@@ -142,6 +142,16 @@ def parse_alternatename_line(line):
     if lang_variant:
         doc["lang_variant"] = lang_variant
 
+    # Add boolean flags only if true
+    if is_preferred:
+        doc["is_preferred"] = True
+    if is_short:
+        doc["is_short"] = True
+    if is_colloquial:
+        doc["is_colloquial"] = True
+    if is_historic:
+        doc["is_historic"] = True
+
     # Add temporal information
     if year_from is not None or year_to is not None:
         doc["timespans"] = []
@@ -170,16 +180,17 @@ def parse_alternatename_line(line):
     return ('toponym', doc)
 
 
-def index_toponyms(file_path, toponyms_index):
+def index_toponyms_and_relations(file_path, toponyms_index, places_index):
     """
     Read alternateNames file and index toponyms.
-    Also collect relations (wkdt, link) for updating places.
+    Stream relations (wkdt, link) directly to place updates without collecting in memory.
     """
-    batch = []
-    relations_by_place = {}  # Collect relations per place for batch updates
-    count = 0
-    skipped = 0
+    toponym_batch = []
+    relations_batch = []
+
+    toponym_count = 0
     relations_count = 0
+    skipped = 0
 
     for line in stream_file(file_path):
         if not line or line.startswith("#"):
@@ -192,87 +203,73 @@ def index_toponyms(file_path, toponyms_index):
                 skipped += 1
                 continue
 
-            # Handle relations
+            # Handle relations - stream to place updates
             if entry_type == 'relation':
                 place_id = doc['place_id']
-                if place_id not in relations_by_place:
-                    relations_by_place[place_id] = []
-                relations_by_place[place_id].append({
-                    'relationType': doc['relationType'],
-                    'relationTo': doc['relationTo']
+
+                # Use script to append to existing relations array
+                relations_batch.append({
+                    "_op_type": "update",
+                    "_index": places_index,
+                    "_id": place_id,
+                    "script": {
+                        "source": """
+                            if (ctx._source.relations == null) {
+                                ctx._source.relations = [];
+                            }
+                            ctx._source.relations.add(params.relation);
+                        """,
+                        "params": {
+                            "relation": {
+                                "relationType": doc['relationType'],
+                                "relationTo": doc['relationTo']
+                            }
+                        }
+                    },
+                    "upsert": {
+                        "relations": [{
+                            "relationType": doc['relationType'],
+                            "relationTo": doc['relationTo']
+                        }]
+                    }
                 })
-                relations_count += 1
+
+                if len(relations_batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(es, relations_batch, raise_on_error=False, stats_only=True)
+                    relations_count += success
+                    print(f"Toponyms: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
+                    relations_batch = []
+
                 continue
 
             # Handle toponyms
             if entry_type == 'toponym':
                 alt_name_id = line.split("\t")[0]
-                batch.append({
+                toponym_batch.append({
                     "_index": toponyms_index,
                     "_id": f"gn_alt:{alt_name_id}",
                     "_source": doc
                 })
 
-                if len(batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-                    count += success
-                    print(
-                        f"Indexed {count} toponyms so far... (skipped {skipped} non-name entries, collected {relations_count} relations)")
-                    batch = []
+                if len(toponym_batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
+                    toponym_count += success
+                    toponym_batch = []
 
         except Exception as e:
             print(f"Error processing line: {str(e)}")
             continue
 
-    # Index remaining batch
-    if batch:
-        success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-        count += success
+    # Index remaining batches
+    if toponym_batch:
+        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
+        toponym_count += success
 
-    print(f"Toponym indexing complete. Total toponyms indexed: {count}, skipped: {skipped}")
-    print(f"Collected {relations_count} relations for {len(relations_by_place)} places")
+    if relations_batch:
+        success, failed = helpers.bulk(es, relations_batch, raise_on_error=False, stats_only=True)
+        relations_count += success
 
-    return relations_by_place
-
-
-def update_place_relations(relations_by_place, places_index):
-    """
-    Update place documents with relations collected from wkdt and link entries.
-    """
-    print("Updating place relations...")
-
-    updates = []
-    count = 0
-
-    for place_id, relations in relations_by_place.items():
-        updates.append({
-            "_op_type": "update",
-            "_index": places_index,
-            "_id": place_id,
-            "doc": {
-                "relations": relations
-            }
-        })
-
-        if len(updates) >= BATCH_SIZE:
-            try:
-                success, failed = helpers.bulk(es, updates, raise_on_error=False, stats_only=True)
-                count += success
-                print(f"Updated {count} places with relations...")
-                updates = []
-            except Exception as e:
-                print(f"Error updating batch: {str(e)}")
-                updates = []
-
-    # Update remaining
-    if updates:
-        try:
-            success, failed = helpers.bulk(es, updates, raise_on_error=False, stats_only=True)
-            count += success
-        except Exception as e:
-            print(f"Error updating final batch: {str(e)}")
-
-    print(f"Place relations update complete. Total updated: {count}")
+    print(f"Indexing complete. Toponyms: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
 
 
 def update_place_labels(toponyms_index, places_index):
@@ -351,13 +348,10 @@ if __name__ == "__main__":
     PLACES_INDEX = "places"
 
     print(f"Starting to index Geonames alternate names from {ALTERNATENAMES_FILE}")
-    print(f"Target index: {TOPONYMS_INDEX}")
+    print(f"Target indices: {TOPONYMS_INDEX}, {PLACES_INDEX}")
 
-    # Index all toponyms and collect relations
-    relations_by_place = index_toponyms(ALTERNATENAMES_FILE, TOPONYMS_INDEX)
-
-    # Update places with relations
-    update_place_relations(relations_by_place, PLACES_INDEX)
+    # Index toponyms and stream relations updates (no in-memory collection)
+    index_toponyms_and_relations(ALTERNATENAMES_FILE, TOPONYMS_INDEX, PLACES_INDEX)
 
     # Update place labels with preferred names
     update_place_labels(TOPONYMS_INDEX, PLACES_INDEX)
