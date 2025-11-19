@@ -5,31 +5,50 @@
   },
   "mappings": {
     "properties": {
-      "place_id": { "type": "keyword" },
-      "toponyms": { "type": "keyword" },
-      "canonical": { "type": "keyword" },
-      "published": { "type": "boolean" },
+      "place_id": {
+        "type": "keyword"
+      },
+      "label": {
+        "type": "keyword"
+      },
+      "toponyms": {
+        "type": "keyword"
+      },
+      "location": {
+        "type": "geo_shape",
+        "ignore_malformed": true,
+        "coerce": true
+      },
+      "timespans": {
+        "type": "integer_range"
+      },
+      "minmax": {
+        "type": "integer_range"
+      },
       "types": {
+        "type": "nested",
         "properties": {
-          "identifier": { "type": "keyword" },
-          "label": { "type": "keyword" },
-          "sourceLabel": { "type": "text" },
-          "src_label": { "type": "text", "fields": { "keyword": { "type": "keyword", "ignore_above": 256 } } }
+          "identifier": {
+            "type": "keyword"
+          },
+          "label": {
+            "type": "keyword"
+          }
         }
       },
-      "fclasses": { "type": "keyword" },
-      "ccodes": { "type": "keyword" },
-      "children": { "type": "keyword" },
       "relations": {
         "properties": {
-          "label": { "type": "text" },
-          "relationTo": { "type": "keyword" },
-          "relationType": { "type": "keyword" }
+          "relationType": {
+            "type": "keyword"
+          },
+          "relationTo": {
+            "type": "keyword"
+          }
         }
       },
-      "timespans": { "type": "integer_range" },
-      "minmax": { "type": "integer_range" },
-      "location": { "type": "geo_shape", "ignore_malformed": true, "coerce": true }
+      "whg_published": {
+        "type": "boolean"
+      }
     }
   }
 }

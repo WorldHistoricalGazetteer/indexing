@@ -28,7 +28,6 @@
       "name": { "type": "keyword" },
       "name_lower": { "type": "keyword" },
       "lang": { "type": "keyword" },
-      "variants": { "type": "keyword" },
       "suggest": {
         "type": "completion",
         "analyzer": "simple",
