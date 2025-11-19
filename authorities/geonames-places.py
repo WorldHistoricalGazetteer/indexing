@@ -80,6 +80,10 @@ def parse_geonames_line(line):
                 "geometry": {
                     "type": "Point",
                     "coordinates": [float(fields[5]), float(fields[4])]  # lon, lat
+                },
+                "rep_point": {
+                    "lon": float(fields[5]),
+                    "lat": float(fields[4])
                 }
                 # timespans will be added if/when we have historical location data
             }

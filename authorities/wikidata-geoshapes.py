@@ -7,7 +7,7 @@ This script:
 1. Queries Elasticsearch for Wikidata places (wd:* prefix)
 2. For each place, checks Wikidata for P3896 (geoshape) property
 3. Fetches the GeoJSON from Wikimedia Commons
-4. Updates the place with the full geometry and computed centroid
+4. Updates the place with the full geometry and computed representative point
 
 This is separated from main ingestion because fetching geoshapes requires
 API calls to Commons and would make the main ingestion extremely slow.
@@ -114,7 +114,7 @@ def fetch_geoshape_from_wikidata(qid):
 
 def process_places_with_geoshapes(places_index, batch_size=100):
     """
-    Query places, fetch their geoshapes, and update with full geometry + centroid.
+    Query places, fetch their geoshapes, and update with full geometry + rep point.
     """
     query = {
         "query": {
@@ -169,7 +169,7 @@ def process_places_with_geoshapes(places_index, batch_size=100):
                 skipped += 1
                 continue
 
-            # Compute geodetically-correct centroid
+            # Compute geodetically-correct representative point
             rep_point = compute_representative_point(geometry)
 
             # Build updated location

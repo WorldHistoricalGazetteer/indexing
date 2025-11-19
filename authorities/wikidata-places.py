@@ -6,6 +6,7 @@ import requests
 from elasticsearch import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from authorities.helpers import compute_representative_point
 
 es = Elasticsearch(ES_HOST)
 
@@ -102,162 +103,16 @@ def extract_coordinates(entity):
     return None
 
 
-def compute_centroid(geometry):
-    """
-    Compute centroid from GeoJSON geometry.
-    Returns [longitude, latitude] or None.
-    """
-    geom_type = geometry.get('type')
-    coords = geometry.get('coordinates')
-
-    if not coords:
-        return None
-
-    try:
-        if geom_type == 'Point':
-            return coords
-
-        elif geom_type == 'LineString':
-            # Average of all points
-            lon = sum(c[0] for c in coords) / len(coords)
-            lat = sum(c[1] for c in coords) / len(coords)
-            return [lon, lat]
-
-        elif geom_type == 'Polygon':
-            # Use exterior ring (first ring)
-            ring = coords[0]
-            lon = sum(c[0] for c in ring) / len(ring)
-            lat = sum(c[1] for c in ring) / len(ring)
-            return [lon, lat]
-
-        elif geom_type == 'MultiPoint':
-            lon = sum(c[0] for c in coords) / len(coords)
-            lat = sum(c[1] for c in coords) / len(coords)
-            return [lon, lat]
-
-        elif geom_type == 'MultiLineString':
-            # Flatten all lines
-            all_points = [pt for line in coords for pt in line]
-            lon = sum(c[0] for c in all_points) / len(all_points)
-            lat = sum(c[1] for c in all_points) / len(all_points)
-            return [lon, lat]
-
-        elif geom_type == 'MultiPolygon':
-            # Use first ring of each polygon
-            all_points = [pt for poly in coords for pt in poly[0]]
-            lon = sum(c[0] for c in all_points) / len(all_points)
-            lat = sum(c[1] for c in all_points) / len(all_points)
-            return [lon, lat]
-
-        elif geom_type == 'GeometryCollection':
-            # Recursively compute centroids and average them
-            centroids = [compute_centroid(g) for g in geometry.get('geometries', [])]
-            centroids = [c for c in centroids if c]  # Filter None
-            if centroids:
-                lon = sum(c[0] for c in centroids) / len(centroids)
-                lat = sum(c[1] for c in centroids) / len(centroids)
-                return [lon, lat]
-
-    except (TypeError, IndexError, ZeroDivisionError):
-        return None
-
-    return None
-
-
-def extract_geoshape(entity):
-    """
-    Extract geoshape from P3896 (geoshape property).
-    This returns a reference to a GeoJSON file on Commons.
-    Returns URL string or None.
-    """
-    if 'claims' not in entity or 'P3896' not in entity['claims']:
-        return None
-
-    for claim in entity['claims']['P3896']:
-        if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
-            # The value is like "Data:France.map"
-            value = claim['mainsnak']['datavalue'].get('value', '')
-            if value:
-                return value
-
-    return None
-
-
-def fetch_geojson_from_commons(data_page):
-    """
-    Fetch GeoJSON data from Wikimedia Commons Data page.
-    Returns GeoJSON geometry dict or None.
-
-    Example data_page: "Data:France.map"
-    """
-    if not data_page or not data_page.startswith('Data:'):
-        return None
-
-    try:
-        # Use Commons API to get the GeoJSON content
-        url = 'https://commons.wikimedia.org/w/api.php'
-        params = {
-            'action': 'query',
-            'prop': 'revisions',
-            'rvslots': '*',
-            'rvprop': 'content',
-            'format': 'json',
-            'titles': data_page,
-            'formatversion': '2'
-        }
-
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-
-        # Navigate to the content
-        pages = data.get('query', {}).get('pages', [])
-        if not pages:
-            return None
-
-        content = pages[0].get('revisions', [{}])[0].get('slots', {}).get('main', {}).get('content')
-        if not content:
-            return None
-
-        # Parse the GeoJSON
-        geojson = json.loads(content)
-
-        # Extract geometry - could be Feature, FeatureCollection, or raw geometry
-        if geojson.get('type') == 'Feature':
-            return geojson.get('geometry')
-        elif geojson.get('type') == 'FeatureCollection':
-            # Return first feature's geometry
-            features = geojson.get('features', [])
-            if features:
-                return features[0].get('geometry')
-        elif geojson.get('type') in ['Point', 'LineString', 'Polygon', 'MultiPoint',
-                                     'MultiLineString', 'MultiPolygon', 'GeometryCollection']:
-            # Raw geometry
-            return geojson
-
-    except (requests.RequestException, json.JSONDecodeError, KeyError, IndexError):
-        return None
-
-    return None
-
-
 def extract_coordinates_and_geoshape(entity):
     """
-    Extract both point coordinates and geoshape, returning a locations array.
-    Returns list of location dicts with geometry and optional centroid.
+    Extract point coordinates and geoshape reference, returning a locations array.
+    Returns list of location dicts with geometry, rep_point, and optional geoshape_ref.
+
+    The geoshape_ref is stored but not fetched during main ingestion to avoid
+    slowing down the process. The wikidata-geoshapes.py script will fetch and
+    process these later.
     """
     locations = []
-
-    # First, try to get geoshape (P3896) - this is the full geometry
-    geoshape_ref = extract_geoshape(entity)
-    if geoshape_ref:
-        # Note: We'll fetch geoshapes in a separate pass to avoid slowing down
-        # the main ingestion. For now, just store the reference.
-        # You could fetch it here with: geometry = fetch_geojson_from_commons(geoshape_ref)
-        # But that would make ingestion MUCH slower (API call per entity)
-
-        # For now, we'll add a placeholder and rely on P625 for the point
-        pass
 
     # Get point coordinates from P625
     coords = extract_coordinates(entity)
@@ -266,13 +121,13 @@ def extract_coordinates_and_geoshape(entity):
             'geometry': {
                 'type': 'Point',
                 'coordinates': coords
+            },
+            'rep_point': {
+                'lon': coords[0],
+                'lat': coords[1]
             }
         }
-        # For simple points, rep_point is the same as geometry
-        location['rep_point'] = {
-            'lon': coords[0],
-            'lat': coords[1]
-        }
+
         locations.append(location)
 
     return locations if locations else None
