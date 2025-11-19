@@ -11,7 +11,7 @@ from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from authorities.helpers import compute_representative_point
 
 es = Elasticsearch(ES_HOST)
-GEOSHAPE_REFS_FILE = "wikidata_geoshape_refs.jsonl"  # New file to store references
+GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
 
 
 def stream_wikidata(file_path):
