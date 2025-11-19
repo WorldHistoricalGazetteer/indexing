@@ -1,7 +1,7 @@
 # authorities/create_indices.py
 
 import json
-from elasticsearch import Elasticsearch
+from elasticsearch8 import Elasticsearch
 from authorities.settings import ES_HOST
 
 es = Elasticsearch(ES_HOST)
