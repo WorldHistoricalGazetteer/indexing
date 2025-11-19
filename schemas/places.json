@@ -27,6 +27,10 @@
             "ignore_malformed": true,
             "coerce": true
           },
+          "rep_point": {
+            "type": "geo_point",
+            "ignore_malformed": true
+          },
           "timespans": {
             "type": "nested",
             "properties": {
@@ -76,6 +80,9 @@
       },
       "whg_published": {
         "type": "boolean"
+      },
+      "source": {
+        "type": "keyword"
       }
     }
   }
