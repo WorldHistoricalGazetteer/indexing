@@ -142,16 +142,6 @@ def parse_alternatename_line(line):
     if lang_variant:
         doc["lang_variant"] = lang_variant
 
-    # Add boolean flags
-    if is_preferred:
-        doc["is_preferred"] = True
-    if is_short:
-        doc["is_short"] = True
-    if is_colloquial:
-        doc["is_colloquial"] = True
-    if is_historic:
-        doc["is_historic"] = True
-
     # Add temporal information
     if year_from is not None or year_to is not None:
         doc["timespans"] = []

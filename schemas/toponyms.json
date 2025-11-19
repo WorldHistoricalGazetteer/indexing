@@ -6,11 +6,16 @@
       "analyzer": {
         "edge_ngram_analyzer": {
           "tokenizer": "edge_ngram_tokenizer",
-          "filter": ["lowercase"]
+          "filter": [
+            "lowercase"
+          ]
         },
         "asciifolding_analyzer": {
           "tokenizer": "standard",
-          "filter": ["asciifolding", "lowercase"]
+          "filter": [
+            "asciifolding",
+            "lowercase"
+          ]
         }
       },
       "tokenizer": {
@@ -18,7 +23,10 @@
           "type": "edge_ngram",
           "min_gram": 2,
           "max_gram": 20,
-          "token_chars": ["letter", "digit"]
+          "token_chars": [
+            "letter",
+            "digit"
+          ]
         }
       }
     }
@@ -39,23 +47,26 @@
       "name_lower": {
         "type": "keyword"
       },
+      "ipa": {
+        "type": "keyword"
+      },
+      "embedding_panphon": {
+        "type": "dense_vector",
+        "dims": 24,
+        "index": true,
+        "similarity": "cosine"
+      },
+      "embedding_bilstm": {
+        "type": "dense_vector",
+        "dims": 128,
+        "index": true,
+        "similarity": "cosine"
+      },
       "lang": {
         "type": "keyword"
       },
       "lang_variant": {
         "type": "keyword"
-      },
-      "is_preferred": {
-        "type": "boolean"
-      },
-      "is_short": {
-        "type": "boolean"
-      },
-      "is_colloquial": {
-        "type": "boolean"
-      },
-      "is_historic": {
-        "type": "boolean"
       },
       "timespans": {
         "type": "nested",
