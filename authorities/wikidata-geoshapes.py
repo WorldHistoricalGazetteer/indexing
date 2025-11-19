@@ -16,7 +16,7 @@ API calls to Commons and would make the main ingestion extremely slow.
 import json
 import requests
 import time
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE
 from authorities.helpers import compute_representative_point

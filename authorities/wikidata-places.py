@@ -3,7 +3,7 @@
 import gzip
 import json
 import requests
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from authorities.helpers import compute_representative_point

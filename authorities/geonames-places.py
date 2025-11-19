@@ -1,7 +1,7 @@
 # authorities/geonames-places.py
 
 import gzip
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 
