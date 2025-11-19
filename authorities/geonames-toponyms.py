@@ -4,24 +4,9 @@ import gzip
 from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from authorities.utilities import stream_file
 
 es = Elasticsearch(ES_HOST)
-
-
-def stream_file(file_path):
-    """
-    Generator yielding lines from a potentially compressed file.
-    """
-    if file_path.endswith(".gz"):
-        open_func = gzip.open
-        mode = 'rt'
-    else:
-        open_func = open
-        mode = 'r'
-
-    with open_func(file_path, mode, encoding='utf-8') as f:
-        for line in f:
-            yield line.strip()
 
 
 def parse_year(year_str):
@@ -343,7 +328,7 @@ def update_place_labels(toponyms_index, places_index):
 
 
 if __name__ == "__main__":
-    ALTERNATENAMES_FILE = f"{DATA_DIR}geonames/alternateNamesV2/alternateNamesV2.txt"
+    ALTERNATENAMES_FILE = f"{DATA_DIR}geonames/alternateNamesV2/alternateNamesV2.zip"
     TOPONYMS_INDEX = "toponyms"
     PLACES_INDEX = "places"
 
