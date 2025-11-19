@@ -1,5 +1,3 @@
-
-
 ES_HOST = "http://localhost:9200"
 BATCH_SIZE = 5000
 

@@ -25,15 +25,61 @@
   },
   "mappings": {
     "properties": {
-      "name": { "type": "keyword" },
-      "name_lower": { "type": "keyword" },
-      "lang": { "type": "keyword" },
+      "place_id": {
+        "type": "keyword"
+      },
+      "name": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "name_lower": {
+        "type": "keyword"
+      },
+      "lang": {
+        "type": "keyword"
+      },
+      "lang_variant": {
+        "type": "keyword"
+      },
+      "is_preferred": {
+        "type": "boolean"
+      },
+      "is_short": {
+        "type": "boolean"
+      },
+      "is_colloquial": {
+        "type": "boolean"
+      },
+      "is_historic": {
+        "type": "boolean"
+      },
+      "timespans": {
+        "type": "nested",
+        "properties": {
+          "start": {
+            "type": "integer"
+          },
+          "end": {
+            "type": "integer"
+          }
+        }
+      },
       "suggest": {
         "type": "completion",
         "analyzer": "simple",
         "preserve_separators": true,
         "preserve_position_increments": true,
-        "max_input_length": 50
+        "max_input_length": 50,
+        "contexts": [
+          {
+            "name": "lang",
+            "type": "category"
+          }
+        ]
       }
     }
   }

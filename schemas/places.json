@@ -9,18 +9,39 @@
         "type": "keyword"
       },
       "label": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword"
+          }
+        }
+      },
+      "ccodes": {
         "type": "keyword"
       },
-      "toponyms": {
-        "type": "keyword"
+      "locations": {
+        "type": "nested",
+        "properties": {
+          "geometry": {
+            "type": "geo_shape",
+            "ignore_malformed": true,
+            "coerce": true
+          },
+          "timespans": {
+            "type": "nested",
+            "properties": {
+              "start": {
+                "type": "integer"
+              },
+              "end": {
+                "type": "integer"
+              }
+            }
+          }
+        }
       },
-      "location": {
-        "type": "geo_shape",
-        "ignore_malformed": true,
-        "coerce": true
-      },
-      "timespans": {
-        "type": "integer_range"
+      "elevation": {
+        "type": "integer"
       },
       "minmax": {
         "type": "integer_range"
@@ -33,16 +54,23 @@
           },
           "label": {
             "type": "keyword"
+          },
+          "sourceLabel": {
+            "type": "keyword"
           }
         }
       },
       "relations": {
+        "type": "nested",
         "properties": {
           "relationType": {
             "type": "keyword"
           },
           "relationTo": {
             "type": "keyword"
+          },
+          "label": {
+            "type": "text"
           }
         }
       },
