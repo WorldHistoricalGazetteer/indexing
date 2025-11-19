@@ -17,13 +17,13 @@ import os
 import sys
 from elasticsearch8 import Elasticsearch, helpers
 
-from authorities.settings import ES_HOST, BATCH_SIZE
+from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from authorities.helpers import compute_representative_point
 
 # --- Configuration ---
 es = Elasticsearch(ES_HOST)
 PLACES_INDEX = "places"
-REFS_FILE = "wikidata_geoshape_refs.jsonl"  # Input file from wikidata-places.py
+REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")  # Input file from wikidata-places.py
 LOG_FILE = "geoshapes_downloaded.log"  # Log file for resumability
 
 
@@ -165,23 +165,32 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=BATCH_SIZE):
                 continue
 
             # Compute geodetically-correct representative point
-            rep_point = compute_representative_point(geometry)
+            rep_point_new = compute_representative_point(geometry)
 
-            # Build the new/updated location object
+            # 2. Build the complete new location object
             new_location = {
                 'geometry': geometry,
+                'rep_point': rep_point_new
             }
-            if rep_point:
-                new_location['rep_point'] = rep_point
 
-            # Update operation: Overwrite the 'locations' array with the complex geometry
             updates.append({
                 "_op_type": "update",
                 "_index": places_index,
                 "_id": place_id,
-                # This replaces the original point location with the complex shape
-                "doc": {
-                    "locations": [new_location]
+                "script": {
+                    "source": """
+                        // Check if locations array exists and has at least one item.
+                        // If it does, overwrite the first location object with the complete new data.
+                        if (ctx._source.locations != null && ctx._source.locations.size() > 0) {
+                            ctx._source.locations[0] = params.new_location;
+                        } else {
+                            // Safety fall-through: create the array if it was missing (shouldn't happen)
+                            ctx._source.locations = [params.new_location];
+                        }
+                    """,
+                    "params": {
+                        "new_location": new_location
+                    }
                 }
             })
 
