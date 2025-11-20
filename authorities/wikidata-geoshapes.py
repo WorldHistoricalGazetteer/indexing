@@ -25,7 +25,9 @@ es = Elasticsearch(ES_HOST)
 PLACES_INDEX = "places"
 REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")  # Input file from wikidata-places.py
 LOG_FILE = "geoshapes_downloaded.log"  # Log file for resumability
-
+HEADERS = {
+    'User-Agent': 'PittCRC-GeoFetcher/1.0 (stg135@pitt.edu; https://crc-pages.pitt.edu/) python-requests',
+}
 
 # --- Configuration ---
 
@@ -57,7 +59,7 @@ def fetch_geojson_from_commons(data_page):
         max_retries = 5
         for attempt in range(max_retries):
             try:
-                response = requests.get(url, params=params, timeout=10)
+                response = requests.get(url, params=params, headers=HEADERS, timeout=10)
                 response.raise_for_status()
                 data = response.json()
                 break  # Success, break out of retry loop

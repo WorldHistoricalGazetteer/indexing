@@ -68,6 +68,17 @@ This requests:
 - `-t 2:00:00`: 2 hour time limit
 - `-a whcdh`: Account allocation
 
+>Alternatively, for a longer session (in this example, 1 day), you can use:
+>```bash
+>ssh stg135@htc.crc.pitt.edu
+>salloc -M htc -A whcdh --qos=normal -c 2 --mem=8G -t 1-00:00:00
+>```
+>
+>And then log into the allocated node:
+>```bash
+>ssh htc-nXXX
+>```
+
 ### 2. Load Singularity Module
 
 ```bash
@@ -93,6 +104,7 @@ tmux
 ```bash
 singularity exec \
   --bind /ix1/whcdh/es/config:/usr/share/elasticsearch/config \
+  --bind /ix1/whcdh/es/logs:/usr/share/elasticsearch/logs \
   /ix1/whcdh/data/elasticsearch-8.11.1.sif \
   /bin/bash -c "ES_JAVA_OPTS='-Xms2g -Xmx2g' \
   elasticsearch \
