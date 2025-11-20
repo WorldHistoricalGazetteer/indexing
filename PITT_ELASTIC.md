@@ -92,13 +92,13 @@ tmux
 
 ```bash
 singularity exec \
-  --bind /ix1/whcdh/data/es-test/config:/usr/share/elasticsearch/config \
+  --bind /ix1/whcdh/es/config:/usr/share/elasticsearch/config \
   /ix1/whcdh/data/elasticsearch-8.11.1.sif \
   /bin/bash -c "ES_JAVA_OPTS='-Xms2g -Xmx2g' \
   elasticsearch \
-    -E path.data=/ix1/whcdh/data/es-test/data \
-    -E path.logs=/ix1/whcdh/data/es-test/logs \
-    -E path.repo=/ix1/whcdh/data/es-test/repo \
+    -E path.data=/ix1/whcdh/es/data \
+    -E path.logs=/ix1/whcdh/es/logs \
+    -E path.repo=/ix1/whcdh/es/repo \
     -E discovery.type=single-node \
     -E xpack.security.enabled=false \
     -E network.host=0.0.0.0"
