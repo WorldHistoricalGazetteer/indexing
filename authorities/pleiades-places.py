@@ -221,24 +221,38 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
     print("Using ijson for memory-efficient parsing...")
 
     try:
-        # Open gzipped file
-        with gzip.open(file_path, 'rb') as gz_file:
-            # Check if it's JSON-LD with @graph
-            # We need to detect this first
-            gz_file.seek(0)
-            first_bytes = gzip.decompress(gz_file.read(1000)).decode('utf-8', errors='ignore')
-            is_graph = '@graph' in first_bytes
+        # Detect if file is gzipped or plain JSON
+        is_gzipped = file_path.endswith('.gz')
+
+        if is_gzipped:
+            # Try to open as gzipped
+            try:
+                file_obj = gzip.open(file_path, 'rb')
+                # Test read
+                test_bytes = file_obj.read(100)
+                file_obj.seek(0)
+            except gzip.BadGzipFile:
+                print("Warning: File has .gz extension but is not gzipped, opening as plain JSON")
+                file_obj = open(file_path, 'rb')
+        else:
+            file_obj = open(file_path, 'rb')
+
+        with file_obj:
+            # Read first bytes to detect format
+            first_bytes = file_obj.read(1000)
+            first_text = first_bytes.decode('utf-8', errors='ignore')
+            is_graph = '@graph' in first_text
 
             # Reset to beginning
-            gz_file.seek(0)
+            file_obj.seek(0)
 
             if is_graph:
                 # Parse @graph array
-                parser = ijson.items(gz_file, '@graph.item')
+                parser = ijson.items(file_obj, '@graph.item')
                 print("Detected JSON-LD format with @graph")
             else:
                 # Parse top-level array
-                parser = ijson.items(gz_file, 'item')
+                parser = ijson.items(file_obj, 'item')
                 print("Detected JSON array format")
 
             # Process each record as it's parsed
