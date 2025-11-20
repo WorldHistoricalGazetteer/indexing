@@ -82,17 +82,17 @@ tmux new -s whg-ingest
 
 ```bash
 singularity exec \
-  --bind /ix1/whcdh/data/es-test/config:/usr/share/elasticsearch/config \
-  --bind /ix1/whcdh/data/es-test/logs:/usr/share/elasticsearch/logs \
-  /ix1/whcdh/data/elasticsearch-8.11.1.sif \
-  /bin/bash -c "ES_JAVA_OPTS='-Xms4g -Xmx4g' \
-  elasticsearch \
-    -E path.data=/ix1/whcdh/data/es/data \
-    -E path.logs=/ix1/whcdh/data/es/logs \
-    -E path.repo=/ix1/whcdh/data/es/repo \
-    -E discovery.type=single-node \
-    -E xpack.security.enabled=false \
-    -E network.host=0.0.0.0"
+    --bind /ix1/whcdh/es/config:/usr/share/elasticsearch/config \
+    --bind /ix1/whcdh/es/logs:/usr/share/elasticsearch/logs \
+    /ix1/whcdh/data/elasticsearch-8.11.1.sif \
+    /bin/bash -c "ES_JAVA_OPTS='-Xms4g -Xmx4g' \
+    elasticsearch \
+      -E path.data=/ix1/whcdh/es/data \
+      -E path.logs=/ix1/whcdh/es/logs \
+      -E path.repo=/ix1/whcdh/es/repo \
+      -E discovery.type=single-node \
+      -E xpack.security.enabled=false \
+      -E network.host=0.0.0.0"
 ```
 
 **Wait 30 seconds**, then verify in new pane:

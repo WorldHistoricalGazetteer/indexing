@@ -1,17 +1,14 @@
-# authorities/pleiades-places.py
+# authorities/pleiades-places-streaming.py
 
 """
-Index Pleiades places data into Elasticsearch.
+Index Pleiades places data into Elasticsearch with memory-efficient streaming.
 
-Pleiades provides rich ancient place data with:
-- Multiple historical locations with temporal attestations
-- Multiple historical names with temporal attestations
-- Connections to other places
-- Rich provenance and references
+This version uses ijson to stream parse the large JSON file instead of
+loading it entirely into memory.
 """
 
 import gzip
-import json
+import ijson
 from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
@@ -208,9 +205,10 @@ def create_place_doc(pleiades_record):
     return doc
 
 
-def index_pleiades(file_path, places_index, toponyms_index):
+def index_pleiades_streaming(file_path, places_index, toponyms_index):
     """
-    Read Pleiades JSON dump and index places and toponyms.
+    Stream parse Pleiades JSON to avoid loading entire file into memory.
+    Uses ijson for incremental JSON parsing.
     """
     place_batch = []
     toponym_batch = []
@@ -219,7 +217,116 @@ def index_pleiades(file_path, places_index, toponyms_index):
     toponym_count = 0
     skipped = 0
 
+    print(f"Streaming Pleiades data from {file_path}")
+    print("Using ijson for memory-efficient parsing...")
+
+    try:
+        # Open gzipped file
+        with gzip.open(file_path, 'rb') as gz_file:
+            # Check if it's JSON-LD with @graph
+            # We need to detect this first
+            gz_file.seek(0)
+            first_bytes = gzip.decompress(gz_file.read(1000)).decode('utf-8', errors='ignore')
+            is_graph = '@graph' in first_bytes
+
+            # Reset to beginning
+            gz_file.seek(0)
+
+            if is_graph:
+                # Parse @graph array
+                parser = ijson.items(gz_file, '@graph.item')
+                print("Detected JSON-LD format with @graph")
+            else:
+                # Parse top-level array
+                parser = ijson.items(gz_file, 'item')
+                print("Detected JSON array format")
+
+            # Process each record as it's parsed
+            for i, record in enumerate(parser):
+                if (i + 1) % 1000 == 0:
+                    print(f"Processed {i + 1:,} records... (places: {place_count:,}, toponyms: {toponym_count:,})")
+
+                try:
+                    # Create place document
+                    place_doc = create_place_doc(record)
+
+                    # Skip if no spatial data
+                    if 'locations' not in place_doc:
+                        skipped += 1
+                        continue
+
+                    place_id = place_doc['place_id']
+
+                    # Add to place batch
+                    place_batch.append({
+                        '_index': places_index,
+                        '_id': place_id,
+                        '_source': place_doc
+                    })
+
+                    # Extract toponyms
+                    toponyms = extract_toponyms(record)
+                    for j, toponym_doc in enumerate(toponyms):
+                        toponym_batch.append({
+                            '_index': toponyms_index,
+                            '_id': f"{place_id}:{j}",
+                            '_source': toponym_doc
+                        })
+
+                    # Bulk index places
+                    if len(place_batch) >= BATCH_SIZE:
+                        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+                        place_count += success
+                        place_batch = []
+
+                    # Bulk index toponyms
+                    if len(toponym_batch) >= BATCH_SIZE:
+                        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
+                        toponym_count += success
+                        toponym_batch = []
+
+                except Exception as e:
+                    print(f"Error processing record {record.get('id', 'unknown')}: {str(e)}")
+                    skipped += 1
+                    continue
+
+    except ImportError:
+        print("\nERROR: ijson library not installed")
+        print("Install with: pip install ijson --break-system-packages")
+        print("\nFalling back to standard (memory-intensive) method...")
+        return index_pleiades_standard(file_path, places_index, toponyms_index)
+
+    # Index remaining batches
+    if place_batch:
+        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+        place_count += success
+
+    if toponym_batch:
+        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
+        toponym_count += success
+
+    print(f"\nIndexing complete!")
+    print(f"Places indexed: {place_count:,}")
+    print(f"Toponyms indexed: {toponym_count:,}")
+    print(f"Skipped (no location): {skipped:,}")
+
+
+def index_pleiades_standard(file_path, places_index, toponyms_index):
+    """
+    Standard (non-streaming) method - loads entire file into memory.
+    Only used as fallback if ijson not available.
+    """
+    import json
+
+    place_batch = []
+    toponym_batch = []
+
+    place_count = 0
+    toponym_count = 0
+    skipped = 0
+
     print(f"Loading Pleiades data from {file_path}")
+    print("WARNING: Loading entire file into memory...")
 
     with gzip.open(file_path, 'rt', encoding='utf-8') as f:
         data = json.load(f)
@@ -300,11 +407,11 @@ def index_pleiades(file_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    PLEIADES_FILE = f"{DATA_DIR}pleiades/pleiades-places-latest/pleiades-places-latest.json.gz"
+    PLEIADES_FILE = f"{DATA_DIR}/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index Pleiades from {PLEIADES_FILE}")
     print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
 
-    index_pleiades(PLEIADES_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+    index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX, TOPONYMS_INDEX)
