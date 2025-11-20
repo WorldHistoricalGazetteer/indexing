@@ -1,241 +1,719 @@
-# Running Elasticsearch 8.11.1 on CRC HTC with Singularity
+# CRC Operations Guide - WHG Elasticsearch Ingestion
 
-This guide documents the setup for running Elasticsearch in a Singularity container on the University of Pittsburgh CRC (Center for Research Computing) HTC cluster.
+Complete guide for running Elasticsearch and ingesting gazetteer data on University of Pittsburgh CRC HTC cluster.
 
-## Prerequisites
+## Table of Contents
 
-- Access to CRC HTC cluster (`stg135@htc.crc.pitt.edu`)
-- Account allocation: `whcdh`
-- Shared storage at `/ix1/whcdh/data/`
+1. [Initial Login and Setup](#initial-login-and-setup)
+2. [Starting Elasticsearch](#starting-elasticsearch)
+3. [Updating Code from GitHub](#updating-code-from-github)
+4. [Running Ingestion Scripts](#running-ingestion-scripts)
+5. [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
 
-## Initial Setup (One-time)
+---
 
-### 1. Download the Elasticsearch Singularity Image
+## Initial Login and Setup
 
-```bash
-# Pull the Elasticsearch 8.11.1 Docker image and convert to SIF
-singularity pull /ix1/whcdh/data/elasticsearch-8.11.1.sif \
-  docker://docker.elastic.co/elasticsearch/elasticsearch:8.11.1
-```
-
-### 2. Create Directory Structure
+### 1. SSH to CRC
 
 ```bash
-# Create directories for Elasticsearch data, logs, config, and snapshots
-mkdir -p /ix1/whcdh/data/es-test/{data,logs,config,repo}
-chmod -R 770 /ix1/whcdh/data/es-test
-```
-
-### 3. Extract and Configure Elasticsearch Config Files
-
-```bash
-# Extract default config from container
-singularity exec /ix1/whcdh/data/elasticsearch-8.11.1.sif \
-  sh -c 'cp -r /usr/share/elasticsearch/config /tmp/es-config && tar -czf - -C /tmp es-config' | \
-  tar -xzf - -C /ix1/whcdh/data/es-test/
-
-# Move config files to correct location
-mv /ix1/whcdh/data/es-test/config/es-config/* /ix1/whcdh/data/es-test/config/
-rmdir /ix1/whcdh/data/es-test/config/es-config
-
-# Fix GC log path (important for Singularity read-only filesystem)
-sed -i 's|logs/gc.log|/ix1/whcdh/data/es-test/logs/gc.log|g' \
-  /ix1/whcdh/data/es-test/config/jvm.options
-```
-
-Verify the config files are in place:
-```bash
-ls -la /ix1/whcdh/data/es-test/config/
-# Should show: elasticsearch.yml, jvm.options, log4j2.properties, etc.
-```
-
-## Running Elasticsearch
-
-### 1. Connect to CRC and Request Interactive Job
-
-```bash
-# SSH to CRC HTC cluster
 ssh stg135@htc.crc.pitt.edu
-
-# Request an interactive session with adequate resources
-crc-interactive -s -c 2 -b 8 -t 2:00:00 -a whcdh
 ```
 
-This requests:
+### 2. Request Interactive Session
+
+For ingestion (12 hours maximum with crc-interactive):
+
+```bash
+crc-interactive -s -c 4 -b 16 -t 12:00:00 -a whcdh
+```
+
+**Parameters:**
 - `-s`: SMP cluster
-- `-c 2`: 2 CPU cores
-- `-b 8`: 8 GB RAM
-- `-t 2:00:00`: 2 hour time limit
+- `-c 4`: 4 CPU cores
+- `-b 16`: 16 GB RAM
+- `-t 48:00:00`: 48 hour time limit
 - `-a whcdh`: Account allocation
 
->Alternatively, for a longer session (in this example, 1 day), you can use:
->```bash
->ssh stg135@htc.crc.pitt.edu
->salloc -M htc -A whcdh --qos=normal -c 2 --mem=8G -t 1-00:00:00
->```
->
->And then log into the allocated node:
->```bash
->ssh htc-nXXX
->```
+**Alternative (salloc) for more than 12 hours:**
+```bash
+salloc -M htc -A whcdh --qos=normal -c 4 --mem=16G -t 2-00:00:00
+ssh htc-nXXX  # Replace XXX with your allocated node number
+```
 
-### 2. Load Singularity Module
+### 3. Load Required Modules
 
 ```bash
 module load singularity/3.9.6
+module load python/3.11  # If using system Python
 ```
 
-### 3. Start tmux (Recommended)
+### 4. Activate Python Environment
 
 ```bash
-# Start tmux for easy management
-tmux
-
-# Tmux quick reference:
-# Ctrl+b "  - split window horizontally
-# Ctrl+b %  - split window vertically
-# Ctrl+b arrow keys - switch between panes
-# Ctrl+b d  - detach (ES keeps running)
-# tmux attach - reattach later
+# Assuming you have a conda environment named 'whg'
+source /path/to/miniconda3/etc/profile.d/conda.sh
+conda activate whg
 ```
 
-### 4. Run Elasticsearch
+**Verify Python packages:**
+```bash
+python -c "import elasticsearch, shapely, pyproj; print('All packages available')"
+```
+
+### 5. Start tmux Session
+
+```bash
+tmux new -s whg-ingest
+
+# Tmux commands:
+# Ctrl+b "  - split horizontally
+# Ctrl+b %  - split vertically
+# Ctrl+b arrow - switch panes
+# Ctrl+b d  - detach
+# tmux attach -t whg-ingest  - reattach
+```
+
+---
+
+## Starting Elasticsearch
+
+### In tmux pane 1 (Elasticsearch server)
 
 ```bash
 singularity exec \
-  --bind /ix1/whcdh/es/config:/usr/share/elasticsearch/config \
-  --bind /ix1/whcdh/es/logs:/usr/share/elasticsearch/logs \
+  --bind /ix1/whcdh/data/es-test/config:/usr/share/elasticsearch/config \
+  --bind /ix1/whcdh/data/es-test/logs:/usr/share/elasticsearch/logs \
   /ix1/whcdh/data/elasticsearch-8.11.1.sif \
-  /bin/bash -c "ES_JAVA_OPTS='-Xms2g -Xmx2g' \
+  /bin/bash -c "ES_JAVA_OPTS='-Xms4g -Xmx4g' \
   elasticsearch \
-    -E path.data=/ix1/whcdh/es/data \
-    -E path.logs=/ix1/whcdh/es/logs \
-    -E path.repo=/ix1/whcdh/es/repo \
+    -E path.data=/ix1/whcdh/data/es/data \
+    -E path.logs=/ix1/whcdh/data/es/logs \
+    -E path.repo=/ix1/whcdh/data/es/repo \
     -E discovery.type=single-node \
     -E xpack.security.enabled=false \
     -E network.host=0.0.0.0"
 ```
 
-**Key configuration options:**
-- `--bind`: Mounts writable config directory over read-only container path
-- `ES_JAVA_OPTS='-Xms2g -Xmx2g'`: Sets heap size to 2GB min/max
-- `path.data`: Where indices are stored
-- `path.logs`: Where logs are written
-- `path.repo`: Where snapshots can be stored
-- `discovery.type=single-node`: Run as single node (not a cluster)
-- `xpack.security.enabled=false`: Disable authentication for testing
-- `network.host=0.0.0.0`: Bind to all network interfaces
-
-### 5. Test Elasticsearch (in new tmux pane)
-
-Press `Ctrl+b "` to split the tmux window, then:
+**Wait 30 seconds**, then verify in new pane:
 
 ```bash
-# Check if ES is running
+# Split window: Ctrl+b "
 curl http://localhost:9200/
+curl http://localhost:9200/_cluster/health?pretty
+```
 
-# Should return JSON with cluster info like:
-# {
-#   "name" : "...",
-#   "cluster_name" : "...",
-#   "version" : {
-#     "number" : "8.11.1",
-#     ...
-#   }
-# }
+Should see cluster health status: "green" or "yellow"
 
-# Check cluster health
+---
+
+## Updating Code from GitHub
+
+### Navigate to Project Directory
+
+```bash
+cd /ix1/whcdh/elastic
+```
+
+### Pull Latest Changes
+
+```bash
+git pull origin main
+```
+
+### Verify File Structure
+
+```bash
+ls -l
+# Should see:
+# authorities/
+# schemas/
+# README.md
+# etc.
+
+ls authorities/
+# Should see:
+# create_indices.py
+# geonames-places.py
+# geonames-toponyms.py
+# wikidata-places.py
+# wikidata-geoshapes.py
+# helpers.py
+# settings.py
+```
+
+### Check/Update Settings
+
+```bash
+nano authorities/settings.py
+```
+
+Verify paths are correct:
+```python
+ES_HOST = "http://localhost:9200"
+BATCH_SIZE = 5000
+DATA_DIR = "/ix1/whcdh/data/"
+```
+
+---
+
+## Running Ingestion Scripts
+
+### Working Directory
+
+```bash
+cd /ix1/whcdh/elastic
+```
+
+All Python commands should be run from this directory so imports work correctly.
+
+---
+
+### Step 1: Create Indices (< 1 minute)
+
+```bash
+python -m authorities/create_indices.py
+```
+
+**Expected output:**
+```
+Index 'places' already exists. Deleting...
+Creating index 'places'...
+Index 'places' created successfully.
+Index 'toponyms' already exists. Deleting...
+Creating index 'toponyms'...
+Index 'toponyms' created successfully.
+
+All indices created successfully!
+
+Next steps:
+1. Run: python -m authorities/geonames-places.py
+2. Run: python -m authorities/geonames-toponyms.py
+```
+
+**Verify:**
+```bash
+curl http://localhost:9200/_cat/indices?v
+# Should show 'places' and 'toponyms' indices
+```
+
+---
+
+### Step 2: Index Geonames Places (2-3 hours)
+
+```bash
+python -m authorities/geonames-places.py
+```
+
+**Input file:** `/ix1/whcdh/data/geonames/allCountries/allCountries.txt`
+
+**Expected output:**
+```
+Starting to index Geonames places from /ix1/whcdh/data/geonames/allCountries/allCountries.txt
+Target index: places
+Indexed 5000 places so far...
+Indexed 10000 places so far...
+...
+Indexing complete. Total places indexed: 12345678
+```
+
+**Monitor progress:**
+```bash
+# In another tmux pane
+watch -n 30 'curl -s http://localhost:9200/places/_count | jq .'
+```
+
+**If interrupted:** Just restart - Elasticsearch handles duplicate IDs gracefully (upserts)
+
+---
+
+### Step 3: Index Geonames Toponyms (4-6 hours)
+
+```bash
+python -m authorities/geonames-toponyms.py
+```
+
+**Input file:** `/ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.txt`
+
+**Expected output:**
+```
+Starting to index Geonames alternate names from /ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.txt
+Target indices: toponyms, places
+Toponyms: 5000, relations: 1200, skipped: 3800
+Toponyms: 10000, relations: 2400, skipped: 7600
+...
+Indexing complete. Toponyms: 14000000, relations: 350000, skipped: 2800000
+Updating place labels with preferred names...
+Updated 5000 place labels...
+...
+Place label update complete. Total updated: 12000000
+```
+
+**Two-phase operation:**
+1. Indexes toponyms + streams wikidata/link relations to places
+2. Updates place labels with preferred names
+
+**Monitor:**
+```bash
+curl -s http://localhost:9200/toponyms/_count | jq .
+curl -s http://localhost:9200/places/_count | jq .
+```
+
+---
+
+### Step 4: Index Wikidata Places (8-12 hours)
+
+```bash
+python -m authorities/wikidata-places.py
+```
+
+**Input file:** `/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz`
+
+**Expected output:**
+```
+Starting to index Wikidata from /ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz
+Target indices: places, toponyms
+
+Note: This will take several hours for the full Wikidata dump (~110M entities)
+Only geographic entities will be indexed.
+
+Processed 100,000 entities... (places: 8234, toponyms: 42156, skipped: 49610)
+Processed 200,000 entities... (places: 16789, toponyms: 86234, skipped: 96977)
+...
+Processed 110,000,000 entities... (places: 10456234, toponyms: 68234567, skipped: 31309199)
+
+Indexing complete!
+Total entities processed: 110,000,000
+Places indexed: 10,456,234
+Toponyms indexed: 68,234,567
+Skipped (non-geographic): 31,309,199
+```
+
+**Progress updates every 100k entities**
+
+**Monitor:**
+```bash
+# Count Wikidata places
+curl -X POST http://localhost:9200/places/_count?pretty -H 'Content-Type: application/json' -d '
+{
+  "query": {"prefix": {"place_id": "wd:"}}
+}'
+
+# Sample Wikidata place
+curl -X POST http://localhost:9200/places/_search?pretty -H 'Content-Type: application/json' -d '
+{
+  "query": {"prefix": {"place_id": "wd:"}},
+  "size": 1
+}'
+```
+
+**Long-running considerations:**
+- This script takes 8-12 hours
+- Keep tmux session alive or run in background
+- Elasticsearch must stay running throughout
+- If interrupted, restart - it will continue/update existing docs
+
+---
+
+### Step 5: Fetch Wikidata Geoshapes (Optional, 4-8 hours)
+
+This step is optional but recommended for places with complex geometries (country borders, rivers, etc.)
+
+```bash
+python -m authorities/wikidata-geoshapes.py
+```
+
+**Confirmation prompt:**
+```
+This script fetches complex geometries (polygons/lines) for Wikidata places.
+It makes API calls to Wikidata SPARQL and Wikimedia Commons.
+Expected runtime: several hours with rate limiting.
+
+Continue? (y/n):
+```
+
+Type `y` and press Enter.
+
+**Expected output:**
+```
+Starting geoshape fetching and updating...
+This will take several hours due to API rate limiting.
+
+Processed: 100, Updated: 45, Skipped: 55
+Processed: 200, Updated: 92, Skipped: 108
+...
+Processed: 10245382, Updated: 127543, Skipped: 10117839
+
+Geoshape processing complete!
+Total processed: 10,245,382
+Updated with geoshapes: 127,543
+Skipped: 10,117,839
+```
+
+**What it does:**
+1. Scrolls through all Wikidata places
+2. Queries SPARQL for P3896 (geoshape) property (~130k places)
+3. Fetches GeoJSON from Wikimedia Commons
+4. Computes geodetically-correct representative points
+5. Updates place documents
+
+**Rate limiting:** 0.1 second delay between requests (nice to Wikimedia)
+
+**Monitor complex geometries:**
+```bash
+curl -X POST http://localhost:9200/places/_search?pretty -H 'Content-Type: application/json' -d '
+{
+  "query": {
+    "bool": {
+      "must": {"prefix": {"place_id": "wd:"}},
+      "filter": {
+        "nested": {
+          "path": "locations",
+          "query": {
+            "script": {
+              "script": "doc[\"locations.geometry.type\"].value != \"Point\""
+            }
+          }
+        }
+      }
+    }
+  },
+  "size": 1
+}'
+```
+
+---
+
+## Monitoring and Troubleshooting
+
+### Check Elasticsearch Health
+
+```bash
+# Cluster health
 curl http://localhost:9200/_cluster/health?pretty
 
-# List indices
+# Indices
 curl http://localhost:9200/_cat/indices?v
+
+# Document counts
+curl http://localhost:9200/places/_count?pretty
+curl http://localhost:9200/toponyms/_count?pretty
 ```
 
-## Common Operations
-
-### Create an Index
+### Monitor Disk Space
 
 ```bash
-curl -X PUT http://localhost:9200/my_index -H 'Content-Type: application/json' -d '{
-  "settings": {
-    "number_of_shards": 1,
-    "number_of_replicas": 0
-  }
-}'
+df -h /ix1/whcdh/data/es-test/data/
 ```
 
-### Index a Document
-
-```bash
-curl -X POST http://localhost:9200/my_index/_doc -H 'Content-Type: application/json' -d '{
-  "title": "Test Document",
-  "content": "This is a test"
-}'
-```
-
-### Search
-
-```bash
-curl http://localhost:9200/my_index/_search?pretty
-```
-
-### Stop Elasticsearch
-
-Press `Ctrl+C` in the pane where Elasticsearch is running.
-
-## Troubleshooting
-
-### Issue: "Read-only file system" errors
-
-**Solution:** Ensure you're using the `--bind` mount for the config directory and that the GC log path has been updated in `jvm.options`.
-
-### Issue: "Missing logging config file"
-
-**Solution:** Verify config files were properly extracted:
-```bash
-ls -la /ix1/whcdh/data/es-test/config/
-```
-
-Should see `log4j2.properties`, `elasticsearch.yml`, `jvm.options`, etc.
-
-### Issue: Can't access from another terminal
-
-**Solution:** Use tmux to split panes within the same interactive job session, or use:
-```bash
-srun --jobid=<your_job_id> --overlap --pty /bin/bash
-```
-
-### Issue: Out of memory
-
-**Solution:** Request more RAM in your interactive session (`-b 16` for 16GB) and adjust ES heap size:
-```bash
-ES_JAVA_OPTS='-Xms4g -Xmx4g'
-```
+Expected final size: ~150-230 GB
 
 ### Check Logs
 
 ```bash
-tail -f /ix1/whcdh/data/es-test/logs/*.log
+# Elasticsearch logs
+tail -f /ix1/whcdh/data/es-test/logs/elasticsearch.log
+
+# Python script output (if redirected)
+tail -f ingestion.log
 ```
 
-## File Locations Summary
+### Script Crashes
 
-- **Singularity Image:** `/ix1/whcdh/data/elasticsearch-8.11.1.sif`
-- **Data Directory:** `/ix1/whcdh/data/es-test/data/`
-- **Log Directory:** `/ix1/whcdh/data/es-test/logs/`
-- **Config Directory:** `/ix1/whcdh/data/es-test/config/`
-- **Snapshot Repository:** `/ix1/whcdh/data/es-test/repo/`
+**All scripts use streaming and can be restarted safely:**
+- They process line-by-line from source files
+- Elasticsearch handles duplicate IDs (updates existing)
+- No need to delete indices and start over
+- Just re-run the script
 
-## Notes
+**Exception:** If you need to completely start over:
+```bash
+curl -X DELETE http://localhost:9200/places
+curl -X DELETE http://localhost:9200/toponyms
+python authorities/create_indices.py
+# Start from Step 2
+```
 
-- The setup uses security disabled (`xpack.security.enabled=false`) for testing. For production, enable security and configure authentication.
-- Data persists in `/ix1/whcdh/data/es-test/data/` between runs.
-- Each interactive session has a time limit (2 hours in the example). Adjust `-t` parameter as needed.
-- Elasticsearch runs on default port 9200 within the compute node.
+### Out of Memory
 
-## Version Information
+**Symptoms:**
+- Elasticsearch crashes
+- Python scripts killed
+- "Out of memory" errors
 
-- **Elasticsearch:** 8.11.1
-- **Singularity:** 3.9.6
-- **Cluster:** CRC HTC (University of Pittsburgh)
-- **Date:** November 2025
+**Solutions:**
+
+1. **Request more memory:**
+```bash
+# Exit current session (Ctrl+d)
+crc-interactive -s -c 4 -b 32 -t 48:00:00 -a whcdh  # 32GB
+```
+
+2. **Adjust ES heap size:**
+```bash
+# In ES startup command, change:
+ES_JAVA_OPTS='-Xms8g -Xmx8g'  # For 16GB+ RAM systems
+```
+
+3. **Reduce batch size:**
+```python
+# Edit authorities/settings.py
+BATCH_SIZE = 2500  # Reduce from 5000
+```
+
+### Elasticsearch Won't Start
+
+**Check logs:**
+```bash
+cat /ix1/whcdh/data/es-test/logs/elasticsearch.log
+```
+
+**Common issues:**
+- Port 9200 already in use (another ES instance running)
+- Insufficient disk space
+- Config file issues
+
+**Solution:**
+```bash
+# Kill existing ES processes
+pkill -f elasticsearch
+
+# Check disk space
+df -h /ix1/whcdh/data/
+
+# Verify config
+ls -la /ix1/whcdh/data/es-test/config/
+```
+
+### Network Timeouts
+
+Scripts have retry logic. Transient network errors are handled automatically.
+
+For persistent issues:
+- Check CRC network status
+- Verify external URLs are accessible (Wikidata, Commons)
+
+### Python Import Errors
+
+```bash
+# Verify you're in the correct directory
+pwd  # Should show /ix1/whcdh/whg-v4 or similar
+
+# Verify Python environment
+conda activate whg
+python -c "from authorities.settings import ES_HOST; print(ES_HOST)"
+```
+
+### tmux Session Lost
+
+```bash
+# List sessions
+tmux ls
+
+# Reattach
+tmux attach -t whg-ingest
+
+# If session is gone, check if processes still running
+ps aux | grep elasticsearch
+ps aux | grep python
+```
+
+---
+
+## Post-Ingestion Optimization
+
+### Force Merge Indices (Recommended)
+
+After all ingestion is complete:
+
+```bash
+# This improves query performance by consolidating segments
+curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
+curl -X POST "http://localhost:9200/toponyms/_forcemerge?max_num_segments=1"
+```
+
+Takes 30-60 minutes. Monitor:
+```bash
+curl http://localhost:9200/_cat/recovery?v
+```
+
+### Create Snapshot (Backup)
+
+```bash
+# Register repository (one-time)
+curl -X PUT "http://localhost:9200/_snapshot/whg_backup" -H 'Content-Type: application/json' -d'
+{
+  "type": "fs",
+  "settings": {
+    "location": "/ix1/whcdh/data/es-test/repo"
+  }
+}'
+
+# Create snapshot
+curl -X PUT "http://localhost:9200/_snapshot/whg_backup/snapshot_$(date +%Y%m%d)" -H 'Content-Type: application/json' -d'
+{
+  "indices": "places,toponyms",
+  "ignore_unavailable": true,
+  "include_global_state": false
+}'
+
+# Check snapshot status
+curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
+```
+
+### Re-enable Replicas (If Disabled)
+
+```bash
+curl -X PUT "http://localhost:9200/places/_settings" -H 'Content-Type: application/json' -d'
+{
+  "index": {
+    "number_of_replicas": 1
+  }
+}'
+
+curl -X PUT "http://localhost:9200/toponyms/_settings" -H 'Content-Type: application/json' -d'
+{
+  "index": {
+    "number_of_replicas": 1
+  }
+}'
+```
+
+---
+
+## Expected Timeline
+
+| Step | Runtime | Cumulative |
+|------|---------|------------|
+| 1. Create indices | < 1 min | 0:01 |
+| 2. Geonames places | 2-3 hrs | 2:01-3:01 |
+| 3. Geonames toponyms | 4-6 hrs | 6:01-9:01 |
+| 4. Wikidata places | 8-12 hrs | 14:01-21:01 |
+| 5. Wikidata geoshapes (optional) | 4-8 hrs | 18:01-29:01 |
+| **Total (core)** | **~15-22 hrs** | |
+| **Total (with geoshapes)** | **~19-30 hrs** | |
+
+**Recommendation:** Request 48-hour session to be safe.
+
+---
+
+## Expected Final Results
+
+### Document Counts
+
+```bash
+# Geonames places
+curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
+{"query": {"prefix": {"place_id": "gn:"}}}'
+# Expected: ~12 million
+
+# Wikidata places
+curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
+{"query": {"prefix": {"place_id": "wd:"}}}'
+# Expected: ~10-15 million
+
+# Total places
+curl http://localhost:9200/places/_count?pretty
+# Expected: ~22-27 million
+
+# Toponyms
+curl http://localhost:9200/toponyms/_count?pretty
+# Expected: ~65-95 million
+```
+
+### Storage
+
+```bash
+curl http://localhost:9200/_cat/indices?v&h=index,store.size
+```
+
+Expected:
+- **places**: 50-80 GB
+- **toponyms**: 100-150 GB
+- **Total**: 150-230 GB
+
+---
+
+## Quick Reference Commands
+
+```bash
+# Elasticsearch health
+curl http://localhost:9200/_cluster/health?pretty
+
+# Count documents
+curl http://localhost:9200/places/_count?pretty
+curl http://localhost:9200/toponyms/_count?pretty
+
+# Sample documents
+curl http://localhost:9200/places/_search?size=1&pretty
+curl http://localhost:9200/toponyms/_search?size=1&pretty
+
+# Check for Wikidata geoshapes
+curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
+{
+  "query": {
+    "nested": {
+      "path": "locations",
+      "query": {
+        "script": {
+          "script": "doc[\"locations.geometry.type\"].value != \"Point\""
+        }
+      }
+    }
+  }
+}'
+
+# Force merge
+curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
+
+# Create snapshot
+curl -X PUT "http://localhost:9200/_snapshot/whg_backup/snapshot_$(date +%Y%m%d)"
+
+# List snapshots
+curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
+```
+
+---
+
+## File Locations Reference
+
+```
+/ix1/whcdh/
+├── data/
+│   ├── elasticsearch-8.11.1.sif          # Singularity image
+│   ├── es/
+│   │   ├── data/                          # ES indices (150-230 GB)
+│   │   ├── logs/                          # ES logs
+│   │   ├── config/                        # ES config files
+│   │   └── repo/                          # Snapshots
+│   ├── geonames/
+│   │   ├── allCountries/allCountries.txt # Places (~12M)
+│   │   └── alternateNamesV2/alternateNamesV2.txt # Names (~17M)
+│   └── wikidata/
+│       └── latest-all/latest-all.json.gz  # Full dump (~110M entities)
+└── whg-v4/                                # Code repository
+    ├── authorities/
+    │   ├── create_indices.py
+    │   ├── geonames-places.py
+    │   ├── geonames-toponyms.py
+    │   ├── wikidata-places.py
+    │   ├── wikidata-geoshapes.py
+    │   ├── helpers.py
+    │   └── settings.py
+    └── schemas/
+        ├── places.json
+        └── toponyms.json
+```
+
+---
+
+## Support and Documentation
+
+- **CRC Documentation:** https://crc.pitt.edu/
+- **Elasticsearch Docs:** https://www.elastic.co/guide/en/elasticsearch/reference/8.11/
+- **Project GitHub:** [your-repo-url]
+- **Contact:** stg135@pitt.edu
+
+---
+
+**Last Updated:** December 2024
