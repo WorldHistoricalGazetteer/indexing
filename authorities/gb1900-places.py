@@ -1,4 +1,4 @@
-# authorities/gb1900-places.py
+# authorities/gb1900-places-fixed.py
 
 """
 Index GB1900 gazetteer data into Elasticsearch.
@@ -9,6 +9,7 @@ of Great Britain (England, Scotland, Wales) from around 1900.
 
 import csv
 import zipfile
+import io
 from elasticsearch8 import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
@@ -34,7 +35,9 @@ def parse_gb1900_row(row):
 
     Returns: (place_doc, toponym_doc) tuple
     """
-    pin_id = row.get('pin_id', '').strip()
+    # Get pin_id with multiple possible field names
+    pin_id = row.get('pin_id', row.get('Pin_id', row.get('PIN_ID', ''))).strip()
+
     if not pin_id:
         return None, None
 
@@ -42,13 +45,16 @@ def parse_gb1900_row(row):
     if pin_id.startswith('\ufeff') or pin_id.startswith('ÿþ'):
         pin_id = pin_id.lstrip('\ufeffÿþ')
 
-    name = row.get('final_text', '').strip()
+    # Get name with multiple possible field names
+    name = row.get('final_text', row.get('Final_text', row.get('FINAL_TEXT', ''))).strip()
+
     if not name:
         return None, None
 
+    # Get coordinates with multiple possible field names
     try:
-        lat = float(row.get('latitude', ''))
-        lon = float(row.get('longitude', ''))
+        lat = float(row.get('latitude', row.get('Latitude', row.get('LATITUDE', ''))))
+        lon = float(row.get('longitude', row.get('Longitude', row.get('LONGITUDE', ''))))
     except (ValueError, TypeError):
         return None, None
 
@@ -72,7 +78,7 @@ def parse_gb1900_row(row):
     }
 
     # Add country code
-    nation = row.get('nation', '').strip()
+    nation = row.get('nation', row.get('Nation', row.get('NATION', ''))).strip()
     if nation in ['England', 'Scotland', 'Wales']:
         place_doc['ccodes'] = ['GB']
 
@@ -133,65 +139,77 @@ def index_gb1900(file_path, places_index, toponyms_index):
             return
 
         print(f"Reading CSV: {csv_file}")
-        print("Processing...")
+
+        # Read the entire file into memory first
+        with zf.open(csv_file, 'r') as f:
+            raw_bytes = f.read()
 
         # Try different encodings
-        for encoding in ['latin-1', 'utf-8', 'iso-8859-1', 'cp1252']:
+        csv_text = None
+        for encoding in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']:
             try:
-                with zf.open(csv_file, 'r') as f:
-                    text_file = (line.decode(encoding) for line in f)
-                    reader = csv.DictReader(text_file)
-
-                    for i, row in enumerate(reader):
-                        if (i + 1) % 10000 == 0:
-                            print(f"Processed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})")
-
-                        try:
-                            place_doc, toponym_doc = parse_gb1900_row(row)
-
-                            if not place_doc or not toponym_doc:
-                                skipped += 1
-                                continue
-
-                            place_id = place_doc['place_id']
-
-                            # Add to batches
-                            place_batch.append({
-                                '_index': places_index,
-                                '_id': place_id,
-                                '_source': place_doc
-                            })
-
-                            toponym_batch.append({
-                                '_index': toponyms_index,
-                                '_id': place_id,  # One toponym per place for GB1900
-                                '_source': toponym_doc
-                            })
-
-                            # Bulk index places
-                            if len(place_batch) >= BATCH_SIZE:
-                                success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                                place_count += success
-                                place_batch = []
-
-                            # Bulk index toponyms
-                            if len(toponym_batch) >= BATCH_SIZE:
-                                success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                                toponym_count += success
-                                toponym_batch = []
-
-                        except Exception as e:
-                            print(f"Error processing row {i + 1}: {str(e)}")
-                            skipped += 1
-                            continue
-
-                    # Successfully processed with this encoding
-                    break
-
+                csv_text = raw_bytes.decode(encoding)
+                print(f"Successfully decoded with {encoding}")
+                break
             except UnicodeDecodeError:
-                if encoding == 'cp1252':
-                    print(f"Could not decode with any encoding")
-                    return
+                continue
+
+        if not csv_text:
+            print("ERROR: Could not decode CSV with any encoding")
+            return
+
+        # Parse CSV
+        print("Processing records...")
+        reader = csv.DictReader(io.StringIO(csv_text))
+
+        # Print header for debugging
+        print(f"CSV columns: {reader.fieldnames}")
+
+        for i, row in enumerate(reader):
+            if (i + 1) % 10000 == 0:
+                print(f"Processed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})")
+
+            try:
+                place_doc, toponym_doc = parse_gb1900_row(row)
+
+                if not place_doc or not toponym_doc:
+                    skipped += 1
+                    if skipped <= 5:  # Show first few skipped for debugging
+                        print(f"  Skipped row {i + 1}: {row}")
+                    continue
+
+                place_id = place_doc['place_id']
+
+                # Add to batches
+                place_batch.append({
+                    '_index': places_index,
+                    '_id': place_id,
+                    '_source': place_doc
+                })
+
+                toponym_batch.append({
+                    '_index': toponyms_index,
+                    '_id': place_id,  # One toponym per place for GB1900
+                    '_source': toponym_doc
+                })
+
+                # Bulk index places
+                if len(place_batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+                    place_count += success
+                    place_batch = []
+
+                # Bulk index toponyms
+                if len(toponym_batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
+                    toponym_count += success
+                    toponym_batch = []
+
+            except Exception as e:
+                print(f"Error processing row {i + 1}: {str(e)}")
+                if skipped < 5:  # Show details for first few errors
+                    print(f"  Row data: {row}")
+                skipped += 1
                 continue
 
     # Index remaining batches
@@ -210,7 +228,7 @@ def index_gb1900(file_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    GB1900_FILE = f"{DATA_DIR}gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
+    GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 
