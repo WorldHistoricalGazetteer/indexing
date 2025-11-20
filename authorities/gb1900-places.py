@@ -144,14 +144,14 @@ def index_gb1900(file_path, places_index, toponyms_index):
         with zf.open(csv_file, 'r') as f:
             raw_bytes = f.read()
 
-        # Try different encodings
+        # Try different encodings - GB1900 is UTF-16 with BOM
         csv_text = None
-        for encoding in ['utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']:
+        for encoding in ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']:
             try:
                 csv_text = raw_bytes.decode(encoding)
                 print(f"Successfully decoded with {encoding}")
                 break
-            except UnicodeDecodeError:
+            except (UnicodeDecodeError, UnicodeError):
                 continue
 
         if not csv_text:
