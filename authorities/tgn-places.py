@@ -202,11 +202,7 @@ def stream_placemap_from_zip(zip_path, coordinates):
                     # <tgn:7011179> <foaf:focus> <tgn:7011179-place>
                     if predicate == 'http://xmlns.com/foaf/0.1/focus':
                         tgn_uri = subject
-                        place_uri = obj_value
-
-                        # Convert place_uri to geometry_uri
-                        # <tgn:7011179-place> -> <tgn:7011179-geometry>
-                        coord_uri = place_uri.replace('-place', '-geometry')
+                        coord_uri = obj_value  # This IS the coordinate URI (ends with -place)
 
                         # Check if we have coordinates for this
                         if coord_uri in coordinates:
