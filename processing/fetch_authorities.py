@@ -2,7 +2,7 @@ import os
 import time
 import httpx
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 
 from processing.settings import DATA_DIR, AUTHORITIES
 
@@ -15,7 +15,7 @@ def get_native_land_key(cli_key: str | None = None) -> str | None:
     Returns the Native Land API key to use:
     1. Use CLI-provided key if given.
     2. Else, load cached key if it exists.
-    3. Else, return None.
+    3. Else, return None and warn if NL files are requested.
     """
     if cli_key:
         # Cache key
@@ -26,6 +26,13 @@ def get_native_land_key(cli_key: str | None = None) -> str | None:
     if NL_KEY_FILE.exists():
         return NL_KEY_FILE.read_text().strip()
 
+    # Check if NL namespace is requested
+    nl_requested = any(
+        auth["namespace"] == "nl"
+        for auth in AUTHORITIES
+    )
+    if nl_requested:
+        print("[WARN] No Native Land API key found. NL datasets will be skipped.")
     return None
 
 
@@ -138,13 +145,13 @@ def update_authority_files(
 
 if __name__ == "__main__":
     import argparse
-    from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--namespaces", default=None)
     parser.add_argument("-a", "--age", type=int, default=365)
     parser.add_argument("--nl-api-key", default=None, help="Native Land API Key")
     args = parser.parse_args()
+
     nl_key = get_native_land_key(args.nl_api_key)
 
     # Inject key into NativeLand URLs if available
