@@ -45,23 +45,9 @@ ssh htc-nXXX  # Replace XXX with your allocated node number
 
 ```bash
 module load singularity/3.9.6
-module load python/3.11  # If using system Python
 ```
 
-### 4. Activate Python Environment
-
-```bash
-# Assuming you have a conda environment named 'whg'
-source /path/to/miniconda3/etc/profile.d/conda.sh
-conda activate whg
-```
-
-**Verify Python packages:**
-```bash
-python -c "import elasticsearch, shapely, pyproj; print('All packages available')"
-```
-
-### 5. Start tmux Session
+### 4. Start tmux Session
 
 ```bash
 tmux new -s whg-ingest
@@ -98,7 +84,7 @@ singularity exec \
 **Wait 30 seconds**, then verify in new pane:
 
 ```bash
-# Split window: Ctrl+b "
+# New window: Ctrl+b : new-window
 curl http://localhost:9200/
 curl http://localhost:9200/_cluster/health?pretty
 ```
