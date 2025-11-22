@@ -4,7 +4,7 @@ import httpx
 from pathlib import Path
 from urllib.parse import urlparse
 
-from processing.settings import DATA_DIR
+from processing.settings import DATA_DIR, AUTHORITIES
 
 ONE_YEAR = 365 * 24 * 3600
 
@@ -43,7 +43,6 @@ def _target_filename(file_cfg: dict, namespace: str) -> Path:
     return Path(f"{DATA_DIR}/authorities/{namespace}/{basename}")
 
 
-
 def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
     dest.parent.mkdir(parents=True, exist_ok=True)
 
@@ -69,13 +68,13 @@ def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
 
 
 def update_authority_files(
-    authorities: list,
-    age: int = 365,
-    namespaces: str | None = None,
+        namespaces: str | None = None,
+        authorities: list = AUTHORITIES,
+        age: int = 365,
 ):
     """
-    age: days; 0 = force-refresh.
     namespaces: comma-separated namespaces or None for all.
+    age: days; 0 = force-refresh.
     """
     allowed = (
         {ns.strip() for ns in namespaces.split(",")}
@@ -94,3 +93,17 @@ def update_authority_files(
 
             if _needs_update(target, age):
                 _download_with_resume(file_cfg["url"], target)
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--namespaces", default=None)
+    parser.add_argument("-a", "--age", type=int, default=365)
+    args = parser.parse_args()
+
+    update_authority_files(
+        namespaces=args.namespaces,
+        age=args.age,
+    )
