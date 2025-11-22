@@ -34,9 +34,6 @@
   },
   "mappings": {
     "properties": {
-      "place_id": {
-        "type": "keyword"
-      },
       "name": {
         "type": "text",
         "fields": {

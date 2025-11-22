@@ -28,8 +28,8 @@ from pathlib import Path
 
 from elasticsearch8 import Elasticsearch, helpers
 
-from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-from authorities.helpers import (
+from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from processing.helpers import (
     compute_geodetic_centroid,
     compute_representative_point,
     compute_bbox,

@@ -16,7 +16,7 @@ import zipfile
 from collections import defaultdict
 from elasticsearch8 import Elasticsearch, helpers
 
-from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 
 es = Elasticsearch(ES_HOST)
 

@@ -7,8 +7,8 @@ import sys
 import os
 from elasticsearch8 import Elasticsearch, helpers
 
-from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-from authorities.helpers import compute_representative_point
+from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from processing.helpers import compute_representative_point
 
 es = Elasticsearch(ES_HOST)
 GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")

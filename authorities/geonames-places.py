@@ -5,8 +5,8 @@ import zipfile
 
 from elasticsearch8 import Elasticsearch, helpers
 
-from authorities.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-from authorities.utilities import stream_file
+from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from processing.utilities import stream_file
 
 es = Elasticsearch(ES_HOST)
 

@@ -69,7 +69,7 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("SETUP COMPLETE!")
     print("=" * 80)
-    print("\nNext steps (examoples):")
+    print("\nNext steps (examples):")
     print("1. Run: python -m authorities.geonames-places")
     print("2. Run: python -m authorities.geonames-toponyms")
     print("3. Run: python -m authorities.tgn-places")
