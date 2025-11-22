@@ -634,21 +634,6 @@ curl http://localhost:9200/toponyms/_count?pretty
 curl http://localhost:9200/places/_search?size=1&pretty
 curl http://localhost:9200/toponyms/_search?size=1&pretty
 
-# Check for Wikidata geoshapes
-curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
-{
-  "query": {
-    "nested": {
-      "path": "locations",
-      "query": {
-        "script": {
-          "script": "doc[\"locations.geometry.type\"].value != \"Point\""
-        }
-      }
-    }
-  }
-}'
-
 # Force merge
 curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
 
@@ -697,9 +682,3 @@ curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
 
 - **CRC Documentation:** https://crc.pitt.edu/
 - **Elasticsearch Docs:** https://www.elastic.co/guide/en/elasticsearch/reference/8.11/
-- **Project GitHub:** [your-repo-url]
-- **Contact:** stg135@pitt.edu
-
----
-
-**Last Updated:** December 2024
