@@ -20,6 +20,15 @@ Complete guide for running Elasticsearch and ingesting gazetteer data on Univers
 ssh stg135@htc.crc.pitt.edu
 ```
 
+### Update Authority Files
+
+The slurm script is set to update all authorities by default. It can be modified to update specific ones if needed.
+
+```bash
+cd /ix1/whcdh/elastic
+sbatch processing/refresh_authorities.slurm
+```
+
 ### 2. Request Interactive Session
 
 For ingestion (12 hours maximum with crc-interactive):
