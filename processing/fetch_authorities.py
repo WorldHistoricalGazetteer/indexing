@@ -47,25 +47,15 @@ def _needs_update(path: Path, age: int) -> bool:
 
 
 def _target_filename(file_cfg: dict, namespace: str) -> Path:
-    url = file_cfg["url"]
-    parsed = urlparse(url)
-
-    # Basename from URL path
-    basename = os.path.basename(parsed.path)
-
-    # If URL ends with "/" or has no meaningful basename
-    if not basename:
-        # Use explicit deterministic name if supplied
-        if "name" in file_cfg:
-            basename = file_cfg["name"]
-        else:
-            # Fallback: last path segment, if any
-            parts = parsed.path.rstrip("/").split("/")
-            last = parts[-1] if parts and parts[-1] else None
-            if last:
-                basename = last
-            else:
-                basename = "download"
+    # Priority: deterministic name in config
+    if "name" in file_cfg:
+        basename = file_cfg["name"]
+    else:
+        url = file_cfg["url"]
+        parsed = urlparse(url)
+        basename = os.path.basename(parsed.path.rstrip("/"))
+        if not basename:
+            basename = "download"
 
     return Path(f"{DATA_DIR}/authorities/{namespace}/{basename}")
 
