@@ -8,49 +8,64 @@ from processing.settings import DATA_DIR
 
 ONE_YEAR = 365 * 24 * 3600
 
+
 def _needs_update(path: Path, age: int) -> bool:
     if age == 0:
         return True
-    if not path.exists():
+    try:
+        st = path.stat()
+    except FileNotFoundError:
         return True
-    return (time.time() - path.stat().st_mtime) > (age * 24 * 3600)
+    return (time.time() - st.st_mtime) > (age * 24 * 3600)
 
 
 def _target_filename(file_cfg: dict, namespace: str) -> Path:
-    # Priority: explicit file_name or local_name; else filename from URL.
-    if "file_name" in file_cfg:
-        return Path(file_cfg["file_name"])
-    if "local_name" in file_cfg:
-        return Path(f"{DATA_DIR}/{namespace}/{file_cfg['local_name']}")
-    # fallback: use basename of URL
     url = file_cfg["url"]
-    name = os.path.basename(urlparse(url).path) or "download"
-    return Path(f"{DATA_DIR}/{namespace}/{name}")
+    parsed = urlparse(url)
+
+    # Basename from URL path
+    basename = os.path.basename(parsed.path)
+
+    # If URL ends with "/" or has no meaningful basename
+    if not basename:
+        # Use explicit deterministic name if supplied
+        if "name" in file_cfg:
+            basename = file_cfg["name"]
+        else:
+            # Fallback: last path segment, if any
+            parts = parsed.path.rstrip("/").split("/")
+            last = parts[-1] if parts and parts[-1] else None
+            if last:
+                basename = last
+            else:
+                basename = "download"
+
+    return Path(f"{DATA_DIR}/authorities/{namespace}/{basename}")
+
 
 
 def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
     dest.parent.mkdir(parents=True, exist_ok=True)
+
     temp = dest.with_suffix(dest.suffix + ".part")
+    resume_pos = temp.stat().st_size if temp.exists() else 0
 
-    resume_pos = 0
-    if temp.exists():
-        resume_pos = temp.stat().st_size
+    headers = {"Range": f"bytes={resume_pos}-"} if resume_pos > 0 else {}
 
-    headers = {}
-    if resume_pos > 0:
-        headers["Range"] = f"bytes={resume_pos}-"
+    try:
+        with httpx.stream("GET", url, headers=headers, timeout=60.0) as resp:
+            if resp.status_code not in (200, 206):
+                raise RuntimeError(f"Download failed: {url} (HTTP {resp.status_code})")
 
-    with httpx.stream("GET", url, headers=headers, timeout=60.0) as resp:
-        if resp.status_code not in (200, 206):
-            raise RuntimeError(f"Download failed: {url} (HTTP {resp.status_code})")
+            mode = "ab" if resume_pos > 0 else "wb"
+            with temp.open(mode) as f:
+                for chunk in resp.iter_bytes(chunk_size=chunk_size):
+                    f.write(chunk)
 
-        mode = "ab" if resume_pos > 0 else "wb"
-        with temp.open(mode) as f:
-            for chunk in resp.iter_bytes(chunk_size=chunk_size):
-                f.write(chunk)
+        temp.replace(dest)
 
-    # move into place atomically
-    temp.replace(dest)
+    except httpx.RequestError as e:
+        raise RuntimeError(f"HTTP error during download: {url}") from e
 
 
 def update_authority_files(
@@ -62,19 +77,20 @@ def update_authority_files(
     age: days; 0 = force-refresh.
     namespaces: comma-separated namespaces or None for all.
     """
-    if namespaces:
-        allowed = set(ns.strip() for ns in namespaces.split(","))
-    else:
-        allowed = None
+    allowed = (
+        {ns.strip() for ns in namespaces.split(",")}
+        if namespaces
+        else None
+    )
 
     for auth in authorities:
         ns = auth["namespace"]
-        if allowed is not None and ns not in allowed:
+        if allowed and ns not in allowed:
             continue
 
         for file_cfg in auth.get("files", []):
             target = _target_filename(file_cfg, ns)
+            target.parent.mkdir(parents=True, exist_ok=True)
 
             if _needs_update(target, age):
-                url = file_cfg["url"]
-                _download_with_resume(url, target)
+                _download_with_resume(file_cfg["url"], target)

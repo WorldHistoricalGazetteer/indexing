@@ -33,7 +33,6 @@ AUTHORITIES = [
                     'feature_code', 'country_code', 'cc2', 'admin1_code', 'admin2_code', 'admin3_code', 'admin4_code',
                     'population', 'elevation', 'dem', 'timezone', 'modification_date',
                 ],
-                'file_name': 'allCountries.txt',
                 'file_type': 'csv',
                 'delimiter': '\t',
             },
@@ -44,7 +43,6 @@ AUTHORITIES = [
                     'alternateNameId', 'geonameid', 'isolanguage', 'alternate_name', 'isPreferredName',
                     'isShortName', 'isColloquial', 'isHistoric', 'from', 'to',
                 ],
-                'file_name': 'alternateNamesV2.txt',  # Zip file also includes iso-languagecodes.txt
                 'file_type': 'csv',
                 'delimiter': '\t',
                 'filters': [
@@ -62,9 +60,6 @@ AUTHORITIES = [
         'files': [
             {
                 'url': 'http://tgndownloads.getty.edu/VocabData/explicit.zip',
-                'local_name': 'tgn_explicit.zip',  # 1.2GB
-                'file_name': 'TGNOut_PlaceMap.nt', # 2.3GB
-                'ld_file': 'tgn_places.ndjson',
                 'file_type': 'nt',
                 'filters': [
                     # At least one of the `identified_by` list items must have "type": "crm:E47_Spatial_Coordinates"
@@ -84,10 +79,7 @@ AUTHORITIES = [
         'files': [
             {
                 'url': 'https://dumps.wikimedia.org/wikidatawiki/entities/latest-all.json.gz',  # 148GB
-                'local_name': '/data/k8s/vespa-ingestion/latest-all.json.gz',
-                'file_name': '/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz',
                 'file_type': 'wikidata',
-                'item_path': 'entities',
                 'item_count': 120_000_000,  # Approximate number of entities in the dump
                 'filters': [
                     lambda doc: 'claims' in doc and 'P625' in doc['claims'],
@@ -104,7 +96,6 @@ AUTHORITIES = [
         'files': [
             {
                 'url': 'https://planet.openstreetmap.org/pbf/planet-latest.osm.pbf',  # 84.7GB
-                'local_name': 'osm.geojsonseq',  # 4.1GB
                 'file_type': 'geojsonseq',  # GeoJSON Sequence with Record Separators
                 'filters': [
                     lambda feature: 'name' in (properties := feature['properties']) and
@@ -159,16 +150,19 @@ AUTHORITIES = [
         'files': [
             {
                 'url': f'https://native-land.ca/api/polygons/geojson/territories?key={NATIVE_LAND_API_KEY}',
+                'name': 'territories.json',
                 'file_type': 'json',
                 'item_path': 'features',
             },
             {
                 'url': f'https://native-land.ca/api/polygons/geojson/languages?key={NATIVE_LAND_API_KEY}',
+                'name': 'languages.json',
                 'file_type': 'json',
                 'item_path': 'features',
             },
             {
                 'url': f'https://native-land.ca/api/polygons/geojson/treaties?key={NATIVE_LAND_API_KEY}',
+                'name': 'treaties.json',
                 'file_type': 'json',
                 'item_path': 'features',
             }
