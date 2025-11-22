@@ -1,4 +1,4 @@
-# authorities/un-countries.py
+# processing/un-countries.py
 
 """
 Index UN member countries with official geometries.
@@ -232,10 +232,36 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     iso_n3 = props.get('ISO_N3', '')
 
     # Create place ID
-    place_id = f"un:{iso_a3.lower()}" if iso_a3 else f"un:{name.lower().replace(' ', '_')}"
+    place_id = f"un:{iso_a3.lower()}" if iso_a3 and iso_a3 != '-99' else f"un:{name.lower().replace(' ', '_')}"
 
     # Check UN membership
     un_member = is_un_member(name)
+
+    # Build toponyms array
+    toponyms = []
+    seen_names = set()
+
+    # Add main name
+    if name and name not in seen_names:
+        toponyms.append(f"{name}@en")
+        seen_names.add(name)
+
+    # Add long name
+    if name_long and name_long not in seen_names:
+        toponyms.append(f"{name_long}@en")
+        seen_names.add(name_long)
+
+    # Add formal name
+    if formal_name and formal_name not in seen_names:
+        toponyms.append(f"{formal_name}@en")
+        seen_names.add(formal_name)
+
+    # Add other name variants if available
+    for field in ['NAME_ALT', 'NAME_SORT', 'ABBREV']:
+        alt_name = props.get(field)
+        if alt_name and alt_name not in seen_names:
+            toponyms.append(f"{alt_name}@en")
+            seen_names.add(alt_name)
 
     # Simplify geometry for performance
     simplified_geom = simplify_geometry(geometry, tolerance_km=simplification_tolerance_km)
@@ -258,6 +284,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     doc = {
         'place_id': place_id,
         'label': name,
+        'toponyms': toponyms,
         'locations': [location],
         'source': 'un-countries',
         'types': [{
@@ -268,10 +295,8 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     }
 
     # Add ISO codes
-    if iso_a2 or iso_a3:
-        doc['ccodes'] = []
-        if iso_a2 and iso_a2 != '-99':
-            doc['ccodes'].append(iso_a2)
+    if iso_a2 and iso_a2 != '-99':
+        doc['ccodes'] = [iso_a2]
 
     # Add relations for alternate codes
     relations = []
@@ -279,20 +304,23 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
         relations.append({
             'relationType': 'hasIdentifier',
             'relationTo': f"iso3166:{iso_a3}",
-            'label': f"ISO 3166-1 alpha-3: {iso_a3}"
+            'label': f"ISO 3166-1 alpha-3: {iso_a3}",
+            'source': 'natural-earth',
+            'method': 'curated',
+            'certainty': 1.0
         })
     if iso_n3 and iso_n3 != '-99':
         relations.append({
             'relationType': 'hasIdentifier',
             'relationTo': f"iso3166:{iso_n3}",
-            'label': f"ISO 3166-1 numeric: {iso_n3}"
+            'label': f"ISO 3166-1 numeric: {iso_n3}",
+            'source': 'natural-earth',
+            'method': 'curated',
+            'certainty': 1.0
         })
 
     if relations:
         doc['relations'] = relations
-
-    # Add metadata fields (not part of schema but useful)
-    doc['un_member'] = un_member
 
     # Add admin level
     doc['admin_level'] = 0  # Country level
@@ -324,64 +352,65 @@ def create_country_toponym_docs(feature, place_id):
     """
     props = feature['properties']
     toponyms = []
+    seen_names = set()
 
     # Main name
     name = props.get('NAME', props.get('ADMIN'))
-    if name:
+    if name and name not in seen_names:
         toponyms.append({
             'place_id': place_id,
-            'name': name,
-            'name_lower': name.lower(),
-            'lang': 'en',
+            'name': f"{name}@en",  # Full name@lang format
             'is_preferred': True,
+            'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
             'suggest': {
                 'input': [name],
                 'contexts': {'lang': ['en']}
             }
         })
+        seen_names.add(name)
 
     # Formal name
     formal_name = props.get('FORMAL_EN')
-    if formal_name and formal_name != name:
+    if formal_name and formal_name not in seen_names:
         toponyms.append({
             'place_id': place_id,
-            'name': formal_name,
-            'name_lower': formal_name.lower(),
-            'lang': 'en',
+            'name': f"{formal_name}@en",
+            'timespans': [{'start': 2025, 'end': 2025}],
             'suggest': {
                 'input': [formal_name],
                 'contexts': {'lang': ['en']}
             }
         })
+        seen_names.add(formal_name)
 
     # Name variants (if available)
     name_long = props.get('NAME_LONG')
-    if name_long and name_long not in [name, formal_name]:
+    if name_long and name_long not in seen_names:
         toponyms.append({
             'place_id': place_id,
-            'name': name_long,
-            'name_lower': name_long.lower(),
-            'lang': 'en',
+            'name': f"{name_long}@en",
+            'timespans': [{'start': 2025, 'end': 2025}],
             'suggest': {
                 'input': [name_long],
                 'contexts': {'lang': ['en']}
             }
         })
+        seen_names.add(name_long)
 
     # Common alternative names from Natural Earth
     for field in ['NAME_ALT', 'NAME_SORT', 'ABBREV']:
         alt_name = props.get(field)
-        if alt_name and alt_name not in [name, formal_name, name_long]:
+        if alt_name and alt_name not in seen_names:
             toponyms.append({
                 'place_id': place_id,
-                'name': alt_name,
-                'name_lower': alt_name.lower(),
-                'lang': 'en',
+                'name': f"{alt_name}@en",
+                'timespans': [{'start': 2025, 'end': 2025}],
                 'suggest': {
                     'input': [alt_name],
                     'contexts': {'lang': ['en']}
                 }
             })
+            seen_names.add(alt_name)
 
     return toponyms
 
@@ -443,7 +472,8 @@ def index_un_countries(
             place_id = place_doc['place_id']
 
             # Track UN membership
-            if place_doc.get('un_member'):
+            name = feature['properties'].get('NAME', feature['properties'].get('ADMIN', ''))
+            if is_un_member(name):
                 stats['un_members'] += 1
             else:
                 stats['non_un'] += 1

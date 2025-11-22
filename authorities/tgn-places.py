@@ -1,4 +1,4 @@
-# authorities/tgn-places-correct.py
+# processing/tgn-places.py
 
 """
 Index Getty Thesaurus of Geographic Names (TGN) data into Elasticsearch.
@@ -7,8 +7,7 @@ CORRECT VERSION - Based on verified RDF structure:
 - Term URIs have skosxl:literalForm with the actual text
 - Places link to term URIs via skosxl:prefLabel
 - All in TGNOut_2Terms.nt file
-
-Verified with test_tgn_structure.py and test_tgn_literals.py
+- Ensures UTF-8 encoding for all strings
 """
 
 import re
@@ -46,7 +45,14 @@ def parse_ntriple(line):
                 break
             quote_end += 1
 
-        obj_value = obj_part[1:quote_end]
+        # Extract literal value and decode unicode escapes
+        raw_value = obj_part[1:quote_end]
+        # Decode unicode escape sequences (e.g., \u0411 -> Б)
+        try:
+            obj_value = raw_value.encode('utf-8').decode('unicode_escape')
+        except:
+            obj_value = raw_value
+
         obj_type = 'literal'
 
         remainder = obj_part[quote_end + 1:].strip()
@@ -119,7 +125,7 @@ def load_terms_and_labels_from_zip(zip_path):
     1. term_uri -> literal text (from skosxl:literalForm)
     2. place_id -> term_uri (from skosxl:prefLabel where subject is a place)
 
-    Returns: (term_literals, place_to_preferred_term)
+    Returns: (term_literals, place_to_preferred_term, place_to_all_terms)
     """
     print("\nLoading terms and labels from TGNOut_2Terms.nt...")
 
@@ -150,6 +156,7 @@ def load_terms_and_labels_from_zip(zip_path):
                         term_uri = subject
                         # obj_type is the language code (e.g., 'en', 'fr')
                         if obj_type not in ['uri', 'typed_literal', 'literal', 'unknown']:
+                            # Ensure text is properly encoded as UTF-8
                             term_literals[term_uri] = (obj_value, obj_type)
 
                     # Extract place -> preferred term mappings
@@ -214,19 +221,34 @@ def stream_placemap_from_zip(zip_path, coordinates):
                     continue
 
 
-def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term):
+def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term, place_to_all_terms):
     """
     Create a place document for a TGN place.
     """
     lat, lon = coordinates[coord_uri]
     place_id = f"tgn:{tgn_id}"
 
+    # Collect toponyms array
+    toponyms = []
+
     # Get preferred label
     label = None
     if tgn_id in place_to_preferred_term:
         term_uri = place_to_preferred_term[tgn_id]
         if term_uri in term_literals:
-            label, lang = term_literals[term_uri]
+            text, lang = term_literals[term_uri]
+            label = text
+            # Add preferred toponym
+            toponyms.append(f"{text}@{lang}")
+
+    # Add other terms as toponyms
+    if tgn_id in place_to_all_terms:
+        for term_uri in place_to_all_terms[tgn_id]:
+            if term_uri in term_literals:
+                text, lang = term_literals[term_uri]
+                toponym = f"{text}@{lang}"
+                if toponym not in toponyms:  # Avoid duplicates
+                    toponyms.append(toponym)
 
     # Fallback label
     if not label:
@@ -235,6 +257,7 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
     doc = {
         'place_id': place_id,
         'label': label,
+        'toponyms': toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',
@@ -270,37 +293,38 @@ def create_toponym_docs(place_id, tgn_id, term_literals, place_to_preferred_term
         term_uri = place_to_preferred_term[tgn_id]
         if term_uri in term_literals:
             text, lang = term_literals[term_uri]
-            if text not in seen_texts:
+            # Create unique key for deduplication
+            key = f"{text}@{lang}"
+            if key not in seen_texts:
                 toponyms.append({
                     'place_id': place_id,
-                    'name': text,
-                    'name_lower': text.lower(),
-                    'lang': lang,
+                    'name': f"{text}@{lang}",  # Full name@lang format
                     'is_preferred': True,
+                    'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
                     'suggest': {
                         'input': [text],
                         'contexts': {'lang': [lang]}
                     }
                 })
-                seen_texts.add(text)
+                seen_texts.add(key)
 
     # Add other terms
     if tgn_id in place_to_all_terms:
         for term_uri in place_to_all_terms[tgn_id]:
             if term_uri in term_literals:
                 text, lang = term_literals[term_uri]
-                if text not in seen_texts:
+                key = f"{text}@{lang}"
+                if key not in seen_texts:
                     toponyms.append({
                         'place_id': place_id,
-                        'name': text,
-                        'name_lower': text.lower(),
-                        'lang': lang,
+                        'name': f"{text}@{lang}",  # Full name@lang format
+                        'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
                         'suggest': {
                             'input': [text],
                             'contexts': {'lang': [lang]}
                         }
                     })
-                    seen_texts.add(text)
+                    seen_texts.add(key)
 
     return toponyms
 
@@ -310,7 +334,7 @@ def index_tgn(zip_path, places_index, toponyms_index):
     Index TGN places from ZIP archive.
     """
     print("=" * 80)
-    print("TGN INDEXING (CORRECT VERSION)")
+    print("TGN INDEXING (UTF-8 CORRECTED VERSION)")
     print("=" * 80)
 
     # Step 1: Load coordinates
@@ -348,7 +372,8 @@ def index_tgn(zip_path, places_index, toponyms_index):
             print(f"  Indexed {place_count:,} places, {toponym_count:,} toponyms...")
 
         try:
-            place_doc = create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term)
+            place_doc = create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term,
+                                         place_to_all_terms)
             place_id = place_doc['place_id']
 
             place_batch.append({
@@ -397,7 +422,7 @@ def index_tgn(zip_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    TGN_FILE = f"{DATA_DIR}/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.nt"
+    TGN_FILE = f"{DATA_DIR}/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.zip"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 

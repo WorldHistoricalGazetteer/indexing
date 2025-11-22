@@ -1,4 +1,4 @@
-# authorities/geonames-toponyms.py
+# processing/geonames-toponyms.py
 
 import gzip
 from elasticsearch8 import Elasticsearch, helpers
@@ -26,26 +26,6 @@ def parse_year(year_str):
         return None
 
 
-def parse_lang_code(isolanguage):
-    """
-    Parse language code which may include variant.
-    Examples: 'en', 'zh-CN', 'zh-Hant', 'fr_1793'
-    Returns (lang, variant) tuple
-    """
-    if not isolanguage:
-        return (None, None)
-
-    # Split on hyphen or underscore
-    if '-' in isolanguage:
-        parts = isolanguage.split('-', 1)
-        return (parts[0], parts[1])
-    elif '_' in isolanguage:
-        parts = isolanguage.split('_', 1)
-        return (parts[0], parts[1])
-    else:
-        return (isolanguage, None)
-
-
 def parse_alternatename_line(line):
     """
     Parse a single alternateNames line.
@@ -63,9 +43,9 @@ def parse_alternatename_line(line):
     9: to (period)
 
     Returns:
-    - ('toponym', doc) for regular toponyms
-    - ('relation', doc) for wkdt/link entries
-    - (None, None) for entries to skip
+    - ('toponym', toponym_with_lang, timespan) for regular toponyms
+    - ('relation', relation_dict) for wkdt/link entries
+    - (None, None, None) for entries to skip
     """
     fields = line.split("\t")
 
@@ -78,119 +58,92 @@ def parse_alternatename_line(line):
         return ('relation', {
             'place_id': f"gn:{geoname_id}",
             'relationType': 'sameAs',
-            'relationTo': f"wd:{value}"
-        })
+            'relationTo': f"wd:{value}",
+            'source': 'geonames',
+            'method': 'curated'
+        }, None)
 
     # Handle links - create describedBy relation
     if lang_code == 'link' and value:
         return ('relation', {
             'place_id': f"gn:{geoname_id}",
             'relationType': 'describedBy',
-            'relationTo': value
-        })
+            'relationTo': value,
+            'source': 'geonames',
+            'method': 'curated'
+        }, None)
 
     # Skip other non-linguistic entries
     skip_codes = ['post', 'iata', 'icao', 'faac', 'unlc']
     if lang_code in skip_codes:
-        return (None, None)
+        return (None, None, None)
 
     # Skip if no actual name
     if not value:
-        return (None, None)
+        return (None, None, None)
 
-    geoname_id = fields[1]
-    name = value
-
-    # Parse language and variant
-    lang, lang_variant = parse_lang_code(lang_code)
-
-    # Parse boolean flags
-    is_preferred = fields[4] == '1' if len(fields) > 4 else False
-    is_short = fields[5] == '1' if len(fields) > 5 else False
-    is_colloquial = fields[6] == '1' if len(fields) > 6 else False
-    is_historic = fields[7] == '1' if len(fields) > 7 else False
+    # Build toponym with language tag
+    # Handle language variants (e.g., zh-CN, fr_1793)
+    if '-' in lang_code or '_' in lang_code:
+        # Keep the full code as-is for variants
+        toponym = f"{value}@{lang_code}"
+    elif lang_code:
+        toponym = f"{value}@{lang_code}"
+    else:
+        # No language code - mark as undetermined
+        toponym = f"{value}@und"
 
     # Parse temporal information
     year_from = parse_year(fields[8]) if len(fields) > 8 else None
     year_to = parse_year(fields[9]) if len(fields) > 9 else None
 
-    # Build the document
-    doc = {
-        "place_id": f"gn:{geoname_id}",
-        "name": name,
-        "name_lower": name.lower()
-    }
-
-    # Add language info
-    if lang:
-        doc["lang"] = lang
-    if lang_variant:
-        doc["lang_variant"] = lang_variant
-
-    # Add boolean flags only if true
-    if is_preferred:
-        doc["is_preferred"] = True
-    if is_short:
-        doc["is_short"] = True
-    if is_colloquial:
-        doc["is_colloquial"] = True
-    if is_historic:
-        doc["is_historic"] = True
-
-    # Add temporal information
+    timespan = None
     if year_from is not None or year_to is not None:
-        doc["timespans"] = []
         timespan = {}
         if year_from is not None:
             timespan["start"] = year_from
         if year_to is not None:
             timespan["end"] = year_to
-        if timespan:
-            doc["timespans"].append(timespan)
 
-    # Add to completion suggester with language context
-    suggest_input = [name]
-    if lang:
-        doc["suggest"] = {
-            "input": suggest_input,
-            "contexts": {
-                "lang": [lang]
-            }
-        }
-    else:
-        doc["suggest"] = {
-            "input": suggest_input
-        }
+    # Check if it's a preferred name
+    is_preferred = fields[4] == '1' if len(fields) > 4 else False
 
-    return ('toponym', doc)
+    return ('toponym', toponym, timespan, is_preferred)
 
 
 def index_toponyms_and_relations(file_path, toponyms_index, places_index):
     """
-    Read alternateNames file and index toponyms.
-    Stream relations (wkdt, link) directly to place updates without collecting in memory.
+    Read alternateNames file and:
+    1. Update places with toponyms array
+    2. Create toponym documents in toponyms index
+    3. Stream relations to place updates
     """
     toponym_batch = []
     relations_batch = []
+    places_toponyms = {}  # place_id -> list of toponyms
+    preferred_names = {}  # place_id -> preferred name
 
     toponym_count = 0
     relations_count = 0
     skipped = 0
+
+    print("Pass 1: Collecting toponyms and relations...")
 
     for line in stream_file(file_path):
         if not line or line.startswith("#"):
             continue
 
         try:
-            entry_type, doc = parse_alternatename_line(line)
+            result = parse_alternatename_line(line)
 
-            if entry_type is None:
+            if result[0] is None:
                 skipped += 1
                 continue
 
-            # Handle relations - stream to place updates
-            if entry_type == 'relation':
-                place_id = doc['place_id']
+            # Handle relations
+            if result[0] == 'relation':
+                relation_dict = result[1]
+                place_id = relation_dict['place_id']
 
                 # Use script to append to existing relations array
                 relations_batch.append({
@@ -202,19 +155,33 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
                             if (ctx._source.relations == null) {
                                 ctx._source.relations = [];
                             }
-                            ctx._source.relations.add(params.relation);
+                            // Check if this relation already exists
+                            boolean exists = false;
+                            for (rel in ctx._source.relations) {
+                                if (rel.relationTo == params.relation.relationTo) {
+                                    exists = true;
+                                    break;
+                                }
+                            }
+                            if (!exists) {
+                                ctx._source.relations.add(params.relation);
+                            }
                         """,
                         "params": {
                             "relation": {
-                                "relationType": doc['relationType'],
-                                "relationTo": doc['relationTo']
+                                "relationType": relation_dict['relationType'],
+                                "relationTo": relation_dict['relationTo'],
+                                "source": relation_dict['source'],
+                                "method": relation_dict['method']
                             }
                         }
                     },
                     "upsert": {
                         "relations": [{
-                            "relationType": doc['relationType'],
-                            "relationTo": doc['relationTo']
+                            "relationType": relation_dict['relationType'],
+                            "relationTo": relation_dict['relationTo'],
+                            "source": relation_dict['source'],
+                            "method": relation_dict['method']
                         }]
                     }
                 })
@@ -222,18 +189,58 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
                 if len(relations_batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(es, relations_batch, raise_on_error=False, stats_only=True)
                     relations_count += success
-                    print(f"Toponyms: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
+                    print(f"Relations updated: {relations_count}, skipped: {skipped}")
                     relations_batch = []
 
                 continue
 
             # Handle toponyms
-            if entry_type == 'toponym':
+            if result[0] == 'toponym':
+                toponym, timespan, is_preferred = result[1], result[2], result[3]
                 alt_name_id = line.split("\t")[0]
+                geoname_id = line.split("\t")[1]
+                place_id = f"gn:{geoname_id}"
+
+                # Collect toponyms for place update
+                if place_id not in places_toponyms:
+                    places_toponyms[place_id] = []
+                places_toponyms[place_id].append(toponym)
+
+                # Track preferred name for label update
+                if is_preferred and place_id not in preferred_names:
+                    # Extract name without language tag
+                    name = toponym.split('@')[0] if '@' in toponym else toponym
+                    preferred_names[place_id] = name
+
+                # Create toponym document
+                toponym_doc = {
+                    'place_id': place_id,
+                    'name': toponym  # Full toponym@lang format
+                }
+
+                # Add timespan if available
+                if timespan:
+                    toponym_doc['timespans'] = [timespan]
+
+                # Add preferred flag
+                if is_preferred:
+                    toponym_doc['is_preferred'] = True
+
+                # Add to completion suggester
+                name_part = toponym.split('@')[0] if '@' in toponym else toponym
+                lang_part = toponym.split('@')[1] if '@' in toponym else 'und'
+
+                toponym_doc['suggest'] = {
+                    'input': [name_part],
+                    'contexts': {
+                        'lang': [lang_part.split('-')[0] if '-' in lang_part else lang_part]
+                    }
+                }
+
                 toponym_batch.append({
                     "_index": toponyms_index,
                     "_id": f"gn_alt:{alt_name_id}",
-                    "_source": doc
+                    "_source": toponym_doc
                 })
 
                 if len(toponym_batch) >= BATCH_SIZE:
@@ -254,77 +261,65 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
         success, failed = helpers.bulk(es, relations_batch, raise_on_error=False, stats_only=True)
         relations_count += success
 
-    print(f"Indexing complete. Toponyms: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
+    print(f"Toponyms indexed: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
 
+    # Now update places with collected toponyms
+    print("\nPass 2: Updating places with toponyms arrays and preferred labels...")
 
-def update_place_labels(toponyms_index, places_index):
-    """
-    Update place documents with preferred names from toponyms.
-    For each place, find the preferred name and update the label field.
-    """
-    print("Updating place labels with preferred names...")
+    update_batch = []
+    update_count = 0
 
-    # Query for all preferred names
-    query = {
-        "query": {
-            "term": {
-                "is_preferred": True
-            }
-        },
-        "_source": ["place_id", "name", "lang"],
-        "size": 1000
-    }
-
-    # Scroll through all preferred names
-    resp = es.search(index=toponyms_index, body=query, scroll='5m')
-    scroll_id = resp['_scroll_id']
-    hits = resp['hits']['hits']
-
-    updates = []
-    count = 0
-
-    while hits:
-        for hit in hits:
-            source = hit['_source']
-            place_id = source['place_id']
-            name = source['name']
-
-            updates.append({
-                "_op_type": "update",
-                "_index": places_index,
-                "_id": place_id,
-                "doc": {
-                    "label": name
+    for place_id, toponyms_list in places_toponyms.items():
+        update_doc = {
+            "_op_type": "update",
+            "_index": places_index,
+            "_id": place_id,
+            "script": {
+                "source": """
+                    if (ctx._source.toponyms == null) {
+                        ctx._source.toponyms = [];
+                    }
+                    for (toponym in params.new_toponyms) {
+                        if (!ctx._source.toponyms.contains(toponym)) {
+                            ctx._source.toponyms.add(toponym);
+                        }
+                    }
+                    if (params.label != null) {
+                        ctx._source.label = params.label;
+                    }
+                """,
+                "params": {
+                    "new_toponyms": toponyms_list,
+                    "label": preferred_names.get(place_id)
                 }
-            })
+            }
+        }
 
-            if len(updates) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, updates, raise_on_error=False, stats_only=True)
-                    count += success
-                    print(f"Updated {count} place labels...")
-                    updates = []
-                except Exception as e:
-                    print(f"Error updating batch: {str(e)}")
-                    updates = []
+        update_batch.append(update_doc)
 
-        # Get next batch
-        resp = es.scroll(scroll_id=scroll_id, scroll='5m')
-        scroll_id = resp['_scroll_id']
-        hits = resp['hits']['hits']
+        if len(update_batch) >= BATCH_SIZE:
+            try:
+                success, failed = helpers.bulk(es, update_batch, raise_on_error=False, stats_only=True)
+                update_count += success
+                print(f"Updated {update_count} places with toponyms...")
+                update_batch = []
+            except Exception as e:
+                print(f"Error updating batch: {str(e)}")
+                update_batch = []
 
     # Update remaining
-    if updates:
+    if update_batch:
         try:
-            success, failed = helpers.bulk(es, updates, raise_on_error=False, stats_only=True)
-            count += success
+            success, failed = helpers.bulk(es, update_batch, raise_on_error=False, stats_only=True)
+            update_count += success
         except Exception as e:
             print(f"Error updating final batch: {str(e)}")
 
-    # Clear scroll
-    es.clear_scroll(scroll_id=scroll_id)
-
-    print(f"Place label update complete. Total updated: {count}")
+    print(f"\nIndexing complete!")
+    print(f"Toponyms indexed: {toponym_count}")
+    print(f"Relations added: {relations_count}")
+    print(f"Places updated with toponyms: {update_count}")
+    print(f"Skipped: {skipped}")
 
 
 if __name__ == "__main__":
@@ -335,8 +330,4 @@ if __name__ == "__main__":
     print(f"Starting to index Geonames alternate names from {ALTERNATENAMES_FILE}")
     print(f"Target indices: {TOPONYMS_INDEX}, {PLACES_INDEX}")
 
-    # Index toponyms and stream relations updates (no in-memory collection)
     index_toponyms_and_relations(ALTERNATENAMES_FILE, TOPONYMS_INDEX, PLACES_INDEX)
-
-    # Update place labels with preferred names
-    update_place_labels(TOPONYMS_INDEX, PLACES_INDEX)

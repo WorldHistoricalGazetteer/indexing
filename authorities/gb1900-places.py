@@ -1,4 +1,4 @@
-# authorities/gb1900-places-fixed.py
+# processing/gb1900-places.py
 
 """
 Index GB1900 gazetteer data into Elasticsearch.
@@ -60,10 +60,14 @@ def parse_gb1900_row(row):
 
     place_id = f"gb1900:{pin_id}"
 
+    # Build toponyms array - GB1900 names are in English
+    toponyms = [f"{name}@en"]
+
     # Build place document
     place_doc = {
         'place_id': place_id,
         'label': name,
+        'toponyms': toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',
@@ -92,23 +96,19 @@ def parse_gb1900_row(row):
     # Build toponym document
     toponym_doc = {
         'place_id': place_id,
-        'name': name,
-        'name_lower': name.lower(),
-        'lang': 'en',  # GB1900 names are in English
+        'name': f"{name}@en",  # Full name@lang format
         'suggest': {
             'input': [name],
             'contexts': {
                 'lang': ['en']
             }
-        }
+        },
+        # Add temporal information (maps are from ca. 1900)
+        'timespans': [{
+            'start': 1888,
+            'end': 1914
+        }]
     }
-
-    # Add temporal information (maps are from ca. 1900)
-    # Most names are from 1888-1914 period
-    toponym_doc['timespans'] = [{
-        'start': 1888,
-        'end': 1914
-    }]
 
     return place_doc, toponym_doc
 

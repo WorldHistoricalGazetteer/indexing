@@ -1,4 +1,4 @@
-# authorities/geonames-places.py
+# processing/geonames-places.py
 
 import gzip
 import zipfile
@@ -58,9 +58,21 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
+    # Build toponyms array - initially just the main name
+    # Additional toponyms will be added from alternateNames file
+    toponyms = []
+    if fields[1]:
+        # For the main name, we don't know the language, so we'll mark it as 'und' (undetermined)
+        toponyms.append(f"{fields[1]}@und")
+
+    # Also add the ASCII name if different
+    if fields[2] and fields[2] != fields[1]:
+        toponyms.append(f"{fields[2]}@und")
+
     # Build the document
     doc = {
         "place_id": f"gn:{fields[0]}",
+        "toponyms": toponyms,
         "ccodes": ccodes,
         "locations": [
             {
@@ -81,15 +93,15 @@ def parse_geonames_line(line):
                 "label": fields[6],  # feature class
                 "sourceLabel": f"{fields[6]}.{fields[7]}"
             }
-        ]
+        ],
+        "source": "geonames"
     }
 
     # Add elevation if available
     if elevation is not None:
         doc["elevation"] = elevation
 
-    # Note: label will be populated from alternateNames (preferred name)
-    # This is a placeholder that can be updated by the alternate names script
+    # Set label to the primary name
     if fields[1]:
         doc["label"] = fields[1]
 

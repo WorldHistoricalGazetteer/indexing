@@ -1,4 +1,4 @@
-# authorities/wikidata-places.py
+# processing/wikidata-places.py
 
 import gzip
 import json
@@ -17,7 +17,6 @@ GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.
 def stream_wikidata(file_path):
     """
     Generator yielding Wikidata entities from compressed JSON dump.
-    (No change)
     """
     with gzip.open(file_path, 'rt', encoding='utf-8') as f:
         for line in f:
@@ -36,7 +35,6 @@ def stream_wikidata(file_path):
 def is_geographic_entity(entity):
     """
     Check if a Wikidata entity represents a geographic place.
-    (No change)
     """
     if 'claims' not in entity:
         return False
@@ -64,7 +62,6 @@ def is_geographic_entity(entity):
 def extract_labels(entity):
     """
     Extract labels from all languages.
-    (No change)
     """
     labels = {}
     if 'labels' in entity:
@@ -76,7 +73,6 @@ def extract_labels(entity):
 def extract_coordinates(entity):
     """
     Extract coordinates from P625 (coordinate location).
-    (No change)
     """
     if 'claims' not in entity or 'P625' not in entity['claims']:
         return None
@@ -139,7 +135,6 @@ def extract_coordinates_and_geoshape(entity):
 def extract_country_codes(entity):
     """
     Extract country codes from P297 (ISO 3166-1 alpha-2 code).
-    (No change)
     """
     ccodes = []
     if 'claims' not in entity or 'P297' not in entity['claims']:
@@ -157,7 +152,6 @@ def extract_country_codes(entity):
 def extract_elevation(entity):
     """
     Extract elevation from P2044 (elevation above sea level).
-    (No change)
     """
     if 'claims' not in entity or 'P2044' not in entity['claims']:
         return None
@@ -177,7 +171,6 @@ def extract_elevation(entity):
 def extract_types(entity):
     """
     Extract type information from P31 (instance of).
-    (No change)
     """
     types = []
     if 'claims' not in entity or 'P31' not in entity['claims']:
@@ -200,7 +193,6 @@ def extract_types(entity):
 def extract_geonames_id(entity):
     """
     Extract Geonames ID from P1566.
-    (No change)
     """
     if 'claims' not in entity or 'P1566' not in entity['claims']:
         return None
@@ -226,9 +218,27 @@ def create_place_doc(entity):
     labels = extract_labels(entity)
     label = labels.get('en', labels.get('mul', qid))
 
+    # Build toponyms array from labels and aliases
+    toponyms = []
+
+    # Add labels (one per language)
+    if 'labels' in entity:
+        for lang, label_obj in entity['labels'].items():
+            name = label_obj['value']
+            toponyms.append(f"{name}@{lang}")
+
+    # Add aliases (multiple per language)
+    if 'aliases' in entity:
+        for lang, alias_list in entity['aliases'].items():
+            for alias_obj in alias_list:
+                name = alias_obj['value']
+                toponyms.append(f"{name}@{lang}")
+
     doc = {
         'place_id': f"wd:{qid}",
-        'label': label
+        'label': label,
+        'toponyms': toponyms,
+        'source': 'wikidata'
     }
 
     # Extract coordinates and geoshape reference
@@ -252,12 +262,19 @@ def create_place_doc(entity):
         doc['types'] = types
 
     # Add relation to Geonames if present
+    relations = []
     gn_id = extract_geonames_id(entity)
     if gn_id:
-        doc['relations'] = [{
+        relations.append({
             'relationType': 'sameAs',
-            'relationTo': f"gn:{gn_id}"
-        }]
+            'relationTo': f"gn:{gn_id}",
+            'source': 'wikidata',
+            'method': 'curated',
+            'certainty': 1.0
+        })
+
+    if relations:
+        doc['relations'] = relations
 
     # Only index if it has at least one spatial attribute (coords or geoshape_ref)
     if not locations and not geoshape_ref:
@@ -269,7 +286,6 @@ def create_place_doc(entity):
 def create_toponym_docs(entity, place_id):
     """
     Create toponym documents from a Wikidata entity's labels and aliases.
-    (No change)
     """
     toponyms = []
 
@@ -279,14 +295,13 @@ def create_toponym_docs(entity, place_id):
             name = label_obj['value']
             doc = {
                 'place_id': place_id,
-                'name': name,
-                'name_lower': name.lower(),
-                'lang': lang,
+                'name': f"{name}@{lang}",  # Full name@lang format
                 'is_preferred': True,  # Labels are preferred names
+                'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
                 'suggest': {
                     'input': [name],
                     'contexts': {
-                        'lang': [lang]
+                        'lang': [lang.split('-')[0] if '-' in lang else lang]
                     }
                 }
             }
@@ -299,13 +314,12 @@ def create_toponym_docs(entity, place_id):
                 name = alias_obj['value']
                 doc = {
                     'place_id': place_id,
-                    'name': name,
-                    'name_lower': name.lower(),
-                    'lang': lang,
+                    'name': f"{name}@{lang}",  # Full name@lang format
+                    'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
                     'suggest': {
                         'input': [name],
                         'contexts': {
-                            'lang': [lang]
+                            'lang': [lang.split('-')[0] if '-' in lang else lang]
                         }
                     }
                 }
@@ -329,6 +343,9 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
 
     print("Starting Wikidata processing...")
     print(f"Saving geoshape references to: {geoshape_refs_file}")
+
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(geoshape_refs_file), exist_ok=True)
 
     # Open the geoshape file for writing
     with open(geoshape_refs_file, 'w') as refs_f:
@@ -357,7 +374,7 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
                 place_id = place_doc['place_id']
                 qid = entity['id']
 
-                # --- NEW FUNCTIONALITY: Save Geoshape Reference ---
+                # Save Geoshape Reference
                 if geoshape_ref:
                     ref_doc = {
                         'qid': qid,
@@ -365,9 +382,8 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
                     }
                     refs_f.write(json.dumps(ref_doc) + '\n')
                     geoshape_count += 1
-                # --------------------------------------------------
 
-                # Add to place batch (Original Indexing Logic)
+                # Add to place batch
                 place_batch.append({
                     '_index': places_index,
                     '_id': place_id,
@@ -399,7 +415,7 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
                 print(f"\nError processing entity {entity.get('id', 'unknown')}: {str(e)}", file=sys.stderr)
                 continue
 
-        # Index remaining batches (after loop finishes)
+        # Index remaining batches
         if place_batch:
             success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
             place_count += success

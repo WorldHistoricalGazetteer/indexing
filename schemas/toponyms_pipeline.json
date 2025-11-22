@@ -1,0 +1,38 @@
+{
+  "description": "Extract language and variant from toponym@lang format",
+  "processors": [
+    {
+      "script": {
+        "lang": "painless",
+        "source": """
+          // Parse toponym@lang or toponym@lang-variant format
+          if (ctx.name != null && ctx.name.contains('@')) {
+            String[] parts = ctx.name.splitOnToken('@');
+            if (parts.length == 2) {
+              ctx.name = parts[0];
+              ctx.name_lower = parts[0].toLowerCase();
+
+              String langPart = parts[1];
+              if (langPart.contains('-')) {
+                String[] langParts = langPart.splitOnToken('-');
+                ctx.lang = langParts[0];
+                ctx.lang_variant = langParts[1];
+              } else {
+                ctx.lang = langPart;
+              }
+            }
+          } else if (ctx.name != null) {
+            // Ensure name_lower exists even if no @ symbol
+            ctx.name_lower = ctx.name.toLowerCase();
+          }
+        """
+      }
+    },
+    {
+      "set": {
+        "field": "indexed_at",
+        "value": "{{_ingest.timestamp}}"
+      }
+    }
+  ]
+}

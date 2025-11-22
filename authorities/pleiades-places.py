@@ -1,4 +1,4 @@
-# authorities/pleiades-places-streaming.py
+# processing/pleiades-places.py
 
 """
 Index Pleiades places data into Elasticsearch with memory-efficient streaming.
@@ -69,9 +69,10 @@ def extract_toponyms(pleiades_record):
     Extract name data from Pleiades names array.
     Each name may have temporal attestations and language info.
 
-    Returns: list of toponym dicts
+    Returns: tuple of (toponyms_list, toponym_docs)
     """
-    toponyms = []
+    toponyms_list = []  # For places.toponyms array
+    toponym_docs = []  # For toponyms index
     place_id = f"pl:{pleiades_record['id']}"
 
     for name_obj in pleiades_record.get('names', []):
@@ -79,52 +80,54 @@ def extract_toponyms(pleiades_record):
         attested = name_obj.get('attested', '')
 
         # Use attested form if available, otherwise romanized
-        name = attested if attested else romanized
-        if not name:
+        name_str = attested if attested else romanized
+        if not name_str:
             continue
 
-        toponym = {
-            'place_id': place_id,
-            'name': name,
-            'name_lower': name.lower()
-        }
+        # Split comma-separated names (common in Pleiades data)
+        names = [n.strip() for n in name_str.split(',') if n.strip()]
 
-        # Add language if available
-        lang = name_obj.get('language')
-        if lang:
-            toponym['lang'] = lang
+        for name in names:
+            # Get language
+            lang = name_obj.get('language', 'und')
+            if not lang:
+                lang = 'und'
 
-        # Add temporal information
-        attestations = name_obj.get('attestations', [])
-        if attestations:
-            # Get start/end from name object
-            start = name_obj.get('start')
-            end = name_obj.get('end')
-            if start is not None or end is not None:
-                timespan = {}
-                if start is not None:
-                    timespan['start'] = start
-                if end is not None:
-                    timespan['end'] = end
-                toponym['timespans'] = [timespan]
+            # Build toponym in name@lang format
+            toponym = f"{name}@{lang}"
+            toponyms_list.append(toponym)
 
-        # Add to completion suggester
-        suggest_input = [name]
-        if lang:
-            toponym['suggest'] = {
-                'input': suggest_input,
+            # Create toponym document
+            toponym_doc = {
+                'place_id': place_id,
+                'name': toponym  # Full name@lang format
+            }
+
+            # Add temporal information
+            attestations = name_obj.get('attestations', [])
+            if attestations:
+                # Get start/end from name object
+                start = name_obj.get('start')
+                end = name_obj.get('end')
+                if start is not None or end is not None:
+                    timespan = {}
+                    if start is not None:
+                        timespan['start'] = start
+                    if end is not None:
+                        timespan['end'] = end
+                    toponym_doc['timespans'] = [timespan]
+
+            # Add to completion suggester
+            toponym_doc['suggest'] = {
+                'input': [name],
                 'contexts': {
-                    'lang': [lang]
+                    'lang': [lang.split('-')[0] if '-' in lang else lang]
                 }
             }
-        else:
-            toponym['suggest'] = {
-                'input': suggest_input
-            }
 
-        toponyms.append(toponym)
+            toponym_docs.append(toponym_doc)
 
-    return toponyms
+    return toponyms_list, toponym_docs
 
 
 def extract_place_types(pleiades_record):
@@ -148,19 +151,17 @@ def create_place_doc(pleiades_record):
     """
     Create a place document from a Pleiades record.
 
-    Pleiades structure:
-    - id: place ID (e.g., "413005")
-    - title: place name
-    - locations: array of historical locations with geometries and dates
-    - names: array of historical names with attestations
-    - placeTypes: array of place type strings
-    - reprPoint: representative point [lon, lat]
+    Returns: tuple of (place_doc, toponym_docs)
     """
     place_id = f"pl:{pleiades_record['id']}"
+
+    # Extract toponyms
+    toponyms_list, toponym_docs = extract_toponyms(pleiades_record)
 
     doc = {
         'place_id': place_id,
         'label': pleiades_record.get('title', ''),
+        'toponyms': toponyms_list,
         'source': 'pleiades'
     }
 
@@ -197,12 +198,15 @@ def create_place_doc(pleiades_record):
                 conn_id = conn_uri.split('/places/')[-1]
                 relations.append({
                     'relationType': 'connectedTo',
-                    'relationTo': f"pl:{conn_id}"
+                    'relationTo': f"pl:{conn_id}",
+                    'source': 'pleiades',
+                    'method': 'curated',
+                    'certainty': 0.9
                 })
         if relations:
             doc['relations'] = relations
 
-    return doc
+    return doc, toponym_docs
 
 
 def index_pleiades_streaming(file_path, places_index, toponyms_index):
@@ -262,7 +266,7 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
 
                 try:
                     # Create place document
-                    place_doc = create_place_doc(record)
+                    place_doc, toponym_docs = create_place_doc(record)
 
                     # Skip if no spatial data
                     if 'locations' not in place_doc:
@@ -278,9 +282,8 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
                         '_source': place_doc
                     })
 
-                    # Extract toponyms
-                    toponyms = extract_toponyms(record)
-                    for j, toponym_doc in enumerate(toponyms):
+                    # Add toponyms to batch
+                    for j, toponym_doc in enumerate(toponym_docs):
                         toponym_batch.append({
                             '_index': toponyms_index,
                             '_id': f"{place_id}:{j}",
@@ -363,7 +366,7 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
 
         try:
             # Create place document
-            place_doc = create_place_doc(record)
+            place_doc, toponym_docs = create_place_doc(record)
 
             # Skip if no spatial data
             if 'locations' not in place_doc:
@@ -379,9 +382,8 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
                 '_source': place_doc
             })
 
-            # Extract toponyms
-            toponyms = extract_toponyms(record)
-            for j, toponym_doc in enumerate(toponyms):
+            # Add toponyms
+            for j, toponym_doc in enumerate(toponym_docs):
                 toponym_batch.append({
                     '_index': toponyms_index,
                     '_id': f"{place_id}:{j}",

@@ -8,7 +8,8 @@ Complete guide for running Elasticsearch and ingesting gazetteer data on Univers
 2. [Starting Elasticsearch](#starting-elasticsearch)
 3. [Updating Code from GitHub](#updating-code-from-github)
 4. [Running Ingestion Scripts](#running-ingestion-scripts)
-5. [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
+5. [Preparing for Production](#preparing-for-production)
+6. [Monitoring and Troubleshooting](#monitoring-and-troubleshooting)
 
 ---
 
@@ -41,7 +42,7 @@ crc-interactive -s -c 4 -b 16 -t 12:00:00 -a whcdh
 - `-s`: SMP cluster
 - `-c 4`: 4 CPU cores
 - `-b 16`: 16 GB RAM
-- `-t 48:00:00`: 48 hour time limit
+- `-t 12:00:00`: 12 hour time limit
 - `-a whcdh`: Account allocation
 
 **Alternative (salloc) for more than 12 hours:**
@@ -121,26 +122,20 @@ git pull origin main
 ```bash
 ls -l
 # Should see:
-# authorities/
+# processing/
+# toponyms/
 # schemas/
 # README.md
 # etc.
 
-ls authorities/
-# Should see:
-# create_indices.py
-# geonames-places.py
-# geonames-toponyms.py
-# wikidata-places.py
-# wikidata-geoshapes.py
-# helpers.py
-# settings.py
+ls processing/
+# Should see ingestion scripts for all authorities
 ```
 
 ### Check/Update Settings
 
 ```bash
-nano authorities/settings.py
+nano processing/settings.py
 ```
 
 Verify paths are correct:
@@ -164,26 +159,19 @@ All Python commands should be run from this directory so imports work correctly.
 
 ---
 
-### Step 1: Create Indices (< 1 minute)
+### Step 1: Create Indices and Pipelines (< 1 minute)
 
 ```bash
-python -m processing/create_indices.py
+python -m processing.create_indices
 ```
 
 **Expected output:**
 ```
-Index 'places' already exists. Deleting...
+ELASTICSEARCH INDEX SETUP
+Creating pipeline 'extract_namespace'...
+Creating pipeline 'extract_language'...
 Creating index 'places'...
-Index 'places' created successfully.
-Index 'toponyms' already exists. Deleting...
 Creating index 'toponyms'...
-Index 'toponyms' created successfully.
-
-All indices created successfully!
-
-Next steps:
-1. Run: python -m authorities/geonames-places.py
-2. Run: python -m authorities/geonames-toponyms.py
 ```
 
 **Verify:**
@@ -197,20 +185,10 @@ curl http://localhost:9200/_cat/indices?v
 ### Step 2: Index Geonames Places (2-3 hours)
 
 ```bash
-python -m authorities/geonames-places.py
+python -m processing.geonames-places
 ```
 
-**Input file:** `/ix1/whcdh/data/geonames/allCountries/allCountries.txt`
-
-**Expected output:**
-```
-Starting to index Geonames places from /ix1/whcdh/data/geonames/allCountries/allCountries.txt
-Target index: places
-Indexed 5000 places so far...
-Indexed 10000 places so far...
-...
-Indexing complete. Total places indexed: 12345678
-```
+**Input file:** `/ix1/whcdh/data/geonames/allCountries/allCountries.zip`
 
 **Monitor progress:**
 ```bash
@@ -218,48 +196,68 @@ Indexing complete. Total places indexed: 12345678
 watch -n 30 'curl -s http://localhost:9200/places/_count | jq .'
 ```
 
-**If interrupted:** Just restart - Elasticsearch handles duplicate IDs gracefully (upserts)
-
 ---
 
 ### Step 3: Index Geonames Toponyms (4-6 hours)
 
 ```bash
-python -m authorities/geonames-toponyms.py
+python -m processing.geonames-toponyms
 ```
 
-**Input file:** `/ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.txt`
-
-**Expected output:**
-```
-Starting to index Geonames alternate names from /ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.txt
-Target indices: toponyms, places
-Toponyms: 5000, relations: 1200, skipped: 3800
-Toponyms: 10000, relations: 2400, skipped: 7600
-...
-Indexing complete. Toponyms: 14000000, relations: 350000, skipped: 2800000
-Updating place labels with preferred names...
-Updated 5000 place labels...
-...
-Place label update complete. Total updated: 12000000
-```
+**Input file:** `/ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.zip`
 
 **Two-phase operation:**
-1. Indexes toponyms + streams wikidata/link relations to places
-2. Updates place labels with preferred names
+1. Creates toponyms and adds relations to places
+2. Updates places with toponyms arrays
 
-**Monitor:**
+---
+
+### Step 4: Index Pleiades (30-60 minutes)
+
 ```bash
-curl -s http://localhost:9200/toponyms/_count | jq .
-curl -s http://localhost:9200/places/_count | jq .
+python -m processing.pleiades-places
+```
+
+**Input file:** `/ix1/whcdh/data/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz`
+
+**Note:** Uses ijson for memory-efficient streaming. Install if needed:
+```bash
+pip install ijson --break-system-packages
 ```
 
 ---
 
-### Step 4: Index Wikidata Places (8-12 hours)
+### Step 5: Index TGN (2-4 hours)
 
 ```bash
-python -m authorities/wikidata-places.py
+python -m processing.tgn-places
+```
+
+**Input file:** `/ix1/whcdh/data/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.zip`
+
+**Three-phase operation:**
+1. Loads coordinates from TGNOut_Coordinates.nt
+2. Loads term literals from TGNOut_2Terms.nt
+3. Matches places to coordinates and indexes
+
+---
+
+### Step 6: Index GB1900 (30-60 minutes)
+
+```bash
+python -m processing.gb1900-places
+```
+
+**Input file:** `/ix1/whcdh/data/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip`
+
+**Note:** CSV is UTF-16 encoded with BOM
+
+---
+
+### Step 7: Index Wikidata Places (8-12 hours)
+
+```bash
+python -m processing.wikidata-places
 ```
 
 **Input file:** `/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz`
@@ -281,41 +279,193 @@ Indexing complete!
 Total entities processed: 110,000,000
 Places indexed: 10,456,234
 Toponyms indexed: 68,234,567
+Geoshape references saved: 130,000
 Skipped (non-geographic): 31,309,199
 ```
 
-**Progress updates every 100k entities**
-
-**Monitor:**
-```bash
-# Count Wikidata places
-curl -X POST http://localhost:9200/places/_count?pretty -H 'Content-Type: application/json' -d '
-{
-  "query": {"prefix": {"place_id": "wd:"}}
-}'
-
-# Sample Wikidata place
-curl -X POST http://localhost:9200/places/_search?pretty -H 'Content-Type: application/json' -d '
-{
-  "query": {"prefix": {"place_id": "wd:"}},
-  "size": 1
-}'
-```
-
-**Long-running considerations:**
-- This script takes 8-12 hours
-- Keep tmux session alive or run in background
-- Elasticsearch must stay running throughout
-- If interrupted, restart - it will continue/update existing docs
+**Note:** Also saves geoshape references to `/ix1/whcdh/data/wikidata/wikidata_geoshape_refs.jsonl`
 
 ---
 
-### Step 5: Fetch Wikidata Geoshapes (Optional, 4-8 hours)
-
-This step is optional but recommended for places with complex geometries (country borders, rivers, etc.)
+### Step 8: Fetch Wikidata Geoshapes (Optional, 4-8 hours)
 
 ```bash
-python -m authorities/wikidata-geoshapes.py
+python -m processing.wikidata-geoshapes
+```
+
+This step fetches complex geometries for Wikidata places that have them (~130k places).
+
+---
+
+### Step 9: Index UN Countries (< 5 minutes)
+
+```bash
+python -m processing.un-countries
+```
+
+Downloads Natural Earth data and indexes UN member countries with high-quality boundary geometries.
+
+---
+
+## Preparing for Production
+
+After all ingestion is complete, prepare indices for production use:
+
+```bash
+python -m processing.prepare_for_production
+```
+
+This script will:
+1. Update `number_of_replicas` from 0 to 1
+2. Update `refresh_interval` from -1 to 1s
+3. Force merge indices to optimize segments (30-60 minutes)
+4. Create a snapshot backup
+
+**Interactive prompts:**
+```
+PREPARE INDICES FOR PRODUCTION
+================================================================================
+
+Checking indices...
+  ✓ Index 'places' exists
+  ✓ Index 'toponyms' exists
+
+--- Current Statistics ---
+
+places Statistics:
+  Documents: 35,456,234
+  Size: 85.23 GB
+  Replicas: 0
+  Refresh interval: -1
+
+toponyms Statistics:
+  Documents: 145,234,567
+  Size: 142.45 GB
+  Replicas: 0
+  Refresh interval: -1
+
+--------------------------------------------------------------------------------
+This script will:
+1. Update number_of_replicas from 0 to 1
+2. Update refresh_interval from -1 to 1s
+3. Force merge indices to optimize segments
+4. Create a snapshot backup
+--------------------------------------------------------------------------------
+
+Proceed with production preparation? (y/n): y
+
+--- Updating Settings ---
+Updating places settings...
+  ✓ Updated replicas and refresh interval
+Updating toponyms settings...
+  ✓ Updated replicas and refresh interval
+
+--- Force Merging ---
+This may take 30-60 minutes...
+Force merging places...
+  ✓ Force merge complete
+Force merging toponyms...
+  ✓ Force merge complete
+
+--- Creating Backup ---
+Creating snapshot: production_20250122_143022
+  ✓ Snapshot created: production_20250122_143022
+
+--- Final Statistics ---
+
+places Statistics:
+  Documents: 35,456,234
+  Size: 85.23 GB
+  Replicas: 1
+  Refresh interval: 1s
+
+toponyms Statistics:
+  Documents: 145,234,567
+  Size: 142.45 GB
+  Replicas: 1
+  Refresh interval: 1s
+
+================================================================================
+PRODUCTION PREPARATION COMPLETE
+================================================================================
+
+Your indices are now ready for production use!
+```
+
+### Manual Settings Update (Alternative)
+
+If you prefer to update settings manually:
+
+```bash
+# Update places index
+curl -X PUT "http://localhost:9200/places/_settings" -H 'Content-Type: application/json' -d'
+{
+  "index": {
+    "number_of_replicas": 1,
+    "refresh_interval": "1s"
+  }
+}'
+
+# Update toponyms index
+curl -X PUT "http://localhost:9200/toponyms/_settings" -H 'Content-Type: application/json' -d'
+{
+  "index": {
+    "number_of_replicas": 1,
+    "refresh_interval": "1s"
+  }
+}'
+
+# Force merge (optional but recommended)
+curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
+curl -X POST "http://localhost:9200/toponyms/_forcemerge?max_num_segments=1"
+```
+
+**Input file:** `/ix1/whcdh/data/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip`
+
+**Note:** Contains ~1.5M British place names from 1888-1914
+
+---
+
+### Step 7: Index UN Countries (5 minutes)
+
+```bash
+python -m processing.un-countries
+```
+
+**Note:** Downloads Natural Earth data automatically if not present. Includes country boundaries and ISO codes.
+
+---
+
+### Step 8: Index Wikidata Places (8-12 hours)
+
+```bash
+python -m processing.wikidata-places
+```
+
+**Input file:** `/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz`
+
+**Expected output:**
+```
+Starting to index Wikidata from /ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz
+Target indices: places, toponyms
+
+Note: This will take several hours for the full Wikidata dump (~110M entities)
+Only geographic entities will be indexed.
+
+Processed 100,000 entities... (places: 8234, toponyms: 42156, skipped: 49610)
+...
+```
+
+**Creates:** Reference file for geoshapes at `/ix1/whcdh/data/wikidata/wikidata_geoshape_refs.jsonl`
+
+---
+
+### Step 9: Fetch Wikidata Geoshapes (Optional, 4-8 hours)
+
+This step fetches complex geometries (polygons/lines) for Wikidata places.
+
+```bash
+python -m processing.wikidata-geoshapes
 ```
 
 **Confirmation prompt:**
@@ -329,52 +479,175 @@ Continue? (y/n):
 
 Type `y` and press Enter.
 
-**Expected output:**
-```
-Starting geoshape fetching and updating...
-This will take several hours due to API rate limiting.
+**Note:** This script is resumable - it logs progress and can be restarted if interrupted.
 
-Processed: 100, Updated: 45, Skipped: 55
-Processed: 200, Updated: 92, Skipped: 108
-...
-Processed: 10245382, Updated: 127543, Skipped: 10117839
+---
 
-Geoshape processing complete!
-Total processed: 10,245,382
-Updated with geoshapes: 127,543
-Skipped: 10,117,839
-```
+### Step 10: Generate Phonetic Features (Optional, 4-6 hours)
 
-**What it does:**
-1. Scrolls through all Wikidata places
-2. Queries SPARQL for P3896 (geoshape) property (~130k places)
-3. Fetches GeoJSON from Wikimedia Commons
-4. Computes geodetically-correct representative points
-5. Updates place documents
-
-**Rate limiting:** 0.1 second delay between requests (nice to Wikimedia)
-
-**Monitor complex geometries:**
+#### PanPhon Features
 ```bash
-curl -X POST http://localhost:9200/places/_search?pretty -H 'Content-Type: application/json' -d '
+# Install dependencies if needed
+pip install epitran panphon --break-system-packages
+
+# Generate IPA and PanPhon features
+python -m toponyms.generate_phonetic_features
+```
+
+#### BiLSTM Embeddings (requires trained model)
+```bash
+python -m toponyms.generate_bilstm_embeddings --model /path/to/model.pt
+```
+
+---
+
+## Preparing for Production
+
+After all ingestion is complete, prepare indices for production use:
+
+### Run Production Preparation Script
+
+```bash
+python -m processing.prepare_for_production
+```
+
+This script will:
+1. Update `number_of_replicas` from 0 to 1
+2. Update `refresh_interval` from -1 to 1s
+3. Force merge indices to optimize segments
+4. Create a snapshot backup
+
+**Expected dialogue:**
+```
+PREPARE INDICES FOR PRODUCTION
+================================================================================
+
+Checking indices...
+  ✓ Index 'places' exists
+  ✓ Index 'toponyms' exists
+
+--- Current Statistics ---
+
+places Statistics:
+  Documents: 22,456,234
+  Size: 65.34 GB
+  Replicas: 0
+  Refresh interval: -1
+
+toponyms Statistics:
+  Documents: 78,234,567
+  Size: 125.67 GB
+  Replicas: 0
+  Refresh interval: -1
+
+--------------------------------------------------------------------------------
+This script will:
+1. Update number_of_replicas from 0 to 1
+2. Update refresh_interval from -1 to 1s
+3. Force merge indices to optimize segments
+4. Create a snapshot backup
+--------------------------------------------------------------------------------
+
+Proceed with production preparation? (y/n): y
+
+--- Updating Settings ---
+Updating places settings...
+  ✓ Updated replicas and refresh interval
+Updating toponyms settings...
+  ✓ Updated replicas and refresh interval
+
+--- Force Merging ---
+This may take 30-60 minutes...
+Force merging places...
+  ✓ Force merge complete
+Force merging toponyms...
+  ✓ Force merge complete
+
+--- Creating Backup ---
+
+Creating snapshot: production_20250122_143045
+  ✓ Snapshot created: production_20250122_143045
+
+--- Final Statistics ---
+
+places Statistics:
+  Documents: 22,456,234
+  Size: 65.34 GB
+  Replicas: 1
+  Refresh interval: 1s
+
+toponyms Statistics:
+  Documents: 78,234,567
+  Size: 125.67 GB
+  Replicas: 1
+  Refresh interval: 1s
+
+================================================================================
+PRODUCTION PREPARATION COMPLETE
+================================================================================
+
+Your indices are now ready for production use!
+```
+
+### Manual Settings Update (Alternative)
+
+If you prefer to update settings manually:
+
+```bash
+# Update places index
+curl -X PUT "http://localhost:9200/places/_settings" -H 'Content-Type: application/json' -d'
 {
-  "query": {
-    "bool": {
-      "must": {"prefix": {"place_id": "wd:"}},
-      "filter": {
-        "nested": {
-          "path": "locations",
-          "query": {
-            "script": {
-              "script": "doc[\"locations.geometry.type\"].value != \"Point\""
-            }
-          }
-        }
-      }
-    }
-  },
-  "size": 1
+  "index": {
+    "number_of_replicas": 1,
+    "refresh_interval": "1s"
+  }
 }'
+
+# Update toponyms index
+curl -X PUT "http://localhost:9200/toponyms/_settings" -H 'Content-Type: application/json' -d'
+{
+  "index": {
+    "number_of_replicas": 1,
+    "refresh_interval": "1s"
+  }
+}'
+```
+
+### Force Merge for Performance
+
+```bash
+# This improves query performance by consolidating segments
+curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
+curl -X POST "http://localhost:9200/toponyms/_forcemerge?max_num_segments=1"
+```
+
+Takes 30-60 minutes. Monitor:
+```bash
+curl http://localhost:9200/_cat/recovery?v
+```
+
+### Create Production Snapshot
+
+```bash
+# Register repository (one-time)
+curl -X PUT "http://localhost:9200/_snapshot/whg_backup" -H 'Content-Type: application/json' -d'
+{
+  "type": "fs",
+  "settings": {
+    "location": "/ix1/whcdh/es/repo"
+  }
+}'
+
+# Create snapshot
+curl -X PUT "http://localhost:9200/_snapshot/whg_backup/production_$(date +%Y%m%d)" -H 'Content-Type: application/json' -d'
+{
+  "indices": "places,toponyms",
+  "ignore_unavailable": true,
+  "include_global_state": false
+}'
+
+# Check snapshot status
+curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
 ```
 
 ---
@@ -390,24 +663,25 @@ curl http://localhost:9200/_cluster/health?pretty
 # Indices
 curl http://localhost:9200/_cat/indices?v
 
-# Document counts
-curl http://localhost:9200/places/_count?pretty
-curl http://localhost:9200/toponyms/_count?pretty
+# Document counts by source
+curl -X POST http://localhost:9200/places/_count?pretty -H 'Content-Type: application/json' -d'
+{"query": {"prefix": {"place_id": "gn:"}}}'
+# Repeat for other prefixes: wd:, pl:, tgn:, gb1900:, un:
 ```
 
 ### Monitor Disk Space
 
 ```bash
-df -h /ix1/whcdh/data/es-test/data/
+df -h /ix1/whcdh/es/data/
 ```
 
-Expected final size: ~150-230 GB
+Expected final size: ~200-300 GB total
 
 ### Check Logs
 
 ```bash
 # Elasticsearch logs
-tail -f /ix1/whcdh/data/es-test/logs/elasticsearch.log
+tail -f /ix1/whcdh/es/logs/elasticsearch.log
 
 # Python script output (if redirected)
 tail -f ingestion.log
@@ -425,7 +699,7 @@ tail -f ingestion.log
 ```bash
 curl -X DELETE http://localhost:9200/places
 curl -X DELETE http://localhost:9200/toponyms
-python authorities/create_indices.py
+python -m processing.create_indices
 # Start from Step 2
 ```
 
@@ -447,146 +721,33 @@ crc-interactive -s -c 4 -b 32 -t 48:00:00 -a whcdh  # 32GB
 2. **Adjust ES heap size:**
 ```bash
 # In ES startup command, change:
-ES_JAVA_OPTS='-Xms8g -Xmx8g'  # For 16GB+ RAM systems
+ES_JAVA_OPTS='-Xms8g -Xmx8g'  # For 32GB+ RAM systems
 ```
 
 3. **Reduce batch size:**
 ```python
-# Edit authorities/settings.py
+# Edit processing/settings.py
 BATCH_SIZE = 2500  # Reduce from 5000
-```
-
-### Elasticsearch Won't Start
-
-**Check logs:**
-```bash
-cat /ix1/whcdh/data/es-test/logs/elasticsearch.log
-```
-
-**Common issues:**
-- Port 9200 already in use (another ES instance running)
-- Insufficient disk space
-- Config file issues
-
-**Solution:**
-```bash
-# Kill existing ES processes
-pkill -f elasticsearch
-
-# Check disk space
-df -h /ix1/whcdh/data/
-
-# Verify config
-ls -la /ix1/whcdh/data/es-test/config/
-```
-
-### Network Timeouts
-
-Scripts have retry logic. Transient network errors are handled automatically.
-
-For persistent issues:
-- Check CRC network status
-- Verify external URLs are accessible (Wikidata, Commons)
-
-### Python Import Errors
-
-```bash
-# Verify you're in the correct directory
-pwd  # Should show /ix1/whcdh/whg-v4 or similar
-
-# Verify Python environment
-conda activate whg
-python -c "from authorities.settings import ES_HOST; print(ES_HOST)"
-```
-
-### tmux Session Lost
-
-```bash
-# List sessions
-tmux ls
-
-# Reattach
-tmux attach -t whg-ingest
-
-# If session is gone, check if processes still running
-ps aux | grep elasticsearch
-ps aux | grep python
-```
-
----
-
-## Post-Ingestion Optimization
-
-### Force Merge Indices (Recommended)
-
-After all ingestion is complete:
-
-```bash
-# This improves query performance by consolidating segments
-curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
-curl -X POST "http://localhost:9200/toponyms/_forcemerge?max_num_segments=1"
-```
-
-Takes 30-60 minutes. Monitor:
-```bash
-curl http://localhost:9200/_cat/recovery?v
-```
-
-### Create Snapshot (Backup)
-
-```bash
-# Register repository (one-time)
-curl -X PUT "http://localhost:9200/_snapshot/whg_backup" -H 'Content-Type: application/json' -d'
-{
-  "type": "fs",
-  "settings": {
-    "location": "/ix1/whcdh/data/es-test/repo"
-  }
-}'
-
-# Create snapshot
-curl -X PUT "http://localhost:9200/_snapshot/whg_backup/snapshot_$(date +%Y%m%d)" -H 'Content-Type: application/json' -d'
-{
-  "indices": "places,toponyms",
-  "ignore_unavailable": true,
-  "include_global_state": false
-}'
-
-# Check snapshot status
-curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
-```
-
-### Re-enable Replicas (If Disabled)
-
-```bash
-curl -X PUT "http://localhost:9200/places/_settings" -H 'Content-Type: application/json' -d'
-{
-  "index": {
-    "number_of_replicas": 1
-  }
-}'
-
-curl -X PUT "http://localhost:9200/toponyms/_settings" -H 'Content-Type: application/json' -d'
-{
-  "index": {
-    "number_of_replicas": 1
-  }
-}'
 ```
 
 ---
 
 ## Expected Timeline
 
-| Step | Runtime | Cumulative |
-|------|---------|------------|
-| 1. Create indices | < 1 min | 0:01 |
-| 2. Geonames places | 2-3 hrs | 2:01-3:01 |
-| 3. Geonames toponyms | 4-6 hrs | 6:01-9:01 |
-| 4. Wikidata places | 8-12 hrs | 14:01-21:01 |
-| 5. Wikidata geoshapes (optional) | 4-8 hrs | 18:01-29:01 |
-| **Total (core)** | **~15-22 hrs** | |
-| **Total (with geoshapes)** | **~19-30 hrs** | |
+| Step | Script | Runtime | Documents (approx) |
+|------|-----------|---------|-------------------|
+| 1 | create_indices | < 1 min | - |
+| 2 | geonames-places | 2-3 hrs | ~12 million |
+| 3 | geonames-toponyms | 4-6 hrs | ~17 million |
+| 4 | pleiades-places | 30-60 min | ~37,000 |
+| 5 | tgn-places | 2-4 hrs | ~2.5 million |
+| 6 | gb1900-places | 30-60 min | ~1.5 million |
+| 7 | un-countries | 5 min | ~200 |
+| 8 | wikidata-places | 8-12 hrs | ~10-15 million |
+| 9 | wikidata-geoshapes (optional) | 4-8 hrs | ~130,000 updates |
+| 10 | prepare_for_production | 30-60 min | Settings update |
+| **Total (core)** | | **~18-26 hrs** | |
+| **Total (with optional)** | | **~22-34 hrs** | |
 
 **Recommendation:** Request 48-hour session to be safe.
 
@@ -597,23 +758,13 @@ curl -X PUT "http://localhost:9200/toponyms/_settings" -H 'Content-Type: applica
 ### Document Counts
 
 ```bash
-# Geonames places
-curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
-{"query": {"prefix": {"place_id": "gn:"}}}'
-# Expected: ~12 million
-
-# Wikidata places
-curl -X POST http://localhost:9200/places/_count -H 'Content-Type: application/json' -d'
-{"query": {"prefix": {"place_id": "wd:"}}}'
-# Expected: ~10-15 million
-
 # Total places
 curl http://localhost:9200/places/_count?pretty
-# Expected: ~22-27 million
+# Expected: ~25-30 million
 
-# Toponyms
+# Total toponyms  
 curl http://localhost:9200/toponyms/_count?pretty
-# Expected: ~65-95 million
+# Expected: ~80-100 million
 ```
 
 ### Storage
@@ -623,9 +774,9 @@ curl http://localhost:9200/_cat/indices?v&h=index,store.size
 ```
 
 Expected:
-- **places**: 50-80 GB
-- **toponyms**: 100-150 GB
-- **Total**: 150-230 GB
+- **places**: 60-90 GB
+- **toponyms**: 120-180 GB
+- **Total**: 180-270 GB
 
 ---
 
@@ -642,6 +793,10 @@ curl http://localhost:9200/toponyms/_count?pretty
 # Sample documents
 curl http://localhost:9200/places/_search?size=1&pretty
 curl http://localhost:9200/toponyms/_search?size=1&pretty
+
+# Update settings for production
+curl -X PUT "http://localhost:9200/places/_settings" -H 'Content-Type: application/json' -d'
+{"index": {"number_of_replicas": 1, "refresh_interval": "1s"}}'
 
 # Force merge
 curl -X POST "http://localhost:9200/places/_forcemerge?max_num_segments=1"
@@ -662,27 +817,47 @@ curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
 ├── data/
 │   ├── elasticsearch-8.11.1.sif          # Singularity image
 │   ├── es/
-│   │   ├── data/                          # ES indices (150-230 GB)
+│   │   ├── data/                          # ES indices (180-270 GB)
 │   │   ├── logs/                          # ES logs
 │   │   ├── config/                        # ES config files
 │   │   └── repo/                          # Snapshots
 │   ├── geonames/
-│   │   ├── allCountries/allCountries.txt # Places (~12M)
-│   │   └── alternateNamesV2/alternateNamesV2.txt # Names (~17M)
-│   └── wikidata/
-│       └── latest-all/latest-all.json.gz  # Full dump (~110M entities)
-└── whg-v4/                                # Code repository
-    ├── authorities/
+│   │   ├── allCountries/allCountries.zip  # Places (~12M)
+│   │   └── alternateNamesV2/alternateNamesV2.zip # Names (~17M)
+│   ├── wikidata/
+│   │   ├── latest-all/latest-all.json.gz  # Full dump (~110M entities)
+│   │   └── wikidata_geoshape_refs.jsonl   # Geoshape references
+│   ├── pleiades/
+│   │   └── pleiades-places-latest/pleiades-places-latest.json.gz
+│   ├── tgn/
+│   │   └── TGNOut_PlaceMap/TGNOut_PlaceMap.zip
+│   ├── gb1900/
+│   │   └── GB1900_gazetteer_abridged_july_2018/
+│   └── natural_earth/
+│       └── ne_10m_admin_0_countries.zip
+└── elastic/                               # Code repository
+    ├── processing/
     │   ├── create_indices.py
+    │   ├── prepare_for_production.py
     │   ├── geonames-places.py
     │   ├── geonames-toponyms.py
+    │   ├── pleiades-places.py
+    │   ├── tgn-places.py
+    │   ├── gb1900-places.py
     │   ├── wikidata-places.py
     │   ├── wikidata-geoshapes.py
+    │   ├── un-countries.py
     │   ├── helpers.py
-    │   └── settings.py
+    │   ├── settings.py
+    │   └── utilities.py
+    ├── toponyms/
+    │   ├── generate_phonetic_features.py
+    │   └── generate_bilstm_embeddings.py
     └── schemas/
         ├── places.json
-        └── toponyms.json
+        ├── places_pipeline.json
+        ├── toponyms.json
+        └── toponyms_pipeline.json
 ```
 
 ---
@@ -691,3 +866,4 @@ curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
 
 - **CRC Documentation:** https://crc.pitt.edu/
 - **Elasticsearch Docs:** https://www.elastic.co/guide/en/elasticsearch/reference/8.11/
+- **Project Repository:** https://github.com/WorldHistoricalGazetteer/whg-v4
