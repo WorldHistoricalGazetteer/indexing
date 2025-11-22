@@ -158,7 +158,7 @@ All Python commands should be run from this directory so imports work correctly.
 ### Step 1: Create Indices (< 1 minute)
 
 ```bash
-python -m authorities/create_indices.py
+python -m processing/create_indices.py
 ```
 
 **Expected output:**
