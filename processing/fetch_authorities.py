@@ -79,7 +79,6 @@ def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
         raise RuntimeError(f"HTTP error during download: {final_url}") from e
 
 
-
 def update_authority_files(
         namespaces: str | None = None,
         authorities: list = AUTHORITIES,
@@ -104,8 +103,17 @@ def update_authority_files(
             target = _target_filename(file_cfg, ns)
             target.parent.mkdir(parents=True, exist_ok=True)
 
-            if _needs_update(target, age):
-                _download_with_resume(file_cfg["url"], target)
+            if not _needs_update(target, age):
+                continue
+
+            url = file_cfg["url"]
+
+            try:
+                _download_with_resume(url, target)
+            except Exception as exc:
+                print(f"[WARN] Skipping update for {ns}:{target.name} — {exc}")
+                # IMPORTANT: continue with next file; do NOT delete or replace anything.
+                continue
 
 
 if __name__ == "__main__":
