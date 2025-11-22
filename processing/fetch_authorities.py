@@ -46,15 +46,27 @@ def _target_filename(file_cfg: dict, namespace: str) -> Path:
 def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
     dest.parent.mkdir(parents=True, exist_ok=True)
 
+    # Resolve redirects before starting a streamed download
+    try:
+        head = httpx.head(url, follow_redirects=True, timeout=10.0)
+        if head.status_code >= 400:
+            raise RuntimeError(f"HEAD failed for {url} (HTTP {head.status_code})")
+        final_url = str(head.url)
+    except httpx.RequestError as e:
+        raise RuntimeError(f"Redirect resolution failed: {url}") from e
+
     temp = dest.with_suffix(dest.suffix + ".part")
     resume_pos = temp.stat().st_size if temp.exists() else 0
 
     headers = {"Range": f"bytes={resume_pos}-"} if resume_pos > 0 else {}
 
     try:
-        with httpx.stream("GET", url, headers=headers, timeout=60.0) as resp:
+        # Now stream the resolved URL
+        with httpx.stream("GET", final_url, headers=headers, timeout=60.0) as resp:
             if resp.status_code not in (200, 206):
-                raise RuntimeError(f"Download failed: {url} (HTTP {resp.status_code})")
+                raise RuntimeError(
+                    f"Download failed: {final_url} (HTTP {resp.status_code})"
+                )
 
             mode = "ab" if resume_pos > 0 else "wb"
             with temp.open(mode) as f:
@@ -64,7 +76,8 @@ def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
         temp.replace(dest)
 
     except httpx.RequestError as e:
-        raise RuntimeError(f"HTTP error during download: {url}") from e
+        raise RuntimeError(f"HTTP error during download: {final_url}") from e
+
 
 
 def update_authority_files(
