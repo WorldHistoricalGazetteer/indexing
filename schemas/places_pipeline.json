@@ -1,0 +1,17 @@
+{
+  "description": "Extract namespace from place_id",
+  "processors": [
+    {
+      "script": {
+        "lang": "painless",
+        "source": "if (ctx.place_id != null && ctx.place_id.contains(':')) { ctx.namespace = ctx.place_id.splitOnToken(':')[0]; }"
+      }
+    },
+    {
+      "set": {
+        "field": "indexed_at",
+        "value": "{{_ingest.timestamp}}"
+      }
+    }
+  ]
+}

@@ -1,11 +1,15 @@
 {
   "settings": {
-    "number_of_shards": 3,
-    "number_of_replicas": 1
+    "number_of_shards": 9,
+    "number_of_replicas": 0,
+    "refresh_interval": "-1"
   },
   "mappings": {
     "properties": {
       "place_id": {
+        "type": "keyword"
+      },
+      "namespace": {
         "type": "keyword"
       },
       "label": {
@@ -15,6 +19,9 @@
             "type": "keyword"
           }
         }
+      },
+      "toponyms": {
+        "type": "keyword"
       },
       "ccodes": {
         "type": "keyword"
@@ -75,14 +82,56 @@
           },
           "label": {
             "type": "text"
+          },
+          "source": {
+            "type": "keyword"
+          },
+          "certainty": {
+            "type": "float"
+          },
+          "method": {
+            "type": "keyword"
+          }
+        }
+      },
+      "clusters": {
+        "type": "nested",
+        "properties": {
+          "cluster_id": {
+            "type": "keyword"
+          },
+          "level": {
+            "type": "keyword"
+          },
+          "certainty": {
+            "type": "float"
+          },
+          "is_canonical": {
+            "type": "boolean"
+          },
+          "cluster_size": {
+            "type": "integer"
+          }
+        }
+      },
+      "canonical_ids": {
+        "properties": {
+          "strict": {
+            "type": "keyword"
+          },
+          "moderate": {
+            "type": "keyword"
+          },
+          "loose": {
+            "type": "keyword"
           }
         }
       },
       "whg_published": {
         "type": "boolean"
       },
-      "source": {
-        "type": "keyword"
+      "indexed_at": {
+        "type": "date"
       }
     }
   }
