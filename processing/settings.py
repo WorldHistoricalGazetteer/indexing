@@ -3,8 +3,6 @@ BATCH_SIZE = 5000
 
 DATA_DIR = "/ix1/whcdh/data/"
 
-NATIVE_LAND_API_KEY = ''  # Use Native Land API Key from https://native-land.ca/dashboard
-
 # Remote Dataset Configurations
 AUTHORITIES = [
     {  # 2024: 37k+ places
@@ -148,20 +146,21 @@ AUTHORITIES = [
         'api_item': '',
         'citation': 'Native Land Digital. https://native-land.ca/',
         'files': [
+            # Use Native Land API Key from https://native-land.ca/dashboard: append to url as ?key=YOUR_API_KEY
             {
-                'url': f'https://native-land.ca/api/polygons/geojson/territories?key={NATIVE_LAND_API_KEY}',
+                'url': f'https://native-land.ca/api/polygons/geojson/territories',
                 'name': 'territories.json',
                 'file_type': 'json',
                 'item_path': 'features',
             },
             {
-                'url': f'https://native-land.ca/api/polygons/geojson/languages?key={NATIVE_LAND_API_KEY}',
+                'url': f'https://native-land.ca/api/polygons/geojson/languages',
                 'name': 'languages.json',
                 'file_type': 'json',
                 'item_path': 'features',
             },
             {
-                'url': f'https://native-land.ca/api/polygons/geojson/treaties?key={NATIVE_LAND_API_KEY}',
+                'url': f'https://native-land.ca/api/polygons/geojson/treaties',
                 'name': 'treaties.json',
                 'file_type': 'json',
                 'item_path': 'features',

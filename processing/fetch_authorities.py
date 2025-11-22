@@ -8,6 +8,26 @@ from processing.settings import DATA_DIR, AUTHORITIES
 
 ONE_YEAR = 365 * 24 * 3600
 
+NL_KEY_FILE = Path(f"{DATA_DIR}/authorities/nl/.nl_api_key")
+
+def get_native_land_key(cli_key: str | None = None) -> str | None:
+    """
+    Returns the Native Land API key to use:
+    1. Use CLI-provided key if given.
+    2. Else, load cached key if it exists.
+    3. Else, return None.
+    """
+    if cli_key:
+        # Cache key
+        NL_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        NL_KEY_FILE.write_text(cli_key)
+        return cli_key
+
+    if NL_KEY_FILE.exists():
+        return NL_KEY_FILE.read_text().strip()
+
+    return None
+
 
 def _needs_update(path: Path, age: int) -> bool:
     if age == 0:
@@ -118,11 +138,26 @@ def update_authority_files(
 
 if __name__ == "__main__":
     import argparse
+    from urllib.parse import urlencode, urlparse, urlunparse, parse_qsl
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--namespaces", default=None)
     parser.add_argument("-a", "--age", type=int, default=365)
+    parser.add_argument("--nl-api-key", default=None, help="Native Land API Key")
     args = parser.parse_args()
+    nl_key = get_native_land_key(args.nl_api_key)
+
+    # Inject key into NativeLand URLs if available
+    if nl_key:
+        for auth in AUTHORITIES:
+            if auth["namespace"] != "nl":
+                continue
+            for file_cfg in auth.get("files", []):
+                url_parts = list(urlparse(file_cfg["url"]))
+                query = dict(parse_qsl(url_parts[4]))
+                query["key"] = nl_key
+                url_parts[4] = urlencode(query)
+                file_cfg["url"] = urlunparse(url_parts)
 
     update_authority_files(
         namespaces=args.namespaces,
