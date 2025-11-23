@@ -11,7 +11,7 @@ from elasticsearch8 import Elasticsearch, helpers
 from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from processing.utilities import stream_file
 
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_geonames_line(line):
