@@ -12,7 +12,7 @@ from elasticsearch8 import Elasticsearch, helpers
 from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from processing.utilities import stream_file
 
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_year(year_str):
@@ -329,9 +329,7 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
 
 
 if __name__ == "__main__":
-    # Updated to match settings.py configuration
-    # File path updated to match fetch_authorities.py structure
-    ALTERNATENAMES_FILE = f"{DATA_DIR}/GeoNames/alternateNamesV2.zip"
+    ALTERNATENAMES_FILE = f"{DATA_DIR}authorities/gn/alternateNamesV2.zip"
     TOPONYMS_INDEX = "toponyms"
     PLACES_INDEX = "places"
 
