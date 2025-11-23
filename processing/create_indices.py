@@ -1,12 +1,13 @@
-# processing/create_indices.py
-
 import json
 import time
 
 from elasticsearch8 import Elasticsearch
 from processing.settings import ES_HOST
 
-es = Elasticsearch(ES_HOST)
+# FIX: Set a sufficient request_timeout (e.g., 60 seconds) at the client level.
+# This ensures the underlying HTTP library (urllib3) waits long enough
+# for the index creation response, preventing the ReadTimeoutError.
+es = Elasticsearch(ES_HOST, request_timeout=60)
 
 
 def create_pipeline(pipeline_name, pipeline_file):
@@ -19,11 +20,15 @@ def create_pipeline(pipeline_name, pipeline_file):
 
     # Delete pipeline if it exists
     try:
-        if es.ingest.get_pipeline(id=pipeline_name):
-            print(f"Pipeline '{pipeline_name}' already exists. Deleting...")
-            es.ingest.delete_pipeline(id=pipeline_name)
-    except:
-        pass  # Pipeline doesn't exist
+        # Use get_pipeline() to check existence, or use exists_pipeline() in newer ES versions
+        es.ingest.delete_pipeline(id=pipeline_name)
+        print(f"Pipeline '{pipeline_name}' already existed. Deleting...")
+    except Exception as e:
+        # Handle case where the pipeline does not exist (404 error)
+        if 'not found' not in str(e):
+             # Only print if it's an unexpected error
+             print(f"Error checking/deleting pipeline '{pipeline_name}': {e}")
+        pass
 
     # Create pipeline
     print(f"Creating pipeline '{pipeline_name}'...")
@@ -48,14 +53,16 @@ def create_index(index_name, schema_file, pipeline=None):
 
     if es.indices.exists(index=index_name):
         print(f"Index '{index_name}' already exists. Deleting...")
-        es.indices.delete(index=index_name)
-        # Wait for deletion
+        # The API-level timeout is set here to ensure the server has time to complete the deletion.
+        es.indices.delete(index=index_name, timeout="60s")
+        # Wait for deletion completion
         for _ in range(30):
             if not es.indices.exists(index=index_name):
                 break
             time.sleep(1)
 
     print(f"Creating index '{index_name}'...")
+    # This timeout is for the server-side operation; the client timeout is now set globally.
     es.indices.create(index=index_name, body=schema, timeout="60s")
     print(f"Index '{index_name}' created successfully.")
 
