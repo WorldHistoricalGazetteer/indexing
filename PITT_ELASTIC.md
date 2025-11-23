@@ -185,7 +185,7 @@ curl http://localhost:9200/_cat/indices?v
 ### Step 2: Index Geonames Places (2-3 hours)
 
 ```bash
-python -m processing.geonames-places
+python -m authorities.geonames-places
 ```
 
 **Input file:** `/ix1/whcdh/data/geonames/allCountries/allCountries.zip`
@@ -201,7 +201,7 @@ watch -n 30 'curl -s http://localhost:9200/places/_count | jq .'
 ### Step 3: Index Geonames Toponyms (4-6 hours)
 
 ```bash
-python -m processing.geonames-toponyms
+python -m authorities.geonames-toponyms
 ```
 
 **Input file:** `/ix1/whcdh/data/geonames/alternateNamesV2/alternateNamesV2.zip`
@@ -215,7 +215,7 @@ python -m processing.geonames-toponyms
 ### Step 4: Index Pleiades (30-60 minutes)
 
 ```bash
-python -m processing.pleiades-places
+python -m authorities.pleiades-places
 ```
 
 **Input file:** `/ix1/whcdh/data/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz`
@@ -230,7 +230,7 @@ pip install ijson --break-system-packages
 ### Step 5: Index TGN (2-4 hours)
 
 ```bash
-python -m processing.tgn-places
+python -m authorities.tgn-places
 ```
 
 **Input file:** `/ix1/whcdh/data/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.zip`
@@ -245,7 +245,7 @@ python -m processing.tgn-places
 ### Step 6: Index GB1900 (30-60 minutes)
 
 ```bash
-python -m processing.gb1900-places
+python -m authorities.gb1900-places
 ```
 
 **Input file:** `/ix1/whcdh/data/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip`
@@ -257,7 +257,7 @@ python -m processing.gb1900-places
 ### Step 7: Index Wikidata Places (8-12 hours)
 
 ```bash
-python -m processing.wikidata-places
+python -m authorities.wikidata-places
 ```
 
 **Input file:** `/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz`
@@ -290,7 +290,7 @@ Skipped (non-geographic): 31,309,199
 ### Step 8: Fetch Wikidata Geoshapes (Optional, 4-8 hours)
 
 ```bash
-python -m processing.wikidata-geoshapes
+python -m authorities.wikidata-geoshapes
 ```
 
 This step fetches complex geometries for Wikidata places that have them (~130k places).
@@ -300,7 +300,7 @@ This step fetches complex geometries for Wikidata places that have them (~130k p
 ### Step 9: Index UN Countries (< 5 minutes)
 
 ```bash
-python -m processing.un-countries
+python -m authorities.un-countries
 ```
 
 Downloads Natural Earth data and indexes UN member countries with high-quality boundary geometries.
@@ -429,7 +429,7 @@ curl -X POST "http://localhost:9200/toponyms/_forcemerge?max_num_segments=1"
 ### Step 7: Index UN Countries (5 minutes)
 
 ```bash
-python -m processing.un-countries
+python -m authorities.un-countries
 ```
 
 **Note:** Downloads Natural Earth data automatically if not present. Includes country boundaries and ISO codes.
@@ -439,7 +439,7 @@ python -m processing.un-countries
 ### Step 8: Index Wikidata Places (8-12 hours)
 
 ```bash
-python -m processing.wikidata-places
+python -m authorities.wikidata-places
 ```
 
 **Input file:** `/ix1/whcdh/data/wikidata/latest-all/latest-all.json.gz`
@@ -465,7 +465,7 @@ Processed 100,000 entities... (places: 8234, toponyms: 42156, skipped: 49610)
 This step fetches complex geometries (polygons/lines) for Wikidata places.
 
 ```bash
-python -m processing.wikidata-geoshapes
+python -m authorities.wikidata-geoshapes
 ```
 
 **Confirmation prompt:**

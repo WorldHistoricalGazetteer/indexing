@@ -149,9 +149,7 @@ def index_batches(file_path, index_name):
 
 
 if __name__ == "__main__":
-    # Updated to match settings.py configuration
-    # File path updated to match fetch_authorities.py structure
-    GEONAMES_FILE = f"{DATA_DIR}/GeoNames/allCountries.zip"
+    GEONAMES_FILE = f"{DATA_DIR}authorities/gn/allCountries.zip"
     PLACES_INDEX = "places"
 
     print(f"Starting to index Geonames places from {GEONAMES_FILE}")
