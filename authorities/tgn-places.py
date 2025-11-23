@@ -422,7 +422,10 @@ def index_tgn(zip_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    TGN_FILE = f"{DATA_DIR}/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.zip"
+    # Updated to match settings.py configuration
+    # File path updated to match fetch_authorities.py structure
+    # Note: settings.py URL points to explicit.zip which contains TGNOut_PlaceMap.nt
+    TGN_FILE = f"{DATA_DIR}/TGN/explicit.zip"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 

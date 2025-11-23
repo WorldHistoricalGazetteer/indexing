@@ -423,7 +423,9 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    PLEIADES_FILE = f"{DATA_DIR}/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz"
+    # Updated to match settings.py configuration
+    # File path updated to match fetch_authorities.py structure
+    PLEIADES_FILE = f"{DATA_DIR}/Pleiades/pleiades-places-latest.json.gz"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 

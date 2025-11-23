@@ -18,6 +18,9 @@ Each country gets:
 - Representative point (capital or geometric centroid)
 - UN membership status
 - Region/subregion classification
+
+Updated to use namespace 'un' and new file paths from settings.py
+Note: settings.py specifies namespace 'un' for ISO3166 dataset
 """
 
 import json
@@ -85,7 +88,7 @@ def download_natural_earth(data_dir):
 
     Returns: Path to the downloaded ZIP file
     """
-    ne_dir = Path(data_dir) / "natural_earth"
+    ne_dir = Path(data_dir) / "ISO3166"
     ne_dir.mkdir(parents=True, exist_ok=True)
 
     zip_path = ne_dir / "ne_10m_admin_0_countries.zip"
@@ -144,7 +147,7 @@ def read_shapefile_from_zip(zip_path):
         print(f"Found shapefile: {shp_name}")
 
         # Extract all related files (.shp, .shx, .dbf, .prj)
-        temp_dir = Path(DATA_DIR) / "natural_earth" / "temp"
+        temp_dir = Path(DATA_DIR) / "ISO3166" / "temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
         for ext in ['.shp', '.shx', '.dbf', '.prj', '.cpg']:
@@ -231,7 +234,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     iso_a3 = props.get('ISO_A3', props.get('ISO_A3_EH', ''))
     iso_n3 = props.get('ISO_N3', '')
 
-    # Create place ID
+    # Create place ID using 'un' namespace as specified in settings.py
     place_id = f"un:{iso_a3.lower()}" if iso_a3 and iso_a3 != '-99' else f"un:{name.lower().replace(' ', '_')}"
 
     # Check UN membership
@@ -439,7 +442,7 @@ def index_un_countries(
     if download:
         zip_path = download_natural_earth(DATA_DIR)
     else:
-        zip_path = Path(DATA_DIR) / "natural_earth" / "ne_10m_admin_0_countries.zip"
+        zip_path = Path(DATA_DIR) / "ISO3166" / "ne_10m_admin_0_countries.zip"
         if not zip_path.exists():
             print(f"ERROR: Natural Earth data not found at {zip_path}")
             print("Run with download=True or manually download the data")

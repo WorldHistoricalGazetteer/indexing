@@ -1,5 +1,11 @@
 # processing/geonames-toponyms.py
 
+"""
+Index GeoNames alternate names (toponyms) data into Elasticsearch.
+
+Updated to use new file paths from settings.py
+"""
+
 import gzip
 from elasticsearch8 import Elasticsearch, helpers
 
@@ -323,7 +329,9 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
 
 
 if __name__ == "__main__":
-    ALTERNATENAMES_FILE = f"{DATA_DIR}geonames/alternateNamesV2/alternateNamesV2.zip"
+    # Updated to match settings.py configuration
+    # File path updated to match fetch_authorities.py structure
+    ALTERNATENAMES_FILE = f"{DATA_DIR}/GeoNames/alternateNamesV2.zip"
     TOPONYMS_INDEX = "toponyms"
     PLACES_INDEX = "places"
 

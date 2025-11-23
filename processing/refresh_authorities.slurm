@@ -2,8 +2,8 @@
 #SBATCH --job-name=refresh_authorities
 #SBATCH --output=/ix1/whcdh/logs/refresh_authorities_%j.log
 #SBATCH --error=/ix1/whcdh/logs/refresh_authorities_%j.err
-#SBATCH --time=04:00:00
-#SBATCH --mem=16G
+#SBATCH --time=12:00:00
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=4
 
 # Activate conda environment

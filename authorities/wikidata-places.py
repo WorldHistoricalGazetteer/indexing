@@ -1,5 +1,9 @@
 # processing/wikidata-places.py
 
+"""
+Index Wikidata places data into Elasticsearch.
+"""
+
 import gzip
 import json
 import requests
@@ -11,7 +15,9 @@ from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from processing.helpers import compute_representative_point
 
 es = Elasticsearch(ES_HOST)
-GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
+
+# Updated to match new directory structure
+GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "Wikidata", "wikidata_geoshape_refs.jsonl")
 
 
 def stream_wikidata(file_path):
@@ -433,7 +439,9 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
 
 
 if __name__ == "__main__":
-    WIKIDATA_FILE = f"{DATA_DIR}wikidata/latest-all/latest-all.json.gz"
+    # Updated to match settings.py configuration
+    # File path updated to match fetch_authorities.py structure
+    WIKIDATA_FILE = f"{DATA_DIR}/Wikidata/latest-all.json.gz"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 

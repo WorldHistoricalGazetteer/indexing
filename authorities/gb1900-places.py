@@ -5,6 +5,8 @@ Index GB1900 gazetteer data into Elasticsearch.
 
 GB1900 is a CSV file with place names transcribed from 1:10,560 Ordnance Survey maps
 of Great Britain (England, Scotland, Wales) from around 1900.
+
+Updated to use namespace 'gb' and new file paths from settings.py
 """
 
 import csv
@@ -58,7 +60,8 @@ def parse_gb1900_row(row):
     except (ValueError, TypeError):
         return None, None
 
-    place_id = f"gb1900:{pin_id}"
+    # Use 'gb' namespace as defined in settings.py
+    place_id = f"gb:{pin_id}"
 
     # Build toponyms array - GB1900 names are in English
     toponyms = [f"{name}@en"]
@@ -228,7 +231,10 @@ def index_gb1900(file_path, places_index, toponyms_index):
 
 
 if __name__ == "__main__":
-    GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
+    # Updated to match settings.py configuration
+    # Namespace: 'gb' (from settings.py)
+    # File path updated to match fetch_authorities.py structure
+    GB1900_FILE = f"{DATA_DIR}/GB1900/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 

@@ -1,5 +1,11 @@
 # processing/geonames-places.py
 
+"""
+Index GeoNames places data into Elasticsearch.
+
+Updated to use new file paths from settings.py
+"""
+
 import gzip
 import zipfile
 
@@ -146,7 +152,9 @@ def index_batches(file_path, index_name):
 
 
 if __name__ == "__main__":
-    GEONAMES_FILE = f"{DATA_DIR}geonames/allCountries/allCountries.zip"
+    # Updated to match settings.py configuration
+    # File path updated to match fetch_authorities.py structure
+    GEONAMES_FILE = f"{DATA_DIR}/GeoNames/allCountries.zip"
     PLACES_INDEX = "places"
 
     print(f"Starting to index Geonames places from {GEONAMES_FILE}")
