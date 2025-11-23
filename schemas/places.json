@@ -115,16 +115,11 @@
         }
       },
       "canonical_ids": {
+        "type": "object",
         "properties": {
-          "strict": {
-            "type": "keyword"
-          },
-          "moderate": {
-            "type": "keyword"
-          },
-          "loose": {
-            "type": "keyword"
-          }
+          "strict":    { "type": "keyword" },
+          "moderate":  { "type": "keyword" },
+          "loose":     { "type": "keyword" }
         }
       },
       "whg_published": {
