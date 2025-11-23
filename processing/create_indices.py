@@ -4,10 +4,7 @@ import time
 from elasticsearch8 import Elasticsearch
 from processing.settings import ES_HOST
 
-# FIX: Set a sufficient request_timeout (e.g., 60 seconds) at the client level.
-# This ensures the underlying HTTP library (urllib3) waits long enough
-# for the index creation response, preventing the ReadTimeoutError.
-es = Elasticsearch(ES_HOST, request_timeout=60)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def create_pipeline(pipeline_name, pipeline_file):
@@ -26,8 +23,8 @@ def create_pipeline(pipeline_name, pipeline_file):
     except Exception as e:
         # Handle case where the pipeline does not exist (404 error)
         if 'not found' not in str(e):
-             # Only print if it's an unexpected error
-             print(f"Error checking/deleting pipeline '{pipeline_name}': {e}")
+            # Only print if it's an unexpected error
+            print(f"Error checking/deleting pipeline '{pipeline_name}': {e}")
         pass
 
     # Create pipeline
