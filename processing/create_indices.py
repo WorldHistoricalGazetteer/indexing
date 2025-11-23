@@ -1,6 +1,8 @@
 # processing/create_indices.py
 
 import json
+import time
+
 from elasticsearch8 import Elasticsearch
 from processing.settings import ES_HOST
 
@@ -38,24 +40,23 @@ def create_index(index_name, schema_file, pipeline=None):
         schema_file: Path to the schema JSON file
         pipeline: Name of the default ingest pipeline (optional)
     """
-    # Read schema from file
     with open(schema_file, 'r') as f:
         schema = json.load(f)
 
-    # Add default pipeline if specified
     if pipeline:
-        if 'settings' not in schema:
-            schema['settings'] = {}
-        schema['settings']['default_pipeline'] = pipeline
+        schema.setdefault('settings', {})['default_pipeline'] = pipeline
 
-    # Delete index if it exists
     if es.indices.exists(index=index_name):
         print(f"Index '{index_name}' already exists. Deleting...")
         es.indices.delete(index=index_name)
+        # Wait for deletion
+        for _ in range(30):
+            if not es.indices.exists(index=index_name):
+                break
+            time.sleep(1)
 
-    # Create index
     print(f"Creating index '{index_name}'...")
-    es.indices.create(index=index_name, body=schema)
+    es.indices.create(index=index_name, body=schema, timeout="60s")
     print(f"Index '{index_name}' created successfully.")
 
 
