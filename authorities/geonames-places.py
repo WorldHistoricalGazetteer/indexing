@@ -6,9 +6,6 @@ Index GeoNames places data into Elasticsearch.
 Updated to use new file paths from settings.py
 """
 
-import gzip
-import zipfile
-
 from elasticsearch8 import Elasticsearch, helpers
 
 from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR

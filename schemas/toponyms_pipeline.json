@@ -4,28 +4,7 @@
     {
       "script": {
         "lang": "painless",
-        "source": """
-          // Parse toponym@lang or toponym@lang-variant format
-          if (ctx.name != null && ctx.name.contains('@')) {
-            String[] parts = ctx.name.splitOnToken('@');
-            if (parts.length == 2) {
-              ctx.name = parts[0];
-              ctx.name_lower = parts[0].toLowerCase();
-
-              String langPart = parts[1];
-              if (langPart.contains('-')) {
-                String[] langParts = langPart.splitOnToken('-');
-                ctx.lang = langParts[0];
-                ctx.lang_variant = langParts[1];
-              } else {
-                ctx.lang = langPart;
-              }
-            }
-          } else if (ctx.name != null) {
-            // Ensure name_lower exists even if no @ symbol
-            ctx.name_lower = ctx.name.toLowerCase();
-          }
-        """
+        "source": "          // Parse toponym@lang or toponym@lang-variant format\n          if (ctx.name != null && ctx.name.contains('@')) {\n            String[] parts = ctx.name.splitOnToken('@');\n            if (parts.length == 2) {\n              ctx.name = parts[0];\n              ctx.name_lower = parts[0].toLowerCase();\n\n              String langPart = parts[1];\n              if (langPart.contains('-')) {\n                String[] langParts = langPart.splitOnToken('-');\n                ctx.lang = langParts[0];\n                ctx.lang_variant = langParts[1];\n              } else {\n                ctx.lang = langPart;\n              }\n            }\n          } else if (ctx.name != null) {\n            // Ensure name_lower exists even if no @ symbol\n            ctx.name_lower = ctx.name.toLowerCase();\n          }"
       }
     },
     {
