@@ -104,7 +104,7 @@ def create_snapshot_repository(repo_name, location):
     print(f"Creating repository '{repo_name}' at location '{location}'...")
     try:
         es.snapshot.create_repository(
-            repository=repo_name,
+            name=repo_name,
             body={
                 "type": "fs",
                 "settings": {
@@ -132,7 +132,7 @@ def create_index_snapshot(index_name, repo_name="staging", suffix="_staging"):
 
     try:
         response = es.snapshot.create(
-            repository=repo_name,
+            name=repo_name,
             snapshot=snapshot_name,
             body={
                 "indices": index_name,
