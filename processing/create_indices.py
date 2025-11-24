@@ -64,32 +64,6 @@ def create_index(index_name, schema_file, pipeline=None):
     print(f"Index '{index_name}' created successfully.")
 
 
-def update_index_settings_for_production(index_name):
-    """
-    Update index settings for production use.
-    This sets replicas to 1 and refresh interval to 1s.
-    """
-    print(f"Updating {index_name} settings for production...")
-
-    # First, ensure index is not write-blocked
-    es.indices.put_settings(
-        index=index_name,
-        body={
-            "index.blocks.read_only_allow_delete": None
-        }
-    )
-
-    # Update settings for production
-    es.indices.put_settings(
-        index=index_name,
-        body={
-            "number_of_replicas": 1,
-            "refresh_interval": "1s"
-        }
-    )
-    print(f"✓ Updated {index_name} settings for production")
-
-
 if __name__ == "__main__":
     print("=" * 80)
     print("ELASTICSEARCH INDEX SETUP")
@@ -112,13 +86,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("SETUP COMPLETE!")
     print("=" * 80)
-    print("\nNext steps (examples):")
-    print("1. Run: python -m authorities.geonames-places")
-    print("2. Run: python -m authorities.geonames-toponyms")
-    print("3. Run: python -m authorities.tgn-places")
-    print("4. Run: python -m authorities.pleiades-places")
-    print("5. Run: python -m authorities.gb1900-places")
-    print("6. Run: python -m authorities.wikidata-places")
-    print("7. Run: python -m authorities.un-countries")
-    print("\nTo prepare for production after all ingestion:")
-    print("python -m processing.prepare_for_production")

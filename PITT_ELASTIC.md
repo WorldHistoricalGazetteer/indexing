@@ -53,6 +53,8 @@ ssh htc-nXXX  # Replace XXX with your allocated node number
 
 ### 3. Load Required Modules
 
+**DEPRECATED: SEE ES_STAGING.md FOR STAGING ES USAGE**
+
 ```bash
 module load singularity/3.9.6
 ```

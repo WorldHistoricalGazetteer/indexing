@@ -1,8 +1,9 @@
 {
   "settings": {
     "number_of_shards": 4,
-    "number_of_replicas": 0,
-    "refresh_interval": "-1",
+    "number_of_replicas": 1,
+    "refresh_interval": "30s",
+    "index.blocks.read_only_allow_delete": false,
     "analysis": {
       "analyzer": {
         "edge_ngram_analyzer": {

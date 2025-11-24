@@ -57,6 +57,7 @@ mv elasticsearch-8.11.1 es-bin
 
 ```
 mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
+mkdir -p /ix1/whcdh/es-staging/{data,logs,repo,config}
 ```
 
 ### Kibana
@@ -137,6 +138,29 @@ Location:
 
 ---
 
+## Basic Status Checks
+
+### Elasticsearch
+```
+curl -X GET "localhost:9200/_cluster/health?pretty"
+```
+### Kibana
+```
+curl -X GET "localhost:5601/api/status" -H "kbn-xsrf: true"
+```
+
+---
+## Create Indices
+
+> IMPORTANT: **Run this once only, as it will destroy existing indices!**
+
+```bash
+cd /ix1/whcdh/elastic
+python -m processing.create_indices
+```
+
+---
+
 ## Log Locations
 
 ### Elasticsearch
@@ -170,11 +194,13 @@ Local only unless tunneled:
 | Elasticsearch | [http://localhost:9200](http://localhost:9200) |
 | Kibana        | [http://localhost:5601](http://localhost:5601) |
 
-SSH tunnelling example:
+SSH tunnelling example for Kibana **from local machine**:
 
 ```
-ssh -L 5601:localhost:5601 gazetteer@<host>
+ssh -o PubkeyAuthentication=no -L 5602:localhost:5601 stg135@gazetteer.crcd.pitt.edu
 ```
+
+Then access Kibana at [http://localhost:5602](http://localhost:5602).
 
 ---
 
