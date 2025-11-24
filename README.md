@@ -46,22 +46,37 @@ source ~/.bashrc
 
 ```
 cd /ix1/whcdh
-wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.2.1-linux-x86_64.tar.gz
+
+# --- Download Elasticsearch 9.2.1 ---
+curl -L -O https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.2.1-linux-x86_64.tar.gz
+
+# --- Extract and Rename ---
 tar xf elasticsearch-9.2.1-linux-x86_64.tar.gz
 mv elasticsearch-9.2.1 es-bin
 rm elasticsearch-9.2.1-linux-x86_64.tar.gz
+
+# --- Create Data Directories ---
 mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
 mkdir -p /ix1/whcdh/es-staging/{data,logs,repo,config}
+
 ```
 
 ### Kibana (Bare-Metal)
 
 ```
 cd /ix1/whcdh
-wget https://artifacts.elastic.co/downloads/kibana/kibana-9.2.1-linux-x86_64.tar.gz
+
+# --- Download Kibana 9.2.1 ---
+curl -L -O https://artifacts.elastic.co/downloads/kibana/kibana-9.2.1-linux-x86_64.tar.gz
+
+# --- Extract and Rename ---
 tar xf kibana-9.2.1-linux-x86_64.tar.gz
 mv kibana-9.2.1 kibana-bin
+rm kibana-9.2.1-linux-x86_64.tar.gz
+
+# --- Create Data Directories ---
 mkdir -p /ix1/whcdh/kibana/{data,logs}
+
 ```
 
 ---

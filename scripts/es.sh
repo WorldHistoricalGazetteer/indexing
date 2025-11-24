@@ -2,34 +2,33 @@
 # ~/es
 # Single wrapper for Elasticsearch and Kibana
 
-ES_BIN="/ix1/whcdh/es-bin/bin/elasticsearch"
-ES_DATA="/ix1/whcdh/es/data"
-ES_LOGS="/ix1/whcdh/es/logs"
-ES_REPO="/ix1/whcdh/es/repo"
-
-KB_BIN="/ix1/whcdh/kibana-bin/bin/kibana"
-KB_DATA="/ix1/whcdh/kibana/data"
-KB_LOGS="/ix1/whcdh/kibana/logs/kibana.log"
-
-ES_PID_FILE="/ix1/whcdh/es/es.pid"
-KB_PID_FILE="/ix1/whcdh/kibana/kb.pid"
+# --- Load Environment Variables ---
+ENV_FILE="/ix1/whcdh/elastic/.env"
+if [ -f "$ENV_FILE" ]; then
+    source "$ENV_FILE"
+else
+    echo "ERROR: .env file not found at $ENV_FILE"
+    exit 1
+fi
 
 start_es() {
     if [ -f "$ES_PID_FILE" ] && kill -0 $(cat "$ES_PID_FILE") 2>/dev/null; then
         echo "Elasticsearch already running."
         return
     fi
-    echo "Starting Elasticsearch..."
+    echo "Starting Elasticsearch..."# Use the variable defined in the .env file
     cp /ix1/whcdh/elastic/config/elasticsearch.yml \
       /ix1/whcdh/es/config/elasticsearch.yml
-    nohup $ES_BIN \
-        -E path.data="$ES_DATA" \
-        -E path.logs="$ES_LOGS" \
-        -E path.repo="$ES_REPO" \
+
+    # Use the variables from the .env file (paths are updated with new names)
+    nohup $ES_BIN_PATH \
+        -E path.data="$ES_DATA_PATH" \
+        -E path.logs="$ES_LOGS_PATH" \
+        -E path.repo="$ES_REPO_ROOT" \
         -E discovery.type=single-node \
         -E xpack.security.enabled=false \
         -E network.host=0.0.0.0 \
-        > "$ES_LOGS/nohup.out" 2>&1 &
+        > "$ES_LOGS_PATH/nohup.out" 2>&1 &
     echo $! > "$ES_PID_FILE"
 }
 
