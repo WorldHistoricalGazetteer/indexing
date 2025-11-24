@@ -57,8 +57,6 @@ rm elasticsearch-9.2.1-linux-x86_64.tar.gz
 
 # --- Create Data Directories ---
 mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
-mkdir -p /ix1/whcdh/es-staging/{data,logs,repo,config}
-
 ```
 
 ### Kibana (Bare-Metal)

@@ -9,7 +9,8 @@
 #SBATCH --error=/ix1/whcdh/es-staging/logs/slurm-%j.err
 
 # Elasticsearch + Java installations
-ES_BIN_PATH=/ix1/whcdh/es-bin/bin/elasticsearch
+ES_HOME=/ix1/whcdh/es-bin
+ES_BIN_PATH=$ES_HOME/bin/elasticsearch
 JAVA_HOME=/ix1/whcdh/jdk-21.0.1
 export PATH="$JAVA_HOME/bin:$PATH"
 
@@ -21,6 +22,9 @@ CONF_DIR="$STAGING_ROOT/config"
 REPO_DIR="$STAGING_ROOT/repo"
 
 mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONF_DIR" "$REPO_DIR"
+
+# Copy required config files from ES installation
+cp -r $ES_HOME/config/* "$CONF_DIR/"
 
 # ES needs ES_PATH_CONF even if empty or minimal
 export ES_PATH_CONF="$CONF_DIR"
@@ -60,6 +64,8 @@ trap cleanup EXIT
 # Start Elasticsearch
 exec $ES_BIN_PATH \
     -E discovery.type=single-node \
+    -E cluster.name="es-staging-${SLURM_JOB_ID}" \
+    -E node.name="es-staging-node-${SLURM_JOB_ID}" \
     -E network.host=127.0.0.1 \
     -E http.port="$ES_PORT" \
     -E path.data="$DATA_DIR" \

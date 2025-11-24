@@ -16,18 +16,19 @@ start_es() {
         echo "Elasticsearch already running."
         return
     fi
-    echo "Starting Elasticsearch..."# Use the variable defined in the .env file
-    cp /ix1/whcdh/elastic/config/elasticsearch.yml \
-      /ix1/whcdh/es/config/elasticsearch.yml
+    echo "Starting Elasticsearch..."
 
-    # Use the variables from the .env file (paths are updated with new names)
+    # Use the variables from the .env file
     nohup $ES_BIN_PATH \
+        -E cluster.name="$ES_CLUSTER_NAME" \
+        -E node.name="$ES_NODE_NAME" \
         -E path.data="$ES_DATA_PATH" \
         -E path.logs="$ES_LOGS_PATH" \
         -E path.repo="$ES_REPO_ROOT" \
         -E discovery.type=single-node \
         -E xpack.security.enabled=false \
-        -E network.host=0.0.0.0 \
+        -E network.host="$ES_HOST_NAME" \
+        -E http.port="$ES_HOST_PORT" \
         > "$ES_LOGS_PATH/nohup.out" 2>&1 &
     echo $! > "$ES_PID_FILE"
 }
@@ -47,26 +48,26 @@ start_kb() {
         return
     fi
     echo "Waiting for Elasticsearch to be ready..."
-    while ! curl -s http://localhost:9200 >/dev/null 2>&1; do
+    while ! curl -s "$ES_HOST_URL" >/dev/null 2>&1; do
         sleep 2
     done
 
     echo "Starting Kibana..."
-    nohup /ix1/whcdh/kibana-bin/bin/kibana \
-          --path.data=/ix1/whcdh/kibana/data \
+    nohup "$KB_BIN_PATH" \
+          --path.data="${NFS_MOUNT}/kibana/data" \
             > /dev/null 2>&1 &
     echo $! > "$KB_PID_FILE"
 }
 
 launch_staging() {
-    STAGING_SCRIPT="/ix1/whcdh/elastic/processing/es_staging.sbatch"
+    STAGING_SCRIPT="${NFS_MOUNT}/elastic/processing/es_staging.sbatch"
 
     echo "Launching staging Elasticsearch..."
     JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
     echo "Launched staging ES as job $JOBID"
     squeue -j "$JOBID"
 
-    INFO="/ix1/whcdh/esinfo/es-$JOBID.env"
+    INFO="${NFS_MOUNT}/esinfo/es-$JOBID.env"
 
     echo -n "Waiting for ES info file..."
     while [ ! -f "$INFO" ]; do
@@ -86,14 +87,14 @@ launch_staging() {
 down_staging() {
     if [ -z "$JOBID" ]; then
         echo "ERROR: No staging JOBID exported in environment."
-        echo "If you lost it, inspect /ix1/whcdh/esinfo/"
+        echo "If you lost it, inspect ${NFS_MOUNT}/esinfo/"
         return 1
     fi
 
     echo "Stopping staging ES job $JOBID..."
     scancel "$JOBID"
 
-    INFO="/ix1/whcdh/esinfo/es-$JOBID.env"
+    INFO="${NFS_MOUNT}/esinfo/es-$JOBID.env"
     rm -f "$INFO"
 
     unset ES_NODE ES_PORT ES_DATA JOBID
@@ -167,13 +168,13 @@ case "$1" in
         echo "   kibana-restart    Restart Kibana only"
         echo
         echo " Staging ES via Slurm (use on login node and include full path):"
-        echo "   source /ix1/whcdh/elastic/scripts/es.sh -staging-start    Launch staging Elasticsearch instance"
-        echo "   source /ix1/whcdh/elastic/scripts/es.sh -staging-stop     Stop staging ES (requires JOBID exported)"
+        echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-start    Launch staging Elasticsearch instance"
+        echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-stop     Stop staging ES (requires JOBID exported)"
         echo
         echo "Notes:"
         echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"
         echo "   are exported into this shell."
         echo " * Connect from your local machine via:"
-        echo "       ssh -L 9200:localhost:\$ES_PORT <user>@gazetteer.crcd.pitt.edu"
+        echo "       ssh -L ${ES_HOST_PORT}:${ES_HOST_NAME}:\$ES_PORT ${USER}@gazetteer.crcd.pitt.edu"
         ;;
 esac
