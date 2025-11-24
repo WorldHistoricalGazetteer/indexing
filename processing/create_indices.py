@@ -1,7 +1,7 @@
 import json
 import time
 
-from elasticsearch8 import Elasticsearch
+from elasticsearch import Elasticsearch
 from processing.settings import ES_HOST
 
 es = Elasticsearch(ES_HOST, request_timeout=180)

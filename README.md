@@ -44,28 +44,23 @@ source ~/.bashrc
 
 ## Elasticsearch Installation (Bare-Metal)
 
-1. Download tarball (as user)
-2. Extract and rename:
-
 ```
 cd /ix1/whcdh
-tar xf elasticsearch-8.11.1-linux-x86_64.tar.gz
-mv elasticsearch-8.11.1 es-bin
-```
-
-3. Create data/log/repo dirs:
-
-```
+wget https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.2.1-linux-x86_64.tar.gz
+tar xf elasticsearch-9.2.1-linux-x86_64.tar.gz
+mv elasticsearch-9.2.1 es-bin
+rm elasticsearch-9.2.1-linux-x86_64.tar.gz
 mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
 mkdir -p /ix1/whcdh/es-staging/{data,logs,repo,config}
 ```
 
-### Kibana
+### Kibana (Bare-Metal)
 
 ```
 cd /ix1/whcdh
-tar xf kibana-8.11.1-linux-x86_64.tar.gz
-mv kibana-8.11.1 kibana-bin
+wget https://artifacts.elastic.co/downloads/kibana/kibana-9.2.1-linux-x86_64.tar.gz
+tar xf kibana-9.2.1-linux-x86_64.tar.gz
+mv kibana-9.2.1 kibana-bin
 mkdir -p /ix1/whcdh/kibana/{data,logs}
 ```
 
@@ -152,12 +147,12 @@ curl -X GET "localhost:5601/api/status" -H "kbn-xsrf: true"
 ---
 ## Create Indices
 
-> IMPORTANT: **Run this once only, as it will destroy existing indices!**
-
-```bash
-cd /ix1/whcdh/elastic
-python -m processing.create_indices
-```
+> IMPORTANT: **Run this _once only_, as it will destroy existing indices!**
+>
+>```bash
+>cd /ix1/whcdh/elastic
+>python -m processing.create_indices
+>```
 
 ---
 
