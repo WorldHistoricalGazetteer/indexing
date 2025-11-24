@@ -20,6 +20,8 @@ start_es() {
         return
     fi
     echo "Starting Elasticsearch..."
+    cp /ix1/whcdh/elastic/config/elasticsearch.yml \
+      /ix1/whcdh/es/config/elasticsearch.yml
     nohup $ES_BIN \
         -E path.data="$ES_DATA" \
         -E path.logs="$ES_LOGS" \

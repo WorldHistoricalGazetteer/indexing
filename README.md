@@ -23,10 +23,16 @@ git commit -m "Make wrapper script executable"
 git push origin main
 ```
 
-Create an alias by using `vi` to add to `~/.bash_profile`:
+Create an alias by using `vi` to add to `~/.bashrc`:
 
 ```bash
 alias es='/ix1/whcdh/elastic/scripts/es.sh'
+```
+
+And then update your current shell:
+
+```bash
+source ~/.bashrc
 ```
 
 > Subsequently, update to latest:
@@ -53,12 +59,6 @@ mv elasticsearch-8.11.1 es-bin
 mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
 ```
 
-4. Copy config from repository to runtime location:
-
-```
-cp /ix1/whcdh/elastic/config/elasticsearch.yml /ix1/whcdh/es/config/elasticsearch.yml
-```
-
 ### Kibana
 
 ```
@@ -78,9 +78,9 @@ All configuration is under:
 /ix1/whcdh/elastic/config/elasticsearch.yml
 ```
 
-This file is passed directly to Elasticsearch via the wrapper script.
+This file is copied to the Elasticsearch config folder via the wrapper script.
 
-You **must not** put copies in `$HOME` or anywhere else. The repo copy is authoritative.
+The repo copy is authoritative. Do not edit the live copy directly as it will be overwritten on next start.
 
 ## Elasticsearch Wrapper Script (`scripts/es.sh`)
 
