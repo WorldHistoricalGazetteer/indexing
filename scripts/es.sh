@@ -166,9 +166,9 @@ case "$1" in
         echo "   kibana-stop       Stop Kibana only"
         echo "   kibana-restart    Restart Kibana only"
         echo
-        echo " Staging ES via Slurm:"
-        echo "   -staging-start    Launch staging Elasticsearch instance"
-        echo "   -staging-stop     Stop staging ES (requires JOBID exported)"
+        echo " Staging ES via Slurm (use on login node and include full path):"
+        echo "   source /ix1/whcdh/elastic/scripts/es.sh -staging-start    Launch staging Elasticsearch instance"
+        echo "   source /ix1/whcdh/elastic/scripts/es.sh -staging-stop     Stop staging ES (requires JOBID exported)"
         echo
         echo "Notes:"
         echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"

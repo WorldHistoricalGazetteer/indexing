@@ -9,7 +9,7 @@
 #SBATCH --error=/ix1/whcdh/es-staging/logs/slurm-%j.err
 
 # Elasticsearch + Java installations
-ES_HOME=/ix1/whcdh/elasticsearch-8.15.0
+ES_BIN_PATH=/ix1/whcdh/es-bin/bin/elasticsearch
 JAVA_HOME=/ix1/whcdh/jdk-21.0.1
 export PATH="$JAVA_HOME/bin:$PATH"
 
@@ -58,7 +58,7 @@ cleanup() {
 trap cleanup EXIT
 
 # Start Elasticsearch
-exec "$ES_HOME/bin/elasticsearch" \
+exec $ES_BIN_PATH \
     -E discovery.type=single-node \
     -E network.host=127.0.0.1 \
     -E http.port="$ES_PORT" \
