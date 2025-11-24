@@ -866,4 +866,3 @@ curl http://localhost:9200/_snapshot/whg_backup/_all?pretty
 
 - **CRC Documentation:** https://crc.pitt.edu/
 - **Elasticsearch Docs:** https://www.elastic.co/guide/en/elasticsearch/reference/8.11/
-- **Project Repository:** https://github.com/WorldHistoricalGazetteer/whg-v4

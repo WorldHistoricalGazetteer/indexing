@@ -87,7 +87,6 @@ def parse_geonames_line(line):
                     "lon": float(fields[5]),
                     "lat": float(fields[4])
                 }
-                # timespans will be added if/when we have historical location data
             }
         ],
         "types": [
