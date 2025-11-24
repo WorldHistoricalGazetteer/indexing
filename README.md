@@ -156,10 +156,16 @@ source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
 
 ## Basic Status Checks
 
-### Elasticsearch
+### Elasticsearch Primary
 ```
 curl -X GET "localhost:9200/_cluster/health?pretty"
 ```
+
+### Elasticsearch Staging
+```
+curl -X GET "localhost:9201/_cluster/health?pretty"
+```
+
 ### Kibana
 ```
 curl -X GET "localhost:5601/api/status" -H "kbn-xsrf: true"

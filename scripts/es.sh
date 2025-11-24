@@ -108,6 +108,33 @@ down_staging() {
 }
 
 
+check_staging() {
+    if [ -z "$JOBID" ] || [ -z "$ES_NODE" ] || [ -z "$ES_PORT" ]; then
+        echo "ERROR: No staging instance info in environment."
+        echo "Run 'source es.sh -staging-start' first or source the env file."
+        return 1
+    fi
+
+    echo "Checking ES health on $ES_NODE:$ES_PORT..."
+    ssh "$ES_NODE" "curl -s http://localhost:$ES_PORT/_cluster/health?pretty"
+}
+
+status_staging() {
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: No staging JOBID in environment."
+        return 1
+    fi
+
+    echo "Job status:"
+    squeue -j "$JOBID"
+    echo
+    echo "ES info:"
+    echo "  Node: $ES_NODE"
+    echo "  Port: $ES_PORT"
+    echo "  Data: $ES_DATA"
+}
+
+
 stop_kb() {
     if [ -f "$KB_PID_FILE" ]; then
         kill -9 $(cat "$KB_PID_FILE") 2>/dev/null && rm -f "$KB_PID_FILE"
@@ -158,6 +185,12 @@ case "$1" in
     -staging-stop)
         down_staging
         ;;
+    -staging-status)
+        status_staging
+        ;;
+    -staging-health)
+        check_staging
+        ;;
     *)
         echo "Usage: $0 OPTIONS"
         echo
@@ -175,6 +208,8 @@ case "$1" in
         echo " Staging ES via Slurm (use on login node and include full path):"
         echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-start    Launch staging Elasticsearch instance"
         echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-stop     Stop staging ES (requires JOBID exported)"
+        echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-status   Show staging ES job status"
+        echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-health   Check health of staging ES instance"
         echo
         echo "Notes:"
         echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"
