@@ -108,11 +108,44 @@ cleanup() {
     echo "Shutdown initiated..."
     echo "=========================================="
 
-    # Create final snapshots before cleanup
+    # Create final snapshots (this waits for completion)
     create_final_snapshots
 
+    # Give ES time to finalize repository metadata
+    echo "Waiting for Elasticsearch to finalize snapshot metadata (15 seconds)..."
+    sleep 15
+
+    # Gracefully stop ES to ensure all data is flushed
+    if [ -n "$ES_PID" ] && kill -0 "$ES_PID" 2>/dev/null; then
+        echo "Sending shutdown signal to Elasticsearch (PID: $ES_PID)..."
+        kill -TERM "$ES_PID"
+
+        # Wait for graceful shutdown (up to 60 seconds)
+        for i in {1..60}; do
+            if ! kill -0 "$ES_PID" 2>/dev/null; then
+                echo "Elasticsearch stopped gracefully."
+                break
+            fi
+            echo -n "."
+            sleep 1
+        done
+        echo
+
+        # Force kill if still running
+        if kill -0 "$ES_PID" 2>/dev/null; then
+            echo "WARNING: Force killing Elasticsearch (data may not be fully flushed)"
+            kill -9 "$ES_PID" 2>/dev/null
+            sleep 5
+        fi
+    fi
+
+    # Additional sync time for NFS
+    echo "Syncing filesystem..."
+    sync
+    sleep 5
+
     echo "Cleaning up staging directory: $STAGING_ROOT"
-    rm -rf "$STAGING_ROOT"
+    rm -rf "$STAGING_ROOT" 2>/dev/null || true
     rm -f "$INFO_FILE"
     echo "Cleanup complete."
 }

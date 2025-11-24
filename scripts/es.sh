@@ -134,6 +134,23 @@ status_staging() {
     echo "  Data: $ES_DATA"
 }
 
+logs_staging() {
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: No staging JOBID in environment."
+        echo "Provide JOBID as argument: $0 -staging-logs <JOBID>"
+        return 1
+    fi
+
+    LOG_OUT="${NFS_MOUNT}/es-staging/logs/slurm-${JOBID}.out"
+    LOG_ERR="${NFS_MOUNT}/es-staging/logs/slurm-${JOBID}.err"
+
+    echo "=== STDOUT (${LOG_OUT}) ==="
+    tail -50 "$LOG_OUT" 2>/dev/null || echo "No stdout log found"
+    echo
+    echo "=== STDERR (${LOG_ERR}) ==="
+    tail -50 "$LOG_ERR" 2>/dev/null || echo "No stderr log found"
+}
+
 
 stop_kb() {
     if [ -f "$KB_PID_FILE" ]; then
@@ -191,6 +208,9 @@ case "$1" in
     -staging-health)
         check_staging
         ;;
+    -staging-logs)
+        logs_staging
+        ;;
     *)
         echo "Usage: $0 OPTIONS"
         echo
@@ -210,6 +230,7 @@ case "$1" in
         echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-stop     Stop staging ES (requires JOBID exported)"
         echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-status   Show staging ES job status"
         echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-health   Check health of staging ES instance"
+        echo "   source ${NFS_MOUNT}/elastic/scripts/es.sh -staging-logs     Show last 50 lines of staging ES logs"
         echo
         echo "Notes:"
         echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"
