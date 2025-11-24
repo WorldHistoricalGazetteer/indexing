@@ -51,12 +51,17 @@ start_kb() {
     while ! curl -s "$ES_HOST_URL" >/dev/null 2>&1; do
         sleep 2
     done
+    echo "Elasticsearch is ready."
 
-    echo "Starting Kibana..."
+    echo "Starting Kibana (this may take 2-5 minutes to fully initialize)..."
     nohup "$KB_BIN_PATH" \
           --path.data="${NFS_MOUNT}/kibana/data" \
             > /dev/null 2>&1 &
     echo $! > "$KB_PID_FILE"
+
+    echo "Kibana started in background (PID: $(cat "$KB_PID_FILE"))"
+    echo "Monitor startup at: ${NFS_MOUNT}/kibana/data/kibana.log"
+    echo "Access Kibana at: http://${ES_HOST_NAME}:5601 (wait a few minutes)"
 }
 
 launch_staging() {

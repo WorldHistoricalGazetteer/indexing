@@ -79,18 +79,6 @@ mkdir -p /ix1/whcdh/kibana/{data,logs}
 
 ---
 
-## Elasticsearch Configuration
-
-All configuration is under:
-
-```
-/ix1/whcdh/elastic/config/elasticsearch.yml
-```
-
-This file is copied to the Elasticsearch config folder via the wrapper script.
-
-The repo copy is authoritative. Do not edit the live copy directly as it will be overwritten on next start.
-
 ## Elasticsearch Wrapper Script (`scripts/es.sh`)
 
 The wrapper script ensures:
