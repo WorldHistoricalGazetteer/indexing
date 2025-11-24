@@ -146,6 +146,13 @@ Location:
 ~/es kibana-restart
 ```
 
+### Staging Elasticsearch:
+
+```
+~/es -staging-start
+~/es -staging-stop
+```
+
 ---
 
 ## Basic Status Checks

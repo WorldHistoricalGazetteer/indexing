@@ -146,10 +146,10 @@ case "$1" in
         stop_kb
         start_kb
         ;;
-    -staging-up)
+    -staging-start)
         launch_staging
         ;;
-    -staging-down)
+    -staging-stop)
         down_staging
         ;;
     *)
@@ -167,8 +167,8 @@ case "$1" in
         echo "   kibana-restart    Restart Kibana only"
         echo
         echo " Staging ES via Slurm:"
-        echo "   -staging-up       Launch staging Elasticsearch instance"
-        echo "   -staging-down     Stop staging ES (requires JOBID exported)"
+        echo "   -staging-start    Launch staging Elasticsearch instance"
+        echo "   -staging-stop     Stop staging ES (requires JOBID exported)"
         echo
         echo "Notes:"
         echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"
