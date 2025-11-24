@@ -61,6 +61,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Set JVM heap size (use about half of allocated memory for heap)
+# Leave the rest for off-heap structures, OS cache, etc.
+export ES_JAVA_OPTS="-Xms8g -Xmx8g"
+
 # Start Elasticsearch
 exec $ES_BIN_PATH \
     -E discovery.type=single-node \

@@ -134,9 +134,22 @@ Location:
 
 ### Staging Elasticsearch:
 
+These commands must be run on a login node:
+
+```bash
+ssh stg135@htc.crc.pitt.edu
 ```
-~/es -staging-start
-~/es -staging-stop
+
+To start a staging ES instance (live for up to 48 hours) on a compute node:
+
+```
+source /ix1/whcdh/elastic/scripts/es.sh -staging-start
+```
+
+To stop the staging ES instance and clean up:
+
+```
+source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
 ```
 
 ---
