@@ -21,7 +21,11 @@ LOG_DIR="$STAGING_ROOT/logs"
 CONF_DIR="$STAGING_ROOT/config"
 REPO_DIR="$STAGING_ROOT/repo"
 
-mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONF_DIR" "$REPO_DIR"
+# Shared snapshot repository (from production)
+SHARED_REPO_DIR="/ix1/whcdh/es/repo/staging"
+REPO_NAME="staging_repo"
+
+mkdir -p "$DATA_DIR" "$LOG_DIR" "$CONF_DIR"
 
 # Copy required config files from ES installation
 cp -r $ES_HOME/config/* "$CONF_DIR/"
@@ -48,10 +52,6 @@ echo "  Node: $SLURMD_NODENAME"
 echo "  Port: $ES_PORT"
 echo "  Root: $STAGING_ROOT"
 echo
-echo "Local access example:"
-echo "  ssh -L 9200:localhost:$ES_PORT $USER@$SLURMD_NODENAME"
-echo "  Then open: http://localhost:9200"
-echo
 
 # Cleanup on termination (job end, cancel, preemption)
 cleanup() {
@@ -65,8 +65,8 @@ trap cleanup EXIT
 # Leave the rest for off-heap structures, OS cache, etc.
 export ES_JAVA_OPTS="-Xms8g -Xmx8g"
 
-# Start Elasticsearch
-exec $ES_BIN_PATH \
+# Start Elasticsearch in background
+$ES_BIN_PATH \
     -E discovery.type=single-node \
     -E cluster.name="es-staging-${SLURM_JOB_ID}" \
     -E node.name="es-staging-node-${SLURM_JOB_ID}" \
@@ -74,5 +74,96 @@ exec $ES_BIN_PATH \
     -E http.port="$ES_PORT" \
     -E path.data="$DATA_DIR" \
     -E path.logs="$LOG_DIR" \
-    -E path.repo="$REPO_DIR" \
-    -E xpack.security.enabled=false
+    -E path.repo="$SHARED_REPO_DIR" \
+    -E xpack.security.enabled=false \
+    > "$LOG_DIR/elasticsearch.log" 2>&1 &
+
+ES_PID=$!
+echo "Elasticsearch PID: $ES_PID"
+
+# Wait for ES to be ready
+echo "Waiting for Elasticsearch to start..."
+ES_URL="http://localhost:$ES_PORT"
+for i in {1..60}; do
+    if curl -s "$ES_URL/_cluster/health" > /dev/null 2>&1; then
+        echo "Elasticsearch is ready!"
+        break
+    fi
+    if ! kill -0 $ES_PID 2>/dev/null; then
+        echo "ERROR: Elasticsearch died during startup"
+        exit 1
+    fi
+    sleep 2
+done
+
+# Register snapshot repository
+echo "Registering snapshot repository '$REPO_NAME'..."
+curl -s -X PUT "$ES_URL/_snapshot/$REPO_NAME" -H 'Content-Type: application/json' -d "{
+  \"type\": \"fs\",
+  \"settings\": {
+    \"location\": \"$SHARED_REPO_DIR\"
+  }
+}" | python3 -m json.tool
+echo
+
+# Find latest snapshots for each index
+echo "Finding latest snapshots..."
+SNAPSHOTS=$(curl -s "$ES_URL/_snapshot/$REPO_NAME/_all")
+
+# Extract latest places snapshot
+LATEST_PLACES=$(echo "$SNAPSHOTS" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+places_snaps = [s for s in data.get('snapshots', []) if 'places_staging' in s['snapshot']]
+if places_snaps:
+    latest = max(places_snaps, key=lambda x: x['start_time'])
+    print(latest['snapshot'])
+")
+
+# Extract latest toponyms snapshot
+LATEST_TOPONYMS=$(echo "$SNAPSHOTS" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+toponyms_snaps = [s for s in data.get('snapshots', []) if 'toponyms_staging' in s['snapshot']]
+if toponyms_snaps:
+    latest = max(toponyms_snaps, key=lambda x: x['start_time'])
+    print(latest['snapshot'])
+")
+
+# Restore places index
+if [ -n "$LATEST_PLACES" ]; then
+    echo "Restoring places index from snapshot: $LATEST_PLACES"
+    curl -s -X POST "$ES_URL/_snapshot/$REPO_NAME/$LATEST_PLACES/_restore" \
+        -H 'Content-Type: application/json' -d '{
+      "indices": "places",
+      "ignore_unavailable": true,
+      "include_global_state": false
+    }' | python3 -m json.tool
+    echo
+else
+    echo "WARNING: No places snapshots found"
+fi
+
+# Restore toponyms index
+if [ -n "$LATEST_TOPONYMS" ]; then
+    echo "Restoring toponyms index from snapshot: $LATEST_TOPONYMS"
+    curl -s -X POST "$ES_URL/_snapshot/$REPO_NAME/$LATEST_TOPONYMS/_restore" \
+        -H 'Content-Type: application/json' -d '{
+      "indices": "toponyms",
+      "ignore_unavailable": true,
+      "include_global_state": false
+    }' | python3 -m json.tool
+    echo
+else
+    echo "WARNING: No toponyms snapshots found"
+fi
+
+echo
+echo "Staging ES is ready at: http://localhost:$ES_PORT"
+echo "Monitor restore progress with:"
+echo "  ssh $SLURMD_NODENAME \"curl -s http://localhost:$ES_PORT/_recovery?pretty\""
+echo
+echo "Keeping ES running until job ends..."
+
+# Wait for ES process (keeps job alive)
+wait $ES_PID
