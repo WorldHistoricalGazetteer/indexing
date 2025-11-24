@@ -6,11 +6,17 @@ Index GeoNames alternate names (toponyms) data into Elasticsearch.
 Updated to use new file paths from settings.py
 """
 
-import gzip
+import os
+
+from dotenv import load_dotenv
 from elasticsearch8 import Elasticsearch, helpers
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from processing.settings import BATCH_SIZE
 from processing.utilities import stream_file
+
+load_dotenv()
+ES_HOST = os.getenv("ES_HOST_URL")
+DATA_DIR = os.getenv("DATA_DIR", "/ix1/whcdh/data")
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
 

@@ -160,7 +160,7 @@ curl -X GET "localhost:5601/api/status" -H "kbn-xsrf: true"
 ```
 
 ---
-## Create Indices
+## Create Indices, Snapshot Repositories, and Initial Staging Snapshots
 
 > IMPORTANT: **Run this _once only_, as it will destroy existing indices!**
 >
