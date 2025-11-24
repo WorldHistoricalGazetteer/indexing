@@ -19,7 +19,6 @@ STAGING_ROOT="/ix1/whcdh/es-staging/${SLURM_JOB_ID}"
 DATA_DIR="$STAGING_ROOT/data"
 LOG_DIR="$STAGING_ROOT/logs"
 CONF_DIR="$STAGING_ROOT/config"
-REPO_DIR="$STAGING_ROOT/repo"
 
 # Shared snapshot repository (from production)
 SHARED_REPO_DIR="/ix1/whcdh/es/repo/staging"
@@ -53,11 +52,69 @@ echo "  Port: $ES_PORT"
 echo "  Root: $STAGING_ROOT"
 echo
 
+# Function to create snapshots before shutdown
+create_final_snapshots() {
+    echo
+    echo "=========================================="
+    echo "Creating final snapshots before shutdown..."
+    echo "=========================================="
+
+    ES_URL="http://localhost:$ES_PORT"
+    TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+    # Check if ES is still responsive
+    if ! curl -s "$ES_URL/_cluster/health" > /dev/null 2>&1; then
+        echo "WARNING: Elasticsearch not responsive, skipping snapshots"
+        return
+    fi
+
+    # Snapshot places index
+    PLACES_SNAPSHOT="places_staging_${TIMESTAMP}"
+    echo "Creating snapshot: $PLACES_SNAPSHOT"
+    PLACES_RESPONSE=$(curl -s -X PUT "$ES_URL/_snapshot/$REPO_NAME/$PLACES_SNAPSHOT?wait_for_completion=true" \
+        -H 'Content-Type: application/json' -d '{
+      "indices": "places",
+      "ignore_unavailable": true,
+      "include_global_state": false
+    }')
+
+    PLACES_STATE=$(echo "$PLACES_RESPONSE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('snapshot', {}).get('state', 'UNKNOWN'))")
+    echo "Places snapshot state: $PLACES_STATE"
+
+    # Snapshot toponyms index
+    TOPONYMS_SNAPSHOT="toponyms_staging_${TIMESTAMP}"
+    echo "Creating snapshot: $TOPONYMS_SNAPSHOT"
+    TOPONYMS_RESPONSE=$(curl -s -X PUT "$ES_URL/_snapshot/$REPO_NAME/$TOPONYMS_SNAPSHOT?wait_for_completion=true" \
+        -H 'Content-Type: application/json' -d '{
+      "indices": "toponyms",
+      "ignore_unavailable": true,
+      "include_global_state": false
+    }')
+
+    TOPONYMS_STATE=$(echo "$TOPONYMS_RESPONSE" | python3 -c "import sys, json; data=json.load(sys.stdin); print(data.get('snapshot', {}).get('state', 'UNKNOWN'))")
+    echo "Toponyms snapshot state: $TOPONYMS_STATE"
+
+    echo
+    echo "Final snapshots completed:"
+    echo "  - $PLACES_SNAPSHOT: $PLACES_STATE"
+    echo "  - $TOPONYMS_SNAPSHOT: $TOPONYMS_STATE"
+    echo "=========================================="
+}
+
 # Cleanup on termination (job end, cancel, preemption)
 cleanup() {
+    echo
+    echo "=========================================="
+    echo "Shutdown initiated..."
+    echo "=========================================="
+
+    # Create final snapshots before cleanup
+    create_final_snapshots
+
     echo "Cleaning up staging directory: $STAGING_ROOT"
     rm -rf "$STAGING_ROOT"
     rm -f "$INFO_FILE"
+    echo "Cleanup complete."
 }
 trap cleanup EXIT
 
@@ -159,9 +216,15 @@ else
 fi
 
 echo
+echo "=========================================="
 echo "Staging ES is ready at: http://localhost:$ES_PORT"
+echo "=========================================="
 echo "Monitor restore progress with:"
 echo "  ssh $SLURMD_NODENAME \"curl -s http://localhost:$ES_PORT/_recovery?pretty\""
+echo
+echo "To create snapshots before shutdown, use:"
+echo "  scancel $SLURM_JOB_ID"
+echo "  (snapshots will be created automatically)"
 echo
 echo "Keeping ES running until job ends..."
 
