@@ -46,6 +46,21 @@ def create_pipeline(pipeline_name, pipeline_file):
     print(f"Pipeline '{pipeline_name}' created successfully.")
 
 
+def delete_index_if_exists(index_name):
+    """
+    Deletes an index if it exists, waiting for completion.
+    """
+    if es.indices.exists(index=index_name):
+        print(f"Index '{index_name}' already exists. Deleting...")
+        es.indices.delete(index=index_name, timeout="60s")
+        # Wait for deletion completion
+        for _ in range(30):
+            if not es.indices.exists(index=index_name):
+                break
+            time.sleep(1)
+        print(f"Index '{index_name}' deleted.")
+
+
 def create_index(index_name, schema_file, pipeline=None):
     """
     Create an Elasticsearch index with the given schema.
@@ -60,16 +75,6 @@ def create_index(index_name, schema_file, pipeline=None):
 
     if pipeline:
         schema.setdefault('settings', {})['default_pipeline'] = pipeline
-
-    if es.indices.exists(index=index_name):
-        print(f"Index '{index_name}' already exists. Deleting...")
-        # The API-level timeout is set here to ensure the server has time to complete the deletion.
-        es.indices.delete(index=index_name, timeout="60s")
-        # Wait for deletion completion
-        for _ in range(30):
-            if not es.indices.exists(index=index_name):
-                break
-            time.sleep(1)
 
     print(f"Creating index '{index_name}'...")
     # This timeout is for the server-side operation; the client timeout is now set globally.
@@ -100,7 +105,7 @@ def create_snapshot_repository(repo_name, location):
     try:
         es.snapshot.create_repository(
             repository=repo_name,
-            body={
+            config={
                 "type": "fs",
                 "settings": {
                     "location": location
@@ -152,10 +157,10 @@ if __name__ == "__main__":
     print("ELASTICSEARCH INDEX & SNAPSHOT SETUP")
     print("=" * 80)
 
-    # 1. Create BOTH snapshot repositories
-    print("\n--- Registering Snapshot Repositories ---")
-    create_snapshot_repository(STAGING_REPO_NAME, STAGING_REPO_LOCATION)
-    create_snapshot_repository(BACKUP_REPO_NAME, BACKUP_REPO_LOCATION)
+    # Delete existing indices if they exist
+    print("\n--- Deleting Existing Indices ---")
+    delete_index_if_exists("places")
+    delete_index_if_exists("toponyms")
 
     # Create ingest pipelines first (before indices that reference them)
     print("\n--- Creating Ingest Pipelines ---")
@@ -164,12 +169,13 @@ if __name__ == "__main__":
 
     # Create indices with their default pipelines
     print("\n--- Creating Indices ---")
-
-    # Create places index with extract_namespace pipeline
     create_index("places", "schemas/places.json", pipeline="extract_namespace")
-
-    # Create toponyms index with extract_language pipeline
     create_index("toponyms", "schemas/toponyms.json", pipeline="extract_language")
+
+    # Create both snapshot repositories
+    print("\n--- Registering Snapshot Repositories ---")
+    create_snapshot_repository(STAGING_REPO_NAME, STAGING_REPO_LOCATION)
+    create_snapshot_repository(BACKUP_REPO_NAME, BACKUP_REPO_LOCATION)
 
     # Create immediate snapshots of both indices in the staging repository
     print("\n--- Creating Immediate Snapshots of Indices ---")
