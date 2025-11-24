@@ -132,7 +132,7 @@ def create_index_snapshot(index_name, repo_name="staging", suffix="_staging"):
 
     try:
         response = es.snapshot.create(
-            name=repo_name,
+            repository=repo_name,
             snapshot=snapshot_name,
             body={
                 "indices": index_name,
