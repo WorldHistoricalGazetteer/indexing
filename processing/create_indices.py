@@ -105,7 +105,7 @@ def create_snapshot_repository(repo_name, location):
     try:
         es.snapshot.create_repository(
             repository=repo_name,
-            config={
+            body={
                 "type": "fs",
                 "settings": {
                     "location": location
