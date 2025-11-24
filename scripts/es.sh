@@ -58,6 +58,50 @@ start_kb() {
     echo $! > "$KB_PID_FILE"
 }
 
+launch_staging() {
+    STAGING_SCRIPT="/ix1/whcdh/elastic/processing/es_staging.sbatch"
+
+    echo "Launching staging Elasticsearch..."
+    JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
+    echo "Launched staging ES as job $JOBID"
+    squeue -j "$JOBID"
+
+    INFO="/ix1/whcdh/esinfo/es-$JOBID.env"
+
+    echo -n "Waiting for ES info file..."
+    while [ ! -f "$INFO" ]; do
+        sleep 2
+    done
+    echo " ready."
+
+    source "$INFO"
+
+    export JOBID ES_NODE ES_PORT ES_DATA
+    echo "ES Node: $ES_NODE"
+    echo "ES Port: $ES_PORT"
+    echo "ES Data Dir: $ES_DATA"
+    echo "ES Env File: $INFO"
+}
+
+down_staging() {
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: No staging JOBID exported in environment."
+        echo "If you lost it, inspect /ix1/whcdh/esinfo/"
+        return 1
+    fi
+
+    echo "Stopping staging ES job $JOBID..."
+    scancel "$JOBID"
+
+    INFO="/ix1/whcdh/esinfo/es-$JOBID.env"
+    rm -f "$INFO"
+
+    unset ES_NODE ES_PORT ES_DATA JOBID
+
+    echo "Staging instance stopped and cleaned."
+}
+
+
 stop_kb() {
     if [ -f "$KB_PID_FILE" ]; then
         kill -9 $(cat "$KB_PID_FILE") 2>/dev/null && rm -f "$KB_PID_FILE"
@@ -102,7 +146,34 @@ case "$1" in
         stop_kb
         start_kb
         ;;
+    -staging-up)
+        launch_staging
+        ;;
+    -staging-down)
+        down_staging
+        ;;
     *)
-        echo "Usage: $0 {-start|-stop|-restart|es-start|es-stop|es-restart|kibana-start|kibana-stop|kibana-restart}"
+        echo "Usage: $0 OPTIONS"
+        echo
+        echo " Local VM services:"
+        echo "   -start            Start Elasticsearch + Kibana"
+        echo "   -stop             Stop Elasticsearch + Kibana"
+        echo "   -restart          Restart both"
+        echo "   es-start          Start Elasticsearch only"
+        echo "   es-stop           Stop Elasticsearch only"
+        echo "   es-restart        Restart Elasticsearch only"
+        echo "   kibana-start      Start Kibana only"
+        echo "   kibana-stop       Stop Kibana only"
+        echo "   kibana-restart    Restart Kibana only"
+        echo
+        echo " Staging ES via Slurm:"
+        echo "   -staging-up       Launch staging Elasticsearch instance"
+        echo "   -staging-down     Stop staging ES (requires JOBID exported)"
+        echo
+        echo "Notes:"
+        echo " * After -staging, variables ES_NODE, ES_PORT, ES_DATA, JOBID"
+        echo "   are exported into this shell."
+        echo " * Connect from your local machine via:"
+        echo "       ssh -L 9200:localhost:\$ES_PORT <user>@gazetteer.crcd.pitt.edu"
         ;;
 esac
