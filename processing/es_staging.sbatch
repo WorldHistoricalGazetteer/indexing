@@ -14,8 +14,8 @@ ES_BIN_PATH=$ES_HOME/bin/elasticsearch
 JAVA_HOME=/ix1/whcdh/jdk-21.0.1
 export PATH="$JAVA_HOME/bin:$PATH"
 
-# Per-job isolated staging root
-STAGING_ROOT="/ix1/whcdh/es-staging/${SLURM_JOB_ID}"
+# Per-job isolated staging root on local NVMe scratch
+STAGING_ROOT="${SLURM_SCRATCH}/es-staging"
 DATA_DIR="$STAGING_ROOT/data"
 LOG_DIR="$STAGING_ROOT/logs"
 CONF_DIR="$STAGING_ROOT/config"
