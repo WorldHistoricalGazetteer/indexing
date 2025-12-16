@@ -6,17 +6,9 @@ Index GeoNames alternate names (toponyms) data into Elasticsearch.
 Updated to use new file paths from settings.py
 """
 
-import os
-
-from dotenv import load_dotenv
 from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import BATCH_SIZE
-from processing.utilities import stream_file
-
-load_dotenv()
-ES_HOST = os.getenv("ES_HOST_URL")
-DATA_DIR = os.getenv("DATA_DIR", "/ix1/whcdh/data")
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import stream_file, create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
 
@@ -343,3 +335,4 @@ if __name__ == "__main__":
     print(f"Target indices: {TOPONYMS_INDEX}, {PLACES_INDEX}")
 
     index_toponyms_and_relations(ALTERNATENAMES_FILE, TOPONYMS_INDEX, PLACES_INDEX)
+    create_checkpoint_snapshot(es, "geonames_toponyms")

@@ -20,14 +20,16 @@ import json
 import os
 import sys
 from pathlib import Path
-from elasticsearch8 import Elasticsearch, helpers
 import osmium
 import shapely.wkb as wkblib
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR, AUTHORITIES
 from processing.helpers import compute_representative_point, simplify_geometry
 
-es = Elasticsearch(ES_HOST)
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.utilities import create_checkpoint_snapshot
+
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Get OSM configuration
 OSM_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'osm'), None)
@@ -487,3 +489,5 @@ if __name__ == "__main__":
         index_osm_pbf(osm_file)
     else:
         index_osm_geojson(osm_file)
+
+    create_checkpoint_snapshot(es, 'osm_places')

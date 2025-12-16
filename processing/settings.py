@@ -1,4 +1,54 @@
-BATCH_SIZE = 5000
+# processing/settings.py
+
+import os
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Load .env from repository root
+env_path = Path(__file__).parent.parent / ".env"
+load_dotenv(env_path)
+
+# Base paths
+IX1_BASE = os.getenv("IX1_BASE", "/ix1/whcdh")
+IX3_BASE = os.getenv("IX3_BASE", "/ix3/whcdh")
+
+# Data
+DATA_DIR = os.getenv("DATA_DIR", f"{IX1_BASE}/data/authorities")
+
+# Elasticsearch
+STAGING_INFO_FILE = os.getenv("STAGING_INFO_FILE", f"{IX1_BASE}/esinfo/es-staging.env")
+
+
+def get_es_host():
+    # Check for running staging instance
+    if os.path.exists(STAGING_INFO_FILE):
+        with open(STAGING_INFO_FILE) as f:
+            for line in f:
+                if line.startswith("ES_NODE="):
+                    node = line.strip().split("=", 1)[1]
+                if line.startswith("ES_PORT="):
+                    port = line.strip().split("=", 1)[1]
+        return f"http://{node}:{port}"
+
+    # Raise error if not found
+    raise EnvironmentError(f"Staging ES info file not found: {STAGING_INFO_FILE}")
+
+
+ES_HOST = get_es_host()
+ES_HOST_PRODUCTION = os.getenv("PROD_ES_URL", "http://localhost:9200")
+
+# Indexing
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5000"))
+
+# Snapshots
+STAGING_REPO_NAME = os.getenv("STAGING_REPO_NAME", "staging_repo")
+STAGING_SNAPSHOT_DIR = os.getenv("STAGING_SNAPSHOT_DIR", f"{IX1_BASE}/es_snapshots/staging")
+BACKUP_REPO_NAME = os.getenv("BACKUP_REPO_NAME", "backup_repo")
+BACKUP_SNAPSHOT_DIR = os.getenv("BACKUP_SNAPSHOT_DIR", f"{IX1_BASE}/es_snapshots/backup")
+
+# Index names
+PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
+TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms")
 
 # Remote Dataset Configurations
 AUTHORITIES = [
@@ -120,16 +170,18 @@ AUTHORITIES = [
                         "madsrdf:hasCloseExternalAuthority" in graph_item
                         or
                         (
-                            "madsrdf:hasExactExternalAuthority" in graph_item
-                            and (
-                                isinstance(graph_item["madsrdf:hasExactExternalAuthority"], list)
-                                or
-                                (
-                                    isinstance(graph_item["madsrdf:hasExactExternalAuthority"], dict)
-                                    and
-                                    not graph_item["madsrdf:hasExactExternalAuthority"].get("@id", "").startswith("http://viaf.org/")
+                                "madsrdf:hasExactExternalAuthority" in graph_item
+                                and (
+                                        isinstance(graph_item["madsrdf:hasExactExternalAuthority"], list)
+                                        or
+                                        (
+                                                isinstance(graph_item["madsrdf:hasExactExternalAuthority"], dict)
+                                                and
+                                                not graph_item["madsrdf:hasExactExternalAuthority"].get("@id",
+                                                                                                        "").startswith(
+                                                    "http://viaf.org/")
+                                        )
                                 )
-                            )
                         )
                         for graph_item in record.get("@graph", [])
                     )

@@ -9,12 +9,14 @@ loading it entirely into memory.
 
 import gzip
 import ijson
-from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from processing.helpers import compute_representative_point
 
-es = Elasticsearch(ES_HOST)
+
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
+
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def extract_locations(pleiades_record):
@@ -433,3 +435,5 @@ if __name__ == "__main__":
     print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
 
     index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+
+    create_checkpoint_snapshot(es, "pleiades_places")

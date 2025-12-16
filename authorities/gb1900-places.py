@@ -12,11 +12,12 @@ Updated to use namespace 'gb' and new file paths from settings.py
 import csv
 import zipfile
 import io
+
 from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_gb1900_row(row):
@@ -242,3 +243,4 @@ if __name__ == "__main__":
     print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
 
     index_gb1900(GB1900_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+    create_checkpoint_snapshot(es, "gb1900_places")

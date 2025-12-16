@@ -2,20 +2,13 @@ import json
 import time
 import os
 
-from elasticsearch import Elasticsearch
-from dotenv import load_dotenv
-
-load_dotenv()
-ES_HOST = os.getenv("ES_HOST_URL")
-
-STAGING_REPO_NAME = os.getenv("ES_STAGING_REPO_NAME")
 STAGING_REPO_LOCATION = os.getenv("ES_STAGING_REPO_LOCATION")
 
-BACKUP_REPO_NAME = os.getenv("ES_BACKUP_REPO_NAME")
 BACKUP_REPO_LOCATION = os.getenv("ES_BACKUP_REPO_LOCATION")
 
-if not ES_HOST:
-    raise EnvironmentError("ES_HOST_URL not found in environment variables.")
+from elasticsearch8 import Elasticsearch
+from processing.settings import ES_HOST, STAGING_REPO_NAME, STAGING_SNAPSHOT_DIR, BACKUP_REPO_NAME, BACKUP_SNAPSHOT_DIR
+from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
 
@@ -117,41 +110,6 @@ def create_snapshot_repository(repo_name, location):
         print(f"ERROR: Failed to create repository '{repo_name}'. Check ES logs. Error: {e}")
 
 
-def create_index_snapshot(index_name, repo_name="staging", suffix="_staging"):
-    """
-    Create an immediate snapshot of a specific index, using an optional suffix.
-    """
-    # Snapshot names are unique; use index name, timestamp, and the staging suffix
-    timestamp = time.strftime('%Y%m%d%H%M%S')
-
-    # Construct the snapshot name: index_name + suffix + timestamp
-    # Example: places_staging_20251124155200
-    snapshot_name = f"{index_name}{suffix}_{timestamp}"
-
-    print(f"Triggering snapshot '{snapshot_name}' for index '{index_name}'...")
-
-    try:
-        response = es.snapshot.create(
-            repository=repo_name,
-            snapshot=snapshot_name,
-            body={
-                "indices": index_name,
-                "ignore_unavailable": True,
-                "include_global_state": False  # Only snapshot the index, not cluster metadata
-            },
-            wait_for_completion=True  # Script waits until snapshot is done
-        )
-        # Check if the snapshot finished successfully
-        if response.get("snapshot", {}).get("state") == "SUCCESS":
-            print(f"Snapshot '{snapshot_name}' (Index: {index_name}) created successfully.")
-        else:
-            print(
-                f"WARNING: Snapshot '{snapshot_name}' finished with state: {response.get('snapshot', {}).get('state')}")
-
-    except Exception as e:
-        print(f"ERROR: Failed to create snapshot for '{index_name}'. Error: {e}")
-
-
 if __name__ == "__main__":
     print("=" * 80)
     print("ELASTICSEARCH INDEX & SNAPSHOT SETUP")
@@ -174,13 +132,12 @@ if __name__ == "__main__":
 
     # Create both snapshot repositories
     print("\n--- Registering Snapshot Repositories ---")
-    create_snapshot_repository(STAGING_REPO_NAME, STAGING_REPO_LOCATION)
-    create_snapshot_repository(BACKUP_REPO_NAME, BACKUP_REPO_LOCATION)
+    create_snapshot_repository(STAGING_REPO_NAME, STAGING_SNAPSHOT_DIR)
+    create_snapshot_repository(BACKUP_REPO_NAME, BACKUP_SNAPSHOT_DIR)
 
     # Create immediate snapshots of both indices in the staging repository
-    print("\n--- Creating Immediate Snapshots of Indices ---")
-    create_index_snapshot("places", repo_name=STAGING_REPO_NAME, suffix="_staging")
-    create_index_snapshot("toponyms", repo_name=STAGING_REPO_NAME, suffix="_staging")
+    print("\n--- Creating Immediate Snapshot of Indices ---")
+    create_checkpoint_snapshot(es, snapshot_name="initial_setup")
 
     print("\n" + "=" * 80)
     print("SETUP COMPLETE!")

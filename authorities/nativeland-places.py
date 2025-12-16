@@ -16,9 +16,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR, AUTHORITIES
 from processing.helpers import (
     compute_representative_point,
     compute_bbox,
@@ -26,7 +23,11 @@ from processing.helpers import (
     simplify_geometry
 )
 
-es = Elasticsearch(ES_HOST)
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.utilities import create_checkpoint_snapshot
+
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Get Native Land configuration
 NL_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'nl'), None)
@@ -485,3 +486,5 @@ if __name__ == "__main__":
     else:
         print("ERROR: Must specify both --file and --type, or use --all")
         parser.print_help()
+
+    create_checkpoint_snapshot(es, 'nativeland_places')

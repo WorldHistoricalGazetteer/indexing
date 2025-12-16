@@ -18,12 +18,13 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR, AUTHORITIES
 from processing.helpers import compute_representative_point
 
-es = Elasticsearch(ES_HOST)
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.utilities import create_checkpoint_snapshot
+
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Get Index Villaris configuration
 IV_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'iv'), None)
@@ -490,3 +491,4 @@ if __name__ == "__main__":
     print()
 
     index_iv_file(str(json_file), args.places_index, args.toponyms_index)
+    create_checkpoint_snapshot(es, "indexvillaris_places")

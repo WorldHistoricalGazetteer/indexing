@@ -24,11 +24,12 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from elasticsearch8 import Elasticsearch, helpers
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR, AUTHORITIES
+from elasticsearch8 import Elasticsearch
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Get LOC configuration
 LOC_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'loc'), None)
@@ -507,3 +508,5 @@ if __name__ == "__main__":
         create_loc_only_places(str(ndjson_file))
     else:
         index_loc_file(str(ndjson_file))
+
+    create_checkpoint_snapshot(es, 'loc_authorities')

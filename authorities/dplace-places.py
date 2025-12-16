@@ -17,10 +17,11 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR, AUTHORITIES
 from processing.helpers import compute_representative_point, compute_bbox
+
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST)
 
@@ -424,3 +425,4 @@ if __name__ == "__main__":
     print()
 
     index_dplace_file(str(geojson_file), args.places_index, args.toponyms_index)
+    create_checkpoint_snapshot(es, "dplace_data")

@@ -13,11 +13,12 @@ CORRECT VERSION - Based on verified RDF structure:
 import re
 import zipfile
 from collections import defaultdict
+
 from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_ntriple(line):
@@ -433,3 +434,5 @@ if __name__ == "__main__":
     print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
 
     index_tgn(TGN_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+
+    create_checkpoint_snapshot(es, "tgn_places")

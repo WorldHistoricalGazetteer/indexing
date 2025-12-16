@@ -23,15 +23,11 @@ Updated to use namespace 'un' and new file paths from settings.py
 Note: settings.py specifies namespace 'un' for ISO3166 dataset
 """
 
-import json
 import sys
 import zipfile
 import urllib.request
 from pathlib import Path
 
-from elasticsearch8 import Elasticsearch, helpers
-
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
 from processing.helpers import (
     compute_geodetic_centroid,
     compute_representative_point,
@@ -40,7 +36,11 @@ from processing.helpers import (
     simplify_geometry
 )
 
-es = Elasticsearch(ES_HOST)
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
+
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Natural Earth download URL
 NATURAL_EARTH_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
@@ -572,3 +572,5 @@ if __name__ == "__main__":
         simplification_tolerance_km=args.simplify,
         download=not args.no_download
     )
+
+    create_checkpoint_snapshot(es, "un_countries")

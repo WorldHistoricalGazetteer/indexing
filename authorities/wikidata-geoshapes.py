@@ -16,9 +16,11 @@ import time
 import os
 import sys
 from datetime import datetime
-from elasticsearch8 import Elasticsearch, helpers
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
+from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
+
 from processing.helpers import compute_representative_point
 
 # --- Configuration ---
@@ -428,6 +430,7 @@ def main():
         sys.exit(0)
 
     process_geoshapes_from_file(PLACES_INDEX, REFS_FILE, batch_size=100)
+    create_checkpoint_snapshot(es, "wikidata_geoshapes")
 
 
 if __name__ == "__main__":

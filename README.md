@@ -1,15 +1,29 @@
-# WHG Elasticsearch + Kibana (Bare-Metal Install)
+# WHG Elasticsearch + Kibana
 
-This document describes how Elasticsearch and Kibana are deployed and run on the Pitt VM *without sudo or podman*, using only user-space binaries.
+This document describes how Elasticsearch and Kibana are deployed for the World Historical Gazetteer project at University of Pittsburgh.
 
----
+## Architecture Overview
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| Production ES | VM (port 9200) | Live queries, persistent |
+| Staging ES | Slurm compute node (port 9201) | Indexing operations, ephemeral |
+| Kibana | VM (port 5601) | Dashboard and monitoring |
+
+### Storage Tiers
+
+| Mount | Type | Use |
+|-------|------|-----|
+| `/ix1/whcdh` | Standard | Code, binaries, configs, snapshots, source data |
+| `/ix3/whcdh` | Flash | Production ES data (fast queries) |
+| `$SLURM_SCRATCH` | NVMe | Staging ES data (ephemeral, fast indexing) |
 
 ## Repository Setup
 
 Clone the repository (first-time setup):
 
 ```bash
-mkdir -p /ix1/whcdh/elastic
+mkdir -p /ix1/whcdh
 cd /ix1/whcdh
 git clone git@github.com:whg/elastic.git elastic
 ```
@@ -23,17 +37,18 @@ git commit -m "Make wrapper script executable"
 git push origin main
 ```
 
-Create an alias by using `vi` to add to `~/.bashrc`:
+Create an alias by adding to `~/.bashrc`:
 
 ```bash
 alias es='/ix1/whcdh/elastic/scripts/es.sh'
 ```
 
-And then update your current shell:
+Update your current shell:
 
 ```bash
 source ~/.bashrc
 ```
+
 
 > Subsequently, update to latest:
 >
@@ -79,156 +94,168 @@ mkdir -p /ix1/whcdh/kibana/{data,logs}
 
 ---
 
-## Elasticsearch Wrapper Script (`scripts/es.sh`)
+## Configuration
 
-The wrapper script ensures:
-
-* correct `ES_HOME`
-* correct `path.data` and `path.logs`
-* correct config path
-* correct JVM options directory
-* non-interactive startup
-* automatically backgrounded operation
-
-Location:
-
-```
-/ix1/whcdh/elastic/scripts/es.sh
-```
-
----
-
-### Start both:
-
-```
-~/es -start
-```
-
-### Stop both:
-
-```
-~/es -stop
-```
-
-### Restart:
-
-```
-~/es -restart
-```
-
-### Elasticsearch only:
-
-```
-~/es es-start
-~/es es-stop
-~/es es-restart
-```
-
-### Kibana only:
-
-```
-~/es kibana-start
-~/es kibana-stop
-~/es kibana-restart
-```
-
-### Staging Elasticsearch:
-
-These commands must be run on a login node:
+All configuration is in `.env` at the repository root:
 
 ```bash
+# View current configuration
+cat /ix1/whcdh/elastic/.env
+```
+
+Key variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `IX1_BASE` | Base path for persistent storage |
+| `IX3_BASE` | Base path for flash storage |
+| `PROD_ES_URL` | Production ES endpoint |
+| `STAGING_ES_PORT` | Staging ES port (9201) |
+| `DATA_DIR` | Authority source files |
+| `SNAPSHOT_DIR` | Snapshot repository location |
+
+## Managing Services
+
+### Production (VM)
+
+```bash
+# Start both Elasticsearch and Kibana
+es -start
+
+# Stop both
+es -stop
+
+# Restart
+es -restart
+
+# Individual services
+es es-start
+es es-stop
+es kibana-start
+es kibana-stop
+```
+
+### Staging (Slurm)
+
+The staging instance runs on a compute node for indexing operations.
+
+```bash
+# SSH to login node first
 ssh stg135@htc.crc.pitt.edu
-```
 
-To start a staging ES instance (live for up to 48 hours) on a compute node:
-
-```
+# Start staging ES (use 'source' to export variables)
 source /ix1/whcdh/elastic/scripts/es.sh -staging-start
-```
 
-To stop the staging ES instance and clean up:
+# Check status
+source /ix1/whcdh/elastic/scripts/es.sh -staging-status
 
-```
+# Check health
+source /ix1/whcdh/elastic/scripts/es.sh -staging-health
+
+# View logs
+source /ix1/whcdh/elastic/scripts/es.sh -staging-logs
+
+# Stop staging ES
 source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
 ```
 
----
+See [ES_STAGING.md](ES_STAGING.md) for detailed staging documentation.
 
 ## Basic Status Checks
 
-### Elasticsearch Primary
-```
-curl -X GET "localhost:9200/_cluster/health?pretty"
+### Production
+```bash
+curl -s "http://localhost:9200/_cluster/health?pretty"
+curl -s "http://localhost:9200/_cat/indices?v"
 ```
 
-### Elasticsearch Staging
-```
-curl -X GET "localhost:9201/_cluster/health?pretty"
+### Staging
+```bash
+# After sourcing staging env
+curl -s "http://$ES_NODE:$ES_PORT/_cluster/health?pretty"
 ```
 
 ### Kibana
+```bash
+curl -s "http://localhost:5601/api/status" -H "kbn-xsrf: true"
 ```
-curl -X GET "localhost:5601/api/status" -H "kbn-xsrf: true"
+
+## Directory Structure
+
 ```
+/ix1/whcdh/
+├── es-bin/                      # Elasticsearch installation
+├── kibana-bin/                  # Kibana installation
+├── jdk-21.0.1/                  # Java installation
+├── elastic/                     # Git repository
+│   ├── .env                     # Environment configuration
+│   ├── scripts/
+│   │   └── es.sh                # Management wrapper
+│   ├── processing/
+│   │   ├── es_staging.sbatch    # Staging Slurm script
+│   │   ├── settings.py          # Python settings
+│   │   ├── deploy_to_production.py
+│   │   └── ...
+│   ├── authorities/             # Ingestion scripts
+│   └── schemas/                 # Index mappings
+├── data/
+│   └── authorities/             # Source data files
+│       ├── gn/                  # GeoNames
+│       ├── wd/                  # Wikidata
+│       ├── tgn/                 # Getty TGN
+│       └── ...
+├── es/
+│   ├── logs/                    # Production ES logs
+│   ├── es.pid                   # Production ES PID
+│   ├── staging-logs/            # Staging Slurm logs
+│   └── snapshots/
+│       ├── staging/             # Snapshots from staging
+│       └── backup/              # Production backups
+├── kibana/
+│   ├── data/
+│   ├── logs/
+│   └── kb.pid
+└── esinfo/
+    └── es-staging.env           # Staging instance connection info
 
----
-## Create Indices, Snapshot Repositories, and Initial Staging Snapshots
+/ix3/whcdh/
+└── es/
+    └── data/                    # Production ES data (flash)
 
-> IMPORTANT: **Run this _once only_, as it will destroy existing indices!**
->
->```bash
->cd /ix1/whcdh/elastic
->python -m processing.create_indices
->```
-
----
+$SLURM_SCRATCH/                  # Per-job ephemeral
+└── es-staging/
+    ├── data/                    # Staging ES data
+    ├── logs/
+    └── config/
+```
 
 ## Log Locations
 
-### Elasticsearch
-
-```
-/ix1/whcdh/es/logs/whg.log
-/ix1/whcdh/es/logs/nohup.out
-```
-
-### Kibana
-
-```
-/ix1/whcdh/kibana/logs/kibana.log
-```
-
-Tail logs:
-
-```
-tail -f /ix1/whcdh/es/logs/whg.log
-tail -f /ix1/whcdh/kibana/logs/kibana.log
-```
-
----
+| Service | Log Location |
+|---------|--------------|
+| Production ES | `/ix1/whcdh/es/logs/` |
+| Staging ES (Slurm) | `/ix1/whcdh/es/staging-logs/slurm-*.out` |
+| Kibana | `/ix1/whcdh/kibana/logs/` |
 
 ## Access URLs
 
-Local only unless tunneled:
+| Service | URL | Notes |
+|---------|-----|-------|
+| Production ES | http://localhost:9200 | VM only |
+| Staging ES | http://$ES_NODE:9201 | Compute node |
+| Kibana | http://localhost:5601 | VM only |
 
-| Service       | URL                                            |
-| ------------- | ---------------------------------------------- |
-| Elasticsearch | [http://localhost:9200](http://localhost:9200) |
-| Kibana        | [http://localhost:5601](http://localhost:5601) |
+SSH tunnel for remote Kibana access:
 
-SSH tunnelling example for Kibana **from local machine**:
-
+```bash
+ssh -L 5602:localhost:5601 stg135@gazetteer.crcd.pitt.edu
+# Then access: http://localhost:5602
 ```
-ssh -o PubkeyAuthentication=no -L 5602:localhost:5601 stg135@gazetteer.crcd.pitt.edu
-```
 
-Then access Kibana at [http://localhost:5602](http://localhost:5602).
+## References
 
----
-
-## Notes
-
-* No systemd, podman, or sudo is used.
-* Everything is isolated to `/ix1/whcdh`.
-* Elasticsearch 8.11.x must **not** be configured with outdated `xpack.searchable.snapshot.cache.*` settings.
-* The wrapper script cleanly manages startup order and PIDs.
+- [ES_STAGING.md](ES_STAGING.md) — Staging instance documentation
+- [PITT_ELASTIC.md](PITT_ELASTIC.md) — Full ingestion operations guide
+- [INDEX_SCHEMAS.md](INDEX_SCHEMAS.md) — Index mappings, settings, and field descriptions
+- [Elasticsearch Documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/index.html)
+- [Pitt CRC Documentation](https://crc.pitt.edu/)

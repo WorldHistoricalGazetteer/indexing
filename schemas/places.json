@@ -1,9 +1,15 @@
 {
   "settings": {
-    "number_of_shards": 4,
-    "number_of_replicas": 1,
-    "refresh_interval": "30s",
-    "index.blocks.read_only_allow_delete": false
+    "index": {
+      "number_of_shards": 4,
+      "number_of_replicas": 0,
+      "refresh_interval": "-1",
+      "blocks.read_only_allow_delete": false,
+      "translog": {
+        "durability": "async",
+        "flush_threshold_size": "1gb"
+      }
+    }
   },
   "mappings": {
     "properties": {
@@ -118,9 +124,15 @@
       "canonical_ids": {
         "type": "object",
         "properties": {
-          "strict":    { "type": "keyword" },
-          "moderate":  { "type": "keyword" },
-          "loose":     { "type": "keyword" }
+          "strict": {
+            "type": "keyword"
+          },
+          "moderate": {
+            "type": "keyword"
+          },
+          "loose": {
+            "type": "keyword"
+          }
         }
       },
       "whg_published": {

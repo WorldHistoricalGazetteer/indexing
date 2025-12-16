@@ -6,15 +6,14 @@ Index Wikidata places data into Elasticsearch.
 
 import gzip
 import json
-import requests
 import sys
 import os
+
 from elasticsearch8 import Elasticsearch, helpers
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.utilities import create_checkpoint_snapshot
 
-from processing.settings import ES_HOST, BATCH_SIZE, DATA_DIR
-from processing.helpers import compute_representative_point
-
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Updated to match new directory structure
 GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "Wikidata", "wikidata_geoshape_refs.jsonl")
@@ -450,3 +449,4 @@ if __name__ == "__main__":
     print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
 
     index_wikidata(WIKIDATA_FILE, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_REFS_FILE)
+    create_checkpoint_snapshot(es, "wikidata_places")
