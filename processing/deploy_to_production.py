@@ -14,7 +14,7 @@ import sys
 from datetime import datetime
 
 from elasticsearch import Elasticsearch
-from processing.settings import ES_HOST_PRODUCTION, STAGING_REPO_NAME
+from processing.settings import ES_HOST_PRODUCTION, STAGING_REPO_NAME, STAGING_SNAPSHOT_DIR
 
 es = Elasticsearch(ES_HOST_PRODUCTION, request_timeout=300)
 
@@ -190,7 +190,7 @@ def main():
             body={
                 "type": "fs",
                 "settings": {
-                    "location": "/ix1/whcdh/es/repo/staging"
+                    "location": STAGING_SNAPSHOT_DIR
                 }
             }
         )
