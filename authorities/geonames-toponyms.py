@@ -131,7 +131,7 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
     relations_count = 0
     skipped = 0
 
-    print("Pass 1: Collecting toponyms and relations...")
+    print("Pass 1: Collecting toponyms and relations...", flush=True)
 
     for line in stream_file(file_path):
         if not line or line.startswith("#"):
@@ -193,7 +193,7 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
                 if len(relations_batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(es, relations_batch, raise_on_error=False, stats_only=True)
                     relations_count += success
-                    print(f"Relations updated: {relations_count}, skipped: {skipped}")
+                    print(f"Relations updated: {relations_count}, skipped: {skipped}", flush=True)
                     relations_batch = []
 
                 continue
@@ -253,7 +253,7 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
                     toponym_batch = []
 
         except Exception as e:
-            print(f"Error processing line: {str(e)}")
+            print(f"Error processing line: {str(e)}", flush=True)
             continue
 
     # Index remaining batches
@@ -268,7 +268,7 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
     print(f"Toponyms indexed: {toponym_count}, relations: {relations_count}, skipped: {skipped}")
 
     # Now update places with collected toponyms
-    print("\nPass 2: Updating places with toponyms arrays and preferred labels...")
+    print("\nPass 2: Updating places with toponyms arrays and preferred labels...", flush=True)
 
     update_batch = []
     update_count = 0
@@ -305,10 +305,10 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
             try:
                 success, failed = helpers.bulk(es, update_batch, raise_on_error=False, stats_only=True)
                 update_count += success
-                print(f"Updated {update_count} places with toponyms...")
+                print(f"Updated {update_count} places with toponyms...", flush=True)
                 update_batch = []
             except Exception as e:
-                print(f"Error updating batch: {str(e)}")
+                print(f"Error updating batch: {str(e)}", flush=True)
                 update_batch = []
 
     # Update remaining
@@ -317,22 +317,22 @@ def index_toponyms_and_relations(file_path, toponyms_index, places_index):
             success, failed = helpers.bulk(es, update_batch, raise_on_error=False, stats_only=True)
             update_count += success
         except Exception as e:
-            print(f"Error updating final batch: {str(e)}")
+            print(f"Error updating final batch: {str(e)}", flush=True)
 
     print(f"\nIndexing complete!")
     print(f"Toponyms indexed: {toponym_count}")
     print(f"Relations added: {relations_count}")
     print(f"Places updated with toponyms: {update_count}")
-    print(f"Skipped: {skipped}")
+    print(f"Skipped: {skipped}", flush=True)
 
 
 if __name__ == "__main__":
-    ALTERNATENAMES_FILE = f"{DATA_DIR}authorities/gn/alternateNamesV2.zip"
+    ALTERNATENAMES_FILE = f"{DATA_DIR}/authorities/gn/alternateNamesV2.zip"
     TOPONYMS_INDEX = "toponyms"
     PLACES_INDEX = "places"
 
     print(f"Starting to index Geonames alternate names from {ALTERNATENAMES_FILE}")
-    print(f"Target indices: {TOPONYMS_INDEX}, {PLACES_INDEX}")
+    print(f"Target indices: {TOPONYMS_INDEX}, {PLACES_INDEX}", flush=True)
 
     index_toponyms_and_relations(ALTERNATENAMES_FILE, TOPONYMS_INDEX, PLACES_INDEX)
     create_checkpoint_snapshot(es, "geonames_toponyms")

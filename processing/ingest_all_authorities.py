@@ -195,11 +195,6 @@ def ingest_all(authorities_to_run=None, skip_existing=False):
     for i, (ns, script, desc) in enumerate(ingestion_order, 1):
         print(f"  {i}. {desc} ({ns})")
 
-    response = input("\nProceed with ingestion? (y/n): ")
-    if response.lower() != 'y':
-        print("Cancelled")
-        return
-
     # Track results
     results = {
         'successful': [],
