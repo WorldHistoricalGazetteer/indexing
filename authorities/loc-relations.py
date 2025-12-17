@@ -25,7 +25,7 @@ import sys
 from pathlib import Path
 from datetime import datetime
 
-from elasticsearch8 import Elasticsearch
+from elasticsearch import Elasticsearch
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
 

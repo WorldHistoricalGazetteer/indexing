@@ -23,7 +23,7 @@ from processing.helpers import (
     simplify_geometry
 )
 
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
 

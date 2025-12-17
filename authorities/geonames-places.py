@@ -5,8 +5,9 @@ Index GeoNames places data into Elasticsearch.
 
 Updated to use new file paths from settings.py
 """
+import sys
 
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
@@ -131,7 +132,9 @@ def index_batches(file_path, index_name):
             if len(batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
                 count += success
-                print(f"Indexed {count} places so far...")
+                sys.stdout.write(
+                    f"\rProcessed {count:,} places...")
+                sys.stdout.flush()
                 batch = []
 
         except Exception as e:

@@ -21,7 +21,7 @@ Dependencies:
 
 import sys
 from collections import defaultdict
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE
 

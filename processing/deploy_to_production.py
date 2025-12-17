@@ -13,7 +13,7 @@ This script:
 import sys
 from datetime import datetime
 
-from elasticsearch8 import Elasticsearch
+from elasticsearch import Elasticsearch
 from processing.settings import ES_HOST_PRODUCTION, STAGING_REPO_NAME
 
 es = Elasticsearch(ES_HOST_PRODUCTION, request_timeout=300)

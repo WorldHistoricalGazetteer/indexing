@@ -29,7 +29,7 @@ import time
 import argparse
 from pathlib import Path
 from datetime import datetime
-from elasticsearch8 import Elasticsearch
+from elasticsearch import Elasticsearch
 
 from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX
 

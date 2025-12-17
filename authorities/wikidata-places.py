@@ -9,7 +9,7 @@ import json
 import sys
 import os
 
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 

@@ -27,7 +27,7 @@ import sys
 import torch
 import torch.nn as nn
 from collections import defaultdict
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 
 from authorities.settings import ES_HOST, BATCH_SIZE
 

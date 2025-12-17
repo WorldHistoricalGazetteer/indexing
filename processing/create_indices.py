@@ -6,7 +6,7 @@ STAGING_REPO_LOCATION = os.getenv("ES_STAGING_REPO_LOCATION")
 
 BACKUP_REPO_LOCATION = os.getenv("ES_BACKUP_REPO_LOCATION")
 
-from elasticsearch8 import Elasticsearch
+from elasticsearch import Elasticsearch
 from processing.settings import ES_HOST, STAGING_REPO_NAME, STAGING_SNAPSHOT_DIR, BACKUP_REPO_NAME, BACKUP_SNAPSHOT_DIR
 from processing.utilities import create_checkpoint_snapshot
 

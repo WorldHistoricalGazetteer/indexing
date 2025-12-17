@@ -6,7 +6,7 @@ Index GeoNames alternate names (toponyms) data into Elasticsearch.
 Updated to use new file paths from settings.py
 """
 
-from elasticsearch8 import Elasticsearch, helpers
+from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
