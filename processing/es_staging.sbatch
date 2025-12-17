@@ -28,8 +28,8 @@
 set -e
 
 # --- Load environment configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/../.env"
+# Use absolute path since SCRIPT_DIR doesn't work reliably in Slurm
+ENV_FILE="/ix1/whcdh/elastic/.env"
 
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
