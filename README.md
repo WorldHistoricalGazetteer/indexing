@@ -24,9 +24,9 @@ This document describes how Elasticsearch and Kibana are deployed for the World 
 
 ```bash
 # Clone the repository (only hardcoded path needed)
-mkdir -p /ix1/whcdh
-cd /ix1/whcdh
-git clone git@github.com:WorldHistoricalGazetteer/elastic.git elastic
+mkdir -p /ix1/ishi
+cd /ix1/ishi
+git clone git@github.com:WorldHistoricalGazetteer/indexing.git elastic
 
 # Run installation (downloads ES + Kibana, sets up alias)
 ./elastic/scripts/es.sh -install
