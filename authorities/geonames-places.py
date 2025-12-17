@@ -1,9 +1,10 @@
-# processing/geonames-places.py
+# authorities/geonames_places.py
 
 """
 Index GeoNames places data into Elasticsearch.
 
-Updated to use new file paths from settings.py
+This script ONLY indexes places. Toponyms are indexed separately
+by geonames_toponyms.py to ensure uniqueness.
 """
 import sys
 
@@ -12,6 +13,24 @@ from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
+
+
+def normalize_lst(name, lang='und'):
+    """
+    Ensure toponym is in LST format (name@lang).
+
+    Args:
+        name: The toponym name
+        lang: Language code (default: 'und' for undetermined)
+
+    Returns:
+        Normalized LST string
+    """
+    if not name:
+        return None
+    if '@' in name:
+        return name
+    return f"{name}@{lang}"
 
 
 def parse_geonames_line(line):
@@ -61,21 +80,30 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Build toponyms array - initially just the main name
-    # Additional toponyms will be added from alternateNames file
+    # Build toponyms array - will be populated by geonames_toponyms.py
+    # We could add the main name here, but alternateNames file provides better
+    # language-tagged versions, so we start with empty array
     toponyms = []
-    if fields[1]:
-        # For the main name, we don't know the language, so we'll mark it as 'und' (undetermined)
-        toponyms.append(f"{fields[1]}@und")
 
-    # Also add the ASCII name if different
-    if fields[2] and fields[2] != fields[1]:
-        toponyms.append(f"{fields[2]}@und")
+    # However, index the main name as a toponym if we want a fallback
+    # This ensures every place has at least one name, even if alternateNames
+    # doesn't include it (rare but possible for very new entries)
+    if fields[1]:  # Main name
+        lst = normalize_lst(fields[1], 'und')
+        if lst:
+            toponyms.append(lst)
+
+    # Optionally add ASCII name if different
+    # (alternateNames usually has this, so you could skip it)
+    # if fields[2] and fields[2] != fields[1]:
+    #     lst = normalize_lst(fields[2], 'und')
+    #     if lst:
+    #         toponyms.append(lst)
 
     # Build the document
     doc = {
         "place_id": f"gn:{fields[0]}",
-        "toponyms": toponyms,
+        "toponyms": toponyms,  # Array of LST references (list, not set)
         "ccodes": ccodes,
         "locations": [
             {
@@ -95,8 +123,7 @@ def parse_geonames_line(line):
                 "label": fields[6],  # feature class
                 "sourceLabel": f"{fields[6]}.{fields[7]}"
             }
-        ],
-        "source": "geonames"
+        ]
     }
 
     # Add elevation if available
@@ -132,13 +159,12 @@ def index_batches(file_path, index_name):
             if len(batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
                 count += success
-                sys.stdout.write(
-                    f"\rProcessed {count:,} places...")
+                sys.stdout.write(f"\rProcessed {count:,} places...")
                 sys.stdout.flush()
                 batch = []
 
         except Exception as e:
-            print(f"Error processing line: {str(e)}")
+            print(f"\nError processing line: {str(e)}")
             continue
 
     # Index remaining batch
@@ -146,17 +172,26 @@ def index_batches(file_path, index_name):
         success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
         count += success
 
-    print(f"Indexing complete. Total places indexed: {count}")
+    print(f"\nIndexing complete. Total places indexed: {count:,}")
 
 
 if __name__ == "__main__":
     GEONAMES_FILE = f"{DATA_DIR}/authorities/gn/allCountries.zip"
     PLACES_INDEX = "places"
 
-    print(f"Starting to index Geonames places from {GEONAMES_FILE}")
+    print("=" * 80)
+    print("GEONAMES PLACES INGESTION")
+    print("=" * 80)
+    print(f"Source: {GEONAMES_FILE}")
     print(f"Target index: {PLACES_INDEX}")
+    print()
 
     index_batches(GEONAMES_FILE, PLACES_INDEX)
 
-    print("Creating checkpoint snapshot...")
+    print("\nCreating checkpoint snapshot...")
     create_checkpoint_snapshot(es, "geonames_places")
+
+    print("\n" + "=" * 80)
+    print("COMPLETE")
+    print("=" * 80)
+    print("Note: Toponyms will be indexed separately by geonames_toponyms.py")

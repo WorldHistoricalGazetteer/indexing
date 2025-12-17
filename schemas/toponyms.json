@@ -41,6 +41,10 @@
   },
   "mappings": {
     "properties": {
+      "toponym_id": {
+        "type": "keyword",
+        "doc_values": true
+      },
       "name": {
         "type": "text",
         "fields": {
@@ -87,6 +91,9 @@
             "type": "category"
           }
         ]
+      },
+      "indexed_at": {
+        "type": "date"
       }
     }
   }
