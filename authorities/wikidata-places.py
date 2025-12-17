@@ -15,8 +15,7 @@ from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
 
-# Updated to match new directory structure
-GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "Wikidata", "wikidata_geoshape_refs.jsonl")
+GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
 
 
 def stream_wikidata(file_path):
@@ -440,7 +439,7 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
 if __name__ == "__main__":
     # Updated to match settings.py configuration
     # File path updated to match fetch_authorities.py structure
-    WIKIDATA_FILE = f"{DATA_DIR}/Wikidata/latest-all.json.gz"
+    WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all.json.gz"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 
