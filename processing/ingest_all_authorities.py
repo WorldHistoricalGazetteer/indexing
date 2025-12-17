@@ -138,7 +138,7 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
 
     # Run the ingestion script
     try:
-        os.system(f"python -m processing.{script_name}")
+        os.system(f"python -m authorities.{script_name}")
 
         elapsed = (datetime.now() - start_time).seconds
         print(f"\n✓ Completed in {elapsed} seconds")
