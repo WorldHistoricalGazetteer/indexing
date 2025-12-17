@@ -520,6 +520,113 @@ staging_logs() {
 }
 
 # =============================================================================
+# INGESTION (Slurm batch job)
+# =============================================================================
+
+do_ingest() {
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    echo "Staging ES is running at http://${ES_NODE}:${ES_PORT}"
+
+    # Build the Python command with all passed arguments
+    PYTHON_ARGS="$@"
+
+    # Create a temporary sbatch script
+    INGEST_SCRIPT=$(mktemp /tmp/es-ingest-XXXXXX.sbatch)
+
+    cat > "$INGEST_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-ingest
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=16G
+#SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
+
+set -e
+
+echo "=========================================="
+echo "AUTHORITY INGESTION JOB"
+echo "=========================================="
+echo "Started: \$(date)"
+echo
+
+# Load environment
+source "$ENV_FILE"
+
+# Load staging ES connection info
+if [ ! -f "$STAGING_INFO_FILE" ]; then
+    echo "ERROR: Staging ES no longer running"
+    exit 1
+fi
+source "$STAGING_INFO_FILE"
+
+# Set ES_HOST for Python scripts
+export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
+
+echo "ES_HOST: \$ES_HOST"
+echo "Arguments: $PYTHON_ARGS"
+echo
+
+# Activate conda environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Run ingestion
+python -m processing.ingest_all_authorities $PYTHON_ARGS
+
+echo
+echo "=========================================="
+echo "INGESTION COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+SBATCH_EOF
+
+    echo
+    echo "Submitting ingestion job..."
+    echo "Arguments passed to ingest_all_authorities.py: $PYTHON_ARGS"
+    echo
+
+    JOBID=$(sbatch --parsable "$INGEST_SCRIPT")
+    rm "$INGEST_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit Slurm job"
+        return 1
+    fi
+
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/ingest-${JOBID}.out"
+    echo
+    echo "Note: The staging ES instance must remain running for the duration."
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -538,6 +645,12 @@ case "$1" in
         ;;
     -staging-health)
         health_staging
+        ;;
+
+    # --- Ingestion ---
+    -ingest)
+        shift  # Remove -ingest from arguments
+        do_ingest "$@"
         ;;
 
     # --- Production (VM) ---
@@ -598,7 +711,7 @@ case "$1" in
         echo "WHG Elasticsearch Management"
         echo "============================"
         echo
-        echo "Usage: $0 COMMAND"
+        echo "Usage: $0 COMMAND [OPTIONS]"
         echo
         echo "SETUP:"
         echo "  -install            Install Elasticsearch and Kibana"
@@ -607,6 +720,20 @@ case "$1" in
         echo "HEALTH CHECKS:"
         echo "  -health             Production cluster health and stats"
         echo "  -staging-health     Staging cluster health and stats"
+        echo
+        echo "INGESTION (requires staging ES running):"
+        echo "  -ingest [OPTIONS]   Submit authority ingestion job to Slurm"
+        echo
+        echo "  Ingestion options (passed to ingest_all_authorities.py):"
+        echo "    -n, --namespaces NS   Comma-separated list: gn,wd,pl,tgn,gb,un,osm,nl,dp,iv,loc"
+        echo "    --skip-existing       Skip authorities already in index"
+        echo "    --check-only          Check data availability only"
+        echo
+        echo "  Examples:"
+        echo "    $0 -ingest                        # Ingest all authorities"
+        echo "    $0 -ingest -n gn,wd               # Ingest GeoNames and Wikidata only"
+        echo "    $0 -ingest --skip-existing        # Skip already ingested"
+        echo "    $0 -ingest --check-only           # Check what's available"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
