@@ -22,6 +22,7 @@ Recommended order:
 12. Wikidata Geoshapes (post-processing for polygons)
 """
 
+import subprocess
 import sys
 import os
 import time
@@ -30,9 +31,22 @@ from pathlib import Path
 from datetime import datetime
 from elasticsearch8 import Elasticsearch
 
-from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES
+from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX
 
 es = Elasticsearch(ES_HOST)
+
+
+class Unbuffered(object):
+    def __init__(self, stream):
+        self.stream = stream
+    def write(self, data):
+        self.stream.write(data)
+        self.stream.flush()
+    def writelines(self, datas):
+        self.stream.writelines(datas)
+        self.stream.flush()
+    def __getattr__(self, attr):
+        return getattr(self.stream, attr)
 
 
 def check_elasticsearch():
@@ -42,13 +56,13 @@ def check_elasticsearch():
         print(f"✓ Elasticsearch {info['version']['number']} is running")
 
         # Check indices
-        if not es.indices.exists(index='places'):
-            print("✗ 'places' index does not exist")
+        if not es.indices.exists(index=PLACES_INDEX):
+            print(f"✗ '{PLACES_INDEX}' index does not exist")
             print("  Run: python -m processing.create_indices")
             return False
 
-        if not es.indices.exists(index='toponyms'):
-            print("✗ 'toponyms' index does not exist")
+        if not es.indices.exists(index=TOPONYMS_INDEX):
+            print(f"✗ '{TOPONYMS_INDEX}' index does not exist")
             print("  Run: python -m processing.create_indices")
             return False
 
@@ -102,7 +116,7 @@ def get_index_counts():
         namespace = auth['namespace']
         try:
             response = es.count(
-                index='places',
+                index=PLACES_INDEX,
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
             )
             counts[namespace] = response['count']
@@ -123,7 +137,7 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
     # Check if already ingested
     if skip_if_exists:
         count = es.count(
-            index='places',
+            index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
         )['count']
 
@@ -138,22 +152,34 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
 
     # Run the ingestion script
     try:
-        os.system(f"python -m authorities.{script_name}")
+        # sys.executable ensures we use the same Python environment/venv
+        # "-u" forces the child process to be unbuffered as well
+        cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
+
+        # We use subprocess.run which waits for the process to finish
+        # The output will stream directly to the Slurm log in real-time
+        subprocess.run(cmd, check=True)
+
+        # Make the docs searchable without changing "refresh_interval": "-1"
+        es.indices.refresh(index=f"{PLACES_INDEX},{TOPONYMS_INDEX}")
 
         elapsed = (datetime.now() - start_time).seconds
         print(f"\n✓ Completed in {elapsed} seconds")
 
         # Get new count
         count = es.count(
-            index='places',
+            index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
         )['count']
 
         print(f"  Total {namespace.upper()} places: {count:,}")
         return True
 
+    except subprocess.CalledProcessError as e:
+        print(f"\n✗ Script failed with exit code {e.returncode}")
+        return False
     except Exception as e:
-        print(f"\n✗ Failed: {e}")
+        print(f"\n✗ Unexpected error: {e}")
         return False
 
 
@@ -258,8 +284,8 @@ def ingest_all(authorities_to_run=None, skip_existing=False):
     print(f"  {'Total:':8} {total:>12,}")
 
     # Get total index counts
-    places_total = es.count(index='places')['count']
-    toponyms_total = es.count(index='toponyms')['count']
+    places_total = es.count(index=PLACES_INDEX)['count']
+    toponyms_total = es.count(index=TOPONYMS_INDEX)['count']
 
     print(f"\nTotal places in index: {places_total:,}")
     print(f"Total toponyms in index: {toponyms_total:,}")
@@ -329,11 +355,6 @@ def main():
 
     # Run ingestion
     ingest_all(namespaces, skip_existing=args.skip_existing)
-
-    # Optionally prepare for production
-    if args.prepare_production:
-        print("\nPreparing indices for production...")
-        os.system("python -m processing.prepare_for_production")
 
 
 if __name__ == "__main__":

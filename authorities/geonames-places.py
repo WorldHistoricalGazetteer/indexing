@@ -131,11 +131,11 @@ def index_batches(file_path, index_name):
             if len(batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
                 count += success
-                print(f"Indexed {count} places so far...", flush=True)
+                print(f"Indexed {count} places so far...")
                 batch = []
 
         except Exception as e:
-            print(f"Error processing line: {str(e)}", flush=True)
+            print(f"Error processing line: {str(e)}")
             continue
 
     # Index remaining batch
@@ -143,15 +143,17 @@ def index_batches(file_path, index_name):
         success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
         count += success
 
-    print(f"Indexing complete. Total places indexed: {count}", flush=True)
+    print(f"Indexing complete. Total places indexed: {count}")
 
 
 if __name__ == "__main__":
     GEONAMES_FILE = f"{DATA_DIR}/authorities/gn/allCountries.zip"
     PLACES_INDEX = "places"
 
-    print(f"Starting to index Geonames places from {GEONAMES_FILE}", flush=True)
-    print(f"Target index: {PLACES_INDEX}", flush=True)
+    print(f"Starting to index Geonames places from {GEONAMES_FILE}")
+    print(f"Target index: {PLACES_INDEX}")
 
     index_batches(GEONAMES_FILE, PLACES_INDEX)
+
+    print("Creating checkpoint snapshot...")
     create_checkpoint_snapshot(es, "geonames_places")
