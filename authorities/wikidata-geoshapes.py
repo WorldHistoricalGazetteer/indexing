@@ -412,22 +412,17 @@ def main():
 
         if remaining == 0:
             print("\nAll references have been processed!")
-            response = input("Re-process all? (y/n): ")
-            if response.lower() != 'y':
-                print("Nothing to do.")
-                sys.exit(0)
-            # Clear the log to start fresh
-            os.remove(LOG_FILE)
-            print("Cleared log file, starting fresh...")
+            # response = input("Re-process all? (y/n): ")  # Cannot use input in slurm jobs
+            # if response.lower() != 'y':
+            #     print("Nothing to do.")
+            #     sys.exit(0)
+            # # Clear the log to start fresh
+            # os.remove(LOG_FILE)
+            # print("Cleared log file, starting fresh...")
 
     print("\nThis will make many API calls to Wikimedia Commons.")
     print("Expected runtime: 4-8 hours with rate limiting.")
     print("The process is resumable - you can stop and restart anytime.")
-
-    response = input("\nContinue? (y/n): ")
-    if response.lower() != 'y':
-        print("Cancelled.")
-        sys.exit(0)
 
     process_geoshapes_from_file(PLACES_INDEX, REFS_FILE, batch_size=100)
     create_checkpoint_snapshot(es, "wikidata_geoshapes")

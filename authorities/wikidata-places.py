@@ -437,9 +437,7 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
 
 
 if __name__ == "__main__":
-    # Updated to match settings.py configuration
-    # File path updated to match fetch_authorities.py structure
-    WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all.json.gz"
+    WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all/latest-all.json.gz"
     PLACES_INDEX = "places"
     TOPONYMS_INDEX = "toponyms"
 
