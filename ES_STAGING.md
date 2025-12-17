@@ -25,9 +25,8 @@ This will:
 1. Submit a Slurm job to a compute node
 2. Start Elasticsearch with data on local NVMe
 3. Register the staging snapshot repository
-4. Restore the latest snapshots (if any exist)
-5. Configure indices for bulk indexing (`refresh_interval: -1`)
-6. Export environment variables to your shell
+4. Restore the latest snapshot (if one exists containing both indices), OR create empty indices using `create_indices.py`
+5. Export environment variables to your shell
 
 Connection info is written to `/ix1/whcdh/esinfo/es-staging.env`.
 
@@ -135,21 +134,6 @@ If the job times out mid-operation:
 - Uncommitted work on the local NVMe is lost
 - The last explicit snapshot is preserved
 - Start a new instance to continue from the last checkpoint
-
-## Index Settings for Bulk Indexing
-
-The staging sbatch automatically configures indices for fast bulk indexing:
-
-```json
-{
-  "index": {
-    "refresh_interval": "-1",
-    "number_of_replicas": 0
-  }
-}
-```
-
-Before transferring to production, `deploy_to_production.py` resets these to query-optimized values.
 
 ## Workflow Example
 

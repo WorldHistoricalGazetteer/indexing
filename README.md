@@ -213,7 +213,7 @@ $SLURM_SCRATCH/                  # Per-job ephemeral
 SSH tunnel for remote Kibana access:
 
 ```bash
-ssh -L 5602:localhost:5601 stg135@gazetteer.crcd.pitt.edu
+ssh -L 5602:localhost:5601 pitt
 # Then access: http://localhost:5602
 ```
 

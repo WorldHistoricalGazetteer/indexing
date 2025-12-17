@@ -17,6 +17,10 @@
 # Start with:  source /ix1/whcdh/elastic/scripts/es.sh -staging-start
 # Stop with:   source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
 #
+# On startup:
+#   - Restores latest snapshots if any exist
+#   - Otherwise creates empty indices using create_indices.py
+#
 # Snapshots must be created EXPLICITLY after completing work.
 # No automatic snapshots are created on shutdown.
 # =============================================================================
@@ -45,7 +49,7 @@ STAGING_CONFIG_DIR="${STAGING_ROOT}/config"
 
 # Create directories
 mkdir -p "$STAGING_DATA_DIR" "$STAGING_LOG_DIR" "$STAGING_CONFIG_DIR"
-mkdir -p "${IX1_BASE}/esinfo"
+mkdir -p "$(dirname "$STAGING_INFO_FILE")"
 mkdir -p "$STAGING_SNAPSHOT_DIR"
 
 # Copy ES config files
@@ -56,6 +60,7 @@ export ES_PATH_CONF="$STAGING_CONFIG_DIR"
 cat > "$STAGING_INFO_FILE" <<EOF
 ES_NODE=$SLURMD_NODENAME
 ES_PORT=$STAGING_ES_PORT
+ES_URL=http://$SLURMD_NODENAME:$STAGING_ES_PORT
 ES_DATA=$STAGING_DATA_DIR
 ES_ROOT=$STAGING_ROOT
 SLURM_JOB_ID=$SLURM_JOB_ID
@@ -120,7 +125,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# --- JVM settings ---
+# --- JVM settings for bulk indexing ---
 export ES_JAVA_OPTS="-Xms8g -Xmx8g"
 
 # --- Start Elasticsearch ---
@@ -137,7 +142,6 @@ echo "Starting Elasticsearch..."
     -E path.repo="$SNAPSHOT_DIR" \
     -E xpack.security.enabled=false \
     -E indices.memory.index_buffer_size=30% \
-    -E index.number_of_replicas=0 \
     > "$STAGING_LOG_DIR/elasticsearch.log" 2>&1 &
 
 ES_PID=$!
@@ -179,78 +183,52 @@ curl -s -X PUT "$ES_URL/_snapshot/$STAGING_REPO_NAME" \
 }" | python3 -m json.tool
 echo
 
-# --- Find and restore latest snapshots ---
-echo "Finding latest snapshots..."
-SNAPSHOTS=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all")
-
-# Extract latest places snapshot
-LATEST_PLACES=$(echo "$SNAPSHOTS" | python3 -c "
+# --- Find latest snapshot containing both indices ---
+echo "Checking for existing snapshots..."
+LATEST_SNAPSHOT=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    places_snaps = [s for s in data.get('snapshots', []) if 'places' in s['indices'] and s['state'] == 'SUCCESS']
-    if places_snaps:
-        latest = max(places_snaps, key=lambda x: x['start_time'])
+    snapshots = data.get('snapshots', [])
+    # Find snapshots that contain both places and toponyms
+    complete = [s for s in snapshots
+                if s['state'] == 'SUCCESS'
+                and 'places' in s['indices']
+                and 'toponyms' in s['indices']]
+    if complete:
+        latest = max(complete, key=lambda x: x['start_time'])
         print(latest['snapshot'])
 except:
     pass
 " 2>/dev/null || true)
 
-# Extract latest toponyms snapshot
-LATEST_TOPONYMS=$(echo "$SNAPSHOTS" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    toponyms_snaps = [s for s in data.get('snapshots', []) if 'toponyms' in s['indices'] and s['state'] == 'SUCCESS']
-    if toponyms_snaps:
-        latest = max(toponyms_snaps, key=lambda x: x['start_time'])
-        print(latest['snapshot'])
-except:
-    pass
-" 2>/dev/null || true)
-
-# Restore places index
-if [ -n "$LATEST_PLACES" ]; then
-    echo "Restoring places index from snapshot: $LATEST_PLACES"
-    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_PLACES/_restore?wait_for_completion=true" \
+if [ -n "$LATEST_SNAPSHOT" ]; then
+    # --- Restore from snapshot ---
+    echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
+    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore?wait_for_completion=true" \
         -H 'Content-Type: application/json' -d '{
-      "indices": "places",
+      "indices": "places,toponyms",
       "ignore_unavailable": true,
       "include_global_state": false
     }' | python3 -m json.tool
     echo
 else
-    echo "No places snapshots found - starting with empty index"
-fi
+    # --- Create empty indices ---
+    echo "No complete snapshots found - creating empty indices..."
+    cd "$REPO_DIR"
 
-# Restore toponyms index
-if [ -n "$LATEST_TOPONYMS" ]; then
-    echo "Restoring toponyms index from snapshot: $LATEST_TOPONYMS"
-    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_TOPONYMS/_restore?wait_for_completion=true" \
-        -H 'Content-Type: application/json' -d '{
-      "indices": "toponyms",
-      "ignore_unavailable": true,
-      "include_global_state": false
-    }' | python3 -m json.tool
-    echo
-else
-    echo "No toponyms snapshots found - starting with empty index"
-fi
-
-# --- Configure indices for bulk indexing ---
-echo "Configuring indices for bulk indexing..."
-for INDEX in places toponyms; do
-    if curl -s "$ES_URL/$INDEX" > /dev/null 2>&1; then
-        curl -s -X PUT "$ES_URL/$INDEX/_settings" \
-            -H 'Content-Type: application/json' -d '{
-            "index": {
-                "refresh_interval": "-1",
-                "number_of_replicas": 0
-            }
-        }' > /dev/null
-        echo "  $INDEX: refresh_interval=-1, replicas=0"
+    # Activate conda environment if available
+    if [ -f "$IX1_BASE/miniconda/etc/profile.d/conda.sh" ]; then
+        source "$IX1_BASE/miniconda/etc/profile.d/conda.sh"
+        conda activate whg 2>/dev/null || true
     fi
-done
+
+    # Set ES_HOST for the Python script
+    export ES_HOST="$ES_URL"
+
+    python -m processing.create_indices
+    echo
+fi
 
 # --- Show index status ---
 echo
