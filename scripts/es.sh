@@ -6,18 +6,229 @@
 
 set -e
 
-# --- Load Environment Variables ---
+# --- Bootstrap: minimal hardcoded path for initial install ---
+IX1_BASE="/ix1/whcdh"
+
+# --- Load Environment Variables (if available) ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${SCRIPT_DIR}/../.env"
 
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
-else
-    echo "ERROR: .env file not found at $ENV_FILE"
-    exit 1
 fi
 
-export PATH="$JAVA_HOME/bin:$PATH"
+# Ensure PATH includes Java if available
+if [ -n "$JAVA_HOME" ] && [ -d "$JAVA_HOME/bin" ]; then
+    export PATH="$JAVA_HOME/bin:$PATH"
+fi
+
+# =============================================================================
+# INSTALLATION AND UPDATE
+# =============================================================================
+
+do_install() {
+    echo "=========================================="
+    echo "WHG ELASTICSEARCH INSTALLATION"
+    echo "=========================================="
+    echo
+
+    # Check if already installed
+    if [ -d "$ES_HOME" ] && [ -d "$KIBANA_HOME" ]; then
+        echo "Elasticsearch and Kibana appear to be already installed."
+        echo "  ES_HOME: $ES_HOME"
+        echo "  KIBANA_HOME: $KIBANA_HOME"
+        read -p "Reinstall? (y/n): " confirm
+        if [ "$confirm" != "y" ]; then
+            echo "Cancelled."
+            return 0
+        fi
+    fi
+
+    # Create directory structure
+    echo "Creating directory structure..."
+    mkdir -p "$IX1_BASE"/{es/{logs,snapshots/staging,snapshots/backup,config},kibana/{data,logs},esinfo,data/authorities}
+    mkdir -p "$IX3_BASE/es/data"
+
+    cd "$IX1_BASE"
+
+    # Download and install Elasticsearch
+    echo
+    echo "Downloading Elasticsearch ${ES_VERSION}..."
+    curl -L -O "$ES_DOWNLOAD_URL"
+
+    echo "Extracting Elasticsearch..."
+    tar xf "elasticsearch-${ES_VERSION}-linux-x86_64.tar.gz"
+    rm -rf "$ES_HOME"
+    mv "elasticsearch-${ES_VERSION}" "$ES_HOME"
+    rm "elasticsearch-${ES_VERSION}-linux-x86_64.tar.gz"
+    echo "✓ Elasticsearch installed to $ES_HOME"
+
+    # Download and install Kibana
+    echo
+    echo "Downloading Kibana ${KIBANA_VERSION}..."
+    curl -L -O "$KIBANA_DOWNLOAD_URL"
+
+    echo "Extracting Kibana..."
+    tar xf "kibana-${KIBANA_VERSION}-linux-x86_64.tar.gz"
+    rm -rf "$KIBANA_HOME"
+    mv "kibana-${KIBANA_VERSION}" "$KIBANA_HOME"
+    rm "kibana-${KIBANA_VERSION}-linux-x86_64.tar.gz"
+    echo "✓ Kibana installed to $KIBANA_HOME"
+
+    # Make wrapper script executable and commit
+    echo
+    echo "Setting up wrapper script..."
+    chmod +x "$REPO_DIR/scripts/es.sh"
+
+    cd "$REPO_DIR"
+    if git diff --quiet scripts/es.sh 2>/dev/null; then
+        echo "  Script permissions already tracked"
+    else
+        git add scripts/es.sh
+        git commit -m "Make es.sh executable" 2>/dev/null || true
+        git push origin main 2>/dev/null || echo "  (Could not push - you may need to push manually)"
+    fi
+
+    # Add alias to .bashrc
+    echo
+    ALIAS_LINE="alias es='$REPO_DIR/scripts/es.sh'"
+    if grep -q "alias es=" ~/.bashrc 2>/dev/null; then
+        echo "Alias 'es' already exists in ~/.bashrc"
+    else
+        echo "$ALIAS_LINE" >> ~/.bashrc
+        echo "✓ Added alias to ~/.bashrc"
+    fi
+
+    echo
+    echo "=========================================="
+    echo "INSTALLATION COMPLETE"
+    echo "=========================================="
+    echo
+    echo "To activate the 'es' alias in your current shell:"
+    echo "  source ~/.bashrc"
+    echo
+    echo "Then start services with:"
+    echo "  es -start"
+    echo
+}
+
+do_update() {
+    echo "Updating from git repository..."
+
+    if [ ! -d "$REPO_DIR" ]; then
+        echo "ERROR: Repository not found at $REPO_DIR"
+        echo "Run installation first or clone manually."
+        return 1
+    fi
+
+    cd "$REPO_DIR"
+
+    # Check for local changes
+    if ! git diff --quiet 2>/dev/null; then
+        echo "WARNING: You have local changes:"
+        git status --short
+        echo
+        read -p "Stash changes and continue? (y/n): " confirm
+        if [ "$confirm" = "y" ]; then
+            git stash
+            echo "Changes stashed. Restore later with: git stash pop"
+        else
+            echo "Cancelled."
+            return 1
+        fi
+    fi
+
+    echo "Pulling latest from main..."
+    git pull origin main
+
+    echo "✓ Update complete"
+}
+
+# =============================================================================
+# HEALTH CHECKS
+# =============================================================================
+
+health_production() {
+    echo "=========================================="
+    echo "PRODUCTION HEALTH CHECK"
+    echo "=========================================="
+    echo
+
+    # Check if ES is running
+    if [ -f "$PROD_ES_PID" ] && kill -0 $(cat "$PROD_ES_PID") 2>/dev/null; then
+        echo "Elasticsearch: RUNNING (PID: $(cat $PROD_ES_PID))"
+    else
+        echo "Elasticsearch: STOPPED"
+        return 1
+    fi
+
+    # Check if Kibana is running
+    if [ -f "$KIBANA_PID" ] && kill -0 $(cat "$KIBANA_PID") 2>/dev/null; then
+        echo "Kibana: RUNNING (PID: $(cat $KIBANA_PID))"
+    else
+        echo "Kibana: STOPPED"
+    fi
+
+    echo
+
+    # Cluster health
+    echo "--- Cluster Health ---"
+    curl -s "$PROD_ES_URL/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
+
+    echo
+    echo "--- Index Summary ---"
+    curl -s "$PROD_ES_URL/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
+
+    echo
+    echo "--- Disk Usage ---"
+    echo "Production data (ix3):"
+    du -sh "$PROD_DATA_DIR" 2>/dev/null || echo "  Directory not found"
+    echo "Snapshots (ix1):"
+    du -sh "$SNAPSHOT_DIR" 2>/dev/null || echo "  Directory not found"
+
+    echo
+    echo "--- Memory ---"
+    free -h | head -2
+}
+
+health_staging() {
+    echo "=========================================="
+    echo "STAGING HEALTH CHECK"
+    echo "=========================================="
+    echo
+
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "Staging instance: NOT RUNNING"
+        echo
+        echo "Start with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    echo "Staging instance: RUNNING"
+    echo "  Node: $ES_NODE"
+    echo "  Port: $ES_PORT"
+    echo "  Job:  $SLURM_JOB_ID"
+    echo
+
+    # Check job status
+    echo "--- Slurm Job Status ---"
+    squeue -j "$SLURM_JOB_ID" 2>/dev/null || echo "Job not found in queue"
+
+    echo
+    echo "--- Cluster Health ---"
+    curl -s "http://${ES_NODE}:${ES_PORT}/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
+
+    echo
+    echo "--- Index Summary ---"
+    curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
+
+    echo
+    echo "--- Snapshots ---"
+    SNAP_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/_snapshot/$STAGING_REPO_NAME/_all" 2>/dev/null | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('snapshots',[])))" 2>/dev/null || echo "?")
+    echo "Snapshots in staging repo: $SNAP_COUNT"
+}
 
 # =============================================================================
 # PRODUCTION ELASTICSEARCH (VM)
@@ -33,6 +244,9 @@ start_prod_es() {
 
     # Ensure directories exist
     mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR"
+
+    # JVM heap: 15g of 32g RAM (leaves ~15g for filesystem cache)
+    export ES_JAVA_OPTS="-Xms15g -Xmx15g"
 
     nohup "$ES_HOME/bin/elasticsearch" \
         -E cluster.name="$PROD_CLUSTER_NAME" \
@@ -285,18 +499,6 @@ staging_status() {
     curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices?v" 2>/dev/null || echo "  Could not connect"
 }
 
-staging_health() {
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "No staging instance running."
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    echo "Checking ES health on ${ES_NODE}:${ES_PORT}..."
-    curl -s "http://${ES_NODE}:${ES_PORT}/_cluster/health?pretty"
-}
-
 staging_logs() {
     if [ ! -f "$STAGING_INFO_FILE" ]; then
         echo "No staging instance found."
@@ -322,6 +524,22 @@ staging_logs() {
 # =============================================================================
 
 case "$1" in
+    # --- Installation and Update ---
+    -install)
+        do_install
+        ;;
+    -update)
+        do_update
+        ;;
+
+    # --- Health Checks ---
+    -health)
+        health_production
+        ;;
+    -staging-health)
+        health_staging
+        ;;
+
     # --- Production (VM) ---
     -start)
         start_prod_es
@@ -371,9 +589,6 @@ case "$1" in
     -staging-status)
         staging_status
         ;;
-    -staging-health)
-        staging_health
-        ;;
     -staging-logs)
         staging_logs
         ;;
@@ -384,6 +599,14 @@ case "$1" in
         echo "============================"
         echo
         echo "Usage: $0 COMMAND"
+        echo
+        echo "SETUP:"
+        echo "  -install            Install Elasticsearch and Kibana"
+        echo "  -update             Pull latest code from git"
+        echo
+        echo "HEALTH CHECKS:"
+        echo "  -health             Production cluster health and stats"
+        echo "  -staging-health     Staging cluster health and stats"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
@@ -400,19 +623,12 @@ case "$1" in
         echo "  source $0 -staging-start    Launch staging ES on Slurm"
         echo "  source $0 -staging-stop     Stop staging ES"
         echo "  source $0 -staging-status   Show status and index counts"
-        echo "  source $0 -staging-health   Check cluster health"
         echo "  source $0 -staging-logs     Show recent log output"
         echo
-        echo "STAGING NOTES:"
-        echo "  - One staging instance at a time (port $STAGING_ES_PORT)"
-        echo "  - All indexing jobs share the single instance"
-        echo "  - Snapshots must be created explicitly (not on shutdown)"
-        echo "  - After -staging-start, variables exported: ES_NODE, ES_PORT, ES_DATA"
-        echo "  - Other scripts can source: $STAGING_INFO_FILE"
-        echo
-        echo "STORAGE:"
-        echo "  Production data: \$IX3_BASE/es/data (flash)"
-        echo "  Staging data:    \$SLURM_SCRATCH (ephemeral NVMe)"
-        echo "  Snapshots:       \$IX1_BASE/es/snapshots (shared)"
+        echo "NOTES:"
+        echo "  - Staging: one instance at a time (port $STAGING_ES_PORT)"
+        echo "  - Staging: snapshots must be created explicitly"
+        echo "  - Production data: $PROD_DATA_DIR"
+        echo "  - Snapshots: $SNAPSHOT_DIR"
         ;;
 esac

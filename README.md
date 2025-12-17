@@ -18,81 +18,36 @@ This document describes how Elasticsearch and Kibana are deployed for the World 
 | `/ix3/whcdh` | Flash | Production ES data (fast queries) |
 | `$SLURM_SCRATCH` | NVMe | Staging ES data (ephemeral, fast indexing) |
 
-## Repository Setup
+## Installation
 
-Clone the repository (first-time setup):
+### First-time Setup
 
 ```bash
+# Clone the repository (only hardcoded path needed)
 mkdir -p /ix1/whcdh
 cd /ix1/whcdh
-git clone git@github.com:whg/elastic.git elastic
-```
+git clone git@github.com:WorldHistoricalGazetteer/elastic.git elastic
 
-Set the wrapper script as permanently executable:
+# Run installation (downloads ES + Kibana, sets up alias)
+./elastic/scripts/es.sh -install
 
-```bash
-chmod +x /ix1/whcdh/elastic/scripts/es.sh
-git add /ix1/whcdh/elastic/scripts/es.sh
-git commit -m "Make wrapper script executable"
-git push origin main
-```
-
-Create an alias by adding to `~/.bashrc`:
-
-```bash
-alias es='/ix1/whcdh/elastic/scripts/es.sh'
-```
-
-Update your current shell:
-
-```bash
+# Activate the alias in your current shell
 source ~/.bashrc
 ```
 
+The `-install` command:
+- Creates the directory structure on ix1 and ix3
+- Downloads and installs Elasticsearch and Kibana
+- Makes the wrapper script executable
+- Adds the `es` alias to your `.bashrc`
 
-> Subsequently, update to latest:
->
->```bash
->cd /ix1/whcdh/elastic
->git pull origin main
->```
+### Updating
 
-## Elasticsearch Installation (Bare-Metal)
-
-```
-cd /ix1/whcdh
-
-# --- Download Elasticsearch 9.2.1 ---
-curl -L -O https://artifacts.elastic.co/downloads/elasticsearch/elasticsearch-9.2.1-linux-x86_64.tar.gz
-
-# --- Extract and Rename ---
-tar xf elasticsearch-9.2.1-linux-x86_64.tar.gz
-mv elasticsearch-9.2.1 es-bin
-rm elasticsearch-9.2.1-linux-x86_64.tar.gz
-
-# --- Create Data Directories ---
-mkdir -p /ix1/whcdh/es/{data,logs,repo,config}
+```bash
+es -update
 ```
 
-### Kibana (Bare-Metal)
-
-```
-cd /ix1/whcdh
-
-# --- Download Kibana 9.2.1 ---
-curl -L -O https://artifacts.elastic.co/downloads/kibana/kibana-9.2.1-linux-x86_64.tar.gz
-
-# --- Extract and Rename ---
-tar xf kibana-9.2.1-linux-x86_64.tar.gz
-mv kibana-9.2.1 kibana-bin
-rm kibana-9.2.1-linux-x86_64.tar.gz
-
-# --- Create Data Directories ---
-mkdir -p /ix1/whcdh/kibana/{data,logs}
-
-```
-
----
+Pulls the latest code from the main branch.
 
 ## Configuration
 
@@ -114,6 +69,20 @@ Key variables:
 | `DATA_DIR` | Authority source files |
 | `SNAPSHOT_DIR` | Snapshot repository location |
 
+### VM Resource Allocation
+
+The VM has 32GB RAM. With ES as the primary service:
+
+| Resource | Allocation | Purpose |
+|----------|------------|---------|
+| ES heap | 15g | JVM heap (`-Xms15g -Xmx15g`) |
+| Filesystem cache | ~15g | OS uses free RAM for caching index files |
+| System/services | ~2g | OS, SSH, monitoring |
+
+The 50/50 split between heap and filesystem cache is standard ES guidance — both are important for query performance.
+
+This is configured in `es.sh` and applied automatically when starting production ES.
+
 ## Managing Services
 
 ### Production (VM)
@@ -133,6 +102,9 @@ es es-start
 es es-stop
 es kibana-start
 es kibana-stop
+
+# Health check
+es -health
 ```
 
 ### Staging (Slurm)
@@ -146,14 +118,14 @@ ssh stg135@htc.crc.pitt.edu
 # Start staging ES (use 'source' to export variables)
 source /ix1/whcdh/elastic/scripts/es.sh -staging-start
 
-# Check status
-source /ix1/whcdh/elastic/scripts/es.sh -staging-status
+# Health check
+es -staging-health
 
-# Check health
-source /ix1/whcdh/elastic/scripts/es.sh -staging-health
+# Check status
+es -staging-status
 
 # View logs
-source /ix1/whcdh/elastic/scripts/es.sh -staging-logs
+es -staging-logs
 
 # Stop staging ES
 source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
@@ -161,24 +133,17 @@ source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
 
 See [ES_STAGING.md](ES_STAGING.md) for detailed staging documentation.
 
-## Basic Status Checks
+## Health Checks
 
-### Production
 ```bash
-curl -s "http://localhost:9200/_cluster/health?pretty"
-curl -s "http://localhost:9200/_cat/indices?v"
+# Production - full health report
+es -health
+
+# Staging - full health report  
+es -staging-health
 ```
 
-### Staging
-```bash
-# After sourcing staging env
-curl -s "http://$ES_NODE:$ES_PORT/_cluster/health?pretty"
-```
-
-### Kibana
-```bash
-curl -s "http://localhost:5601/api/status" -H "kbn-xsrf: true"
-```
+These show cluster health, index stats, disk usage, and memory.
 
 ## Directory Structure
 
