@@ -322,7 +322,7 @@ def pass2_update_places_with_toponyms(file_path):
 
         processed += 1
         if processed % 100000 == 0:
-            sys.stdout.write(f"\r  Processed {processed:,} lines...")
+            sys.stdout.write(f"\r  Processed {processed:,} lines...                      ")
             sys.stdout.flush()
 
         try:
