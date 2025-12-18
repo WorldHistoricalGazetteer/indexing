@@ -31,32 +31,48 @@ from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TO
 es = Elasticsearch(ES_HOST)
 
 
-def delete_existing_namespace(namespace):
+def delete_existing_namespace(namespace, batch_size=10000):
     """
-    Delete all places for a given authority namespace.
+    Delete all places for a given authority namespace in batches
+    to avoid blocking Elasticsearch for large datasets.
     """
-    print(f"\nDeleting existing data for namespace '{namespace}'")
+    print(f"\nDeleting existing data for namespace '{namespace}' in batches of {batch_size:,}")
 
-    query = {
-        "query": {
-            "prefix": {
-                "place_id": f"{namespace}:"
-            }
-        }
-    }
+    total_deleted = 0
 
-    resp = es.delete_by_query(
+    # Initial scroll query
+    resp = es.search(
         index=PLACES_INDEX,
-        body=query,
-        conflicts="proceed",
-        refresh=True,
-        slices="auto",
-        wait_for_completion=True,
+        query={"prefix": {"place_id": f"{namespace}:"}},
+        scroll="2m",
+        size=batch_size,
+        _source=False  # we only need IDs
     )
+    scroll_id = resp['_scroll_id']
 
-    deleted = resp.get("deleted", 0)
-    print(f"  Deleted {deleted:,} places")
-    return deleted
+    while True:
+        hits = resp['hits']['hits']
+        if not hits:
+            break
+
+        # Prepare bulk delete actions
+        actions = [{"_op_type": "delete", "_index": PLACES_INDEX, "_id": h["_id"]} for h in hits]
+        success, failed = helpers.bulk(es, actions, raise_on_error=False, stats_only=True)
+        total_deleted += success
+
+        print(f"  Deleted {total_deleted:,} places so far...")
+
+        # Fetch next batch
+        resp = es.scroll(scroll_id=scroll_id, scroll="2m")
+        scroll_id = resp['_scroll_id']
+
+    # Cleanup scroll context
+    es.clear_scroll(scroll_id=scroll_id)
+
+    print(f"✓ Finished deleting namespace '{namespace}'")
+    print(f"  Total deleted: {total_deleted:,}")
+    return total_deleted
+
 
 
 def deduplicate_and_index_toponyms():
