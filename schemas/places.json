@@ -51,9 +51,6 @@
         }
       },
       "toponyms": {
-        "type": "keyword"
-      },
-      "temporally_scoped_toponyms": {
         "type": "nested",
         "properties": {
           "toponym_id": {
