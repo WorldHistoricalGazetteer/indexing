@@ -24,7 +24,6 @@ Recommended order:
 
 import subprocess
 import sys
-import os
 import time
 import argparse
 from pathlib import Path
@@ -163,8 +162,8 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
         # Make the docs searchable without changing "refresh_interval": "-1"
         es.indices.refresh(index=f"{PLACES_INDEX},{TOPONYMS_INDEX}")
 
-        elapsed = (datetime.now() - start_time).seconds
-        print(f"\n✓ Completed in {str(datetime.utcfromtimestamp(elapsed).strftime('%H:%M:%S'))}")
+        elapsed = datetime.now() - start_time
+        print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
 
         # Get new count
         count = es.count(

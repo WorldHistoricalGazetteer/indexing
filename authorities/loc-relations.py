@@ -16,6 +16,8 @@ The LOC data includes:
 
 This script primarily creates relations in existing places rather than
 creating new place records.
+
+No changes needed for temporal scoping design - LOC only updates relations.
 """
 
 import json
@@ -444,26 +446,6 @@ def index_loc_file(ndjson_file):
                     print(f"    → {rel['relationTo']}: {rel.get('label', 'LOC authority')}")
 
 
-def create_loc_only_places(ndjson_file, places_index='places'):
-    """
-    Optional: Create place records for LOC entries that don't match existing places.
-
-    This is generally not recommended as LOC geographic authorities are
-    primarily useful for linking, not as standalone place records.
-    """
-
-    print("\nWARNING: Creating standalone LOC places is not recommended")
-    print("LOC authorities are best used for enriching existing place data")
-
-    response = input("Continue anyway? (y/n): ")
-    if response.lower() != 'y':
-        print("Cancelled")
-        return
-
-    # Implementation would go here if needed...
-    print("Not implemented - use LOC data for relations only")
-
-
 if __name__ == "__main__":
     import argparse
 
@@ -473,11 +455,6 @@ if __name__ == "__main__":
     parser.add_argument(
         '--file',
         help='Path to LOC NDJSON file (default: auto-detect from settings)'
-    )
-    parser.add_argument(
-        '--create-places',
-        action='store_true',
-        help='Create new place records for unmatched LOC entries (not recommended)'
     )
 
     args = parser.parse_args()
@@ -501,12 +478,9 @@ if __name__ == "__main__":
 
     print(f"Starting LOC authority processing")
     print(f"File: {ndjson_file}")
-    print(f"Mode: {'Create places' if args.create_places else 'Relations only'}")
+    print(f"Mode: Relations only (no new places created)")
     print()
 
-    if args.create_places:
-        create_loc_only_places(str(ndjson_file))
-    else:
-        index_loc_file(str(ndjson_file))
+    index_loc_file(str(ndjson_file))
 
     create_checkpoint_snapshot(es, 'loc_authorities')

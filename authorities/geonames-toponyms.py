@@ -307,7 +307,7 @@ def pass2_update_places_with_toponyms(file_path):
             if failed > 0:
                 sys.stdout.write(f"\r  Updated {places_updated:,} places ({failed} failed)...")
             else:
-                sys.stdout.write(f"\r  Updated {places_updated:,} places...")
+                sys.stdout.write(f"\r  Updated {places_updated:,} places...                  ")
             sys.stdout.flush()
         except Exception as e:
             print(f"\nError updating batch: {str(e)}")

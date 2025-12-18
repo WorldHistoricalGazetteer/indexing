@@ -11,6 +11,8 @@ compiled by John Adams. This dataset provides:
 - Market day information for market towns
 
 The data has been reconciled with modern gazetteers to provide coordinates.
+
+Updated to use temporal scoping design with 1680 as timespan.
 """
 
 import json
@@ -51,6 +53,8 @@ def process_iv_entry(entry, namespace='iv'):
         "wikidata_id": "Wikidata Q-number",
         "confidence": 0.95
     }
+
+    Returns: place_doc dict (no separate toponym docs in new design)
     """
 
     # Handle both direct entries and GeoJSON features
@@ -88,49 +92,46 @@ def process_iv_entry(entry, namespace='iv'):
     historical_name = props.get('name', props.get('historical_name', ''))
 
     if not iv_id or not historical_name:
-        return None, []
+        return None
 
     # Create place ID
     place_id = f"{namespace}:{iv_id.replace('IV_', '')}"
 
-    # Build toponyms array
+    # Build toponyms array and temporally_scoped_toponyms
     toponyms = []
-    toponym_docs = []
+    temporally_scoped_toponyms = []
+    seen_lsts = set()
 
     # Historical name (1680)
-    toponyms.append(f"{historical_name}@en")
-    toponym_docs.append({
-        'place_id': place_id,
-        'name': f"{historical_name}@en",
-        'is_preferred': True,
-        'timespans': [{
-            'start': 1680,
-            'end': 1680
-        }],
-        'suggest': {
-            'input': [historical_name],
-            'contexts': {'lang': ['en']}
-        }
-    })
+    lst = f"{historical_name}@en"
+    if lst not in seen_lsts:
+        toponyms.append(lst)
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 1680},
+                'end': {'in': 1680}
+            }
+        })
+        seen_lsts.add(lst)
 
     # Modern name if different
     modern_name = props.get('modern_name', props.get('modern', ''))
     if modern_name and modern_name != historical_name:
-        toponyms.append(f"{modern_name}@en")
-        toponym_docs.append({
-            'place_id': place_id,
-            'name': f"{modern_name}@en",
-            'timespans': [{
-                'start': 2000,  # Modern era
-                'end': 2025
-            }],
-            'suggest': {
-                'input': [modern_name],
-                'contexts': {'lang': ['en']}
-            }
-        })
+        lst = f"{modern_name}@en"
+        if lst not in seen_lsts:
+            toponyms.append(lst)
+            # Modern name gets current scope
+            temporally_scoped_toponyms.append({
+                'toponym_id': lst,
+                'timespan': {
+                    'start': {'in': 2000},
+                    'end': {'in': 2025}
+                }
+            })
+            seen_lsts.add(lst)
 
-    # Alternative spellings
+    # Alternative names
     if 'alternative_names' in props:
         alt_names = props['alternative_names']
         if isinstance(alt_names, str):
@@ -138,23 +139,22 @@ def process_iv_entry(entry, namespace='iv'):
 
         for alt_name in alt_names:
             if alt_name and alt_name not in [historical_name, modern_name]:
-                toponyms.append(f"{alt_name}@en")
-                toponym_docs.append({
-                    'place_id': place_id,
-                    'name': f"{alt_name}@en",
-                    'timespans': [{
-                        'start': 1680,
-                        'end': 1680
-                    }],
-                    'suggest': {
-                        'input': [alt_name],
-                        'contexts': {'lang': ['en']}
-                    }
-                })
+                lst = f"{alt_name}@en"
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    # Alternative names get 1680 scope
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 1680},
+                            'end': {'in': 1680}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
     # Check for geometry
     if not geometry:
-        return None, []  # Skip entries without location
+        return None  # Skip entries without location
 
     rep_point = compute_representative_point(geometry)
 
@@ -162,7 +162,8 @@ def process_iv_entry(entry, namespace='iv'):
     place_doc = {
         'place_id': place_id,
         'label': historical_name,
-        'toponyms': list(set(toponyms)),
+        'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'indexvillaris',
         'locations': [{
             'geometry': geometry,
@@ -251,12 +252,15 @@ def process_iv_entry(entry, namespace='iv'):
         except (ValueError, TypeError):
             pass
 
-    return place_doc, toponym_docs
+    return place_doc
 
 
-def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
+def index_iv_file(json_file, places_index='places'):
     """
     Process Index Villaris JSON file and index to Elasticsearch.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
 
     print(f"Processing Index Villaris file: {json_file}")
@@ -274,9 +278,7 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
             return
 
     places_batch = []
-    toponyms_batch = []
     places_count = 0
-    toponyms_count = 0
     skipped = 0
     no_coords = 0
 
@@ -331,7 +333,7 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
                   f"indexed: {places_count}, no coords: {no_coords}, skipped: {skipped}")
 
         try:
-            place_doc, toponym_docs = process_iv_entry(entry)
+            place_doc = process_iv_entry(entry)
 
             if not place_doc:
                 # Check if it was missing coordinates
@@ -351,14 +353,6 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
                 '_source': place_doc
             })
 
-            # Add toponyms
-            for j, toponym_doc in enumerate(toponym_docs):
-                toponyms_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:{j}",
-                    '_source': toponym_doc
-                })
-
             # Bulk index when batch is full
             if len(places_batch) >= BATCH_SIZE:
                 try:
@@ -371,15 +365,6 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
                     print(f"    ERROR indexing places batch: {e}")
                     places_batch = []
 
-            if len(toponyms_batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-                    toponyms_count += success
-                    toponyms_batch = []
-                except Exception as e:
-                    print(f"    ERROR indexing toponyms batch: {e}")
-                    toponyms_batch = []
-
         except Exception as e:
             print(f"  ERROR processing entry {i}: {e}")
             if i < 3:  # Show first few problematic entries
@@ -387,20 +372,13 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
             skipped += 1
             continue
 
-    # Index remaining batches
+    # Index remaining batch
     if places_batch:
         try:
             success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
             places_count += success
         except Exception as e:
             print(f"ERROR indexing final places batch: {e}")
-
-    if toponyms_batch:
-        try:
-            success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-            toponyms_count += success
-        except Exception as e:
-            print(f"ERROR indexing final toponyms batch: {e}")
 
     elapsed = (datetime.now() - start_time).seconds
 
@@ -409,7 +387,6 @@ def index_iv_file(json_file, places_index='places', toponyms_index='toponyms'):
     print(f"{'=' * 80}")
     print(f"Time elapsed: {elapsed} seconds")
     print(f"Places indexed: {places_count:,}")
-    print(f"Toponyms indexed: {toponyms_count:,}")
     print(f"Missing coordinates: {no_coords:,}")
     print(f"Skipped (other): {skipped:,}")
 
@@ -458,11 +435,6 @@ if __name__ == "__main__":
         default='places',
         help='Target places index name (default: places)'
     )
-    parser.add_argument(
-        '--toponyms-index',
-        default='toponyms',
-        help='Target toponyms index name (default: toponyms)'
-    )
 
     args = parser.parse_args()
 
@@ -486,9 +458,9 @@ if __name__ == "__main__":
 
     print(f"Starting Index Villaris ingestion")
     print(f"File: {json_file}")
-    print(f"Target indices: {args.places_index}, {args.toponyms_index}")
+    print(f"Target index: {args.places_index}")
     print(f"Historical period: 1680")
     print()
 
-    index_iv_file(str(json_file), args.places_index, args.toponyms_index)
+    index_iv_file(str(json_file), args.places_index)
     create_checkpoint_snapshot(es, "indexvillaris_places")

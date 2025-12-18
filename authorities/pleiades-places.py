@@ -5,12 +5,13 @@ Index Pleiades places data into Elasticsearch with memory-efficient streaming.
 
 This version uses ijson to stream parse the large JSON file instead of
 loading it entirely into memory.
+
+Updated to use temporal scoping design where temporal data lives with places.
 """
 
 import gzip
 import ijson
 from processing.helpers import compute_representative_point
-
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -71,10 +72,10 @@ def extract_toponyms(pleiades_record):
     Extract name data from Pleiades names array.
     Each name may have temporal attestations and language info.
 
-    Returns: tuple of (toponyms_list, toponym_docs)
+    Returns: tuple of (toponyms_list, temporally_scoped_toponyms)
     """
     toponyms_list = []  # For places.toponyms array
-    toponym_docs = []  # For toponyms index
+    temporally_scoped_toponyms = []  # For places.temporally_scoped_toponyms
     place_id = f"pl:{pleiades_record['id']}"
 
     for name_obj in pleiades_record.get('names', []):
@@ -99,13 +100,10 @@ def extract_toponyms(pleiades_record):
             toponym = f"{name}@{lang}"
             toponyms_list.append(toponym)
 
-            # Create toponym document
-            toponym_doc = {
-                'place_id': place_id,
-                'name': toponym  # Full name@lang format
-            }
+            # Build temporally scoped entry
+            scoped_entry = {'toponym_id': toponym}
 
-            # Add temporal information
+            # Add temporal information from attestations
             attestations = name_obj.get('attestations', [])
             if attestations:
                 # Get start/end from name object
@@ -114,22 +112,14 @@ def extract_toponyms(pleiades_record):
                 if start is not None or end is not None:
                     timespan = {}
                     if start is not None:
-                        timespan['start'] = start
+                        timespan['start'] = {'in': start}
                     if end is not None:
-                        timespan['end'] = end
-                    toponym_doc['timespans'] = [timespan]
+                        timespan['end'] = {'in': end}
+                    scoped_entry['timespan'] = timespan
 
-            # Add to completion suggester
-            toponym_doc['suggest'] = {
-                'input': [name],
-                'contexts': {
-                    'lang': [lang.split('-')[0] if '-' in lang else lang]
-                }
-            }
+            temporally_scoped_toponyms.append(scoped_entry)
 
-            toponym_docs.append(toponym_doc)
-
-    return toponyms_list, toponym_docs
+    return toponyms_list, temporally_scoped_toponyms
 
 
 def extract_place_types(pleiades_record):
@@ -153,17 +143,18 @@ def create_place_doc(pleiades_record):
     """
     Create a place document from a Pleiades record.
 
-    Returns: tuple of (place_doc, toponym_docs)
+    Returns: place_doc dict
     """
     place_id = f"pl:{pleiades_record['id']}"
 
-    # Extract toponyms
-    toponyms_list, toponym_docs = extract_toponyms(pleiades_record)
+    # Extract toponyms with temporal scoping
+    toponyms_list, temporally_scoped_toponyms = extract_toponyms(pleiades_record)
 
     doc = {
         'place_id': place_id,
         'label': pleiades_record.get('title', ''),
         'toponyms': toponyms_list,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'pleiades'
     }
 
@@ -208,23 +199,25 @@ def create_place_doc(pleiades_record):
         if relations:
             doc['relations'] = relations
 
-    return doc, toponym_docs
+    return doc
 
 
-def index_pleiades_streaming(file_path, places_index, toponyms_index):
+def index_pleiades_streaming(file_path, places_index):
     """
     Stream parse Pleiades JSON to avoid loading entire file into memory.
     Uses ijson for incremental JSON parsing.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
     place_batch = []
-    toponym_batch = []
 
     place_count = 0
-    toponym_count = 0
     skipped = 0
 
     print(f"Streaming Pleiades data from {file_path}")
     print("Using ijson for memory-efficient parsing...")
+    print("Using new temporal scoping design")
 
     try:
         # Detect if file is gzipped or plain JSON
@@ -264,11 +257,11 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
             # Process each record as it's parsed
             for i, record in enumerate(parser):
                 if (i + 1) % 1000 == 0:
-                    print(f"Processed {i + 1:,} records... (places: {place_count:,}, toponyms: {toponym_count:,})")
+                    print(f"Processed {i + 1:,} records... (places: {place_count:,})")
 
                 try:
                     # Create place document
-                    place_doc, toponym_docs = create_place_doc(record)
+                    place_doc = create_place_doc(record)
 
                     # Skip if no spatial data
                     if 'locations' not in place_doc:
@@ -284,25 +277,11 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
                         '_source': place_doc
                     })
 
-                    # Add toponyms to batch
-                    for j, toponym_doc in enumerate(toponym_docs):
-                        toponym_batch.append({
-                            '_index': toponyms_index,
-                            '_id': f"{place_id}:{j}",
-                            '_source': toponym_doc
-                        })
-
                     # Bulk index places
                     if len(place_batch) >= BATCH_SIZE:
                         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                         place_count += success
                         place_batch = []
-
-                    # Bulk index toponyms
-                    if len(toponym_batch) >= BATCH_SIZE:
-                        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                        toponym_count += success
-                        toponym_batch = []
 
                 except Exception as e:
                     print(f"Error processing record {record.get('id', 'unknown')}: {str(e)}")
@@ -313,24 +292,19 @@ def index_pleiades_streaming(file_path, places_index, toponyms_index):
         print("\nERROR: ijson library not installed")
         print("Install with: pip install ijson --break-system-packages")
         print("\nFalling back to standard (memory-intensive) method...")
-        return index_pleiades_standard(file_path, places_index, toponyms_index)
+        return index_pleiades_standard(file_path, places_index)
 
-    # Index remaining batches
+    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    if toponym_batch:
-        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-        toponym_count += success
-
     print(f"\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
-    print(f"Toponyms indexed: {toponym_count:,}")
     print(f"Skipped (no location): {skipped:,}")
 
 
-def index_pleiades_standard(file_path, places_index, toponyms_index):
+def index_pleiades_standard(file_path, places_index):
     """
     Standard (non-streaming) method - loads entire file into memory.
     Only used as fallback if ijson not available.
@@ -338,10 +312,7 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
     import json
 
     place_batch = []
-    toponym_batch = []
-
     place_count = 0
-    toponym_count = 0
     skipped = 0
 
     print(f"Loading Pleiades data from {file_path}")
@@ -364,11 +335,11 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
 
     for i, record in enumerate(records):
         if (i + 1) % 1000 == 0:
-            print(f"Processed {i + 1:,} records... (places: {place_count:,}, toponyms: {toponym_count:,})")
+            print(f"Processed {i + 1:,} records... (places: {place_count:,})")
 
         try:
             # Create place document
-            place_doc, toponym_docs = create_place_doc(record)
+            place_doc = create_place_doc(record)
 
             # Skip if no spatial data
             if 'locations' not in place_doc:
@@ -384,43 +355,24 @@ def index_pleiades_standard(file_path, places_index, toponyms_index):
                 '_source': place_doc
             })
 
-            # Add toponyms
-            for j, toponym_doc in enumerate(toponym_docs):
-                toponym_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:{j}",
-                    '_source': toponym_doc
-                })
-
             # Bulk index places
             if len(place_batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                 place_count += success
                 place_batch = []
 
-            # Bulk index toponyms
-            if len(toponym_batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                toponym_count += success
-                toponym_batch = []
-
         except Exception as e:
             print(f"Error processing record {record.get('id', 'unknown')}: {str(e)}")
             skipped += 1
             continue
 
-    # Index remaining batches
+    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    if toponym_batch:
-        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-        toponym_count += success
-
     print(f"\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
-    print(f"Toponyms indexed: {toponym_count:,}")
     print(f"Skipped (no location): {skipped:,}")
 
 
@@ -429,11 +381,10 @@ if __name__ == "__main__":
     # File path updated to match fetch_authorities.py structure
     PLEIADES_FILE = f"{DATA_DIR}/Pleiades/pleiades-places-latest.json.gz"
     PLACES_INDEX = "places"
-    TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index Pleiades from {PLEIADES_FILE}")
-    print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
+    print(f"Target index: {PLACES_INDEX}\n")
 
-    index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+    index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX)
 
     create_checkpoint_snapshot(es, "pleiades_places")

@@ -8,6 +8,9 @@ CORRECT VERSION - Based on verified RDF structure:
 - Places link to term URIs via skosxl:prefLabel
 - All in TGNOut_2Terms.nt file
 - Ensures UTF-8 encoding for all strings
+
+Updated to use temporal scoping design where temporal data lives with places.
+TGN is current data, so all toponyms get 2025 temporal scope.
 """
 
 import re
@@ -225,12 +228,16 @@ def stream_placemap_from_zip(zip_path, coordinates):
 def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term, place_to_all_terms):
     """
     Create a place document for a TGN place.
+
+    Uses new temporal scoping design with TGN as current (2025) data.
     """
     lat, lon = coordinates[coord_uri]
     place_id = f"tgn:{tgn_id}"
 
-    # Collect toponyms array
+    # Collect toponyms array and temporally_scoped_toponyms
     toponyms = []
+    temporally_scoped_toponyms = []
+    seen_lsts = set()
 
     # Get preferred label
     label = None
@@ -239,17 +246,35 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
         if term_uri in term_literals:
             text, lang = term_literals[term_uri]
             label = text
-            # Add preferred toponym
-            toponyms.append(f"{text}@{lang}")
+            # Add preferred toponym with temporal scope
+            lst = f"{text}@{lang}"
+            if lst not in seen_lsts:
+                toponyms.append(lst)
+                temporally_scoped_toponyms.append({
+                    'toponym_id': lst,
+                    'timespan': {
+                        'start': {'in': 2025},
+                        'end': {'in': 2025}
+                    }
+                })
+                seen_lsts.add(lst)
 
     # Add other terms as toponyms
     if tgn_id in place_to_all_terms:
         for term_uri in place_to_all_terms[tgn_id]:
             if term_uri in term_literals:
                 text, lang = term_literals[term_uri]
-                toponym = f"{text}@{lang}"
-                if toponym not in toponyms:  # Avoid duplicates
-                    toponyms.append(toponym)
+                lst = f"{text}@{lang}"
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 2025},
+                            'end': {'in': 2025}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
     # Fallback label
     if not label:
@@ -259,6 +284,7 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
         'place_id': place_id,
         'label': label,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',
@@ -280,63 +306,17 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
     return doc
 
 
-def create_toponym_docs(place_id, tgn_id, term_literals, place_to_preferred_term, place_to_all_terms):
-    """
-    Create toponym documents for all terms of a place.
-
-    Returns: list of toponym dicts
-    """
-    toponyms = []
-    seen_texts = set()  # Avoid duplicates
-
-    # Get preferred term first
-    if tgn_id in place_to_preferred_term:
-        term_uri = place_to_preferred_term[tgn_id]
-        if term_uri in term_literals:
-            text, lang = term_literals[term_uri]
-            # Create unique key for deduplication
-            key = f"{text}@{lang}"
-            if key not in seen_texts:
-                toponyms.append({
-                    'place_id': place_id,
-                    'name': f"{text}@{lang}",  # Full name@lang format
-                    'is_preferred': True,
-                    'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
-                    'suggest': {
-                        'input': [text],
-                        'contexts': {'lang': [lang]}
-                    }
-                })
-                seen_texts.add(key)
-
-    # Add other terms
-    if tgn_id in place_to_all_terms:
-        for term_uri in place_to_all_terms[tgn_id]:
-            if term_uri in term_literals:
-                text, lang = term_literals[term_uri]
-                key = f"{text}@{lang}"
-                if key not in seen_texts:
-                    toponyms.append({
-                        'place_id': place_id,
-                        'name': f"{text}@{lang}",  # Full name@lang format
-                        'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
-                        'suggest': {
-                            'input': [text],
-                            'contexts': {'lang': [lang]}
-                        }
-                    })
-                    seen_texts.add(key)
-
-    return toponyms
-
-
-def index_tgn(zip_path, places_index, toponyms_index):
+def index_tgn(zip_path, places_index):
     """
     Index TGN places from ZIP archive.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
     print("=" * 80)
     print("TGN INDEXING (UTF-8 CORRECTED VERSION)")
     print("=" * 80)
+    print("Using new temporal scoping design")
 
     # Step 1: Load coordinates
     coordinates = load_coordinates_from_zip(zip_path)
@@ -364,13 +344,11 @@ def index_tgn(zip_path, places_index, toponyms_index):
     print("\nIndexing places...")
 
     place_batch = []
-    toponym_batch = []
     place_count = 0
-    toponym_count = 0
 
     for i, (tgn_id, coord_uri) in enumerate(place_to_coord.items()):
         if (i + 1) % 10000 == 0:
-            print(f"  Indexed {place_count:,} places, {toponym_count:,} toponyms...")
+            print(f"  Indexed {place_count:,} places...")
 
         try:
             place_doc = create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term,
@@ -383,24 +361,10 @@ def index_tgn(zip_path, places_index, toponyms_index):
                 '_source': place_doc
             })
 
-            # Create toponyms
-            toponyms = create_toponym_docs(place_id, tgn_id, term_literals, place_to_preferred_term, place_to_all_terms)
-            for j, toponym_doc in enumerate(toponyms):
-                toponym_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:{j}",
-                    '_source': toponym_doc
-                })
-
             if len(place_batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                 place_count += success
                 place_batch = []
-
-            if len(toponym_batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                toponym_count += success
-                toponym_batch = []
 
         except Exception as e:
             print(f"Error processing TGN {tgn_id}: {str(e)}")
@@ -411,15 +375,10 @@ def index_tgn(zip_path, places_index, toponyms_index):
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    if toponym_batch:
-        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-        toponym_count += success
-
     print(f"\n{'=' * 80}")
     print("INDEXING COMPLETE")
     print('=' * 80)
-    print(f"Places indexed:   {place_count:,}")
-    print(f"Toponyms indexed: {toponym_count:,}")
+    print(f"Places indexed: {place_count:,}")
 
 
 if __name__ == "__main__":
@@ -428,11 +387,10 @@ if __name__ == "__main__":
     # Note: settings.py URL points to explicit.zip which contains TGNOut_PlaceMap.nt
     TGN_FILE = f"{DATA_DIR}/TGN/explicit.zip"
     PLACES_INDEX = "places"
-    TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index TGN from {TGN_FILE}")
-    print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
+    print(f"Target index: {PLACES_INDEX}\n")
 
-    index_tgn(TGN_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+    index_tgn(TGN_FILE, PLACES_INDEX)
 
     create_checkpoint_snapshot(es, "tgn_places")

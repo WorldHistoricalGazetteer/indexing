@@ -2,6 +2,9 @@
 
 """
 Index Wikidata places data into Elasticsearch.
+
+Updated to use temporal scoping design where temporal data lives with places,
+not with toponyms. All Wikidata names are current (2025) data.
 """
 
 import gzip
@@ -213,6 +216,11 @@ def extract_geonames_id(entity):
 def create_place_doc(entity):
     """
     Create a place document from a Wikidata entity.
+
+    Uses new temporal scoping design:
+    - toponyms: array of LST strings
+    - temporally_scoped_toponyms: nested array with timespan for each toponym
+
     Returns: doc dict, geoshape_ref string.
     """
     qid = entity.get('id')
@@ -222,26 +230,53 @@ def create_place_doc(entity):
     labels = extract_labels(entity)
     label = labels.get('en', labels.get('mul', qid))
 
-    # Build toponyms array from labels and aliases
+    # Build toponyms array and temporally_scoped_toponyms array
     toponyms = []
+    temporally_scoped_toponyms = []
+    seen_lsts = set()  # Deduplicate
 
     # Add labels (one per language)
     if 'labels' in entity:
         for lang, label_obj in entity['labels'].items():
             name = label_obj['value']
-            toponyms.append(f"{name}@{lang}")
+            lst = f"{name}@{lang}"
+
+            if lst not in seen_lsts:
+                toponyms.append(lst)
+                # Wikidata is current data - use 2025
+                temporally_scoped_toponyms.append({
+                    'toponym_id': lst,
+                    'timespan': {
+                        'start': {'in': 2025},
+                        'end': {'in': 2025}
+                    }
+                })
+                seen_lsts.add(lst)
 
     # Add aliases (multiple per language)
     if 'aliases' in entity:
         for lang, alias_list in entity['aliases'].items():
             for alias_obj in alias_list:
                 name = alias_obj['value']
-                toponyms.append(f"{name}@{lang}")
+                lst = f"{name}@{lang}"
+
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    # Aliases also get current year scope
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 2025},
+                            'end': {'in': 2025}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
     doc = {
         'place_id': f"wd:{qid}",
         'label': label,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'wikidata'
     }
 
@@ -287,66 +322,26 @@ def create_place_doc(entity):
     return doc, geoshape_ref
 
 
-def create_toponym_docs(entity, place_id):
-    """
-    Create toponym documents from a Wikidata entity's labels and aliases.
-    """
-    toponyms = []
-
-    # Extract labels (one per language)
-    if 'labels' in entity:
-        for lang, label_obj in entity['labels'].items():
-            name = label_obj['value']
-            doc = {
-                'place_id': place_id,
-                'name': f"{name}@{lang}",  # Full name@lang format
-                'is_preferred': True,  # Labels are preferred names
-                'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
-                'suggest': {
-                    'input': [name],
-                    'contexts': {
-                        'lang': [lang.split('-')[0] if '-' in lang else lang]
-                    }
-                }
-            }
-            toponyms.append(doc)
-
-    # Extract aliases (multiple per language)
-    if 'aliases' in entity:
-        for lang, alias_list in entity['aliases'].items():
-            for alias_obj in alias_list:
-                name = alias_obj['value']
-                doc = {
-                    'place_id': place_id,
-                    'name': f"{name}@{lang}",  # Full name@lang format
-                    'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
-                    'suggest': {
-                        'input': [name],
-                        'contexts': {
-                            'lang': [lang.split('-')[0] if '-' in lang else lang]
-                        }
-                    }
-                }
-                toponyms.append(doc)
-
-    return toponyms
-
-
 def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
     """
-    Process Wikidata dump, index places/toponyms, and save geoshape references.
+    Process Wikidata dump, index places, and save geoshape references.
+
+    NOTE: With new design, we only index places (with temporally_scoped_toponyms).
+    We do NOT create separate toponym documents - the toponyms index is populated
+    by a separate pass that deduplicates LSTs across all authorities.
     """
     place_batch = []
-    toponym_batch = []
 
     place_count = 0
-    toponym_count = 0
     processed = 0
     skipped = 0
     geoshape_count = 0
 
     print("Starting Wikidata processing...")
     print(f"Saving geoshape references to: {geoshape_refs_file}")
+    print("Note: Using new temporal scoping design")
+    print("  - toponyms: array of LST strings")
+    print("  - temporally_scoped_toponyms: nested array with timespans")
 
     # Ensure directory exists
     os.makedirs(os.path.dirname(geoshape_refs_file), exist_ok=True)
@@ -394,44 +389,24 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
                     '_source': place_doc
                 })
 
-                # Create toponym documents
-                toponym_docs = create_toponym_docs(entity, place_id)
-                for i, toponym_doc in enumerate(toponym_docs):
-                    toponym_batch.append({
-                        '_index': toponyms_index,
-                        '_id': f"wd:{qid}:{i}",
-                        '_source': toponym_doc
-                    })
-
                 # Bulk index places
                 if len(place_batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                     place_count += success
                     place_batch = []
 
-                # Bulk index toponyms
-                if len(toponym_batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                    toponym_count += success
-                    toponym_batch = []
-
             except Exception as e:
                 print(f"\nError processing entity {entity.get('id', 'unknown')}: {str(e)}", file=sys.stderr)
                 continue
 
-        # Index remaining batches
+        # Index remaining batch
         if place_batch:
             success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
             place_count += success
 
-        if toponym_batch:
-            success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-            toponym_count += success
-
     print(f"\n\nIndexing complete!")
     print(f"Total entities processed: {processed:,}")
     print(f"Places indexed: {place_count:,}")
-    print(f"Toponyms indexed: {toponym_count:,}")
     print(f"Geoshape references saved: {geoshape_count:,}")
     print(f"Skipped (non-geographic): {skipped:,}")
 
@@ -442,7 +417,7 @@ if __name__ == "__main__":
     TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index Wikidata from {WIKIDATA_FILE}")
-    print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}")
+    print(f"Target index: {PLACES_INDEX}")
     print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
 
     index_wikidata(WIKIDATA_FILE, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_REFS_FILE)

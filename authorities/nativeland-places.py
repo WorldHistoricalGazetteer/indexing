@@ -10,6 +10,8 @@ Native Land provides geographic data about indigenous:
 
 Data comes as GeoJSON with polygon geometries.
 Each feature represents a distinct cultural/political boundary.
+
+Updated to use temporal scoping design. Native Land is current data (2025).
 """
 
 import json
@@ -37,7 +39,11 @@ if not NL_CONFIG:
 
 
 def process_territory(feature, namespace='nl'):
-    """Process a Native Land territory feature."""
+    """
+    Process a Native Land territory feature.
+
+    Returns: place_doc dict
+    """
 
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
@@ -45,29 +51,44 @@ def process_territory(feature, namespace='nl'):
     # Extract key properties
     name = props.get('Name', props.get('name', ''))
     if not name:
-        return None, []
+        return None
 
     # Generate place ID
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:territory:{slug}"
 
-    # Build toponyms
-    toponyms = [f"{name}@en"]  # Native Land data is primarily in English
-    toponym_docs = []
+    # Build toponyms and temporally_scoped_toponyms
+    toponyms = []
+    temporally_scoped_toponyms = []
+    seen_lsts = set()
 
-    # Sometimes there are alternate names in description
-    description = props.get('description', '')
+    # Native Land data is primarily in English
+    lst = f"{name}@en"
+    if lst not in seen_lsts:
+        toponyms.append(lst)
+        # Current data - use 2025
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }
+        })
+        seen_lsts.add(lst)
 
-    # Create primary toponym document
-    toponym_docs.append({
-        'place_id': place_id,
-        'name': f"{name}@en",
-        'is_preferred': True,
-        'suggest': {
-            'input': [name],
-            'contexts': {'lang': ['en']}
-        }
-    })
+    # French name if available
+    if 'FrenchName' in props and props['FrenchName']:
+        lst = f"{props['FrenchName']}@fr"
+        if lst not in seen_lsts:
+            toponyms.append(lst)
+            temporally_scoped_toponyms.append({
+                'toponym_id': lst,
+                'timespan': {
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }
+            })
+            seen_lsts.add(lst)
 
     # Simplify geometry for large polygons
     if geometry:
@@ -76,13 +97,14 @@ def process_territory(feature, namespace='nl'):
         bbox = compute_bbox(geometry)
         area = compute_area_km2(geometry)
     else:
-        return None, []
+        return None
 
     # Build place document
     place_doc = {
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,
@@ -104,6 +126,7 @@ def process_territory(feature, namespace='nl'):
         place_doc['area_km2'] = round(area, 2)
 
     # Add description as a property
+    description = props.get('description', '')
     if description:
         place_doc['description'] = description
 
@@ -111,24 +134,15 @@ def process_territory(feature, namespace='nl'):
     if 'color' in props:
         place_doc['display_color'] = props['color']
 
-    # Add any related links
-    relations = []
-    if 'FrenchName' in props and props['FrenchName']:
-        toponyms.append(f"{props['FrenchName']}@fr")
-        toponym_docs.append({
-            'place_id': place_id,
-            'name': f"{props['FrenchName']}@fr",
-            'suggest': {
-                'input': [props['FrenchName']],
-                'contexts': {'lang': ['fr']}
-            }
-        })
-
-    return place_doc, toponym_docs
+    return place_doc
 
 
 def process_language(feature, namespace='nl'):
-    """Process a Native Land language area feature."""
+    """
+    Process a Native Land language area feature.
+
+    Returns: place_doc dict
+    """
 
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
@@ -136,24 +150,24 @@ def process_language(feature, namespace='nl'):
     # Extract key properties
     name = props.get('Name', props.get('name', ''))
     if not name:
-        return None, []
+        return None
 
     # Generate place ID
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:language:{slug}"
 
-    # Build toponyms
-    toponyms = [f"{name}@en"]
-    toponym_docs = []
+    # Build toponyms and temporally_scoped_toponyms
+    toponyms = []
+    temporally_scoped_toponyms = []
 
-    # Create primary toponym document
-    toponym_docs.append({
-        'place_id': place_id,
-        'name': f"{name}@en",
-        'is_preferred': True,
-        'suggest': {
-            'input': [name],
-            'contexts': {'lang': ['en']}
+    lst = f"{name}@en"
+    toponyms.append(lst)
+    # Current data - use 2025
+    temporally_scoped_toponyms.append({
+        'toponym_id': lst,
+        'timespan': {
+            'start': {'in': 2025},
+            'end': {'in': 2025}
         }
     })
 
@@ -163,13 +177,14 @@ def process_language(feature, namespace='nl'):
         rep_point = compute_representative_point(geometry)
         area = compute_area_km2(geometry)
     else:
-        return None, []
+        return None
 
     # Build place document
     place_doc = {
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,
@@ -190,11 +205,15 @@ def process_language(feature, namespace='nl'):
     if 'color' in props:
         place_doc['display_color'] = props['color']
 
-    return place_doc, toponym_docs
+    return place_doc
 
 
 def process_treaty(feature, namespace='nl'):
-    """Process a Native Land treaty boundary feature."""
+    """
+    Process a Native Land treaty boundary feature.
+
+    Returns: place_doc dict
+    """
 
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
@@ -202,24 +221,24 @@ def process_treaty(feature, namespace='nl'):
     # Extract key properties
     name = props.get('Name', props.get('name', ''))
     if not name:
-        return None, []
+        return None
 
     # Generate place ID
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:treaty:{slug}"
 
-    # Build toponyms
-    toponyms = [f"{name}@en"]
-    toponym_docs = []
+    # Build toponyms and temporally_scoped_toponyms
+    toponyms = []
+    temporally_scoped_toponyms = []
 
-    # Create primary toponym document
-    toponym_docs.append({
-        'place_id': place_id,
-        'name': f"{name}@en",
-        'is_preferred': True,
-        'suggest': {
-            'input': [name],
-            'contexts': {'lang': ['en']}
+    lst = f"{name}@en"
+    toponyms.append(lst)
+    # Current data - use 2025
+    temporally_scoped_toponyms.append({
+        'toponym_id': lst,
+        'timespan': {
+            'start': {'in': 2025},
+            'end': {'in': 2025}
         }
     })
 
@@ -229,13 +248,14 @@ def process_treaty(feature, namespace='nl'):
         rep_point = compute_representative_point(geometry)
         area = compute_area_km2(geometry)
     else:
-        return None, []
+        return None
 
     # Build place document
     place_doc = {
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,
@@ -260,16 +280,19 @@ def process_treaty(feature, namespace='nl'):
     if 'color' in props:
         place_doc['display_color'] = props['color']
 
-    return place_doc, toponym_docs
+    return place_doc
 
 
-def index_nativeland_file(json_file, data_type, places_index='places', toponyms_index='toponyms'):
+def index_nativeland_file(json_file, data_type, places_index='places'):
     """
     Process a Native Land GeoJSON file and index to Elasticsearch.
 
     Args:
         json_file: Path to GeoJSON file
         data_type: One of 'territories', 'languages', 'treaties'
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
 
     print(f"Processing Native Land {data_type} file: {json_file}")
@@ -295,9 +318,7 @@ def index_nativeland_file(json_file, data_type, places_index='places', toponyms_
         return
 
     places_batch = []
-    toponyms_batch = []
     places_count = 0
-    toponyms_count = 0
     skipped = 0
 
     print(f"Reading {data_type} data...")
@@ -328,7 +349,7 @@ def index_nativeland_file(json_file, data_type, places_index='places', toponyms_
             print(f"  Processing {data_type} {i + 1}/{len(features)}...")
 
         try:
-            place_doc, toponym_docs = processor(feature, namespace='nl')
+            place_doc = processor(feature, namespace='nl')
 
             if not place_doc:
                 skipped += 1
@@ -343,14 +364,6 @@ def index_nativeland_file(json_file, data_type, places_index='places', toponyms_
                 '_source': place_doc
             })
 
-            # Add toponyms
-            for j, toponym_doc in enumerate(toponym_docs):
-                toponyms_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:{j}",
-                    '_source': toponym_doc
-                })
-
             # Bulk index when batch is full
             if len(places_batch) >= BATCH_SIZE:
                 try:
@@ -361,21 +374,12 @@ def index_nativeland_file(json_file, data_type, places_index='places', toponyms_
                     print(f"  Error indexing places: {e}")
                     places_batch = []
 
-            if len(toponyms_batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-                    toponyms_count += success
-                    toponyms_batch = []
-                except Exception as e:
-                    print(f"  Error indexing toponyms: {e}")
-                    toponyms_batch = []
-
         except Exception as e:
             print(f"  Error processing feature {i}: {e}")
             skipped += 1
             continue
 
-    # Index remaining batches
+    # Index remaining batch
     if places_batch:
         try:
             success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
@@ -383,16 +387,8 @@ def index_nativeland_file(json_file, data_type, places_index='places', toponyms_
         except Exception as e:
             print(f"Error indexing final places batch: {e}")
 
-    if toponyms_batch:
-        try:
-            success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-            toponyms_count += success
-        except Exception as e:
-            print(f"Error indexing final toponyms batch: {e}")
-
     print(f"\nIndexing complete for {data_type}!")
     print(f"Places indexed: {places_count:,}")
-    print(f"Toponyms indexed: {toponyms_count:,}")
     print(f"Skipped: {skipped:,}")
 
 
@@ -421,7 +417,6 @@ def index_all_nativeland():
     ]
 
     total_places = 0
-    total_toponyms = 0
 
     for filename, data_type in file_types:
         file_path = nl_dir / filename

@@ -7,6 +7,7 @@ GB1900 is a CSV file with place names transcribed from 1:10,560 Ordnance Survey 
 of Great Britain (England, Scotland, Wales) from around 1900.
 
 Updated to use namespace 'gb' and new file paths from settings.py
+Updated to use temporal scoping design with 1888-1914 timespan for map period.
 """
 
 import csv
@@ -22,7 +23,7 @@ es = Elasticsearch(ES_HOST, request_timeout=180)
 
 def parse_gb1900_row(row):
     """
-    Parse a GB1900 CSV row into place and toponym documents.
+    Parse a GB1900 CSV row into place document.
 
     CSV columns:
     - pin_id: unique identifier
@@ -36,13 +37,13 @@ def parse_gb1900_row(row):
     - longitude: WGS84 longitude
     - notes: additional notes
 
-    Returns: (place_doc, toponym_doc) tuple
+    Returns: place_doc dict (no separate toponym docs in new design)
     """
     # Get pin_id with multiple possible field names
     pin_id = row.get('pin_id', row.get('Pin_id', row.get('PIN_ID', ''))).strip()
 
     if not pin_id:
-        return None, None
+        return None
 
     # Remove BOM if present
     if pin_id.startswith('\ufeff') or pin_id.startswith('ÿþ'):
@@ -52,26 +53,37 @@ def parse_gb1900_row(row):
     name = row.get('final_text', row.get('Final_text', row.get('FINAL_TEXT', ''))).strip()
 
     if not name:
-        return None, None
+        return None
 
     # Get coordinates with multiple possible field names
     try:
         lat = float(row.get('latitude', row.get('Latitude', row.get('LATITUDE', ''))))
         lon = float(row.get('longitude', row.get('Longitude', row.get('LONGITUDE', ''))))
     except (ValueError, TypeError):
-        return None, None
+        return None
 
     # Use 'gb' namespace as defined in settings.py
     place_id = f"gb:{pin_id}"
 
-    # Build toponyms array - GB1900 names are in English
-    toponyms = [f"{name}@en"]
+    # Build toponyms array and temporally_scoped_toponyms
+    lst = f"{name}@en"
+    toponyms = [lst]
+
+    # GB1900 maps are from ca. 1900 (1888-1914 period)
+    temporally_scoped_toponyms = [{
+        'toponym_id': lst,
+        'timespan': {
+            'start': {'in': 1888},
+            'end': {'in': 1914}
+        }
+    }]
 
     # Build place document
     place_doc = {
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',
@@ -97,35 +109,18 @@ def parse_gb1900_row(row):
         'sourceLabel': 'map-label'
     }]
 
-    # Build toponym document
-    toponym_doc = {
-        'place_id': place_id,
-        'name': f"{name}@en",  # Full name@lang format
-        'suggest': {
-            'input': [name],
-            'contexts': {
-                'lang': ['en']
-            }
-        },
-        # Add temporal information (maps are from ca. 1900)
-        'timespans': [{
-            'start': 1888,
-            'end': 1914
-        }]
-    }
-
-    return place_doc, toponym_doc
+    return place_doc
 
 
-def index_gb1900(file_path, places_index, toponyms_index):
+def index_gb1900(file_path, places_index):
     """
-    Read GB1900 CSV from ZIP archive and index places and toponyms.
+    Read GB1900 CSV from ZIP archive and index places.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
     place_batch = []
-    toponym_batch = []
-
     place_count = 0
-    toponym_count = 0
     skipped = 0
 
     print(f"Opening GB1900 archive: {file_path}")
@@ -174,9 +169,9 @@ def index_gb1900(file_path, places_index, toponyms_index):
                 print(f"Processed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})")
 
             try:
-                place_doc, toponym_doc = parse_gb1900_row(row)
+                place_doc = parse_gb1900_row(row)
 
-                if not place_doc or not toponym_doc:
+                if not place_doc:
                     skipped += 1
                     if skipped <= 5:  # Show first few skipped for debugging
                         print(f"  Skipped row {i + 1}: {row}")
@@ -184,17 +179,11 @@ def index_gb1900(file_path, places_index, toponyms_index):
 
                 place_id = place_doc['place_id']
 
-                # Add to batches
+                # Add to batch
                 place_batch.append({
                     '_index': places_index,
                     '_id': place_id,
                     '_source': place_doc
-                })
-
-                toponym_batch.append({
-                    '_index': toponyms_index,
-                    '_id': place_id,  # One toponym per place for GB1900
-                    '_source': toponym_doc
                 })
 
                 # Bulk index places
@@ -203,12 +192,6 @@ def index_gb1900(file_path, places_index, toponyms_index):
                     place_count += success
                     place_batch = []
 
-                # Bulk index toponyms
-                if len(toponym_batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-                    toponym_count += success
-                    toponym_batch = []
-
             except Exception as e:
                 print(f"Error processing row {i + 1}: {str(e)}")
                 if skipped < 5:  # Show details for first few errors
@@ -216,18 +199,13 @@ def index_gb1900(file_path, places_index, toponyms_index):
                 skipped += 1
                 continue
 
-    # Index remaining batches
+    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    if toponym_batch:
-        success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-        toponym_count += success
-
     print(f"\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
-    print(f"Toponyms indexed: {toponym_count:,}")
     print(f"Skipped: {skipped:,}")
 
 
@@ -237,10 +215,9 @@ if __name__ == "__main__":
     # File path updated to match fetch_authorities.py structure
     GB1900_FILE = f"{DATA_DIR}/GB1900/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
-    TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index GB1900 from {GB1900_FILE}")
-    print(f"Target indices: {PLACES_INDEX}, {TOPONYMS_INDEX}\n")
+    print(f"Target index: {PLACES_INDEX}\n")
 
-    index_gb1900(GB1900_FILE, PLACES_INDEX, TOPONYMS_INDEX)
+    index_gb1900(GB1900_FILE, PLACES_INDEX)
     create_checkpoint_snapshot(es, "gb1900_places")

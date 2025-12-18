@@ -14,6 +14,8 @@ OSM features of interest:
 - landuse=* (forest, reservoir, etc.)
 
 Only features with a 'name' tag are indexed.
+
+Updated to use temporal scoping design. OSM is current data (2025).
 """
 
 import json
@@ -44,12 +46,10 @@ class OSMHandler(osmium.SimpleHandler):
     Extracts named geographic features.
     """
 
-    def __init__(self, places_batch_callback, toponyms_batch_callback):
+    def __init__(self, places_batch_callback):
         super().__init__()
         self.places_batch = []
-        self.toponyms_batch = []
         self.places_batch_callback = places_batch_callback
-        self.toponyms_batch_callback = toponyms_batch_callback
         self.processed = 0
         self.indexed = 0
         self.wkbfab = osmium.geom.WKBFactory()
@@ -86,55 +86,67 @@ class OSMHandler(osmium.SimpleHandler):
 
         # Skip if no name
         if 'name' not in tags:
-            return None, []
+            return None
 
         place_id = f"osm:{osm_type[0]}{osm_id}"  # e.g., osm:n12345, osm:w67890
 
-        # Build toponyms array
+        # Build toponyms array and temporally_scoped_toponyms
         toponyms = []
-        toponym_docs = []
+        temporally_scoped_toponyms = []
+        seen_lsts = set()
 
         # Main name (language unknown unless specified)
         main_name = tags['name']
-        toponyms.append(f"{main_name}@und")
+        lst = f"{main_name}@und"
+        if lst not in seen_lsts:
+            toponyms.append(lst)
+            # OSM is current data - use 2025
+            temporally_scoped_toponyms.append({
+                'toponym_id': lst,
+                'timespan': {
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }
+            })
+            seen_lsts.add(lst)
 
         # Language-specific names
         if 'names' in tags:
             for lang, name in tags['names'].items():
-                toponyms.append(f"{name}@{lang}")
-
-                # Create toponym document
-                toponym_docs.append({
-                    'place_id': place_id,
-                    'name': f"{name}@{lang}",
-                    'suggest': {
-                        'input': [name],
-                        'contexts': {'lang': [lang]}
-                    }
-                })
+                lst = f"{name}@{lang}"
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 2025},
+                            'end': {'in': 2025}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
         # Alternative names
         for alt_field in ['alt_name', 'old_name', 'official_name']:
             if alt_field in tags:
                 alt_name = tags[alt_field]
-                toponyms.append(f"{alt_name}@und")
-
-        # Create main toponym document
-        toponym_docs.insert(0, {
-            'place_id': place_id,
-            'name': f"{main_name}@und",
-            'is_preferred': True,
-            'suggest': {
-                'input': [main_name],
-                'contexts': {'lang': ['und']}
-            }
-        })
+                lst = f"{alt_name}@und"
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 2025},
+                            'end': {'in': 2025}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
         # Build place document
         place_doc = {
             'place_id': place_id,
             'label': main_name,
-            'toponyms': list(set(toponyms)),  # Remove duplicates
+            'toponyms': toponyms,
+            'temporally_scoped_toponyms': temporally_scoped_toponyms,
             'source': 'osm'
         }
 
@@ -206,16 +218,13 @@ class OSMHandler(osmium.SimpleHandler):
             except ValueError:
                 pass
 
-        return place_doc, toponym_docs
+        return place_doc
 
     def flush_batches(self):
         """Flush any remaining items in batches."""
         if self.places_batch:
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
-        if self.toponyms_batch:
-            self.toponyms_batch_callback(self.toponyms_batch)
-            self.toponyms_batch = []
 
     def node(self, n):
         """Process OSM node."""
@@ -234,7 +243,7 @@ class OSMHandler(osmium.SimpleHandler):
             'coordinates': [n.location.lon, n.location.lat]
         }
 
-        place_doc, toponym_docs = self.create_place_doc(n.id, 'node', tags, geometry)
+        place_doc = self.create_place_doc(n.id, 'node', tags, geometry)
 
         if place_doc:
             self.places_batch.append({
@@ -242,13 +251,6 @@ class OSMHandler(osmium.SimpleHandler):
                 '_id': place_doc['place_id'],
                 '_source': place_doc
             })
-
-            for i, toponym_doc in enumerate(toponym_docs):
-                self.toponyms_batch.append({
-                    '_index': 'toponyms',
-                    '_id': f"{place_doc['place_id']}:{i}",
-                    '_source': toponym_doc
-                })
 
             self.indexed += 1
 
@@ -258,10 +260,6 @@ class OSMHandler(osmium.SimpleHandler):
         if len(self.places_batch) >= BATCH_SIZE:
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
-
-        if len(self.toponyms_batch) >= BATCH_SIZE:
-            self.toponyms_batch_callback(self.toponyms_batch)
-            self.toponyms_batch = []
 
         # Progress reporting
         if self.processed % 100000 == 0:
@@ -288,7 +286,7 @@ class OSMHandler(osmium.SimpleHandler):
             # If we can't get geometry, use a representative point if available
             pass
 
-        place_doc, toponym_docs = self.create_place_doc(w.id, 'way', tags, geometry)
+        place_doc = self.create_place_doc(w.id, 'way', tags, geometry)
 
         if place_doc:
             self.places_batch.append({
@@ -296,13 +294,6 @@ class OSMHandler(osmium.SimpleHandler):
                 '_id': place_doc['place_id'],
                 '_source': place_doc
             })
-
-            for i, toponym_doc in enumerate(toponym_docs):
-                self.toponyms_batch.append({
-                    '_index': 'toponyms',
-                    '_id': f"{place_doc['place_id']}:{i}",
-                    '_source': toponym_doc
-                })
 
             self.indexed += 1
 
@@ -313,17 +304,18 @@ class OSMHandler(osmium.SimpleHandler):
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
 
-        if len(self.toponyms_batch) >= BATCH_SIZE:
-            self.toponyms_batch_callback(self.toponyms_batch)
-            self.toponyms_batch = []
-
         # Progress reporting
         if self.processed % 10000 == 0:
             print(f"Processed {self.processed:,} ways, indexed {self.indexed:,} places")
 
 
-def index_osm_pbf(pbf_file, places_index='places', toponyms_index='toponyms'):
-    """Process OSM PBF file and index to Elasticsearch."""
+def index_osm_pbf(pbf_file, places_index='places'):
+    """
+    Process OSM PBF file and index to Elasticsearch.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
+    """
 
     print(f"Processing OSM PBF file: {pbf_file}")
 
@@ -332,7 +324,6 @@ def index_osm_pbf(pbf_file, places_index='places', toponyms_index='toponyms'):
         return
 
     places_count = 0
-    toponyms_count = 0
 
     def index_places_batch(batch):
         nonlocal places_count
@@ -344,18 +335,8 @@ def index_osm_pbf(pbf_file, places_index='places', toponyms_index='toponyms'):
         except Exception as e:
             print(f"  Error indexing places batch: {e}")
 
-    def index_toponyms_batch(batch):
-        nonlocal toponyms_count
-        try:
-            success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-            toponyms_count += success
-            if failed > 0:
-                print(f"  Warning: {failed} toponyms failed to index")
-        except Exception as e:
-            print(f"  Error indexing toponyms batch: {e}")
-
     # Create handler
-    handler = OSMHandler(index_places_batch, index_toponyms_batch)
+    handler = OSMHandler(index_places_batch)
 
     # Process file
     print("Reading OSM data...")
@@ -374,48 +355,6 @@ def index_osm_pbf(pbf_file, places_index='places', toponyms_index='toponyms'):
     print(f"\nIndexing complete!")
     print(f"Total processed: {handler.processed:,}")
     print(f"Places indexed: {places_count:,}")
-    print(f"Toponyms indexed: {toponyms_count:,}")
-
-
-def index_osm_geojson(geojson_file, places_index='places', toponyms_index='toponyms'):
-    """Process OSM GeoJSON/GeoJSONSeq file and index to Elasticsearch."""
-
-    print(f"Processing OSM GeoJSON file: {geojson_file}")
-
-    if not os.path.exists(geojson_file):
-        # Check if it's in the standard location
-        standard_path = Path(DATA_DIR) / 'authorities' / 'osm' / Path(geojson_file).name
-        if standard_path.exists():
-            geojson_file = standard_path
-        else:
-            print(f"ERROR: File not found: {geojson_file}")
-            return
-
-    places_batch = []
-    toponyms_batch = []
-    places_count = 0
-    toponyms_count = 0
-    processed = 0
-
-    print("Reading GeoJSON data...")
-
-    # Detect format (GeoJSON vs GeoJSONSeq)
-    with open(geojson_file, 'r') as f:
-        first_line = f.readline().strip()
-        is_seq = not first_line.startswith('{')  # GeoJSONSeq has one feature per line
-
-    # Process file
-    # Note: This is a simplified version.
-    # For the full planet file, you'd need streaming JSON parsing
-
-    print("Note: Full OSM planet processing requires the PBF format.")
-    print("GeoJSON export may be a subset of data.")
-
-    # ... processing logic would go here ...
-
-    print(f"\nIndexing complete!")
-    print(f"Places indexed: {places_count:,}")
-    print(f"Toponyms indexed: {toponyms_count:,}")
 
 
 if __name__ == "__main__":
@@ -426,12 +365,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--file',
-        help='Path to OSM file (PBF or GeoJSON format)'
+        help='Path to OSM file (PBF format)'
     )
     parser.add_argument(
-        '--format',
-        choices=['pbf', 'geojson'],
-        help='File format (auto-detected if not specified)'
+        '--places-index',
+        default='places',
+        help='Target places index name'
     )
 
     args = parser.parse_args()
@@ -447,28 +386,14 @@ if __name__ == "__main__":
         # Use the first file
         file_config = osm_files[0]
         filename = file_config.get('name', 'planet-latest.osm.pbf')
-        osm_file = Path(DATA_DIR) / 'authorities' / 'osm' / filename
 
-        # Try to determine format
-        if osm_file.suffix == '.pbf':
-            file_format = 'pbf'
-        else:
-            file_format = 'geojson'
+        osm_file = Path(DATA_DIR) / 'authorities' / 'osm' / filename
     else:
         osm_file = args.file
-        file_format = args.format
-
-        if not file_format:
-            # Auto-detect format
-            if osm_file.endswith('.pbf'):
-                file_format = 'pbf'
-            else:
-                file_format = 'geojson'
 
     print(f"Starting OSM ingestion")
     print(f"File: {osm_file}")
-    print(f"Format: {file_format}")
-    print(f"Target indices: places, toponyms")
+    print(f"Target index: {args.places_index}")
     print()
 
     if not Path(osm_file).exists():
@@ -478,16 +403,12 @@ if __name__ == "__main__":
         print("\nNote: The full planet file is ~85GB and will take many hours to download")
         sys.exit(1)
 
-    if file_format == 'pbf':
-        try:
-            import osmium
-        except ImportError:
-            print("ERROR: osmium library required for PBF processing")
-            print("Install with: pip install osmium --break-system-packages")
-            sys.exit(1)
+    try:
+        import osmium
+    except ImportError:
+        print("ERROR: osmium library required for PBF processing")
+        print("Install with: pip install osmium --break-system-packages")
+        sys.exit(1)
 
-        index_osm_pbf(osm_file)
-    else:
-        index_osm_geojson(osm_file)
-
+    index_osm_pbf(osm_file, args.places_index)
     create_checkpoint_snapshot(es, 'osm_places')

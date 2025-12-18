@@ -20,6 +20,7 @@ Each country gets:
 - Region/subregion classification
 
 Updated to use namespace 'un' and new file paths from settings.py
+Updated to use temporal scoping design. UN Countries is current data (2025).
 Note: settings.py specifies namespace 'un' for ISO3166 dataset
 """
 
@@ -240,30 +241,64 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     # Check UN membership
     un_member = is_un_member(name)
 
-    # Build toponyms array
+    # Build toponyms array and temporally_scoped_toponyms
     toponyms = []
+    temporally_scoped_toponyms = []
     seen_names = set()
 
     # Add main name
     if name and name not in seen_names:
-        toponyms.append(f"{name}@en")
+        lst = f"{name}@en"
+        toponyms.append(lst)
+        # Current data - use 2025
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }
+        })
         seen_names.add(name)
 
     # Add long name
     if name_long and name_long not in seen_names:
-        toponyms.append(f"{name_long}@en")
+        lst = f"{name_long}@en"
+        toponyms.append(lst)
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }
+        })
         seen_names.add(name_long)
 
     # Add formal name
     if formal_name and formal_name not in seen_names:
-        toponyms.append(f"{formal_name}@en")
+        lst = f"{formal_name}@en"
+        toponyms.append(lst)
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }
+        })
         seen_names.add(formal_name)
 
     # Add other name variants if available
     for field in ['NAME_ALT', 'NAME_SORT', 'ABBREV']:
         alt_name = props.get(field)
         if alt_name and alt_name not in seen_names:
-            toponyms.append(f"{alt_name}@en")
+            lst = f"{alt_name}@en"
+            toponyms.append(lst)
+            temporally_scoped_toponyms.append({
+                'toponym_id': lst,
+                'timespan': {
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }
+            })
             seen_names.add(alt_name)
 
     # Simplify geometry for performance
@@ -288,6 +323,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [location],
         'source': 'un-countries',
         'types': [{
@@ -347,80 +383,8 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     return doc
 
 
-def create_country_toponym_docs(feature, place_id):
-    """
-    Create toponym documents for a country's various names.
-
-    Returns: List of toponym dicts
-    """
-    props = feature['properties']
-    toponyms = []
-    seen_names = set()
-
-    # Main name
-    name = props.get('NAME', props.get('ADMIN'))
-    if name and name not in seen_names:
-        toponyms.append({
-            'place_id': place_id,
-            'name': f"{name}@en",  # Full name@lang format
-            'is_preferred': True,
-            'timespans': [{'start': 2025, 'end': 2025}],  # Modern source
-            'suggest': {
-                'input': [name],
-                'contexts': {'lang': ['en']}
-            }
-        })
-        seen_names.add(name)
-
-    # Formal name
-    formal_name = props.get('FORMAL_EN')
-    if formal_name and formal_name not in seen_names:
-        toponyms.append({
-            'place_id': place_id,
-            'name': f"{formal_name}@en",
-            'timespans': [{'start': 2025, 'end': 2025}],
-            'suggest': {
-                'input': [formal_name],
-                'contexts': {'lang': ['en']}
-            }
-        })
-        seen_names.add(formal_name)
-
-    # Name variants (if available)
-    name_long = props.get('NAME_LONG')
-    if name_long and name_long not in seen_names:
-        toponyms.append({
-            'place_id': place_id,
-            'name': f"{name_long}@en",
-            'timespans': [{'start': 2025, 'end': 2025}],
-            'suggest': {
-                'input': [name_long],
-                'contexts': {'lang': ['en']}
-            }
-        })
-        seen_names.add(name_long)
-
-    # Common alternative names from Natural Earth
-    for field in ['NAME_ALT', 'NAME_SORT', 'ABBREV']:
-        alt_name = props.get(field)
-        if alt_name and alt_name not in seen_names:
-            toponyms.append({
-                'place_id': place_id,
-                'name': f"{alt_name}@en",
-                'timespans': [{'start': 2025, 'end': 2025}],
-                'suggest': {
-                    'input': [alt_name],
-                    'contexts': {'lang': ['en']}
-                }
-            })
-            seen_names.add(alt_name)
-
-    return toponyms
-
-
 def index_un_countries(
         places_index='places',
-        toponyms_index='toponyms',
         simplification_tolerance_km=1.0,
         download=True
 ):
@@ -429,9 +393,11 @@ def index_un_countries(
 
     Args:
         places_index: Target places index
-        toponyms_index: Target toponyms index
         simplification_tolerance_km: Geometry simplification tolerance
         download: Whether to download Natural Earth data if not present
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
     print("=" * 80)
     print("UN COUNTRIES INDEXING")
@@ -459,14 +425,12 @@ def index_un_countries(
     stats = {
         'processed': 0,
         'places_indexed': 0,
-        'toponyms_indexed': 0,
         'un_members': 0,
         'non_un': 0,
         'errors': 0
     }
 
     place_batch = []
-    toponym_batch = []
 
     for i, feature in enumerate(features):
         try:
@@ -488,15 +452,6 @@ def index_un_countries(
                 '_source': place_doc
             })
 
-            # Create toponyms
-            toponym_docs = create_country_toponym_docs(feature, place_id)
-            for j, toponym_doc in enumerate(toponym_docs):
-                toponym_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:name:{j}",
-                    '_source': toponym_doc
-                })
-
             stats['processed'] += 1
 
             if (i + 1) % 50 == 0:
@@ -517,20 +472,12 @@ def index_un_countries(
         except Exception as e:
             print(f"Error indexing places: {e}")
 
-    if toponym_batch:
-        try:
-            success, failed = helpers.bulk(es, toponym_batch, raise_on_error=False, stats_only=True)
-            stats['toponyms_indexed'] = success
-        except Exception as e:
-            print(f"Error indexing toponyms: {e}")
-
     # Final report
     print("\n" + "=" * 80)
     print("INDEXING COMPLETE")
     print("=" * 80)
     print(f"Countries processed:      {stats['processed']}")
     print(f"Places indexed:           {stats['places_indexed']}")
-    print(f"Toponyms indexed:         {stats['toponyms_indexed']}")
     print(f"UN members:               {stats['un_members']}")
     print(f"Non-UN territories:       {stats['non_un']}")
     print(f"Errors:                   {stats['errors']}")
@@ -558,17 +505,11 @@ if __name__ == "__main__":
         default='places',
         help='Target places index name'
     )
-    parser.add_argument(
-        '--toponyms-index',
-        default='toponyms',
-        help='Target toponyms index name'
-    )
 
     args = parser.parse_args()
 
     index_un_countries(
         places_index=args.places_index,
-        toponyms_index=args.toponyms_index,
         simplification_tolerance_km=args.simplify,
         download=not args.no_download
     )

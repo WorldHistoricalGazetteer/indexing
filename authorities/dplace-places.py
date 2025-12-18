@@ -10,6 +10,8 @@ across human societies. The geographic data primarily consists of:
 - Environmental zones
 
 Data comes as GeoJSON with point geometries representing society locations.
+
+Updated to use temporal scoping design. D-PLACE is current data (2025).
 """
 
 import json
@@ -44,6 +46,8 @@ def process_dplace_feature(feature, namespace='dp'):
     - iso_code: ISO 639-3 language code
     - latitude/longitude: Location coordinates
     - region: Geographic region
+
+    Returns: place_doc dict
     """
 
     props = feature.get('properties', {})
@@ -54,14 +58,15 @@ def process_dplace_feature(feature, namespace='dp'):
     name = props.get('name', props.get('society_name', props.get('language_name', '')))
 
     if not name or not feature_id:
-        return None, []
+        return None
 
     # Create place ID
     place_id = f"{namespace}:{feature_id}"
 
-    # Build toponyms array
+    # Build toponyms array and temporally_scoped_toponyms
     toponyms = []
-    toponym_docs = []
+    temporally_scoped_toponyms = []
+    seen_lsts = set()
 
     # Primary name (usually in English or native language)
     lang_code = props.get('iso_code', 'und')
@@ -69,33 +74,35 @@ def process_dplace_feature(feature, namespace='dp'):
         # For now, treat as undetermined unless we have a mapping
         lang_code = 'und'
 
-    toponyms.append(f"{name}@{lang_code}")
-
-    # Create primary toponym document
-    toponym_docs.append({
-        'place_id': place_id,
-        'name': f"{name}@{lang_code}",
-        'is_preferred': True,
-        'suggest': {
-            'input': [name],
-            'contexts': {'lang': [lang_code if lang_code != 'und' else 'en']}
-        }
-    })
+    lst = f"{name}@{lang_code}"
+    if lst not in seen_lsts:
+        toponyms.append(lst)
+        # D-PLACE is current data - use 2025
+        temporally_scoped_toponyms.append({
+            'toponym_id': lst,
+            'timespan': {
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }
+        })
+        seen_lsts.add(lst)
 
     # Add alternative names if present
     if 'alternate_names' in props and props['alternate_names']:
         for alt_name in props['alternate_names'].split(';'):
             alt_name = alt_name.strip()
             if alt_name and alt_name != name:
-                toponyms.append(f"{alt_name}@und")
-                toponym_docs.append({
-                    'place_id': place_id,
-                    'name': f"{alt_name}@und",
-                    'suggest': {
-                        'input': [alt_name],
-                        'contexts': {'lang': ['und']}
-                    }
-                })
+                lst = f"{alt_name}@und"
+                if lst not in seen_lsts:
+                    toponyms.append(lst)
+                    temporally_scoped_toponyms.append({
+                        'toponym_id': lst,
+                        'timespan': {
+                            'start': {'in': 2025},
+                            'end': {'in': 2025}
+                        }
+                    })
+                    seen_lsts.add(lst)
 
     # Extract geometry
     if not geometry:
@@ -109,9 +116,9 @@ def process_dplace_feature(feature, namespace='dp'):
                     'coordinates': [lon, lat]
                 }
             except (ValueError, TypeError):
-                return None, []
+                return None
         else:
-            return None, []
+            return None
 
     rep_point = compute_representative_point(geometry)
 
@@ -119,7 +126,8 @@ def process_dplace_feature(feature, namespace='dp'):
     place_doc = {
         'place_id': place_id,
         'label': name,
-        'toponyms': list(set(toponyms)),  # Remove duplicates
+        'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'dplace',
         'locations': [{
             'geometry': geometry,
@@ -216,12 +224,15 @@ def process_dplace_feature(feature, namespace='dp'):
         except (ValueError, TypeError):
             pass
 
-    return place_doc, toponym_docs
+    return place_doc
 
 
-def index_dplace_file(geojson_file, places_index='places', toponyms_index='toponyms'):
+def index_dplace_file(geojson_file, places_index='places'):
     """
     Process D-PLACE GeoJSON file and index to Elasticsearch.
+
+    Note: With new design, we only index places.
+    Toponyms will be indexed separately by cross-authority deduplication.
     """
 
     print(f"Processing D-PLACE file: {geojson_file}")
@@ -239,9 +250,7 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
             return
 
     places_batch = []
-    toponyms_batch = []
     places_count = 0
-    toponyms_count = 0
     skipped = 0
     errors = 0
 
@@ -286,7 +295,7 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
                   f"indexed: {places_count}, skipped: {skipped}")
 
         try:
-            place_doc, toponym_docs = process_dplace_feature(feature)
+            place_doc = process_dplace_feature(feature)
 
             if not place_doc:
                 skipped += 1
@@ -300,14 +309,6 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
                 '_id': place_id,
                 '_source': place_doc
             })
-
-            # Add toponyms
-            for j, toponym_doc in enumerate(toponym_docs):
-                toponyms_batch.append({
-                    '_index': toponyms_index,
-                    '_id': f"{place_id}:{j}",
-                    '_source': toponym_doc
-                })
 
             # Bulk index when batch is full
             if len(places_batch) >= BATCH_SIZE:
@@ -323,17 +324,6 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
                     errors += len(places_batch)
                     places_batch = []
 
-            if len(toponyms_batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-                    toponyms_count += success
-                    if failed > 0:
-                        print(f"    WARNING: {failed} toponyms failed to index")
-                    toponyms_batch = []
-                except Exception as e:
-                    print(f"    ERROR indexing toponyms batch: {e}")
-                    toponyms_batch = []
-
         except Exception as e:
             print(f"  ERROR processing feature {i}: {e}")
             if i < 5:  # Show details for first few errors
@@ -341,7 +331,7 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
             errors += 1
             continue
 
-    # Index remaining batches
+    # Index remaining batch
     if places_batch:
         try:
             success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
@@ -352,13 +342,6 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
             print(f"ERROR indexing final places batch: {e}")
             errors += len(places_batch)
 
-    if toponyms_batch:
-        try:
-            success, failed = helpers.bulk(es, toponyms_batch, raise_on_error=False, stats_only=True)
-            toponyms_count += success
-        except Exception as e:
-            print(f"ERROR indexing final toponyms batch: {e}")
-
     elapsed = (datetime.now() - start_time).seconds
 
     print(f"\n{'=' * 80}")
@@ -366,7 +349,6 @@ def index_dplace_file(geojson_file, places_index='places', toponyms_index='topon
     print(f"{'=' * 80}")
     print(f"Time elapsed: {elapsed} seconds")
     print(f"Places indexed: {places_count:,}")
-    print(f"Toponyms indexed: {toponyms_count:,}")
     print(f"Skipped: {skipped:,}")
     print(f"Errors: {errors:,}")
 
@@ -394,11 +376,6 @@ if __name__ == "__main__":
         default='places',
         help='Target places index name (default: places)'
     )
-    parser.add_argument(
-        '--toponyms-index',
-        default='toponyms',
-        help='Target toponyms index name (default: toponyms)'
-    )
 
     args = parser.parse_args()
 
@@ -421,8 +398,8 @@ if __name__ == "__main__":
 
     print(f"Starting D-PLACE ingestion")
     print(f"File: {geojson_file}")
-    print(f"Target indices: {args.places_index}, {args.toponyms_index}")
+    print(f"Target index: {args.places_index}")
     print()
 
-    index_dplace_file(str(geojson_file), args.places_index, args.toponyms_index)
+    index_dplace_file(str(geojson_file), args.places_index)
     create_checkpoint_snapshot(es, "dplace_data")
