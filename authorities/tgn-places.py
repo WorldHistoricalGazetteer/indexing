@@ -12,7 +12,6 @@ TGN ingestion into Elasticsearch (maximally optimized)
 import zipfile
 from pathlib import Path
 from collections import defaultdict
-import sqlite3
 import time
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -83,7 +82,7 @@ def build_side_index(zip_path):
         elif pred.endswith("#long"):
             coord[1] = float(obj)
         if i % 500_000 == 0:
-            print(f"  {i:,} triples")
+            print(f"\r  {i:,} triples")
 
     # Remove incomplete
     coordinates = {k: tuple(v) for k, v in coordinates.items() if None not in v}
@@ -106,7 +105,7 @@ def build_side_index(zip_path):
             tgn_id = subj.split("/tgn/")[-1]
             place_terms[tgn_id].append(obj)
         if i % 1_000_000 == 0:
-            print(f"  {i:,} triples")
+            print(f"\r  {i:,} triples")
 
     print(f"✓ {len(term_literals):,} terms loaded")
     print(f"✓ {len(place_pref):,} preferred labels")
@@ -182,7 +181,7 @@ def index_tgn(zip_path, places_index):
             batch.clear()
 
         if i % 100_000 == 0:
-            print(f"Processed {i:,} triples, indexed {count:,} places")
+            print(f"\rProcessed {i:,} triples, indexed {count:,} places")
 
     if batch:
         success, failed = helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
