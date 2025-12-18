@@ -481,7 +481,7 @@ def index_iv_file(json_file, places_index='places'):
         if (i + 1) % 500 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"  Processing entry {i + 1}/{len(entries)} "
+            print(f"\r  Processing entry {i + 1}/{len(entries)} "
                   f"({rate:.1f}/sec) - "
                   f"indexed: {places_count}, no coords: {no_coords}, skipped: {skipped}")
 
