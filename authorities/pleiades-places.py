@@ -72,11 +72,10 @@ def extract_toponyms(pleiades_record):
     Extract name data from Pleiades names array.
     Each name may have temporal attestations and language info.
 
-    Returns: tuple of (toponyms_list, temporally_scoped_toponyms)
+    Returns: list of toponym objects with temporal scoping
     """
-    toponyms_list = []  # For places.toponyms array
-    temporally_scoped_toponyms = []  # For places.temporally_scoped_toponyms
-    place_id = f"pl:{pleiades_record['id']}"
+    toponyms = []
+    seen_lsts = set()
 
     for name_obj in pleiades_record.get('names', []):
         romanized = name_obj.get('romanized', '')
@@ -97,11 +96,16 @@ def extract_toponyms(pleiades_record):
                 lang = 'und'
 
             # Build toponym in name@lang format
-            toponym = f"{name}@{lang}"
-            toponyms_list.append(toponym)
+            toponym_id = f"{name}@{lang}"
 
-            # Build temporally scoped entry
-            scoped_entry = {'toponym_id': toponym}
+            # Skip if already added
+            if toponym_id in seen_lsts:
+                continue
+
+            seen_lsts.add(toponym_id)
+
+            # Build toponym entry with temporal scoping
+            toponym_entry = {'toponym_id': toponym_id}
 
             # Add temporal information from attestations
             attestations = name_obj.get('attestations', [])
@@ -115,11 +119,11 @@ def extract_toponyms(pleiades_record):
                         timespan['start'] = {'in': start}
                     if end is not None:
                         timespan['end'] = {'in': end}
-                    scoped_entry['timespan'] = timespan
+                    toponym_entry['timespan'] = timespan
 
-            temporally_scoped_toponyms.append(scoped_entry)
+            toponyms.append(toponym_entry)
 
-    return toponyms_list, temporally_scoped_toponyms
+    return toponyms
 
 
 def extract_place_types(pleiades_record):
@@ -148,13 +152,12 @@ def create_place_doc(pleiades_record):
     place_id = f"pl:{pleiades_record['id']}"
 
     # Extract toponyms with temporal scoping
-    toponyms_list, temporally_scoped_toponyms = extract_toponyms(pleiades_record)
+    toponyms = extract_toponyms(pleiades_record)
 
     doc = {
         'place_id': place_id,
         'label': pleiades_record.get('title', ''),
-        'toponyms': toponyms_list,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
+        'toponyms': toponyms,
         'source': 'pleiades'
     }
 

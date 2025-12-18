@@ -237,15 +237,6 @@ def ingest_all(authorities_to_run=None, skip_existing=False):
             results['skipped'].append(ns)
             continue
 
-        # Special handling for certain authorities
-        if ns == 'osm':
-            # OSM is huge, confirm before running
-            print(f"\nWARNING: OSM ingestion can take many hours")
-            response = input("Run OSM ingestion? (y/n): ")
-            if response.lower() != 'y':
-                results['skipped'].append(ns)
-                continue
-
         if ns == 'loc':
             # LOC only creates relations
             print(f"\nNOTE: LOC creates relations only, not new places")

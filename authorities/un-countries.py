@@ -241,17 +241,15 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     # Check UN membership
     un_member = is_un_member(name)
 
-    # Build toponyms array and temporally_scoped_toponyms
+    # Build toponyms array with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_names = set()
 
     # Add main name
     if name and name not in seen_names:
         lst = f"{name}@en"
-        toponyms.append(lst)
         # Current data - use 2025
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 2025},
@@ -291,8 +289,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
         alt_name = props.get(field)
         if alt_name and alt_name not in seen_names:
             lst = f"{alt_name}@en"
-            toponyms.append(lst)
-            temporally_scoped_toponyms.append({
+            toponyms.append({
                 'toponym_id': lst,
                 'timespan': {
                     'start': {'in': 2025},
@@ -323,7 +320,6 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [location],
         'source': 'un-countries',
         'types': [{

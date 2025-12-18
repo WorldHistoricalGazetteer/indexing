@@ -97,16 +97,14 @@ def process_iv_entry(entry, namespace='iv'):
     # Create place ID
     place_id = f"{namespace}:{iv_id.replace('IV_', '')}"
 
-    # Build toponyms array and temporally_scoped_toponyms
+    # Build toponyms with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_lsts = set()
 
     # Historical name (1680)
     lst = f"{historical_name}@en"
     if lst not in seen_lsts:
-        toponyms.append(lst)
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 1680},
@@ -120,9 +118,8 @@ def process_iv_entry(entry, namespace='iv'):
     if modern_name and modern_name != historical_name:
         lst = f"{modern_name}@en"
         if lst not in seen_lsts:
-            toponyms.append(lst)
             # Modern name gets current scope
-            temporally_scoped_toponyms.append({
+            toponyms.append({
                 'toponym_id': lst,
                 'timespan': {
                     'start': {'in': 2000},
@@ -141,9 +138,8 @@ def process_iv_entry(entry, namespace='iv'):
             if alt_name and alt_name not in [historical_name, modern_name]:
                 lst = f"{alt_name}@en"
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
                     # Alternative names get 1680 scope
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 1680},
@@ -163,7 +159,6 @@ def process_iv_entry(entry, namespace='iv'):
         'place_id': place_id,
         'label': historical_name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'indexvillaris',
         'locations': [{
             'geometry': geometry,

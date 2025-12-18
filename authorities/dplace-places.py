@@ -63,9 +63,8 @@ def process_dplace_feature(feature, namespace='dp'):
     # Create place ID
     place_id = f"{namespace}:{feature_id}"
 
-    # Build toponyms array and temporally_scoped_toponyms
+    # Build toponyms with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_lsts = set()
 
     # Primary name (usually in English or native language)
@@ -76,9 +75,8 @@ def process_dplace_feature(feature, namespace='dp'):
 
     lst = f"{name}@{lang_code}"
     if lst not in seen_lsts:
-        toponyms.append(lst)
         # D-PLACE is current data - use 2025
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 2025},
@@ -94,8 +92,7 @@ def process_dplace_feature(feature, namespace='dp'):
             if alt_name and alt_name != name:
                 lst = f"{alt_name}@und"
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -127,7 +124,6 @@ def process_dplace_feature(feature, namespace='dp'):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'dplace',
         'locations': [{
             'geometry': geometry,

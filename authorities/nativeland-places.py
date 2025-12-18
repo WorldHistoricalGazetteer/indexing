@@ -57,17 +57,15 @@ def process_territory(feature, namespace='nl'):
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:territory:{slug}"
 
-    # Build toponyms and temporally_scoped_toponyms
+    # Build toponyms with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_lsts = set()
 
     # Native Land data is primarily in English
     lst = f"{name}@en"
     if lst not in seen_lsts:
-        toponyms.append(lst)
         # Current data - use 2025
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 2025},
@@ -80,8 +78,7 @@ def process_territory(feature, namespace='nl'):
     if 'FrenchName' in props and props['FrenchName']:
         lst = f"{props['FrenchName']}@fr"
         if lst not in seen_lsts:
-            toponyms.append(lst)
-            temporally_scoped_toponyms.append({
+            toponyms.append({
                 'toponym_id': lst,
                 'timespan': {
                     'start': {'in': 2025},
@@ -104,7 +101,6 @@ def process_territory(feature, namespace='nl'):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,
@@ -156,14 +152,12 @@ def process_language(feature, namespace='nl'):
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:language:{slug}"
 
-    # Build toponyms and temporally_scoped_toponyms
+    # Build toponyms with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
 
     lst = f"{name}@en"
-    toponyms.append(lst)
     # Current data - use 2025
-    temporally_scoped_toponyms.append({
+    toponyms.append({
         'toponym_id': lst,
         'timespan': {
             'start': {'in': 2025},
@@ -184,7 +178,6 @@ def process_language(feature, namespace='nl'):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,
@@ -227,14 +220,12 @@ def process_treaty(feature, namespace='nl'):
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:treaty:{slug}"
 
-    # Build toponyms and temporally_scoped_toponyms
+    # Build toponyms with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
 
     lst = f"{name}@en"
-    toponyms.append(lst)
     # Current data - use 2025
-    temporally_scoped_toponyms.append({
+    toponyms.append({
         'toponym_id': lst,
         'timespan': {
             'start': {'in': 2025},
@@ -255,7 +246,6 @@ def process_treaty(feature, namespace='nl'):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'nativeland',
         'locations': [{
             'geometry': geometry,

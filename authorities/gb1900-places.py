@@ -65,12 +65,11 @@ def parse_gb1900_row(row):
     # Use 'gb' namespace as defined in settings.py
     place_id = f"gb:{pin_id}"
 
-    # Build toponyms array and temporally_scoped_toponyms
+    # Build toponyms array with temporal scoping
     lst = f"{name}@en"
-    toponyms = [lst]
 
     # GB1900 maps are from ca. 1900 (1888-1914 period)
-    temporally_scoped_toponyms = [{
+    toponyms = [{
         'toponym_id': lst,
         'timespan': {
             'start': {'in': 1888},
@@ -83,7 +82,6 @@ def parse_gb1900_row(row):
         'place_id': place_id,
         'label': name,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',

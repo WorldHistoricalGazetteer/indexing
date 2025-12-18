@@ -234,9 +234,8 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
     lat, lon = coordinates[coord_uri]
     place_id = f"tgn:{tgn_id}"
 
-    # Collect toponyms array and temporally_scoped_toponyms
+    # Collect toponyms array with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_lsts = set()
 
     # Get preferred label
@@ -249,8 +248,7 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
             # Add preferred toponym with temporal scope
             lst = f"{text}@{lang}"
             if lst not in seen_lsts:
-                toponyms.append(lst)
-                temporally_scoped_toponyms.append({
+                toponyms.append({
                     'toponym_id': lst,
                     'timespan': {
                         'start': {'in': 2025},
@@ -266,8 +264,7 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
                 text, lang = term_literals[term_uri]
                 lst = f"{text}@{lang}"
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -284,7 +281,6 @@ def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_pre
         'place_id': place_id,
         'label': label,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'locations': [{
             'geometry': {
                 'type': 'Point',
