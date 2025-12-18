@@ -31,48 +31,32 @@ from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TO
 es = Elasticsearch(ES_HOST)
 
 
-def delete_existing_namespace(namespace, batch_size=10000):
+def delete_existing_namespace(namespace):
     """
-    Delete all places for a given authority namespace in batches
-    to avoid blocking Elasticsearch for large datasets.
+    Delete all places for a given authority namespace.
     """
-    print(f"\nDeleting existing data for namespace '{namespace}' in batches of {batch_size:,}")
+    print(f"\nDeleting existing data for namespace '{namespace}'")
 
-    total_deleted = 0
+    query = {
+        "query": {
+            "prefix": {
+                "place_id": f"{namespace}:"
+            }
+        }
+    }
 
-    # Initial scroll query
-    resp = es.search(
+    resp = es.delete_by_query(
         index=PLACES_INDEX,
-        query={"prefix": {"place_id": f"{namespace}:"}},
-        scroll="2m",
-        size=batch_size,
-        _source=False  # we only need IDs
+        body=query,
+        conflicts="proceed",
+        refresh=True,
+        slices="auto",
+        wait_for_completion=True,
     )
-    scroll_id = resp['_scroll_id']
 
-    while True:
-        hits = resp['hits']['hits']
-        if not hits:
-            break
-
-        # Prepare bulk delete actions
-        actions = [{"_op_type": "delete", "_index": PLACES_INDEX, "_id": h["_id"]} for h in hits]
-        success, failed = helpers.bulk(es, actions, raise_on_error=False, stats_only=True)
-        total_deleted += success
-
-        print(f"  Deleted {total_deleted:,} places so far...")
-
-        # Fetch next batch
-        resp = es.scroll(scroll_id=scroll_id, scroll="2m")
-        scroll_id = resp['_scroll_id']
-
-    # Cleanup scroll context
-    es.clear_scroll(scroll_id=scroll_id)
-
-    print(f"✓ Finished deleting namespace '{namespace}'")
-    print(f"  Total deleted: {total_deleted:,}")
-    return total_deleted
-
+    deleted = resp.get("deleted", 0)
+    print(f"  Deleted {deleted:,} places")
+    return deleted
 
 
 def deduplicate_and_index_toponyms():
@@ -193,12 +177,38 @@ def check_data_files():
     for auth in AUTHORITIES:
         namespace = auth['namespace']
         auth_dir = Path(DATA_DIR) / 'authorities' / namespace
+
+        sys.stdout.write(f"  Checking {namespace}...")
+        sys.stdout.flush()
+
         if not auth_dir.exists():
             available[namespace] = False
+            print(" directory not found")
             continue
-        has_files = any((auth_dir / (file_config.get('name') or Path(file_config['url']).name)).exists()
-                        for file_config in auth.get('files', []))
-        available[namespace] = has_files
+
+        try:
+            # Check if any configured files exist
+            files = auth.get('files', [])
+            if not files:
+                available[namespace] = False
+                print(" no files configured")
+                continue
+
+            has_files = False
+            for file_config in files:
+                filename = file_config.get('name') or Path(file_config['url']).name
+                filepath = auth_dir / filename
+                if filepath.exists():
+                    has_files = True
+                    break
+
+            available[namespace] = has_files
+            print(" OK" if has_files else " files not found")
+
+        except Exception as e:
+            print(f" ERROR: {e}")
+            available[namespace] = False
+
     return available
 
 
@@ -206,13 +216,18 @@ def get_index_counts():
     counts = {}
     for auth in AUTHORITIES:
         namespace = auth['namespace']
+        sys.stdout.write(f"  Counting {namespace}...")
+        sys.stdout.flush()
         try:
             response = es.count(
                 index=PLACES_INDEX,
-                body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
+                body={'query': {'prefix': {'place_id': f"{namespace}:"}}},
+                request_timeout=10
             )
             counts[namespace] = response['count']
-        except:
+            print(f" {response['count']:,}")
+        except Exception as e:
+            print(f" ERROR: {e}")
             counts[namespace] = 0
     return counts
 
@@ -390,15 +405,9 @@ def main():
 
     print("\nChecking available data files:")
     available = check_data_files()
-    for ns in sorted(available.keys()):
-        status = "✓ Available" if available[ns] else "✗ Not downloaded"
-        print(f"  {ns:8} {status}")
 
     print("\nCurrent index counts:")
     counts = get_index_counts()
-    for ns in sorted(counts.keys()):
-        if counts[ns] > 0:
-            print(f"  {ns:8} {counts[ns]:>12,} places")
 
     if args.check_only:
         print("\nCheck complete (--check-only specified)")
