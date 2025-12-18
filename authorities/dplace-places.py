@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import compute_representative_point
+from processing.helpers import compute_representative_point, compute_bbox
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
@@ -53,9 +53,26 @@ def process_dplace_feature(feature, namespace='dp'):
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
 
-    # Extract core identifiers
-    feature_id = props.get('id', props.get('xd_id', ''))
-    name = props.get('name', props.get('society_name', props.get('language_name', '')))
+    # D-PLACE stores language data nested in properties.language
+    lang_obj = props.get('language', {})
+
+    # Extract core identifiers - check multiple locations
+    feature_id = (
+            feature.get('id') or  # Feature-level ID
+            lang_obj.get('xid') or
+            lang_obj.get('id') or
+            props.get('id') or
+            props.get('xd_id', '')
+    )
+
+    # Name can be at multiple levels
+    name = (
+            props.get('name') or
+            lang_obj.get('name') or
+            lang_obj.get('language') or
+            props.get('society_name') or
+            props.get('language_name', '')
+    )
 
     if not name or not feature_id:
         return None
@@ -67,11 +84,12 @@ def process_dplace_feature(feature, namespace='dp'):
     toponyms = []
     seen_lsts = set()
 
-    # Primary name (usually in English or native language)
-    lang_code = props.get('iso_code', 'und')
-    if len(lang_code) == 3:  # ISO 639-3 codes
-        # For now, treat as undetermined unless we have a mapping
-        lang_code = 'und'
+    # Primary name
+    # Check if we have a glottocode for language identification
+    glottocode = lang_obj.get('glottocode', props.get('glottocode', ''))
+
+    # For now, use 'und' (undetermined) as we don't have a glottocode->ISO639 mapping
+    lang_code = 'und'
 
     lst = f"{name}@{lang_code}"
     if lst not in seen_lsts:
@@ -84,6 +102,20 @@ def process_dplace_feature(feature, namespace='dp'):
             }
         })
         seen_lsts.add(lst)
+
+    # Add name_in_source if different
+    name_in_source = lang_obj.get('name_in_source', '')
+    if name_in_source and name_in_source != name:
+        lst = f"{name_in_source}@{lang_code}"
+        if lst not in seen_lsts:
+            toponyms.append({
+                'toponym_id': lst,
+                'timespan': {
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }
+            })
+            seen_lsts.add(lst)
 
     # Add alternative names if present
     if 'alternate_names' in props and props['alternate_names']:
@@ -103,11 +135,14 @@ def process_dplace_feature(feature, namespace='dp'):
 
     # Extract geometry
     if not geometry:
-        # Try to build from coordinates
-        if 'longitude' in props and 'latitude' in props:
+        # Try to build from nested language coordinates
+        lat = lang_obj.get('latitude', props.get('latitude'))
+        lon = lang_obj.get('longitude', props.get('longitude'))
+
+        if lat is not None and lon is not None:
             try:
-                lon = float(props['longitude'])
-                lat = float(props['latitude'])
+                lat = float(lat)
+                lon = float(lon)
                 geometry = {
                     'type': 'Point',
                     'coordinates': [lon, lat]
@@ -116,6 +151,16 @@ def process_dplace_feature(feature, namespace='dp'):
                 return None
         else:
             return None
+
+    # Check for wrapped coordinates (> 180 or < -180)
+    # D-PLACE sometimes uses 0-360 longitude instead of -180 to 180
+    if geometry and geometry.get('type') == 'Point':
+        coords = geometry.get('coordinates', [])
+        if len(coords) == 2:
+            lon, lat = coords
+            if lon > 180:
+                lon = lon - 360
+                geometry['coordinates'] = [lon, lat]
 
     rep_point = compute_representative_point(geometry)
 
@@ -135,18 +180,20 @@ def process_dplace_feature(feature, namespace='dp'):
     types = []
 
     # Determine type based on properties
-    if 'language_family' in props:
+    language_family = lang_obj.get('language_family', props.get('language_family'))
+    if language_family:
         types.append({
             'identifier': 'language-location',
             'label': 'dplace',
-            'sourceLabel': f"language:{props['language_family']}"
+            'sourceLabel': f"language:{language_family}"
         })
 
-    if 'society_type' in props:
+    society_type = props.get('society_type')
+    if society_type:
         types.append({
             'identifier': 'society-location',
             'label': 'dplace',
-            'sourceLabel': f"society:{props['society_type']}"
+            'sourceLabel': f"society:{society_type}"
         })
 
     if not types:
@@ -163,29 +210,42 @@ def process_dplace_feature(feature, namespace='dp'):
     relations = []
 
     # Link to Glottolog if available
-    if 'glottocode' in props and props['glottocode']:
+    if glottocode:
         relations.append({
             'relationType': 'sameAs',
-            'relationTo': f"glottolog:{props['glottocode']}",
+            'relationTo': f"glottolog:{glottocode}",
             'source': 'dplace',
             'method': 'curated'
         })
 
     # Link to ISO 639-3 if available
-    if 'iso_code' in props and props['iso_code']:
+    iso_code = lang_obj.get('iso_code', props.get('iso_code'))
+    if iso_code:
         relations.append({
             'relationType': 'hasIdentifier',
-            'relationTo': f"iso639:{props['iso_code']}",
-            'label': f"ISO 639-3: {props['iso_code']}",
+            'relationTo': f"iso639:{iso_code}",
+            'label': f"ISO 639-3: {iso_code}",
             'source': 'dplace',
             'method': 'curated'
         })
 
     # Link to Ethnologue if available
-    if 'ethnologue_id' in props and props['ethnologue_id']:
+    ethnologue_id = lang_obj.get('ethnologue_id', props.get('ethnologue_id'))
+    if ethnologue_id:
         relations.append({
             'relationType': 'sameAs',
-            'relationTo': f"ethnologue:{props['ethnologue_id']}",
+            'relationTo': f"ethnologue:{ethnologue_id}",
+            'source': 'dplace',
+            'method': 'curated'
+        })
+
+    # Link to HRAF if available
+    hraf_id = lang_obj.get('hraf_id', props.get('hraf_id'))
+    if hraf_id:
+        relations.append({
+            'relationType': 'sameAs',
+            'relationTo': f"hraf:{hraf_id}",
+            'label': f"HRAF: {lang_obj.get('hraf_name', hraf_id)}",
             'source': 'dplace',
             'method': 'curated'
         })
@@ -194,29 +254,31 @@ def process_dplace_feature(feature, namespace='dp'):
         place_doc['relations'] = relations
 
     # Add additional properties
-    if 'language_family' in props:
-        place_doc['language_family'] = props['language_family']
+    if language_family:
+        place_doc['language_family'] = language_family
 
-    if 'region' in props:
-        place_doc['region'] = props['region']
+    region = lang_obj.get('region', props.get('region'))
+    if region:
+        place_doc['region'] = region
 
-    if 'population' in props:
+    population = props.get('population')
+    if population:
         try:
-            place_doc['population'] = int(props['population'])
+            place_doc['population'] = int(population)
         except (ValueError, TypeError):
             pass
 
     # Add time period if available
-    if 'time_period' in props or 'year' in props:
+    year = lang_obj.get('year', props.get('year', props.get('time_period')))
+    if year:
         try:
-            year = props.get('year', props.get('time_period'))
-            if year:
-                place_doc['time_period'] = int(year)
-                # Add to location timespan
-                place_doc['locations'][0]['timespans'] = [{
-                    'start': int(year),
-                    'end': int(year)
-                }]
+            year = int(year)
+            place_doc['time_period'] = year
+            # Add to location timespan
+            place_doc['locations'][0]['timespans'] = [{
+                'start': year,
+                'end': year
+            }]
         except (ValueError, TypeError):
             pass
 
@@ -286,7 +348,7 @@ def index_dplace_file(geojson_file, places_index='places'):
         if (i + 1) % 100 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"\r  Processing feature {i + 1}/{len(features)} "
+            print(f"  Processing feature {i + 1}/{len(features)} "
                   f"({rate:.1f}/sec) - "
                   f"indexed: {places_count}, skipped: {skipped}")
 

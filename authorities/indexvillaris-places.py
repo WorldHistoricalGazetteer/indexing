@@ -62,6 +62,26 @@ def process_iv_entry(entry, namespace='iv'):
         # GeoJSON feature
         props = entry.get('properties', {})
         geometry = entry.get('geometry')
+
+        # Handle GeometryCollection - extract first Point geometry
+        if geometry and geometry.get('type') == 'GeometryCollection':
+            geometries = geometry.get('geometries', [])
+            # Find first Point geometry with certain or highest certainty
+            point_geom = None
+            best_certainty = None
+
+            for geom in geometries:
+                if geom.get('type') == 'Point':
+                    certainty = geom.get('certainty', 'uncertain')
+                    # Prefer certain points, or first point if none certain
+                    if certainty == 'certain':
+                        point_geom = geom
+                        break
+                    elif point_geom is None:
+                        point_geom = geom
+                        best_certainty = certainty
+
+            geometry = point_geom
     else:
         # Direct object
         props = entry
@@ -86,10 +106,40 @@ def process_iv_entry(entry, namespace='iv'):
                 }
             except (ValueError, TypeError):
                 pass
+        elif 'lon' in props and 'lat' in props:
+            try:
+                geometry = {
+                    'type': 'Point',
+                    'coordinates': [
+                        float(props['lon']),
+                        float(props['lat'])
+                    ]
+                }
+            except (ValueError, TypeError):
+                pass
+        elif 'lng' in props and 'lat' in props:
+            try:
+                geometry = {
+                    'type': 'Point',
+                    'coordinates': [
+                        float(props['lng']),
+                        float(props['lat'])
+                    ]
+                }
+            except (ValueError, TypeError):
+                pass
 
     # Extract core fields
     iv_id = props.get('id', props.get('iv_id', ''))
-    historical_name = props.get('name', props.get('historical_name', ''))
+
+    # Try multiple name fields
+    historical_name = props.get('name', props.get('historical_name', props.get('title', '')))
+
+    # If no name in properties, check names array in entry
+    if not historical_name and 'names' in entry:
+        names = entry['names']
+        if names and len(names) > 0:
+            historical_name = names[0].get('toponym', '')
 
     if not iv_id or not historical_name:
         return None
@@ -101,9 +151,58 @@ def process_iv_entry(entry, namespace='iv'):
     toponyms = []
     seen_lsts = set()
 
-    # Historical name (1680)
-    lst = f"{historical_name}@en"
-    if lst not in seen_lsts:
+    # Extract names from the names array if present
+    if 'names' in entry and entry['names']:
+        for name_obj in entry['names']:
+            toponym = name_obj.get('toponym', '')
+            if not toponym:
+                continue
+
+            lst = f"{toponym}@en"
+            if lst in seen_lsts:
+                continue
+
+            # Extract timespan from when field
+            when = name_obj.get('when', {})
+            timespans = when.get('timespans', [])
+
+            if timespans and len(timespans) > 0:
+                ts = timespans[0]
+                start = ts.get('start', {})
+                end = ts.get('end', {})
+
+                # Extract year from start/end (may have 'latest', 'earliest', 'in')
+                start_year = start.get('latest', start.get('earliest', start.get('in', 1680)))
+                end_year = end.get('earliest', end.get('latest', end.get('in', 1680)))
+
+                # Convert to int if string
+                if isinstance(start_year, str):
+                    start_year = int(start_year)
+                if isinstance(end_year, str):
+                    end_year = int(end_year)
+
+                toponyms.append({
+                    'toponym_id': lst,
+                    'timespan': {
+                        'start': {'in': start_year},
+                        'end': {'in': end_year}
+                    }
+                })
+                seen_lsts.add(lst)
+            else:
+                # Default to 1680
+                toponyms.append({
+                    'toponym_id': lst,
+                    'timespan': {
+                        'start': {'in': 1680},
+                        'end': {'in': 1680}
+                    }
+                })
+                seen_lsts.add(lst)
+
+    # Fallback: if no names array, use the extracted historical_name
+    if not toponyms:
+        lst = f"{historical_name}@en"
         toponyms.append({
             'toponym_id': lst,
             'timespan': {
@@ -113,20 +212,21 @@ def process_iv_entry(entry, namespace='iv'):
         })
         seen_lsts.add(lst)
 
-    # Modern name if different
+    # Modern name if different (from properties)
     modern_name = props.get('modern_name', props.get('modern', ''))
     if modern_name and modern_name != historical_name:
-        lst = f"{modern_name}@en"
-        if lst not in seen_lsts:
-            # Modern name gets current scope
-            toponyms.append({
-                'toponym_id': lst,
-                'timespan': {
-                    'start': {'in': 2000},
-                    'end': {'in': 2025}
-                }
-            })
-            seen_lsts.add(lst)
+        if modern_name and modern_name != historical_name:
+            lst = f"{modern_name}@en"
+            if lst not in seen_lsts:
+                # Modern name gets current scope
+                toponyms.append({
+                    'toponym_id': lst,
+                    'timespan': {
+                        'start': {'in': 2000},
+                        'end': {'in': 2025}
+                    }
+                })
+                seen_lsts.add(lst)
 
     # Alternative names
     if 'alternative_names' in props:
@@ -174,25 +274,83 @@ def process_iv_entry(entry, namespace='iv'):
     # Add place type
     types = []
 
-    # Determine type from properties
-    if 'market_day' in props and props['market_day']:
-        types.append({
-            'identifier': 'market-town',
-            'label': 'indexvillaris',
-            'sourceLabel': 'market town (1680)'
-        })
-    else:
-        types.append({
-            'identifier': 'settlement',
-            'label': 'indexvillaris',
-            'sourceLabel': 'village/town (1680)'
-        })
+    # Extract from types array if present in entry
+    if 'types' in entry and entry['types']:
+        for type_obj in entry['types']:
+            identifier = type_obj.get('identifier', '')
+            label = type_obj.get('label', '')
+
+            # Map Wikidata identifiers to our types
+            type_map = {
+                'wd:Q18511725': 'market-town',
+                'wd:Q486972': 'settlement',
+                'wd:Q515': 'city',
+                'wd:Q532': 'village'
+            }
+
+            type_id = type_map.get(identifier, 'settlement')
+
+            types.append({
+                'identifier': type_id,
+                'label': 'indexvillaris',
+                'sourceLabel': label
+            })
+
+    # Fallback: Determine type from properties
+    if not types:
+        if 'market_day' in props and props['market_day']:
+            types.append({
+                'identifier': 'market-town',
+                'label': 'indexvillaris',
+                'sourceLabel': 'market town (1680)'
+            })
+        else:
+            types.append({
+                'identifier': 'settlement',
+                'label': 'indexvillaris',
+                'sourceLabel': 'village/town (1680)'
+            })
 
     place_doc['types'] = types
 
     # Add relations to modern gazetteers
     relations = []
 
+    # Extract from links array if present
+    if 'links' in entry and entry['links']:
+        for link in entry['links']:
+            link_type = link.get('type', 'closeMatch')
+            identifier = link.get('identifier', '')
+
+            if not identifier:
+                continue
+
+            # Parse identifier (e.g., "GB1900:586555942c66dc10b805eb51")
+            if ':' in identifier:
+                parts = identifier.split(':', 1)
+                namespace_map = {
+                    'GB1900': 'gb',
+                    'osm': 'osm',
+                    'wd': 'wd'
+                }
+
+                source_ns = parts[0]
+                target_ns = namespace_map.get(source_ns, source_ns.lower())
+                relation_to = f"{target_ns}:{parts[1]}"
+
+                # Map link type to relation type
+                rel_type = 'exactMatch' if link_type == 'exactMatch' else 'closeMatch'
+                certainty = 1.0 if link_type == 'exactMatch' else 0.9
+
+                relations.append({
+                    'relationType': rel_type,
+                    'relationTo': relation_to,
+                    'source': 'indexvillaris',
+                    'method': 'reconciled',
+                    'certainty': certainty
+                })
+
+    # Fallback: Old property-based relations (for backwards compatibility)
     # GB1900 link
     if 'gb1900_id' in props and props['gb1900_id']:
         relations.append({
@@ -323,7 +481,7 @@ def index_iv_file(json_file, places_index='places'):
         if (i + 1) % 500 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"\r  Processing entry {i + 1}/{len(entries)} "
+            print(f"  Processing entry {i + 1}/{len(entries)} "
                   f"({rate:.1f}/sec) - "
                   f"indexed: {places_count}, no coords: {no_coords}, skipped: {skipped}")
 
