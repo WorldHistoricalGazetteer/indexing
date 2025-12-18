@@ -466,7 +466,7 @@ if __name__ == "__main__":
     # Updated to match settings.py configuration
     # File path updated to match fetch_authorities.py structure
     # Note: settings.py URL points to explicit.zip which contains TGNOut_PlaceMap.nt
-    TGN_FILE = f"{DATA_DIR}/tgn/explicit.zip"
+    TGN_FILE = f"{DATA_DIR}/authorities/tgn/explicit.zip"
     # TGN_FILE = f"{DATA_DIR}/tgn/TGNOut_PlaceMap/TGNOut_PlaceMap.nt"
     PLACES_INDEX = "places"
 
