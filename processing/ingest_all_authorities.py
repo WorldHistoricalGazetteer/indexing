@@ -10,16 +10,16 @@ optimal order, considering dependencies and data volume.
 Recommended order:
 1. GeoNames (base gazetteer with most places)
 2. Wikidata (extensive modern coverage)
-3. TGN (Getty Thesaurus - art historical places)
-4. Pleiades (ancient places)
-5. GB1900 (British historical places)
-6. UN Countries (country boundaries)
-7. OSM (if available - very large)
-8. Native Land (indigenous territories)
-9. D-PLACE (linguistic/cultural data)
-10. Index Villaris (17th century English places)
-11. LOC (relations only - enriches existing data)
-12. Wikidata Geoshapes (post-processing for polygons)
+3. Wikidata Geoshapes (post-processing for polygons)
+4. OSM (if available - very large)
+5. TGN (Getty Thesaurus - art historical places)
+6. Pleiades (ancient places)
+7. GB1900 (British historical places)
+8. UN Countries (country boundaries)
+9. Native Land (indigenous territories)
+10. D-PLACE (linguistic/cultural data)
+11. Index Villaris (17th century English places)
+12. LOC (relations only - enriches existing data)
 """
 
 import subprocess
@@ -196,16 +196,16 @@ def ingest_all(authorities_to_run=None, skip_existing=False):
         ('gn', 'geonames-places', 'GeoNames places'),
         ('gn', 'geonames-toponyms', 'GeoNames toponyms'),
         ('wd', 'wikidata-places', 'Wikidata places'),
+        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (post-process)'),
+        ('osm', 'osm-places', 'OpenStreetMap (if available)'),
         ('tgn', 'tgn-places', 'Getty TGN'),
         ('pl', 'pleiades-places', 'Pleiades ancient places'),
         ('gb', 'gb1900-places', 'GB1900 British places'),
         ('un', 'un-countries', 'UN member countries'),
-        ('osm', 'osm-places', 'OpenStreetMap (if available)'),
         ('nl', 'nativeland-places', 'Native Land territories'),
         ('dp', 'dplace-places', 'D-PLACE linguistic data'),
         ('iv', 'indexvillaris-places', 'Index Villaris 1680'),
         ('loc', 'loc-relations', 'Library of Congress relations'),
-        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (post-process)'),
     ]
 
     # Filter if specific authorities requested

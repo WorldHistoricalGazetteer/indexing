@@ -143,7 +143,7 @@ def pass1_index_unique_toponyms(file_path):
     PASS 1: Stream through file and index unique toponyms.
 
     Toponyms are now timeless - they just store the LST (name@lang).
-    Temporal data lives with places in temporally_scoped_toponyms.
+    Temporal data lives with places in toponyms nested array.
 
     Uses a small in-memory cache to deduplicate LSTs,
     then flushes when cache is full.
@@ -235,9 +235,8 @@ def pass2_update_places_with_toponyms(file_path):
     """
     PASS 2: Stream through file and update places with toponyms.
 
-    Now includes temporal scoping - builds both:
-    - toponyms: array of LST strings (for quick lookup)
-    - temporally_scoped_toponyms: nested array with timespan data
+    Uses simplified schema: toponyms is a nested array with toponym_id and timespan.
+    No separate string array.
 
     Batches updates by place_id to avoid duplicate updates.
     Memory usage: ~200MB (one batch of place updates)
@@ -247,8 +246,8 @@ def pass2_update_places_with_toponyms(file_path):
     print("=" * 80)
 
     # Batch updates by place_id
-    # Key: place_id, Value: {'toponyms': set(), 'scoped': list(), 'label': str}
-    place_updates = defaultdict(lambda: {'toponyms': set(), 'scoped': [], 'label': None})
+    # Key: place_id, Value: {'toponyms': list(), 'seen': set(), 'label': str}
+    place_updates = defaultdict(lambda: {'toponyms': [], 'seen': set(), 'label': None})
 
     processed = 0
     skipped = 0
@@ -275,24 +274,25 @@ def pass2_update_places_with_toponyms(file_path):
                         if (ctx._source.toponyms == null) {
                             ctx._source.toponyms = [];
                         }
-                        if (ctx._source.temporally_scoped_toponyms == null) {
-                            ctx._source.temporally_scoped_toponyms = [];
-                        }
-                        for (toponym in params.new_toponyms) {
-                            if (!ctx._source.toponyms.contains(toponym)) {
-                                ctx._source.toponyms.add(toponym);
+                        // Add new toponyms (with deduplication by toponym_id)
+                        for (new_toponym in params.new_toponyms) {
+                            boolean exists = false;
+                            for (existing in ctx._source.toponyms) {
+                                if (existing.toponym_id == new_toponym.toponym_id) {
+                                    exists = true;
+                                    break;
+                                }
                             }
-                        }
-                        for (scoped in params.new_scoped) {
-                            ctx._source.temporally_scoped_toponyms.add(scoped);
+                            if (!exists) {
+                                ctx._source.toponyms.add(new_toponym);
+                            }
                         }
                         if (params.label != null) {
                             ctx._source.label = params.label;
                         }
                     ''',
                     'params': {
-                        'new_toponyms': list(data['toponyms']),
-                        'new_scoped': data['scoped'],
+                        'new_toponyms': data['toponyms'],
                         'label': data['label']
                     }
                 }
@@ -334,11 +334,15 @@ def pass2_update_places_with_toponyms(file_path):
 
             _, lst, timespan, is_preferred, place_id = result
 
-            # Add to place's toponyms set (for quick lookup)
-            place_updates[place_id]['toponyms'].add(lst)
+            # Check if we've already added this LST for this place
+            if lst in place_updates[place_id]['seen']:
+                continue
 
-            # Build temporally scoped entry
-            scoped_entry = {'toponym_id': lst}
+            place_updates[place_id]['seen'].add(lst)
+
+            # Build toponym entry with temporal scoping
+            toponym_entry = {'toponym_id': lst}
+
             if timespan:
                 # Convert to nested structure expected by schema
                 scoped_timespan = {}
@@ -346,8 +350,9 @@ def pass2_update_places_with_toponyms(file_path):
                     scoped_timespan['start'] = {'in': timespan['start']}
                 if 'end' in timespan:
                     scoped_timespan['end'] = {'in': timespan['end']}
-                scoped_entry['timespan'] = scoped_timespan
-            place_updates[place_id]['scoped'].append(scoped_entry)
+                toponym_entry['timespan'] = scoped_timespan
+
+            place_updates[place_id]['toponyms'].append(toponym_entry)
 
             # Set preferred label (first preferred name wins)
             if is_preferred and place_updates[place_id]['label'] is None:

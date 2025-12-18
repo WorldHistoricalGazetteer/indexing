@@ -80,10 +80,8 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Build toponyms array - will be populated by geonames_toponyms.py
-    # We also build temporally_scoped_toponyms with default timespan
+    # Build toponyms array with temporal scoping - will be enriched by geonames_toponyms.py
     toponyms = []
-    temporally_scoped_toponyms = []
 
     # Add the main name as a fallback toponym with current year scope
     # This ensures every place has at least one name, even if alternateNames
@@ -91,9 +89,8 @@ def parse_geonames_line(line):
     if fields[1]:  # Main name
         lst = normalize_lst(fields[1], 'und')
         if lst:
-            toponyms.append(lst)
             # Add with temporal scope - GeoNames is current data, so use 2025
-            temporally_scoped_toponyms.append({
+            toponyms.append({
                 "toponym_id": lst,
                 "timespan": {
                     "start": {"in": 2025},
@@ -106,13 +103,18 @@ def parse_geonames_line(line):
     # if fields[2] and fields[2] != fields[1]:
     #     lst = normalize_lst(fields[2], 'und')
     #     if lst:
-    #         toponyms.append(lst)
+    #         toponyms.append({
+    #             "toponym_id": lst,
+    #             "timespan": {
+    #                 "start": {"in": 2025},
+    #                 "end": {"in": 2025}
+    #             }
+    #         })
 
     # Build the document
     doc = {
         "place_id": f"gn:{fields[0]}",
-        "toponyms": toponyms,  # Array of LST references (list, not set)
-        "temporally_scoped_toponyms": temporally_scoped_toponyms,  # Nested array with timespans
+        "toponyms": toponyms,  # Nested array with toponym_id and timespan
         "ccodes": ccodes,
         "locations": [
             {

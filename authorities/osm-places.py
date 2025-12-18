@@ -90,18 +90,16 @@ class OSMHandler(osmium.SimpleHandler):
 
         place_id = f"osm:{osm_type[0]}{osm_id}"  # e.g., osm:n12345, osm:w67890
 
-        # Build toponyms array and temporally_scoped_toponyms
+        # Build toponyms array with temporal scoping
         toponyms = []
-        temporally_scoped_toponyms = []
         seen_lsts = set()
 
         # Main name (language unknown unless specified)
         main_name = tags['name']
         lst = f"{main_name}@und"
         if lst not in seen_lsts:
-            toponyms.append(lst)
             # OSM is current data - use 2025
-            temporally_scoped_toponyms.append({
+            toponyms.append({
                 'toponym_id': lst,
                 'timespan': {
                     'start': {'in': 2025},
@@ -115,8 +113,7 @@ class OSMHandler(osmium.SimpleHandler):
             for lang, name in tags['names'].items():
                 lst = f"{name}@{lang}"
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -131,8 +128,7 @@ class OSMHandler(osmium.SimpleHandler):
                 alt_name = tags[alt_field]
                 lst = f"{alt_name}@und"
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -146,7 +142,6 @@ class OSMHandler(osmium.SimpleHandler):
             'place_id': place_id,
             'label': main_name,
             'toponyms': toponyms,
-            'temporally_scoped_toponyms': temporally_scoped_toponyms,
             'source': 'osm'
         }
 
