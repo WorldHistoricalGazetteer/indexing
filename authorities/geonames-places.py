@@ -81,17 +81,25 @@ def parse_geonames_line(line):
             pass
 
     # Build toponyms array - will be populated by geonames_toponyms.py
-    # We could add the main name here, but alternateNames file provides better
-    # language-tagged versions, so we start with empty array
+    # We also build temporally_scoped_toponyms with default timespan
     toponyms = []
+    temporally_scoped_toponyms = []
 
-    # However, index the main name as a toponym if we want a fallback
+    # Add the main name as a fallback toponym with current year scope
     # This ensures every place has at least one name, even if alternateNames
     # doesn't include it (rare but possible for very new entries)
     if fields[1]:  # Main name
         lst = normalize_lst(fields[1], 'und')
         if lst:
             toponyms.append(lst)
+            # Add with temporal scope - GeoNames is current data, so use 2025
+            temporally_scoped_toponyms.append({
+                "toponym_id": lst,
+                "timespan": {
+                    "start": {"in": 2025},
+                    "end": {"in": 2025}
+                }
+            })
 
     # Optionally add ASCII name if different
     # (alternateNames usually has this, so you could skip it)
@@ -104,6 +112,7 @@ def parse_geonames_line(line):
     doc = {
         "place_id": f"gn:{fields[0]}",
         "toponyms": toponyms,  # Array of LST references (list, not set)
+        "temporally_scoped_toponyms": temporally_scoped_toponyms,  # Nested array with timespans
         "ccodes": ccodes,
         "locations": [
             {

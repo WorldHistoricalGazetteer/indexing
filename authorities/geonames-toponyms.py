@@ -142,7 +142,10 @@ def pass1_index_unique_toponyms(file_path):
     """
     PASS 1: Stream through file and index unique toponyms.
 
-    Uses a small in-memory cache to aggregate timespans for the same LST,
+    Toponyms are now timeless - they just store the LST (name@lang).
+    Temporal data lives with places in temporally_scoped_toponyms.
+
+    Uses a small in-memory cache to deduplicate LSTs,
     then flushes when cache is full.
 
     Memory usage: ~500MB max (cache of 100k LSTs)
@@ -151,9 +154,9 @@ def pass1_index_unique_toponyms(file_path):
     print("PASS 1: INDEXING UNIQUE TOPONYMS")
     print("=" * 80)
 
-    # Small cache to aggregate timespans for same LST before indexing
+    # Small cache to deduplicate LSTs before indexing
     # Flush when it reaches max size
-    lst_cache = defaultdict(lambda: {'timespans': [], 'suggest_input': None, 'suggest_lang': None})
+    lst_cache = {}  # Simple set-like dict: {lst: True}
     CACHE_MAX = 100000
 
     processed = 0
@@ -168,23 +171,10 @@ def pass1_index_unique_toponyms(file_path):
             return
 
         batch = []
-        for lst, data in lst_cache.items():
+        for lst in lst_cache.keys():
             doc = {
                 'toponym_id': lst,  # The full LST (pipeline will extract name/lang)
             }
-
-            # Add timespans if any
-            if data['timespans']:
-                doc['timespans'] = data['timespans']
-
-            # Add completion suggester
-            if data['suggest_input'] and data['suggest_lang']:
-                doc['suggest'] = {
-                    'input': [data['suggest_input']],
-                    'contexts': {
-                        'lang': [data['suggest_lang']]
-                    }
-                }
 
             batch.append({
                 '_index': 'toponyms',
@@ -218,18 +208,8 @@ def pass1_index_unique_toponyms(file_path):
 
             _, lst, timespan, is_preferred, place_id = result
 
-            # Add to cache
-            if timespan and timespan not in lst_cache[lst]['timespans']:
-                lst_cache[lst]['timespans'].append(timespan)
-
-            # Set suggest fields (first time we see this LST)
-            if lst_cache[lst]['suggest_input'] is None:
-                name_part = lst.split('@')[0] if '@' in lst else lst
-                lang_part = lst.split('@')[1] if '@' in lst else 'und'
-                lang_context = lang_part.split('-')[0] if '-' in lang_part else lang_part
-
-                lst_cache[lst]['suggest_input'] = name_part
-                lst_cache[lst]['suggest_lang'] = lang_context
+            # Add LST to cache (simple deduplication)
+            lst_cache[lst] = True
 
             # Flush cache when it gets large
             if len(lst_cache) >= CACHE_MAX:
@@ -255,6 +235,10 @@ def pass2_update_places_with_toponyms(file_path):
     """
     PASS 2: Stream through file and update places with toponyms.
 
+    Now includes temporal scoping - builds both:
+    - toponyms: array of LST strings (for quick lookup)
+    - temporally_scoped_toponyms: nested array with timespan data
+
     Batches updates by place_id to avoid duplicate updates.
     Memory usage: ~200MB (one batch of place updates)
     """
@@ -263,8 +247,8 @@ def pass2_update_places_with_toponyms(file_path):
     print("=" * 80)
 
     # Batch updates by place_id
-    # Key: place_id, Value: {'toponyms': set(), 'label': str}
-    place_updates = defaultdict(lambda: {'toponyms': set(), 'label': None})
+    # Key: place_id, Value: {'toponyms': set(), 'scoped': list(), 'label': str}
+    place_updates = defaultdict(lambda: {'toponyms': set(), 'scoped': [], 'label': None})
 
     processed = 0
     skipped = 0
@@ -291,10 +275,16 @@ def pass2_update_places_with_toponyms(file_path):
                         if (ctx._source.toponyms == null) {
                             ctx._source.toponyms = [];
                         }
+                        if (ctx._source.temporally_scoped_toponyms == null) {
+                            ctx._source.temporally_scoped_toponyms = [];
+                        }
                         for (toponym in params.new_toponyms) {
                             if (!ctx._source.toponyms.contains(toponym)) {
                                 ctx._source.toponyms.add(toponym);
                             }
+                        }
+                        for (scoped in params.new_scoped) {
+                            ctx._source.temporally_scoped_toponyms.add(scoped);
                         }
                         if (params.label != null) {
                             ctx._source.label = params.label;
@@ -302,6 +292,7 @@ def pass2_update_places_with_toponyms(file_path):
                     ''',
                     'params': {
                         'new_toponyms': list(data['toponyms']),
+                        'new_scoped': data['scoped'],
                         'label': data['label']
                     }
                 }
@@ -343,8 +334,20 @@ def pass2_update_places_with_toponyms(file_path):
 
             _, lst, timespan, is_preferred, place_id = result
 
-            # Add to place's toponyms set
+            # Add to place's toponyms set (for quick lookup)
             place_updates[place_id]['toponyms'].add(lst)
+
+            # Build temporally scoped entry
+            scoped_entry = {'toponym_id': lst}
+            if timespan:
+                # Convert to nested structure expected by schema
+                scoped_timespan = {}
+                if 'start' in timespan:
+                    scoped_timespan['start'] = {'in': timespan['start']}
+                if 'end' in timespan:
+                    scoped_timespan['end'] = {'in': timespan['end']}
+                scoped_entry['timespan'] = scoped_timespan
+            place_updates[place_id]['scoped'].append(scoped_entry)
 
             # Set preferred label (first preferred name wins)
             if is_preferred and place_updates[place_id]['label'] is None:

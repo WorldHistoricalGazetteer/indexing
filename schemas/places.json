@@ -1,14 +1,12 @@
 {
   "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "-1",
+    "max_result_window": 10000,
     "index": {
-      "number_of_shards": 4,
-      "number_of_replicas": 0,
-      "refresh_interval": "-1",
-      "blocks.read_only_allow_delete": false,
-      "translog": {
-        "durability": "async",
-        "flush_threshold_size": "1gb"
-      }
+      "sort.field": ["src", "src_id"],
+      "sort.order": ["asc", "asc"]
     }
   },
   "mappings": {
@@ -16,53 +14,73 @@
       "place_id": {
         "type": "keyword"
       },
-      "namespace": {
+      "src": {
         "type": "keyword"
       },
-      "label": {
+      "src_id": {
+        "type": "keyword"
+      },
+      "title": {
         "type": "text",
         "fields": {
           "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          }
+        }
+      },
+      "names": {
+        "type": "nested",
+        "properties": {
+          "toponym": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "lang": {
             "type": "keyword"
+          },
+          "citation": {
+            "type": "object",
+            "enabled": false
           }
         }
       },
       "toponyms": {
         "type": "keyword"
       },
-      "ccodes": {
-        "type": "keyword"
-      },
-      "locations": {
+      "temporally_scoped_toponyms": {
         "type": "nested",
         "properties": {
-          "geometry": {
-            "type": "geo_shape",
-            "ignore_malformed": true,
-            "coerce": true
+          "toponym_id": {
+            "type": "keyword"
           },
-          "rep_point": {
-            "type": "geo_point",
-            "ignore_malformed": true
-          },
-          "timespans": {
-            "type": "nested",
+          "timespan": {
+            "type": "object",
             "properties": {
               "start": {
-                "type": "integer"
+                "type": "object",
+                "properties": {
+                  "in": {
+                    "type": "integer"
+                  }
+                }
               },
               "end": {
-                "type": "integer"
+                "type": "object",
+                "properties": {
+                  "in": {
+                    "type": "integer"
+                  }
+                }
               }
             }
           }
         }
-      },
-      "elevation": {
-        "type": "integer"
-      },
-      "minmax": {
-        "type": "integer_range"
       },
       "types": {
         "type": "nested",
@@ -71,75 +89,97 @@
             "type": "keyword"
           },
           "label": {
-            "type": "keyword"
+            "type": "text"
           },
           "sourceLabel": {
             "type": "keyword"
           }
         }
       },
+      "ccodes": {
+        "type": "keyword"
+      },
+      "geom": {
+        "type": "geo_shape"
+      },
+      "repr_point": {
+        "type": "geo_point"
+      },
       "relations": {
         "type": "nested",
         "properties": {
-          "relationType": {
+          "relation_type": {
             "type": "keyword"
           },
-          "relationTo": {
+          "related_place_id": {
             "type": "keyword"
           },
           "label": {
             "type": "text"
           },
-          "source": {
-            "type": "keyword"
-          },
-          "certainty": {
-            "type": "float"
-          },
-          "method": {
-            "type": "keyword"
+          "when": {
+            "type": "object",
+            "properties": {
+              "timespans": {
+                "type": "nested",
+                "properties": {
+                  "start": {
+                    "type": "object",
+                    "properties": {
+                      "in": {
+                        "type": "integer"
+                      }
+                    }
+                  },
+                  "end": {
+                    "type": "object",
+                    "properties": {
+                      "in": {
+                        "type": "integer"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       },
-      "clusters": {
+      "links": {
         "type": "nested",
         "properties": {
-          "cluster_id": {
+          "type": {
             "type": "keyword"
           },
-          "level": {
+          "identifier": {
             "type": "keyword"
-          },
-          "certainty": {
-            "type": "float"
-          },
-          "is_canonical": {
-            "type": "boolean"
-          },
-          "cluster_size": {
-            "type": "integer"
           }
         }
       },
-      "canonical_ids": {
-        "type": "object",
+      "descriptions": {
+        "type": "nested",
         "properties": {
-          "strict": {
-            "type": "keyword"
+          "value": {
+            "type": "text"
           },
-          "moderate": {
-            "type": "keyword"
-          },
-          "loose": {
+          "lang": {
             "type": "keyword"
           }
         }
       },
-      "whg_published": {
-        "type": "boolean"
-      },
-      "indexed_at": {
-        "type": "date"
+      "depictions": {
+        "type": "nested",
+        "properties": {
+          "@id": {
+            "type": "keyword"
+          },
+          "title": {
+            "type": "text"
+          },
+          "license": {
+            "type": "keyword"
+          }
+        }
       }
     }
   }

@@ -164,7 +164,7 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
         es.indices.refresh(index=f"{PLACES_INDEX},{TOPONYMS_INDEX}")
 
         elapsed = (datetime.now() - start_time).seconds
-        print(f"\n✓ Completed in {elapsed} seconds")
+        print(f"\n✓ Completed in {str(datetime.utcfromtimestamp(elapsed).strftime('%H:%M:%S'))}")
 
         # Get new count
         count = es.count(

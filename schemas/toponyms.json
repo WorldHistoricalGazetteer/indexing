@@ -68,17 +68,6 @@
       "lang_variant": {
         "type": "keyword"
       },
-      "timespans": {
-        "type": "nested",
-        "properties": {
-          "start": {
-            "type": "integer"
-          },
-          "end": {
-            "type": "integer"
-          }
-        }
-      },
       "suggest": {
         "type": "completion",
         "analyzer": "simple",
