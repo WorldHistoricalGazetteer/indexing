@@ -211,7 +211,7 @@ if __name__ == "__main__":
     # Updated to match settings.py configuration
     # Namespace: 'gb' (from settings.py)
     # File path updated to match fetch_authorities.py structure
-    GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018.zip"
+    GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
 
     print(f"Starting to index GB1900 from {GB1900_FILE}")
