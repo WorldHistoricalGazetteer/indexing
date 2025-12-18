@@ -52,6 +52,7 @@ def delete_existing_namespace(namespace):
         refresh=True,
         slices="auto",
         wait_for_completion=True,
+        request_timeout=3600  # 1 hour timeout for large deletes
     )
 
     deleted = resp.get("deleted", 0)
@@ -219,10 +220,9 @@ def get_index_counts():
         sys.stdout.write(f"  Counting {namespace}...")
         sys.stdout.flush()
         try:
-            response = es.count(
+            response = es.options(request_timeout=30).count(
                 index=PLACES_INDEX,
-                body={'query': {'prefix': {'place_id': f"{namespace}:"}}},
-                request_timeout=10
+                body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
             )
             counts[namespace] = response['count']
             print(f" {response['count']:,}")
@@ -245,7 +245,7 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     is_update_script = script_name in update_scripts
 
     if not is_update_script:
-        count = es.count(
+        count = es.options(request_timeout=30).count(
             index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
         )['count']
@@ -266,7 +266,7 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
 
         if not is_update_script:
-            count = es.count(
+            count = es.options(request_timeout=30).count(
                 index=PLACES_INDEX,
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
             )['count']
@@ -386,6 +386,7 @@ def main():
     parser.add_argument('-n', '--namespaces',
                         help='Comma-separated list of namespaces to ingest/delete (runs ALL scripts for each namespace in order)')
     parser.add_argument('--check-only', action='store_true', help='Only check data availability, don\'t run ingestion')
+    parser.add_argument('--skip-counts', action='store_true', help='Skip counting existing documents (faster startup)')
     parser.add_argument('--prepare-production', action='store_true', help='Run production preparation after ingestion')
     parser.add_argument('-d', '--delete-only', action='store_true',
                         help='Delete specified authorities without ingesting')
@@ -406,8 +407,12 @@ def main():
     print("\nChecking available data files:")
     available = check_data_files()
 
-    print("\nCurrent index counts:")
-    counts = get_index_counts()
+    if not args.skip_counts:
+        print("\nCurrent index counts:")
+        counts = get_index_counts()
+    else:
+        print("\nSkipping index counts (--skip-counts specified)")
+        counts = {}
 
     if args.check_only:
         print("\nCheck complete (--check-only specified)")
