@@ -63,6 +63,10 @@ def is_geographic_entity(entity):
     if 'P625' in entity['claims']:
         return True
 
+    # Check if it has geoshape data (P3896) - also indicates geographic entity
+    if 'P3896' in entity['claims']:
+        return True
+
     return False
 
 
@@ -218,8 +222,7 @@ def create_place_doc(entity):
     Create a place document from a Wikidata entity.
 
     Uses new temporal scoping design:
-    - toponyms: array of LST strings
-    - temporally_scoped_toponyms: nested array with timespan for each toponym
+    - toponyms: nested array with timespan for each toponym
 
     Returns: doc dict, geoshape_ref string.
     """
@@ -230,9 +233,8 @@ def create_place_doc(entity):
     labels = extract_labels(entity)
     label = labels.get('en', labels.get('mul', qid))
 
-    # Build toponyms array and temporally_scoped_toponyms array
+    # Build toponyms array with temporal scoping
     toponyms = []
-    temporally_scoped_toponyms = []
     seen_lsts = set()  # Deduplicate
 
     # Add labels (one per language)
@@ -242,9 +244,8 @@ def create_place_doc(entity):
             lst = f"{name}@{lang}"
 
             if lst not in seen_lsts:
-                toponyms.append(lst)
                 # Wikidata is current data - use 2025
-                temporally_scoped_toponyms.append({
+                toponyms.append({
                     'toponym_id': lst,
                     'timespan': {
                         'start': {'in': 2025},
@@ -261,9 +262,8 @@ def create_place_doc(entity):
                 lst = f"{name}@{lang}"
 
                 if lst not in seen_lsts:
-                    toponyms.append(lst)
                     # Aliases also get current year scope
-                    temporally_scoped_toponyms.append({
+                    toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -276,7 +276,6 @@ def create_place_doc(entity):
         'place_id': f"wd:{qid}",
         'label': label,
         'toponyms': toponyms,
-        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'wikidata'
     }
 
