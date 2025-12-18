@@ -554,7 +554,7 @@ do_ingest() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=64G
 #SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
 

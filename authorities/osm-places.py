@@ -21,6 +21,7 @@ Updated to use temporal scoping design. OSM is current data (2025).
 import json
 import os
 import sys
+import gc
 from pathlib import Path
 import osmium
 import shapely.wkb as wkblib
@@ -220,6 +221,8 @@ class OSMHandler(osmium.SimpleHandler):
         if self.places_batch:
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
+            # Force garbage collection to free memory
+            gc.collect()
 
     def node(self, n):
         """Process OSM node."""
@@ -256,6 +259,10 @@ class OSMHandler(osmium.SimpleHandler):
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
 
+            # Force garbage collection every 10 batches to prevent memory buildup
+            if self.processed % (BATCH_SIZE * 10) == 0:
+                gc.collect()
+
         # Progress reporting
         if self.processed % 100000 == 0:
             print(f"Processed {self.processed:,} nodes, indexed {self.indexed:,} places")
@@ -277,10 +284,15 @@ class OSMHandler(osmium.SimpleHandler):
             wkb = self.wkbfab.create_linestring(w)
             line = wkblib.loads(wkb, hex=True)
             geometry = json.loads(json.dumps(line.__geo_interface__))
+            # Explicitly delete geometry objects to free memory
+            del line
+            del wkb
         except:
-            # If we can't get geometry, use a representative point if available
-            pass
+            # If we can't get geometry, skip this feature entirely
+            # (we need geometry to index a useful place)
+            return
 
+        # Only create place_doc if we have geometry
         place_doc = self.create_place_doc(w.id, 'way', tags, geometry)
 
         if place_doc:
@@ -298,6 +310,10 @@ class OSMHandler(osmium.SimpleHandler):
         if len(self.places_batch) >= BATCH_SIZE:
             self.places_batch_callback(self.places_batch)
             self.places_batch = []
+
+            # Force garbage collection every 10 batches
+            if self.processed % (BATCH_SIZE * 10) == 0:
+                gc.collect()
 
         # Progress reporting
         if self.processed % 10000 == 0:
