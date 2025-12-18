@@ -261,8 +261,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     # Add long name
     if name_long and name_long not in seen_names:
         lst = f"{name_long}@en"
-        toponyms.append(lst)
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 2025},
@@ -274,8 +273,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     # Add formal name
     if formal_name and formal_name not in seen_names:
         lst = f"{formal_name}@en"
-        toponyms.append(lst)
-        temporally_scoped_toponyms.append({
+        toponyms.append({
             'toponym_id': lst,
             'timespan': {
                 'start': {'in': 2025},

@@ -3,8 +3,8 @@
 """
 Index Wikidata places data into Elasticsearch.
 
-Updated to use simplified schema: toponyms is a nested array containing
-both toponym_id and timespan. All Wikidata names are current (2025) data.
+Updated to use temporal scoping design where temporal data lives with places,
+not with toponyms. All Wikidata names are current (2025) data.
 """
 
 import gzip
@@ -217,8 +217,9 @@ def create_place_doc(entity):
     """
     Create a place document from a Wikidata entity.
 
-    Uses simplified schema:
-    - toponyms: nested array with toponym_id and timespan
+    Uses new temporal scoping design:
+    - toponyms: array of LST strings
+    - temporally_scoped_toponyms: nested array with timespan for each toponym
 
     Returns: doc dict, geoshape_ref string.
     """
@@ -229,8 +230,9 @@ def create_place_doc(entity):
     labels = extract_labels(entity)
     label = labels.get('en', labels.get('mul', qid))
 
-    # Build toponyms array with temporal scoping
+    # Build toponyms array and temporally_scoped_toponyms array
     toponyms = []
+    temporally_scoped_toponyms = []
     seen_lsts = set()  # Deduplicate
 
     # Add labels (one per language)
@@ -240,8 +242,9 @@ def create_place_doc(entity):
             lst = f"{name}@{lang}"
 
             if lst not in seen_lsts:
+                toponyms.append(lst)
                 # Wikidata is current data - use 2025
-                toponyms.append({
+                temporally_scoped_toponyms.append({
                     'toponym_id': lst,
                     'timespan': {
                         'start': {'in': 2025},
@@ -258,8 +261,9 @@ def create_place_doc(entity):
                 lst = f"{name}@{lang}"
 
                 if lst not in seen_lsts:
+                    toponyms.append(lst)
                     # Aliases also get current year scope
-                    toponyms.append({
+                    temporally_scoped_toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
                             'start': {'in': 2025},
@@ -272,6 +276,7 @@ def create_place_doc(entity):
         'place_id': f"wd:{qid}",
         'label': label,
         'toponyms': toponyms,
+        'temporally_scoped_toponyms': temporally_scoped_toponyms,
         'source': 'wikidata'
     }
 
@@ -317,13 +322,16 @@ def create_place_doc(entity):
     return doc, geoshape_ref
 
 
-def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
+def index_wikidata(file_path, places_index, geoshape_refs_file):
     """
     Process Wikidata dump, index places, and save geoshape references.
 
-    NOTE: With simplified design, we only index places (with nested toponyms).
-    We do NOT create separate toponym documents - the toponyms index is populated
-    by a separate pass that deduplicates LSTs across all authorities.
+    Uses simplified schema:
+    - toponyms: nested array with toponym_id and timespan
+
+    NOTE: This script does NOT index to the toponyms index. The toponyms index
+    is populated by a separate deduplication step that runs after ALL authorities
+    are ingested.
     """
     place_batch = []
 
@@ -408,11 +416,10 @@ def index_wikidata(file_path, places_index, toponyms_index, geoshape_refs_file):
 if __name__ == "__main__":
     WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all/latest-all.json.gz"
     PLACES_INDEX = "places"
-    TOPONYMS_INDEX = "toponyms"
 
     print(f"Starting to index Wikidata from {WIKIDATA_FILE}")
     print(f"Target index: {PLACES_INDEX}")
     print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
 
-    index_wikidata(WIKIDATA_FILE, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_REFS_FILE)
+    index_wikidata(WIKIDATA_FILE, PLACES_INDEX, GEOSHAPE_REFS_FILE)
     create_checkpoint_snapshot(es, "wikidata_places")

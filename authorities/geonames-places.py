@@ -205,4 +205,5 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("COMPLETE")
     print("=" * 80)
-    print("Note: Toponyms will be indexed separately by geonames_toponyms.py")
+    print("Note: Alternate names will be added by geonames_toponyms.py")
+    print("      Toponyms index will be populated by deduplicate_and_index_toponyms()")

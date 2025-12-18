@@ -1,15 +1,20 @@
 # authorities/geonames_toponyms.py
 
 """
-Index GeoNames alternate names (toponyms) data into Elasticsearch.
+Update GeoNames places with alternate names (toponyms) data.
 
 MEMORY-EFFICIENT VERSION: Uses streaming approach to avoid loading
 17M records into memory.
 
-Three-pass approach:
-1. Index unique toponyms directly (streaming)
-2. Update places with toponyms (streaming)
-3. Update places with relations (streaming)
+Two-pass approach:
+1. Update places with toponyms (streaming)
+2. Update places with relations (streaming)
+
+NOTE: This script does NOT index to the toponyms index. The toponyms index
+is populated by a separate deduplication step (deduplicate_and_index_toponyms)
+that runs after ALL authorities are ingested. This ensures each unique LST
+appears only once in the toponyms index, regardless of how many authorities
+reference it.
 """
 import sys
 from collections import defaultdict
@@ -138,111 +143,22 @@ def parse_alternatename_line(line):
     return ('toponym', lst, timespan, is_preferred, place_id)
 
 
-def pass1_index_unique_toponyms(file_path):
+def pass1_update_places_with_toponyms(file_path):
     """
-    PASS 1: Stream through file and index unique toponyms.
-
-    Toponyms are now timeless - they just store the LST (name@lang).
-    Temporal data lives with places in toponyms nested array.
-
-    Uses a small in-memory cache to deduplicate LSTs,
-    then flushes when cache is full.
-
-    Memory usage: ~500MB max (cache of 100k LSTs)
-    """
-    print("=" * 80)
-    print("PASS 1: INDEXING UNIQUE TOPONYMS")
-    print("=" * 80)
-
-    # Small cache to deduplicate LSTs before indexing
-    # Flush when it reaches max size
-    lst_cache = {}  # Simple set-like dict: {lst: True}
-    CACHE_MAX = 100000
-
-    processed = 0
-    skipped = 0
-    toponyms_indexed = 0
-
-    def flush_cache():
-        """Index the current cache and clear it."""
-        nonlocal toponyms_indexed
-
-        if not lst_cache:
-            return
-
-        batch = []
-        for lst in lst_cache.keys():
-            doc = {
-                'toponym_id': lst,  # The full LST (pipeline will extract name/lang)
-            }
-
-            batch.append({
-                '_index': 'toponyms',
-                '_id': lst,  # LST is the document ID (ensures uniqueness)
-                '_source': doc
-            })
-
-        # Bulk index
-        success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-        toponyms_indexed += success
-
-        # Clear cache
-        lst_cache.clear()
-
-        sys.stdout.write(f"\r  Processed {processed:,} lines, indexed {toponyms_indexed:,} toponyms...")
-        sys.stdout.flush()
-
-    # Stream through file
-    for line in stream_file(file_path):
-        if not line or line.startswith("#"):
-            continue
-
-        processed += 1
-
-        try:
-            result = parse_alternatename_line(line)
-
-            if result[0] != 'toponym':
-                skipped += 1
-                continue
-
-            _, lst, timespan, is_preferred, place_id = result
-
-            # Add LST to cache (simple deduplication)
-            lst_cache[lst] = True
-
-            # Flush cache when it gets large
-            if len(lst_cache) >= CACHE_MAX:
-                flush_cache()
-
-        except Exception as e:
-            skipped += 1
-            if skipped % 10000 == 0:
-                print(f"\nWarning: {skipped:,} lines skipped due to errors")
-            continue
-
-    # Final flush
-    flush_cache()
-
-    print(f"\n  Total lines processed: {processed:,}")
-    print(f"  Unique toponyms indexed: {toponyms_indexed:,}")
-    print(f"  Lines skipped: {skipped:,}")
-
-    return toponyms_indexed
-
-
-def pass2_update_places_with_toponyms(file_path):
-    """
-    PASS 2: Stream through file and update places with toponyms.
+    PASS 1: Stream through file and update places with toponyms.
 
     Uses simplified schema: toponyms is a nested array with toponym_id and timespan.
     No separate string array.
 
     Batches updates by place_id to avoid duplicate updates.
     Memory usage: ~200MB (one batch of place updates)
+
+    NOTE: This does NOT index to the toponyms index. The toponyms index
+    will be populated by a separate deduplication step after all authorities
+    are ingested.
     """
     print("\n" + "=" * 80)
-    print("PASS 2: UPDATING PLACES WITH TOPONYMS")
+    print("PASS 1: UPDATING PLACES WITH TOPONYMS")
     print("=" * 80)
 
     # Batch updates by place_id
@@ -374,14 +290,14 @@ def pass2_update_places_with_toponyms(file_path):
     return places_updated
 
 
-def pass3_update_places_with_relations(file_path):
+def pass2_update_places_with_relations(file_path):
     """
-    PASS 3: Stream through file and add relations to places.
+    PASS 2: Stream through file and add relations to places.
 
     Memory usage: ~50MB (one batch of relation updates)
     """
     print("\n" + "=" * 80)
-    print("PASS 3: ADDING RELATIONS TO PLACES")
+    print("PASS 2: ADDING RELATIONS TO PLACES")
     print("=" * 80)
 
     batch = []
@@ -471,29 +387,30 @@ if __name__ == "__main__":
     print("=" * 80)
     print(f"Source: {ALTERNATENAMES_FILE}")
     print()
-    print("This script uses a three-pass streaming approach:")
-    print("  Pass 1: Index unique toponyms (streaming with small cache)")
-    print("  Pass 2: Update places with toponyms (streaming)")
-    print("  Pass 3: Add relations to places (streaming)")
+    print("This script uses a two-pass streaming approach:")
+    print("  Pass 1: Update places with toponyms (streaming)")
+    print("  Pass 2: Add relations to places (streaming)")
+    print()
+    print("Note: Toponyms index will be populated by separate deduplication step")
+    print("      after all authorities are ingested.")
     print()
     print("Peak memory usage: <1GB")
     print()
 
-    # Pass 1: Index unique toponyms
-    toponyms_count = pass1_index_unique_toponyms(ALTERNATENAMES_FILE)
+    # Pass 1: Update places with toponyms
+    places_updated = pass1_update_places_with_toponyms(ALTERNATENAMES_FILE)
 
-    # Pass 2: Update places with toponyms
-    places_updated = pass2_update_places_with_toponyms(ALTERNATENAMES_FILE)
-
-    # Pass 3: Add relations
-    relations_count = pass3_update_places_with_relations(ALTERNATENAMES_FILE)
+    # Pass 2: Add relations
+    relations_count = pass2_update_places_with_relations(ALTERNATENAMES_FILE)
 
     print("\n" + "=" * 80)
     print("INGESTION COMPLETE")
     print("=" * 80)
-    print(f"Unique toponyms indexed: {toponyms_count:,}")
     print(f"Places updated: {places_updated:,}")
     print(f"Relations added: {relations_count:,}")
+    print()
+    print("Note: Run deduplicate_and_index_toponyms() after all authorities")
+    print("      are ingested to populate the toponyms index.")
     print()
 
     print("Creating checkpoint snapshot...")

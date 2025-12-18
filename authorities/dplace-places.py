@@ -19,7 +19,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import compute_representative_point, compute_bbox
+from processing.helpers import compute_representative_point
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES

@@ -28,7 +28,7 @@ import time
 import argparse
 from pathlib import Path
 from datetime import datetime
-from elasticsearch import Elasticsearch
+from elasticsearch import Elasticsearch, helpers
 
 from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX
 
@@ -38,14 +38,181 @@ es = Elasticsearch(ES_HOST)
 class Unbuffered(object):
     def __init__(self, stream):
         self.stream = stream
+
     def write(self, data):
         self.stream.write(data)
         self.stream.flush()
+
     def writelines(self, datas):
         self.stream.writelines(datas)
         self.stream.flush()
+
     def __getattr__(self, attr):
         return getattr(self.stream, attr)
+
+
+def delete_existing_namespace(namespace):
+    """
+    Delete all places (and related toponyms via later rebuild)
+    for a given authority namespace.
+    """
+    print(f"\nDeleting existing data for namespace '{namespace}'")
+
+    query = {
+        "query": {
+            "prefix": {
+                "place_id": f"{namespace}:"
+            }
+        }
+    }
+
+    resp = es.delete_by_query(
+        index=PLACES_INDEX,
+        body=query,
+        conflicts="proceed",
+        refresh=True,
+        slices="auto",
+        wait_for_completion=True,
+    )
+
+    deleted = resp.get("deleted", 0)
+    print(f"  Deleted {deleted:,} places")
+
+    return deleted
+
+
+def deduplicate_and_index_toponyms():
+    """
+    Extract unique toponym_ids from places.toponyms (nested)
+    and index them into the toponyms index without overwriting
+    existing enriched documents.
+
+    Safe, idempotent, scalable.
+    """
+
+    print("\n" + "=" * 80)
+    print("DEDUPLICATING AND INDEXING TOPONYMS (SAFE MODE)")
+    print("=" * 80)
+
+    start_time = datetime.now()
+
+    indexed_created = 0
+    batch = []
+    BATCH_SIZE = 10000
+
+    # Composite aggregation over nested toponyms
+    query = {
+        "size": 0,
+        "aggs": {
+            "toponyms_nested": {
+                "nested": {
+                    "path": "toponyms"
+                },
+                "aggs": {
+                    "unique_toponyms": {
+                        "composite": {
+                            "size": 10000,
+                            "sources": [
+                                {
+                                    "toponym": {
+                                        "terms": {
+                                            "field": "toponyms.toponym_id"
+                                        }
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    after_key = None
+    page = 0
+
+    try:
+        while True:
+            page += 1
+
+            if after_key:
+                query["aggs"]["toponyms_nested"]["aggs"]["unique_toponyms"]["composite"]["after"] = after_key
+
+            resp = es.search(
+                index=PLACES_INDEX,
+                body=query,
+                request_timeout=300
+            )
+
+            agg = resp["aggregations"]["toponyms_nested"]["unique_toponyms"]
+            buckets = agg["buckets"]
+
+            if not buckets:
+                break
+
+            print(f"  Page {page}: {len(buckets):,} unique toponyms")
+
+            for bucket in buckets:
+                toponym_id = bucket["key"]["toponym"]
+
+                batch.append({
+                    "_op_type": "create",  # create-only, never overwrite
+                    "_index": TOPONYMS_INDEX,
+                    "_id": toponym_id,
+                    "_source": {
+                        "toponym_id": toponym_id
+                    }
+                })
+
+                if len(batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(
+                        es,
+                        batch,
+                        raise_on_error=False,
+                        raise_on_exception=False,
+                        stats_only=True
+                    )
+
+                    indexed_created += success
+                    batch.clear()
+
+                    if indexed_created and indexed_created % 100000 == 0:
+                        print(f"    Created {indexed_created:,} new toponyms")
+
+            after_key = agg.get("after_key")
+            if not after_key:
+                break
+
+        # Final batch
+        if batch:
+            success, failed = helpers.bulk(
+                es,
+                batch,
+                raise_on_error=False,
+                raise_on_exception=False,
+                stats_only=True
+            )
+            indexed_created += success
+            batch.clear()
+
+    except Exception as e:
+        print("ERROR during toponym deduplication:")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    es.indices.refresh(index=TOPONYMS_INDEX)
+
+    elapsed = datetime.now() - start_time
+
+    print("\n✓ TOPONYM DEDUPLICATION COMPLETE")
+    print(f"  Newly created toponyms: {indexed_created:,}")
+    print(f"  Time elapsed: {str(elapsed).split('.')[0]}")
+
+    final_count = es.count(index=TOPONYMS_INDEX)["count"]
+    print(f"  Total toponyms in index: {final_count:,}")
+
+    return True
 
 
 def check_elasticsearch():
@@ -125,47 +292,39 @@ def get_index_counts():
     return counts
 
 
-def run_ingestion(namespace, script_name, skip_if_exists=False):
-    """Run a single ingestion script."""
+def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=False):
+    """
+    Run a single ingestion script.
+    """
 
     print(f"\n{'=' * 80}")
     print(f"INGESTING: {namespace.upper()}")
     print(f"Script: {script_name}")
     print(f"{'=' * 80}")
 
-    # Check if already ingested
-    if skip_if_exists:
-        count = es.count(
-            index=PLACES_INDEX,
-            body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
-        )['count']
+    count = es.count(
+        index=PLACES_INDEX,
+        body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
+    )['count']
 
-        if count > 0:
-            print(f"Already ingested: {count:,} places found")
-            response = input("Re-ingest? (y/n): ")
-            if response.lower() != 'y':
-                print("Skipped")
-                return True
+    if count > 0:
+        if replace_existing:
+            delete_existing_namespace(namespace)
+        elif skip_existing:
+            print(f"Skipping {namespace}: {count:,} places already exist")
+            return True
 
     start_time = datetime.now()
 
-    # Run the ingestion script
     try:
-        # sys.executable ensures we use the same Python environment/venv
-        # "-u" forces the child process to be unbuffered as well
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
-
-        # We use subprocess.run which waits for the process to finish
-        # The output will stream directly to the Slurm log in real-time
         subprocess.run(cmd, check=True)
 
-        # Make the docs searchable without changing "refresh_interval": "-1"
         es.indices.refresh(index=f"{PLACES_INDEX},{TOPONYMS_INDEX}")
 
         elapsed = datetime.now() - start_time
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
 
-        # Get new count
         count = es.count(
             index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
@@ -177,12 +336,10 @@ def run_ingestion(namespace, script_name, skip_if_exists=False):
     except subprocess.CalledProcessError as e:
         print(f"\n✗ Script failed with exit code {e.returncode}")
         return False
-    except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
-        return False
 
 
-def ingest_all(authorities_to_run=None, skip_existing=False):
+
+def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=False):
     """
     Run all configured ingestions in order.
 
@@ -242,7 +399,12 @@ def ingest_all(authorities_to_run=None, skip_existing=False):
             print(f"\nNOTE: LOC creates relations only, not new places")
 
         # Run ingestion
-        success = run_ingestion(ns, script, skip_if_exists=skip_existing)
+        success = run_ingestion(
+            ns,
+            script,
+            skip_existing=skip_existing,
+            replace_existing=replace_existing
+        )
 
         if success:
             results['successful'].append(ns)
@@ -290,11 +452,6 @@ def main():
         help='Comma-separated list of namespaces to ingest (default: all)'
     )
     parser.add_argument(
-        '--skip-existing',
-        action='store_true',
-        help='Skip authorities that already have data in the index'
-    )
-    parser.add_argument(
         '--check-only',
         action='store_true',
         help='Only check data availability, don\'t run ingestion'
@@ -305,7 +462,20 @@ def main():
         help='Run production preparation after ingestion'
     )
 
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument(
+        '--skip-existing',
+        action='store_true',
+        help='Skip authorities that already have data (default behaviour)'
+    )
+    group.add_argument(
+        '-r', '--replace-existing',
+        action='store_true',
+        help='Delete existing data for an authority before re-ingesting'
+    )
+
     args = parser.parse_args()
+    skip_existing = not args.replace_existing
 
     print("=" * 80)
     print("AUTHORITY DATA INGESTION COORDINATOR")
@@ -344,7 +514,14 @@ def main():
         print("\nWill ingest all available authorities")
 
     # Run ingestion
-    ingest_all(namespaces, skip_existing=args.skip_existing)
+    ingest_all(
+        namespaces,
+        skip_existing=skip_existing,
+        replace_existing=args.replace_existing
+    )
+
+    # Deduplicate and index toponyms
+    deduplicate_and_index_toponyms()
 
 
 if __name__ == "__main__":

@@ -5,8 +5,14 @@
     "refresh_interval": "-1",
     "max_result_window": 10000,
     "index": {
-      "sort.field": ["src", "src_id"],
-      "sort.order": ["asc", "asc"]
+      "sort.field": [
+        "src",
+        "src_id"
+      ],
+      "sort.order": [
+        "asc",
+        "asc"
+      ]
     }
   },
   "mappings": {
@@ -18,6 +24,9 @@
         "type": "keyword"
       },
       "src_id": {
+        "type": "keyword"
+      },
+      "namespace": {
         "type": "keyword"
       },
       "title": {
