@@ -338,7 +338,7 @@ def index_pleiades_standard(file_path, places_index):
 
     for i, record in enumerate(records):
         if (i + 1) % 1000 == 0:
-            print(f"Processed {i + 1:,} records... (places: {place_count:,})")
+            print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})")
 
         try:
             # Create place document

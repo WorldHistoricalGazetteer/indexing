@@ -71,44 +71,74 @@ def parse_ntriple(line):
     return (subject, predicate, obj_value, obj_type)
 
 
-def load_coordinates_from_zip(zip_path):
+def load_coordinates_from_file(file_path):
     """
     Load all coordinates from TGNOut_Coordinates.nt into memory.
+    Works with both ZIP archives and extracted .nt files.
 
     Returns: dict mapping coordinate URI to (lat, lon) tuple
     """
     print("Loading coordinates...")
     coordinates = {}
 
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        with zf.open('TGNOut_Coordinates.nt', 'r') as f:
-            for i, line in enumerate(f):
-                if i % 500000 == 0 and i > 0:
-                    print(f"  Loaded {len(coordinates):,} coordinates from {i:,} triples...")
+    # Determine if we're dealing with a ZIP or directory
+    from pathlib import Path
+    path = Path(file_path)
 
-                try:
-                    line_str = line.decode('utf-8')
-                    parsed = parse_ntriple(line_str)
+    if path.suffix == '.zip':
+        # ZIP file - use original logic
+        import zipfile
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            with zf.open('TGNOut_Coordinates.nt', 'r') as f:
+                lines = f
+    else:
+        # Extracted file - file_path should be to the directory or PlaceMap.nt
+        if path.is_file():
+            # Path is to PlaceMap.nt, get parent directory
+            data_dir = path.parent
+        else:
+            # Path is to directory
+            data_dir = path
 
-                    if not parsed:
-                        continue
+        coords_file = data_dir / 'TGNOut_Coordinates.nt'
+        if not coords_file.exists():
+            print(f"ERROR: Coordinates file not found at {coords_file}")
+            return {}
 
-                    subject, predicate, obj_value, obj_type = parsed
+        lines = open(coords_file, 'rb')
 
-                    if predicate == 'http://www.w3.org/2003/01/geo/wgs84_pos#lat':
-                        coord_uri = subject
-                        if coord_uri not in coordinates:
-                            coordinates[coord_uri] = [None, None]
-                        coordinates[coord_uri][0] = float(obj_value)
+    # Process lines
+    for i, line in enumerate(lines):
+        if i % 500000 == 0 and i > 0:
+            print(f"  Loaded {len(coordinates):,} coordinates from {i:,} triples...")
 
-                    elif predicate == 'http://www.w3.org/2003/01/geo/wgs84_pos#long':
-                        coord_uri = subject
-                        if coord_uri not in coordinates:
-                            coordinates[coord_uri] = [None, None]
-                        coordinates[coord_uri][1] = float(obj_value)
+        try:
+            line_str = line.decode('utf-8')
+            parsed = parse_ntriple(line_str)
 
-                except (UnicodeDecodeError, ValueError) as e:
-                    continue
+            if not parsed:
+                continue
+
+            subject, predicate, obj_value, obj_type = parsed
+
+            if predicate == 'http://www.w3.org/2003/01/geo/wgs84_pos#lat':
+                coord_uri = subject
+                if coord_uri not in coordinates:
+                    coordinates[coord_uri] = [None, None]
+                coordinates[coord_uri][0] = float(obj_value)
+
+            elif predicate == 'http://www.w3.org/2003/01/geo/wgs84_pos#long':
+                coord_uri = subject
+                if coord_uri not in coordinates:
+                    coordinates[coord_uri] = [None, None]
+                coordinates[coord_uri][1] = float(obj_value)
+
+        except (UnicodeDecodeError, ValueError) as e:
+            continue
+
+    # Close file if we opened it
+    if not path.suffix == '.zip':
+        lines.close()
 
     # Clean up - remove incomplete coordinates
     complete_coords = {
@@ -121,9 +151,10 @@ def load_coordinates_from_zip(zip_path):
     return complete_coords
 
 
-def load_terms_and_labels_from_zip(zip_path):
+def load_terms_and_labels_from_file(file_path):
     """
     Load term literals and place-to-term mappings from TGNOut_2Terms.nt.
+    Works with both ZIP archives and extracted .nt files.
 
     Single pass extracts:
     1. term_uri -> literal text (from skosxl:literalForm)
@@ -137,50 +168,72 @@ def load_terms_and_labels_from_zip(zip_path):
     place_to_preferred_term = {}  # tgn_id -> term_uri (for prefLabelGVP)
     place_to_all_terms = defaultdict(list)  # tgn_id -> [term_uris]
 
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        with zf.open('TGNOut_2Terms.nt', 'r') as f:
-            for i, line in enumerate(f):
-                if (i + 1) % 5000000 == 0:
-                    print(f"  Processed {i + 1:,} triples...")
-                    print(f"    Terms with literals: {len(term_literals):,}")
-                    print(f"    Places with preferred terms: {len(place_to_preferred_term):,}")
+    # Determine if we're dealing with a ZIP or directory
+    from pathlib import Path
+    path = Path(file_path)
 
-                try:
-                    line_str = line.decode('utf-8')
-                    parsed = parse_ntriple(line_str)
+    if path.suffix == '.zip':
+        # ZIP file
+        import zipfile
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            with zf.open('TGNOut_2Terms.nt', 'r') as f:
+                lines = f
+    else:
+        # Extracted file
+        if path.is_file():
+            data_dir = path.parent
+        else:
+            data_dir = path
 
-                    if not parsed:
-                        continue
+        terms_file = data_dir / 'TGNOut_2Terms.nt'
+        if not terms_file.exists():
+            print(f"ERROR: Terms file not found at {terms_file}")
+            return {}, {}, defaultdict(list)
 
-                    subject, predicate, obj_value, obj_type = parsed
+        lines = open(terms_file, 'rb')
 
-                    # Extract term literals
-                    # <tgn/term/47413-en> <skosxl:literalForm> "Siena"@en
-                    if predicate == 'http://www.w3.org/2008/05/skos-xl#literalForm':
-                        term_uri = subject
-                        # obj_type is the language code (e.g., 'en', 'fr')
-                        if obj_type not in ['uri', 'typed_literal', 'literal', 'unknown']:
-                            # Ensure text is properly encoded as UTF-8
-                            term_literals[term_uri] = (obj_value, obj_type)
+    # Process lines
+    for i, line in enumerate(lines):
+        if (i + 1) % 5000000 == 0:
+            print(f"  Processed {i + 1:,} triples...")
+            print(f"    Terms with literals: {len(term_literals):,}")
+            print(f"    Places with preferred terms: {len(place_to_preferred_term):,}")
 
-                    # Extract place -> preferred term mappings
-                    # <tgn:7011179> <gvp:prefLabelGVP> <tgn/term/47413-en>
-                    elif predicate == 'http://vocab.getty.edu/ontology#prefLabelGVP':
-                        if '/tgn/' in subject and obj_type == 'uri':
-                            tgn_id = subject.split('/tgn/')[-1]
-                            # Only track numbered place IDs
-                            if tgn_id.replace('-', '').isdigit():
-                                place_to_preferred_term[tgn_id] = obj_value
+        try:
+            line_str = line.decode('utf-8')
+            parsed = parse_ntriple(line_str)
 
-                    # Also track all prefLabels (not just GVP) for additional names
-                    elif predicate == 'http://www.w3.org/2008/05/skos-xl#prefLabel':
-                        if '/tgn/' in subject and obj_type == 'uri':
-                            tgn_id = subject.split('/tgn/')[-1]
-                            if tgn_id.replace('-', '').isdigit():
-                                place_to_all_terms[tgn_id].append(obj_value)
+            if not parsed:
+                continue
 
-                except (UnicodeDecodeError, ValueError) as e:
-                    continue
+            subject, predicate, obj_value, obj_type = parsed
+
+            # Extract term literals
+            if predicate == 'http://www.w3.org/2008/05/skos-xl#literalForm':
+                term_uri = subject
+                if obj_type not in ['uri', 'typed_literal', 'literal', 'unknown']:
+                    term_literals[term_uri] = (obj_value, obj_type)
+
+            # Extract place -> preferred term mappings
+            elif predicate == 'http://vocab.getty.edu/ontology#prefLabelGVP':
+                if '/tgn/' in subject and obj_type == 'uri':
+                    tgn_id = subject.split('/tgn/')[-1]
+                    if tgn_id.replace('-', '').isdigit():
+                        place_to_preferred_term[tgn_id] = obj_value
+
+            # Track all prefLabels for additional names
+            elif predicate == 'http://www.w3.org/2008/05/skos-xl#prefLabel':
+                if '/tgn/' in subject and obj_type == 'uri':
+                    tgn_id = subject.split('/tgn/')[-1]
+                    if tgn_id.replace('-', '').isdigit():
+                        place_to_all_terms[tgn_id].append(obj_value)
+
+        except (UnicodeDecodeError, ValueError) as e:
+            continue
+
+    # Close file if we opened it
+    if not path.suffix == '.zip':
+        lines.close()
 
     print(f"✓ Loaded {len(term_literals):,} term literals")
     print(f"✓ Loaded {len(place_to_preferred_term):,} preferred term mappings")
@@ -189,40 +242,72 @@ def load_terms_and_labels_from_zip(zip_path):
     return term_literals, place_to_preferred_term, place_to_all_terms
 
 
-def stream_placemap_from_zip(zip_path, coordinates):
+def stream_placemap_from_file(file_path, coordinates):
     """
     Stream TGNOut_PlaceMap.nt and yield (tgn_id, coord_uri) pairs.
+    Works with both ZIP archives and extracted .nt files.
     """
     print("\nStreaming place-coordinate mappings...")
 
-    with zipfile.ZipFile(zip_path, 'r') as zf:
-        with zf.open('TGNOut_PlaceMap.nt', 'r') as f:
-            for i, line in enumerate(f):
-                if i % 500000 == 0 and i > 0:
-                    print(f"  Processed {i:,} place-map triples...")
+    # Determine if we're dealing with a ZIP or directory
+    from pathlib import Path
+    path = Path(file_path)
 
-                try:
-                    line_str = line.decode('utf-8')
-                    parsed = parse_ntriple(line_str)
+    if path.suffix == '.zip':
+        # ZIP file
+        import zipfile
+        with zipfile.ZipFile(file_path, 'r') as zf:
+            with zf.open('TGNOut_PlaceMap.nt', 'r') as f:
+                lines = f
+    else:
+        # Extracted file
+        if path.is_file() and path.name == 'TGNOut_PlaceMap.nt':
+            # Path is directly to the PlaceMap file
+            placemap_file = path
+        elif path.is_file():
+            # Path is to another file, use parent directory
+            placemap_file = path.parent / 'TGNOut_PlaceMap.nt'
+        else:
+            # Path is to directory
+            placemap_file = path / 'TGNOut_PlaceMap.nt'
 
-                    if not parsed:
-                        continue
+        if not placemap_file.exists():
+            print(f"ERROR: PlaceMap file not found at {placemap_file}")
+            return
 
-                    subject, predicate, obj_value, obj_type = parsed
+        lines = open(placemap_file, 'rb')
 
-                    # <tgn:7011179> <foaf:focus> <tgn:7011179-place>
-                    if predicate == 'http://xmlns.com/foaf/0.1/focus':
-                        tgn_uri = subject
-                        coord_uri = obj_value  # This IS the coordinate URI (ends with -place)
+    # Process lines
+    for i, line in enumerate(lines):
+        if i % 500000 == 0 and i > 0:
+            print(f"  Processed {i:,} place-map triples...")
 
-                        # Check if we have coordinates for this
-                        if coord_uri in coordinates:
-                            if '/tgn/' in tgn_uri:
-                                tgn_id = tgn_uri.split('/tgn/')[-1]
-                                yield (tgn_id, coord_uri)
+        try:
+            line_str = line.decode('utf-8')
+            parsed = parse_ntriple(line_str)
 
-                except (UnicodeDecodeError, ValueError) as e:
-                    continue
+            if not parsed:
+                continue
+
+            subject, predicate, obj_value, obj_type = parsed
+
+            # <tgn:7011179> <foaf:focus> <tgn:7011179-place>
+            if predicate == 'http://xmlns.com/foaf/0.1/focus':
+                tgn_uri = subject
+                coord_uri = obj_value
+
+                # Check if we have coordinates for this
+                if coord_uri in coordinates:
+                    if '/tgn/' in tgn_uri:
+                        tgn_id = tgn_uri.split('/tgn/')[-1]
+                        yield (tgn_id, coord_uri)
+
+        except (UnicodeDecodeError, ValueError) as e:
+            continue
+
+    # Close file if we opened it
+    if not path.suffix == '.zip':
+        lines.close()
 
 
 def create_place_doc(tgn_id, coord_uri, coordinates, term_literals, place_to_preferred_term, place_to_all_terms):
@@ -315,18 +400,18 @@ def index_tgn(zip_path, places_index):
     print("Using new temporal scoping design")
 
     # Step 1: Load coordinates
-    coordinates = load_coordinates_from_zip(zip_path)
+    coordinates = load_coordinates_from_file(zip_path)
     if not coordinates:
         print("ERROR: No coordinates found!")
         return
 
     # Step 2: Load term literals and place-term mappings
-    term_literals, place_to_preferred_term, place_to_all_terms = load_terms_and_labels_from_zip(zip_path)
+    term_literals, place_to_preferred_term, place_to_all_terms = load_terms_and_labels_from_file(zip_path)
 
     # Step 3: Find places with coordinates
     print("\nFinding places with coordinates...")
     place_to_coord = {}
-    for tgn_id, coord_uri in stream_placemap_from_zip(zip_path, coordinates):
+    for tgn_id, coord_uri in stream_placemap_from_file(zip_path, coordinates):
         place_to_coord[tgn_id] = coord_uri
 
     print(f"✓ Found {len(place_to_coord):,} TGN places with coordinates")
