@@ -215,6 +215,8 @@ def check_data_files():
 
 def get_index_counts():
     counts = {}
+    total_count = 0
+
     for auth in AUTHORITIES:
         namespace = auth['namespace']
         sys.stdout.write(f"  Counting {namespace}...")
@@ -224,13 +226,21 @@ def get_index_counts():
                 index=PLACES_INDEX,
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
             )
-            counts[namespace] = response['count']
-            print(f" {response['count']:,}")
+            count = response['count']
+            counts[namespace] = count
+            total_count += count
+
+            print(f" {count:,}")
             sys.stdout.flush()
         except Exception as e:
             print(f" ERROR: {e}")
             sys.stdout.flush()
             counts[namespace] = 0
+
+    print()
+    print(f"  TOTAL PLACES: {total_count:,}")
+    print()
+
     return counts
 
 
