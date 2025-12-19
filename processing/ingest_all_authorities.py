@@ -45,14 +45,13 @@ def delete_existing_namespace(namespace):
         }
     }
 
-    resp = es.delete_by_query(
+    resp = es.options(request_timeout=3600).delete_by_query(
         index=PLACES_INDEX,
         body=query,
         conflicts="proceed",
         refresh=True,
         slices="auto",
-        wait_for_completion=True,
-        request_timeout=3600  # 1 hour timeout for large deletes
+        wait_for_completion=True
     )
 
     deleted = resp.get("deleted", 0)

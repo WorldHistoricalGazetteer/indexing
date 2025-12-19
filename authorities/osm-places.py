@@ -166,6 +166,9 @@ class OSMHandler(osmium.SimpleHandler):
         self.wkbfab = osmium.geom.WKBFactory()
 
     def node(self, n):
+        # Skip untagged nodes instantly to save Python overhead
+        if not n.tags: return
+
         if self.tracker.should_skip('node'): return
         tags = process_tags(n.tags)
         if tags:
@@ -174,7 +177,10 @@ class OSMHandler(osmium.SimpleHandler):
         self.tracker.increment('node')
 
     def way(self, w):
+        if 'name' not in w.tags: return
+
         if self.tracker.should_skip('way'): return
+
         tags = process_tags(w.tags)
         if tags:
             try:
@@ -194,7 +200,10 @@ class OSMHandler(osmium.SimpleHandler):
         self.tracker.increment('way')
 
     def relation(self, r):
+        if 'name' not in r.tags: return
+
         if self.tracker.should_skip('relation'): return
+
         tags = process_tags(r.tags)
         if tags:
             try:
