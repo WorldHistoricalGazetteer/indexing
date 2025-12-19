@@ -226,8 +226,10 @@ def get_index_counts():
             )
             counts[namespace] = response['count']
             print(f" {response['count']:,}")
+            sys.stdout.flush()
         except Exception as e:
             print(f" ERROR: {e}")
+            sys.stdout.flush()
             counts[namespace] = 0
     return counts
 
