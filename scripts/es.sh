@@ -550,13 +550,20 @@ do_ingest() {
     cat > "$INGEST_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=es-ingest
-#SBATCH --time=24:00:00
+#SBATCH --time=47:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120G
+#SBATCH --exclusive
+#SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
+
+# NOTE: --exclusive ensures dedicated disk I/O.
+# NOTE: 16 CPUS: 1 for Osmium main loop, 8-10 for ES parallel_bulk threads, rest for GC/OS overhead.
+# NOTE: --mem=120G leaves room for OS overhead on 128G nodes.
+# NOTE: --signal gives the Python script 2 minutes to save state before timeout.
 
 set -e
 

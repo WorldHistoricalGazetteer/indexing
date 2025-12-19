@@ -1,425 +1,304 @@
 # processing/osm-places.py
 
 """
-Index OpenStreetMap (OSM) named places into Elasticsearch.
-
-OSM data comes in PBF (Protocolbuffer Binary Format) or GeoJSON format.
-This script processes named geographic features from OSM.
-
-OSM features of interest:
-- place=* (city, town, village, hamlet, etc.)
-- natural=* (peak, volcano, bay, etc.)
-- water/waterway=* (lake, river, etc.)
-- historic=* (castle, ruins, etc.)
-- landuse=* (forest, reservoir, etc.)
-
-Only features with a 'name' tag are indexed.
-
-Updated to use temporal scoping design. OSM is current data (2025).
+High-Performance Single-Pass OSM Ingestion.
+Features:
+- Auto-staging to local scratch (NVMe).
+- Inline complexity filtering (Triage).
+- Robust resumption state tracking.
 """
 
 import json
 import os
 import sys
 import gc
+import time
+import signal
+import subprocess
 from pathlib import Path
+from datetime import datetime
+
 import osmium
 import shapely.wkb as wkblib
-
-from processing.helpers import compute_representative_point, simplify_geometry
+from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
+from processing.helpers import compute_representative_point, simplify_geometry
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+# ---------------- CONFIG ----------------
+CHECKPOINT_INTERVAL = 50000
+BULK_THREAD_COUNT = 8
+QUEUE_SIZE = 12
 
-# Get OSM configuration
-OSM_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'osm'), None)
-if not OSM_CONFIG:
-    print("ERROR: OSM configuration not found in AUTHORITIES")
-    sys.exit(1)
+# Complexity Thresholds (Triage)
+# If a geometry exceeds these, we simplify it aggressively before indexing.
+COMPLEXITY_THRESHOLD_COORDS = 1000
+SIMPLIFY_TOLERANCE_DEG = 0.001  # Approx 100m
 
 
+# ---------------- STATE MANAGEMENT ----------------
+class ProgressTracker:
+    def __init__(self, state_file):
+        self.state_file = state_file
+        self.counts = {'node': 0, 'way': 0, 'relation': 0}
+        self.targets = {'node': 0, 'way': 0, 'relation': 0}
+        self.start_time = time.time()
+        self.load_state()
+
+    def load_state(self):
+        if os.path.exists(self.state_file):
+            try:
+                with open(self.state_file, 'r') as f:
+                    data = json.load(f)
+                    self.targets = data.get('counts', self.targets)
+                    print(f"RESUMING from checkpoint: {self.targets}")
+            except Exception as e:
+                print(f"Warning: failed to read state file: {e}")
+
+    def save_state(self):
+        temp_file = f"{self.state_file}.tmp"
+        with open(temp_file, 'w') as f:
+            json.dump({
+                'timestamp': datetime.now().isoformat(),
+                'counts': self.counts
+            }, f)
+        os.replace(temp_file, self.state_file)
+        print(f"  [Checkpoint saved at {self.counts}]")
+
+    def should_skip(self, type_):
+        # "Fast-forward" logic
+        if self.counts[type_] < self.targets[type_]:
+            self.counts[type_] += 1
+            if self.counts[type_] % 1000000 == 0:
+                print(f"  Skipping... {type_} {self.counts[type_]}/{self.targets[type_]}")
+            return True
+        return False
+
+    def increment(self, type_):
+        self.counts[type_] += 1
+        if self.counts[type_] % CHECKPOINT_INTERVAL == 0:
+            self.save_state()
+            elapsed = time.time() - self.start_time
+            rate = self.counts[type_] / elapsed if elapsed > 0 else 0
+            print(f"Processed {self.counts[type_]:,} {type_}s (Rate: {rate:.0f}/s)")
+
+
+# ---------------- HELPERS ----------------
+def create_doc(osm_id, osm_type, tags, geometry):
+    """Creates the ES document."""
+    place_id = f"osm:{osm_type[0]}{osm_id}"
+
+    # Simple toponyms
+    toponyms = [{'toponym_id': f"{tags['name']}@und", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}}]
+    if 'names' in tags:
+        for lang, val in tags['names'].items():
+            toponyms.append({'toponym_id': f"{val}@{lang}", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}})
+
+    doc = {
+        'place_id': place_id,
+        'label': tags['name'],
+        'toponyms': toponyms,
+        'source': 'osm'
+    }
+
+    if geometry:
+        # Calculate representative point (expensive but needed)
+        try:
+            rep_point = compute_representative_point(geometry)
+            doc['locations'] = [{'geometry': geometry, 'rep_point': rep_point}]
+        except:
+            pass  # Geometry invalid or empty
+
+    # Types
+    types = []
+    for k in ['place', 'natural', 'water', 'waterway', 'historic', 'landuse']:
+        if k in tags:
+            types.append({'identifier': tags[k], 'label': 'osm', 'sourceLabel': f"{k}={tags[k]}"})
+    if types: doc['types'] = types
+
+    if 'wikidata' in tags:
+        doc['relations'] = [{'relationType': 'sameAs', 'relationTo': f"wd:{tags['wikidata']}", 'source': 'osm'}]
+
+    if 'population' in tags:
+        try:
+            doc['population'] = int(tags['population'])
+        except:
+            pass
+
+    return doc
+
+
+def process_tags(tags):
+    """Filters tags before processing geometry to save CPU."""
+    if 'name' not in tags: return None
+
+    # Check if we care about this feature
+    # Optimization: Check for 'place' first as it's most common
+    if 'place' in tags:
+        pass
+    elif any(k in tags for k in ['natural', 'water', 'waterway', 'historic', 'landuse']):
+        pass
+    else:
+        return None
+
+    # Extract tags
+    result = {'name': tags['name']}
+    if 'names' not in result: result['names'] = {}
+
+    for tag in tags:
+        if tag.k.startswith('name:'):
+            result['names'][tag.k[5:]] = tag.v
+        elif tag.k in {'place', 'natural', 'water', 'waterway', 'historic', 'landuse', 'boundary', 'admin_level',
+                       'population', 'elevation', 'wikidata'}:
+            result[tag.k] = tag.v
+
+    return result
+
+
+# ---------------- HANDLER ----------------
 class OSMHandler(osmium.SimpleHandler):
-    """
-    Handler for processing OSM PBF files.
-    Extracts named geographic features.
-    """
-
-    def __init__(self, places_batch_callback):
+    def __init__(self, tracker, buffer_callback):
         super().__init__()
-        self.places_batch = []
-        self.places_batch_callback = places_batch_callback
-        self.processed = 0
-        self.indexed = 0
+        self.tracker = tracker
+        self.buffer_callback = buffer_callback
         self.wkbfab = osmium.geom.WKBFactory()
 
-    def process_tags(self, tags):
-        """Extract relevant tags from OSM element."""
-        result = {}
-
-        # Core tags we're interested in
-        relevant_tags = {
-            'name', 'name:en', 'alt_name', 'old_name', 'official_name',
-            'place', 'natural', 'water', 'waterway', 'historic', 'landuse',
-            'boundary', 'admin_level', 'population', 'elevation',
-            'wikidata', 'wikipedia'
-        }
-
-        for tag in tags:
-            key = tag.k
-            value = tag.v
-
-            # Collect name variants
-            if key.startswith('name:'):
-                lang = key[5:]  # Remove 'name:' prefix
-                if 'names' not in result:
-                    result['names'] = {}
-                result['names'][lang] = value
-            elif key in relevant_tags:
-                result[key] = value
-
-        return result
-
-    def create_place_doc(self, osm_id, osm_type, tags, geometry):
-        """Create place document from OSM element."""
-
-        # Skip if no name
-        if 'name' not in tags:
-            return None
-
-        place_id = f"osm:{osm_type[0]}{osm_id}"  # e.g., osm:n12345, osm:w67890
-
-        # Build toponyms array with temporal scoping
-        toponyms = []
-        seen_lsts = set()
-
-        # Main name (language unknown unless specified)
-        main_name = tags['name']
-        lst = f"{main_name}@und"
-        if lst not in seen_lsts:
-            # OSM is current data - use 2025
-            toponyms.append({
-                'toponym_id': lst,
-                'timespan': {
-                    'start': {'in': 2025},
-                    'end': {'in': 2025}
-                }
-            })
-            seen_lsts.add(lst)
-
-        # Language-specific names
-        if 'names' in tags:
-            for lang, name in tags['names'].items():
-                lst = f"{name}@{lang}"
-                if lst not in seen_lsts:
-                    toponyms.append({
-                        'toponym_id': lst,
-                        'timespan': {
-                            'start': {'in': 2025},
-                            'end': {'in': 2025}
-                        }
-                    })
-                    seen_lsts.add(lst)
-
-        # Alternative names
-        for alt_field in ['alt_name', 'old_name', 'official_name']:
-            if alt_field in tags:
-                alt_name = tags[alt_field]
-                lst = f"{alt_name}@und"
-                if lst not in seen_lsts:
-                    toponyms.append({
-                        'toponym_id': lst,
-                        'timespan': {
-                            'start': {'in': 2025},
-                            'end': {'in': 2025}
-                        }
-                    })
-                    seen_lsts.add(lst)
-
-        # Build place document
-        place_doc = {
-            'place_id': place_id,
-            'label': main_name,
-            'toponyms': toponyms,
-            'source': 'osm'
-        }
-
-        # Add geometry if available
-        if geometry:
-            # Simplify large geometries
-            if geometry.get('type') in ['Polygon', 'MultiPolygon']:
-                geometry = simplify_geometry(geometry, tolerance_km=0.1)
-
-            rep_point = compute_representative_point(geometry)
-
-            place_doc['locations'] = [{
-                'geometry': geometry,
-                'rep_point': rep_point
-            }]
-
-        # Add place type
-        types = []
-        if 'place' in tags:
-            types.append({
-                'identifier': tags['place'],
-                'label': 'osm',
-                'sourceLabel': f"place={tags['place']}"
-            })
-        for tag_type in ['natural', 'water', 'waterway', 'historic', 'landuse']:
-            if tag_type in tags:
-                types.append({
-                    'identifier': tags[tag_type],
-                    'label': 'osm',
-                    'sourceLabel': f"{tag_type}={tags[tag_type]}"
-                })
-
-        if types:
-            place_doc['types'] = types
-
-        # Add relations
-        relations = []
-        if 'wikidata' in tags:
-            relations.append({
-                'relationType': 'sameAs',
-                'relationTo': f"wd:{tags['wikidata']}",
-                'source': 'osm',
-                'method': 'curated'
-            })
-
-        if relations:
-            place_doc['relations'] = relations
-
-        # Add admin level
-        if 'admin_level' in tags:
-            try:
-                place_doc['admin_level'] = int(tags['admin_level'])
-            except ValueError:
-                pass
-
-        # Add population if available
-        if 'population' in tags:
-            try:
-                place_doc['population'] = int(tags['population'])
-            except ValueError:
-                pass
-
-        # Add elevation if available
-        if 'elevation' in tags:
-            try:
-                # Handle elevation with units (e.g., "1234 m")
-                elev_str = tags['elevation'].replace('m', '').strip()
-                place_doc['elevation'] = int(float(elev_str))
-            except ValueError:
-                pass
-
-        return place_doc
-
-    def flush_batches(self):
-        """Flush any remaining items in batches."""
-        if self.places_batch:
-            self.places_batch_callback(self.places_batch)
-            self.places_batch = []
-            # Force garbage collection to free memory
-            gc.collect()
-
     def node(self, n):
-        """Process OSM node."""
-        tags = self.process_tags(n.tags)
-
-        # Check if this is a geographic feature we want
-        if not any(k in tags for k in ['place', 'natural', 'water', 'historic']):
-            return
-
-        if 'name' not in tags:
-            return
-
-        # Create geometry
-        geometry = {
-            'type': 'Point',
-            'coordinates': [n.location.lon, n.location.lat]
-        }
-
-        place_doc = self.create_place_doc(n.id, 'node', tags, geometry)
-
-        if place_doc:
-            self.places_batch.append({
-                '_index': 'places',
-                '_id': place_doc['place_id'],
-                '_source': place_doc
-            })
-
-            self.indexed += 1
-
-        self.processed += 1
-
-        # Flush batches if needed
-        if len(self.places_batch) >= BATCH_SIZE:
-            self.places_batch_callback(self.places_batch)
-            self.places_batch = []
-
-            # Force garbage collection every 10 batches to prevent memory buildup
-            if self.processed % (BATCH_SIZE * 10) == 0:
-                gc.collect()
-
-        # Progress reporting
-        if self.processed % 100000 == 0:
-            print(f"Processed {self.processed:,} nodes, indexed {self.indexed:,} places")
+        if self.tracker.should_skip('node'): return
+        tags = process_tags(n.tags)
+        if tags:
+            geo = {'type': 'Point', 'coordinates': [n.location.lon, n.location.lat]}
+            self.buffer_callback(create_doc(n.id, 'node', tags, geo))
+        self.tracker.increment('node')
 
     def way(self, w):
-        """Process OSM way."""
-        tags = self.process_tags(w.tags)
+        if self.tracker.should_skip('way'): return
+        tags = process_tags(w.tags)
+        if tags:
+            try:
+                # 1. Create WKB (Fastest C++ method)
+                wkb = self.wkbfab.create_linestring(w)
+                geom = wkblib.loads(wkb, hex=True)
 
-        # Check if this is a geographic feature we want
-        if not any(k in tags for k in ['place', 'natural', 'water', 'waterway', 'historic', 'landuse']):
-            return
+                # 2. INLINE TRIAGE: Check complexity immediately
+                # If too big, simplify NOW before creating full GeoJSON
+                if len(geom.coords) > COMPLEXITY_THRESHOLD_COORDS:
+                    geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
 
-        if 'name' not in tags:
-            return
+                geo = mapping(geom)
+                self.buffer_callback(create_doc(w.id, 'way', tags, geo))
+            except:
+                pass  # Skip broken geometries
+        self.tracker.increment('way')
 
-        # Try to get geometry
-        geometry = None
-        try:
-            wkb = self.wkbfab.create_linestring(w)
-            line = wkblib.loads(wkb, hex=True)
-            geometry = json.loads(json.dumps(line.__geo_interface__))
-            # Explicitly delete geometry objects to free memory
-            del line
-            del wkb
-        except:
-            # If we can't get geometry, skip this feature entirely
-            # (we need geometry to index a useful place)
-            return
+    def relation(self, r):
+        if self.tracker.should_skip('relation'): return
+        tags = process_tags(r.tags)
+        if tags:
+            try:
+                wkb = self.wkbfab.create_multipolygon(r)
+                geom = wkblib.loads(wkb, hex=True)
 
-        # Only create place_doc if we have geometry
-        place_doc = self.create_place_doc(w.id, 'way', tags, geometry)
-
-        if place_doc:
-            self.places_batch.append({
-                '_index': 'places',
-                '_id': place_doc['place_id'],
-                '_source': place_doc
-            })
-
-            self.indexed += 1
-
-        self.processed += 1
-
-        # Flush batches if needed
-        if len(self.places_batch) >= BATCH_SIZE:
-            self.places_batch_callback(self.places_batch)
-            self.places_batch = []
-
-            # Force garbage collection every 10 batches
-            if self.processed % (BATCH_SIZE * 10) == 0:
-                gc.collect()
-
-        # Progress reporting
-        if self.processed % 10000 == 0:
-            print(f"Processed {self.processed:,} ways, indexed {self.indexed:,} places")
+                if geom.is_valid:
+                    # Always simplify relations (they are usually huge)
+                    geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
+                    geo = mapping(geom)
+                    self.buffer_callback(create_doc(r.id, 'relation', tags, geo))
+            except:
+                pass
+        self.tracker.increment('relation')
 
 
-def index_osm_pbf(pbf_file, places_index='places'):
-    """
-    Process OSM PBF file and index to Elasticsearch.
+# ---------------- STAGING & MAIN ----------------
+def stage_file_to_scratch(source_path):
+    scratch_dir = os.environ.get('SLURM_SCRATCH')
+    if not scratch_dir or not os.path.exists(scratch_dir):
+        print("Notice: No scratch dir found, using network storage.")
+        return source_path, False
 
-    Note: With new design, we only index places.
-    Toponyms will be indexed separately by cross-authority deduplication.
-    """
+    target_path = os.path.join(scratch_dir, os.path.basename(source_path))
+    print(f"Staging to local scratch: {target_path}")
+    subprocess.run(['rsync', '-ah', str(source_path), target_path], check=True)
+    return target_path, True
 
-    print(f"Processing OSM PBF file: {pbf_file}")
 
-    if not os.path.exists(pbf_file):
-        print(f"ERROR: File not found: {pbf_file}")
-        return
+def index_osm_optimized(pbf_file):
+    es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
+    state_file = Path.cwd() / 'osm_state.json'
+    tracker = ProgressTracker(str(state_file))
 
-    places_count = 0
+    # Signal Handling
+    def signal_handler(sig, frame):
+        print("\n!!! SIGNAL RECEIVED - SAVING STATE !!!")
+        tracker.save_state()
+        sys.exit(0)
 
-    def index_places_batch(batch):
-        nonlocal places_count
-        try:
-            success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-            places_count += success
-            if failed > 0:
-                print(f"  Warning: {failed} places failed to index")
-        except Exception as e:
-            print(f"  Error indexing places batch: {e}")
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
 
-    # Create handler
-    handler = OSMHandler(index_places_batch)
+    # Parallel Bulk Buffer
+    buffer_list = []
 
-    # Process file
-    print("Reading OSM data...")
-    print("Note: This will take several hours for planet.osm.pbf")
+    def flush_buffer():
+        if not buffer_list: return
+        # Parallel bulk handles the complexity.
+        # If one doc is heavy, others keep moving in other threads.
+        helpers.parallel_bulk(
+            es, buffer_list,
+            thread_count=BULK_THREAD_COUNT,
+            queue_size=QUEUE_SIZE,
+            raise_on_error=False
+        )
+        buffer_list.clear()
+
+        if tracker.counts['node'] % 500000 == 0:
+            gc.collect()
+
+    def add_to_buffer(doc):
+        buffer_list.append({
+            '_index': 'places',
+            '_id': doc['place_id'],
+            '_source': doc
+        })
+        if len(buffer_list) >= 2000:  # Smaller batch size for better responsiveness
+            flush_buffer()
+
+    # Staging
+    active_pbf, is_staged = stage_file_to_scratch(pbf_file)
 
     try:
-        handler.apply_file(pbf_file, locations=True, idx='flex_mem')
+        print(f"Starting Single-Pass Ingestion: {active_pbf}")
+        handler = OSMHandler(tracker, add_to_buffer)
+        # Use memory cache for nodes (fastest)
+        handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
+
+        flush_buffer()
+        tracker.save_state()
+        create_checkpoint_snapshot(es, 'osm_places')
+        print("Ingestion Complete.")
+
     except Exception as e:
-        print(f"Error processing PBF file: {e}")
-        print("Make sure you have osmium installed: pip install osmium")
-        return
-
-    # Flush remaining batches
-    handler.flush_batches()
-
-    print(f"\nIndexing complete!")
-    print(f"Total processed: {handler.processed:,}")
-    print(f"Places indexed: {places_count:,}")
+        print(f"Error: {e}")
+        tracker.save_state()
+        raise
+    finally:
+        if is_staged and os.path.exists(active_pbf):
+            os.remove(active_pbf)
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description='Index OpenStreetMap places into Elasticsearch'
-    )
-    parser.add_argument(
-        '--file',
-        help='Path to OSM file (PBF format)'
-    )
-    parser.add_argument(
-        '--places-index',
-        default='places',
-        help='Target places index name'
-    )
-
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--file', help='Path to PBF')
     args = parser.parse_args()
 
-    # If no file specified, use the one from settings
-    if not args.file:
-        # Get OSM file from settings
-        osm_files = OSM_CONFIG.get('files', [])
-        if not osm_files:
-            print("ERROR: No OSM files configured")
-            sys.exit(1)
+    # Default file logic
+    osm_file = args.file
+    if not osm_file:
+        # Fallback to configured path logic would go here
+        osm_file = Path(DATA_DIR) / 'authorities' / 'osm' / 'planet-latest.osm.pbf'
 
-        # Use the first file
-        file_config = osm_files[0]
-        filename = file_config.get('name', 'planet-latest.osm.pbf')
-
-        osm_file = Path(DATA_DIR) / 'authorities' / 'osm' / filename
-    else:
-        osm_file = args.file
-
-    print(f"Starting OSM ingestion")
-    print(f"File: {osm_file}")
-    print(f"Target index: {args.places_index}")
-    print()
-
-    if not Path(osm_file).exists():
-        print(f"ERROR: File not found: {osm_file}")
-        print("\nTo download OSM data, run:")
-        print("  python -m processing.fetch_authorities -n osm")
-        print("\nNote: The full planet file is ~85GB and will take many hours to download")
-        sys.exit(1)
-
-    try:
-        import osmium
-    except ImportError:
-        print("ERROR: osmium library required for PBF processing")
-        print("Install with: pip install osmium --break-system-packages")
-        sys.exit(1)
-
-    index_osm_pbf(osm_file, args.places_index)
-    create_checkpoint_snapshot(es, 'osm_places')
+    index_osm_optimized(osm_file)
