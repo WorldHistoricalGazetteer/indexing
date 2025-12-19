@@ -240,6 +240,7 @@ def get_index_counts():
     print()
     print(f"  TOTAL PLACES: {total_count:,}")
     print()
+    sys.stdout.flush()
 
     return counts
 
