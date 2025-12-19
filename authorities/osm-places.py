@@ -186,7 +186,7 @@ class OSMHandler(osmium.SimpleHandler):
             try:
                 # 1. Create WKB (Fastest C++ method)
                 wkb = self.wkbfab.create_linestring(w)
-                geom = wkblib.loads(wkb, hex=True)
+                geom = wkblib.loads(wkb, hex=False)
 
                 # 2. INLINE TRIAGE: Check complexity immediately
                 # If too big, simplify NOW before creating full GeoJSON
@@ -208,7 +208,7 @@ class OSMHandler(osmium.SimpleHandler):
         if tags:
             try:
                 wkb = self.wkbfab.create_multipolygon(r)
-                geom = wkblib.loads(wkb, hex=True)
+                geom = wkblib.loads(wkb, hex=False)
 
                 if geom.is_valid:
                     # Always simplify relations (they are usually huge)
