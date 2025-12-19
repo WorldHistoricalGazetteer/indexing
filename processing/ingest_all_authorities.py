@@ -219,7 +219,8 @@ def get_index_counts():
 
     for auth in AUTHORITIES:
         namespace = auth['namespace']
-        sys.stdout.write(f"  Counting {namespace}...")
+        dataset_name = auth['dataset_name']
+        sys.stdout.write(f"  Counting '{dataset_name}'...")
         sys.stdout.flush()
         try:
             response = es.options(request_timeout=30).count(
