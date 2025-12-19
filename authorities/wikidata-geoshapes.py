@@ -11,7 +11,7 @@ import os
 import sys
 import sqlite3
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from elasticsearch import Elasticsearch, helpers
@@ -238,18 +238,16 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
     print("Scanning for tasks...")
     tasks = []
 
-    # 1. Prepare Tasks
     with open(refs_file, "r") as f:
         for line in f:
             ref = json.loads(line)
             place_id = f"wd:{ref['qid']}"
 
             if place_id in downloaded_ids: continue
-            # Optional: verify_place_exists is slow for 50k items.
-            # If you are confident refs match ES, comment this out for speed.
-            if not verify_place_exists(place_id):
-                log_downloaded(place_id)
-                continue
+            # Optional: verify_place_exists is slow. Comment out if confident.
+            # if not verify_place_exists(place_id):
+            #    log_downloaded(place_id)
+            #    continue
 
             tasks.append((conn, ref["geoshape_ref"], place_id))
 
@@ -260,7 +258,6 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
     completed = 0
     start_time = time.time()
 
-    # 2. Execute with Progress Bar
     with ThreadPoolExecutor(max_workers=4) as executor:
         futures = {executor.submit(fetch_task, t): t for t in tasks}
 
@@ -268,23 +265,32 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             place_id, geometry, ref_name = future.result()
             completed += 1
 
-            # Update Progress Bar
+            # --- Progress Bar Update ---
             if completed % 5 == 0 or completed == total_tasks:
                 percent = (completed / total_tasks) * 100
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
 
+                # Calculate ETA
+                if rate > 0:
+                    remaining_items = total_tasks - completed
+                    eta_seconds = int(remaining_items / rate)
+                    eta_str = str(timedelta(seconds=eta_seconds))
+                else:
+                    eta_str = "--:--:--"
+
                 # Truncate filename for display
                 display_name = (ref_name[:20] + '..') if len(ref_name) > 20 else ref_name
 
+                # Clear line and Print
                 sys.stdout.write(
-                    f"\r[WD-Shapes] {completed:,}/{total_tasks:,} ({percent:.1f}%) | {rate:.1f} items/s | Active: {display_name:<25}")
+                    f"\r[WD-Shapes] {completed:,}/{total_tasks:,} ({percent:.1f}%) | {rate:.1f} it/s | ETA: {eta_str} | Active: {display_name:<20}")
                 sys.stdout.flush()
+            # ---------------------------
 
             if not geometry:
                 continue
 
-            # Add to Bulk
             rep_point = compute_representative_point(geometry)
             updates.append({
                 "_op_type": "update", "_index": places_index, "_id": place_id,
@@ -305,12 +311,10 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             })
             log_downloaded(place_id)
 
-            # Flush Bulk
             if len(updates) >= batch_size:
                 helpers.bulk(es, updates, raise_on_error=False)
                 updates.clear()
 
-    # Final flush
     if updates:
         helpers.bulk(es, updates, raise_on_error=False)
 
