@@ -2,9 +2,6 @@
 
 """
 Index GeoNames places data into Elasticsearch.
-
-This script ONLY indexes places. Toponyms are indexed separately
-by geonames_toponyms.py to ensure uniqueness.
 """
 import sys
 
@@ -16,16 +13,7 @@ es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def normalize_lst(name, lang='und'):
-    """
-    Ensure toponym is in LST format (name@lang).
-
-    Args:
-        name: The toponym name
-        lang: Language code (default: 'und' for undetermined)
-
-    Returns:
-        Normalized LST string
-    """
+    """Ensure toponym is in LST format (name@lang)."""
     if not name:
         return None
     if '@' in name:
@@ -62,9 +50,9 @@ def parse_geonames_line(line):
 
     # Build country codes array
     ccodes = []
-    if fields[8]:  # primary country code
+    if fields[8]:
         ccodes.append(fields[8])
-    if fields[9]:  # alternate country codes
+    if fields[9]:
         ccodes.extend([cc.strip() for cc in fields[9].split(",") if cc.strip()])
 
     # Handle elevation - prefer elevation field, fall back to DEM
@@ -80,16 +68,19 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Build toponyms array with temporal scoping - will be enriched by geonames_toponyms.py
-    toponyms = []
+    # Handle population
+    population = None
+    if fields[14] and fields[14] != '':
+        try:
+            population = int(fields[14])
+        except ValueError:
+            pass
 
-    # Add the main name as a fallback toponym with current year scope
-    # This ensures every place has at least one name, even if alternateNames
-    # doesn't include it (rare but possible for very new entries)
-    if fields[1]:  # Main name
+    # Build toponyms array
+    toponyms = []
+    if fields[1]:
         lst = normalize_lst(fields[1], 'und')
         if lst:
-            # Add with temporal scope - GeoNames is current data, so use 2025
             toponyms.append({
                 "toponym_id": lst,
                 "timespan": {
@@ -98,60 +89,39 @@ def parse_geonames_line(line):
                 }
             })
 
-    # Optionally add ASCII name if different
-    # (alternateNames usually has this, so you could skip it)
-    # if fields[2] and fields[2] != fields[1]:
-    #     lst = normalize_lst(fields[2], 'und')
-    #     if lst:
-    #         toponyms.append({
-    #             "toponym_id": lst,
-    #             "timespan": {
-    #                 "start": {"in": 2025},
-    #                 "end": {"in": 2025}
-    #             }
-    #         })
-
-    # Build the document
+    # Build document
     doc = {
         "place_id": f"gn:{fields[0]}",
-        "toponyms": toponyms,  # Nested array with toponym_id and timespan
+        "title": fields[1],
+        "toponyms": toponyms,
         "ccodes": ccodes,
-        "locations": [
-            {
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [float(fields[5]), float(fields[4])]  # lon, lat
-                },
-                "rep_point": {
-                    "lon": float(fields[5]),
-                    "lat": float(fields[4])
-                }
-            }
-        ],
+        "geom": {
+            "type": "Point",
+            "coordinates": [float(fields[5]), float(fields[4])]  # lon, lat
+        },
+        "repr_point": {
+            "lon": float(fields[5]),
+            "lat": float(fields[4])
+        },
         "types": [
             {
-                "identifier": fields[7],  # feature code
-                "label": fields[6],  # feature class
+                "identifier": fields[7],
+                "label": fields[6],
                 "sourceLabel": f"{fields[6]}.{fields[7]}"
             }
         ]
     }
 
-    # Add elevation if available
     if elevation is not None:
         doc["elevation"] = elevation
-
-    # Set label to the primary name
-    if fields[1]:
-        doc["label"] = fields[1]
+    if population is not None:
+        doc["population"] = population
 
     return doc
 
 
 def index_batches(file_path, index_name):
-    """
-    Read the file line by line and bulk index in batches.
-    """
+    """Read file and bulk index in batches."""
     batch = []
     count = 0
 
@@ -178,7 +148,6 @@ def index_batches(file_path, index_name):
             print(f"\nError processing line: {str(e)}")
             continue
 
-    # Index remaining batch
     if batch:
         success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
         count += success
@@ -191,7 +160,7 @@ if __name__ == "__main__":
     PLACES_INDEX = "places"
 
     print("=" * 80)
-    print("GEONAMES PLACES INGESTION")
+    print("GEONAMES PLACES INGESTION (SCHEMA COMPLIANT)")
     print("=" * 80)
     print(f"Source: {GEONAMES_FILE}")
     print(f"Target index: {PLACES_INDEX}")
@@ -206,4 +175,3 @@ if __name__ == "__main__":
     print("COMPLETE")
     print("=" * 80)
     print("Note: Alternate names will be added by geonames_toponyms.py")
-    print("      Toponyms index will be populated by deduplicate_and_index_toponyms()")

@@ -2,19 +2,6 @@
 
 """
 Update GeoNames places with alternate names (toponyms) data.
-
-MEMORY-EFFICIENT VERSION: Uses streaming approach to avoid loading
-17M records into memory.
-
-Two-pass approach:
-1. Update places with toponyms (streaming)
-2. Update places with relations (streaming)
-
-NOTE: This script does NOT index to the toponyms index. The toponyms index
-is populated by a separate deduplication step (deduplicate_and_index_toponyms)
-that runs after ALL authorities are ingested. This ensures each unique LST
-appears only once in the toponyms index, regardless of how many authorities
-reference it.
 """
 import sys
 from collections import defaultdict
@@ -27,16 +14,7 @@ es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def normalize_lst(name, lang='und'):
-    """
-    Ensure toponym is in LST format (name@lang).
-
-    Args:
-        name: The toponym name
-        lang: Language code (default: 'und' for undetermined)
-
-    Returns:
-        Normalized LST string
-    """
+    """Ensure toponym is in LST format (name@lang)."""
     if not name:
         return None
     if '@' in name:
@@ -45,13 +23,7 @@ def normalize_lst(name, lang='und'):
 
 
 def parse_year(year_str):
-    """
-    Parse a year string which could be:
-    - Empty
-    - A year (e.g., "1850")
-    - A negative year for BCE (e.g., "-500")
-    Returns integer year or None
-    """
+    """Parse year string, handling empty, positive, and negative years."""
     if not year_str or year_str.strip() == '':
         return None
     try:
@@ -62,21 +34,9 @@ def parse_year(year_str):
 
 def parse_alternatename_line(line):
     """
-    Parse a single alternateNames line.
+    Parse alternateNames line - SCHEMA COMPLIANT.
 
-    Field positions from Geonames readme:
-    0: alternateNameId
-    1: geonameid
-    2: isolanguage
-    3: alternate name
-    4: isPreferredName
-    5: isShortName
-    6: isColloquial
-    7: isHistoric
-    8: from (period)
-    9: to (period)
-
-    Returns tuple:
+    Returns:
     - ('toponym', lst, timespan, is_preferred, place_id) for regular toponyms
     - ('relation', place_id, relation_dict) for wkdt/link entries
     - (None, ...) for entries to skip
@@ -88,23 +48,20 @@ def parse_alternatename_line(line):
     value = fields[3] if len(fields) > 3 else ''
     place_id = f"gn:{geoname_id}"
 
-    # Handle wikidata IDs - create sameAs relation
+    # Handle wikidata IDs
     if lang_code == 'wkdt' and value:
         return ('relation', place_id, {
-            'relationType': 'sameAs',
-            'relationTo': f"wd:{value}",
-            'source': 'geonames',
-            'method': 'curated',
-            'certainty': 1.0
+            'relation_type': 'sameAs',
+            'related_place_id': f"wd:{value}",
+            'label': 'Wikidata'
         })
 
-    # Handle links - create describedBy relation
+    # Handle links
     if lang_code == 'link' and value:
         return ('relation', place_id, {
-            'relationType': 'describedBy',
-            'relationTo': value,
-            'source': 'geonames',
-            'method': 'curated'
+            'relation_type': 'describedBy',
+            'related_place_id': value,
+            'label': 'External Link'
         })
 
     # Skip other non-linguistic entries
@@ -112,14 +69,11 @@ def parse_alternatename_line(line):
     if lang_code in skip_codes:
         return (None,)
 
-    # Skip if no actual name
     if not value:
         return (None,)
 
-    # Build LST (Language-Scoped Toponym)
-    # Handle language variants (e.g., zh-CN, fr_1793)
+    # Build LST
     if lang_code:
-        # Normalize underscore to hyphen for consistency
         lang_code = lang_code.replace('_', '-')
         lst = normalize_lst(value, lang_code)
     else:
@@ -137,7 +91,6 @@ def parse_alternatename_line(line):
         if year_to is not None:
             timespan["end"] = year_to
 
-    # Check if it's a preferred name
     is_preferred = fields[4] == '1' if len(fields) > 4 else False
 
     return ('toponym', lst, timespan, is_preferred, place_id)
@@ -145,25 +98,14 @@ def parse_alternatename_line(line):
 
 def pass1_update_places_with_toponyms(file_path):
     """
-    PASS 1: Stream through file and update places with toponyms.
-
-    Uses simplified schema: toponyms is a nested array with toponym_id and timespan.
-    No separate string array.
-
-    Batches updates by place_id to avoid duplicate updates.
-    Memory usage: ~200MB (one batch of place updates)
-
-    NOTE: This does NOT index to the toponyms index. The toponyms index
-    will be populated by a separate deduplication step after all authorities
-    are ingested.
+    PASS 1: Stream through file and update places with toponyms - SCHEMA COMPLIANT.
     """
     print("\n" + "=" * 80)
     print("PASS 1: UPDATING PLACES WITH TOPONYMS")
     print("=" * 80)
 
     # Batch updates by place_id
-    # Key: place_id, Value: {'toponyms': list(), 'seen': set(), 'label': str}
-    place_updates = defaultdict(lambda: {'toponyms': [], 'seen': set(), 'label': None})
+    place_updates = defaultdict(lambda: {'toponyms': [], 'seen': set(), 'title': None})
 
     processed = 0
     skipped = 0
@@ -190,7 +132,6 @@ def pass1_update_places_with_toponyms(file_path):
                         if (ctx._source.toponyms == null) {
                             ctx._source.toponyms = [];
                         }
-                        // Add new toponyms (with deduplication by toponym_id)
                         for (new_toponym in params.new_toponyms) {
                             boolean exists = false;
                             for (existing in ctx._source.toponyms) {
@@ -203,19 +144,18 @@ def pass1_update_places_with_toponyms(file_path):
                                 ctx._source.toponyms.add(new_toponym);
                             }
                         }
-                        if (params.label != null) {
-                            ctx._source.label = params.label;
+                        if (params.title != null) {
+                            ctx._source.title = params.title;
                         }
                     ''',
                     'params': {
                         'new_toponyms': data['toponyms'],
-                        'label': data['label']
+                        'title': data['title']
                     }
                 }
             }
             batch.append(update_op)
 
-        # Bulk update
         try:
             success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
             places_updated += success
@@ -223,12 +163,11 @@ def pass1_update_places_with_toponyms(file_path):
             if failed > 0:
                 sys.stdout.write(f"\r  Updated {places_updated:,} places ({failed} failed)...")
             else:
-                sys.stdout.write(f"\r  Updated {places_updated:,} places...                  ")
+                sys.stdout.write(f"\r  Updated {places_updated:,} places...")
             sys.stdout.flush()
         except Exception as e:
             print(f"\nError updating batch: {str(e)}")
 
-        # Clear batch
         place_updates.clear()
 
     # Stream through file
@@ -238,7 +177,7 @@ def pass1_update_places_with_toponyms(file_path):
 
         processed += 1
         if processed % 100000 == 0:
-            sys.stdout.write(f"\r  Processed {processed:,} lines...                      ")
+            sys.stdout.write(f"\r  Processed {processed:,} lines...")
             sys.stdout.flush()
 
         try:
@@ -250,17 +189,14 @@ def pass1_update_places_with_toponyms(file_path):
 
             _, lst, timespan, is_preferred, place_id = result
 
-            # Check if we've already added this LST for this place
             if lst in place_updates[place_id]['seen']:
                 continue
 
             place_updates[place_id]['seen'].add(lst)
 
-            # Build toponym entry with temporal scoping
             toponym_entry = {'toponym_id': lst}
 
             if timespan:
-                # Convert to nested structure expected by schema
                 scoped_timespan = {}
                 if 'start' in timespan:
                     scoped_timespan['start'] = {'in': timespan['start']}
@@ -270,12 +206,10 @@ def pass1_update_places_with_toponyms(file_path):
 
             place_updates[place_id]['toponyms'].append(toponym_entry)
 
-            # Set preferred label (first preferred name wins)
-            if is_preferred and place_updates[place_id]['label'] is None:
+            if is_preferred and place_updates[place_id]['title'] is None:
                 name = lst.split('@')[0] if '@' in lst else lst
-                place_updates[place_id]['label'] = name
+                place_updates[place_id]['title'] = name
 
-            # Flush when batch is large enough
             if len(place_updates) >= BATCH_SIZE:
                 flush_updates()
 
@@ -283,7 +217,6 @@ def pass1_update_places_with_toponyms(file_path):
             skipped += 1
             continue
 
-    # Final flush
     flush_updates()
 
     print(f"\n  Total places updated: {places_updated:,}")
@@ -292,9 +225,7 @@ def pass1_update_places_with_toponyms(file_path):
 
 def pass2_update_places_with_relations(file_path):
     """
-    PASS 2: Stream through file and add relations to places.
-
-    Memory usage: ~50MB (one batch of relation updates)
+    PASS 2: Stream through file and add relations.
     """
     print("\n" + "=" * 80)
     print("PASS 2: ADDING RELATIONS TO PLACES")
@@ -332,10 +263,9 @@ def pass2_update_places_with_relations(file_path):
                         if (ctx._source.relations == null) {
                             ctx._source.relations = [];
                         }
-                        // Check if this relation already exists
                         boolean exists = false;
                         for (rel in ctx._source.relations) {
-                            if (rel.relationTo == params.relation.relationTo) {
+                            if (rel.related_place_id == params.relation.related_place_id) {
                                 exists = true;
                                 break;
                             }
@@ -367,7 +297,6 @@ def pass2_update_places_with_relations(file_path):
             skipped += 1
             continue
 
-    # Final batch
     if batch:
         try:
             success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
@@ -383,24 +312,12 @@ if __name__ == "__main__":
     ALTERNATENAMES_FILE = f"{DATA_DIR}/authorities/gn/alternateNamesV2.zip"
 
     print("=" * 80)
-    print("GEONAMES TOPONYMS INGESTION (MEMORY-EFFICIENT)")
+    print("GEONAMES TOPONYMS INGESTION")
     print("=" * 80)
     print(f"Source: {ALTERNATENAMES_FILE}")
     print()
-    print("This script uses a two-pass streaming approach:")
-    print("  Pass 1: Update places with toponyms (streaming)")
-    print("  Pass 2: Add relations to places (streaming)")
-    print()
-    print("Note: Toponyms index will be populated by separate deduplication step")
-    print("      after all authorities are ingested.")
-    print()
-    print("Peak memory usage: <1GB")
-    print()
 
-    # Pass 1: Update places with toponyms
     places_updated = pass1_update_places_with_toponyms(ALTERNATENAMES_FILE)
-
-    # Pass 2: Add relations
     relations_count = pass2_update_places_with_relations(ALTERNATENAMES_FILE)
 
     print("\n" + "=" * 80)
@@ -408,9 +325,6 @@ if __name__ == "__main__":
     print("=" * 80)
     print(f"Places updated: {places_updated:,}")
     print(f"Relations added: {relations_count:,}")
-    print()
-    print("Note: Run deduplicate_and_index_toponyms() after all authorities")
-    print("      are ingested to populate the toponyms index.")
     print()
 
     print("Creating checkpoint snapshot...")
