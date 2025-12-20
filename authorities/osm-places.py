@@ -2,10 +2,13 @@
 
 """
 High-Performance Single-Pass OSM Ingestion.
+
 Features:
-- Auto-staging to local scratch (NVMe).
-- Inline complexity filtering (Triage).
-- Robust resumption state tracking.
+- Auto-staging to local scratch (NVMe)
+- Inline complexity filtering (Triage)
+- Robust resumption state tracking
+- Schema-compliant field names (title, geom, repr_point, relation_type, related_place_id)
+- Progress indicators with \r for clean output
 """
 
 import json
@@ -33,7 +36,6 @@ BULK_THREAD_COUNT = 8
 QUEUE_SIZE = 12
 
 # Complexity Thresholds (Triage)
-# If a geometry exceeds these, we simplify it aggressively before indexing.
 COMPLEXITY_THRESHOLD_COORDS = 1000
 SIMPLIFY_TOLERANCE_DEG = 0.001  # Approx 100m
 
@@ -72,7 +74,7 @@ class ProgressTracker:
         if self.counts[type_] < self.targets[type_]:
             self.counts[type_] += 1
             if self.counts[type_] % 1000000 == 0:
-                print(f"  Skipping... {type_} {self.counts[type_]}/{self.targets[type_]}")
+                print(f"\r  Skipping... {type_} {self.counts[type_]:,}/{self.targets[type_]:,}", end='', flush=True)
             return True
         return False
 
@@ -82,48 +84,78 @@ class ProgressTracker:
             self.save_state()
             elapsed = time.time() - self.start_time
             rate = self.counts[type_] / elapsed if elapsed > 0 else 0
-            print(f"Processed {self.counts[type_]:,} {type_}s (Rate: {rate:.0f}/s)")
+            print(f"\rProcessed {self.counts[type_]:,} {type_}s (Rate: {rate:.0f}/s)", end='', flush=True)
 
 
 # ---------------- HELPERS ----------------
 def create_doc(osm_id, osm_type, tags, geometry):
-    """Creates the ES document."""
+    """
+    Creates ES document matching places.json schema.
+
+    Schema field names:
+    - title (not label)
+    - geom (not locations[].geometry)
+    - repr_point (not locations[].rep_point)
+    - relation_type (not relationType)
+    - related_place_id (not relationTo)
+    """
     place_id = f"osm:{osm_type[0]}{osm_id}"
 
-    # Simple toponyms
+    # Build toponyms array (nested with toponym_id and timespan)
     toponyms = [{'toponym_id': f"{tags['name']}@und", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}}]
     if 'names' in tags:
         for lang, val in tags['names'].items():
             toponyms.append({'toponym_id': f"{val}@{lang}", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}})
 
+    # Base document
     doc = {
         'place_id': place_id,
-        'label': tags['name'],
+        'title': tags['name'],
         'toponyms': toponyms,
         'source': 'osm'
     }
 
+    # Add geometry
     if geometry:
-        # Calculate representative point (expensive but needed)
         try:
             rep_point = compute_representative_point(geometry)
-            doc['locations'] = [{'geometry': geometry, 'rep_point': rep_point}]
+            doc['geom'] = geometry
+            doc['repr_point'] = rep_point
         except:
-            pass  # Geometry invalid or empty
+            pass  # Geometry invalid
 
     # Types
     types = []
     for k in ['place', 'natural', 'water', 'waterway', 'historic', 'landuse']:
         if k in tags:
-            types.append({'identifier': tags[k], 'label': 'osm', 'sourceLabel': f"{k}={tags[k]}"})
-    if types: doc['types'] = types
+            types.append({
+                'identifier': tags[k],
+                'label': 'osm',
+                'sourceLabel': f"{k}={tags[k]}"
+            })
+    if types:
+        doc['types'] = types
 
+    # Relations
     if 'wikidata' in tags:
-        doc['relations'] = [{'relationType': 'sameAs', 'relationTo': f"wd:{tags['wikidata']}", 'source': 'osm'}]
+        doc['relations'] = [{
+            'relation_type': 'sameAs',
+            'related_place_id': f"wd:{tags['wikidata']}",
+            'label': 'Wikidata'
+        }]
 
+    # Population
     if 'population' in tags:
         try:
             doc['population'] = int(tags['population'])
+        except:
+            pass
+
+    # Elevation
+    if 'elevation' in tags:
+        try:
+            elev_str = tags['elevation'].replace('m', '').strip()
+            doc['elevation'] = int(float(elev_str))
         except:
             pass
 
@@ -135,7 +167,6 @@ def process_tags(tags):
     if 'name' not in tags: return None
 
     # Check if we care about this feature
-    # Optimization: Check for 'place' first as it's most common
     if 'place' in tags:
         pass
     elif any(k in tags for k in ['natural', 'water', 'waterway', 'historic', 'landuse']):
@@ -145,7 +176,7 @@ def process_tags(tags):
 
     # Extract tags
     result = {'name': tags['name']}
-    if 'names' not in result: result['names'] = {}
+    result['names'] = {}
 
     for tag in tags:
         if tag.k.startswith('name:'):
@@ -166,7 +197,6 @@ class OSMHandler(osmium.SimpleHandler):
         self.wkbfab = osmium.geom.WKBFactory()
 
     def node(self, n):
-        # Skip untagged nodes instantly to save Python overhead
         if not n.tags: return
 
         if self.tracker.should_skip('node'): return
@@ -184,19 +214,17 @@ class OSMHandler(osmium.SimpleHandler):
         tags = process_tags(w.tags)
         if tags:
             try:
-                # 1. Create WKB (Fastest C++ method)
                 wkb = self.wkbfab.create_linestring(w)
                 geom = wkblib.loads(wkb, hex=False)
 
-                # 2. INLINE TRIAGE: Check complexity immediately
-                # If too big, simplify NOW before creating full GeoJSON
+                # INLINE TRIAGE: Check complexity
                 if len(geom.coords) > COMPLEXITY_THRESHOLD_COORDS:
                     geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
 
                 geo = mapping(geom)
                 self.buffer_callback(create_doc(w.id, 'way', tags, geo))
             except:
-                pass  # Skip broken geometries
+                pass
         self.tracker.increment('way')
 
     def relation(self, r):
@@ -211,7 +239,6 @@ class OSMHandler(osmium.SimpleHandler):
                 geom = wkblib.loads(wkb, hex=False)
 
                 if geom.is_valid:
-                    # Always simplify relations (they are usually huge)
                     geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
                     geo = mapping(geom)
                     self.buffer_callback(create_doc(r.id, 'relation', tags, geo))
@@ -249,17 +276,27 @@ def index_osm_optimized(pbf_file):
 
     # Parallel Bulk Buffer
     buffer_list = []
+    indexed_count = 0
+    failed_count = 0
 
     def flush_buffer():
+        nonlocal indexed_count, failed_count
         if not buffer_list: return
-        # Parallel bulk handles the complexity.
-        # If one doc is heavy, others keep moving in other threads.
-        helpers.parallel_bulk(
-            es, buffer_list,
-            thread_count=BULK_THREAD_COUNT,
-            queue_size=QUEUE_SIZE,
-            raise_on_error=False
-        )
+
+        # Track results
+        for success, info in helpers.parallel_bulk(
+                es, buffer_list,
+                thread_count=BULK_THREAD_COUNT,
+                queue_size=QUEUE_SIZE,
+                raise_on_error=False
+        ):
+            if success:
+                indexed_count += 1
+            else:
+                failed_count += 1
+                if failed_count <= 5:  # Show first few errors
+                    print(f"\n  Bulk index error: {info}")
+
         buffer_list.clear()
 
         if tracker.counts['node'] % 500000 == 0:
@@ -271,7 +308,7 @@ def index_osm_optimized(pbf_file):
             '_id': doc['place_id'],
             '_source': doc
         })
-        if len(buffer_list) >= 2000:  # Smaller batch size for better responsiveness
+        if len(buffer_list) >= 2000:
             flush_buffer()
 
     # Staging
@@ -280,16 +317,22 @@ def index_osm_optimized(pbf_file):
     try:
         print(f"Starting Single-Pass Ingestion: {active_pbf}")
         handler = OSMHandler(tracker, add_to_buffer)
-        # Use memory cache for nodes (fastest)
         handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
 
         flush_buffer()
         tracker.save_state()
+
+        print(f"\n\nIndexing complete:")
+        print(f"  Documents indexed: {indexed_count:,}")
+        print(f"  Documents failed: {failed_count:,}")
+
         create_checkpoint_snapshot(es, 'osm_places')
         print("Ingestion Complete.")
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"\nError: {e}")
+        import traceback
+        traceback.print_exc()
         tracker.save_state()
         raise
     finally:
@@ -304,10 +347,8 @@ if __name__ == "__main__":
     parser.add_argument('--file', help='Path to PBF')
     args = parser.parse_args()
 
-    # Default file logic
     osm_file = args.file
     if not osm_file:
-        # Fallback to configured path logic would go here
         osm_file = Path(DATA_DIR) / 'authorities' / 'osm' / 'planet-latest.osm.pbf'
 
     index_osm_optimized(osm_file)

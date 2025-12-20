@@ -9,13 +9,6 @@ optimal order, considering dependencies and data volume.
 
 When you specify `-n gn`, it runs BOTH geonames-places AND geonames-toponyms.
 When you specify `-n gn,wd`, it runs all GeoNames scripts then all Wikidata scripts.
-
-Recommended order:
-1. GeoNames places + toponyms (base gazetteer)
-2. Wikidata places + geoshapes (extensive modern coverage)
-3. Other authorities (can run in parallel if desired)
-4. LOC relations (enriches existing data)
-5. Toponyms deduplication (final step)
 """
 
 import subprocess
@@ -36,6 +29,7 @@ def delete_existing_namespace(namespace):
     Delete all places for a given authority namespace.
     """
     print(f"\nDeleting existing data for namespace '{namespace}'")
+    sys.stdout.flush()
 
     query = {
         "query": {
@@ -56,6 +50,7 @@ def delete_existing_namespace(namespace):
 
     deleted = resp.get("deleted", 0)
     print(f"  Deleted {deleted:,} places")
+    sys.stdout.flush()
     return deleted
 
 
@@ -68,6 +63,7 @@ def deduplicate_and_index_toponyms():
     print("\n" + "=" * 80)
     print("DEDUPLICATING AND INDEXING TOPONYMS (SAFE MODE)")
     print("=" * 80)
+    sys.stdout.flush()
 
     start_time = datetime.now()
     indexed_created = 0
@@ -110,6 +106,7 @@ def deduplicate_and_index_toponyms():
                 break
 
             print(f"  Page {page}: {len(buckets):,} unique toponyms")
+            sys.stdout.flush()
 
             for bucket in buckets:
                 toponym_id = bucket["key"]["toponym"]
@@ -142,6 +139,7 @@ def deduplicate_and_index_toponyms():
         print("ERROR during toponym deduplication:")
         import traceback
         traceback.print_exc()
+        sys.stdout.flush()
         return False
 
     es.indices.refresh(index=TOPONYMS_INDEX)
@@ -152,6 +150,7 @@ def deduplicate_and_index_toponyms():
     print(f"  Time elapsed: {str(elapsed).split('.')[0]}")
     final_count = es.count(index=TOPONYMS_INDEX)["count"]
     print(f"  Total toponyms in index: {final_count:,}")
+    sys.stdout.flush()
     return True
 
 
@@ -166,9 +165,11 @@ def check_elasticsearch():
             print(f"✗ '{TOPONYMS_INDEX}' index does not exist")
             return False
         print("✓ Required indices exist")
+        sys.stdout.flush()
         return True
     except Exception as e:
         print(f"✗ Cannot connect to Elasticsearch: {e}")
+        sys.stdout.flush()
         return False
 
 
@@ -209,6 +210,7 @@ def check_data_files():
             print(f" ERROR: {e}")
             available[namespace] = False
 
+    sys.stdout.flush()
     return available
 
 
@@ -252,6 +254,7 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     print(f"\n{'=' * 80}")
     print(f"INGESTING: {namespace.upper()} ({script_name})")
     print(f"{'=' * 80}")
+    sys.stdout.flush()
 
     # For update scripts (toponyms, geoshapes, relations), always run
     update_scripts = ['geonames-toponyms', 'wikidata-geoshapes', 'loc-relations']
@@ -268,15 +271,17 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
                 delete_existing_namespace(namespace)
             elif skip_existing:
                 print(f"Skipping {namespace}: {count:,} places already exist")
+                sys.stdout.flush()
                 return True
 
     start_time = datetime.now()
     try:
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
-        subprocess.run(cmd, check=True)
+        subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
         es.indices.refresh(index=f"{PLACES_INDEX},{TOPONYMS_INDEX}")
         elapsed = datetime.now() - start_time
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
+        sys.stdout.flush()
 
         if not is_update_script:
             count = es.options(request_timeout=30).count(
@@ -284,13 +289,16 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
             )['count']
             print(f"  Total {namespace.upper()} places: {count:,}")
+            sys.stdout.flush()
 
         return True
     except subprocess.CalledProcessError as e:
         print(f"\n✗ Script failed with exit code {e.returncode}")
+        sys.stdout.flush()
         return False
     except Exception as e:
         print(f"\n✗ Unexpected error: {e}")
+        sys.stdout.flush()
         return False
 
 
@@ -304,11 +312,11 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     # Full ingestion order with script IDs for tracking
     # Format: (namespace, script_name, description, script_id)
     ingestion_order = [
+        ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),
         ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),
         ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),
         ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),
         ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
-        ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),
         ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),
         ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),
         ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),
@@ -327,12 +335,15 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
             if ns in authorities_to_run
         ]
 
+    print("\nWill operate on: " + (', '.join(authorities_to_run) if authorities_to_run else "all available authorities") + " (including all scripts for each)")
     print("\nPlanned ingestion order:")
     for i, (ns, script, desc, script_id) in enumerate(ingestion_order, 1):
         print(f"  {i}. {desc} ({script_id})")
+    sys.stdout.flush()
 
     if not ingestion_order:
         print("\nNo authorities to process!")
+        sys.stdout.flush()
         return
 
     results = {'successful': [], 'failed': [], 'skipped': []}
@@ -344,6 +355,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         if script_id.endswith('-places') or script_id == 'loc-relations':
             if not auth_dir.exists() or not any(auth_dir.iterdir()):
                 print(f"\n⚠ Skipping {ns}: No data files found")
+                sys.stdout.flush()
                 if ns not in results['skipped']:
                     results['skipped'].append(ns)
                 continue
@@ -358,6 +370,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
 
         if ns == 'loc':
             print(f"\nNOTE: LOC creates relations only, not new places")
+            sys.stdout.flush()
 
         success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
 
@@ -369,6 +382,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
                 results['failed'].append(ns)
             # Stop processing further scripts for this namespace if one fails
             print(f"Stopping further {ns} scripts due to failure")
+            sys.stdout.flush()
             break
 
         time.sleep(2)
@@ -380,6 +394,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     print(f"\n✓ Successful: {', '.join(results['successful']) or 'None'}")
     print(f"⚠ Skipped: {', '.join(results['skipped']) or 'None'}")
     print(f"✗ Failed: {', '.join(results['failed']) or 'None'}")
+    sys.stdout.flush()
 
     counts = get_index_counts()
     print("\nFinal document counts by source:")
@@ -392,6 +407,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
 
     print(f"\nTotal places in index: {es.count(index=PLACES_INDEX)['count']:,}")
     print(f"Total toponyms in index: {es.count(index=TOPONYMS_INDEX)['count']:,}")
+    sys.stdout.flush()
 
 
 def main():
@@ -413,29 +429,30 @@ def main():
     print("=" * 80)
     print("AUTHORITY DATA INGESTION COORDINATOR")
     print("=" * 80)
+    sys.stdout.flush()
 
     if not check_elasticsearch():
         sys.exit(1)
 
     print("\nChecking available data files:")
+    sys.stdout.flush()
     available = check_data_files()
 
     if not args.skip_counts:
         print("\nCurrent index counts:")
+        sys.stdout.flush()
         counts = get_index_counts()
     else:
         print("\nSkipping index counts (--skip-counts specified)")
+        sys.stdout.flush()
         counts = {}
 
     if args.check_only:
         print("\nCheck complete (--check-only specified)")
+        sys.stdout.flush()
         return
 
     namespaces = [ns.strip() for ns in args.namespaces.split(',')] if args.namespaces else None
-    if namespaces:
-        print(f"\nWill operate on: {', '.join(namespaces)} (including all scripts for each)")
-    else:
-        print("\nWill operate on all available authorities")
 
     ingest_all(namespaces, skip_existing=skip_existing,
                replace_existing=args.replace_existing, delete_only=args.delete_only)
@@ -446,6 +463,7 @@ def main():
     elif not args.delete_only:
         print("\nNote: Skipping toponyms deduplication (only runs when processing all authorities)")
         print("      Run without -n flag to deduplicate toponyms across all authorities")
+        sys.stdout.flush()
 
 
 if __name__ == "__main__":

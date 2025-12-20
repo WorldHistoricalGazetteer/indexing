@@ -99,6 +99,12 @@
       "repr_point": {
         "type": "geo_point"
       },
+      "population": {
+        "type": "integer"
+      },
+      "elevation": {
+        "type": "integer"
+      },
       "relations": {
         "type": "nested",
         "properties": {
