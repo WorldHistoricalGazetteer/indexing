@@ -60,7 +60,6 @@ class ProgressTracker:
                 'counts': self.counts
             }, f)
         os.replace(temp_file, self.state_file)
-        print(f"  [Checkpoint saved at {self.counts}]")
 
     def should_skip(self, type_):
         # "Fast-forward" logic
@@ -257,6 +256,12 @@ def stage_file_to_scratch(source_path):
         return source_path, False
 
     target_path = os.path.join(scratch_dir, os.path.basename(source_path))
+
+    # Check if already staged
+    if os.path.exists(target_path):
+        print(f"Using existing staged file: {target_path}")
+        return target_path, True
+
     print(f"Staging to local scratch: {target_path}")
     subprocess.run(['rsync', '-ah', str(source_path), target_path], check=True)
     return target_path, True
