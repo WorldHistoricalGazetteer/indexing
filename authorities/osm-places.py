@@ -2,13 +2,6 @@
 
 """
 High-Performance Single-Pass OSM Ingestion.
-
-Features:
-- Auto-staging to local scratch (NVMe)
-- Inline complexity filtering (Triage)
-- Robust resumption state tracking
-- Schema-compliant field names (title, geom, repr_point, relation_type, related_place_id)
-- Progress indicators with \r for clean output
 """
 
 import json
@@ -89,23 +82,26 @@ class ProgressTracker:
 
 # ---------------- HELPERS ----------------
 def create_doc(osm_id, osm_type, tags, geometry):
-    """
-    Creates ES document matching places.json schema.
-
-    Schema field names:
-    - title (not label)
-    - geom (not locations[].geometry)
-    - repr_point (not locations[].rep_point)
-    - relation_type (not relationType)
-    - related_place_id (not relationTo)
-    """
     place_id = f"osm:{osm_type[0]}{osm_id}"
 
-    # Build toponyms array (nested with toponym_id and timespan)
-    toponyms = [{'toponym_id': f"{tags['name']}@und", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}}]
+    # Build toponyms array with timespans (plural)
+    toponyms = [{
+        'toponym_id': f"{tags['name']}@und",
+        'timespans': [{
+            'start': {'in': 2025},
+            'end': {'in': 2025}
+        }]
+    }]
+
     if 'names' in tags:
         for lang, val in tags['names'].items():
-            toponyms.append({'toponym_id': f"{val}@{lang}", 'timespan': {'start': {'in': 2025}, 'end': {'in': 2025}}})
+            toponyms.append({
+                'toponym_id': f"{val}@{lang}",
+                'timespans': [{
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }]
+            })
 
     # Base document
     doc = {
@@ -115,12 +111,18 @@ def create_doc(osm_id, osm_type, tags, geometry):
         'source': 'osm'
     }
 
-    # Add geometry
+    # Add geometry as geometries array
     if geometry:
         try:
             rep_point = compute_representative_point(geometry)
-            doc['geom'] = geometry
-            doc['repr_point'] = rep_point
+            doc['geometries'] = [{
+                'geom': geometry,
+                'repr_point': rep_point,
+                'timespans': [{
+                    'start': {'in': 2025},
+                    'end': {'in': 2025}
+                }]
+            }]
         except:
             pass  # Geometry invalid
 
@@ -315,7 +317,11 @@ def index_osm_optimized(pbf_file):
     active_pbf, is_staged = stage_file_to_scratch(pbf_file)
 
     try:
+        print("=" * 80)
+        print("OSM PLACES INGESTION")
+        print("=" * 80)
         print(f"Starting Single-Pass Ingestion: {active_pbf}")
+
         handler = OSMHandler(tracker, add_to_buffer)
         handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
 

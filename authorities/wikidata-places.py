@@ -39,24 +39,19 @@ def is_geographic_entity(entity):
     if 'claims' not in entity:
         return False
 
-    # Check P31 (instance of)
     if 'P31' in entity['claims']:
         for claim in entity['claims']['P31']:
             if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
                 qid = claim['mainsnak']['datavalue'].get('value', {}).get('id', '')
-                # Exclude humans, websites, etc.
                 if qid in ['Q5', 'Q35127', 'Q4167836', 'Q13442814']:
                     return False
-                # Include geographic entities
                 if qid in ['Q82794', 'Q515', 'Q486972', 'Q532', 'Q7275', 'Q6256',
                            'Q23442', 'Q8502', 'Q4022', 'Q23397', 'Q34763', 'Q33837']:
                     return True
 
-    # Check if it has coordinates (P625)
     if 'P625' in entity['claims']:
         return True
 
-    # Check if it has geoshape data (P3896)
     if 'P3896' in entity['claims']:
         return True
 
@@ -64,7 +59,7 @@ def is_geographic_entity(entity):
 
 
 def extract_coordinates(entity):
-    """Extract coordinates from P625 (coordinate location)."""
+    """Extract coordinates from P625."""
     if 'claims' not in entity or 'P625' not in entity['claims']:
         return None
 
@@ -78,10 +73,7 @@ def extract_coordinates(entity):
 
 
 def extract_geoshape_ref(entity):
-    """
-    Extract geoshape reference from P3896.
-    Returns the file name (e.g., 'France.map') or None.
-    """
+    """Extract geoshape reference from P3896."""
     if 'claims' not in entity or 'P3896' not in entity['claims']:
         return None
 
@@ -89,13 +81,13 @@ def extract_geoshape_ref(entity):
         if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
             value = claim['mainsnak']['datavalue'].get('value', {})
             if isinstance(value, str) and value.startswith('Data:'):
-                return value[5:]  # Remove "Data:" prefix
+                return value[5:]
 
     return None
 
 
 def extract_country_codes(entity):
-    """Extract country codes from P297 (ISO 3166-1 alpha-2 code)."""
+    """Extract country codes from P297."""
     ccodes = []
     if 'claims' not in entity or 'P297' not in entity['claims']:
         return ccodes
@@ -110,7 +102,7 @@ def extract_country_codes(entity):
 
 
 def extract_elevation(entity):
-    """Extract elevation from P2044 (elevation above sea level)."""
+    """Extract elevation from P2044."""
     if 'claims' not in entity or 'P2044' not in entity['claims']:
         return None
 
@@ -127,17 +119,15 @@ def extract_elevation(entity):
 
 
 def extract_population(entity):
-    """Extract population from P1082 (population)."""
+    """Extract population from P1082."""
     if 'claims' not in entity or 'P1082' not in entity['claims']:
         return None
 
-    # Get the most recent population value
     for claim in entity['claims']['P1082']:
         if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
             value = claim['mainsnak']['datavalue'].get('value', {})
             if isinstance(value, dict) and 'amount' in value:
                 try:
-                    # Remove + prefix if present and convert to int
                     amount = value['amount'].lstrip('+')
                     return int(float(amount))
                 except (ValueError, TypeError, AttributeError):
@@ -147,7 +137,7 @@ def extract_population(entity):
 
 
 def extract_types(entity):
-    """Extract type information from P31 (instance of)."""
+    """Extract type information from P31."""
     types = []
     if 'claims' not in entity or 'P31' not in entity['claims']:
         return types
@@ -198,11 +188,10 @@ def create_place_doc(entity):
 
     title = labels.get('en', labels.get('mul', qid))
 
-    # Build toponyms array with temporal scoping
+    # Build toponyms array with timespans array
     toponyms = []
     seen_lsts = set()
 
-    # Add labels
     if 'labels' in entity:
         for lang, label_obj in entity['labels'].items():
             name = label_obj['value']
@@ -211,14 +200,13 @@ def create_place_doc(entity):
             if lst not in seen_lsts:
                 toponyms.append({
                     'toponym_id': lst,
-                    'timespan': {
+                    'timespans': [{
                         'start': {'in': 2025},
                         'end': {'in': 2025}
-                    }
+                    }]
                 })
                 seen_lsts.add(lst)
 
-    # Add aliases
     if 'aliases' in entity:
         for lang, alias_list in entity['aliases'].items():
             for alias_obj in alias_list:
@@ -228,10 +216,10 @@ def create_place_doc(entity):
                 if lst not in seen_lsts:
                     toponyms.append({
                         'toponym_id': lst,
-                        'timespan': {
+                        'timespans': [{
                             'start': {'in': 2025},
                             'end': {'in': 2025}
-                        }
+                        }]
                     })
                     seen_lsts.add(lst)
 
@@ -247,15 +235,22 @@ def create_place_doc(entity):
     coords = extract_coordinates(entity)
     geoshape_ref = extract_geoshape_ref(entity)
 
+    # Build geometries array
     if coords:
-        doc['geom'] = {
-            'type': 'Point',
-            'coordinates': coords
-        }
-        doc['repr_point'] = {
-            'lon': coords[0],
-            'lat': coords[1]
-        }
+        doc['geometries'] = [{
+            'geom': {
+                'type': 'Point',
+                'coordinates': coords
+            },
+            'repr_point': {
+                'lon': coords[0],
+                'lat': coords[1]
+            },
+            'timespans': [{
+                'start': {'in': 2025},
+                'end': {'in': 2025}
+            }]
+        }]
 
     # Add country codes
     ccodes = extract_country_codes(entity)
@@ -277,6 +272,7 @@ def create_place_doc(entity):
     if types:
         doc['types'] = types
 
+    # Add relation with schema-compliant field names
     relations = []
     gn_id = extract_geonames_id(entity)
     if gn_id:
@@ -289,7 +285,7 @@ def create_place_doc(entity):
     if relations:
         doc['relations'] = relations
 
-    # Only index if it has at least one spatial attribute
+    # Only index if it has spatial data
     if not coords and not geoshape_ref:
         return None, None
 
@@ -297,7 +293,7 @@ def create_place_doc(entity):
 
 
 def index_wikidata(file_path, places_index, geoshape_refs_file):
-    """Process Wikidata dump, index places, and save geoshape references."""
+    """Process Wikidata dump, index places, save geoshape references."""
     place_batch = []
     place_count = 0
     processed = 0
@@ -332,7 +328,6 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                 place_id = place_doc['place_id']
                 qid = entity['id']
 
-                # Save geoshape reference
                 if geoshape_ref:
                     ref_doc = {
                         'qid': qid,
@@ -341,7 +336,6 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                     refs_f.write(json.dumps(ref_doc) + '\n')
                     geoshape_count += 1
 
-                # Add to place batch
                 place_batch.append({
                     '_index': places_index,
                     '_id': place_id,

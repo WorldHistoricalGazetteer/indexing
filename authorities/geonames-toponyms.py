@@ -34,12 +34,12 @@ def parse_year(year_str):
 
 def parse_alternatename_line(line):
     """
-    Parse alternateNames line - SCHEMA COMPLIANT.
+    Parse alternateNames line.
 
     Returns:
-    - ('toponym', lst, timespan, is_preferred, place_id) for regular toponyms
-    - ('relation', place_id, relation_dict) for wkdt/link entries
-    - (None, ...) for entries to skip
+    - ('toponym', lst, timespans_list, is_preferred, place_id)
+    - ('relation', place_id, relation_dict)
+    - (None, ...)
     """
     fields = line.split("\t")
 
@@ -48,7 +48,7 @@ def parse_alternatename_line(line):
     value = fields[3] if len(fields) > 3 else ''
     place_id = f"gn:{geoname_id}"
 
-    # Handle wikidata IDs
+    # Handle wikidata IDs - use schema field names
     if lang_code == 'wkdt' and value:
         return ('relation', place_id, {
             'relation_type': 'sameAs',
@@ -56,7 +56,7 @@ def parse_alternatename_line(line):
             'label': 'Wikidata'
         })
 
-    # Handle links
+    # Handle links - use schema field names
     if lang_code == 'link' and value:
         return ('relation', place_id, {
             'relation_type': 'describedBy',
@@ -64,7 +64,7 @@ def parse_alternatename_line(line):
             'label': 'External Link'
         })
 
-    # Skip other non-linguistic entries
+    # Skip non-linguistic entries
     skip_codes = ['post', 'iata', 'icao', 'faac', 'unlc', 'tcid', 'abbr']
     if lang_code in skip_codes:
         return (None,)
@@ -79,32 +79,30 @@ def parse_alternatename_line(line):
     else:
         lst = normalize_lst(value, 'und')
 
-    # Parse temporal information
+    # Parse temporal information into timespans array
     year_from = parse_year(fields[8]) if len(fields) > 8 else None
     year_to = parse_year(fields[9]) if len(fields) > 9 else None
 
-    timespan = None
+    timespans_list = None
     if year_from is not None or year_to is not None:
         timespan = {}
         if year_from is not None:
-            timespan["start"] = year_from
+            timespan["start"] = {'in': year_from}
         if year_to is not None:
-            timespan["end"] = year_to
+            timespan["end"] = {'in': year_to}
+        timespans_list = [timespan]
 
     is_preferred = fields[4] == '1' if len(fields) > 4 else False
 
-    return ('toponym', lst, timespan, is_preferred, place_id)
+    return ('toponym', lst, timespans_list, is_preferred, place_id)
 
 
 def pass1_update_places_with_toponyms(file_path):
-    """
-    PASS 1: Stream through file and update places with toponyms - SCHEMA COMPLIANT.
-    """
+    """PASS 1: Stream through file and update places with toponyms."""
     print("\n" + "=" * 80)
     print("PASS 1: UPDATING PLACES WITH TOPONYMS")
     print("=" * 80)
 
-    # Batch updates by place_id
     place_updates = defaultdict(lambda: {'toponyms': [], 'seen': set(), 'title': None})
 
     processed = 0
@@ -112,7 +110,6 @@ def pass1_update_places_with_toponyms(file_path):
     places_updated = 0
 
     def flush_updates():
-        """Flush accumulated place updates."""
         nonlocal places_updated
 
         if not place_updates:
@@ -170,7 +167,6 @@ def pass1_update_places_with_toponyms(file_path):
 
         place_updates.clear()
 
-    # Stream through file
     for line in stream_file(file_path):
         if not line or line.startswith("#"):
             continue
@@ -187,25 +183,21 @@ def pass1_update_places_with_toponyms(file_path):
                 skipped += 1
                 continue
 
-            _, lst, timespan, is_preferred, place_id = result
+            _, lst, timespans_list, is_preferred, place_id = result
 
             if lst in place_updates[place_id]['seen']:
                 continue
 
             place_updates[place_id]['seen'].add(lst)
 
+            # Build toponym entry with timespans array
             toponym_entry = {'toponym_id': lst}
-
-            if timespan:
-                scoped_timespan = {}
-                if 'start' in timespan:
-                    scoped_timespan['start'] = {'in': timespan['start']}
-                if 'end' in timespan:
-                    scoped_timespan['end'] = {'in': timespan['end']}
-                toponym_entry['timespan'] = scoped_timespan
+            if timespans_list:
+                toponym_entry['timespans'] = timespans_list
 
             place_updates[place_id]['toponyms'].append(toponym_entry)
 
+            # Set preferred title
             if is_preferred and place_updates[place_id]['title'] is None:
                 name = lst.split('@')[0] if '@' in lst else lst
                 place_updates[place_id]['title'] = name
@@ -224,9 +216,7 @@ def pass1_update_places_with_toponyms(file_path):
 
 
 def pass2_update_places_with_relations(file_path):
-    """
-    PASS 2: Stream through file and add relations.
-    """
+    """PASS 2: Stream through file and add relations."""
     print("\n" + "=" * 80)
     print("PASS 2: ADDING RELATIONS TO PLACES")
     print("=" * 80)

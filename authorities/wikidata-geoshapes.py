@@ -47,10 +47,7 @@ def rate_limited():
         _last_request_time = time.time()
 
 
-# ----------------------------------------------------------------------
-# SQLite cache
-# ----------------------------------------------------------------------
-
+# SQLite cache functions
 def init_cache():
     os.makedirs(os.path.dirname(CACHE_DB), exist_ok=True)
     conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
@@ -90,10 +87,7 @@ def cache_put_error(conn, data_page, error_msg):
     conn.commit()
 
 
-# ----------------------------------------------------------------------
 # Logging helpers
-# ----------------------------------------------------------------------
-
 def log_error(place_id, error_msg):
     with open(ERROR_LOG, "a") as f:
         f.write(f"{datetime.now().isoformat()} | {place_id} | {error_msg}\n")
@@ -110,15 +104,11 @@ def log_downloaded(place_id):
         f.write(f"{place_id}\n")
 
 
-# ----------------------------------------------------------------------
 # Commons fetch
-# ----------------------------------------------------------------------
-
 def fetch_geojson_from_commons(conn, data_page, place_id):
     """Fetch GeoJSON geometry from Wikimedia Commons."""
     if not data_page: return None
 
-    # Cache check
     geometry, status = cache_get(conn, data_page)
     if status == "ok": return geometry
     if status == "error": return None
@@ -149,7 +139,6 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
                 log_error(place_id, str(e))
                 return None
 
-    # Parse response
     try:
         pages = data.get("query", {}).get("pages", [])
         if not pages or pages[0].get("missing"):
@@ -165,7 +154,6 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
 
         geojson = json.loads(content)
 
-        # Extract geometry
         geometry = None
         if geojson.get("type") == "Feature":
             geometry = geojson.get("geometry")
@@ -187,10 +175,6 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
         return None
 
 
-# ----------------------------------------------------------------------
-# ES Helpers
-# ----------------------------------------------------------------------
-
 def check_elasticsearch_connection():
     try:
         if not es.indices.exists(index=PLACES_INDEX): return False
@@ -198,17 +182,6 @@ def check_elasticsearch_connection():
     except:
         return False
 
-
-def verify_place_exists(place_id):
-    try:
-        return es.exists(index=PLACES_INDEX, id=place_id)
-    except:
-        return False
-
-
-# ----------------------------------------------------------------------
-# Main Loop
-# ----------------------------------------------------------------------
 
 def fetch_task(args):
     conn, geoshape_ref, place_id = args
@@ -245,7 +218,6 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             place_id, geometry, ref_name = future.result()
             completed += 1
 
-            # Progress bar
             if completed % 5 == 0 or completed == total_tasks:
                 percent = (completed / total_tasks) * 100
                 elapsed = time.time() - start_time
@@ -269,20 +241,31 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
 
             rep_point = compute_representative_point(geometry)
 
+            # Update geometries array
             updates.append({
                 "_op_type": "update",
                 "_index": places_index,
                 "_id": place_id,
                 "script": {
                     "source": """
-                        ctx._source.geom = params.geom;
-                        if (params.rep != null) {
-                            ctx._source.repr_point = params.rep;
+                        if (ctx._source.geometries == null || ctx._source.geometries.size() == 0) {
+                            ctx._source.geometries = [params.new_geom];
+                        } else {
+                            ctx._source.geometries[0].geom = params.geom;
+                            ctx._source.geometries[0].repr_point = params.rep;
                         }
                     """,
                     "params": {
                         "geom": geometry,
-                        "rep": rep_point
+                        "rep": rep_point,
+                        "new_geom": {
+                            "geom": geometry,
+                            "repr_point": rep_point,
+                            "timespans": [{
+                                "start": {"in": 2025},
+                                "end": {"in": 2025}
+                            }]
+                        }
                     }
                 }
             })

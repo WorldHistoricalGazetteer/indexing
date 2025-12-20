@@ -132,7 +132,7 @@ def extract_place_types(pleiades_record):
 
 def create_place_doc(pleiades_record):
     """
-    Create a place document from a Pleiades record - SCHEMA COMPLIANT.
+    Create a place document from a Pleiades record.
 
     Uses new schema:
     - geometries: array of {geom, repr_point, timespans[]} for temporal geometries

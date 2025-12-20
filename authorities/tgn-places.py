@@ -13,10 +13,7 @@ from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
 
-# -------------------------
 # NT streaming & parsing
-# -------------------------
-
 def stream_nt(file_path, filename_in_zip=None):
     path = Path(file_path)
     if path.suffix == ".zip":
@@ -50,10 +47,7 @@ def parse_nt(line):
     except ValueError:
         return None
 
-# -------------------------
 # In-memory side-index
-# -------------------------
-
 def build_side_index(zip_path):
     """Load coordinates and terms into memory for fast lookups"""
     print("Building in-memory side index...")
@@ -78,7 +72,6 @@ def build_side_index(zip_path):
         if i % 500_000 == 0:
             print(f"\r  {i:,} triples", end='', flush=True)
 
-    # Remove incomplete
     coordinates = {k: tuple(v) for k, v in coordinates.items() if None not in v}
     print(f"\n✓ Loaded {len(coordinates):,} complete coordinates")
 
@@ -107,13 +100,10 @@ def build_side_index(zip_path):
 
     return coordinates, term_literals, place_pref, place_terms
 
-# -------------------------
 # ES indexing
-# -------------------------
-
 def index_tgn(zip_path, places_index):
     print("="*80)
-    print("TGN INDEXING (SCHEMA COMPLIANT)")
+    print("TGN INDEXING")
     print("="*80)
 
     coordinates, term_literals, place_pref, place_terms = build_side_index(zip_path)
@@ -137,7 +127,7 @@ def index_tgn(zip_path, places_index):
             continue
         lat, lon = coordinates[coord_uri]
 
-        # Build toponyms
+        # Build toponyms with timespans
         seen = set()
         toponyms = []
 
@@ -150,18 +140,18 @@ def index_tgn(zip_path, places_index):
             if text not in seen:
                 toponyms.append({
                     "toponym_id": text,
-                    "timespan": {"start": {"in": 2025}, "end": {"in": 2025}}
+                    "timespans": [{
+                        "start": {"in": 2025},
+                        "end": {"in": 2025}
+                    }]
                 })
                 seen.add(text)
 
         title = toponyms[0]["toponym_id"] if toponyms else f"TGN {tgn_id}"
         place_id = f"tgn:{tgn_id}"
 
-        # Build document - SCHEMA COMPLIANT
-        doc = {
-            "place_id": place_id,
-            "title": title,
-            "toponyms": toponyms,
+        # Build geometries array
+        geometries = [{
             "geom": {
                 "type": "Point",
                 "coordinates": [lon, lat]
@@ -170,6 +160,18 @@ def index_tgn(zip_path, places_index):
                 "lon": lon,
                 "lat": lat
             },
+            "timespans": [{
+                "start": {"in": 2025},
+                "end": {"in": 2025}
+            }]
+        }]
+
+        # Build document
+        doc = {
+            "place_id": place_id,
+            "title": title,
+            "toponyms": toponyms,
+            "geometries": geometries,
             "source": "tgn",
             "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
         }
@@ -192,10 +194,7 @@ def index_tgn(zip_path, places_index):
     print(f"\n✓ INDEXING COMPLETE: {count:,} places in {elapsed/60:.1f} min")
     create_checkpoint_snapshot(es, "tgn_places")
 
-# -------------------------
 # Main
-# -------------------------
-
 if __name__ == "__main__":
     TGN_FILE = f"{DATA_DIR}/authorities/tgn/explicit.zip"
     PLACES_INDEX = "places"

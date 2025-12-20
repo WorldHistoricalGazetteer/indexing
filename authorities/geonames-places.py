@@ -23,7 +23,7 @@ def normalize_lst(name, lang='und'):
 
 def parse_geonames_line(line):
     """
-    Parse a single Geonames line into a dict suitable for the Place index.
+    Parse a single Geonames line.
 
     Field positions from Geonames readme:
     0: geonameid
@@ -76,18 +76,34 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Build toponyms array
+    # Build toponyms array with timespans (GeoNames is current data - 2025)
     toponyms = []
     if fields[1]:
         lst = normalize_lst(fields[1], 'und')
         if lst:
             toponyms.append({
                 "toponym_id": lst,
-                "timespan": {
+                "timespans": [{
                     "start": {"in": 2025},
                     "end": {"in": 2025}
-                }
+                }]
             })
+
+    # Build geometries array (GeoNames has single point per place)
+    geometries = [{
+        'geom': {
+            'type': 'Point',
+            'coordinates': [float(fields[5]), float(fields[4])]  # lon, lat
+        },
+        'repr_point': {
+            'lon': float(fields[5]),
+            'lat': float(fields[4])
+        },
+        'timespans': [{
+            'start': {'in': 2025},
+            'end': {'in': 2025}
+        }]
+    }]
 
     # Build document
     doc = {
@@ -95,14 +111,7 @@ def parse_geonames_line(line):
         "title": fields[1],
         "toponyms": toponyms,
         "ccodes": ccodes,
-        "geom": {
-            "type": "Point",
-            "coordinates": [float(fields[5]), float(fields[4])]  # lon, lat
-        },
-        "repr_point": {
-            "lon": float(fields[5]),
-            "lat": float(fields[4])
-        },
+        "geometries": geometries,
         "types": [
             {
                 "identifier": fields[7],
@@ -160,7 +169,7 @@ if __name__ == "__main__":
     PLACES_INDEX = "places"
 
     print("=" * 80)
-    print("GEONAMES PLACES INGESTION (SCHEMA COMPLIANT)")
+    print("GEONAMES PLACES INGESTION")
     print("=" * 80)
     print(f"Source: {GEONAMES_FILE}")
     print(f"Target index: {PLACES_INDEX}")
@@ -174,4 +183,3 @@ if __name__ == "__main__":
     print("\n" + "=" * 80)
     print("COMPLETE")
     print("=" * 80)
-    print("Note: Alternate names will be added by geonames_toponyms.py")

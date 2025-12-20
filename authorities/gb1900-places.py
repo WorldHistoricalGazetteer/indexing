@@ -16,22 +16,8 @@ es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_gb1900_row(row):
-    """
-    Parse a GB1900 CSV row into place document - SCHEMA COMPLIANT.
-
-    CSV columns:
-    - pin_id: unique identifier
-    - final_text: place name
-    - nation: England, Scotland, Wales
-    - local_authority: administrative area
-    - parish: parish name
-    - osgb_east: Ordnance Survey easting
-    - osgb_north: Ordnance Survey northing
-    - latitude: WGS84 latitude
-    - longitude: WGS84 longitude
-    - notes: additional notes
-    """
-    # Get pin_id with multiple possible field names
+    """Parse a GB1900 CSV row."""
+    # Get pin_id
     pin_id = row.get('pin_id', row.get('Pin_id', row.get('PIN_ID', ''))).strip()
 
     if not pin_id:
@@ -56,22 +42,19 @@ def parse_gb1900_row(row):
 
     place_id = f"gb:{pin_id}"
 
-    # Build toponyms array with temporal scoping
+    # Build toponyms array with timespans
     # GB1900 maps are from ca. 1900 (1888-1914 period)
     lst = f"{name}@en"
     toponyms = [{
         'toponym_id': lst,
-        'timespan': {
+        'timespans': [{
             'start': {'in': 1888},
             'end': {'in': 1914}
-        }
+        }]
     }]
 
-    # Build place document
-    place_doc = {
-        'place_id': place_id,
-        'title': name,
-        'toponyms': toponyms,
+    # Build geometries array with historical timespans
+    geometries = [{
         'geom': {
             'type': 'Point',
             'coordinates': [lon, lat]
@@ -80,6 +63,18 @@ def parse_gb1900_row(row):
             'lon': lon,
             'lat': lat
         },
+        'timespans': [{
+            'start': {'in': 1888},
+            'end': {'in': 1914}
+        }]
+    }]
+
+    # Build place document
+    place_doc = {
+        'place_id': place_id,
+        'title': name,
+        'toponyms': toponyms,
+        'geometries': geometries,
         'source': 'gb1900'
     }
 
@@ -99,7 +94,7 @@ def parse_gb1900_row(row):
 
 
 def index_gb1900(file_path, places_index):
-    """Read GB1900 CSV from ZIP archive and index places."""
+    """Read GB1900 CSV from ZIP and index places."""
     place_batch = []
     place_count = 0
     skipped = 0
@@ -107,7 +102,7 @@ def index_gb1900(file_path, places_index):
     print(f"Opening GB1900 archive: {file_path}")
 
     with zipfile.ZipFile(file_path, 'r') as zf:
-        # Find the CSV file
+        # Find CSV file
         csv_file = None
         for name in zf.namelist():
             if name.endswith('.csv') and not name.startswith('__MACOSX'):
@@ -124,7 +119,7 @@ def index_gb1900(file_path, places_index):
         with zf.open(csv_file, 'r') as f:
             raw_bytes = f.read()
 
-        # Try different encodings - GB1900 is UTF-16 with BOM
+        # Try different encodings
         csv_text = None
         for encoding in ['utf-16', 'utf-16-le', 'utf-16-be', 'utf-8', 'latin-1', 'iso-8859-1', 'cp1252', 'utf-8-sig']:
             try:
@@ -135,7 +130,7 @@ def index_gb1900(file_path, places_index):
                 continue
 
         if not csv_text:
-            print("ERROR: Could not decode CSV with any encoding")
+            print("ERROR: Could not decode CSV")
             return
 
         # Parse CSV
@@ -190,8 +185,12 @@ if __name__ == "__main__":
     GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
 
-    print(f"Starting to index GB1900 from {GB1900_FILE}")
-    print(f"Target index: {PLACES_INDEX}\n")
+    print("=" * 80)
+    print("GB1900 PLACES INGESTION")
+    print("=" * 80)
+    print(f"Source: {GB1900_FILE}")
+    print(f"Target index: {PLACES_INDEX}")
+    print()
 
     index_gb1900(GB1900_FILE, PLACES_INDEX)
     create_checkpoint_snapshot(es, "gb1900_places")
