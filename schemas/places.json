@@ -126,7 +126,7 @@
         "type": "keyword"
       },
       "population": {
-        "type": "integer"
+        "type": "long"
       },
       "elevation": {
         "type": "integer"
