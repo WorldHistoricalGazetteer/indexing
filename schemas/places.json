@@ -53,8 +53,40 @@
           "toponym_id": {
             "type": "keyword"
           },
-          "timespan": {
-            "type": "object",
+          "timespans": {
+            "type": "nested",
+            "properties": {
+              "start": {
+                "type": "object",
+                "properties": {
+                  "in": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "end": {
+                "type": "object",
+                "properties": {
+                  "in": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "geometries": {
+        "type": "nested",
+        "properties": {
+          "geom": {
+            "type": "geo_shape"
+          },
+          "repr_point": {
+            "type": "geo_point"
+          },
+          "timespans": {
+            "type": "nested",
             "properties": {
               "start": {
                 "type": "object",
@@ -93,12 +125,6 @@
       "ccodes": {
         "type": "keyword"
       },
-      "geom": {
-        "type": "geo_shape"
-      },
-      "repr_point": {
-        "type": "geo_point"
-      },
       "population": {
         "type": "integer"
       },
@@ -117,27 +143,22 @@
           "label": {
             "type": "text"
           },
-          "when": {
-            "type": "object",
+          "timespans": {
+            "type": "nested",
             "properties": {
-              "timespans": {
-                "type": "nested",
+              "start": {
+                "type": "object",
                 "properties": {
-                  "start": {
-                    "type": "object",
-                    "properties": {
-                      "in": {
-                        "type": "integer"
-                      }
-                    }
-                  },
-                  "end": {
-                    "type": "object",
-                    "properties": {
-                      "in": {
-                        "type": "integer"
-                      }
-                    }
+                  "in": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "end": {
+                "type": "object",
+                "properties": {
+                  "in": {
+                    "type": "integer"
                   }
                 }
               }

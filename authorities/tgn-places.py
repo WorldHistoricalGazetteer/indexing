@@ -1,12 +1,6 @@
 #!/usr/bin/env python
 """
 TGN ingestion into Elasticsearch (maximally optimized)
-
-- Full streaming of NT files from ZIP or extracted
-- Batched SQLite writes and/or in-memory dictionaries
-- Pre-joined term literals for fast ES indexing
-- Bulk ES inserts
-- Scales to 40M+ triples
 """
 
 import zipfile
@@ -82,11 +76,11 @@ def build_side_index(zip_path):
         elif pred.endswith("#long"):
             coord[1] = float(obj)
         if i % 500_000 == 0:
-            print(f"\r  {i:,} triples")
+            print(f"\r  {i:,} triples", end='', flush=True)
 
     # Remove incomplete
     coordinates = {k: tuple(v) for k, v in coordinates.items() if None not in v}
-    print(f"✓ Loaded {len(coordinates):,} complete coordinates")
+    print(f"\n✓ Loaded {len(coordinates):,} complete coordinates")
 
     # Term literals and place-term mappings
     print("Loading term literals and place mappings...")
@@ -105,9 +99,9 @@ def build_side_index(zip_path):
             tgn_id = subj.split("/tgn/")[-1]
             place_terms[tgn_id].append(obj)
         if i % 1_000_000 == 0:
-            print(f"\r  {i:,} triples")
+            print(f"\r  {i:,} triples", end='', flush=True)
 
-    print(f"✓ {len(term_literals):,} terms loaded")
+    print(f"\n✓ {len(term_literals):,} terms loaded")
     print(f"✓ {len(place_pref):,} preferred labels")
     print(f"✓ {len(place_terms):,} places with terms")
 
@@ -119,7 +113,7 @@ def build_side_index(zip_path):
 
 def index_tgn(zip_path, places_index):
     print("="*80)
-    print("TGN INDEXING (MAXIMALLY OPTIMIZED)")
+    print("TGN INDEXING (SCHEMA COMPLIANT)")
     print("="*80)
 
     coordinates, term_literals, place_pref, place_terms = build_side_index(zip_path)
@@ -160,15 +154,22 @@ def index_tgn(zip_path, places_index):
                 })
                 seen.add(text)
 
-        label = toponyms[0]["toponym_id"] if toponyms else f"TGN {tgn_id}"
+        title = toponyms[0]["toponym_id"] if toponyms else f"TGN {tgn_id}"
         place_id = f"tgn:{tgn_id}"
 
+        # Build document - SCHEMA COMPLIANT
         doc = {
             "place_id": place_id,
-            "label": label,
+            "title": title,
             "toponyms": toponyms,
-            "locations": [{"geometry": {"type": "Point", "coordinates": [lon, lat]},
-                           "rep_point": {"lon": lon, "lat": lat}}],
+            "geom": {
+                "type": "Point",
+                "coordinates": [lon, lat]
+            },
+            "repr_point": {
+                "lon": lon,
+                "lat": lat
+            },
             "source": "tgn",
             "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
         }
@@ -181,7 +182,7 @@ def index_tgn(zip_path, places_index):
             batch.clear()
 
         if i % 100_000 == 0:
-            print(f"\rProcessed {i:,} triples, indexed {count:,} places")
+            print(f"\rProcessed {i:,} triples, indexed {count:,} places", end='', flush=True)
 
     if batch:
         success, failed = helpers.bulk(es, batch, stats_only=True, raise_on_error=False)

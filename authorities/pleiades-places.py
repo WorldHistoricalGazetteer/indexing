@@ -2,11 +2,6 @@
 
 """
 Index Pleiades places data into Elasticsearch with memory-efficient streaming.
-
-This version uses ijson to stream parse the large JSON file instead of
-loading it entirely into memory.
-
-Updated to use temporal scoping design where temporal data lives with places.
 """
 
 import gzip
@@ -20,16 +15,16 @@ from processing.utilities import create_checkpoint_snapshot
 es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
-def extract_locations(pleiades_record):
+def extract_geometries(pleiades_record):
     """
-    Extract location data from Pleiades locations array.
-    Each location may have temporal attestations and geometry.
-
-    Returns: list of location dicts for our schema
+    Extract all geometries from Pleiades locations array with temporal attestations.
+    Returns: list of geometry objects with optional timespans
     """
-    locations = []
+    geometries = []
 
-    for loc in pleiades_record.get('locations', []):
+    locations = pleiades_record.get('locations', [])
+
+    for loc in locations:
         geometry = loc.get('geometry')
         if not geometry:
             continue
@@ -37,43 +32,48 @@ def extract_locations(pleiades_record):
         # Compute representative point
         rep_point = compute_representative_point(geometry)
 
-        location = {
-            'geometry': geometry,
-            'rep_point': rep_point
+        # Build geometry entry
+        geom_entry = {
+            'geom': geometry,
+            'repr_point': rep_point
         }
 
-        # Add temporal attestations
-        attestations = loc.get('attestations', [])
-        if attestations:
-            timespans = []
-            for att in attestations:
-                # Pleiades has start/end directly on location
-                start = loc.get('start')
-                end = loc.get('end')
-                if start is not None or end is not None:
-                    timespan = {}
-                    if start is not None:
-                        timespan['start'] = start
-                    if end is not None:
-                        timespan['end'] = end
-                    timespans.append(timespan)
-                    break  # One timespan per location in Pleiades
+        # Add temporal attestations if present
+        # Pleiades has start/end directly on location
+        start = loc.get('start')
+        end = loc.get('end')
+        if start is not None or end is not None:
+            timespan = {}
+            if start is not None:
+                timespan['start'] = {'in': start}
+            if end is not None:
+                timespan['end'] = {'in': end}
+            geom_entry['timespans'] = [timespan]
 
-            if timespans:
-                location['timespans'] = timespans
+        geometries.append(geom_entry)
 
-        locations.append(location)
+    # Fallback to reprPoint if no locations
+    if not geometries and pleiades_record.get('reprPoint'):
+        coords = pleiades_record['reprPoint']
+        geom = {
+            'type': 'Point',
+            'coordinates': coords
+        }
+        repr_pt = {
+            'lon': coords[0],
+            'lat': coords[1]
+        }
+        # Add to geometries array
+        geometries.append({
+            'geom': geom,
+            'repr_point': repr_pt
+        })
 
-    return locations if locations else None
+    return geometries
 
 
 def extract_toponyms(pleiades_record):
-    """
-    Extract name data from Pleiades names array.
-    Each name may have temporal attestations and language info.
-
-    Returns: list of toponym objects with temporal scoping
-    """
+    """Extract name data with temporal scoping using timespans array."""
     toponyms = []
     seen_lsts = set()
 
@@ -81,45 +81,34 @@ def extract_toponyms(pleiades_record):
         romanized = name_obj.get('romanized', '')
         attested = name_obj.get('attested', '')
 
-        # Use attested form if available, otherwise romanized
         name_str = attested if attested else romanized
         if not name_str:
             continue
 
-        # Split comma-separated names (common in Pleiades data)
+        # Split comma-separated names
         names = [n.strip() for n in name_str.split(',') if n.strip()]
 
         for name in names:
-            # Get language
-            lang = name_obj.get('language', 'und')
-            if not lang:
-                lang = 'und'
-
-            # Build toponym in name@lang format
+            lang = name_obj.get('language', 'und') or 'und'
             toponym_id = f"{name}@{lang}"
 
-            # Skip if already added
             if toponym_id in seen_lsts:
                 continue
 
             seen_lsts.add(toponym_id)
 
-            # Build toponym entry with temporal scoping
             toponym_entry = {'toponym_id': toponym_id}
 
-            # Add temporal information from attestations
-            attestations = name_obj.get('attestations', [])
-            if attestations:
-                # Get start/end from name object
-                start = name_obj.get('start')
-                end = name_obj.get('end')
-                if start is not None or end is not None:
-                    timespan = {}
-                    if start is not None:
-                        timespan['start'] = {'in': start}
-                    if end is not None:
-                        timespan['end'] = {'in': end}
-                    toponym_entry['timespan'] = timespan
+            # Add temporal information as timespans array
+            start = name_obj.get('start')
+            end = name_obj.get('end')
+            if start is not None or end is not None:
+                timespan = {}
+                if start is not None:
+                    timespan['start'] = {'in': start}
+                if end is not None:
+                    timespan['end'] = {'in': end}
+                toponym_entry['timespans'] = [timespan]
 
             toponyms.append(toponym_entry)
 
@@ -127,9 +116,7 @@ def extract_toponyms(pleiades_record):
 
 
 def extract_place_types(pleiades_record):
-    """
-    Extract place types from Pleiades.
-    """
+    """Extract place types."""
     types = []
 
     for place_type in pleiades_record.get('placeTypes', []):
@@ -145,59 +132,54 @@ def extract_place_types(pleiades_record):
 
 def create_place_doc(pleiades_record):
     """
-    Create a place document from a Pleiades record.
+    Create a place document from a Pleiades record - SCHEMA COMPLIANT.
 
-    Returns: place_doc dict
+    Uses new schema:
+    - geometries: array of {geom, repr_point, timespans[]} for temporal geometries
+    - toponyms with timespans array
+    - relations with timespans array
+
+    Returns: place_doc dict or None
     """
     place_id = f"pl:{pleiades_record['id']}"
 
-    # Extract toponyms with temporal scoping
+    # Extract toponyms with timespans array
     toponyms = extract_toponyms(pleiades_record)
 
+    # Extract all geometries with temporal attestations
+    geometries = extract_geometries(pleiades_record)
+
+    # Skip if no spatial data
+    if not geometries:
+        return None
+
+    # Build document
     doc = {
         'place_id': place_id,
-        'label': pleiades_record.get('title', ''),
+        'title': pleiades_record.get('title', ''),
         'toponyms': toponyms,
-        'source': 'pleiades'
+        'source': 'pleiades',
+        # All geometries with temporal data in array
+        'geometries': geometries
     }
-
-    # Extract locations
-    locations = extract_locations(pleiades_record)
-    if locations:
-        doc['locations'] = locations
-    elif pleiades_record.get('reprPoint'):
-        # Fallback to reprPoint if no locations
-        coords = pleiades_record['reprPoint']
-        doc['locations'] = [{
-            'geometry': {
-                'type': 'Point',
-                'coordinates': coords
-            },
-            'rep_point': {
-                'lon': coords[0],
-                'lat': coords[1]
-            }
-        }]
 
     # Extract place types
     types = extract_place_types(pleiades_record)
     if types:
         doc['types'] = types
 
-    # Extract connections/relations
+    # Extract connections with schema field names
     connections = pleiades_record.get('connectsWith', [])
     if connections:
         relations = []
         for conn_uri in connections:
-            # Extract Pleiades ID from URI
             if '/places/' in conn_uri:
                 conn_id = conn_uri.split('/places/')[-1]
                 relations.append({
-                    'relationType': 'connectedTo',
-                    'relationTo': f"pl:{conn_id}",
-                    'source': 'pleiades',
-                    'method': 'curated',
-                    'certainty': 0.9
+                    'relation_type': 'connectedTo',
+                    'related_place_id': f"pl:{conn_id}",
+                    'label': 'Pleiades Connection'
+                    # Note: Pleiades connections don't have temporal data
                 })
         if relations:
             doc['relations'] = relations
@@ -206,112 +188,90 @@ def create_place_doc(pleiades_record):
 
 
 def index_pleiades_streaming(file_path, places_index):
-    """
-    Stream parse Pleiades JSON to avoid loading entire file into memory.
-    Uses ijson for incremental JSON parsing.
-
-    Note: With new design, we only index places.
-    Toponyms will be indexed separately by cross-authority deduplication.
-    """
+    """Stream parse Pleiades JSON to avoid loading entire file into memory."""
     place_batch = []
-
     place_count = 0
     skipped = 0
 
     print(f"Streaming Pleiades data from {file_path}")
     print("Using ijson for memory-efficient parsing...")
-    print("Using new temporal scoping design")
+    print("SCHEMA COMPLIANT VERSION")
 
     try:
-        # Detect if file is gzipped or plain JSON
         is_gzipped = file_path.endswith('.gz')
 
         if is_gzipped:
-            # Try to open as gzipped
             try:
                 file_obj = gzip.open(file_path, 'rb')
-                # Test read
                 test_bytes = file_obj.read(100)
                 file_obj.seek(0)
             except gzip.BadGzipFile:
-                print("Warning: File has .gz extension but is not gzipped, opening as plain JSON")
+                print("Warning: File has .gz extension but is not gzipped")
                 file_obj = open(file_path, 'rb')
         else:
             file_obj = open(file_path, 'rb')
 
         with file_obj:
-            # Read first bytes to detect format
+            # Detect format
             first_bytes = file_obj.read(1000)
             first_text = first_bytes.decode('utf-8', errors='ignore')
             is_graph = '@graph' in first_text
 
-            # Reset to beginning
             file_obj.seek(0)
 
             if is_graph:
-                # Parse @graph array
                 parser = ijson.items(file_obj, '@graph.item')
                 print("Detected JSON-LD format with @graph")
             else:
-                # Parse top-level array
                 parser = ijson.items(file_obj, 'item')
                 print("Detected JSON array format")
 
-            # Process each record as it's parsed
             for i, record in enumerate(parser):
                 if (i + 1) % 1000 == 0:
-                    print(f"Processed {i + 1:,} records... (places: {place_count:,})")
+                    print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
 
                 try:
-                    # Create place document
                     place_doc = create_place_doc(record)
 
-                    # Skip if no spatial data
-                    if 'locations' not in place_doc:
+                    if not place_doc:
                         skipped += 1
                         continue
 
                     place_id = place_doc['place_id']
 
-                    # Add to place batch
                     place_batch.append({
                         '_index': places_index,
                         '_id': place_id,
                         '_source': place_doc
                     })
 
-                    # Bulk index places
                     if len(place_batch) >= BATCH_SIZE:
                         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                         place_count += success
                         place_batch = []
 
                 except Exception as e:
-                    print(f"Error processing record {record.get('id', 'unknown')}: {str(e)}")
+                    print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
                     skipped += 1
                     continue
 
     except ImportError:
         print("\nERROR: ijson library not installed")
         print("Install with: pip install ijson --break-system-packages")
-        print("\nFalling back to standard (memory-intensive) method...")
+        print("\nFalling back to standard method...")
         return index_pleiades_standard(file_path, places_index)
 
-    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    print(f"\nIndexing complete!")
+    print(f"\n\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
     print(f"Skipped (no location): {skipped:,}")
 
 
 def index_pleiades_standard(file_path, places_index):
-    """
-    Standard (non-streaming) method - loads entire file into memory.
-    Only used as fallback if ijson not available.
-    """
+    """Standard method - loads entire file into memory. Fallback only."""
     import json
 
     place_batch = []
@@ -324,7 +284,6 @@ def index_pleiades_standard(file_path, places_index):
     with gzip.open(file_path, 'rt', encoding='utf-8') as f:
         data = json.load(f)
 
-    # Handle @graph structure
     if isinstance(data, dict) and '@graph' in data:
         records = data['@graph']
     elif isinstance(data, list):
@@ -334,54 +293,46 @@ def index_pleiades_standard(file_path, places_index):
         return
 
     print(f"Found {len(records)} Pleiades records")
-    print("Processing...")
 
     for i, record in enumerate(records):
         if (i + 1) % 1000 == 0:
-            print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})")
+            print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
 
         try:
-            # Create place document
             place_doc = create_place_doc(record)
 
-            # Skip if no spatial data
-            if 'locations' not in place_doc:
+            if not place_doc:
                 skipped += 1
                 continue
 
             place_id = place_doc['place_id']
 
-            # Add to place batch
             place_batch.append({
                 '_index': places_index,
                 '_id': place_id,
                 '_source': place_doc
             })
 
-            # Bulk index places
             if len(place_batch) >= BATCH_SIZE:
                 success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                 place_count += success
                 place_batch = []
 
         except Exception as e:
-            print(f"Error processing record {record.get('id', 'unknown')}: {str(e)}")
+            print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
             skipped += 1
             continue
 
-    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
-    print(f"\nIndexing complete!")
+    print(f"\n\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
     print(f"Skipped (no location): {skipped:,}")
 
 
 if __name__ == "__main__":
-    # Updated to match settings.py configuration
-    # File path updated to match fetch_authorities.py structure
     PLEIADES_FILE = f"{DATA_DIR}/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz"
     PLACES_INDEX = "places"
 
@@ -389,5 +340,4 @@ if __name__ == "__main__":
     print(f"Target index: {PLACES_INDEX}\n")
 
     index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX)
-
     create_checkpoint_snapshot(es, "pleiades_places")

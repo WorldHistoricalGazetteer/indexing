@@ -2,12 +2,6 @@
 
 """
 Index GB1900 gazetteer data into Elasticsearch.
-
-GB1900 is a CSV file with place names transcribed from 1:10,560 Ordnance Survey maps
-of Great Britain (England, Scotland, Wales) from around 1900.
-
-Updated to use namespace 'gb' and new file paths from settings.py
-Updated to use temporal scoping design with 1888-1914 timespan for map period.
 """
 
 import csv
@@ -23,7 +17,7 @@ es = Elasticsearch(ES_HOST, request_timeout=180)
 
 def parse_gb1900_row(row):
     """
-    Parse a GB1900 CSV row into place document.
+    Parse a GB1900 CSV row into place document - SCHEMA COMPLIANT.
 
     CSV columns:
     - pin_id: unique identifier
@@ -36,8 +30,6 @@ def parse_gb1900_row(row):
     - latitude: WGS84 latitude
     - longitude: WGS84 longitude
     - notes: additional notes
-
-    Returns: place_doc dict (no separate toponym docs in new design)
     """
     # Get pin_id with multiple possible field names
     pin_id = row.get('pin_id', row.get('Pin_id', row.get('PIN_ID', ''))).strip()
@@ -49,26 +41,24 @@ def parse_gb1900_row(row):
     if pin_id.startswith('\ufeff') or pin_id.startswith('ÿþ'):
         pin_id = pin_id.lstrip('\ufeffÿþ')
 
-    # Get name with multiple possible field names
+    # Get name
     name = row.get('final_text', row.get('Final_text', row.get('FINAL_TEXT', ''))).strip()
 
     if not name:
         return None
 
-    # Get coordinates with multiple possible field names
+    # Get coordinates
     try:
         lat = float(row.get('latitude', row.get('Latitude', row.get('LATITUDE', ''))))
         lon = float(row.get('longitude', row.get('Longitude', row.get('LONGITUDE', ''))))
     except (ValueError, TypeError):
         return None
 
-    # Use 'gb' namespace as defined in settings.py
     place_id = f"gb:{pin_id}"
 
     # Build toponyms array with temporal scoping
-    lst = f"{name}@en"
-
     # GB1900 maps are from ca. 1900 (1888-1914 period)
+    lst = f"{name}@en"
     toponyms = [{
         'toponym_id': lst,
         'timespan': {
@@ -80,18 +70,16 @@ def parse_gb1900_row(row):
     # Build place document
     place_doc = {
         'place_id': place_id,
-        'label': name,
+        'title': name,
         'toponyms': toponyms,
-        'locations': [{
-            'geometry': {
-                'type': 'Point',
-                'coordinates': [lon, lat]
-            },
-            'rep_point': {
-                'lon': lon,
-                'lat': lat
-            }
-        }],
+        'geom': {
+            'type': 'Point',
+            'coordinates': [lon, lat]
+        },
+        'repr_point': {
+            'lon': lon,
+            'lat': lat
+        },
         'source': 'gb1900'
     }
 
@@ -100,7 +88,7 @@ def parse_gb1900_row(row):
     if nation in ['England', 'Scotland', 'Wales']:
         place_doc['ccodes'] = ['GB']
 
-    # Add place type (all are named places from maps)
+    # Add place type
     place_doc['types'] = [{
         'identifier': 'named-place',
         'label': 'gb1900',
@@ -111,12 +99,7 @@ def parse_gb1900_row(row):
 
 
 def index_gb1900(file_path, places_index):
-    """
-    Read GB1900 CSV from ZIP archive and index places.
-
-    Note: With new design, we only index places.
-    Toponyms will be indexed separately by cross-authority deduplication.
-    """
+    """Read GB1900 CSV from ZIP archive and index places."""
     place_batch = []
     place_count = 0
     skipped = 0
@@ -137,7 +120,7 @@ def index_gb1900(file_path, places_index):
 
         print(f"Reading CSV: {csv_file}")
 
-        # Read the entire file into memory first
+        # Read file into memory
         with zf.open(csv_file, 'r') as f:
             raw_bytes = f.read()
 
@@ -159,7 +142,6 @@ def index_gb1900(file_path, places_index):
         print("Processing records...")
         reader = csv.DictReader(io.StringIO(csv_text))
 
-        # Print header for debugging
         print(f"CSV columns: {reader.fieldnames}")
 
         for i, row in enumerate(reader):
@@ -171,20 +153,18 @@ def index_gb1900(file_path, places_index):
 
                 if not place_doc:
                     skipped += 1
-                    if skipped <= 5:  # Show first few skipped for debugging
+                    if skipped <= 5:
                         print(f"  Skipped row {i + 1}: {row}")
                     continue
 
                 place_id = place_doc['place_id']
 
-                # Add to batch
                 place_batch.append({
                     '_index': places_index,
                     '_id': place_id,
                     '_source': place_doc
                 })
 
-                # Bulk index places
                 if len(place_batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                     place_count += success
@@ -192,12 +172,11 @@ def index_gb1900(file_path, places_index):
 
             except Exception as e:
                 print(f"Error processing row {i + 1}: {str(e)}")
-                if skipped < 5:  # Show details for first few errors
+                if skipped < 5:
                     print(f"  Row data: {row}")
                 skipped += 1
                 continue
 
-    # Index remaining batch
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
@@ -208,9 +187,6 @@ def index_gb1900(file_path, places_index):
 
 
 if __name__ == "__main__":
-    # Updated to match settings.py configuration
-    # Namespace: 'gb' (from settings.py)
-    # File path updated to match fetch_authorities.py structure
     GB1900_FILE = f"{DATA_DIR}/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip"
     PLACES_INDEX = "places"
 
