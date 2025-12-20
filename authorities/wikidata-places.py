@@ -2,9 +2,6 @@
 
 """
 Index Wikidata places data into Elasticsearch.
-
-Updated to use temporal scoping design where temporal data lives with places,
-not with toponyms. All Wikidata names are current (2025) data.
 """
 
 import gzip
@@ -22,9 +19,7 @@ GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.
 
 
 def stream_wikidata(file_path):
-    """
-    Generator yielding Wikidata entities from compressed JSON dump.
-    """
+    """Generator yielding Wikidata entities from compressed JSON dump."""
     with gzip.open(file_path, 'rt', encoding='utf-8') as f:
         for line in f:
             line = line.strip()
@@ -40,9 +35,7 @@ def stream_wikidata(file_path):
 
 
 def is_geographic_entity(entity):
-    """
-    Check if a Wikidata entity represents a geographic place.
-    """
+    """Check if a Wikidata entity represents a geographic place."""
     if 'claims' not in entity:
         return False
 
@@ -59,32 +52,19 @@ def is_geographic_entity(entity):
                            'Q23442', 'Q8502', 'Q4022', 'Q23397', 'Q34763', 'Q33837']:
                     return True
 
-    # Check if it has coordinates (P625) - strong indicator of geographic entity
+    # Check if it has coordinates (P625)
     if 'P625' in entity['claims']:
         return True
 
-    # Check if it has geoshape data (P3896) - also indicates geographic entity
+    # Check if it has geoshape data (P3896)
     if 'P3896' in entity['claims']:
         return True
 
     return False
 
 
-def extract_labels(entity):
-    """
-    Extract labels from all languages.
-    """
-    labels = {}
-    if 'labels' in entity:
-        for lang, label_obj in entity['labels'].items():
-            labels[lang] = label_obj['value']
-    return labels
-
-
 def extract_coordinates(entity):
-    """
-    Extract coordinates from P625 (coordinate location).
-    """
+    """Extract coordinates from P625 (coordinate location)."""
     if 'claims' not in entity or 'P625' not in entity['claims']:
         return None
 
@@ -109,44 +89,13 @@ def extract_geoshape_ref(entity):
         if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
             value = claim['mainsnak']['datavalue'].get('value', {})
             if isinstance(value, str) and value.startswith('Data:'):
-                # Return only the filename after "Data:"
-                return value[5:]
+                return value[5:]  # Remove "Data:" prefix
 
     return None
 
 
-def extract_coordinates_and_geoshape(entity):
-    """
-    Extract point coordinates and geoshape reference.
-    Returns: locations array, geoshape_ref string.
-    """
-    locations = []
-
-    # Get point coordinates from P625
-    coords = extract_coordinates(entity)
-    if coords:
-        location = {
-            'geometry': {
-                'type': 'Point',
-                'coordinates': coords
-            },
-            'rep_point': {
-                'lon': coords[0],
-                'lat': coords[1]
-            }
-        }
-        locations.append(location)
-
-    # Get geoshape reference from P3896
-    geoshape_ref = extract_geoshape_ref(entity)
-
-    return locations if locations else None, geoshape_ref
-
-
 def extract_country_codes(entity):
-    """
-    Extract country codes from P297 (ISO 3166-1 alpha-2 code).
-    """
+    """Extract country codes from P297 (ISO 3166-1 alpha-2 code)."""
     ccodes = []
     if 'claims' not in entity or 'P297' not in entity['claims']:
         return ccodes
@@ -161,9 +110,7 @@ def extract_country_codes(entity):
 
 
 def extract_elevation(entity):
-    """
-    Extract elevation from P2044 (elevation above sea level).
-    """
+    """Extract elevation from P2044 (elevation above sea level)."""
     if 'claims' not in entity or 'P2044' not in entity['claims']:
         return None
 
@@ -179,10 +126,28 @@ def extract_elevation(entity):
     return None
 
 
+def extract_population(entity):
+    """Extract population from P1082 (population)."""
+    if 'claims' not in entity or 'P1082' not in entity['claims']:
+        return None
+
+    # Get the most recent population value
+    for claim in entity['claims']['P1082']:
+        if 'mainsnak' in claim and 'datavalue' in claim['mainsnak']:
+            value = claim['mainsnak']['datavalue'].get('value', {})
+            if isinstance(value, dict) and 'amount' in value:
+                try:
+                    # Remove + prefix if present and convert to int
+                    amount = value['amount'].lstrip('+')
+                    return int(float(amount))
+                except (ValueError, TypeError, AttributeError):
+                    pass
+
+    return None
+
+
 def extract_types(entity):
-    """
-    Extract type information from P31 (instance of).
-    """
+    """Extract type information from P31 (instance of)."""
     types = []
     if 'claims' not in entity or 'P31' not in entity['claims']:
         return types
@@ -202,9 +167,7 @@ def extract_types(entity):
 
 
 def extract_geonames_id(entity):
-    """
-    Extract Geonames ID from P1566.
-    """
+    """Extract Geonames ID from P1566."""
     if 'claims' not in entity or 'P1566' not in entity['claims']:
         return None
 
@@ -221,30 +184,31 @@ def create_place_doc(entity):
     """
     Create a place document from a Wikidata entity.
 
-    Uses new temporal scoping design:
-    - toponyms: nested array with timespan for each toponym
-
     Returns: doc dict, geoshape_ref string.
     """
     qid = entity.get('id')
     if not qid:
         return None, None
 
-    labels = extract_labels(entity)
-    label = labels.get('en', labels.get('mul', qid))
+    # Extract labels
+    labels = {}
+    if 'labels' in entity:
+        for lang, label_obj in entity['labels'].items():
+            labels[lang] = label_obj['value']
+
+    title = labels.get('en', labels.get('mul', qid))
 
     # Build toponyms array with temporal scoping
     toponyms = []
-    seen_lsts = set()  # Deduplicate
+    seen_lsts = set()
 
-    # Add labels (one per language)
+    # Add labels
     if 'labels' in entity:
         for lang, label_obj in entity['labels'].items():
             name = label_obj['value']
             lst = f"{name}@{lang}"
 
             if lst not in seen_lsts:
-                # Wikidata is current data - use 2025
                 toponyms.append({
                     'toponym_id': lst,
                     'timespan': {
@@ -254,7 +218,7 @@ def create_place_doc(entity):
                 })
                 seen_lsts.add(lst)
 
-    # Add aliases (multiple per language)
+    # Add aliases
     if 'aliases' in entity:
         for lang, alias_list in entity['aliases'].items():
             for alias_obj in alias_list:
@@ -262,7 +226,6 @@ def create_place_doc(entity):
                 lst = f"{name}@{lang}"
 
                 if lst not in seen_lsts:
-                    # Aliases also get current year scope
                     toponyms.append({
                         'toponym_id': lst,
                         'timespan': {
@@ -272,17 +235,27 @@ def create_place_doc(entity):
                     })
                     seen_lsts.add(lst)
 
+    # Build document
     doc = {
         'place_id': f"wd:{qid}",
-        'label': label,
+        'title': title,
         'toponyms': toponyms,
         'source': 'wikidata'
     }
 
     # Extract coordinates and geoshape reference
-    locations, geoshape_ref = extract_coordinates_and_geoshape(entity)
-    if locations:
-        doc['locations'] = locations
+    coords = extract_coordinates(entity)
+    geoshape_ref = extract_geoshape_ref(entity)
+
+    if coords:
+        doc['geom'] = {
+            'type': 'Point',
+            'coordinates': coords
+        }
+        doc['repr_point'] = {
+            'lon': coords[0],
+            'lat': coords[1]
+        }
 
     # Add country codes
     ccodes = extract_country_codes(entity)
@@ -294,46 +267,38 @@ def create_place_doc(entity):
     if elevation is not None:
         doc['elevation'] = elevation
 
+    # Add population
+    population = extract_population(entity)
+    if population is not None:
+        doc['population'] = population
+
     # Add types
     types = extract_types(entity)
     if types:
         doc['types'] = types
 
-    # Add relation to Geonames if present
     relations = []
     gn_id = extract_geonames_id(entity)
     if gn_id:
         relations.append({
-            'relationType': 'sameAs',
-            'relationTo': f"gn:{gn_id}",
-            'source': 'wikidata',
-            'method': 'curated',
-            'certainty': 1.0
+            'relation_type': 'sameAs',
+            'related_place_id': f"gn:{gn_id}",
+            'label': 'GeoNames'
         })
 
     if relations:
         doc['relations'] = relations
 
-    # Only index if it has at least one spatial attribute (coords or geoshape_ref)
-    if not locations and not geoshape_ref:
+    # Only index if it has at least one spatial attribute
+    if not coords and not geoshape_ref:
         return None, None
 
     return doc, geoshape_ref
 
 
 def index_wikidata(file_path, places_index, geoshape_refs_file):
-    """
-    Process Wikidata dump, index places, and save geoshape references.
-
-    Uses simplified schema:
-    - toponyms: nested array with toponym_id and timespan
-
-    NOTE: This script does NOT index to the toponyms index. The toponyms index
-    is populated by a separate deduplication step that runs after ALL authorities
-    are ingested.
-    """
+    """Process Wikidata dump, index places, and save geoshape references."""
     place_batch = []
-
     place_count = 0
     processed = 0
     skipped = 0
@@ -341,30 +306,23 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
 
     print("Starting Wikidata processing...")
     print(f"Saving geoshape references to: {geoshape_refs_file}")
-    print("Note: Using simplified schema")
-    print("  - toponyms: nested array with toponym_id and timespan")
 
-    # Ensure directory exists
     os.makedirs(os.path.dirname(geoshape_refs_file), exist_ok=True)
 
-    # Open the geoshape file for writing
     with open(geoshape_refs_file, 'w') as refs_f:
         for entity in stream_wikidata(file_path):
             processed += 1
 
-            # Progress update every 100k entities
             if processed % 100000 == 0:
                 sys.stdout.write(
                     f"\rProcessed {processed:,} entities... (places: {place_count:,}, geoshapes: {geoshape_count:,}, skipped: {skipped:,})")
                 sys.stdout.flush()
 
-            # Check if it's a geographic entity
             if not is_geographic_entity(entity):
                 skipped += 1
                 continue
 
             try:
-                # Create place document and get geoshape reference
                 place_doc, geoshape_ref = create_place_doc(entity)
 
                 if not place_doc:
@@ -374,7 +332,7 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                 place_id = place_doc['place_id']
                 qid = entity['id']
 
-                # Save Geoshape Reference
+                # Save geoshape reference
                 if geoshape_ref:
                     ref_doc = {
                         'qid': qid,
@@ -390,7 +348,6 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                     '_source': place_doc
                 })
 
-                # Bulk index places
                 if len(place_batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
                     place_count += success
@@ -400,7 +357,6 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                 print(f"\nError processing entity {entity.get('id', 'unknown')}: {str(e)}", file=sys.stderr)
                 continue
 
-        # Index remaining batch
         if place_batch:
             success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
             place_count += success

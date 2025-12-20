@@ -56,26 +56,15 @@ def init_cache():
     conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("""
-                 CREATE TABLE IF NOT EXISTS geoshape_cache
-                 (
-                     data_page
-                     TEXT
-                     PRIMARY
-                     KEY,
-                     geometry_json
-                     TEXT,
-                     status
-                     TEXT
-                     NOT
-                     NULL,
-                     error_msg
-                     TEXT,
-                     fetched_at
-                     TEXT
-                     NOT
-                     NULL
-                 )
-                 """)
+        CREATE TABLE IF NOT EXISTS geoshape_cache
+        (
+            data_page TEXT PRIMARY KEY,
+            geometry_json TEXT,
+            status TEXT NOT NULL,
+            error_msg TEXT,
+            fetched_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     return conn
 
@@ -126,14 +115,10 @@ def log_downloaded(place_id):
 # ----------------------------------------------------------------------
 
 def fetch_geojson_from_commons(conn, data_page, place_id):
-    """
-    Fetch GeoJSON geometry from Wikimedia Commons.
-    Returns geometry dict or None.
-    NOTE: All print statements removed to allow progress bar in main loop.
-    """
+    """Fetch GeoJSON geometry from Wikimedia Commons."""
     if not data_page: return None
 
-    # --- Cache check ---
+    # Cache check
     geometry, status = cache_get(conn, data_page)
     if status == "ok": return geometry
     if status == "error": return None
@@ -244,11 +229,6 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             place_id = f"wd:{ref['qid']}"
 
             if place_id in downloaded_ids: continue
-            # Optional: verify_place_exists is slow. Comment out if confident.
-            # if not verify_place_exists(place_id):
-            #    log_downloaded(place_id)
-            #    continue
-
             tasks.append((conn, ref["geoshape_ref"], place_id))
 
     total_tasks = len(tasks)
@@ -265,13 +245,12 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             place_id, geometry, ref_name = future.result()
             completed += 1
 
-            # --- Progress Bar Update ---
+            # Progress bar
             if completed % 5 == 0 or completed == total_tasks:
                 percent = (completed / total_tasks) * 100
                 elapsed = time.time() - start_time
                 rate = completed / elapsed if elapsed > 0 else 0
 
-                # Calculate ETA
                 if rate > 0:
                     remaining_items = total_tasks - completed
                     eta_seconds = int(remaining_items / rate)
@@ -279,35 +258,33 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
                 else:
                     eta_str = "--:--:--"
 
-                # Truncate filename for display
                 display_name = (ref_name[:20] + '..') if len(ref_name) > 20 else ref_name
 
-                # Clear line and Print
                 sys.stdout.write(
                     f"\r[WD-Shapes] {completed:,}/{total_tasks:,} ({percent:.1f}%) | {rate:.1f} it/s | ETA: {eta_str} | Active: {display_name:<20}")
                 sys.stdout.flush()
-            # ---------------------------
 
             if not geometry:
                 continue
 
             rep_point = compute_representative_point(geometry)
+
             updates.append({
-                "_op_type": "update", "_index": places_index, "_id": place_id,
+                "_op_type": "update",
+                "_index": places_index,
+                "_id": place_id,
                 "script": {
                     "source": """
-                        if (ctx._source.locations != null && ctx._source.locations.size() > 0) {
-                            ctx._source.locations[0].geometry = params.geom;
-                            if (params.rep != null) { ctx._source.locations[0].rep_point = params.rep; }
-                        } else {
-                            ctx._source.locations = [params.newloc];
+                        ctx._source.geom = params.geom;
+                        if (params.rep != null) {
+                            ctx._source.repr_point = params.rep;
                         }
                     """,
                     "params": {
-                        "geom": geometry, "rep": rep_point,
-                        "newloc": {"geometry": geometry, "rep_point": rep_point},
-                    },
-                },
+                        "geom": geometry,
+                        "rep": rep_point
+                    }
+                }
             })
             log_downloaded(place_id)
 
@@ -323,7 +300,8 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
 
 
 def main():
-    if not check_elasticsearch_connection(): sys.exit(1)
+    if not check_elasticsearch_connection():
+        sys.exit(1)
     process_geoshapes_from_file(PLACES_INDEX, REFS_FILE, batch_size=BATCH_SIZE)
     create_checkpoint_snapshot(es, "wikidata_geoshapes")
 
