@@ -1,5 +1,5 @@
 {
-  "description": "Extract namespace from place_id",
+  "description": "Extracts namespace and adds timestamp",
   "processors": [
     {
       "script": {
