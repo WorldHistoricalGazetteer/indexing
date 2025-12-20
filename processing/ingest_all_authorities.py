@@ -316,7 +316,6 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),
         ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),
         ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),
-        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
         ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),
         ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),
         ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),
@@ -325,6 +324,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),
         ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),
         ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
+        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
     ]
 
     # Filter by requested namespaces (includes ALL scripts for that namespace)
