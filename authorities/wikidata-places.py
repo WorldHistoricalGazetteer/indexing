@@ -196,8 +196,7 @@ def create_place_doc_fast(entity, entity_bytes):
     doc = {
         'place_id': f"wd:{qid}",
         'title': title,
-        'toponyms': toponyms,
-        'source': 'wikidata'
+        'toponyms': toponyms
     }
 
     # Add geometries

@@ -132,7 +132,6 @@ def process_dplace_feature(feature, namespace='dp'):
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'source': 'dplace',
         'geometries': [{
             'geom': geometry,
             'repr_point': rep_point,

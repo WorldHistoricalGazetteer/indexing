@@ -106,8 +106,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
     doc = {
         'place_id': place_id,
         'title': tags['name'],
-        'toponyms': toponyms,
-        'source': 'osm'
+        'toponyms': toponyms
     }
 
     # Add geometry as geometries array

@@ -143,7 +143,6 @@ def process_iv_entry(entry, namespace='iv'):
         'place_id': place_id,
         'title': historical_name,
         'toponyms': toponyms,
-        'source': 'indexvillaris',
         'geometries': [{
             'geom': geometry,
             'repr_point': rep_point,

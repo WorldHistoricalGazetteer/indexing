@@ -50,7 +50,6 @@ def process_territory(feature, namespace='nl'):
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'source': 'nativeland',
         'geometries': [
             {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
         'types': [{'identifier': 'indigenous-territory', 'label': 'nativeland', 'sourceLabel': 'territory'}]
@@ -88,7 +87,6 @@ def process_language(feature, namespace='nl'):
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'source': 'nativeland',
         'geometries': [
             {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
         'types': [{'identifier': 'indigenous-language-area', 'label': 'nativeland', 'sourceLabel': 'language'}]
@@ -124,7 +122,6 @@ def process_treaty(feature, namespace='nl'):
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'source': 'nativeland',
         'geometries': [
             {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
         'types': [{'identifier': 'treaty-area', 'label': 'nativeland', 'sourceLabel': 'treaty'}]

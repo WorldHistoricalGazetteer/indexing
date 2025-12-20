@@ -74,8 +74,7 @@ def parse_gb1900_row(row):
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': geometries,
-        'source': 'gb1900'
+        'geometries': geometries
     }
 
     # Add country code

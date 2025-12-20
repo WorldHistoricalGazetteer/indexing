@@ -158,8 +158,6 @@ def create_place_doc(pleiades_record):
         'place_id': place_id,
         'title': pleiades_record.get('title', ''),
         'toponyms': toponyms,
-        'source': 'pleiades',
-        # All geometries with temporal data in array
         'geometries': geometries
     }
 

@@ -176,7 +176,6 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
         'title': name,
         'toponyms': toponyms,
         'geometries': [geometry_entry],
-        'source': 'un-countries',
         'types': [{'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}]
     }
 
