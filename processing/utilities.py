@@ -1,4 +1,5 @@
 import gzip
+import time
 import zipfile
 
 from processing.settings import STAGING_REPO_NAME, PLACES_INDEX,  TOPONYMS_INDEX
@@ -35,7 +36,6 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
 
     Args:
         es: Elasticsearch client
-        indices: Index name(s) to snapshot (str or list)
         snapshot_name: Name for the snapshot (will be prefixed with timestamp)
         repo_name: Snapshot repository name
 
@@ -43,6 +43,7 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
         dict with snapshot info or None on failure
     """
     from datetime import datetime
+    import time
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     full_name = f"{snapshot_name}_{timestamp}"
@@ -53,7 +54,8 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
     print(f"  Indices: {', '.join(indices)}")
 
     try:
-        response = es.snapshot.create(
+        # 1. Start snapshot asynchronously (wait_for_completion=False)
+        es.snapshot.create(
             repository=repo_name,
             snapshot=full_name,
             body={
@@ -61,17 +63,52 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
                 "ignore_unavailable": True,
                 "include_global_state": False
             },
-            wait_for_completion=True
+            wait_for_completion=False
         )
 
-        state = response.get("snapshot", {}).get("state", "UNKNOWN")
-        if state == "SUCCESS":
-            print(f"  ✓ Snapshot created: {full_name}")
-            return response
+        # 2. Poll for completion
+        print(f"  Snapshot in progress...", end="", flush=True)
+
+        final_status = None
+        while True:
+            try:
+                # Get specific snapshot status
+                status = es.snapshot.get(repository=repo_name, snapshot=full_name)
+
+                # Check if snapshot info is available yet
+                if not status.get('snapshots'):
+                    time.sleep(2)
+                    continue
+
+                snapshot_info = status['snapshots'][0]
+                state = snapshot_info.get("state")
+
+                if state == "SUCCESS":
+                    final_status = snapshot_info
+                    print(" Done.")  # Clean newline
+                    break
+                elif state in ["FAILED", "PARTIAL", "INCOMPATIBLE"]:
+                    final_status = snapshot_info
+                    print(f"\n  ✗ Snapshot finished with state: {state}")
+                    break
+
+                # If IN_PROGRESS, print dot and wait
+                print(".", end="", flush=True)
+                time.sleep(5)  # Check every 5 seconds
+
+            except Exception as e:
+                # If network blip, just retry loop
+                print(f"!", end="", flush=True)
+                time.sleep(5)
+
+        # 3. Report result
+        if final_status and final_status.get("state") == "SUCCESS":
+            print(f"  ✓ Snapshot created successfully: {full_name}")
+            return final_status
         else:
-            print(f"  ✗ Snapshot state: {state}")
+            print(f"  ✗ Snapshot failed.")
             return None
 
     except Exception as e:
-        print(f"  ✗ Snapshot failed: {e}")
+        print(f"\n  ✗ Snapshot request failed: {e}")
         return None
