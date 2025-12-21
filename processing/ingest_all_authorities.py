@@ -9,6 +9,21 @@ optimal order, considering dependencies and data volume.
 
 When you specify `-n gn`, it runs BOTH geonames-places AND geonames-toponyms.
 When you specify `-n gn,wd`, it runs all GeoNames scripts then all Wikidata scripts.
+
+21 Dec 2025 Final document counts by source:
+
+  dp              2,599
+  gb          1,174,449
+  gn         13,378,039
+  iv             24,000
+  nl              4,343
+  osm        18,113,756
+  pl             34,085
+  tgn         2,972,410
+  un                257
+  wd         11,456,496
+
+  Total:     47,160,434
 """
 
 import subprocess
@@ -105,7 +120,7 @@ def deduplicate_and_index_toponyms():
             if not buckets:
                 break
 
-            print(f"  Page {page}: {len(buckets):,} unique toponyms")
+            print(f"\r  Page {page}: {len(buckets):,} unique toponyms", end='', flush=True)
             sys.stdout.flush()
 
             for bucket in buckets:
@@ -312,19 +327,19 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     # Full ingestion order with script IDs for tracking
     # Format: (namespace, script_name, description, script_id)
     ingestion_order = [
-        ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),
-        ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),
-        ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),
-        ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),
-        ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),
-        ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),
-        ('un', 'un-countries', 'UN member countries', 'un-countries'),
-        ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),
-        ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),
-        ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),
-        ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),
-        ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
-        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
+        ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),  # 18,113,756 4:04:14
+        ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),  # 13,378,039 0:21:43
+        ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),  # Places updated: 7,600,036; Relations added: 1,820,560; 0:35:40
+        ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),  # 11,456,496 2:52:55
+        ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),  # 2,972,410 0:05:57
+        ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),  # 34,085 0:01:15
+        ('un', 'un-countries', 'UN member countries', 'un-countries'),  # 257 0:00:45
+        ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),  # 2,599 0:00:05
+        ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),  # 4,343 0:00:09
+        ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),  # 1,174,449 0:02:02
+        ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),  # 24,000 0:00:10
+        ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),  # Places updated: 3,335 0:03:50
+        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),  # Places updated: 58,681 0:00:22
     ]
 
     # Filter by requested namespaces (includes ALL scripts for that namespace)

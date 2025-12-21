@@ -179,7 +179,7 @@ def index_nativeland_file(json_file, data_type, places_index='places'):
 
     for i, feature in enumerate(features):
         if (i + 1) % 100 == 0:
-            print(f"  {i + 1}/{len(features)}...")
+            print(f"\r  {i + 1}/{len(features)}...", end='', flush=True)
 
         try:
             place_doc = processor(feature, namespace='nl')

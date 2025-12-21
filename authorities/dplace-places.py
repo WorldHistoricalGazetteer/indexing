@@ -286,7 +286,7 @@ def index_dplace_file(geojson_file, places_index='places'):
         if (i + 1) % 100 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"\r  Processing {i + 1}/{len(features)} ({rate:.1f}/sec) - indexed: {places_count}")
+            print(f"\r  Processing {i + 1}/{len(features)} ({rate:.1f}/sec) - indexed: {places_count}", end='', flush=True)
 
         try:
             place_doc = process_dplace_feature(feature)

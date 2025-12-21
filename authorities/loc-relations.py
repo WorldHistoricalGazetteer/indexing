@@ -210,7 +210,7 @@ def index_loc_file(ndjson_file):
                     elapsed = (datetime.now() - start_time).seconds
                     rate = total_records / elapsed if elapsed > 0 else 0
                     print(
-                        f"  {total_records:,} ({rate:.1f}/s) - geo: {geographic_records:,}, rels: {relations_created:,}")
+                        f"\r  {total_records:,} ({rate:.1f}/s) - geo: {geographic_records:,}, rels: {relations_created:,}", end='', flush=True)
 
                 try:
                     record = json.loads(line)

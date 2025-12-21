@@ -282,7 +282,7 @@ def index_iv_file(json_file, places_index='places'):
         if (i + 1) % 500 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"\r  {i + 1}/{len(entries)} ({rate:.1f}/s) - indexed: {places_count}")
+            print(f"\r  {i + 1}/{len(entries)} ({rate:.1f}/s) - indexed: {places_count}", end='', flush=True)
 
         try:
             place_doc = process_iv_entry(entry)

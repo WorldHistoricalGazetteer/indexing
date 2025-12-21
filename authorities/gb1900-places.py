@@ -140,7 +140,7 @@ def index_gb1900(file_path, places_index):
 
         for i, row in enumerate(reader):
             if (i + 1) % 10000 == 0:
-                print(f"\rProcessed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})")
+                print(f"\rProcessed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})", end='', flush=True)
 
             try:
                 place_doc = parse_gb1900_row(row)
