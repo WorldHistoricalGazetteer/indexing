@@ -35,6 +35,8 @@ fi
 
 # Staging ES info file (created by es.sh -staging-start)
 STAGING_INFO_FILE="${IX1_BASE}/esinfo/es-staging.env"
+# Print out staging file name for debugging
+echo "Staging ES info file: $STAGING_INFO_FILE"
 
 # Model training directories
 MODEL_DIR="${IX1_BASE}/models/phonetic"
