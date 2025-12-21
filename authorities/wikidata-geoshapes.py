@@ -154,6 +154,10 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
 
         geojson = json.loads(content)
 
+        # Wikimedia Commons wraps GeoJSON in a "data" field
+        if "data" in geojson and isinstance(geojson["data"], dict):
+            geojson = geojson["data"]
+
         geometry = None
         if geojson.get("type") == "Feature":
             geometry = geojson.get("geometry")
@@ -164,7 +168,7 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
             geometry = geojson
 
         if not geometry:
-            raise ValueError(f"Unexpected GeoJSON type: {geojson.get('type')}")
+            raise ValueError(f"Unexpected GeoJSON structure: {geojson.get('type', 'unknown')}")
 
         cache_put_ok(conn, data_page, geometry)
         return geometry
@@ -241,7 +245,6 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
 
             rep_point = compute_representative_point(geometry)
 
-            # Update geometries array
             updates.append({
                 "_op_type": "update",
                 "_index": places_index,
