@@ -25,7 +25,7 @@ set -e
 # --- Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IX1_BASE="/ix1/whcdh"
-REPO_DIR="${IX1_BASE}/whg-crc"
+REPO_DIR="${IX1_BASE}/elastic"
 
 # Load environment if available
 ENV_FILE="${REPO_DIR}/.env"
