@@ -34,7 +34,7 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 # Staging ES info file (created by es.sh -staging-start)
-STAGING_INFO_FILE="${IX1_BASE}/esinfo/staging_es_info.sh"
+STAGING_INFO_FILE="${IX1_BASE}/esinfo/es-staging.env"
 
 # Model training directories
 MODEL_DIR="${IX1_BASE}/models/phonetic"
@@ -47,7 +47,7 @@ SLURM_LOG_DIR="${MODEL_DIR}/slurm_logs"
 JOB_INFO_FILE="${MODEL_DIR}/current_job.sh"
 
 # Training script location
-TRAINING_SCRIPT="${REPO_DIR}/processing/phonetic_similarity_model.py"
+TRAINING_SCRIPT="${REPO_DIR}/phonetics/phonetic_similarity_model.py"
 
 # Default training parameters
 DEFAULT_BATCH_SIZE=128

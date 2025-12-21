@@ -399,10 +399,10 @@ class TrainingDataExtractor:
         }
 
     def extract_clusters_from_es(
-            self,
-            batch_size: int = 1000,
-            max_docs: Optional[int] = None,
-            min_cluster_size: int = 2
+        self,
+        batch_size: int = 1000,
+        max_docs: Optional[int] = None,
+        min_cluster_size: int = 2
     ) -> List[List[Tuple[str, str]]]:
         """
         Scroll through Elasticsearch and extract toponym clusters from WHG places index.
@@ -490,9 +490,9 @@ class TrainingDataExtractor:
             hits = resp['hits']['hits']
 
     def build_training_data(
-            self,
-            clusters: List[List[Tuple[str, str]]],
-            similarity_threshold: float = Config.SIMILARITY_THRESHOLD
+        self,
+        clusters: List[List[Tuple[str, str]]],
+        similarity_threshold: float = Config.SIMILARITY_THRESHOLD
     ) -> Tuple[List[Dict], List[Dict], List[Dict]]:
         """
         Build training pairs from clusters.
@@ -528,7 +528,7 @@ class TrainingDataExtractor:
 
             # Generate pairs within cluster
             for i, item_a in enumerate(processed):
-                for item_b in processed[i + 1:]:
+                for item_b in processed[i+1:]:
                     if item_a['has_phonetic'] and item_b['has_phonetic']:
                         sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
                         if sim >= similarity_threshold:
@@ -550,8 +550,8 @@ class TrainingDataExtractor:
 
         print(f"\nData Statistics:")
         print(f"  Total items: {stats['total']}")
-        print(f"  With IPA: {stats['with_ipa']} ({100 * stats['with_ipa'] / max(1, stats['total']):.1f}%)")
-        print(f"  Without IPA: {stats['without_ipa']} ({100 * stats['without_ipa'] / max(1, stats['total']):.1f}%)")
+        print(f"  With IPA: {stats['with_ipa']} ({100*stats['with_ipa']/max(1,stats['total']):.1f}%)")
+        print(f"  Without IPA: {stats['without_ipa']} ({100*stats['without_ipa']/max(1,stats['total']):.1f}%)")
         print(f"  Pairs with phonetic: {len(pairs_with_phonetic)}")
         print(f"  Pairs without phonetic: {len(pairs_without_phonetic)}")
 
@@ -562,11 +562,11 @@ class TrainingDataExtractor:
         return pairs_with_phonetic, pairs_without_phonetic, all_items
 
     def save(
-            self,
-            pairs_phonetic: List[Dict],
-            pairs_no_phonetic: List[Dict],
-            items: List[Dict],
-            path: str
+        self,
+        pairs_phonetic: List[Dict],
+        pairs_no_phonetic: List[Dict],
+        items: List[Dict],
+        path: str
     ):
         """Save training data to file."""
         data = {
@@ -591,12 +591,12 @@ class PhoneticEncoder(nn.Module):
     """
 
     def __init__(
-            self,
-            phonetic_feat_dim: int = Config.PHONETIC_FEAT_DIM,
-            hidden_dim: int = Config.HIDDEN_DIM,
-            embed_dim: int = Config.EMBED_DIM,
-            num_layers: int = Config.NUM_LAYERS,
-            dropout: float = Config.DROPOUT
+        self,
+        phonetic_feat_dim: int = Config.PHONETIC_FEAT_DIM,
+        hidden_dim: int = Config.HIDDEN_DIM,
+        embed_dim: int = Config.EMBED_DIM,
+        num_layers: int = Config.NUM_LAYERS,
+        dropout: float = Config.DROPOUT
     ):
         super().__init__()
 
@@ -649,15 +649,15 @@ class CharEncoder(nn.Module):
     """
 
     def __init__(
-            self,
-            vocab_size: int = Config.VOCAB_SIZE,
-            num_langs: int = Config.NUM_LANGS,
-            char_embed_dim: int = Config.CHAR_EMBED_DIM,
-            lang_embed_dim: int = Config.LANG_EMBED_DIM,
-            hidden_dim: int = Config.HIDDEN_DIM,
-            embed_dim: int = Config.EMBED_DIM,
-            num_layers: int = Config.NUM_LAYERS,
-            dropout: float = Config.DROPOUT
+        self,
+        vocab_size: int = Config.VOCAB_SIZE,
+        num_langs: int = Config.NUM_LANGS,
+        char_embed_dim: int = Config.CHAR_EMBED_DIM,
+        lang_embed_dim: int = Config.LANG_EMBED_DIM,
+        hidden_dim: int = Config.HIDDEN_DIM,
+        embed_dim: int = Config.EMBED_DIM,
+        num_layers: int = Config.NUM_LAYERS,
+        dropout: float = Config.DROPOUT
     ):
         super().__init__()
 
@@ -682,10 +682,10 @@ class CharEncoder(nn.Module):
         )
 
     def forward(
-            self,
-            char_ids: torch.Tensor,
-            lang_ids: torch.Tensor,
-            seq_lengths: torch.Tensor
+        self,
+        char_ids: torch.Tensor,
+        lang_ids: torch.Tensor,
+        seq_lengths: torch.Tensor
     ) -> torch.Tensor:
         """
         Args:
@@ -730,10 +730,10 @@ class HybridPhoneticModel(nn.Module):
     """
 
     def __init__(
-            self,
-            phonetic_encoder: PhoneticEncoder,
-            char_encoder: CharEncoder,
-            embed_dim: int = Config.EMBED_DIM
+        self,
+        phonetic_encoder: PhoneticEncoder,
+        char_encoder: CharEncoder,
+        embed_dim: int = Config.EMBED_DIM
     ):
         super().__init__()
 
@@ -749,13 +749,13 @@ class HybridPhoneticModel(nn.Module):
         )
 
     def forward(
-            self,
-            char_ids: torch.Tensor,
-            lang_ids: torch.Tensor,
-            char_lengths: torch.Tensor,
-            phonetic_seq: Optional[torch.Tensor] = None,
-            phonetic_lengths: Optional[torch.Tensor] = None,
-            has_phonetic: Optional[torch.Tensor] = None
+        self,
+        char_ids: torch.Tensor,
+        lang_ids: torch.Tensor,
+        char_lengths: torch.Tensor,
+        phonetic_seq: Optional[torch.Tensor] = None,
+        phonetic_lengths: Optional[torch.Tensor] = None,
+        has_phonetic: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """
         Forward pass with optional phonetic pathway.
@@ -803,18 +803,18 @@ class HybridPhoneticModel(nn.Module):
             return char_emb
 
     def encode_phonetic_only(
-            self,
-            phonetic_seq: torch.Tensor,
-            phonetic_lengths: torch.Tensor
+        self,
+        phonetic_seq: torch.Tensor,
+        phonetic_lengths: torch.Tensor
     ) -> torch.Tensor:
         """Direct phonetic encoding (for Phase 1 training)."""
         return self.phonetic_encoder(phonetic_seq, phonetic_lengths)
 
     def encode_char_only(
-            self,
-            char_ids: torch.Tensor,
-            lang_ids: torch.Tensor,
-            char_lengths: torch.Tensor
+        self,
+        char_ids: torch.Tensor,
+        lang_ids: torch.Tensor,
+        char_lengths: torch.Tensor
     ) -> torch.Tensor:
         """Direct character encoding (for Phase 3 training)."""
         return self.char_encoder(char_ids, lang_ids, char_lengths)
@@ -832,10 +832,10 @@ class TripletLoss(nn.Module):
         self.margin = margin
 
     def forward(
-            self,
-            anchor: torch.Tensor,
-            positive: torch.Tensor,
-            negative: torch.Tensor
+        self,
+        anchor: torch.Tensor,
+        positive: torch.Tensor,
+        negative: torch.Tensor
     ) -> torch.Tensor:
         """
         Args:
@@ -958,11 +958,11 @@ class Phase3Dataset(Dataset):
     """
 
     def __init__(
-            self,
-            pairs: List[Dict],
-            all_items: List[Dict],
-            char_vocab: CharVocab,
-            lang_vocab: LangVocab
+        self,
+        pairs: List[Dict],
+        all_items: List[Dict],
+        char_vocab: CharVocab,
+        lang_vocab: LangVocab
     ):
         self.pairs = pairs
         self.all_items = all_items
@@ -1141,11 +1141,11 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
 # =============================================================================
 
 def train_phase1(
-        data_path: str,
-        output_path: str,
-        epochs: int = Config.PHASE1_EPOCHS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = Config.LEARNING_RATE
+    data_path: str,
+    output_path: str,
+    epochs: int = Config.PHASE1_EPOCHS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = Config.LEARNING_RATE
 ) -> PhoneticEncoder:
     """Phase 1: Train phonetic encoder (Teacher) with triplet loss."""
 
@@ -1239,7 +1239,7 @@ def train_phase1(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -1255,12 +1255,12 @@ def train_phase1(
 
 
 def train_phase2(
-        data_path: str,
-        phase1_path: str,
-        output_path: str,
-        epochs: int = Config.PHASE2_EPOCHS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = Config.LEARNING_RATE
+    data_path: str,
+    phase1_path: str,
+    output_path: str,
+    epochs: int = Config.PHASE2_EPOCHS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = Config.LEARNING_RATE
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """Phase 2: Alignment training - teach Student to match Teacher."""
 
@@ -1378,7 +1378,7 @@ def train_phase2(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -1402,12 +1402,12 @@ def train_phase2(
 
 
 def train_phase3(
-        data_path: str,
-        phase2_path: str,
-        output_path: str,
-        epochs: int = Config.PHASE3_EPOCHS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = 5e-4  # Lower LR for fine-tuning
+    data_path: str,
+    phase2_path: str,
+    output_path: str,
+    epochs: int = Config.PHASE3_EPOCHS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = 5e-4  # Lower LR for fine-tuning
 ) -> HybridPhoneticModel:
     """Phase 3: Fine-tune on all data with hard negatives."""
 
@@ -1549,7 +1549,7 @@ def train_phase3(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -1699,11 +1699,11 @@ class PhoneticSimilarityModel:
         return embedding.cpu().numpy()[0]
 
     def similarity(
-            self,
-            toponym_a: str,
-            lang_a: str,
-            toponym_b: str,
-            lang_b: str
+        self,
+        toponym_a: str,
+        lang_a: str,
+        toponym_b: str,
+        lang_b: str
     ) -> float:
         """
         Compute cosine similarity between two toponyms.
@@ -1737,11 +1737,11 @@ class PhoneticSimilarityModel:
         return np.array(embeddings)
 
     def find_similar(
-            self,
-            query_toponym: str,
-            query_lang: str,
-            candidates: List[Tuple[str, str]],
-            top_k: int = 10
+        self,
+        query_toponym: str,
+        query_lang: str,
+        candidates: List[Tuple[str, str]],
+        top_k: int = 10
     ) -> List[Tuple[str, str, float]]:
         """
         Find most similar toponyms from candidates.
@@ -1832,19 +1832,19 @@ def main():
 Examples:
   # Generate demo data (no Elasticsearch needed)
   python phonetic_similarity_model.py --phase 0 --demo --output data.pkl
-
+  
   # Extract from Elasticsearch
   python phonetic_similarity_model.py --phase 0 --es-host localhost:9200 --index places --output data.pkl
-
+  
   # Train Phase 1 (Teacher)
   python phonetic_similarity_model.py --phase 1 --data data.pkl --output phase1.pt
-
+  
   # Train Phase 2 (Alignment)
   python phonetic_similarity_model.py --phase 2 --data data.pkl --phase1-model phase1.pt --output phase2.pt
-
+  
   # Train Phase 3 (Generalization)
   python phonetic_similarity_model.py --phase 3 --data data.pkl --phase2-model phase2.pt --output final_model.pt
-
+  
   # Run inference
   python phonetic_similarity_model.py --infer --model final_model.pt --toponym1 "London" --lang1 "en" --toponym2 "Londres" --lang2 "fr"
         """
