@@ -74,6 +74,7 @@ def deduplicate_and_index_toponyms():
     Extract unique toponym_ids from places.toponyms (nested)
     and index them into the toponyms index without overwriting existing enriched documents.
     """
+    from datetime import timedelta
 
     print("\n" + "=" * 80)
     print("DEDUPLICATING AND INDEXING TOPONYMS (SAFE MODE)")
@@ -84,6 +85,31 @@ def deduplicate_and_index_toponyms():
     indexed_created = 0
     batch = []
     BATCH_SIZE = 10000
+
+    # First, get an estimate of total unique toponyms for ETA calculation
+    print("Estimating total unique toponyms...")
+    count_query = {
+        "size": 0,
+        "aggs": {
+            "toponyms_nested": {
+                "nested": {"path": "toponyms"},
+                "aggs": {
+                    "unique_count": {
+                        "cardinality": {
+                            "field": "toponyms.toponym_id",
+                            "precision_threshold": 40000
+                        }
+                    }
+                }
+            }
+        }
+    }
+    count_resp = es.search(index=PLACES_INDEX, body=count_query, request_timeout=300)
+    estimated_total = count_resp["aggregations"]["toponyms_nested"]["unique_count"]["value"]
+    estimated_pages = max(1, int(estimated_total / 10000))
+    print(f"Estimated unique toponyms: ~{estimated_total:,}")
+    print(f"Estimated pages: ~{estimated_pages:,}\n")
+    sys.stdout.flush()
 
     query = {
         "size": 0,
@@ -120,7 +146,21 @@ def deduplicate_and_index_toponyms():
             if not buckets:
                 break
 
-            print(f"\r  Page {page}: {len(buckets):,} unique toponyms", end='', flush=True)
+            # Calculate progress and ETA
+            percent = (page / estimated_pages) * 100 if estimated_pages > 0 else 0
+            elapsed = (datetime.now() - start_time).total_seconds()
+            rate = page / elapsed if elapsed > 0 else 0
+
+            if rate > 0 and page < estimated_pages:
+                remaining_pages = estimated_pages - page
+                eta_seconds = int(remaining_pages / rate)
+                eta_str = str(timedelta(seconds=eta_seconds))
+            else:
+                eta_str = "--:--:--"
+
+            print(f"\r  Page {page:,}/{estimated_pages:,} ({percent:.1f}%) | "
+                  f"{len(buckets):,} toponyms | {rate:.2f} pages/s | ETA: {eta_str}",
+                  end='', flush=True)
             sys.stdout.flush()
 
             for bucket in buckets:
@@ -151,7 +191,7 @@ def deduplicate_and_index_toponyms():
             batch.clear()
 
     except Exception as e:
-        print("ERROR during toponym deduplication:")
+        print("\nERROR during toponym deduplication:")
         import traceback
         traceback.print_exc()
         sys.stdout.flush()
