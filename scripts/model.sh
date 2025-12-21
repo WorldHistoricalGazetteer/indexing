@@ -106,15 +106,24 @@ check_training_script() {
 activate_conda() {
     # Returns the commands needed to activate conda in a subshell/sbatch
     cat <<'EOF'
-# Activate conda environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+# Load user profile to find Conda
+source ~/.bashrc
+
+# Activate environment
+# Try 'conda' command directly first (in case it's in PATH)
+if command -v conda &> /dev/null; then
+    conda activate whg
+# Fallback: Try sourcing standard paths if 'conda' command isn't found
+elif [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
     source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
     conda activate whg
 elif [ -f "$HOME/miniconda/etc/profile.d/conda.sh" ]; then
     source "$HOME/miniconda/etc/profile.d/conda.sh"
     conda activate whg
 else
-    echo "ERROR: Conda not found"
+    echo "ERROR: Conda not found in PATH or standard locations."
+    echo "Debug info:"
+    echo "PATH: $PATH"
     exit 1
 fi
 EOF
