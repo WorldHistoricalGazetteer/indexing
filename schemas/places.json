@@ -26,27 +26,6 @@
           }
         }
       },
-      "names": {
-        "type": "nested",
-        "properties": {
-          "toponym": {
-            "type": "text",
-            "fields": {
-              "keyword": {
-                "type": "keyword",
-                "ignore_above": 256
-              }
-            }
-          },
-          "lang": {
-            "type": "keyword"
-          },
-          "citation": {
-            "type": "object",
-            "enabled": false
-          }
-        }
-      },
       "toponyms": {
         "type": "nested",
         "properties": {
