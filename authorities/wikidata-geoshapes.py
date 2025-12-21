@@ -48,25 +48,48 @@ def rate_limited():
 
 
 # SQLite cache functions
+_thread_local = threading.local()
+
+
+def get_cache_conn():
+    """Get thread-local SQLite connection."""
+    if not hasattr(_thread_local, 'conn'):
+        _thread_local.conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
+        _thread_local.conn.execute("PRAGMA journal_mode=WAL;")
+    return _thread_local.conn
+
+
 def init_cache():
     os.makedirs(os.path.dirname(CACHE_DB), exist_ok=True)
-    conn = sqlite3.connect(CACHE_DB, check_same_thread=False)
+    conn = sqlite3.connect(CACHE_DB)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS geoshape_cache
-        (
-            data_page TEXT PRIMARY KEY,
-            geometry_json TEXT,
-            status TEXT NOT NULL,
-            error_msg TEXT,
-            fetched_at TEXT NOT NULL
-        )
-    """)
+                 CREATE TABLE IF NOT EXISTS geoshape_cache
+                 (
+                     data_page
+                     TEXT
+                     PRIMARY
+                     KEY,
+                     geometry_json
+                     TEXT,
+                     status
+                     TEXT
+                     NOT
+                     NULL,
+                     error_msg
+                     TEXT,
+                     fetched_at
+                     TEXT
+                     NOT
+                     NULL
+                 )
+                 """)
     conn.commit()
-    return conn
+    conn.close()
 
 
-def cache_get(conn, data_page):
+def cache_get(data_page):
+    conn = get_cache_conn()
     cur = conn.execute("SELECT geometry_json, status FROM geoshape_cache WHERE data_page = ?", (data_page,))
     row = cur.fetchone()
     if not row: return None, None
@@ -75,13 +98,15 @@ def cache_get(conn, data_page):
     return None, "error"
 
 
-def cache_put_ok(conn, data_page, geometry):
+def cache_put_ok(data_page, geometry):
+    conn = get_cache_conn()
     conn.execute("INSERT OR REPLACE INTO geoshape_cache VALUES (?, ?, 'ok', NULL, ?)",
                  (data_page, json.dumps(geometry), datetime.now().isoformat()))
     conn.commit()
 
 
-def cache_put_error(conn, data_page, error_msg):
+def cache_put_error(data_page, error_msg):
+    conn = get_cache_conn()
     conn.execute("INSERT OR REPLACE INTO geoshape_cache VALUES (?, NULL, 'error', ?, ?)",
                  (data_page, error_msg, datetime.now().isoformat()))
     conn.commit()
@@ -105,11 +130,11 @@ def log_downloaded(place_id):
 
 
 # Commons fetch
-def fetch_geojson_from_commons(conn, data_page, place_id):
+def fetch_geojson_from_commons(data_page, place_id):
     """Fetch GeoJSON geometry from Wikimedia Commons."""
     if not data_page: return None
 
-    geometry, status = cache_get(conn, data_page)
+    geometry, status = cache_get(data_page)
     if status == "ok": return geometry
     if status == "error": return None
 
@@ -135,7 +160,7 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
             if attempt < max_retries - 1:
                 time.sleep(2 ** attempt)
             else:
-                cache_put_error(conn, data_page, str(e))
+                cache_put_error(data_page, str(e))
                 log_error(place_id, str(e))
                 return None
 
@@ -166,15 +191,42 @@ def fetch_geojson_from_commons(conn, data_page, place_id):
             if feats: geometry = feats[0].get("geometry")
         elif geojson.get("type") in {"Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon"}:
             geometry = geojson
+        elif geojson.get("type") == "GeometryCollection":
+            # Merge all Polygons and MultiPolygons into a single MultiPolygon
+            geometries = geojson.get("geometries", [])
+            all_polygons = []
+
+            for g in geometries:
+                if g.get("type") == "Polygon":
+                    # Polygon coordinates are [[ring1], [ring2], ...]
+                    all_polygons.append(g.get("coordinates", []))
+                elif g.get("type") == "MultiPolygon":
+                    # MultiPolygon coordinates are [[[ring1], [ring2], ...], [[ring1], ...]]
+                    all_polygons.extend(g.get("coordinates", []))
+
+            if all_polygons:
+                # If only one polygon, use Polygon type; otherwise MultiPolygon
+                if len(all_polygons) == 1:
+                    geometry = {
+                        "type": "Polygon",
+                        "coordinates": all_polygons[0]
+                    }
+                else:
+                    geometry = {
+                        "type": "MultiPolygon",
+                        "coordinates": all_polygons
+                    }
+            else:
+                raise ValueError(f"GeometryCollection contains no Polygon/MultiPolygon")
 
         if not geometry:
             raise ValueError(f"Unexpected GeoJSON structure: {geojson.get('type', 'unknown')}")
 
-        cache_put_ok(conn, data_page, geometry)
+        cache_put_ok(data_page, geometry)
         return geometry
 
     except Exception as e:
-        cache_put_error(conn, data_page, str(e))
+        cache_put_error(data_page, str(e))
         log_error(place_id, str(e))
         return None
 
@@ -188,13 +240,13 @@ def check_elasticsearch_connection():
 
 
 def fetch_task(args):
-    conn, geoshape_ref, place_id = args
-    geometry = fetch_geojson_from_commons(conn, geoshape_ref, place_id)
+    geoshape_ref, place_id = args
+    geometry = fetch_geojson_from_commons(geoshape_ref, place_id)
     return place_id, geometry, geoshape_ref
 
 
 def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
-    conn = init_cache()
+    init_cache()  # Initialize cache database
     downloaded_ids = get_downloaded_list()
 
     print("Scanning for tasks...")
@@ -206,7 +258,7 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             place_id = f"wd:{ref['qid']}"
 
             if place_id in downloaded_ids: continue
-            tasks.append((conn, ref["geoshape_ref"], place_id))
+            tasks.append((ref["geoshape_ref"], place_id))
 
     total_tasks = len(tasks)
     print(f"Starting {total_tasks:,} fetch tasks")
@@ -245,6 +297,7 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
 
             rep_point = compute_representative_point(geometry)
 
+            # Update geometries array
             updates.append({
                 "_op_type": "update",
                 "_index": places_index,
@@ -282,7 +335,6 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
         helpers.bulk(es, updates, raise_on_error=False)
 
     print("\nDone.")
-    conn.close()
 
 
 def main():
