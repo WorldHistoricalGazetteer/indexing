@@ -1658,16 +1658,24 @@ def main():
 
     parser.add_argument('--phase', type=int, choices=[0, 1, 2, 3])
     parser.add_argument('--infer', action='store_true')
+
+    # Data extraction (Phase 0)
     parser.add_argument('--es-host', default='localhost:9200')
     parser.add_argument('--index', default='places')
     parser.add_argument('--max-docs', type=int, default=None)
-    parser.add_argument('--data', default='training_data.h5')  # ← Changed to .h5
-    parser.add_argument('--output', default='model.pt')
+
+    # Training
+    parser.add_argument('--data', default='training_data.h5',
+                        help='Training data file (HDF5 for phases 1-3)')
+    parser.add_argument('--output', default='model.pt',
+                        help='Output file (HDF5 for phase 0, .pt for phases 1-3)')
     parser.add_argument('--phase1-model', default='phase1.pt')
     parser.add_argument('--phase2-model', default='phase2.pt')
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=Config.BATCH_SIZE)
     parser.add_argument('--lr', type=float, default=Config.LEARNING_RATE)
+
+    # Inference
     parser.add_argument('--model', default='final_model.pt')
     parser.add_argument('--toponym1')
     parser.add_argument('--lang1')
@@ -1678,7 +1686,7 @@ def main():
     args = parser.parse_args()
 
     if args.infer:
-        # Inference mode
+        # Inference code
         if not all([args.toponym1, args.lang1, args.toponym2, args.lang2]):
             parser.error("Inference requires --toponym1, --lang1, --toponym2, --lang2")
 
@@ -1690,24 +1698,33 @@ def main():
         print(f"\n'{args.toponym1}' ({args.lang1}) vs '{args.toponym2}' ({args.lang2})")
         print(f"Similarity: {sim:.4f}")
 
-        # Also show romanized forms
         rom1 = anyascii(args.toponym1).lower()
         rom2 = anyascii(args.toponym2).lower()
         print(f"Romanized: '{rom1}' vs '{rom2}'")
 
     elif args.phase == 0:
+        # Data extraction - args.output is the HDF5 file
         extractor = TrainingDataExtractor(args.es_host, args.index)
         clusters = extractor.extract_clusters_from_es(max_docs=args.max_docs)
-        extractor.build_training_data_streaming(clusters, args.output)  # ← Streaming!
+        extractor.build_training_data_streaming(clusters, args.output)  # ← Use args.output
 
     elif args.phase == 1:
-        train_phase1(args.data, args.output)
+        # Training Phase 1 - args.data is HDF5, args.output is model
+        epochs = args.epochs or Config.PHASE1_EPOCHS
+        train_phase1(args.data, args.output, epochs=epochs,
+                     batch_size=args.batch_size, lr=args.lr)
 
     elif args.phase == 2:
-        train_phase2(args.data, args.phase1_model, args.output)
+        # Training Phase 2
+        epochs = args.epochs or Config.PHASE2_EPOCHS
+        train_phase2(args.data, args.phase1_model, args.output,
+                     epochs=epochs, batch_size=args.batch_size, lr=args.lr)
 
     elif args.phase == 3:
-        train_phase3(args.data, args.phase2_model, args.output)
+        # Training Phase 3
+        epochs = args.epochs or Config.PHASE3_EPOCHS
+        train_phase3(args.data, args.phase2_model, args.output,
+                     epochs=epochs, batch_size=args.batch_size, lr=args.lr or 5e-4)
 
     else:
         parser.print_help()

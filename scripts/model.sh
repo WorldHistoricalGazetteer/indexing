@@ -168,7 +168,7 @@ do_extract() {
         esac
     done
 
-    local OUTPUT_FILE="${DATA_DIR}/training_data.pkl"
+    local OUTPUT_FILE="${DATA_DIR}/training_data.h5"
 
     # Create extraction job script
     local EXTRACT_SCRIPT=$(mktemp /tmp/phonetic-extract-XXXXXX.sbatch)
