@@ -35,8 +35,6 @@ fi
 
 # Staging ES info file (created by es.sh -staging-start)
 STAGING_INFO_FILE="${IX1_BASE}/esinfo/es-staging.env"
-# Print out staging file name for debugging
-echo "Staging ES info file: $STAGING_INFO_FILE"
 
 # Model training directories
 MODEL_DIR="${IX1_BASE}/models/phonetic"
@@ -104,28 +102,24 @@ check_training_script() {
 }
 
 activate_conda() {
-    # Returns the commands needed to activate conda in a subshell/sbatch
     cat <<'EOF'
-# Load user profile to find Conda
-source ~/.bashrc
+# --- HARDCODED CONDA SETUP ---
 
-# Activate environment
-# Try 'conda' command directly first (in case it's in PATH)
-if command -v conda &> /dev/null; then
-    conda activate whg
-# Fallback: Try sourcing standard paths if 'conda' command isn't found
-elif [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
+# 1. Define the path - Use path given by "echo $CONDA_EXE"
+CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/bin/conda"
+
+# 2. Source it
+if [ -f "$CONDA_SETUP" ]; then
+    source "$CONDA_SETUP"
 else
-    echo "ERROR: Conda not found in PATH or standard locations."
-    echo "Debug info:"
-    echo "PATH: $PATH"
-    exit 1
+    echo "ERROR: Could not find conda setup at $CONDA_SETUP"
+    exit 127
 fi
+
+# 3. Activate
+conda activate whg
+echo "Environment: $(conda info --envs | grep '*' | awk '{print $1}')"
+echo "Python: $(which python)"
 EOF
 }
 
