@@ -31,8 +31,73 @@ def geojson_to_shapely(geojson_geom):
     try:
         return shape(geojson_geom)
     except Exception as e:
+        # Try stripping Z-coordinates if present
+        try:
+            geom_2d = strip_z_coordinates(geojson_geom)
+            if geom_2d:
+                return shape(geom_2d)
+        except:
+            pass
         print(f"Error converting GeoJSON to Shapely: {e}")
         return None
+
+
+def strip_z_coordinates(geojson_geom):
+    """
+    Remove Z-coordinates from a GeoJSON geometry.
+
+    Args:
+        geojson_geom: Dict with GeoJSON geometry
+
+    Returns:
+        New geometry dict with only lon,lat coordinates
+    """
+    if not geojson_geom:
+        return None
+
+    geom_type = geojson_geom.get('type')
+    coords = geojson_geom.get('coordinates')
+
+    if not coords:
+        return None
+
+    def strip_coord(c):
+        """Strip a single coordinate to 2D."""
+        if isinstance(c, (list, tuple)) and len(c) >= 2:
+            return [c[0], c[1]]
+        return c
+
+    def strip_coords_recursive(coords, depth):
+        """Recursively strip coordinates based on geometry type."""
+        if depth == 0:
+            return strip_coord(coords)
+        return [strip_coords_recursive(c, depth - 1) for c in coords]
+
+    # Determine nesting depth for each geometry type
+    depth_map = {
+        'Point': 0,
+        'LineString': 1,
+        'Polygon': 2,
+        'MultiPoint': 1,
+        'MultiLineString': 2,
+        'MultiPolygon': 3
+    }
+
+    if geom_type in depth_map:
+        new_coords = strip_coords_recursive(coords, depth_map[geom_type])
+        return {
+            'type': geom_type,
+            'coordinates': new_coords
+        }
+    elif geom_type == 'GeometryCollection':
+        geometries = geojson_geom.get('geometries', [])
+        new_geometries = [strip_z_coordinates(g) for g in geometries]
+        return {
+            'type': 'GeometryCollection',
+            'geometries': [g for g in new_geometries if g]
+        }
+
+    return None
 
 
 def compute_geodetic_centroid(geojson_geom):
