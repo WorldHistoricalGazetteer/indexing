@@ -105,19 +105,28 @@ activate_conda() {
     cat <<'EOF'
 # --- HARDCODED CONDA SETUP ---
 
-# 1. Define the path - Use path given by "echo $CONDA_EXE"
-CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/bin/conda"
+# 1. Define the path to the SHELL SCRIPT (not the binary)
+# Derived from: /ihome/whcdh/stg135/miniconda3/bin/conda
+CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
 
 # 2. Source it
 if [ -f "$CONDA_SETUP" ]; then
     source "$CONDA_SETUP"
 else
     echo "ERROR: Could not find conda setup at $CONDA_SETUP"
-    exit 127
+    # Fallback: try adding the bin directory to PATH directly
+    export PATH="/ihome/whcdh/stg135/miniconda3/bin:$PATH"
 fi
 
 # 3. Activate
 conda activate whg
+
+# 4. Verify
+if [ $? -ne 0 ]; then
+    echo "ERROR: Failed to activate 'whg' environment."
+    exit 127
+fi
+
 echo "Environment: $(conda info --envs | grep '*' | awk '{print $1}')"
 echo "Python: $(which python)"
 EOF
