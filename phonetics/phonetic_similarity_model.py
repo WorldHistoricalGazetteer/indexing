@@ -333,7 +333,7 @@ class ToponymEnricher:
 
     def __init__(self, es_host='localhost:9200', index='toponyms'):
         from elasticsearch import Elasticsearch
-        self.es = Elasticsearch([es_host], timeout=60)
+        self.es = Elasticsearch([es_host], request_timeout=60)
         self.index = index
         self.ft = FeatureTable()
         self._epi_cache = {}
