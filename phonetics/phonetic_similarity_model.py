@@ -165,6 +165,9 @@ class Config:
         'vi': 'vie-Latn',
         'yo': 'yor-Latn',
         'zh': 'cmn-Hans',  # Simplified Chinese
+        'zh-Hans': 'cmn-Hans',
+        'zh-Hant': 'cmn-Hans',  # <--- Approximate, but better than nothing
+        'zh-cn': 'cmn-Hans',    # <--- USEFUL ALIAS
     }
 
 
@@ -365,16 +368,11 @@ class TrainingDataExtractor:
             return 0.0
 
     def process_toponym(self, toponym: str, lang_code: str) -> Optional[Dict[str, Any]]:
-        """
-        Process a toponym. Always returns romanized form.
-        IPA and phonetic features included when Epitran succeeds.
-        """
-        # Always generate romanized form (Student input)
+        """Process a toponym..."""
         romanized = anyascii(toponym).lower().strip()
         if not romanized:
             return None
 
-        # Try to generate IPA (Teacher input)
         ipa = None
         features = None
 
@@ -382,11 +380,14 @@ class TrainingDataExtractor:
         if epi:
             try:
                 ipa = epi.transliterate(toponym)
-                features = self.ft.word_to_vector_list(ipa, numeric=True)
-                if not features:
-                    ipa = None
-                    features = None
-            except Exception:
+                if ipa:  # ← Add this check
+                    features = self.ft.word_to_vector_list(ipa, numeric=True)
+                    if not features:
+                        print(f"DEBUG: Empty features for '{toponym}' ({lang_code}) -> IPA: '{ipa}'")
+                        ipa = None
+                        features = None
+            except Exception as e:
+                print(f"DEBUG: Epitran failed for '{toponym}' ({lang_code}): {e}")
                 pass
 
         return {
