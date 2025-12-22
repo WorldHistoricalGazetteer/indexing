@@ -298,6 +298,8 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
                 if not rep_point:
                     print(f"✗ {place_id}: Still failed after refetch, skipping")
                     continue
+                else:
+                    print(f"✓ {place_id}: Succeeded on refetch")
 
             # Update geometries array
             updates.append({
