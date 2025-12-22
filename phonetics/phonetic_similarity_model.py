@@ -445,7 +445,7 @@ class TrainingDataExtractor:
 
             count += 1
             if count % 10000 == 0:
-                print(f"  Processed {count} documents, {len(clusters)} valid clusters...")
+                print(f"\r  Processed {count} documents, {len(clusters)} valid clusters...", end='', flush=True)
 
             if max_docs and count >= max_docs:
                 break
