@@ -273,7 +273,31 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             if not geometry:
                 continue
 
-            rep_point = compute_representative_point(geometry)
+            try:
+                rep_point = compute_representative_point(geometry)
+            except Exception as e:
+                rep_point = None
+
+            # If repr_point fails, clear cache and retry once
+            if not rep_point:
+                print(f"\n⚠ {place_id}: repr_point failed, refetching...")
+
+                # Delete from cache
+                conn = get_cache_conn()
+                conn.execute("DELETE FROM geoshape_cache WHERE data_page = ?", (ref_name,))
+                conn.commit()
+
+                # Refetch
+                geometry = fetch_geojson_from_commons(ref_name, place_id)
+                if geometry:
+                    try:
+                        rep_point = compute_representative_point(geometry)
+                    except Exception as e:
+                        rep_point = None
+
+                if not rep_point:
+                    print(f"✗ {place_id}: Still failed after refetch, skipping")
+                    continue
 
             # Update geometries array
             updates.append({
