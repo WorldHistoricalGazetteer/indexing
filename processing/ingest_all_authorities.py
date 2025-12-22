@@ -24,6 +24,8 @@ When you specify `-n gn,wd`, it runs all GeoNames scripts then all Wikidata scri
   wd         11,456,496
 
   Total:     47,160,434
+
+Unique Toponyms: 74,417,599 indexed in 1 day, 0:45:53
 """
 
 import subprocess

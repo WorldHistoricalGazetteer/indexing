@@ -1,4 +1,4 @@
-# authorities/helpers.py
+# processing/helpers.py
 
 """
 Geospatial helper functions using GEOS (via Shapely) for accurate computations.
@@ -98,6 +98,45 @@ def compute_geodetic_centroid(geojson_geom):
         return None
 
 
+def _representative_from_collection(gc: GeometryCollection):
+    """
+    Select a meaningful geometry from a GeometryCollection
+    and return its representative point.
+    """
+    if gc.is_empty:
+        return None
+
+    # Prefer polygons (by area)
+    polygons = []
+    lines = []
+    points = []
+
+    for g in gc.geoms:
+        if g.is_empty:
+            continue
+        if isinstance(g, (Polygon, MultiPolygon)):
+            polygons.append(g)
+        elif isinstance(g, (LineString, MultiLineString)):
+            lines.append(g)
+        elif isinstance(g, (Point, MultiPoint)):
+            points.append(g)
+
+    if polygons:
+        geom = max(polygons, key=lambda g: g.area)
+        return geom.representative_point()
+
+    if lines:
+        geom = max(lines, key=lambda g: g.length)
+        return geom.representative_point()
+
+    if points:
+        # Deterministic: first point
+        geom = points[0]
+        return geom.representative_point()
+
+    return None
+
+
 def compute_representative_point(geojson_geom):
     """
     Compute a representative point guaranteed to be within the geometry.
@@ -119,17 +158,17 @@ def compute_representative_point(geojson_geom):
         if not geom or geom.is_empty:
             return None
 
-        # For Point geometries, return as-is
         if isinstance(geom, Point):
             return {'lon': geom.x, 'lat': geom.y}
 
-        # Use Shapely's representative_point method
-        rep_point = geom.representative_point()
+        if isinstance(geom, GeometryCollection):
+            rp = _representative_from_collection(geom)
+            if rp is None:
+                return None
+            return {'lon': rp.x, 'lat': rp.y}
 
-        return {
-            'lon': rep_point.x,
-            'lat': rep_point.y
-        }
+        rep_point = geom.representative_point()
+        return {'lon': rep_point.x, 'lat': rep_point.y}
 
     except Exception as e:
         print(f"Error computing representative point: {e}")

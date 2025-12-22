@@ -2,6 +2,8 @@
 
 """
 Post-processing script to fetch and add geoshape geometries to Wikidata places.
+
+FIXED: Now stores geom_type as a separate queryable field
 """
 
 import json
@@ -18,6 +20,10 @@ from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 from processing.helpers import compute_representative_point
+from processing.geometry_collection_processor import (
+    process_geometry_collection,
+    validate_geometry
+)
 
 # --- Configuration ---
 es = Elasticsearch(ES_HOST)
@@ -50,7 +56,6 @@ def rate_limited():
 # SQLite cache functions
 _thread_local = threading.local()
 
-
 def get_cache_conn():
     """Get thread-local SQLite connection."""
     if not hasattr(_thread_local, 'conn'):
@@ -64,26 +69,15 @@ def init_cache():
     conn = sqlite3.connect(CACHE_DB)
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.execute("""
-                 CREATE TABLE IF NOT EXISTS geoshape_cache
-                 (
-                     data_page
-                     TEXT
-                     PRIMARY
-                     KEY,
-                     geometry_json
-                     TEXT,
-                     status
-                     TEXT
-                     NOT
-                     NULL,
-                     error_msg
-                     TEXT,
-                     fetched_at
-                     TEXT
-                     NOT
-                     NULL
-                 )
-                 """)
+        CREATE TABLE IF NOT EXISTS geoshape_cache
+        (
+            data_page TEXT PRIMARY KEY,
+            geometry_json TEXT,
+            status TEXT NOT NULL,
+            error_msg TEXT,
+            fetched_at TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -192,35 +186,19 @@ def fetch_geojson_from_commons(data_page, place_id):
         elif geojson.get("type") in {"Point", "LineString", "Polygon", "MultiPoint", "MultiLineString", "MultiPolygon"}:
             geometry = geojson
         elif geojson.get("type") == "GeometryCollection":
-            # Merge all Polygons and MultiPolygons into a single MultiPolygon
-            geometries = geojson.get("geometries", [])
-            all_polygons = []
-
-            for g in geometries:
-                if g.get("type") == "Polygon":
-                    # Polygon coordinates are [[ring1], [ring2], ...]
-                    all_polygons.append(g.get("coordinates", []))
-                elif g.get("type") == "MultiPolygon":
-                    # MultiPolygon coordinates are [[[ring1], [ring2], ...], [[ring1], ...]]
-                    all_polygons.extend(g.get("coordinates", []))
-
-            if all_polygons:
-                # If only one polygon, use Polygon type; otherwise MultiPolygon
-                if len(all_polygons) == 1:
-                    geometry = {
-                        "type": "Polygon",
-                        "coordinates": all_polygons[0]
-                    }
-                else:
-                    geometry = {
-                        "type": "MultiPolygon",
-                        "coordinates": all_polygons
-                    }
-            else:
-                raise ValueError(f"GeometryCollection contains no Polygon/MultiPolygon")
+            geometry = geojson
+            # Alternatively, reduce to single geometry type
+            # geometry = process_geometry_collection(geojson)
 
         if not geometry:
             raise ValueError(f"Unexpected GeoJSON structure: {geojson.get('type', 'unknown')}")
+
+        # Validate and repair geometry before caching
+        geometry = validate_geometry(geometry)
+        if not geometry:
+            raise ValueError(f"Geometry validation failed - invalid coordinate structure")
+        if not geometry:
+            raise ValueError(f"Geometry validation failed - invalid coordinate structure")
 
         cache_put_ok(data_page, geometry)
         return geometry
