@@ -38,6 +38,7 @@ import os
 import random
 import pickle
 import argparse
+import orjson
 from collections import defaultdict
 from typing import Optional, List, Tuple, Dict, Any
 
@@ -46,6 +47,7 @@ import h5py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from elasticsearch import helpers
 from torch.utils.data import Dataset, DataLoader
 
 from streaming_datasets import (
@@ -323,291 +325,338 @@ class LangVocab:
 # Data Extraction
 # =============================================================================
 
-class TrainingDataExtractor:
-    """Extract training data from Elasticsearch, streaming directly to HDF5."""
+class ToponymEnricher:
+    """
+    Scans the 'toponyms' index and computes phonetic features for supported languages.
+    Updates the documents in-place so they can be retrieved quickly later.
+    """
 
-    def __init__(self, es_host: str = 'localhost:9200', index_name: str = 'places'):
-        try:
-            from elasticsearch import Elasticsearch
-            self.es = Elasticsearch([es_host])
-            self.index = index_name
-        except ImportError:
-            print("Warning: elasticsearch not installed.")
-            self.es = None
-            self.index = None
-
+    def __init__(self, es_host='localhost:9200', index='toponyms'):
+        from elasticsearch import Elasticsearch
+        self.es = Elasticsearch([es_host], timeout=60)
+        self.index = index
         self.ft = FeatureTable()
-        self.dst = panphon.distance.Distance()
         self._epi_cache = {}
 
-    def get_epitran(self, lang_code: str) -> Optional[epitran.Epitran]:
+        # Load all Epitran models upfront (optional, but good for speed)
+        print("Loading Epitran models...")
+        for lang in Config.EPITRAN_LANGS:
+            self._get_epitran(lang)
+
+    def _get_epitran(self, lang_code):
         if lang_code not in self._epi_cache:
             epitran_code = Config.EPITRAN_LANGS.get(lang_code)
-            if epitran_code:
-                try:
-                    self._epi_cache[lang_code] = epitran.Epitran(epitran_code)
-                except Exception as e:
-                    print(f"Warning: Failed to load Epitran for {lang_code}: {e}")
-                    self._epi_cache[lang_code] = None
-            else:
+            try:
+                self._epi_cache[lang_code] = epitran.Epitran(epitran_code) if epitran_code else None
+            except:
                 self._epi_cache[lang_code] = None
         return self._epi_cache[lang_code]
 
-    def phonetic_similarity(self, ipa_a: str, ipa_b: str) -> float:
-        if not ipa_a or not ipa_b:
-            return 0.0
-        try:
-            fed = self.dst.feature_edit_distance(ipa_a, ipa_b)
-            segs_a = self.dst.fm.ipa_segs(ipa_a)
-            segs_b = self.dst.fm.ipa_segs(ipa_b)
-            max_len = max(len(segs_a), len(segs_b))
-            if max_len == 0:
-                return 0.0
-            return 1.0 - (fed / max_len)
-        except Exception:
-            return 0.0
+    def _compute_phonetics(self, name, lang):
+        epi = self._get_epitran(lang)
+        if not epi: return None
 
-    def process_toponym(self, toponym: str, lang_code: str) -> Optional[Dict[str, Any]]:
-        romanized = anyascii(toponym).lower().strip()
-        if not romanized:
+        try:
+            ipa = epi.transliterate(name)
+            if not ipa: return None
+            features = self.ft.word_to_vector_list(ipa, numeric=True)
+            if not features: return None
+            return {'ipa': ipa, 'features': features}
+        except:
             return None
 
-        ipa = None
-        features = None
+    def run(self):
+        print(f"Adding phonetic fields to index '{self.index}' mapping...")
+        # 1. Update Mapping (Safe: non-destructive)
+        try:
+            self.es.indices.put_mapping(index=self.index, body={
+                "properties": {
+                    "ipa_cached": {"type": "keyword", "index": False, "doc_values": False},
+                    "features_cached_json": {"type": "keyword", "index": False, "doc_values": False}
+                }
+            })
+        except Exception as e:
+            print(f"Mapping update warning (might already exist): {e}")
 
-        epi = self.get_epitran(lang_code)
-        if epi:
-            try:
-                ipa = epi.transliterate(toponym)
-                if ipa:
-                    features = self.ft.word_to_vector_list(ipa, numeric=True)
-                    if not features:
-                        ipa = None
-                        features = None
-            except (IndexError, KeyError, ValueError):
-                ipa = None
-                features = None
-            except Exception as e:
-                print(f"Warning: Unexpected Epitran error for '{toponym}' ({lang_code}): {type(e).__name__}")
-                ipa = None
-                features = None
-
-        return {
-            'toponym': toponym,
-            'romanized': romanized,
-            'lang': lang_code,
-            'ipa': ipa,
-            'features': features,
-            'has_phonetic': features is not None
-        }
-
-    def extract_clusters_from_es(
-            self,
-            batch_size: int = 1000,
-            max_docs: Optional[int] = None,
-            min_cluster_size: int = 2
-    ) -> List[List[Tuple[str, str]]]:
-        if self.es is None:
-            raise RuntimeError("Elasticsearch not available")
-
+        # 2. Query: Find docs in supported langs that MISS the cache
         query = {
-            "query": {"match_all": {}},
-            "_source": ["place_id", "toponyms"]
+            "query": {
+                "bool": {
+                    "filter": [
+                        {"terms": {"lang": list(Config.EPITRAN_LANGS.keys())}},
+                        {"bool": {"must_not": {"exists": {"field": "ipa_cached"}}}}
+                    ]
+                }
+            }
         }
-        clusters = []
+
+        print("Scanning and enriching toponyms...")
+        updates = []
         count = 0
-        skipped_no_lang = 0
 
-        for hit in self._scroll_search(query, batch_size):
-            source = hit['_source']
-            cluster = []
-            seen = set()
+        # Scan efficiently
+        scanner = helpers.scan(
+            self.es,
+            query=query,
+            index=self.index,
+            _source=["name", "lang"],
+            size=1000,
+            scroll='2h'
+        )
 
-            toponyms = source.get('toponyms', [])
-            for entry in toponyms:
-                if isinstance(entry, dict):
-                    toponym_id = entry.get('toponym_id', '')
-                    if '@' in toponym_id:
-                        at_idx = toponym_id.rfind('@')
-                        toponym = toponym_id[:at_idx].strip()
-                        lang = toponym_id[at_idx + 1:].strip()
+        for hit in scanner:
+            doc_id = hit['_id']
+            name = hit['_source'].get('name')
+            lang = hit['_source'].get('lang')
 
-                        if toponym and lang:
-                            key = (toponym.lower(), lang.lower())
-                            if key not in seen:
-                                seen.add(key)
-                                cluster.append((toponym, lang))
-                    else:
-                        skipped_no_lang += 1
+            if not name or not lang: continue
 
-            if len(cluster) >= min_cluster_size:
-                clusters.append(cluster)
+            result = self._compute_phonetics(name, lang)
 
-            count += 1
-            if count % 10000 == 0:
-                print(f"\r  Processed {count} documents, {len(clusters)} valid clusters...", end='', flush=True)
+            if result:
+                updates.append({
+                    "_op_type": "update",
+                    "_index": self.index,
+                    "_id": doc_id,
+                    "doc": {
+                        "ipa_cached": result['ipa'],
+                        # Serialize list-of-lists to JSON string to prevent flattening
+                        "features_cached_json": orjson.dumps(
+                            result['features'],
+                            option=orjson.OPT_SERIALIZE_NUMPY
+                        ).decode('utf-8')
+                    }
+                })
 
-            if max_docs and count >= max_docs:
-                break
+            if len(updates) >= 500:
+                helpers.bulk(self.es, updates, request_timeout=60)
+                count += len(updates)
+                print(f"  Enriched {count} documents...", end='\r')
+                updates = []
 
-        print(f"\nExtraction complete:")
-        print(f"  Documents processed: {count}")
-        print(f"  Valid clusters (>= {min_cluster_size} toponyms): {len(clusters)}")
-        print(f"  Toponyms skipped (no language tag): {skipped_no_lang}")
+        if updates:
+            helpers.bulk(self.es, updates)
+            count += len(updates)
 
-        return clusters
+        print(f"\nDone! Enriched {count} documents. The 'toponyms' index is now hydrated.")
 
-    def _scroll_search(self, query: dict, batch_size: int):
-        resp = self.es.search(index=self.index, body=query, scroll='5m', size=batch_size)
-        scroll_id = resp['_scroll_id']
-        hits = resp['hits']['hits']
+class TrainingDataExtractor:
+    """
+    Extracts clusters from 'places' index and looks up phonetics from 'toponyms'.
+    Uses Single-Pass HDF5 writing.
+    """
 
-        while hits:
-            for hit in hits:
-                yield hit
-            resp = self.es.scroll(scroll_id=scroll_id, scroll='5m')
-            scroll_id = resp['_scroll_id']
-            hits = resp['hits']['hits']
+    def __init__(self, es_host='localhost:9200', index_name='places'):
+        from elasticsearch import Elasticsearch
+        self.es = Elasticsearch([es_host])
+        self.index = index_name
+        self.dst = panphon.distance.Distance()
 
-    def build_training_data_streaming(
-            self,
-            clusters: List[List[Tuple[str, str]]],
-            output_path: str,
-            similarity_threshold: float = Config.SIMILARITY_THRESHOLD
-    ):
-        """Stream training data directly to HDF5 file (memory-efficient)."""
+    def phonetic_similarity(self, ipa_a: str, ipa_b: str) -> float:
+        if not ipa_a or not ipa_b: return 0.0
+        try:
+            fed = self.dst.feature_edit_distance(ipa_a, ipa_b)
+            # Simple length normalization
+            max_len = max(len(ipa_a), len(ipa_b)) / 3  # Rough approximation of segments
+            if max_len == 0: return 0.0
+            return max(0.0, 1.0 - (fed / max(1, max_len)))
+        except:
+            return 0.0
 
-        print(f"Pass 1/2: Counting items and estimating pairs...")
+    def extract_and_stream(self, output_path: str, max_docs=None):
+        print(f"Starting Harvest: Streaming 'places' -> HDF5 '{output_path}'")
 
-        total_items = 0
-        cluster_item_counts = []
-        stats = {'total': 0, 'with_ipa': 0, 'without_ipa': 0}
-        skipped_langs = defaultdict(int)
-
-        for cluster_idx, cluster in enumerate(clusters):
-            valid_count = 0
-            for toponym, lang in cluster:
-                result = self.process_toponym(toponym, lang)
-                if result:
-                    valid_count += 1
-                    total_items += 1
-                    stats['total'] += 1
-                    if result['has_phonetic']:
-                        stats['with_ipa'] += 1
-                    else:
-                        stats['without_ipa'] += 1
-                        skipped_langs[lang] += 1
-
-            cluster_item_counts.append(valid_count)
-
-            if (cluster_idx + 1) % 1000 == 0:
-                print(f"  Processed {cluster_idx + 1:,} clusters, {total_items:,} items...")
-
-        print(f"\nPass 2/2: Writing to {output_path}...")
-        print(f"  Total items: {total_items:,}")
-
-        # Create HDF5 file
+        # Open HDF5 with Write mode
         with h5py.File(output_path, 'w') as f:
+            # 1. Setup Dynamic Datasets
             str_dtype = h5py.special_dtype(vlen=str)
 
-            items_grp = f.create_group('items')
-            items_grp.create_dataset('toponym', (total_items,), dtype=str_dtype)
-            items_grp.create_dataset('romanized', (total_items,), dtype=str_dtype)
-            items_grp.create_dataset('lang', (total_items,), dtype=str_dtype)
-            items_grp.create_dataset('ipa', (total_items,), dtype=str_dtype)
-            items_grp.create_dataset('cluster_id', (total_items,), dtype='i4')
-            items_grp.create_dataset('has_phonetic', (total_items,), dtype='bool')
+            grp_items = f.create_group('items')
+            grp_feats = f.create_group('features')
+            grp_pairs_p = f.create_group('pairs_with_phonetic')
+            grp_pairs_np = f.create_group('pairs_without_phonetic')
 
-            features_grp = f.create_group('features')
+            def make_dset(grp, name, dtype):
+                return grp.create_dataset(name, (100000,), maxshape=(None,), dtype=dtype, chunks=True)
 
-            pairs_phon_grp = f.create_group('pairs_with_phonetic')
-            pairs_phon_grp.create_dataset('anchor_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
-            pairs_phon_grp.create_dataset('positive_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
-            pairs_phon_grp.create_dataset('similarity', (0,), maxshape=(None,), dtype='f4', chunks=True)
+            dsets = {
+                'toponym': make_dset(grp_items, 'toponym', str_dtype),
+                'romanized': make_dset(grp_items, 'romanized', str_dtype),
+                'lang': make_dset(grp_items, 'lang', str_dtype),
+                'ipa': make_dset(grp_items, 'ipa', str_dtype),
+                'cluster_id': make_dset(grp_items, 'cluster_id', 'i4'),
+                'has_phonetic': make_dset(grp_items, 'has_phonetic', 'bool'),
+                # Pairs
+                'p_anc': make_dset(grp_pairs_p, 'anchor_idx', 'i4'),
+                'p_pos': make_dset(grp_pairs_p, 'positive_idx', 'i4'),
+                'p_sim': make_dset(grp_pairs_p, 'similarity', 'f4'),
+                'np_anc': make_dset(grp_pairs_np, 'anchor_idx', 'i4'),
+                'np_pos': make_dset(grp_pairs_np, 'positive_idx', 'i4'),
+            }
 
-            pairs_no_phon_grp = f.create_group('pairs_without_phonetic')
-            pairs_no_phon_grp.create_dataset('anchor_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
-            pairs_no_phon_grp.create_dataset('positive_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
+            # State tracking
+            counters = {'items': 0, 'phon_pairs': 0, 'non_phon_pairs': 0}
+            caps = {'items': 100000, 'phon_pairs': 100000, 'non_phon_pairs': 100000}
 
-            item_idx = 0
-            pair_phon_idx = 0
-            pair_no_phon_idx = 0
+            # 2. Scroll and Batch
+            cluster_batch = []
 
-            for cluster_idx, cluster in enumerate(clusters):
-                cluster_items = []
+            query = {"query": {"match_all": {}}, "_source": ["toponyms"]}
 
-                for toponym, lang in cluster:
-                    result = self.process_toponym(toponym, lang)
-                    if not result:
-                        continue
+            # Use helpers.scan for safer iteration than manual scroll
+            scanner = helpers.scan(self.es, index=self.index, query=query, scroll='5m', size=1000)
 
-                    items_grp['toponym'][item_idx] = result['toponym']
-                    items_grp['romanized'][item_idx] = result['romanized']
-                    items_grp['lang'][item_idx] = result['lang']
-                    items_grp['ipa'][item_idx] = result['ipa'] or ''
-                    items_grp['cluster_id'][item_idx] = cluster_idx
-                    items_grp['has_phonetic'][item_idx] = result['has_phonetic']
+            for i, hit in enumerate(scanner):
+                if max_docs and i >= max_docs: break
 
-                    if result['features'] is not None:
-                        features_grp.create_dataset(
-                            str(item_idx),
-                            data=np.array(result['features'], dtype='f4')
-                        )
+                # Extract Cluster
+                raw_toponyms = hit['_source'].get('toponyms', [])
+                cluster = []
+                seen = set()
+                for t in raw_toponyms:
+                    if isinstance(t, dict):
+                        tid = t.get('toponym_id', '')
+                        if '@' in tid:
+                            name, lang = tid.rsplit('@', 1)
+                            name, lang = name.strip(), lang.strip()
+                            if name and lang:
+                                k = (name.lower(), lang.lower())
+                                if k not in seen:
+                                    seen.add(k)
+                                    cluster.append((name, lang))
 
-                    cluster_items.append({
-                        'idx': item_idx,
-                        'ipa': result['ipa'],
-                        'has_phonetic': result['has_phonetic']
-                    })
+                if len(cluster) >= 2:
+                    cluster_batch.append((i, cluster))
 
-                    item_idx += 1
+                # Process Batch every 1000 clusters
+                if len(cluster_batch) >= 1000:
+                    self._process_batch(cluster_batch, dsets, grp_feats, counters, caps)
+                    cluster_batch = []
+                    print(f"\r  Processed {i + 1} docs | Items: {counters['items']}", end='')
 
-                # Generate pairs
-                for i, item_a in enumerate(cluster_items):
-                    for item_b in cluster_items[i + 1:]:
-                        if item_a['has_phonetic'] and item_b['has_phonetic']:
-                            sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
-                            if sim >= similarity_threshold:
-                                idx = pair_phon_idx
-                                pairs_phon_grp['anchor_idx'].resize((idx + 1,))
-                                pairs_phon_grp['positive_idx'].resize((idx + 1,))
-                                pairs_phon_grp['similarity'].resize((idx + 1,))
-                                pairs_phon_grp['anchor_idx'][idx] = item_a['idx']
-                                pairs_phon_grp['positive_idx'][idx] = item_b['idx']
-                                pairs_phon_grp['similarity'][idx] = sim
-                                pair_phon_idx += 1
-                        else:
-                            idx = pair_no_phon_idx
-                            pairs_no_phon_grp['anchor_idx'].resize((idx + 1,))
-                            pairs_no_phon_grp['positive_idx'].resize((idx + 1,))
-                            pairs_no_phon_grp['anchor_idx'][idx] = item_a['idx']
-                            pairs_no_phon_grp['positive_idx'][idx] = item_b['idx']
-                            pair_no_phon_idx += 1
+            # Process remaining
+            if cluster_batch:
+                self._process_batch(cluster_batch, dsets, grp_feats, counters, caps)
 
-                if (cluster_idx + 1) % 1000 == 0:
-                    print(f"  Written {item_idx:,} items, "
-                          f"{pair_phon_idx:,} phonetic pairs, "
-                          f"{pair_no_phon_idx:,} non-phonetic pairs...")
+            # 3. Final Trim
+            print("\nTrimming datasets...")
+            for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
+                dsets[k].resize((counters['items'],))
 
-            f.attrs['total_items'] = item_idx
-            f.attrs['pairs_with_phonetic'] = pair_phon_idx
-            f.attrs['pairs_without_phonetic'] = pair_no_phon_idx
-            f.attrs['with_ipa'] = stats['with_ipa']
-            f.attrs['without_ipa'] = stats['without_ipa']
-            f.attrs['similarity_threshold'] = similarity_threshold
+            dsets['p_anc'].resize((counters['phon_pairs'],))
+            dsets['p_pos'].resize((counters['phon_pairs'],))
+            dsets['p_sim'].resize((counters['phon_pairs'],))
 
-        print(f"\nData Statistics:")
-        print(f"  Total items: {stats['total']:,}")
-        print(f"  With IPA: {stats['with_ipa']:,} ({100 * stats['with_ipa'] / max(1, stats['total']):.1f}%)")
-        print(f"  Without IPA: {stats['without_ipa']:,} ({100 * stats['without_ipa'] / max(1, stats['total']):.1f}%)")
-        print(f"  Pairs with phonetic: {pair_phon_idx:,}")
-        print(f"  Pairs without phonetic: {pair_no_phon_idx:,}")
+            dsets['np_anc'].resize((counters['non_phon_pairs'],))
+            dsets['np_pos'].resize((counters['non_phon_pairs'],))
 
-        if skipped_langs:
-            top_skipped = sorted(skipped_langs.items(), key=lambda x: -x[1])[:10]
-            print(f"  Top languages without Epitran: {dict(top_skipped)}")
+            # Metadata
+            f.attrs['total_items'] = counters['items']
+            f.attrs['pairs_with_phonetic'] = counters['phon_pairs']
+            f.attrs['pairs_without_phonetic'] = counters['non_phon_pairs']
 
-        print(f"\nSaved training data to {output_path}")
+            print("Done.")
+
+    def _process_batch(self, batch, dsets, grp_feats, counters, caps):
+        """
+        1. Fetch all phonetics for the batch (MGET).
+        2. Write to HDF5 (Resize if needed).
+        """
+        # A. Collect IDs
+        ids_to_fetch = set()
+        for _, cluster in batch:
+            for name, lang in cluster:
+                ids_to_fetch.add(f"{name}@{lang}")
+
+        # B. MGET Cache
+        cache = {}
+        if ids_to_fetch:
+            try:
+                resp = self.es.mget(index='toponyms', body={'ids': list(ids_to_fetch)},
+                                    _source=['ipa_cached', 'features_cached_json'])
+                for doc in resp['docs']:
+                    if doc['found'] and 'ipa_cached' in doc['_source']:
+                        cache[doc['_id']] = {
+                            'ipa': doc['_source']['ipa_cached'],
+                            'feats': orjson.loads(doc['_source']['features_cached_json'])
+                        }
+            except Exception as e:
+                print(f"\nWarning: MGET failed: {e}")
+
+        # C. Write
+        CHUNK_EXPAND = 50000
+
+        for cluster_idx, cluster in batch:
+            cluster_items = []
+
+            # Process Items
+            for name, lang in cluster:
+                # Resize Check (Items)
+                if counters['items'] >= caps['items']:
+                    new_cap = caps['items'] + CHUNK_EXPAND
+                    for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
+                        dsets[k].resize((new_cap,))
+                    caps['items'] = new_cap
+
+                # Check Cache
+                doc_id = f"{name}@{lang}"
+                cached = cache.get(doc_id)
+
+                # Prepare Data
+                c_idx = counters['items']
+                dsets['toponym'][c_idx] = name
+                dsets['romanized'][c_idx] = anyascii(name).lower()
+                dsets['lang'][c_idx] = lang
+                dsets['cluster_id'][c_idx] = cluster_idx
+
+                has_phonetic = False
+                ipa_str = ""
+
+                if cached:
+                    has_phonetic = True
+                    ipa_str = cached['ipa']
+                    # Write Feature Vector (Separate Group, no resizing needed)
+                    grp_feats.create_dataset(str(c_idx), data=np.array(cached['feats'], dtype='f4'))
+
+                dsets['ipa'][c_idx] = ipa_str
+                dsets['has_phonetic'][c_idx] = has_phonetic
+
+                cluster_items.append({'idx': c_idx, 'ipa': ipa_str, 'has_p': has_phonetic})
+                counters['items'] += 1
+
+            # Process Pairs
+            for i, item_a in enumerate(cluster_items):
+                for item_b in cluster_items[i + 1:]:
+                    if item_a['has_p'] and item_b['has_p']:
+                        # Phonetic Pair - Check Threshold
+                        sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
+
+                        if sim >= Config.SIMILARITY_THRESHOLD:
+                            # Resize Check
+                            if counters['phon_pairs'] >= caps['phon_pairs']:
+                                new_cap = caps['phon_pairs'] + CHUNK_EXPAND
+                                dsets['p_anc'].resize((new_cap,))
+                                dsets['p_pos'].resize((new_cap,))
+                                dsets['p_sim'].resize((new_cap,))
+                                caps['phon_pairs'] = new_cap
+
+                            pidx = counters['phon_pairs']
+                            dsets['p_anc'][pidx] = item_a['idx']
+                            dsets['p_pos'][pidx] = item_b['idx']
+                            dsets['p_sim'][pidx] = sim
+                            counters['phon_pairs'] += 1
+                    else:
+                        # Fallback Pair
+                        if counters['non_phon_pairs'] >= caps['non_phon_pairs']:
+                            new_cap = caps['non_phon_pairs'] + CHUNK_EXPAND
+                            dsets['np_anc'].resize((new_cap,))
+                            dsets['np_pos'].resize((new_cap,))
+                            caps['non_phon_pairs'] = new_cap
+
+                        pidx = counters['non_phon_pairs']
+                        dsets['np_anc'][pidx] = item_a['idx']
+                        dsets['np_pos'][pidx] = item_b['idx']
+                        counters['non_phon_pairs'] += 1
 
 
 # =============================================================================
@@ -1656,6 +1705,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
+    parser.add_argument('--enrich', action='store_true', help="Hydrate 'toponyms' index with phonetics")
+
     parser.add_argument('--phase', type=int, choices=[0, 1, 2, 3])
     parser.add_argument('--infer', action='store_true')
 
@@ -1685,6 +1736,11 @@ def main():
 
     args = parser.parse_args()
 
+    if args.enrich:
+        enricher = ToponymEnricher(args.es_host, 'toponyms')  # Explicitly targeting toponyms index
+        enricher.run()
+        return
+
     if args.infer:
         # Inference code
         if not all([args.toponym1, args.lang1, args.toponym2, args.lang2]):
@@ -1702,11 +1758,9 @@ def main():
         rom2 = anyascii(args.toponym2).lower()
         print(f"Romanized: '{rom1}' vs '{rom2}'")
 
-    elif args.phase == 0:
-        # Data extraction - args.output is the HDF5 file
+    elif args.phase == 0:# Optimized Extraction
         extractor = TrainingDataExtractor(args.es_host, args.index)
-        clusters = extractor.extract_clusters_from_es(max_docs=args.max_docs)
-        extractor.build_training_data_streaming(clusters, args.output)  # ← Use args.output
+        extractor.extract_and_stream(args.output, max_docs=args.max_docs)
 
     elif args.phase == 1:
         # Training Phase 1 - args.data is HDF5, args.output is model
