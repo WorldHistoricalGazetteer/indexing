@@ -431,7 +431,7 @@ class ToponymEnricher:
             if len(updates) >= 500:
                 helpers.bulk(self.es, updates, request_timeout=60)
                 count += len(updates)
-                print(f"  Enriched {count} documents...", end='\r')
+                print(f"  Enriched {count} documents...", end='\r', flush=True)
                 updates = []
 
         if updates:
