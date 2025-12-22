@@ -5,13 +5,16 @@ A Student-Teacher architecture that learns phonetic embeddings from toponyms.
 - Teacher: Epitran + PanPhon → IPA features → BiLSTM (phonetically grounded)
 - Student: anyascii + Language ID → BiLSTM (universal fallback)
 
+Uses HDF5 for memory-efficient training on large datasets.
+Memory footprint stays constant (~100MB) regardless of dataset size.
+
 Training proceeds in three phases:
 1. Train Teacher on IPA features (triplet loss)
 2. Align Student to Teacher (MSE + cosine loss)
 3. Fine-tune Student on all data including non-Epitran languages (triplet loss with hard negatives)
 
 Requirements:
-    pip install torch epitran panphon anyascii elasticsearch
+    pip install torch epitran panphon anyascii elasticsearch h5py
 
 Usage:
     # Phase 0: Extract data from Elasticsearch
@@ -29,8 +32,6 @@ Usage:
     # Inference
     python phonetic_similarity_model.py --infer --model final_model.pt --toponym1 "London" --lang1 "en" --toponym2 "Londres" --lang2 "fr"
 
-Author: Generated with Claude
-License: MIT
 """
 
 import os
@@ -41,10 +42,17 @@ from collections import defaultdict
 from typing import Optional, List, Tuple, Dict, Any
 
 import numpy as np
+import h5py
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
+
+from streaming_datasets import (
+    StreamingPhase1Dataset,
+    StreamingPhase2Dataset,
+    StreamingPhase3Dataset
+)
 
 # Optional imports with graceful fallback
 try:
@@ -316,10 +324,7 @@ class LangVocab:
 # =============================================================================
 
 class TrainingDataExtractor:
-    """
-    Extract training data from Elasticsearch.
-    Always produces romanized form; IPA when Epitran supports the language.
-    """
+    """Extract training data from Elasticsearch, streaming directly to HDF5."""
 
     def __init__(self, es_host: str = 'localhost:9200', index_name: str = 'places'):
         try:
@@ -327,7 +332,7 @@ class TrainingDataExtractor:
             self.es = Elasticsearch([es_host])
             self.index = index_name
         except ImportError:
-            print("Warning: elasticsearch not installed. Use --skip-es for testing.")
+            print("Warning: elasticsearch not installed.")
             self.es = None
             self.index = None
 
@@ -336,7 +341,6 @@ class TrainingDataExtractor:
         self._epi_cache = {}
 
     def get_epitran(self, lang_code: str) -> Optional[epitran.Epitran]:
-        """Get or create Epitran instance for a language."""
         if lang_code not in self._epi_cache:
             epitran_code = Config.EPITRAN_LANGS.get(lang_code)
             if epitran_code:
@@ -350,34 +354,24 @@ class TrainingDataExtractor:
         return self._epi_cache[lang_code]
 
     def phonetic_similarity(self, ipa_a: str, ipa_b: str) -> float:
-        """Compute normalised phonetic similarity (0-1) using PanPhon feature edit distance."""
         if not ipa_a or not ipa_b:
             return 0.0
-
         try:
             fed = self.dst.feature_edit_distance(ipa_a, ipa_b)
             segs_a = self.dst.fm.ipa_segs(ipa_a)
             segs_b = self.dst.fm.ipa_segs(ipa_b)
             max_len = max(len(segs_a), len(segs_b))
-
             if max_len == 0:
                 return 0.0
-
             return 1.0 - (fed / max_len)
         except Exception:
             return 0.0
 
     def process_toponym(self, toponym: str, lang_code: str) -> Optional[Dict[str, Any]]:
-        """
-        Process a toponym. Always returns romanized form.
-        IPA and phonetic features included when Epitran succeeds.
-        """
-        # Always generate romanized form (Student input)
         romanized = anyascii(toponym).lower().strip()
         if not romanized:
             return None
 
-        # Try to generate IPA (Teacher input)
         ipa = None
         features = None
 
@@ -388,17 +382,12 @@ class TrainingDataExtractor:
                 if ipa:
                     features = self.ft.word_to_vector_list(ipa, numeric=True)
                     if not features:
-                        # IPA string produced but PanPhon couldn't parse it
                         ipa = None
                         features = None
-            except (IndexError, KeyError, ValueError) as e:
-                # Epitran's G2P models can fail on certain inputs
-                # Common with English on non-English names (e.g., Korean romanizations)
-                # Silently fall back to character-only pathway
+            except (IndexError, KeyError, ValueError):
                 ipa = None
                 features = None
             except Exception as e:
-                # Log unexpected errors but don't crash
                 print(f"Warning: Unexpected Epitran error for '{toponym}' ({lang_code}): {type(e).__name__}")
                 ipa = None
                 features = None
@@ -413,24 +402,11 @@ class TrainingDataExtractor:
         }
 
     def extract_clusters_from_es(
-        self,
-        batch_size: int = 1000,
-        max_docs: Optional[int] = None,
-        min_cluster_size: int = 2
+            self,
+            batch_size: int = 1000,
+            max_docs: Optional[int] = None,
+            min_cluster_size: int = 2
     ) -> List[List[Tuple[str, str]]]:
-        """
-        Scroll through Elasticsearch and extract toponym clusters from WHG places index.
-
-        Parses the `toponyms.toponym_id` field which stores toponyms in "London@en" format.
-
-        Args:
-            batch_size: Number of documents per scroll batch
-            max_docs: Maximum documents to process (None for all)
-            min_cluster_size: Minimum toponyms per place to include as cluster
-
-        Returns:
-            List of clusters, each cluster is a list of (toponym, lang) tuples
-        """
         if self.es is None:
             raise RuntimeError("Elasticsearch not available")
 
@@ -445,14 +421,13 @@ class TrainingDataExtractor:
         for hit in self._scroll_search(query, batch_size):
             source = hit['_source']
             cluster = []
-            seen = set()  # Deduplicate within cluster
+            seen = set()
 
             toponyms = source.get('toponyms', [])
             for entry in toponyms:
                 if isinstance(entry, dict):
                     toponym_id = entry.get('toponym_id', '')
                     if '@' in toponym_id:
-                        # Split on last @ to handle toponyms that might contain @
                         at_idx = toponym_id.rfind('@')
                         toponym = toponym_id[:at_idx].strip()
                         lang = toponym_id[at_idx + 1:].strip()
@@ -463,7 +438,6 @@ class TrainingDataExtractor:
                                 seen.add(key)
                                 cluster.append((toponym, lang))
                     else:
-                        # No language tag
                         skipped_no_lang += 1
 
             if len(cluster) >= min_cluster_size:
@@ -484,53 +458,39 @@ class TrainingDataExtractor:
         return clusters
 
     def _scroll_search(self, query: dict, batch_size: int):
-        """Generator that scrolls through Elasticsearch results."""
-        resp = self.es.search(
-            index=self.index,
-            body=query,
-            scroll='5m',
-            size=batch_size
-        )
-
+        resp = self.es.search(index=self.index, body=query, scroll='5m', size=batch_size)
         scroll_id = resp['_scroll_id']
         hits = resp['hits']['hits']
 
         while hits:
             for hit in hits:
                 yield hit
-
             resp = self.es.scroll(scroll_id=scroll_id, scroll='5m')
             scroll_id = resp['_scroll_id']
             hits = resp['hits']['hits']
 
-    def build_training_data(
-        self,
-        clusters: List[List[Tuple[str, str]]],
-        similarity_threshold: float = Config.SIMILARITY_THRESHOLD
-    ) -> Tuple[List[Dict], List[Dict], List[Dict]]:
-        """
-        Build training pairs from clusters.
+    def build_training_data_streaming(
+            self,
+            clusters: List[List[Tuple[str, str]]],
+            output_path: str,
+            similarity_threshold: float = Config.SIMILARITY_THRESHOLD
+    ):
+        """Stream training data directly to HDF5 file (memory-efficient)."""
 
-        Returns:
-            - pairs_with_phonetic: pairs where both items have IPA (for Phase 1 & 2)
-            - pairs_without_phonetic: pairs where at least one lacks IPA (for Phase 3)
-            - all_items: all processed items
-        """
-        pairs_with_phonetic = []
-        pairs_without_phonetic = []
-        all_items = []
+        print(f"Pass 1/2: Counting items and estimating pairs...")
 
+        total_items = 0
+        cluster_item_counts = []
         stats = {'total': 0, 'with_ipa': 0, 'without_ipa': 0}
         skipped_langs = defaultdict(int)
 
         for cluster_idx, cluster in enumerate(clusters):
-            processed = []
-
+            valid_count = 0
             for toponym, lang in cluster:
                 result = self.process_toponym(toponym, lang)
                 if result:
-                    result['cluster_id'] = cluster_idx
-                    processed.append(result)
+                    valid_count += 1
+                    total_items += 1
                     stats['total'] += 1
                     if result['has_phonetic']:
                         stats['with_ipa'] += 1
@@ -538,60 +498,116 @@ class TrainingDataExtractor:
                         stats['without_ipa'] += 1
                         skipped_langs[lang] += 1
 
-            all_items.extend(processed)
+            cluster_item_counts.append(valid_count)
 
-            # Generate pairs within cluster
-            for i, item_a in enumerate(processed):
-                for item_b in processed[i+1:]:
-                    if item_a['has_phonetic'] and item_b['has_phonetic']:
-                        sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
-                        if sim >= similarity_threshold:
-                            pairs_with_phonetic.append({
-                                'anchor': item_a,
-                                'positive': item_b,
-                                'similarity': sim
-                            })
-                    else:
-                        # Can't measure phonetic similarity, but in same cluster
-                        pairs_without_phonetic.append({
-                            'anchor': item_a,
-                            'positive': item_b,
-                            'similarity': None
-                        })
+            if (cluster_idx + 1) % 1000 == 0:
+                print(f"  Processed {cluster_idx + 1:,} clusters, {total_items:,} items...")
 
-            if (cluster_idx + 1) % 10000 == 0:
-                print(f"  Processed {cluster_idx + 1} clusters...")
+        print(f"\nPass 2/2: Writing to {output_path}...")
+        print(f"  Total items: {total_items:,}")
+
+        # Create HDF5 file
+        with h5py.File(output_path, 'w') as f:
+            str_dtype = h5py.special_dtype(vlen=str)
+
+            items_grp = f.create_group('items')
+            items_grp.create_dataset('toponym', (total_items,), dtype=str_dtype)
+            items_grp.create_dataset('romanized', (total_items,), dtype=str_dtype)
+            items_grp.create_dataset('lang', (total_items,), dtype=str_dtype)
+            items_grp.create_dataset('ipa', (total_items,), dtype=str_dtype)
+            items_grp.create_dataset('cluster_id', (total_items,), dtype='i4')
+            items_grp.create_dataset('has_phonetic', (total_items,), dtype='bool')
+
+            features_grp = f.create_group('features')
+
+            pairs_phon_grp = f.create_group('pairs_with_phonetic')
+            pairs_phon_grp.create_dataset('anchor_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
+            pairs_phon_grp.create_dataset('positive_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
+            pairs_phon_grp.create_dataset('similarity', (0,), maxshape=(None,), dtype='f4', chunks=True)
+
+            pairs_no_phon_grp = f.create_group('pairs_without_phonetic')
+            pairs_no_phon_grp.create_dataset('anchor_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
+            pairs_no_phon_grp.create_dataset('positive_idx', (0,), maxshape=(None,), dtype='i4', chunks=True)
+
+            item_idx = 0
+            pair_phon_idx = 0
+            pair_no_phon_idx = 0
+
+            for cluster_idx, cluster in enumerate(clusters):
+                cluster_items = []
+
+                for toponym, lang in cluster:
+                    result = self.process_toponym(toponym, lang)
+                    if not result:
+                        continue
+
+                    items_grp['toponym'][item_idx] = result['toponym']
+                    items_grp['romanized'][item_idx] = result['romanized']
+                    items_grp['lang'][item_idx] = result['lang']
+                    items_grp['ipa'][item_idx] = result['ipa'] or ''
+                    items_grp['cluster_id'][item_idx] = cluster_idx
+                    items_grp['has_phonetic'][item_idx] = result['has_phonetic']
+
+                    if result['features'] is not None:
+                        features_grp.create_dataset(
+                            str(item_idx),
+                            data=np.array(result['features'], dtype='f4')
+                        )
+
+                    cluster_items.append({
+                        'idx': item_idx,
+                        'ipa': result['ipa'],
+                        'has_phonetic': result['has_phonetic']
+                    })
+
+                    item_idx += 1
+
+                # Generate pairs
+                for i, item_a in enumerate(cluster_items):
+                    for item_b in cluster_items[i + 1:]:
+                        if item_a['has_phonetic'] and item_b['has_phonetic']:
+                            sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
+                            if sim >= similarity_threshold:
+                                idx = pair_phon_idx
+                                pairs_phon_grp['anchor_idx'].resize((idx + 1,))
+                                pairs_phon_grp['positive_idx'].resize((idx + 1,))
+                                pairs_phon_grp['similarity'].resize((idx + 1,))
+                                pairs_phon_grp['anchor_idx'][idx] = item_a['idx']
+                                pairs_phon_grp['positive_idx'][idx] = item_b['idx']
+                                pairs_phon_grp['similarity'][idx] = sim
+                                pair_phon_idx += 1
+                        else:
+                            idx = pair_no_phon_idx
+                            pairs_no_phon_grp['anchor_idx'].resize((idx + 1,))
+                            pairs_no_phon_grp['positive_idx'].resize((idx + 1,))
+                            pairs_no_phon_grp['anchor_idx'][idx] = item_a['idx']
+                            pairs_no_phon_grp['positive_idx'][idx] = item_b['idx']
+                            pair_no_phon_idx += 1
+
+                if (cluster_idx + 1) % 1000 == 0:
+                    print(f"  Written {item_idx:,} items, "
+                          f"{pair_phon_idx:,} phonetic pairs, "
+                          f"{pair_no_phon_idx:,} non-phonetic pairs...")
+
+            f.attrs['total_items'] = item_idx
+            f.attrs['pairs_with_phonetic'] = pair_phon_idx
+            f.attrs['pairs_without_phonetic'] = pair_no_phon_idx
+            f.attrs['with_ipa'] = stats['with_ipa']
+            f.attrs['without_ipa'] = stats['without_ipa']
+            f.attrs['similarity_threshold'] = similarity_threshold
 
         print(f"\nData Statistics:")
-        print(f"  Total items: {stats['total']}")
-        print(f"  With IPA: {stats['with_ipa']} ({100*stats['with_ipa']/max(1,stats['total']):.1f}%)")
-        print(f"  Without IPA: {stats['without_ipa']} ({100*stats['without_ipa']/max(1,stats['total']):.1f}%)")
-        print(f"  Pairs with phonetic: {len(pairs_with_phonetic)}")
-        print(f"  Pairs without phonetic: {len(pairs_without_phonetic)}")
+        print(f"  Total items: {stats['total']:,}")
+        print(f"  With IPA: {stats['with_ipa']:,} ({100 * stats['with_ipa'] / max(1, stats['total']):.1f}%)")
+        print(f"  Without IPA: {stats['without_ipa']:,} ({100 * stats['without_ipa'] / max(1, stats['total']):.1f}%)")
+        print(f"  Pairs with phonetic: {pair_phon_idx:,}")
+        print(f"  Pairs without phonetic: {pair_no_phon_idx:,}")
 
         if skipped_langs:
             top_skipped = sorted(skipped_langs.items(), key=lambda x: -x[1])[:10]
             print(f"  Top languages without Epitran: {dict(top_skipped)}")
 
-        return pairs_with_phonetic, pairs_without_phonetic, all_items
-
-    def save(
-        self,
-        pairs_phonetic: List[Dict],
-        pairs_no_phonetic: List[Dict],
-        items: List[Dict],
-        path: str
-    ):
-        """Save training data to file."""
-        data = {
-            'pairs_with_phonetic': pairs_phonetic,
-            'pairs_without_phonetic': pairs_no_phonetic,
-            'items': items,
-            'epitran_langs': Config.EPITRAN_LANGS
-        }
-        with open(path, 'wb') as f:
-            pickle.dump(data, f)
-        print(f"Saved training data to {path}")
+        print(f"\nSaved training data to {output_path}")
 
 
 # =============================================================================
@@ -895,175 +911,6 @@ class RobustAlignmentLoss(nn.Module):
 
 
 # =============================================================================
-# Datasets
-# =============================================================================
-
-class Phase1Dataset(Dataset):
-    """
-    Phase 1: Train phonetic encoder (Teacher) with triplet loss.
-    Uses only items with phonetic features.
-    """
-
-    def __init__(self, pairs: List[Dict], all_items: List[Dict]):
-        # Filter to pairs where both have phonetic
-        self.pairs = [
-            p for p in pairs
-            if p['anchor']['has_phonetic'] and p['positive']['has_phonetic']
-        ]
-        self.all_items = [item for item in all_items if item['has_phonetic']]
-
-        # Index by cluster for negative sampling
-        self.cluster_to_items = defaultdict(list)
-        for idx, item in enumerate(self.all_items):
-            self.cluster_to_items[item['cluster_id']].append(idx)
-        self.cluster_ids = list(self.cluster_to_items.keys())
-
-    def __len__(self) -> int:
-        return len(self.pairs)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        pair = self.pairs[idx]
-
-        # Sample negative from different cluster
-        anchor_cluster = pair['anchor']['cluster_id']
-        neg_cluster = random.choice([c for c in self.cluster_ids if c != anchor_cluster])
-        neg_idx = random.choice(self.cluster_to_items[neg_cluster])
-        negative = self.all_items[neg_idx]
-
-        return {
-            'anchor_features': torch.tensor(pair['anchor']['features'], dtype=torch.float32),
-            'positive_features': torch.tensor(pair['positive']['features'], dtype=torch.float32),
-            'negative_features': torch.tensor(negative['features'], dtype=torch.float32),
-        }
-
-
-class Phase2Dataset(Dataset):
-    """
-    Phase 2: Alignment training.
-    For items with phonetic, train char encoder to match phone encoder output.
-    """
-
-    def __init__(self, items: List[Dict], char_vocab: CharVocab, lang_vocab: LangVocab):
-        self.items = [item for item in items if item['has_phonetic']]
-        self.char_vocab = char_vocab
-        self.lang_vocab = lang_vocab
-
-    def __len__(self) -> int:
-        return len(self.items)
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        item = self.items[idx]
-
-        char_ids = self.char_vocab.encode(item['romanized'])
-        lang_id = self.lang_vocab.encode(item['lang'])
-
-        return {
-            'char_ids': torch.tensor(char_ids, dtype=torch.long),
-            'lang_id': torch.tensor(lang_id, dtype=torch.long),
-            'phonetic_features': torch.tensor(item['features'], dtype=torch.float32),
-        }
-
-
-class Phase3Dataset(Dataset):
-    """
-    Phase 3: Character-only triplet training on all data.
-    Includes items without phonetic support.
-    Uses hard negative mining: same first letter, similar length.
-    """
-
-    def __init__(
-        self,
-        pairs: List[Dict],
-        all_items: List[Dict],
-        char_vocab: CharVocab,
-        lang_vocab: LangVocab
-    ):
-        self.pairs = pairs
-        self.all_items = all_items
-        self.char_vocab = char_vocab
-        self.lang_vocab = lang_vocab
-
-        # Index by cluster for negative sampling
-        self.cluster_to_items = defaultdict(list)
-        for idx, item in enumerate(all_items):
-            self.cluster_to_items[item['cluster_id']].append(idx)
-        self.cluster_ids = list(self.cluster_to_items.keys())
-
-        # Index by first character for hard negative mining
-        self.index_by_first_char = defaultdict(list)
-        for idx, item in enumerate(all_items):
-            if item['romanized']:
-                first_char = item['romanized'][0]
-                self.index_by_first_char[first_char].append(idx)
-
-    def __len__(self) -> int:
-        return len(self.pairs)
-
-    def get_hard_negative(self, anchor_item: Dict) -> Dict:
-        """
-        Get a hard negative:
-        1. Same first character
-        2. Different cluster
-        3. Similar length (±2 characters)
-        """
-        first_char = anchor_item['romanized'][0] if anchor_item['romanized'] else ''
-        anchor_len = len(anchor_item['romanized'])
-        anchor_cluster = anchor_item['cluster_id']
-
-        candidates = self.index_by_first_char.get(first_char, [])
-
-        # Need enough candidates for hard mining
-        if len(candidates) < 5:
-            return self._random_negative(anchor_cluster)
-
-        # Try to find valid hard negative
-        random.shuffle(candidates)
-        for neg_idx in candidates[:20]:  # Check up to 20 candidates
-            negative = self.all_items[neg_idx]
-
-            # Must be different cluster
-            if negative['cluster_id'] == anchor_cluster:
-                continue
-
-            # Prefer similar length (±2)
-            neg_len = len(negative['romanized'])
-            if abs(neg_len - anchor_len) <= 2:
-                return negative
-
-        # Fallback: any different cluster with same first char
-        for neg_idx in candidates[:20]:
-            negative = self.all_items[neg_idx]
-            if negative['cluster_id'] != anchor_cluster:
-                return negative
-
-        # Final fallback: random
-        return self._random_negative(anchor_cluster)
-
-    def _random_negative(self, anchor_cluster: int) -> Dict:
-        """Get a random negative from a different cluster."""
-        neg_cluster = random.choice([c for c in self.cluster_ids if c != anchor_cluster])
-        neg_idx = random.choice(self.cluster_to_items[neg_cluster])
-        return self.all_items[neg_idx]
-
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        pair = self.pairs[idx]
-        anchor = pair['anchor']
-        positive = pair['positive']
-
-        # Hard negative mining
-        negative = self.get_hard_negative(anchor)
-
-        return {
-            'anchor_char_ids': torch.tensor(self.char_vocab.encode(anchor['romanized']), dtype=torch.long),
-            'anchor_lang_id': torch.tensor(self.lang_vocab.encode(anchor['lang']), dtype=torch.long),
-            'positive_char_ids': torch.tensor(self.char_vocab.encode(positive['romanized']), dtype=torch.long),
-            'positive_lang_id': torch.tensor(self.lang_vocab.encode(positive['lang']), dtype=torch.long),
-            'negative_char_ids': torch.tensor(self.char_vocab.encode(negative['romanized']), dtype=torch.long),
-            'negative_lang_id': torch.tensor(self.lang_vocab.encode(negative['lang']), dtype=torch.long),
-        }
-
-
-# =============================================================================
 # Collate Functions
 # =============================================================================
 
@@ -1155,30 +1002,20 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
 # =============================================================================
 
 def train_phase1(
-    data_path: str,
-    output_path: str,
-    epochs: int = Config.PHASE1_EPOCHS,
-    batch_size: int = Config.BATCH_SIZE,
-    lr: float = Config.LEARNING_RATE
-) -> PhoneticEncoder:
-    """Phase 1: Train phonetic encoder (Teacher) with triplet loss."""
+        data_path: str,
+        output_path: str,
+        epochs: int = Config.PHASE1_EPOCHS,
+        batch_size: int = Config.BATCH_SIZE,
+        lr: float = Config.LEARNING_RATE
+):
+    """Phase 1: Train phonetic encoder (streaming from HDF5)."""
 
     print("=" * 60)
     print("Phase 1: Training Phonetic Encoder (Teacher)")
     print("=" * 60)
 
-    with open(data_path, 'rb') as f:
-        data = pickle.load(f)
-
-    pairs = data['pairs_with_phonetic']
-    items = data['items']
-
-    # Train/val split
-    random.shuffle(pairs)
-    split = int(0.9 * len(pairs))
-
-    train_dataset = Phase1Dataset(pairs[:split], items)
-    val_dataset = Phase1Dataset(pairs[split:], items)
+    train_dataset = StreamingPhase1Dataset(data_path, split='train')
+    val_dataset = StreamingPhase1Dataset(data_path, split='val')
 
     print(f"Training pairs: {len(train_dataset)}")
     print(f"Validation pairs: {len(val_dataset)}")
@@ -1269,38 +1106,28 @@ def train_phase1(
 
 
 def train_phase2(
-    data_path: str,
-    phase1_path: str,
-    output_path: str,
-    epochs: int = Config.PHASE2_EPOCHS,
-    batch_size: int = Config.BATCH_SIZE,
-    lr: float = Config.LEARNING_RATE
-) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
-    """Phase 2: Alignment training - teach Student to match Teacher."""
+        data_path: str,
+        phase1_path: str,
+        output_path: str,
+        epochs: int = Config.PHASE2_EPOCHS,
+        batch_size: int = Config.BATCH_SIZE,
+        lr: float = Config.LEARNING_RATE
+):
+    """Phase 2: Alignment training (streaming from HDF5)."""
 
     print("=" * 60)
     print("Phase 2: Alignment Training (Student → Teacher)")
     print("=" * 60)
 
-    with open(data_path, 'rb') as f:
-        data = pickle.load(f)
-
-    items = data['items']
-
-    # Build vocabularies
+    # Build vocabularies from HDF5
     char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
-    char_vocab.fit([item['romanized'] for item in items])
+    char_vocab.fit(data_path)
 
     lang_vocab = LangVocab()
-    lang_vocab.fit([item['lang'] for item in items])
+    lang_vocab.fit(data_path)
 
-    # Dataset
-    all_items_with_phonetic = [item for item in items if item['has_phonetic']]
-    random.shuffle(all_items_with_phonetic)
-    split = int(0.9 * len(all_items_with_phonetic))
-
-    train_dataset = Phase2Dataset(all_items_with_phonetic[:split], char_vocab, lang_vocab)
-    val_dataset = Phase2Dataset(all_items_with_phonetic[split:], char_vocab, lang_vocab)
+    train_dataset = StreamingPhase2Dataset(data_path, char_vocab, lang_vocab, split='train')
+    val_dataset = StreamingPhase2Dataset(data_path, char_vocab, lang_vocab, split='val')
 
     print(f"Training items: {len(train_dataset)}")
     print(f"Validation items: {len(val_dataset)}")
@@ -1416,29 +1243,18 @@ def train_phase2(
 
 
 def train_phase3(
-    data_path: str,
-    phase2_path: str,
-    output_path: str,
-    epochs: int = Config.PHASE3_EPOCHS,
-    batch_size: int = Config.BATCH_SIZE,
-    lr: float = 5e-4  # Lower LR for fine-tuning
-) -> HybridPhoneticModel:
-    """Phase 3: Fine-tune on all data with hard negatives."""
+        data_path: str,
+        phase2_path: str,
+        output_path: str,
+        epochs: int = Config.PHASE3_EPOCHS,
+        batch_size: int = Config.BATCH_SIZE,
+        lr: float = 5e-4
+):
+    """Phase 3: Fine-tune on all data (streaming from HDF5)."""
 
     print("=" * 60)
     print("Phase 3: Generalization Training (Hard Negatives)")
     print("=" * 60)
-
-    with open(data_path, 'rb') as f:
-        data = pickle.load(f)
-
-    # Combine all pairs
-    all_pairs = data['pairs_with_phonetic'] + data['pairs_without_phonetic']
-    items = data['items']
-
-    print(f"Total pairs: {len(all_pairs)}")
-    print(f"  - With phonetic: {len(data['pairs_with_phonetic'])}")
-    print(f"  - Without phonetic: {len(data['pairs_without_phonetic'])}")
 
     # Load vocabularies
     vocab_dir = os.path.dirname(phase2_path) or '.'
@@ -1446,12 +1262,8 @@ def train_phase3(
     char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
     lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
-    # Dataset with hard negative mining
-    random.shuffle(all_pairs)
-    split = int(0.9 * len(all_pairs))
-
-    train_dataset = Phase3Dataset(all_pairs[:split], items, char_vocab, lang_vocab)
-    val_dataset = Phase3Dataset(all_pairs[split:], items, char_vocab, lang_vocab)
+    train_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='train')
+    val_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='val')
 
     print(f"Training pairs: {len(train_dataset)}")
     print(f"Validation pairs: {len(val_dataset)}")
@@ -1840,71 +1652,28 @@ def generate_demo_data(output_path: str, num_clusters: int = 1000):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Phonetic Similarity Model for Multilingual Toponyms',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  # Generate demo data (no Elasticsearch needed)
-  python phonetic_similarity_model.py --phase 0 --demo --output data.pkl
-  
-  # Extract from Elasticsearch
-  python phonetic_similarity_model.py --phase 0 --es-host localhost:9200 --index places --output data.pkl
-  
-  # Train Phase 1 (Teacher)
-  python phonetic_similarity_model.py --phase 1 --data data.pkl --output phase1.pt
-  
-  # Train Phase 2 (Alignment)
-  python phonetic_similarity_model.py --phase 2 --data data.pkl --phase1-model phase1.pt --output phase2.pt
-  
-  # Train Phase 3 (Generalization)
-  python phonetic_similarity_model.py --phase 3 --data data.pkl --phase2-model phase2.pt --output final_model.pt
-  
-  # Run inference
-  python phonetic_similarity_model.py --infer --model final_model.pt --toponym1 "London" --lang1 "en" --toponym2 "Londres" --lang2 "fr"
-        """
+        description='Phonetic Similarity Model (Streaming Version)',
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    # Mode selection
-    parser.add_argument('--phase', type=int, choices=[0, 1, 2, 3],
-                        help='Training phase (0=extract, 1=teacher, 2=align, 3=generalize)')
-    parser.add_argument('--infer', action='store_true',
-                        help='Run inference mode')
-
-    # Data extraction (Phase 0)
-    parser.add_argument('--es-host', default='localhost:9200',
-                        help='Elasticsearch host')
-    parser.add_argument('--index', default='places',
-                        help='Elasticsearch index name')
-    parser.add_argument('--max-docs', type=int, default=None,
-                        help='Maximum documents to process')
-    parser.add_argument('--demo', action='store_true',
-                        help='Generate demo data instead of using Elasticsearch')
-
-    # Training
-    parser.add_argument('--data', default='training_data.pkl',
-                        help='Training data file')
-    parser.add_argument('--output', default='model.pt',
-                        help='Output file')
-    parser.add_argument('--phase1-model', default='phase1.pt',
-                        help='Phase 1 model file (for Phase 2)')
-    parser.add_argument('--phase2-model', default='phase2.pt',
-                        help='Phase 2 model file (for Phase 3)')
-    parser.add_argument('--epochs', type=int, default=None,
-                        help='Number of training epochs')
-    parser.add_argument('--batch-size', type=int, default=Config.BATCH_SIZE,
-                        help='Batch size')
-    parser.add_argument('--lr', type=float, default=Config.LEARNING_RATE,
-                        help='Learning rate')
-
-    # Inference
-    parser.add_argument('--model', default='final_model.pt',
-                        help='Model file for inference')
-    parser.add_argument('--toponym1', help='First toponym')
-    parser.add_argument('--lang1', help='First language')
-    parser.add_argument('--toponym2', help='Second toponym')
-    parser.add_argument('--lang2', help='Second language')
-    parser.add_argument('--gpu', action='store_true',
-                        help='Use GPU for inference')
+    parser.add_argument('--phase', type=int, choices=[0, 1, 2, 3])
+    parser.add_argument('--infer', action='store_true')
+    parser.add_argument('--es-host', default='localhost:9200')
+    parser.add_argument('--index', default='places')
+    parser.add_argument('--max-docs', type=int, default=None)
+    parser.add_argument('--data', default='training_data.h5')  # ← Changed to .h5
+    parser.add_argument('--output', default='model.pt')
+    parser.add_argument('--phase1-model', default='phase1.pt')
+    parser.add_argument('--phase2-model', default='phase2.pt')
+    parser.add_argument('--epochs', type=int, default=None)
+    parser.add_argument('--batch-size', type=int, default=Config.BATCH_SIZE)
+    parser.add_argument('--lr', type=float, default=Config.LEARNING_RATE)
+    parser.add_argument('--model', default='final_model.pt')
+    parser.add_argument('--toponym1')
+    parser.add_argument('--lang1')
+    parser.add_argument('--toponym2')
+    parser.add_argument('--lang2')
+    parser.add_argument('--gpu', action='store_true')
 
     args = parser.parse_args()
 
@@ -1927,29 +1696,18 @@ Examples:
         print(f"Romanized: '{rom1}' vs '{rom2}'")
 
     elif args.phase == 0:
-        # Data extraction
-        if args.demo:
-            generate_demo_data(args.output, num_clusters=1000)
-        else:
-            extractor = TrainingDataExtractor(args.es_host, args.index)
-            clusters = extractor.extract_clusters_from_es(max_docs=args.max_docs)
-            pairs_p, pairs_np, items = extractor.build_training_data(clusters)
-            extractor.save(pairs_p, pairs_np, items, args.output)
+        extractor = TrainingDataExtractor(args.es_host, args.index)
+        clusters = extractor.extract_clusters_from_es(max_docs=args.max_docs)
+        extractor.build_training_data_streaming(clusters, args.output)  # ← Streaming!
 
     elif args.phase == 1:
-        epochs = args.epochs or Config.PHASE1_EPOCHS
-        train_phase1(args.data, args.output, epochs=epochs,
-                     batch_size=args.batch_size, lr=args.lr)
+        train_phase1(args.data, args.output)
 
     elif args.phase == 2:
-        epochs = args.epochs or Config.PHASE2_EPOCHS
-        train_phase2(args.data, args.phase1_model, args.output,
-                     epochs=epochs, batch_size=args.batch_size, lr=args.lr)
+        train_phase2(args.data, args.phase1_model, args.output)
 
     elif args.phase == 3:
-        epochs = args.epochs or Config.PHASE3_EPOCHS
-        train_phase3(args.data, args.phase2_model, args.output,
-                     epochs=epochs, batch_size=args.batch_size, lr=args.lr or 5e-4)
+        train_phase3(args.data, args.phase2_model, args.output)
 
     else:
         parser.print_help()
