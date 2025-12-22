@@ -368,11 +368,16 @@ class TrainingDataExtractor:
             return 0.0
 
     def process_toponym(self, toponym: str, lang_code: str) -> Optional[Dict[str, Any]]:
-        """Process a toponym..."""
+        """
+        Process a toponym. Always returns romanized form.
+        IPA and phonetic features included when Epitran succeeds.
+        """
+        # Always generate romanized form (Student input)
         romanized = anyascii(toponym).lower().strip()
         if not romanized:
             return None
 
+        # Try to generate IPA (Teacher input)
         ipa = None
         features = None
 
@@ -380,15 +385,23 @@ class TrainingDataExtractor:
         if epi:
             try:
                 ipa = epi.transliterate(toponym)
-                if ipa:  # ← Add this check
+                if ipa:
                     features = self.ft.word_to_vector_list(ipa, numeric=True)
                     if not features:
-                        print(f"DEBUG: Empty features for '{toponym}' ({lang_code}) -> IPA: '{ipa}'")
+                        # IPA string produced but PanPhon couldn't parse it
                         ipa = None
                         features = None
+            except (IndexError, KeyError, ValueError) as e:
+                # Epitran's G2P models can fail on certain inputs
+                # Common with English on non-English names (e.g., Korean romanizations)
+                # Silently fall back to character-only pathway
+                ipa = None
+                features = None
             except Exception as e:
-                print(f"DEBUG: Epitran failed for '{toponym}' ({lang_code}): {e}")
-                pass
+                # Log unexpected errors but don't crash
+                print(f"Warning: Unexpected Epitran error for '{toponym}' ({lang_code}): {type(e).__name__}")
+                ipa = None
+                features = None
 
         return {
             'toponym': toponym,
