@@ -209,7 +209,7 @@ cd "$REPO_DIR"
 
 python "$TRAINING_SCRIPT" \\
     --phase 0 \\
-    --es-host "\${ES_NODE}:\${ES_PORT}" \\
+    --es-host "http://\${ES_NODE}:\${ES_PORT}" \\
     --index "${INDEX_NAME}" \\
     --output "${OUTPUT_FILE}" \\
     ${MAX_DOCS_ARG}
