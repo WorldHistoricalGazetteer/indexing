@@ -59,7 +59,7 @@ GPU_COUNT=1
 GPU_MEM="40g"
 CPU_COUNT=8
 MEM="64G"
-TIME_EXTRACT="4:00:00"
+TIME_EXTRACT="8:00:00"
 TIME_PHASE1="12:00:00"
 TIME_PHASE2="8:00:00"
 TIME_PHASE3="6:00:00"
@@ -135,6 +135,98 @@ EOF
 # =============================================================================
 # DATA EXTRACTION (CPU job - reads from ES)
 # =============================================================================
+
+do_enrich() {
+    echo "=========================================="
+    echo "ENRICH ELASTICSEARCH TOPONYMS INDEX"
+    echo "=========================================="
+    echo "This step hydrates the 'toponyms' index with computed IPA/Phonetic features."
+    echo "It ensures subsequent extraction is purely I/O bound."
+    echo
+
+    check_staging_es || return 1
+    check_training_script || return 1
+    ensure_directories
+
+    source "$STAGING_INFO_FILE"
+
+    # Resource configuration for Enrichment
+    # This is CPU-bound (Epitran) and Latency-bound (ES Updates)
+    # 48 hours to handle the 74M document scan safely.
+    local TIME_ENRICH="48:00:00"
+
+    local ENRICH_SCRIPT=$(mktemp /tmp/phonetic-enrich-XXXXXX.sbatch)
+
+    cat > "$ENRICH_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=phonetic-enrich
+#SBATCH --partition=smp
+#SBATCH --time=${TIME_ENRICH}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --output=${SLURM_LOG_DIR}/enrich-%j.out
+#SBATCH --error=${SLURM_LOG_DIR}/enrich-%j.err
+
+set -e
+
+echo "=========================================="
+echo "PHONETIC MODEL - ENRICHMENT (HYDRATION)"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+source "$STAGING_INFO_FILE"
+export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
+
+echo "Elasticsearch: \$ES_HOST"
+echo "Task: Computing IPA and PanPhon features for supported languages"
+echo
+
+$(activate_conda)
+
+cd "$REPO_DIR"
+
+echo "Starting enrichment loop..."
+# Run the script in enrich mode
+python "$TRAINING_SCRIPT" --enrich --es-host "\$ES_HOST"
+
+echo
+echo "=========================================="
+echo "ENRICHMENT COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+echo "The 'toponyms' index is now hydrated."
+SBATCH_EOF
+
+    echo "Submitting enrichment job..."
+    local JOBID=$(sbatch --parsable "$ENRICH_SCRIPT")
+    rm "$ENRICH_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit job"
+        return 1
+    fi
+
+    # Save job info
+    cat > "$JOB_INFO_FILE" <<EOF
+CURRENT_JOB_ID=$JOBID
+CURRENT_PHASE="enrich"
+STARTED_AT="$(date -Iseconds)"
+EOF
+
+    echo
+    echo "Submitted job: $JOBID"
+    echo "This process is allocated 48 hours to handle the full dataset."
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${SLURM_LOG_DIR}/enrich-${JOBID}.out"
+    echo
+    echo "Once this completes, run '$0 -extract' to generate the training file."
+}
 
 do_extract() {
     echo "=========================================="
@@ -266,19 +358,19 @@ submit_training_phase() {
         1)
             PHASE_NAME="phase1-teacher"
             TIME_LIMIT="$TIME_PHASE1"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.pkl"
+            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5"
             OUTPUT_FILE="${CHECKPOINT_DIR}/phase1.pt"
             ;;
         2)
             PHASE_NAME="phase2-alignment"
             TIME_LIMIT="$TIME_PHASE2"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.pkl --phase1-model ${CHECKPOINT_DIR}/phase1.pt"
+            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5 --phase1-model ${CHECKPOINT_DIR}/phase1.pt"
             OUTPUT_FILE="${CHECKPOINT_DIR}/phase2.pt"
             ;;
         3)
             PHASE_NAME="phase3-generalize"
             TIME_LIMIT="$TIME_PHASE3"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.pkl --phase2-model ${CHECKPOINT_DIR}/phase2.pt"
+            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5 --phase2-model ${CHECKPOINT_DIR}/phase2.pt"
             OUTPUT_FILE="${CHECKPOINT_DIR}/final_model.pt"
             ;;
         *)
@@ -386,14 +478,14 @@ do_train() {
     done
 
     # Check training data exists
-    if [ ! -f "${DATA_DIR}/training_data.pkl" ]; then
-        echo "ERROR: Training data not found at ${DATA_DIR}/training_data.pkl"
+    if [ ! -f "${DATA_DIR}/training_data.h5" ]; then
+        echo "ERROR: Training data not found at ${DATA_DIR}/training_data.h5"
         echo "Run extraction first: $0 -extract"
         return 1
     fi
 
-    echo "Training data: ${DATA_DIR}/training_data.pkl"
-    ls -lh "${DATA_DIR}/training_data.pkl"
+    echo "Training data: ${DATA_DIR}/training_data.h5"
+    ls -lh "${DATA_DIR}/training_data.h5"
     echo
 
     if [ -n "$SINGLE_PHASE" ]; then
@@ -514,10 +606,10 @@ do_status() {
 
     echo
     echo "--- Training Data ---"
-    if [ -f "${DATA_DIR}/training_data.pkl" ]; then
-        echo "  ✓ training_data.pkl  $(ls -lh ${DATA_DIR}/training_data.pkl | awk '{print $5, $6, $7, $8}')"
+    if [ -f "${DATA_DIR}/training_data.h5" ]; then
+        echo "  ✓ training_data.h5  $(ls -lh ${DATA_DIR}/training_data.h5 | awk '{print $5, $6, $7, $8}')"
     else
-        echo "  ✗ training_data.pkl  (not found - run extraction first)"
+        echo "  ✗ training_data.h5  (not found - run extraction first)"
     fi
 
     echo
@@ -744,6 +836,10 @@ EOF
 # =============================================================================
 
 case "$1" in
+    -enrich)
+        shift
+        do_enrich "$@"
+        ;;
     -extract)
         shift
         do_extract "$@"
