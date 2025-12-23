@@ -188,6 +188,7 @@ echo
 $(activate_conda)
 
 cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
 
 echo "Starting enrichment loop..."
 # Run the script in enrich mode
@@ -298,6 +299,7 @@ echo
 $(activate_conda)
 
 cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
 
 python "$TRAINING_SCRIPT" \\
     --phase 0 \\
@@ -421,6 +423,7 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA av
 echo
 
 cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
 
 echo "--- Starting Training Phase ${PHASE} ---"
 echo "Input: ${INPUT_ARGS}"
