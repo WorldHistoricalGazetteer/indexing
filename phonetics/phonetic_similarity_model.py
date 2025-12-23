@@ -538,30 +538,32 @@ class TrainingDataExtractor:
 
         return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
 
-    def extract_and_stream(self, output_path: str, max_docs=None):
+    def extract_and_stream_robust(self, output_path: str, max_docs=None, checkpoint_every=100000):
         """
-        Extract training data with global pair deduplication.
+        Extract training data with robust error handling.
+        Uses search_after instead of scroll (more reliable for large datasets).
 
         Args:
             output_path: Path to output HDF5 file
-            max_docs: Maximum documents to process (None = all)
+            max_docs: Maximum documents to process
+            checkpoint_every: Save progress every N documents
         """
-        print(f"Starting Harvest with Global Pair Deduplication")
+        print(f"Starting Robust Harvest with search_after API")
         print(f"Output: {output_path}")
-        print(f"Deduplication method: {'Bloom filter' if HAVE_BLOOM else 'Set (high memory)'}")
+        print(f"Checkpoint every: {checkpoint_every:,} docs")
         print()
 
-        # Initialize deduplication structures
-        if HAVE_BLOOM:
-            # Bloom filter: memory-efficient, ~0.1% false positive rate acceptable
+        # Initialize deduplication
+        try:
+            from pybloom_live import BloomFilter
             seen_phonetic = BloomFilter(capacity=50_000_000, error_rate=0.001)
             seen_non_phonetic = BloomFilter(capacity=50_000_000, error_rate=0.001)
-        else:
-            # Fallback to sets (higher memory but exact)
+            print("Using Bloom filter for deduplication")
+        except ImportError:
             seen_phonetic = set()
             seen_non_phonetic = set()
+            print("Using set-based deduplication (higher memory)")
 
-        # Statistics tracking
         stats = {
             'docs_processed': 0,
             'clusters_found': 0,
@@ -575,11 +577,8 @@ class TrainingDataExtractor:
             'non_phonetic_pairs_duplicates': 0,
         }
 
-        # Open HDF5 with Write mode
         with h5py.File(output_path, 'w') as f:
-            # 1. Setup Dynamic Datasets
             str_dtype = h5py.special_dtype(vlen=str)
-
             grp_items = f.create_group('items')
             grp_feats = f.create_group('features')
             grp_pairs_p = f.create_group('pairs_with_phonetic')
@@ -595,7 +594,6 @@ class TrainingDataExtractor:
                 'ipa': make_dset(grp_items, 'ipa', str_dtype),
                 'cluster_id': make_dset(grp_items, 'cluster_id', 'i4'),
                 'has_phonetic': make_dset(grp_items, 'has_phonetic', 'bool'),
-                # Pairs
                 'p_anc': make_dset(grp_pairs_p, 'anchor_idx', 'i4'),
                 'p_pos': make_dset(grp_pairs_p, 'positive_idx', 'i4'),
                 'p_sim': make_dset(grp_pairs_p, 'similarity', 'f4'),
@@ -603,64 +601,114 @@ class TrainingDataExtractor:
                 'np_pos': make_dset(grp_pairs_np, 'positive_idx', 'i4'),
             }
 
-            # State tracking
             counters = {'items': 0, 'phon_pairs': 0, 'non_phon_pairs': 0}
             caps = {'items': 100000, 'phon_pairs': 100000, 'non_phon_pairs': 100000}
 
-            # 2. Scroll and Batch
             cluster_batch = []
+            search_after = None
+            batch_size = 1000
 
-            query = {"query": {"match_all": {}}, "_source": ["toponyms"]}
+            print("Starting extraction with search_after pagination...")
 
-            # Use helpers.scan for safer iteration
-            scanner = helpers.scan(self.es, index=self.index, query=query, scroll='5m', size=1000)
+            while True:
+                # Build query with search_after
+                query = {
+                    "size": batch_size,
+                    "query": {"match_all": {}},
+                    "_source": ["toponyms"],
+                    "sort": [{"_id": "asc"}]
+                }
 
-            for i, hit in enumerate(scanner):
-                if max_docs and i >= max_docs:
+                if search_after:
+                    query["search_after"] = search_after
+
+                # Execute search with retry
+                max_retries = 3
+                resp = None
+
+                for attempt in range(max_retries):
+                    try:
+                        resp = self.es.search(index=self.index, body=query, request_timeout=60)
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"\nSearch failed (attempt {attempt + 1}/{max_retries}): {e}")
+                            print("Retrying in 5 seconds...")
+                            import time
+                            time.sleep(5)
+                        else:
+                            print(f"\nFATAL: Search failed after {max_retries} attempts")
+                            print(f"Processed {stats['docs_processed']:,} documents")
+                            raise
+
+                if not resp:
                     break
 
-                stats['docs_processed'] = i + 1
+                hits = resp['hits']['hits']
 
-                # Extract Cluster
-                raw_toponyms = hit['_source'].get('toponyms', [])
-                cluster = []
-                seen = set()
-                for t in raw_toponyms:
-                    if isinstance(t, dict):
-                        tid = t.get('toponym_id', '')
-                        if '@' in tid:
-                            name, lang = tid.rsplit('@', 1)
-                            name, lang = name.strip(), lang.strip()
-                            if name and lang:
-                                k = (name.lower(), lang.lower())
-                                if k not in seen:
-                                    seen.add(k)
-                                    cluster.append((name, lang))
+                if not hits:
+                    print("\nNo more results - extraction complete!")
+                    break
 
-                if len(cluster) >= 2:
-                    stats['clusters_found'] += 1
-                    cluster_batch.append((i, cluster))
+                # Process hits
+                for hit in hits:
+                    if max_docs and stats['docs_processed'] >= max_docs:
+                        break
 
-                # Process Batch every 1000 clusters
-                if len(cluster_batch) >= 1000:
-                    self._process_batch_deduplicated(
-                        cluster_batch, dsets, grp_feats, counters, caps,
-                        seen_phonetic, seen_non_phonetic, stats
-                    )
-                    cluster_batch = []
+                    # Extract cluster
+                    raw_toponyms = hit['_source'].get('toponyms', [])
+                    cluster = []
+                    seen_cluster = set()
 
-                # Progress report every 10k docs
-                if stats['docs_processed'] % 10000 == 0:
-                    self._print_progress(stats)
+                    for t in raw_toponyms:
+                        if isinstance(t, dict):
+                            tid = t.get('toponym_id', '')
+                            if '@' in tid:
+                                name, lang = tid.rsplit('@', 1)
+                                name, lang = name.strip(), lang.strip()
+                                if name and lang:
+                                    k = (name.lower(), lang.lower())
+                                    if k not in seen_cluster:
+                                        seen_cluster.add(k)
+                                        cluster.append((name, lang))
 
-            # Process remaining
+                    if len(cluster) >= 2:
+                        stats['clusters_found'] += 1
+                        cluster_batch.append((stats['docs_processed'], cluster))
+
+                    stats['docs_processed'] += 1
+
+                    # Process batch
+                    if len(cluster_batch) >= 1000:
+                        self._process_batch_deduplicated(
+                            cluster_batch, dsets, grp_feats, counters, caps,
+                            seen_phonetic, seen_non_phonetic, stats
+                        )
+                        cluster_batch = []
+
+                    # Progress report
+                    if stats['docs_processed'] % 10000 == 0:
+                        self._print_progress(stats)
+
+                    # Checkpoint
+                    if stats['docs_processed'] % checkpoint_every == 0:
+                        print(f"\n[CHECKPOINT] Processed {stats['docs_processed']:,} docs")
+                        f.flush()  # Force write to disk
+
+                # Update cursor for next batch
+                search_after = hits[-1]['sort']
+
+                if max_docs and stats['docs_processed'] >= max_docs:
+                    break
+
+            # Process remaining batch
             if cluster_batch:
                 self._process_batch_deduplicated(
                     cluster_batch, dsets, grp_feats, counters, caps,
                     seen_phonetic, seen_non_phonetic, stats
                 )
 
-            # 3. Final Trim
+            # Trim datasets
             print("\nTrimming datasets to final size...")
             for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
                 dsets[k].resize((counters['items'],))
@@ -676,11 +724,11 @@ class TrainingDataExtractor:
             f.attrs['total_items'] = counters['items']
             f.attrs['pairs_with_phonetic'] = counters['phon_pairs']
             f.attrs['pairs_without_phonetic'] = counters['non_phon_pairs']
-            f.attrs['similarity_threshold'] = 0.5  # Config.SIMILARITY_THRESHOLD
+            f.attrs['similarity_threshold'] = 0.5
 
-        # Final statistics
+        # Final stats
         print("\n" + "=" * 70)
-        print("EXTRACTION COMPLETE WITH DEDUPLICATION")
+        print("EXTRACTION COMPLETE")
         print("=" * 70)
         self._print_final_stats(stats, counters)
 
