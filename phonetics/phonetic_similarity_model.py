@@ -14,7 +14,7 @@ Training proceeds in three phases:
 3. Fine-tune Student on all data including non-Epitran languages (triplet loss with hard negatives)
 
 Requirements:
-    pip install torch epitran panphon anyascii elasticsearch h5py
+    pip install torch epitran panphon anyascii elasticsearch h5py pybloom-live
 
 Usage:
     # Phase 0: Extract data from Elasticsearch
@@ -68,6 +68,14 @@ try:
     import panphon.distance
 except ImportError:
     raise ImportError("Please install epitran and panphon: pip install epitran panphon")
+
+try:
+    from pybloom_live import BloomFilter
+    HAVE_BLOOM = True
+except ImportError:
+    print("Warning: pybloom-live not installed. Using set-based deduplication (higher memory).")
+    print("Install with: pip install pybloom-live")
+    HAVE_BLOOM = False
 
 from processing.utilities import create_checkpoint_snapshot
 
@@ -481,10 +489,11 @@ class ToponymEnricher:
             else:
                 print("No documents were enriched, skipping snapshot.")
 
+
 class TrainingDataExtractor:
     """
     Extracts clusters from 'places' index and looks up phonetics from 'toponyms'.
-    Uses Single-Pass HDF5 writing.
+    Uses Single-Pass HDF5 writing with global pair deduplication.
     """
 
     def __init__(self, es_host='localhost:9200', index_name='places'):
@@ -494,18 +503,77 @@ class TrainingDataExtractor:
         self.dst = panphon.distance.Distance()
 
     def phonetic_similarity(self, ipa_a: str, ipa_b: str) -> float:
-        if not ipa_a or not ipa_b: return 0.0
+        if not ipa_a or not ipa_b:
+            return 0.0
         try:
             fed = self.dst.feature_edit_distance(ipa_a, ipa_b)
             # Simple length normalization
             max_len = max(len(ipa_a), len(ipa_b)) / 3  # Rough approximation of segments
-            if max_len == 0: return 0.0
+            if max_len == 0:
+                return 0.0
             return max(0.0, 1.0 - (fed / max(1, max_len)))
         except:
             return 0.0
 
+    def _normalize_str(self, s):
+        """Normalize string for comparison (handle bytes, strip, lowercase)."""
+        if isinstance(s, bytes):
+            s = s.decode('utf-8')
+        return s.lower().strip()
+
+    def _make_pair_key(self, top_a: str, lang_a: str, top_b: str, lang_b: str) -> str:
+        """
+        Create canonical pair key for deduplication.
+        Ensures (A,B) and (B,A) have the same key.
+        """
+        # Normalize
+        top_a = self._normalize_str(top_a)
+        lang_a = self._normalize_str(lang_a)
+        top_b = self._normalize_str(top_b)
+        lang_b = self._normalize_str(lang_b)
+
+        # Canonical ordering (alphabetical)
+        if (top_a, lang_a) > (top_b, lang_b):
+            top_a, lang_a, top_b, lang_b = top_b, lang_b, top_a, lang_a
+
+        return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
+
     def extract_and_stream(self, output_path: str, max_docs=None):
-        print(f"Starting Harvest: Streaming 'places' -> HDF5 '{output_path}'")
+        """
+        Extract training data with global pair deduplication.
+
+        Args:
+            output_path: Path to output HDF5 file
+            max_docs: Maximum documents to process (None = all)
+        """
+        print(f"Starting Harvest with Global Pair Deduplication")
+        print(f"Output: {output_path}")
+        print(f"Deduplication method: {'Bloom filter' if HAVE_BLOOM else 'Set (high memory)'}")
+        print()
+
+        # Initialize deduplication structures
+        if HAVE_BLOOM:
+            # Bloom filter: memory-efficient, ~0.1% false positive rate acceptable
+            seen_phonetic = BloomFilter(capacity=50_000_000, error_rate=0.001)
+            seen_non_phonetic = BloomFilter(capacity=50_000_000, error_rate=0.001)
+        else:
+            # Fallback to sets (higher memory but exact)
+            seen_phonetic = set()
+            seen_non_phonetic = set()
+
+        # Statistics tracking
+        stats = {
+            'docs_processed': 0,
+            'clusters_found': 0,
+            'items_written': 0,
+            'phonetic_pairs_attempted': 0,
+            'phonetic_pairs_written': 0,
+            'phonetic_pairs_duplicates': 0,
+            'phonetic_pairs_below_threshold': 0,
+            'non_phonetic_pairs_attempted': 0,
+            'non_phonetic_pairs_written': 0,
+            'non_phonetic_pairs_duplicates': 0,
+        }
 
         # Open HDF5 with Write mode
         with h5py.File(output_path, 'w') as f:
@@ -544,11 +612,14 @@ class TrainingDataExtractor:
 
             query = {"query": {"match_all": {}}, "_source": ["toponyms"]}
 
-            # Use helpers.scan for safer iteration than manual scroll
+            # Use helpers.scan for safer iteration
             scanner = helpers.scan(self.es, index=self.index, query=query, scroll='5m', size=1000)
 
             for i, hit in enumerate(scanner):
-                if max_docs and i >= max_docs: break
+                if max_docs and i >= max_docs:
+                    break
+
+                stats['docs_processed'] = i + 1
 
                 # Extract Cluster
                 raw_toponyms = hit['_source'].get('toponyms', [])
@@ -567,20 +638,30 @@ class TrainingDataExtractor:
                                     cluster.append((name, lang))
 
                 if len(cluster) >= 2:
+                    stats['clusters_found'] += 1
                     cluster_batch.append((i, cluster))
 
                 # Process Batch every 1000 clusters
                 if len(cluster_batch) >= 1000:
-                    self._process_batch(cluster_batch, dsets, grp_feats, counters, caps)
+                    self._process_batch_deduplicated(
+                        cluster_batch, dsets, grp_feats, counters, caps,
+                        seen_phonetic, seen_non_phonetic, stats
+                    )
                     cluster_batch = []
-                    print(f"\r  Processed {i + 1} docs | Items: {counters['items']}", end='', flush=True)
+
+                    # Progress report every 10k docs
+                    if stats['docs_processed'] % 10000 == 0:
+                        self._print_progress(stats)
 
             # Process remaining
             if cluster_batch:
-                self._process_batch(cluster_batch, dsets, grp_feats, counters, caps)
+                self._process_batch_deduplicated(
+                    cluster_batch, dsets, grp_feats, counters, caps,
+                    seen_phonetic, seen_non_phonetic, stats
+                )
 
             # 3. Final Trim
-            print("\nTrimming datasets...")
+            print("\nTrimming datasets to final size...")
             for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
                 dsets[k].resize((counters['items'],))
 
@@ -588,22 +669,27 @@ class TrainingDataExtractor:
             dsets['p_pos'].resize((counters['phon_pairs'],))
             dsets['p_sim'].resize((counters['phon_pairs'],))
 
-            dsets['np_anc'].resize((counters['non_phon_pairs'],))
-            dsets['np_pos'].resize((counters['non_phon_pairs'],))
+            dsets['np_anc'].resize((counters['non_phonetic_pairs'],))
+            dsets['np_pos'].resize((counters['non_phonetic_pairs'],))
 
             # Metadata
             f.attrs['total_items'] = counters['items']
             f.attrs['pairs_with_phonetic'] = counters['phon_pairs']
-            f.attrs['pairs_without_phonetic'] = counters['non_phon_pairs']
+            f.attrs['pairs_without_phonetic'] = counters['non_phonetic_pairs']
+            f.attrs['similarity_threshold'] = 0.5  # Config.SIMILARITY_THRESHOLD
 
-            print("Done.")
+        # Final statistics
+        print("\n" + "=" * 70)
+        print("EXTRACTION COMPLETE WITH DEDUPLICATION")
+        print("=" * 70)
+        self._print_final_stats(stats, counters)
 
-    def _process_batch(self, batch, dsets, grp_feats, counters, caps):
+    def _process_batch_deduplicated(self, batch, dsets, grp_feats, counters, caps,
+                                    seen_phonetic, seen_non_phonetic, stats):
         """
-        1. Fetch all phonetics for the batch (MGET).
-        2. Write to HDF5 (Resize if needed).
+        Process a batch of clusters with global pair deduplication.
         """
-        # A. Collect IDs
+        # A. Collect IDs for MGET
         ids_to_fetch = set()
         for _, cluster in batch:
             for name, lang in cluster:
@@ -613,8 +699,11 @@ class TrainingDataExtractor:
         cache = {}
         if ids_to_fetch:
             try:
-                resp = self.es.mget(index='toponyms', body={'ids': list(ids_to_fetch)},
-                                    _source=['ipa_cached', 'features_cached_json'])
+                resp = self.es.mget(
+                    index='toponyms',
+                    body={'ids': list(ids_to_fetch)},
+                    _source=['ipa_cached', 'features_cached_json']
+                )
                 for doc in resp['docs']:
                     if doc['found'] and 'ipa_cached' in doc['_source']:
                         cache[doc['_id']] = {
@@ -624,7 +713,7 @@ class TrainingDataExtractor:
             except Exception as e:
                 print(f"\nWarning: MGET failed: {e}")
 
-        # C. Write
+        # C. Write with Deduplication
         CHUNK_EXPAND = 50000
 
         for cluster_idx, cluster in batch:
@@ -656,48 +745,157 @@ class TrainingDataExtractor:
                 if cached:
                     has_phonetic = True
                     ipa_str = cached['ipa']
-                    # Write Feature Vector (Separate Group, no resizing needed)
+                    # Write Feature Vector
                     grp_feats.create_dataset(str(c_idx), data=np.array(cached['feats'], dtype='f4'))
 
                 dsets['ipa'][c_idx] = ipa_str
                 dsets['has_phonetic'][c_idx] = has_phonetic
 
-                cluster_items.append({'idx': c_idx, 'ipa': ipa_str, 'has_p': has_phonetic})
+                cluster_items.append({
+                    'idx': c_idx,
+                    'toponym': name,
+                    'lang': lang,
+                    'ipa': ipa_str,
+                    'has_p': has_phonetic
+                })
                 counters['items'] += 1
+                stats['items_written'] += 1
 
-            # Process Pairs
+            # Process Pairs with Global Deduplication
             for i, item_a in enumerate(cluster_items):
                 for item_b in cluster_items[i + 1:]:
+                    # Create canonical pair key
+                    pair_key = self._make_pair_key(
+                        item_a['toponym'], item_a['lang'],
+                        item_b['toponym'], item_b['lang']
+                    )
+
                     if item_a['has_p'] and item_b['has_p']:
-                        # Phonetic Pair - Check Threshold
+                        # Phonetic Pair
+                        stats['phonetic_pairs_attempted'] += 1
+
+                        # Check for duplicate
+                        if pair_key in seen_phonetic:
+                            stats['phonetic_pairs_duplicates'] += 1
+                            continue
+
+                        # Check similarity threshold
                         sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
 
-                        if sim >= Config.SIMILARITY_THRESHOLD:
-                            # Resize Check
-                            if counters['phon_pairs'] >= caps['phon_pairs']:
-                                new_cap = caps['phon_pairs'] + CHUNK_EXPAND
-                                dsets['p_anc'].resize((new_cap,))
-                                dsets['p_pos'].resize((new_cap,))
-                                dsets['p_sim'].resize((new_cap,))
-                                caps['phon_pairs'] = new_cap
+                        if sim < 0.5:  # Config.SIMILARITY_THRESHOLD
+                            stats['phonetic_pairs_below_threshold'] += 1
+                            continue
 
-                            pidx = counters['phon_pairs']
-                            dsets['p_anc'][pidx] = item_a['idx']
-                            dsets['p_pos'][pidx] = item_b['idx']
-                            dsets['p_sim'][pidx] = sim
-                            counters['phon_pairs'] += 1
+                        # Mark as seen
+                        seen_phonetic.add(pair_key)
+
+                        # Resize Check
+                        if counters['phon_pairs'] >= caps['phon_pairs']:
+                            new_cap = caps['phon_pairs'] + CHUNK_EXPAND
+                            dsets['p_anc'].resize((new_cap,))
+                            dsets['p_pos'].resize((new_cap,))
+                            dsets['p_sim'].resize((new_cap,))
+                            caps['phon_pairs'] = new_cap
+
+                        # Write
+                        pidx = counters['phon_pairs']
+                        dsets['p_anc'][pidx] = item_a['idx']
+                        dsets['p_pos'][pidx] = item_b['idx']
+                        dsets['p_sim'][pidx] = sim
+                        counters['phon_pairs'] += 1
+                        stats['phonetic_pairs_written'] += 1
+
                     else:
-                        # Fallback Pair
-                        if counters['non_phon_pairs'] >= caps['non_phon_pairs']:
-                            new_cap = caps['non_phon_pairs'] + CHUNK_EXPAND
+                        # Non-Phonetic Pair
+                        stats['non_phonetic_pairs_attempted'] += 1
+
+                        # Check for duplicate
+                        if pair_key in seen_non_phonetic:
+                            stats['non_phonetic_pairs_duplicates'] += 1
+                            continue
+
+                        # Mark as seen
+                        seen_non_phonetic.add(pair_key)
+
+                        # Resize Check
+                        if counters['non_phonetic_pairs'] >= caps['non_phonetic_pairs']:
+                            new_cap = caps['non_phonetic_pairs'] + CHUNK_EXPAND
                             dsets['np_anc'].resize((new_cap,))
                             dsets['np_pos'].resize((new_cap,))
-                            caps['non_phon_pairs'] = new_cap
+                            caps['non_phonetic_pairs'] = new_cap
 
-                        pidx = counters['non_phon_pairs']
+                        # Write
+                        pidx = counters['non_phonetic_pairs']
                         dsets['np_anc'][pidx] = item_a['idx']
                         dsets['np_pos'][pidx] = item_b['idx']
-                        counters['non_phon_pairs'] += 1
+                        counters['non_phonetic_pairs'] += 1
+                        stats['non_phonetic_pairs_written'] += 1
+
+    def _print_progress(self, stats):
+        """Print progress update during extraction."""
+        print(f"\rDocs: {stats['docs_processed']:,} | "
+              f"Clusters: {stats['clusters_found']:,} | "
+              f"Items: {stats['items_written']:,} | "
+              f"Phon pairs: {stats['phonetic_pairs_written']:,} "
+              f"(dupes: {stats['phonetic_pairs_duplicates']:,}) | "
+              f"Non-phon: {stats['non_phonetic_pairs_written']:,} "
+              f"(dupes: {stats['non_phonetic_pairs_duplicates']:,})",
+              end='', flush=True)
+
+    def _print_final_stats(self, stats, counters):
+        """Print final extraction statistics."""
+        print(f"\nDocuments processed: {stats['docs_processed']:,}")
+        print(f"Clusters found: {stats['clusters_found']:,}")
+        print(f"Items written: {stats['items_written']:,}")
+        print()
+
+        # Phonetic pairs
+        phon_total = stats['phonetic_pairs_attempted']
+        phon_written = stats['phonetic_pairs_written']
+        phon_dupes = stats['phonetic_pairs_duplicates']
+        phon_below = stats['phonetic_pairs_below_threshold']
+
+        if phon_total > 0:
+            print(f"Phonetic pairs:")
+            print(f"  Attempted:        {phon_total:,}")
+            print(f"  Written:          {phon_written:,} ({100 * phon_written / phon_total:.1f}%)")
+            print(f"  Duplicates:       {phon_dupes:,} ({100 * phon_dupes / phon_total:.1f}%)")
+            print(f"  Below threshold:  {phon_below:,} ({100 * phon_below / phon_total:.1f}%)")
+        else:
+            print(f"Phonetic pairs: 0 (no IPA data available)")
+
+        print()
+
+        # Non-phonetic pairs
+        non_phon_total = stats['non_phonetic_pairs_attempted']
+        non_phon_written = stats['non_phonetic_pairs_written']
+        non_phon_dupes = stats['non_phonetic_pairs_duplicates']
+
+        if non_phon_total > 0:
+            print(f"Non-phonetic pairs:")
+            print(f"  Attempted:        {non_phon_total:,}")
+            print(f"  Written:          {non_phon_written:,} ({100 * non_phon_written / non_phon_total:.1f}%)")
+            print(f"  Duplicates:       {non_phon_dupes:,} ({100 * non_phon_dupes / non_phon_total:.1f}%)")
+
+        print()
+        print(f"FINAL COUNTS:")
+        print(f"  Items:            {counters['items']:,}")
+        print(f"  Phonetic pairs:   {counters['phon_pairs']:,}")
+        print(f"  Non-phonetic:     {counters['non_phonetic_pairs']:,}")
+        print(f"  Total pairs:      {counters['phon_pairs'] + counters['non_phonetic_pairs']:,}")
+
+        # Deduplication effectiveness
+        total_attempted = phon_total + non_phon_total
+        total_written = phon_written + non_phon_written
+        total_dupes = phon_dupes + non_phon_dupes
+
+        if total_attempted > 0:
+            print()
+            print(f"Deduplication effectiveness:")
+            print(f"  Original pairs:   {total_attempted:,}")
+            print(f"  Unique pairs:     {total_written:,}")
+            print(f"  Duplicates:       {total_dupes:,} ({100 * total_dupes / total_attempted:.1f}%)")
+            print(f"  Reduction:        {100 * (total_attempted - total_written) / total_attempted:.1f}%")
 
 
 # =============================================================================
