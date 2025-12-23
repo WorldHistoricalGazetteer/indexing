@@ -616,7 +616,7 @@ class TrainingDataExtractor:
                     "size": batch_size,
                     "query": {"match_all": {}},
                     "_source": ["toponyms"],
-                    "sort": [{"_id": "asc"}]
+                    "sort": ["_doc"]
                 }
 
                 if search_after:
