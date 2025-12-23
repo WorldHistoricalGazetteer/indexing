@@ -203,12 +203,22 @@ class CharVocab:
         self.frozen = False
         self.hash_space_start = None
 
-    def fit(self, texts: List[str]) -> 'CharVocab':
-        """Build vocabulary from training texts."""
+    def fit(self, hdf5_path: str) -> 'CharVocab':
+        """Build vocabulary from HDF5 training data."""
+        print("Building character vocabulary...")
         char_counts = defaultdict(int)
-        for text in texts:
-            for c in text:
-                char_counts[c] += 1
+
+        with h5py.File(hdf5_path, 'r') as f:
+            items = f['items']
+            total_items = f.attrs['total_items']
+
+            for idx in range(total_items):
+                text = items['romanized'][idx]
+                # Handle bytes if stored as bytes
+                if isinstance(text, bytes):
+                    text = text.decode('utf-8')
+                for c in text:
+                    char_counts[c] += 1
 
         # Reserve 20% of vocab for hash fallback
         max_vocab_chars = int(self.vocab_size * 0.8)
@@ -284,13 +294,25 @@ class LangVocab:
         self.id_to_lang = {0: self.UNK_LANG}
         self.next_id = 1
 
-    def fit(self, languages: List[str]) -> 'LangVocab':
-        """Build vocabulary from language codes."""
-        for lang in sorted(set(languages)):
-            if lang not in self.lang_to_id:
-                self.lang_to_id[lang] = self.next_id
-                self.id_to_lang[self.next_id] = lang
-                self.next_id += 1
+    def fit(self, hdf5_path: str) -> 'LangVocab':
+        """Build vocabulary from HDF5 training data."""
+        print("Building language vocabulary...")
+        with h5py.File(hdf5_path, 'r') as f:
+            items = f['items']
+            total_items = f.attrs['total_items']
+
+            languages = set()
+            for idx in range(total_items):
+                lang = items['lang'][idx]
+                if isinstance(lang, bytes):
+                    lang = lang.decode('utf-8')
+                languages.add(lang)
+
+            for lang in sorted(languages):
+                if lang not in self.lang_to_id:
+                    self.lang_to_id[lang] = self.next_id
+                    self.id_to_lang[self.next_id] = lang
+                    self.next_id += 1
 
         print(f"LangVocab: {len(self.lang_to_id)} languages")
         return self
