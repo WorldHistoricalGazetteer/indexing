@@ -50,7 +50,8 @@ JOB_INFO_FILE="${MODEL_DIR}/current_job.sh"
 TRAINING_SCRIPT="${REPO_DIR}/phonetics/phonetic_similarity_model.py"
 
 # Default training parameters
-DEFAULT_BATCH_SIZE=128
+DEFAULT_BATCH_SIZE=256
+SUBSAMPLE_PAIRS=5000000  # Limit to 5M pairs
 DEFAULT_MAX_DOCS=""  # Empty = all documents
 
 # GPU partition settings
@@ -60,9 +61,9 @@ GPU_MEM="40g"
 CPU_COUNT=8
 MEM="64G"
 TIME_EXTRACT="8:00:00"
-TIME_PHASE1="12:00:00"
-TIME_PHASE2="8:00:00"
-TIME_PHASE3="6:00:00"
+TIME_PHASE1="18:00:00"  # ~15 hours (5M pairs, 50 epochs)
+TIME_PHASE2="6:00:00"   # ~5 hours (no change, item-based)
+TIME_PHASE3="12:00:00"  # ~10 hours (5M pairs, 20 epochs)
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -434,7 +435,8 @@ python "$TRAINING_SCRIPT" \\
     --phase ${PHASE} \\
     ${INPUT_ARGS} \\
     --output "${OUTPUT_FILE}" \\
-    --batch-size ${DEFAULT_BATCH_SIZE}
+    --batch-size ${DEFAULT_BATCH_SIZE} \\
+    --subsample-pairs ${SUBSAMPLE_PAIRS}
 
 echo
 echo "=========================================="

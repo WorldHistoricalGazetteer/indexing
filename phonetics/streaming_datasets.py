@@ -17,18 +17,23 @@ from typing import Dict, List
 class StreamingPhase1Dataset(Dataset):
     """Phase 1 Dataset with HDF5 streaming."""
 
-    def __init__(self, hdf5_path: str, split: str = 'train', train_ratio: float = 0.9):
+    def __init__(self, hdf5_path: str, split: str = 'train', train_ratio: float = 0.9, subsample_pairs = 5_000_000):
         self.hdf5_path = hdf5_path
         self.split = split
 
         with h5py.File(hdf5_path, 'r') as f:
             total_pairs = f.attrs['pairs_with_phonetic']
-            split_idx = int(total_pairs * train_ratio)
 
+            max_pairs = min(total_pairs, subsample_pairs)
+            all_indices = list(range(total_pairs))
+            random.shuffle(all_indices)
+            sampled_indices = all_indices[:max_pairs]
+
+            split_idx = int(max_pairs * train_ratio)
             if split == 'train':
-                self.pair_indices = list(range(split_idx))
+                self.pair_indices = sampled_indices[:split_idx]
             else:
-                self.pair_indices = list(range(split_idx, total_pairs))
+                self.pair_indices = sampled_indices[split_idx:]
 
             items = f['items']
             self.phonetic_item_indices = []
@@ -133,7 +138,7 @@ class StreamingPhase2Dataset(Dataset):
 class StreamingPhase3Dataset(Dataset):
     """Phase 3 Dataset with HDF5 streaming and hard negative mining."""
 
-    def __init__(self, hdf5_path: str, char_vocab, lang_vocab, split: str = 'train', train_ratio: float = 0.9):
+    def __init__(self, hdf5_path: str, char_vocab, lang_vocab, split: str = 'train', train_ratio: float = 0.9, subsample_pairs = 5_000_000):
         self.hdf5_path = hdf5_path
         self.char_vocab = char_vocab
         self.lang_vocab = lang_vocab
@@ -144,12 +149,16 @@ class StreamingPhase3Dataset(Dataset):
             no_phon_count = f.attrs['pairs_without_phonetic']
             total_pairs = phon_count + no_phon_count
 
-            split_idx = int(total_pairs * train_ratio)
+            max_pairs = min(total_pairs, subsample_pairs)
+            all_indices = list(range(total_pairs))
+            random.shuffle(all_indices)
+            sampled_indices = all_indices[:max_pairs]
 
+            split_idx = int(total_pairs * train_ratio)
             if split == 'train':
-                self.pair_indices = list(range(split_idx))
+                self.pair_indices = sampled_indices[:split_idx]
             else:
-                self.pair_indices = list(range(split_idx, total_pairs))
+                self.pair_indices = sampled_indices[split_idx:]
 
             self.phonetic_pairs = [i for i in self.pair_indices if i < phon_count]
             self.non_phonetic_pairs = [i - phon_count for i in self.pair_indices if i >= phon_count]

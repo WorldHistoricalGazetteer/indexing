@@ -92,7 +92,8 @@ class Config:
     DROPOUT = 0.2
 
     # Training
-    BATCH_SIZE = 128
+    BATCH_SIZE = 256
+    SUBSAMPLE_PAIRS = 5000000
     LEARNING_RATE = 1e-3
     PHASE1_EPOCHS = 50
     PHASE2_EPOCHS = 30
@@ -1094,6 +1095,7 @@ def train_phase1(
         data_path: str,
         output_path: str,
         epochs: int = Config.PHASE1_EPOCHS,
+        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
         batch_size: int = Config.BATCH_SIZE,
         lr: float = Config.LEARNING_RATE
 ):
@@ -1103,8 +1105,8 @@ def train_phase1(
     print("Phase 1: Training Phonetic Encoder (Teacher)")
     print("=" * 60)
 
-    train_dataset = StreamingPhase1Dataset(data_path, split='train')
-    val_dataset = StreamingPhase1Dataset(data_path, split='val')
+    train_dataset = StreamingPhase1Dataset(data_path, split='train', subsample_pairs=subsample_pairs)
+    val_dataset = StreamingPhase1Dataset(data_path, split='val', subsample_pairs=subsample_pairs)
 
     print(f"Training pairs: {len(train_dataset)}")
     print(f"Validation pairs: {len(val_dataset)}")
@@ -1335,6 +1337,7 @@ def train_phase3(
         data_path: str,
         phase2_path: str,
         output_path: str,
+        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
         epochs: int = Config.PHASE3_EPOCHS,
         batch_size: int = Config.BATCH_SIZE,
         lr: float = 5e-4
@@ -1351,8 +1354,8 @@ def train_phase3(
     char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
     lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
-    train_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='train')
-    val_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='val')
+    train_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='train', subsample_pairs=subsample_pairs)
+    val_dataset = StreamingPhase3Dataset(data_path, char_vocab, lang_vocab, split='val', subsample_pairs=subsample_pairs)
 
     print(f"Training pairs: {len(train_dataset)}")
     print(f"Validation pairs: {len(val_dataset)}")
@@ -1764,6 +1767,7 @@ def main():
     parser.add_argument('--phase2-model', default='phase2.pt')
     parser.add_argument('--epochs', type=int, default=None)
     parser.add_argument('--batch-size', type=int, default=Config.BATCH_SIZE)
+    parser.add_argument('--subsample-pairs', type=int, default=Config.SUBSAMPLE_PAIRS)
     parser.add_argument('--lr', type=float, default=Config.LEARNING_RATE)
 
     # Inference
@@ -1805,7 +1809,7 @@ def main():
     elif args.phase == 1:
         # Training Phase 1 - args.data is HDF5, args.output is model
         epochs = args.epochs or Config.PHASE1_EPOCHS
-        train_phase1(args.data, args.output, epochs=epochs,
+        train_phase1(args.data, args.output, epochs=epochs, subsample_pairs=args.subsample_pairs,
                      batch_size=args.batch_size, lr=args.lr)
 
     elif args.phase == 2:
@@ -1817,7 +1821,7 @@ def main():
     elif args.phase == 3:
         # Training Phase 3
         epochs = args.epochs or Config.PHASE3_EPOCHS
-        train_phase3(args.data, args.phase2_model, args.output,
+        train_phase3(args.data, args.phase2_model, args.output, subsample_pairs=args.subsample_pairs,
                      epochs=epochs, batch_size=args.batch_size, lr=args.lr or 5e-4)
 
     else:
