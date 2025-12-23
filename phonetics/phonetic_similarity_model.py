@@ -669,13 +669,13 @@ class TrainingDataExtractor:
             dsets['p_pos'].resize((counters['phon_pairs'],))
             dsets['p_sim'].resize((counters['phon_pairs'],))
 
-            dsets['np_anc'].resize((counters['non_phonetic_pairs'],))
-            dsets['np_pos'].resize((counters['non_phonetic_pairs'],))
+            dsets['np_anc'].resize((counters['non_phon_pairs'],))
+            dsets['np_pos'].resize((counters['non_phon_pairs'],))
 
             # Metadata
             f.attrs['total_items'] = counters['items']
             f.attrs['pairs_with_phonetic'] = counters['phon_pairs']
-            f.attrs['pairs_without_phonetic'] = counters['non_phonetic_pairs']
+            f.attrs['pairs_without_phonetic'] = counters['non_phon_pairs']
             f.attrs['similarity_threshold'] = 0.5  # Config.SIMILARITY_THRESHOLD
 
         # Final statistics
@@ -818,17 +818,17 @@ class TrainingDataExtractor:
                         seen_non_phonetic.add(pair_key)
 
                         # Resize Check
-                        if counters['non_phonetic_pairs'] >= caps['non_phonetic_pairs']:
-                            new_cap = caps['non_phonetic_pairs'] + CHUNK_EXPAND
+                        if counters['non_phon_pairs'] >= caps['non_phon_pairs']:
+                            new_cap = caps['non_phon_pairs'] + CHUNK_EXPAND
                             dsets['np_anc'].resize((new_cap,))
                             dsets['np_pos'].resize((new_cap,))
-                            caps['non_phonetic_pairs'] = new_cap
+                            caps['non_phon_pairs'] = new_cap
 
                         # Write
-                        pidx = counters['non_phonetic_pairs']
+                        pidx = counters['non_phon_pairs']
                         dsets['np_anc'][pidx] = item_a['idx']
                         dsets['np_pos'][pidx] = item_b['idx']
-                        counters['non_phonetic_pairs'] += 1
+                        counters['non_phon_pairs'] += 1
                         stats['non_phonetic_pairs_written'] += 1
 
     def _print_progress(self, stats):
@@ -881,8 +881,8 @@ class TrainingDataExtractor:
         print(f"FINAL COUNTS:")
         print(f"  Items:            {counters['items']:,}")
         print(f"  Phonetic pairs:   {counters['phon_pairs']:,}")
-        print(f"  Non-phonetic:     {counters['non_phonetic_pairs']:,}")
-        print(f"  Total pairs:      {counters['phon_pairs'] + counters['non_phonetic_pairs']:,}")
+        print(f"  Non-phonetic:     {counters['non_phon_pairs']:,}")
+        print(f"  Total pairs:      {counters['phon_pairs'] + counters['non_phon_pairs']:,}")
 
         # Deduplication effectiveness
         total_attempted = phon_total + non_phon_total
