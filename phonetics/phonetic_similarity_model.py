@@ -550,7 +550,7 @@ class TrainingDataExtractor:
                 if len(cluster_batch) >= 1000:
                     self._process_batch(cluster_batch, dsets, grp_feats, counters, caps)
                     cluster_batch = []
-                    print(f"\r  Processed {i + 1} docs | Items: {counters['items']}", end='')
+                    print(f"\r  Processed {i + 1} docs | Items: {counters['items']}", end='', flush=True)
 
             # Process remaining
             if cluster_batch:
