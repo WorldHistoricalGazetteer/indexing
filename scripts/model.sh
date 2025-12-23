@@ -60,10 +60,10 @@ GPU_COUNT=1
 GPU_MEM="40g"
 CPU_COUNT=8
 MEM="64G"
-TIME_EXTRACT="8:00:00"
-TIME_PHASE1="18:00:00"  # ~15 hours (5M pairs, 50 epochs)
-TIME_PHASE2="6:00:00"   # ~5 hours (no change, item-based)
-TIME_PHASE3="12:00:00"  # ~10 hours (5M pairs, 20 epochs)
+TIME_EXTRACT="48:00:00"
+TIME_PHASE1="48:00:00"  # ~15 hours (5M pairs, 50 epochs)
+TIME_PHASE2="48:00:00"   # ~5 hours (no change, item-based)
+TIME_PHASE3="48:00:00"  # ~10 hours (5M pairs, 20 epochs)
 
 # =============================================================================
 # HELPER FUNCTIONS

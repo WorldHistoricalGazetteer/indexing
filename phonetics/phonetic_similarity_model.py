@@ -649,9 +649,9 @@ class TrainingDataExtractor:
                     )
                     cluster_batch = []
 
-                    # Progress report every 10k docs
-                    if stats['docs_processed'] % 10000 == 0:
-                        self._print_progress(stats)
+                # Progress report every 10k docs
+                if stats['docs_processed'] % 10000 == 0:
+                    self._print_progress(stats)
 
             # Process remaining
             if cluster_batch:
