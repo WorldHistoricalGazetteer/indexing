@@ -136,7 +136,7 @@ EOF
 # DATA EXTRACTION (CPU job - reads from ES)
 # =============================================================================
 
-do_enrich() {
+do_enrich() {  # 27,393,380 toponyms in 4h26
     echo "=========================================="
     echo "ENRICH ELASTICSEARCH TOPONYMS INDEX"
     echo "=========================================="

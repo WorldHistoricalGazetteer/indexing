@@ -69,6 +69,7 @@ try:
 except ImportError:
     raise ImportError("Please install epitran and panphon: pip install epitran panphon")
 
+from processing.utilities import create_checkpoint_snapshot
 
 # =============================================================================
 # Configuration
@@ -394,51 +395,68 @@ class ToponymEnricher:
         updates = []
         count = 0
 
-        # Scan efficiently
-        scanner = helpers.scan(
-            self.es,
-            query=query,
-            index=self.index,
-            _source=["name", "lang"],
-            size=1000,
-            scroll='2h'
-        )
+        try:
+            # Scan efficiently
+            scanner = helpers.scan(
+                self.es,
+                query=query,
+                index=self.index,
+                _source=["name", "lang"],
+                size=1000,
+                scroll='2h'
+            )
 
-        for hit in scanner:
-            doc_id = hit['_id']
-            name = hit['_source'].get('name')
-            lang = hit['_source'].get('lang')
+            for hit in scanner:
+                doc_id = hit['_id']
+                name = hit['_source'].get('name')
+                lang = hit['_source'].get('lang')
 
-            if not name or not lang: continue
+                if not name or not lang: continue
 
-            result = self._compute_phonetics(name, lang)
+                result = self._compute_phonetics(name, lang)
 
-            if result:
-                updates.append({
-                    "_op_type": "update",
-                    "_index": self.index,
-                    "_id": doc_id,
-                    "doc": {
-                        "ipa_cached": result['ipa'],
-                        # Serialize list-of-lists to JSON string to prevent flattening
-                        "features_cached_json": orjson.dumps(
-                            result['features'],
-                            option=orjson.OPT_SERIALIZE_NUMPY
-                        ).decode('utf-8')
-                    }
-                })
+                if result:
+                    updates.append({
+                        "_op_type": "update",
+                        "_index": self.index,
+                        "_id": doc_id,
+                        "doc": {
+                            "ipa_cached": result['ipa'],
+                            # Serialize list-of-lists to JSON string to prevent flattening
+                            "features_cached_json": orjson.dumps(
+                                result['features'],
+                                option=orjson.OPT_SERIALIZE_NUMPY
+                            ).decode('utf-8')
+                        }
+                    })
 
-            if len(updates) >= 500:
-                helpers.bulk(self.es, updates, request_timeout=60)
+                if len(updates) >= 500:
+                    helpers.bulk(self.es, updates, request_timeout=60)
+                    count += len(updates)
+                    print(f"  Enriched {count} documents...", end='\r', flush=True)
+                    updates = []
+
+            if updates:
+                helpers.bulk(self.es, updates)
                 count += len(updates)
-                print(f"  Enriched {count} documents...", end='\r', flush=True)
-                updates = []
 
-        if updates:
-            helpers.bulk(self.es, updates)
-            count += len(updates)
+            print(f"\nDone! Enriched {count} documents. The 'toponyms' index is now hydrated.")
 
-        print(f"\nDone! Enriched {count} documents. The 'toponyms' index is now hydrated.")
+        except KeyboardInterrupt:
+            print("\n\n[Warning] Process interrupted by user.")
+        except Exception as e:
+            print(f"\n\n[Error] Process crashed: {e}")
+        finally:
+            # AUTOMATIC SAFETY SNAPSHOT
+            print("\n" + "="*60)
+            print("AUTOMATIC CHECKPOINT TRIGGERED")
+            print("="*60)
+
+            # If we processed anything, or if it was a long run, save it.
+            if count > 0:
+                create_checkpoint_snapshot(self.es, snapshot_name="toponym_enrichment_checkpoint")
+            else:
+                print("No documents were enriched, skipping snapshot.")
 
 class TrainingDataExtractor:
     """
