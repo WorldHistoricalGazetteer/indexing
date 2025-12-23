@@ -538,7 +538,7 @@ class TrainingDataExtractor:
 
         return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
 
-    def extract_and_stream_robust(self, output_path: str, max_docs=None, checkpoint_every=100000):
+    def extract_and_stream(self, output_path: str, max_docs=None, checkpoint_every=100000):
         """
         Extract training data with robust error handling.
         Uses search_after instead of scroll (more reliable for large datasets).
