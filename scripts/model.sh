@@ -193,7 +193,7 @@ export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
 
 echo "Starting enrichment loop..."
 # Run the script in enrich mode
-python "$TRAINING_SCRIPT" --enrich --es-host "\$ES_HOST"
+python -u "$TRAINING_SCRIPT" --enrich --es-host "\$ES_HOST"
 
 echo
 echo "=========================================="
@@ -302,7 +302,7 @@ $(activate_conda)
 cd "$REPO_DIR"
 export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
 
-python "$TRAINING_SCRIPT" \\
+python -u "$TRAINING_SCRIPT" \\
     --phase 0 \\
     --es-host "http://\${ES_NODE}:\${ES_PORT}" \\
     --index "${INDEX_NAME}" \\
@@ -431,7 +431,7 @@ echo "Input: ${INPUT_ARGS}"
 echo "Output: ${OUTPUT_FILE}"
 echo
 
-python "$TRAINING_SCRIPT" \\
+python -u "$TRAINING_SCRIPT" \\
     --phase ${PHASE} \\
     ${INPUT_ARGS} \\
     --output "${OUTPUT_FILE}" \\
