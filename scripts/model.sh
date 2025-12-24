@@ -55,7 +55,9 @@ SUBSAMPLE_PAIRS=5000000  # Limit to 5M pairs
 DEFAULT_MAX_DOCS=""  # Empty = all documents
 
 # GPU partition settings
+GPU_CLUSTER="gpu"
 GPU_PARTITION="a100"
+GPU_QOS="gpu-a100-l"
 GPU_COUNT=1
 GPU_MEM="40g"
 CPU_COUNT=8
@@ -392,13 +394,15 @@ submit_training_phase() {
     cat > "$TRAIN_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=phonetic-${PHASE_NAME}
+#SBATCH --cluster=${GPU_CLUSTER}
 #SBATCH --partition=${GPU_PARTITION}
-#SBATCH --time=${TIME_LIMIT}
+#SBATCH --qos=${GPU_QOS}
+#SBATCH --gres=gpu:${GPU_COUNT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
+#SBATCH --time=${TIME_LIMIT}
 #SBATCH --cpus-per-task=${CPU_COUNT}
 #SBATCH --mem=${MEM}
-#SBATCH --gres=gpu:${GPU_COUNT}
 #SBATCH --output=${SLURM_LOG_DIR}/${PHASE_NAME}-%j.out
 #SBATCH --error=${SLURM_LOG_DIR}/${PHASE_NAME}-%j.err
 ${DEPENDENCY_ARG}
@@ -685,8 +689,10 @@ do_test() {
     echo
 
     # Use srun for interactive GPU access
-    srun --partition=${GPU_PARTITION} \
-         --gres=gpu:1 \
+    srun --cluster=${GPU_CLUSTER} \
+         --partition=${GPU_PARTITION} \
+         --qos=${GPU_QOS} \
+         --gres=gpu:${GPU_COUNT} \
          --mem=16G \
          --time=00:10:00 \
          --pty bash -c "
@@ -828,7 +834,9 @@ EXAMPLES:
   $0 -train --phase 2
 
 GPU RESOURCES:
+  Cluster: ${GPU_CLUSTER}
   Partition: ${GPU_PARTITION}
+  QOS: ${GPU_QOS}
   GPUs: ${GPU_COUNT}x A100 ${GPU_MEM}
   CPUs: ${CPU_COUNT}
   Memory: ${MEM}
