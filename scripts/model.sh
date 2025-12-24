@@ -451,7 +451,7 @@ echo "Output: ${OUTPUT_FILE}"
 ls -lh "${OUTPUT_FILE}"*
 SBATCH_EOF
 
-    local JOBID=$(sbatch --parsable "$TRAIN_SCRIPT")
+    local JOBID=$(sbatch --parsable "$TRAIN_SCRIPT" | cut -d';' -f1)
     rm "$TRAIN_SCRIPT"
 
     echo "$JOBID"
