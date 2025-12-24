@@ -389,6 +389,17 @@ submit_training_phase() {
         DEPENDENCY_ARG="#SBATCH --dependency=afterok:${DEPENDENCY}"
     fi
 
+    local EXTRA_ARGS=""
+    if [ -n "$CUSTOM_EPOCHS" ]; then
+        EXTRA_ARGS="$EXTRA_ARGS --epochs $CUSTOM_EPOCHS"
+    fi
+    if [ -n "$CUSTOM_BATCH_SIZE" ]; then
+        EXTRA_ARGS="$EXTRA_ARGS --batch-size $CUSTOM_BATCH_SIZE"
+    else
+        EXTRA_ARGS="$EXTRA_ARGS --batch-size $DEFAULT_BATCH_SIZE"
+    fi
+    EXTRA_ARGS="$EXTRA_ARGS --subsample-pairs $SUBSAMPLE_PAIRS"
+
     local TRAIN_SCRIPT=$(mktemp /tmp/phonetic-train-p${PHASE}-XXXXXX.sbatch)
 
     cat > "$TRAIN_SCRIPT" <<SBATCH_EOF
@@ -434,17 +445,6 @@ echo "--- Starting Training Phase ${PHASE} ---"
 echo "Input: ${INPUT_ARGS}"
 echo "Output: ${OUTPUT_FILE}"
 echo
-
-# Build optional arguments
-local EXTRA_ARGS=""
-if [ -n "$CUSTOM_EPOCHS" ]; then
-    EXTRA_ARGS="$EXTRA_ARGS --epochs ${CUSTOM_EPOCHS}"
-fi
-if [ -n "$CUSTOM_BATCH_SIZE" ]; then
-    EXTRA_ARGS="$EXTRA_ARGS --batch-size ${CUSTOM_BATCH_SIZE}"
-else
-    EXTRA_ARGS="$EXTRA_ARGS --batch-size ${DEFAULT_BATCH_SIZE}"
-fi
 
 python -u "$TRAINING_SCRIPT" \\
     --phase ${PHASE} \\
