@@ -390,11 +390,17 @@ class ToponymEnricher:
 
         try:
             ipa = epi.transliterate(name)
-            if not ipa: return None
+            if not ipa or not ipa.strip(): return None  # Check for empty/whitespace
+
             features = self.ft.word_to_vector_list(ipa, numeric=True)
-            if not features: return None
+            if not features or len(features) == 0: return None  # Explicit empty check
+
+            # Validate feature shape (each phoneme should have 24 features)
+            if not all(isinstance(f, (list, tuple)) and len(f) == 24 for f in features):
+                return None
+
             return {'ipa': ipa, 'features': features}
-        except:
+        except Exception:
             return None
 
     def run(self):
@@ -787,14 +793,24 @@ class TrainingDataExtractor:
                 dsets['lang'][c_idx] = lang
                 dsets['cluster_id'][c_idx] = cluster_idx
 
-                has_phonetic = False
-                ipa_str = ""
-
                 if cached:
-                    has_phonetic = True
-                    ipa_str = cached['ipa']
-                    # Write Feature Vector
-                    grp_feats.create_dataset(str(c_idx), data=np.array(cached['feats'], dtype='f4'))
+                    # Validate cached features
+                    feats = cached.get('feats', [])
+                    ipa_str = cached.get('ipa', '')
+
+                    # Only mark as phonetic if features are valid and non-empty
+                    if feats and len(feats) > 0 and ipa_str:
+                        has_phonetic = True
+                        ipa_str = cached['ipa']
+                        # Write Feature Vector
+                        grp_feats.create_dataset(str(c_idx), data=np.array(feats, dtype='f4'))
+                    else:
+                        # Cached but invalid - treat as non-phonetic
+                        has_phonetic = False
+                        ipa_str = ""
+                else:
+                    has_phonetic = False
+                    ipa_str = ""
 
                 dsets['ipa'][c_idx] = ipa_str
                 dsets['has_phonetic'][c_idx] = has_phonetic

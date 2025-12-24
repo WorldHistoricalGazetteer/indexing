@@ -40,7 +40,13 @@ class StreamingPhase1Dataset(Dataset):
 
             for idx in range(f.attrs['total_items']):
                 if items['has_phonetic'][idx]:
-                    self.phonetic_item_indices.append(idx)
+                    # Validate that features actually exist
+                    feature_key = str(idx)
+                    if feature_key in f['features']:
+                        feat_shape = f['features'][feature_key].shape
+                        # Only include if features are non-empty
+                        if feat_shape[0] > 0:
+                            self.phonetic_item_indices.append(idx)
 
             self.cluster_to_items = defaultdict(list)
             for idx in self.phonetic_item_indices:
