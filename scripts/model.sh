@@ -363,19 +363,19 @@ submit_training_phase() {
         1)
             PHASE_NAME="phase1-teacher"
             TIME_LIMIT="$TIME_PHASE1"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5"
+            INPUT_ARGS="--data ${DATA_FILE}"
             OUTPUT_FILE="${CHECKPOINT_DIR}/phase1.pt"
             ;;
         2)
             PHASE_NAME="phase2-alignment"
             TIME_LIMIT="$TIME_PHASE2"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5 --phase1-model ${CHECKPOINT_DIR}/phase1.pt"
+            INPUT_ARGS="--data ${DATA_FILE} --phase1-model ${CHECKPOINT_DIR}/phase1.pt"
             OUTPUT_FILE="${CHECKPOINT_DIR}/phase2.pt"
             ;;
         3)
             PHASE_NAME="phase3-generalize"
             TIME_LIMIT="$TIME_PHASE3"
-            INPUT_ARGS="--data ${DATA_DIR}/training_data.h5 --phase2-model ${CHECKPOINT_DIR}/phase2.pt"
+            INPUT_ARGS="--data ${DATA_FILE} --phase2-model ${CHECKPOINT_DIR}/phase2.pt"
             OUTPUT_FILE="${CHECKPOINT_DIR}/final_model.pt"
             ;;
         *)
@@ -435,11 +435,22 @@ echo "Input: ${INPUT_ARGS}"
 echo "Output: ${OUTPUT_FILE}"
 echo
 
+# Build optional arguments
+local EXTRA_ARGS=""
+if [ -n "$CUSTOM_EPOCHS" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --epochs ${CUSTOM_EPOCHS}"
+fi
+if [ -n "$CUSTOM_BATCH_SIZE" ]; then
+    EXTRA_ARGS="$EXTRA_ARGS --batch-size ${CUSTOM_BATCH_SIZE}"
+else
+    EXTRA_ARGS="$EXTRA_ARGS --batch-size ${DEFAULT_BATCH_SIZE}"
+fi
+
 python -u "$TRAINING_SCRIPT" \\
     --phase ${PHASE} \\
     ${INPUT_ARGS} \\
     --output "${OUTPUT_FILE}" \\
-    --batch-size ${DEFAULT_BATCH_SIZE} \\
+    ${EXTRA_ARGS} \\
     --subsample-pairs ${SUBSAMPLE_PAIRS}
 
 echo
@@ -469,6 +480,9 @@ do_train() {
     # Parse arguments
     local SINGLE_PHASE=""
     local SKIP_EXTRACT=false
+    local CUSTOM_DATA=""
+    local CUSTOM_EPOCHS=""
+    local CUSTOM_BATCH_SIZE=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -480,21 +494,36 @@ do_train() {
                 SKIP_EXTRACT=true
                 shift
                 ;;
+            --data)
+                CUSTOM_DATA="$2"
+                shift 2
+                ;;
+            --epochs)
+                CUSTOM_EPOCHS="$2"
+                shift 2
+                ;;
+            --batch-size)
+                CUSTOM_BATCH_SIZE="$2"
+                shift 2
+                ;;
             *)
                 shift
                 ;;
         esac
     done
 
+    # Determine which data file to use
+    local DATA_FILE="${CUSTOM_DATA:-${DATA_DIR}/training_data.h5}"
+
     # Check training data exists
-    if [ ! -f "${DATA_DIR}/training_data.h5" ]; then
-        echo "ERROR: Training data not found at ${DATA_DIR}/training_data.h5"
+    if [ ! -f "${DATA_FILE}" ]; then
+        echo "ERROR: Training data not found at ${DATA_FILE}"
         echo "Run extraction first: $0 -extract"
         return 1
     fi
 
-    echo "Training data: ${DATA_DIR}/training_data.h5"
-    ls -lh "${DATA_DIR}/training_data.h5"
+    echo "Training data: ${DATA_FILE}"
+    ls -lh "${DATA_FILE}"
     echo
 
     if [ -n "$SINGLE_PHASE" ]; then
@@ -517,7 +546,7 @@ do_train() {
                 ;;
         esac
 
-        local JOBID=$(submit_training_phase "$SINGLE_PHASE" "")
+        local JOBID=$(submit_training_phase "$SINGLE_PHASE" "" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
 
         if [ -z "$JOBID" ]; then
             echo "ERROR: Failed to submit job"
@@ -541,13 +570,13 @@ EOF
         echo "Training all phases (1 → 2 → 3) with job dependencies..."
         echo
 
-        local JOB1=$(submit_training_phase 1 "")
+        local JOB1=$(submit_training_phase 1 "" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
         echo "Phase 1 job: $JOB1"
 
-        local JOB2=$(submit_training_phase 2 "$JOB1")
+        local JOB2=$(submit_training_phase 2 "$JOB1" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
         echo "Phase 2 job: $JOB2 (depends on $JOB1)"
 
-        local JOB3=$(submit_training_phase 3 "$JOB2")
+        local JOB3=$(submit_training_phase 3 "$JOB2" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
         echo "Phase 3 job: $JOB3 (depends on $JOB2)"
 
         cat > "$JOB_INFO_FILE" <<EOF
