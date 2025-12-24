@@ -1372,7 +1372,7 @@ def train_phase1(
     model = PhoneticEncoder().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=5, factor=0.5, verbose=True
+        optimizer, mode='min', patience=5, factor=0.5
     )
     criterion = TripletLoss()
 
@@ -1500,7 +1500,7 @@ def train_phase2(
 
     optimizer = torch.optim.Adam(char_encoder.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=5, factor=0.5, verbose=True
+        optimizer, mode='min', patience=5, factor=0.5
     )
     criterion = RobustAlignmentLoss()
 
@@ -1649,7 +1649,7 @@ def train_phase3(
         lr=lr
     )
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='min', patience=3, factor=0.5, verbose=True
+        optimizer, mode='min', patience=3, factor=0.5
     )
     criterion = TripletLoss()
 
