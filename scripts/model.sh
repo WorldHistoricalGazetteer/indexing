@@ -346,6 +346,225 @@ EOF
     echo "When complete, run: $0 -train"
 }
 
+do_extract_fast() {
+    echo "=========================================="
+    echo "FAST EXTRACTION (NO DEDUPLICATION)"
+    echo "=========================================="
+    echo
+
+    check_staging_es || return 1
+    check_training_script || return 1
+    ensure_directories
+
+    source "$STAGING_INFO_FILE"
+
+    # Parse arguments
+    local MAX_DOCS_ARG=""
+    local INDEX_NAME="places"
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --max-docs)
+                MAX_DOCS_ARG="--max-docs $2"
+                shift 2
+                ;;
+            --index)
+                INDEX_NAME="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    local OUTPUT_FILE="${DATA_DIR}/training_data_raw.h5"
+
+    # Create extraction job script
+    local EXTRACT_SCRIPT=$(mktemp /tmp/phonetic-extract-fast-XXXXXX.sbatch)
+
+    cat > "$EXTRACT_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=phonetic-extract-fast
+#SBATCH --partition=smp
+#SBATCH --time=${TIME_EXTRACT}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --output=${SLURM_LOG_DIR}/extract-fast-%j.out
+#SBATCH --error=${SLURM_LOG_DIR}/extract-fast-%j.err
+
+set -e
+
+echo "=========================================="
+echo "PHONETIC MODEL - FAST EXTRACTION"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+source "$STAGING_INFO_FILE"
+export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
+
+echo "Elasticsearch: \$ES_HOST"
+echo "Index: ${INDEX_NAME}"
+echo "Output: ${OUTPUT_FILE}"
+echo "Mode: FAST (no deduplication)"
+echo
+
+$(activate_conda)
+
+cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+
+python -u "$TRAINING_SCRIPT" \\
+    --fast-extract \\
+    --es-host "http://\${ES_NODE}:\${ES_PORT}" \\
+    --index "${INDEX_NAME}" \\
+    --output "${OUTPUT_FILE}" \\
+    ${MAX_DOCS_ARG}
+
+echo
+echo "=========================================="
+echo "FAST EXTRACTION COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+echo "Output: ${OUTPUT_FILE}"
+ls -lh "${OUTPUT_FILE}"
+echo
+echo "Next step: Run '$0 -deduplicate' to remove duplicates"
+SBATCH_EOF
+
+    echo "Submitting fast extraction job..."
+    local JOBID=$(sbatch --parsable "$EXTRACT_SCRIPT")
+    rm "$EXTRACT_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit job"
+        return 1
+    fi
+
+    cat > "$JOB_INFO_FILE" <<EOF
+CURRENT_JOB_ID=$JOBID
+CURRENT_PHASE="extract-fast"
+STARTED_AT="$(date -Iseconds)"
+EOF
+
+    echo
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${SLURM_LOG_DIR}/extract-fast-${JOBID}.out"
+}
+
+do_deduplicate() {
+    echo "=========================================="
+    echo "DEDUPLICATE TRAINING DATA"
+    echo "=========================================="
+    echo
+
+    check_training_script || return 1
+    ensure_directories
+
+    local INPUT_FILE="${DATA_DIR}/training_data_raw.h5"
+    local OUTPUT_FILE="${DATA_DIR}/training_data.h5"
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --input)
+                INPUT_FILE="$2"
+                shift 2
+                ;;
+            --output)
+                OUTPUT_FILE="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ ! -f "$INPUT_FILE" ]; then
+        echo "ERROR: Input file not found: $INPUT_FILE"
+        return 1
+    fi
+
+    # Create deduplication job script
+    local DEDUP_SCRIPT=$(mktemp /tmp/phonetic-dedup-XXXXXX.sbatch)
+
+    cat > "$DEDUP_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=phonetic-dedup
+#SBATCH --partition=smp
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+#SBATCH --output=${SLURM_LOG_DIR}/dedup-%j.out
+#SBATCH --error=${SLURM_LOG_DIR}/dedup-%j.err
+
+set -e
+
+echo "=========================================="
+echo "PHONETIC MODEL - DEDUPLICATION"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+echo "Input:  ${INPUT_FILE}"
+echo "Output: ${OUTPUT_FILE}"
+echo
+
+$(activate_conda)
+
+cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+
+python -u "$TRAINING_SCRIPT" \\
+    --deduplicate \\
+    --input "${INPUT_FILE}" \\
+    --output "${OUTPUT_FILE}"
+
+echo
+echo "=========================================="
+echo "DEDUPLICATION COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+echo "Output: ${OUTPUT_FILE}"
+ls -lh "${OUTPUT_FILE}"
+echo
+echo "Ready for training: $0 -train"
+SBATCH_EOF
+
+    echo "Submitting deduplication job..."
+    local JOBID=$(sbatch --parsable "$DEDUP_SCRIPT")
+    rm "$DEDUP_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit job"
+        return 1
+    fi
+
+    cat > "$JOB_INFO_FILE" <<EOF
+CURRENT_JOB_ID=$JOBID
+CURRENT_PHASE="deduplicate"
+STARTED_AT="$(date -Iseconds)"
+EOF
+
+    echo
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${SLURM_LOG_DIR}/dedup-${JOBID}.out"
+}
+
 # =============================================================================
 # TRAINING (GPU jobs)
 # =============================================================================
@@ -818,9 +1037,15 @@ PREREQUISITES:
 USAGE: $0 COMMAND [OPTIONS]
 
 DATA EXTRACTION (requires staging ES):
-  -extract [OPTIONS]     Extract training data from Elasticsearch
-    --max-docs N         Limit to N documents (for testing)
-    --index NAME         Index name (default: places)
+  -extract-fast [OPTIONS]   RECOMMENDED: Fast extraction without deduplication
+    --max-docs N            Limit to N documents (for testing)
+    --index NAME            Index name (default: places)
+
+  -deduplicate [OPTIONS]    Deduplicate extracted data (run after -extract-fast)
+    --input FILE            Input raw HDF5 file (default: training_data_raw.h5)
+    --output FILE           Output deduplicated file (default: training_data.h5)
+
+  -extract [OPTIONS]        OLD: Extract with deduplication (slower, deprecated)
 
 TRAINING (GPU jobs):
   -train                 Run all 3 phases with job dependencies
@@ -850,7 +1075,8 @@ DIRECTORIES:
 EXAMPLES:
   # Full pipeline
   source es.sh -staging-start          # Start ES (in another terminal)
-  $0 -extract                          # Extract data (~1-2 hours)
+  $0 -extract-fast                     # Fast extraction (~3-4 hours for 47M docs)
+  $0 -deduplicate                      # Deduplicate offline (~2-3 hours)
   $0 -train                            # Train all phases (~26 hours total)
   $0 -status                           # Check progress
   $0 -test                             # Test the model
@@ -882,9 +1108,17 @@ case "$1" in
         shift
         do_enrich "$@"
         ;;
+    -extract-fast)
+        shift
+        do_extract_fast "$@"
+        ;;
     -extract)
         shift
-        do_extract "$@"
+        do_extract "$@"  # Keep old version for compatibility
+        ;;
+    -deduplicate)
+        shift
+        do_deduplicate "$@"
         ;;
     -train)
         shift

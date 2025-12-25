@@ -544,6 +544,316 @@ class TrainingDataExtractor:
 
         return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
 
+    def extract_and_stream_fast(self, output_path: str, max_docs=None, checkpoint_every=100000):
+        """
+        Fast extraction with NO deduplication.
+        Writes all pairs directly to HDF5 for post-processing deduplication.
+
+        Args:
+            output_path: Path to output HDF5 file
+            max_docs: Maximum documents to process
+            checkpoint_every: Save progress every N documents
+        """
+        print(f"Starting Fast Extraction (NO deduplication)")
+        print(f"Output: {output_path}")
+        print(f"Checkpoint every: {checkpoint_every:,} docs")
+        print()
+
+        stats = {
+            'docs_processed': 0,
+            'clusters_found': 0,
+            'items_written': 0,
+            'phonetic_pairs_written': 0,
+            'non_phonetic_pairs_written': 0,
+        }
+
+        with h5py.File(output_path, 'w') as f:
+            str_dtype = h5py.special_dtype(vlen=str)
+            grp_items = f.create_group('items')
+            grp_feats = f.create_group('features')
+            grp_pairs_p = f.create_group('pairs_with_phonetic')
+            grp_pairs_np = f.create_group('pairs_without_phonetic')
+
+            def make_dset(grp, name, dtype):
+                return grp.create_dataset(name, (100000,), maxshape=(None,), dtype=dtype, chunks=True)
+
+            dsets = {
+                'toponym': make_dset(grp_items, 'toponym', str_dtype),
+                'romanized': make_dset(grp_items, 'romanized', str_dtype),
+                'lang': make_dset(grp_items, 'lang', str_dtype),
+                'ipa': make_dset(grp_items, 'ipa', str_dtype),
+                'cluster_id': make_dset(grp_items, 'cluster_id', 'i4'),
+                'has_phonetic': make_dset(grp_items, 'has_phonetic', 'bool'),
+                'p_anc': make_dset(grp_pairs_p, 'anchor_idx', 'i4'),
+                'p_pos': make_dset(grp_pairs_p, 'positive_idx', 'i4'),
+                'p_sim': make_dset(grp_pairs_p, 'similarity', 'f4'),
+                'np_anc': make_dset(grp_pairs_np, 'anchor_idx', 'i4'),
+                'np_pos': make_dset(grp_pairs_np, 'positive_idx', 'i4'),
+            }
+
+            counters = {'items': 0, 'phon_pairs': 0, 'non_phon_pairs': 0}
+            caps = {'items': 100000, 'phon_pairs': 100000, 'non_phon_pairs': 100000}
+
+            cluster_batch = []
+            search_after = None
+            batch_size = 1000
+
+            print("Starting extraction with search_after pagination...")
+
+            while True:
+                # Build query
+                query = {
+                    "size": batch_size,
+                    "query": {"match_all": {}},
+                    "_source": ["toponyms"],
+                    "sort": ["_doc"]
+                }
+
+                if search_after:
+                    query["search_after"] = search_after
+
+                # Execute search with retry
+                max_retries = 3
+                resp = None
+
+                for attempt in range(max_retries):
+                    try:
+                        resp = self.es.search(index=self.index, body=query, request_timeout=60)
+                        break
+                    except Exception as e:
+                        if attempt < max_retries - 1:
+                            print(f"\nSearch failed (attempt {attempt + 1}/{max_retries}): {e}")
+                            print("Retrying in 5 seconds...")
+                            import time
+                            time.sleep(5)
+                        else:
+                            print(f"\nFATAL: Search failed after {max_retries} attempts")
+                            raise
+
+                if not resp:
+                    break
+
+                hits = resp['hits']['hits']
+                if not hits:
+                    print("\nNo more results - extraction complete!")
+                    break
+
+                # Process hits
+                for hit in hits:
+                    if max_docs and stats['docs_processed'] >= max_docs:
+                        break
+
+                    # Extract cluster
+                    raw_toponyms = hit['_source'].get('toponyms', [])
+                    cluster = []
+                    seen_cluster = set()
+
+                    for t in raw_toponyms:
+                        if isinstance(t, dict):
+                            tid = t.get('toponym_id', '')
+                            if '@' in tid:
+                                name, lang = tid.rsplit('@', 1)
+                                name, lang = name.strip(), lang.strip()
+                                if name and lang:
+                                    k = (name.lower(), lang.lower())
+                                    if k not in seen_cluster:
+                                        seen_cluster.add(k)
+                                        cluster.append((name, lang))
+
+                    if len(cluster) >= 2:
+                        stats['clusters_found'] += 1
+                        cluster_batch.append((stats['docs_processed'], cluster))
+
+                    stats['docs_processed'] += 1
+
+                    # Process batch
+                    if len(cluster_batch) >= 1000:
+                        self._process_batch_fast(
+                            cluster_batch, dsets, grp_feats, counters, caps, stats
+                        )
+                        cluster_batch = []
+
+                    # Progress report
+                    if stats['docs_processed'] % 10000 == 0:
+                        self._print_progress_fast(stats)
+
+                    # Checkpoint
+                    if stats['docs_processed'] % checkpoint_every == 0:
+                        print(f"\n[CHECKPOINT] Processed {stats['docs_processed']:,} docs")
+                        f.flush()
+
+                # Update cursor
+                search_after = hits[-1]['sort']
+
+                if max_docs and stats['docs_processed'] >= max_docs:
+                    break
+
+            # Process remaining batch
+            if cluster_batch:
+                self._process_batch_fast(
+                    cluster_batch, dsets, grp_feats, counters, caps, stats
+                )
+
+            # Trim datasets
+            print("\nTrimming datasets to final size...")
+            for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
+                dsets[k].resize((counters['items'],))
+
+            dsets['p_anc'].resize((counters['phon_pairs'],))
+            dsets['p_pos'].resize((counters['phon_pairs'],))
+            dsets['p_sim'].resize((counters['phon_pairs'],))
+
+            dsets['np_anc'].resize((counters['non_phon_pairs'],))
+            dsets['np_pos'].resize((counters['non_phon_pairs'],))
+
+            # Metadata
+            f.attrs['total_items'] = counters['items']
+            f.attrs['pairs_with_phonetic'] = counters['phon_pairs']
+            f.attrs['pairs_without_phonetic'] = counters['non_phon_pairs']
+            f.attrs['similarity_threshold'] = 0.5
+            f.attrs['deduplicated'] = False  # Mark as not deduplicated
+
+        # Final stats
+        print("\n" + "=" * 70)
+        print("FAST EXTRACTION COMPLETE (Contains duplicates)")
+        print("=" * 70)
+        print(f"Documents: {stats['docs_processed']:,}")
+        print(f"Clusters: {stats['clusters_found']:,}")
+        print(f"Items: {stats['items_written']:,}")
+        print(f"Phonetic pairs: {stats['phonetic_pairs_written']:,}")
+        print(f"Non-phonetic pairs: {stats['non_phonetic_pairs_written']:,}")
+        print(f"Total pairs: {stats['phonetic_pairs_written'] + stats['non_phonetic_pairs_written']:,}")
+        print()
+        print("Next step: Run deduplication with --deduplicate")
+
+    def _process_batch_fast(self, batch, dsets, grp_feats, counters, caps, stats):
+        """Process batch WITHOUT deduplication - writes ALL pairs."""
+
+        # Collect IDs for MGET
+        ids_to_fetch = set()
+        for _, cluster in batch:
+            for name, lang in cluster:
+                ids_to_fetch.add(f"{name}@{lang}")
+
+        # MGET Cache
+        cache = {}
+        if ids_to_fetch:
+            try:
+                resp = self.es.mget(
+                    index='toponyms',
+                    body={'ids': list(ids_to_fetch)},
+                    _source=['ipa_cached', 'features_cached_json']
+                )
+                for doc in resp['docs']:
+                    if doc['found'] and 'ipa_cached' in doc['_source']:
+                        cache[doc['_id']] = {
+                            'ipa': doc['_source']['ipa_cached'],
+                            'feats': orjson.loads(doc['_source']['features_cached_json'])
+                        }
+            except Exception as e:
+                print(f"\nWarning: MGET failed: {e}")
+
+        CHUNK_EXPAND = 50000
+
+        for cluster_idx, cluster in batch:
+            cluster_items = []
+
+            # Write Items
+            for name, lang in cluster:
+                # Resize check
+                if counters['items'] >= caps['items']:
+                    new_cap = caps['items'] + CHUNK_EXPAND
+                    for k in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
+                        dsets[k].resize((new_cap,))
+                    caps['items'] = new_cap
+
+                doc_id = f"{name}@{lang}"
+                cached = cache.get(doc_id)
+
+                c_idx = counters['items']
+                dsets['toponym'][c_idx] = name
+                dsets['romanized'][c_idx] = anyascii(name).lower()
+                dsets['lang'][c_idx] = lang
+                dsets['cluster_id'][c_idx] = cluster_idx
+
+                if cached:
+                    feats = cached.get('feats', [])
+                    ipa_str = cached.get('ipa', '')
+
+                    if feats and len(feats) > 0 and ipa_str:
+                        has_phonetic = True
+                        ipa_str = cached['ipa']
+                        grp_feats.create_dataset(str(c_idx), data=np.array(feats, dtype='f4'))
+                    else:
+                        has_phonetic = False
+                        ipa_str = ""
+                else:
+                    has_phonetic = False
+                    ipa_str = ""
+
+                dsets['ipa'][c_idx] = ipa_str
+                dsets['has_phonetic'][c_idx] = has_phonetic
+
+                cluster_items.append({
+                    'idx': c_idx,
+                    'toponym': name,
+                    'lang': lang,
+                    'ipa': ipa_str,
+                    'has_p': has_phonetic
+                })
+                counters['items'] += 1
+                stats['items_written'] += 1
+
+            # Write ALL Pairs (NO deduplication)
+            for i, item_a in enumerate(cluster_items):
+                for item_b in cluster_items[i + 1:]:
+
+                    if item_a['has_p'] and item_b['has_p']:
+                        # Phonetic Pair
+                        sim = self.phonetic_similarity(item_a['ipa'], item_b['ipa'])
+
+                        if sim < 0.5:
+                            continue
+
+                        # Resize check
+                        if counters['phon_pairs'] >= caps['phon_pairs']:
+                            new_cap = caps['phon_pairs'] + CHUNK_EXPAND
+                            dsets['p_anc'].resize((new_cap,))
+                            dsets['p_pos'].resize((new_cap,))
+                            dsets['p_sim'].resize((new_cap,))
+                            caps['phon_pairs'] = new_cap
+
+                        pidx = counters['phon_pairs']
+                        dsets['p_anc'][pidx] = item_a['idx']
+                        dsets['p_pos'][pidx] = item_b['idx']
+                        dsets['p_sim'][pidx] = sim
+                        counters['phon_pairs'] += 1
+                        stats['phonetic_pairs_written'] += 1
+
+                    else:
+                        # Non-Phonetic Pair
+                        # Resize check
+                        if counters['non_phon_pairs'] >= caps['non_phon_pairs']:
+                            new_cap = caps['non_phon_pairs'] + CHUNK_EXPAND
+                            dsets['np_anc'].resize((new_cap,))
+                            dsets['np_pos'].resize((new_cap,))
+                            caps['non_phon_pairs'] = new_cap
+
+                        pidx = counters['non_phon_pairs']
+                        dsets['np_anc'][pidx] = item_a['idx']
+                        dsets['np_pos'][pidx] = item_b['idx']
+                        counters['non_phon_pairs'] += 1
+                        stats['non_phonetic_pairs_written'] += 1
+
+    def _print_progress_fast(self, stats):
+        """Print progress for fast extraction."""
+        print(f"\rDocs: {stats['docs_processed']:,} | "
+              f"Clusters: {stats['clusters_found']:,} | "
+              f"Items: {stats['items_written']:,} | "
+              f"Phon pairs: {stats['phonetic_pairs_written']:,} | "
+              f"Non-phon: {stats['non_phonetic_pairs_written']:,}",
+              end='', flush=True)
+
     def extract_and_stream(self, output_path: str, max_docs=None, checkpoint_every=100000):
         """
         Extract training data with robust error handling.
@@ -1260,6 +1570,186 @@ class RobustAlignmentLoss(nn.Module):
         cosine_dist = 1.0 - F.cosine_similarity(char_emb, phone_emb).mean()
 
         return mse + (self.cosine_weight * cosine_dist)
+
+
+# =============================================================================
+# Deduplication Function
+# =============================================================================
+
+def deduplicate_hdf5(input_path: str, output_path: str):
+    """
+    Post-process HDF5 file to remove duplicate pairs using SQLite.
+
+    Args:
+        input_path: Path to raw (duplicated) HDF5 file
+        output_path: Path to deduplicated output HDF5 file
+    """
+    import sqlite3
+
+    print("=" * 70)
+    print("DEDUPLICATING HDF5 FILE")
+    print("=" * 70)
+    print(f"Input:  {input_path}")
+    print(f"Output: {output_path}")
+    print()
+
+    # Create in-memory SQLite database
+    print("Initializing SQLite deduplication database...")
+    db = sqlite3.connect(':memory:')
+    db.execute('CREATE TABLE seen_pairs (pair_key TEXT PRIMARY KEY)')
+    db.execute('CREATE INDEX idx_pair ON seen_pairs(pair_key)')
+
+    stats = {
+        'phonetic_original': 0,
+        'phonetic_unique': 0,
+        'phonetic_duplicates': 0,
+        'non_phonetic_original': 0,
+        'non_phonetic_unique': 0,
+        'non_phonetic_duplicates': 0,
+    }
+
+    with h5py.File(input_path, 'r') as f_in:
+        with h5py.File(output_path, 'w') as f_out:
+
+            # Copy items and features as-is (no dedup needed)
+            print("Copying items and features...")
+            f_in.copy('items', f_out)
+            f_in.copy('features', f_out)
+
+            items = f_in['items']
+
+            # Helper to make canonical pair key
+            def make_pair_key(anc_idx, pos_idx):
+                top_a = items['toponym'][anc_idx]
+                lang_a = items['lang'][anc_idx]
+                top_b = items['toponym'][pos_idx]
+                lang_b = items['lang'][pos_idx]
+
+                # Normalize
+                if isinstance(top_a, bytes):
+                    top_a = top_a.decode('utf-8')
+                if isinstance(lang_a, bytes):
+                    lang_a = lang_a.decode('utf-8')
+                if isinstance(top_b, bytes):
+                    top_b = top_b.decode('utf-8')
+                if isinstance(lang_b, bytes):
+                    lang_b = lang_b.decode('utf-8')
+
+                top_a = top_a.lower().strip()
+                lang_a = lang_a.lower().strip()
+                top_b = top_b.lower().strip()
+                lang_b = lang_b.lower().strip()
+
+                # Canonical ordering
+                if (top_a, lang_a) > (top_b, lang_b):
+                    top_a, lang_a, top_b, lang_b = top_b, lang_b, top_a, lang_a
+
+                return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
+
+            # Deduplicate phonetic pairs
+            print("Deduplicating phonetic pairs...")
+            pairs_p = f_in['pairs_with_phonetic']
+            stats['phonetic_original'] = pairs_p['anchor_idx'].shape[0]
+
+            deduplicated_phon = []
+
+            for i in range(stats['phonetic_original']):
+                if i % 100000 == 0:
+                    print(f"  Processed {i:,}/{stats['phonetic_original']:,} phonetic pairs...", end='\r')
+
+                anc_idx = int(pairs_p['anchor_idx'][i])
+                pos_idx = int(pairs_p['positive_idx'][i])
+                sim = float(pairs_p['similarity'][i])
+
+                pair_key = make_pair_key(anc_idx, pos_idx)
+
+                # Check if seen
+                cursor = db.execute('SELECT 1 FROM seen_pairs WHERE pair_key=?', (pair_key,))
+                if not cursor.fetchone():
+                    # New pair
+                    db.execute('INSERT INTO seen_pairs VALUES (?)', (pair_key,))
+                    deduplicated_phon.append((anc_idx, pos_idx, sim))
+                    stats['phonetic_unique'] += 1
+                else:
+                    stats['phonetic_duplicates'] += 1
+
+            print(f"  Processed {stats['phonetic_original']:,}/{stats['phonetic_original']:,} phonetic pairs")
+
+            # Write deduplicated phonetic pairs
+            grp_p = f_out.create_group('pairs_with_phonetic')
+            grp_p.create_dataset('anchor_idx', data=[p[0] for p in deduplicated_phon], dtype='i4')
+            grp_p.create_dataset('positive_idx', data=[p[1] for p in deduplicated_phon], dtype='i4')
+            grp_p.create_dataset('similarity', data=[p[2] for p in deduplicated_phon], dtype='f4')
+
+            # Deduplicate non-phonetic pairs
+            print("Deduplicating non-phonetic pairs...")
+            pairs_np = f_in['pairs_without_phonetic']
+            stats['non_phonetic_original'] = pairs_np['anchor_idx'].shape[0]
+
+            deduplicated_non_phon = []
+
+            for i in range(stats['non_phonetic_original']):
+                if i % 100000 == 0:
+                    print(f"  Processed {i:,}/{stats['non_phonetic_original']:,} non-phonetic pairs...", end='\r')
+
+                anc_idx = int(pairs_np['anchor_idx'][i])
+                pos_idx = int(pairs_np['positive_idx'][i])
+
+                pair_key = make_pair_key(anc_idx, pos_idx)
+
+                # Check if seen
+                cursor = db.execute('SELECT 1 FROM seen_pairs WHERE pair_key=?', (pair_key,))
+                if not cursor.fetchone():
+                    # New pair
+                    db.execute('INSERT INTO seen_pairs VALUES (?)', (pair_key,))
+                    deduplicated_non_phon.append((anc_idx, pos_idx))
+                    stats['non_phonetic_unique'] += 1
+                else:
+                    stats['non_phonetic_duplicates'] += 1
+
+            print(
+                f"  Processed {stats['non_phonetic_original']:,}/{stats['non_phonetic_original']:,} non-phonetic pairs")
+
+            # Write deduplicated non-phonetic pairs
+            grp_np = f_out.create_group('pairs_without_phonetic')
+            grp_np.create_dataset('anchor_idx', data=[p[0] for p in deduplicated_non_phon], dtype='i4')
+            grp_np.create_dataset('positive_idx', data=[p[1] for p in deduplicated_non_phon], dtype='i4')
+
+            # Write metadata
+            f_out.attrs['total_items'] = f_in.attrs['total_items']
+            f_out.attrs['pairs_with_phonetic'] = stats['phonetic_unique']
+            f_out.attrs['pairs_without_phonetic'] = stats['non_phonetic_unique']
+            f_out.attrs['similarity_threshold'] = f_in.attrs.get('similarity_threshold', 0.5)
+            f_out.attrs['deduplicated'] = True
+
+    db.close()
+
+    # Final stats
+    print("\n" + "=" * 70)
+    print("DEDUPLICATION COMPLETE")
+    print("=" * 70)
+
+    total_original = stats['phonetic_original'] + stats['non_phonetic_original']
+    total_unique = stats['phonetic_unique'] + stats['non_phonetic_unique']
+    total_duplicates = stats['phonetic_duplicates'] + stats['non_phonetic_duplicates']
+
+    print(f"\nPhonetic pairs:")
+    print(f"  Original:    {stats['phonetic_original']:,}")
+    print(f"  Unique:      {stats['phonetic_unique']:,}")
+    print(
+        f"  Duplicates:  {stats['phonetic_duplicates']:,} ({100 * stats['phonetic_duplicates'] / max(1, stats['phonetic_original']):.1f}%)")
+
+    print(f"\nNon-phonetic pairs:")
+    print(f"  Original:    {stats['non_phonetic_original']:,}")
+    print(f"  Unique:      {stats['non_phonetic_unique']:,}")
+    print(
+        f"  Duplicates:  {stats['non_phonetic_duplicates']:,} ({100 * stats['non_phonetic_duplicates'] / max(1, stats['non_phonetic_original']):.1f}%)")
+
+    print(f"\nTotal:")
+    print(f"  Original:    {total_original:,}")
+    print(f"  Unique:      {total_unique:,}")
+    print(f"  Duplicates:  {total_duplicates:,} ({100 * total_duplicates / max(1, total_original):.1f}%)")
+    print(f"  Reduction:   {100 * total_duplicates / max(1, total_original):.1f}%")
 
 
 # =============================================================================
@@ -2040,6 +2530,13 @@ def main():
     parser.add_argument('--lang2')
     parser.add_argument('--gpu', action='store_true')
 
+    # Deduplication
+    parser.add_argument('--fast-extract', action='store_true',
+                        help='Fast extraction without deduplication')
+    parser.add_argument('--deduplicate', action='store_true',
+                        help='Deduplicate existing HDF5 file')
+    parser.add_argument('--input', help='Input file for deduplication')
+
     args = parser.parse_args()
 
     if args.enrich:
@@ -2064,7 +2561,19 @@ def main():
         rom2 = anyascii(args.toponym2).lower()
         print(f"Romanized: '{rom1}' vs '{rom2}'")
 
-    elif args.phase == 0:# Optimized Extraction
+    elif args.fast_extract:
+        # Fast extraction without deduplication
+        extractor = TrainingDataExtractor(args.es_host, args.index)
+        extractor.extract_and_stream_fast(args.output, max_docs=args.max_docs)
+
+    elif args.deduplicate:
+        # Deduplicate existing HDF5 file
+        if not args.input:
+            parser.error("--deduplicate requires --input")
+        deduplicate_hdf5(args.input, args.output)
+
+    elif args.phase == 0:
+        # OLD extraction with deduplication (deprecated)
         extractor = TrainingDataExtractor(args.es_host, args.index)
         extractor.extract_and_stream(args.output, max_docs=args.max_docs)
 
