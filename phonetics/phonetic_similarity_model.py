@@ -1596,8 +1596,22 @@ def deduplicate_hdf5(input_path: str, output_path: str):
     # Create in-memory SQLite database
     print("Initializing SQLite deduplication database...")
     db = sqlite3.connect(':memory:')
-    db.execute('CREATE TABLE seen_pairs (pair_key TEXT PRIMARY KEY)')
-    db.execute('CREATE INDEX idx_pair ON seen_pairs(pair_key)')
+
+    # Store ALL pair data, using pair_key as PRIMARY KEY for auto-dedup
+    db.execute('''CREATE TABLE phonetic_pairs
+                  (
+                      pair_key     TEXT PRIMARY KEY,
+                      anchor_idx   INTEGER,
+                      positive_idx INTEGER,
+                      similarity   REAL
+                  )''')
+
+    db.execute('''CREATE TABLE non_phonetic_pairs
+                  (
+                      pair_key     TEXT PRIMARY KEY,
+                      anchor_idx   INTEGER,
+                      positive_idx INTEGER
+                  )''')
 
     stats = {
         'phonetic_original': 0,
@@ -1609,111 +1623,147 @@ def deduplicate_hdf5(input_path: str, output_path: str):
     }
 
     with h5py.File(input_path, 'r') as f_in:
-        with h5py.File(output_path, 'w') as f_out:
 
-            # Copy items and features as-is (no dedup needed)
-            print("Copying items and features...")
+        # Copy items and features as-is (no dedup needed)
+        print("Copying items and features...")
+
+        items = f_in['items']
+
+        # Helper to make canonical pair key
+        def make_pair_key(anc_idx, pos_idx):
+            top_a = items['toponym'][anc_idx]
+            lang_a = items['lang'][anc_idx]
+            top_b = items['toponym'][pos_idx]
+            lang_b = items['lang'][pos_idx]
+
+            # Normalize
+            if isinstance(top_a, bytes):
+                top_a = top_a.decode('utf-8')
+            if isinstance(lang_a, bytes):
+                lang_a = lang_a.decode('utf-8')
+            if isinstance(top_b, bytes):
+                top_b = top_b.decode('utf-8')
+            if isinstance(lang_b, bytes):
+                lang_b = lang_b.decode('utf-8')
+
+            top_a = top_a.lower().strip()
+            lang_a = lang_a.lower().strip()
+            top_b = top_b.lower().strip()
+            lang_b = lang_b.lower().strip()
+
+            # Canonical ordering
+            if (top_a, lang_a) > (top_b, lang_b):
+                top_a, lang_a, top_b, lang_b = top_b, lang_b, top_a, lang_a
+
+            return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
+
+        # Load phonetic pairs into SQLite (INSERT OR IGNORE auto-deduplicates)
+        print("Loading phonetic pairs into SQLite...")
+        pairs_p = f_in['pairs_with_phonetic']
+        stats['phonetic_original'] = pairs_p['anchor_idx'].shape[0]
+
+        cursor = db.cursor()
+
+        # Batch insert for speed
+        batch = []
+        batch_size = 10000
+
+        for i in range(stats['phonetic_original']):
+            if i % 100000 == 0:
+                print(f"  Loaded {i:,}/{stats['phonetic_original']:,} phonetic pairs...", end='\r')
+
+            anc_idx = int(pairs_p['anchor_idx'][i])
+            pos_idx = int(pairs_p['positive_idx'][i])
+            sim = float(pairs_p['similarity'][i])
+
+            pair_key = make_pair_key(anc_idx, pos_idx)
+            batch.append((pair_key, anc_idx, pos_idx, sim))
+
+            if len(batch) >= batch_size:
+                cursor.executemany(
+                    'INSERT OR IGNORE INTO phonetic_pairs VALUES (?, ?, ?, ?)',
+                    batch
+                )
+                batch = []
+
+        # Insert remaining
+        if batch:
+            cursor.executemany(
+                'INSERT OR IGNORE INTO phonetic_pairs VALUES (?, ?, ?, ?)',
+                batch
+            )
+
+        db.commit()
+        print(f"  Loaded {stats['phonetic_original']:,}/{stats['phonetic_original']:,} phonetic pairs")
+
+        # Count unique
+        stats['phonetic_unique'] = cursor.execute('SELECT COUNT(*) FROM phonetic_pairs').fetchone()[0]
+        stats['phonetic_duplicates'] = stats['phonetic_original'] - stats['phonetic_unique']
+
+        # Load non-phonetic pairs into SQLite
+        print("Loading non-phonetic pairs into SQLite...")
+        pairs_np = f_in['pairs_without_phonetic']
+        stats['non_phonetic_original'] = pairs_np['anchor_idx'].shape[0]
+
+        batch = []
+
+        for i in range(stats['non_phonetic_original']):
+            if i % 100000 == 0:
+                print(f"  Loaded {i:,}/{stats['non_phonetic_original']:,} non-phonetic pairs...", end='\r')
+
+            anc_idx = int(pairs_np['anchor_idx'][i])
+            pos_idx = int(pairs_np['positive_idx'][i])
+
+            pair_key = make_pair_key(anc_idx, pos_idx)
+            batch.append((pair_key, anc_idx, pos_idx))
+
+            if len(batch) >= batch_size:
+                cursor.executemany(
+                    'INSERT OR IGNORE INTO non_phonetic_pairs VALUES (?, ?, ?)',
+                    batch
+                )
+                batch = []
+
+        # Insert remaining
+        if batch:
+            cursor.executemany(
+                'INSERT OR IGNORE INTO non_phonetic_pairs VALUES (?, ?, ?)',
+                batch
+            )
+
+        db.commit()
+        print(f"  Loaded {stats['non_phonetic_original']:,}/{stats['non_phonetic_original']:,} non-phonetic pairs")
+
+        # Count unique
+        stats['non_phonetic_unique'] = cursor.execute('SELECT COUNT(*) FROM non_phonetic_pairs').fetchone()[0]
+        stats['non_phonetic_duplicates'] = stats['non_phonetic_original'] - stats['non_phonetic_unique']
+
+        # Now write deduplicated data to output HDF5
+        print("\nWriting deduplicated HDF5 file...")
+
+        with h5py.File(output_path, 'w') as f_out:
+            # Copy items and features
             f_in.copy('items', f_out)
             f_in.copy('features', f_out)
 
-            items = f_in['items']
-
-            # Helper to make canonical pair key
-            def make_pair_key(anc_idx, pos_idx):
-                top_a = items['toponym'][anc_idx]
-                lang_a = items['lang'][anc_idx]
-                top_b = items['toponym'][pos_idx]
-                lang_b = items['lang'][pos_idx]
-
-                # Normalize
-                if isinstance(top_a, bytes):
-                    top_a = top_a.decode('utf-8')
-                if isinstance(lang_a, bytes):
-                    lang_a = lang_a.decode('utf-8')
-                if isinstance(top_b, bytes):
-                    top_b = top_b.decode('utf-8')
-                if isinstance(lang_b, bytes):
-                    lang_b = lang_b.decode('utf-8')
-
-                top_a = top_a.lower().strip()
-                lang_a = lang_a.lower().strip()
-                top_b = top_b.lower().strip()
-                lang_b = lang_b.lower().strip()
-
-                # Canonical ordering
-                if (top_a, lang_a) > (top_b, lang_b):
-                    top_a, lang_a, top_b, lang_b = top_b, lang_b, top_a, lang_a
-
-                return f"{top_a}@{lang_a}|{top_b}@{lang_b}"
-
-            # Deduplicate phonetic pairs
-            print("Deduplicating phonetic pairs...")
-            pairs_p = f_in['pairs_with_phonetic']
-            stats['phonetic_original'] = pairs_p['anchor_idx'].shape[0]
-
-            deduplicated_phon = []
-
-            for i in range(stats['phonetic_original']):
-                if i % 100000 == 0:
-                    print(f"  Processed {i:,}/{stats['phonetic_original']:,} phonetic pairs...", end='\r')
-
-                anc_idx = int(pairs_p['anchor_idx'][i])
-                pos_idx = int(pairs_p['positive_idx'][i])
-                sim = float(pairs_p['similarity'][i])
-
-                pair_key = make_pair_key(anc_idx, pos_idx)
-
-                # Check if seen
-                cursor = db.execute('SELECT 1 FROM seen_pairs WHERE pair_key=?', (pair_key,))
-                if not cursor.fetchone():
-                    # New pair
-                    db.execute('INSERT INTO seen_pairs VALUES (?)', (pair_key,))
-                    deduplicated_phon.append((anc_idx, pos_idx, sim))
-                    stats['phonetic_unique'] += 1
-                else:
-                    stats['phonetic_duplicates'] += 1
-
-            print(f"  Processed {stats['phonetic_original']:,}/{stats['phonetic_original']:,} phonetic pairs")
-
             # Write deduplicated phonetic pairs
+            print("  Writing phonetic pairs...")
+            cursor.execute('SELECT anchor_idx, positive_idx, similarity FROM phonetic_pairs ORDER BY anchor_idx')
+            phon_data = cursor.fetchall()
+
             grp_p = f_out.create_group('pairs_with_phonetic')
-            grp_p.create_dataset('anchor_idx', data=[p[0] for p in deduplicated_phon], dtype='i4')
-            grp_p.create_dataset('positive_idx', data=[p[1] for p in deduplicated_phon], dtype='i4')
-            grp_p.create_dataset('similarity', data=[p[2] for p in deduplicated_phon], dtype='f4')
-
-            # Deduplicate non-phonetic pairs
-            print("Deduplicating non-phonetic pairs...")
-            pairs_np = f_in['pairs_without_phonetic']
-            stats['non_phonetic_original'] = pairs_np['anchor_idx'].shape[0]
-
-            deduplicated_non_phon = []
-
-            for i in range(stats['non_phonetic_original']):
-                if i % 100000 == 0:
-                    print(f"  Processed {i:,}/{stats['non_phonetic_original']:,} non-phonetic pairs...", end='\r')
-
-                anc_idx = int(pairs_np['anchor_idx'][i])
-                pos_idx = int(pairs_np['positive_idx'][i])
-
-                pair_key = make_pair_key(anc_idx, pos_idx)
-
-                # Check if seen
-                cursor = db.execute('SELECT 1 FROM seen_pairs WHERE pair_key=?', (pair_key,))
-                if not cursor.fetchone():
-                    # New pair
-                    db.execute('INSERT INTO seen_pairs VALUES (?)', (pair_key,))
-                    deduplicated_non_phon.append((anc_idx, pos_idx))
-                    stats['non_phonetic_unique'] += 1
-                else:
-                    stats['non_phonetic_duplicates'] += 1
-
-            print(
-                f"  Processed {stats['non_phonetic_original']:,}/{stats['non_phonetic_original']:,} non-phonetic pairs")
+            grp_p.create_dataset('anchor_idx', data=[p[0] for p in phon_data], dtype='i4')
+            grp_p.create_dataset('positive_idx', data=[p[1] for p in phon_data], dtype='i4')
+            grp_p.create_dataset('similarity', data=[p[2] for p in phon_data], dtype='f4')
 
             # Write deduplicated non-phonetic pairs
+            print("  Writing non-phonetic pairs...")
+            cursor.execute('SELECT anchor_idx, positive_idx FROM non_phonetic_pairs ORDER BY anchor_idx')
+            non_phon_data = cursor.fetchall()
+
             grp_np = f_out.create_group('pairs_without_phonetic')
-            grp_np.create_dataset('anchor_idx', data=[p[0] for p in deduplicated_non_phon], dtype='i4')
-            grp_np.create_dataset('positive_idx', data=[p[1] for p in deduplicated_non_phon], dtype='i4')
+            grp_np.create_dataset('anchor_idx', data=[p[0] for p in non_phon_data], dtype='i4')
+            grp_np.create_dataset('positive_idx', data=[p[1] for p in non_phon_data], dtype='i4')
 
             # Write metadata
             f_out.attrs['total_items'] = f_in.attrs['total_items']
