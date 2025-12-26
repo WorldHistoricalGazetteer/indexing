@@ -32,6 +32,15 @@
           "toponym_id": {
             "type": "keyword"
           },
+          "label": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
           "timespans": {
             "type": "nested",
             "properties": {

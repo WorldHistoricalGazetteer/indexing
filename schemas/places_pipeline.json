@@ -1,10 +1,98 @@
 {
-  "description": "Extracts namespace and adds timestamp",
+  "description": "Extracts namespace, normalizes toponyms, and adds timestamp",
   "processors": [
     {
       "script": {
         "lang": "painless",
         "source": "if (ctx.place_id != null && ctx.place_id.contains(':')) { ctx.namespace = ctx.place_id.splitOnToken(':')[0]; }"
+      }
+    },
+    {
+      "script": {
+        "lang": "painless",
+        "description": "Normalize toponyms: store original as label, create toponym_id from normalized name",
+        "source": """
+          if (ctx.toponyms != null) {
+            def validToponyms = [];
+            def seen = new HashSet();
+            
+            for (def t : ctx.toponyms) {
+              // Get original toponym_id
+              def origId = t.toponym_id;
+              if (origId == null || !origId.contains('@')) {
+                continue;
+              }
+              
+              // Split into name and lang
+              int atPos = origId.lastIndexOf('@');
+              if (atPos <= 0) {
+                continue;
+              }
+              
+              def origName = origId.substring(0, atPos);
+              def lang = origId.substring(atPos + 1);
+              
+              if (origName.length() == 0 || lang.length() == 0) {
+                continue;
+              }
+              
+              // Store original as label
+              t.label = origName;
+              
+              // Normalize the name
+              def normalized = origName;
+              
+              // Remove content in parentheses: "London (city)" -> "London"
+              normalized = /\\s*\\([^)]*\\)\\s*/.matcher(normalized).replaceAll(' ');
+              
+              // Remove content in square brackets: "Tokyo [東京]" -> "Tokyo"
+              normalized = /\\s*\\[[^\\]]*\\]\\s*/.matcher(normalized).replaceAll(' ');
+              
+              // Remove content in curly braces
+              normalized = /\\s*\\{[^}]*\\}\\s*/.matcher(normalized).replaceAll(' ');
+              
+              // Truncate at comma: "Dolovi, Danilovgrad" -> "Dolovi"
+              if (normalized.contains(',')) {
+                normalized = normalized.splitOnToken(',')[0];
+              }
+              
+              // Truncate at " - ": "Paris - capital" -> "Paris"
+              if (normalized.contains(' - ')) {
+                normalized = normalized.splitOnToken(' - ')[0];
+              }
+              
+              // Truncate at " / ": "München / Munich" -> "München"
+              if (normalized.contains(' / ')) {
+                normalized = normalized.splitOnToken(' / ')[0];
+              }
+              
+              // Remove problematic characters (numbers, punctuation that breaks IPA)
+              normalized = /[0-9;:!?@#$%^&*+=<>|\\\\~`"]/.matcher(normalized).replaceAll('');
+              
+              // Collapse multiple spaces and trim
+              normalized = /\\s+/.matcher(normalized).replaceAll(' ').trim();
+              
+              // Skip if normalized result is too short
+              if (normalized.length() < 2) {
+                continue;
+              }
+              
+              // Construct new toponym_id from normalized name
+              def newId = normalized + '@' + lang;
+              
+              // Deduplicate within this place
+              if (seen.contains(newId)) {
+                continue;
+              }
+              seen.add(newId);
+              
+              t.toponym_id = newId;
+              validToponyms.add(t);
+            }
+            
+            ctx.toponyms = validToponyms;
+          }
+        """
       }
     },
     {

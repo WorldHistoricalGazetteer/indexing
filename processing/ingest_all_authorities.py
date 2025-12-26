@@ -33,7 +33,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch, helpers
 
 from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX
@@ -71,25 +71,27 @@ def delete_existing_namespace(namespace):
     return deleted
 
 
-def deduplicate_and_index_toponyms():
+def deduplicate_and_index_toponyms(es, places_index, toponyms_index):
     """
     Extract unique toponym_ids from places.toponyms (nested)
-    and index them into the toponyms index without overwriting existing enriched documents.
-    """
-    from datetime import timedelta
+    and index them into the toponyms index.
 
+    The toponyms are already normalized by the places pipeline.
+    The toponyms pipeline extracts name/lang from toponym_id.
+
+    Assumes a fresh toponyms index (no existence checks needed).
+    """
     print("\n" + "=" * 80)
-    print("DEDUPLICATING AND INDEXING TOPONYMS (SAFE MODE)")
+    print("DEDUPLICATING AND INDEXING TOPONYMS")
     print("=" * 80)
     sys.stdout.flush()
 
     start_time = datetime.now()
-    indexed_created = 0
-    batch = []
-    BATCH_SIZE = 10000
 
-    # First, get an estimate of total unique toponyms for ETA calculation
+    # Estimate total
     print("Estimating total unique toponyms...")
+    sys.stdout.flush()
+
     count_query = {
         "size": 0,
         "aggs": {
@@ -106,13 +108,14 @@ def deduplicate_and_index_toponyms():
             }
         }
     }
-    count_resp = es.search(index=PLACES_INDEX, body=count_query, request_timeout=300)
+    count_resp = es.search(index=places_index, body=count_query, request_timeout=300)
     estimated_total = count_resp["aggregations"]["toponyms_nested"]["unique_count"]["value"]
     estimated_pages = max(1, int(estimated_total / 10000))
     print(f"Estimated unique toponyms: ~{estimated_total:,}")
     print(f"Estimated pages: ~{estimated_pages:,}\n")
     sys.stdout.flush()
 
+    # Composite aggregation query
     query = {
         "size": 0,
         "aggs": {
@@ -134,6 +137,9 @@ def deduplicate_and_index_toponyms():
 
     after_key = None
     page = 0
+    indexed_count = 0
+    batch = []
+    BATCH_SIZE = 50000  # Larger batches for fresh index
 
     try:
         while True:
@@ -141,14 +147,14 @@ def deduplicate_and_index_toponyms():
             if after_key:
                 query["aggs"]["toponyms_nested"]["aggs"]["unique_toponyms"]["composite"]["after"] = after_key
 
-            resp = es.search(index=PLACES_INDEX, body=query, request_timeout=300)
+            resp = es.search(index=places_index, body=query, request_timeout=300)
             agg = resp["aggregations"]["toponyms_nested"]["unique_toponyms"]
             buckets = agg["buckets"]
 
             if not buckets:
                 break
 
-            # Calculate progress and ETA
+            # Progress and ETA
             percent = (page / estimated_pages) * 100 if estimated_pages > 0 else 0
             elapsed = (datetime.now() - start_time).total_seconds()
             rate = page / elapsed if elapsed > 0 else 0
@@ -161,53 +167,54 @@ def deduplicate_and_index_toponyms():
                 eta_str = "--:--:--"
 
             print(f"\r  Page {page:,}/{estimated_pages:,} ({percent:.1f}%) | "
-                  f"{len(buckets):,} toponyms | {rate:.2f} pages/s | ETA: {eta_str}",
+                  f"Indexed: {indexed_count:,} | {rate:.2f} pages/s | ETA: {eta_str}",
                   end='', flush=True)
             sys.stdout.flush()
 
             for bucket in buckets:
                 toponym_id = bucket["key"]["toponym"]
+
+                # Simple index - pipeline extracts name/lang
                 batch.append({
-                    "_op_type": "create",
-                    "_index": TOPONYMS_INDEX,
+                    "_index": toponyms_index,
                     "_id": toponym_id,
-                    "_source": {"toponym_id": toponym_id}
+                    "_source": {
+                        "toponym_id": toponym_id
+                    }
                 })
 
-                if len(batch) >= BATCH_SIZE:
-                    success, _ = helpers.bulk(
-                        es, batch, raise_on_error=False, raise_on_exception=False, stats_only=True
-                    )
-                    indexed_created += success
-                    batch.clear()
+            if len(batch) >= BATCH_SIZE:
+                success, _ = helpers.bulk(es, batch, stats_only=True)
+                indexed_count += success
+                batch.clear()
 
             after_key = agg.get("after_key")
             if not after_key:
                 break
 
+        # Final batch
         if batch:
-            success, _ = helpers.bulk(
-                es, batch, raise_on_error=False, raise_on_exception=False, stats_only=True
-            )
-            indexed_created += success
+            success, _ = helpers.bulk(es, batch, stats_only=True)
+            indexed_count += success
             batch.clear()
 
     except Exception as e:
-        print("\nERROR during toponym deduplication:")
+        print(f"\nERROR during toponym deduplication: {e}")
         import traceback
         traceback.print_exc()
         sys.stdout.flush()
         return False
 
-    es.indices.refresh(index=TOPONYMS_INDEX)
+    es.indices.refresh(index=toponyms_index)
     elapsed = datetime.now() - start_time
+    final_count = es.count(index=toponyms_index)["count"]
 
-    print("\n✓ TOPONYM DEDUPLICATION COMPLETE")
-    print(f"  Newly created toponyms: {indexed_created:,}")
+    print("\n\n✓ TOPONYM DEDUPLICATION COMPLETE")
+    print(f"  Indexed: {indexed_count:,}")
+    print(f"  Total in index: {final_count:,}")
     print(f"  Time elapsed: {str(elapsed).split('.')[0]}")
-    final_count = es.count(index=TOPONYMS_INDEX)["count"]
-    print(f"  Total toponyms in index: {final_count:,}")
     sys.stdout.flush()
+
     return True
 
 

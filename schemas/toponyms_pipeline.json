@@ -1,10 +1,33 @@
 {
-  "description": "Extract language and name from Language-Scoped Toponym (LST) format (name@lang), preserving original. Appends @und if no language specified.",
+  "description": "Extract language and name from normalized toponym_id (name@lang format)",
   "processors": [
     {
       "script": {
         "lang": "painless",
-        "source": "if (ctx.toponym_id != null) { if (!ctx.toponym_id.contains('@')) { ctx.toponym_id = ctx.toponym_id + '@und'; } String[] parts = ctx.toponym_id.splitOnToken('@'); if (parts.length == 2) { ctx.name = parts[0]; ctx.name_lower = parts[0].toLowerCase(); String langPart = parts[1]; if (langPart.contains('-')) { String[] langParts = langPart.splitOnToken('-'); ctx.lang = langParts[0]; ctx.lang_variant = langParts[1]; } else { ctx.lang = langPart; } } }"
+        "source": """
+          if (ctx.toponym_id != null) {
+            // Ensure there's a language tag
+            if (!ctx.toponym_id.contains('@')) {
+              ctx.toponym_id = ctx.toponym_id + '@und';
+            }
+            
+            // Split on last @ to handle names that might contain @
+            int atPos = ctx.toponym_id.lastIndexOf('@');
+            if (atPos > 0) {
+              ctx.name = ctx.toponym_id.substring(0, atPos);
+              ctx.name_lower = ctx.name.toLowerCase();
+              
+              String langPart = ctx.toponym_id.substring(atPos + 1);
+              if (langPart.contains('-')) {
+                String[] langParts = langPart.splitOnToken('-');
+                ctx.lang = langParts[0];
+                ctx.lang_variant = langParts[1];
+              } else {
+                ctx.lang = langPart;
+              }
+            }
+          }
+        """
       }
     },
     {
