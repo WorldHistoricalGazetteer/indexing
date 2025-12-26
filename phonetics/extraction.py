@@ -42,6 +42,15 @@ except ImportError:
 from .config import Config
 
 
+def normalize_es_host(es_host: str) -> str:
+    """Ensure ES host has proper URL scheme."""
+    if not es_host:
+        return 'http://localhost:9200'
+    if not es_host.startswith(('http://', 'https://')):
+        return f'http://{es_host}'
+    return es_host
+
+
 class ToponymEnricher:
     """
     Scans the 'toponyms' index and computes phonetic features for supported languages.
@@ -49,7 +58,7 @@ class ToponymEnricher:
     """
 
     def __init__(self, es_host='localhost:9200', index='toponyms'):
-        self.es = Elasticsearch([es_host], request_timeout=60)
+        self.es = Elasticsearch([normalize_es_host(es_host)], request_timeout=60)
         self.index = index
         self.ft = FeatureTable()
         self._epi_cache = {}
@@ -171,22 +180,22 @@ class ToponymEnricher:
         """
         Remove ipa_cached and features_cached_json from toponyms where
         the cached features are empty or invalid.
-        
+
         This fixes earlier bugs where empty embeddings were stored.
         """
         print("Scanning for invalid cached phonetics...")
-        
+
         # Find documents with ipa_cached but potentially invalid features
         query = {
             "query": {
                 "exists": {"field": "ipa_cached"}
             }
         }
-        
+
         updates = []
         checked = 0
         invalid = 0
-        
+
         scanner = helpers.scan(
             self.es,
             query=query,
@@ -195,25 +204,25 @@ class ToponymEnricher:
             size=1000,
             scroll='2h'
         )
-        
+
         for hit in scanner:
             checked += 1
-            
+
             if checked % 100000 == 0:
                 print(f"  Checked {checked:,}, found {invalid:,} invalid...", end='\r', flush=True)
-            
+
             doc_id = hit['_id']
             source = hit['_source']
-            
+
             ipa = source.get('ipa_cached', '')
             features_json = source.get('features_cached_json', '')
-            
+
             is_invalid = False
-            
+
             # Check for empty IPA
             if not ipa or not ipa.strip():
                 is_invalid = True
-            
+
             # Check for empty or invalid features
             if features_json:
                 try:
@@ -226,7 +235,7 @@ class ToponymEnricher:
                     is_invalid = True
             else:
                 is_invalid = True
-            
+
             if is_invalid:
                 invalid += 1
                 updates.append({
@@ -238,21 +247,21 @@ class ToponymEnricher:
                         "features_cached_json": None
                     }
                 })
-            
+
             if len(updates) >= 500:
                 helpers.bulk(self.es, updates, request_timeout=60)
                 updates = []
-        
+
         if updates:
             helpers.bulk(self.es, updates, request_timeout=60)
-        
+
         print(f"\nChecked {checked:,} documents, cleaned {invalid:,} invalid entries.")
 
 
 class TrainingDataExtractor:
     """
     Extracts clusters from 'places' index and looks up phonetics from 'toponyms'.
-    
+
     Optimized v2:
     - Namespace filtering (e.g., -n gn for GeoNames only)
     - Pre-filters toponyms to Epitran languages with valid cached phonetics
@@ -263,10 +272,10 @@ class TrainingDataExtractor:
     SUPPORTED_LANGS: Set[str] = frozenset(Config.EPITRAN_LANGS.keys())
 
     def __init__(self, es_host: str = 'localhost:9200', index_name: str = 'places'):
-        self.es = Elasticsearch([es_host], request_timeout=120)
+        self.es = Elasticsearch([normalize_es_host(es_host)], request_timeout=120)
         self.index = index_name
         self.dst = panphon.distance.Distance()
-        
+
         # Cache for phonetic data: toponym_id -> {ipa, features} or None
         self._phonetic_cache: Dict[str, Optional[Dict]] = {}
 
@@ -287,12 +296,12 @@ class TrainingDataExtractor:
         """
         Fetch cached phonetics for a batch of toponym_ids.
         Returns dict mapping toponym_id to {ipa, features} for valid entries only.
-        
+
         Uses caching to avoid redundant MGET calls.
         """
         result = {}
         ids_to_fetch = []
-        
+
         # Check cache first
         for tid in toponym_ids:
             if tid in self._phonetic_cache:
@@ -301,10 +310,10 @@ class TrainingDataExtractor:
                     result[tid] = cached
             else:
                 ids_to_fetch.append(tid)
-        
+
         if not ids_to_fetch:
             return result
-        
+
         # Batch MGET for uncached IDs
         try:
             resp = self.es.mget(
@@ -318,29 +327,29 @@ class TrainingDataExtractor:
             for tid in ids_to_fetch:
                 self._phonetic_cache[tid] = None
             return result
-        
+
         # Process results
         for doc in resp.get('docs', []):
             tid = doc['_id']
-            
+
             if not doc.get('found'):
                 self._phonetic_cache[tid] = None
                 continue
-            
+
             source = doc.get('_source', {})
             ipa = source.get('ipa_cached', '')
             features_json = source.get('features_cached_json', '')
-            
+
             # Validate IPA
             if not ipa or not ipa.strip():
                 self._phonetic_cache[tid] = None
                 continue
-            
+
             # Validate features JSON
             if not features_json:
                 self._phonetic_cache[tid] = None
                 continue
-            
+
             try:
                 features = orjson.loads(features_json)
                 # Validate features structure
@@ -354,14 +363,14 @@ class TrainingDataExtractor:
                 if len(features) > 1 and not (isinstance(features[-1], (list, tuple)) and len(features[-1]) == 24):
                     self._phonetic_cache[tid] = None
                     continue
-                
+
                 entry = {'ipa': ipa, 'features': features}
                 self._phonetic_cache[tid] = entry
                 result[tid] = entry
-                
+
             except Exception:
                 self._phonetic_cache[tid] = None
-        
+
         return result
 
     def extract_optimized(
@@ -373,7 +382,7 @@ class TrainingDataExtractor:
     ):
         """
         Optimized extraction with namespace filtering and pre-filtering.
-        
+
         Args:
             output_path: HDF5 output file path
             namespaces: List of namespace prefixes to include (e.g., ['gn', 'wd'])
@@ -493,7 +502,7 @@ class TrainingDataExtractor:
 
                 # Collect all candidate toponym_ids from this batch for batch MGET
                 batch_candidates = []  # List of (hit_idx, tid, name, lang)
-                
+
                 for hit_idx, hit in enumerate(hits):
                     if max_docs and stats['docs_scanned'] >= max_docs:
                         break
@@ -519,10 +528,10 @@ class TrainingDataExtractor:
                         at_pos = tid.rfind('@')
                         if at_pos <= 0:
                             continue
-                        
+
                         name = tid[:at_pos].strip()
                         lang = tid[at_pos + 1:].strip()
-                        
+
                         if not name or not lang:
                             continue
 
@@ -592,10 +601,10 @@ class TrainingDataExtractor:
                         # STAGE 4: Generate pairs (optimized loop)
                         n_items = len(item_indices)
                         sim_threshold = Config.SIMILARITY_THRESHOLD
-                        
+
                         for i in range(n_items - 1):
                             idx_a, ipa_a = item_indices[i]
-                            
+
                             for j in range(i + 1, n_items):
                                 idx_b, ipa_b = item_indices[j]
 
