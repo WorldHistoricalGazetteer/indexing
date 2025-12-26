@@ -7,16 +7,22 @@
 # Coordinates training of the phonetic similarity model on GPU nodes while
 # reading training data from a staging Elasticsearch instance.
 #
+# v2 Updates:
+#   - Namespace filtering (-n gn for GeoNames only)
+#   - Cleanup invalid phonetics (--cleanup-phonetics)
+#   - Curriculum hard negatives (Stage A/B for Phase 3)
+#   - Uses modular phonetics package
+#
 # Prerequisites:
 #   - Staging ES running: source es.sh -staging-start
 #   - Conda environment with: torch, epitran, panphon, anyascii, elasticsearch
 #
 # Usage:
-#   ./model.sh -extract          # Extract data from staging ES
-#   ./model.sh -train            # Run all 3 training phases
-#   ./model.sh -train-phase 1    # Run specific phase
-#   ./model.sh -status           # Check job status
-#   ./model.sh -logs             # View training logs
+#   ./model.sh -extract -n gn        # Extract GeoNames only
+#   ./model.sh -train                # Run all 3 training phases
+#   ./model.sh -train-phase 3 -B     # Phase 3 with Stage B negatives
+#   ./model.sh -status               # Check job status
+#   ./model.sh -logs                 # View training logs
 #
 # =============================================================================
 
@@ -46,13 +52,14 @@ SLURM_LOG_DIR="${MODEL_DIR}/slurm_logs"
 # Job tracking
 JOB_INFO_FILE="${MODEL_DIR}/current_job.sh"
 
-# Training script location
-TRAINING_SCRIPT="${REPO_DIR}/phonetics/phonetic_similarity_model.py"
+# Training module location (now a package)
+TRAINING_MODULE="phonetics"
 
 # Default training parameters
 DEFAULT_BATCH_SIZE=256
 SUBSAMPLE_PAIRS=5000000  # Limit to 5M pairs
 DEFAULT_MAX_DOCS=""  # Empty = all documents
+DEFAULT_NAMESPACES=""  # Empty = all namespaces
 
 # GPU partition settings
 GPU_CLUSTER="gpu"
@@ -63,9 +70,9 @@ GPU_MEM="40g"
 CPU_COUNT=8
 MEM="64G"
 TIME_EXTRACT="48:00:00"
-TIME_PHASE1="48:00:00"  # ~15 hours (5M pairs, 50 epochs)
-TIME_PHASE2="48:00:00"   # ~5 hours (no change, item-based)
-TIME_PHASE3="48:00:00"  # ~10 hours (5M pairs, 20 epochs)
+TIME_PHASE1="48:00:00"
+TIME_PHASE2="48:00:00"
+TIME_PHASE3="48:00:00"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -95,36 +102,20 @@ check_staging_es() {
     return 0
 }
 
-check_training_script() {
-    if [ ! -f "$TRAINING_SCRIPT" ]; then
-        echo "ERROR: Training script not found at $TRAINING_SCRIPT"
-        echo "Please ensure phonetic_similarity_model.py is in the processing directory."
-        return 1
-    fi
-    return 0
-}
-
 activate_conda() {
     cat <<'EOF'
 # --- HARDCODED CONDA SETUP ---
-
-# 1. Define the path to the SHELL SCRIPT (not the binary)
-# Derived from: /ihome/whcdh/stg135/miniconda3/bin/conda
 CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
 
-# 2. Source it
 if [ -f "$CONDA_SETUP" ]; then
     source "$CONDA_SETUP"
 else
     echo "ERROR: Could not find conda setup at $CONDA_SETUP"
-    # Fallback: try adding the bin directory to PATH directly
     export PATH="/ihome/whcdh/stg135/miniconda3/bin:$PATH"
 fi
 
-# 3. Activate
 conda activate whg
 
-# 4. Verify
 if [ $? -ne 0 ]; then
     echo "ERROR: Failed to activate 'whg' environment."
     exit 127
@@ -136,28 +127,21 @@ EOF
 }
 
 # =============================================================================
-# DATA EXTRACTION (CPU job - reads from ES)
+# ENRICHMENT (hydrate toponyms with IPA/PanPhon)
 # =============================================================================
 
-do_enrich() {  # 27,393,380 toponyms in 4h26
+do_enrich() {
     echo "=========================================="
     echo "ENRICH ELASTICSEARCH TOPONYMS INDEX"
     echo "=========================================="
-    echo "This step hydrates the 'toponyms' index with computed IPA/Phonetic features."
-    echo "It ensures subsequent extraction is purely I/O bound."
     echo
 
     check_staging_es || return 1
-    check_training_script || return 1
     ensure_directories
 
     source "$STAGING_INFO_FILE"
 
-    # Resource configuration for Enrichment
-    # This is CPU-bound (Epitran) and Latency-bound (ES Updates)
-    # 48 hours to handle the 74M document scan safely.
     local TIME_ENRICH="48:00:00"
-
     local ENRICH_SCRIPT=$(mktemp /tmp/phonetic-enrich-XXXXXX.sbatch)
 
     cat > "$ENRICH_SCRIPT" <<SBATCH_EOF
@@ -175,34 +159,29 @@ do_enrich() {  # 27,393,380 toponyms in 4h26
 set -e
 
 echo "=========================================="
-echo "PHONETIC MODEL - ENRICHMENT (HYDRATION)"
+echo "PHONETIC MODEL - ENRICHMENT"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "Node: \$(hostname)"
 echo
 
 source "$STAGING_INFO_FILE"
-export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
 
-echo "Elasticsearch: \$ES_HOST"
-echo "Task: Computing IPA and PanPhon features for supported languages"
+echo "Elasticsearch: http://\${ES_NODE}:\${ES_PORT}"
 echo
 
 $(activate_conda)
 
 cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 
-echo "Starting enrichment loop..."
-# Run the script in enrich mode
-python -u "$TRAINING_SCRIPT" --enrich --es-host "\$ES_HOST"
+python -u -m ${TRAINING_MODULE} --enrich --es-host "\${ES_NODE}:\${ES_PORT}"
 
 echo
 echo "=========================================="
 echo "ENRICHMENT COMPLETE"
 echo "=========================================="
 echo "Finished: \$(date)"
-echo "The 'toponyms' index is now hydrated."
 SBATCH_EOF
 
     echo "Submitting enrichment job..."
@@ -214,7 +193,6 @@ SBATCH_EOF
         return 1
     fi
 
-    # Save job info
     cat > "$JOB_INFO_FILE" <<EOF
 CURRENT_JOB_ID=$JOBID
 CURRENT_PHASE="enrich"
@@ -223,14 +201,95 @@ EOF
 
     echo
     echo "Submitted job: $JOBID"
-    echo "This process is allocated 48 hours to handle the full dataset."
     echo
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
     echo "  tail -f ${SLURM_LOG_DIR}/enrich-${JOBID}.out"
-    echo
-    echo "Once this completes, run '$0 -extract' to generate the training file."
 }
+
+# =============================================================================
+# CLEANUP INVALID PHONETICS
+# =============================================================================
+
+do_cleanup_phonetics() {
+    echo "=========================================="
+    echo "CLEANUP INVALID CACHED PHONETICS"
+    echo "=========================================="
+    echo
+
+    check_staging_es || return 1
+    ensure_directories
+
+    source "$STAGING_INFO_FILE"
+
+    local CLEANUP_SCRIPT=$(mktemp /tmp/phonetic-cleanup-XXXXXX.sbatch)
+
+    cat > "$CLEANUP_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=phonetic-cleanup
+#SBATCH --partition=smp
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --output=${SLURM_LOG_DIR}/cleanup-%j.out
+#SBATCH --error=${SLURM_LOG_DIR}/cleanup-%j.err
+
+set -e
+
+echo "=========================================="
+echo "PHONETIC MODEL - CLEANUP INVALID PHONETICS"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+source "$STAGING_INFO_FILE"
+
+echo "Elasticsearch: http://\${ES_NODE}:\${ES_PORT}"
+echo
+
+$(activate_conda)
+
+cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
+
+python -u -m ${TRAINING_MODULE} --cleanup-phonetics --es-host "\${ES_NODE}:\${ES_PORT}"
+
+echo
+echo "=========================================="
+echo "CLEANUP COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+SBATCH_EOF
+
+    echo "Submitting cleanup job..."
+    local JOBID=$(sbatch --parsable "$CLEANUP_SCRIPT")
+    rm "$CLEANUP_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit job"
+        return 1
+    fi
+
+    cat > "$JOB_INFO_FILE" <<EOF
+CURRENT_JOB_ID=$JOBID
+CURRENT_PHASE="cleanup"
+STARTED_AT="$(date -Iseconds)"
+EOF
+
+    echo
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${SLURM_LOG_DIR}/cleanup-${JOBID}.out"
+}
+
+# =============================================================================
+# DATA EXTRACTION
+# =============================================================================
 
 do_extract() {
     echo "=========================================="
@@ -239,19 +298,25 @@ do_extract() {
     echo
 
     check_staging_es || return 1
-    check_training_script || return 1
     ensure_directories
 
     source "$STAGING_INFO_FILE"
 
     # Parse arguments
     local MAX_DOCS_ARG=""
+    local NAMESPACE_ARG=""
     local INDEX_NAME="places"
+    local OUTPUT_SUFFIX=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             --max-docs)
                 MAX_DOCS_ARG="--max-docs $2"
+                shift 2
+                ;;
+            -n|--namespaces)
+                NAMESPACE_ARG="-n $2"
+                OUTPUT_SUFFIX="_$2"
                 shift 2
                 ;;
             --index)
@@ -264,9 +329,8 @@ do_extract() {
         esac
     done
 
-    local OUTPUT_FILE="${DATA_DIR}/training_data.h5"
+    local OUTPUT_FILE="${DATA_DIR}/training_data${OUTPUT_SUFFIX}.h5"
 
-    # Create extraction job script
     local EXTRACT_SCRIPT=$(mktemp /tmp/phonetic-extract-XXXXXX.sbatch)
 
     cat > "$EXTRACT_SCRIPT" <<SBATCH_EOF
@@ -290,25 +354,25 @@ echo "Started: \$(date)"
 echo "Node: \$(hostname)"
 echo
 
-# Load staging ES info
 source "$STAGING_INFO_FILE"
-export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
 
-echo "Elasticsearch: \$ES_HOST"
+echo "Elasticsearch: http://\${ES_NODE}:\${ES_PORT}"
 echo "Index: ${INDEX_NAME}"
+echo "Namespaces: ${NAMESPACE_ARG:-ALL}"
 echo "Output: ${OUTPUT_FILE}"
 echo
 
 $(activate_conda)
 
 cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 
-python -u "$TRAINING_SCRIPT" \\
+python -u -m ${TRAINING_MODULE} \\
     --phase 0 \\
-    --es-host "http://\${ES_NODE}:\${ES_PORT}" \\
+    --es-host "\${ES_NODE}:\${ES_PORT}" \\
     --index "${INDEX_NAME}" \\
     --output "${OUTPUT_FILE}" \\
+    ${NAMESPACE_ARG} \\
     ${MAX_DOCS_ARG}
 
 echo
@@ -329,11 +393,11 @@ SBATCH_EOF
         return 1
     fi
 
-    # Save job info
     cat > "$JOB_INFO_FILE" <<EOF
 CURRENT_JOB_ID=$JOBID
 CURRENT_PHASE="extract"
 STARTED_AT="$(date -Iseconds)"
+OUTPUT_FILE="${OUTPUT_FILE}"
 EOF
 
     echo
@@ -343,120 +407,7 @@ EOF
     echo "  squeue -j $JOBID"
     echo "  tail -f ${SLURM_LOG_DIR}/extract-${JOBID}.out"
     echo
-    echo "When complete, run: $0 -train"
-}
-
-do_extract_fast() {
-    echo "=========================================="
-    echo "FAST EXTRACTION (NO DEDUPLICATION)"
-    echo "=========================================="
-    echo
-
-    check_staging_es || return 1
-    check_training_script || return 1
-    ensure_directories
-
-    source "$STAGING_INFO_FILE"
-
-    # Parse arguments
-    local MAX_DOCS_ARG=""
-    local INDEX_NAME="places"
-
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --max-docs)
-                MAX_DOCS_ARG="--max-docs $2"
-                shift 2
-                ;;
-            --index)
-                INDEX_NAME="$2"
-                shift 2
-                ;;
-            *)
-                shift
-                ;;
-        esac
-    done
-
-    local OUTPUT_FILE="${DATA_DIR}/training_data_raw.h5"
-
-    # Create extraction job script
-    local EXTRACT_SCRIPT=$(mktemp /tmp/phonetic-extract-fast-XXXXXX.sbatch)
-
-    cat > "$EXTRACT_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=phonetic-extract-fast
-#SBATCH --partition=smp
-#SBATCH --time=${TIME_EXTRACT}
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --output=${SLURM_LOG_DIR}/extract-fast-%j.out
-#SBATCH --error=${SLURM_LOG_DIR}/extract-fast-%j.err
-
-set -e
-
-echo "=========================================="
-echo "PHONETIC MODEL - FAST EXTRACTION"
-echo "=========================================="
-echo "Started: \$(date)"
-echo "Node: \$(hostname)"
-echo
-
-source "$STAGING_INFO_FILE"
-export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
-
-echo "Elasticsearch: \$ES_HOST"
-echo "Index: ${INDEX_NAME}"
-echo "Output: ${OUTPUT_FILE}"
-echo "Mode: FAST (no deduplication)"
-echo
-
-$(activate_conda)
-
-cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
-
-python -u "$TRAINING_SCRIPT" \\
-    --fast-extract \\
-    --es-host "http://\${ES_NODE}:\${ES_PORT}" \\
-    --index "${INDEX_NAME}" \\
-    --output "${OUTPUT_FILE}" \\
-    ${MAX_DOCS_ARG}
-
-echo
-echo "=========================================="
-echo "FAST EXTRACTION COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-echo "Output: ${OUTPUT_FILE}"
-ls -lh "${OUTPUT_FILE}"
-echo
-echo "Next step: Run '$0 -deduplicate' to remove duplicates"
-SBATCH_EOF
-
-    echo "Submitting fast extraction job..."
-    local JOBID=$(sbatch --parsable "$EXTRACT_SCRIPT")
-    rm "$EXTRACT_SCRIPT"
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit job"
-        return 1
-    fi
-
-    cat > "$JOB_INFO_FILE" <<EOF
-CURRENT_JOB_ID=$JOBID
-CURRENT_PHASE="extract-fast"
-STARTED_AT="$(date -Iseconds)"
-EOF
-
-    echo
-    echo "Submitted job: $JOBID"
-    echo
-    echo "Monitor with:"
-    echo "  squeue -j $JOBID"
-    echo "  tail -f ${SLURM_LOG_DIR}/extract-fast-${JOBID}.out"
+    echo "When complete, run: $0 -deduplicate"
 }
 
 do_deduplicate() {
@@ -465,13 +416,12 @@ do_deduplicate() {
     echo "=========================================="
     echo
 
-    check_training_script || return 1
     ensure_directories
 
-    local INPUT_FILE="${DATA_DIR}/training_data_raw.h5"
+    # Parse arguments
+    local INPUT_FILE="${DATA_DIR}/training_data_gn.h5"
     local OUTPUT_FILE="${DATA_DIR}/training_data.h5"
 
-    # Parse arguments
     while [[ $# -gt 0 ]]; do
         case $1 in
             --input)
@@ -490,10 +440,10 @@ do_deduplicate() {
 
     if [ ! -f "$INPUT_FILE" ]; then
         echo "ERROR: Input file not found: $INPUT_FILE"
+        echo "Run extraction first: $0 -extract -n gn"
         return 1
     fi
 
-    # Create deduplication job script
     local DEDUP_SCRIPT=$(mktemp /tmp/phonetic-dedup-XXXXXX.sbatch)
 
     cat > "$DEDUP_SCRIPT" <<SBATCH_EOF
@@ -524,9 +474,9 @@ echo
 $(activate_conda)
 
 cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 
-python -u "$TRAINING_SCRIPT" \\
+python -u -m ${TRAINING_MODULE} \\
     --deduplicate \\
     --input "${INPUT_FILE}" \\
     --output "${OUTPUT_FILE}"
@@ -572,11 +522,17 @@ EOF
 submit_training_phase() {
     local PHASE=$1
     local DEPENDENCY=$2
+    local DATA_FILE=$3
+    local CUSTOM_EPOCHS=$4
+    local CUSTOM_BATCH_SIZE=$5
+    local NEGATIVE_STAGE=$6
+    local STAGE_A_MODEL=$7
 
     local PHASE_NAME=""
     local TIME_LIMIT=""
     local INPUT_ARGS=""
     local OUTPUT_FILE=""
+    local STAGE_ARGS=""
 
     case $PHASE in
         1)
@@ -592,10 +548,17 @@ submit_training_phase() {
             OUTPUT_FILE="${CHECKPOINT_DIR}/phase2.pt"
             ;;
         3)
-            PHASE_NAME="phase3-generalize"
+            if [ "$NEGATIVE_STAGE" = "B" ]; then
+                PHASE_NAME="phase3-stage-b"
+                OUTPUT_FILE="${CHECKPOINT_DIR}/final_model_b.pt"
+                STAGE_ARGS="--negative-stage B --stage-a-model ${STAGE_A_MODEL:-${CHECKPOINT_DIR}/phase3_a.pt}"
+            else
+                PHASE_NAME="phase3-stage-a"
+                OUTPUT_FILE="${CHECKPOINT_DIR}/phase3_a.pt"
+                STAGE_ARGS="--negative-stage A"
+            fi
             TIME_LIMIT="$TIME_PHASE3"
             INPUT_ARGS="--data ${DATA_FILE} --phase2-model ${CHECKPOINT_DIR}/phase2.pt"
-            OUTPUT_FILE="${CHECKPOINT_DIR}/final_model.pt"
             ;;
         *)
             echo "ERROR: Invalid phase: $PHASE"
@@ -646,31 +609,30 @@ echo "Started: \$(date)"
 echo "Node: \$(hostname)"
 echo
 
-# Show GPU info
 echo "--- GPU Information ---"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 echo
 
 $(activate_conda)
 
-# Verify CUDA is available
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
 echo
 
 cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:${PYTHONPATH}"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 
 echo "--- Starting Training Phase ${PHASE} ---"
 echo "Input: ${INPUT_ARGS}"
 echo "Output: ${OUTPUT_FILE}"
+echo "Stage args: ${STAGE_ARGS}"
 echo
 
-python -u "$TRAINING_SCRIPT" \\
+python -u -m ${TRAINING_MODULE} \\
     --phase ${PHASE} \\
     ${INPUT_ARGS} \\
     --output "${OUTPUT_FILE}" \\
     ${EXTRA_ARGS} \\
-    --subsample-pairs ${SUBSAMPLE_PAIRS}
+    ${STAGE_ARGS}
 
 echo
 echo "=========================================="
@@ -693,25 +655,21 @@ do_train() {
     echo "=========================================="
     echo
 
-    check_training_script || return 1
     ensure_directories
 
     # Parse arguments
     local SINGLE_PHASE=""
-    local SKIP_EXTRACT=false
     local CUSTOM_DATA=""
     local CUSTOM_EPOCHS=""
     local CUSTOM_BATCH_SIZE=""
+    local NEGATIVE_STAGE="A"
+    local STAGE_A_MODEL=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             --phase)
                 SINGLE_PHASE="$2"
                 shift 2
-                ;;
-            --skip-extract)
-                SKIP_EXTRACT=true
-                shift
                 ;;
             --data)
                 CUSTOM_DATA="$2"
@@ -725,19 +683,29 @@ do_train() {
                 CUSTOM_BATCH_SIZE="$2"
                 shift 2
                 ;;
+            -A|--stage-a)
+                NEGATIVE_STAGE="A"
+                shift
+                ;;
+            -B|--stage-b)
+                NEGATIVE_STAGE="B"
+                shift
+                ;;
+            --stage-a-model)
+                STAGE_A_MODEL="$2"
+                shift 2
+                ;;
             *)
                 shift
                 ;;
         esac
     done
 
-    # Determine which data file to use
     local DATA_FILE="${CUSTOM_DATA:-${DATA_DIR}/training_data.h5}"
 
-    # Check training data exists
     if [ ! -f "${DATA_FILE}" ]; then
         echo "ERROR: Training data not found at ${DATA_FILE}"
-        echo "Run extraction first: $0 -extract"
+        echo "Run extraction first: $0 -extract -n gn"
         return 1
     fi
 
@@ -746,8 +714,11 @@ do_train() {
     echo
 
     if [ -n "$SINGLE_PHASE" ]; then
-        # Train single phase
         echo "Training Phase ${SINGLE_PHASE} only..."
+
+        if [ "$SINGLE_PHASE" = "3" ]; then
+            echo "Negative stage: ${NEGATIVE_STAGE}"
+        fi
 
         # Check prerequisites
         case $SINGLE_PHASE in
@@ -762,10 +733,15 @@ do_train() {
                     echo "ERROR: Phase 2 checkpoint not found. Run phase 2 first."
                     return 1
                 fi
+                if [ "$NEGATIVE_STAGE" = "B" ] && [ ! -f "${STAGE_A_MODEL:-${CHECKPOINT_DIR}/phase3_a.pt}" ]; then
+                    echo "ERROR: Stage A model not found for Stage B training."
+                    echo "Either run Stage A first or specify --stage-a-model"
+                    return 1
+                fi
                 ;;
         esac
 
-        local JOBID=$(submit_training_phase "$SINGLE_PHASE" "" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
+        local JOBID=$(submit_training_phase "$SINGLE_PHASE" "" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE" "$NEGATIVE_STAGE" "$STAGE_A_MODEL")
 
         if [ -z "$JOBID" ]; then
             echo "ERROR: Failed to submit job"
@@ -775,6 +751,7 @@ do_train() {
         cat > "$JOB_INFO_FILE" <<EOF
 CURRENT_JOB_ID=$JOBID
 CURRENT_PHASE="phase${SINGLE_PHASE}"
+NEGATIVE_STAGE="${NEGATIVE_STAGE}"
 STARTED_AT="$(date -Iseconds)"
 EOF
 
@@ -786,7 +763,7 @@ EOF
 
     else
         # Train all phases with dependencies
-        echo "Training all phases (1 → 2 → 3) with job dependencies..."
+        echo "Training all phases (1 → 2 → 3A) with job dependencies..."
         echo
 
         local JOB1=$(submit_training_phase 1 "" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
@@ -795,8 +772,8 @@ EOF
         local JOB2=$(submit_training_phase 2 "$JOB1" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
         echo "Phase 2 job: $JOB2 (depends on $JOB1)"
 
-        local JOB3=$(submit_training_phase 3 "$JOB2" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE")
-        echo "Phase 3 job: $JOB3 (depends on $JOB2)"
+        local JOB3=$(submit_training_phase 3 "$JOB2" "$DATA_FILE" "$CUSTOM_EPOCHS" "$CUSTOM_BATCH_SIZE" "A")
+        echo "Phase 3A job: $JOB3 (depends on $JOB2)"
 
         cat > "$JOB_INFO_FILE" <<EOF
 PHASE1_JOB_ID=$JOB1
@@ -813,14 +790,14 @@ EOF
         echo
         echo "Phase 1 (Teacher):      $JOB1"
         echo "Phase 2 (Alignment):    $JOB2 → depends on $JOB1"
-        echo "Phase 3 (Generalize):   $JOB3 → depends on $JOB2"
+        echo "Phase 3A (Curriculum):  $JOB3 → depends on $JOB2"
+        echo
+        echo "Optional: After Phase 3A completes, run Stage B:"
+        echo "  $0 -train --phase 3 -B"
         echo
         echo "Monitor with:"
         echo "  $0 -status"
         echo "  $0 -logs"
-        echo
-        echo "NOTE: Staging ES must remain running until extraction is complete."
-        echo "      Training phases run on GPU nodes and don't need ES."
     fi
 }
 
@@ -834,11 +811,11 @@ do_status() {
     echo "=========================================="
     echo
 
-    # Show current jobs
     if [ -f "$JOB_INFO_FILE" ]; then
         source "$JOB_INFO_FILE"
         echo "Current pipeline started: $STARTED_AT"
         echo "Phase: $CURRENT_PHASE"
+        [ -n "$NEGATIVE_STAGE" ] && echo "Negative stage: $NEGATIVE_STAGE"
         echo
 
         if [ -n "$PHASE1_JOB_ID" ]; then
@@ -853,7 +830,7 @@ do_status() {
 
     echo
     echo "--- Checkpoints ---"
-    for f in phase1.pt phase2.pt final_model.pt; do
+    for f in phase1.pt phase2.pt phase3_a.pt final_model_b.pt; do
         if [ -f "${CHECKPOINT_DIR}/$f" ]; then
             echo "  ✓ $f  $(ls -lh ${CHECKPOINT_DIR}/$f | awk '{print $5, $6, $7, $8}')"
         else
@@ -863,11 +840,13 @@ do_status() {
 
     echo
     echo "--- Training Data ---"
-    if [ -f "${DATA_DIR}/training_data.h5" ]; then
-        echo "  ✓ training_data.h5  $(ls -lh ${DATA_DIR}/training_data.h5 | awk '{print $5, $6, $7, $8}')"
-    else
-        echo "  ✗ training_data.h5  (not found - run extraction first)"
-    fi
+    for f in training_data.h5 training_data_gn.h5; do
+        if [ -f "${DATA_DIR}/$f" ]; then
+            echo "  ✓ $f  $(ls -lh ${DATA_DIR}/$f | awk '{print $5, $6, $7, $8}')"
+        fi
+    done
+    [ ! -f "${DATA_DIR}/training_data.h5" ] && [ ! -f "${DATA_DIR}/training_data_gn.h5" ] && \
+        echo "  ✗ No training data found - run extraction first"
 
     echo
     echo "--- Recent Logs ---"
@@ -926,17 +905,21 @@ do_test() {
     echo "=========================================="
     echo
 
-    if [ ! -f "${CHECKPOINT_DIR}/final_model.pt" ]; then
-        echo "ERROR: Final model not found at ${CHECKPOINT_DIR}/final_model.pt"
+    local MODEL_FILE="${CHECKPOINT_DIR}/phase3_a.pt"
+
+    if [ -f "${CHECKPOINT_DIR}/final_model_b.pt" ]; then
+        MODEL_FILE="${CHECKPOINT_DIR}/final_model_b.pt"
+    fi
+
+    if [ ! -f "$MODEL_FILE" ]; then
+        echo "ERROR: No trained model found."
         echo "Complete training first."
         return 1
     fi
 
-    # Quick interactive test
-    echo "Running quick inference test..."
+    echo "Using model: $MODEL_FILE"
     echo
 
-    # Use srun for interactive GPU access
     srun --cluster=${GPU_CLUSTER} \
          --partition=${GPU_PARTITION} \
          --qos=${GPU_QOS} \
@@ -946,18 +929,21 @@ do_test() {
          --pty bash -c "
 $(activate_conda)
 
-python $TRAINING_SCRIPT \\
+cd $REPO_DIR
+export PYTHONPATH=\"${REPO_DIR}:\${PYTHONPATH}\"
+
+python -m ${TRAINING_MODULE} \\
     --infer \\
-    --model ${CHECKPOINT_DIR}/final_model.pt \\
+    --model ${MODEL_FILE} \\
     --toponym1 'London' --lang1 'en' \\
     --toponym2 'Londres' --lang2 'fr' \\
     --gpu
 
 echo
 echo 'Testing cross-script similarity...'
-python $TRAINING_SCRIPT \\
+python -m ${TRAINING_MODULE} \\
     --infer \\
-    --model ${CHECKPOINT_DIR}/final_model.pt \\
+    --model ${MODEL_FILE} \\
     --toponym1 'Tokyo' --lang1 'en' \\
     --toponym2 '東京' --lang2 'ja' \\
     --gpu
@@ -1024,11 +1010,17 @@ do_clean_all() {
 
 show_help() {
     cat <<EOF
-Phonetic Similarity Model Training Orchestrator
-================================================
+Phonetic Similarity Model Training Orchestrator (v2)
+=====================================================
 
 Trains a phonetic embedding model for multilingual toponym matching using
 GPU acceleration on Pitt CRC Slurm cluster.
+
+v2 Features:
+  - Namespace filtering (-n gn for GeoNames only)
+  - Cleanup invalid cached phonetics
+  - BiLSTM + Self-Attention architecture
+  - Curriculum hard negatives (Stage A/B)
 
 PREREQUISITES:
   1. Start staging ES: source es.sh -staging-start
@@ -1036,24 +1028,27 @@ PREREQUISITES:
 
 USAGE: $0 COMMAND [OPTIONS]
 
-DATA EXTRACTION (requires staging ES):
-  -extract-fast [OPTIONS]   RECOMMENDED: Fast extraction without deduplication
-    --max-docs N            Limit to N documents (for testing)
-    --index NAME            Index name (default: places)
+DATA PREPARATION (requires staging ES):
+  -enrich               Hydrate toponyms index with IPA/PanPhon features
+  -cleanup-phonetics    Remove invalid cached phonetics (fixes earlier bugs)
 
-  -deduplicate [OPTIONS]    Deduplicate extracted data (run after -extract-fast)
-    --input FILE            Input raw HDF5 file (default: training_data_raw.h5)
-    --output FILE           Output deduplicated file (default: training_data.h5)
+  -extract [OPTIONS]    Extract training data from Elasticsearch
+    -n, --namespaces NS   Namespace prefixes (e.g., -n gn or -n gn,wd)
+    --max-docs N          Limit documents (for testing)
+    --index NAME          Index name (default: places)
 
-  -extract [OPTIONS]        OLD: Extract with deduplication (slower, deprecated)
+  -deduplicate [OPTIONS]  Deduplicate extracted data
+    --input FILE          Input HDF5 file
+    --output FILE         Output deduplicated file
 
 TRAINING (GPU jobs):
-  -train                 Run all 3 phases with job dependencies
+  -train                 Run all 3 phases (1 → 2 → 3A) with dependencies
   -train --phase N       Run specific phase (1, 2, or 3)
 
-  Phase 1: Train phonetic encoder (Teacher) - ~12 hours
-  Phase 2: Align character encoder to Teacher - ~8 hours
-  Phase 3: Fine-tune on all data with hard negatives - ~6 hours
+  Phase 3 curriculum options:
+    -A, --stage-a        Stage A: ortho-close, phon-distant negatives (default)
+    -B, --stage-b        Stage B: model-mined false positives
+    --stage-a-model FILE Use specific Stage A model for Stage B mining
 
 MONITORING:
   -status               Show training status and checkpoints
@@ -1067,34 +1062,37 @@ CLEANUP:
   -clean                Remove logs and job info (keeps data/checkpoints)
   -clean-all            Remove everything including data and checkpoints
 
+RECOMMENDED PIPELINE:
+  # 1. Start staging ES
+  source es.sh -staging-start
+
+  # 2. (Optional) Clean up invalid phonetics from previous runs
+  $0 -cleanup-phonetics
+
+  # 3. Extract GeoNames only (faster, sufficient data)
+  $0 -extract -n gn
+
+  # 4. Deduplicate
+  $0 -deduplicate --input ${DATA_DIR}/training_data_gn.h5
+
+  # 5. Train all phases
+  $0 -train
+
+  # 6. (Optional) Run Stage B for additional refinement
+  $0 -train --phase 3 -B
+
+  # 7. Test
+  $0 -test
+
 DIRECTORIES:
   Training data:   ${DATA_DIR}/
   Checkpoints:     ${CHECKPOINT_DIR}/
   Slurm logs:      ${SLURM_LOG_DIR}/
 
-EXAMPLES:
-  # Full pipeline
-  source es.sh -staging-start          # Start ES (in another terminal)
-  $0 -extract-fast                     # Fast extraction (~3-4 hours for 47M docs)
-  $0 -deduplicate                      # Deduplicate offline (~2-3 hours)
-  $0 -train                            # Train all phases (~26 hours total)
-  $0 -status                           # Check progress
-  $0 -test                             # Test the model
-
-  # Quick test with limited data
-  $0 -extract --max-docs 10000
-  $0 -train
-
-  # Resume from phase 2
-  $0 -train --phase 2
-
 GPU RESOURCES:
   Cluster: ${GPU_CLUSTER}
   Partition: ${GPU_PARTITION}
-  QOS: ${GPU_QOS}
   GPUs: ${GPU_COUNT}x A100 ${GPU_MEM}
-  CPUs: ${CPU_COUNT}
-  Memory: ${MEM}
 
 EOF
 }
@@ -1108,13 +1106,13 @@ case "$1" in
         shift
         do_enrich "$@"
         ;;
-    -extract-fast)
+    -cleanup-phonetics)
         shift
-        do_extract_fast "$@"
+        do_cleanup_phonetics "$@"
         ;;
     -extract)
         shift
-        do_extract "$@"  # Keep old version for compatibility
+        do_extract "$@"
         ;;
     -deduplicate)
         shift
@@ -1125,8 +1123,8 @@ case "$1" in
         do_train "$@"
         ;;
     -train-phase)
-        # Alias for -train --phase
-        do_train --phase "$2"
+        shift
+        do_train --phase "$@"
         ;;
     -status)
         do_status
