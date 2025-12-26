@@ -4,30 +4,7 @@
     {
       "script": {
         "lang": "painless",
-        "source": """
-          if (ctx.toponym_id != null) {
-            // Ensure there's a language tag
-            if (!ctx.toponym_id.contains('@')) {
-              ctx.toponym_id = ctx.toponym_id + '@und';
-            }
-            
-            // Split on last @ to handle names that might contain @
-            int atPos = ctx.toponym_id.lastIndexOf('@');
-            if (atPos > 0) {
-              ctx.name = ctx.toponym_id.substring(0, atPos);
-              ctx.name_lower = ctx.name.toLowerCase();
-              
-              String langPart = ctx.toponym_id.substring(atPos + 1);
-              if (langPart.contains('-')) {
-                String[] langParts = langPart.splitOnToken('-');
-                ctx.lang = langParts[0];
-                ctx.lang_variant = langParts[1];
-              } else {
-                ctx.lang = langPart;
-              }
-            }
-          }
-        """
+        "source": "if (ctx.toponym_id != null) { if (!ctx.toponym_id.contains('@')) { ctx.toponym_id = ctx.toponym_id + '@und'; } int atPos = ctx.toponym_id.lastIndexOf('@'); if (atPos > 0) { ctx.name = ctx.toponym_id.substring(0, atPos); ctx.name_lower = ctx.name.toLowerCase(); String langPart = ctx.toponym_id.substring(atPos + 1); if (langPart.contains('-')) { String[] langParts = langPart.splitOnToken('-'); ctx.lang = langParts[0]; ctx.lang_variant = langParts[1]; } else { ctx.lang = langPart; } } }"
       }
     },
     {
