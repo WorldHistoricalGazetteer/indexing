@@ -11,11 +11,19 @@ v2 Optimizations:
 - Namespace filtering (-n gn to extract GeoNames only)
 - Pre-filter toponyms to Epitran-supported languages with valid cached phonetics
 - Efficient pair generation loops
+
+v3 Optimizations:
+- Parallel toponym enrichment with multiprocessing
+- Process by language (one Epitran model at a time)
+- Parallel bulk updates to ES
 """
 
+import sys
 import sqlite3
 import time
 from collections import defaultdict
+from datetime import datetime, timedelta
+from multiprocessing import Pool
 from typing import Dict, List, Optional, Set
 
 import h5py
@@ -36,6 +44,7 @@ except ImportError:
 
 try:
     from elasticsearch import Elasticsearch, helpers
+    from elasticsearch.helpers import parallel_bulk, scan
 except ImportError:
     raise ImportError("Please install elasticsearch: pip install elasticsearch")
 
@@ -51,55 +60,107 @@ def normalize_es_host(es_host: str) -> str:
     return es_host
 
 
+# =============================================================================
+# MULTIPROCESSING WORKER FUNCTIONS (must be at module level)
+# =============================================================================
+
+# Global variables for worker processes (initialized once per worker)
+_worker_epi = None
+_worker_ft = None
+_worker_lang = None
+
+
+def _init_enrichment_worker(lang_code):
+    """Initialize Epitran and PanPhon for a worker process."""
+    global _worker_epi, _worker_ft, _worker_lang
+
+    epitran_code = Config.EPITRAN_LANGS.get(lang_code)
+    if epitran_code:
+        try:
+            _worker_epi = epitran.Epitran(epitran_code)
+        except Exception:
+            _worker_epi = None
+    else:
+        _worker_epi = None
+
+    _worker_ft = FeatureTable()
+    _worker_lang = lang_code
+
+
+def _process_toponym_for_enrichment(item):
+    """
+    Process a single toponym - runs in worker process.
+
+    Args:
+        item: tuple of (doc_id, name, lang)
+
+    Returns:
+        tuple of (doc_id, ipa, features_json) or (doc_id, None, None) on failure
+    """
+    global _worker_epi, _worker_ft
+
+    doc_id, name, lang = item
+
+    if _worker_epi is None:
+        return (doc_id, None, None)
+
+    try:
+        # Transliterate to IPA
+        ipa = _worker_epi.transliterate(name)
+        if not ipa or not ipa.strip():
+            return (doc_id, None, None)
+
+        # Get PanPhon features
+        features = _worker_ft.word_to_vector_list(ipa, numeric=True)
+        if not features or len(features) == 0:
+            return (doc_id, None, None)
+
+        # Validate features
+        if not all(isinstance(f, (list, tuple)) and len(f) == 24 for f in features):
+            return (doc_id, None, None)
+
+        # Serialize features
+        features_json = orjson.dumps(features, option=orjson.OPT_SERIALIZE_NUMPY).decode('utf-8')
+
+        return (doc_id, ipa, features_json)
+
+    except Exception:
+        return (doc_id, None, None)
+
+
+# =============================================================================
+# TOPONYM ENRICHER
+# =============================================================================
+
 class ToponymEnricher:
     """
     Scans the 'toponyms' index and computes phonetic features for supported languages.
     Updates the documents in-place so they can be retrieved quickly later.
+
+    Optimized with:
+    - Multiprocessing for Epitran/PanPhon (CPU-bound)
+    - Process by language (one Epitran model at a time)
+    - Parallel bulk updates to ES
+    - Pre-filter to supported languages only
     """
 
-    def __init__(self, es_host='localhost:9200', index='toponyms'):
-        self.es = Elasticsearch([normalize_es_host(es_host)], request_timeout=60)
+    def __init__(self, es_host='localhost:9200', index='toponyms', num_workers=12, batch_size=5000):
+        self.es = Elasticsearch([normalize_es_host(es_host)], request_timeout=120)
         self.index = index
-        self.ft = FeatureTable()
-        self._epi_cache = {}
-
-        print("Loading Epitran models...")
-        for lang in Config.EPITRAN_LANGS:
-            self._get_epitran(lang)
-
-    def _get_epitran(self, lang_code):
-        if lang_code not in self._epi_cache:
-            epitran_code = Config.EPITRAN_LANGS.get(lang_code)
-            try:
-                self._epi_cache[lang_code] = epitran.Epitran(epitran_code) if epitran_code else None
-            except:
-                self._epi_cache[lang_code] = None
-        return self._epi_cache[lang_code]
-
-    def _compute_phonetics(self, name, lang):
-        epi = self._get_epitran(lang)
-        if not epi:
-            return None
-
-        try:
-            ipa = epi.transliterate(name)
-            if not ipa or not ipa.strip():
-                return None
-
-            features = self.ft.word_to_vector_list(ipa, numeric=True)
-            if not features or len(features) == 0:
-                return None
-
-            if not all(isinstance(f, (list, tuple)) and len(f) == 24 for f in features):
-                return None
-
-            return {'ipa': ipa, 'features': features}
-        except Exception:
-            return None
+        self.num_workers = num_workers
+        self.batch_size = batch_size
 
     def run(self):
-        print(f"Adding phonetic fields to index '{self.index}' mapping...")
+        print("=" * 80)
+        print("TOPONYM ENRICHMENT (OPTIMIZED PARALLEL)")
+        print("=" * 80)
+        print(f"Workers: {self.num_workers}")
+        print(f"Batch size: {self.batch_size}")
+        print(f"Supported languages: {len(Config.EPITRAN_LANGS)}")
+        print()
+        sys.stdout.flush()
 
+        # Ensure mapping has phonetic fields
         try:
             self.es.indices.put_mapping(index=self.index, body={
                 "properties": {
@@ -108,84 +169,201 @@ class ToponymEnricher:
                 }
             })
         except Exception as e:
-            print(f"Mapping update warning (might already exist): {e}")
+            print(f"Mapping update warning: {e}")
 
-        query = {
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"terms": {"lang": list(Config.EPITRAN_LANGS.keys())}},
-                        {"bool": {"must_not": {"exists": {"field": "ipa_cached"}}}}
-                    ]
+        start_time = datetime.now()
+        total_enriched = 0
+        total_skipped = 0
+        total_processed = 0
+
+        # Get counts per language
+        print("Counting toponyms per language...")
+        sys.stdout.flush()
+
+        lang_counts = {}
+        for lang in Config.EPITRAN_LANGS.keys():
+            count_query = {
+                "query": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"lang": lang}},
+                            {"bool": {"must_not": {"exists": {"field": "ipa_cached"}}}}
+                        ]
+                    }
                 }
             }
-        }
+            try:
+                resp = self.es.count(index=self.index, body=count_query)
+                count = resp['count']
+                if count > 0:
+                    lang_counts[lang] = count
+            except Exception:
+                pass
 
-        print("Scanning and enriching toponyms...")
-        updates = []
-        count = 0
+        total_to_process = sum(lang_counts.values())
+        print(f"Total toponyms to enrich: {total_to_process:,}")
+        print(f"Languages with data: {len(lang_counts)}")
+        print()
 
-        try:
-            scanner = helpers.scan(
-                self.es,
-                query=query,
-                index=self.index,
-                _source=["name", "lang"],
-                size=1000,
-                scroll='2h'
-            )
+        if total_to_process == 0:
+            print("Nothing to enrich!")
+            return
 
-            for hit in scanner:
-                doc_id = hit['_id']
-                name = hit['_source'].get('name')
-                lang = hit['_source'].get('lang')
+        # Sort languages by count (largest first for better progress visibility)
+        sorted_langs = sorted(lang_counts.items(), key=lambda x: -x[1])
 
-                if not name or not lang:
-                    continue
+        for lang_idx, (lang, lang_count) in enumerate(sorted_langs, 1):
+            lang_start = datetime.now()
+            lang_enriched = 0
+            lang_skipped = 0
 
-                result = self._compute_phonetics(name, lang)
+            print(f"\n[{lang_idx}/{len(sorted_langs)}] Processing '{lang}' ({lang_count:,} toponyms)...")
+            sys.stdout.flush()
 
-                if result:
-                    updates.append({
-                        "_op_type": "update",
-                        "_index": self.index,
-                        "_id": doc_id,
-                        "doc": {
-                            "ipa_cached": result['ipa'],
-                            "features_cached_json": orjson.dumps(
-                                result['features'],
-                                option=orjson.OPT_SERIALIZE_NUMPY
-                            ).decode('utf-8')
-                        }
-                    })
+            query = {
+                "query": {
+                    "bool": {
+                        "filter": [
+                            {"term": {"lang": lang}},
+                            {"bool": {"must_not": {"exists": {"field": "ipa_cached"}}}}
+                        ]
+                    }
+                }
+            }
 
-                if len(updates) >= 500:
-                    helpers.bulk(self.es, updates, request_timeout=60)
-                    count += len(updates)
-                    print(f"  Enriched {count} documents...", end='\r', flush=True)
-                    updates = []
+            batch = []
+            updates = []
 
+            # Initialize worker pool for this language
+            with Pool(processes=self.num_workers,
+                      initializer=_init_enrichment_worker,
+                      initargs=(lang,)) as pool:
+
+                scanner = scan(
+                    self.es,
+                    query=query,
+                    index=self.index,
+                    _source=["name"],
+                    size=self.batch_size,
+                    scroll='30m'
+                )
+
+                for hit in scanner:
+                    doc_id = hit['_id']
+                    name = hit['_source'].get('name', '')
+
+                    batch.append((doc_id, name, lang))
+
+                    if len(batch) >= self.batch_size:
+                        # Process batch in parallel
+                        results = pool.map(_process_toponym_for_enrichment, batch)
+
+                        # Collect updates
+                        for doc_id, ipa, features_json in results:
+                            if ipa is not None:
+                                updates.append({
+                                    "_op_type": "update",
+                                    "_index": self.index,
+                                    "_id": doc_id,
+                                    "doc": {
+                                        "ipa_cached": ipa,
+                                        "features_cached_json": features_json
+                                    }
+                                })
+                                lang_enriched += 1
+                            else:
+                                lang_skipped += 1
+
+                        batch = []
+
+                        # Bulk update to ES
+                        if len(updates) >= self.batch_size:
+                            for ok, result in parallel_bulk(self.es, updates, thread_count=4,
+                                                            raise_on_error=False,
+                                                            raise_on_exception=False):
+                                pass
+                            updates = []
+
+                        # Progress
+                        elapsed = (datetime.now() - start_time).total_seconds()
+                        done = total_enriched + total_skipped + lang_enriched + lang_skipped
+                        rate = done / elapsed if elapsed > 0 else 0
+                        if rate > 0:
+                            eta = (total_to_process - done) / rate
+                            eta_str = str(timedelta(seconds=int(eta)))
+                        else:
+                            eta_str = "--:--:--"
+
+                        print(f"\r    {lang}: {lang_enriched + lang_skipped:,}/{lang_count:,} | "
+                              f"Total: {done:,}/{total_to_process:,} | "
+                              f"Rate: {rate:,.0f}/s | ETA: {eta_str}    ",
+                              end="", flush=True)
+
+                # Process remaining batch
+                if batch:
+                    results = pool.map(_process_toponym_for_enrichment, batch)
+                    for doc_id, ipa, features_json in results:
+                        if ipa is not None:
+                            updates.append({
+                                "_op_type": "update",
+                                "_index": self.index,
+                                "_id": doc_id,
+                                "doc": {
+                                    "ipa_cached": ipa,
+                                    "features_cached_json": features_json
+                                }
+                            })
+                            lang_enriched += 1
+                        else:
+                            lang_skipped += 1
+
+            # Final updates for this language
             if updates:
-                helpers.bulk(self.es, updates)
-                count += len(updates)
+                for ok, result in parallel_bulk(self.es, updates, thread_count=4,
+                                                raise_on_error=False,
+                                                raise_on_exception=False):
+                    pass
 
-            print(f"\nDone! Enriched {count} documents.")
+            total_enriched += lang_enriched
+            total_skipped += lang_skipped
+            total_processed += lang_enriched + lang_skipped
 
-        except KeyboardInterrupt:
-            print("\n\n[Warning] Process interrupted by user.")
-        except Exception as e:
-            print(f"\n\n[Error] Process crashed: {e}")
+            lang_elapsed = datetime.now() - lang_start
+            print(f"\n    Done: {lang_enriched:,} enriched, {lang_skipped:,} skipped "
+                  f"in {str(lang_elapsed).split('.')[0]}")
+            sys.stdout.flush()
+
+        # Final refresh
+        print("\nRefreshing index...")
+        self.es.indices.refresh(index=self.index)
+
+        elapsed = datetime.now() - start_time
+
+        # Final count
+        enriched_count = self.es.count(
+            index=self.index,
+            body={"query": {"exists": {"field": "ipa_cached"}}}
+        )['count']
+
+        print("\n" + "=" * 80)
+        print("ENRICHMENT COMPLETE")
+        print("=" * 80)
+        print(f"  Total processed: {total_processed:,}")
+        print(f"  Enriched: {total_enriched:,}")
+        print(f"  Skipped: {total_skipped:,}")
+        print(f"  Total with phonetics: {enriched_count:,}")
+        print(f"  Time elapsed: {str(elapsed).split('.')[0]}")
+        if elapsed.total_seconds() > 0:
+            print(f"  Rate: {total_processed / elapsed.total_seconds():,.0f} toponyms/s")
+        sys.stdout.flush()
 
     def cleanup_invalid_phonetics(self):
         """
         Remove ipa_cached and features_cached_json from toponyms where
         the cached features are empty or invalid.
-
-        This fixes earlier bugs where empty embeddings were stored.
         """
         print("Scanning for invalid cached phonetics...")
 
-        # Find documents with ipa_cached but potentially invalid features
         query = {
             "query": {
                 "exists": {"field": "ipa_cached"}
@@ -219,11 +397,9 @@ class ToponymEnricher:
 
             is_invalid = False
 
-            # Check for empty IPA
             if not ipa or not ipa.strip():
                 is_invalid = True
 
-            # Check for empty or invalid features
             if features_json:
                 try:
                     features = orjson.loads(features_json)
@@ -257,6 +433,10 @@ class ToponymEnricher:
 
         print(f"\nChecked {checked:,} documents, cleaned {invalid:,} invalid entries.")
 
+
+# =============================================================================
+# TRAINING DATA EXTRACTOR
+# =============================================================================
 
 class TrainingDataExtractor:
     """
@@ -683,6 +863,10 @@ class TrainingDataExtractor:
         print()
         print(f"Output: {output_path}")
 
+
+# =============================================================================
+# DEDUPLICATION
+# =============================================================================
 
 def deduplicate_hdf5(input_path: str, output_path: str):
     """Post-process HDF5 file to remove duplicate pairs using SQLite."""
