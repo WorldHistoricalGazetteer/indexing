@@ -20,7 +20,7 @@ from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
 from processing.helpers import compute_representative_point, simplify_geometry
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, OSM_STATE_FILE
 from processing.utilities import create_checkpoint_snapshot
 
 # ---------------- CONFIG ----------------
@@ -268,8 +268,7 @@ def stage_file_to_scratch(source_path):
 
 def index_osm_optimized(pbf_file):
     es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
-    state_file = Path.cwd() / 'osm_state.json'
-    tracker = ProgressTracker(str(state_file))
+    tracker = ProgressTracker(OSM_STATE_FILE)
 
     # Signal Handling
     def signal_handler(sig, frame):

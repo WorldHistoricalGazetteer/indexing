@@ -27,7 +27,7 @@ When you specify `-n gn,wd`, it runs all GeoNames scripts then all Wikidata scri
 
 Unique Toponyms: 74,417,599 indexed in 1 day, 0:45:53
 """
-
+import os
 import subprocess
 import sys
 import time
@@ -37,7 +37,7 @@ from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch, helpers
 
 from processing.deduplicate_toponyms_fast import deduplicate_and_index_toponyms
-from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX
+from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_LOG_FILE, OSM_STATE_FILE
 
 es = Elasticsearch(ES_HOST)
 
@@ -187,10 +187,21 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
         if count > 0:
             if replace_existing:
                 delete_existing_namespace(namespace)
+
+                # Remove OSM_STATE_FILE if OSM is being re-ingested
+                if namespace == 'osm':
+                    if os.path.exists(OSM_STATE_FILE):
+                        os.remove(OSM_STATE_FILE)
+
             elif skip_existing:
                 print(f"Skipping {namespace}: {count:,} places already exist")
                 sys.stdout.flush()
                 return True
+
+    if script_name == 'wikidata-geoshapes':
+        # Delete log of processed geoshapes from any previous run (does not delete cached geoshapes)
+        if os.path.exists(GEOSHAPE_LOG_FILE):
+            os.remove(GEOSHAPE_LOG_FILE)
 
     start_time = datetime.now()
     try:

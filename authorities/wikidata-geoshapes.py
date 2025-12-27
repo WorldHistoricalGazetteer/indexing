@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE, GEOSHAPE_LOG_FILE
 from processing.utilities import create_checkpoint_snapshot
 from processing.helpers import compute_representative_point
 from processing.geometry_collection_processor import (
@@ -29,8 +29,6 @@ from processing.geometry_collection_processor import (
 es = Elasticsearch(ES_HOST)
 PLACES_INDEX = "places"
 
-REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
-LOG_FILE = os.path.join(DATA_DIR, "wikidata", "geoshapes_downloaded.log")
 ERROR_LOG = os.path.join(DATA_DIR, "wikidata", "geoshapes_errors.log")
 CACHE_DB = os.path.join(DATA_DIR, "wikidata", "geoshape_cache.sqlite")
 
@@ -113,13 +111,13 @@ def log_error(place_id, error_msg):
 
 
 def get_downloaded_list():
-    if not os.path.exists(LOG_FILE): return set()
-    with open(LOG_FILE, "r") as f:
+    if not os.path.exists(GEOSHAPE_LOG_FILE): return set()
+    with open(GEOSHAPE_LOG_FILE, "r") as f:
         return set(line.strip() for line in f if line.strip())
 
 
 def log_downloaded(place_id):
-    with open(LOG_FILE, "a") as f:
+    with open(GEOSHAPE_LOG_FILE, "a") as f:
         f.write(f"{place_id}\n")
 
 
@@ -344,7 +342,7 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
 def main():
     if not check_elasticsearch_connection():
         sys.exit(1)
-    process_geoshapes_from_file(PLACES_INDEX, REFS_FILE, batch_size=BATCH_SIZE)
+    process_geoshapes_from_file(PLACES_INDEX, GEOSHAPE_REFS_FILE, batch_size=BATCH_SIZE)
     create_checkpoint_snapshot(es, "wikidata_geoshapes")
 
 

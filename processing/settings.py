@@ -50,6 +50,13 @@ BACKUP_SNAPSHOT_DIR = os.getenv("BACKUP_SNAPSHOT_DIR", f"{IX1_BASE}/es_snapshots
 PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms")
 
+# Wikidata processing logs
+GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
+GEOSHAPE_LOG_FILE = os.path.join(DATA_DIR, "wikidata", "geoshapes_downloaded.log")
+
+# OSM processing state file
+OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"
+
 # Remote Dataset Configurations
 AUTHORITIES = [
     {  # 2024: 37k+ places

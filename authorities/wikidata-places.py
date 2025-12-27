@@ -12,12 +12,10 @@ import os
 
 import orjson  # Much faster than json
 from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
+from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE
 from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
-
-GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
 
 # Pre-compile byte patterns for fast scanning
 SKIP_BYTES = {b'[', b']', b''}
