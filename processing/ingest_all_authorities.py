@@ -523,7 +523,7 @@ def main():
 
     if not args.delete_only and not namespaces:
         # Only run deduplication if processing all authorities
-        deduplicate_and_index_toponyms()
+        deduplicate_and_index_toponyms(es, PLACES_INDEX, TOPONYMS_INDEX)
     elif not args.delete_only:
         print("\nNote: Skipping toponyms deduplication (only runs when processing all authorities)")
         print("      Run without -n flag to deduplicate toponyms across all authorities")
