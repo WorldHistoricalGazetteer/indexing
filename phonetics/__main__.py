@@ -72,6 +72,8 @@ def main():
                         help='Comma-separated namespace prefixes to extract (e.g., -n gn or -n gn,wd)')
     parser.add_argument('--cleanup-phonetics', action='store_true',
                         help='Clean up invalid cached phonetics in toponyms index')
+    parser.add_argument('--workers', type=int, default=12,
+                        help='Number of parallel workers for enrichment (default: 12)')
 
     # Training
     parser.add_argument('--data', default='training_data.h5',
@@ -110,13 +112,23 @@ def main():
 
     if args.enrich:
         from .extraction import ToponymEnricher
-        enricher = ToponymEnricher(args.es_host, 'toponyms')
+        enricher = ToponymEnricher(
+            es_host=args.es_host,
+            index='toponyms',
+            num_workers=args.workers,
+            batch_size=args.batch_size
+        )
         enricher.run()
         return
 
     if args.cleanup_phonetics:
         from .extraction import ToponymEnricher
-        enricher = ToponymEnricher(args.es_host, 'toponyms')
+        enricher = ToponymEnricher(
+            es_host=args.es_host,
+            index='toponyms',
+            num_workers=args.workers,
+            batch_size=args.batch_size
+        )
         enricher.cleanup_invalid_phonetics()
         return
 
@@ -127,7 +139,7 @@ def main():
 
     if args.infer:
         from .inference import PhoneticSimilarityModel
-        
+
         if not all([args.toponym1, args.lang1, args.toponym2, args.lang2]):
             parser.error("Inference requires --toponym1, --lang1, --toponym2, --lang2")
 
@@ -185,22 +197,22 @@ def main():
         from .training import train_phase3, mine_hard_negatives
         from .vocab import CharVocab, LangVocab
         from .models import PhoneticEncoder, CharEncoder, HybridPhoneticModel
-        
+
         epochs = args.epochs or Config.PHASE3_EPOCHS
-        
+
         if args.negative_stage == 'B':
             # Stage B requires a Stage A model for mining negatives
             if not args.stage_a_model:
                 parser.error("Stage B requires --stage-a-model from Stage A training")
-            
+
             print("Loading Stage A model for negative mining...")
-            
+
             # Load vocabularies
             vocab_dir = os.path.dirname(args.stage_a_model) or '.'
             base_name = os.path.splitext(os.path.basename(args.stage_a_model))[0]
             char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
             lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
-            
+
             # Load model
             checkpoint = torch.load(args.stage_a_model, map_location='cpu')
             phonetic_encoder = PhoneticEncoder()
@@ -210,17 +222,17 @@ def main():
             )
             model = HybridPhoneticModel(phonetic_encoder, char_encoder)
             model.load_state_dict(checkpoint['model_state'])
-            
+
             # Mine hard negatives
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             mined_negatives = mine_hard_negatives(
                 model, args.data, char_vocab, lang_vocab, device=device
             )
-            
+
             # Store for dataset to use
             # Note: This is a simplified approach; in practice you might save to disk
             print(f"Mined {sum(len(v) for v in mined_negatives.values())} hard negatives")
-        
+
         train_phase3(
             args.data, args.phase2_model, args.output,
             subsample_pairs=args.subsample_pairs,

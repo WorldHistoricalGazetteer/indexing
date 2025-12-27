@@ -127,7 +127,7 @@ EOF
 }
 
 # =============================================================================
-# ENRICHMENT (hydrate toponyms with IPA/PanPhon)
+# ENRICHMENT (hydrate toponyms with IPA/PanPhon) - UPDATED FOR PARALLEL
 # =============================================================================
 
 do_enrich() {
@@ -141,9 +141,30 @@ do_enrich() {
 
     source "$STAGING_INFO_FILE"
 
+    # Parse arguments
+    local NUM_WORKERS=12
+    local BATCH_SIZE=5000
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --workers)
+                NUM_WORKERS="$2"
+                shift 2
+                ;;
+            --batch-size)
+                BATCH_SIZE="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     local TIME_ENRICH="48:00:00"
     local ENRICH_SCRIPT=$(mktemp /tmp/phonetic-enrich-XXXXXX.sbatch)
 
+    # Resources: 16 CPUs for 12 workers + overhead, 120G memory for ES bulk ops
     cat > "$ENRICH_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=phonetic-enrich
@@ -151,18 +172,21 @@ do_enrich() {
 #SBATCH --time=${TIME_ENRICH}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=120G
 #SBATCH --output=${SLURM_LOG_DIR}/enrich-%j.out
 #SBATCH --error=${SLURM_LOG_DIR}/enrich-%j.err
 
 set -e
 
 echo "=========================================="
-echo "PHONETIC MODEL - ENRICHMENT"
+echo "PHONETIC MODEL - ENRICHMENT (PARALLEL)"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "Node: \$(hostname)"
+echo "CPUs: \$(nproc)"
+echo "Workers: ${NUM_WORKERS}"
+echo "Batch size: ${BATCH_SIZE}"
 echo
 
 source "$STAGING_INFO_FILE"
@@ -175,7 +199,11 @@ $(activate_conda)
 cd "$REPO_DIR"
 export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 
-python -u -m ${TRAINING_MODULE} --enrich --es-host "\${ES_NODE}:\${ES_PORT}"
+python -u -m ${TRAINING_MODULE} \\
+    --enrich \\
+    --es-host "\${ES_NODE}:\${ES_PORT}" \\
+    --workers ${NUM_WORKERS} \\
+    --batch-size ${BATCH_SIZE}
 
 echo
 echo "=========================================="
@@ -185,6 +213,12 @@ echo "Finished: \$(date)"
 SBATCH_EOF
 
     echo "Submitting enrichment job..."
+    echo "  Workers: ${NUM_WORKERS}"
+    echo "  Batch size: ${BATCH_SIZE}"
+    echo "  CPUs: 16"
+    echo "  Memory: 120G"
+    echo
+
     local JOBID=$(sbatch --parsable "$ENRICH_SCRIPT")
     rm "$ENRICH_SCRIPT"
 
