@@ -70,8 +70,6 @@ def main():
     parser.add_argument('--max-docs', type=int, default=None)
     parser.add_argument('-n', '--namespaces', default=None,
                         help='Comma-separated namespace prefixes to extract (e.g., -n gn or -n gn,wd)')
-    parser.add_argument('--cleanup-phonetics', action='store_true',
-                        help='Clean up invalid cached phonetics in toponyms index')
     parser.add_argument('--workers', type=int, default=12,
                         help='Number of parallel workers for enrichment (default: 12)')
 
@@ -121,17 +119,6 @@ def main():
         enricher.run()
         return
 
-    if args.cleanup_phonetics:
-        from .extraction import ToponymEnricher
-        enricher = ToponymEnricher(
-            es_host=args.es_host,
-            index='toponyms',
-            num_workers=args.workers,
-            batch_size=args.batch_size
-        )
-        enricher.cleanup_invalid_phonetics()
-        return
-
     # Parse namespaces if provided
     namespaces = None
     if args.namespaces:
@@ -160,12 +147,6 @@ def main():
         from .extraction import TrainingDataExtractor
         extractor = TrainingDataExtractor(args.es_host, args.index)
         extractor.extract_optimized(args.output, namespaces=namespaces, max_docs=args.max_docs)
-
-    elif args.deduplicate:
-        from .extraction import deduplicate_hdf5
-        if not args.input:
-            parser.error("--deduplicate requires --input")
-        deduplicate_hdf5(args.input, args.output)
 
     elif args.phase == 0:
         from .extraction import TrainingDataExtractor

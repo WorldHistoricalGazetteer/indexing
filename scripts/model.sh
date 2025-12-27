@@ -242,86 +242,6 @@ EOF
 }
 
 # =============================================================================
-# CLEANUP INVALID PHONETICS
-# =============================================================================
-
-do_cleanup_phonetics() {
-    echo "=========================================="
-    echo "CLEANUP INVALID CACHED PHONETICS"
-    echo "=========================================="
-    echo
-
-    check_staging_es || return 1
-    ensure_directories
-
-    source "$STAGING_INFO_FILE"
-
-    local CLEANUP_SCRIPT=$(mktemp /tmp/phonetic-cleanup-XXXXXX.sbatch)
-
-    cat > "$CLEANUP_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=phonetic-cleanup
-#SBATCH --partition=smp
-#SBATCH --time=24:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH --output=${SLURM_LOG_DIR}/cleanup-%j.out
-#SBATCH --error=${SLURM_LOG_DIR}/cleanup-%j.err
-
-set -e
-
-echo "=========================================="
-echo "PHONETIC MODEL - CLEANUP INVALID PHONETICS"
-echo "=========================================="
-echo "Started: \$(date)"
-echo "Node: \$(hostname)"
-echo
-
-source "$STAGING_INFO_FILE"
-
-echo "Elasticsearch: http://\${ES_NODE}:\${ES_PORT}"
-echo
-
-$(activate_conda)
-
-cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
-
-python -u -m ${TRAINING_MODULE} --cleanup-phonetics --es-host "\${ES_NODE}:\${ES_PORT}"
-
-echo
-echo "=========================================="
-echo "CLEANUP COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-SBATCH_EOF
-
-    echo "Submitting cleanup job..."
-    local JOBID=$(sbatch --parsable "$CLEANUP_SCRIPT")
-    rm "$CLEANUP_SCRIPT"
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit job"
-        return 1
-    fi
-
-    cat > "$JOB_INFO_FILE" <<EOF
-CURRENT_JOB_ID=$JOBID
-CURRENT_PHASE="cleanup"
-STARTED_AT="$(date -Iseconds)"
-EOF
-
-    echo
-    echo "Submitted job: $JOBID"
-    echo
-    echo "Monitor with:"
-    echo "  squeue -j $JOBID"
-    echo "  tail -f ${SLURM_LOG_DIR}/cleanup-${JOBID}.out"
-}
-
-# =============================================================================
 # DATA EXTRACTION
 # =============================================================================
 
@@ -440,113 +360,6 @@ EOF
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
     echo "  tail -f ${SLURM_LOG_DIR}/extract-${JOBID}.out"
-    echo
-    echo "When complete, run: $0 -deduplicate"
-}
-
-do_deduplicate() {
-    echo "=========================================="
-    echo "DEDUPLICATE TRAINING DATA"
-    echo "=========================================="
-    echo
-
-    ensure_directories
-
-    # Parse arguments
-    local INPUT_FILE="${DATA_DIR}/training_data_gn.h5"
-    local OUTPUT_FILE="${DATA_DIR}/training_data.h5"
-
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --input)
-                INPUT_FILE="$2"
-                shift 2
-                ;;
-            --output)
-                OUTPUT_FILE="$2"
-                shift 2
-                ;;
-            *)
-                shift
-                ;;
-        esac
-    done
-
-    if [ ! -f "$INPUT_FILE" ]; then
-        echo "ERROR: Input file not found: $INPUT_FILE"
-        echo "Run extraction first: $0 -extract -n gn"
-        return 1
-    fi
-
-    local DEDUP_SCRIPT=$(mktemp /tmp/phonetic-dedup-XXXXXX.sbatch)
-
-    cat > "$DEDUP_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=phonetic-dedup
-#SBATCH --partition=smp
-#SBATCH --time=24:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=64G
-#SBATCH --output=${SLURM_LOG_DIR}/dedup-%j.out
-#SBATCH --error=${SLURM_LOG_DIR}/dedup-%j.err
-
-set -e
-
-echo "=========================================="
-echo "PHONETIC MODEL - DEDUPLICATION"
-echo "=========================================="
-echo "Started: \$(date)"
-echo "Node: \$(hostname)"
-echo
-
-echo "Input:  ${INPUT_FILE}"
-echo "Output: ${OUTPUT_FILE}"
-echo
-
-$(activate_conda)
-
-cd "$REPO_DIR"
-export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
-
-python -u -m ${TRAINING_MODULE} \\
-    --deduplicate \\
-    --input "${INPUT_FILE}" \\
-    --output "${OUTPUT_FILE}"
-
-echo
-echo "=========================================="
-echo "DEDUPLICATION COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-echo "Output: ${OUTPUT_FILE}"
-ls -lh "${OUTPUT_FILE}"
-echo
-echo "Ready for training: $0 -train"
-SBATCH_EOF
-
-    echo "Submitting deduplication job..."
-    local JOBID=$(sbatch --parsable "$DEDUP_SCRIPT")
-    rm "$DEDUP_SCRIPT"
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit job"
-        return 1
-    fi
-
-    cat > "$JOB_INFO_FILE" <<EOF
-CURRENT_JOB_ID=$JOBID
-CURRENT_PHASE="deduplicate"
-STARTED_AT="$(date -Iseconds)"
-EOF
-
-    echo
-    echo "Submitted job: $JOBID"
-    echo
-    echo "Monitor with:"
-    echo "  squeue -j $JOBID"
-    echo "  tail -f ${SLURM_LOG_DIR}/dedup-${JOBID}.out"
 }
 
 # =============================================================================
@@ -1071,10 +884,6 @@ DATA PREPARATION (requires staging ES):
     --max-docs N          Limit documents (for testing)
     --index NAME          Index name (default: places)
 
-  -deduplicate [OPTIONS]  Deduplicate extracted data
-    --input FILE          Input HDF5 file
-    --output FILE         Output deduplicated file
-
 TRAINING (GPU jobs):
   -train                 Run all 3 phases (1 → 2 → 3A) with dependencies
   -train --phase N       Run specific phase (1, 2, or 3)
@@ -1100,22 +909,16 @@ RECOMMENDED PIPELINE:
   # 1. Start staging ES
   source es.sh -staging-start
 
-  # 2. (Optional) Clean up invalid phonetics from previous runs
-  $0 -cleanup-phonetics
-
-  # 3. Extract GeoNames only (faster, sufficient data)
+  # 2. Extract GeoNames only (faster, sufficient data)
   $0 -extract -n gn
 
-  # 4. Deduplicate
-  $0 -deduplicate --input ${DATA_DIR}/training_data_gn.h5
-
-  # 5. Train all phases
+  # 3. Train all phases
   $0 -train
 
-  # 6. (Optional) Run Stage B for additional refinement
+  # 4. (Optional) Run Stage B for additional refinement
   $0 -train --phase 3 -B
 
-  # 7. Test
+  # 5. Test
   $0 -test
 
 DIRECTORIES:
@@ -1140,17 +943,9 @@ case "$1" in
         shift
         do_enrich "$@"
         ;;
-    -cleanup-phonetics)
-        shift
-        do_cleanup_phonetics "$@"
-        ;;
     -extract)
         shift
         do_extract "$@"
-        ;;
-    -deduplicate)
-        shift
-        do_deduplicate "$@"
         ;;
     -train)
         shift
