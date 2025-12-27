@@ -11,9 +11,15 @@ v2 Changes:
 - Phase 3 supports staged curriculum hard negatives:
   - Stage A: Orthographically close, phonetically distant
   - Stage B: Model-mined false positives (optional second pass)
+
+v3 Changes:
+- Multi-source dataset support with oversampling
+- Separate HDF5 files for different data sources (GeoNames, Index Villaris, Pleiades)
+- Configurable oversampling multipliers per source
 """
 
 import os
+from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 import torch
@@ -26,10 +32,38 @@ from .vocab import CharVocab, LangVocab
 from .models import PhoneticEncoder, CharEncoder, HybridPhoneticModel
 from .losses import TripletLoss, RobustAlignmentLoss
 from .streaming_datasets import (
-    StreamingPhase1Dataset,
-    StreamingPhase2Dataset,
-    StreamingPhase3Dataset
+    MultiSourcePhase1Dataset,
+    MultiSourcePhase2Dataset,
+    MultiSourcePhase3Dataset,
 )
+
+
+# =============================================================================
+# Multi-Source Dataset Configuration
+# =============================================================================
+
+@dataclass
+class DataSource:
+    """Configuration for a single training data source."""
+    name: str
+    path: str
+    oversample: int = 1
+
+
+# Default data sources (can be overridden in function calls)
+# Historical sources are oversampled to achieve ~10% representation per epoch
+DATA_SOURCES = [
+    DataSource(
+        name='GeoNames',
+        path='/ix1/whcdh/models/phonetic/data/training_data_gn.h5',
+        oversample=1,
+    ),
+    DataSource(
+        name='Pleiades+IV',
+        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv.h5',
+        oversample=50,
+    ),
+]
 
 
 # =============================================================================
@@ -124,8 +158,8 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
 # =============================================================================
 
 def train_phase1(
-    data_path: str,
-    output_path: str,
+    sources: List[DataSource] = None,
+    output_path: str = None,
     epochs: int = Config.PHASE1_EPOCHS,
     subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
     batch_size: int = Config.BATCH_SIZE,
@@ -133,20 +167,43 @@ def train_phase1(
 ) -> PhoneticEncoder:
     """
     Phase 1: Train phonetic encoder (Teacher).
-    
+
     Uses BiLSTM + Self-Attention + Attention-Aware Pooling architecture.
     Trained with triplet loss on phonetically similar/dissimilar pairs.
+
+    Args:
+        sources: List of DataSource objects. Defaults to DATA_SOURCES.
+        output_path: Where to save the trained model.
+        epochs: Number of training epochs.
+        subsample_pairs: Max pairs to sample per source.
+        batch_size: Training batch size.
+        lr: Learning rate.
     """
+    # Handle defaults
+    if sources is None:
+        sources = DATA_SOURCES
+
+    data_paths = [s.path for s in sources]
+    oversample_factors = [s.oversample for s in sources]
+
     print("=" * 60)
     print("Phase 1: Training Phonetic Encoder (Teacher)")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
 
-    train_dataset = StreamingPhase1Dataset(
-        data_path, split='train', subsample_pairs=subsample_pairs
+    # Log data sources
+    print("\nData sources:")
+    for source in sources:
+        print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
+    print()
+
+    train_dataset = MultiSourcePhase1Dataset(
+        data_paths, oversample_factors,
+        split='train', subsample_pairs=subsample_pairs
     )
-    val_dataset = StreamingPhase1Dataset(
-        data_path, split='val', subsample_pairs=subsample_pairs
+    val_dataset = MultiSourcePhase1Dataset(
+        data_paths, oversample_factors,
+        split='val', subsample_pairs=subsample_pairs
     )
 
     print(f"Training pairs: {len(train_dataset):,}")
@@ -236,33 +293,60 @@ def train_phase1(
 
 
 def train_phase2(
-    data_path: str,
-    phase1_path: str,
-    output_path: str,
+    sources: List[DataSource] = None,
+    phase1_path: str = None,
+    output_path: str = None,
     epochs: int = Config.PHASE2_EPOCHS,
     batch_size: int = Config.BATCH_SIZE,
     lr: float = Config.LEARNING_RATE
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """
     Phase 2: Alignment training (Student → Teacher).
-    
+
     Trains the character encoder (Student) to produce embeddings that
     match the phonetic encoder (Teacher) output.
+
+    Args:
+        sources: List of DataSource objects. Defaults to DATA_SOURCES.
+        phase1_path: Path to Phase 1 trained model.
+        output_path: Where to save the trained model.
+        epochs: Number of training epochs.
+        batch_size: Training batch size.
+        lr: Learning rate.
     """
+    # Handle defaults
+    if sources is None:
+        sources = DATA_SOURCES
+
+    data_paths = [s.path for s in sources]
+    oversample_factors = [s.oversample for s in sources]
+
     print("=" * 60)
     print("Phase 2: Alignment Training (Student → Teacher)")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
 
-    # Build vocabularies from HDF5
+    # Log data sources
+    print("\nData sources:")
+    for source in sources:
+        print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
+    print()
+
+    # Build vocabularies from all HDF5 files
     char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
-    char_vocab.fit(data_path)
+    char_vocab.fit_multi(data_paths)
 
     lang_vocab = LangVocab()
-    lang_vocab.fit(data_path)
+    lang_vocab.fit_multi(data_paths)
 
-    train_dataset = StreamingPhase2Dataset(data_path, char_vocab, lang_vocab, split='train')
-    val_dataset = StreamingPhase2Dataset(data_path, char_vocab, lang_vocab, split='val')
+    train_dataset = MultiSourcePhase2Dataset(
+        data_paths, oversample_factors,
+        char_vocab, lang_vocab, split='train'
+    )
+    val_dataset = MultiSourcePhase2Dataset(
+        data_paths, oversample_factors,
+        char_vocab, lang_vocab, split='val'
+    )
 
     print(f"Training items: {len(train_dataset):,}")
     print(f"Validation items: {len(val_dataset):,}")
@@ -377,9 +461,9 @@ def train_phase2(
 
 
 def train_phase3(
-    data_path: str,
-    phase2_path: str,
-    output_path: str,
+    sources: List[DataSource] = None,
+    phase2_path: str = None,
+    output_path: str = None,
     subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
     epochs: int = Config.PHASE3_EPOCHS,
     batch_size: int = Config.BATCH_SIZE,
@@ -388,27 +472,47 @@ def train_phase3(
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
-    
+
     CRITICAL: Each negative stage must REPLACE, not augment, the previous one.
     Do NOT mix negative types in the same training pass.
-    
+
     Stage A (Default): Orthographically close, phonetically distant
         - Targets false friends and spelling-driven false positives
         - Use this EXCLUSIVELY for early Phase 3 fine-tuning
-    
+
     Stage B (Optional): Model-mined false positives
         - Run AFTER initial Phase 3 pass
         - Uses model's own failure modes to sharpen decision boundary
         - Requires set_mined_negatives() on dataset
-    
+
     Args:
+        sources: List of DataSource objects. Defaults to DATA_SOURCES.
+        phase2_path: Path to Phase 2 trained model.
+        output_path: Where to save the trained model.
+        subsample_pairs: Max pairs to sample per source.
+        epochs: Number of training epochs.
+        batch_size: Training batch size.
+        lr: Learning rate.
         negative_stage: 'A' for ortho-phonetic negatives, 'B' for model-mined
     """
+    # Handle defaults
+    if sources is None:
+        sources = DATA_SOURCES
+
+    data_paths = [s.path for s in sources]
+    oversample_factors = [s.oversample for s in sources]
+
     print("=" * 60)
     print("Phase 3: Generalization Training (Curriculum Hard Negatives)")
     print(f"  Negative Stage: {negative_stage}")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
+
+    # Log data sources
+    print("\nData sources:")
+    for source in sources:
+        print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
+    print()
 
     # Load vocabularies
     vocab_dir = os.path.dirname(phase2_path) or '.'
@@ -416,13 +520,15 @@ def train_phase3(
     char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
     lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
-    train_dataset = StreamingPhase3Dataset(
-        data_path, char_vocab, lang_vocab,
+    train_dataset = MultiSourcePhase3Dataset(
+        data_paths, oversample_factors,
+        char_vocab, lang_vocab,
         split='train', subsample_pairs=subsample_pairs,
         negative_stage=negative_stage
     )
-    val_dataset = StreamingPhase3Dataset(
-        data_path, char_vocab, lang_vocab,
+    val_dataset = MultiSourcePhase3Dataset(
+        data_paths, oversample_factors,
+        char_vocab, lang_vocab,
         split='val', subsample_pairs=subsample_pairs,
         negative_stage=negative_stage
     )
@@ -572,91 +678,91 @@ def mine_hard_negatives(
 ) -> Dict[int, List[int]]:
     """
     Mine hard negatives from model's false positives for Stage B training.
-    
+
     Identifies pairs where:
     - Model similarity > threshold
     - Items are from different clusters (known non-identical)
-    
+
     CONSTRAINTS (as specified):
     - No human labeling
     - Only reuse existing dataset exclusions (cluster != cluster)
     - Conservative threshold (high similarity only)
-    
+
     Args:
         model: Trained model from Phase 3 Stage A
         data_path: HDF5 training data path
         similarity_threshold: Conservative threshold (default 0.85)
         max_negatives_per_anchor: Limit negatives per anchor
-    
+
     Returns:
         Dict mapping anchor_idx to list of hard negative indices
     """
     import h5py
     from collections import defaultdict
-    
+
     print("=" * 60)
     print("Mining Hard Negatives (Stage B)")
     print(f"  Similarity threshold: {similarity_threshold}")
     print("=" * 60)
-    
+
     model.eval()
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    
+
     mined_negatives = defaultdict(list)
-    
+
     with h5py.File(data_path, 'r') as f:
         items = f['items']
         total_items = f.attrs['total_items']
-        
+
         # Build cluster index
         cluster_to_items = defaultdict(list)
         item_clusters = {}
-        
+
         for idx in range(total_items):
             cluster_id = int(items['cluster_id'][idx])
             cluster_to_items[cluster_id].append(idx)
             item_clusters[idx] = cluster_id
-        
+
         # Sample items for efficiency
         sample_size = min(10000, total_items)
         sampled_indices = list(range(total_items))
         import random
         random.shuffle(sampled_indices)
         sampled_indices = sampled_indices[:sample_size]
-        
+
         print(f"Computing embeddings for {sample_size} items...")
-        
+
         # Compute embeddings in batches
         embeddings = {}
         batch_size = 256
-        
+
         for batch_start in range(0, len(sampled_indices), batch_size):
             batch_indices = sampled_indices[batch_start:batch_start + batch_size]
-            
+
             char_ids_list = []
             lang_ids_list = []
-            
+
             for idx in batch_indices:
                 romanized = items['romanized'][idx]
                 lang = items['lang'][idx]
-                
+
                 char_ids = char_vocab.encode(romanized)
                 lang_id = lang_vocab.encode(lang)
-                
+
                 char_ids_list.append(torch.tensor(char_ids, dtype=torch.long))
                 lang_ids_list.append(lang_id)
-            
+
             # Pad and batch
             max_len = max(len(ids) for ids in char_ids_list)
             char_ids_padded = torch.zeros(len(batch_indices), max_len, dtype=torch.long)
             char_lengths = torch.tensor([len(ids) for ids in char_ids_list])
-            
+
             for i, ids in enumerate(char_ids_list):
                 char_ids_padded[i, :len(ids)] = ids
-            
+
             lang_ids_tensor = torch.tensor(lang_ids_list, dtype=torch.long)
-            
+
             with torch.no_grad():
                 embs = model.encode_char_only(
                     char_ids_padded.to(device),
@@ -664,35 +770,35 @@ def mine_hard_negatives(
                     char_lengths
                 )
                 embs = embs.cpu().numpy()
-            
+
             for i, idx in enumerate(batch_indices):
                 embeddings[idx] = embs[i]
-        
+
         print(f"Finding false positives (sim > {similarity_threshold})...")
-        
+
         # Find false positives
         import numpy as np
-        
+
         fp_count = 0
         for i, idx_a in enumerate(sampled_indices):
             if i % 1000 == 0:
                 print(f"  Processed {i}/{len(sampled_indices)}", end='\r')
-            
+
             emb_a = embeddings[idx_a]
             cluster_a = item_clusters[idx_a]
-            
+
             for idx_b in sampled_indices[i+1:]:
                 cluster_b = item_clusters[idx_b]
-                
+
                 # Only consider cross-cluster pairs (known non-identical)
                 if cluster_a == cluster_b:
                     continue
-                
+
                 emb_b = embeddings[idx_b]
-                
+
                 # Compute cosine similarity
                 sim = float(np.dot(emb_a, emb_b))
-                
+
                 if sim > similarity_threshold:
                     # This is a false positive - model thinks they're similar but they're not
                     if len(mined_negatives[idx_a]) < max_negatives_per_anchor:
@@ -701,8 +807,8 @@ def mine_hard_negatives(
                     if len(mined_negatives[idx_b]) < max_negatives_per_anchor:
                         mined_negatives[idx_b].append(idx_a)
                         fp_count += 1
-        
+
         print(f"\nMined {fp_count} hard negative pairs")
         print(f"Anchors with negatives: {len(mined_negatives)}")
-    
+
     return dict(mined_negatives)

@@ -43,60 +43,92 @@ def _levenshtein_distance(s1: str, s2: str) -> int:
     return previous_row[-1]
 
 
-class StreamingPhase1Dataset(Dataset):
+# =============================================================================
+# Multi-Source Dataset Classes
+# =============================================================================
+
+class MultiSourcePhase1Dataset(Dataset):
     """
-    Phase 1 Dataset with HDF5 streaming.
-    
-    Provides triplets of (anchor, positive, negative) phonetic feature sequences
-    for training the Teacher (phonetic encoder).
+    Phase 1 Dataset combining multiple HDF5 sources with oversampling.
+
+    Each source can have a different oversample factor, allowing historical
+    sources (Index Villaris, Pleiades) to be represented proportionally
+    despite having fewer pairs than GeoNames.
     """
 
     def __init__(
         self,
-        hdf5_path: str,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
         split: str = 'train',
         train_ratio: float = 0.9,
         subsample_pairs: int = Config.SUBSAMPLE_PAIRS
     ):
-        self.hdf5_path = hdf5_path
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
         self.split = split
 
-        with h5py.File(hdf5_path, 'r') as f:
-            total_pairs = f.attrs['pairs_with_phonetic']
+        # Build combined index: list of (source_idx, pair_idx_in_source)
+        self.combined_indices = []
 
-            max_pairs = min(total_pairs, subsample_pairs)
-            all_indices = list(range(total_pairs))
-            random.shuffle(all_indices)
-            sampled_indices = all_indices[:max_pairs]
+        # Per-source metadata
+        self.source_pair_counts = []
+        self.source_phonetic_indices = []  # List of phonetic item indices per source
+        self.source_cluster_maps = []  # cluster_to_items per source
 
-            split_idx = int(max_pairs * train_ratio)
-            if split == 'train':
-                self.pair_indices = sampled_indices[:split_idx]
-            else:
-                self.pair_indices = sampled_indices[split_idx:]
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            with h5py.File(path, 'r') as f:
+                total_pairs = f.attrs['pairs_with_phonetic']
 
-            items = f['items']
-            self.phonetic_item_indices = []
+                # Subsample if needed
+                max_pairs = min(total_pairs, subsample_pairs)
+                all_indices = list(range(total_pairs))
+                random.shuffle(all_indices)
+                sampled_indices = all_indices[:max_pairs]
 
-            for idx in range(f.attrs['total_items']):
-                if items['has_phonetic'][idx]:
-                    feature_key = str(idx)
-                    if feature_key in f['features']:
-                        feat_shape = f['features'][feature_key].shape
-                        if feat_shape[0] > 0:
-                            self.phonetic_item_indices.append(idx)
+                # Split train/val
+                split_idx = int(max_pairs * train_ratio)
+                if split == 'train':
+                    source_indices = sampled_indices[:split_idx]
+                else:
+                    source_indices = sampled_indices[split_idx:]
 
-            self.cluster_to_items = defaultdict(list)
-            for idx in self.phonetic_item_indices:
-                cluster_id = int(items['cluster_id'][idx])
-                self.cluster_to_items[cluster_id].append(idx)
+                self.source_pair_counts.append(len(source_indices))
 
-            self.cluster_ids = list(self.cluster_to_items.keys())
+                # Apply oversampling
+                for _ in range(factor):
+                    for pair_idx in source_indices:
+                        self.combined_indices.append((source_idx, pair_idx))
 
-        print(f"StreamingPhase1Dataset ({split}): {len(self.pair_indices):,} pairs")
+                # Build phonetic item indices for this source
+                items = f['items']
+                phonetic_indices = []
+                cluster_to_items = defaultdict(list)
+
+                for idx in range(f.attrs['total_items']):
+                    if items['has_phonetic'][idx]:
+                        feature_key = str(idx)
+                        if feature_key in f['features']:
+                            feat_shape = f['features'][feature_key].shape
+                            if feat_shape[0] > 0:
+                                phonetic_indices.append(idx)
+                                cluster_id = int(items['cluster_id'][idx])
+                                cluster_to_items[cluster_id].append(idx)
+
+                self.source_phonetic_indices.append(phonetic_indices)
+                self.source_cluster_maps.append(dict(cluster_to_items))
+
+        # Shuffle combined indices
+        random.shuffle(self.combined_indices)
+
+        print(f"MultiSourcePhase1Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_pair_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} pairs × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
 
     def __len__(self) -> int:
-        return len(self.pair_indices)
+        return len(self.combined_indices)
 
     def _load_features(self, f: h5py.File, item_idx: int) -> np.ndarray:
         feature_key = str(item_idx)
@@ -105,17 +137,21 @@ class StreamingPhase1Dataset(Dataset):
         return np.array([])
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        with h5py.File(self.hdf5_path, 'r') as f:
+        source_idx, pair_idx = self.combined_indices[idx]
+
+        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
             pairs = f['pairs_with_phonetic']
             items = f['items']
 
-            pair_idx = self.pair_indices[idx]
             anchor_idx = int(pairs['anchor_idx'][pair_idx])
             positive_idx = int(pairs['positive_idx'][pair_idx])
 
+            # Get negative from same source
             anchor_cluster = int(items['cluster_id'][anchor_idx])
-            neg_cluster = random.choice([c for c in self.cluster_ids if c != anchor_cluster])
-            negative_idx = random.choice(self.cluster_to_items[neg_cluster])
+            cluster_map = self.source_cluster_maps[source_idx]
+            cluster_ids = list(cluster_map.keys())
+            neg_cluster = random.choice([c for c in cluster_ids if c != anchor_cluster])
+            negative_idx = random.choice(cluster_map[neg_cluster])
 
             anchor_features = self._load_features(f, anchor_idx)
             positive_features = self._load_features(f, positive_idx)
@@ -128,52 +164,73 @@ class StreamingPhase1Dataset(Dataset):
         }
 
 
-class StreamingPhase2Dataset(Dataset):
+class MultiSourcePhase2Dataset(Dataset):
     """
-    Phase 2 Dataset with HDF5 streaming.
-    
+    Phase 2 Dataset combining multiple HDF5 sources with oversampling.
+
     Provides (character sequence, phonetic features) pairs for
     Student-Teacher alignment training.
     """
 
     def __init__(
         self,
-        hdf5_path: str,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
         char_vocab,
         lang_vocab,
         split: str = 'train',
         train_ratio: float = 0.9
     ):
-        self.hdf5_path = hdf5_path
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
         self.char_vocab = char_vocab
         self.lang_vocab = lang_vocab
         self.split = split
 
-        with h5py.File(hdf5_path, 'r') as f:
-            items = f['items']
-            self.item_indices = []
+        # Build combined index: list of (source_idx, item_idx_in_source)
+        self.combined_indices = []
+        self.source_item_counts = []
 
-            for idx in range(f.attrs['total_items']):
-                if items['has_phonetic'][idx]:
-                    self.item_indices.append(idx)
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            with h5py.File(path, 'r') as f:
+                items = f['items']
+                item_indices = []
 
-            random.shuffle(self.item_indices)
-            split_idx = int(len(self.item_indices) * train_ratio)
+                for idx in range(f.attrs['total_items']):
+                    if items['has_phonetic'][idx]:
+                        item_indices.append(idx)
 
-            if split == 'train':
-                self.item_indices = self.item_indices[:split_idx]
-            else:
-                self.item_indices = self.item_indices[split_idx:]
+                random.shuffle(item_indices)
+                split_idx = int(len(item_indices) * train_ratio)
 
-        print(f"StreamingPhase2Dataset ({split}): {len(self.item_indices):,} items")
+                if split == 'train':
+                    source_indices = item_indices[:split_idx]
+                else:
+                    source_indices = item_indices[split_idx:]
+
+                self.source_item_counts.append(len(source_indices))
+
+                # Apply oversampling
+                for _ in range(factor):
+                    for item_idx in source_indices:
+                        self.combined_indices.append((source_idx, item_idx))
+
+        random.shuffle(self.combined_indices)
+
+        print(f"MultiSourcePhase2Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_item_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} items × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
 
     def __len__(self) -> int:
-        return len(self.item_indices)
+        return len(self.combined_indices)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        with h5py.File(self.hdf5_path, 'r') as f:
+        source_idx, item_idx = self.combined_indices[idx]
+
+        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
             items = f['items']
-            item_idx = self.item_indices[idx]
 
             romanized = items['romanized'][item_idx]
             lang = items['lang'][item_idx]
@@ -191,258 +248,209 @@ class StreamingPhase2Dataset(Dataset):
         }
 
 
-class StreamingPhase3Dataset(Dataset):
+class MultiSourcePhase3Dataset(Dataset):
     """
-    Phase 3 Dataset with HDF5 streaming and Curriculum Hard Negatives.
-    
-    v2 Changes - Curriculum Hard Negative Mining:
-    
-    Stage A (Default): Orthographically close, phonetically distant
-        - anyascii edit distance is small
-        - PanPhon cosine distance is large
-        - Targets false friends and spelling-driven false positives
-    
-    Stage B (Optional): Model-mined false positives
-        - Pairs with similarity > threshold but known non-identical
-        - Set via set_mined_negatives() after Phase 3 pass
-        - Sharpens decision boundary using model's own failure modes
-    
-    CRITICAL: Do not mix negative types in the same training pass.
-    Each stage must REPLACE, not augment, the previous one.
+    Phase 3 Dataset combining multiple HDF5 sources with oversampling
+    and curriculum hard negative support.
+
+    Each source maintains its own cluster structure for negative sampling,
+    ensuring negatives come from the same source as the anchor/positive.
     """
 
     def __init__(
         self,
-        hdf5_path: str,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
         char_vocab,
         lang_vocab,
         split: str = 'train',
         train_ratio: float = 0.9,
         subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
-        negative_stage: str = 'A'  # 'A' for ortho-phon, 'B' for model-mined
+        negative_stage: str = 'A'
     ):
-        self.hdf5_path = hdf5_path
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
         self.char_vocab = char_vocab
         self.lang_vocab = lang_vocab
         self.split = split
         self.negative_stage = negative_stage
-        
-        # Stage B: Model-mined hard negatives (set externally)
-        self.mined_negatives: Optional[Dict[int, List[int]]] = None
 
-        with h5py.File(hdf5_path, 'r') as f:
-            phon_count = f.attrs['pairs_with_phonetic']
-            no_phon_count = f.attrs['pairs_without_phonetic']
-            total_pairs = phon_count + no_phon_count
+        # Build combined index: list of (source_idx, pair_idx_in_source, is_phonetic)
+        self.combined_indices = []
+        self.source_pair_counts = []
 
-            max_pairs = min(total_pairs, subsample_pairs)
-            all_indices = list(range(total_pairs))
-            random.shuffle(all_indices)
-            sampled_indices = all_indices[:max_pairs]
+        # Per-source metadata for negative sampling
+        self.source_cluster_maps = []
+        self.source_first_char_indices = []
+        self.source_item_romanized = []
+        self.source_item_ipa = []
+        self.source_phon_counts = []
 
-            split_idx = int(len(sampled_indices) * train_ratio)
-            if split == 'train':
-                self.pair_indices = sampled_indices[:split_idx]
-            else:
-                self.pair_indices = sampled_indices[split_idx:]
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            with h5py.File(path, 'r') as f:
+                phon_count = f.attrs['pairs_with_phonetic']
+                no_phon_count = f.attrs.get('pairs_without_phonetic', 0)
+                total_pairs = phon_count + no_phon_count
 
-            self.phon_count = phon_count
+                self.source_phon_counts.append(phon_count)
 
-            items = f['items']
-            total_items = f.attrs['total_items']
+                max_pairs = min(total_pairs, subsample_pairs)
+                all_indices = list(range(total_pairs))
+                random.shuffle(all_indices)
+                sampled_indices = all_indices[:max_pairs]
 
-            # Build cluster index
-            self.cluster_to_items = defaultdict(list)
-            for idx in range(total_items):
-                cluster_id = int(items['cluster_id'][idx])
-                self.cluster_to_items[cluster_id].append(idx)
-            self.cluster_ids = list(self.cluster_to_items.keys())
+                split_idx = int(len(sampled_indices) * train_ratio)
+                if split == 'train':
+                    source_indices = sampled_indices[:split_idx]
+                else:
+                    source_indices = sampled_indices[split_idx:]
 
-            # Build first-char index for Stage A hard negatives
-            self.index_by_first_char = defaultdict(list)
-            self.item_romanized = {}
-            self.item_ipa = {}
-            
-            for idx in range(total_items):
-                romanized = items['romanized'][idx]
-                if isinstance(romanized, bytes):
-                    romanized = romanized.decode('utf-8')
-                
-                self.item_romanized[idx] = romanized
-                
-                if romanized:
-                    first_char = romanized[0].lower()
-                    self.index_by_first_char[first_char].append(idx)
-                
-                # Store IPA for phonetic distance computation
-                ipa = items['ipa'][idx]
-                if isinstance(ipa, bytes):
-                    ipa = ipa.decode('utf-8')
-                self.item_ipa[idx] = ipa
+                self.source_pair_counts.append(len(source_indices))
 
-        print(f"StreamingPhase3Dataset ({split}): {len(self.pair_indices):,} pairs")
+                # Apply oversampling
+                for _ in range(factor):
+                    for pair_idx in source_indices:
+                        self.combined_indices.append((source_idx, pair_idx))
+
+                # Build per-source metadata for negative sampling
+                items = f['items']
+                total_items = f.attrs['total_items']
+
+                cluster_to_items = defaultdict(list)
+                first_char_index = defaultdict(list)
+                item_romanized = {}
+                item_ipa = {}
+
+                for idx in range(total_items):
+                    cluster_id = int(items['cluster_id'][idx])
+                    cluster_to_items[cluster_id].append(idx)
+
+                    romanized = items['romanized'][idx]
+                    if isinstance(romanized, bytes):
+                        romanized = romanized.decode('utf-8')
+                    item_romanized[idx] = romanized
+
+                    if romanized:
+                        first_char = romanized[0].lower()
+                        first_char_index[first_char].append(idx)
+
+                    ipa = items['ipa'][idx]
+                    if isinstance(ipa, bytes):
+                        ipa = ipa.decode('utf-8')
+                    item_ipa[idx] = ipa
+
+                self.source_cluster_maps.append(dict(cluster_to_items))
+                self.source_first_char_indices.append(dict(first_char_index))
+                self.source_item_romanized.append(item_romanized)
+                self.source_item_ipa.append(item_ipa)
+
+        random.shuffle(self.combined_indices)
+
+        print(f"MultiSourcePhase3Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_pair_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} pairs × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
         print(f"  Negative stage: {negative_stage}")
 
-    def set_mined_negatives(self, mined_negatives: Dict[int, List[int]]):
-        """
-        Set model-mined hard negatives for Stage B.
-        
-        Args:
-            mined_negatives: Dict mapping anchor_idx to list of hard negative indices
-        """
-        self.mined_negatives = mined_negatives
-        self.negative_stage = 'B'
-        print(f"  Stage B activated: {len(mined_negatives)} anchors with mined negatives")
-
     def __len__(self) -> int:
-        return len(self.pair_indices)
+        return len(self.combined_indices)
 
-    def _get_stage_a_negative(self, f: h5py.File, anchor_idx: int) -> int:
-        """
-        Stage A: Find orthographically close but phonetically distant negative.
-        
-        Targets false friends and spelling-driven false positives.
-        """
+    def _random_negative(self, source_idx: int, anchor_cluster: int) -> int:
+        """Select random negative from different cluster within same source."""
+        cluster_map = self.source_cluster_maps[source_idx]
+        cluster_ids = list(cluster_map.keys())
+        neg_cluster = random.choice([c for c in cluster_ids if c != anchor_cluster])
+        return random.choice(cluster_map[neg_cluster])
+
+    def _get_stage_a_negative(self, source_idx: int, f: h5py.File, anchor_idx: int) -> int:
+        """Stage A: Find orthographically close but phonetically distant negative."""
         items = f['items']
-        anchor_rom = self.item_romanized.get(anchor_idx, '')
+        anchor_rom = self.source_item_romanized[source_idx].get(anchor_idx, '')
         anchor_cluster = int(items['cluster_id'][anchor_idx])
-        anchor_ipa = self.item_ipa.get(anchor_idx, '')
-        
+        anchor_ipa = self.source_item_ipa[source_idx].get(anchor_idx, '')
+
         if not anchor_rom:
-            return self._random_negative(anchor_cluster)
-        
+            return self._random_negative(source_idx, anchor_cluster)
+
         first_char = anchor_rom[0].lower()
-        candidates = self.index_by_first_char.get(first_char, [])
-        
+        first_char_index = self.source_first_char_indices[source_idx]
+        candidates = list(first_char_index.get(first_char, []))
+
         if len(candidates) < 10:
-            # Fallback: use adjacent first chars
             for offset in [-1, 1, -2, 2]:
                 adj_char = chr(ord(first_char) + offset)
-                candidates.extend(self.index_by_first_char.get(adj_char, []))
-        
+                candidates.extend(first_char_index.get(adj_char, []))
+
         if len(candidates) < 5:
-            return self._random_negative(anchor_cluster)
-        
-        # Sample candidates and find best hard negative
+            return self._random_negative(source_idx, anchor_cluster)
+
         random.shuffle(candidates)
         best_neg_idx = None
         best_score = -float('inf')
-        
-        for neg_idx in candidates[:50]:  # Check up to 50 candidates
+
+        cluster_map = self.source_cluster_maps[source_idx]
+
+        for neg_idx in candidates[:50]:
             neg_cluster = int(items['cluster_id'][neg_idx])
-            
-            # Must be from different cluster (different place)
+
             if neg_cluster == anchor_cluster:
                 continue
-            
-            neg_rom = self.item_romanized.get(neg_idx, '')
+
+            neg_rom = self.source_item_romanized[source_idx].get(neg_idx, '')
             if not neg_rom:
                 continue
-            
-            # Compute orthographic distance (edit distance)
+
             edit_dist = _levenshtein_distance(anchor_rom.lower(), neg_rom.lower())
-            
-            # We want SMALL edit distance (orthographically similar)
+
             if edit_dist > Config.STAGE_A_EDIT_DISTANCE_MAX:
                 continue
-            
-            # Compute phonetic distance if IPA available
-            neg_ipa = self.item_ipa.get(neg_idx, '')
-            
+
+            neg_ipa = self.source_item_ipa[source_idx].get(neg_idx, '')
+
             if anchor_ipa and neg_ipa:
-                # Simple phonetic distance: normalized edit distance on IPA
                 ipa_edit = _levenshtein_distance(anchor_ipa, neg_ipa)
                 max_ipa_len = max(len(anchor_ipa), len(neg_ipa), 1)
                 phon_dist = ipa_edit / max_ipa_len
-                
-                # We want LARGE phonetic distance
+
                 if phon_dist < Config.STAGE_A_PHONETIC_DISTANCE_MIN:
                     continue
-                
-                # Score: prioritize high phonetic distance with low edit distance
+
                 score = phon_dist - (edit_dist * 0.1)
             else:
-                # No IPA: use edit distance inverse as proxy
                 score = -edit_dist
-            
+
             if score > best_score:
                 best_score = score
                 best_neg_idx = neg_idx
-        
+
         if best_neg_idx is not None:
             return best_neg_idx
-        
-        # Fallback to length-similar negative
-        return self._get_length_similar_negative(items, anchor_idx, anchor_cluster, anchor_rom)
 
-    def _get_stage_b_negative(self, anchor_idx: int, anchor_cluster: int) -> int:
-        """
-        Stage B: Return model-mined false positive negative.
-        """
-        if self.mined_negatives and anchor_idx in self.mined_negatives:
-            candidates = self.mined_negatives[anchor_idx]
-            if candidates:
-                return random.choice(candidates)
-        
-        # Fallback to random negative
-        return self._random_negative(anchor_cluster)
-
-    def _get_length_similar_negative(
-        self,
-        items,
-        anchor_idx: int,
-        anchor_cluster: int,
-        anchor_rom: str
-    ) -> int:
-        """Fallback: find length-similar negative from different cluster."""
-        anchor_len = len(anchor_rom)
-        first_char = anchor_rom[0].lower() if anchor_rom else ''
-        
-        candidates = self.index_by_first_char.get(first_char, [])
-        random.shuffle(candidates)
-        
-        for neg_idx in candidates[:20]:
-            neg_cluster = int(items['cluster_id'][neg_idx])
-            if neg_cluster == anchor_cluster:
-                continue
-            
-            neg_rom = self.item_romanized.get(neg_idx, '')
-            neg_len = len(neg_rom)
-            
-            if abs(neg_len - anchor_len) <= 2:
-                return neg_idx
-        
-        return self._random_negative(anchor_cluster)
-
-    def _random_negative(self, anchor_cluster: int) -> int:
-        """Select random negative from different cluster."""
-        neg_cluster = random.choice([c for c in self.cluster_ids if c != anchor_cluster])
-        return random.choice(self.cluster_to_items[neg_cluster])
+        return self._random_negative(source_idx, anchor_cluster)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
-        pair_idx = self.pair_indices[idx]
+        source_idx, pair_idx = self.combined_indices[idx]
+        phon_count = self.source_phon_counts[source_idx]
 
-        with h5py.File(self.hdf5_path, 'r') as f:
+        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
             items = f['items']
 
-            if pair_idx < self.phon_count:
+            if pair_idx < phon_count:
                 pairs = f['pairs_with_phonetic']
                 local_idx = pair_idx
             else:
                 pairs = f['pairs_without_phonetic']
-                local_idx = pair_idx - self.phon_count
+                local_idx = pair_idx - phon_count
 
             anchor_idx = int(pairs['anchor_idx'][local_idx])
             positive_idx = int(pairs['positive_idx'][local_idx])
             anchor_cluster = int(items['cluster_id'][anchor_idx])
-            
-            # Select negative based on curriculum stage
+
             if self.negative_stage == 'A':
-                negative_idx = self._get_stage_a_negative(f, anchor_idx)
-            elif self.negative_stage == 'B':
-                negative_idx = self._get_stage_b_negative(anchor_idx, anchor_cluster)
+                negative_idx = self._get_stage_a_negative(source_idx, f, anchor_idx)
             else:
-                negative_idx = self._random_negative(anchor_cluster)
+                negative_idx = self._random_negative(source_idx, anchor_cluster)
 
             anchor_rom = items['romanized'][anchor_idx]
             anchor_lang = items['lang'][anchor_idx]

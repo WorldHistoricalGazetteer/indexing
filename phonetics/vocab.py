@@ -67,11 +67,48 @@ class CharVocab:
 
         return self
 
+    def fit_multi(self, hdf5_paths: List[str]) -> 'CharVocab':
+        """Build vocabulary from multiple HDF5 training data files."""
+        print(f"Building character vocabulary from {len(hdf5_paths)} sources...")
+        char_counts = defaultdict(int)
+
+        for path in hdf5_paths:
+            with h5py.File(path, 'r') as f:
+                items = f['items']
+                total_items = f.attrs['total_items']
+
+                for idx in range(total_items):
+                    text = items['romanized'][idx]
+                    if isinstance(text, bytes):
+                        text = text.decode('utf-8')
+                    for c in text:
+                        char_counts[c] += 1
+
+        # Reserve 20% of vocab for hash fallback
+        max_vocab_chars = int(self.vocab_size * 0.8)
+
+        # Add most frequent characters to vocab
+        for char, _ in sorted(char_counts.items(), key=lambda x: -x[1]):
+            if self.next_id >= max_vocab_chars:
+                break
+            if char not in self.char_to_id:
+                self.char_to_id[char] = self.next_id
+                self.id_to_char[self.next_id] = char
+                self.next_id += 1
+
+        self.hash_space_start = self.next_id
+        self.frozen = True
+
+        hash_slots = self.vocab_size - self.hash_space_start
+        print(f"CharVocab: {len(self.char_to_id)} explicit chars, {hash_slots} hash slots")
+
+        return self
+
     def encode(self, text: str, max_len: int = Config.MAX_TOPONYM_LEN) -> List[int]:
         """Convert text to character IDs."""
         if isinstance(text, bytes):
             text = text.decode('utf-8')
-        
+
         ids = []
         for c in text[:max_len]:
             if c in self.char_to_id:
@@ -143,6 +180,31 @@ class LangVocab:
                     self.lang_to_id[lang] = self.next_id
                     self.id_to_lang[self.next_id] = lang
                     self.next_id += 1
+
+        print(f"LangVocab: {len(self.lang_to_id)} languages")
+        return self
+
+    def fit_multi(self, hdf5_paths: List[str]) -> 'LangVocab':
+        """Build vocabulary from multiple HDF5 training data files."""
+        print(f"Building language vocabulary from {len(hdf5_paths)} sources...")
+        languages = set()
+
+        for path in hdf5_paths:
+            with h5py.File(path, 'r') as f:
+                items = f['items']
+                total_items = f.attrs['total_items']
+
+                for idx in range(total_items):
+                    lang = items['lang'][idx]
+                    if isinstance(lang, bytes):
+                        lang = lang.decode('utf-8')
+                    languages.add(lang)
+
+        for lang in sorted(languages):
+            if lang not in self.lang_to_id:
+                self.lang_to_id[lang] = self.next_id
+                self.id_to_lang[self.next_id] = lang
+                self.next_id += 1
 
         print(f"LangVocab: {len(self.lang_to_id)} languages")
         return self
