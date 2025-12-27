@@ -30,6 +30,8 @@ import h5py
 import numpy as np
 import orjson
 
+from processing.utilities import create_checkpoint_snapshot
+
 try:
     import epitran
     from panphon import FeatureTable
@@ -337,6 +339,10 @@ class ToponymEnricher:
         print("\nRefreshing index...")
         self.es.indices.refresh(index=self.index)
 
+        # Create snapshot
+        print("\nCreating checkpoint snapshot...")
+        create_checkpoint_snapshot(self.es, 'phonetic_enrichment')
+
         elapsed = datetime.now() - start_time
 
         # Final count
@@ -561,17 +567,25 @@ class TrainingDataExtractor:
         checkpoint_every: int = 100000
     ):
         """
-        Optimized extraction with namespace filtering and pre-filtering.
+        Optimized extraction with inline SQLite deduplication.
+
+        Single-pass extraction that:
+        1. Streams places from ES
+        2. Deduplicates items and pairs via SQLite (on disk)
+        3. Writes unique data to HDF5 at the end
 
         Args:
             output_path: HDF5 output file path
             namespaces: List of namespace prefixes to include (e.g., ['gn', 'wd'])
                        None means all namespaces
             max_docs: Maximum documents to process (for testing)
-            checkpoint_every: Flush to disk every N documents
+            checkpoint_every: Commit SQLite every N documents
         """
+        import os
+        import tempfile
+
         print("=" * 70)
-        print("OPTIMIZED TRAINING DATA EXTRACTION")
+        print("TRAINING DATA EXTRACTION (WITH INLINE DEDUPLICATION)")
         print("=" * 70)
         print(f"Output: {output_path}")
         print(f"Namespaces: {namespaces if namespaces else 'ALL'}")
@@ -584,8 +598,10 @@ class TrainingDataExtractor:
             'toponyms_checked': 0,
             'toponyms_supported_lang': 0,
             'toponyms_with_phonetics': 0,
-            'items_written': 0,
-            'pairs_written': 0,
+            'items_new': 0,
+            'items_existing': 0,
+            'pairs_new': 0,
+            'pairs_existing': 0,
         }
 
         # Build query with namespace filter
@@ -607,49 +623,58 @@ class TrainingDataExtractor:
         count_resp = self.es.count(index=self.index, body=query_body)
         total_docs = count_resp['count']
         print(f"Total documents to process: {total_docs:,}")
+
+        # Create temp SQLite database for deduplication
+        db_fd, db_path = tempfile.mkstemp(suffix='.db', prefix='phonetic_extract_')
+        os.close(db_fd)
+        print(f"Temp database: {db_path}")
         print()
 
-        with h5py.File(output_path, 'w') as f:
-            str_dtype = h5py.special_dtype(vlen=str)
-            grp_items = f.create_group('items')
-            grp_feats = f.create_group('features')
-            grp_pairs = f.create_group('pairs_with_phonetic')
+        try:
+            # =========================================================
+            # PHASE 1: Extract from ES into SQLite (with deduplication)
+            # =========================================================
+            print("--- PHASE 1: Extracting to SQLite ---")
 
-            # Pre-allocate datasets
-            chunk_size = 100000
+            db = sqlite3.connect(db_path)
+            db.execute('PRAGMA journal_mode=WAL')
+            db.execute('PRAGMA synchronous=NORMAL')
+            db.execute('PRAGMA cache_size=-64000')  # 64MB cache
 
-            dsets = {
-                'toponym': grp_items.create_dataset('toponym', (chunk_size,), maxshape=(None,), dtype=str_dtype, chunks=True),
-                'romanized': grp_items.create_dataset('romanized', (chunk_size,), maxshape=(None,), dtype=str_dtype, chunks=True),
-                'lang': grp_items.create_dataset('lang', (chunk_size,), maxshape=(None,), dtype=str_dtype, chunks=True),
-                'ipa': grp_items.create_dataset('ipa', (chunk_size,), maxshape=(None,), dtype=str_dtype, chunks=True),
-                'cluster_id': grp_items.create_dataset('cluster_id', (chunk_size,), maxshape=(None,), dtype='i4', chunks=True),
-                'has_phonetic': grp_items.create_dataset('has_phonetic', (chunk_size,), maxshape=(None,), dtype='bool', chunks=True),
-                'p_anc': grp_pairs.create_dataset('anchor_idx', (chunk_size,), maxshape=(None,), dtype='i4', chunks=True),
-                'p_pos': grp_pairs.create_dataset('positive_idx', (chunk_size,), maxshape=(None,), dtype='i4', chunks=True),
-                'p_sim': grp_pairs.create_dataset('similarity', (chunk_size,), maxshape=(None,), dtype='f4', chunks=True),
-            }
+            # Items table: unique toponyms keyed by toponym@lang
+            db.execute('''
+                CREATE TABLE items (
+                    item_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    item_key TEXT UNIQUE,
+                    toponym TEXT,
+                    romanized TEXT,
+                    lang TEXT,
+                    ipa TEXT,
+                    features BLOB
+                )
+            ''')
 
-            counters = {'items': 0, 'pairs': 0}
-            caps = {'items': chunk_size, 'pairs': chunk_size}
+            # Pairs table: unique pairs keyed by sorted item keys
+            db.execute('''
+                CREATE TABLE pairs (
+                    pair_key TEXT PRIMARY KEY,
+                    item_key_a TEXT,
+                    item_key_b TEXT,
+                    similarity REAL
+                )
+            ''')
 
-            def ensure_capacity(counter_name: str, dset_keys: List[str]):
-                """Expand datasets if needed."""
-                if counters[counter_name] >= caps[counter_name]:
-                    new_cap = caps[counter_name] + chunk_size
-                    for key in dset_keys:
-                        dsets[key].resize((new_cap,))
-                    caps[counter_name] = new_cap
+            db.commit()
+            cursor = db.cursor()
 
             # Process places in batches
             search_after = None
             batch_size = 500
-
             start_time = time.time()
             last_report_time = start_time
+            last_commit_docs = 0
 
             while True:
-                # Build paginated query
                 query = {
                     "size": batch_size,
                     **query_body,
@@ -680,8 +705,8 @@ class TrainingDataExtractor:
                 if not hits:
                     break
 
-                # Collect all candidate toponym_ids from this batch for batch MGET
-                batch_candidates = []  # List of (hit_idx, tid, name, lang)
+                # Collect candidate toponym_ids for batch MGET
+                batch_candidates = []
 
                 for hit_idx, hit in enumerate(hits):
                     if max_docs and stats['docs_scanned'] >= max_docs:
@@ -693,7 +718,6 @@ class TrainingDataExtractor:
                     if not raw_toponyms:
                         continue
 
-                    # STAGE 1: Parse and filter to supported languages (fast, O(n))
                     seen_in_cluster = set()
 
                     for t in raw_toponyms:
@@ -704,7 +728,6 @@ class TrainingDataExtractor:
                         if not tid or '@' not in tid:
                             continue
 
-                        # Parse toponym_id
                         at_pos = tid.rfind('@')
                         if at_pos <= 0:
                             continue
@@ -717,7 +740,6 @@ class TrainingDataExtractor:
 
                         stats['toponyms_checked'] += 1
 
-                        # Filter: supported language only (fast set lookup)
                         if lang not in self.SUPPORTED_LANGS:
                             continue
 
@@ -731,7 +753,7 @@ class TrainingDataExtractor:
 
                         batch_candidates.append((hit_idx, tid, name, lang))
 
-                # STAGE 2: Batch fetch phonetics for all candidates
+                # Batch fetch phonetics
                 if batch_candidates:
                     all_tids = [tid for _, tid, _, _ in batch_candidates]
                     phonetics = self._fetch_phonetics_batch(all_tids)
@@ -748,64 +770,77 @@ class TrainingDataExtractor:
                                 'features': phonetics[tid]['features']
                             })
 
-                    # STAGE 3: Process each place with valid phonetic toponyms
+                    # Process each place
                     for hit_idx, phonetic_toponyms in hit_toponyms.items():
-                        # Need at least 2 to form pairs
                         if len(phonetic_toponyms) < 2:
                             continue
 
                         stats['docs_with_clusters'] += 1
-                        cluster_id = stats['docs_with_clusters']
 
-                        # Write items and collect indices for pair generation
-                        item_indices = []
+                        # Insert/get items and collect keys for pair generation
+                        item_keys = []
 
                         for topo in phonetic_toponyms:
-                            ensure_capacity('items', ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic'])
+                            item_key = f"{topo['name'].lower()}@{topo['lang'].lower()}"
 
-                            idx = counters['items']
-                            dsets['toponym'][idx] = topo['name']
-                            dsets['romanized'][idx] = anyascii(topo['name']).lower()
-                            dsets['lang'][idx] = topo['lang']
-                            dsets['ipa'][idx] = topo['ipa']
-                            dsets['cluster_id'][idx] = cluster_id
-                            dsets['has_phonetic'][idx] = True
+                            # Try to insert (will fail silently if exists)
+                            try:
+                                cursor.execute(
+                                    '''INSERT INTO items (item_key, toponym, romanized, lang, ipa, features)
+                                       VALUES (?, ?, ?, ?, ?, ?)''',
+                                    (
+                                        item_key,
+                                        topo['name'],
+                                        anyascii(topo['name']).lower(),
+                                        topo['lang'],
+                                        topo['ipa'],
+                                        orjson.dumps(topo['features'], option=orjson.OPT_SERIALIZE_NUMPY)
+                                    )
+                                )
+                                stats['items_new'] += 1
+                            except sqlite3.IntegrityError:
+                                stats['items_existing'] += 1
 
-                            # Store features
-                            grp_feats.create_dataset(str(idx), data=np.array(topo['features'], dtype='f4'))
+                            item_keys.append((item_key, topo['ipa']))
 
-                            item_indices.append((idx, topo['ipa']))
-                            counters['items'] += 1
-                            stats['items_written'] += 1
-
-                        # STAGE 4: Generate pairs (optimized loop)
-                        n_items = len(item_indices)
+                        # Generate pairs
+                        n_items = len(item_keys)
                         sim_threshold = Config.SIMILARITY_THRESHOLD
 
                         for i in range(n_items - 1):
-                            idx_a, ipa_a = item_indices[i]
+                            key_a, ipa_a = item_keys[i]
 
                             for j in range(i + 1, n_items):
-                                idx_b, ipa_b = item_indices[j]
+                                key_b, ipa_b = item_keys[j]
 
                                 sim = self.phonetic_similarity(ipa_a, ipa_b)
 
                                 if sim < sim_threshold:
                                     continue
 
-                                ensure_capacity('pairs', ['p_anc', 'p_pos', 'p_sim'])
+                                # Create canonical pair key (sorted)
+                                if key_a > key_b:
+                                    key_a, key_b = key_b, key_a
+                                pair_key = f"{key_a}|{key_b}"
 
-                                pidx = counters['pairs']
-                                dsets['p_anc'][pidx] = idx_a
-                                dsets['p_pos'][pidx] = idx_b
-                                dsets['p_sim'][pidx] = sim
-                                counters['pairs'] += 1
-                                stats['pairs_written'] += 1
+                                try:
+                                    cursor.execute(
+                                        'INSERT INTO pairs (pair_key, item_key_a, item_key_b, similarity) VALUES (?, ?, ?, ?)',
+                                        (pair_key, key_a, key_b, sim)
+                                    )
+                                    stats['pairs_new'] += 1
+                                except sqlite3.IntegrityError:
+                                    stats['pairs_existing'] += 1
 
                 # Update cursor
                 search_after = hits[-1]['sort']
 
-                # Progress report every 5 seconds
+                # Periodic commit
+                if stats['docs_scanned'] - last_commit_docs >= checkpoint_every:
+                    db.commit()
+                    last_commit_docs = stats['docs_scanned']
+
+                # Progress report
                 current_time = time.time()
                 if current_time - last_report_time >= 5:
                     elapsed = current_time - start_time
@@ -813,43 +848,121 @@ class TrainingDataExtractor:
                     eta = (total_docs - stats['docs_scanned']) / rate if rate > 0 else 0
 
                     print(f"\rDocs: {stats['docs_scanned']:,}/{total_docs:,} ({100*stats['docs_scanned']/total_docs:.1f}%) | "
-                          f"Clusters: {stats['docs_with_clusters']:,} | "
-                          f"Items: {stats['items_written']:,} | "
-                          f"Pairs: {stats['pairs_written']:,} | "
+                          f"Items: {stats['items_new']:,} | "
+                          f"Pairs: {stats['pairs_new']:,} | "
+                          f"Deduped: {stats['items_existing']+stats['pairs_existing']:,} | "
                           f"Rate: {rate:.0f}/s | "
                           f"ETA: {eta/60:.0f}m",
                           end='', flush=True)
                     last_report_time = current_time
 
-                # Checkpoint
-                if stats['docs_scanned'] % checkpoint_every == 0:
-                    f.flush()
-
                 if max_docs and stats['docs_scanned'] >= max_docs:
                     break
 
-            # Trim datasets to actual size
-            print("\n\nTrimming datasets...")
-            for key in ['toponym', 'romanized', 'lang', 'ipa', 'cluster_id', 'has_phonetic']:
-                dsets[key].resize((counters['items'],))
+            # Final commit
+            db.commit()
 
-            for key in ['p_anc', 'p_pos', 'p_sim']:
-                dsets[key].resize((counters['pairs'],))
+            # Get final counts
+            unique_items = cursor.execute('SELECT COUNT(*) FROM items').fetchone()[0]
+            unique_pairs = cursor.execute('SELECT COUNT(*) FROM pairs').fetchone()[0]
 
-            # Write metadata
-            f.attrs['total_items'] = counters['items']
-            f.attrs['pairs_with_phonetic'] = counters['pairs']
-            f.attrs['pairs_without_phonetic'] = 0
-            f.attrs['similarity_threshold'] = Config.SIMILARITY_THRESHOLD
-            f.attrs['namespaces'] = ','.join(namespaces) if namespaces else 'all'
-            f.attrs['deduplicated'] = False
+            phase1_elapsed = time.time() - start_time
+            print(f"\n\nPhase 1 complete: {phase1_elapsed/60:.1f} minutes")
+            print(f"  Unique items: {unique_items:,}")
+            print(f"  Unique pairs: {unique_pairs:,}")
+
+            # =========================================================
+            # PHASE 2: Write deduplicated data to HDF5
+            # =========================================================
+            print("\n--- PHASE 2: Writing HDF5 ---")
+            phase2_start = time.time()
+
+            with h5py.File(output_path, 'w') as f:
+                str_dtype = h5py.special_dtype(vlen=str)
+                grp_items = f.create_group('items')
+                grp_feats = f.create_group('features')
+                grp_pairs = f.create_group('pairs_with_phonetic')
+
+                # Create datasets with exact sizes
+                dsets = {
+                    'toponym': grp_items.create_dataset('toponym', (unique_items,), dtype=str_dtype),
+                    'romanized': grp_items.create_dataset('romanized', (unique_items,), dtype=str_dtype),
+                    'lang': grp_items.create_dataset('lang', (unique_items,), dtype=str_dtype),
+                    'ipa': grp_items.create_dataset('ipa', (unique_items,), dtype=str_dtype),
+                    'cluster_id': grp_items.create_dataset('cluster_id', (unique_items,), dtype='i4'),
+                    'has_phonetic': grp_items.create_dataset('has_phonetic', (unique_items,), dtype='bool'),
+                }
+
+                # Build item_key -> index mapping and write items
+                print("  Writing items...")
+                item_key_to_idx = {}
+
+                cursor.execute('SELECT item_id, item_key, toponym, romanized, lang, ipa, features FROM items ORDER BY item_id')
+
+                for idx, (item_id, item_key, toponym, romanized, lang, ipa, features_blob) in enumerate(cursor):
+                    if idx % 100000 == 0:
+                        print(f"    {idx:,}/{unique_items:,}", end='\r')
+
+                    item_key_to_idx[item_key] = idx
+                    dsets['toponym'][idx] = toponym
+                    dsets['romanized'][idx] = romanized
+                    dsets['lang'][idx] = lang
+                    dsets['ipa'][idx] = ipa
+                    dsets['cluster_id'][idx] = 0  # Not tracking clusters in deduped output
+                    dsets['has_phonetic'][idx] = True
+
+                    # Write features
+                    features = orjson.loads(features_blob)
+                    grp_feats.create_dataset(str(idx), data=np.array(features, dtype='f4'))
+
+                print(f"    {unique_items:,}/{unique_items:,} items written")
+
+                # Write pairs
+                print("  Writing pairs...")
+
+                anchor_idx = np.zeros(unique_pairs, dtype='i4')
+                positive_idx = np.zeros(unique_pairs, dtype='i4')
+                similarity = np.zeros(unique_pairs, dtype='f4')
+
+                cursor.execute('SELECT item_key_a, item_key_b, similarity FROM pairs')
+
+                for idx, (key_a, key_b, sim) in enumerate(cursor):
+                    if idx % 100000 == 0:
+                        print(f"    {idx:,}/{unique_pairs:,}", end='\r')
+
+                    anchor_idx[idx] = item_key_to_idx[key_a]
+                    positive_idx[idx] = item_key_to_idx[key_b]
+                    similarity[idx] = sim
+
+                grp_pairs.create_dataset('anchor_idx', data=anchor_idx)
+                grp_pairs.create_dataset('positive_idx', data=positive_idx)
+                grp_pairs.create_dataset('similarity', data=similarity)
+
+                print(f"    {unique_pairs:,}/{unique_pairs:,} pairs written")
+
+                # Write metadata
+                f.attrs['total_items'] = unique_items
+                f.attrs['pairs_with_phonetic'] = unique_pairs
+                f.attrs['pairs_without_phonetic'] = 0
+                f.attrs['similarity_threshold'] = Config.SIMILARITY_THRESHOLD
+                f.attrs['namespaces'] = ','.join(namespaces) if namespaces else 'all'
+                f.attrs['deduplicated'] = True
+
+            db.close()
+            phase2_elapsed = time.time() - phase2_start
+
+        finally:
+            # Clean up temp database
+            if os.path.exists(db_path):
+                os.unlink(db_path)
+                print(f"\nCleaned up temp database")
 
         # Final report
-        elapsed = time.time() - start_time
+        total_elapsed = time.time() - start_time
         print("\n" + "=" * 70)
         print("EXTRACTION COMPLETE")
         print("=" * 70)
-        print(f"Time elapsed: {elapsed/60:.1f} minutes")
+        print(f"Time elapsed: {total_elapsed/60:.1f} minutes (Phase 1: {phase1_elapsed/60:.1f}m, Phase 2: {phase2_elapsed/60:.1f}m)")
         print()
         print(f"Documents scanned:        {stats['docs_scanned']:,}")
         print(f"Documents with clusters:  {stats['docs_with_clusters']:,}")
@@ -858,21 +971,29 @@ class TrainingDataExtractor:
         print(f"  Supported language:     {stats['toponyms_supported_lang']:,} ({100*stats['toponyms_supported_lang']/max(1,stats['toponyms_checked']):.1f}%)")
         print(f"  With valid phonetics:   {stats['toponyms_with_phonetics']:,} ({100*stats['toponyms_with_phonetics']/max(1,stats['toponyms_supported_lang']):.1f}%)")
         print()
-        print(f"Items written:            {stats['items_written']:,}")
-        print(f"Pairs written:            {stats['pairs_written']:,}")
+        print(f"Items (unique):           {unique_items:,} (deduped {stats['items_existing']:,})")
+        print(f"Pairs (unique):           {unique_pairs:,} (deduped {stats['pairs_existing']:,})")
         print()
         print(f"Output: {output_path}")
 
 
 # =============================================================================
-# DEDUPLICATION
+# DEDUPLICATION (LEGACY - now integrated into extract_optimized)
 # =============================================================================
 
 def deduplicate_hdf5(input_path: str, output_path: str):
-    """Post-process HDF5 file to remove duplicate pairs using SQLite."""
+    """
+    Post-process HDF5 file to remove duplicate pairs using SQLite.
+
+    DEPRECATED: This is now handled inline by extract_optimized().
+    Kept for backward compatibility with existing two-step workflows.
+    """
     print("=" * 70)
     print("DEDUPLICATING HDF5 FILE")
     print("=" * 70)
+    print("NOTE: This step is now integrated into extract_optimized().")
+    print("      Consider using single-step extraction instead.")
+    print()
 
     db = sqlite3.connect(':memory:')
 
