@@ -157,7 +157,7 @@ def main():
         from .training import train_phase1
         epochs = args.epochs or Config.PHASE1_EPOCHS
         train_phase1(
-            args.data, args.output,
+            output_path=args.output,
             epochs=epochs,
             subsample_pairs=args.subsample_pairs,
             batch_size=args.batch_size,
@@ -168,7 +168,8 @@ def main():
         from .training import train_phase2
         epochs = args.epochs or Config.PHASE2_EPOCHS
         train_phase2(
-            args.data, args.phase1_model, args.output,
+            phase1_path=args.phase1_model,
+            output_path=args.output,
             epochs=epochs,
             batch_size=args.batch_size,
             lr=args.lr
@@ -215,7 +216,8 @@ def main():
             print(f"Mined {sum(len(v) for v in mined_negatives.values())} hard negatives")
 
         train_phase3(
-            args.data, args.phase2_model, args.output,
+            phase2_path=args.phase2_model,
+            output_path=args.output,
             subsample_pairs=args.subsample_pairs,
             epochs=epochs,
             batch_size=args.batch_size,

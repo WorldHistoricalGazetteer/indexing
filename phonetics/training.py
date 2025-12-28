@@ -47,7 +47,6 @@ class DataSource:
     """Configuration for a single training data source."""
     name: str
     path: str
-    pairs: int
     oversample: int = 1
 
 
@@ -57,14 +56,12 @@ DATA_SOURCES = [
     DataSource(
         name='GeoNames',
         path='/ix1/whcdh/models/phonetic/data/training_data_gn.h5',
-        pairs=2_573_786,
         oversample=1,
     ),
     DataSource(
         name='Pleiades+IV',
         path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv.h5',
-        pairs=11_783,
-        oversample=25,
+        oversample=24,
     ),
 ]
 
@@ -161,12 +158,12 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
 # =============================================================================
 
 def train_phase1(
-        sources: List[DataSource] = None,
-        output_path: str = None,
-        epochs: int = Config.PHASE1_EPOCHS,
-        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = Config.LEARNING_RATE
+    sources: List[DataSource] = None,
+    output_path: str = None,
+    epochs: int = Config.PHASE1_EPOCHS,
+    subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = Config.LEARNING_RATE
 ) -> PhoneticEncoder:
     """
     Phase 1: Train phonetic encoder (Teacher).
@@ -280,7 +277,7 @@ def train_phase1(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -296,12 +293,12 @@ def train_phase1(
 
 
 def train_phase2(
-        sources: List[DataSource] = None,
-        phase1_path: str = None,
-        output_path: str = None,
-        epochs: int = Config.PHASE2_EPOCHS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = Config.LEARNING_RATE
+    sources: List[DataSource] = None,
+    phase1_path: str = None,
+    output_path: str = None,
+    epochs: int = Config.PHASE2_EPOCHS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = Config.LEARNING_RATE
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """
     Phase 2: Alignment training (Student → Teacher).
@@ -440,7 +437,7 @@ def train_phase2(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -464,14 +461,14 @@ def train_phase2(
 
 
 def train_phase3(
-        sources: List[DataSource] = None,
-        phase2_path: str = None,
-        output_path: str = None,
-        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
-        epochs: int = Config.PHASE3_EPOCHS,
-        batch_size: int = Config.BATCH_SIZE,
-        lr: float = 5e-4,
-        negative_stage: str = 'A'
+    sources: List[DataSource] = None,
+    phase2_path: str = None,
+    output_path: str = None,
+    subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
+    epochs: int = Config.PHASE3_EPOCHS,
+    batch_size: int = Config.BATCH_SIZE,
+    lr: float = 5e-4,
+    negative_stage: str = 'A'
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
@@ -645,7 +642,7 @@ def train_phase3(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -671,13 +668,13 @@ def train_phase3(
 
 
 def mine_hard_negatives(
-        model: HybridPhoneticModel,
-        data_path: str,
-        char_vocab: CharVocab,
-        lang_vocab: LangVocab,
-        similarity_threshold: float = Config.STAGE_B_SIMILARITY_THRESHOLD,
-        max_negatives_per_anchor: int = 10,
-        device: str = 'cuda'
+    model: HybridPhoneticModel,
+    data_path: str,
+    char_vocab: CharVocab,
+    lang_vocab: LangVocab,
+    similarity_threshold: float = Config.STAGE_B_SIMILARITY_THRESHOLD,
+    max_negatives_per_anchor: int = 10,
+    device: str = 'cuda'
 ) -> Dict[int, List[int]]:
     """
     Mine hard negatives from model's false positives for Stage B training.
@@ -790,7 +787,7 @@ def mine_hard_negatives(
             emb_a = embeddings[idx_a]
             cluster_a = item_clusters[idx_a]
 
-            for idx_b in sampled_indices[i + 1:]:
+            for idx_b in sampled_indices[i+1:]:
                 cluster_b = item_clusters[idx_b]
 
                 # Only consider cross-cluster pairs (known non-identical)
