@@ -207,19 +207,26 @@ def train_phase1(
     )
 
     print(f"Training pairs: {len(train_dataset):,}")
-    print(f"Validation pairs: {len(val_dataset):,}")
+    print(f"Validation pairs: {len(val_dataset):,}", flush=True)
+
+    # Worker init function to ensure fresh file handles per worker
+    def worker_init_fn(worker_id):
+        # Each worker clears any inherited file handles and will open fresh ones
+        train_dataset._file_handles = {}
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase1, num_workers=4, pin_memory=True
+        collate_fn=collate_phase1, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase1, num_workers=4, pin_memory=True
+        collate_fn=collate_phase1, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}")
+    print(f"Device: {device}", flush=True)
 
     model = PhoneticEncoder().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -351,20 +358,26 @@ def train_phase2(
         char_vocab, lang_vocab, split='val'
     )
 
-    print(f"Training items: {len(train_dataset):,}")
-    print(f"Validation items: {len(val_dataset):,}")
+    print(f"Training items: {len(train_dataset):,}", flush=True)
+    print(f"Validation items: {len(val_dataset):,}", flush=True)
+
+    # Worker init function to ensure fresh file handles per worker
+    def worker_init_fn(worker_id):
+        train_dataset._file_handles = {}
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase2, num_workers=4, pin_memory=True
+        collate_fn=collate_phase2, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase2, num_workers=4, pin_memory=True
+        collate_fn=collate_phase2, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}")
+    print(f"Device: {device}", flush=True)
 
     # Load pre-trained phonetic encoder (Teacher)
     phonetic_encoder = PhoneticEncoder().to(device)
@@ -536,20 +549,26 @@ def train_phase3(
         negative_stage=negative_stage
     )
 
-    print(f"Training pairs: {len(train_dataset):,}")
-    print(f"Validation pairs: {len(val_dataset):,}")
+    print(f"Training pairs: {len(train_dataset):,}", flush=True)
+    print(f"Validation pairs: {len(val_dataset):,}", flush=True)
+
+    # Worker init function to ensure fresh file handles per worker
+    def worker_init_fn(worker_id):
+        train_dataset._file_handles = {}
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase3, num_workers=4, pin_memory=True
+        collate_fn=collate_phase3, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase3, num_workers=4, pin_memory=True
+        collate_fn=collate_phase3, num_workers=4, pin_memory=True,
+        worker_init_fn=worker_init_fn, persistent_workers=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}")
+    print(f"Device: {device}", flush=True)
 
     # Load Phase 2 models
     checkpoint = torch.load(phase2_path, map_location=device)
