@@ -297,8 +297,24 @@ def train_phase1(
     criterion = TripletLoss()
 
     best_val_loss = float('inf')
+    start_epoch = 0
 
-    for epoch in range(epochs):
+    # Check for existing checkpoint to resume from
+    if output_path and os.path.exists(output_path):
+        print(f"Found existing checkpoint: {output_path}")
+        checkpoint = torch.load(output_path, map_location=device)
+        model.load_state_dict(checkpoint['model_state'])
+        if 'optimizer_state' in checkpoint:
+            optimizer.load_state_dict(checkpoint['optimizer_state'])
+        if 'scheduler_state' in checkpoint:
+            scheduler.load_state_dict(checkpoint['scheduler_state'])
+        if 'epoch' in checkpoint:
+            start_epoch = checkpoint['epoch'] + 1
+        if 'val_loss' in checkpoint:
+            best_val_loss = checkpoint['val_loss']
+        print(f"  Resuming from epoch {start_epoch + 1}, best_val_loss: {best_val_loss:.4f}", flush=True)
+
+    for epoch in range(start_epoch, epochs):
         # Training
         model.train()
         train_loss = 0
@@ -363,6 +379,8 @@ def train_phase1(
             best_val_loss = val_loss
             torch.save({
                 'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'scheduler_state': scheduler.state_dict(),
                 'epoch': epoch,
                 'val_loss': val_loss
             }, output_path)
@@ -468,8 +486,24 @@ def train_phase2(
     criterion = RobustAlignmentLoss()
 
     best_val_loss = float('inf')
+    start_epoch = 0
 
-    for epoch in range(epochs):
+    # Check for existing checkpoint to resume from
+    if output_path and os.path.exists(output_path):
+        print(f"Found existing checkpoint: {output_path}")
+        ckpt = torch.load(output_path, map_location=device)
+        char_encoder.load_state_dict(ckpt['char_state'])
+        if 'optimizer_state' in ckpt:
+            optimizer.load_state_dict(ckpt['optimizer_state'])
+        if 'scheduler_state' in ckpt:
+            scheduler.load_state_dict(ckpt['scheduler_state'])
+        if 'epoch' in ckpt:
+            start_epoch = ckpt['epoch'] + 1
+        if 'val_loss' in ckpt:
+            best_val_loss = ckpt['val_loss']
+        print(f"  Resuming from epoch {start_epoch + 1}, best_val_loss: {best_val_loss:.4f}", flush=True)
+
+    for epoch in range(start_epoch, epochs):
         # Training
         char_encoder.train()
         train_loss = 0
@@ -525,6 +559,8 @@ def train_phase2(
             torch.save({
                 'phonetic_state': phonetic_encoder.state_dict(),
                 'char_state': char_encoder.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'scheduler_state': scheduler.state_dict(),
                 'epoch': epoch,
                 'val_loss': val_loss
             }, output_path)
@@ -666,8 +702,24 @@ def train_phase3(
     criterion = TripletLoss()
 
     best_val_loss = float('inf')
+    start_epoch = 0
 
-    for epoch in range(epochs):
+    # Check for existing checkpoint to resume from
+    if output_path and os.path.exists(output_path):
+        print(f"Found existing checkpoint: {output_path}")
+        ckpt = torch.load(output_path, map_location=device)
+        model.load_state_dict(ckpt['model_state'])
+        if 'optimizer_state' in ckpt:
+            optimizer.load_state_dict(ckpt['optimizer_state'])
+        if 'scheduler_state' in ckpt:
+            scheduler.load_state_dict(ckpt['scheduler_state'])
+        if 'epoch' in ckpt:
+            start_epoch = ckpt['epoch'] + 1
+        if 'val_loss' in ckpt:
+            best_val_loss = ckpt['val_loss']
+        print(f"  Resuming from epoch {start_epoch + 1}, best_val_loss: {best_val_loss:.4f}", flush=True)
+
+    for epoch in range(start_epoch, epochs):
         # Training
         model.train()
         train_loss = 0
@@ -733,6 +785,8 @@ def train_phase3(
             best_val_loss = val_loss
             torch.save({
                 'model_state': model.state_dict(),
+                'optimizer_state': optimizer.state_dict(),
+                'scheduler_state': scheduler.state_dict(),
                 'char_vocab_size': char_vocab.vocab_size,
                 'num_langs': lang_vocab.next_id,
                 'epoch': epoch,
