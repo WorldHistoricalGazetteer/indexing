@@ -92,6 +92,17 @@ def restructure_hdf5(input_path: str, output_path: str, seed: int = 42):
         triplet_positives = []
         triplet_negatives = []
 
+        # Pre-convert to list for fast random access
+        all_valid_items = list(item_has_features.keys())
+        n_valid_items = len(all_valid_items)
+
+        # Check if we have multiple clusters or just one
+        n_clusters = len(cluster_to_items)
+        print(f"  Cluster count: {n_clusters}")
+
+        if n_clusters == 1:
+            print("  Single cluster detected - using fast random negative sampling")
+
         skipped = 0
         for pair_idx in tqdm(range(total_pairs), desc="Generating triplets"):
             anchor_idx = int(pairs['anchor_idx'][pair_idx])
@@ -102,21 +113,27 @@ def restructure_hdf5(input_path: str, output_path: str, seed: int = 42):
                 skipped += 1
                 continue
 
-            anchor_cluster = int(items['cluster_id'][anchor_idx])
-            other_clusters = cluster_ids_excl.get(anchor_cluster, [])
+            if n_clusters > 1:
+                # Multi-cluster: sample from different cluster
+                anchor_cluster = int(items['cluster_id'][anchor_idx])
+                other_clusters = cluster_ids_excl.get(anchor_cluster, [])
 
-            if other_clusters:
-                neg_cluster = rng.choice(other_clusters)
-                neg_candidates = cluster_to_items[neg_cluster]
-                negative_idx = neg_candidates[rng.integers(len(neg_candidates))]
-            else:
-                # Fallback: sample any item except anchor/positive
-                all_items = list(item_has_features.keys())
-                available = [i for i in all_items if i != anchor_idx and i != positive_idx]
-                if available:
-                    negative_idx = rng.choice(available)
+                if other_clusters:
+                    neg_cluster = rng.choice(other_clusters)
+                    neg_candidates = cluster_to_items[neg_cluster]
+                    negative_idx = neg_candidates[rng.integers(len(neg_candidates))]
                 else:
-                    negative_idx = positive_idx  # Last resort
+                    # Fallback for this anchor's cluster
+                    negative_idx = all_valid_items[rng.integers(n_valid_items)]
+                    while negative_idx == anchor_idx or negative_idx == positive_idx:
+                        negative_idx = all_valid_items[rng.integers(n_valid_items)]
+            else:
+                # Single cluster: just pick any random item that's not anchor/positive
+                # This is O(1) - just random index into array
+                negative_idx = all_valid_items[rng.integers(n_valid_items)]
+                # Retry if we hit anchor or positive (very rare with 2M+ items)
+                while negative_idx == anchor_idx or negative_idx == positive_idx:
+                    negative_idx = all_valid_items[rng.integers(n_valid_items)]
 
             triplet_anchors.append(anchor_idx)
             triplet_positives.append(positive_idx)
