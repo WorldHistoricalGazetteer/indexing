@@ -10,12 +10,12 @@
 
 \usepackage{fontspec}
 
-% Set Libertinus Serif as main font
+% Set Linux Libertine O as main font (available on arXiv/TeX Live)
 \setmainfont[
-    BoldFont = {Libertinus Serif Bold},
-    ItalicFont = {Libertinus Serif Italic},
-    BoldItalicFont = {Libertinus Serif Bold Italic}
-]{Libertinus Serif Regular}
+    BoldFont = {Linux Libertine O Bold},
+    ItalicFont = {Linux Libertine O Italic},
+    BoldItalicFont = {Linux Libertine O Bold Italic}
+]{Linux Libertine O}
 
 \usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
 
@@ -27,7 +27,12 @@
 \usepackage{url}
 \usepackage{amsmath,amssymb}
 
+% natbib must be loaded before polyglossia/bidi
+\usepackage[round]{natbib}
+\bibliographystyle{plainnat}
+
 \usepackage{polyglossia}
+\usepackage{amstext}
 \setmainlanguage{english}
 \setotherlanguage{arabic}
 
@@ -43,9 +48,6 @@
 ]{Charis SIL}
 
 \newcommand{\textipa}[1]{{\ipafont #1}}
-
-\usepackage[round]{natbib}
-\bibliographystyle{plainnat}
 
 \AtBeginDocument{%
   \providecommand\BibTeX{{Bib\TeX}}}
@@ -439,7 +441,7 @@ The model is compared against the following baselines:
     \item \textbf{Character-only Siamese BiLSTM}: The architecture without phonetic pre-training (ablation), demonstrating the contribution of the Teacher network.
 \end{itemize}
 
-I do not directly compare against GeoBERTTM~\citep{qiu2024geobert} as their model requires Chinese-specific features (Pinyin, radicals, strokes) unavailable for multilingual test sets. However, their published results are reported for context, and the complementary strengths of the two approaches are discussed.
+I do not directly compare against GeoBERTTM~\citep{qiu2024geobert} as their model requires Chinese-specific features (radicals, strokes) unavailable for multilingual test sets. However, their published results are reported for context, and the complementary strengths of the two approaches are discussed.
 
 \subsection{Evaluation Metrics}
 
