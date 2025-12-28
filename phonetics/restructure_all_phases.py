@@ -189,18 +189,21 @@ def restructure_phase2(input_path: str, output_path: str, seed: int = 42):
             items_out.create_dataset('char_lengths', data=char_lengths, dtype=np.int16)
             items_out.create_dataset('lang_ids', data=lang_ids, dtype=np.int16)
 
-            # Vocabularies (store as attributes for simplicity)
+            # Vocabularies (store as variable-length strings)
             vocab_group = f_out.create_group('vocab')
 
-            # Store char vocab
-            char_vocab_data = np.array([(k, v) for k, v in char_vocab.items()],
-                                       dtype=[('char', 'U10'), ('id', 'i4')])
-            vocab_group.create_dataset('char_vocab', data=char_vocab_data)
+            # Store char vocab as two separate arrays
+            dt_str = h5py.special_dtype(vlen=str)
+            char_keys = list(char_vocab.keys())
+            char_vals = [char_vocab[k] for k in char_keys]
+            vocab_group.create_dataset('char_vocab_keys', data=char_keys, dtype=dt_str)
+            vocab_group.create_dataset('char_vocab_vals', data=np.array(char_vals, dtype=np.int32))
 
-            # Store lang vocab
-            lang_vocab_data = np.array([(k, v) for k, v in lang_vocab.items()],
-                                       dtype=[('lang', 'U10'), ('id', 'i4')])
-            vocab_group.create_dataset('lang_vocab', data=lang_vocab_data)
+            # Store lang vocab as two separate arrays
+            lang_keys = list(lang_vocab.keys())
+            lang_vals = [lang_vocab[k] for k in lang_keys]
+            vocab_group.create_dataset('lang_vocab_keys', data=lang_keys, dtype=dt_str)
+            vocab_group.create_dataset('lang_vocab_vals', data=np.array(lang_vals, dtype=np.int32))
 
             # Features - write in chunks
             features_out = f_out.create_group('features')
@@ -475,15 +478,19 @@ def restructure_phase3(input_path: str, output_path: str,
             dt_str = h5py.special_dtype(vlen=str)
             items_out.create_dataset('romanized', data=romanized_all, dtype=dt_str)
 
-            # Vocabularies
+            # Vocabularies (store as separate key/value arrays)
             vocab_group = f_out.create_group('vocab')
-            char_vocab_data = np.array([(k, v) for k, v in char_vocab.items()],
-                                       dtype=[('char', 'U10'), ('id', 'i4')])
-            vocab_group.create_dataset('char_vocab', data=char_vocab_data)
+            dt_str = h5py.special_dtype(vlen=str)
 
-            lang_vocab_data = np.array([(k, v) for k, v in lang_vocab.items()],
-                                       dtype=[('lang', 'U10'), ('id', 'i4')])
-            vocab_group.create_dataset('lang_vocab', data=lang_vocab_data)
+            char_keys = list(char_vocab.keys())
+            char_vals = [char_vocab[k] for k in char_keys]
+            vocab_group.create_dataset('char_vocab_keys', data=char_keys, dtype=dt_str)
+            vocab_group.create_dataset('char_vocab_vals', data=np.array(char_vals, dtype=np.int32))
+
+            lang_keys = list(lang_vocab.keys())
+            lang_vals = [lang_vocab[k] for k in lang_keys]
+            vocab_group.create_dataset('lang_vocab_keys', data=lang_keys, dtype=dt_str)
+            vocab_group.create_dataset('lang_vocab_vals', data=np.array(lang_vals, dtype=np.int32))
 
     print(f"Phase 3 restructuring complete: {output_path}")
 

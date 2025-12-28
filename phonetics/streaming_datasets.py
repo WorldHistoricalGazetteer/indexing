@@ -733,3 +733,241 @@ class OptimizedPhase1Dataset(Dataset):
                 f.close()
             except:
                 pass
+
+
+# =============================================================================
+# Optimized Phase 2 Dataset (uses restructured HDF5)
+# =============================================================================
+
+class OptimizedPhase2Dataset(Dataset):
+    """
+    Ultra-fast Phase 2 Dataset using pre-restructured HDF5.
+
+    Expects HDF5 created by restructure_all_phases.py with:
+    - /items/char_ids (N, max_len) pre-encoded characters
+    - /items/char_lengths (N,) lengths
+    - /items/lang_ids (N,) language indices
+    - /features/data (N, max_feat_len, 24) packed features
+    - /features/lengths (N,) feature lengths
+
+    Returns pre-encoded data - no runtime string processing.
+    """
+
+    def __init__(
+        self,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
+        split: str = 'train',
+        train_ratio: float = 0.9,
+        seed: int = 42
+    ):
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
+        self.split = split
+
+        self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
+
+        # Will be opened lazily per worker
+        self._file_handles: Dict[int, h5py.File] = {}
+
+        # Load into memory (small arrays)
+        self._char_ids: Dict[int, np.ndarray] = {}
+        self._char_lengths: Dict[int, np.ndarray] = {}
+        self._lang_ids: Dict[int, np.ndarray] = {}
+        self._feat_lengths: Dict[int, np.ndarray] = {}
+
+        # Build combined index
+        self.combined_indices = []
+        self.source_item_counts = []
+
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            with h5py.File(path, 'r') as f:
+                total_items = f.attrs['total_items']
+
+                # Load small arrays into memory
+                self._char_ids[source_idx] = f['items/char_ids'][:]
+                self._char_lengths[source_idx] = f['items/char_lengths'][:]
+                self._lang_ids[source_idx] = f['items/lang_ids'][:]
+                self._feat_lengths[source_idx] = f['features/lengths'][:]
+
+            # Subsample and split
+            all_indices = np.arange(total_items)
+            self.rng.shuffle(all_indices)
+
+            split_idx = int(total_items * train_ratio)
+            if split == 'train':
+                source_indices = all_indices[:split_idx]
+            else:
+                source_indices = all_indices[split_idx:]
+
+            self.source_item_counts.append(len(source_indices))
+
+            # Apply oversampling
+            for _ in range(factor):
+                for item_idx in source_indices:
+                    self.combined_indices.append((source_idx, item_idx))
+
+        self.rng.shuffle(self.combined_indices)
+
+        print(f"OptimizedPhase2Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_item_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} items × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+
+    def _get_file(self, source_idx: int) -> h5py.File:
+        """Lazily open file handle per worker."""
+        if source_idx not in self._file_handles:
+            self._file_handles[source_idx] = h5py.File(
+                self.hdf5_paths[source_idx], 'r'
+            )
+        return self._file_handles[source_idx]
+
+    def __len__(self) -> int:
+        return len(self.combined_indices)
+
+    def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
+        source_idx, item_idx = self.combined_indices[idx]
+
+        # Get pre-encoded data from memory
+        char_len = self._char_lengths[source_idx][item_idx]
+        char_ids = self._char_ids[source_idx][item_idx, :char_len].copy()
+        lang_id = self._lang_ids[source_idx][item_idx]
+
+        # Get features from HDF5
+        feat_len = self._feat_lengths[source_idx][item_idx]
+        f = self._get_file(source_idx)
+        features = f['features/data'][item_idx, :feat_len, :]
+
+        return {
+            'char_ids': char_ids,
+            'lang_id': lang_id,
+            'phonetic_features': features,
+        }
+
+    def __del__(self):
+        for f in self._file_handles.values():
+            try:
+                f.close()
+            except:
+                pass
+
+
+# =============================================================================
+# Optimized Phase 3 Dataset (uses restructured HDF5 with pre-mined hard negatives)
+# =============================================================================
+
+class OptimizedPhase3Dataset(Dataset):
+    """
+    Ultra-fast Phase 3 Dataset using pre-restructured HDF5 with hard negatives.
+
+    Expects HDF5 created by restructure_all_phases.py with:
+    - /triplets/anchor_idx, positive_idx, negative_idx (pre-computed Stage A)
+    - /items/char_ids (N, max_len) pre-encoded characters
+    - /items/char_lengths (N,) lengths
+    - /items/lang_ids (N,) language indices
+
+    Returns pre-encoded triplets - no runtime negative mining or string processing.
+    """
+
+    def __init__(
+        self,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
+        split: str = 'train',
+        train_ratio: float = 0.9,
+        subsample_triplets: int = Config.SUBSAMPLE_PAIRS,
+        seed: int = 42
+    ):
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
+        self.split = split
+
+        self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
+
+        # Load all data into memory (it's just indices and encoded chars)
+        self._triplet_anchors: Dict[int, np.ndarray] = {}
+        self._triplet_positives: Dict[int, np.ndarray] = {}
+        self._triplet_negatives: Dict[int, np.ndarray] = {}
+        self._char_ids: Dict[int, np.ndarray] = {}
+        self._char_lengths: Dict[int, np.ndarray] = {}
+        self._lang_ids: Dict[int, np.ndarray] = {}
+
+        # Build combined index
+        self.combined_indices = []
+        self.source_triplet_counts = []
+
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            with h5py.File(path, 'r') as f:
+                # Load triplets
+                self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
+                self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
+                self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
+
+                # Load item data
+                self._char_ids[source_idx] = f['items/char_ids'][:]
+                self._char_lengths[source_idx] = f['items/char_lengths'][:]
+                self._lang_ids[source_idx] = f['items/lang_ids'][:]
+
+                total_triplets = len(self._triplet_anchors[source_idx])
+
+            # Subsample if needed
+            max_triplets = min(total_triplets, subsample_triplets)
+            all_indices = np.arange(total_triplets)
+            self.rng.shuffle(all_indices)
+            sampled_indices = all_indices[:max_triplets]
+
+            # Split train/val
+            split_idx = int(max_triplets * train_ratio)
+            if split == 'train':
+                source_indices = sampled_indices[:split_idx]
+            else:
+                source_indices = sampled_indices[split_idx:]
+
+            self.source_triplet_counts.append(len(source_indices))
+
+            # Apply oversampling
+            for _ in range(factor):
+                for triplet_idx in source_indices:
+                    self.combined_indices.append((source_idx, triplet_idx))
+
+        self.rng.shuffle(self.combined_indices)
+
+        print(f"OptimizedPhase3Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_triplet_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} triplets × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+
+    def __len__(self) -> int:
+        return len(self.combined_indices)
+
+    def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
+        source_idx, triplet_idx = self.combined_indices[idx]
+
+        # Get triplet indices
+        anchor_idx = self._triplet_anchors[source_idx][triplet_idx]
+        positive_idx = self._triplet_positives[source_idx][triplet_idx]
+        negative_idx = self._triplet_negatives[source_idx][triplet_idx]
+
+        # Get pre-encoded character sequences
+        anchor_len = self._char_lengths[source_idx][anchor_idx]
+        positive_len = self._char_lengths[source_idx][positive_idx]
+        negative_len = self._char_lengths[source_idx][negative_idx]
+
+        anchor_chars = self._char_ids[source_idx][anchor_idx, :anchor_len].copy()
+        positive_chars = self._char_ids[source_idx][positive_idx, :positive_len].copy()
+        negative_chars = self._char_ids[source_idx][negative_idx, :negative_len].copy()
+
+        anchor_lang = self._lang_ids[source_idx][anchor_idx]
+        positive_lang = self._lang_ids[source_idx][positive_idx]
+        negative_lang = self._lang_ids[source_idx][negative_idx]
+
+        return {
+            'anchor_char_ids': anchor_chars,
+            'anchor_lang_id': anchor_lang,
+            'positive_char_ids': positive_chars,
+            'positive_lang_id': positive_lang,
+            'negative_char_ids': negative_chars,
+            'negative_lang_id': negative_lang,
+        }

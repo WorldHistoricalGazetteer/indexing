@@ -37,6 +37,8 @@ from .streaming_datasets import (
     MultiSourcePhase2Dataset,
     MultiSourcePhase3Dataset,
     OptimizedPhase1Dataset,
+    OptimizedPhase2Dataset,
+    OptimizedPhase3Dataset,
 )
 
 
@@ -78,7 +80,35 @@ DATA_SOURCES_OPTIMIZED = [
     DataSource(
         name='Pleiades+IV',
         path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized.h5',
-        oversample=50,
+        oversample=24,
+    ),
+]
+
+# Optimized data sources for Phase 2
+DATA_SOURCES_PHASE2_OPTIMIZED = [
+    DataSource(
+        name='GeoNames',
+        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized_phase2.h5',
+        oversample=1,
+    ),
+    DataSource(
+        name='Pleiades+IV',
+        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized_phase2.h5',
+        oversample=24,
+    ),
+]
+
+# Optimized data sources for Phase 3 (with pre-mined hard negatives)
+DATA_SOURCES_PHASE3_OPTIMIZED = [
+    DataSource(
+        name='GeoNames',
+        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized_phase3.h5',
+        oversample=1,
+    ),
+    DataSource(
+        name='Pleiades+IV',
+        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized_phase3.h5',
+        oversample=24,
     ),
 ]
 
@@ -396,7 +426,8 @@ def train_phase2(
     output_path: str = None,
     epochs: int = Config.PHASE2_EPOCHS,
     batch_size: int = Config.BATCH_SIZE,
-    lr: float = Config.LEARNING_RATE
+    lr: float = Config.LEARNING_RATE,
+    use_optimized: bool = True
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """
     Phase 2: Alignment training (Student → Teacher).
@@ -411,13 +442,30 @@ def train_phase2(
         epochs: Number of training epochs.
         batch_size: Training batch size.
         lr: Learning rate.
+        use_optimized: Try to use optimized HDF5 files if available.
     """
-    # Handle defaults
+    import os
+
+    # Handle defaults - try optimized sources first
     if sources is None:
-        sources = DATA_SOURCES
+        if use_optimized:
+            all_optimized_exist = all(
+                os.path.exists(s.path) for s in DATA_SOURCES_PHASE2_OPTIMIZED
+            )
+            if all_optimized_exist:
+                sources = DATA_SOURCES_PHASE2_OPTIMIZED
+                print("Using OPTIMIZED Phase 2 HDF5 files")
+            else:
+                sources = DATA_SOURCES
+                print("Using standard HDF5 files (Phase 2 optimized files not found)")
+        else:
+            sources = DATA_SOURCES
 
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
+
+    # Check if these are optimized files
+    is_optimized = all('_phase2.h5' in p for p in data_paths)
 
     print("=" * 60)
     print("Phase 2: Alignment Training (Student → Teacher)")
@@ -430,37 +478,69 @@ def train_phase2(
         print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
     print()
 
-    # Build vocabularies from all HDF5 files
-    char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
-    char_vocab.fit_multi(data_paths)
+    if is_optimized:
+        # Load vocab from optimized HDF5 (stored as separate key/value arrays)
+        import h5py
+        with h5py.File(data_paths[0], 'r') as f:
+            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                        for k in f['vocab/char_vocab_keys'][:]]
+            char_vals = f['vocab/char_vocab_vals'][:]
+            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                        for k in f['vocab/lang_vocab_keys'][:]]
+            lang_vals = f['vocab/lang_vocab_vals'][:]
 
-    lang_vocab = LangVocab()
-    lang_vocab.fit_multi(data_paths)
+        # Reconstruct vocabs
+        char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
+        char_vocab.char_to_id = {k: int(v) for k, v in zip(char_keys, char_vals)}
+        char_vocab.id_to_char = {v: k for k, v in char_vocab.char_to_id.items()}
 
-    train_dataset = MultiSourcePhase2Dataset(
-        data_paths, oversample_factors,
-        char_vocab, lang_vocab, split='train'
-    )
-    val_dataset = MultiSourcePhase2Dataset(
-        data_paths, oversample_factors,
-        char_vocab, lang_vocab, split='val'
-    )
+        lang_vocab = LangVocab()
+        lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
+        lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
+
+        train_dataset = OptimizedPhase2Dataset(
+            data_paths, oversample_factors, split='train'
+        )
+        val_dataset = OptimizedPhase2Dataset(
+            data_paths, oversample_factors, split='val'
+        )
+    else:
+        # Build vocabularies from all HDF5 files
+        char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
+        char_vocab.fit_multi(data_paths)
+
+        lang_vocab = LangVocab()
+        lang_vocab.fit_multi(data_paths)
+
+        train_dataset = MultiSourcePhase2Dataset(
+            data_paths, oversample_factors,
+            char_vocab, lang_vocab, split='train'
+        )
+        val_dataset = MultiSourcePhase2Dataset(
+            data_paths, oversample_factors,
+            char_vocab, lang_vocab, split='val'
+        )
 
     print(f"Training items: {len(train_dataset):,}", flush=True)
     print(f"Validation items: {len(val_dataset):,}", flush=True)
 
-    # Use num_workers=0 to avoid HDF5 multiprocessing issues
+    # Use workers for optimized dataset, single-threaded for original
+    num_workers = 4 if is_optimized else 0
+
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase2, num_workers=0, pin_memory=True
+        collate_fn=collate_phase2, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase2, num_workers=0, pin_memory=True
+        collate_fn=collate_phase2, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}", flush=True)
+    print(f"DataLoader workers: {num_workers}", flush=True)
 
     # Load pre-trained phonetic encoder (Teacher)
     phonetic_encoder = PhoneticEncoder().to(device)
@@ -585,7 +665,8 @@ def train_phase3(
     epochs: int = Config.PHASE3_EPOCHS,
     batch_size: int = Config.BATCH_SIZE,
     lr: float = 5e-4,
-    negative_stage: str = 'A'
+    negative_stage: str = 'A',
+    use_optimized: bool = True
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
@@ -611,13 +692,33 @@ def train_phase3(
         batch_size: Training batch size.
         lr: Learning rate.
         negative_stage: 'A' for ortho-phonetic negatives, 'B' for model-mined
+        use_optimized: Try to use optimized HDF5 files if available.
     """
-    # Handle defaults
+    import os as os_module
+
+    # Handle defaults - try optimized sources first
     if sources is None:
-        sources = DATA_SOURCES
+        if use_optimized and negative_stage == 'A':
+            # Optimized files have pre-mined Stage A negatives
+            all_optimized_exist = all(
+                os_module.path.exists(s.path) for s in DATA_SOURCES_PHASE3_OPTIMIZED
+            )
+            if all_optimized_exist:
+                sources = DATA_SOURCES_PHASE3_OPTIMIZED
+                print("Using OPTIMIZED Phase 3 HDF5 files (pre-mined Stage A negatives)")
+            else:
+                sources = DATA_SOURCES
+                print("Using standard HDF5 files (Phase 3 optimized files not found)")
+        else:
+            sources = DATA_SOURCES
+            if negative_stage == 'B':
+                print("Stage B requires runtime mining - using standard HDF5 files")
 
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
+
+    # Check if these are optimized files
+    is_optimized = all('_phase3.h5' in p for p in data_paths)
 
     print("=" * 60)
     print("Phase 3: Generalization Training (Curriculum Hard Negatives)")
@@ -634,37 +735,71 @@ def train_phase3(
     # Load vocabularies
     vocab_dir = os.path.dirname(phase2_path) or '.'
     base_name = os.path.splitext(os.path.basename(phase2_path))[0]
-    char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
-    lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
-    train_dataset = MultiSourcePhase3Dataset(
-        data_paths, oversample_factors,
-        char_vocab, lang_vocab,
-        split='train', subsample_pairs=subsample_pairs,
-        negative_stage=negative_stage
-    )
-    val_dataset = MultiSourcePhase3Dataset(
-        data_paths, oversample_factors,
-        char_vocab, lang_vocab,
-        split='val', subsample_pairs=subsample_pairs,
-        negative_stage=negative_stage
-    )
+    if is_optimized:
+        # Load vocab from optimized HDF5 (stored as separate key/value arrays)
+        import h5py
+        with h5py.File(data_paths[0], 'r') as f:
+            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                        for k in f['vocab/char_vocab_keys'][:]]
+            char_vals = f['vocab/char_vocab_vals'][:]
+            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                        for k in f['vocab/lang_vocab_keys'][:]]
+            lang_vals = f['vocab/lang_vocab_vals'][:]
+
+        char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
+        char_vocab.char_to_id = {k: int(v) for k, v in zip(char_keys, char_vals)}
+        char_vocab.id_to_char = {v: k for k, v in char_vocab.char_to_id.items()}
+
+        lang_vocab = LangVocab()
+        lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
+        lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
+
+        train_dataset = OptimizedPhase3Dataset(
+            data_paths, oversample_factors,
+            split='train', subsample_triplets=subsample_pairs
+        )
+        val_dataset = OptimizedPhase3Dataset(
+            data_paths, oversample_factors,
+            split='val', subsample_triplets=subsample_pairs
+        )
+    else:
+        char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
+        lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
+
+        train_dataset = MultiSourcePhase3Dataset(
+            data_paths, oversample_factors,
+            char_vocab, lang_vocab,
+            split='train', subsample_pairs=subsample_pairs,
+            negative_stage=negative_stage
+        )
+        val_dataset = MultiSourcePhase3Dataset(
+            data_paths, oversample_factors,
+            char_vocab, lang_vocab,
+            split='val', subsample_pairs=subsample_pairs,
+            negative_stage=negative_stage
+        )
 
     print(f"Training pairs: {len(train_dataset):,}", flush=True)
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
-    # Use num_workers=0 to avoid HDF5 multiprocessing issues
+    # Use workers for optimized dataset, single-threaded for original
+    num_workers = 4 if is_optimized else 0
+
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase3, num_workers=0, pin_memory=True
+        collate_fn=collate_phase3, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase3, num_workers=0, pin_memory=True
+        collate_fn=collate_phase3, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}", flush=True)
+    print(f"DataLoader workers: {num_workers}", flush=True)
 
     # Load Phase 2 models
     checkpoint = torch.load(phase2_path, map_location=device)
