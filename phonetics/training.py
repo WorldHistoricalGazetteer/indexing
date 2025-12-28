@@ -22,6 +22,7 @@ import os
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -35,6 +36,7 @@ from .streaming_datasets import (
     MultiSourcePhase1Dataset,
     MultiSourcePhase2Dataset,
     MultiSourcePhase3Dataset,
+    OptimizedPhase1Dataset,
 )
 
 
@@ -65,22 +67,55 @@ DATA_SOURCES = [
     ),
 ]
 
+# Optimized data sources (use restructured HDF5 files for Phase 1)
+# These have pre-computed triplets and contiguous feature arrays
+DATA_SOURCES_OPTIMIZED = [
+    DataSource(
+        name='GeoNames',
+        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized.h5',
+        oversample=1,
+    ),
+    DataSource(
+        name='Pleiades+IV',
+        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized.h5',
+        oversample=50,
+    ),
+]
+
 
 # =============================================================================
 # Collate Functions
 # =============================================================================
 
 def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Tensor]]:
-    """Collate function for Phase 1 (phonetic features only)."""
+    """Collate function for Phase 1 (phonetic features only).
+
+    Handles numpy arrays from Dataset and converts to tensors here.
+    Uses more efficient padding with pre-allocated buffers.
+    """
 
     def pad_features(features_list):
-        lengths = torch.tensor([len(f) for f in features_list])
+        # Handle both numpy arrays and tensors
+        lengths = [len(f) for f in features_list]
         max_len = max(lengths)
-        feat_dim = features_list[0].shape[1]
-        padded = torch.zeros(len(features_list), max_len, feat_dim)
+        if max_len == 0:
+            # Edge case: empty features
+            return torch.zeros(len(features_list), 1, 24), torch.zeros(len(features_list), dtype=torch.long)
+
+        feat_dim = features_list[0].shape[1] if len(features_list[0].shape) > 1 else 24
+
+        # Pre-allocate output tensor
+        padded = torch.zeros(len(features_list), max_len, feat_dim, dtype=torch.float32)
+
         for i, f in enumerate(features_list):
-            padded[i, :len(f)] = f
-        return padded, lengths
+            if len(f) > 0:
+                # Convert numpy to tensor if needed
+                if isinstance(f, np.ndarray):
+                    padded[i, :len(f)] = torch.from_numpy(f)
+                else:
+                    padded[i, :len(f)] = f
+
+        return padded, torch.tensor(lengths, dtype=torch.long)
 
     anchor, anchor_len = pad_features([b['anchor_features'] for b in batch])
     positive, pos_len = pad_features([b['positive_features'] for b in batch])
@@ -163,7 +198,8 @@ def train_phase1(
     epochs: int = Config.PHASE1_EPOCHS,
     subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
     batch_size: int = Config.BATCH_SIZE,
-    lr: float = Config.LEARNING_RATE
+    lr: float = Config.LEARNING_RATE,
+    use_optimized: bool = True
 ) -> PhoneticEncoder:
     """
     Phase 1: Train phonetic encoder (Teacher).
@@ -178,13 +214,31 @@ def train_phase1(
         subsample_pairs: Max pairs to sample per source.
         batch_size: Training batch size.
         lr: Learning rate.
+        use_optimized: Try to use optimized HDF5 files if available.
     """
-    # Handle defaults
+    import os
+
+    # Handle defaults - try optimized sources first
     if sources is None:
-        sources = DATA_SOURCES
+        if use_optimized:
+            # Check if optimized files exist
+            all_optimized_exist = all(
+                os.path.exists(s.path) for s in DATA_SOURCES_OPTIMIZED
+            )
+            if all_optimized_exist:
+                sources = DATA_SOURCES_OPTIMIZED
+                print("Using OPTIMIZED HDF5 files (pre-computed triplets)")
+            else:
+                sources = DATA_SOURCES
+                print("Using standard HDF5 files (optimized files not found)")
+        else:
+            sources = DATA_SOURCES
 
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
+
+    # Check if these are optimized files
+    is_optimized = all('_optimized.h5' in p for p in data_paths)
 
     print("=" * 60)
     print("Phase 1: Training Phonetic Encoder (Teacher)")
@@ -197,14 +251,25 @@ def train_phase1(
         print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
     print()
 
-    train_dataset = MultiSourcePhase1Dataset(
-        data_paths, oversample_factors,
-        split='train', subsample_pairs=subsample_pairs
-    )
-    val_dataset = MultiSourcePhase1Dataset(
-        data_paths, oversample_factors,
-        split='val', subsample_pairs=subsample_pairs
-    )
+    # Use appropriate dataset class
+    if is_optimized:
+        train_dataset = OptimizedPhase1Dataset(
+            data_paths, oversample_factors,
+            split='train', subsample_triplets=subsample_pairs
+        )
+        val_dataset = OptimizedPhase1Dataset(
+            data_paths, oversample_factors,
+            split='val', subsample_triplets=subsample_pairs
+        )
+    else:
+        train_dataset = MultiSourcePhase1Dataset(
+            data_paths, oversample_factors,
+            split='train', subsample_pairs=subsample_pairs
+        )
+        val_dataset = MultiSourcePhase1Dataset(
+            data_paths, oversample_factors,
+            split='val', subsample_pairs=subsample_pairs
+        )
 
     print(f"Training pairs: {len(train_dataset):,}")
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)

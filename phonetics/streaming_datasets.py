@@ -26,10 +26,10 @@ def _levenshtein_distance(s1: str, s2: str) -> int:
     """Compute Levenshtein edit distance between two strings."""
     if len(s1) < len(s2):
         s1, s2 = s2, s1
-    
+
     if len(s2) == 0:
         return len(s1)
-    
+
     previous_row = range(len(s2) + 1)
     for i, c1 in enumerate(s1):
         current_row = [i + 1]
@@ -39,7 +39,7 @@ def _levenshtein_distance(s1: str, s2: str) -> int:
             substitutions = previous_row[j] + (c1 != c2)
             current_row.append(min(insertions, deletions, substitutions))
         previous_row = current_row
-    
+
     return previous_row[-1]
 
 
@@ -55,7 +55,12 @@ class MultiSourcePhase1Dataset(Dataset):
     sources (Index Villaris, Pleiades) to be represented proportionally
     despite having fewer pairs than GeoNames.
 
-    File handles are cached per worker process for performance.
+    Optimizations:
+    - Precomputed cluster exclusion lists (no per-sample list comprehension)
+    - Set-based phonetic indices for O(1) exclusion
+    - NumPy RNG for faster random sampling
+    - Cached file handles (no SWMR overhead)
+    - Returns numpy arrays (tensor conversion in collate)
     """
 
     def __init__(
@@ -64,13 +69,17 @@ class MultiSourcePhase1Dataset(Dataset):
         oversample_factors: List[int],
         split: str = 'train',
         train_ratio: float = 0.9,
-        subsample_pairs: int = Config.SUBSAMPLE_PAIRS
+        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
+        seed: int = 42
     ):
         self.hdf5_paths = hdf5_paths
         self.oversample_factors = oversample_factors
         self.split = split
 
-        # File handle cache (populated lazily per worker)
+        # NumPy RNG for fast, reproducible sampling
+        self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
+
+        # File handle cache (populated lazily)
         self._file_handles: Dict[int, h5py.File] = {}
 
         # Build combined index: list of (source_idx, pair_idx_in_source)
@@ -78,8 +87,12 @@ class MultiSourcePhase1Dataset(Dataset):
 
         # Per-source metadata
         self.source_pair_counts = []
-        self.source_phonetic_indices = []  # List of phonetic item indices per source
-        self.source_cluster_maps = []  # cluster_to_items per source
+        self.source_phonetic_indices = []  # List for random access
+        self.source_phonetic_set = []  # Set for O(1) exclusion checks
+        self.source_cluster_maps = []  # cluster_id -> list of item indices
+        self.source_cluster_ids = []  # List of cluster IDs per source
+        self.source_cluster_ids_excl = []  # Precomputed: cluster_id -> other cluster IDs
+        self.source_feature_keys = []  # Set of valid feature keys per source
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
             with h5py.File(path, 'r') as f:
@@ -87,9 +100,9 @@ class MultiSourcePhase1Dataset(Dataset):
 
                 # Subsample if needed
                 max_pairs = min(total_pairs, subsample_pairs)
-                all_indices = list(range(total_pairs))
-                random.shuffle(all_indices)
-                sampled_indices = all_indices[:max_pairs]
+                all_indices = np.arange(total_pairs)
+                self.rng.shuffle(all_indices)
+                sampled_indices = all_indices[:max_pairs].tolist()
 
                 # Split train/val
                 split_idx = int(max_pairs * train_ratio)
@@ -105,6 +118,10 @@ class MultiSourcePhase1Dataset(Dataset):
                     for pair_idx in source_indices:
                         self.combined_indices.append((source_idx, pair_idx))
 
+                # Cache valid feature keys (avoid per-sample string creation + lookup)
+                feature_keys = set(f['features'].keys())
+                self.source_feature_keys.append(feature_keys)
+
                 # Build phonetic item indices for this source
                 items = f['items']
                 phonetic_indices = []
@@ -112,19 +129,28 @@ class MultiSourcePhase1Dataset(Dataset):
 
                 for idx in range(f.attrs['total_items']):
                     if items['has_phonetic'][idx]:
-                        feature_key = str(idx)
-                        if feature_key in f['features']:
-                            feat_shape = f['features'][feature_key].shape
-                            if feat_shape[0] > 0:
-                                phonetic_indices.append(idx)
-                                cluster_id = int(items['cluster_id'][idx])
-                                cluster_to_items[cluster_id].append(idx)
+                        if str(idx) in feature_keys:
+                            phonetic_indices.append(idx)
+                            cluster_id = int(items['cluster_id'][idx])
+                            cluster_to_items[cluster_id].append(idx)
 
                 self.source_phonetic_indices.append(phonetic_indices)
+                self.source_phonetic_set.append(set(phonetic_indices))
                 self.source_cluster_maps.append(dict(cluster_to_items))
 
+                # Precompute cluster exclusion lists
+                cluster_ids = list(cluster_to_items.keys())
+                self.source_cluster_ids.append(cluster_ids)
+
+                # For each cluster, precompute the list of OTHER clusters
+                cluster_ids_excl = {
+                    c: [x for x in cluster_ids if x != c]
+                    for c in cluster_ids
+                }
+                self.source_cluster_ids_excl.append(cluster_ids_excl)
+
         # Shuffle combined indices
-        random.shuffle(self.combined_indices)
+        self.rng.shuffle(self.combined_indices)
 
         print(f"MultiSourcePhase1Dataset ({split}):")
         for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_pair_counts, oversample_factors)):
@@ -135,21 +161,23 @@ class MultiSourcePhase1Dataset(Dataset):
     def _get_file(self, source_idx: int) -> h5py.File:
         """Get cached file handle for source, opening if needed."""
         if source_idx not in self._file_handles:
+            # No SWMR - files are read-only during training
             self._file_handles[source_idx] = h5py.File(
-                self.hdf5_paths[source_idx], 'r', swmr=True
+                self.hdf5_paths[source_idx], 'r'
             )
         return self._file_handles[source_idx]
 
     def __len__(self) -> int:
         return len(self.combined_indices)
 
-    def _load_features(self, f: h5py.File, item_idx: int) -> np.ndarray:
+    def _load_features(self, f: h5py.File, source_idx: int, item_idx: int) -> np.ndarray:
+        """Load features, using cached key set to avoid repeated lookups."""
         feature_key = str(item_idx)
-        if feature_key in f['features']:
+        if feature_key in self.source_feature_keys[source_idx]:
             return f['features'][feature_key][:]
-        return np.array([])
+        return np.array([], dtype=np.float32)
 
-    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+    def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
         source_idx, pair_idx = self.combined_indices[idx]
         f = self._get_file(source_idx)
 
@@ -159,35 +187,34 @@ class MultiSourcePhase1Dataset(Dataset):
         anchor_idx = int(pairs['anchor_idx'][pair_idx])
         positive_idx = int(pairs['positive_idx'][pair_idx])
 
-        # Get negative from same source
+        # Get negative from same source using precomputed exclusion lists
         anchor_cluster = int(items['cluster_id'][anchor_idx])
-        cluster_map = self.source_cluster_maps[source_idx]
-        cluster_ids = list(cluster_map.keys())
-
-        # Find clusters different from anchor
-        other_clusters = [c for c in cluster_ids if c != anchor_cluster]
+        other_clusters = self.source_cluster_ids_excl[source_idx].get(anchor_cluster, [])
 
         if other_clusters:
             # Normal case: sample from a different cluster
-            neg_cluster = random.choice(other_clusters)
-            negative_idx = random.choice(cluster_map[neg_cluster])
+            neg_cluster = self.rng.choice(other_clusters)
+            cluster_items = self.source_cluster_maps[source_idx][neg_cluster]
+            negative_idx = cluster_items[self.rng.integers(len(cluster_items))]
         else:
             # Edge case: only one cluster in this source
-            available = [i for i in self.source_phonetic_indices[source_idx]
-                        if i != anchor_idx and i != positive_idx]
+            # Use set difference for O(1) exclusion
+            phonetic_set = self.source_phonetic_set[source_idx]
+            available = phonetic_set - {anchor_idx, positive_idx}
             if available:
-                negative_idx = random.choice(available)
+                negative_idx = self.rng.choice(list(available))
             else:
                 negative_idx = positive_idx
 
-        anchor_features = self._load_features(f, anchor_idx)
-        positive_features = self._load_features(f, positive_idx)
-        negative_features = self._load_features(f, negative_idx)
+        # Return numpy arrays - tensor conversion happens in collate_fn
+        anchor_features = self._load_features(f, source_idx, anchor_idx)
+        positive_features = self._load_features(f, source_idx, positive_idx)
+        negative_features = self._load_features(f, source_idx, negative_idx)
 
         return {
-            'anchor_features': torch.tensor(anchor_features, dtype=torch.float32),
-            'positive_features': torch.tensor(positive_features, dtype=torch.float32),
-            'negative_features': torch.tensor(negative_features, dtype=torch.float32),
+            'anchor_features': anchor_features,
+            'positive_features': positive_features,
+            'negative_features': negative_features,
         }
 
     def __del__(self):
@@ -563,6 +590,140 @@ class MultiSourcePhase3Dataset(Dataset):
 
     def __del__(self):
         """Close any open file handles."""
+        for f in self._file_handles.values():
+            try:
+                f.close()
+            except:
+                pass
+
+
+# =============================================================================
+# Optimized Phase 1 Dataset (uses restructured HDF5)
+# =============================================================================
+
+class OptimizedPhase1Dataset(Dataset):
+    """
+    Ultra-fast Phase 1 Dataset using pre-restructured HDF5.
+
+    Expects HDF5 created by restructure_hdf5.py with:
+    - /triplets/anchor_idx, positive_idx, negative_idx (pre-computed)
+    - /features/data (N, max_len, 24) contiguous array
+    - /features/lengths (N,) sequence lengths
+
+    This eliminates:
+    - Runtime negative sampling
+    - String key lookups
+    - Per-sample Python overhead
+
+    Supports multiple sources with oversampling, same as MultiSourcePhase1Dataset.
+    """
+
+    def __init__(
+        self,
+        hdf5_paths: List[str],
+        oversample_factors: List[int],
+        split: str = 'train',
+        train_ratio: float = 0.9,
+        subsample_triplets: int = Config.SUBSAMPLE_PAIRS,
+        seed: int = 42
+    ):
+        self.hdf5_paths = hdf5_paths
+        self.oversample_factors = oversample_factors
+        self.split = split
+
+        # NumPy RNG for shuffling
+        self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
+
+        # File handles (opened once, kept open)
+        self._file_handles: Dict[int, h5py.File] = {}
+
+        # Pre-load feature data references (memory-mapped via HDF5)
+        self._features_data: Dict[int, h5py.Dataset] = {}
+        self._features_lengths: Dict[int, np.ndarray] = {}
+
+        # Pre-load triplet indices
+        self._triplet_anchors: Dict[int, np.ndarray] = {}
+        self._triplet_positives: Dict[int, np.ndarray] = {}
+        self._triplet_negatives: Dict[int, np.ndarray] = {}
+
+        # Build combined index
+        self.combined_indices = []
+        self.source_triplet_counts = []
+
+        for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
+            f = h5py.File(path, 'r')
+            self._file_handles[source_idx] = f
+
+            # Load feature arrays (keep as HDF5 dataset for memory-mapped access)
+            self._features_data[source_idx] = f['features/data']
+            self._features_lengths[source_idx] = f['features/lengths'][:]
+
+            # Load triplet indices into memory (small, fast random access)
+            self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
+            self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
+            self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
+
+            total_triplets = len(self._triplet_anchors[source_idx])
+
+            # Subsample if needed
+            max_triplets = min(total_triplets, subsample_triplets)
+            all_indices = np.arange(total_triplets)
+            self.rng.shuffle(all_indices)
+            sampled_indices = all_indices[:max_triplets]
+
+            # Split train/val
+            split_idx = int(max_triplets * train_ratio)
+            if split == 'train':
+                source_indices = sampled_indices[:split_idx]
+            else:
+                source_indices = sampled_indices[split_idx:]
+
+            self.source_triplet_counts.append(len(source_indices))
+
+            # Apply oversampling
+            for _ in range(factor):
+                for triplet_idx in source_indices:
+                    self.combined_indices.append((source_idx, triplet_idx))
+
+        # Shuffle combined indices
+        self.rng.shuffle(self.combined_indices)
+
+        print(f"OptimizedPhase1Dataset ({split}):")
+        for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_triplet_counts, oversample_factors)):
+            effective = count * factor
+            print(f"  Source {i}: {count:,} triplets × {factor}x = {effective:,} effective")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+
+    def __len__(self) -> int:
+        return len(self.combined_indices)
+
+    def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
+        source_idx, triplet_idx = self.combined_indices[idx]
+
+        # Get pre-computed triplet indices
+        anchor_idx = self._triplet_anchors[source_idx][triplet_idx]
+        positive_idx = self._triplet_positives[source_idx][triplet_idx]
+        negative_idx = self._triplet_negatives[source_idx][triplet_idx]
+
+        # Get feature lengths
+        anchor_len = self._features_lengths[source_idx][anchor_idx]
+        positive_len = self._features_lengths[source_idx][positive_idx]
+        negative_len = self._features_lengths[source_idx][negative_idx]
+
+        # Load features (sliced to actual length)
+        features_data = self._features_data[source_idx]
+        anchor_features = features_data[anchor_idx, :anchor_len, :]
+        positive_features = features_data[positive_idx, :positive_len, :]
+        negative_features = features_data[negative_idx, :negative_len, :]
+
+        return {
+            'anchor_features': anchor_features,
+            'positive_features': positive_features,
+            'negative_features': negative_features,
+        }
+
+    def __del__(self):
+        """Close file handles."""
         for f in self._file_handles.values():
             try:
                 f.close()
