@@ -192,7 +192,7 @@ def train_phase1(
     print("=" * 60)
 
     # Log data sources
-    print("\nSampling data sources:")
+    print("\nData sources:")
     for source in sources:
         print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
     print()
@@ -241,8 +241,11 @@ def train_phase1(
             neg_seq, neg_len = batch['negative']
 
             anchor_seq = anchor_seq.to(device)
+            anchor_len = anchor_len.to(device)
             pos_seq = pos_seq.to(device)
+            pos_len = pos_len.to(device)
             neg_seq = neg_seq.to(device)
+            neg_len = neg_len.to(device)
 
             optimizer.zero_grad()
 
@@ -266,9 +269,9 @@ def train_phase1(
                 pos_seq, pos_len = batch['positive']
                 neg_seq, neg_len = batch['negative']
 
-                anchor_emb = model(anchor_seq.to(device), anchor_len)
-                pos_emb = model(pos_seq.to(device), pos_len)
-                neg_emb = model(neg_seq.to(device), neg_len)
+                anchor_emb = model(anchor_seq.to(device), anchor_len.to(device))
+                pos_emb = model(pos_seq.to(device), pos_len.to(device))
+                neg_emb = model(neg_seq.to(device), neg_len.to(device))
 
                 loss = criterion(anchor_emb, pos_emb, neg_emb)
                 val_loss += loss.item()
@@ -395,10 +398,10 @@ def train_phase2(
 
         for batch in train_loader:
             char_ids = batch['char_ids'].to(device)
-            char_lengths = batch['char_lengths']
+            char_lengths = batch['char_lengths'].to(device)
             lang_ids = batch['lang_ids'].to(device)
             phone_feats = batch['phonetic_features'].to(device)
-            phone_lengths = batch['phonetic_lengths']
+            phone_lengths = batch['phonetic_lengths'].to(device)
 
             optimizer.zero_grad()
 
@@ -422,10 +425,10 @@ def train_phase2(
         with torch.no_grad():
             for batch in val_loader:
                 char_ids = batch['char_ids'].to(device)
-                char_lengths = batch['char_lengths']
+                char_lengths = batch['char_lengths'].to(device)
                 lang_ids = batch['lang_ids'].to(device)
                 phone_feats = batch['phonetic_features'].to(device)
-                phone_lengths = batch['phonetic_lengths']
+                phone_lengths = batch['phonetic_lengths'].to(device)
 
                 target_emb = phonetic_encoder(phone_feats, phone_lengths)
                 char_emb = char_encoder(char_ids, lang_ids, char_lengths)
@@ -597,10 +600,13 @@ def train_phase3(
 
             anchor_ids = anchor_ids.to(device)
             anchor_langs = anchor_langs.to(device)
+            anchor_lens = anchor_lens.to(device)
             pos_ids = pos_ids.to(device)
             pos_langs = pos_langs.to(device)
+            pos_lens = pos_lens.to(device)
             neg_ids = neg_ids.to(device)
             neg_langs = neg_langs.to(device)
+            neg_lens = neg_lens.to(device)
 
             optimizer.zero_grad()
 
@@ -626,13 +632,13 @@ def train_phase3(
                 neg_ids, neg_langs, neg_lens = batch['negative']
 
                 anchor_emb = model.encode_char_only(
-                    anchor_ids.to(device), anchor_langs.to(device), anchor_lens
+                    anchor_ids.to(device), anchor_langs.to(device), anchor_lens.to(device)
                 )
                 pos_emb = model.encode_char_only(
-                    pos_ids.to(device), pos_langs.to(device), pos_lens
+                    pos_ids.to(device), pos_langs.to(device), pos_lens.to(device)
                 )
                 neg_emb = model.encode_char_only(
-                    neg_ids.to(device), neg_langs.to(device), neg_lens
+                    neg_ids.to(device), neg_langs.to(device), neg_lens.to(device)
                 )
 
                 loss = criterion(anchor_emb, pos_emb, neg_emb)
