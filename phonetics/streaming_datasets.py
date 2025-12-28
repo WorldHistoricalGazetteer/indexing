@@ -615,7 +615,8 @@ class OptimizedPhase1Dataset(Dataset):
     - String key lookups
     - Per-sample Python overhead
 
-    Supports multiple sources with oversampling, same as MultiSourcePhase1Dataset.
+    Supports multiple sources with oversampling.
+    Compatible with num_workers > 0 via lazy file handle initialization.
     """
 
     def __init__(
@@ -634,14 +635,12 @@ class OptimizedPhase1Dataset(Dataset):
         # NumPy RNG for shuffling
         self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
 
-        # File handles (opened once, kept open)
+        # File handles - will be opened lazily per worker
         self._file_handles: Dict[int, h5py.File] = {}
-
-        # Pre-load feature data references (memory-mapped via HDF5)
         self._features_data: Dict[int, h5py.Dataset] = {}
-        self._features_lengths: Dict[int, np.ndarray] = {}
 
-        # Pre-load triplet indices
+        # These are loaded into memory (small) - shared across workers
+        self._features_lengths: Dict[int, np.ndarray] = {}
         self._triplet_anchors: Dict[int, np.ndarray] = {}
         self._triplet_positives: Dict[int, np.ndarray] = {}
         self._triplet_negatives: Dict[int, np.ndarray] = {}
@@ -651,19 +650,15 @@ class OptimizedPhase1Dataset(Dataset):
         self.source_triplet_counts = []
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
-            f = h5py.File(path, 'r')
-            self._file_handles[source_idx] = f
+            # Open temporarily to load metadata into memory
+            with h5py.File(path, 'r') as f:
+                # Load into memory (small arrays)
+                self._features_lengths[source_idx] = f['features/lengths'][:]
+                self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
+                self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
+                self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
 
-            # Load feature arrays (keep as HDF5 dataset for memory-mapped access)
-            self._features_data[source_idx] = f['features/data']
-            self._features_lengths[source_idx] = f['features/lengths'][:]
-
-            # Load triplet indices into memory (small, fast random access)
-            self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
-            self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
-            self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
-
-            total_triplets = len(self._triplet_anchors[source_idx])
+                total_triplets = len(self._triplet_anchors[source_idx])
 
             # Subsample if needed
             max_triplets = min(total_triplets, subsample_triplets)
@@ -694,24 +689,33 @@ class OptimizedPhase1Dataset(Dataset):
             print(f"  Source {i}: {count:,} triplets × {factor}x = {effective:,} effective")
         print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
 
+    def _get_features_data(self, source_idx: int) -> h5py.Dataset:
+        """Lazily open file handle per worker process."""
+        if source_idx not in self._file_handles:
+            self._file_handles[source_idx] = h5py.File(
+                self.hdf5_paths[source_idx], 'r'
+            )
+            self._features_data[source_idx] = self._file_handles[source_idx]['features/data']
+        return self._features_data[source_idx]
+
     def __len__(self) -> int:
         return len(self.combined_indices)
 
     def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
         source_idx, triplet_idx = self.combined_indices[idx]
 
-        # Get pre-computed triplet indices
+        # Get pre-computed triplet indices (from memory)
         anchor_idx = self._triplet_anchors[source_idx][triplet_idx]
         positive_idx = self._triplet_positives[source_idx][triplet_idx]
         negative_idx = self._triplet_negatives[source_idx][triplet_idx]
 
-        # Get feature lengths
+        # Get feature lengths (from memory)
         anchor_len = self._features_lengths[source_idx][anchor_idx]
         positive_len = self._features_lengths[source_idx][positive_idx]
         negative_len = self._features_lengths[source_idx][negative_idx]
 
-        # Load features (sliced to actual length)
-        features_data = self._features_data[source_idx]
+        # Load features from HDF5 (lazy file handle)
+        features_data = self._get_features_data(source_idx)
         anchor_features = features_data[anchor_idx, :anchor_len, :]
         positive_features = features_data[positive_idx, :positive_len, :]
         negative_features = features_data[negative_idx, :negative_len, :]

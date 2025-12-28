@@ -90,31 +90,28 @@ DATA_SOURCES_OPTIMIZED = [
 def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Tensor]]:
     """Collate function for Phase 1 (phonetic features only).
 
-    Handles numpy arrays from Dataset and converts to tensors here.
-    Uses more efficient padding with pre-allocated buffers.
+    Uses torch.nn.utils.rnn.pad_sequence for efficient batched padding.
     """
+    from torch.nn.utils.rnn import pad_sequence
 
     def pad_features(features_list):
-        # Handle both numpy arrays and tensors
-        lengths = [len(f) for f in features_list]
-        max_len = max(lengths)
-        if max_len == 0:
+        # Convert to tensors and get lengths
+        tensors = []
+        lengths = []
+        for f in features_list:
+            if isinstance(f, np.ndarray):
+                t = torch.from_numpy(f).float()
+            else:
+                t = f.float()
+            tensors.append(t)
+            lengths.append(len(t))
+
+        if not tensors or all(len(t) == 0 for t in tensors):
             # Edge case: empty features
             return torch.zeros(len(features_list), 1, 24), torch.zeros(len(features_list), dtype=torch.long)
 
-        feat_dim = features_list[0].shape[1] if len(features_list[0].shape) > 1 else 24
-
-        # Pre-allocate output tensor
-        padded = torch.zeros(len(features_list), max_len, feat_dim, dtype=torch.float32)
-
-        for i, f in enumerate(features_list):
-            if len(f) > 0:
-                # Convert numpy to tensor if needed
-                if isinstance(f, np.ndarray):
-                    padded[i, :len(f)] = torch.from_numpy(f)
-                else:
-                    padded[i, :len(f)] = f
-
+        # pad_sequence expects (L, D) tensors, pads to (max_L, D), returns (B, max_L, D) with batch_first=True
+        padded = pad_sequence(tensors, batch_first=True, padding_value=0.0)
         return padded, torch.tensor(lengths, dtype=torch.long)
 
     anchor, anchor_len = pad_features([b['anchor_features'] for b in batch])
@@ -274,19 +271,23 @@ def train_phase1(
     print(f"Training pairs: {len(train_dataset):,}")
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
-    # Use num_workers=0 to avoid HDF5 multiprocessing issues
-    # Each worker would need its own file handle, which complicates things
+    # Use workers for optimized dataset (lazy file handles), single-threaded for original
+    num_workers = 4 if is_optimized else 0
+
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase1, num_workers=0, pin_memory=True
+        collate_fn=collate_phase1, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase1, num_workers=0, pin_memory=True
+        collate_fn=collate_phase1, num_workers=num_workers,
+        pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}", flush=True)
+    print(f"DataLoader workers: {num_workers}", flush=True)
 
     model = PhoneticEncoder().to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
