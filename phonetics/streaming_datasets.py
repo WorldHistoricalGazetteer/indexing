@@ -150,8 +150,24 @@ class MultiSourcePhase1Dataset(Dataset):
             anchor_cluster = int(items['cluster_id'][anchor_idx])
             cluster_map = self.source_cluster_maps[source_idx]
             cluster_ids = list(cluster_map.keys())
-            neg_cluster = random.choice([c for c in cluster_ids if c != anchor_cluster])
-            negative_idx = random.choice(cluster_map[neg_cluster])
+
+            # Find clusters different from anchor
+            other_clusters = [c for c in cluster_ids if c != anchor_cluster]
+
+            if other_clusters:
+                # Normal case: sample from a different cluster
+                neg_cluster = random.choice(other_clusters)
+                negative_idx = random.choice(cluster_map[neg_cluster])
+            else:
+                # Edge case: only one cluster in this source
+                # Sample from any phonetic item in this source that isn't anchor/positive
+                available = [i for i in self.source_phonetic_indices[source_idx]
+                            if i != anchor_idx and i != positive_idx]
+                if available:
+                    negative_idx = random.choice(available)
+                else:
+                    # Extremely rare: fall back to positive (will have zero loss)
+                    negative_idx = positive_idx
 
             anchor_features = self._load_features(f, anchor_idx)
             positive_features = self._load_features(f, positive_idx)
@@ -285,6 +301,7 @@ class MultiSourcePhase3Dataset(Dataset):
         self.source_item_romanized = []
         self.source_item_ipa = []
         self.source_phon_counts = []
+        self.source_all_items = []  # All item indices per source for fallback
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
             with h5py.File(path, 'r') as f:
@@ -320,10 +337,12 @@ class MultiSourcePhase3Dataset(Dataset):
                 first_char_index = defaultdict(list)
                 item_romanized = {}
                 item_ipa = {}
+                all_item_indices = []
 
                 for idx in range(total_items):
                     cluster_id = int(items['cluster_id'][idx])
                     cluster_to_items[cluster_id].append(idx)
+                    all_item_indices.append(idx)
 
                     romanized = items['romanized'][idx]
                     if isinstance(romanized, bytes):
@@ -343,6 +362,7 @@ class MultiSourcePhase3Dataset(Dataset):
                 self.source_first_char_indices.append(dict(first_char_index))
                 self.source_item_romanized.append(item_romanized)
                 self.source_item_ipa.append(item_ipa)
+                self.source_all_items.append(all_item_indices)
 
         random.shuffle(self.combined_indices)
 
@@ -356,12 +376,28 @@ class MultiSourcePhase3Dataset(Dataset):
     def __len__(self) -> int:
         return len(self.combined_indices)
 
-    def _random_negative(self, source_idx: int, anchor_cluster: int) -> int:
+    def _random_negative(self, source_idx: int, anchor_cluster: int, exclude_indices: set = None) -> int:
         """Select random negative from different cluster within same source."""
+        if exclude_indices is None:
+            exclude_indices = set()
+
         cluster_map = self.source_cluster_maps[source_idx]
         cluster_ids = list(cluster_map.keys())
-        neg_cluster = random.choice([c for c in cluster_ids if c != anchor_cluster])
-        return random.choice(cluster_map[neg_cluster])
+        other_clusters = [c for c in cluster_ids if c != anchor_cluster]
+
+        if other_clusters:
+            # Normal case: sample from a different cluster
+            neg_cluster = random.choice(other_clusters)
+            return random.choice(cluster_map[neg_cluster])
+        else:
+            # Edge case: only one cluster in this source
+            # Sample any item from this source not in exclude set
+            all_items = self.source_all_items[source_idx]
+            available = [i for i in all_items if i not in exclude_indices]
+            if available:
+                return random.choice(available)
+            # Fallback: return any item (will have zero loss)
+            return random.choice(all_items)
 
     def _get_stage_a_negative(self, source_idx: int, f: h5py.File, anchor_idx: int) -> int:
         """Stage A: Find orthographically close but phonetically distant negative."""
@@ -371,7 +407,7 @@ class MultiSourcePhase3Dataset(Dataset):
         anchor_ipa = self.source_item_ipa[source_idx].get(anchor_idx, '')
 
         if not anchor_rom:
-            return self._random_negative(source_idx, anchor_cluster)
+            return self._random_negative(source_idx, anchor_cluster, {anchor_idx})
 
         first_char = anchor_rom[0].lower()
         first_char_index = self.source_first_char_indices[source_idx]
@@ -383,7 +419,7 @@ class MultiSourcePhase3Dataset(Dataset):
                 candidates.extend(first_char_index.get(adj_char, []))
 
         if len(candidates) < 5:
-            return self._random_negative(source_idx, anchor_cluster)
+            return self._random_negative(source_idx, anchor_cluster, {anchor_idx})
 
         random.shuffle(candidates)
         best_neg_idx = None
@@ -427,7 +463,7 @@ class MultiSourcePhase3Dataset(Dataset):
         if best_neg_idx is not None:
             return best_neg_idx
 
-        return self._random_negative(source_idx, anchor_cluster)
+        return self._random_negative(source_idx, anchor_cluster, {anchor_idx})
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         source_idx, pair_idx = self.combined_indices[idx]
@@ -450,7 +486,7 @@ class MultiSourcePhase3Dataset(Dataset):
             if self.negative_stage == 'A':
                 negative_idx = self._get_stage_a_negative(source_idx, f, anchor_idx)
             else:
-                negative_idx = self._random_negative(source_idx, anchor_cluster)
+                negative_idx = self._random_negative(source_idx, anchor_cluster, {anchor_idx, positive_idx})
 
             anchor_rom = items['romanized'][anchor_idx]
             anchor_lang = items['lang'][anchor_idx]

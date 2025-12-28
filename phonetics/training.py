@@ -192,7 +192,7 @@ def train_phase1(
     print("=" * 60)
 
     # Log data sources
-    print("\nData sources:")
+    print("\nSampling data sources:")
     for source in sources:
         print(f"  {source.name}: {source.path} (oversample: {source.oversample}x)")
     print()
