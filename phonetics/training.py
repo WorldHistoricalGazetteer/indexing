@@ -209,20 +209,15 @@ def train_phase1(
     print(f"Training pairs: {len(train_dataset):,}")
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
-    # Worker init function to ensure fresh file handles per worker
-    def worker_init_fn(worker_id):
-        # Each worker clears any inherited file handles and will open fresh ones
-        train_dataset._file_handles = {}
-
+    # Use num_workers=0 to avoid HDF5 multiprocessing issues
+    # Each worker would need its own file handle, which complicates things
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase1, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase1, num_workers=0, pin_memory=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase1, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase1, num_workers=0, pin_memory=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -241,8 +236,9 @@ def train_phase1(
         # Training
         model.train()
         train_loss = 0
+        num_batches = 0
 
-        for batch in train_loader:
+        for batch_idx, batch in enumerate(train_loader):
             anchor_seq, anchor_len = batch['anchor']
             pos_seq, pos_len = batch['positive']
             neg_seq, neg_len = batch['negative']
@@ -266,10 +262,17 @@ def train_phase1(
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             train_loss += loss.item()
+            num_batches += 1
+
+            # Progress logging every 100 batches
+            if (batch_idx + 1) % 100 == 0:
+                avg_loss = train_loss / num_batches
+                print(f"  Epoch {epoch+1} | Batch {batch_idx+1}/{len(train_loader)} | Loss: {avg_loss:.4f}", flush=True)
 
         # Validation
         model.eval()
         val_loss = 0
+        val_batches = 0
         with torch.no_grad():
             for batch in val_loader:
                 anchor_seq, anchor_len = batch['anchor']
@@ -282,9 +285,10 @@ def train_phase1(
 
                 loss = criterion(anchor_emb, pos_emb, neg_emb)
                 val_loss += loss.item()
+                val_batches += 1
 
-        train_loss /= len(train_loader)
-        val_loss /= len(val_loader)
+        train_loss /= num_batches
+        val_loss /= val_batches
         scheduler.step(val_loss)
 
         print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
@@ -361,19 +365,14 @@ def train_phase2(
     print(f"Training items: {len(train_dataset):,}", flush=True)
     print(f"Validation items: {len(val_dataset):,}", flush=True)
 
-    # Worker init function to ensure fresh file handles per worker
-    def worker_init_fn(worker_id):
-        train_dataset._file_handles = {}
-
+    # Use num_workers=0 to avoid HDF5 multiprocessing issues
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase2, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase2, num_workers=0, pin_memory=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase2, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase2, num_workers=0, pin_memory=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -552,19 +551,14 @@ def train_phase3(
     print(f"Training pairs: {len(train_dataset):,}", flush=True)
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
-    # Worker init function to ensure fresh file handles per worker
-    def worker_init_fn(worker_id):
-        train_dataset._file_handles = {}
-
+    # Use num_workers=0 to avoid HDF5 multiprocessing issues
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase3, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase3, num_workers=0, pin_memory=True
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase3, num_workers=4, pin_memory=True,
-        worker_init_fn=worker_init_fn, persistent_workers=True
+        collate_fn=collate_phase3, num_workers=0, pin_memory=True
     )
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
