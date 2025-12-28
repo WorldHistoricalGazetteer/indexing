@@ -54,6 +54,8 @@ class MultiSourcePhase1Dataset(Dataset):
     Each source can have a different oversample factor, allowing historical
     sources (Index Villaris, Pleiades) to be represented proportionally
     despite having fewer pairs than GeoNames.
+
+    File handles are cached per worker process for performance.
     """
 
     def __init__(
@@ -67,6 +69,9 @@ class MultiSourcePhase1Dataset(Dataset):
         self.hdf5_paths = hdf5_paths
         self.oversample_factors = oversample_factors
         self.split = split
+
+        # File handle cache (populated lazily per worker)
+        self._file_handles: Dict[int, h5py.File] = {}
 
         # Build combined index: list of (source_idx, pair_idx_in_source)
         self.combined_indices = []
@@ -125,7 +130,15 @@ class MultiSourcePhase1Dataset(Dataset):
         for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_pair_counts, oversample_factors)):
             effective = count * factor
             print(f"  Source {i}: {count:,} pairs × {factor}x = {effective:,} effective")
-        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+
+    def _get_file(self, source_idx: int) -> h5py.File:
+        """Get cached file handle for source, opening if needed."""
+        if source_idx not in self._file_handles:
+            self._file_handles[source_idx] = h5py.File(
+                self.hdf5_paths[source_idx], 'r', swmr=True
+            )
+        return self._file_handles[source_idx]
 
     def __len__(self) -> int:
         return len(self.combined_indices)
@@ -138,46 +151,52 @@ class MultiSourcePhase1Dataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         source_idx, pair_idx = self.combined_indices[idx]
+        f = self._get_file(source_idx)
 
-        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
-            pairs = f['pairs_with_phonetic']
-            items = f['items']
+        pairs = f['pairs_with_phonetic']
+        items = f['items']
 
-            anchor_idx = int(pairs['anchor_idx'][pair_idx])
-            positive_idx = int(pairs['positive_idx'][pair_idx])
+        anchor_idx = int(pairs['anchor_idx'][pair_idx])
+        positive_idx = int(pairs['positive_idx'][pair_idx])
 
-            # Get negative from same source
-            anchor_cluster = int(items['cluster_id'][anchor_idx])
-            cluster_map = self.source_cluster_maps[source_idx]
-            cluster_ids = list(cluster_map.keys())
+        # Get negative from same source
+        anchor_cluster = int(items['cluster_id'][anchor_idx])
+        cluster_map = self.source_cluster_maps[source_idx]
+        cluster_ids = list(cluster_map.keys())
 
-            # Find clusters different from anchor
-            other_clusters = [c for c in cluster_ids if c != anchor_cluster]
+        # Find clusters different from anchor
+        other_clusters = [c for c in cluster_ids if c != anchor_cluster]
 
-            if other_clusters:
-                # Normal case: sample from a different cluster
-                neg_cluster = random.choice(other_clusters)
-                negative_idx = random.choice(cluster_map[neg_cluster])
+        if other_clusters:
+            # Normal case: sample from a different cluster
+            neg_cluster = random.choice(other_clusters)
+            negative_idx = random.choice(cluster_map[neg_cluster])
+        else:
+            # Edge case: only one cluster in this source
+            available = [i for i in self.source_phonetic_indices[source_idx]
+                        if i != anchor_idx and i != positive_idx]
+            if available:
+                negative_idx = random.choice(available)
             else:
-                # Edge case: only one cluster in this source
-                # Sample from any phonetic item in this source that isn't anchor/positive
-                available = [i for i in self.source_phonetic_indices[source_idx]
-                            if i != anchor_idx and i != positive_idx]
-                if available:
-                    negative_idx = random.choice(available)
-                else:
-                    # Extremely rare: fall back to positive (will have zero loss)
-                    negative_idx = positive_idx
+                negative_idx = positive_idx
 
-            anchor_features = self._load_features(f, anchor_idx)
-            positive_features = self._load_features(f, positive_idx)
-            negative_features = self._load_features(f, negative_idx)
+        anchor_features = self._load_features(f, anchor_idx)
+        positive_features = self._load_features(f, positive_idx)
+        negative_features = self._load_features(f, negative_idx)
 
         return {
             'anchor_features': torch.tensor(anchor_features, dtype=torch.float32),
             'positive_features': torch.tensor(positive_features, dtype=torch.float32),
             'negative_features': torch.tensor(negative_features, dtype=torch.float32),
         }
+
+    def __del__(self):
+        """Close any open file handles."""
+        for f in self._file_handles.values():
+            try:
+                f.close()
+            except:
+                pass
 
 
 class MultiSourcePhase2Dataset(Dataset):
@@ -186,6 +205,8 @@ class MultiSourcePhase2Dataset(Dataset):
 
     Provides (character sequence, phonetic features) pairs for
     Student-Teacher alignment training.
+
+    File handles are cached per worker process for performance.
     """
 
     def __init__(
@@ -202,6 +223,9 @@ class MultiSourcePhase2Dataset(Dataset):
         self.char_vocab = char_vocab
         self.lang_vocab = lang_vocab
         self.split = split
+
+        # File handle cache (populated lazily per worker)
+        self._file_handles: Dict[int, h5py.File] = {}
 
         # Build combined index: list of (source_idx, item_idx_in_source)
         self.combined_indices = []
@@ -237,22 +261,30 @@ class MultiSourcePhase2Dataset(Dataset):
         for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_item_counts, oversample_factors)):
             effective = count * factor
             print(f"  Source {i}: {count:,} items × {factor}x = {effective:,} effective")
-        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+
+    def _get_file(self, source_idx: int) -> h5py.File:
+        """Get cached file handle for source, opening if needed."""
+        if source_idx not in self._file_handles:
+            self._file_handles[source_idx] = h5py.File(
+                self.hdf5_paths[source_idx], 'r', swmr=True
+            )
+        return self._file_handles[source_idx]
 
     def __len__(self) -> int:
         return len(self.combined_indices)
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         source_idx, item_idx = self.combined_indices[idx]
+        f = self._get_file(source_idx)
 
-        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
-            items = f['items']
+        items = f['items']
 
-            romanized = items['romanized'][item_idx]
-            lang = items['lang'][item_idx]
+        romanized = items['romanized'][item_idx]
+        lang = items['lang'][item_idx]
 
-            feature_key = str(item_idx)
-            phonetic_features = f['features'][feature_key][:]
+        feature_key = str(item_idx)
+        phonetic_features = f['features'][feature_key][:]
 
         char_ids = self.char_vocab.encode(romanized)
         lang_id = self.lang_vocab.encode(lang)
@@ -263,6 +295,14 @@ class MultiSourcePhase2Dataset(Dataset):
             'phonetic_features': torch.tensor(phonetic_features, dtype=torch.float32),
         }
 
+    def __del__(self):
+        """Close any open file handles."""
+        for f in self._file_handles.values():
+            try:
+                f.close()
+            except:
+                pass
+
 
 class MultiSourcePhase3Dataset(Dataset):
     """
@@ -271,6 +311,8 @@ class MultiSourcePhase3Dataset(Dataset):
 
     Each source maintains its own cluster structure for negative sampling,
     ensuring negatives come from the same source as the anchor/positive.
+
+    File handles are cached per worker process for performance.
     """
 
     def __init__(
@@ -290,6 +332,9 @@ class MultiSourcePhase3Dataset(Dataset):
         self.lang_vocab = lang_vocab
         self.split = split
         self.negative_stage = negative_stage
+
+        # File handle cache (populated lazily per worker)
+        self._file_handles: Dict[int, h5py.File] = {}
 
         # Build combined index: list of (source_idx, pair_idx_in_source, is_phonetic)
         self.combined_indices = []
@@ -370,8 +415,16 @@ class MultiSourcePhase3Dataset(Dataset):
         for i, (path, count, factor) in enumerate(zip(hdf5_paths, self.source_pair_counts, oversample_factors)):
             effective = count * factor
             print(f"  Source {i}: {count:,} pairs × {factor}x = {effective:,} effective")
-        print(f"  Total: {len(self.combined_indices):,} samples per epoch")
-        print(f"  Negative stage: {negative_stage}")
+        print(f"  Total: {len(self.combined_indices):,} samples per epoch", flush=True)
+        print(f"  Negative stage: {negative_stage}", flush=True)
+
+    def _get_file(self, source_idx: int) -> h5py.File:
+        """Get cached file handle for source, opening if needed."""
+        if source_idx not in self._file_handles:
+            self._file_handles[source_idx] = h5py.File(
+                self.hdf5_paths[source_idx], 'r', swmr=True
+            )
+        return self._file_handles[source_idx]
 
     def __len__(self) -> int:
         return len(self.combined_indices)
@@ -399,11 +452,9 @@ class MultiSourcePhase3Dataset(Dataset):
             # Fallback: return any item (will have zero loss)
             return random.choice(all_items)
 
-    def _get_stage_a_negative(self, source_idx: int, f: h5py.File, anchor_idx: int) -> int:
+    def _get_stage_a_negative(self, source_idx: int, anchor_idx: int, anchor_cluster: int) -> int:
         """Stage A: Find orthographically close but phonetically distant negative."""
-        items = f['items']
         anchor_rom = self.source_item_romanized[source_idx].get(anchor_idx, '')
-        anchor_cluster = int(items['cluster_id'][anchor_idx])
         anchor_ipa = self.source_item_ipa[source_idx].get(anchor_idx, '')
 
         if not anchor_rom:
@@ -425,12 +476,18 @@ class MultiSourcePhase3Dataset(Dataset):
         best_neg_idx = None
         best_score = -float('inf')
 
+        # Use cached cluster info instead of reading from file
         cluster_map = self.source_cluster_maps[source_idx]
 
         for neg_idx in candidates[:50]:
-            neg_cluster = int(items['cluster_id'][neg_idx])
+            # Get cluster from cached data
+            neg_cluster = None
+            for cid, items in cluster_map.items():
+                if neg_idx in items:
+                    neg_cluster = cid
+                    break
 
-            if neg_cluster == anchor_cluster:
+            if neg_cluster is None or neg_cluster == anchor_cluster:
                 continue
 
             neg_rom = self.source_item_romanized[source_idx].get(neg_idx, '')
@@ -468,32 +525,32 @@ class MultiSourcePhase3Dataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         source_idx, pair_idx = self.combined_indices[idx]
         phon_count = self.source_phon_counts[source_idx]
+        f = self._get_file(source_idx)
 
-        with h5py.File(self.hdf5_paths[source_idx], 'r') as f:
-            items = f['items']
+        items = f['items']
 
-            if pair_idx < phon_count:
-                pairs = f['pairs_with_phonetic']
-                local_idx = pair_idx
-            else:
-                pairs = f['pairs_without_phonetic']
-                local_idx = pair_idx - phon_count
+        if pair_idx < phon_count:
+            pairs = f['pairs_with_phonetic']
+            local_idx = pair_idx
+        else:
+            pairs = f['pairs_without_phonetic']
+            local_idx = pair_idx - phon_count
 
-            anchor_idx = int(pairs['anchor_idx'][local_idx])
-            positive_idx = int(pairs['positive_idx'][local_idx])
-            anchor_cluster = int(items['cluster_id'][anchor_idx])
+        anchor_idx = int(pairs['anchor_idx'][local_idx])
+        positive_idx = int(pairs['positive_idx'][local_idx])
+        anchor_cluster = int(items['cluster_id'][anchor_idx])
 
-            if self.negative_stage == 'A':
-                negative_idx = self._get_stage_a_negative(source_idx, f, anchor_idx)
-            else:
-                negative_idx = self._random_negative(source_idx, anchor_cluster, {anchor_idx, positive_idx})
+        if self.negative_stage == 'A':
+            negative_idx = self._get_stage_a_negative(source_idx, anchor_idx, anchor_cluster)
+        else:
+            negative_idx = self._random_negative(source_idx, anchor_cluster, {anchor_idx, positive_idx})
 
-            anchor_rom = items['romanized'][anchor_idx]
-            anchor_lang = items['lang'][anchor_idx]
-            positive_rom = items['romanized'][positive_idx]
-            positive_lang = items['lang'][positive_idx]
-            negative_rom = items['romanized'][negative_idx]
-            negative_lang = items['lang'][negative_idx]
+        anchor_rom = items['romanized'][anchor_idx]
+        anchor_lang = items['lang'][anchor_idx]
+        positive_rom = items['romanized'][positive_idx]
+        positive_lang = items['lang'][positive_idx]
+        negative_rom = items['romanized'][negative_idx]
+        negative_lang = items['lang'][negative_idx]
 
         return {
             'anchor_char_ids': torch.tensor(self.char_vocab.encode(anchor_rom), dtype=torch.long),
@@ -503,3 +560,11 @@ class MultiSourcePhase3Dataset(Dataset):
             'negative_char_ids': torch.tensor(self.char_vocab.encode(negative_rom), dtype=torch.long),
             'negative_lang_id': torch.tensor(self.lang_vocab.encode(negative_lang), dtype=torch.long),
         }
+
+    def __del__(self):
+        """Close any open file handles."""
+        for f in self._file_handles.values():
+            try:
+                f.close()
+            except:
+                pass

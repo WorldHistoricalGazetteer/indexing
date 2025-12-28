@@ -280,7 +280,7 @@ def train_phase1(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -289,7 +289,7 @@ def train_phase1(
                 'epoch': epoch,
                 'val_loss': val_loss
             }, output_path)
-            print(f"  → Saved best model (val_loss: {val_loss:.4f})")
+            print(f"  → Saved best model (val_loss: {val_loss:.4f})", flush=True)
 
     print(f"\nPhase 1 complete. Best model saved to {output_path}")
     return model
@@ -440,7 +440,7 @@ def train_phase2(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -457,7 +457,7 @@ def train_phase2(
             char_vocab.save(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
             lang_vocab.save(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
-            print(f"  → Saved best model (val_loss: {val_loss:.4f})")
+            print(f"  → Saved best model (val_loss: {val_loss:.4f})", flush=True)
 
     print(f"\nPhase 2 complete. Best model saved to {output_path}")
     return phonetic_encoder, char_encoder, char_vocab, lang_vocab
@@ -648,7 +648,7 @@ def train_phase3(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}")
+        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -667,7 +667,7 @@ def train_phase3(
             char_vocab.save(os.path.join(final_vocab_dir, f'{final_base_name}_char_vocab.pkl'))
             lang_vocab.save(os.path.join(final_vocab_dir, f'{final_base_name}_lang_vocab.pkl'))
 
-            print(f"  → Saved best model (val_loss: {val_loss:.4f})")
+            print(f"  → Saved best model (val_loss: {val_loss:.4f})", flush=True)
 
     print(f"\nPhase 3 complete. Final model saved to {output_path}")
     return model
