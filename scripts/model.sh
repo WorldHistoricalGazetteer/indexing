@@ -550,15 +550,15 @@ do_train() {
 
     local DATA_FILE="${CUSTOM_DATA:-${DATA_DIR}/training_data.h5}"
 
-    if [ ! -f "${DATA_FILE}" ]; then
-        echo "ERROR: Training data not found at ${DATA_FILE}"
-        echo "Run extraction first: $0 -extract -n gn"
-        return 1
-    fi
-
-    echo "Training data: ${DATA_FILE}"
-    ls -lh "${DATA_FILE}"
-    echo
+#    if [ ! -f "${DATA_FILE}" ]; then
+#        echo "ERROR: Training data not found at ${DATA_FILE}"
+#        echo "Run extraction first: $0 -extract -n gn"
+#        return 1
+#    fi
+#
+#    echo "Training data: ${DATA_FILE}"
+#    ls -lh "${DATA_FILE}"
+#    echo
 
     if [ -n "$SINGLE_PHASE" ]; then
         echo "Training Phase ${SINGLE_PHASE} only..."
