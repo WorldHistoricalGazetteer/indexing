@@ -10,12 +10,13 @@
 
 \usepackage{fontspec}
 
-% Set Linux Libertine O as main font (available on arXiv/TeX Live)
-\setmainfont[
-    BoldFont = {Linux Libertine O Bold},
-    ItalicFont = {Linux Libertine O Italic},
-    BoldItalicFont = {Linux Libertine O Bold Italic}
-]{Linux Libertine O}
+% Set Linux Libertine as main font
+\setmainfont{LinLibertine_R.otf}[
+    Path = fonts/,
+    BoldFont = LinLibertine_RB.otf,
+    ItalicFont = LinLibertine_RI.otf,
+    BoldItalicFont = LinLibertine_RBI.otf
+]
 
 \usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
 
@@ -36,16 +37,18 @@
 \setmainlanguage{english}
 \setotherlanguage{arabic}
 
-\newfontfamily\arabicfont[
-  Script=Arabic,
-  Scale=MatchLowercase,
-  Renderer=HarfBuzz
-]{Amiri}
+\newfontfamily\arabicfont{Amiri-Regular.ttf}[
+    Path = fonts/,
+    Script = Arabic,
+    BoldFont = Amiri-Bold.ttf,
+    ItalicFont = Amiri-Slanted.ttf
+]
 
-\newfontfamily\ipafont[
-  Ligatures = TeX,
-  Renderer = HarfBuzz
-]{Charis SIL}
+\newfontfamily\ipafont{CharisSIL-Regular.ttf}[
+    Path = fonts/,
+    BoldFont = CharisSIL-Bold.ttf,
+    ItalicFont = CharisSIL-Italic.ttf
+]
 
 \newcommand{\textipa}[1]{{\ipafont #1}}
 
@@ -67,6 +70,21 @@ World Historical Gazetteer / University of Pittsburgh \\
 \begin{document}
 
 \maketitle
+
+\section*{ACM Computing Classification System (CCS)}
+
+\begin{itemize}
+  \item \textbf{Computing methodologies} $\rightarrow$ Natural language processing
+  \item \textbf{Computing methodologies} $\rightarrow$ Neural networks
+  \item \textbf{Applied computing} $\rightarrow$ Digital humanities
+  \item \textbf{Information systems} $\rightarrow$ Geographic information systems
+\end{itemize}
+
+\section*{Mathematics Subject Classification (MSC 2020)}
+
+\noindent
+Primary: 68T50 \\
+Secondary: 68T07, 68U35
 
 \begin{abstract}
 Historical toponym resolution---linking place name mentions in texts to canonical gazetteer entries---remains challenging in digital humanities when orthographic variation, script differences, and transliteration ambiguity obscure phonetic continuity across languages and time periods. This paper presents a phonetically grounded neural architecture for cross-lingual historical toponym matching that operates on articulatory features rather than surface characters. I introduce a Student--Teacher framework employing Bidirectional LSTMs with self-attention: the Teacher network learns from 24-dimensional articulatory feature vectors encoding the physical configuration of the vocal tract for each phoneme, while the Student network learns to approximate phonetic similarity from romanized character sequences alone, enabling efficient inference without runtime phonetic processing. I construct a multilingual training corpus from GeoNames, the historical Index Villaris (1680), and the Pleiades gazetteer, using stratified oversampling to balance contemporary and historical data. Curriculum-based hard negative mining further refines the learned similarity space. I evaluate the model on the MEHDIE benchmark for cross-lingual historical toponym matching and compare performance with standard string similarity and phonetic baselines. The trained model and training data will be released as open resources for the cultural heritage community.
@@ -574,6 +592,6 @@ This research was supported in part by the University of Pittsburgh Center for R
 %% ============================================================================
 %% BIBLIOGRAPHY
 %% ============================================================================
-\bibliography{references}
+\bibliography{phonetic-embeddings}
 
 \end{document}
