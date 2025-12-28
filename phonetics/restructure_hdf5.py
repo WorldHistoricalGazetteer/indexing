@@ -152,26 +152,17 @@ def restructure_hdf5(input_path: str, output_path: str, seed: int = 42):
         triplet_positives = np.array([old_to_new[i] for i in triplet_positives], dtype=np.int32)
         triplet_negatives = np.array([old_to_new[i] for i in triplet_negatives], dtype=np.int32)
 
-        # --- Pack features into contiguous array ---
-        print("Packing features into contiguous array...")
+        # --- Prepare lengths array (small, fits in memory) ---
         n_valid = len(valid_items)
         feat_dim = 24  # Articulatory features
 
-        # Allocate contiguous arrays
-        packed_features = np.zeros((n_valid, max_feature_len, feat_dim), dtype=np.float32)
         packed_lengths = np.zeros(n_valid, dtype=np.int16)
-
-        for new_idx, old_idx in enumerate(tqdm(valid_items, desc="Packing features")):
-            feature_key = str(old_idx)
-            feat = features_group[feature_key][:]
-            length = feat.shape[0]
-            packed_features[new_idx, :length, :] = feat
-            packed_lengths[new_idx] = length
+        for new_idx, old_idx in enumerate(valid_items):
+            packed_lengths[new_idx] = feature_lengths[old_idx]
 
         # --- Copy item metadata (remapped) ---
         print("Preparing item metadata...")
 
-        # We need to copy only the valid items' metadata
         romanized_data = []
         lang_data = []
         cluster_data = []
@@ -181,7 +172,7 @@ def restructure_hdf5(input_path: str, output_path: str, seed: int = 42):
             lang_data.append(items['lang'][old_idx])
             cluster_data.append(items['cluster_id'][old_idx])
 
-        # --- Write output file ---
+        # --- Write output file with chunked feature writing ---
         print(f"Writing {output_path}...")
 
         with h5py.File(output_path, 'w') as f_out:
@@ -199,17 +190,40 @@ def restructure_hdf5(input_path: str, output_path: str, seed: int = 42):
             triplets.create_dataset('positive_idx', data=triplet_positives, dtype=np.int32)
             triplets.create_dataset('negative_idx', data=triplet_negatives, dtype=np.int32)
 
-            # Features (contiguous)
+            # Features - create dataset first, then fill in chunks
             features = f_out.create_group('features')
-            features.create_dataset(
+
+            chunk_size = min(1000, n_valid)
+            feat_dataset = features.create_dataset(
                 'data',
-                data=packed_features,
+                shape=(n_valid, max_feature_len, feat_dim),
                 dtype=np.float32,
-                chunks=(min(1000, n_valid), max_feature_len, feat_dim),
+                chunks=(chunk_size, max_feature_len, feat_dim),
                 compression='gzip',
-                compression_opts=1  # Fast compression
+                compression_opts=1
             )
             features.create_dataset('lengths', data=packed_lengths, dtype=np.int16)
+
+            # Write features in chunks to avoid OOM
+            print("Packing features into contiguous array (chunked)...")
+            write_chunk_size = 10000  # Process 10k items at a time
+
+            for chunk_start in tqdm(range(0, n_valid, write_chunk_size), desc="Writing features"):
+                chunk_end = min(chunk_start + write_chunk_size, n_valid)
+                chunk_len = chunk_end - chunk_start
+
+                # Allocate chunk buffer
+                chunk_buffer = np.zeros((chunk_len, max_feature_len, feat_dim), dtype=np.float32)
+
+                for i, new_idx in enumerate(range(chunk_start, chunk_end)):
+                    old_idx = valid_items[new_idx]
+                    feature_key = str(old_idx)
+                    feat = features_group[feature_key][:]
+                    length = feat.shape[0]
+                    chunk_buffer[i, :length, :] = feat
+
+                # Write chunk to HDF5
+                feat_dataset[chunk_start:chunk_end] = chunk_buffer
 
             # Item metadata (remapped)
             items_out = f_out.create_group('items')
