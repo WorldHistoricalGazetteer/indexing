@@ -119,7 +119,7 @@ DATA_SOURCES_PHASE3_OPTIMIZED = [
 
 def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Tensor]]:
     """Collate function for Phase 1 (phonetic features only).
-
+    
     Uses torch.nn.utils.rnn.pad_sequence for efficient batched padding.
     """
     from torch.nn.utils.rnn import pad_sequence
@@ -135,11 +135,11 @@ def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Ten
                 t = f.float()
             tensors.append(t)
             lengths.append(len(t))
-
+        
         if not tensors or all(len(t) == 0 for t in tensors):
             # Edge case: empty features
             return torch.zeros(len(features_list), 1, 24), torch.zeros(len(features_list), dtype=torch.long)
-
+        
         # pad_sequence expects (L, D) tensors, pads to (max_L, D), returns (B, max_L, D) with batch_first=True
         padded = pad_sequence(tensors, batch_first=True, padding_value=0.0)
         return padded, torch.tensor(lengths, dtype=torch.long)
@@ -163,7 +163,11 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         max_len = max(lengths)
         padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
         for i, ids in enumerate(ids_list):
-            padded[i, :len(ids)] = ids
+            # Handle both numpy arrays and torch tensors
+            if isinstance(ids, np.ndarray):
+                padded[i, :len(ids)] = torch.from_numpy(ids)
+            else:
+                padded[i, :len(ids)] = ids
         return padded, lengths
 
     def pad_features(features_list):
@@ -172,7 +176,11 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         feat_dim = features_list[0].shape[1]
         padded = torch.zeros(len(features_list), max_len, feat_dim)
         for i, f in enumerate(features_list):
-            padded[i, :len(f)] = f
+            # Handle both numpy arrays and torch tensors
+            if isinstance(f, np.ndarray):
+                padded[i, :len(f)] = torch.from_numpy(f)
+            else:
+                padded[i, :len(f)] = f
         return padded, lengths
 
     char_ids, char_lengths = pad_ids([b['char_ids'] for b in batch])
@@ -196,7 +204,11 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
         max_len = max(lengths)
         padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
         for i, ids in enumerate(ids_list):
-            padded[i, :len(ids)] = ids
+            # Handle both numpy arrays and torch tensors
+            if isinstance(ids, np.ndarray):
+                padded[i, :len(ids)] = torch.from_numpy(ids)
+            else:
+                padded[i, :len(ids)] = ids
         return padded, lengths
 
     anchor_ids, anchor_lens = pad_ids([b['anchor_char_ids'] for b in batch])
@@ -230,10 +242,10 @@ def train_phase1(
 ) -> PhoneticEncoder:
     """
     Phase 1: Train phonetic encoder (Teacher).
-
+    
     Uses BiLSTM + Self-Attention + Attention-Aware Pooling architecture.
     Trained with triplet loss on phonetically similar/dissimilar pairs.
-
+    
     Args:
         sources: List of DataSource objects. Defaults to DATA_SOURCES.
         output_path: Where to save the trained model.
@@ -244,7 +256,7 @@ def train_phase1(
         use_optimized: Try to use optimized HDF5 files if available.
     """
     import os
-
+    
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized:
@@ -260,18 +272,18 @@ def train_phase1(
                 print("Using standard HDF5 files (optimized files not found)")
         else:
             sources = DATA_SOURCES
-
+    
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
-
+    
     # Check if these are optimized files
     is_optimized = all('_optimized.h5' in p for p in data_paths)
-
+    
     print("=" * 60)
     print("Phase 1: Training Phonetic Encoder (Teacher)")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
-
+    
     # Log data sources
     print("\nData sources:")
     for source in sources:
@@ -303,15 +315,15 @@ def train_phase1(
 
     # Use workers for optimized dataset (lazy file handles), single-threaded for original
     num_workers = 4 if is_optimized else 0
-
+    
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase1, num_workers=num_workers,
+        collate_fn=collate_phase1, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase1, num_workers=num_workers,
+        collate_fn=collate_phase1, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
@@ -328,7 +340,7 @@ def train_phase1(
 
     best_val_loss = float('inf')
     start_epoch = 0
-
+    
     # Check for existing checkpoint to resume from
     if output_path and os.path.exists(output_path):
         print(f"Found existing checkpoint: {output_path}")
@@ -343,7 +355,7 @@ def train_phase1(
         if 'val_loss' in checkpoint:
             best_val_loss = checkpoint['val_loss']
         print(f"  Resuming from epoch {start_epoch + 1}, best_val_loss: {best_val_loss:.4f}", flush=True)
-
+    
     for epoch in range(start_epoch, epochs):
         # Training
         model.train()
@@ -375,7 +387,7 @@ def train_phase1(
             optimizer.step()
             train_loss += loss.item()
             num_batches += 1
-
+            
             # Progress logging every 100 batches
             if (batch_idx + 1) % 100 == 0:
                 avg_loss = train_loss / num_batches
@@ -431,10 +443,10 @@ def train_phase2(
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """
     Phase 2: Alignment training (Student → Teacher).
-
+    
     Trains the character encoder (Student) to produce embeddings that
     match the phonetic encoder (Teacher) output.
-
+    
     Args:
         sources: List of DataSource objects. Defaults to DATA_SOURCES.
         phase1_path: Path to Phase 1 trained model.
@@ -445,7 +457,7 @@ def train_phase2(
         use_optimized: Try to use optimized HDF5 files if available.
     """
     import os
-
+    
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized:
@@ -460,18 +472,18 @@ def train_phase2(
                 print("Using standard HDF5 files (Phase 2 optimized files not found)")
         else:
             sources = DATA_SOURCES
-
+    
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
-
+    
     # Check if these are optimized files
     is_optimized = all('_phase2.h5' in p for p in data_paths)
-
+    
     print("=" * 60)
     print("Phase 2: Alignment Training (Student → Teacher)")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
-
+    
     # Log data sources
     print("\nData sources:")
     for source in sources:
@@ -482,22 +494,22 @@ def train_phase2(
         # Load vocab from optimized HDF5 (stored as separate key/value arrays)
         import h5py
         with h5py.File(data_paths[0], 'r') as f:
-            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
                         for k in f['vocab/char_vocab_keys'][:]]
             char_vals = f['vocab/char_vocab_vals'][:]
-            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
                         for k in f['vocab/lang_vocab_keys'][:]]
             lang_vals = f['vocab/lang_vocab_vals'][:]
-
+        
         # Reconstruct vocabs
         char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
         char_vocab.char_to_id = {k: int(v) for k, v in zip(char_keys, char_vals)}
         char_vocab.id_to_char = {v: k for k, v in char_vocab.char_to_id.items()}
-
+        
         lang_vocab = LangVocab()
         lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
         lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
-
+        
         train_dataset = OptimizedPhase2Dataset(
             data_paths, oversample_factors, split='train'
         )
@@ -526,15 +538,15 @@ def train_phase2(
 
     # Use workers for optimized dataset, single-threaded for original
     num_workers = 4 if is_optimized else 0
-
+    
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase2, num_workers=num_workers,
+        collate_fn=collate_phase2, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase2, num_workers=num_workers,
+        collate_fn=collate_phase2, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
@@ -567,7 +579,7 @@ def train_phase2(
 
     best_val_loss = float('inf')
     start_epoch = 0
-
+    
     # Check for existing checkpoint to resume from
     if output_path and os.path.exists(output_path):
         print(f"Found existing checkpoint: {output_path}")
@@ -670,19 +682,19 @@ def train_phase3(
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
-
+    
     CRITICAL: Each negative stage must REPLACE, not augment, the previous one.
     Do NOT mix negative types in the same training pass.
-
+    
     Stage A (Default): Orthographically close, phonetically distant
         - Targets false friends and spelling-driven false positives
         - Use this EXCLUSIVELY for early Phase 3 fine-tuning
-
+    
     Stage B (Optional): Model-mined false positives
         - Run AFTER initial Phase 3 pass
         - Uses model's own failure modes to sharpen decision boundary
         - Requires set_mined_negatives() on dataset
-
+    
     Args:
         sources: List of DataSource objects. Defaults to DATA_SOURCES.
         phase2_path: Path to Phase 2 trained model.
@@ -695,7 +707,7 @@ def train_phase3(
         use_optimized: Try to use optimized HDF5 files if available.
     """
     import os as os_module
-
+    
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized and negative_stage == 'A':
@@ -713,19 +725,19 @@ def train_phase3(
             sources = DATA_SOURCES
             if negative_stage == 'B':
                 print("Stage B requires runtime mining - using standard HDF5 files")
-
+    
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
-
+    
     # Check if these are optimized files
     is_optimized = all('_phase3.h5' in p for p in data_paths)
-
+    
     print("=" * 60)
     print("Phase 3: Generalization Training (Curriculum Hard Negatives)")
     print(f"  Negative Stage: {negative_stage}")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
-
+    
     # Log data sources
     print("\nData sources:")
     for source in sources:
@@ -735,26 +747,26 @@ def train_phase3(
     # Load vocabularies
     vocab_dir = os.path.dirname(phase2_path) or '.'
     base_name = os.path.splitext(os.path.basename(phase2_path))[0]
-
+    
     if is_optimized:
         # Load vocab from optimized HDF5 (stored as separate key/value arrays)
         import h5py
         with h5py.File(data_paths[0], 'r') as f:
-            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
                         for k in f['vocab/char_vocab_keys'][:]]
             char_vals = f['vocab/char_vocab_vals'][:]
-            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
                         for k in f['vocab/lang_vocab_keys'][:]]
             lang_vals = f['vocab/lang_vocab_vals'][:]
-
+        
         char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
         char_vocab.char_to_id = {k: int(v) for k, v in zip(char_keys, char_vals)}
         char_vocab.id_to_char = {v: k for k, v in char_vocab.char_to_id.items()}
-
+        
         lang_vocab = LangVocab()
         lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
         lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
-
+        
         train_dataset = OptimizedPhase3Dataset(
             data_paths, oversample_factors,
             split='train', subsample_triplets=subsample_pairs
@@ -785,15 +797,15 @@ def train_phase3(
 
     # Use workers for optimized dataset, single-threaded for original
     num_workers = 4 if is_optimized else 0
-
+    
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase3, num_workers=num_workers,
+        collate_fn=collate_phase3, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase3, num_workers=num_workers,
+        collate_fn=collate_phase3, num_workers=num_workers, 
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
@@ -838,7 +850,7 @@ def train_phase3(
 
     best_val_loss = float('inf')
     start_epoch = 0
-
+    
     # Check for existing checkpoint to resume from
     if output_path and os.path.exists(output_path):
         print(f"Found existing checkpoint: {output_path}")
@@ -952,91 +964,91 @@ def mine_hard_negatives(
 ) -> Dict[int, List[int]]:
     """
     Mine hard negatives from model's false positives for Stage B training.
-
+    
     Identifies pairs where:
     - Model similarity > threshold
     - Items are from different clusters (known non-identical)
-
+    
     CONSTRAINTS (as specified):
     - No human labeling
     - Only reuse existing dataset exclusions (cluster != cluster)
     - Conservative threshold (high similarity only)
-
+    
     Args:
         model: Trained model from Phase 3 Stage A
         data_path: HDF5 training data path
         similarity_threshold: Conservative threshold (default 0.85)
         max_negatives_per_anchor: Limit negatives per anchor
-
+    
     Returns:
         Dict mapping anchor_idx to list of hard negative indices
     """
     import h5py
     from collections import defaultdict
-
+    
     print("=" * 60)
     print("Mining Hard Negatives (Stage B)")
     print(f"  Similarity threshold: {similarity_threshold}")
     print("=" * 60)
-
+    
     model.eval()
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
     model.to(device)
-
+    
     mined_negatives = defaultdict(list)
-
+    
     with h5py.File(data_path, 'r') as f:
         items = f['items']
         total_items = f.attrs['total_items']
-
+        
         # Build cluster index
         cluster_to_items = defaultdict(list)
         item_clusters = {}
-
+        
         for idx in range(total_items):
             cluster_id = int(items['cluster_id'][idx])
             cluster_to_items[cluster_id].append(idx)
             item_clusters[idx] = cluster_id
-
+        
         # Sample items for efficiency
         sample_size = min(10000, total_items)
         sampled_indices = list(range(total_items))
         import random
         random.shuffle(sampled_indices)
         sampled_indices = sampled_indices[:sample_size]
-
+        
         print(f"Computing embeddings for {sample_size} items...")
-
+        
         # Compute embeddings in batches
         embeddings = {}
         batch_size = 256
-
+        
         for batch_start in range(0, len(sampled_indices), batch_size):
             batch_indices = sampled_indices[batch_start:batch_start + batch_size]
-
+            
             char_ids_list = []
             lang_ids_list = []
-
+            
             for idx in batch_indices:
                 romanized = items['romanized'][idx]
                 lang = items['lang'][idx]
-
+                
                 char_ids = char_vocab.encode(romanized)
                 lang_id = lang_vocab.encode(lang)
-
+                
                 char_ids_list.append(torch.tensor(char_ids, dtype=torch.long))
                 lang_ids_list.append(lang_id)
-
+            
             # Pad and batch
             max_len = max(len(ids) for ids in char_ids_list)
             char_ids_padded = torch.zeros(len(batch_indices), max_len, dtype=torch.long)
             char_lengths = torch.tensor([len(ids) for ids in char_ids_list])
-
+            
             for i, ids in enumerate(char_ids_list):
                 char_ids_padded[i, :len(ids)] = ids
-
+            
             lang_ids_tensor = torch.tensor(lang_ids_list, dtype=torch.long)
-
+            
             with torch.no_grad():
                 embs = model.encode_char_only(
                     char_ids_padded.to(device),
@@ -1044,35 +1056,35 @@ def mine_hard_negatives(
                     char_lengths
                 )
                 embs = embs.cpu().numpy()
-
+            
             for i, idx in enumerate(batch_indices):
                 embeddings[idx] = embs[i]
-
+        
         print(f"Finding false positives (sim > {similarity_threshold})...")
-
+        
         # Find false positives
         import numpy as np
-
+        
         fp_count = 0
         for i, idx_a in enumerate(sampled_indices):
             if i % 1000 == 0:
                 print(f"  Processed {i}/{len(sampled_indices)}", end='\r')
-
+            
             emb_a = embeddings[idx_a]
             cluster_a = item_clusters[idx_a]
-
+            
             for idx_b in sampled_indices[i+1:]:
                 cluster_b = item_clusters[idx_b]
-
+                
                 # Only consider cross-cluster pairs (known non-identical)
                 if cluster_a == cluster_b:
                     continue
-
+                
                 emb_b = embeddings[idx_b]
-
+                
                 # Compute cosine similarity
                 sim = float(np.dot(emb_a, emb_b))
-
+                
                 if sim > similarity_threshold:
                     # This is a false positive - model thinks they're similar but they're not
                     if len(mined_negatives[idx_a]) < max_negatives_per_anchor:
@@ -1081,8 +1093,8 @@ def mine_hard_negatives(
                     if len(mined_negatives[idx_b]) < max_negatives_per_anchor:
                         mined_negatives[idx_b].append(idx_a)
                         fp_count += 1
-
+        
         print(f"\nMined {fp_count} hard negative pairs")
         print(f"Anchors with negatives: {len(mined_negatives)}")
-
+    
     return dict(mined_negatives)
