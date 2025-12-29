@@ -158,16 +158,21 @@ def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Ten
 def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
     """Collate function for Phase 2 (alignment training)."""
 
+    def to_tensor(x):
+        """Convert numpy array or scalar to tensor."""
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x)
+        elif isinstance(x, (np.integer, np.floating)):
+            return torch.tensor(x)
+        return x
+
     def pad_ids(ids_list):
         lengths = torch.tensor([len(ids) for ids in ids_list])
         max_len = max(lengths)
         padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
         for i, ids in enumerate(ids_list):
-            # Handle both numpy arrays and torch tensors
-            if isinstance(ids, np.ndarray):
-                padded[i, :len(ids)] = torch.from_numpy(ids)
-            else:
-                padded[i, :len(ids)] = ids
+            ids_t = to_tensor(ids)
+            padded[i, :len(ids_t)] = ids_t
         return padded, lengths
 
     def pad_features(features_list):
@@ -176,15 +181,12 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         feat_dim = features_list[0].shape[1]
         padded = torch.zeros(len(features_list), max_len, feat_dim)
         for i, f in enumerate(features_list):
-            # Handle both numpy arrays and torch tensors
-            if isinstance(f, np.ndarray):
-                padded[i, :len(f)] = torch.from_numpy(f)
-            else:
-                padded[i, :len(f)] = f
+            f_t = to_tensor(f)
+            padded[i, :len(f_t)] = f_t
         return padded, lengths
 
     char_ids, char_lengths = pad_ids([b['char_ids'] for b in batch])
-    lang_ids = torch.stack([b['lang_id'] for b in batch])
+    lang_ids = torch.tensor([int(b['lang_id']) for b in batch], dtype=torch.long)
     phone_feats, phone_lengths = pad_features([b['phonetic_features'] for b in batch])
 
     return {
@@ -199,26 +201,31 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
 def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
     """Collate function for Phase 3 (character triplets)."""
 
+    def to_tensor(x):
+        """Convert numpy array or scalar to tensor."""
+        if isinstance(x, np.ndarray):
+            return torch.from_numpy(x)
+        elif isinstance(x, (np.integer, np.floating)):
+            return torch.tensor(x)
+        return x
+
     def pad_ids(ids_list):
         lengths = torch.tensor([len(ids) for ids in ids_list])
         max_len = max(lengths)
         padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
         for i, ids in enumerate(ids_list):
-            # Handle both numpy arrays and torch tensors
-            if isinstance(ids, np.ndarray):
-                padded[i, :len(ids)] = torch.from_numpy(ids)
-            else:
-                padded[i, :len(ids)] = ids
+            ids_t = to_tensor(ids)
+            padded[i, :len(ids_t)] = ids_t
         return padded, lengths
 
     anchor_ids, anchor_lens = pad_ids([b['anchor_char_ids'] for b in batch])
-    anchor_langs = torch.stack([b['anchor_lang_id'] for b in batch])
+    anchor_langs = torch.tensor([int(b['anchor_lang_id']) for b in batch], dtype=torch.long)
 
     pos_ids, pos_lens = pad_ids([b['positive_char_ids'] for b in batch])
-    pos_langs = torch.stack([b['positive_lang_id'] for b in batch])
+    pos_langs = torch.tensor([int(b['positive_lang_id']) for b in batch], dtype=torch.long)
 
     neg_ids, neg_lens = pad_ids([b['negative_char_ids'] for b in batch])
-    neg_langs = torch.stack([b['negative_lang_id'] for b in batch])
+    neg_langs = torch.tensor([int(b['negative_lang_id']) for b in batch], dtype=torch.long)
 
     return {
         'anchor': (anchor_ids, anchor_langs, anchor_lens),
