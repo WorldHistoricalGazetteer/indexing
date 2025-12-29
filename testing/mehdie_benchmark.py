@@ -5,26 +5,30 @@ Evaluates phonetic similarity models against the MEHDIE benchmark testsets
 for cross-lingual historical toponym matching.
 
 Reference:
-    "Utilizing phonetic similarity for cross-source and cross-language
-    toponym matching: a benchmark and prototype"
-    Language Resources and Evaluation, 2025
+    Sagi et al. (2025) "Utilizing phonetic similarity for cross-source and
+    cross-language toponym matching: a benchmark and prototype"
+    Language Resources and Evaluation, 59:2427-2451
+    https://doi.org/10.1007/s10579-025-09812-9
 
-Testsets:
-    - testset7: YaqutSham ↔ KimaSham
-    - testset8: KimaSham ↔ ThurayyaSham
-    - testset9: Tudela ↔ Thurayya
-    - testset10: YaqutAndalusMagreb ↔ KimaMagrebAndalus
-    - testset11: Damast ↔ Tudela
+Testsets (from paper Table 2):
+    - testset7:  YaqutSham ↔ KimaSham (30 matches)
+    - testset8:  KimaSham ↔ ThurayyaSham (21 matches)
+    - testset9:  Tudela ↔ Thurayya (18 matches)
+    - testset10: YaqutAndalusMagreb ↔ KimaMagrebAndalus (28 matches)
+    - testset11: Damast ↔ Tudela (32 matches)
+
+Primary Metric: F-5 (recall weighted 5x over precision)
+    The paper notes users prefer high recall and tolerate low precision,
+    as they want to find all potential matches for manual review.
 
 Usage:
     from testing.mehdie_benchmark import MEHDIEBenchmark
 
     benchmark = MEHDIEBenchmark('/path/to/mehdie-testsets')
-    results = benchmark.evaluate_model(model, thresholds=[0.5, 0.6, 0.7, 0.8])
+    results = benchmark.evaluate_model(model, thresholds=[0.7, 0.8, 0.9])
     benchmark.print_results(results)
 """
 
-import os
 import csv
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Callable
@@ -78,7 +82,7 @@ class MEHDIEBenchmark:
     across different scripts (Hebrew, Arabic) and sources.
     """
 
-    # Testset configurations
+    # Testset configurations matching the paper
     TESTSET_CONFIGS = {
         'testset7-YaqutSham_KimaSham': {
             'dataset1': 'YaqutSham.tsv',
@@ -224,7 +228,7 @@ class MEHDIEBenchmark:
     def evaluate_model(
             self,
             similarity_fn: Callable[[str, str], float],
-            thresholds: List[float] = [0.5, 0.6, 0.7, 0.8, 0.9],
+            thresholds: List[float] = None,
             testset_names: Optional[List[str]] = None,
             verbose: bool = True
     ) -> Dict[str, List[EvaluationResult]]:
@@ -240,6 +244,10 @@ class MEHDIEBenchmark:
         Returns:
             Dict mapping testset name to list of EvaluationResults per threshold
         """
+        if thresholds is None:
+            # Default thresholds matching paper range
+            thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
+
         results = {}
 
         testsets_to_eval = testset_names or list(self.testsets.keys())
@@ -294,7 +302,7 @@ class MEHDIEBenchmark:
 
                 f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
 
-                # F5 emphasizes recall 5x more than precision
+                # F-5 emphasizes recall 5x more than precision (paper's primary metric)
                 beta = 5
                 f5 = (1 + beta ** 2) * precision * recall / (beta ** 2 * precision + recall) \
                     if (beta ** 2 * precision + recall) > 0 else 0.0
@@ -338,55 +346,55 @@ class MEHDIEBenchmark:
 
         for testset_name, testset_results in results.items():
             print(f"\n{testset_name}")
-            print("-" * 80)
+            print("-" * 90)
             print(f"{'Threshold':>10} {'Precision':>10} {'Recall':>10} {'F1':>10} "
                   f"{'F5':>10} {'TP':>6} {'FP':>6} {'FN':>6}")
-            print("-" * 80)
+            print("-" * 90)
 
             for r in testset_results:
                 print(f"{r.threshold:>10.2f} {r.precision:>10.3f} {r.recall:>10.3f} "
                       f"{r.f1:>10.3f} {r.f5:>10.3f} {r.true_positives:>6} "
                       f"{r.false_positives:>6} {r.false_negatives:>6}")
 
-        # Summary: best F1 per testset
+        # Summary: best F-5 per testset (matching paper's primary metric)
         print("\n" + "=" * 100)
-        print("SUMMARY (Best F1 per testset)")
+        print("SUMMARY (Best F-5 per testset)")
         print("=" * 100)
-        print(f"{'Testset':<50} {'θ':>6} {'P':>8} {'R':>8} {'F1':>8}")
+        print(f"{'Testset':<50} {'θ':>6} {'P':>8} {'R':>8} {'F5':>8}")
         print("-" * 100)
 
         for testset_name, testset_results in results.items():
-            best = max(testset_results, key=lambda r: r.f1)
+            best = max(testset_results, key=lambda r: r.f5)
             short_name = testset_name.replace('testset', 'TS')
             print(f"{short_name:<50} {best.threshold:>6.2f} {best.precision:>8.3f} "
-                  f"{best.recall:>8.3f} {best.f1:>8.3f}")
+                  f"{best.recall:>8.3f} {best.f5:>8.3f}")
 
     def _print_latex_table(self, results: Dict[str, List[EvaluationResult]]):
         """Print LaTeX formatted results table."""
         print("\n% LaTeX table")
         print("\\begin{table}[h]")
         print("\\centering")
-        print("\\begin{tabular}{lcccccc}")
+        print("\\begin{tabular}{lccccc}")
         print("\\toprule")
-        print("Testset & $\\theta$ & Precision & Recall & F1 & F5 \\\\")
+        print("Testset & $\\theta$ & Precision & Recall & F-1 & F-5 \\\\")
         print("\\midrule")
 
         for testset_name, testset_results in results.items():
-            best = max(testset_results, key=lambda r: r.f1)
+            best = max(testset_results, key=lambda r: r.f5)
             short_name = testset_name.split('-')[0].replace('testset', 'TS')
             print(f"{short_name} & {best.threshold:.2f} & {best.precision:.3f} & "
                   f"{best.recall:.3f} & {best.f1:.3f} & {best.f5:.3f} \\\\")
 
         print("\\bottomrule")
         print("\\end{tabular}")
-        print("\\caption{MEHDIE benchmark results}")
+        print("\\caption{MEHDIE benchmark results (F-5 is primary metric)}")
         print("\\label{tab:mehdie-results}")
         print("\\end{table}")
 
     def compare_methods(
             self,
             methods: Dict[str, Callable[[str, str], float]],
-            thresholds: List[float] = [0.5, 0.6, 0.7, 0.8, 0.9],
+            thresholds: List[float] = None,
             verbose: bool = True
     ) -> Dict[str, Dict[str, List[EvaluationResult]]]:
         """
@@ -400,6 +408,9 @@ class MEHDIEBenchmark:
         Returns:
             Dict mapping method name to results dict
         """
+        if thresholds is None:
+            thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
+
         all_results = {}
 
         for method_name, similarity_fn in methods.items():
@@ -415,9 +426,9 @@ class MEHDIEBenchmark:
         return all_results
 
     def print_comparison(self, all_results: Dict[str, Dict[str, List[EvaluationResult]]]):
-        """Print comparison table across methods."""
+        """Print comparison table across methods (using F-5 as primary metric)."""
         print("\n" + "=" * 120)
-        print("METHOD COMPARISON (Best F1 per testset)")
+        print("METHOD COMPARISON (Best F-5 per testset)")
         print("=" * 120)
 
         methods = list(all_results.keys())
@@ -434,19 +445,19 @@ class MEHDIEBenchmark:
         for testset in testsets:
             row = f"{testset:<40}"
             for method in methods:
-                best = max(all_results[method][testset], key=lambda r: r.f1)
-                row += f" {best.f1:>15.3f}"
+                best = max(all_results[method][testset], key=lambda r: r.f5)
+                row += f" {best.f5:>15.3f}"
             print(row)
 
         # Average
         print("-" * 120)
         row = f"{'AVERAGE':<40}"
         for method in methods:
-            avg_f1 = np.mean([
-                max(all_results[method][ts], key=lambda r: r.f1).f1
+            avg_f5 = np.mean([
+                max(all_results[method][ts], key=lambda r: r.f5).f5
                 for ts in testsets
             ])
-            row += f" {avg_f1:>15.3f}"
+            row += f" {avg_f5:>15.3f}"
         print(row)
 
 
@@ -463,7 +474,6 @@ def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
     Returns:
         Function (name1, name2) -> similarity score [0, 1]
     """
-    import torch
     import torch.nn.functional as F
 
     model = model.to(device)
@@ -538,7 +548,10 @@ def detect_language(text: str) -> str:
     return 'unknown'
 
 
+# =============================================================================
 # Baseline similarity functions for comparison
+# =============================================================================
+
 def levenshtein_similarity(s1: str, s2: str) -> float:
     """Normalized Levenshtein similarity."""
     if not s1 or not s2:
@@ -633,7 +646,7 @@ if __name__ == '__main__':
     parser.add_argument('--baselines', action='store_true',
                         help='Run baseline methods (Levenshtein, Jaro-Winkler)')
     parser.add_argument('--thresholds', type=float, nargs='+',
-                        default=[0.5, 0.6, 0.7, 0.8, 0.9],
+                        default=[0.7, 0.8, 0.85, 0.9, 0.95],
                         help='Similarity thresholds to evaluate')
     parser.add_argument('--latex', action='store_true',
                         help='Output results in LaTeX format')
