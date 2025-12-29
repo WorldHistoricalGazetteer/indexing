@@ -19,6 +19,7 @@ v3 Changes:
 """
 
 import os
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
@@ -111,6 +112,44 @@ DATA_SOURCES_PHASE3_OPTIMIZED = [
         oversample=24,
     ),
 ]
+
+
+def copy_data_to_local(sources: List[DataSource], phase: str = '') -> List[DataSource]:
+    """
+    Copy HDF5 data files to local scratch for faster I/O.
+    
+    Uses SLURM_TMPDIR if available (node-local SSD), otherwise /tmp.
+    Returns new DataSource list with local paths.
+    """
+    import shutil
+    
+    local_dir = os.environ.get('SLURM_TMPDIR', '/tmp')
+    local_sources = []
+    
+    print(f"\nCopying data to local scratch: {local_dir}")
+    
+    for source in sources:
+        filename = os.path.basename(source.path)
+        local_path = os.path.join(local_dir, filename)
+        
+        if not os.path.exists(local_path):
+            print(f"  Copying {source.name}: {source.path} -> {local_path}")
+            start_time = time.time()
+            shutil.copy2(source.path, local_path)
+            elapsed = time.time() - start_time
+            size_mb = os.path.getsize(local_path) / (1024 * 1024)
+            print(f"    Done: {size_mb:.1f} MB in {elapsed:.1f}s ({size_mb/elapsed:.1f} MB/s)")
+        else:
+            print(f"  {source.name}: Already exists at {local_path}")
+        
+        local_sources.append(DataSource(
+            name=source.name,
+            path=local_path,
+            oversample=source.oversample
+        ))
+    
+    print()
+    return local_sources
 
 
 # =============================================================================
@@ -446,7 +485,8 @@ def train_phase2(
     epochs: int = Config.PHASE2_EPOCHS,
     batch_size: int = Config.BATCH_SIZE,
     lr: float = Config.LEARNING_RATE,
-    use_optimized: bool = True
+    use_optimized: bool = True,
+    use_local_scratch: bool = True
 ) -> Tuple[PhoneticEncoder, CharEncoder, CharVocab, LangVocab]:
     """
     Phase 2: Alignment training (Student → Teacher).
@@ -462,8 +502,8 @@ def train_phase2(
         batch_size: Training batch size.
         lr: Learning rate.
         use_optimized: Try to use optimized HDF5 files if available.
+        use_local_scratch: Copy data to local scratch for faster I/O.
     """
-    import os
     
     # Handle defaults - try optimized sources first
     if sources is None:
@@ -479,6 +519,12 @@ def train_phase2(
                 print("Using standard HDF5 files (Phase 2 optimized files not found)")
         else:
             sources = DATA_SOURCES
+    
+    # Copy data to local scratch if requested
+    if use_local_scratch and os.environ.get('SLURM_TMPDIR'):
+        sources = copy_data_to_local(sources, phase='phase2')
+    elif use_local_scratch:
+        print("Note: SLURM_TMPDIR not set, using network storage")
     
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
@@ -685,7 +731,8 @@ def train_phase3(
     batch_size: int = Config.BATCH_SIZE,
     lr: float = 5e-4,
     negative_stage: str = 'A',
-    use_optimized: bool = True
+    use_optimized: bool = True,
+    use_local_scratch: bool = True
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
@@ -712,15 +759,15 @@ def train_phase3(
         lr: Learning rate.
         negative_stage: 'A' for ortho-phonetic negatives, 'B' for model-mined
         use_optimized: Try to use optimized HDF5 files if available.
+        use_local_scratch: Copy data to local scratch for faster I/O.
     """
-    import os as os_module
     
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized and negative_stage == 'A':
             # Optimized files have pre-mined Stage A negatives
             all_optimized_exist = all(
-                os_module.path.exists(s.path) for s in DATA_SOURCES_PHASE3_OPTIMIZED
+                os.path.exists(s.path) for s in DATA_SOURCES_PHASE3_OPTIMIZED
             )
             if all_optimized_exist:
                 sources = DATA_SOURCES_PHASE3_OPTIMIZED
@@ -732,6 +779,12 @@ def train_phase3(
             sources = DATA_SOURCES
             if negative_stage == 'B':
                 print("Stage B requires runtime mining - using standard HDF5 files")
+    
+    # Copy data to local scratch if requested
+    if use_local_scratch and os.environ.get('SLURM_TMPDIR'):
+        sources = copy_data_to_local(sources, phase='phase3')
+    elif use_local_scratch:
+        print("Note: SLURM_TMPDIR not set, using network storage")
     
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
