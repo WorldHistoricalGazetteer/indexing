@@ -552,10 +552,10 @@ def train_phase2(
             sources = DATA_SOURCES
     
     # Copy data to local scratch if requested
-    if use_local_scratch and os.environ.get('SLURM_TMPDIR'):
+    if use_local_scratch and (os.environ.get('SLURM_TMPDIR') or os.environ.get('TMPDIR')):
         sources = copy_data_to_local(sources, phase='phase2')
     elif use_local_scratch:
-        print("Note: SLURM_TMPDIR not set, using network storage")
+        print("Note: No local scratch available (SLURM_TMPDIR/TMPDIR not set), using network storage")
     
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
@@ -812,10 +812,10 @@ def train_phase3(
                 print("Stage B requires runtime mining - using standard HDF5 files")
     
     # Copy data to local scratch if requested
-    if use_local_scratch and os.environ.get('SLURM_TMPDIR'):
+    if use_local_scratch and (os.environ.get('SLURM_TMPDIR') or os.environ.get('TMPDIR')):
         sources = copy_data_to_local(sources, phase='phase3')
     elif use_local_scratch:
-        print("Note: SLURM_TMPDIR not set, using network storage")
+        print("Note: No local scratch available (SLURM_TMPDIR/TMPDIR not set), using network storage")
     
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
