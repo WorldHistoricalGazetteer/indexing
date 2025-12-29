@@ -226,7 +226,12 @@ def collate_phase1(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, torch.Ten
 
 
 def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
-    """Collate function for Phase 2 (alignment training)."""
+    """Collate function for Phase 2 (alignment training).
+    
+    Optimized: Uses pad_sequence (C++ backend) instead of manual Python loops.
+    Lengths stay on CPU to avoid GPU sync in pack_padded_sequence.
+    """
+    from torch.nn.utils.rnn import pad_sequence
 
     def to_tensor(x):
         """Convert numpy array or scalar to tensor."""
@@ -237,22 +242,15 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
         return x
 
     def pad_ids(ids_list):
-        lengths = torch.tensor([len(ids) for ids in ids_list])
-        max_len = max(lengths)
-        padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
-        for i, ids in enumerate(ids_list):
-            ids_t = to_tensor(ids)
-            padded[i, :len(ids_t)] = ids_t
+        tensors = [to_tensor(ids).long() for ids in ids_list]
+        padded = pad_sequence(tensors, batch_first=True, padding_value=0)
+        lengths = torch.tensor([len(t) for t in tensors], dtype=torch.long)
         return padded, lengths
 
     def pad_features(features_list):
-        lengths = torch.tensor([len(f) for f in features_list])
-        max_len = max(lengths)
-        feat_dim = features_list[0].shape[1]
-        padded = torch.zeros(len(features_list), max_len, feat_dim)
-        for i, f in enumerate(features_list):
-            f_t = to_tensor(f)
-            padded[i, :len(f_t)] = f_t
+        tensors = [to_tensor(f).float() for f in features_list]
+        padded = pad_sequence(tensors, batch_first=True, padding_value=0.0)
+        lengths = torch.tensor([len(t) for t in tensors], dtype=torch.long)
         return padded, lengths
 
     char_ids, char_lengths = pad_ids([b['char_ids'] for b in batch])
@@ -261,15 +259,20 @@ def collate_phase2(batch: List[Dict]) -> Dict[str, torch.Tensor]:
 
     return {
         'char_ids': char_ids,
-        'char_lengths': char_lengths,
+        'char_lengths': char_lengths,  # Stays on CPU
         'lang_ids': lang_ids,
         'phonetic_features': phone_feats,
-        'phonetic_lengths': phone_lengths
+        'phonetic_lengths': phone_lengths  # Stays on CPU
     }
 
 
 def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
-    """Collate function for Phase 3 (character triplets)."""
+    """Collate function for Phase 3 (character triplets).
+    
+    Optimized: Uses pad_sequence (C++ backend) instead of manual Python loops.
+    Lengths stay on CPU to avoid GPU sync in pack_padded_sequence.
+    """
+    from torch.nn.utils.rnn import pad_sequence
 
     def to_tensor(x):
         """Convert numpy array or scalar to tensor."""
@@ -280,12 +283,9 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
         return x
 
     def pad_ids(ids_list):
-        lengths = torch.tensor([len(ids) for ids in ids_list])
-        max_len = max(lengths)
-        padded = torch.zeros(len(ids_list), max_len, dtype=torch.long)
-        for i, ids in enumerate(ids_list):
-            ids_t = to_tensor(ids)
-            padded[i, :len(ids_t)] = ids_t
+        tensors = [to_tensor(ids).long() for ids in ids_list]
+        padded = pad_sequence(tensors, batch_first=True, padding_value=0)
+        lengths = torch.tensor([len(t) for t in tensors], dtype=torch.long)
         return padded, lengths
 
     anchor_ids, anchor_lens = pad_ids([b['anchor_char_ids'] for b in batch])
@@ -298,7 +298,7 @@ def collate_phase3(batch: List[Dict]) -> Dict[str, Tuple[torch.Tensor, ...]]:
     neg_langs = torch.tensor([int(b['negative_lang_id']) for b in batch], dtype=torch.long)
 
     return {
-        'anchor': (anchor_ids, anchor_langs, anchor_lens),
+        'anchor': (anchor_ids, anchor_langs, anchor_lens),  # lengths on CPU
         'positive': (pos_ids, pos_langs, pos_lens),
         'negative': (neg_ids, neg_langs, neg_lens)
     }
@@ -445,11 +445,11 @@ def train_phase1(
             neg_seq, neg_len = batch['negative']
 
             anchor_seq = anchor_seq.to(device)
-            anchor_len = anchor_len.to(device)
+            # anchor_len stays on CPU - avoids GPU sync
             pos_seq = pos_seq.to(device)
-            pos_len = pos_len.to(device)
+            # pos_len stays on CPU
             neg_seq = neg_seq.to(device)
-            neg_len = neg_len.to(device)
+            # neg_len stays on CPU
 
             optimizer.zero_grad()
 
@@ -480,9 +480,9 @@ def train_phase1(
                 pos_seq, pos_len = batch['positive']
                 neg_seq, neg_len = batch['negative']
 
-                anchor_emb = model(anchor_seq.to(device), anchor_len.to(device))
-                pos_emb = model(pos_seq.to(device), pos_len.to(device))
-                neg_emb = model(neg_seq.to(device), neg_len.to(device))
+                anchor_emb = model(anchor_seq.to(device), anchor_len)  # lengths stay on CPU
+                pos_emb = model(pos_seq.to(device), pos_len)
+                neg_emb = model(neg_seq.to(device), neg_len)
 
                 loss = criterion(anchor_emb, pos_emb, neg_emb)
                 val_loss += loss.item()
@@ -686,10 +686,10 @@ def train_phase2(
 
         for batch in train_loader:
             char_ids = batch['char_ids'].to(device)
-            char_lengths = batch['char_lengths'].to(device)
+            char_lengths = batch['char_lengths']  # Keep on CPU - avoids GPU sync
             lang_ids = batch['lang_ids'].to(device)
             phone_feats = batch['phonetic_features'].to(device)
-            phone_lengths = batch['phonetic_lengths'].to(device)
+            phone_lengths = batch['phonetic_lengths']  # Keep on CPU - avoids GPU sync
 
             optimizer.zero_grad()
 
@@ -713,10 +713,10 @@ def train_phase2(
         with torch.no_grad():
             for batch in val_loader:
                 char_ids = batch['char_ids'].to(device)
-                char_lengths = batch['char_lengths'].to(device)
+                char_lengths = batch['char_lengths']  # Keep on CPU
                 lang_ids = batch['lang_ids'].to(device)
                 phone_feats = batch['phonetic_features'].to(device)
-                phone_lengths = batch['phonetic_lengths'].to(device)
+                phone_lengths = batch['phonetic_lengths']  # Keep on CPU
 
                 target_emb = phonetic_encoder(phone_feats, phone_lengths)
                 char_emb = char_encoder(char_ids, lang_ids, char_lengths)
@@ -969,13 +969,13 @@ def train_phase3(
 
             anchor_ids = anchor_ids.to(device)
             anchor_langs = anchor_langs.to(device)
-            anchor_lens = anchor_lens.to(device)
+            # anchor_lens stays on CPU
             pos_ids = pos_ids.to(device)
             pos_langs = pos_langs.to(device)
-            pos_lens = pos_lens.to(device)
+            # pos_lens stays on CPU
             neg_ids = neg_ids.to(device)
             neg_langs = neg_langs.to(device)
-            neg_lens = neg_lens.to(device)
+            # neg_lens stays on CPU
 
             optimizer.zero_grad()
 
@@ -1001,13 +1001,13 @@ def train_phase3(
                 neg_ids, neg_langs, neg_lens = batch['negative']
 
                 anchor_emb = model.encode_char_only(
-                    anchor_ids.to(device), anchor_langs.to(device), anchor_lens.to(device)
+                    anchor_ids.to(device), anchor_langs.to(device), anchor_lens  # lengths on CPU
                 )
                 pos_emb = model.encode_char_only(
-                    pos_ids.to(device), pos_langs.to(device), pos_lens.to(device)
+                    pos_ids.to(device), pos_langs.to(device), pos_lens
                 )
                 neg_emb = model.encode_char_only(
-                    neg_ids.to(device), neg_langs.to(device), neg_lens.to(device)
+                    neg_ids.to(device), neg_langs.to(device), neg_lens
                 )
 
                 loss = criterion(anchor_emb, pos_emb, neg_emb)

@@ -243,49 +243,49 @@ class PhoneticEncoder(nn.Module):
         Encode phonetic sequences to embeddings.
         
         Args:
-            phonetic_seq: (batch, max_seq_len, phonetic_feat_dim)
-            seq_lengths: (batch,)
-        
+            phonetic_seq: (batch, max_seq_len, phonetic_feat_dim) [GPU]
+            seq_lengths: (batch,) [CPU - keeps on CPU for pack_padded_sequence]
+
         Returns:
             (batch, embed_dim) normalized embeddings
         """
         batch_size = phonetic_seq.size(0)
         max_len = phonetic_seq.size(1)
         device = phonetic_seq.device
-        
-        # Create mask for valid positions
-        mask = torch.arange(max_len, device=device).unsqueeze(0) < seq_lengths.unsqueeze(1)
-        
-        # Pack and process through BiLSTM
+
+        # Create mask - move lengths to GPU only for this (async copy)
+        mask = torch.arange(max_len, device=device).unsqueeze(0) < seq_lengths.to(device).unsqueeze(1)
+
+        # Pack with CPU lengths (no sync needed)
         packed = nn.utils.rnn.pack_padded_sequence(
-            phonetic_seq, seq_lengths.cpu(),
+            phonetic_seq, seq_lengths,
             batch_first=True, enforce_sorted=False
         )
         lstm_out, _ = self.bilstm(packed)
         lstm_out, _ = nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True, total_length=max_len)
-        
+
         # Self-Attention over timesteps
         attended, _ = self.self_attention(lstm_out, mask)
-        
+
         # Residual connection
         attended = attended + lstm_out
-        
+
         # Attention-Aware Pooling
         pooled, _ = self.pooling(attended, mask)
-        
+
         # Project to embedding space
         embedding = self.projection(pooled)
-        
+
         return F.normalize(embedding, p=2, dim=-1)
 
 
 class CharEncoder(nn.Module):
     """
     Student Model: Language-Conditioned Character Encoder.
-    
+
     Architecture (v2):
         Char Embed + Lang Embed → BiLSTM → Self-Attention → Attention Pooling → Projection
-    
+
     Learns to approximate phonetic space from (Romanized Text + Language ID).
     The language embedding is concatenated at every timestep to condition
     the LSTM on the source language.
@@ -304,13 +304,13 @@ class CharEncoder(nn.Module):
         dropout: float = Config.DROPOUT
     ):
         super().__init__()
-        
+
         self.hidden_dim = hidden_dim
-        
+
         # Embeddings
         self.char_embed = nn.Embedding(vocab_size, char_embed_dim, padding_idx=0)
         self.lang_embed = nn.Embedding(num_langs, lang_embed_dim)
-        
+
         # BiLSTM: input is char embedding + language embedding at each timestep
         self.bilstm = nn.LSTM(
             input_size=char_embed_dim + lang_embed_dim,
@@ -320,20 +320,20 @@ class CharEncoder(nn.Module):
             bidirectional=True,
             dropout=dropout if num_layers > 1 else 0
         )
-        
+
         # Self-Attention
         self.self_attention = SelfAttention(
             hidden_dim=hidden_dim * 2,
             num_heads=num_attention_heads,
             dropout=dropout
         )
-        
+
         # Attention-Aware Pooling
         self.pooling = AttentionPooling(
             hidden_dim=hidden_dim * 2,
             dropout=dropout
         )
-        
+
         # Projection to embedding space
         self.projection = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),
@@ -350,51 +350,51 @@ class CharEncoder(nn.Module):
     ) -> torch.Tensor:
         """
         Encode character sequences with language conditioning.
-        
+
         Args:
-            char_ids: (batch, max_seq_len) - romanized character IDs
-            lang_ids: (batch,) - language IDs
-            seq_lengths: (batch,) - actual sequence lengths
-        
+            char_ids: (batch, max_seq_len) - romanized character IDs [GPU]
+            lang_ids: (batch,) - language IDs [GPU]
+            seq_lengths: (batch,) - actual sequence lengths [CPU]
+
         Returns:
             (batch, embed_dim) normalized embeddings
         """
         batch_size, max_len = char_ids.shape
         device = char_ids.device
-        
-        # Create mask for valid positions
-        mask = torch.arange(max_len, device=device).unsqueeze(0) < seq_lengths.unsqueeze(1)
-        
+
+        # Create mask - move lengths to GPU only for this (async copy)
+        mask = torch.arange(max_len, device=device).unsqueeze(0) < seq_lengths.to(device).unsqueeze(1)
+
         # Embed characters: (batch, seq, char_embed_dim)
         c_emb = self.char_embed(char_ids)
-        
+
         # Embed language and broadcast: (batch, seq, lang_embed_dim)
         l_emb = self.lang_embed(lang_ids)
         l_emb = l_emb.unsqueeze(1).expand(-1, max_len, -1)
-        
+
         # Concatenate: (batch, seq, char_embed_dim + lang_embed_dim)
         combined_input = torch.cat([c_emb, l_emb], dim=-1)
-        
-        # Pack and process through BiLSTM
+
+        # Pack with CPU lengths (no sync needed)
         packed = nn.utils.rnn.pack_padded_sequence(
-            combined_input, seq_lengths.cpu(),
+            combined_input, seq_lengths,
             batch_first=True, enforce_sorted=False
         )
         lstm_out, _ = self.bilstm(packed)
         lstm_out, _ = nn.utils.rnn.pad_packed_sequence(lstm_out, batch_first=True, total_length=max_len)
-        
+
         # Self-Attention over timesteps
         attended, _ = self.self_attention(lstm_out, mask)
-        
+
         # Residual connection
         attended = attended + lstm_out
-        
+
         # Attention-Aware Pooling
         pooled, _ = self.pooling(attended, mask)
-        
+
         # Project and normalize
         embedding = self.projection(pooled)
-        
+
         return F.normalize(embedding, p=2, dim=-1)
 
 
@@ -411,10 +411,10 @@ class HybridPhoneticModel(nn.Module):
         embed_dim: int = Config.EMBED_DIM
     ):
         super().__init__()
-        
+
         self.phonetic_encoder = phonetic_encoder
         self.char_encoder = char_encoder
-        
+
         # Learnable gate for blending pathways
         self.gate = nn.Sequential(
             nn.Linear(embed_dim * 2, embed_dim),
@@ -434,7 +434,7 @@ class HybridPhoneticModel(nn.Module):
     ) -> torch.Tensor:
         """
         Forward pass with optional phonetic pathway.
-        
+
         Args:
             char_ids: (batch, max_char_len) - romanized character IDs
             lang_ids: (batch,) - language IDs
@@ -442,17 +442,17 @@ class HybridPhoneticModel(nn.Module):
             phonetic_seq: (batch, max_phone_len, feat_dim) - IPA features, optional
             phonetic_lengths: (batch,) - phonetic sequence lengths, optional
             has_phonetic: (batch,) - boolean mask for items with phonetic features
-        
+
         Returns:
             (batch, embed_dim) normalized embeddings
         """
         # Character pathway (always available)
         char_emb = self.char_encoder(char_ids, lang_ids, char_lengths)
-        
+
         # Phonetic pathway (when available)
         if phonetic_seq is not None and has_phonetic is not None and has_phonetic.any():
             phone_emb = torch.zeros_like(char_emb)
-            
+
             # Only process items with phonetic features
             mask = has_phonetic
             if mask.any():
@@ -461,15 +461,15 @@ class HybridPhoneticModel(nn.Module):
                     phonetic_lengths[mask]
                 )
                 phone_emb[mask] = phone_subset
-            
+
             # Gated fusion
             combined = torch.cat([char_emb, phone_emb], dim=-1)
             gate_value = self.gate(combined)
-            
+
             # Apply gate only where we have phonetic
             gate_value = gate_value * has_phonetic.float().unsqueeze(-1)
             fused = gate_value * phone_emb + (1 - gate_value) * char_emb
-            
+
             return F.normalize(fused, p=2, dim=-1)
         else:
             return char_emb
