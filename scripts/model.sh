@@ -460,6 +460,43 @@ echo "--- GPU Information ---"
 nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
 echo
 
+# === LOCAL SCRATCH SETUP ===
+# Copy training data to node-local storage for faster I/O
+if [ -n "\$SLURM_TMPDIR" ]; then
+    echo "--- Setting up local scratch: \$SLURM_TMPDIR ---"
+    LOCAL_DATA_DIR="\$SLURM_TMPDIR/phonetic_data"
+    mkdir -p "\$LOCAL_DATA_DIR"
+
+    # Copy optimized HDF5 files based on phase
+    DATA_DIR="${DATA_DIR:-/ix1/whcdh/models/phonetic/data}"
+
+    case ${PHASE} in
+        1)
+            echo "Copying Phase 1 data files..."
+            cp -v "\$DATA_DIR"/training_data_*_optimized.h5 "\$LOCAL_DATA_DIR/" 2>/dev/null || true
+            ;;
+        2)
+            echo "Copying Phase 2 data files..."
+            cp -v "\$DATA_DIR"/*_optimized_phase2.h5 "\$LOCAL_DATA_DIR/" 2>/dev/null || true
+            ;;
+        3)
+            echo "Copying Phase 3 data files..."
+            cp -v "\$DATA_DIR"/*_optimized_phase3.h5 "\$LOCAL_DATA_DIR/" 2>/dev/null || true
+            ;;
+    esac
+
+    echo "Local data files:"
+    ls -lh "\$LOCAL_DATA_DIR"/*.h5 2>/dev/null || echo "No HDF5 files found"
+    echo
+
+    # Export for Python to detect
+    export SLURM_TMPDIR
+    export LOCAL_DATA_DIR
+else
+    echo "WARNING: SLURM_TMPDIR not set - using network storage (slower)"
+fi
+# === END LOCAL SCRATCH SETUP ===
+
 $(activate_conda)
 
 python -c "import torch; print(f'PyTorch: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"

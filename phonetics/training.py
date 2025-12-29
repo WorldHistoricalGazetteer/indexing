@@ -118,11 +118,34 @@ def copy_data_to_local(sources: List[DataSource], phase: str = '') -> List[DataS
     """
     Copy HDF5 data files to local scratch for faster I/O.
     
-    Uses SLURM_TMPDIR if available (node-local SSD), otherwise /tmp.
+    Uses LOCAL_DATA_DIR if set (pre-copied by sbatch script),
+    otherwise SLURM_TMPDIR (node-local SSD), otherwise /tmp.
     Returns new DataSource list with local paths.
     """
     import shutil
     
+    # Check if data was pre-copied by sbatch script
+    local_data_dir = os.environ.get('LOCAL_DATA_DIR')
+    if local_data_dir and os.path.isdir(local_data_dir):
+        print(f"\nUsing pre-copied local data: {local_data_dir}")
+        local_sources = []
+        for source in sources:
+            filename = os.path.basename(source.path)
+            local_path = os.path.join(local_data_dir, filename)
+            if os.path.exists(local_path):
+                print(f"  {source.name}: {local_path}")
+                local_sources.append(DataSource(
+                    name=source.name,
+                    path=local_path,
+                    oversample=source.oversample
+                ))
+            else:
+                print(f"  {source.name}: Not found locally, using {source.path}")
+                local_sources.append(source)
+        print()
+        return local_sources
+    
+    # Fall back to copying ourselves
     local_dir = os.environ.get('SLURM_TMPDIR', '/tmp')
     local_sources = []
     
