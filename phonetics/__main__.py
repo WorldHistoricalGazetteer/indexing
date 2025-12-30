@@ -217,15 +217,17 @@ def main():
                 mining_data_path = DATA_SOURCES_PHASE3_OPTIMIZED[0].path
                 print(f"Using optimized file for mining: {mining_data_path}")
 
-            # Mine hard negatives
+            # Mine hard negatives (hybrid strategy: random + targeted)
             mined_negatives = mine_hard_negatives(
                 model=model,
                 data_path=mining_data_path,
                 char_vocab=char_vocab,
                 lang_vocab=lang_vocab,
                 device=device,
-                similarity_threshold=0.5,
-                sample_size=1000000,
+                similarity_threshold=0.5,      # Lower threshold to catch more
+                max_negatives_per_anchor=20,   # More negatives per anchor
+                random_sample_size=500000,     # Random pairs for background noise
+                targeted_sample_size=500000,   # Targeted pairs for spelling confusion
             )
 
             print(f"Mined {sum(len(v) for v in mined_negatives.values()):,} hard negatives "
