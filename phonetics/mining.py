@@ -23,9 +23,9 @@ def mine_hard_negatives(
     data_path: str,
     char_vocab,
     lang_vocab,
-    similarity_threshold: float = 0.7,
+    similarity_threshold: float = 0.6,
     max_negatives_per_anchor: int = 10,
-    sample_size: int = 50000,
+    sample_size: int = 500000,
     batch_size: int = 512,
     device: str = 'cuda'
 ) -> Dict[int, List[int]]:
