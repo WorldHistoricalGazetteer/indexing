@@ -536,6 +536,11 @@ def train_phase2(
         use_local_scratch: Copy data to local scratch for faster I/O.
     """
     
+    # Initialize CUDA FIRST - before loading large datasets into RAM
+    # This reserves GPU address space before memory fragmentation occurs
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}", flush=True)
+    
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized:
@@ -637,8 +642,6 @@ def train_phase2(
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}", flush=True)
     print(f"DataLoader workers: {num_workers}", flush=True)
 
     # Load pre-trained phonetic encoder (Teacher)
@@ -796,6 +799,10 @@ def train_phase3(
         use_local_scratch: Copy data to local scratch for faster I/O.
     """
     
+    # Initialize CUDA FIRST - before loading large datasets into RAM
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    print(f"Device: {device}", flush=True)
+    
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized and negative_stage == 'A':
@@ -903,8 +910,6 @@ def train_phase3(
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Device: {device}", flush=True)
     print(f"DataLoader workers: {num_workers}", flush=True)
 
     # Load Phase 2 models
