@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2025.12.28)  30 DEC 2025 23:05
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2025.12.28)  30 DEC 2025 23:43
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -382,12 +382,422 @@ LaTeX Font Info:    Redeclaring math symbol \hbar on input line 98.
 LaTeX Font Info:    Overwriting math alphabet `\mathfrak' in version `bold'
 (Font)                  U/euf/m/n --> U/euf/b/n on input line 106.
 ))
-(/usr/share/texlive/texmf-dist/tex/latex/natbib/natbib.sty
+(/usr/share/texlive/texmf-dist/tex/latex/multirow/multirow.sty
+Package: multirow 2021/03/15 v2.8 Span multiple rows of a table
+\multirow@colwidth=\skip53
+\multirow@cntb=\count304
+\multirow@dima=\skip54
+\bigstrutjot=\dimen171
+)
+(/usr/share/texlive/texmf-dist/tex/latex/pgfplots/pgfplots.sty
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.revision.tex)
+Package: pgfplots 2021/05/15 v1.18.1 Data Visualization (1.18.1)
+
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/frontendlayer/tikz.sty
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/basiclayer/pgf.sty
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/utilities/pgfrcs.sty
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-common.tex
+\pgfutil@everybye=\toks23
+\pgfutil@tempdima=\dimen172
+\pgfutil@tempdimb=\dimen173
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-common-lists.t
+ex)) (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-latex.def
+\pgfutil@abb=\box55
+) (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfrcs.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/pgf.revision.tex)
+Package: pgfrcs 2021/05/15 v3.1.9a (3.1.9a)
+))
+Package: pgf 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/basiclayer/pgfcore.sty
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/systemlayer/pgfsys.sty
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsys.code.tex
+Package: pgfsys 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfkeys.code.tex
+\pgfkeys@pathtoks=\toks24
+\pgfkeys@temptoks=\toks25
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfkeysfiltered.code.t
+ex
+\pgfkeys@tmptoks=\toks26
+))
+\pgf@x=\dimen174
+\pgf@y=\dimen175
+\pgf@xa=\dimen176
+\pgf@ya=\dimen177
+\pgf@xb=\dimen178
+\pgf@yb=\dimen179
+\pgf@xc=\dimen180
+\pgf@yc=\dimen181
+\pgf@xd=\dimen182
+\pgf@yd=\dimen183
+\w@pgf@writea=\write3
+\r@pgf@reada=\read2
+\c@pgf@counta=\count305
+\c@pgf@countb=\count306
+\c@pgf@countc=\count307
+\c@pgf@countd=\count308
+\t@pgf@toka=\toks27
+\t@pgf@tokb=\toks28
+\t@pgf@tokc=\toks29
+\pgf@sys@id@count=\count309
+ (/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgf.cfg
+File: pgf.cfg 2021/05/15 v3.1.9a (3.1.9a)
+)
+Driver file for pgf: pgfsys-xetex.def
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsys-xetex.def
+File: pgfsys-xetex.def 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsys-dvipdfmx.def
+File: pgfsys-dvipdfmx.def 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsys-common-pdf.de
+f
+File: pgfsys-common-pdf.def 2021/05/15 v3.1.9a (3.1.9a)
+)
+\pgfsys@objnum=\count310
+)))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsyssoftpath.code.
+tex
+File: pgfsyssoftpath.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfsyssoftpath@smallbuffer@items=\count311
+\pgfsyssoftpath@bigbuffer@items=\count312
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgfsysprotocol.code.
+tex
+File: pgfsysprotocol.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)) (/usr/share/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
+Package: xcolor 2021/10/31 v2.13 LaTeX color extensions (UK)
+
+(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg
+File: color.cfg 2016/01/02 v1.6 sample color configuration
+)
+Package xcolor Info: Driver file: xetex.def on input line 227.
+Package xcolor Info: Model `cmy' substituted by `cmy0' on input line 1352.
+Package xcolor Info: Model `RGB' extended on input line 1368.
+Package xcolor Info: Model `HTML' substituted by `rgb' on input line 1370.
+Package xcolor Info: Model `Hsb' substituted by `hsb' on input line 1371.
+Package xcolor Info: Model `tHsb' substituted by `hsb' on input line 1372.
+Package xcolor Info: Model `HSB' substituted by `hsb' on input line 1373.
+Package xcolor Info: Model `Gray' substituted by `gray' on input line 1374.
+Package xcolor Info: Model `wave' substituted by `hsb' on input line 1375.
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcore.code.tex
+Package: pgfcore 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmath.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathcalc.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathutil.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathparser.code.tex
+\pgfmath@dimen=\dimen184
+\pgfmath@count=\count313
+\pgfmath@box=\box56
+\pgfmath@toks=\toks30
+\pgfmath@stack@operand=\toks31
+\pgfmath@stack@operation=\toks32
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.basic.code
+.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.trigonomet
+ric.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.random.cod
+e.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.comparison
+.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.base.code.
+tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.round.code
+.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.misc.code.
+tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.integerari
+thmetics.code.tex)))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfloat.code.tex
+\c@pgfmathroundto@lastzeros=\count314
+))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfint.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepoints.code.te
+x
+File: pgfcorepoints.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@picminx=\dimen185
+\pgf@picmaxx=\dimen186
+\pgf@picminy=\dimen187
+\pgf@picmaxy=\dimen188
+\pgf@pathminx=\dimen189
+\pgf@pathmaxx=\dimen190
+\pgf@pathminy=\dimen191
+\pgf@pathmaxy=\dimen192
+\pgf@xx=\dimen193
+\pgf@xy=\dimen194
+\pgf@yx=\dimen195
+\pgf@yy=\dimen196
+\pgf@zx=\dimen197
+\pgf@zy=\dimen198
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepathconstruct.
+code.tex
+File: pgfcorepathconstruct.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@path@lastx=\dimen199
+\pgf@path@lasty=\dimen256
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepathusage.code
+.tex
+File: pgfcorepathusage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@shorten@end@additional=\dimen257
+\pgf@shorten@start@additional=\dimen258
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorescopes.code.te
+x
+File: pgfcorescopes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfpic=\box57
+\pgf@hbox=\box58
+\pgf@layerbox@main=\box59
+\pgf@picture@serial@count=\count315
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoregraphicstate.c
+ode.tex
+File: pgfcoregraphicstate.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgflinewidth=\dimen259
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoretransformation
+s.code.tex
+File: pgfcoretransformations.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@pt@x=\dimen260
+\pgf@pt@y=\dimen261
+\pgf@pt@temp=\dimen262
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorequick.code.tex
+File: pgfcorequick.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreobjects.code.t
+ex
+File: pgfcoreobjects.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepathprocessing
+.code.tex
+File: pgfcorepathprocessing.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorearrows.code.te
+x
+File: pgfcorearrows.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfarrowsep=\dimen263
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreshade.code.tex
+File: pgfcoreshade.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@max=\dimen264
+\pgf@sys@shading@range@num=\count316
+\pgf@shadingcount=\count317
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreimage.code.tex
+File: pgfcoreimage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreexternal.code.
+tex
+File: pgfcoreexternal.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfexternal@startupbox=\box60
+))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorelayers.code.te
+x
+File: pgfcorelayers.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoretransparency.c
+ode.tex
+File: pgfcoretransparency.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepatterns.code.
+tex
+File: pgfcorepatterns.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorerdf.code.tex
+File: pgfcorerdf.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmoduleshapes.code.tex
+File: pgfmoduleshapes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfnodeparttextbox=\box61
+) (/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmoduleplot.code.tex
+File: pgfmoduleplot.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/compatibility/pgfcomp-version-0-65
+.sty
+Package: pgfcomp-version-0-65 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@nodesepstart=\dimen265
+\pgf@nodesepend=\dimen266
+)
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/compatibility/pgfcomp-version-1-18
+.sty
+Package: pgfcomp-version-1-18 2021/05/15 v3.1.9a (3.1.9a)
+)) (/usr/share/texlive/texmf-dist/tex/latex/pgf/utilities/pgffor.sty
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/utilities/pgfkeys.sty
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfkeys.code.tex))
+(/usr/share/texlive/texmf-dist/tex/latex/pgf/math/pgfmath.sty
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmath.code.tex))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgffor.code.tex
+Package: pgffor 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmath.code.tex)
+\pgffor@iter=\dimen267
+\pgffor@skip=\dimen268
+\pgffor@stack=\toks33
+\pgffor@toks=\toks34
+))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/tikz.code.tex
+Package: tikz 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/pgflibraryplothandlers
+.code.tex
+File: pgflibraryplothandlers.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgf@plot@mark@count=\count318
+\pgfplotmarksize=\dimen269
+)
+\tikz@lastx=\dimen270
+\tikz@lasty=\dimen271
+\tikz@lastxsaved=\dimen272
+\tikz@lastysaved=\dimen273
+\tikz@lastmovetox=\dimen274
+\tikz@lastmovetoy=\dimen275
+\tikzleveldistance=\dimen276
+\tikzsiblingdistance=\dimen277
+\tikz@figbox=\box62
+\tikz@figbox@bg=\box63
+\tikz@tempbox=\box64
+\tikz@tempbox@bg=\box65
+\tikztreelevel=\count319
+\tikznumberofchildren=\count320
+\tikznumberofcurrentchild=\count321
+\tikz@fig@count=\count322
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmodulematrix.code.tex
+File: pgfmodulematrix.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+\pgfmatrixcurrentrow=\count323
+\pgfmatrixcurrentcolumn=\count324
+\pgf@matrix@numberofcolumns=\count325
+)
+\tikz@expandcount=\count326
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
+zlibrarytopaths.code.tex
+File: tikzlibrarytopaths.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+)))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotscore.code.tex
+\t@pgfplots@toka=\toks35
+\t@pgfplots@tokb=\toks36
+\t@pgfplots@tokc=\toks37
+\pgfplots@tmpa=\dimen278
+\c@pgfplots@coordindex=\count327
+\c@pgfplots@scanlineindex=\count328
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/sys/pgfplotssysgeneric.code
+.tex))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/libs/pgfplotslibrary.code.t
+ex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/oldpgfcompatib/pgfplotsoldp
+gfsupp_loader.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/pgflibraryfpu.code.tex
+))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotsutil.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/liststructure/pgfplotslists
+tructure.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/liststructure/pgfplotslists
+tructureext.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/liststructure/pgfplotsarray
+.code.tex
+\c@pgfplotsarray@tmp=\count329
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/liststructure/pgfplotsmatri
+x.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/numtable/pgfplotstableshare
+d.code.tex
+\c@pgfplotstable@counta=\count330
+\t@pgfplotstable@a=\toks38
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/liststructure/pgfplotsdeque
+.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotsbinary.code.te
+x
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotsbinary.data.co
+de.tex))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotsutil.verb.code
+.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/libs/pgflibrarypgfplots.sur
+fshading.code.tex
+\c@pgfplotslibrarysurf@no=\count331
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/sys/pgflibrarypgfplots.surf
+shading.pgfsys-xetex.def
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/sys/pgflibrarypgfplots.surf
+shading.pgfsys-dvipdfmx.def
+\c@pgfplotslibrarysurf@streamlen=\count332
+))))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotscolormap.code.
+tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/util/pgfplotscolor.code.tex
+))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotsstackedplots.code.t
+ex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotsplothandlers.code.t
+ex
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotsmeshplothandler.cod
+e.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotsmeshplotimage.code.
+tex)))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.scaling.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotscoordprocessing.cod
+e.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.errorbars.code.tex
+) (/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.markers.code.tex
+) (/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplotsticks.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/pgfplots.paths.code.tex)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
+zlibrarydecorations.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmoduledecorations.cod
+e.tex
+\pgfdecoratedcompleteddistance=\dimen279
+\pgfdecoratedremainingdistance=\dimen280
+\pgfdecoratedinputsegmentcompleteddistance=\dimen281
+\pgfdecoratedinputsegmentremainingdistance=\dimen282
+\pgf@decorate@distancetomove=\dimen283
+\pgf@decorate@repeatstate=\count333
+\pgfdecorationsegmentamplitude=\dimen284
+\pgfdecorationsegmentlength=\dimen285
+)
+\tikz@lib@dec@box=\box66
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
+zlibrarydecorations.pathmorphing.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/decorations/pgflibrary
+decorations.pathmorphing.code.tex))
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
+zlibrarydecorations.pathreplacing.code.tex
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/decorations/pgflibrary
+decorations.pathreplacing.code.tex))
+(/usr/share/texlive/texmf-dist/tex/generic/pgfplots/libs/tikzlibrarypgfplots.co
+ntourlua.code.tex)
+\pgfplots@numplots=\count334
+\pgfplots@xmin@reg=\dimen286
+\pgfplots@xmax@reg=\dimen287
+\pgfplots@ymin@reg=\dimen288
+\pgfplots@ymax@reg=\dimen289
+\pgfplots@zmin@reg=\dimen290
+\pgfplots@zmax@reg=\dimen291
+)
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
+zlibraryplotmarks.code.tex
+File: tikzlibraryplotmarks.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+
+(/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/pgflibraryplotmarks.co
+de.tex
+File: pgflibraryplotmarks.code.tex 2021/05/15 v3.1.9a (3.1.9a)
+))) (/usr/share/texlive/texmf-dist/tex/latex/natbib/natbib.sty
 Package: natbib 2010/09/13 8.31b (PWD, AO)
-\bibhang=\skip53
-\bibsep=\skip54
+\bibhang=\skip55
+\bibsep=\skip56
 LaTeX Info: Redefining \cite on input line 694.
-\c@NAT@ctr=\count304
+\c@NAT@ctr=\count335
 )
 (/usr/share/texlive/texmf-dist/tex/latex/polyglossia/polyglossia.sty
 Package: polyglossia 2021/04/12 v1.53 Modern multilingual typesetting with XeLa
@@ -401,10 +811,10 @@ Package: xkeyval 2020/11/20 v2.8 package option processing (HA)
 
 (/usr/share/texlive/texmf-dist/tex/generic/xkeyval/xkeyval.tex
 (/usr/share/texlive/texmf-dist/tex/generic/xkeyval/xkvutils.tex
-\XKV@toks=\toks23
-\XKV@tempa@toks=\toks24
+\XKV@toks=\toks39
+\XKV@tempa@toks=\toks40
 )
-\XKV@depth=\count305
+\XKV@depth=\count336
 File: xkeyval.tex 2014/12/03 v2.7a key=value parser (HA)
 ))
 (/usr/share/texlive/texmf-dist/tex/latex/l3packages/l3keys2e/l3keys2e.sty
@@ -522,19 +932,19 @@ Package: bidi 2022/02/01 v36.4 Bidirectional typesetting in plain TeX and LaTeX
 ****************************************************
 (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/biditools.sty
 Package: biditools 2022/02/01 v2.1 Programming tools for bidi package
-\@bidi@envbody=\toks25
-\@bidi@emptytoks=\toks26
-\bidi@poscount=\count306
-\bidi@tempcountb=\count307
-\bidi@temptoksa=\toks27
-\bidi@temptoksb=\toks28
-\bidi@dummies=\count308
-\bidi@are@these@correct=\toks29
-\bidi@toks@lista=\toks30
-\bidi@toks@listb=\toks31
-\bidi@stack@length=\count309
-\bidi@empty@stack=\toks32
-\bidi@looprepeat@depth=\count310
+\@bidi@envbody=\toks41
+\@bidi@emptytoks=\toks42
+\bidi@poscount=\count337
+\bidi@tempcountb=\count338
+\bidi@temptoksa=\toks43
+\bidi@temptoksb=\toks44
+\bidi@dummies=\count339
+\bidi@are@these@correct=\toks45
+\bidi@toks@lista=\toks46
+\bidi@toks@listb=\toks47
+\bidi@stack@length=\count340
+\bidi@empty@stack=\toks48
+\bidi@looprepeat@depth=\count341
 )
 ==> First Aid for biditools.sty no longer applied!
     Expected:
@@ -551,7 +961,7 @@ Package zref Info: New property list: main on input line 764.
 Package zref Info: New property: default on input line 765.
 Package zref Info: New property: page on input line 766.
 )
-\c@abspage=\count311
+\c@abspage=\count342
 Package zref Info: New property: abspage on input line 66.
 )
 \@bidi@copyins@=\insert252
@@ -559,14 +969,14 @@ Package zref Info: New property: abspage on input line 66.
 (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/latex-xetex-bidi.def
 File: latex-xetex-bidi.def 2022/02/01 v1.3.8 bidi adaptations for `latex.ltx' f
 or XeTeX engine
-\bidi@n@everypar=\toks33
-\bidi@column@check@number=\count312
+\bidi@n@everypar=\toks49
+\bidi@column@check@number=\count343
 
 (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/footnote-xetex-bidi.def
 File: footnote-xetex-bidi.def 2017/08/09 v1.1 bidi footnote macros for XeTeX en
 gine
-\c@footdir@label=\count313
-\footdir@toks=\toks34
+\c@footdir@label=\count344
+\footdir@toks=\toks50
 )
 (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/article-xetex-bidi.def
 File: article-xetex-bidi.def 2017/06/09 v0.6 bidi adaptations for standard arti
@@ -580,6 +990,17 @@ ge for XeTeX engine
 File: amstext-xetex-bidi.def 2016/09/12 v0.2 bidi adaptations for amstext packa
 ge for XeTeX engine
 )
+(/usr/share/texlive/texmf-dist/tex/xelatex/bidi/color-xetex-bidi.def
+File: color-xetex-bidi.def 2013/04/08 v0.2 bidi adaptations for color package f
+or XeTeX engine
+LaTeX Info: Redefining \color on input line 50.
+)
+(/usr/share/texlive/texmf-dist/tex/xelatex/bidi/xcolor-xetex-bidi.def
+File: xcolor-xetex-bidi.def 2013/04/08 v0.2 bidi adaptations for xcolor package
+ for XeTeX engine
+LaTeX Info: Redefining \color on input line 49.
+LaTeX Info: Redefining \bidicolor on input line 92.
+)
 (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/graphicx-xetex-bidi.def
 File: graphicx-xetex-bidi.def 2017/06/17 v0.5 bidi adaptations for graphicx pac
 kage for XeTeX engine
@@ -588,7 +1009,11 @@ kage for XeTeX engine
 File: hyperref-xetex-bidi.def 2018/11/11 v1.1 bidi adaptations for hyperref pac
 kage for XeTeX engine
 )
-(/usr/share/texlive/texmf-dist/tex/xelatex/bidi/natbib-xetex-bidi.def
+(/usr/share/texlive/texmf-dist/tex/xelatex/bidi/pgfcorescopes.code-xetex-bidi.d
+ef
+File: pgfcorescopes.code-xetex-bidi.def 2015/11/14 v0.1 bidi adaptations for pg
+f package for XeTeX engine
+) (/usr/share/texlive/texmf-dist/tex/xelatex/bidi/natbib-xetex-bidi.def
 File: natbib-xetex-bidi.def 2017/06/09 v0.2 bidi adaptations for natbib package
  for XeTeX engine
 ))
@@ -596,7 +1021,7 @@ File: natbib-xetex-bidi.def 2017/06/09 v0.2 bidi adaptations for natbib package
 File: loadingorder-xetex-bidi.def 2017/12/29 v0.97 making sure that bidi is the
  last package loaded
 )
-\bidi@digits=\count314
+\bidi@digits=\count345
 \bidi@digits@charclass=\XeTeXcharclass2
 \bidi@sepmark@charclass=\XeTeXcharclass3
 )
@@ -609,28 +1034,28 @@ Package: hijrical 2010/07/12 v0.2 Islamic calendar
 
 (/usr/share/texlive/texmf-dist/tex/latex/tools/calc.sty
 Package: calc 2017/05/25 v4.3 Infix arithmetic (KKT,FJ)
-\calc@Acount=\count315
-\calc@Bcount=\count316
-\calc@Adimen=\dimen171
-\calc@Bdimen=\dimen172
-\calc@Askip=\skip55
-\calc@Bskip=\skip56
+\calc@Acount=\count346
+\calc@Bcount=\count347
+\calc@Adimen=\dimen292
+\calc@Bdimen=\dimen293
+\calc@Askip=\skip57
+\calc@Bskip=\skip58
 LaTeX Info: Redefining \setlength on input line 80.
 LaTeX Info: Redefining \addtolength on input line 81.
-\calc@Ccount=\count317
-\calc@Cskip=\skip57
+\calc@Ccount=\count348
+\calc@Cskip=\skip59
 )
 (/usr/share/texlive/texmf-dist/tex/latex/polyglossia/cal-util.def
-\c@tmpA=\count318
-\c@tmpB=\count319
-\c@tmpC=\count320
-\c@tmpD=\count321
-\c@tmpE=\count322
-\c@tmpF=\count323
+\c@tmpA=\count349
+\c@tmpB=\count350
+\c@tmpC=\count351
+\c@tmpD=\count352
+\c@tmpE=\count353
+\c@tmpF=\count354
 )
-\c@Hijriday=\count324
-\c@Hijrimonth=\count325
-\c@Hijriyear=\count326
+\c@Hijriday=\count355
+\c@Hijrimonth=\count356
+\c@Hijriyear=\count357
 )
 The property list \polyglossia@langsetup contains the pairs (without outer
 braces):
@@ -741,105 +1166,96 @@ LaTeX Info: Redefining \ttfamily on input line 21.
 )
 \openout1 = `phonetic-embeddings.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 70.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 73.
 LaTeX Font Info:    Trying to load font information for TS1+cmr on input line 7
-0.
+3.
 
 (/usr/share/texlive/texmf-dist/tex/latex/base/ts1cmr.fd
 File: ts1cmr.fd 2019/12/16 v2.5j Standard LaTeX font definitions
 )
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 70.
-LaTeX Font Info:    ... okay on input line 70.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 73.
+LaTeX Font Info:    ... okay on input line 73.
 
 Package fontspec Info: Adjusting the maths setup (use [no-math] to avoid
 (fontspec)             this).
 
 \symlegacymaths=\mathgroup6
 LaTeX Font Info:    Overwriting symbol font `legacymaths' in version `bold'
-(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 70.
-LaTeX Font Info:    Redeclaring math accent \acute on input line 70.
-LaTeX Font Info:    Redeclaring math accent \grave on input line 70.
-LaTeX Font Info:    Redeclaring math accent \ddot on input line 70.
-LaTeX Font Info:    Redeclaring math accent \tilde on input line 70.
-LaTeX Font Info:    Redeclaring math accent \bar on input line 70.
-LaTeX Font Info:    Redeclaring math accent \breve on input line 70.
-LaTeX Font Info:    Redeclaring math accent \check on input line 70.
-LaTeX Font Info:    Redeclaring math accent \hat on input line 70.
-LaTeX Font Info:    Redeclaring math accent \dot on input line 70.
-LaTeX Font Info:    Redeclaring math accent \mathring on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Delta on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Theta on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Xi on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Pi on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Phi on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Psi on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \Omega on input line 70.
-LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 70.
-LaTeX Font Info:    Redeclaring symbol font `operators' on input line 70.
+(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 73.
+LaTeX Font Info:    Redeclaring math accent \acute on input line 73.
+LaTeX Font Info:    Redeclaring math accent \grave on input line 73.
+LaTeX Font Info:    Redeclaring math accent \ddot on input line 73.
+LaTeX Font Info:    Redeclaring math accent \tilde on input line 73.
+LaTeX Font Info:    Redeclaring math accent \bar on input line 73.
+LaTeX Font Info:    Redeclaring math accent \breve on input line 73.
+LaTeX Font Info:    Redeclaring math accent \check on input line 73.
+LaTeX Font Info:    Redeclaring math accent \hat on input line 73.
+LaTeX Font Info:    Redeclaring math accent \dot on input line 73.
+LaTeX Font Info:    Redeclaring math accent \mathring on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 73.
+LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 73.
+LaTeX Font Info:    Redeclaring symbol font `operators' on input line 73.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `normal' on input line 70.
+(Font)              `operators' in the math version `normal' on input line 73.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  OT1/cmr/m/n --> TU/LinLibertine_R.otf(0)/m/n on input l
-ine 70.
+ine 73.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `bold' on input line 70.
+(Font)              `operators' in the math version `bold' on input line 73.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  OT1/cmr/bx/n --> TU/LinLibertine_R.otf(0)/m/n on input 
-line 70.
+line 73.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  TU/LinLibertine_R.otf(0)/m/n --> TU/LinLibertine_R.otf(
-0)/m/n on input line 70.
+0)/m/n on input line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
 (Font)                  OT1/cmr/m/it --> TU/LinLibertine_R.otf(0)/m/it on input
- line 70.
+ line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
 (Font)                  OT1/cmr/bx/n --> TU/LinLibertine_R.otf(0)/b/n on input 
-line 70.
+line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 70.
+(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 70.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 73.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  TU/LinLibertine_R.otf(0)/m/n --> TU/LinLibertine_R.otf(
-0)/b/n on input line 70.
+0)/b/n on input line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
 (Font)                  OT1/cmr/bx/it --> TU/LinLibertine_R.otf(0)/b/it on inpu
-t line 70.
+t line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 70.
+(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 73.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 70.
-
-(/usr/share/texlive/texmf-dist/tex/latex/graphics/color.sty
-Package: color 2021/12/07 v1.3c Standard LaTeX Color (DPC)
-
-(/usr/share/texlive/texmf-dist/tex/latex/graphics-cfg/color.cfg
-File: color.cfg 2016/01/02 v1.6 sample color configuration
-)
-Package color Info: Driver file: xetex.def on input line 149.
-)
-Package hyperref Info: Link coloring ON on input line 70.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 73.
+Package hyperref Info: Link coloring ON on input line 73.
 
 (/usr/share/texlive/texmf-dist/tex/latex/hyperref/nameref.sty
 Package: nameref 2021-04-02 v2.47 Cross-referencing by name of section
@@ -850,23 +1266,23 @@ Package: refcount 2019/12/15 v3.6 Data extraction from label references (HO)
 (/usr/share/texlive/texmf-dist/tex/generic/gettitlestring/gettitlestring.sty
 Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
 )
-\c@section@level=\count327
+\c@section@level=\count358
 )
-LaTeX Info: Redefining \ref on input line 70.
-LaTeX Info: Redefining \pageref on input line 70.
-LaTeX Info: Redefining \nameref on input line 70.
+LaTeX Info: Redefining \ref on input line 73.
+LaTeX Info: Redefining \pageref on input line 73.
+LaTeX Info: Redefining \nameref on input line 73.
 
 (pdf/phonetic-embeddings.out) (pdf/phonetic-embeddings.out)
-\@outlinefile=\write3
-\openout3 = `phonetic-embeddings.out'.
+\@outlinefile=\write4
+\openout4 = `phonetic-embeddings.out'.
 
-LaTeX Info: Redefining \microtypecontext on input line 70.
-Package microtype Info: Applying patch `item' on input line 70.
-Package microtype Info: Applying patch `toc' on input line 70.
-Package microtype Info: Applying patch `eqnum' on input line 70.
+LaTeX Info: Redefining \microtypecontext on input line 73.
+Package microtype Info: Applying patch `item' on input line 73.
+Package microtype Info: Applying patch `toc' on input line 73.
+Package microtype Info: Applying patch `eqnum' on input line 73.
 
 
-Package microtype Warning: Unable to apply patch `footnote' on input line 70.
+Package microtype Warning: Unable to apply patch `footnote' on input line 73.
 
 Package microtype Info: Character protrusion enabled (level 2).
 Package microtype Info: Using protrusion set `basicmath'.
@@ -877,10 +1293,13 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `LinLibertine_R.otf' (encoding: TU).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-LaTeX Info: Redefining \rmfamily on input line 70.
-LaTeX Info: Redefining \sffamily on input line 70.
-LaTeX Info: Redefining \ttfamily on input line 70.
-LaTeX Font Info:    Trying to load font information for U+msa on input line 73.
+Package pgfplots notification 'compat/show suggested version=true': document ha
+s been generated with the most recent feature set (\pgfplotsset{compat=1.18}).
+
+LaTeX Info: Redefining \rmfamily on input line 73.
+LaTeX Info: Redefining \sffamily on input line 73.
+LaTeX Info: Redefining \ttfamily on input line 73.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 76.
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
@@ -888,7 +1307,7 @@ File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-msa.cfg
 File: mt-msa.cfg 2006/02/04 v1.1 microtype config. file: AMS symbols (a) (RS)
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 73.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 76.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
@@ -900,72 +1319,53 @@ File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 (/usr/share/texlive/texmf-dist/tex/latex/microtype/mt-cmr.cfg
 File: mt-cmr.cfg 2013/05/19 v2.2 microtype config. file: Computer Modern Roman 
 (RS)
-)
-Overfull \hbox (9.36337pt too wide) in paragraph at lines 90--91
-[]\TU/LinLibertine_R.otf(0)/m/n/10 learns to approximate phonetic similarity fr
-om romanized character sequences[]
- []
+) [1
 
-[1
-
-]
-LaTeX Info: Redefining \rmfamily on input line 111.
-LaTeX Info: Redefining \sffamily on input line 111.
-LaTeX Info: Redefining \ttfamily on input line 111.
-LaTeX Info: Redefining \rmfamily on input line 111.
-LaTeX Info: Redefining \sffamily on input line 111.
-LaTeX Info: Redefining \ttfamily on input line 111.
- [2]
-Overfull \hbox (4.02425pt too wide) in paragraph at lines 118--119
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 typically undergoes phonetic adaptation r
-ather than arbitrary transformation. This[]
- []
-
-[3]
-Overfull \hbox (27.14284pt too wide) in paragraph at lines 148--149
+] [2]
+Overfull \hbox (27.14284pt too wide) in paragraph at lines 127--128
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 Rule-based phonetic algorithms like Sou
 ndex ([][][]Russell[][][], [][][]1918[][][]) and Metaphone ([][][]Philips[][][]
 ,[]
  []
 
 
-Overfull \hbox (16.39534pt too wide) in paragraph at lines 148--149
+Overfull \hbox (16.39534pt too wide) in paragraph at lines 127--128
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 extended coverage to European languages b
 ut remains limited for non-Indo-European[]
  []
 
 
-Overfull \hbox (0.56161pt too wide) in paragraph at lines 152--153
+Overfull \hbox (0.56161pt too wide) in paragraph at lines 131--132
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 Sporleder[][][], [][][]2017[][][]) comb
 ine geographic and semantic features for historical toponym[]
  []
 
 
-Overfull \hbox (13.65054pt too wide) in paragraph at lines 152--153
+Overfull \hbox (13.65054pt too wide) in paragraph at lines 131--132
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 their approach relies on exact and near-e
 xact string matching for candidate retrieval—[]
  []
 
-[4]
-Overfull \hbox (11.59666pt too wide) in paragraph at lines 160--161
+[3]
+Overfull \hbox (11.59666pt too wide) in paragraph at lines 139--140
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 There are clear synergies between the M
 EHDIE project and this work: MEHDIE’s[]
  []
 
-[5]
-Overfull \hbox (6.00896pt too wide) in paragraph at lines 174--175
+[4]
+Overfull \hbox (6.00896pt too wide) in paragraph at lines 153--154
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 version for over 100 languages, outputtin
 g IPA transcriptions. PanPhon ([][][]Mortensen[][]
  []
 
-[6] [7]
-Overfull \hbox (12.57616pt too wide) in paragraph at lines 205--206
+[5] [6]
+Overfull \hbox (12.57616pt too wide) in paragraph at lines 186--187
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 with language identification. Through kno
 wledge distillation from the Teacher,[]
  []
 
 
-Overfull \hbox (16.44017pt too wide) in paragraph at lines 208--209
+Overfull \hbox (16.44017pt too wide) in paragraph at lines 189--190
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 Both encoders share the same architectu
 re: a Bidirectional LSTM with lightweight[]
  []
@@ -976,112 +1376,106 @@ File: phonetic-architecture.png Graphic file (type bmp)
 LaTeX Warning: `h' float specifier changed to `ht'.
 
 
-Overfull \hbox (24.61111pt too wide) in paragraph at lines 229--230
+Overfull \hbox (24.61111pt too wide) in paragraph at lines 210--211
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 A toponym is thus represented as a sequ
 ence of feature vectors $[] \OT1/cmr/m/n/10.95 = [[][]\OML/cmm/m/it/10.95 ; [][
 ]; [] ; [][]\OT1/cmr/m/n/10.95 ]$[]
  []
 
 
-Overfull \hbox (2.18417pt too wide) in paragraph at lines 231--232
+Overfull \hbox (2.18417pt too wide) in paragraph at lines 212--213
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 This representation offers several adva
 ntages over character-based approaches: []
  []
 
-[8]
-Overfull \hbox (6.04758pt too wide) in paragraph at lines 242--243
+[7]
+Overfull \hbox (6.04758pt too wide) in paragraph at lines 223--224
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 linguistically ideal conventions (e.g., c
 ontext-dependent rules in Cyrillic languages),[]
  []
 
-[9] [10]
-Overfull \hbox (1.75154pt too wide) in paragraph at lines 323--324
+[8] [9]
+Overfull \hbox (1.75154pt too wide) in paragraph at lines 304--305
 [][]\TU/LinLibertine_R.otf(0)/b/n/10.95 Stage A\TU/LinLibertine_R.otf(0)/m/n/10
 .95 : Hard negatives are sampled based on orthographic similarity: pairs[]
  []
 
-[11]
-Overfull \hbox (6.13026pt too wide) in paragraph at lines 353--354
+[10]
+Overfull \hbox (6.13026pt too wide) in paragraph at lines 336--337
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 many”/“Deutschland”, “Japan”/“Nippon”, “F
 lorence”/“Firenze”). To construct mean-[]
  []
 
-[12]
-Overfull \hbox (17.97945pt too wide) in paragraph at lines 357--358
+[11]
+Overfull \hbox (17.97945pt too wide) in paragraph at lines 340--341
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 tised and georeferenced transcription of 
 the cartographer John Adams’s 1680 gazetteer[]
  []
 
-[13]
-Overfull \hbox (20.4395pt too wide) in paragraph at lines 389--390
+[12]
+Overfull \hbox (20.4395pt too wide) in paragraph at lines 372--373
 [][]\TU/LinLibertine_R.otf(0)/b/n/10.95 Orthographic negatives \TU/LinLibertine
 _R.otf(0)/m/n/10.95 (for curriculum learning): Names with high character-[]
  []
 
 
-LaTeX Warning: `h' float specifier changed to `ht'.
-
-
-Overfull \hbox (10.29602pt too wide) in paragraph at lines 410--410
+Overfull \hbox (10.29602pt too wide) in paragraph at lines 393--393
 [][]\TU/LinLibertine_R.otf(0)/b/n/12 Training Strategy: Balancing Contemporary 
 and Historical Data []
  []
 
-[14]
-Overfull \hbox (0.69182pt too wide) in paragraph at lines 416--417
+[13]
+Overfull \hbox (0.69182pt too wide) in paragraph at lines 399--400
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 phases. Importantly, negative sampling fo
 r triplet loss draws from the same source[]
  []
 
+[14]
+Overfull \hbox (0.39983pt too wide) in paragraph at lines 421--424
+[]\TU/LinLibertine_R.otf(0)/m/n/10.95 phonetic and orthographic assumptions. Di
+rect performance parity with MEHDIE[]
+ []
+
 [15]
-Overfull \hbox (2.88666pt too wide) in paragraph at lines 455--456
-[][]\TU/LinLibertine_R.otf(0)/b/n/10.95 Jaro-Winkler similarity\TU/LinLibertine
-_R.otf(0)/m/n/10.95 : Edit distance variant that weights prefix matches[]
- []
 
-[16] (./geonames-evaluation.tex
-Overfull \hbox (17.9375pt too wide) in paragraph at lines 2--2
-[][]\TU/LinLibertine_R.otf(0)/b/n/14.4 Primary Evaluation: GeoNames-Scale Gazet
-teer Match-[]
- []
+LaTeX Warning: `h' float specifier changed to `ht'.
 
-[17] [18]) (./mehdie-tests.tex
-Overfull \hbox (26.62628pt too wide) in paragraph at lines 9--13
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 The proposed model is designed for large-
-scale gazetteer reconciliation, with GeoNames-[]
- []
+Package pgfplots info on input line 538: Using 'lua backend=false' for axis: x 
+coord trafo unsupported.
 
-[19] [20])
-Overfull \hbox (0.4047pt too wide) in paragraph at lines 521--522
+LaTeX Warning: `h' float specifier changed to `ht'.
+
+[16] [17]
+Overfull \hbox (0.4047pt too wide) in paragraph at lines 594--595
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 This approach occupies a distinct niche b
 etween the rule-based cross-lingual meth-[]
  []
 
 
-Overfull \hbox (5.17888pt too wide) in paragraph at lines 525--526
+Overfull \hbox (5.17888pt too wide) in paragraph at lines 598--599
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 chitecture offers a more lightweight alte
 rnative suitable for deployment in resource-[]
  []
 
 
-Overfull \hbox (2.15822pt too wide) in paragraph at lines 527--528
+Overfull \hbox (2.15822pt too wide) in paragraph at lines 600--601
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 like GeoBERTTM, and GeoBERTTM does not ad
 dress cross-lingual matching. This[]
  []
 
-[21]
-Overfull \hbox (1.36829pt too wide) in paragraph at lines 539--540
+
+Overfull \hbox (1.36829pt too wide) in paragraph at lines 612--613
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 place names have multiple valid pronuncia
 tions (regional accents, historical shifts).[]
  []
 
-[22]
-Overfull \hbox (0.29521pt too wide) in paragraph at lines 573--574
+[18] [19]
+Overfull \hbox (0.29521pt too wide) in paragraph at lines 663--664
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 a candidate toponym pair identified throu
 gh preliminary filtering (e.g., geographic[]
  []
 
-[23] (pdf/phonetic-embeddings.bbl [24] [25] [26])
+[20] (pdf/phonetic-embeddings.bbl [21] [22] [23])
 The property list \polyglossia@langsetup contains the pairs (without outer
 braces):
 >  {latex/script}  =>  {latin}
@@ -1132,22 +1526,22 @@ braces):
 >  {arabic/babelname}  =>  {arabic}
 >  {arabic/localnumeral}  =>  {arabicnumerals}
 >  {arabic/Localnumeral}  =>  {arabicnumerals}.
- [27] [28]
+ [24] [25] [26]
 (pdf/phonetic-embeddings.aux
 LaTeX Info: Redefining \rmfamily on input line 21.
 LaTeX Info: Redefining \sffamily on input line 21.
 LaTeX Info: Redefining \ttfamily on input line 21.
 )
 Package rerunfilecheck Info: File `phonetic-embeddings.out' has not changed.
-(rerunfilecheck)             Checksum: E7742D3AC2FA7385CDADBB0B8911280D;11399.
+(rerunfilecheck)             Checksum: 4595B485989992D0E1E846D735C3222E;10355.
  ) 
 Here is how much of TeX's memory you used:
- 16744 strings out of 478181
- 332544 string characters out of 5854526
- 802290 words of memory out of 5000000
- 37032 multiletter control sequences out of 15000+600000
- 479014 words of font info for 103 fonts, out of 8000000 for 9000
+ 37718 strings out of 478181
+ 912407 string characters out of 5854526
+ 1441564 words of memory out of 5000000
+ 57652 multiletter control sequences out of 15000+600000
+ 480117 words of font info for 107 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 73i,13n,85p,1490b,507s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 99i,18n,103p,1220b,2332s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/phonetic-embeddings.pdf (28 pages).
+Output written on pdf/phonetic-embeddings.pdf (26 pages).

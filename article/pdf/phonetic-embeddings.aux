@@ -23,6 +23,9 @@
 \@writefile{lof}{\selectlanguage *{english}}
 \@writefile{lot}{\selectlanguage *{english}}
 \@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{2}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{section.2}\protected@file@percent }
+\newlabel{sec:related}{{2}{2}{Related Work}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Toponym Resolution and Geocoding}{2}{subsection.2.1}\protected@file@percent }
 \citation{recchia2013}
 \citation{santos2018}
 \citation{odell1918}
@@ -30,17 +33,14 @@
 \citation{philips2000}
 \citation{ardanuy2017}
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{4}{section.2}\protected@file@percent }
-\newlabel{sec:related}{{2}{4}{Related Work}{section.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Toponym Resolution and Geocoding}{4}{subsection.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Cross-Lingual and Historical Toponym Matching}{4}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Cross-Lingual and Historical Toponym Matching}{3}{subsection.2.2}\protected@file@percent }
 \citation{ehrmann2020,ehrmann2022}
 \citation{qiu2024geobert}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Deep Learning for Toponym Matching}{4}{subsection.2.3}\protected@file@percent }
 \citation{mortensen2018}
 \citation{mortensen2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Deep Learning for Toponym Matching}{6}{subsection.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Phonetic Representations in NLP}{6}{subsection.2.4}\protected@file@percent }
 \citation{rama2016}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Phonetic Representations in NLP}{5}{subsection.2.4}\protected@file@percent }
 \citation{translit2020}
 \citation{bromley1993,chopra2005}
 \citation{schroff2015}
@@ -48,97 +48,86 @@
 \citation{mueller2016,neculoiu2016}
 \citation{mueller2016}
 \citation{neculoiu2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Siamese Networks for Similarity Learning}{7}{subsection.2.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Model Architecture}{7}{section.3}\protected@file@percent }
-\newlabel{sec:architecture}{{3}{7}{Model Architecture}{section.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{8}{subsection.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Input Representations}{8}{subsection.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Phonetic Features (Teacher)}{8}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Siamese Networks for Similarity Learning}{6}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Model Architecture}{6}{section.3}\protected@file@percent }
+\newlabel{sec:architecture}{{3}{6}{Model Architecture}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{6}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Input Representations}{7}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Phonetic Features (Teacher)}{7}{subsubsection.3.2.1}\protected@file@percent }
 \citation{schuster1997}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Character Embeddings with Language ID (Student)}{9}{subsubsection.3.2.2}\protected@file@percent }
-\zref@newlabel{footdir@1}{\abspage{9}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Sequence Encoder}{9}{subsection.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Bidirectional LSTM}{9}{subsubsection.3.3.1}\protected@file@percent }
-\zref@newlabel{footdir@2}{\abspage{9}}
 \citation{lin2017structured}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Additive Self-Attention}{10}{subsubsection.3.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Similarity Computation}{10}{subsection.3.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Three-Phase Training}{10}{subsection.3.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.1}Phase 1: Teacher Pre-training}{11}{subsubsection.3.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.2}Phase 2: Student-Teacher Alignment}{11}{subsubsection.3.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.3}Phase 3: Student Fine-tuning with Curriculum Hard Negatives}{11}{subsubsection.3.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Construction}{12}{section.4}\protected@file@percent }
-\newlabel{sec:dataset}{{4}{12}{Dataset Construction}{section.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Source Data}{12}{subsection.4.1}\protected@file@percent }
-\zref@newlabel{footdir@3}{\abspage{12}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}GeoNames}{12}{subsubsection.4.1.1}\protected@file@percent }
-\zref@newlabel{footdir@5}{\abspage{12}}
-\zref@newlabel{footdir@4}{\abspage{12}}
-\zref@newlabel{footdir@6}{\abspage{12}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Character Embeddings with Language ID (Student)}{8}{subsubsection.3.2.2}\protected@file@percent }
+\zref@newlabel{footdir@1}{\abspage{8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Sequence Encoder}{8}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Bidirectional LSTM}{8}{subsubsection.3.3.1}\protected@file@percent }
+\zref@newlabel{footdir@2}{\abspage{8}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Additive Self-Attention}{9}{subsubsection.3.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Similarity Computation}{9}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Three-Phase Training}{9}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.1}Phase 1: Teacher Pre-training}{9}{subsubsection.3.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.2}Phase 2: Student-Teacher Alignment}{10}{subsubsection.3.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.3}Phase 3: Student Fine-tuning with Curriculum Hard Negatives}{10}{subsubsection.3.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Construction}{10}{section.4}\protected@file@percent }
+\newlabel{sec:dataset}{{4}{10}{Dataset Construction}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Source Data}{10}{subsection.4.1}\protected@file@percent }
+\zref@newlabel{footdir@3}{\abspage{11}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}GeoNames}{11}{subsubsection.4.1.1}\protected@file@percent }
+\zref@newlabel{footdir@5}{\abspage{11}}
+\zref@newlabel{footdir@4}{\abspage{11}}
+\zref@newlabel{footdir@6}{\abspage{11}}
 \citation{indexvillaris2024}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Index Villaris (1680)}{13}{subsubsection.4.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Pleiades}{13}{subsubsection.4.1.3}\protected@file@percent }
-\zref@newlabel{footdir@7}{\abspage{13}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Phonetic Annotation}{13}{subsection.4.2}\protected@file@percent }
-\zref@newlabel{footdir@8}{\abspage{13}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Pair Generation}{14}{subsection.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Positive Pairs}{14}{subsubsection.4.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Negative Pairs}{14}{subsubsection.4.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Corpus Statistics}{14}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Index Villaris (1680)}{12}{subsubsection.4.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Pleiades}{12}{subsubsection.4.1.3}\protected@file@percent }
+\zref@newlabel{footdir@7}{\abspage{12}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Phonetic Annotation}{12}{subsection.4.2}\protected@file@percent }
+\zref@newlabel{footdir@8}{\abspage{12}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Pair Generation}{13}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Positive Pairs}{13}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Negative Pairs}{13}{subsubsection.4.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Corpus Statistics}{13}{subsection.4.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces WHG training corpus statistics (preliminary)}}{13}{table.1}\protected@file@percent }
+\newlabel{tab:corpus-stats}{{1}{13}{WHG training corpus statistics (preliminary)}{table.1}{}}
+\citation{mehdie2025}
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Training Strategy: Balancing Contemporary and Historical Data}{14}{subsection.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{14}{section.5}\protected@file@percent }
+\newlabel{sec:experiments}{{5}{14}{Experiments}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Evaluation Benchmarks}{14}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.1}Internal Validation Split (Generalization)}{14}{subsubsection.5.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.2}MEHDIE Benchmark (Specialization)}{14}{subsubsection.5.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Implementation Details}{15}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Results}{15}{section.6}\protected@file@percent }
+\newlabel{sec:results}{{6}{15}{Results}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Internal Validation: The "Noise Floor"}{15}{subsection.6.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Internal Validation Results ($N=259,825$)}}{15}{table.2}\protected@file@percent }
+\newlabel{tab:val_results}{{2}{15}{Internal Validation Results ($N=259,825$)}{table.2}{}}
 \citation{mehdie2025}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces WHG training corpus statistics (preliminary)}}{15}{table.1}\protected@file@percent }
-\newlabel{tab:corpus-stats}{{1}{15}{WHG training corpus statistics (preliminary)}{table.1}{}}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{15}{section.5}\protected@file@percent }
-\newlabel{sec:experiments}{{5}{15}{Experiments}{section.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Evaluation Benchmarks}{15}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.1}MEHDIE Benchmark}{15}{subsubsection.5.1.1}\protected@file@percent }
-\citation{recchia2013}
-\citation{mehdie2025}
-\citation{qiu2024geobert}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.2}Held-out Test Set}{16}{subsubsection.5.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Baselines}{16}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Evaluation Metrics}{17}{subsection.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Implementation Details}{17}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Primary Evaluation: GeoNames-Scale Gazetteer Matching}{17}{section.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Evaluation Setup}{18}{subsection.6.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Dataset Statistics}{18}{subsection.6.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Results by Threshold}{18}{subsection.6.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces GeoNames validation performance across similarity thresholds.}}{18}{table.2}\protected@file@percent }
-\newlabel{tab:geonames_thresholds}{{2}{18}{GeoNames validation performance across similarity thresholds}{table.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Similarity Distribution Analysis}{19}{subsection.6.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.5}Discussion}{19}{subsection.6.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.6}Limitations and Extensions}{19}{subsection.6.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}External Benchmark Evaluation: MEHDIE}{19}{section.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Benchmark Scope and Interpretation}{19}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Results Overview}{20}{subsection.7.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Best F$_5$ scores per MEHDIE testset.}}{20}{table.3}\protected@file@percent }
-\newlabel{tab:mehdie_f5_best}{{3}{20}{Best F$_5$ scores per MEHDIE testset}{table.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Comparison with Published MEHDIE Results}{20}{subsection.7.3}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Comparison with MEHDIE published F$_5$ scores.}}{20}{table.4}\protected@file@percent }
-\newlabel{tab:mehdie_comparison}{{4}{20}{Comparison with MEHDIE published F$_5$ scores}{table.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Discussion}{20}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MEHDIE Benchmark Performance}{16}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Comparison with MEHDIE Benchmark (Metric: Best F-5)}}{16}{table.3}\protected@file@percent }
+\newlabel{tab:mehdie_results}{{3}{16}{Comparison with MEHDIE Benchmark (Metric: Best F-5)}{table.3}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{17}{section.7}\protected@file@percent }
+\newlabel{sec:discussion}{{7}{17}{Discussion}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Generalist vs. Specialist Models}{17}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Similarity Distribution Analysis}{17}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Production Readiness}{17}{subsection.7.3}\protected@file@percent }
 \citation{mehdie2025}
 \citation{qiu2024geobert}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Future Work}{21}{subsection.7.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Discussion}{21}{section.8}\protected@file@percent }
-\newlabel{sec:discussion}{{8}{21}{Discussion}{section.8}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.1}Positioning Relative to Prior Work}{21}{subsection.8.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.2}Limitations}{22}{subsection.8.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.2.1}Grapheme-to-Phoneme Coverage}{22}{subsubsection.8.2.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.2.2}Pronunciation Variation}{22}{subsubsection.8.2.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.2.3}Semantic vs. Phonetic Similarity}{22}{subsubsection.8.2.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.3}Future Directions}{22}{subsection.8.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.3.1}Multi-task Learning}{22}{subsubsection.8.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.3.2}Attention Interpretability}{23}{subsubsection.8.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {8.3.3}Integration with Gazetteer Services}{23}{subsubsection.8.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {8.4}Deployment Context: WHG PLACE}{23}{subsection.8.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Positioning Relative to Prior Work}{18}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Limitations}{18}{subsection.7.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.5.1}Grapheme-to-Phoneme Coverage}{18}{subsubsection.7.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.5.2}Pronunciation Variation}{19}{subsubsection.7.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.5.3}Semantic vs. Phonetic Similarity}{19}{subsubsection.7.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.5.4}Further Evaluation on Noisy Data}{19}{subsubsection.7.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.6}Future Directions}{19}{subsection.7.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.6.1}Multi-task Learning}{19}{subsubsection.7.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.6.2}Attention Interpretability}{20}{subsubsection.7.6.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.6.3}Integration with Gazetteer Services}{20}{subsubsection.7.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.7}Deployment Context: WHG PLACE}{20}{subsection.7.7}\protected@file@percent }
 \bibdata{phonetic-embeddings}
 \bibcite{translit2020}{{1}{2020}{{Benites et~al.}}{{Benites, Duivesteijn, von D{\"a}niken, and Cieliebak}}}
 \bibcite{bromley1993}{{2}{1993}{{Bromley et~al.}}{{Bromley, Guyon, LeCun, Säckinger, and Shah}}}
-\@writefile{toc}{\contentsline {section}{\numberline {9}Conclusion}{24}{section.9}\protected@file@percent }
-\newlabel{sec:conclusion}{{9}{24}{Conclusion}{section.9}{}}
 \bibcite{chopra2005}{{3}{2005}{{Chopra et~al.}}{{Chopra, Hadsell, and LeCun}}}
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{21}{section.8}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{21}{Conclusion}{section.8}{}}
 \bibcite{ardanuy2017}{{4}{2017}{{Coll~Ardanuy and Sporleder}}{{}}}
 \bibcite{ehrmann2020}{{5}{2020}{{Ehrmann et~al.}}{{Ehrmann, Romanello, Flückiger, and Clematide}}}
 \bibcite{ehrmann2022}{{6}{2022}{{Ehrmann et~al.}}{{Ehrmann, Romanello, Najem-Meyer, Doucet, and Clematide}}}
@@ -158,6 +147,10 @@
 \bibcite{santos2018}{{20}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
 \bibcite{schroff2015}{{21}{2015}{{Schroff et~al.}}{{Schroff, Kalenichenko, and Philbin}}}
 \bibcite{schuster1997}{{22}{1997}{{Schuster and Paliwal}}{{}}}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{28}{figure.1}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{28}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
-\gdef \@abspage@last{28}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{25}{figure.1}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{25}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Separation of Positive and Negative pairs in the validation set. The Stage B mining strategy successfully suppressed negative scores (red) below the 0.5 threshold, creating a clear margin for decision making.}}{26}{figure.2}\protected@file@percent }
+\newlabel{fig:distribution}{{2}{26}{Separation of Positive and Negative pairs in the validation set. The Stage B mining strategy successfully suppressed negative scores (red) below the 0.5 threshold, creating a clear margin for decision making}{figure.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Performance comparison by testset. Our generalist model outperforms the specialist SOTA on TS8 and ties on TS11/TS9, but trails on the highly morphologically complex TS7/TS10.}}{26}{figure.3}\protected@file@percent }
+\newlabel{fig:benchmark}{{3}{26}{Performance comparison by testset. Our generalist model outperforms the specialist SOTA on TS8 and ties on TS11/TS9, but trails on the highly morphologically complex TS7/TS10}{figure.3}{}}
+\gdef \@abspage@last{26}
