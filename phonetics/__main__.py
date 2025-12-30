@@ -223,7 +223,9 @@ def main():
                 data_path=mining_data_path,
                 char_vocab=char_vocab,
                 lang_vocab=lang_vocab,
-                device=device
+                device=device,
+                similarity_threshold=0.5,
+                sample_size=1000000,
             )
 
             print(f"Mined {sum(len(v) for v in mined_negatives.values()):,} hard negatives "
