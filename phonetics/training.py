@@ -868,13 +868,16 @@ def train_phase3(
         lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
         lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
         
+        # Load train dataset (loads all data into RAM)
         train_dataset = OptimizedPhase3Dataset(
             data_paths, oversample_factors,
             split='train', subsample_triplets=subsample_pairs
         )
+        # Val dataset shares the loaded data - no extra memory needed
         val_dataset = OptimizedPhase3Dataset(
             data_paths, oversample_factors,
-            split='val', subsample_triplets=subsample_pairs
+            split='val', subsample_triplets=subsample_pairs,
+            shared_data=train_dataset.get_shared_data()
         )
     else:
         char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))

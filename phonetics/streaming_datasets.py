@@ -466,43 +466,62 @@ class OptimizedPhase2Dataset(Dataset):
 
 class OptimizedPhase3Dataset(Dataset):
     """
-    Optimized Phase 3 Dataset with pre-mined hard negatives.
-    All data loaded into memory (triplet indices + char encodings are small).
+    FULLY IN-MEMORY Phase 3 Dataset with pre-mined hard negatives.
+
+    Supports sharing loaded data between train/val splits to avoid double memory usage.
     """
 
     def __init__(self, hdf5_paths: List[str], oversample_factors: List[int],
                  split: str = 'train', train_ratio: float = 0.9,
-                 subsample_triplets: int = Config.SUBSAMPLE_PAIRS, seed: int = 42):
+                 subsample_triplets: int = Config.SUBSAMPLE_PAIRS, seed: int = 42,
+                 shared_data: Optional[Dict] = None):
         self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
 
-        # All loaded into memory (no features, just indices and char encodings)
-        self._triplet_anchors: Dict[int, np.ndarray] = {}
-        self._triplet_positives: Dict[int, np.ndarray] = {}
-        self._triplet_negatives: Dict[int, np.ndarray] = {}
-        self._char_ids: Dict[int, np.ndarray] = {}
-        self._char_lengths: Dict[int, np.ndarray] = {}
-        self._lang_ids: Dict[int, np.ndarray] = {}
+        if shared_data is not None:
+            print(f"OptimizedPhase3Dataset ({split}): Reusing shared data from train set...")
+            self._triplet_anchors = shared_data['triplet_anchors']
+            self._triplet_positives = shared_data['triplet_positives']
+            self._triplet_negatives = shared_data['triplet_negatives']
+            self._char_ids = shared_data['char_ids']
+            self._char_lengths = shared_data['char_lengths']
+            self._lang_ids = shared_data['lang_ids']
+            self._total_triplets = shared_data['total_triplets']
+        else:
+            # All loaded into memory (no features, just indices and char encodings)
+            self._triplet_anchors: Dict[int, np.ndarray] = {}
+            self._triplet_positives: Dict[int, np.ndarray] = {}
+            self._triplet_negatives: Dict[int, np.ndarray] = {}
+            self._char_ids: Dict[int, np.ndarray] = {}
+            self._char_lengths: Dict[int, np.ndarray] = {}
+            self._lang_ids: Dict[int, np.ndarray] = {}
+            self._total_triplets: Dict[int, int] = {}
+
+            total_bytes = 0
+            print(f"OptimizedPhase3Dataset ({split}): Loading data into RAM...")
+
+            for source_idx, path in enumerate(hdf5_paths):
+                with h5py.File(path, 'r') as f:
+                    self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
+                    self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
+                    self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
+                    self._char_ids[source_idx] = f['items/char_ids'][:]
+                    self._char_lengths[source_idx] = f['items/char_lengths'][:]
+                    self._lang_ids[source_idx] = f['items/lang_ids'][:]
+                    self._total_triplets[source_idx] = len(self._triplet_anchors[source_idx])
+
+                    total_bytes += sum(arr.nbytes for arr in [
+                        self._triplet_anchors[source_idx], self._triplet_positives[source_idx],
+                        self._triplet_negatives[source_idx], self._char_ids[source_idx],
+                        self._char_lengths[source_idx], self._lang_ids[source_idx]
+                    ])
+
+            print(f"  Total memory: {total_bytes/1024**3:.2f} GB", flush=True)
+
+        # Build index for this split
         self.combined_indices = []
 
-        total_bytes = 0
-        print(f"OptimizedPhase3Dataset ({split}): Loading data into RAM...")
-
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
-            with h5py.File(path, 'r') as f:
-                self._triplet_anchors[source_idx] = f['triplets/anchor_idx'][:]
-                self._triplet_positives[source_idx] = f['triplets/positive_idx'][:]
-                self._triplet_negatives[source_idx] = f['triplets/negative_idx'][:]
-                self._char_ids[source_idx] = f['items/char_ids'][:]
-                self._char_lengths[source_idx] = f['items/char_lengths'][:]
-                self._lang_ids[source_idx] = f['items/lang_ids'][:]
-                total_triplets = len(self._triplet_anchors[source_idx])
-
-                total_bytes += sum(arr.nbytes for arr in [
-                    self._triplet_anchors[source_idx], self._triplet_positives[source_idx],
-                    self._triplet_negatives[source_idx], self._char_ids[source_idx],
-                    self._char_lengths[source_idx], self._lang_ids[source_idx]
-                ])
-
+            total_triplets = self._total_triplets[source_idx]
             max_t = min(total_triplets, subsample_triplets)
             indices = np.arange(total_triplets)
             self.rng.shuffle(indices)
@@ -513,10 +532,22 @@ class OptimizedPhase3Dataset(Dataset):
                 for t_idx in source_indices:
                     self.combined_indices.append((source_idx, t_idx))
 
-            print(f"  Source {source_idx}: {len(source_indices):,} triplets × {factor}x = {len(source_indices)*factor:,}")
+            print(f"  {split} Source {source_idx}: {len(source_indices):,} triplets × {factor}x = {len(source_indices)*factor:,}")
 
         self.rng.shuffle(self.combined_indices)
-        print(f"  Total: {len(self.combined_indices):,} samples | Memory: {total_bytes/1024**3:.2f} GB", flush=True)
+        print(f"  {split} total: {len(self.combined_indices):,} samples", flush=True)
+
+    def get_shared_data(self) -> Dict:
+        """Return data arrays for sharing with val dataset."""
+        return {
+            'triplet_anchors': self._triplet_anchors,
+            'triplet_positives': self._triplet_positives,
+            'triplet_negatives': self._triplet_negatives,
+            'char_ids': self._char_ids,
+            'char_lengths': self._char_lengths,
+            'lang_ids': self._lang_ids,
+            'total_triplets': self._total_triplets,
+        }
 
     def __len__(self):
         return len(self.combined_indices)
