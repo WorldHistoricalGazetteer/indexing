@@ -213,7 +213,7 @@ class LangVocab:
         """Convert language code to ID."""
         if isinstance(lang, bytes):
             lang = lang.decode('utf-8')
-        return self.lang_to_id.get(lang, self.lang_to_id[self.UNK_LANG])
+        return self.lang_to_id.get(lang, self.lang_to_id.get(self.UNK_LANG, 0))
 
     def save(self, path: str):
         """Save vocabulary to file."""

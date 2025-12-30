@@ -8,18 +8,6 @@ Reference:
     Sagi et al. (2025) "Utilizing phonetic similarity for cross-source and
     cross-language toponym matching: a benchmark and prototype"
     Language Resources and Evaluation, 59:2427-2451
-    https://doi.org/10.1007/s10579-025-09812-9
-
-Testsets (from paper Table 2):
-    - testset7:  YaqutSham ↔ KimaSham (30 matches)
-    - testset8:  KimaSham ↔ ThurayyaSham (21 matches)
-    - testset9:  Tudela ↔ Thurayya (18 matches)
-    - testset10: YaqutAndalusMagreb ↔ KimaMagrebAndalus (28 matches)
-    - testset11: Damast ↔ Tudela (32 matches)
-
-Primary Metric: F-5 (recall weighted 5x over precision)
-    The paper notes users prefer high recall and tolerate low precision,
-    as they want to find all potential matches for manual review.
 
 Usage:
     from testing.mehdie_benchmark import MEHDIEBenchmark
@@ -33,14 +21,16 @@ import csv
 from dataclasses import dataclass, field
 from typing import Dict, List, Tuple, Optional, Callable
 from pathlib import Path
+import unicodedata
 
 import numpy as np
 import torch
+
+# Try to import anyascii
 try:
     from anyascii import anyascii
 except ImportError:
-    def anyascii(text): return text  # Fallback (will fail for cross-script)
-
+    def anyascii(text): return text
 
 @dataclass
 class TestSet:
@@ -81,9 +71,6 @@ class EvaluationResult:
 class MEHDIEBenchmark:
     """
     Benchmark evaluation against MEHDIE testsets.
-
-    Evaluates a phonetic similarity model's ability to match toponyms
-    across different scripts (Hebrew, Arabic) and sources.
     """
 
     # Testset configurations matching the paper
@@ -116,12 +103,6 @@ class MEHDIEBenchmark:
     }
 
     def __init__(self, testsets_dir: str):
-        """
-        Initialize benchmark with path to MEHDIE testsets.
-
-        Args:
-            testsets_dir: Path to directory containing testset folders
-        """
         self.testsets_dir = Path(testsets_dir)
         self.testsets: Dict[str, TestSet] = {}
         self._load_testsets()
@@ -167,14 +148,11 @@ class MEHDIEBenchmark:
             for row in reader:
                 record_id = row.get('id', '')
                 if record_id:
-                    # Get all name variants
                     title = row.get('title', '')
                     variants_str = row.get('variants', '')
 
-                    # Parse variants (may be semicolon or colon separated)
                     variants = []
                     if variants_str:
-                        # Handle both separators
                         for sep in [';', ':']:
                             if sep in variants_str:
                                 variants.extend(variants_str.split(sep))
@@ -182,10 +160,7 @@ class MEHDIEBenchmark:
                         else:
                             variants = [variants_str]
 
-                    # Clean variants
                     variants = [v.strip() for v in variants if v.strip()]
-
-                    # Add title if not in variants
                     all_names = [title] + [v for v in variants if v != title]
 
                     dataset[record_id] = {
@@ -213,22 +188,6 @@ class MEHDIEBenchmark:
                         matches.append((id1, id2))
         return matches
 
-    def get_all_name_pairs(self, testset: TestSet) -> List[Tuple[str, str, str, str]]:
-        """
-        Get all possible name pairs between two datasets.
-
-        Returns list of (id1, id2, name1, name2) tuples.
-        """
-        pairs = []
-        for id1, record1 in testset.dataset1.items():
-            for id2, record2 in testset.dataset2.items():
-                # For each pair of records, compare all name variants
-                for name1 in record1['all_names']:
-                    for name2 in record2['all_names']:
-                        if name1 and name2:
-                            pairs.append((id1, id2, name1, name2))
-        return pairs
-
     def evaluate_model(
             self,
             similarity_fn: Callable[[str, str], float],
@@ -238,22 +197,12 @@ class MEHDIEBenchmark:
     ) -> Dict[str, List[EvaluationResult]]:
         """
         Evaluate a similarity function against the benchmark.
-
-        Args:
-            similarity_fn: Function (name1, name2) -> similarity score [0, 1]
-            thresholds: List of similarity thresholds to evaluate
-            testset_names: Specific testsets to evaluate (None = all)
-            verbose: Print progress
-
-        Returns:
-            Dict mapping testset name to list of EvaluationResults per threshold
+        Passes RAW strings to similarity_fn.
         """
         if thresholds is None:
-            # Default thresholds matching paper range
             thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
 
         results = {}
-
         testsets_to_eval = testset_names or list(self.testsets.keys())
 
         for testset_name in testsets_to_eval:
@@ -262,14 +211,10 @@ class MEHDIEBenchmark:
                 continue
 
             testset = self.testsets[testset_name]
-
             if verbose:
                 print(f"\nEvaluating {testset_name}...")
 
-            # Compute similarity scores for all record pairs
-            # We match at record level: if ANY name pair exceeds threshold, it's a match
-            pair_scores = {}  # (id1, id2) -> max similarity score
-
+            pair_scores = {}
             total_comparisons = len(testset.dataset1) * len(testset.dataset2)
             if verbose:
                 print(f"  Computing {total_comparisons:,} pairwise similarities...")
@@ -280,38 +225,26 @@ class MEHDIEBenchmark:
                     for name1 in record1['all_names']:
                         for name2 in record2['all_names']:
                             if name1 and name2:
-                                # ADD THESE TWO LINES:
-                                name1_rom = anyascii(name1).lower()
-                                name2_rom = anyascii(name2).lower()
-
-                                # Use romanized names for comparison
-                                score = similarity_fn(name1_rom, name2_rom)
+                                # FIXED: Pass raw names; functions handle romanization/detection
+                                score = similarity_fn(name1, name2)
                                 max_score = max(max_score, score)
                     pair_scores[(id1, id2)] = max_score
 
-            # Ground truth as set for fast lookup
             gt_set = set(testset.ground_truth)
-
-            # Evaluate at each threshold
             testset_results = []
+
             for threshold in thresholds:
-                # Predictions at this threshold
                 predictions = {
                     pair for pair, score in pair_scores.items()
                     if score >= threshold
                 }
-
-                # Calculate metrics
                 tp = len(predictions & gt_set)
                 fp = len(predictions - gt_set)
                 fn = len(gt_set - predictions)
 
                 precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
                 recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
-
                 f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
-
-                # F-5 emphasizes recall 5x more than precision (paper's primary metric)
                 beta = 5
                 f5 = (1 + beta ** 2) * precision * recall / (beta ** 2 * precision + recall) \
                     if (beta ** 2 * precision + recall) > 0 else 0.0
@@ -348,30 +281,25 @@ class MEHDIEBenchmark:
             self._print_ascii_table(results)
 
     def _print_ascii_table(self, results: Dict[str, List[EvaluationResult]]):
-        """Print ASCII formatted results table."""
         print("\n" + "=" * 100)
         print("MEHDIE BENCHMARK RESULTS")
         print("=" * 100)
-
         for testset_name, testset_results in results.items():
             print(f"\n{testset_name}")
             print("-" * 90)
             print(f"{'Threshold':>10} {'Precision':>10} {'Recall':>10} {'F1':>10} "
                   f"{'F5':>10} {'TP':>6} {'FP':>6} {'FN':>6}")
             print("-" * 90)
-
             for r in testset_results:
                 print(f"{r.threshold:>10.2f} {r.precision:>10.3f} {r.recall:>10.3f} "
                       f"{r.f1:>10.3f} {r.f5:>10.3f} {r.true_positives:>6} "
                       f"{r.false_positives:>6} {r.false_negatives:>6}")
 
-        # Summary: best F-5 per testset (matching paper's primary metric)
         print("\n" + "=" * 100)
         print("SUMMARY (Best F-5 per testset)")
         print("=" * 100)
         print(f"{'Testset':<50} {'θ':>6} {'P':>8} {'R':>8} {'F5':>8}")
         print("-" * 100)
-
         for testset_name, testset_results in results.items():
             best = max(testset_results, key=lambda r: r.f5)
             short_name = testset_name.replace('testset', 'TS')
@@ -379,7 +307,6 @@ class MEHDIEBenchmark:
                   f"{best.recall:>8.3f} {best.f5:>8.3f}")
 
     def _print_latex_table(self, results: Dict[str, List[EvaluationResult]]):
-        """Print LaTeX formatted results table."""
         print("\n% LaTeX table")
         print("\\begin{table}[h]")
         print("\\centering")
@@ -387,13 +314,11 @@ class MEHDIEBenchmark:
         print("\\toprule")
         print("Testset & $\\theta$ & Precision & Recall & F-1 & F-5 \\\\")
         print("\\midrule")
-
         for testset_name, testset_results in results.items():
             best = max(testset_results, key=lambda r: r.f5)
             short_name = testset_name.split('-')[0].replace('testset', 'TS')
             print(f"{short_name} & {best.threshold:.2f} & {best.precision:.3f} & "
                   f"{best.recall:.3f} & {best.f1:.3f} & {best.f5:.3f} \\\\")
-
         print("\\bottomrule")
         print("\\end{tabular}")
         print("\\caption{MEHDIE benchmark results (F-5 is primary metric)}")
@@ -406,59 +331,36 @@ class MEHDIEBenchmark:
             thresholds: List[float] = None,
             verbose: bool = True
     ) -> Dict[str, Dict[str, List[EvaluationResult]]]:
-        """
-        Compare multiple similarity methods.
-
-        Args:
-            methods: Dict mapping method name to similarity function
-            thresholds: Thresholds to evaluate
-            verbose: Print progress
-
-        Returns:
-            Dict mapping method name to results dict
-        """
         if thresholds is None:
             thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
-
         all_results = {}
-
         for method_name, similarity_fn in methods.items():
             if verbose:
                 print(f"\n{'=' * 60}")
                 print(f"Evaluating method: {method_name}")
                 print('=' * 60)
-
             all_results[method_name] = self.evaluate_model(
                 similarity_fn, thresholds, verbose=verbose
             )
-
         return all_results
 
     def print_comparison(self, all_results: Dict[str, Dict[str, List[EvaluationResult]]]):
-        """Print comparison table across methods (using F-5 as primary metric)."""
         print("\n" + "=" * 120)
         print("METHOD COMPARISON (Best F-5 per testset)")
         print("=" * 120)
-
         methods = list(all_results.keys())
         testsets = list(next(iter(all_results.values())).keys())
-
-        # Header
         header = f"{'Testset':<40}"
         for method in methods:
             header += f" {method:>15}"
         print(header)
         print("-" * 120)
-
-        # Rows
         for testset in testsets:
             row = f"{testset:<40}"
             for method in methods:
                 best = max(all_results[method][testset], key=lambda r: r.f5)
                 row += f" {best.f5:>15.3f}"
             print(row)
-
-        # Average
         print("-" * 120)
         row = f"{'AVERAGE':<40}"
         for method in methods:
@@ -473,35 +375,31 @@ class MEHDIEBenchmark:
 def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
     """
     Create a similarity function from a trained HybridPhoneticModel.
-
-    Args:
-        model: Trained HybridPhoneticModel
-        char_vocab: CharVocab instance
-        lang_vocab: LangVocab instance
-        device: Device to run inference on
-
-    Returns:
-        Function (name1, name2) -> similarity score [0, 1]
+    Takes RAW text, detects language, romanizes, and infers.
     """
     import torch.nn.functional as F
 
     model = model.to(device)
     model.eval()
 
-    # Cache for embeddings
     embedding_cache = {}
 
     def get_embedding(name: str) -> torch.Tensor:
         if name in embedding_cache:
             return embedding_cache[name]
 
-        # Detect language based on script
+        # 1. Detect language from RAW script
         lang = detect_language(name)
 
+        # 2. Romanize for the character encoder
+        romanized = anyascii(name).lower()
+        if not romanized: # Fallback if anyascii fails or empty
+             romanized = name.lower()
+
         # Encode
-        char_ids = torch.tensor([char_vocab.encode(name)], dtype=torch.long, device=device)
+        char_ids = torch.tensor([char_vocab.encode(romanized)], dtype=torch.long, device=device)
         lang_ids = torch.tensor([lang_vocab.encode(lang)], dtype=torch.long, device=device)
-        lengths = torch.tensor([len(name)], dtype=torch.long, device=device)
+        lengths = torch.tensor([len(romanized)], dtype=torch.long, device=device)
 
         with torch.no_grad():
             emb = model.encode_char_only(char_ids, lang_ids, lengths)
@@ -513,22 +411,21 @@ def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
         if not name1 or not name2:
             return 0.0
 
+        # Pass raw names to get_embedding
         emb1 = get_embedding(name1)
         emb2 = get_embedding(name2)
 
         # Cosine similarity
         sim = F.cosine_similarity(emb1, emb2).item()
-
-        # Convert from [-1, 1] to [0, 1]
         return (sim + 1) / 2
 
     return similarity_fn
 
 
 def detect_language(text: str) -> str:
-    """Detect language based on Unicode script."""
+    """Detect language based on Unicode script. Returns ISO 639-1 codes."""
     if not text:
-        return 'unknown'
+        return 'en' # Default fallback
 
     # Check first non-space character
     for char in text:
@@ -538,23 +435,23 @@ def detect_language(text: str) -> str:
 
         # Hebrew: U+0590–U+05FF
         if 0x0590 <= code <= 0x05FF:
-            return 'heb'
+            return 'he' # Changed from 'heb'
 
         # Arabic: U+0600–U+06FF, U+0750–U+077F, U+08A0–U+08FF
         if (0x0600 <= code <= 0x06FF or
                 0x0750 <= code <= 0x077F or
                 0x08A0 <= code <= 0x08FF):
-            return 'ara'
+            return 'ar' # Changed from 'ara'
 
         # Syriac: U+0700–U+074F
         if 0x0700 <= code <= 0x074F:
-            return 'syr'
+            return 'arc' # Aramaic/Syriac
 
         # Latin
         if code < 0x0250:
-            return 'lat'
+            return 'en' # Fallback for Latin script
 
-    return 'unknown'
+    return 'en'
 
 
 # =============================================================================
@@ -562,9 +459,13 @@ def detect_language(text: str) -> str:
 # =============================================================================
 
 def levenshtein_similarity(s1: str, s2: str) -> float:
-    """Normalized Levenshtein similarity."""
+    """Normalized Levenshtein similarity (with internal Romanization)."""
     if not s1 or not s2:
         return 0.0
+
+    # Internal Romanization for baselines
+    s1 = anyascii(s1).lower()
+    s2 = anyascii(s2).lower()
 
     m, n = len(s1), len(s2)
     if m < n:
@@ -590,9 +491,13 @@ def levenshtein_similarity(s1: str, s2: str) -> float:
 
 
 def jaro_winkler_similarity(s1: str, s2: str) -> float:
-    """Jaro-Winkler string similarity."""
+    """Jaro-Winkler string similarity (with internal Romanization)."""
     if not s1 or not s2:
         return 0.0
+
+    # Internal Romanization for baselines
+    s1 = anyascii(s1).lower()
+    s2 = anyascii(s2).lower()
 
     if s1 == s2:
         return 1.0
