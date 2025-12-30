@@ -43,7 +43,7 @@ LOG_DIR="${BENCHMARK_DIR}/logs"
 
 # Model checkpoints
 MODEL_DIR="${IX1_BASE}/models/phonetic/checkpoints"
-DEFAULT_MODEL="${MODEL_DIR}/phase3_a.pt"
+DEFAULT_MODEL="${MODEL_DIR}/final_model_b.pt"
 
 # Job tracking
 JOB_INFO_FILE="${BENCHMARK_DIR}/current_job.sh"
