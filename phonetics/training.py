@@ -1056,147 +1056,104 @@ def train_phase3(
 
 
 def mine_hard_negatives(
-    model: HybridPhoneticModel,
-    data_path: str,
-    char_vocab: CharVocab,
-    lang_vocab: LangVocab,
-    similarity_threshold: float = Config.STAGE_B_SIMILARITY_THRESHOLD,
-    max_negatives_per_anchor: int = 10,
-    device: str = 'cuda'
+        model: HybridPhoneticModel,
+        data_path: str,  # This argument becomes unused, we use DATA_SOURCES_PHASE3_OPTIMIZED
+        char_vocab: CharVocab,  # Unused in optimized version
+        lang_vocab: LangVocab,  # Unused in optimized version
+        similarity_threshold: float = 0.85,
+        max_negatives_per_anchor: int = 10,
+        device: str = 'cuda'
 ) -> Dict[int, List[int]]:
     """
-    Mine hard negatives from model's false positives for Stage B training.
-    
-    Identifies pairs where:
-    - Model similarity > threshold
-    - Items are from different clusters (known non-identical)
-    
-    CONSTRAINTS (as specified):
-    - No human labeling
-    - Only reuse existing dataset exclusions (cluster != cluster)
-    - Conservative threshold (high similarity only)
-    
-    Args:
-        model: Trained model from Phase 3 Stage A
-        data_path: HDF5 training data path
-        similarity_threshold: Conservative threshold (default 0.85)
-        max_negatives_per_anchor: Limit negatives per anchor
-    
-    Returns:
-        Dict mapping anchor_idx to list of hard negative indices
+    Mine hard negatives by checking Stage A (Levenshtein) negatives.
+    Finds pairs where: Edit Distance is Small (Stage A) AND Model Similarity is High (Error).
     """
     import h5py
-    from collections import defaultdict
-    
+    from .training import DATA_SOURCES_PHASE3_OPTIMIZED  # Import globally defined sources
+
     print("=" * 60)
-    print("Mining Hard Negatives (Stage B)")
-    print(f"  Similarity threshold: {similarity_threshold}")
+    print("Mining Hard Negatives (Smart Strategy)")
+    print("  Source: Filtering Stage A Levenshtein negatives")
+    print(f"  Target: Finding pairs with Model Sim > {similarity_threshold}")
     print("=" * 60)
-    
+
     model.eval()
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
     model.to(device)
-    
-    mined_negatives = defaultdict(list)
-    
-    with h5py.File(data_path, 'r') as f:
-        items = f['items']
-        total_items = f.attrs['total_items']
-        
-        # Build cluster index
-        cluster_to_items = defaultdict(list)
-        item_clusters = {}
-        
-        for idx in range(total_items):
-            cluster_id = int(items['cluster_id'][idx])
-            cluster_to_items[cluster_id].append(idx)
-            item_clusters[idx] = cluster_id
-        
-        # Sample items for efficiency
-        sample_size = min(10000, total_items)
-        sampled_indices = list(range(total_items))
-        import random
-        random.shuffle(sampled_indices)
-        sampled_indices = sampled_indices[:sample_size]
-        
-        print(f"Computing embeddings for {sample_size} items...")
-        
-        # Compute embeddings in batches
-        embeddings = {}
-        batch_size = 256
-        
-        for batch_start in range(0, len(sampled_indices), batch_size):
-            batch_indices = sampled_indices[batch_start:batch_start + batch_size]
-            
-            char_ids_list = []
-            lang_ids_list = []
-            
-            for idx in batch_indices:
-                romanized = items['romanized'][idx]
-                lang = items['lang'][idx]
-                
-                char_ids = char_vocab.encode(romanized)
-                lang_id = lang_vocab.encode(lang)
-                
-                char_ids_list.append(torch.tensor(char_ids, dtype=torch.long))
-                lang_ids_list.append(lang_id)
-            
-            # Pad and batch
-            max_len = max(len(ids) for ids in char_ids_list)
-            char_ids_padded = torch.zeros(len(batch_indices), max_len, dtype=torch.long)
-            char_lengths = torch.tensor([len(ids) for ids in char_ids_list])
-            
-            for i, ids in enumerate(char_ids_list):
-                char_ids_padded[i, :len(ids)] = ids
-            
-            lang_ids_tensor = torch.tensor(lang_ids_list, dtype=torch.long)
-            
-            with torch.no_grad():
-                embs = model.encode_char_only(
-                    char_ids_padded.to(device),
-                    lang_ids_tensor.to(device),
-                    char_lengths
-                )
-                embs = embs.cpu().numpy()
-            
-            for i, idx in enumerate(batch_indices):
-                embeddings[idx] = embs[i]
-        
-        print(f"Finding false positives (sim > {similarity_threshold})...")
-        
-        # Find false positives
-        import numpy as np
-        
-        fp_count = 0
-        for i, idx_a in enumerate(sampled_indices):
-            if i % 1000 == 0:
-                print(f"  Processed {i}/{len(sampled_indices)}", end='\r')
-            
-            emb_a = embeddings[idx_a]
-            cluster_a = item_clusters[idx_a]
-            
-            for idx_b in sampled_indices[i+1:]:
-                cluster_b = item_clusters[idx_b]
-                
-                # Only consider cross-cluster pairs (known non-identical)
-                if cluster_a == cluster_b:
-                    continue
-                
-                emb_b = embeddings[idx_b]
-                
-                # Compute cosine similarity
-                sim = float(np.dot(emb_a, emb_b))
-                
-                if sim > similarity_threshold:
-                    # This is a false positive - model thinks they're similar but they're not
-                    if len(mined_negatives[idx_a]) < max_negatives_per_anchor:
-                        mined_negatives[idx_a].append(idx_b)
-                        fp_count += 1
-                    if len(mined_negatives[idx_b]) < max_negatives_per_anchor:
-                        mined_negatives[idx_b].append(idx_a)
-                        fp_count += 1
-        
-        print(f"\nMined {fp_count} hard negative pairs")
-        print(f"Anchors with negatives: {len(mined_negatives)}")
-    
-    return dict(mined_negatives)
+
+    mined_negatives = {}
+    total_mined = 0
+
+    # Iterate over the OPTIMIZED files (which contain the triplets)
+    # We ignore the 'data_path' arg which points to the raw file
+    for source in DATA_SOURCES_PHASE3_OPTIMIZED:
+        if not os.path.exists(source.path):
+            continue
+
+        print(f"Scanning {source.name}...")
+
+        with h5py.File(source.path, 'r') as f:
+            # We can read the IDs directly - no need to tokenize text!
+            # Phase 3 Optimized files have: anchor_char_ids, negative_char_ids
+
+            # Process in large batches
+            batch_size = 2048
+            num_samples = f['triplets/anchor_char_ids'].shape[0]
+
+            # Limit scan to first 100k pairs to save time, or scan all if fast
+            scan_limit = min(num_samples, 100000)
+
+            for i in range(0, scan_limit, batch_size):
+                end = min(i + batch_size, scan_limit)
+
+                # 1. Load Batch (Anchor vs Negative)
+                # Note: 'negative' here means "Spelling-Close" (Stage A negative)
+                anc_ids = torch.from_numpy(f['triplets/anchor_char_ids'][i:end]).long().to(device)
+                anc_lens = torch.from_numpy(f['triplets/anchor_lengths'][i:end]).long().cpu()  # CPU for pack_padded
+                anc_langs = torch.from_numpy(f['triplets/anchor_lang_id'][i:end]).long().to(device)
+
+                neg_ids = torch.from_numpy(f['triplets/negative_char_ids'][i:end]).long().to(device)
+                neg_lens = torch.from_numpy(f['triplets/negative_lengths'][i:end]).long().cpu()  # CPU
+                neg_langs = torch.from_numpy(f['triplets/negative_lang_id'][i:end]).long().to(device)
+
+                # 2. Compute Embeddings
+                with torch.no_grad():
+                    emb_anc = model.encode_char_only(anc_ids, anc_langs, anc_lens)
+                    emb_neg = model.encode_char_only(neg_ids, neg_langs, neg_lens)
+
+                    # 3. Compute Cosine Similarity
+                    # (N, D) * (N, D) -> (N,)
+                    sims = torch.nn.functional.cosine_similarity(emb_anc, emb_neg)
+
+                # 4. Filter: Find failures (Sim > Threshold)
+                failures = torch.where(sims > similarity_threshold)[0]
+
+                if len(failures) > 0:
+                    # Map back to global indices or store for the dataset
+                    # Note: For simplicity in the Dataset class, we usually map
+                    # anchor_idx -> list of negative_indices.
+                    # However, since we are scanning the *triplets* file, we need
+                    # the original Item IDs to be useful for the raw dataset.
+                    # The optimized file stores 'anchor_idx' and 'negative_idx' pointing to the original raw items.
+
+                    raw_anc_idxs = f['triplets/anchor_idx'][i:end]
+                    raw_neg_idxs = f['triplets/negative_idx'][i:end]
+
+                    failure_indices = failures.cpu().numpy()
+
+                    for fail_idx in failure_indices:
+                        a_id = int(raw_anc_idxs[fail_idx])
+                        n_id = int(raw_neg_idxs[fail_idx])
+
+                        if a_id not in mined_negatives:
+                            mined_negatives[a_id] = []
+                        if len(mined_negatives[a_id]) < max_negatives_per_anchor:
+                            mined_negatives[a_id].append(n_id)
+                            total_mined += 1
+
+                print(f"  Scanned {end}/{scan_limit} | Found {total_mined} hard negatives...", end='\r')
+
+    print(f"\nTotal mined hard negatives: {total_mined}")
+    print(f"Anchors with negatives: {len(mined_negatives)}")
+
+    return mined_negatives
