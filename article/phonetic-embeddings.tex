@@ -421,9 +421,13 @@ The oversampling strategy is applied consistently across all three training phas
 \section{Experiments}
 \label{sec:experiments}
 
-%% TODO: This section outlines planned experiments. Update with results.
-
 \subsection{Evaluation Benchmarks}
+
+\subsubsection{Held-out Test Set}
+
+I reserve 10\% of the WHG training corpus as a held-out test set, stratified by language pair to ensure coverage across the linguistic diversity of the training data. This enables evaluation on a broader range of language pairs than the MEHDIE benchmark, including non-Semitic languages and ancient-to-modern variation from Pleiades.
+
+\input{geonames-evaluation.tex}
 
 \subsubsection{MEHDIE Benchmark}
 
@@ -439,12 +443,7 @@ I evaluate on the benchmark introduced by Sagi et al.~\citep{mehdie2025}, which 
 
 The benchmark includes manually verified match annotations, enabling evaluation of precision and recall. Critically, this benchmark tests cross-script matching between Hebrew and Arabic---languages that share Semitic phonetic heritage but use entirely different writing systems. This makes it well-suited for evaluating the phonetic approach.
 
-%% TODO: Obtain MEHDIE benchmark data (contact authors if not publicly available)
-%% TODO: Document evaluation protocol matching their paper for comparability
-
-\subsubsection{Held-out Test Set}
-
-I reserve 10\% of the WHG training corpus as a held-out test set, stratified by language pair to ensure coverage across the linguistic diversity of the training data. This enables evaluation on a broader range of language pairs than the MEHDIE benchmark, including non-Semitic languages and ancient-to-modern variation from Pleiades.
+\input{mehdie-tests.tex}
 
 \subsection{Baselines}
 

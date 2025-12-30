@@ -1,0 +1,81 @@
+
+\section{Primary Evaluation: GeoNames-Scale Gazetteer Matching}
+
+This section presents the primary evaluation of the proposed model on GeoNames-derived data.
+Unlike external benchmarks, this evaluation directly reflects the intended deployment context:
+large-scale gazetteer reconciliation under extreme class imbalance, with millions of candidate
+pairs and high recall requirements.
+
+\subsection{Evaluation Setup}
+
+The model was evaluated on a held-out validation split drawn from a GeoNames-based training corpus.
+Triplets were constructed to reflect realistic matching conditions, pairing true toponym variants
+with large numbers of confusable negatives. Similarity was computed using cosine similarity in the
+learned phonetic embedding space.
+
+A range of similarity thresholds $\theta \in [0.5, 0.95]$ was evaluated to characterise the
+precision--recall trade-off. In addition to standard F$_1$, we report F$_5$, which weights recall
+five times more heavily than precision and better reflects gazetteer linking priorities.
+
+\subsection{Dataset Statistics}
+
+The validation split contains approximately 260k positive and 260k negative pairs, sampled from
+over two million unique toponym instances. This scale is several orders of magnitude larger than
+manuscript-oriented benchmarks and exposes the model to realistic noise and aliasing.
+
+\subsection{Results by Threshold}
+
+Table~\ref{tab:geonames_thresholds} reports performance as a function of the similarity threshold.
+Lower thresholds maximise recall, while higher thresholds approach perfect precision at the cost
+of reduced coverage.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{lcccc}
+\hline
+$\theta$ & Precision & Recall & F$_1$ & F$_5$ \\
+\hline
+0.50 & 0.957 & 0.998 & 0.977 & 0.996 \\
+0.60 & 0.984 & 0.994 & 0.989 & 0.994 \\
+0.70 & 0.996 & 0.985 & 0.991 & 0.986 \\
+0.80 & 1.000 & 0.958 & 0.978 & 0.959 \\
+0.85 & 1.000 & 0.925 & 0.961 & 0.928 \\
+0.90 & 1.000 & 0.858 & 0.923 & 0.862 \\
+0.95 & 1.000 & 0.699 & 0.823 & 0.707 \\
+\hline
+\end{tabular}
+\caption{GeoNames validation performance across similarity thresholds.}
+\label{tab:geonames_thresholds}
+\end{table}
+
+The best F$_5$ score is achieved at $\theta = 0.50$, reflecting the model’s ability to maintain
+extremely high recall with only moderate precision loss. This behaviour is well-suited to
+candidate generation pipelines, where false positives can be filtered downstream using spatial,
+topological, or authority-based constraints.
+
+\subsection{Similarity Distribution Analysis}
+
+Figure-free analysis of similarity distributions further illustrates the model’s separation
+capacity. Positive pairs exhibit a strong concentration near cosine similarity 1.0, with a
+median similarity of 0.975 and a 5th percentile of 0.815. In contrast, negative pairs are centred
+near zero (median 0.005), with negligible mass above 0.8 similarity.
+
+Only 0.4\% of negative pairs exceed a similarity of 0.7, and none exceed 0.8, indicating a clean
+margin between true matches and confusable negatives. Approximately 14\% of positive pairs fall
+below 0.9 similarity, reflecting genuinely difficult cases such as extreme orthographic variation,
+cross-lingual forms, and historical exonyms.
+
+\subsection{Discussion}
+
+These results demonstrate that the proposed model achieves strong separation between matching and
+non-matching toponyms at GeoNames scale. The high-recall regime is particularly robust, supporting
+its use as a phonetic candidate generator in large gazetteer alignment tasks. Unlike classical
+string similarity measures, the learned embedding space maintains discrimination even under heavy
+aliasing and multilingual variation.
+
+\subsection{Limitations and Extensions}
+
+While GeoNames provides broad coverage and relatively clean identifiers, it does not fully capture
+the noise and inconsistency of volunteered geographic information. An OpenStreetMap-based evaluation
+would introduce noisier labels and richer alias structures, and is identified as a priority for
+future work.
