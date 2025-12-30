@@ -24,7 +24,6 @@
 set -e
 
 # --- Configuration ---
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IX1_BASE="/ix1/whcdh"
 REPO_DIR="${IX1_BASE}/elastic"
 
@@ -35,14 +34,20 @@ if [ -f "$ENV_FILE" ]; then
 fi
 
 # Benchmark directories
-BENCHMARK_DIR="${IX1_BASE}/benchmark"
+BENCHMARK_DIR="${REPO_DIR}/testing"
 TESTSETS_DIR="${BENCHMARK_DIR}/mehdie-testsets"
 RESULTS_DIR="${BENCHMARK_DIR}/results"
 LOG_DIR="${BENCHMARK_DIR}/logs"
 
 # Model checkpoints
 MODEL_DIR="${IX1_BASE}/models/phonetic/checkpoints"
-DEFAULT_MODEL="${MODEL_DIR}/phase3_a.pt"
+
+# Prefer Stage B (final) model if available, otherwise Stage A
+if [ -f "${MODEL_DIR}/final_model_b.pt" ]; then
+    DEFAULT_MODEL="${MODEL_DIR}/final_model_b.pt"
+else
+    DEFAULT_MODEL="${MODEL_DIR}/phase3_a.pt"
+fi
 
 # Job tracking
 JOB_INFO_FILE="${BENCHMARK_DIR}/current_job.sh"
@@ -746,7 +751,7 @@ EVALUATION COMMANDS:
                         Methods: Levenshtein, Jaro-Winkler
 
   -model [--model PATH] Run trained model evaluation (GPU)
-                        Default model: ${DEFAULT_MODEL}
+                        Default: final_model_b.pt if available, else phase3_a.pt
 
   -full [--model PATH]  Run full evaluation (baselines + model)
                         Requires GPU for model inference
