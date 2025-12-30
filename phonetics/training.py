@@ -936,7 +936,7 @@ def train_phase3(
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
     # Use workers for optimized dataset, single-threaded for original
-    num_workers = 4 if is_optimized else 0
+    num_workers = 4 if (is_optimized and negative_stage == 'A') else 0
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
