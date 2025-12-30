@@ -224,10 +224,10 @@ def main():
                 char_vocab=char_vocab,
                 lang_vocab=lang_vocab,
                 device=device,
-                similarity_threshold=0.5,      # Lower threshold to catch more
+                similarity_threshold=0.4,      # Lower threshold to catch more
                 max_negatives_per_anchor=20,   # More negatives per anchor
-                random_sample_size=500000,     # Random pairs for background noise
-                targeted_sample_size=500000,   # Targeted pairs for spelling confusion
+                random_sample_size=1000000,     # Random pairs for background noise
+                targeted_sample_size=1000000,   # Targeted pairs for spelling confusion
             )
 
             print(f"Mined {sum(len(v) for v in mined_negatives.values()):,} hard negatives "
