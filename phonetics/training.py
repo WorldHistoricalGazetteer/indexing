@@ -935,8 +935,14 @@ def train_phase3(
     print(f"Training pairs: {len(train_dataset):,}", flush=True)
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
-    # Use workers for optimized dataset, single-threaded for original
-    num_workers = 4 if (is_optimized and negative_stage == 'A') else 0
+    # Use workers for optimized dataset Stage A only
+    # Stage B with mined_negatives can have issues with multiprocessing
+    if is_optimized and negative_stage == 'A':
+        num_workers = 4
+    else:
+        num_workers = 0
+        if negative_stage == 'B':
+            print("Note: Using num_workers=0 for Stage B (mined negatives + multiprocessing can deadlock)")
 
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
