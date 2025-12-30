@@ -1093,65 +1093,85 @@ def mine_hard_negatives(
         print(f"Scanning {source.name}...")
 
         with h5py.File(source.path, 'r') as f:
-            # --- DYNAMIC KEY DETECTION ---
-            # Determine where the data lives (Root or Triplets group)
-            if 'anchor_char_ids' in f:
-                pfx = ''  # Root level
-            elif 'triplets' in f and 'anchor_char_ids' in f['triplets']:
-                pfx = 'triplets/'
+            # --- ROBUST KEY DETECTION ---
+            # 1. Identify the 'triplets' group location
+            if 'triplets' in f:
+                grp = f['triplets']
+                base_pfx = 'triplets/'
             else:
-                print(f"  ERROR: Could not find 'anchor_char_ids' in {list(f.keys())}")
+                grp = f
+                base_pfx = ''
+
+            # 2. Identify the structure inside (Flat vs Nested)
+            # Check for 'anchor_char_ids' (Flat) or 'anchor/char_ids' (Nested)
+            keys = list(grp.keys())
+
+            if 'anchor_char_ids' in keys:
+                # Flat structure: triplets/anchor_char_ids
+                pfx_anc = f'{base_pfx}anchor_'
+                pfx_neg = f'{base_pfx}negative_'
+                suffix = ''
+            elif 'anchor' in keys and isinstance(grp['anchor'], h5py.Group):
+                # Nested structure: triplets/anchor/char_ids
+                pfx_anc = f'{base_pfx}anchor/'
+                pfx_neg = f'{base_pfx}negative/'
+                suffix = ''  # keys inside are just 'char_ids', 'lengths'
+            else:
+                print(f"  ERROR: Unexpected HDF5 structure. Keys in {base_pfx}: {keys}")
                 continue
 
-            # Identify the ID tracking columns (might be anchor_idx or anchor_item_idx)
-            # This maps the triplet back to the original dataset row ID
-            if f'{pfx}anchor_idx' in f:
-                idx_key = 'idx'
-            elif f'{pfx}anchor_item_idx' in f:
-                idx_key = 'item_idx'
-            else:
-                print(f"  WARNING: Could not find index columns (anchor_idx/item_idx). skipping.")
+            # 3. Identify Index Columns (idx vs item_idx)
+            # We need to map back to global IDs
+            idx_name = 'idx'
+            if f'{pfx_anc}item_idx' in f or (f'{pfx_anc}item_idx' in grp):
+                idx_name = 'item_idx'
+
+            # Helper to build paths
+            def get_path(side, name):
+                # e.g., 'anchor', 'char_ids' -> triplets/anchor/char_ids
+                # e.g., 'anchor', 'char_ids' -> triplets/anchor_char_ids
+                if '/' in pfx_anc: return f"{base_pfx}{side}/{name}"
+                return f"{base_pfx}{side}_{name}"
+
+            # Get total samples
+            try:
+                num_samples = f[get_path('anchor', 'char_ids')].shape[0]
+            except KeyError:
+                print(f"  ERROR: Could not find char_ids at {get_path('anchor', 'char_ids')}")
                 continue
 
-            # Get total number of triplets
-            num_samples = f[f'{pfx}anchor_char_ids'].shape[0]
             print(f"  Found {num_samples:,} triplets. Scanning...")
 
             batch_size = 2048
-            scan_limit = min(num_samples, 200000)  # Check first 200k pairs
+            scan_limit = min(num_samples, 200000)
 
             for i in range(0, scan_limit, batch_size):
                 end = min(i + batch_size, scan_limit)
 
-                # 1. Load Batch (using detected prefix)
-                anc_ids = torch.from_numpy(f[f'{pfx}anchor_char_ids'][i:end]).long().to(device)
-                anc_lens = torch.from_numpy(f[f'{pfx}anchor_lengths'][i:end]).long().cpu()
-                anc_langs = torch.from_numpy(f[f'{pfx}anchor_lang_id'][i:end]).long().to(device)
+                # Load Batch using dynamic paths
+                anc_ids = torch.from_numpy(f[get_path('anchor', 'char_ids')][i:end]).long().to(device)
+                anc_lens = torch.from_numpy(f[get_path('anchor', 'lengths')][i:end]).long().cpu()
+                anc_langs = torch.from_numpy(f[get_path('anchor', 'lang_id')][i:end]).long().to(device)
 
-                neg_ids = torch.from_numpy(f[f'{pfx}negative_char_ids'][i:end]).long().to(device)
-                neg_lens = torch.from_numpy(f[f'{pfx}negative_lengths'][i:end]).long().cpu()
-                neg_langs = torch.from_numpy(f[f'{pfx}negative_lang_id'][i:end]).long().to(device)
+                neg_ids = torch.from_numpy(f[get_path('negative', 'char_ids')][i:end]).long().to(device)
+                neg_lens = torch.from_numpy(f[get_path('negative', 'lengths')][i:end]).long().cpu()
+                neg_langs = torch.from_numpy(f[get_path('negative', 'lang_id')][i:end]).long().to(device)
 
-                # 2. Compute Embeddings
+                # Compute Embeddings & Similarity
                 with torch.no_grad():
                     emb_anc = model.encode_char_only(anc_ids, anc_langs, anc_lens)
                     emb_neg = model.encode_char_only(neg_ids, neg_langs, neg_lens)
-
-                    # 3. Compute Cosine Similarity
                     sims = torch.nn.functional.cosine_similarity(emb_anc, emb_neg)
 
-                # 4. Filter: Find failures (Sim > Threshold)
+                # Filter Failures
                 failures = torch.where(sims > similarity_threshold)[0]
 
                 if len(failures) > 0:
-                    # Load original IDs only for the failures
-                    # (Reading small random chunks is fine here)
-                    # We need the indices from the file to know WHO these items are
-                    raw_anc_idxs = f[f'{pfx}anchor_{idx_key}'][i:end]
-                    raw_neg_idxs = f[f'{pfx}negative_{idx_key}'][i:end]
+                    # Load original IDs
+                    raw_anc_idxs = f[get_path('anchor', idx_name)][i:end]
+                    raw_neg_idxs = f[get_path('negative', idx_name)][i:end]
 
                     failure_indices = failures.cpu().numpy()
-
                     for fail_idx in failure_indices:
                         a_id = int(raw_anc_idxs[fail_idx])
                         n_id = int(raw_neg_idxs[fail_idx])
