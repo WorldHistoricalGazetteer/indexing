@@ -36,6 +36,10 @@ from pathlib import Path
 
 import numpy as np
 import torch
+try:
+    from anyascii import anyascii
+except ImportError:
+    def anyascii(text): return text  # Fallback (will fail for cross-script)
 
 
 @dataclass
@@ -276,7 +280,12 @@ class MEHDIEBenchmark:
                     for name1 in record1['all_names']:
                         for name2 in record2['all_names']:
                             if name1 and name2:
-                                score = similarity_fn(name1, name2)
+                                # ADD THESE TWO LINES:
+                                name1_rom = anyascii(name1).lower()
+                                name2_rom = anyascii(name2).lower()
+
+                                # Use romanized names for comparison
+                                score = similarity_fn(name1_rom, name2_rom)
                                 max_score = max(max_score, score)
                     pair_scores[(id1, id2)] = max_score
 
