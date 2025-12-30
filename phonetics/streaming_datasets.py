@@ -2,6 +2,7 @@
 HDF5-backed Dataset classes for streaming training.
 
 v3: OptimizedPhase2Dataset loads metadata into RAM, reads features from disk (local NVMe).
+v4: Added set_mined_negatives() support for Stage B curriculum training.
 """
 
 import random
@@ -165,7 +166,13 @@ class MultiSourcePhase2Dataset(Dataset):
 
 
 class MultiSourcePhase3Dataset(Dataset):
-    """Phase 3 Dataset with curriculum hard negatives."""
+    """
+    Phase 3 Dataset with curriculum hard negatives.
+
+    Supports two negative mining stages:
+    - Stage A: Orthographically close, phonetically distant (computed on-the-fly)
+    - Stage B: Model-mined hard negatives (set via set_mined_negatives())
+    """
 
     def __init__(self, hdf5_paths: List[str], oversample_factors: List[int],
                  char_vocab, lang_vocab, split: str = 'train', train_ratio: float = 0.9,
@@ -182,6 +189,9 @@ class MultiSourcePhase3Dataset(Dataset):
         self.source_item_ipa = []
         self.source_phon_counts = []
         self.source_all_items = []
+
+        # Stage B: mined negatives (set via set_mined_negatives)
+        self._mined_negatives: Optional[Dict[int, List[int]]] = None
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
             with h5py.File(path, 'r') as f:
@@ -219,6 +229,18 @@ class MultiSourcePhase3Dataset(Dataset):
         random.shuffle(self.combined_indices)
         print(f"MultiSourcePhase3Dataset ({split}): {len(self.combined_indices):,} samples", flush=True)
 
+    def set_mined_negatives(self, mined_negatives: Dict[int, List[int]]):
+        """
+        Set model-mined hard negatives for Stage B training.
+
+        Args:
+            mined_negatives: Dict mapping anchor_idx -> list of hard negative indices
+        """
+        self._mined_negatives = mined_negatives
+        self.negative_stage = 'B'
+        total = sum(len(v) for v in mined_negatives.values())
+        print(f"  Set {total:,} mined negatives for {len(mined_negatives):,} anchors")
+
     def _get_file(self, source_idx: int) -> h5py.File:
         if source_idx not in self._file_handles:
             self._file_handles[source_idx] = h5py.File(self.hdf5_paths[source_idx], 'r')
@@ -234,6 +256,7 @@ class MultiSourcePhase3Dataset(Dataset):
         return random.choice(available) if available else random.choice(self.source_all_items[source_idx])
 
     def _get_stage_a_negative(self, source_idx: int, anchor_idx: int, anchor_cluster: int) -> int:
+        """Stage A: Find orthographically close but phonetically distant negative."""
         anchor_rom = self.source_item_romanized[source_idx].get(anchor_idx, '')
         if not anchor_rom: return self._random_negative(source_idx, anchor_cluster, {anchor_idx})
         first_char = anchor_rom[0].lower()
@@ -262,6 +285,15 @@ class MultiSourcePhase3Dataset(Dataset):
             if score > best_score: best_score, best_idx = score, neg_idx
         return best_idx if best_idx else self._random_negative(source_idx, anchor_cluster, {anchor_idx})
 
+    def _get_stage_b_negative(self, source_idx: int, anchor_idx: int, anchor_cluster: int) -> int:
+        """Stage B: Use model-mined hard negatives."""
+        if self._mined_negatives and anchor_idx in self._mined_negatives:
+            negatives = self._mined_negatives[anchor_idx]
+            if negatives:
+                return random.choice(negatives)
+        # Fallback to random if no mined negative available
+        return self._random_negative(source_idx, anchor_cluster, {anchor_idx})
+
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         source_idx, pair_idx = self.combined_indices[idx]
         f = self._get_file(source_idx)
@@ -271,7 +303,15 @@ class MultiSourcePhase3Dataset(Dataset):
         local_idx = pair_idx if pair_idx < phon_count else pair_idx - phon_count
         anchor_idx, positive_idx = int(pairs['anchor_idx'][local_idx]), int(pairs['positive_idx'][local_idx])
         anchor_cluster = int(items['cluster_id'][anchor_idx])
-        negative_idx = self._get_stage_a_negative(source_idx, anchor_idx, anchor_cluster) if self.negative_stage == 'A' else self._random_negative(source_idx, anchor_cluster, {anchor_idx, positive_idx})
+
+        # Select negative based on stage
+        if self.negative_stage == 'B':
+            negative_idx = self._get_stage_b_negative(source_idx, anchor_idx, anchor_cluster)
+        elif self.negative_stage == 'A':
+            negative_idx = self._get_stage_a_negative(source_idx, anchor_idx, anchor_cluster)
+        else:
+            negative_idx = self._random_negative(source_idx, anchor_cluster, {anchor_idx, positive_idx})
+
         return {
             'anchor_char_ids': torch.tensor(self.char_vocab.encode(items['romanized'][anchor_idx]), dtype=torch.long),
             'anchor_lang_id': torch.tensor(self.lang_vocab.encode(items['lang'][anchor_idx]), dtype=torch.long),
@@ -469,6 +509,9 @@ class OptimizedPhase3Dataset(Dataset):
     FULLY IN-MEMORY Phase 3 Dataset with pre-mined hard negatives.
 
     Supports sharing loaded data between train/val splits to avoid double memory usage.
+
+    For Stage B training, call set_mined_negatives() after construction to
+    override the pre-computed negatives with model-mined hard negatives.
     """
 
     def __init__(self, hdf5_paths: List[str], oversample_factors: List[int],
@@ -476,6 +519,11 @@ class OptimizedPhase3Dataset(Dataset):
                  subsample_triplets: int = Config.SUBSAMPLE_PAIRS, seed: int = 42,
                  shared_data: Optional[Dict] = None):
         self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
+        self.split = split
+
+        # Stage B support
+        self._mined_negatives: Optional[Dict[int, List[int]]] = None
+        self._use_mined_negatives = False
 
         if shared_data is not None:
             print(f"OptimizedPhase3Dataset ({split}): Reusing shared data from train set...")
@@ -486,6 +534,7 @@ class OptimizedPhase3Dataset(Dataset):
             self._char_lengths = shared_data['char_lengths']
             self._lang_ids = shared_data['lang_ids']
             self._total_triplets = shared_data['total_triplets']
+            self._total_items = shared_data.get('total_items', {})
         else:
             # All loaded into memory (no features, just indices and char encodings)
             self._triplet_anchors: Dict[int, np.ndarray] = {}
@@ -495,6 +544,7 @@ class OptimizedPhase3Dataset(Dataset):
             self._char_lengths: Dict[int, np.ndarray] = {}
             self._lang_ids: Dict[int, np.ndarray] = {}
             self._total_triplets: Dict[int, int] = {}
+            self._total_items: Dict[int, int] = {}
 
             total_bytes = 0
             print(f"OptimizedPhase3Dataset ({split}): Loading data into RAM...")
@@ -508,6 +558,7 @@ class OptimizedPhase3Dataset(Dataset):
                     self._char_lengths[source_idx] = f['items/char_lengths'][:]
                     self._lang_ids[source_idx] = f['items/lang_ids'][:]
                     self._total_triplets[source_idx] = len(self._triplet_anchors[source_idx])
+                    self._total_items[source_idx] = len(self._char_ids[source_idx])
 
                     total_bytes += sum(arr.nbytes for arr in [
                         self._triplet_anchors[source_idx], self._triplet_positives[source_idx],
@@ -519,6 +570,7 @@ class OptimizedPhase3Dataset(Dataset):
 
         # Build index for this split
         self.combined_indices = []
+        self.hdf5_paths = hdf5_paths  # Store for reference
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
             total_triplets = self._total_triplets[source_idx]
@@ -537,6 +589,21 @@ class OptimizedPhase3Dataset(Dataset):
         self.rng.shuffle(self.combined_indices)
         print(f"  {split} total: {len(self.combined_indices):,} samples", flush=True)
 
+    def set_mined_negatives(self, mined_negatives: Dict[int, List[int]]):
+        """
+        Set model-mined hard negatives for Stage B training.
+
+        This switches the dataset from using pre-computed Stage A negatives
+        to using the provided model-mined hard negatives.
+
+        Args:
+            mined_negatives: Dict mapping anchor_idx -> list of hard negative indices
+        """
+        self._mined_negatives = mined_negatives
+        self._use_mined_negatives = True
+        total = sum(len(v) for v in mined_negatives.values())
+        print(f"  OptimizedPhase3Dataset ({self.split}): Set {total:,} mined negatives for {len(mined_negatives):,} anchors")
+
     def get_shared_data(self) -> Dict:
         """Return data arrays for sharing with val dataset."""
         return {
@@ -547,17 +614,34 @@ class OptimizedPhase3Dataset(Dataset):
             'char_lengths': self._char_lengths,
             'lang_ids': self._lang_ids,
             'total_triplets': self._total_triplets,
+            'total_items': self._total_items,
         }
 
     def __len__(self):
         return len(self.combined_indices)
 
+    def _get_mined_negative(self, source_idx: int, anchor_idx: int) -> int:
+        """Get a mined hard negative for the anchor, or random fallback."""
+        if self._mined_negatives and anchor_idx in self._mined_negatives:
+            negatives = self._mined_negatives[anchor_idx]
+            if negatives:
+                return random.choice(negatives)
+
+        # Fallback: random item from same source
+        total_items = self._total_items.get(source_idx, len(self._char_ids[source_idx]))
+        return random.randint(0, total_items - 1)
+
     def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
         source_idx, triplet_idx = self.combined_indices[idx]
 
-        a_idx = self._triplet_anchors[source_idx][triplet_idx]
-        p_idx = self._triplet_positives[source_idx][triplet_idx]
-        n_idx = self._triplet_negatives[source_idx][triplet_idx]
+        a_idx = int(self._triplet_anchors[source_idx][triplet_idx])
+        p_idx = int(self._triplet_positives[source_idx][triplet_idx])
+
+        # Use mined negative if Stage B, otherwise use pre-computed
+        if self._use_mined_negatives:
+            n_idx = self._get_mined_negative(source_idx, a_idx)
+        else:
+            n_idx = int(self._triplet_negatives[source_idx][triplet_idx])
 
         a_len = int(self._char_lengths[source_idx][a_idx])
         p_len = int(self._char_lengths[source_idx][p_idx])

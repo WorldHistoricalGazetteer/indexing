@@ -17,15 +17,15 @@ from pathlib import Path
 
 
 def mine_hard_negatives(
-        model,
-        data_path: str,
-        char_vocab,
-        lang_vocab,
-        similarity_threshold: float = 0.7,
-        max_negatives_per_anchor: int = 10,
-        sample_size: int = 50000,
-        batch_size: int = 512,
-        device: str = 'cuda'
+    model,
+    data_path: str,
+    char_vocab,
+    lang_vocab,
+    similarity_threshold: float = 0.7,
+    max_negatives_per_anchor: int = 10,
+    sample_size: int = 50000,
+    batch_size: int = 512,
+    device: str = 'cuda'
 ) -> Dict[int, List[int]]:
     """
     Mine hard negatives from training data.
@@ -117,11 +117,12 @@ def mine_hard_negatives(
             lang_ids_list.append(lang_id)
             lengths.append(len(topo))
 
-        # Pad sequences
+        # Pad sequences (use 0 as padding, standard convention)
         max_len = max(len(ids) for ids in char_ids_list)
+        pad_id = 0  # Standard padding index
         padded_char_ids = []
         for ids in char_ids_list:
-            padded = ids + [char_vocab.pad_id] * (max_len - len(ids))
+            padded = ids + [pad_id] * (max_len - len(ids))
             padded_char_ids.append(padded)
 
         char_ids_t = torch.tensor(padded_char_ids, dtype=torch.long, device=device)
@@ -216,11 +217,11 @@ def mine_hard_negatives(
 
 
 def mine_hard_negatives_from_multiple_sources(
-        model,
-        data_paths: List[str],
-        char_vocab,
-        lang_vocab,
-        **kwargs
+    model,
+    data_paths: List[str],
+    char_vocab,
+    lang_vocab,
+    **kwargs
 ) -> Dict[int, List[int]]:
     """
     Mine hard negatives from multiple training data files.
@@ -234,9 +235,9 @@ def mine_hard_negatives_from_multiple_sources(
             print(f"Skipping {path} (not found)")
             continue
 
-        print(f"\n{'=' * 60}")
+        print(f"\n{'='*60}")
         print(f"Processing: {path}")
-        print('=' * 60)
+        print('='*60)
 
         negatives = mine_hard_negatives(
             model=model,
