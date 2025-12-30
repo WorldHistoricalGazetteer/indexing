@@ -586,6 +586,9 @@ do_train() {
     done
 
     local DATA_FILE="${CUSTOM_DATA:-${DATA_DIR}/training_data.h5}"
+    if [ ! -f "$DATA_FILE" ] && [ -f "${DATA_DIR}/training_data_gn.h5" ]; then
+        DATA_FILE="${DATA_DIR}/training_data_gn.h5"
+    fi
 
 #    if [ ! -f "${DATA_FILE}" ]; then
 #        echo "ERROR: Training data not found at ${DATA_FILE}"
