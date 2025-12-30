@@ -493,7 +493,7 @@ def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
 
         # Cosine similarity
         sim = F.cosine_similarity(emb1, emb2).item()
-        return (sim + 1) / 2
+        return max(0.0, sim)
 
     return similarity_fn
 
