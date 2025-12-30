@@ -1057,9 +1057,9 @@ def train_phase3(
 
 def mine_hard_negatives(
         model: HybridPhoneticModel,
-        data_path: str,  # This argument becomes unused, we use DATA_SOURCES_PHASE3_OPTIMIZED
-        char_vocab: CharVocab,  # Unused in optimized version
-        lang_vocab: LangVocab,  # Unused in optimized version
+        data_path: str,
+        char_vocab: CharVocab,
+        lang_vocab: LangVocab,
         similarity_threshold: float = 0.85,
         max_negatives_per_anchor: int = 10,
         device: str = 'cuda'
@@ -1069,7 +1069,8 @@ def mine_hard_negatives(
     Finds pairs where: Edit Distance is Small (Stage A) AND Model Similarity is High (Error).
     """
     import h5py
-    from .training import DATA_SOURCES_PHASE3_OPTIMIZED  # Import globally defined sources
+    import os
+    from .training import DATA_SOURCES_PHASE3_OPTIMIZED
 
     print("=" * 60)
     print("Mining Hard Negatives (Smart Strategy)")
@@ -1084,37 +1085,52 @@ def mine_hard_negatives(
     mined_negatives = {}
     total_mined = 0
 
-    # Iterate over the OPTIMIZED files (which contain the triplets)
-    # We ignore the 'data_path' arg which points to the raw file
     for source in DATA_SOURCES_PHASE3_OPTIMIZED:
         if not os.path.exists(source.path):
+            print(f"Skipping {source.name} (file not found)")
             continue
 
         print(f"Scanning {source.name}...")
 
         with h5py.File(source.path, 'r') as f:
-            # We can read the IDs directly - no need to tokenize text!
-            # Phase 3 Optimized files have: anchor_char_ids, negative_char_ids
+            # --- DYNAMIC KEY DETECTION ---
+            # Determine where the data lives (Root or Triplets group)
+            if 'anchor_char_ids' in f:
+                pfx = ''  # Root level
+            elif 'triplets' in f and 'anchor_char_ids' in f['triplets']:
+                pfx = 'triplets/'
+            else:
+                print(f"  ERROR: Could not find 'anchor_char_ids' in {list(f.keys())}")
+                continue
 
-            # Process in large batches
+            # Identify the ID tracking columns (might be anchor_idx or anchor_item_idx)
+            # This maps the triplet back to the original dataset row ID
+            if f'{pfx}anchor_idx' in f:
+                idx_key = 'idx'
+            elif f'{pfx}anchor_item_idx' in f:
+                idx_key = 'item_idx'
+            else:
+                print(f"  WARNING: Could not find index columns (anchor_idx/item_idx). skipping.")
+                continue
+
+            # Get total number of triplets
+            num_samples = f[f'{pfx}anchor_char_ids'].shape[0]
+            print(f"  Found {num_samples:,} triplets. Scanning...")
+
             batch_size = 2048
-            num_samples = f['triplets/anchor_char_ids'].shape[0]
-
-            # Limit scan to first 100k pairs to save time, or scan all if fast
-            scan_limit = min(num_samples, 100000)
+            scan_limit = min(num_samples, 200000)  # Check first 200k pairs
 
             for i in range(0, scan_limit, batch_size):
                 end = min(i + batch_size, scan_limit)
 
-                # 1. Load Batch (Anchor vs Negative)
-                # Note: 'negative' here means "Spelling-Close" (Stage A negative)
-                anc_ids = torch.from_numpy(f['triplets/anchor_char_ids'][i:end]).long().to(device)
-                anc_lens = torch.from_numpy(f['triplets/anchor_lengths'][i:end]).long().cpu()  # CPU for pack_padded
-                anc_langs = torch.from_numpy(f['triplets/anchor_lang_id'][i:end]).long().to(device)
+                # 1. Load Batch (using detected prefix)
+                anc_ids = torch.from_numpy(f[f'{pfx}anchor_char_ids'][i:end]).long().to(device)
+                anc_lens = torch.from_numpy(f[f'{pfx}anchor_lengths'][i:end]).long().cpu()
+                anc_langs = torch.from_numpy(f[f'{pfx}anchor_lang_id'][i:end]).long().to(device)
 
-                neg_ids = torch.from_numpy(f['triplets/negative_char_ids'][i:end]).long().to(device)
-                neg_lens = torch.from_numpy(f['triplets/negative_lengths'][i:end]).long().cpu()  # CPU
-                neg_langs = torch.from_numpy(f['triplets/negative_lang_id'][i:end]).long().to(device)
+                neg_ids = torch.from_numpy(f[f'{pfx}negative_char_ids'][i:end]).long().to(device)
+                neg_lens = torch.from_numpy(f[f'{pfx}negative_lengths'][i:end]).long().cpu()
+                neg_langs = torch.from_numpy(f[f'{pfx}negative_lang_id'][i:end]).long().to(device)
 
                 # 2. Compute Embeddings
                 with torch.no_grad():
@@ -1122,22 +1138,17 @@ def mine_hard_negatives(
                     emb_neg = model.encode_char_only(neg_ids, neg_langs, neg_lens)
 
                     # 3. Compute Cosine Similarity
-                    # (N, D) * (N, D) -> (N,)
                     sims = torch.nn.functional.cosine_similarity(emb_anc, emb_neg)
 
                 # 4. Filter: Find failures (Sim > Threshold)
                 failures = torch.where(sims > similarity_threshold)[0]
 
                 if len(failures) > 0:
-                    # Map back to global indices or store for the dataset
-                    # Note: For simplicity in the Dataset class, we usually map
-                    # anchor_idx -> list of negative_indices.
-                    # However, since we are scanning the *triplets* file, we need
-                    # the original Item IDs to be useful for the raw dataset.
-                    # The optimized file stores 'anchor_idx' and 'negative_idx' pointing to the original raw items.
-
-                    raw_anc_idxs = f['triplets/anchor_idx'][i:end]
-                    raw_neg_idxs = f['triplets/negative_idx'][i:end]
+                    # Load original IDs only for the failures
+                    # (Reading small random chunks is fine here)
+                    # We need the indices from the file to know WHO these items are
+                    raw_anc_idxs = f[f'{pfx}anchor_{idx_key}'][i:end]
+                    raw_neg_idxs = f[f'{pfx}negative_{idx_key}'][i:end]
 
                     failure_indices = failures.cpu().numpy()
 
@@ -1152,6 +1163,7 @@ def mine_hard_negatives(
                             total_mined += 1
 
                 print(f"  Scanned {end}/{scan_limit} | Found {total_mined} hard negatives...", end='\r')
+        print()
 
     print(f"\nTotal mined hard negatives: {total_mined}")
     print(f"Anchors with negatives: {len(mined_negatives)}")
