@@ -472,8 +472,10 @@ def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
         char_ids = torch.tensor([char_vocab.encode(romanized)], dtype=torch.long, device=device)
         lang_ids = torch.tensor([lang_vocab.encode(lang)], dtype=torch.long, device=device)
 
-        # FIX: Keep lengths on CPU (because pack_padded_sequence expects it)
-        lengths = torch.tensor([len(romanized)], dtype=torch.long, device='cpu')
+        # Keep lengths on CPU (because pack_padded_sequence expects it)
+        encoded_list = char_vocab.encode(romanized)
+        char_ids = torch.tensor([encoded_list], dtype=torch.long, device=device)
+        lengths = torch.tensor([len(encoded_list)], dtype=torch.long, device='cpu')
 
         with torch.no_grad():
             emb = model.encode_char_only(char_ids, lang_ids, lengths)
