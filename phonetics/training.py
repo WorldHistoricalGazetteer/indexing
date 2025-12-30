@@ -760,32 +760,33 @@ def train_phase2(
 
 
 def train_phase3(
-    sources: List[DataSource] = None,
-    phase2_path: str = None,
-    output_path: str = None,
-    subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
-    epochs: int = Config.PHASE3_EPOCHS,
-    batch_size: int = Config.BATCH_SIZE,
-    lr: float = 5e-4,
-    negative_stage: str = 'A',
-    use_optimized: bool = True,
-    use_local_scratch: bool = True
+        sources: List[DataSource] = None,
+        phase2_path: str = None,
+        output_path: str = None,
+        subsample_pairs: int = Config.SUBSAMPLE_PAIRS,
+        epochs: int = Config.PHASE3_EPOCHS,
+        batch_size: int = Config.BATCH_SIZE,
+        lr: float = 5e-4,
+        negative_stage: str = 'A',
+        mined_negatives: Dict[int, List[int]] = None,
+        use_optimized: bool = True,
+        use_local_scratch: bool = True
 ) -> HybridPhoneticModel:
     """
     Phase 3: Fine-tune with curriculum hard negatives.
-    
+
     CRITICAL: Each negative stage must REPLACE, not augment, the previous one.
     Do NOT mix negative types in the same training pass.
-    
+
     Stage A (Default): Orthographically close, phonetically distant
         - Targets false friends and spelling-driven false positives
         - Use this EXCLUSIVELY for early Phase 3 fine-tuning
-    
+
     Stage B (Optional): Model-mined false positives
         - Run AFTER initial Phase 3 pass
         - Uses model's own failure modes to sharpen decision boundary
-        - Requires set_mined_negatives() on dataset
-    
+        - Requires mined_negatives dict from mining.mine_hard_negatives()
+
     Args:
         sources: List of DataSource objects. Defaults to DATA_SOURCES.
         phase2_path: Path to Phase 2 trained model.
@@ -795,14 +796,23 @@ def train_phase3(
         batch_size: Training batch size.
         lr: Learning rate.
         negative_stage: 'A' for ortho-phonetic negatives, 'B' for model-mined
+        mined_negatives: Dict mapping anchor_idx -> list of hard negative indices
+                        (required for Stage B, ignored for Stage A)
         use_optimized: Try to use optimized HDF5 files if available.
         use_local_scratch: Copy data to local scratch for faster I/O.
     """
-    
+
+    # Validate Stage B requirements
+    if negative_stage == 'B' and not mined_negatives:
+        raise ValueError(
+            "Stage B requires mined_negatives. Run mining.mine_hard_negatives() first "
+            "with a Stage A model to generate hard negatives."
+        )
+
     # Initialize CUDA FIRST - before loading large datasets into RAM
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}", flush=True)
-    
+
     # Handle defaults - try optimized sources first
     if sources is None:
         if use_optimized and negative_stage == 'A':
@@ -819,26 +829,29 @@ def train_phase3(
         else:
             sources = DATA_SOURCES
             if negative_stage == 'B':
-                print("Stage B requires runtime mining - using standard HDF5 files")
-    
+                print("Stage B uses runtime-mined negatives from Stage A model")
+
     # Copy data to local scratch if requested
     if use_local_scratch and (os.environ.get('SLURM_TMPDIR') or os.environ.get('TMPDIR')):
         sources = copy_data_to_local(sources, phase='phase3')
     elif use_local_scratch:
         print("Note: No local scratch available (SLURM_TMPDIR/TMPDIR not set), using network storage")
-    
+
     data_paths = [s.path for s in sources]
     oversample_factors = [s.oversample for s in sources]
-    
+
     # Check if these are optimized files
     is_optimized = all('_phase3.h5' in p for p in data_paths)
-    
+
     print("=" * 60)
     print("Phase 3: Generalization Training (Curriculum Hard Negatives)")
     print(f"  Negative Stage: {negative_stage}")
+    if negative_stage == 'B' and mined_negatives:
+        total_mined = sum(len(v) for v in mined_negatives.values())
+        print(f"  Mined negatives: {total_mined:,} for {len(mined_negatives):,} anchors")
     print("  Architecture: BiLSTM + Self-Attention + Attention Pooling")
     print("=" * 60)
-    
+
     # Log data sources
     print("\nData sources:")
     for source in sources:
@@ -848,26 +861,26 @@ def train_phase3(
     # Load vocabularies
     vocab_dir = os.path.dirname(phase2_path) or '.'
     base_name = os.path.splitext(os.path.basename(phase2_path))[0]
-    
+
     if is_optimized:
         # Load vocab from optimized HDF5 (stored as separate key/value arrays)
         import h5py
         with h5py.File(data_paths[0], 'r') as f:
-            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
-                        for k in f['vocab/char_vocab_keys'][:]]
+            char_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                         for k in f['vocab/char_vocab_keys'][:]]
             char_vals = f['vocab/char_vocab_vals'][:]
-            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k 
-                        for k in f['vocab/lang_vocab_keys'][:]]
+            lang_keys = [k.decode('utf-8') if isinstance(k, bytes) else k
+                         for k in f['vocab/lang_vocab_keys'][:]]
             lang_vals = f['vocab/lang_vocab_vals'][:]
-        
+
         char_vocab = CharVocab(vocab_size=Config.VOCAB_SIZE)
         char_vocab.char_to_id = {k: int(v) for k, v in zip(char_keys, char_vals)}
         char_vocab.id_to_char = {v: k for k, v in char_vocab.char_to_id.items()}
-        
+
         lang_vocab = LangVocab()
         lang_vocab.lang_to_id = {k: int(v) for k, v in zip(lang_keys, lang_vals)}
         lang_vocab.next_id = max(lang_vocab.lang_to_id.values()) + 1
-        
+
         # Load train dataset (loads all data into RAM)
         train_dataset = OptimizedPhase3Dataset(
             data_paths, oversample_factors,
@@ -879,6 +892,16 @@ def train_phase3(
             split='val', subsample_triplets=subsample_pairs,
             shared_data=train_dataset.get_shared_data()
         )
+
+        # Stage B: Set mined negatives on datasets
+        if negative_stage == 'B' and mined_negatives:
+            if hasattr(train_dataset, 'set_mined_negatives'):
+                train_dataset.set_mined_negatives(mined_negatives)
+                val_dataset.set_mined_negatives(mined_negatives)
+                print(f"Set mined negatives on optimized datasets")
+            else:
+                print("WARNING: OptimizedPhase3Dataset does not support set_mined_negatives()")
+                print("         Stage B training will fall back to Stage A negatives")
     else:
         char_vocab = CharVocab.load(os.path.join(vocab_dir, f'{base_name}_char_vocab.pkl'))
         lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
@@ -896,20 +919,30 @@ def train_phase3(
             negative_stage=negative_stage
         )
 
+        # Stage B: Set mined negatives on datasets
+        if negative_stage == 'B' and mined_negatives:
+            if hasattr(train_dataset, 'set_mined_negatives'):
+                train_dataset.set_mined_negatives(mined_negatives)
+                val_dataset.set_mined_negatives(mined_negatives)
+                print(f"Set mined negatives on multi-source datasets")
+            else:
+                print("WARNING: MultiSourcePhase3Dataset does not support set_mined_negatives()")
+                print("         Stage B training will fall back to Stage A negatives")
+
     print(f"Training pairs: {len(train_dataset):,}", flush=True)
     print(f"Validation pairs: {len(val_dataset):,}", flush=True)
 
     # Use workers for optimized dataset, single-threaded for original
     num_workers = 4 if is_optimized else 0
-    
+
     train_loader = DataLoader(
         train_dataset, batch_size=batch_size, shuffle=True,
-        collate_fn=collate_phase3, num_workers=num_workers, 
+        collate_fn=collate_phase3, num_workers=num_workers,
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
     val_loader = DataLoader(
         val_dataset, batch_size=batch_size, shuffle=False,
-        collate_fn=collate_phase3, num_workers=num_workers, 
+        collate_fn=collate_phase3, num_workers=num_workers,
         pin_memory=True, persistent_workers=(num_workers > 0)
     )
 
@@ -952,7 +985,7 @@ def train_phase3(
 
     best_val_loss = float('inf')
     start_epoch = 0
-    
+
     # Check for existing checkpoint to resume from
     if output_path and os.path.exists(output_path):
         print(f"Found existing checkpoint: {output_path}")
@@ -1028,7 +1061,7 @@ def train_phase3(
         val_loss /= len(val_loader)
         scheduler.step(val_loss)
 
-        print(f"Epoch {epoch+1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
+        print(f"Epoch {epoch + 1:3d}/{epochs} | Train: {train_loss:.4f} | Val: {val_loss:.4f}", flush=True)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -1053,139 +1086,3 @@ def train_phase3(
 
     print(f"\nPhase 3 complete. Final model saved to {output_path}")
     return model
-
-
-def mine_hard_negatives(
-        model: HybridPhoneticModel,
-        data_path: str,
-        char_vocab: CharVocab,
-        lang_vocab: LangVocab,
-        similarity_threshold: float = 0.85,
-        max_negatives_per_anchor: int = 10,
-        device: str = 'cuda'
-) -> Dict[int, List[int]]:
-    """
-    Mine hard negatives by checking Stage A (Levenshtein) negatives.
-    Finds pairs where: Edit Distance is Small (Stage A) AND Model Similarity is High (Error).
-    """
-    import h5py
-    import os
-    from .training import DATA_SOURCES_PHASE3_OPTIMIZED
-
-    print("=" * 60)
-    print("Mining Hard Negatives (Smart Strategy)")
-    print("  Source: Filtering Stage A Levenshtein negatives")
-    print(f"  Target: Finding pairs with Model Sim > {similarity_threshold}")
-    print("=" * 60)
-
-    model.eval()
-    device = torch.device(device if torch.cuda.is_available() else 'cpu')
-    model.to(device)
-
-    mined_negatives = {}
-    total_mined = 0
-
-    for source in DATA_SOURCES_PHASE3_OPTIMIZED:
-        if not os.path.exists(source.path):
-            print(f"Skipping {source.name} (file not found)")
-            continue
-
-        print(f"Scanning {source.name}...")
-
-        with h5py.File(source.path, 'r') as f:
-            # --- ROBUST KEY DETECTION ---
-            # 1. Identify the 'triplets' group location
-            if 'triplets' in f:
-                grp = f['triplets']
-                base_pfx = 'triplets/'
-            else:
-                grp = f
-                base_pfx = ''
-
-            # 2. Identify the structure inside (Flat vs Nested)
-            # Check for 'anchor_char_ids' (Flat) or 'anchor/char_ids' (Nested)
-            keys = list(grp.keys())
-
-            if 'anchor_char_ids' in keys:
-                # Flat structure: triplets/anchor_char_ids
-                pfx_anc = f'{base_pfx}anchor_'
-                pfx_neg = f'{base_pfx}negative_'
-                suffix = ''
-            elif 'anchor' in keys and isinstance(grp['anchor'], h5py.Group):
-                # Nested structure: triplets/anchor/char_ids
-                pfx_anc = f'{base_pfx}anchor/'
-                pfx_neg = f'{base_pfx}negative/'
-                suffix = ''  # keys inside are just 'char_ids', 'lengths'
-            else:
-                print(f"  ERROR: Unexpected HDF5 structure. Keys in {base_pfx}: {keys}")
-                continue
-
-            # 3. Identify Index Columns (idx vs item_idx)
-            # We need to map back to global IDs
-            idx_name = 'idx'
-            if f'{pfx_anc}item_idx' in f or (f'{pfx_anc}item_idx' in grp):
-                idx_name = 'item_idx'
-
-            # Helper to build paths
-            def get_path(side, name):
-                # e.g., 'anchor', 'char_ids' -> triplets/anchor/char_ids
-                # e.g., 'anchor', 'char_ids' -> triplets/anchor_char_ids
-                if '/' in pfx_anc: return f"{base_pfx}{side}/{name}"
-                return f"{base_pfx}{side}_{name}"
-
-            # Get total samples
-            try:
-                num_samples = f[get_path('anchor', 'char_ids')].shape[0]
-            except KeyError:
-                print(f"  ERROR: Could not find char_ids at {get_path('anchor', 'char_ids')}")
-                continue
-
-            print(f"  Found {num_samples:,} triplets. Scanning...")
-
-            batch_size = 2048
-            scan_limit = min(num_samples, 200000)
-
-            for i in range(0, scan_limit, batch_size):
-                end = min(i + batch_size, scan_limit)
-
-                # Load Batch using dynamic paths
-                anc_ids = torch.from_numpy(f[get_path('anchor', 'char_ids')][i:end]).long().to(device)
-                anc_lens = torch.from_numpy(f[get_path('anchor', 'lengths')][i:end]).long().cpu()
-                anc_langs = torch.from_numpy(f[get_path('anchor', 'lang_id')][i:end]).long().to(device)
-
-                neg_ids = torch.from_numpy(f[get_path('negative', 'char_ids')][i:end]).long().to(device)
-                neg_lens = torch.from_numpy(f[get_path('negative', 'lengths')][i:end]).long().cpu()
-                neg_langs = torch.from_numpy(f[get_path('negative', 'lang_id')][i:end]).long().to(device)
-
-                # Compute Embeddings & Similarity
-                with torch.no_grad():
-                    emb_anc = model.encode_char_only(anc_ids, anc_langs, anc_lens)
-                    emb_neg = model.encode_char_only(neg_ids, neg_langs, neg_lens)
-                    sims = torch.nn.functional.cosine_similarity(emb_anc, emb_neg)
-
-                # Filter Failures
-                failures = torch.where(sims > similarity_threshold)[0]
-
-                if len(failures) > 0:
-                    # Load original IDs
-                    raw_anc_idxs = f[get_path('anchor', idx_name)][i:end]
-                    raw_neg_idxs = f[get_path('negative', idx_name)][i:end]
-
-                    failure_indices = failures.cpu().numpy()
-                    for fail_idx in failure_indices:
-                        a_id = int(raw_anc_idxs[fail_idx])
-                        n_id = int(raw_neg_idxs[fail_idx])
-
-                        if a_id not in mined_negatives:
-                            mined_negatives[a_id] = []
-                        if len(mined_negatives[a_id]) < max_negatives_per_anchor:
-                            mined_negatives[a_id].append(n_id)
-                            total_mined += 1
-
-                print(f"  Scanned {end}/{scan_limit} | Found {total_mined} hard negatives...", end='\r')
-        print()
-
-    print(f"\nTotal mined hard negatives: {total_mined}")
-    print(f"Anchors with negatives: {len(mined_negatives)}")
-
-    return mined_negatives

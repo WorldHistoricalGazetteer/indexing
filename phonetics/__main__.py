@@ -176,16 +176,19 @@ def main():
         )
 
     elif args.phase == 3:
-        from .training import train_phase3, mine_hard_negatives
+        from .training import train_phase3
         from .vocab import CharVocab, LangVocab
         from .models import PhoneticEncoder, CharEncoder, HybridPhoneticModel
 
         epochs = args.epochs or Config.PHASE3_EPOCHS
+        mined_negatives = None
 
         if args.negative_stage == 'B':
             # Stage B requires a Stage A model for mining negatives
             if not args.stage_a_model:
                 parser.error("Stage B requires --stage-a-model from Stage A training")
+
+            from .mining import mine_hard_negatives
 
             print("Loading Stage A model for negative mining...")
 
@@ -196,7 +199,8 @@ def main():
             lang_vocab = LangVocab.load(os.path.join(vocab_dir, f'{base_name}_lang_vocab.pkl'))
 
             # Load model
-            checkpoint = torch.load(args.stage_a_model, map_location='cpu')
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            checkpoint = torch.load(args.stage_a_model, map_location=device)
             phonetic_encoder = PhoneticEncoder()
             char_encoder = CharEncoder(
                 vocab_size=checkpoint.get('char_vocab_size', char_vocab.vocab_size),
@@ -206,14 +210,16 @@ def main():
             model.load_state_dict(checkpoint['model_state'])
 
             # Mine hard negatives
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
             mined_negatives = mine_hard_negatives(
-                model, args.data, char_vocab, lang_vocab, device=device
+                model=model,
+                data_path=args.data,
+                char_vocab=char_vocab,
+                lang_vocab=lang_vocab,
+                device=device
             )
 
-            # Store for dataset to use
-            # Note: This is a simplified approach; in practice you might save to disk
-            print(f"Mined {sum(len(v) for v in mined_negatives.values())} hard negatives")
+            print(f"Mined {sum(len(v) for v in mined_negatives.values()):,} hard negatives "
+                  f"for {len(mined_negatives):,} anchors")
 
         train_phase3(
             phase2_path=args.phase2_model,
@@ -222,7 +228,8 @@ def main():
             epochs=epochs,
             batch_size=args.batch_size,
             lr=args.lr or 5e-4,
-            negative_stage=args.negative_stage
+            negative_stage=args.negative_stage,
+            mined_negatives=mined_negatives
         )
 
     else:
