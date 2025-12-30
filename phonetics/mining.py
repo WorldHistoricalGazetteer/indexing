@@ -15,6 +15,8 @@ import torch.nn.functional as F
 from typing import Dict, List, Set, Tuple
 from pathlib import Path
 
+from .config import Config
+
 
 def mine_hard_negatives(
     model,
@@ -96,6 +98,10 @@ def mine_hard_negatives(
     # --- Pre-encode all items ---
     print(f"\nPre-encoding all {n_items:,} items...")
 
+    # Get max sequence length from model config (default 50)
+    max_seq_len = getattr(Config, 'MAX_SEQ_LEN', 50)
+    print(f"  Max sequence length: {max_seq_len}")
+
     all_embeddings = []
 
     for start in range(0, n_items, batch_size):
@@ -113,15 +119,22 @@ def mine_hard_negatives(
             char_ids = char_vocab.encode(topo)
             lang_id = lang_vocab.encode(lang)
 
+            # Truncate to max length (model expects this)
+            if len(char_ids) > max_seq_len:
+                char_ids = char_ids[:max_seq_len]
+
             char_ids_list.append(char_ids)
             lang_ids_list.append(lang_id)
-            lengths.append(len(topo))
+            lengths.append(min(len(topo), max_seq_len))
 
         # Pad sequences (use 0 as padding, standard convention)
         max_len = max(len(ids) for ids in char_ids_list)
+        max_len = min(max_len, max_seq_len)  # Cap at model's max
         pad_id = 0  # Standard padding index
         padded_char_ids = []
         for ids in char_ids_list:
+            # Truncate if needed, then pad
+            ids = ids[:max_len]
             padded = ids + [pad_id] * (max_len - len(ids))
             padded_char_ids.append(padded)
 
