@@ -349,49 +349,74 @@ class OptimizedPhase1Dataset(Dataset):
 
 class OptimizedPhase2Dataset(Dataset):
     """
-    Hybrid Phase 2 Dataset - metadata in RAM, features from local NVMe.
+    FULLY IN-MEMORY Phase 2 Dataset - ZERO disk I/O during training.
 
-    Loads small arrays (char_ids, lengths, lang_ids) into memory.
-    Reads feature arrays from HDF5 on demand (should be on local NVMe via TMPDIR).
+    Loads all data into RAM at startup. Supports sharing loaded data between
+    train/val splits to avoid double memory usage.
     """
 
     def __init__(self, hdf5_paths: List[str], oversample_factors: List[int],
-                 split: str = 'train', train_ratio: float = 0.9, seed: int = 42):
-        self.hdf5_paths = hdf5_paths
+                 split: str = 'train', train_ratio: float = 0.9, seed: int = 42,
+                 shared_data: Optional[Dict] = None):
+        """
+        Args:
+            shared_data: If provided, reuse already-loaded arrays instead of loading again.
+                         Pass the train dataset's get_shared_data() to the val dataset.
+        """
         self.rng = np.random.default_rng(seed if split == 'train' else seed + 1)
 
-        # File handles opened lazily per worker
-        self._file_handles: Dict[int, h5py.File] = {}
+        # Either use shared data or load fresh
+        if shared_data is not None:
+            print(f"OptimizedPhase2Dataset ({split}): Reusing shared data from train set...")
+            self._char_ids = shared_data['char_ids']
+            self._char_lengths = shared_data['char_lengths']
+            self._lang_ids = shared_data['lang_ids']
+            self._features = shared_data['features']
+            self._feat_lengths = shared_data['feat_lengths']
+            self._total_items = shared_data['total_items']
+        else:
+            # Load EVERYTHING into memory
+            self._char_ids: Dict[int, np.ndarray] = {}
+            self._char_lengths: Dict[int, np.ndarray] = {}
+            self._lang_ids: Dict[int, np.ndarray] = {}
+            self._features: Dict[int, np.ndarray] = {}
+            self._feat_lengths: Dict[int, np.ndarray] = {}
+            self._total_items: Dict[int, int] = {}
 
-        # Small arrays loaded into memory
-        self._char_ids: Dict[int, np.ndarray] = {}
-        self._char_lengths: Dict[int, np.ndarray] = {}
-        self._lang_ids: Dict[int, np.ndarray] = {}
-        self._feat_lengths: Dict[int, np.ndarray] = {}
+            total_bytes = 0
+            print(f"OptimizedPhase2Dataset ({split}): Loading ALL data into RAM...")
 
+            for source_idx, path in enumerate(hdf5_paths):
+                with h5py.File(path, 'r') as f:
+                    total_items = f.attrs['total_items']
+                    self._total_items[source_idx] = total_items
+
+                    # Load ALL arrays into memory
+                    print(f"  Source {source_idx}: Loading {total_items:,} items...", end=" ", flush=True)
+                    self._char_ids[source_idx] = f['items/char_ids'][:]
+                    self._char_lengths[source_idx] = f['items/char_lengths'][:]
+                    self._lang_ids[source_idx] = f['items/lang_ids'][:]
+                    self._features[source_idx] = f['features/data'][:]
+                    self._feat_lengths[source_idx] = f['features/lengths'][:]
+
+                    source_bytes = (
+                        self._char_ids[source_idx].nbytes +
+                        self._char_lengths[source_idx].nbytes +
+                        self._lang_ids[source_idx].nbytes +
+                        self._features[source_idx].nbytes +
+                        self._feat_lengths[source_idx].nbytes
+                    )
+                    total_bytes += source_bytes
+                    print(f"{source_bytes/1024**3:.2f} GB")
+
+            print(f"  Total memory: {total_bytes/1024**3:.2f} GB", flush=True)
+
+        # Build index for this split
         self.combined_indices = []
-        metadata_bytes = 0
-
-        print(f"OptimizedPhase2Dataset ({split}): Loading metadata into RAM...")
 
         for source_idx, (path, factor) in enumerate(zip(hdf5_paths, oversample_factors)):
-            with h5py.File(path, 'r') as f:
-                total_items = f.attrs['total_items']
+            total_items = self._total_items[source_idx]
 
-                # Load small arrays into memory
-                self._char_ids[source_idx] = f['items/char_ids'][:]
-                self._char_lengths[source_idx] = f['items/char_lengths'][:]
-                self._lang_ids[source_idx] = f['items/lang_ids'][:]
-                self._feat_lengths[source_idx] = f['features/lengths'][:]
-
-                metadata_bytes += (
-                    self._char_ids[source_idx].nbytes +
-                    self._char_lengths[source_idx].nbytes +
-                    self._lang_ids[source_idx].nbytes +
-                    self._feat_lengths[source_idx].nbytes
-                )
-
-            # Split train/val
             indices = np.arange(total_items)
             self.rng.shuffle(indices)
             split_idx = int(total_items * train_ratio)
@@ -402,16 +427,21 @@ class OptimizedPhase2Dataset(Dataset):
                 for item_idx in source_indices:
                     self.combined_indices.append((source_idx, item_idx))
 
-            print(f"  Source {source_idx}: {len(source_indices):,} items × {factor}x = {len(source_indices)*factor:,}")
+            print(f"  {split} Source {source_idx}: {len(source_indices):,} items × {factor}x = {len(source_indices)*factor:,}")
 
         self.rng.shuffle(self.combined_indices)
-        print(f"  Total: {len(self.combined_indices):,} samples | Metadata: {metadata_bytes/1024**2:.1f} MB", flush=True)
+        print(f"  {split} total: {len(self.combined_indices):,} samples", flush=True)
 
-    def _get_file(self, source_idx: int) -> h5py.File:
-        """Lazily open file handle per worker."""
-        if source_idx not in self._file_handles:
-            self._file_handles[source_idx] = h5py.File(self.hdf5_paths[source_idx], 'r')
-        return self._file_handles[source_idx]
+    def get_shared_data(self) -> Dict:
+        """Return data arrays for sharing with val dataset."""
+        return {
+            'char_ids': self._char_ids,
+            'char_lengths': self._char_lengths,
+            'lang_ids': self._lang_ids,
+            'features': self._features,
+            'feat_lengths': self._feat_lengths,
+            'total_items': self._total_items,
+        }
 
     def __len__(self):
         return len(self.combined_indices)
@@ -419,28 +449,19 @@ class OptimizedPhase2Dataset(Dataset):
     def __getitem__(self, idx: int) -> Dict[str, np.ndarray]:
         source_idx, item_idx = self.combined_indices[idx]
 
-        # Get metadata from memory
+        # ALL data from memory - ZERO disk I/O
         char_len = int(self._char_lengths[source_idx][item_idx])
         char_ids = self._char_ids[source_idx][item_idx, :char_len].copy()
         lang_id = self._lang_ids[source_idx][item_idx]
 
-        # Get features from HDF5 (local NVMe)
         feat_len = int(self._feat_lengths[source_idx][item_idx])
-        f = self._get_file(source_idx)
-        features = f['features/data'][item_idx, :feat_len, :]
+        features = self._features[source_idx][item_idx, :feat_len, :].copy()
 
         return {
             'char_ids': char_ids,
             'lang_id': lang_id,
             'phonetic_features': features,
         }
-
-    def __del__(self):
-        for f in self._file_handles.values():
-            try:
-                f.close()
-            except:
-                pass
 
 
 class OptimizedPhase3Dataset(Dataset):
