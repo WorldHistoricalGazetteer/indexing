@@ -621,11 +621,19 @@ class OptimizedPhase3Dataset(Dataset):
         return len(self.combined_indices)
 
     def _get_mined_negative(self, source_idx: int, anchor_idx: int) -> int:
-        """Get a mined hard negative for the anchor, or random fallback."""
+        """Get a mined hard negative for the anchor, or random fallback.
+
+        Note: Mined negatives are global indices from the mining data file.
+        We only use them if they're valid for this source's item count.
+        """
         if self._mined_negatives and anchor_idx in self._mined_negatives:
             negatives = self._mined_negatives[anchor_idx]
             if negatives:
-                return random.choice(negatives)
+                # Filter to valid indices for this source
+                total_items = self._total_items.get(source_idx, len(self._char_ids[source_idx]))
+                valid_negatives = [n for n in negatives if n < total_items]
+                if valid_negatives:
+                    return random.choice(valid_negatives)
 
         # Fallback: random item from same source
         total_items = self._total_items.get(source_idx, len(self._char_ids[source_idx]))

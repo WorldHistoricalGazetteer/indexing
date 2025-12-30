@@ -23,9 +23,9 @@ def mine_hard_negatives(
     data_path: str,
     char_vocab,
     lang_vocab,
-    similarity_threshold: float = 0.6,
+    similarity_threshold: float = 0.7,
     max_negatives_per_anchor: int = 10,
-    sample_size: int = 500000,
+    sample_size: int = 50000,
     batch_size: int = 512,
     device: str = 'cuda'
 ) -> Dict[int, List[int]]:
@@ -38,9 +38,11 @@ def mine_hard_negatives(
     3. Sample random item pairs that are NOT positives
     4. Find pairs where model similarity > threshold (model's mistakes)
 
+    Supports both original and optimized HDF5 structures.
+
     Args:
         model: Trained HybridPhoneticModel
-        data_path: Path to training HDF5 file (e.g., training_data_gn.h5)
+        data_path: Path to training HDF5 file
         char_vocab: CharVocab instance
         lang_vocab: LangVocab instance
         similarity_threshold: Pairs with model sim > this are "hard negatives"
@@ -58,98 +60,157 @@ def mine_hard_negatives(
     print(f"  Data: {data_path}")
     print(f"  Similarity threshold: {similarity_threshold}")
     print(f"  Sample size: {sample_size:,}")
-    print()
 
     model.eval()
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
 
     with h5py.File(data_path, 'r') as f:
-        # --- Load items ---
-        items_grp = f['items']
-        n_items = items_grp['toponym'].shape[0]
+        # Detect file structure (optimized vs original)
+        is_optimized = 'triplets' in f and 'items/char_ids' in f
 
-        print(f"Loading {n_items:,} items...")
+        if is_optimized:
+            # --- Optimized Phase 3 structure ---
+            print("Detected OPTIMIZED Phase 3 file structure")
 
-        toponyms = items_grp['toponym'][:]
-        langs = items_grp['lang'][:]
+            items_grp = f['items']
+            n_items = items_grp['char_ids'].shape[0]
 
-        # Decode bytes to strings if necessary
-        if isinstance(toponyms[0], bytes):
-            toponyms = [t.decode('utf-8') for t in toponyms]
-        if isinstance(langs[0], bytes):
-            langs = [l.decode('utf-8') for l in langs]
+            print(f"Loading {n_items:,} items...")
 
-        # --- Build positive pairs set ---
-        pairs_grp = f['pairs_with_phonetic']
-        anchor_indices = pairs_grp['anchor_idx'][:]
-        positive_indices = pairs_grp['positive_idx'][:]
+            # Load pre-encoded char_ids and lang_ids directly
+            all_char_ids = items_grp['char_ids'][:]
+            all_char_lengths = items_grp['char_lengths'][:]
+            all_lang_ids = items_grp['lang_ids'][:]
 
-        print(f"Building positive pairs set from {len(anchor_indices):,} pairs...")
+            # Build positive pairs from triplets (anchor-positive pairs)
+            triplets_grp = f['triplets']
+            anchor_indices = triplets_grp['anchor_idx'][:]
+            positive_indices = triplets_grp['positive_idx'][:]
 
-        positive_pairs: Set[Tuple[int, int]] = set()
-        for a, p in zip(anchor_indices, positive_indices):
-            # Store both directions
-            positive_pairs.add((int(a), int(p)))
-            positive_pairs.add((int(p), int(a)))
+            print(f"Building positive pairs set from {len(anchor_indices):,} triplets...")
 
-        print(f"  Positive pairs (bidirectional): {len(positive_pairs):,}")
+            positive_pairs: Set[Tuple[int, int]] = set()
+            for a, p in zip(anchor_indices, positive_indices):
+                positive_pairs.add((int(a), int(p)))
+                positive_pairs.add((int(p), int(a)))
 
-    # --- Pre-encode all items ---
-    print(f"\nPre-encoding all {n_items:,} items...")
+            print(f"  Positive pairs (bidirectional): {len(positive_pairs):,}")
 
-    # Get max sequence length from model config (default 50)
-    max_seq_len = getattr(Config, 'MAX_SEQ_LEN', 50)
-    print(f"  Max sequence length: {max_seq_len}")
+            # Pre-encode all items using pre-computed char_ids
+            print(f"\nPre-encoding all {n_items:,} items...")
+            max_seq_len = getattr(Config, 'MAX_SEQ_LEN', 50)
+            print(f"  Max sequence length: {max_seq_len}")
 
-    all_embeddings = []
+            all_embeddings = []
 
-    for start in range(0, n_items, batch_size):
-        end = min(start + batch_size, n_items)
+            for start in range(0, n_items, batch_size):
+                end = min(start + batch_size, n_items)
 
-        batch_toponyms = toponyms[start:end]
-        batch_langs = langs[start:end]
+                # Get pre-encoded data
+                batch_char_ids = all_char_ids[start:end]
+                batch_lengths = all_char_lengths[start:end]
+                batch_lang_ids = all_lang_ids[start:end]
 
-        # Encode characters
-        char_ids_list = []
-        lang_ids_list = []
-        lengths = []
+                # Truncate to max_seq_len
+                batch_char_ids = batch_char_ids[:, :max_seq_len]
+                batch_lengths = np.minimum(batch_lengths, max_seq_len)
 
-        for topo, lang in zip(batch_toponyms, batch_langs):
-            char_ids = char_vocab.encode(topo)
-            lang_id = lang_vocab.encode(lang)
+                char_ids_t = torch.from_numpy(batch_char_ids).long().to(device)
+                lang_ids_t = torch.from_numpy(batch_lang_ids).long().to(device)
+                lengths_t = torch.from_numpy(batch_lengths).long()
 
-            # Truncate to max length (model expects this)
-            if len(char_ids) > max_seq_len:
-                char_ids = char_ids[:max_seq_len]
+                with torch.no_grad():
+                    emb = model.encode_char_only(char_ids_t, lang_ids_t, lengths_t)
+                    all_embeddings.append(emb.cpu())
 
-            char_ids_list.append(char_ids)
-            lang_ids_list.append(lang_id)
-            lengths.append(min(len(topo), max_seq_len))
+                if (start // batch_size) % 100 == 0:
+                    print(f"  Encoded {end:,}/{n_items:,}...", end='\r')
 
-        # Pad sequences (use 0 as padding, standard convention)
-        max_len = max(len(ids) for ids in char_ids_list)
-        max_len = min(max_len, max_seq_len)  # Cap at model's max
-        pad_id = 0  # Standard padding index
-        padded_char_ids = []
-        for ids in char_ids_list:
-            # Truncate if needed, then pad
-            ids = ids[:max_len]
-            padded = ids + [pad_id] * (max_len - len(ids))
-            padded_char_ids.append(padded)
+        else:
+            # --- Original structure ---
+            print("Detected ORIGINAL file structure")
 
-        char_ids_t = torch.tensor(padded_char_ids, dtype=torch.long, device=device)
-        lang_ids_t = torch.tensor(lang_ids_list, dtype=torch.long, device=device)
-        lengths_t = torch.tensor(lengths, dtype=torch.long)
+            items_grp = f['items']
+            n_items = items_grp['toponym'].shape[0]
 
-        with torch.no_grad():
-            emb = model.encode_char_only(char_ids_t, lang_ids_t, lengths_t)
-            all_embeddings.append(emb.cpu())
+            print(f"Loading {n_items:,} items...")
 
-        if (start // batch_size) % 100 == 0:
-            print(f"  Encoded {end:,}/{n_items:,}...", end='\r')
+            toponyms = items_grp['toponym'][:]
+            langs = items_grp['lang'][:]
 
-    all_embeddings = torch.cat(all_embeddings, dim=0)  # (n_items, embed_dim)
+            # Decode bytes to strings if necessary
+            if isinstance(toponyms[0], bytes):
+                toponyms = [t.decode('utf-8') for t in toponyms]
+            if isinstance(langs[0], bytes):
+                langs = [l.decode('utf-8') for l in langs]
+
+            # Build positive pairs set
+            pairs_grp = f['pairs_with_phonetic']
+            anchor_indices = pairs_grp['anchor_idx'][:]
+            positive_indices = pairs_grp['positive_idx'][:]
+
+            print(f"Building positive pairs set from {len(anchor_indices):,} pairs...")
+
+            positive_pairs: Set[Tuple[int, int]] = set()
+            for a, p in zip(anchor_indices, positive_indices):
+                positive_pairs.add((int(a), int(p)))
+                positive_pairs.add((int(p), int(a)))
+
+            print(f"  Positive pairs (bidirectional): {len(positive_pairs):,}")
+
+            # Pre-encode all items
+            print(f"\nPre-encoding all {n_items:,} items...")
+            max_seq_len = getattr(Config, 'MAX_SEQ_LEN', 50)
+            print(f"  Max sequence length: {max_seq_len}")
+
+            all_embeddings = []
+
+            for start in range(0, n_items, batch_size):
+                end = min(start + batch_size, n_items)
+
+                batch_toponyms = toponyms[start:end]
+                batch_langs = langs[start:end]
+
+                # Encode characters
+                char_ids_list = []
+                lang_ids_list = []
+                lengths = []
+
+                for topo, lang in zip(batch_toponyms, batch_langs):
+                    char_ids = char_vocab.encode(topo)
+                    lang_id = lang_vocab.encode(lang)
+
+                    # Truncate to max length
+                    if len(char_ids) > max_seq_len:
+                        char_ids = char_ids[:max_seq_len]
+
+                    char_ids_list.append(char_ids)
+                    lang_ids_list.append(lang_id)
+                    lengths.append(min(len(topo), max_seq_len))
+
+                # Pad sequences
+                max_len = max(len(ids) for ids in char_ids_list)
+                max_len = min(max_len, max_seq_len)
+                pad_id = 0
+                padded_char_ids = []
+                for ids in char_ids_list:
+                    ids = ids[:max_len]
+                    padded = ids + [pad_id] * (max_len - len(ids))
+                    padded_char_ids.append(padded)
+
+                char_ids_t = torch.tensor(padded_char_ids, dtype=torch.long, device=device)
+                lang_ids_t = torch.tensor(lang_ids_list, dtype=torch.long, device=device)
+                lengths_t = torch.tensor(lengths, dtype=torch.long)
+
+                with torch.no_grad():
+                    emb = model.encode_char_only(char_ids_t, lang_ids_t, lengths_t)
+                    all_embeddings.append(emb.cpu())
+
+                if (start // batch_size) % 100 == 0:
+                    print(f"  Encoded {end:,}/{n_items:,}...", end='\r')
+
+    all_embeddings = torch.cat(all_embeddings, dim=0)
     print(f"\n  Embeddings shape: {all_embeddings.shape}")
 
     # --- Sample random negative pairs ---
@@ -162,7 +223,6 @@ def mine_hard_negatives(
     max_attempts = sample_size * 10
 
     while len(negative_candidates) < sample_size and attempts < max_attempts:
-        # Sample random pairs
         batch_anchors = rng.integers(0, n_items, size=batch_size)
         batch_others = rng.integers(0, n_items, size=batch_size)
 
@@ -181,7 +241,7 @@ def mine_hard_negatives(
 
     print(f"  Collected {len(negative_candidates):,} negative candidates")
 
-    # --- Find hard negatives (high model similarity) ---
+    # --- Find hard negatives ---
     print(f"\nFinding hard negatives (model sim > {similarity_threshold})...")
 
     mined_negatives: Dict[int, List[int]] = {}
@@ -197,10 +257,8 @@ def mine_hard_negatives(
         emb_anchors = all_embeddings[anchor_ids]
         emb_others = all_embeddings[other_ids]
 
-        # Cosine similarity
         sims = F.cosine_similarity(emb_anchors, emb_others)
 
-        # Find failures (high similarity = model thinks they're similar but they're not)
         hard_mask = sims > similarity_threshold
         hard_indices = torch.where(hard_mask)[0]
 

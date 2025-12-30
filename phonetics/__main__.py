@@ -189,6 +189,7 @@ def main():
                 parser.error("Stage B requires --stage-a-model from Stage A training")
 
             from .mining import mine_hard_negatives
+            from .training import DATA_SOURCES_PHASE3_OPTIMIZED
 
             print("Loading Stage A model for negative mining...")
 
@@ -209,10 +210,17 @@ def main():
             model = HybridPhoneticModel(phonetic_encoder, char_encoder)
             model.load_state_dict(checkpoint['model_state'])
 
+            # Use optimized file for mining if available (to match training indices)
+            # Only use the first/primary source for mining
+            mining_data_path = args.data
+            if DATA_SOURCES_PHASE3_OPTIMIZED and os.path.exists(DATA_SOURCES_PHASE3_OPTIMIZED[0].path):
+                mining_data_path = DATA_SOURCES_PHASE3_OPTIMIZED[0].path
+                print(f"Using optimized file for mining: {mining_data_path}")
+
             # Mine hard negatives
             mined_negatives = mine_hard_negatives(
                 model=model,
-                data_path=args.data,
+                data_path=mining_data_path,
                 char_vocab=char_vocab,
                 lang_vocab=lang_vocab,
                 device=device
