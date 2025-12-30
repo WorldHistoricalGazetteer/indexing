@@ -141,7 +141,8 @@ def run_evaluation(
         model_path: str = None,
         output_path: str = None,
         thresholds: list = None,
-        device: str = 'cuda'
+        device: str = 'cuda',
+        skip_baselines: bool = False
 ):
     """Run full MEHDIE benchmark evaluation."""
 
@@ -156,6 +157,7 @@ def run_evaluation(
     print(f"Model: {model_path or 'None (baselines only)'}")
     print(f"Thresholds: {thresholds}")
     print(f"Device: {device}")
+    print(f"Skip Baselines: {skip_baselines}")
     print()
 
     # Load benchmark
@@ -166,10 +168,11 @@ def run_evaluation(
         return None
 
     # Define methods to evaluate
-    methods = {
-        'Levenshtein': levenshtein_similarity,
-        'Jaro-Winkler': jaro_winkler_similarity,
-    }
+    methods = {}
+
+    if not skip_baselines:
+        methods['Levenshtein'] = levenshtein_similarity
+        methods['Jaro-Winkler'] = jaro_winkler_similarity
 
     # Add trained model if provided
     if model_path:
@@ -179,6 +182,10 @@ def run_evaluation(
             model, char_vocab, lang_vocab, device
         )
         print("Model loaded successfully.")
+
+    if not methods:
+        print("ERROR: No methods to evaluate. Provide a model or remove --skip-baselines.")
+        return None
 
     # Run evaluation
     print("\n" + "=" * 80)
@@ -255,7 +262,7 @@ def run_evaluation(
     if deltas:
         avg_delta = np.mean(deltas)
         print("-" * 80)
-        print(f"{'AVERAGE DELTA vs MEHDIE best':<30} {'':<4} {'':<10} {'':<10} {'':<10} {avg_delta:+8.3f}")
+        print(f"{'AVERAGE DELTA vs MEHDIE best':<30} {''}")
 
     # Print per-testset detail
     print("\n" + "=" * 80)
@@ -361,14 +368,14 @@ Examples:
     python run_mehdie_evaluation.py --testsets /path/to/mehdie-testsets
 
     # Run with trained model
-    python run_mehdie_evaluation.py \\
-        --testsets /path/to/mehdie-testsets \\
-        --model /path/to/phonetic_phase3.pt \\
+    python run_mehdie_evaluation.py \
+        --testsets /path/to/mehdie-testsets \
+        --model /path/to/phonetic_phase3.pt \
         --output results/evaluation.json
 
     # Run with CPU (for baselines or if no GPU available)
-    python run_mehdie_evaluation.py \\
-        --testsets /path/to/mehdie-testsets \\
+    python run_mehdie_evaluation.py \
+        --testsets /path/to/mehdie-testsets \
         --device cpu
         """
     )
@@ -394,6 +401,10 @@ Examples:
         '--device', default='cuda',
         help='Device for model inference (cuda/cpu)'
     )
+    parser.add_argument(
+        '--skip-baselines', action='store_true',
+        help='Skip baseline string similarity methods'
+    )
 
     args = parser.parse_args()
 
@@ -407,7 +418,8 @@ Examples:
         model_path=args.model,
         output_path=args.output,
         thresholds=args.thresholds,
-        device=args.device
+        device=args.device,
+        skip_baselines=args.skip_baselines
     )
 
 

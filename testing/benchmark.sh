@@ -15,6 +15,7 @@
 # Usage:
 #   ./benchmark.sh -baselines              # Run string similarity baselines (CPU)
 #   ./benchmark.sh -model                  # Run trained model evaluation (GPU)
+#   ./benchmark.sh -model --skip-baselines # Run model ONLY (skip string tests)
 #   ./benchmark.sh -full                   # Run both baselines and model
 #   ./benchmark.sh -status                 # Check job status
 #   ./benchmark.sh -results                # View latest results
@@ -24,6 +25,7 @@
 set -e
 
 # --- Configuration ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IX1_BASE="/ix1/whcdh"
 REPO_DIR="${IX1_BASE}/elastic"
 
@@ -41,13 +43,7 @@ LOG_DIR="${BENCHMARK_DIR}/logs"
 
 # Model checkpoints
 MODEL_DIR="${IX1_BASE}/models/phonetic/checkpoints"
-
-# Prefer Stage B (final) model if available, otherwise Stage A
-if [ -f "${MODEL_DIR}/final_model_b.pt" ]; then
-    DEFAULT_MODEL="${MODEL_DIR}/final_model_b.pt"
-else
-    DEFAULT_MODEL="${MODEL_DIR}/phase3_a.pt"
-fi
+DEFAULT_MODEL="${MODEL_DIR}/phase3_a.pt"
 
 # Job tracking
 JOB_INFO_FILE="${BENCHMARK_DIR}/current_job.sh"
@@ -219,9 +215,9 @@ echo "Testsets: ${TESTSETS_DIR}"
 echo "Output: ${OUTPUT_FILE}"
 echo
 
-python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \\
-    --testsets "${TESTSETS_DIR}" \\
-    --output "${OUTPUT_FILE}" \\
+python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \
+    --testsets "${TESTSETS_DIR}" \
+    --output "${OUTPUT_FILE}" \
     --device cpu
 
 echo
@@ -269,12 +265,17 @@ do_model() {
 
     # Parse arguments
     local MODEL_PATH="$DEFAULT_MODEL"
+    local SKIP_ARG=""
 
     while [[ $# -gt 0 ]]; do
         case $1 in
             --model)
                 MODEL_PATH="$2"
                 shift 2
+                ;;
+            --skip-baselines)
+                SKIP_ARG="--skip-baselines"
+                shift
                 ;;
             *)
                 shift
@@ -331,13 +332,15 @@ echo "--- Running Model Evaluation ---"
 echo "Testsets: ${TESTSETS_DIR}"
 echo "Model: ${MODEL_PATH}"
 echo "Output: ${OUTPUT_FILE}"
+echo "Skipping baselines: ${SKIP_ARG:-No}"
 echo
 
-python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \\
-    --testsets "${TESTSETS_DIR}" \\
-    --model "${MODEL_PATH}" \\
-    --output "${OUTPUT_FILE}" \\
-    --device cuda
+python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \
+    --testsets "${TESTSETS_DIR}" \
+    --model "${MODEL_PATH}" \
+    --output "${OUTPUT_FILE}" \
+    --device cuda \
+    ${SKIP_ARG}
 
 echo
 echo "=========================================="
@@ -455,10 +458,10 @@ echo "  - Jaro-Winkler similarity"
 echo "  - Trained phonetic model"
 echo
 
-python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \\
-    --testsets "${TESTSETS_DIR}" \\
-    --model "${MODEL_PATH}" \\
-    --output "${OUTPUT_FILE}" \\
+python -u -m ${TESTING_MODULE}.run_mehdie_evaluation \
+    --testsets "${TESTSETS_DIR}" \
+    --model "${MODEL_PATH}" \
+    --output "${OUTPUT_FILE}" \
     --device cuda
 
 echo
@@ -751,7 +754,10 @@ EVALUATION COMMANDS:
                         Methods: Levenshtein, Jaro-Winkler
 
   -model [--model PATH] Run trained model evaluation (GPU)
-                        Default: final_model_b.pt if available, else phase3_a.pt
+                        Default model: ${DEFAULT_MODEL}
+
+  -model --skip-baselines
+                        Run model evaluation ONLY (skipping string metrics)
 
   -full [--model PATH]  Run full evaluation (baselines + model)
                         Requires GPU for model inference
