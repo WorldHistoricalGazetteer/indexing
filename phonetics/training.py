@@ -814,22 +814,25 @@ def train_phase3(
     print(f"Device: {device}", flush=True)
 
     # Handle defaults - try optimized sources first
+    # Stage B should ALSO use optimized files - we just override the negatives
     if sources is None:
-        if use_optimized and negative_stage == 'A':
-            # Optimized files have pre-mined Stage A negatives
+        if use_optimized:
+            # Optimized files have pre-encoded items - use them for both Stage A and B
             all_optimized_exist = all(
                 os.path.exists(s.path) for s in DATA_SOURCES_PHASE3_OPTIMIZED
             )
             if all_optimized_exist:
                 sources = DATA_SOURCES_PHASE3_OPTIMIZED
-                print("Using OPTIMIZED Phase 3 HDF5 files (pre-mined Stage A negatives)")
+                if negative_stage == 'A':
+                    print("Using OPTIMIZED Phase 3 HDF5 files (pre-mined Stage A negatives)")
+                else:
+                    print("Using OPTIMIZED Phase 3 HDF5 files (will override with mined Stage B negatives)")
             else:
                 sources = DATA_SOURCES
                 print("Using standard HDF5 files (Phase 3 optimized files not found)")
         else:
             sources = DATA_SOURCES
-            if negative_stage == 'B':
-                print("Stage B uses runtime-mined negatives from Stage A model")
+            print("Using standard HDF5 files (use_optimized=False)")
 
     # Copy data to local scratch if requested
     if use_local_scratch and (os.environ.get('SLURM_TMPDIR') or os.environ.get('TMPDIR')):
