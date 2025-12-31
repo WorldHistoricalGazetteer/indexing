@@ -1,3 +1,4 @@
+# phonetics/models.py
 """
 Neural Network Models for Phonetic Similarity.
 
@@ -479,7 +480,7 @@ class HybridPhoneticModel(nn.Module):
         phonetic_seq: torch.Tensor,
         phonetic_lengths: torch.Tensor
     ) -> torch.Tensor:
-        """Direct phonetic encoding (for Phase 1 training)."""
+        """Direct phonetic encoding (for Phase 1 training)"""
         return self.phonetic_encoder(phonetic_seq, phonetic_lengths)
 
     def encode_char_only(
@@ -488,5 +489,5 @@ class HybridPhoneticModel(nn.Module):
         lang_ids: torch.Tensor,
         char_lengths: torch.Tensor
     ) -> torch.Tensor:
-        """Direct character encoding (for Phase 3 training)."""
+        """Direct character encoding"""
         return self.char_encoder(char_ids, lang_ids, char_lengths)

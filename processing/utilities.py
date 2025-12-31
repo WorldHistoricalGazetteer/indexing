@@ -1,8 +1,56 @@
+# processing/utilities.py
+
 import gzip
 import time
 import zipfile
+from pathlib import Path
 
-from processing.settings import STAGING_REPO_NAME, PLACES_INDEX,  TOPONYMS_INDEX
+import torch
+from phonetics.models import HybridPhoneticModel, PhoneticEncoder, CharEncoder
+from phonetics.vocab import CharVocab, LangVocab
+
+from processing.settings import STAGING_REPO_NAME, PLACES_INDEX,  TOPONYMS_INDEX, IX1_BASE
+
+
+def load_phonetic_model(model_path: str = f"{IX1_BASE}/models/phonetic/checkpoints/final_model_b.pt", device: str = "cuda"):
+    """
+    Load the Hybrid BiLSTM phonetic embedding model for inference.
+    """
+
+    model_path = Path(model_path)
+    vocab_dir = model_path.parent
+    base_name = model_path.stem
+
+    char_vocab = CharVocab.load(vocab_dir / f"{base_name}_char_vocab.pkl")
+    lang_vocab = LangVocab.load(vocab_dir / f"{base_name}_lang_vocab.pkl")
+
+    checkpoint = torch.load(model_path, map_location="cpu")
+
+    phonetic_encoder = PhoneticEncoder()
+
+    char_encoder = CharEncoder(
+        vocab_size=checkpoint.get("char_vocab_size", char_vocab.vocab_size),
+        num_langs=checkpoint.get("num_langs", lang_vocab.next_id),
+    )
+
+    model_cfg = checkpoint.get("model_cfg", {})
+
+    model = HybridPhoneticModel(
+        phonetic_encoder,
+        char_encoder,
+        **model_cfg
+    )
+
+    state = checkpoint.get("model_state", checkpoint)
+    model.load_state_dict(state, strict=True)
+
+    model.char_vocab = char_vocab
+    model.lang_vocab = lang_vocab
+
+    model.to(device)
+    model.eval()
+
+    return model
 
 
 def stream_file(file_path):

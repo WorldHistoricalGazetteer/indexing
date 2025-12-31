@@ -634,6 +634,50 @@ SBATCH_EOF
 }
 
 # =============================================================================
+# EMBEDDING (Slurm batch job)
+# =============================================================================
+
+do_embedding() {
+    MODEL_VERSION=${2:?Model version integer required}
+
+    EMBED_SLURM_SCRIPT="$REPO_DIR/processing/embed_toponyms.slurm"
+
+    if [[ ! -f "$STAGING_INFO_FILE" ]]; then
+        echo "ERROR: Staging ES not running."
+        echo "Run: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    sbatch <<EOF
+#!/bin/bash
+#SBATCH --job-name=embed-toponyms-v${MODEL_VERSION}
+#SBATCH --output=/ix1/whcdh/logs/embed_toponyms_%j.out
+#SBATCH --error=/ix1/whcdh/logs/embed_toponyms_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+
+source /ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh
+conda activate whg
+
+export ES_URL=${ES_URL}
+
+python -m processing.embed_toponyms \
+  --model-version ${MODEL_VERSION}
+
+EOF
+
+    echo "Embedding job submitted for model version ${MODEL_VERSION}."
+    echo "Check Slurm queue and logs for progress:"
+    echo "  squeue -u \$USER"
+    echo "  tail -f /ix1/whcdh/logs/embed_toponyms_${JOBID}.*"
+}
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -711,6 +755,9 @@ case "$1" in
         ;;
     -staging-logs)
         staging_logs
+        ;;
+    -staging-embed-toponyms)
+        do_embedding "$@"
         ;;
 
     # --- Help ---
