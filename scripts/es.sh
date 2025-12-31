@@ -638,9 +638,8 @@ SBATCH_EOF
 # =============================================================================
 
 do_embedding() {
+    # $1 is the flag (-staging-embed-toponyms), $2 is the version
     MODEL_VERSION=${2:?Model version integer required}
-
-    EMBED_SLURM_SCRIPT="$REPO_DIR/processing/embed_toponyms.slurm"
 
     if [[ ! -f "$STAGING_INFO_FILE" ]]; then
         echo "ERROR: Staging ES not running."
@@ -648,33 +647,66 @@ do_embedding() {
         return 1
     fi
 
+    # Load info to ensure we can print status,
+    # though Python settings.py handles the actual connection.
     source "$STAGING_INFO_FILE"
 
-    sbatch <<EOF
+    # Ensure log directory exists (use env var or fallback)
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    echo "Submitting embedding job for Model Version: ${MODEL_VERSION}..."
+
+    # Submit via here-doc and capture the Job ID (--parsable returns just the ID)
+    JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=embed-toponyms-v${MODEL_VERSION}
-#SBATCH --output=/ix1/whcdh/logs/embed_toponyms_%j.out
-#SBATCH --error=/ix1/whcdh/logs/embed_toponyms_%j.err
+#SBATCH --job-name=whg-embed-v${MODEL_VERSION}
+#SBATCH --output=${LOG_DIR}/embed_%j.out
+#SBATCH --error=${LOG_DIR}/embed_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 
-source /ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh
-conda activate whg
+set -e
 
-export ES_URL=${ES_URL}
+# 1. Environment Setup (Dynamic)
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+else
+    echo "Error: Could not find conda installation"
+    exit 1
+fi
 
-python -m processing.embed_toponyms \
-  --model-version ${MODEL_VERSION}
+# 2. Navigate to Repo Root
+# Essential for 'python -m processing...' to work
+cd "$REPO_DIR"
 
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Model Version: ${MODEL_VERSION}"
+
+# 3. Run
+# settings.py will pick up the ES connection info automatically
+python -m processing.embed_toponyms --model-version ${MODEL_VERSION}
+
+echo "Job Finished: \$(date)"
 EOF
+)
 
-    echo "Embedding job submitted for model version ${MODEL_VERSION}."
-    echo "Check Slurm queue and logs for progress:"
-    echo "  squeue -u \$USER"
-    echo "  tail -f /ix1/whcdh/logs/embed_toponyms_${JOBID}.*"
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit Slurm job."
+        return 1
+    fi
+
+    echo "✓ Job submitted successfully: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/embed_${JOBID}.*"
 }
 
 # =============================================================================
@@ -805,6 +837,7 @@ case "$1" in
         echo "  source $0 -staging-stop     Stop staging ES"
         echo "  source $0 -staging-status   Show status and index counts"
         echo "  source $0 -staging-logs     Show recent log output"
+        echo "  source $0 -staging-embed-toponyms MODEL_VERSION   Submit to embed toponyms using specified model version"
         echo
         echo "NOTES:"
         echo "  - Staging: one instance at a time (port $STAGING_ES_PORT)"
