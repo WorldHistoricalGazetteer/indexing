@@ -634,11 +634,131 @@ SBATCH_EOF
 }
 
 # =============================================================================
-# EMBEDDING (Slurm batch job)
+# EMBEDDING
 # =============================================================================
 
-do_embedding() {
-    # $1 is the flag (-staging-embed-toponyms), $2 is the version
+# =============================================================================
+# EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
+# =============================================================================
+
+do_embed_extract() {
+    # Phase 1: Extract toponyms to Parquet (CPU node)
+    MODEL_VERSION=${2:-}
+
+    if [[ ! -f "$STAGING_INFO_FILE" ]]; then
+        echo "ERROR: Staging ES not running."
+        echo "Run: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    VERSION_ARG=""
+    if [[ -n "$MODEL_VERSION" ]]; then
+        VERSION_ARG="--model-version $MODEL_VERSION"
+    fi
+
+    echo "Submitting extraction job..."
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-extract
+#SBATCH --output=${LOG_DIR}/extract_%j.out
+#SBATCH --error=${LOG_DIR}/extract_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+
+python -m processing.embed_extract $VERSION_ARG
+
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ Extraction job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/extract_${JOBID}.out"
+}
+
+do_embed_transform() {
+    # Phase 2: Compute embeddings on GPU with local scratch
+    MODEL_VERSION=${2:?Model version integer required}
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    echo "Submitting GPU embedding job for Model Version: ${MODEL_VERSION}..."
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-gpu-v${MODEL_VERSION}
+#SBATCH --output=${LOG_DIR}/transform_%j.out
+#SBATCH --error=${LOG_DIR}/transform_%j.err
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+
+set -e
+
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Setup local scratch (CRC convention)
+SCRATCH_DIR="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_DIR"
+
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "GPU: \$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
+echo "Scratch: \$SCRATCH_DIR"
+echo "Model Version: ${MODEL_VERSION}"
+
+python -m processing.embed_transform \\
+    --model-version ${MODEL_VERSION} \\
+    --scratch-dir "\$SCRATCH_DIR"
+
+# Cleanup scratch
+rm -rf "\$SCRATCH_DIR"
+
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ GPU embedding job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/transform_${JOBID}.out"
+}
+
+do_embed_load() {
+    # Phase 3: Load embeddings back to ES (CPU node)
     MODEL_VERSION=${2:?Model version integer required}
 
     if [[ ! -f "$STAGING_INFO_FILE" ]]; then
@@ -647,66 +767,48 @@ do_embedding() {
         return 1
     fi
 
-    # Load info to ensure we can print status,
-    # though Python settings.py handles the actual connection.
     source "$STAGING_INFO_FILE"
-
-    # Ensure log directory exists (use env var or fallback)
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
     mkdir -p "$LOG_DIR"
 
-    echo "Submitting embedding job for Model Version: ${MODEL_VERSION}..."
+    echo "Submitting load job for Model Version: ${MODEL_VERSION}..."
 
-    # Submit via here-doc and capture the Job ID (--parsable returns just the ID)
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-embed-v${MODEL_VERSION}
-#SBATCH --output=${LOG_DIR}/embed_%j.out
-#SBATCH --error=${LOG_DIR}/embed_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --job-name=whg-embed-load-v${MODEL_VERSION}
+#SBATCH --output=${LOG_DIR}/load_%j.out
+#SBATCH --error=${LOG_DIR}/load_%j.err
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=16
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 
 set -e
 
-# 1. Environment Setup (Dynamic)
 if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
     source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
     conda activate whg
 elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
     source "\$HOME/miniconda/etc/profile.d/conda.sh"
     conda activate whg
-else
-    echo "Error: Could not find conda installation"
-    exit 1
 fi
 
-# 2. Navigate to Repo Root
-# Essential for 'python -m processing...' to work
 cd "$REPO_DIR"
 
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
 echo "Model Version: ${MODEL_VERSION}"
 
-# 3. Run
-# settings.py will pick up the ES connection info automatically
-python -m processing.embed_toponyms --model-version ${MODEL_VERSION}
+python -m processing.embed_load --model-version ${MODEL_VERSION} --snapshot
 
 echo "Job Finished: \$(date)"
 EOF
 )
 
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit Slurm job."
-        return 1
-    fi
-
-    echo "✓ Job submitted successfully: $JOBID"
+    echo "✓ Load job submitted: $JOBID"
     echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/embed_${JOBID}.*"
+    echo "  Logs: tail -f ${LOG_DIR}/load_${JOBID}.out"
 }
 
 # =============================================================================
@@ -788,9 +890,15 @@ case "$1" in
     -staging-logs)
         staging_logs
         ;;
-    -staging-embed-toponyms)
-        do_embedding "$@"
-        ;;
+   -staging-embed-extract)
+       do_embed_extract "$@"
+       ;;
+   -staging-embed-transform)
+       do_embed_transform "$@"
+       ;;
+   -staging-embed-load)
+       do_embed_load "$@"
+       ;;
 
     # --- Help ---
     *)
@@ -837,7 +945,21 @@ case "$1" in
         echo "  source $0 -staging-stop     Stop staging ES"
         echo "  source $0 -staging-status   Show status and index counts"
         echo "  source $0 -staging-logs     Show recent log output"
-        echo "  source $0 -staging-embed-toponyms MODEL_VERSION   Submit to embed toponyms using specified model version"
+        echo
+        echo "EMBEDDING PIPELINE (run on CRC login node, use 'source'):"
+        echo "  source $0 -staging-embed-extract [VERSION]    Extract toponyms to Parquet (CPU)"
+        echo "  source $0 -staging-embed-transform VERSION     Compute embeddings for specific model version (GPU)"
+        echo "  source $0 -staging-embed-load VERSION          Load embeddings back to ES for specific model version (CPU)"
+        echo
+        echo "Workflow:"
+        echo "  1. Start staging ES: source es.sh -staging-start"
+        echo "  2. Extract: source es.sh -staging-embed-extract 1"
+        echo "  3. Run GPU job: source es.sh -staging-embed-transform 1"
+        echo "  4. Load results: source es.sh -staging-embed-load 1"
+        echo
+        echo "Data directory: $REPO_DIR/data/embed_pipeline/"
+        echo "  - raw_chunk_NNNN.parquet    (Phase 1 output)"
+        echo "  - vectors_chunk_NNNN.parquet (Phase 2 output)"
         echo
         echo "NOTES:"
         echo "  - Staging: one instance at a time (port $STAGING_ES_PORT)"
