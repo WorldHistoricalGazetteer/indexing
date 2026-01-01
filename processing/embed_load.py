@@ -84,10 +84,12 @@ def load_chunk(es, df, pbar):
             try:
                 helpers.bulk(es, actions)
             except helpers.BulkIndexError as e:
-                # Print first few errors for debugging
-                print(f"\nBulk error: {len(e.errors)} failures")
-                for err in e.errors[:3]:
-                    print(f"  {err}")
+                # Print errors to stderr for visibility
+                import json
+                sys.stderr.write(f"\nBulk error: {len(e.errors)} failures\n")
+                for err in e.errors[:5]:
+                    sys.stderr.write(f"  {json.dumps(err, indent=2)}\n")
+                sys.stderr.flush()
                 raise
             pbar.update(len(actions))
             actions = []
@@ -96,9 +98,11 @@ def load_chunk(es, df, pbar):
         try:
             helpers.bulk(es, actions)
         except helpers.BulkIndexError as e:
-            print(f"\nBulk error: {len(e.errors)} failures")
-            for err in e.errors[:3]:
-                print(f"  {err}")
+            import json
+            sys.stderr.write(f"\nBulk error: {len(e.errors)} failures\n")
+            for err in e.errors[:5]:
+                sys.stderr.write(f"  {json.dumps(err, indent=2)}\n")
+            sys.stderr.flush()
             raise
         pbar.update(len(actions))
 
