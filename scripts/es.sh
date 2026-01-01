@@ -709,10 +709,12 @@ do_embed_transform() {
 #SBATCH --job-name=whg-embed-gpu-v${MODEL_VERSION}
 #SBATCH --output=${LOG_DIR}/transform_%j.out
 #SBATCH --error=${LOG_DIR}/transform_%j.err
-#SBATCH --partition=gpu
+#SBATCH --cluster=gpu
+#SBATCH --partition=a100
+#SBATCH --qos=gpu-a100-l
+#SBATCH --gres=gpu:1
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
-#SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=32G
 
