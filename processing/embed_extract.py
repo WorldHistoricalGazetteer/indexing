@@ -32,10 +32,12 @@ def parse_args():
 
 def build_query(model_version):
     if model_version is None:
-        return {"match_all": {}}
+        return {"query": {"match_all": {}}}
     return {
-        "bool": {
-            "must_not": [{"term": {VERSION_FIELD: model_version}}]
+        "query": {
+            "bool": {
+                "must_not": [{"term": {VERSION_FIELD: model_version}}]
+            }
         }
     }
 
@@ -51,7 +53,7 @@ def main():
     query = build_query(args.model_version)
 
     # Count documents
-    count_resp = es.count(index=TOPONYMS_INDEX, body={"query": query})
+    count_resp = es.count(index=TOPONYMS_INDEX, body=query)
     total_docs = count_resp["count"]
     print(f"Documents to extract: {total_docs:,}")
 
@@ -62,7 +64,9 @@ def main():
     scan_gen = helpers.scan(
         es,
         index=TOPONYMS_INDEX,
-        query=query,
+        query={"match_all": {}} if args.model_version is None else {
+            "bool": {"must_not": [{"term": {VERSION_FIELD: args.model_version}}]}
+        },
         scroll="60m",
         size=10_000,
         _source=[SOURCE_TEXT_FIELD, SOURCE_LANG_FIELD]
