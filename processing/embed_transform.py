@@ -37,14 +37,7 @@ def parse_args():
 def collate_batch(names, langs, model, device):
     """Tokenize and pad batch for GPU inference."""
     char_seqs = [model.char_vocab.encode(n) for n in names]
-
-    lang_ids_list = []
-    for lang in langs:
-        try:
-            lid = model.lang_vocab.get_id(lang) if hasattr(model.lang_vocab, 'get_id') else model.lang_vocab[lang]
-        except (KeyError, AttributeError):
-            lid = 0
-        lang_ids_list.append(lid)
+    lang_ids_list = [model.lang_vocab.encode(lang) for lang in langs]
 
     seq_lengths = [len(s) for s in char_seqs]
     max_len = max(seq_lengths) if seq_lengths else 0
