@@ -77,11 +77,11 @@ def process_chunk(df, model, device, model_version):
 
     result = pd.DataFrame({
         "_id": df["_id"],
-        "embedding_bilstm": all_embeddings,
+        "embedding": all_embeddings,
         "model_version": model_version
     })
 
-    result = result[result["embedding_bilstm"].notna()]
+    result = result[result["embedding"].notna()]
     return result
 
 

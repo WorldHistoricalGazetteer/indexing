@@ -17,7 +17,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from processing.settings import ES_HOST, STAGING_REPO_NAME, TOPONYMS_INDEX
 
-VECTOR_FIELD = "embedding_bilstm"
+VECTOR_FIELD = "embedding"
 VERSION_FIELD = "model_version"
 BULK_CHUNK_SIZE = 2000
 SNAPSHOT_INTERVAL = 3 * 60 * 60  # 3 hours

@@ -56,9 +56,9 @@
       "name_lower": {
         "type": "keyword"
       },
-      "embedding_bilstm": {
+      "embedding": {
         "type": "dense_vector",
-        "dims": 128,
+        "dims": 64,
         "index": true,
         "similarity": "cosine"
       },
