@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-from elasticsearch import helpers, Elasticsearch
+from elasticsearch import Elasticsearch
 from tqdm import tqdm
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -32,14 +32,36 @@ def parse_args():
 
 def build_query(model_version):
     if model_version is None:
-        return {"query": {"match_all": {}}}
+        return {"match_all": {}}
     return {
-        "query": {
-            "bool": {
-                "must_not": [{"term": {VERSION_FIELD: model_version}}]
-            }
+        "bool": {
+            "must_not": [{"term": {VERSION_FIELD: model_version}}]
         }
     }
+
+
+def scroll_all(es, index, query, source_fields, scroll="60m", size=10_000):
+    """Manual scroll implementation for ES 8.x compatibility."""
+    resp = es.search(
+        index=index,
+        query=query,
+        scroll=scroll,
+        size=size,
+        source=source_fields
+    )
+
+    scroll_id = resp["_scroll_id"]
+    hits = resp["hits"]["hits"]
+
+    while hits:
+        for hit in hits:
+            yield hit
+
+        resp = es.scroll(scroll_id=scroll_id, scroll=scroll)
+        scroll_id = resp["_scroll_id"]
+        hits = resp["hits"]["hits"]
+
+    es.clear_scroll(scroll_id=scroll_id)
 
 
 def main():
@@ -53,7 +75,7 @@ def main():
     query = build_query(args.model_version)
 
     # Count documents
-    count_resp = es.count(index=TOPONYMS_INDEX, body=query)
+    count_resp = es.count(index=TOPONYMS_INDEX, query=query)
     total_docs = count_resp["count"]
     print(f"Documents to extract: {total_docs:,}")
 
@@ -61,22 +83,11 @@ def main():
         print("Nothing to extract.")
         return
 
-    scan_gen = helpers.scan(
-        es,
-        index=TOPONYMS_INDEX,
-        query={"match_all": {}} if args.model_version is None else {
-            "bool": {"must_not": [{"term": {VERSION_FIELD: args.model_version}}]}
-        },
-        scroll="60m",
-        size=10_000,
-        _source=[SOURCE_TEXT_FIELD, SOURCE_LANG_FIELD]
-    )
-
     buffer = []
     chunk_num = 0
     pbar = tqdm(total=total_docs, unit="docs")
 
-    for hit in scan_gen:
+    for hit in scroll_all(es, TOPONYMS_INDEX, query, [SOURCE_TEXT_FIELD, SOURCE_LANG_FIELD]):
         buffer.append({
             "_id": hit["_id"],
             "name": hit["_source"].get(SOURCE_TEXT_FIELD, ""),
