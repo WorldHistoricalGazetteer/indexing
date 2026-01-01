@@ -433,123 +433,157 @@
     \section{Results}
     \label{sec:results}
 
-    \subsection{Internal Validation: The "Noise Floor"}
-    The primary goal of the Stage B negative mining was to eliminate false positives caused by the model's tendency to over-generalize phonetic similarity. Table~\ref{tab:val_results} presents the performance on the internal validation split.
+    \subsection{Internal Validation}
+
+    The primary deployment context for this model is large-scale gazetteer reconciliation,
+    where millions of candidate pairs must be evaluated efficiently with high precision.
+    Table~\ref{tab:val_results} presents performance on the held-out validation split
+    ($N=259,825$ pairs), comparing the trained model against string similarity baselines
+    operating on the same AnyAscii-romanized input.
 
     \begin{table}[h]
         \centering
-        \caption{Internal Validation Results ($N=259,825$)}
+        \caption{Internal Validation Results ($N=259,825$). The trained model substantially
+        outperforms string similarity baselines, achieving higher recall at equivalent or
+        better precision.}
         \label{tab:val_results}
-        \begin{tabular}{cccccc}
+        \begin{tabular}{llccccc}
             \toprule
-            \textbf{Threshold ($\theta$)} & \textbf{Precision} & \textbf{Recall} & \textbf{F1}    & \textbf{False Positives} \\
+            \textbf{Method} & \textbf{$\theta$} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{F5} \\
             \midrule
-            0.50                          & 0.957              & 0.998           & 0.977          & 11,532                   \\
-            0.60                          & 0.984              & 0.994           & 0.989          & 4,291                    \\
-            \textbf{0.70}                 & \textbf{0.996}     & \textbf{0.985}  & \textbf{0.991} & \textbf{1,031}           \\
-            0.80                          & 1.000              & 0.958           & 0.978          & 106                      \\
-            0.90                          & 1.000              & 0.858           & 0.923          & 4                        \\
+            \multirow{3}{*}{Levenshtein}
+                & 0.50 & 0.999 & 0.883 & 0.937 & 0.887 \\
+                & 0.60 & 1.000 & 0.804 & 0.891 & 0.810 \\
+                & 0.70 & 1.000 & 0.719 & 0.837 & 0.727 \\
+            \midrule
+            \multirow{3}{*}{Jaro-Winkler}
+                & 0.60 & 0.942 & 0.956 & 0.949 & 0.955 \\
+                & 0.70 & 0.993 & 0.901 & 0.945 & 0.904 \\
+                & 0.80 & 0.999 & 0.804 & 0.891 & 0.810 \\
+            \midrule
+            \multirow{3}{*}{\textbf{This Model}}
+                & 0.60 & 0.984 & 0.994 & 0.989 & 0.993 \\
+                & \textbf{0.70} & \textbf{0.996} & \textbf{0.985} & \textbf{0.991} & \textbf{0.986} \\
+                & 0.80 & 1.000 & 0.958 & 0.978 & 0.962 \\
             \bottomrule
         \end{tabular}
     \end{table}
 
-    At $\theta=0.70$, the model achieves near-perfect precision (99.6\%) while retaining 98.5\% recall. Crucially, the distribution of negative pairs (non-matches) has been successfully suppressed: 95\% of all negative pairs score below 0.485. This indicates that the ``noise floor''—random pairs that accidentally look similar—has been pushed well below the operational threshold.
+    At the optimal threshold ($\theta=0.70$), the model achieves 99.6\% precision with
+    98.5\% recall, outperforming the best baseline (Jaro-Winkler at $\theta=0.60$:
+    F1=0.949) by over four percentage points. More significantly, the model maintains
+    high recall at high precision thresholds: even at $\theta=0.80$, recall remains
+    above 95\%, whereas Levenshtein at the same threshold recovers only 63\% of true
+    matches.
+
+    The learned embeddings achieve substantially better separation between positive
+    and negative pairs than edit-distance metrics. Figure~\ref{fig:distribution}
+    illustrates this: 95\% of negative pairs score below 0.485 with the trained model,
+    compared to maximum negative similarities of 0.667 for Levenshtein and 0.900 for
+    Jaro-Winkler. This separation enables confident automated matching at thresholds
+    where baseline methods would produce unacceptable false positive rates.
 
     \begin{figure}[h]
         \centering
         \begin{tikzpicture}
             \begin{axis}[
-                width=10cm, height=6cm,
-                xlabel={Cosine Similarity},
+                width=12cm, height=6cm,
+                xlabel={Similarity Score},
                 ylabel={Density},
-                xmin=-0.2, xmax=1.0,
-                ymin=0, ymax=1,
+                xmin=0, xmax=1.0,
+                ymin=0,
                 legend pos=north west,
                 grid=major,
-                area style,
             ]
-% Illustrative distribution based on reported percentiles
-                \addplot[fill=red!30, draw=red, opacity=0.5] coordinates {
-                    (-0.2, 0.0) (0.0, 0.4) (0.2, 0.3) (0.4, 0.1) (0.485, 0.05) (0.6, 0.0)
-                };
-                \addlegendentry{Negatives (95th \%ile = 0.485)}
+                % Model negatives - concentrated near 0
+                \addplot[fill=red!30, draw=red, opacity=0.6, smooth, thick] coordinates {
+                    (0.0, 0.8) (0.1, 0.6) (0.2, 0.3) (0.3, 0.15) (0.4, 0.05) (0.5, 0.01) (0.6, 0.0)
+                } \closedcycle;
+                \addlegendentry{Negatives (This Model)}
 
-                \addplot[fill=blue!30, draw=blue, opacity=0.5] coordinates {
-                    (0.7, 0.0) (0.8, 0.05) (0.9, 0.2) (0.95, 0.6) (0.99, 0.8) (1.0, 0.0)
-                };
-                \addlegendentry{Positives (5th \%ile = 0.815)}
+                % Model positives - concentrated near 1
+                \addplot[fill=blue!30, draw=blue, opacity=0.6, smooth, thick] coordinates {
+                    (0.7, 0.0) (0.8, 0.05) (0.85, 0.15) (0.9, 0.4) (0.95, 0.7) (1.0, 0.5)
+                } \closedcycle;
+                \addlegendentry{Positives (This Model)}
+
+                % Levenshtein negative max
+                \draw[dashed, orange, thick] (0.667, 0) -- (0.667, 0.8);
+                \node[anchor=south, orange, font=\footnotesize] at (0.667, 0.75) {Lev. neg. max};
             \end{axis}
         \end{tikzpicture}
-        \caption{Separation of Positive and Negative pairs in the validation set. The Stage B mining strategy successfully suppressed negative scores (red) below the 0.5 threshold, creating a clear margin for decision making.}
+        \caption{Similarity score distributions for positive and negative pairs. The
+        trained model concentrates negative pairs near zero (95th percentile = 0.485),
+        creating a wide margin for threshold selection. Levenshtein negatives extend
+        to 0.667, reducing the viable operating range.}
         \label{fig:distribution}
     \end{figure}
 
-    \subsection{MEHDIE Benchmark Performance}
+    \subsection{MEHDIE Benchmark}
 
-    Table~\ref{tab:mehdie_results} compares our model against the Levenshtein baseline and the state-of-the-art results reported by \citet{mehdie2025}. Following the benchmark protocol, we report the F-5 score (weighting recall 5x higher than precision), reflecting the preference in historical research for finding all candidates over filtering them.
+    The MEHDIE benchmark~\citep{mehdie2025} evaluates cross-script matching between
+    historical Hebrew and Arabic sources---a severe domain shift from the predominantly
+    Indo-European training data. Table~\ref{tab:mehdie_results} compares performance
+    using the F-5 metric, which weights recall 5$\times$ over precision to reflect
+    the preference in historical research for high recall.
 
     \begin{table}[h]
         \centering
-        \caption{Comparison with MEHDIE Benchmark (Metric: Best F-5)}
+        \caption{MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically
+        engineered transliterations; AnyAscii baselines use naive character-by-character
+        romanization matching the trained model's input.}
         \label{tab:mehdie_results}
         \resizebox{\textwidth}{!}{
-            \begin{tabular}{llcccc}
+            \begin{tabular}{llcccccc}
                 \toprule
-                \textbf{ID} & \textbf{Dataset Pair}                       & \textbf{Levenshtein} & \textbf{MEHDIE (Phonetic)} & \textbf{Our Model} & \textbf{$\Delta$ SOTA} \\
+                \textbf{ID} & \textbf{Dataset Pair} & \textbf{MEHDIE Orth.} & \textbf{MEHDIE Phon.} & \textbf{AnyAscii Lev.} & \textbf{This Model} & \textbf{$\Delta$ Lev.} \\
                 \midrule
-                TS7         & Yaqut (Ar) $\leftrightarrow$ Kima (He)      & 0.476                & \textbf{0.77}              & 0.371              & -0.399                 \\
-                TS8         & Kima (He) $\leftrightarrow$ Thurayya (Ar)   & 0.750                & 0.68                       & \textbf{0.738}     & +0.058                 \\
-                TS9         & Tudela (He) $\leftrightarrow$ Thurayya (Ar) & 0.768                & \textbf{0.70}              & 0.676              & -0.024                 \\
-                TS10        & Yaqut $\leftrightarrow$ Kima (Magreb)       & 0.428                & \textbf{0.77}              & 0.437              & -0.333                 \\
-                TS11        & Damast (De) $\leftrightarrow$ Tudela (He)   & 0.832                & \textbf{0.88}              & 0.857              & -0.023                 \\
+                TS7  & Yaqut (Ar) $\leftrightarrow$ Kima (He)      & 0.67 & \textbf{0.77} & 0.476 & 0.371 & $-0.105$ \\
+                TS8  & Kima (He) $\leftrightarrow$ Thurayya (Ar)   & 0.65 & 0.68          & 0.750 & 0.738 & $-0.012$ \\
+                TS9  & Tudela (He) $\leftrightarrow$ Thurayya (Ar) & \textbf{0.92} & 0.70 & 0.768 & 0.676 & $-0.092$ \\
+                TS10 & Yaqut $\leftrightarrow$ Kima (Maghreb)      & 0.75 & \textbf{0.77} & 0.428 & \textbf{0.437} & $+0.009$ \\
+                TS11 & Damast (De) $\leftrightarrow$ Tudela (He)   & 0.78 & \textbf{0.88} & 0.832 & \textbf{0.857} & $+0.025$ \\
+                \midrule
+                \multicolumn{2}{l}{Average} & 0.75 & 0.76 & 0.651 & 0.616 & $-0.035$ \\
                 \bottomrule
             \end{tabular}
         }
     \end{table}
 
-    \textbf{Outperforming SOTA on Complex Cross-Source Data (TS8):}
-    Our model achieved an F-5 score of \textbf{0.738} on Testset 8, surpassing the MEHDIE phonetic model (0.68). This dataset involves matching Hebrew gazetteer entries to the Arabic \emph{Thurayya} gazetteer, a task complicated by inconsistent transliteration standards in the source data. Our model's ability to generalize from global training data allowed it to bridge these inconsistencies better than the specialized baseline.
+    Four baselines are shown. The MEHDIE orthographic and phonetic baselines operate
+    on carefully engineered transliterations designed for Hebrew-Arabic correspondence;
+    these embed substantial linguistic expertise. The AnyAscii Levenshtein baseline
+    uses the same naive romanization as the trained model, providing a fair comparison
+    of what the learned representations add beyond simple edit distance.
 
-    \textbf{Parity on Standard Pairs (TS11, TS9):}
-    On Testset 11 (German-Hebrew) and Testset 9, our model performed effectively at par with the SOTA (differences of $<0.03$), demonstrating that the neural architecture successfully learned the phonetic correspondence between European and Semitic languages without explicit rule-based training.
+    The model outperforms AnyAscii Levenshtein on TS10 and TS11, and achieves near-parity
+    on TS8 (0.738 vs.\ 0.750). On TS11 (German-Hebrew), the model achieves the second-best
+    result overall (0.857), approaching the specialised MEHDIE phonetic baseline (0.88).
+    This testset involves European-Semitic matching, where the model's global training
+    data provides relevant signal.
 
-    \textbf{The Semitic Morphology Gap (TS7, TS10):}
-    Performance was significantly lower on Testsets 7 and 10. These datasets are characterized by radical morphological shifts typical of Semitic languages (e.g., vowel pattern changes between Arabic and Hebrew cognates). Our model, trained primarily on GeoNames (which has a global distribution), treats such radical vowel shifts as indicative of different entities (e.g., distinguishing \emph{London} from \emph{Linden}). The MEHDIE model, specialized for this language family, treats them as matches.
+    Performance is weaker on TS7 and TS9, where the model underperforms even simple
+    Levenshtein. Notably, however, the model achieves \emph{higher recall} than
+    Levenshtein on these testsets (TS9: 100\% vs.\ 88.9\%; TS7: 75.8\% at $\theta=0.9$
+    vs.\ 54.5\% at $\theta=0.7$), but at the cost of substantially more false positives.
+    For applications prioritising recall over precision---such as candidate generation
+    for human review---this trade-off may be acceptable.
 
-    \begin{figure}[h]
-        \centering
-        \begin{tikzpicture}
-            \begin{axis}[
-                ybar,
-                bar width=15pt,
-                width=\textwidth,
-                height=7cm,
-                ylabel={F-5 Score},
-                symbolic x coords={TS7, TS8, TS9, TS10, TS11},
-                xtick=data,
-                ymin=0, ymax=1,
-                legend style={at={(0.5,-0.15)}, anchor=north, legend columns=-1},
-                nodes near coords,
-                nodes near coords align={vertical},
-                every node near coord/.append style={font=\footnotesize, /pgf/number format/.cd, fixed, precision=2}
-            ]
-                \addplot coordinates {(TS7, 0.77) (TS8, 0.68) (TS9, 0.70) (TS10, 0.77) (TS11, 0.88)};
-                \addlegendentry{MEHDIE (SOTA)}
-
-                \addplot coordinates {(TS7, 0.37) (TS8, 0.74) (TS9, 0.68) (TS10, 0.44) (TS11, 0.86)};
-                \addlegendentry{Our Model}
-            \end{axis}
-        \end{tikzpicture}
-        \caption{Performance comparison by testset. Our generalist model outperforms the specialist SOTA on TS8 and ties on TS11/TS9, but trails on the highly morphologically complex TS7/TS10.}
-        \label{fig:benchmark}
-    \end{figure}
+    The gap between MEHDIE's engineered baselines and the AnyAscii baselines
+    (average F-5: 0.76 vs.\ 0.65) quantifies the value of linguistic preprocessing
+    for this domain. The learned model, operating on naive romanization, cannot fully
+    compensate for this missing linguistic structure. However, on the internal
+    validation benchmark (Table~\ref{tab:val_results}), where no such preprocessing
+    advantage exists, the model substantially outperforms string similarity baselines,
+    demonstrating that the learned representations capture genuine phonetic structure
+    rather than merely approximating edit distance.
 
     \subsection{Deployment and Qualitative Evaluation}
 
-    The phonetic similarity model is to be deployed as a core component of
+    The phonetic similarity model is deployed as a core component of
     \textbf{WHG PLACE} (\textbf{P}lace \textbf{L}inkage, \textbf{A}lignment,
     and \textbf{C}oncordance \textbf{E}ngine), the World Historical Gazetteer's
-    reconciliation infrastructure. Embeddings have now been computed for all 68.7
+    reconciliation infrastructure. Embeddings have been computed for all 68.7
     million toponyms in its Elasticsearch index, enabling sub-second
     similarity search via kNN queries.
 
@@ -585,27 +619,51 @@
     \section{Discussion}
     \label{sec:discussion}
 
+    \subsection{Internal Validation: The Core Result}
+
+    The primary contribution of this work is demonstrated on the internal validation
+    benchmark, where the model substantially outperforms string similarity baselines
+    operating on identical input representations. At the optimal threshold, the model
+    achieves F1=0.991 compared to Jaro-Winkler's F1=0.949 and Levenshtein's F1=0.937---an
+    improvement of 4--5 percentage points.
+
+    More significant than the aggregate metrics is the \emph{separation} between
+    positive and negative pairs. The learned embeddings push 95\% of negative pairs
+    below similarity 0.485, whereas Levenshtein negatives extend to 0.667 and
+    Jaro-Winkler negatives reach 0.900. This separation has practical consequences:
+    it enables confident automated matching at thresholds where baseline methods
+    would produce unacceptable false positive rates. For large-scale gazetteer
+    reconciliation involving millions of candidate pairs, this margin is essential.
+
     \subsection{The Generalist-Specialist Trade-off}
 
-    The divergent performance on MEHDIE testsets reveals a fundamental tension in
-    cross-lingual matching: models optimised for global consistency necessarily
-    sacrifice sensitivity to language-family-specific patterns.
+    The MEHDIE benchmark results reveal a fundamental tension in cross-lingual
+    matching: models optimised for global consistency necessarily sacrifice
+    sensitivity to language-family-specific patterns.
 
     The MEHDIE system encodes explicit knowledge of Semitic consonantal roots,
     correctly treating radical vowel alternations (e.g., Arabic \emph{kitāb} /
     Hebrew \emph{ketav}) as identity-preserving. This model, trained on global
     data where vowel changes typically signal distinct entities (English
     \emph{London} vs.\ \emph{Linden}), learns a more conservative similarity
-    function. This explains the performance gap on TS7 and TS10, where Semitic
-    morphophonology dominates.
+    function. This explains the performance gap on TS7 and TS9.
 
-    However, specialisation has costs. The MEHDIE transliteration library required
-    substantial linguistic expertise to develop and remains specific to one
-    language pair. This approach scales to any language with sufficient gazetteer
-    coverage, requiring no manual rule engineering. The strong performance on TS8
-    (+0.058 F5 over MEHDIE) suggests that when difficulty stems from source noise
-    rather than systematic morphology, learned representations outperform
-    hand-crafted rules.
+    Notably, the model does not consistently outperform simple Levenshtein on
+    MEHDIE testsets when both operate on AnyAscii romanization (average F-5:
+    0.616 vs.\ 0.651). However, this comparison is instructive: the model
+    achieves \emph{higher recall} on most testsets (e.g., TS9: 100\% vs.\ 88.9\%;
+    TS11: 96.9\% vs.\ 93.8\%) at the cost of lower precision. For candidate
+    generation workflows where human reviewers filter false positives, this
+    trade-off may be preferable to the higher-precision, lower-recall profile
+    of edit distance.
+
+    The gap between MEHDIE's engineered baselines (average F-5: 0.76) and the
+    AnyAscii baselines (0.65) quantifies the value of linguistic preprocessing
+    for this domain. The learned model cannot fully compensate for missing
+    linguistic structure in its input representation. This suggests that for
+    specialised domains like Semitic cross-script matching, combining learned
+    embeddings with linguistically informed preprocessing may yield the best
+    results.
 
     \subsection{Embedding Space Characteristics}
 
@@ -644,6 +702,13 @@
     geographic features in the WHG PLACE pipeline addresses this limitation
     at the system level.
 
+    \subsubsection{Input Representation}
+    The MEHDIE results demonstrate that naive romanization (AnyAscii) discards
+    phonetic information that linguistically informed transliteration preserves.
+    For cross-script matching between related languages (e.g., Hebrew-Arabic),
+    the model's input representation may be a limiting factor independent of
+    architectural capacity.
+
     \subsection{Future Directions}
 
     Several extensions merit investigation:
@@ -652,6 +717,10 @@
         \item \textbf{Semitic fine-tuning}: Incorporating MEHDIE benchmark data
         as curriculum training examples could improve performance on
         morphologically complex language pairs without sacrificing global precision.
+
+        \item \textbf{Improved romanization}: Replacing AnyAscii with
+        linguistically informed transliteration for specific script pairs
+        could recover phonetic information currently lost in preprocessing.
 
         \item \textbf{Language and script identification}: Automatic detection
         of source language could improve Student encoder performance, particularly
@@ -677,7 +746,26 @@
     \section{Conclusion}
     \label{sec:conclusion}
 
-    I have presented a neural architecture for toponym matching that achieves state-of-the-art results on difficult cross-source benchmarks (TS8) and near-perfect precision on global validation data. While it does not fully replicate the specialized performance of rule-based systems on deep Semitic morphology, it offers a scalable, language-agnostic alternative that requires no expert rule-crafting. The trained model and code are released to facilitate further research in global digital humanities.
+    I have presented a neural architecture for cross-lingual toponym matching
+    that learns phonetic similarity from articulatory features. On the internal
+    validation benchmark, the model substantially outperforms string similarity
+    baselines (F1=0.991 vs.\ 0.949), with learned embeddings achieving markedly
+    better separation between matching and non-matching pairs than edit-distance
+    metrics.
+
+    On the external MEHDIE benchmark for Semitic cross-script matching, results
+    are mixed: the model approaches or exceeds baseline performance on testsets
+    involving European-Semitic pairs (TS11: 0.857) but underperforms on
+    Hebrew-Arabic pairs where specialised linguistic knowledge provides
+    significant advantage. This highlights a fundamental trade-off between
+    global consistency and language-family-specific flexibility.
+
+    The model offers a scalable, language-agnostic approach to phonetic similarity
+    that requires no expert rule-crafting and operates efficiently at scale.
+    Embeddings for 68.7 million toponyms have been computed and deployed in the
+    World Historical Gazetteer's reconciliation infrastructure. The trained model
+    and code are released to facilitate further research in global digital
+    humanities.
 
 %% ============================================================================
 %% ACKNOWLEDGMENTS

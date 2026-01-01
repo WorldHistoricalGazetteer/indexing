@@ -94,30 +94,32 @@
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Evaluation Benchmarks}{14}{subsection.5.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.1}Internal Validation Split (Generalization)}{14}{subsubsection.5.1.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.2}MEHDIE Benchmark (Specialization)}{14}{subsubsection.5.1.2}\protected@file@percent }
-\citation{mehdie2025}
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Implementation Details}{15}{subsection.5.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {6}Results}{15}{section.6}\protected@file@percent }
 \newlabel{sec:results}{{6}{15}{Results}{section.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Internal Validation: The "Noise Floor"}{15}{subsection.6.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Internal Validation Results ($N=259,825$)}}{15}{table.2}\protected@file@percent }
-\newlabel{tab:val_results}{{2}{15}{Internal Validation Results ($N=259,825$)}{table.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MEHDIE Benchmark Performance}{16}{subsection.6.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Comparison with MEHDIE Benchmark (Metric: Best F-5)}}{16}{table.3}\protected@file@percent }
-\newlabel{tab:mehdie_results}{{3}{16}{Comparison with MEHDIE Benchmark (Metric: Best F-5)}{table.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment and Qualitative Evaluation}{16}{subsection.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{17}{section.7}\protected@file@percent }
-\newlabel{sec:discussion}{{7}{17}{Discussion}{section.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}The Generalist-Specialist Trade-off}{17}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Embedding Space Characteristics}{18}{subsection.7.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Limitations}{18}{subsection.7.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.1}Grapheme-to-Phoneme Coverage}{18}{subsubsection.7.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.2}Pronunciation Variation}{18}{subsubsection.7.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.3.3}Phonetic vs.\ Geographic Disambiguation}{18}{subsubsection.7.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Future Directions}{18}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Internal Validation}{15}{subsection.6.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision.}}{15}{table.2}\protected@file@percent }
+\newlabel{tab:val_results}{{2}{15}{Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision}{table.2}{}}
+\citation{mehdie2025}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MEHDIE Benchmark}{16}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input.}}{16}{table.3}\protected@file@percent }
+\newlabel{tab:mehdie_results}{{3}{16}{MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment and Qualitative Evaluation}{17}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{18}{section.7}\protected@file@percent }
+\newlabel{sec:discussion}{{7}{18}{Discussion}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Internal Validation: The Core Result}{18}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}The Generalist-Specialist Trade-off}{18}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Embedding Space Characteristics}{19}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Limitations}{19}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.1}Grapheme-to-Phoneme Coverage}{19}{subsubsection.7.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.2}Pronunciation Variation}{19}{subsubsection.7.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.3}Phonetic vs.\ Geographic Disambiguation}{19}{subsubsection.7.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.4}Input Representation}{19}{subsubsection.7.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Future Directions}{20}{subsection.7.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{20}{section.8}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{20}{Conclusion}{section.8}{}}
 \bibdata{phonetic-embeddings}
 \bibcite{translit2020}{{1}{2020}{{Benites et~al.}}{{Benites, Duivesteijn, von D{\"a}niken, and Cieliebak}}}
-\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{19}{section.8}\protected@file@percent }
-\newlabel{sec:conclusion}{{8}{19}{Conclusion}{section.8}{}}
 \bibcite{bromley1993}{{2}{1993}{{Bromley et~al.}}{{Bromley, Guyon, LeCun, Säckinger, and Shah}}}
 \bibcite{chopra2005}{{3}{2005}{{Chopra et~al.}}{{Chopra, Hadsell, and LeCun}}}
 \bibcite{ardanuy2017}{{4}{2017}{{Coll~Ardanuy and Sporleder}}{{}}}
@@ -139,10 +141,8 @@
 \bibcite{santos2018}{{20}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
 \bibcite{schroff2015}{{21}{2015}{{Schroff et~al.}}{{Schroff, Kalenichenko, and Philbin}}}
 \bibcite{schuster1997}{{22}{1997}{{Schuster and Paliwal}}{{}}}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{23}{figure.1}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{23}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Separation of Positive and Negative pairs in the validation set. The Stage B mining strategy successfully suppressed negative scores (red) below the 0.5 threshold, creating a clear margin for decision making.}}{24}{figure.2}\protected@file@percent }
-\newlabel{fig:distribution}{{2}{24}{Separation of Positive and Negative pairs in the validation set. The Stage B mining strategy successfully suppressed negative scores (red) below the 0.5 threshold, creating a clear margin for decision making}{figure.2}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {3}{\ignorespaces Performance comparison by testset. Our generalist model outperforms the specialist SOTA on TS8 and ties on TS11/TS9, but trails on the highly morphologically complex TS7/TS10.}}{24}{figure.3}\protected@file@percent }
-\newlabel{fig:benchmark}{{3}{24}{Performance comparison by testset. Our generalist model outperforms the specialist SOTA on TS8 and ties on TS11/TS9, but trails on the highly morphologically complex TS7/TS10}{figure.3}{}}
-\gdef \@abspage@last{24}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{24}{figure.1}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{24}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range.}}{25}{figure.2}\protected@file@percent }
+\newlabel{fig:distribution}{{2}{25}{Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range}{figure.2}{}}
+\gdef \@abspage@last{25}
