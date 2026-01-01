@@ -81,12 +81,25 @@ def load_chunk(es, df, pbar):
         })
 
         if len(actions) >= BULK_CHUNK_SIZE:
-            helpers.bulk(es, actions, request_timeout=60)
+            try:
+                helpers.bulk(es, actions)
+            except helpers.BulkIndexError as e:
+                # Print first few errors for debugging
+                print(f"\nBulk error: {len(e.errors)} failures")
+                for err in e.errors[:3]:
+                    print(f"  {err}")
+                raise
             pbar.update(len(actions))
             actions = []
 
     if actions:
-        helpers.bulk(es, actions, request_timeout=60)
+        try:
+            helpers.bulk(es, actions)
+        except helpers.BulkIndexError as e:
+            print(f"\nBulk error: {len(e.errors)} failures")
+            for err in e.errors[:3]:
+                print(f"  {err}")
+            raise
         pbar.update(len(actions))
 
 
