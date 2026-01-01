@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2025.12.28)  30 DEC 2025 23:43
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2025.12.28)  1 JAN 2026 21:59
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1358,13 +1358,13 @@ Overfull \hbox (6.00896pt too wide) in paragraph at lines 153--154
 g IPA transcriptions. PanPhon ([][][]Mortensen[][]
  []
 
-[5] [6]
+[5]
 Overfull \hbox (12.57616pt too wide) in paragraph at lines 186--187
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 with language identification. Through kno
 wledge distillation from the Teacher,[]
  []
 
-
+[6]
 Overfull \hbox (16.44017pt too wide) in paragraph at lines 189--190
 [][]\TU/LinLibertine_R.otf(0)/m/n/10.95 Both encoders share the same architectu
 re: a Bidirectional LSTM with lightweight[]
@@ -1401,81 +1401,76 @@ Overfull \hbox (1.75154pt too wide) in paragraph at lines 304--305
  []
 
 [10]
-Overfull \hbox (6.13026pt too wide) in paragraph at lines 336--337
+Overfull \hbox (6.13026pt too wide) in paragraph at lines 335--336
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 many”/“Deutschland”, “Japan”/“Nippon”, “F
 lorence”/“Firenze”). To construct mean-[]
  []
 
-[11]
-Overfull \hbox (17.97945pt too wide) in paragraph at lines 340--341
+
+Overfull \hbox (17.97945pt too wide) in paragraph at lines 339--340
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 tised and georeferenced transcription of 
 the cartographer John Adams’s 1680 gazetteer[]
  []
 
-[12]
-Overfull \hbox (20.4395pt too wide) in paragraph at lines 372--373
+[11] [12]
+Overfull \hbox (20.4395pt too wide) in paragraph at lines 371--372
 [][]\TU/LinLibertine_R.otf(0)/b/n/10.95 Orthographic negatives \TU/LinLibertine
 _R.otf(0)/m/n/10.95 (for curriculum learning): Names with high character-[]
  []
 
 
-Overfull \hbox (10.29602pt too wide) in paragraph at lines 393--393
+Overfull \hbox (10.29602pt too wide) in paragraph at lines 392--392
 [][]\TU/LinLibertine_R.otf(0)/b/n/12 Training Strategy: Balancing Contemporary 
 and Historical Data []
  []
 
 [13]
-Overfull \hbox (0.69182pt too wide) in paragraph at lines 399--400
+Overfull \hbox (0.69182pt too wide) in paragraph at lines 398--399
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 phases. Importantly, negative sampling fo
 r triplet loss draws from the same source[]
  []
 
-[14]
-Overfull \hbox (0.39983pt too wide) in paragraph at lines 421--424
+
+Overfull \hbox (0.39983pt too wide) in paragraph at lines 419--422
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 phonetic and orthographic assumptions. Di
 rect performance parity with MEHDIE[]
  []
 
-[15]
+[14]
 
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-Package pgfplots info on input line 538: Using 'lua backend=false' for axis: x 
+[15]
+Package pgfplots info on input line 535: Using 'lua backend=false' for axis: x 
 coord trafo unsupported.
 
+
 LaTeX Warning: `h' float specifier changed to `ht'.
 
-[16] [17]
-Overfull \hbox (0.4047pt too wide) in paragraph at lines 594--595
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 This approach occupies a distinct niche b
-etween the rule-based cross-lingual meth-[]
- []
 
-
-Overfull \hbox (5.17888pt too wide) in paragraph at lines 598--599
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 chitecture offers a more lightweight alte
-rnative suitable for deployment in resource-[]
- []
-
-
-Overfull \hbox (2.15822pt too wide) in paragraph at lines 600--601
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 like GeoBERTTM, and GeoBERTTM does not ad
-dress cross-lingual matching. This[]
- []
-
-
-Overfull \hbox (1.36829pt too wide) in paragraph at lines 612--613
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 place names have multiple valid pronuncia
-tions (regional accents, historical shifts).[]
- []
-
-[18] [19]
-Overfull \hbox (0.29521pt too wide) in paragraph at lines 663--664
+Overfull \hbox (0.29521pt too wide) in paragraph at lines 556--563
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 a candidate toponym pair identified throu
 gh preliminary filtering (e.g., geographic[]
  []
 
-[20] (pdf/phonetic-embeddings.bbl [21] [22] [23])
+[16]
+
+LaTeX Warning: Reference `tab:qualitative' on page 17 undefined on input line 5
+77.
+
+[17]
+Overfull \hbox (0.49956pt too wide) in paragraph at lines 652--655
+[]\TU/LinLibertine_R.otf(0)/m/n/10.95 lum training examples could improve perfo
+rmance on morphologically com-[]
+ []
+
+[18]
+Overfull \hbox (13.40596pt too wide) in paragraph at lines 661--665
+[][]\TU/LinLibertine_R.otf(0)/b/n/10.95 Semantic encoding\TU/LinLibertine_R.otf
+(0)/m/n/10.95 : Classifying toponymic elements (e.g., “-bury”, “-chester”,[]
+ []
+
+(pdf/phonetic-embeddings.bbl [19] [20] [21])
 The property list \polyglossia@langsetup contains the pairs (without outer
 braces):
 >  {latex/script}  =>  {latin}
@@ -1526,22 +1521,25 @@ braces):
 >  {arabic/babelname}  =>  {arabic}
 >  {arabic/localnumeral}  =>  {arabicnumerals}
 >  {arabic/Localnumeral}  =>  {arabicnumerals}.
- [24] [25] [26]
+ [22] [23] [24]
 (pdf/phonetic-embeddings.aux
 LaTeX Info: Redefining \rmfamily on input line 21.
 LaTeX Info: Redefining \sffamily on input line 21.
 LaTeX Info: Redefining \ttfamily on input line 21.
 )
+
+LaTeX Warning: There were undefined references.
+
 Package rerunfilecheck Info: File `phonetic-embeddings.out' has not changed.
-(rerunfilecheck)             Checksum: 4595B485989992D0E1E846D735C3222E;10355.
+(rerunfilecheck)             Checksum: DDC3A66A9C5BBF8D722EADF49D06AFB1;9172.
  ) 
 Here is how much of TeX's memory you used:
- 37718 strings out of 478181
- 912407 string characters out of 5854526
+ 37719 strings out of 478181
+ 912418 string characters out of 5854526
  1441564 words of memory out of 5000000
- 57652 multiletter control sequences out of 15000+600000
+ 57653 multiletter control sequences out of 15000+600000
  480117 words of font info for 107 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  99i,18n,103p,1220b,2332s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/phonetic-embeddings.pdf (26 pages).
+Output written on pdf/phonetic-embeddings.pdf (24 pages).

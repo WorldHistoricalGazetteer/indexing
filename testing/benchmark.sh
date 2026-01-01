@@ -188,6 +188,83 @@ EOF
 # INTERNAL VALIDATION SPLIT (GPU)
 # =============================================================================
 
+do_val_baselines() {
+    echo "=========================================="
+    echo "VALIDATION SPLIT - BASELINES (CPU)"
+    echo "=========================================="
+    echo
+
+    local DATA_PATH="$DEFAULT_TRAIN_DATA"
+    local MAX_PAIRS=50000
+
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --data) DATA_PATH="$2"; shift 2 ;;
+            --max-pairs) MAX_PAIRS="$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    if [ ! -f "$DATA_PATH" ]; then
+        echo "ERROR: Training data not found at: $DATA_PATH"
+        return 1
+    fi
+    ensure_directories
+
+    local BASELINE_SCRIPT=$(mktemp /tmp/val-baselines-XXXXXX.sbatch)
+
+    cat > "$BASELINE_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=val-baselines
+#SBATCH --partition=${SMP_PARTITION}
+#SBATCH --time=${SMP_TIME}
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=${SMP_CPUS}
+#SBATCH --mem=${SMP_MEM}
+#SBATCH --output=${LOG_DIR}/val_baselines-%j.out
+#SBATCH --error=${LOG_DIR}/val_baselines-%j.err
+
+set -e
+$(activate_conda)
+cd "$REPO_DIR"
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
+
+echo "--- Running Baseline Evaluation on Val Split ---"
+echo "Data: ${DATA_PATH}"
+echo "Max pairs: ${MAX_PAIRS}"
+echo
+
+python -u -m ${TESTING_MODULE}.evaluate_val_split_baselines \
+    --data "${DATA_PATH}" \
+    --max-pairs ${MAX_PAIRS}
+
+echo
+echo "Done."
+SBATCH_EOF
+
+    echo "Submitting baseline validation job..."
+    local JOBID=$(sbatch --parsable "$BASELINE_SCRIPT")
+    rm "$BASELINE_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit job"
+        return 1
+    fi
+
+    cat > "$JOB_INFO_FILE" <<EOF
+CURRENT_JOB_ID=$JOBID
+JOB_TYPE="val_baselines"
+DATA_PATH="${DATA_PATH}"
+STARTED_AT="$(date -Iseconds)"
+OUTPUT_FILE="${LOG_DIR}/val_baselines-${JOBID}.out"
+EOF
+
+    echo
+    echo "Submitted job: $JOBID"
+    echo "Results will be in: ${LOG_DIR}/val_baselines-${JOBID}.out"
+}
+
 do_val_split() {
     echo "=========================================="
     echo "INTERNAL VALIDATION EVALUATION (GPU)"
@@ -505,6 +582,7 @@ case "$1" in
     -baselines|--baselines) shift; do_baselines "$@" ;;
     -model|--model)         shift; do_model "$@" ;;
     -val|--val)             shift; do_val_split "$@" ;;
+    -val-baselines|--val-baselines) shift; do_val_baselines "$@" ;;
     -full|--full)           shift; do_full "$@" ;;
     -status|--status)       do_status ;;
     -results|--results)     do_results "$2" ;;

@@ -134,7 +134,7 @@
 
     The MEHDIE work provides crucial insights for this approach. First, it demonstrates that phonetic relationships between languages can be exploited for toponym matching, validating the central hypothesis. Second, it highlights the limitations of transliteration-based approaches: their custom transliteration library required substantial linguistic expertise to develop and remains specific to Hebrew-Arabic pairs. Third, their benchmark reveals that no single metric dominates across all dataset pairs, suggesting that learned representations may offer advantages over hand-crafted similarity functions. Notably, the MEHDIE paper does not engage with recent deep learning approaches to toponym matching, focusing instead on interpretable rule-based and metric-based methods. The neural architecture presented here complements their work by learning phonetic similarity patterns from data rather than encoding them manually.
 
-    Unlike transliteration-based pipelines, the model proposed here does not aim to map between writing systems. Instead, it learns a shared phonetic similarity space grounded in articulatory properties---the physical configuration of the vocal tract during speech production. This representation is inherently cross-lingual: the same articulatory features describe sounds in any human language, enabling the model to recognize phonetic correspondence without language-pair-specific rules.
+    Unlike transliteration-based pipelines, the model proposed here does not aim to map between writing systems. Instead, it learns a shared similarity space grounded in articulatory properties, enabling recognition of phonetic correspondence without language-pair-specific rules.
 
     There are clear synergies between the MEHDIE project and this work: MEHDIE's matching software was originally based on an earlier version of the World Historical Gazetteer, and I have benefited from discussions with Tomer Sagi about cross-script toponym matching challenges. The present work can be seen as extending the WHG infrastructure that MEHDIE built upon, now incorporating learned phonetic representations to complement the rule-based approaches they developed.
 
@@ -218,7 +218,7 @@
 
     \subsubsection{Character Embeddings with Language ID (Student)}
 
-    For the Student encoder, AnyAscii\footnote{\url{https://github.com/anyascii/anyascii}} romanization is first applied to convert non-Latin scripts to Latin characters. AnyAscii provides ASCII transliteration for approximately 124,000 of Unicode's 155,000 characters, covering all major scripts used in contemporary and historical toponymy. The ~30,000 unsupported characters consist primarily of very rare CJK variants and cuneiform---the latter potentially relevant for Mesopotamian toponyms, though these typically appear in already-romanized form in modern gazetteers.
+    For the Student encoder, AnyAscii\footnote{\url{https://github.com/anyascii/anyascii}} romanization is first applied to convert non-Latin scripts to Latin characters. AnyAscii provides ASCII transliteration for approximately 124,000 of Unicode's 155,000 characters, covering all major scripts used in contemporary and historical toponymy.
 
     A key property of AnyAscii is that it performs context-free, character-by-character transliteration. While this means romanization may not always match linguistically ideal conventions (e.g., context-dependent rules in Cyrillic languages), it ensures \emph{consistency}: the same character always maps to the same ASCII output. This consistency is valuable for the Student network, which learns to recognize patterns in the romanized output rather than requiring linguistically perfect transliteration.
 
@@ -312,7 +312,6 @@
 %% DATASET CONSTRUCTION
 %% ============================================================================
 
-
     \section{Dataset Construction}
     \label{sec:dataset}
 
@@ -402,7 +401,6 @@
 %% EXPERIMENTS
 %% ============================================================================
 
-
     \section{Experiments}
     \label{sec:experiments}
 
@@ -429,9 +427,8 @@
     The model was trained for 40 epochs on an NVIDIA A100 GPU. The curriculum learning strategy involved two mining phases: Stage A (orthographic negatives) and Stage B (model-based hard negatives). For Stage B, 180,873 hard negatives were mined using a hybrid strategy (70\% random sampling, 30\% targeted triplet scanning) to balance noise reduction with fine-grained discrimination. The final model (`final\_model\_b.pt`) achieved a triplet loss of $0.0008$.
 
 %% ============================================================================
-%% RESULTS (TODO)
+%% RESULTS
 %% ============================================================================
-
 
     \section{Results}
     \label{sec:results}
@@ -547,127 +544,135 @@
         \label{fig:benchmark}
     \end{figure}
 
-%% TODO: Complete this section after running experiments
+    \subsection{Deployment and Qualitative Evaluation}
 
-%% Planned subsections:
-%% - Overall performance comparison
-%% - Cross-script performance (Latin vs. Cyrillic vs. Arabic etc.)
-%% - Low-resource language performance
-%% - Ablation studies (phonetic features, attention, curriculum learning)
-%% - Qualitative analysis of attention weights
-%% - Error analysis
+    The phonetic similarity model is to be deployed as a core component of
+    \textbf{WHG PLACE} (\textbf{P}lace \textbf{L}inkage, \textbf{A}lignment,
+    and \textbf{C}oncordance \textbf{E}ngine), the World Historical Gazetteer's
+    reconciliation infrastructure. Embeddings have now been computed for all 68.7
+    million toponyms in its Elasticsearch index, enabling sub-second
+    similarity search via kNN queries.
+
+    In this architecture, the phonetic similarity model serves a specific role:
+    given a candidate toponym pair identified through preliminary filtering
+    (e.g., geographic proximity, shared administrative region), the model
+    produces a continuous similarity score that can be combined with other
+    contextual features. The combined score informs both automated matching
+    decisions and the ranking of candidates presented to human reviewers for
+    validation.
+
+    This modular design allows the phonetic similarity component to be evaluated
+    and improved independently while integrating seamlessly into the broader
+    reconciliation pipeline. The model's continuous output (rather than binary
+    classification) is essential for this use case, as downstream components
+    require graded similarity judgments to rank candidates and calibrate
+    confidence thresholds.
+
+    To assess practical utility beyond aggregate metrics, I sampled random
+    toponyms from two populations: (a) those with Epitran/PanPhon support
+    (testing the full Teacher-Student pipeline), and (b) those without G2P
+    resources (testing Student generalisation). For each query, the top 15
+    matches by cosine similarity were retrieved and manually evaluated for
+    phonetic plausibility. Representative examples appear in
+    Table~\ref{tab:qualitative}.
+
+    % TODO: Add qualitative results table
 
 %% ============================================================================
 %% DISCUSSION
 %% ============================================================================
 
-
     \section{Discussion}
     \label{sec:discussion}
 
-    \subsection{Generalist vs. Specialist Models}
-    The results highlight a fundamental trade-off in toponym resolution: the tension between \emph{global precision} and \emph{local flexibility}.
+    \subsection{The Generalist-Specialist Trade-off}
 
-    The MEHDIE system represents a ``Specialist'' approach: highly optimized for the specific phonology and morphology of the Hebrew-Arabic language pair. It correctly identifies that \emph{Yaqut} and \emph{Kima} refer to the same entity despite significant vowel changes, because it encodes the rules of Semitic roots.
+    The divergent performance on MEHDIE testsets reveals a fundamental tension in
+    cross-lingual matching: models optimised for global consistency necessarily
+    sacrifice sensitivity to language-family-specific patterns.
 
-    Our architecture represents a ``Generalist'' approach. By training on global data (GeoNames), it learns a universal definition of phonetic similarity. On the Internal Validation set, this yields a precision of 99.6\%. However, this global precision comes at a cost: the model learns that vowel changes usually signal a difference in meaning (e.g., in English or Romance languages). Consequently, it is more conservative when applying to the radical shifts found in Testsets 7 and 10.
+    The MEHDIE system encodes explicit knowledge of Semitic consonantal roots,
+    correctly treating radical vowel alternations (e.g., Arabic \emph{kitāb} /
+    Hebrew \emph{ketav}) as identity-preserving. This model, trained on global
+    data where vowel changes typically signal distinct entities (English
+    \emph{London} vs.\ \emph{Linden}), learns a more conservative similarity
+    function. This explains the performance gap on TS7 and TS10, where Semitic
+    morphophonology dominates.
 
-    However, the victory on Testset 8 (+0.058 F5) is significant. It suggests that when the difficulty stems from \emph{source noise} or \emph{transliteration inconsistency} rather than pure morphology, the neural model's ability to learn robust features from massive amounts of data outweighs the benefits of hand-crafted rules.
+    However, specialisation has costs. The MEHDIE transliteration library required
+    substantial linguistic expertise to develop and remains specific to one
+    language pair. This approach scales to any language with sufficient gazetteer
+    coverage, requiring no manual rule engineering. The strong performance on TS8
+    (+0.058 F5 over MEHDIE) suggests that when difficulty stems from source noise
+    rather than systematic morphology, learned representations outperform
+    hand-crafted rules.
 
-    \subsection{Similarity Distribution Analysis}
+    \subsection{Embedding Space Characteristics}
 
-    Figure-free analysis of similarity distributions further illustrates the model’s separation
-    capacity. Positive pairs exhibit a strong concentration near cosine similarity 1.0, with a
-    median similarity of 0.975 and a 5th percentile of 0.815. In contrast, negative pairs are centred
-    near zero (median 0.005), with negligible mass above 0.8 similarity.
+    The 64-dimensional embedding space appears sufficient for the current task,
+    but the 14\% of positive pairs scoring below 0.9 similarity suggests
+    headroom for improvement. These difficult cases warrant investigation:
+    preliminary analysis indicates they cluster around (a) extreme historical
+    drift (e.g., Latin to modern vernacular), (b) competing transliteration
+    standards, and (c) borrowed names with phonological adaptation.
 
-    Only 0.4\% of negative pairs exceed a similarity of 0.7, and none exceed 0.8, indicating a clean
-    margin between true matches and confusable negatives. Approximately 14\% of positive pairs fall
-    below 0.9 similarity, reflecting genuinely difficult cases such as extreme orthographic variation,
-    cross-lingual forms, and historical exonyms.
-
-    \subsection{Production Readiness}
-    For deployment in the World Historical Gazetteer, the Internal Validation results are arguably more predictive of utility than the specific Semitic benchmarks. A search engine that returns 99\% valid matches (Precision 0.996) is usable for automated reconciliation; a system with lower precision requires manual verification. The high performance on TS8 and TS11 suggests the model is ready for broad deployment, with the caveat that specific language families (like Semitic) may require fine-tuning or specialized sub-modules.
-
-    \subsection{Positioning Relative to Prior Work}
-
-    This approach occupies a distinct niche between the rule-based cross-lingual methods of MEHDIE~\citep{mehdie2025} and the deep learning monolingual methods exemplified by GeoBERTTM~\citep{qiu2024geobert}.
-
-    The MEHDIE transliteration approach achieves strong results for Hebrew-Arabic matching by exploiting linguistic expertise about Semitic phonetics. However, developing such transliteration libraries requires substantial effort for each language pair, and the rules may not transfer to unrelated language families. The learned representations presented here aim to capture phonetic relationships automatically from training data, potentially scaling to language pairs where expert transliteration rules are unavailable.
-
-    GeoBERTTM demonstrates that neural approaches can achieve near-perfect accuracy on toponym matching, but its reliance on Chinese-specific features limits cross-lingual applicability. Furthermore, BERT-based approaches require substantial computational resources for both training and inference. The BiLSTM architecture offers a more lightweight alternative suitable for deployment in resource-constrained settings typical of digital humanities projects.
-
-    Notably, the MEHDIE paper does not engage with deep learning approaches like GeoBERTTM, and GeoBERTTM does not address cross-lingual matching. This work bridges that gap by applying neural methods to the cross-lingual challenge.
+    Increasing embedding dimensionality to 128 or 256 dimensions might capture
+    more nuanced phonetic distinctions, but would increase computational cost
+    both during training and at inference time when input strings must be
+    encoded for search. A careful trade-off analysis would be required before
+    deployment.
 
     \subsection{Limitations}
 
-    Several limitations constrain the current approach:
-
     \subsubsection{Grapheme-to-Phoneme Coverage}
-
-    While Epitran supports approximately 100 languages, many historically significant languages lack G2P resources. The Student-Teacher framework partially addresses this by enabling the Student to process unseen words in scripts with orthographic conventions similar to those encountered during training---the Student learns implicit grapheme-to-phoneme mappings from the Teacher's supervision. However, this transfer is limited: the Student cannot reliably infer phonetic features for scripts with entirely different orthography-to-phonology mappings (e.g., logographic systems, or writing systems not represented in training). Performance on truly out-of-distribution scripts (e.g., cuneiform, hieroglyphics) would require explicit G2P resources or transliteration to a supported script.
+    Epitran supports approximately 100 languages, but historically significant
+    languages (Middle Persian, Classical Tibetan, pre-modern Korean) lack
+    resources. The Student encoder provides partial mitigation through transfer
+    from related scripts, but truly out-of-distribution writing systems
+    (cuneiform, hieroglyphics) would require dedicated G2P development or
+    transliteration to supported scripts.
 
     \subsubsection{Pronunciation Variation}
+    The model assumes canonical pronunciation, but toponyms often have multiple
+    valid realisations (regional accents, historical shifts, spelling
+    pronunciations). Future work could explore multi-embedding approaches or
+    uncertainty quantification.
 
-    This approach assumes a canonical pronunciation for each toponym, but many place names have multiple valid pronunciations (regional accents, historical shifts). The current model does not explicitly handle this variation.
-
-    \subsubsection{Semantic vs. Phonetic Similarity}
-
-    Some toponym pairs are phonetically similar but semantically distinct (e.g., ``Paris, Texas'' vs. ``Paris, France''). The model focuses on phonetic matching and would require integration with geographic or contextual features for full disambiguation.
-
-    \subsubsection{Further Evaluation on Noisy Data}
-
-    While GeoNames provides broad coverage and relatively clean identifiers, it does not fully capture
-    the noise and inconsistency of volunteered geographic information. An OpenStreetMap-based evaluation
-    would introduce noisier labels and richer alias structures, and is identified as a priority for
-    future work.
+    \subsubsection{Phonetic vs.\ Geographic Disambiguation}
+    The model cannot distinguish phonetically identical but geographically
+    distinct places (Paris, Texas vs.\ Paris, France). Integration with
+    geographic features in the WHG PLACE pipeline addresses this limitation
+    at the system level.
 
     \subsection{Future Directions}
 
-    Several extensions are planned:
-    \begin{itemize}
-        \item Primary evaluation will continue to foreground GeoNames-scale experiments, which directly
-        reflect the model’s intended use.
-        \item OpenStreetMap-based evaluation is a promising next step due to noisier labels and richer aliasing.
-        \item MEHDIE datasets could be incorporated as additional fine-tuning or curriculum training data.
-        \item A ``brutal'' ablation study is planned to isolate the contributions of phonetic normalisation,
-        sequence sensitivity, and metric learning.
-    \end{itemize}
-
-    \subsubsection{Multi-task Learning}
-
-    Incorporating additional tasks such as language identification or script classification could improve representation quality, particularly for the Student encoder.
-
-    \subsubsection{Attention Interpretability}
-
-    The self-attention weights may provide interpretable signals about which portions of toponyms are most discriminative. Visualizing these patterns could yield linguistic insights about cross-lingual naming conventions.
-
-    \subsubsection{Integration with Gazetteer Services}
-
-    The trained model could be deployed as a fuzzy matching component within gazetteer reconciliation services such as the World Historical Gazetteer, enabling researchers to link historical sources to canonical place databases.
-
-    \subsection{Deployment Context: WHG PLACE}
-
-    The phonetic similarity model described in this paper is being developed as a core component of \textbf{WHG PLACE} (\textbf{P}lace \textbf{L}inkage, \textbf{A}lignment, and \textbf{C}oncordance \textbf{E}ngine), a system designed to streamline the incorporation of newly contributed datasets into the World Historical Gazetteer. PLACE aims to reduce the manual effort required to reconcile, match, and rank places across different datasets---an essential step in establishing WHG as a central resource in the Digital Humanities ecosystem.
-
-    At the heart of WHG PLACE is a \textbf{Toponymic-Linguistics API} that generates phonetic representations of toponyms to enhance both searching and similarity-based grouping. The current architecture combines:
+    Several extensions merit investigation:
 
     \begin{itemize}
-        \item \textbf{Phonetic encoding}: Epitran for grapheme-to-phoneme conversion, PanPhon for articulatory feature extraction, and the Siamese-BiLSTM model described in this paper for learned phonetic similarity scoring.
+        \item \textbf{Semitic fine-tuning}: Incorporating MEHDIE benchmark data
+        as curriculum training examples could improve performance on
+        morphologically complex language pairs without sacrificing global precision.
 
-        \item \textbf{Vector indexing}: Elasticsearch-based indexing of phonetic embeddings, enabling efficient cosine similarity search across millions of toponyms.
+        \item \textbf{Language and script identification}: Automatic detection
+        of source language could improve Student encoder performance, particularly
+        for scripts where the same character sequences have different phonetic
+        realisations across languages.
+
+        \item \textbf{Semantic encoding}: Classifying toponymic elements
+        (e.g., ``-bury'', ``-chester'', ``Saint-'') to capture geographic
+        concepts could complement phonetic similarity with semantic features,
+        though this remains at the conceptual stage.
+
+        \item \textbf{Attention interpretability}: Visualising learned attention
+        weights would likely reveal which phonetic segments carry discriminative
+        information---one might expect consonant clusters and word-initial
+        segments to receive higher weight, as these are typically most stable
+        across transliteration systems.
     \end{itemize}
-
-    Future development may incorporate semantic encoding of toponymic elements (e.g., classifying components like ``-bury'', ``-chester'', ``Saint-'' to capture geographic concepts), but this remains at the conceptual stage.
-
-    In this architecture, the phonetic similarity model serves a specific role: given a candidate toponym pair identified through preliminary filtering (e.g., geographic proximity, shared administrative region), the model produces a continuous similarity score that can be combined with other contextual features. The combined score informs both automated matching decisions and the ranking of candidates presented to human reviewers for validation.
-
-    This modular design allows the phonetic similarity component to be evaluated and improved independently while integrating seamlessly into the broader reconciliation pipeline. The model's continuous output (rather than binary classification) is essential for this use case, as downstream components require graded similarity judgments to rank candidates and calibrate confidence thresholds.
 
 %% ============================================================================
 %% CONCLUSION
 %% ============================================================================
-
 
     \section{Conclusion}
     \label{sec:conclusion}
@@ -677,7 +682,6 @@
 %% ============================================================================
 %% ACKNOWLEDGMENTS
 %% ============================================================================
-
 
     \section*{Acknowledgments}
     This research was supported in part by the University of Pittsburgh Center for Research Computing and Data, RRID:SCR\_022735, through the resources provided. Specifically, this work used the HTC cluster, which is supported by NIH award number S10OD028483, and the H2P cluster, which is supported by NSF award number OAC-2117681.
