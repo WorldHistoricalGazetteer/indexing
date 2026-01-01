@@ -634,10 +634,6 @@ SBATCH_EOF
 }
 
 # =============================================================================
-# EMBEDDING
-# =============================================================================
-
-# =============================================================================
 # EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
 # =============================================================================
 
@@ -713,7 +709,8 @@ do_embed_transform() {
 #SBATCH --job-name=whg-embed-gpu-v${MODEL_VERSION}
 #SBATCH --output=${LOG_DIR}/transform_%j.out
 #SBATCH --error=${LOG_DIR}/transform_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --partition=gpu
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
