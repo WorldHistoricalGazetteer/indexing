@@ -740,9 +740,7 @@ echo "GPU: \$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || e
 echo "Scratch: \$SCRATCH_DIR"
 echo "Model Version: ${MODEL_VERSION}"
 
-python -m processing.embed_transform \\
-    --model-version ${MODEL_VERSION} \\
-    --scratch-dir "\$SCRATCH_DIR"
+python -m processing.embed_transform --model-version ${MODEL_VERSION} --scratch-dir "\$SCRATCH_DIR"
 
 # Cleanup scratch
 rm -rf "\$SCRATCH_DIR"
