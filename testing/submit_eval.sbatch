@@ -42,8 +42,6 @@ echo "Working directory: $(pwd)"
 python -m testing.evaluate_embeddings \
     --es-host "$ES_URL" \
     --model-path /ix1/whcdh/models/phonetic/checkpoints/final_model_b.pt \
-    --noise \
-    --noise-level 0.3 \
     --samples 50 \
     --neighbours 15 \
     --output article/noise-evaluation.tex
