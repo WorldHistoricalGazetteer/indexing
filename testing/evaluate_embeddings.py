@@ -37,11 +37,11 @@ from typing import List, Optional, Tuple, Dict, Set
 
 from elasticsearch import Elasticsearch
 
-from phonetics.config import EPITRAN_LANGS
+from phonetics.config import Config
 from processing.settings import ES_HOST
 
 # Build set of supported language codes from config
-EPITRAN_LANGUAGE_CODES = set(EPITRAN_LANGS.keys())
+EPITRAN_LANGUAGE_CODES = set(Config.EPITRAN_LANGS.keys())
 
 
 # Script detection ranges (Unicode blocks)
