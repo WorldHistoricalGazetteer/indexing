@@ -202,9 +202,18 @@ def run_noise_evaluation(es_host, index, n_samples, k, output, model_path, seed=
 
     def encode(name, lang):
         name = anyascii(name).lower()
-        c = torch.tensor([char_vocab.encode(name)], device=device)
-        l = torch.tensor([lang_vocab.encode(lang)], device=device)
-        ln = torch.tensor([len(name)])
+        encoded_chars = char_vocab.encode(name)
+
+        # Safety check: Ensure we don't pass empty sequences
+        if not encoded_chars:
+            encoded_chars = [0]
+
+        c = torch.tensor([encoded_chars], dtype=torch.long, device=device)
+        l = torch.tensor([lang_vocab.encode(lang)], dtype=torch.long, device=device)
+
+        # Lengths must be on CPU for pack_padded_sequence
+        ln = torch.tensor([len(encoded_chars)], dtype=torch.long, device='cpu')
+
         with torch.no_grad():
             return model.encode_char_only(c, l, ln).squeeze().cpu().tolist()
 
