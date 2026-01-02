@@ -51,7 +51,7 @@ from anyascii import anyascii
 from elasticsearch import Elasticsearch
 
 from phonetics.config import Config
-from processing.settings import ES_HOST
+from processing.settings import ES_HOST, IX1_BASE
 
 # Build set of supported language codes from config
 EPITRAN_LANGUAGE_CODES = set(Config.EPITRAN_LANGS.keys())
@@ -1613,7 +1613,7 @@ def main():
     # Noise options
     parser.add_argument('--noise-level', type=float, default=0.3,
                         help='Noise level 0.0-1.0 (default: 0.3)')
-    parser.add_argument('--model-path', type=str, default=None,
+    parser.add_argument('--model-path', type=str, default=f"{IX1_BASE}/models/phonetic/checkpoints/final_model_b.pt",
                         help='Path to trained model (required for --noise mode)')
 
     args = parser.parse_args()
