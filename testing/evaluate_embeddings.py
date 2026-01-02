@@ -7,38 +7,41 @@ using cosine similarity on the embedding field. Generates LaTeX tables suitable
 for inclusion in academic papers.
 
 Runs two separate test series:
-1. Toponyms WITH IPA (phonetically grounded embeddings)
-2. Toponyms WITHOUT IPA (character-only embeddings)
+1. Toponyms in languages WITH Epitran support (phonetically grounded embeddings)
+2. Toponyms in languages WITHOUT Epitran support (character-only embeddings)
 
 Optional cross-script mode samples toponyms from specific scripts and highlights
 neighbours from different scripts, demonstrating cross-lingual phonetic matching.
 
 Usage:
     python -m testing.evaluate_embeddings \
-        --output article/embedding-evaluation.tex \
+        --es-host localhost:9200 \
+        --index toponyms \
         --samples 10 \
         --neighbours 15 \
-        --es-host localhost:9200 \
-        --index toponyms
+        --output article/embedding-evaluation.tex
 
     # Cross-script evaluation
     python -m testing.evaluate_embeddings \
-        --output article/cross-script-evaluation.tex \
         --cross-script \
         --samples 5 \
-        --neighbours 15
+        --neighbours 15 \
+        --output article/cross-script-evaluation.tex
 """
 
 import argparse
 import random
-import re
 import sys
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple, Dict, Set
 
 from elasticsearch import Elasticsearch
 
+from phonetics.config import EPITRAN_LANGS
 from processing.settings import ES_HOST
+
+# Build set of supported language codes from config
+EPITRAN_LANGUAGE_CODES = set(EPITRAN_LANGS.keys())
 
 
 # Script detection ranges (Unicode blocks)
@@ -81,6 +84,19 @@ def detect_script(text: str) -> str:
     return max(script_counts, key=script_counts.get)
 
 
+def has_epitran_support(lang: str) -> bool:
+    """Check if a language has Epitran support."""
+    if not lang:
+        return False
+    # Normalize: lowercase, check exact match first
+    lang_lower = lang.lower()
+    if lang_lower in EPITRAN_LANGUAGE_CODES:
+        return True
+    # Try base language (before hyphen/underscore)
+    lang_base = lang_lower.split('-')[0].split('_')[0]
+    return lang_base in EPITRAN_LANGUAGE_CODES
+
+
 @dataclass
 class Toponym:
     """Represents a toponym document from ES."""
@@ -99,6 +115,10 @@ class Toponym:
     def has_ipa(self) -> bool:
         return self.ipa is not None and len(self.ipa) > 0
 
+    @property
+    def has_epitran(self) -> bool:
+        return has_epitran_support(self.lang)
+
 
 @dataclass
 class Neighbour:
@@ -113,6 +133,10 @@ class Neighbour:
     def __post_init__(self):
         if not self.script:
             self.script = detect_script(self.name)
+
+    @property
+    def has_ipa(self) -> bool:
+        return self.ipa is not None and len(self.ipa) > 0
 
 
 def escape_latex(text: str) -> str:
@@ -144,54 +168,41 @@ def format_ipa(ipa: Optional[str]) -> str:
     return rf"\textipa{{{escape_latex(ipa)}}}"
 
 
-def get_random_toponyms(
+def get_random_toponyms_by_epitran(
         es: Elasticsearch,
         index: str,
         n: int,
-        with_ipa: bool,
+        with_epitran: bool,
         seed: int = None
 ) -> List[Toponym]:
     """
-    Sample n random toponyms from ES, filtered by IPA presence.
+    Sample n random toponyms from ES, filtered by Epitran language support.
 
     Uses function_score with random_score for true random sampling.
     """
     if seed is not None:
         random.seed(seed)
 
-    # Build query based on IPA filter
-    if with_ipa:
-        filter_clause = {
-            "bool": {
-                "must": [
-                    {"exists": {"field": "embedding"}},
-                    {"exists": {"field": "ipa_cached"}}
-                ],
-                "must_not": [
-                    {"term": {"ipa_cached": ""}}
-                ]
-            }
-        }
+    # Build language filter based on Epitran support
+    if with_epitran:
+        # Languages WITH Epitran support
+        lang_filter = {"terms": {"lang": list(EPITRAN_LANGUAGE_CODES)}}
     else:
-        filter_clause = {
-            "bool": {
-                "must": [
-                    {"exists": {"field": "embedding"}}
-                ],
-                "should": [
-                    {"bool": {"must_not": {"exists": {"field": "ipa_cached"}}}},
-                    {"term": {"ipa_cached": ""}}
-                ],
-                "minimum_should_match": 1
-            }
-        }
+        # Languages WITHOUT Epitran support
+        lang_filter = {"bool": {"must_not": {"terms": {"lang": list(EPITRAN_LANGUAGE_CODES)}}}}
 
-    # Use random_score for random sampling
     query = {
         "size": n,
         "query": {
             "function_score": {
-                "query": {"bool": {"filter": filter_clause}},
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"exists": {"field": "embedding"}},
+                        ],
+                        "filter": lang_filter
+                    }
+                },
                 "random_score": {"seed": seed or random.randint(0, 2 ** 31)},
                 "boost_mode": "replace"
             }
@@ -225,7 +236,7 @@ def get_toponyms_by_script(
     """
     Sample n random toponyms from ES that are primarily in the specified script.
 
-    Uses a regex filter on the name field to match script-specific character ranges.
+    Uses a regex filter on the name.keyword field to match script-specific character ranges.
     """
     if seed is not None:
         random.seed(seed)
@@ -245,7 +256,7 @@ def get_toponyms_by_script(
 
     if script not in script_patterns:
         print(f"Warning: No regex pattern for script '{script}', falling back to random sampling")
-        return get_random_toponyms(es, index, n, with_ipa=True, seed=seed)
+        return get_random_toponyms_by_epitran(es, index, n, with_epitran=True, seed=seed)
 
     pattern = script_patterns[script]
 
@@ -257,7 +268,7 @@ def get_toponyms_by_script(
                     "bool": {
                         "must": [
                             {"exists": {"field": "embedding"}},
-                            {"regexp": {"name": f".*{pattern}.*"}}
+                            {"regexp": {"name.keyword": f".*{pattern}.*"}}
                         ]
                     }
                 },
@@ -340,18 +351,18 @@ def generate_latex_table(
         toponym: Toponym,
         neighbours: List[Neighbour],
         table_id: int,
-        series: str  # "ipa" or "noipa"
+        series: str  # "epitran" or "noepitran"
 ) -> str:
     """Generate a LaTeX table for one toponym and its neighbours."""
 
     label = f"tab:embed-{series}-{table_id}"
-    ipa_status = "with IPA" if toponym.has_ipa else "without IPA"
+    epitran_status = "Epitran-supported" if toponym.has_epitran else "no Epitran"
 
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
         r"\small",
-        rf"\caption{{Nearest neighbours for \textbf{{{escape_latex(toponym.name)}}} [{toponym.lang}] ({ipa_status})}}",
+        rf"\caption{{Nearest neighbours for \textbf{{{escape_latex(toponym.name)}}} [{toponym.lang}] ({epitran_status})}}",
         rf"\label{{{label}}}",
         r"\begin{tabular}{rlllp{4cm}}",
         r"\toprule",
@@ -391,11 +402,6 @@ def generate_cross_script_table(
     """Generate a LaTeX table highlighting cross-script matches."""
 
     label = f"tab:cross-script-{table_id}"
-
-    # Count scripts in neighbours
-    script_counts: Dict[str, int] = {}
-    for n in neighbours:
-        script_counts[n.script] = script_counts.get(n.script, 0) + 1
 
     cross_script_count = sum(1 for n in neighbours if n.script != toponym.script)
 
@@ -463,7 +469,7 @@ def generate_summary_table(
         same_lang = sum(1 for n in neighbours if n.lang == toponym.lang)
         same_lang_counts.append(same_lang)
 
-        with_ipa = sum(1 for n in neighbours if n.ipa)
+        with_ipa = sum(1 for n in neighbours if n.has_ipa)
         has_ipa_counts.append(with_ipa)
 
     avg_score = sum(all_scores) / len(all_scores) if all_scores else 0
@@ -475,12 +481,12 @@ def generate_summary_table(
 
     k = len(results[0][1]) if results and results[0][1] else 15
 
-    series_label = "With IPA" if series == "ipa" else "Without IPA"
+    series_label = "Epitran-supported languages" if series == "epitran" else "Non-Epitran languages"
 
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
-        rf"\caption{{Summary statistics for {series_label} series ($n={len(results)}$, $k={k}$)}}",
+        rf"\caption{{Summary statistics for {series_label} ($n={len(results)}$, $k={k}$)}}",
         rf"\label{{tab:embed-summary-{series}}}",
         r"\begin{tabular}{lr}",
         r"\toprule",
@@ -564,10 +570,10 @@ def generate_cross_script_summary(
 
 
 def generate_comparison_table(
-        ipa_results: List[Tuple[Toponym, List[Neighbour]]],
-        noipa_results: List[Tuple[Toponym, List[Neighbour]]]
+        epitran_results: List[Tuple[Toponym, List[Neighbour]]],
+        noepitran_results: List[Tuple[Toponym, List[Neighbour]]]
 ) -> str:
-    """Generate a comparison table between IPA and non-IPA series."""
+    """Generate a comparison table between Epitran and non-Epitran series."""
 
     def calc_stats(results):
         if not results:
@@ -590,21 +596,21 @@ def generate_comparison_table(
             'top5_mean': sum(top5_scores) / len(top5_scores) if top5_scores else 0,
         }
 
-    ipa_stats = calc_stats(ipa_results)
-    noipa_stats = calc_stats(noipa_results)
+    epitran_stats = calc_stats(epitran_results)
+    noepitran_stats = calc_stats(noepitran_results)
 
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
-        r"\caption{Comparison of embedding quality: IPA vs non-IPA toponyms}",
+        r"\caption{Comparison of embedding quality: Epitran-supported vs non-Epitran languages}",
         r"\label{tab:embed-comparison}",
         r"\begin{tabular}{lrr}",
         r"\toprule",
-        r"\textbf{Metric} & \textbf{With IPA} & \textbf{Without IPA} \\",
+        r"\textbf{Metric} & \textbf{Epitran} & \textbf{Non-Epitran} \\",
         r"\midrule",
-        rf"Mean similarity (all neighbours) & {ipa_stats.get('mean', 0):.4f} & {noipa_stats.get('mean', 0):.4f} \\",
-        rf"Mean similarity (top-1) & {ipa_stats.get('top1_mean', 0):.4f} & {noipa_stats.get('top1_mean', 0):.4f} \\",
-        rf"Mean similarity (top-5) & {ipa_stats.get('top5_mean', 0):.4f} & {noipa_stats.get('top5_mean', 0):.4f} \\",
+        rf"Mean similarity (all neighbours) & {epitran_stats.get('mean', 0):.4f} & {noepitran_stats.get('mean', 0):.4f} \\",
+        rf"Mean similarity (top-1) & {epitran_stats.get('top1_mean', 0):.4f} & {noepitran_stats.get('top1_mean', 0):.4f} \\",
+        rf"Mean similarity (top-5) & {epitran_stats.get('top5_mean', 0):.4f} & {noepitran_stats.get('top5_mean', 0):.4f} \\",
         r"\bottomrule",
         r"\end{tabular}",
         r"\end{table}",
@@ -639,6 +645,7 @@ def run_evaluation(
     print(f"Index: {index}")
     print(f"Samples per series: {n_samples}")
     print(f"Neighbours per query: {k_neighbours}")
+    print(f"Epitran languages configured: {len(EPITRAN_LANGUAGE_CODES)}")
     print()
 
     # Refresh index
@@ -649,21 +656,27 @@ def run_evaluation(
     stats = es.count(index=index, body={"query": {"match_all": {}}})
     total_docs = stats['count']
 
-    with_ipa_count = es.count(index=index, body={
-        "query": {"bool": {"must": [
-            {"exists": {"field": "ipa_cached"}},
-            {"bool": {"must_not": {"term": {"ipa_cached": ""}}}}
-        ]}}
-    })['count']
-
     with_embedding = es.count(index=index, body={
         "query": {"exists": {"field": "embedding"}}
+    })['count']
+
+    # Count by Epitran support
+    epitran_count = es.count(index=index, body={
+        "query": {
+            "bool": {
+                "must": [
+                    {"exists": {"field": "embedding"}},
+                    {"terms": {"lang": list(EPITRAN_LANGUAGE_CODES)}}
+                ]
+            }
+        }
     })['count']
 
     print(f"Index statistics:")
     print(f"  Total documents: {total_docs:,}")
     print(f"  With embeddings: {with_embedding:,}")
-    print(f"  With IPA: {with_ipa_count:,}")
+    print(f"  Epitran-supported languages: {epitran_count:,}")
+    print(f"  Non-Epitran languages: {with_embedding - epitran_count:,}")
     print()
 
     latex_parts = []
@@ -681,59 +694,59 @@ def run_evaluation(
 
 """)
 
-    # Series 1: With IPA
+    # Series 1: Epitran-supported languages
     print("=" * 60)
-    print("SERIES 1: Toponyms WITH IPA")
+    print("SERIES 1: Epitran-supported languages")
     print("=" * 60)
 
-    latex_parts.append(r"\subsection*{Series 1: Toponyms with IPA}")
+    latex_parts.append(r"\subsection*{Series 1: Epitran-supported languages}")
     latex_parts.append("")
 
-    ipa_toponyms = get_random_toponyms(es, index, n_samples, with_ipa=True, seed=seed)
-    print(f"Sampled {len(ipa_toponyms)} toponyms with IPA")
+    epitran_toponyms = get_random_toponyms_by_epitran(es, index, n_samples, with_epitran=True, seed=seed)
+    print(f"Sampled {len(epitran_toponyms)} toponyms with Epitran support")
 
-    ipa_results = []
-    for i, toponym in enumerate(ipa_toponyms):
-        print(f"  [{i + 1}/{len(ipa_toponyms)}] {toponym.name} ({toponym.lang})")
+    epitran_results = []
+    for i, toponym in enumerate(epitran_toponyms):
+        print(f"  [{i + 1}/{len(epitran_toponyms)}] {toponym.name} ({toponym.lang}) - IPA: {'yes' if toponym.has_ipa else 'no'}")
         neighbours = find_neighbours(es, index, toponym, k_neighbours)
-        ipa_results.append((toponym, neighbours))
+        epitran_results.append((toponym, neighbours))
 
-        table = generate_latex_table(toponym, neighbours, i + 1, "ipa")
+        table = generate_latex_table(toponym, neighbours, i + 1, "epitran")
         latex_parts.append(table)
 
-    # Summary for IPA series
-    summary_ipa = generate_summary_table(ipa_results, "ipa")
-    latex_parts.append(summary_ipa)
+    # Summary for Epitran series
+    summary_epitran = generate_summary_table(epitran_results, "epitran")
+    latex_parts.append(summary_epitran)
 
-    # Series 2: Without IPA
+    # Series 2: Non-Epitran languages
     print()
     print("=" * 60)
-    print("SERIES 2: Toponyms WITHOUT IPA")
+    print("SERIES 2: Non-Epitran languages")
     print("=" * 60)
 
-    latex_parts.append(r"\subsection*{Series 2: Toponyms without IPA}")
+    latex_parts.append(r"\subsection*{Series 2: Non-Epitran languages}")
     latex_parts.append("")
 
     # Use different seed for second series
     seed2 = (seed + 12345) if seed else None
-    noipa_toponyms = get_random_toponyms(es, index, n_samples, with_ipa=False, seed=seed2)
-    print(f"Sampled {len(noipa_toponyms)} toponyms without IPA")
+    noepitran_toponyms = get_random_toponyms_by_epitran(es, index, n_samples, with_epitran=False, seed=seed2)
+    print(f"Sampled {len(noepitran_toponyms)} toponyms without Epitran support")
 
-    noipa_results = []
-    for i, toponym in enumerate(noipa_toponyms):
-        print(f"  [{i + 1}/{len(noipa_toponyms)}] {toponym.name} ({toponym.lang})")
+    noepitran_results = []
+    for i, toponym in enumerate(noepitran_toponyms):
+        print(f"  [{i + 1}/{len(noepitran_toponyms)}] {toponym.name} ({toponym.lang})")
         neighbours = find_neighbours(es, index, toponym, k_neighbours)
-        noipa_results.append((toponym, neighbours))
+        noepitran_results.append((toponym, neighbours))
 
-        table = generate_latex_table(toponym, neighbours, i + 1, "noipa")
+        table = generate_latex_table(toponym, neighbours, i + 1, "noepitran")
         latex_parts.append(table)
 
-    # Summary for no-IPA series
-    summary_noipa = generate_summary_table(noipa_results, "noipa")
-    latex_parts.append(summary_noipa)
+    # Summary for non-Epitran series
+    summary_noepitran = generate_summary_table(noepitran_results, "noepitran")
+    latex_parts.append(summary_noepitran)
 
     # Combined comparison table
-    latex_parts.append(generate_comparison_table(ipa_results, noipa_results))
+    latex_parts.append(generate_comparison_table(epitran_results, noepitran_results))
 
     # Write output
     latex_content = "\n".join(latex_parts)
@@ -807,7 +820,7 @@ def run_cross_script_evaluation(
         latex_parts.append(rf"\subsection*{{Queries in {script.title()} script}}")
         latex_parts.append("")
 
-        script_seed = (seed + hash(script)) if seed else None
+        script_seed = (seed + hash(script) % (2**31)) if seed else None
         toponyms = get_toponyms_by_script(es, index, script, n_samples, seed=script_seed)
 
         if not toponyms:
@@ -866,7 +879,7 @@ def main():
 
     # Cross-script mode
     parser.add_argument('--cross-script', action='store_true',
-                        help='Run cross-script evaluation instead of IPA/non-IPA series')
+                        help='Run cross-script evaluation instead of Epitran/non-Epitran series')
     parser.add_argument('--scripts', nargs='+',
                         default=['cyrillic', 'greek', 'arabic', 'hebrew', 'cjk'],
                         help='Scripts to evaluate in cross-script mode '
