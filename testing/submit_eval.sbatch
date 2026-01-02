@@ -39,7 +39,7 @@ echo "Starting evaluation on $(hostname)"
 echo "Connecting to ES at: $ES_URL"
 echo "Working directory: $(pwd)"
 
-python -m evaluate_embeddings \
+python -m ./evaluate_embeddings \
     --es-host "$ES_URL" \
     --model-path /ix1/whcdh/models/phonetic/checkpoints/final_model_b.pt \
     --noise \
