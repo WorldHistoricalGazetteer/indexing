@@ -22,10 +22,10 @@
 \@writefile{toc}{\selectlanguage *{english}}
 \@writefile{lof}{\selectlanguage *{english}}
 \@writefile{lot}{\selectlanguage *{english}}
-\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{2}{section.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{2}{section.2}\protected@file@percent }
-\newlabel{sec:related}{{2}{2}{Related Work}{section.2}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Toponym Resolution and Geocoding}{2}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {1}Introduction}{3}{section.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{3}{section.2}\protected@file@percent }
+\newlabel{sec:related}{{2}{3}{Related Work}{section.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Toponym Resolution and Geocoding}{3}{subsection.2.1}\protected@file@percent }
 \citation{recchia2013}
 \citation{santos2018}
 \citation{odell1918}
@@ -33,91 +33,91 @@
 \citation{philips2000}
 \citation{ardanuy2017}
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Cross-Lingual and Historical Toponym Matching}{3}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}Cross-Lingual and Historical Toponym Matching}{4}{subsection.2.2}\protected@file@percent }
 \citation{ehrmann2020,ehrmann2022}
 \citation{qiu2024geobert}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Deep Learning for Toponym Matching}{4}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Deep Learning for Toponym Matching}{5}{subsection.2.3}\protected@file@percent }
 \citation{mortensen2018}
 \citation{mortensen2016}
 \citation{rama2016}
 \citation{translit2020}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Phonetic Representations in NLP}{5}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Phonetic Representations in NLP}{6}{subsection.2.4}\protected@file@percent }
 \citation{bromley1993,chopra2005}
 \citation{schroff2015}
 \citation{bromley1993}
 \citation{mueller2016,neculoiu2016}
 \citation{mueller2016}
 \citation{neculoiu2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Siamese Networks for Similarity Learning}{6}{subsection.2.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {3}Model Architecture}{6}{section.3}\protected@file@percent }
-\newlabel{sec:architecture}{{3}{6}{Model Architecture}{section.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{6}{subsection.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Input Representations}{7}{subsection.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Phonetic Features (Teacher)}{7}{subsubsection.3.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Siamese Networks for Similarity Learning}{7}{subsection.2.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {3}Model Architecture}{7}{section.3}\protected@file@percent }
+\newlabel{sec:architecture}{{3}{7}{Model Architecture}{section.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Overview}{7}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Input Representations}{8}{subsection.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.1}Phonetic Features (Teacher)}{8}{subsubsection.3.2.1}\protected@file@percent }
 \citation{schuster1997}
 \citation{lin2017structured}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Character Embeddings with Language ID (Student)}{8}{subsubsection.3.2.2}\protected@file@percent }
-\zref@newlabel{footdir@1}{\abspage{8}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Sequence Encoder}{8}{subsection.3.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Bidirectional LSTM}{8}{subsubsection.3.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Additive Self-Attention}{8}{subsubsection.3.3.2}\protected@file@percent }
-\zref@newlabel{footdir@2}{\abspage{8}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Similarity Computation}{9}{subsection.3.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Three-Phase Training}{9}{subsection.3.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.1}Phase 1: Teacher Pre-training}{9}{subsubsection.3.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.2}Phase 2: Student-Teacher Alignment}{10}{subsubsection.3.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.3}Phase 3: Student Fine-tuning with Curriculum Hard Negatives}{10}{subsubsection.3.5.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Construction}{10}{section.4}\protected@file@percent }
-\newlabel{sec:dataset}{{4}{10}{Dataset Construction}{section.4}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Source Data}{10}{subsection.4.1}\protected@file@percent }
-\zref@newlabel{footdir@3}{\abspage{10}}
-\zref@newlabel{footdir@4}{\abspage{10}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.2.2}Character Embeddings with Language ID (Student)}{9}{subsubsection.3.2.2}\protected@file@percent }
+\zref@newlabel{footdir@1}{\abspage{9}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Sequence Encoder}{9}{subsection.3.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.1}Bidirectional LSTM}{9}{subsubsection.3.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.3.2}Additive Self-Attention}{9}{subsubsection.3.3.2}\protected@file@percent }
+\zref@newlabel{footdir@2}{\abspage{9}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Similarity Computation}{10}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Three-Phase Training}{10}{subsection.3.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.1}Phase 1: Teacher Pre-training}{10}{subsubsection.3.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.2}Phase 2: Student-Teacher Alignment}{11}{subsubsection.3.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {3.5.3}Phase 3: Student Fine-tuning with Curriculum Hard Negatives}{11}{subsubsection.3.5.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Dataset Construction}{11}{section.4}\protected@file@percent }
+\newlabel{sec:dataset}{{4}{11}{Dataset Construction}{section.4}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Source Data}{11}{subsection.4.1}\protected@file@percent }
+\zref@newlabel{footdir@3}{\abspage{11}}
+\zref@newlabel{footdir@4}{\abspage{11}}
 \citation{indexvillaris2024}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}GeoNames}{11}{subsubsection.4.1.1}\protected@file@percent }
-\zref@newlabel{footdir@5}{\abspage{11}}
-\zref@newlabel{footdir@6}{\abspage{11}}
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Index Villaris (1680)}{12}{subsubsection.4.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Pleiades}{12}{subsubsection.4.1.3}\protected@file@percent }
-\zref@newlabel{footdir@7}{\abspage{12}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Phonetic Annotation}{12}{subsection.4.2}\protected@file@percent }
-\zref@newlabel{footdir@8}{\abspage{12}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Pair Generation}{13}{subsection.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Positive Pairs}{13}{subsubsection.4.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Negative Pairs}{13}{subsubsection.4.3.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Corpus Statistics}{13}{subsection.4.4}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces WHG training corpus statistics (preliminary)}}{13}{table.1}\protected@file@percent }
-\newlabel{tab:corpus-stats}{{1}{13}{WHG training corpus statistics (preliminary)}{table.1}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Training Strategy: Balancing Contemporary and Historical Data}{13}{subsection.4.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.1}GeoNames}{12}{subsubsection.4.1.1}\protected@file@percent }
+\zref@newlabel{footdir@5}{\abspage{12}}
+\zref@newlabel{footdir@6}{\abspage{12}}
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.2}Index Villaris (1680)}{13}{subsubsection.4.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.1.3}Pleiades}{13}{subsubsection.4.1.3}\protected@file@percent }
+\zref@newlabel{footdir@7}{\abspage{13}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}Phonetic Annotation}{13}{subsection.4.2}\protected@file@percent }
+\zref@newlabel{footdir@8}{\abspage{13}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Pair Generation}{14}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.1}Positive Pairs}{14}{subsubsection.4.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {4.3.2}Negative Pairs}{14}{subsubsection.4.3.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Corpus Statistics}{14}{subsection.4.4}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces WHG training corpus statistics (preliminary)}}{14}{table.1}\protected@file@percent }
+\newlabel{tab:corpus-stats}{{1}{14}{WHG training corpus statistics (preliminary)}{table.1}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Training Strategy: Balancing Contemporary and Historical Data}{14}{subsection.4.5}\protected@file@percent }
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{14}{section.5}\protected@file@percent }
-\newlabel{sec:experiments}{{5}{14}{Experiments}{section.5}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Evaluation Benchmarks}{14}{subsection.5.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.1}Internal Validation Split (Generalization)}{14}{subsubsection.5.1.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.2}MEHDIE Benchmark (Specialization)}{14}{subsubsection.5.1.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Implementation Details}{15}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {6}Results}{15}{section.6}\protected@file@percent }
-\newlabel{sec:results}{{6}{15}{Results}{section.6}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Internal Validation}{15}{subsection.6.1}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision.}}{15}{table.2}\protected@file@percent }
-\newlabel{tab:val_results}{{2}{15}{Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision}{table.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {5}Experiments}{15}{section.5}\protected@file@percent }
+\newlabel{sec:experiments}{{5}{15}{Experiments}{section.5}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Evaluation Benchmarks}{15}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.1}Internal Validation Split (Generalization)}{15}{subsubsection.5.1.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {5.1.2}MEHDIE Benchmark (Specialization)}{15}{subsubsection.5.1.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Implementation Details}{16}{subsection.5.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {6}Results}{16}{section.6}\protected@file@percent }
+\newlabel{sec:results}{{6}{16}{Results}{section.6}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Internal Validation}{16}{subsection.6.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision.}}{16}{table.2}\protected@file@percent }
+\newlabel{tab:val_results}{{2}{16}{Internal Validation Results ($N=259,825$). The trained model substantially outperforms string similarity baselines, achieving higher recall at equivalent or better precision}{table.2}{}}
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MEHDIE Benchmark}{16}{subsection.6.2}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input.}}{16}{table.3}\protected@file@percent }
-\newlabel{tab:mehdie_results}{{3}{16}{MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input}{table.3}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment and Qualitative Evaluation}{17}{subsection.6.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{18}{section.7}\protected@file@percent }
-\newlabel{sec:discussion}{{7}{18}{Discussion}{section.7}{}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Internal Validation: The Core Result}{18}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}The Generalist-Specialist Trade-off}{18}{subsection.7.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Embedding Space Characteristics}{19}{subsection.7.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Limitations}{19}{subsection.7.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.1}Grapheme-to-Phoneme Coverage}{19}{subsubsection.7.4.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.2}Pronunciation Variation}{19}{subsubsection.7.4.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.3}Phonetic vs.\ Geographic Disambiguation}{19}{subsubsection.7.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.4}Input Representation}{19}{subsubsection.7.4.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Future Directions}{20}{subsection.7.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{20}{section.8}\protected@file@percent }
-\newlabel{sec:conclusion}{{8}{20}{Conclusion}{section.8}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}MEHDIE Benchmark}{17}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input.}}{17}{table.3}\protected@file@percent }
+\newlabel{tab:mehdie_results}{{3}{17}{MEHDIE Benchmark Results (Best F-5). MEHDIE baselines use linguistically engineered transliterations; AnyAscii baselines use naive character-by-character romanization matching the trained model's input}{table.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Deployment and Qualitative Evaluation}{18}{subsection.6.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{19}{section.7}\protected@file@percent }
+\newlabel{sec:discussion}{{7}{19}{Discussion}{section.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Internal Validation: The Core Result}{19}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}The Generalist-Specialist Trade-off}{19}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Embedding Space Characteristics}{20}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.4}Limitations}{20}{subsection.7.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.1}Grapheme-to-Phoneme Coverage}{20}{subsubsection.7.4.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.2}Pronunciation Variation}{20}{subsubsection.7.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.3}Phonetic vs.\ Geographic Disambiguation}{20}{subsubsection.7.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsubsection}{\numberline {7.4.4}Input Representation}{20}{subsubsection.7.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.5}Future Directions}{21}{subsection.7.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{21}{section.8}\protected@file@percent }
+\newlabel{sec:conclusion}{{8}{21}{Conclusion}{section.8}{}}
 \bibdata{phonetic-embeddings}
 \bibcite{translit2020}{{1}{2020}{{Benites et~al.}}{{Benites, Duivesteijn, von D{\"a}niken, and Cieliebak}}}
 \bibcite{bromley1993}{{2}{1993}{{Bromley et~al.}}{{Bromley, Guyon, LeCun, Säckinger, and Shah}}}
@@ -141,8 +141,118 @@
 \bibcite{santos2018}{{20}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
 \bibcite{schroff2015}{{21}{2015}{{Schroff et~al.}}{{Schroff, Kalenichenko, and Philbin}}}
 \bibcite{schuster1997}{{22}{1997}{{Schuster and Paliwal}}{{}}}
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{24}{figure.1}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{24}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
-\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range.}}{25}{figure.2}\protected@file@percent }
-\newlabel{fig:distribution}{{2}{25}{Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range}{figure.2}{}}
-\gdef \@abspage@last{25}
+\@writefile{toc}{\protect \protect \begingroup \immediate \write \@unused   \def \MessageBreak  
+ \let \protect \edef  Try typing  <return>  to proceed.\MessageBreak If that doesn't work, type  X <return>  to quit.  \errhelp \let \def \MessageBreak  
+                \def   \errmessage  LaTeX Error: Something's wrong--perhaps a missing \protect \let \protect \begingroup \immediate \write \@unused   \def \MessageBreak  
+ \let \protect \edef  Try typing  <return>  to proceed.\MessageBreak If that doesn't work, type  X <return>  to quit.  \errhelp \let \def \MessageBreak  
+                \def   \errmessage  LaTeX Error: Something's wrong--perhaps a missing \protect \let \protect \begingroup \immediate \write \@unused   \def \MessageBreak  
+ \let \protect \edef  Try typing  <return>  to proceed.\MessageBreak If that doesn't work, type  X <return>  to quit.  \errhelp \let \def \MessageBreak  
+                \def   \errmessage  LaTeX Error: Something's wrong--perhaps a missing \protect \let \protected@file@percent }} } } } } } 
+\newlabel{app:qualitative}{{A}{25}{Qualitative Evaluation Tables}{appendix.A}{}}
+\@writefile{lot}{\protect \vskip \z@ plus.2\p@ {\leftskip 1.5em\relax \rightskip 2.55em\parfillskip -\rightskip \parindent 1.5em\relax \let \vskip \z@ plus.2\p@ {\leftskip 1.5em\relax \rightskip 2.55em\parfillskip -\rightskip \parindent 1.5em\relax \let \protected@file@percent }} } 
+\newlabel{tab:embed-epitran-1}{{4}{25}{Nearest neighbours for \textbf {乌龟田} [zh] (Epitran-supported)}{table.4}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {77}{\ignorespaces Cross-script evaluation summary}}{25}{table.77}\protected@file@percent }
+\newlabel{tab:cross-script-summary}{{77}{25}{Cross-script evaluation summary}{table.77}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Nearest neighbours for \textbf  {Othón P. Blanco} [pt] (Epitran-supported)}}{26}{table.5}\protected@file@percent }
+\newlabel{tab:embed-epitran-2}{{5}{26}{Nearest neighbours for \textbf {Othón P. Blanco} [pt] (Epitran-supported)}{table.5}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces Nearest neighbours for \textbf  {Darreh-ye Karāshk} [sv] (Epitran-supported)}}{26}{table.6}\protected@file@percent }
+\newlabel{tab:embed-epitran-3}{{6}{26}{Nearest neighbours for \textbf {Darreh-ye Karāshk} [sv] (Epitran-supported)}{table.6}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {7}{\ignorespaces Nearest neighbours for \textbf  {The Digger Farm} [en] (Epitran-supported)}}{27}{table.7}\protected@file@percent }
+\newlabel{tab:embed-epitran-4}{{7}{27}{Nearest neighbours for \textbf {The Digger Farm} [en] (Epitran-supported)}{table.7}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {8}{\ignorespaces Nearest neighbours for \textbf  {Svirok} [ro] (Epitran-supported)}}{27}{table.8}\protected@file@percent }
+\newlabel{tab:embed-epitran-5}{{8}{27}{Nearest neighbours for \textbf {Svirok} [ro] (Epitran-supported)}{table.8}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {9}{\ignorespaces Nearest neighbours for \textbf  {Кынок} [kk] (Epitran-supported)}}{28}{table.9}\protected@file@percent }
+\newlabel{tab:embed-epitran-6}{{9}{28}{Nearest neighbours for \textbf {Кынок} [kk] (Epitran-supported)}{table.9}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {10}{\ignorespaces Nearest neighbours for \textbf  {افه‌لر} [fa] (Epitran-supported)}}{28}{table.10}\protected@file@percent }
+\newlabel{tab:embed-epitran-7}{{10}{28}{Nearest neighbours for \textbf {افه‌لر} [fa] (Epitran-supported)}{table.10}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {11}{\ignorespaces Nearest neighbours for \textbf  {Katelijnevest} [nl] (Epitran-supported)}}{29}{table.11}\protected@file@percent }
+\newlabel{tab:embed-epitran-8}{{11}{29}{Nearest neighbours for \textbf {Katelijnevest} [nl] (Epitran-supported)}{table.11}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {12}{\ignorespaces Nearest neighbours for \textbf  {Ouâdi ed Dîk} [sv] (Epitran-supported)}}{29}{table.12}\protected@file@percent }
+\newlabel{tab:embed-epitran-9}{{12}{29}{Nearest neighbours for \textbf {Ouâdi ed Dîk} [sv] (Epitran-supported)}{table.12}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {13}{\ignorespaces Nearest neighbours for \textbf  {Iggui Ouferni} [fi] (Epitran-supported)}}{30}{table.13}\protected@file@percent }
+\newlabel{tab:embed-epitran-10}{{13}{30}{Nearest neighbours for \textbf {Iggui Ouferni} [fi] (Epitran-supported)}{table.13}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {14}{\ignorespaces Summary statistics for Epitran-supported languages ($n=10$, $k=15$)}}{30}{table.14}\protected@file@percent }
+\newlabel{tab:embed-summary-epitran}{{14}{30}{Summary statistics for Epitran-supported languages ($n=10$, $k=15$)}{table.14}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {15}{\ignorespaces Nearest neighbours for \textbf  {Saint-Joseph-de-Rivière} [scn] (no Epitran)}}{31}{table.15}\protected@file@percent }
+\newlabel{tab:embed-noepitran-1}{{15}{31}{Nearest neighbours for \textbf {Saint-Joseph-de-Rivière} [scn] (no Epitran)}{table.15}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {16}{\ignorespaces Nearest neighbours for \textbf  {Córrego Riachão} [und] (no Epitran)}}{31}{table.16}\protected@file@percent }
+\newlabel{tab:embed-noepitran-2}{{16}{31}{Nearest neighbours for \textbf {Córrego Riachão} [und] (no Epitran)}{table.16}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {17}{\ignorespaces Nearest neighbours for \textbf  {Beni Boukitoun} [ceb] (no Epitran)}}{32}{table.17}\protected@file@percent }
+\newlabel{tab:embed-noepitran-3}{{17}{32}{Nearest neighbours for \textbf {Beni Boukitoun} [ceb] (no Epitran)}{table.17}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {18}{\ignorespaces Nearest neighbours for \textbf  {Ozero Isayevo} [und] (no Epitran)}}{32}{table.18}\protected@file@percent }
+\newlabel{tab:embed-noepitran-4}{{18}{32}{Nearest neighbours for \textbf {Ozero Isayevo} [und] (no Epitran)}{table.18}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {19}{\ignorespaces Nearest neighbours for \textbf  {Шевкатие} [tt] (no Epitran)}}{33}{table.19}\protected@file@percent }
+\newlabel{tab:embed-noepitran-5}{{19}{33}{Nearest neighbours for \textbf {Шевкатие} [tt] (no Epitran)}{table.19}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {20}{\ignorespaces Nearest neighbours for \textbf  {Emeşe} [nb] (no Epitran)}}{33}{table.20}\protected@file@percent }
+\newlabel{tab:embed-noepitran-6}{{20}{33}{Nearest neighbours for \textbf {Emeşe} [nb] (no Epitran)}{table.20}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {21}{\ignorespaces Nearest neighbours for \textbf  {1908ko Udako Olinpiar Jokoak} [eu] (no Epitran)}}{34}{table.21}\protected@file@percent }
+\newlabel{tab:embed-noepitran-7}{{21}{34}{Nearest neighbours for \textbf {1908ko Udako Olinpiar Jokoak} [eu] (no Epitran)}{table.21}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {22}{\ignorespaces Nearest neighbours for \textbf  {Kauvbergje} [ceb] (no Epitran)}}{35}{table.22}\protected@file@percent }
+\newlabel{tab:embed-noepitran-8}{{22}{35}{Nearest neighbours for \textbf {Kauvbergje} [ceb] (no Epitran)}{table.22}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {23}{\ignorespaces Nearest neighbours for \textbf  {Marškalni} [und] (no Epitran)}}{35}{table.23}\protected@file@percent }
+\newlabel{tab:embed-noepitran-9}{{23}{35}{Nearest neighbours for \textbf {Marškalni} [und] (no Epitran)}{table.23}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {24}{\ignorespaces Nearest neighbours for \textbf  {安宏基天曜府2期} [und] (no Epitran)}}{36}{table.24}\protected@file@percent }
+\newlabel{tab:embed-noepitran-10}{{24}{36}{Nearest neighbours for \textbf {安宏基天曜府2期} [und] (no Epitran)}{table.24}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {25}{\ignorespaces Summary statistics for Non-Epitran languages ($n=10$, $k=15$)}}{36}{table.25}\protected@file@percent }
+\newlabel{tab:embed-summary-noepitran}{{25}{36}{Summary statistics for Non-Epitran languages ($n=10$, $k=15$)}{table.25}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {26}{\ignorespaces Comparison of embedding quality: Epitran-supported vs non-Epitran languages}}{36}{table.26}\protected@file@percent }
+\newlabel{tab:embed-comparison}{{26}{36}{Comparison of embedding quality: Epitran-supported vs non-Epitran languages}{table.26}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {27}{\ignorespaces Cross-script neighbours for \textbf  {Ирэгандя} [und, cyrillic] (15/15 cross-script)}}{37}{table.27}\protected@file@percent }
+\newlabel{tab:cross-script-1}{{27}{37}{Cross-script neighbours for \textbf {Ирэгандя} [und, cyrillic] (15/15 cross-script)}{table.27}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {28}{\ignorespaces Cross-script neighbours for \textbf  {Кревишон} [ru, cyrillic] (0/15 cross-script)}}{37}{table.28}\protected@file@percent }
+\newlabel{tab:cross-script-2}{{28}{37}{Cross-script neighbours for \textbf {Кревишон} [ru, cyrillic] (0/15 cross-script)}{table.28}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {29}{\ignorespaces Cross-script neighbours for \textbf  {Карабаны} [und, cyrillic] (15/15 cross-script)}}{38}{table.29}\protected@file@percent }
+\newlabel{tab:cross-script-3}{{29}{38}{Cross-script neighbours for \textbf {Карабаны} [und, cyrillic] (15/15 cross-script)}{table.29}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {30}{\ignorespaces Cross-script neighbours for \textbf  {Казанский аэропорт} [ru, cyrillic] (0/15 cross-script)}}{38}{table.30}\protected@file@percent }
+\newlabel{tab:cross-script-4}{{30}{38}{Cross-script neighbours for \textbf {Казанский аэропорт} [ru, cyrillic] (0/15 cross-script)}{table.30}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {31}{\ignorespaces Cross-script neighbours for \textbf  {Кътинска река} [bg, cyrillic] (15/15 cross-script)}}{39}{table.31}\protected@file@percent }
+\newlabel{tab:cross-script-5}{{31}{39}{Cross-script neighbours for \textbf {Кътинска река} [bg, cyrillic] (15/15 cross-script)}{table.31}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {32}{\ignorespaces Cross-script neighbours for \textbf  {Ишкошим} [cs, cyrillic] (13/15 cross-script)}}{39}{table.32}\protected@file@percent }
+\newlabel{tab:cross-script-6}{{32}{39}{Cross-script neighbours for \textbf {Ишкошим} [cs, cyrillic] (13/15 cross-script)}{table.32}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {33}{\ignorespaces Cross-script neighbours for \textbf  {Падмуркі касцёла Звеставання Найсвяцейшай Панны Марыі 1751 г. і манастыра брыгітак 1623 г.} [und, cyrillic] (4/15 cross-script)}}{40}{table.33}\protected@file@percent }
+\newlabel{tab:cross-script-7}{{33}{40}{Cross-script neighbours for \textbf {Падмуркі касцёла Звеставання Найсвяцейшай Панны Марыі 1751 г. і манастыра брыгітак 1623 г.} [und, cyrillic] (4/15 cross-script)}{table.33}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {34}{\ignorespaces Cross-script neighbours for \textbf  {Bеrеzоvyi Hrud} [fi, latin] (0/15 cross-script)}}{40}{table.34}\protected@file@percent }
+\newlabel{tab:cross-script-8}{{34}{40}{Cross-script neighbours for \textbf {Bеrеzоvyi Hrud} [fi, latin] (0/15 cross-script)}{table.34}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {35}{\ignorespaces Cross-script neighbours for \textbf  {Вале-Аўрына} [be, cyrillic] (14/15 cross-script)}}{41}{table.35}\protected@file@percent }
+\newlabel{tab:cross-script-9}{{35}{41}{Cross-script neighbours for \textbf {Вале-Аўрына} [be, cyrillic] (14/15 cross-script)}{table.35}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {36}{\ignorespaces Cross-script neighbours for \textbf  {Рағзов} [und, cyrillic] (15/15 cross-script)}}{41}{table.36}\protected@file@percent }
+\newlabel{tab:cross-script-10}{{36}{41}{Cross-script neighbours for \textbf {Рағзов} [und, cyrillic] (15/15 cross-script)}{table.36}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {37}{\ignorespaces Cross-script neighbours for \textbf  {Άνθεια Έβρου} [el, greek] (15/15 cross-script)}}{42}{table.37}\protected@file@percent }
+\newlabel{tab:cross-script-11}{{37}{42}{Cross-script neighbours for \textbf {Άνθεια Έβρου} [el, greek] (15/15 cross-script)}{table.37}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {38}{\ignorespaces Cross-script neighbours for \textbf  {Μετόχι Σταυρονικήτα} [el, greek] (15/15 cross-script)}}{42}{table.38}\protected@file@percent }
+\newlabel{tab:cross-script-12}{{38}{42}{Cross-script neighbours for \textbf {Μετόχι Σταυρονικήτα} [el, greek] (15/15 cross-script)}{table.38}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {39}{\ignorespaces Cross-script neighbours for \textbf  {Διάμεσο} [el, greek] (15/15 cross-script)}}{43}{table.39}\protected@file@percent }
+\newlabel{tab:cross-script-13}{{39}{43}{Cross-script neighbours for \textbf {Διάμεσο} [el, greek] (15/15 cross-script)}{table.39}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {40}{\ignorespaces Cross-script neighbours for \textbf  {Οικόπεδο Χαραγκιωνη} [und, greek] (14/15 cross-script)}}{43}{table.40}\protected@file@percent }
+\newlabel{tab:cross-script-14}{{40}{43}{Cross-script neighbours for \textbf {Οικόπεδο Χαραγκιωνη} [und, greek] (14/15 cross-script)}{table.40}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {41}{\ignorespaces Cross-script neighbours for \textbf  {Χάνι Δελβινάκι} [und, greek] (15/15 cross-script)}}{44}{table.41}\protected@file@percent }
+\newlabel{tab:cross-script-15}{{41}{44}{Cross-script neighbours for \textbf {Χάνι Δελβινάκι} [und, greek] (15/15 cross-script)}{table.41}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {42}{\ignorespaces Cross-script neighbours for \textbf  {Κορυφή Ηλείας} [el, greek] (15/15 cross-script)}}{44}{table.42}\protected@file@percent }
+\newlabel{tab:cross-script-16}{{42}{44}{Cross-script neighbours for \textbf {Κορυφή Ηλείας} [el, greek] (15/15 cross-script)}{table.42}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {43}{\ignorespaces Cross-script neighbours for \textbf  {Λόνγκμπριτζ} [el, greek] (15/15 cross-script)}}{45}{table.43}\protected@file@percent }
+\newlabel{tab:cross-script-17}{{43}{45}{Cross-script neighbours for \textbf {Λόνγκμπριτζ} [el, greek] (15/15 cross-script)}{table.43}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {44}{\ignorespaces Cross-script neighbours for \textbf  {Καραβούλα} [el, greek] (14/15 cross-script)}}{45}{table.44}\protected@file@percent }
+\newlabel{tab:cross-script-18}{{44}{45}{Cross-script neighbours for \textbf {Καραβούλα} [el, greek] (14/15 cross-script)}{table.44}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {45}{\ignorespaces Cross-script neighbours for \textbf  {Ζοριάνο} [el, greek] (15/15 cross-script)}}{46}{table.45}\protected@file@percent }
+\newlabel{tab:cross-script-19}{{45}{46}{Cross-script neighbours for \textbf {Ζοριάνο} [el, greek] (15/15 cross-script)}{table.45}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {46}{\ignorespaces Cross-script neighbours for \textbf  {Χαναάν} [grc, greek] (15/15 cross-script)}}{46}{table.46}\protected@file@percent }
+\newlabel{tab:cross-script-20}{{46}{46}{Cross-script neighbours for \textbf {Χαναάν} [grc, greek] (15/15 cross-script)}{table.46}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {47}{\ignorespaces Cross-script neighbours for \textbf  {کوه هوریده} [fa, arabic] (0/15 cross-script)}}{47}{table.47}\protected@file@percent }
+\newlabel{tab:cross-script-21}{{47}{47}{Cross-script neighbours for \textbf {کوه هوریده} [fa, arabic] (0/15 cross-script)}{table.47}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {48}{\ignorespaces Cross-script neighbours for \textbf  {لبرلمان د كازاخستان} [ary, arabic] (6/15 cross-script)}}{47}{table.48}\protected@file@percent }
+\newlabel{tab:cross-script-22}{{48}{47}{Cross-script neighbours for \textbf {لبرلمان د كازاخستان} [ary, arabic] (6/15 cross-script)}{table.48}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {49}{\ignorespaces Cross-script neighbours for \textbf  {السّويح} [ar, arabic] (0/15 cross-script)}}{48}{table.49}\protected@file@percent }
+\newlabel{tab:cross-script-23}{{49}{48}{Cross-script neighbours for \textbf {السّويح} [ar, arabic] (0/15 cross-script)}{table.49}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {50}{\ignorespaces Cross-script neighbours for \textbf  {شهرستان کوهرنگ} [glk, arabic] (12/15 cross-script)}}{48}{table.50}\protected@file@percent }
+\newlabel{tab:cross-script-24}{{50}{48}{Cross-script neighbours for \textbf {شهرستان کوهرنگ} [glk, arabic] (12/15 cross-script)}{table.50}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {51}{\ignorespaces Cross-script neighbours for \textbf  {Id Ouanir ⵉⴷⴰⵡⵏⵉⵔ إداونير} [und, latin] (9/15 cross-script)}}{49}{table.51}\protected@file@percent }
+\newlabel{tab:cross-script-25}{{51}{49}{Cross-script neighbours for \textbf {Id Ouanir ⵉⴷⴰⵡⵏⵉⵔ إداونير} [und, latin] (9/15 cross-script)}{table.51}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {52}{\ignorespaces Cross-script neighbours for \textbf  {ترید‌ویندز} [glk, arabic] (15/15 cross-script)}}{49}{table.52}\protected@file@percent }
+\newlabel{tab:cross-script-26}{{52}{49}{Cross-script neighbours for \textbf {ترید‌ویندز} [glk, arabic] (15/15 cross-script)}{table.52}{}}
+\@writefile{lot}{\contentsline {table}{\numberline {53}{\ignorespaces Cross-script neighbours for \textbf  {مسار} [ar, arabic] (0/15 cross-script)}}{50}{table.53}\protected@file@percent }
+\newlabel{tab:cross-script-27}{{53}{50}{Cross-script neighbours for \textbf {مسار} [ar, arabic] (0/15 cross-script)}{table.53}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores.}}{51}{figure.1}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{51}{Student-Teacher architecture for phonetic similarity learning. The Teacher network processes IPA articulatory features via Epitran and PanPhon; the Student network processes romanized characters with language embeddings. Both use BiLSTM encoding followed by additive attention pooling. During training, the Student learns to approximate Teacher embeddings through knowledge distillation (Phases 1--3). At inference, only the Student network is required, outputting cosine similarity scores}{figure.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range.}}{52}{figure.2}\protected@file@percent }
+\newlabel{fig:distribution}{{2}{52}{Similarity score distributions for positive and negative pairs. The trained model concentrates negative pairs near zero (95th percentile = 0.485), creating a wide margin for threshold selection. Levenshtein negatives extend to 0.667, reducing the viable operating range}{figure.2}{}}
+\gdef \@abspage@last{52}

@@ -49,3 +49,9 @@
 \BOOKMARK [3][-]{subsubsection.7.4.4}{\376\377\000I\000n\000p\000u\000t\000\040\000R\000e\000p\000r\000e\000s\000e\000n\000t\000a\000t\000i\000o\000n}{subsection.7.4}% 49
 \BOOKMARK [2][-]{subsection.7.5}{\376\377\000F\000u\000t\000u\000r\000e\000\040\000D\000i\000r\000e\000c\000t\000i\000o\000n\000s}{section.7}% 50
 \BOOKMARK [1][-]{section.8}{\376\377\000C\000o\000n\000c\000l\000u\000s\000i\000o\000n}{}% 51
+\protect \let \reserved@d =[\def \@nodocument \def table{{table}{\def !{[1][-]}\futurelet \@let@token \let \par }\def htbp{1}\edef htbp{htbp}\def !{!}\@floatpenalty -\@Miii \protect \begingroup \immediate \write \@unused   \def \MessageBreak  
+ \let \protect \edef  You've lost some text.  Try typing  <return>  to proceed.\MessageBreak If that doesn't work, type  X <return>  to quit.  \errhelp \let \def \MessageBreak  
+                \def   \errmessage  LaTeX Error: Too many unprocessed floats.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help   \endgroup \global \setbox \bx@A \vbox \bgroup \color@begingroup \let gray 0gray 0\special {color push gray 0}\aftergroup \special {color pop}\vbox \bgroup \hsize \columnwidth \let  } 

@@ -20,7 +20,10 @@ bibtex pdf/phonetic-embeddings
 echo "4. Running XeLaTeX (Pass 2)..."
 xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf phonetic-embeddings.tex
 
-echo "5. Running XeLaTeX (Pass 3 - Final)..."
+echo "5. Running XeLaTeX (Pass 3)..."
+xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf phonetic-embeddings.tex
+
+echo "6. Running XeLaTeX (Pass 4 - Final)..."
 xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf phonetic-embeddings.tex
 
 echo "Build complete! Output: article/pdf/phonetic-embeddings.pdf"

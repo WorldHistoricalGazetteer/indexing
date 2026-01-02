@@ -27,6 +27,10 @@
 \usepackage{amsmath,amssymb}
 \usepackage{multirow}
 
+% Tables
+\usepackage{xcolor}
+\usepackage{colortbl}
+
 % Charts and Graphs
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
@@ -41,12 +45,20 @@
 \setmainlanguage{english}
 \setotherlanguage{arabic}
 
+\newfontfamily\cyrillicfont{Linux Libertine O}
+\newfontfamily\greekfont{Linux Libertine O}
+
 \newfontfamily\arabicfont{Amiri-Regular.ttf}[
     Path = fonts/,
     Script = Arabic,
     BoldFont = Amiri-Bold.ttf,
     ItalicFont = Amiri-Slanted.ttf
 ]
+
+%\usepackage{xeCJK}
+%\setCJKmainfont{Noto Sans CJK SC}
+%
+%\newfontfamily\hebrewfont{Noto Sans Hebrew}[Script=Hebrew]
 
 \newfontfamily\ipafont{CharisSIL-Regular.ttf}[
     Path = fonts/,
@@ -312,6 +324,7 @@
 %% DATASET CONSTRUCTION
 %% ============================================================================
 
+
     \section{Dataset Construction}
     \label{sec:dataset}
 
@@ -401,6 +414,7 @@
 %% EXPERIMENTS
 %% ============================================================================
 
+
     \section{Experiments}
     \label{sec:experiments}
 
@@ -430,6 +444,7 @@
 %% RESULTS
 %% ============================================================================
 
+
     \section{Results}
     \label{sec:results}
 
@@ -452,19 +467,19 @@
             \textbf{Method} & \textbf{$\theta$} & \textbf{Precision} & \textbf{Recall} & \textbf{F1} & \textbf{F5} \\
             \midrule
             \multirow{3}{*}{Levenshtein}
-                & 0.50 & 0.999 & 0.883 & 0.937 & 0.887 \\
-                & 0.60 & 1.000 & 0.804 & 0.891 & 0.810 \\
-                & 0.70 & 1.000 & 0.719 & 0.837 & 0.727 \\
+            & 0.50              & 0.999              & 0.883           & 0.937          & 0.887          \\
+            & 0.60              & 1.000              & 0.804           & 0.891          & 0.810          \\
+            & 0.70              & 1.000              & 0.719           & 0.837          & 0.727          \\
             \midrule
             \multirow{3}{*}{Jaro-Winkler}
-                & 0.60 & 0.942 & 0.956 & 0.949 & 0.955 \\
-                & 0.70 & 0.993 & 0.901 & 0.945 & 0.904 \\
-                & 0.80 & 0.999 & 0.804 & 0.891 & 0.810 \\
+            & 0.60              & 0.942              & 0.956           & 0.949          & 0.955          \\
+            & 0.70              & 0.993              & 0.901           & 0.945          & 0.904          \\
+            & 0.80              & 0.999              & 0.804           & 0.891          & 0.810          \\
             \midrule
             \multirow{3}{*}{\textbf{This Model}}
-                & 0.60 & 0.984 & 0.994 & 0.989 & 0.993 \\
-                & \textbf{0.70} & \textbf{0.996} & \textbf{0.985} & \textbf{0.991} & \textbf{0.986} \\
-                & 0.80 & 1.000 & 0.958 & 0.978 & 0.962 \\
+            & 0.60              & 0.984              & 0.994           & 0.989          & 0.993          \\
+            & \textbf{0.70}     & \textbf{0.996}     & \textbf{0.985}  & \textbf{0.991} & \textbf{0.986} \\
+            & 0.80              & 1.000              & 0.958           & 0.978          & 0.962          \\
             \bottomrule
         \end{tabular}
     \end{table}
@@ -514,8 +529,8 @@
         \end{tikzpicture}
         \caption{Similarity score distributions for positive and negative pairs. The
         trained model concentrates negative pairs near zero (95th percentile = 0.485),
-        creating a wide margin for threshold selection. Levenshtein negatives extend
-        to 0.667, reducing the viable operating range.}
+            creating a wide margin for threshold selection. Levenshtein negatives extend
+            to 0.667, reducing the viable operating range.}
         \label{fig:distribution}
     \end{figure}
 
@@ -536,13 +551,13 @@
         \resizebox{\textwidth}{!}{
             \begin{tabular}{llcccccc}
                 \toprule
-                \textbf{ID} & \textbf{Dataset Pair} & \textbf{MEHDIE Orth.} & \textbf{MEHDIE Phon.} & \textbf{AnyAscii Lev.} & \textbf{This Model} & \textbf{$\Delta$ Lev.} \\
+                \textbf{ID} & \textbf{Dataset Pair}                       & \textbf{MEHDIE Orth.} & \textbf{MEHDIE Phon.} & \textbf{AnyAscii Lev.} & \textbf{This Model} & \textbf{$\Delta$ Lev.} \\
                 \midrule
-                TS7  & Yaqut (Ar) $\leftrightarrow$ Kima (He)      & 0.67 & \textbf{0.77} & 0.476 & 0.371 & $-0.105$ \\
-                TS8  & Kima (He) $\leftrightarrow$ Thurayya (Ar)   & 0.65 & 0.68          & 0.750 & 0.738 & $-0.012$ \\
-                TS9  & Tudela (He) $\leftrightarrow$ Thurayya (Ar) & \textbf{0.92} & 0.70 & 0.768 & 0.676 & $-0.092$ \\
-                TS10 & Yaqut $\leftrightarrow$ Kima (Maghreb)      & 0.75 & \textbf{0.77} & 0.428 & \textbf{0.437} & $+0.009$ \\
-                TS11 & Damast (De) $\leftrightarrow$ Tudela (He)   & 0.78 & \textbf{0.88} & 0.832 & \textbf{0.857} & $+0.025$ \\
+                TS7         & Yaqut (Ar) $\leftrightarrow$ Kima (He)      & 0.67                  & \textbf{0.77}         & 0.476                  & 0.371               & $-0.105$               \\
+                TS8         & Kima (He) $\leftrightarrow$ Thurayya (Ar)   & 0.65                  & 0.68                  & 0.750                  & 0.738               & $-0.012$               \\
+                TS9         & Tudela (He) $\leftrightarrow$ Thurayya (Ar) & \textbf{0.92}         & 0.70                  & 0.768                  & 0.676               & $-0.092$               \\
+                TS10        & Yaqut $\leftrightarrow$ Kima (Maghreb)      & 0.75                  & \textbf{0.77}         & 0.428                  & \textbf{0.437} & $+0.009$ \\
+                TS11        & Damast (De) $\leftrightarrow$ Tudela (He)   & 0.78                  & \textbf{0.88}         & 0.832                  & \textbf{0.857} & $+0.025$ \\
                 \midrule
                 \multicolumn{2}{l}{Average} & 0.75 & 0.76 & 0.651 & 0.616 & $-0.035$ \\
                 \bottomrule
@@ -607,14 +622,12 @@
     (testing the full Teacher-Student pipeline), and (b) those without G2P
     resources (testing Student generalisation). For each query, the top 15
     matches by cosine similarity were retrieved and manually evaluated for
-    phonetic plausibility. Representative examples appear in
-    Table~\ref{tab:qualitative}.
-
-    % TODO: Add qualitative results table
+    phonetic plausibility. Representative examples appear in \autoref{app:qualitative}.
 
 %% ============================================================================
 %% DISCUSSION
 %% ============================================================================
+
 
     \section{Discussion}
     \label{sec:discussion}
@@ -743,6 +756,7 @@
 %% CONCLUSION
 %% ============================================================================
 
+
     \section{Conclusion}
     \label{sec:conclusion}
 
@@ -771,6 +785,7 @@
 %% ACKNOWLEDGMENTS
 %% ============================================================================
 
+
     \section*{Acknowledgments}
     This research was supported in part by the University of Pittsburgh Center for Research Computing and Data, RRID:SCR\_022735, through the resources provided. Specifically, this work used the HTC cluster, which is supported by NIH award number S10OD028483, and the H2P cluster, which is supported by NSF award number OAC-2117681.
 
@@ -778,5 +793,14 @@
 %% BIBLIOGRAPHY
 %% ============================================================================
     \bibliography{phonetic-embeddings}
+
+%% ============================================================================
+%% APPENDIX
+%% ============================================================================
+    \appendix
+    \section{Qualitative Evaluation Tables}
+    \label{app:qualitative}
+    \input{embedding-evaluation}
+    \input{embedding-evaluation-cross-script}
 
 \end{document}
