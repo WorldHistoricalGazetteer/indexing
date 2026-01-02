@@ -7,19 +7,17 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=16G
 #SBATCH --time=04:00:00
-#SBATCH --cluster=smp      # Optional: Explicitly target SMP/HTC if required, otherwise remove
+#SBATCH --cluster=smp
 
-# 1. Load environment
-module load python/3.11.5
-
-# 2. Activate Conda
+# 1. Activate Conda (skip module load)
 source ~/.bashrc
 conda activate whg
 
+# 2. Set Working Directory
+# We must be in the 'elastic' folder for "python -m testing.evaluate_embeddings" to work
+cd /ix1/whcdh/elastic
+
 # 3. LOCATE STAGING ELASTICSEARCH
-# We need to connect to the ES instance running in your 'es-staging' job.
-# The staging script writes connection info to a specific file.
-# (Adjust this path if STAGING_INFO_FILE is defined elsewhere in your .env)
 ENV_FILE="/ix1/whcdh/elastic/.env"
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
@@ -39,6 +37,7 @@ fi
 # 4. Run Evaluation
 echo "Starting evaluation on $(hostname)"
 echo "Connecting to ES at: $ES_URL"
+echo "Working directory: $(pwd)"
 
 python -m testing.evaluate_embeddings \
     --es-host "$ES_URL" \
