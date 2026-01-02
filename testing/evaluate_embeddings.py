@@ -324,15 +324,7 @@ PHONETIC_SUBSTITUTIONS = {
 def apply_noise(text: str, script: str, noise_level: float = 0.3, seed: int = None) -> Tuple[str, List[str]]:
     """
     Apply realistic noise to a toponym.
-
-    Args:
-        text: Original toponym
-        script: Detected script of the text
-        noise_level: Probability of applying noise to each character (0.0-1.0)
-        seed: Random seed for reproducibility
-
-    Returns:
-        Tuple of (noisy_text, list of noise descriptions applied)
+    Refactored to handle dynamic list length changes safely.
     """
     if seed is not None:
         random.seed(seed)
@@ -352,16 +344,20 @@ def apply_noise(text: str, script: str, noise_level: float = 0.3, seed: int = No
     max_modifications = max(1, int(len(text) * noise_level))
     num_modifications = random.randint(1, max_modifications)
 
-    # Select random positions to modify
-    modifiable_positions = list(range(len(chars)))
-    random.shuffle(modifiable_positions)
-
     modifications_made = 0
 
-    for pos in modifiable_positions:
-        if modifications_made >= num_modifications:
+    # Safety counter to prevent infinite loops if no noise can be applied
+    attempts = 0
+    max_attempts = num_modifications * 5
+
+    while modifications_made < num_modifications and attempts < max_attempts:
+        attempts += 1
+
+        # Always pick a valid position based on CURRENT length
+        if len(chars) < 1:
             break
 
+        pos = random.randint(0, len(chars) - 1)
         char = chars[pos]
         char_lower = char.lower()
 
@@ -407,7 +403,7 @@ def apply_noise(text: str, script: str, noise_level: float = 0.3, seed: int = No
                 deleted = chars.pop(pos)
                 applied_noise.append(f"deletion '{deleted}'")
                 modifications_made += 1
-                modifiable_positions = [p if p < pos else p - 1 for p in modifiable_positions]
+                # No need to adjust index list, we pick a new random int next loop
 
         elif noise_type == NoiseType.DUPLICATION:
             # Duplicate a character (common typo)
@@ -415,7 +411,7 @@ def apply_noise(text: str, script: str, noise_level: float = 0.3, seed: int = No
                 chars.insert(pos, chars[pos])
                 applied_noise.append(f"duplication '{chars[pos]}'")
                 modifications_made += 1
-                modifiable_positions = [p if p <= pos else p + 1 for p in modifiable_positions]
+                # No need to adjust index list, we pick a new random int next loop
 
     return ''.join(chars), applied_noise
 
