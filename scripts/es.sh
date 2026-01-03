@@ -633,6 +633,79 @@ SBATCH_EOF
     echo "Note: The staging ES instance must remain running for the duration."
 }
 
+# ==============================================================================
+# TOPONYM INDEX REBUILD (Slurm batch job)
+# ==============================================================================
+
+do_rebuild_toponyms() {
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    # Capture extra args (e.g., --limit 1000)
+    PYTHON_ARGS="$@"
+
+    echo "Submitting toponym index rebuild job..."
+    echo "  ES Host: http://${ES_NODE}:${ES_PORT}"
+    echo "  Args:    $PYTHON_ARGS"
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-rebuild-topo
+#SBATCH --output=${LOG_DIR}/rebuild_%j.out
+#SBATCH --error=${LOG_DIR}/rebuild_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+
+# Load Environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+
+# Run the rebuild
+# Note: We hardcode --confirm here because this is an intentional manual Slurm submission
+python -m phonetics.extraction.rebuild_toponyms_index \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --confirm \
+    $PYTHON_ARGS
+
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ Rebuild job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/rebuild_${JOBID}.out"
+}
+
 # =============================================================================
 # EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
 # =============================================================================
@@ -834,6 +907,11 @@ case "$1" in
         shift  # Remove -ingest from arguments
         do_ingest "$@"
         ;;
+    # --- Rebuild Toponyms Index ---
+    -rebuild-toponyms)
+        shift  # Remove -rebuild-toponyms from arguments
+        do_rebuild_toponyms "$@"
+        ;;
 
     # --- Production (VM) ---
     -start)
@@ -887,15 +965,15 @@ case "$1" in
     -staging-logs)
         staging_logs
         ;;
-   -staging-embed-extract)
-       do_embed_extract "$@"
-       ;;
-   -staging-embed-transform)
-       do_embed_transform "$@"
-       ;;
-   -staging-embed-load)
-       do_embed_load "$@"
-       ;;
+    -staging-embed-extract)
+        do_embed_extract "$@"
+        ;;
+    -staging-embed-transform)
+        do_embed_transform "$@"
+        ;;
+    -staging-embed-load)
+        do_embed_load "$@"
+        ;;
 
     # --- Help ---
     *)
@@ -925,6 +1003,9 @@ case "$1" in
         echo "    $0 -ingest -n gn,wd               # Ingest GeoNames and Wikidata only"
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
+        echo
+        echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
+        echo "  -rebuild-toponyms [OPTIONS]   Submit toponym index rebuild job to Slurm"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
