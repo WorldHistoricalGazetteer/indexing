@@ -21,6 +21,7 @@ Requirements:
 import argparse
 import json
 import logging
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -417,13 +418,19 @@ def main():
         '--schema-path',
         type=Path,
         default=SCHEMA_PATH,
-        help=f'Path to index schema JSON (default: {SCHEMA_PATH})'
+        help=f'Path to index schema JSON'
     )
     parser.add_argument(
         '--sqlite-path',
         type=Path,
         default=f'{IX1_BASE}/data/toponyms.db',
-        help=f'Path for SQLite intermediate DB (default: {IX1_BASE}/data/toponyms.db)'
+        help=f'Final destination for SQLite DB (default: {IX1_BASE}/data/toponyms.db)'
+    )
+    parser.add_argument(
+        '--scratch-dir',
+        type=Path,
+        default=None,
+        help='Directory for temporary working files (default: system temp)'
     )
     parser.add_argument(
         '--batch-size',
@@ -451,12 +458,10 @@ def main():
         print("Run with --confirm to proceed.")
         sys.exit(1)
 
-    # Validate schema path
     if not args.schema_path.exists():
         logger.error(f"Schema file not found: {args.schema_path}")
         sys.exit(1)
 
-    # Connect to ES
     es = Elasticsearch(args.es_host)
     if not es.ping():
         logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
@@ -464,41 +469,58 @@ def main():
 
     logger.info(f"Connected to Elasticsearch at {args.es_host}")
 
-    # Setup SQLite
-    sqlite_path = str(args.sqlite_path)
+    # --- UPDATED LOGIC START ---
 
-    logger.info(f"Using SQLite database: {sqlite_path}")
+    # 1. Define Paths
+    final_db_path = args.sqlite_path
 
-    try:
-        # Step 1: Extract to SQLite
-        conn = create_sqlite_db(sqlite_path)
-        places_count, toponym_count = extract_toponyms_to_sqlite(
-            es, conn, args.places_index, args.batch_size, args.limit
-        )
+    # 2. Create Temporary Directory in Scratch
+    # usage of 'with' ensures cleanup even if script crashes
+    with tempfile.TemporaryDirectory(dir=args.scratch_dir) as temp_dir:
+        temp_db_path = Path(temp_dir) / "toponyms_working.db"
+        logger.info(f"Building temporary database at: {temp_db_path}")
 
-        # Step 2: Delete and recreate index
-        delete_index(es, args.toponyms_index)
-        create_index(es, args.toponyms_index, args.schema_path)
+        try:
+            # 3. Build DB in Scratch
+            conn = create_sqlite_db(str(temp_db_path))
 
-        # Step 3: Bulk index
-        indexed = bulk_index_toponyms(
-            es, conn, args.toponyms_index, args.batch_size
-        )
+            # Step A: Extract
+            places_count, toponym_count = extract_toponyms_to_sqlite(
+                es, conn, args.places_index, args.batch_size, args.limit
+            )
 
-        # Step 4: Finalize
-        finalize_index(es, args.toponyms_index)
+            # Step B: Recreate Index
+            delete_index(es, args.toponyms_index)
+            create_index(es, args.toponyms_index, args.schema_path)
 
-        conn.close()
+            # Step C: Bulk Index (Reads from Scratch DB)
+            indexed = bulk_index_toponyms(
+                es, conn, args.toponyms_index, args.batch_size
+            )
 
-        # Summary
-        logger.info("=" * 60)
-        logger.info("Rebuild complete!")
-        logger.info(f"  Places processed: {places_count:,}")
-        logger.info(f"  Unique toponyms: {toponym_count:,}")
-        logger.info(f"  Documents indexed: {indexed:,}")
+            # Step D: Finalize
+            finalize_index(es, args.toponyms_index)
 
-    finally:
-        logger.info(f"SQLite database preserved at: {sqlite_path}")
+            # Close connection to allow safe copying
+            conn.close()
+
+            # 4. Copy to Final Location
+            logger.info(f"Copying database to persistent storage: {final_db_path}")
+            # Ensure parent dir exists
+            final_db_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(temp_db_path, final_db_path)
+
+            # Summary
+            logger.info("=" * 60)
+            logger.info("Rebuild complete!")
+            logger.info(f"  Places processed: {places_count:,}")
+            logger.info(f"  Unique toponyms: {toponym_count:,}")
+            logger.info(f"  Documents indexed: {indexed:,}")
+            logger.info(f"  Database saved to: {final_db_path}")
+
+        except Exception as e:
+            logger.error(f"Process failed: {e}")
+            sys.exit(1)
 
 
 if __name__ == '__main__':

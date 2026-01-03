@@ -656,6 +656,10 @@ do_rebuild_toponyms() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
     mkdir -p "$LOG_DIR"
 
+    # Setup local scratch (CRC convention)
+    SCRATCH_DIR="/scratch/slurm-\${SLURM_JOB_ID}"
+    mkdir -p "\$SCRATCH_DIR"
+
     # Capture extra args (e.g., --limit 1000)
     PYTHON_ARGS="$@"
 
@@ -689,11 +693,13 @@ cd "$REPO_DIR"
 
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
+echo "Using scratch: $SCRATCH_DIR"
 
 # Run the rebuild
 # Note: We hardcode --confirm here because this is an intentional manual Slurm submission
 python -m phonetics.extraction.rebuild_toponyms_index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --scratch-dir "$SCRATCH_DIR" \
     --confirm \
     $PYTHON_ARGS
 
