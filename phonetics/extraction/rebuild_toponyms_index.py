@@ -410,7 +410,7 @@ def main():
         logger.error(f"Schema file not found: {args.schema_path}")
         sys.exit(1)
 
-    es = Elasticsearch(args.es_host, timeout=60) # Increased timeout
+    es = Elasticsearch(args.es_host)
     if not es.ping():
         logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
         sys.exit(1)
