@@ -158,9 +158,6 @@ def extract_toponyms_to_sqlite(
             continue
 
         for top in toponyms_list:
-            # === CORRECTED LOGIC FOR YOUR SCHEMA ===
-            # The schema has: toponym_id, label.
-            # It does NOT have: toponym, lang.
 
             top_id = top.get('toponym_id')
             label = top.get('label')
@@ -197,6 +194,10 @@ def extract_toponyms_to_sqlite(
             name = name.strip()
             if not name:
                 continue
+
+            # Filter out placeholder languages like 'und' (Undetermined)
+            if lang and lang.lower() in ('und', 'zxx', 'mis', 'null', 'none'):
+                lang = None
 
             # Cleanup empty lang strings
             if not lang:
