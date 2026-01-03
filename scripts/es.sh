@@ -837,6 +837,150 @@ EOF
 }
 
 # =============================================================================
+# MODEL TRAINING PIPELINE (Slurm Chained Jobs)
+# =============================================================================
+
+do_train_model() {
+    # Usage: source es.sh -train-model [DATA_VERSION]
+    DATA_VERSION=${2:?Data version integer required (e.g., 2)}
+
+    # Define paths
+    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    CHECKPOINT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/training_v${DATA_VERSION}"
+
+    mkdir -p "$CHECKPOINT_DIR"
+    mkdir -p "$LOG_DIR"
+
+    echo "=========================================="
+    echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo "Data:        $DATA_DIR"
+    echo "Checkpoints: $CHECKPOINT_DIR"
+    echo "Logs:        $LOG_DIR"
+    echo
+
+    # --- PHASE 1: TEACHER TRAINING ---
+    # ~2-4 hours, needs GPU
+    JOB_ID_1=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/phase1_%j.out
+#SBATCH --error=${LOG_DIR}/phase1_%j.err
+#SBATCH --cluster=gpu
+#SBATCH --partition=a100
+#SBATCH --qos=gpu-a100-l
+#SBATCH --gres=gpu:1
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+
+set -e
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+cd "$REPO_DIR"
+
+echo "Starting Phase 1 (Teacher)..."
+python -m phonetics.training.train \
+    --phase 1 \
+    --data-dir "$DATA_DIR" \
+    --output-dir "$CHECKPOINT_DIR" \
+    --epochs 50 \
+    --batch-size 128
+EOF
+)
+    echo "✓ Phase 1 submitted: $JOB_ID_1"
+
+    # --- PHASE 2: STUDENT ALIGNMENT ---
+    # Depends on Phase 1 success
+    # ~12-24 hours, needs GPU
+    JOB_ID_2=$(sbatch --parsable --dependency=afterok:${JOB_ID_1} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/phase2_%j.out
+#SBATCH --error=${LOG_DIR}/phase2_%j.err
+#SBATCH --cluster=gpu
+#SBATCH --partition=a100
+#SBATCH --qos=gpu-a100-l
+#SBATCH --gres=gpu:1
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+cd "$REPO_DIR"
+
+echo "Starting Phase 2 (Student Alignment)..."
+python -m phonetics.training.train \
+    --phase 2 \
+    --data-dir "$DATA_DIR" \
+    --output-dir "$CHECKPOINT_DIR" \
+    --teacher-checkpoint "${CHECKPOINT_DIR}/phase1_best.pt" \
+    --epochs 50 \
+    --batch-size 128
+EOF
+)
+    echo "✓ Phase 2 submitted: $JOB_ID_2 (Depends on $JOB_ID_1)"
+
+    # --- PHASE 3: FINE TUNING ---
+    # Depends on Phase 2 success
+    # ~8-12 hours, needs GPU
+    JOB_ID_3=$(sbatch --parsable --dependency=afterok:${JOB_ID_2} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/phase3_%j.out
+#SBATCH --error=${LOG_DIR}/phase3_%j.err
+#SBATCH --cluster=gpu
+#SBATCH --partition=a100
+#SBATCH --qos=gpu-a100-l
+#SBATCH --gres=gpu:1
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+cd "$REPO_DIR"
+
+echo "Starting Phase 3 (Fine Tuning)..."
+python -m phonetics.training.train \
+    --phase 3 \
+    --data-dir "$DATA_DIR" \
+    --output-dir "$CHECKPOINT_DIR" \
+    --student-checkpoint "${CHECKPOINT_DIR}/phase2_best.pt" \
+    --epochs 30 \
+    --batch-size 128
+EOF
+)
+    echo "✓ Phase 3 submitted: $JOB_ID_3 (Depends on $JOB_ID_2)"
+    echo
+    echo "Pipeline queued successfully!"
+    echo "Monitor progress: squeue -u $USER"
+    echo "Final model will be at: ${CHECKPOINT_DIR}/final_model.pt"
+}
+
+# =============================================================================
 # EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
 # =============================================================================
 
@@ -1048,6 +1192,11 @@ case "$1" in
         do_train_extract "$@"
         ;;
 
+    # --- Training Pipeline ---
+    -train-model)
+        do_train_model "$@"
+        ;;
+
     # --- Production (VM) ---
     -start)
         start_prod_es
@@ -1141,6 +1290,12 @@ case "$1" in
         echo
         echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms [OPTIONS]   Submit toponym index rebuild job to Slurm"
+        echo
+        echo "TRAINING DATA PREPARATION:"
+        echo "  -train-extract VERSION        Extract toponyms and generate pairs for model version"
+        echo
+        echo "MODEL TRAINING PIPELINE:"
+        echo "  -train-model VERSION          Submit full training pipeline for model version"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
