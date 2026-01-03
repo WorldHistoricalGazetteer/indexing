@@ -713,6 +713,130 @@ EOF
 }
 
 # =============================================================================
+# TRAINING DATA PREPARATION (Extract -> Generate Pairs)
+# =============================================================================
+
+do_train_extract() {
+    # Usage: source es.sh -train-extract [VERSION]
+    DATA_VERSION=${1:?Data version integer required (e.g., 2)}
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: Staging ES not running."
+        echo "Run: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES connectivity
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    # Define final destination
+    FINAL_DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+
+    # Setup local scratch directory variable (evaluated at runtime inside Slurm)
+    # We use a literal variable for the sbatch script
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    echo "Submitting training data extraction job..."
+    echo "  Version: $DATA_VERSION"
+    echo "  Dest:    $FINAL_DATA_DIR"
+    echo "  ES Host: http://${ES_NODE}:${ES_PORT}"
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-extract-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/train_extract_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/train_extract_v${DATA_VERSION}_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=64G
+
+set -e
+
+# Load Environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Define Scratch Directory
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Work Dir (Scratch): \$SCRATCH_DIR"
+echo "Final Dir: $FINAL_DATA_DIR"
+
+# STEP 1: Extract Toponyms to Parquet (Output to Scratch)
+echo
+echo "=========================================="
+echo "STEP 1: Extracting Toponyms"
+echo "=========================================="
+python -m phonetics.extraction.extract_to_parquet \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --output-dir "\$SCRATCH_DIR" \
+    --namespaces gn wd tgn pl iv gb \
+    --batch-size 2000
+
+# STEP 2: Generate Pairs and Triplets (Read/Write in Scratch)
+echo
+echo "=========================================="
+echo "STEP 2: Generating Pairs and Triplets"
+echo "=========================================="
+python -m phonetics.extraction.generate_pairs \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --data-dir "\$SCRATCH_DIR" \
+    --namespaces gn wd tgn pl iv gb \
+    --batch-size 50000
+
+# STEP 3: Copy to Persistent Storage
+echo
+echo "=========================================="
+echo "STEP 3: Copying Data to Persistent Storage"
+echo "=========================================="
+
+# Ensure parent directory exists
+mkdir -p "$FINAL_DATA_DIR"
+
+# Use rsync for safety (it handles existing directories better than cp)
+# -a: archive mode (preserves permissions/times)
+# -v: verbose
+rsync -av "\$SCRATCH_DIR/" "$FINAL_DATA_DIR/"
+
+echo
+echo "=========================================="
+echo "PIPELINE COMPLETE"
+echo "=========================================="
+echo "Data available at: $FINAL_DATA_DIR"
+echo "Job Finished: \$(date)"
+
+# Cleanup handled automatically by Slurm, but explicit check helps log intent
+echo "Scratch cleanup will be handled by Slurm epilog."
+EOF
+)
+
+    echo "✓ Training preparation job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/train_extract_v${DATA_VERSION}_${JOBID}.out"
+}
+
+# =============================================================================
 # EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
 # =============================================================================
 
@@ -917,6 +1041,11 @@ case "$1" in
     -rebuild-toponyms)
         shift  # Remove -rebuild-toponyms from arguments
         do_rebuild_toponyms "$@"
+        ;;
+
+    # --- Training Data Preparation ---
+    -train-extract)
+        do_train_extract "$@"
         ;;
 
     # --- Production (VM) ---

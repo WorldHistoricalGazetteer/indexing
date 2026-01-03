@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple
 
+from processing.utilities import create_checkpoint_snapshot
+
 try:
     from elasticsearch import Elasticsearch
     from elasticsearch.helpers import scan, bulk, parallel_bulk
@@ -368,6 +370,10 @@ def finalize_index(es: Elasticsearch, index: str):
     es.indices.refresh(index=index)
     count = es.count(index=index)['count']
     logger.info(f"Index '{index}' finalized with {count:,} documents")
+
+    logger.info("Saving checkpoint snapshot...")
+    create_checkpoint_snapshot(es, snapshot_name="toponyms_rebuild")
+    logger.info("... done")
 
 
 def main():
