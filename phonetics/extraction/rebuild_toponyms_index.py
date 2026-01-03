@@ -1,18 +1,7 @@
+# phonetics/extraction/rebuild_toponyms_index.py
 """
 Rebuild the ES toponyms index from the places index.
-
-This script:
-1. Deletes the existing toponyms index
-2. Creates a new index with revised schema (128-dim embeddings, namespaces array)
-3. Scans the places index, aggregating toponyms via SQLite intermediate in SCRATCH
-4. Bulk indexes toponyms with complete namespace lists and script detection
-5. Saves the SQLite DB to persistent storage for training
-
-Usage:
-    python -m phonetics.extraction.rebuild_toponyms_index \
-        --es-host localhost:9200 \
-        --scratch-dir /scratch/slurm-$SLURM_JOB_ID \
-        --confirm
+Optimized for speed and robustness against garbage data.
 """
 
 import argparse
@@ -29,8 +18,7 @@ from typing import Iterator, Dict, List, Optional, Tuple
 from processing.utilities import create_checkpoint_snapshot
 
 try:
-    from elasticsearch import Elasticsearch
-    from elasticsearch.helpers import scan, bulk, parallel_bulk
+    from elasticsearch import Elasticsearch, helpers
 except ImportError:
     print("Error: elasticsearch package required. Install with: pip install elasticsearch")
     sys.exit(1)
@@ -41,76 +29,97 @@ except ImportError:
     tqdm = None
     print("Warning: tqdm not available. Progress bars disabled.")
 
-# Add parent to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from phonetics.utils.script_detection import (
-    Script, detect_script, get_primary_namespace, NAMESPACE_PRIORITY
+    Script, detect_script, get_primary_namespace
 )
 
 from processing.settings import ES_HOST, IX1_BASE
 
+# --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
+
+# Suppress noisy Elasticsearch HTTP logs (PUT/POST/GET)
+logging.getLogger("elastic_transport").setLevel(logging.WARNING)
+logging.getLogger("elasticsearch").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 SCHEMA_PATH = Path(__file__).parent.parent.parent / 'schemas' / 'toponyms.json'
+
+# --- CONSTANTS ---
+MAX_ID_BYTES = 450  # ES limit is 512. Leave room for safety.
+MAX_NAME_LEN = 200  # If a name is longer than this chars, it's a description, skip it.
 
 
 def create_sqlite_db(db_path: str) -> sqlite3.Connection:
     """
     Create SQLite database for toponym aggregation.
+
+    OPTIMIZATION: We do NOT create indexes on toponym_namespaces yet.
+    We create them after bulk insertion to speed up the process.
     """
-    # check_same_thread=False required because parallel_bulk reads from threads
     conn = sqlite3.connect(db_path, check_same_thread=False)
+
+    # Performance Tuning for Bulk Loading
     conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA synchronous=NORMAL')
-    conn.execute('PRAGMA cache_size=-1000000')  # 1GB cache
+    conn.execute('PRAGMA synchronous=OFF')      # Riskier but much faster for temp scratch DBs
+    conn.execute('PRAGMA cache_size=-4000000')  # Use up to 4GB RAM for cache
+    conn.execute('PRAGMA temp_store=MEMORY')    # Store temp tables in RAM
 
     conn.executescript('''
-                       CREATE TABLE IF NOT EXISTS toponyms
-                       (
-                           toponym_id TEXT PRIMARY KEY,
-                           name TEXT NOT NULL,
-                           lang TEXT,
-                           lang_variant TEXT,
-                           script TEXT
-                       );
+        CREATE TABLE IF NOT EXISTS toponyms (
+            toponym_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            lang TEXT,
+            lang_variant TEXT,
+            script TEXT
+        );
 
-                       CREATE TABLE IF NOT EXISTS toponym_namespaces
-                       (
-                           toponym_id TEXT NOT NULL,
-                           namespace TEXT NOT NULL,
-                           PRIMARY KEY (toponym_id, namespace)
-                       );
-
-                       CREATE INDEX IF NOT EXISTS idx_namespace
-                           ON toponym_namespaces(namespace);
-                       ''')
+        -- Heap table for speed (no PK yet)
+        CREATE TABLE IF NOT EXISTS toponym_namespaces (
+            toponym_id TEXT NOT NULL,
+            namespace TEXT NOT NULL
+        );
+    ''')
 
     conn.commit()
     return conn
 
 
-def scan_places(
-        es: Elasticsearch,
-        index: str = 'places',
-        batch_size: int = 2000,
-) -> Iterator[Dict]:
-    """Scan the places index and yield place documents."""
+def optimize_db_after_load(conn: sqlite3.Connection):
+    """
+    Create indexes AFTER loading data.
+    This prevents re-balancing the B-Tree on every insert.
+    """
+    logger.info("Optimizing SQLite database (Creating Indices)...")
+
+    # Create the index needed for the GROUP BY query
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
+
+    # Analyze to help the query optimizer
+    conn.execute('ANALYZE')
+    conn.commit()
+    logger.info("Database optimized.")
+
+
+def scan_places(es: Elasticsearch, index: str = 'places', batch_size: int = 2000) -> Iterator[Dict]:
+    """Scan the places index."""
     query = {
         "query": {"match_all": {}},
         "_source": ["namespace", "toponyms"]
     }
 
-    # Scroll 30m is safer for massive indices
-    for doc in scan(
+    # Scroll 60m to be safe with large datasets
+    for doc in helpers.scan(
             es,
             index=index,
             query=query,
-            scroll='30m',
+            scroll='60m',
             size=batch_size,
     ):
         yield doc['_source']
@@ -124,7 +133,6 @@ def extract_toponyms_to_sqlite(
         limit: Optional[int] = None,
 ) -> Tuple[int, int]:
     """Extract toponyms from places index into SQLite."""
-    # Get total count
     try:
         total = es.count(index=places_index)['count']
     except Exception:
@@ -137,6 +145,7 @@ def extract_toponyms_to_sqlite(
 
     places_processed = 0
     toponyms_extracted = 0
+    ignored_garbage = 0
 
     toponym_batch = []
     namespace_batch = []
@@ -144,13 +153,7 @@ def extract_toponyms_to_sqlite(
     iterator = scan_places(es, places_index, batch_size)
 
     if tqdm:
-        # mininterval=30.0 prevents log spam (updates every 30s)
-        iterator = tqdm(
-            iterator,
-            total=total,
-            desc="Extracting",
-            mininterval=30.0
-        )
+        iterator = tqdm(iterator, total=total, desc="Extracting", mininterval=10.0)
 
     for place in iterator:
         namespace = place.get('namespace', 'other')
@@ -160,22 +163,18 @@ def extract_toponyms_to_sqlite(
             continue
 
         for top in toponyms_list:
-
             top_id = top.get('toponym_id')
             label = top.get('label')
 
-            # We must parse ID: "Name@Lang"
+            # --- Name & Lang Parsing ---
             if not top_id:
                 continue
 
             if '@' in top_id:
-                # Find the LAST @ to separate name from lang
-                # (in case name contains @, though rare)
                 at_pos = top_id.rfind('@')
                 name = top_id[:at_pos]
                 lang_part = top_id[at_pos + 1:]
 
-                # Handle "en-GB"
                 if '-' in lang_part:
                     parts = lang_part.split('-', 1)
                     lang = parts[0]
@@ -184,28 +183,36 @@ def extract_toponyms_to_sqlite(
                     lang = lang_part
                     lang_variant = None
             else:
-                # Fallback: No @ found
                 name = top_id
                 lang = None
                 lang_variant = None
 
-            # Fallback to label if name parsing failed somehow
             if not name and label:
                 name = label
 
-            name = name.strip()
+            if name:
+                name = name.strip()
+
             if not name:
                 continue
 
-            # Filter out placeholder languages like 'und' (Undetermined)
+            # --- CRITICAL FIX: GARBAGE FILTER ---
+            # 1. Check Character Length (Logical check)
+            if len(name) > MAX_NAME_LEN:
+                ignored_garbage += 1
+                continue
+
+            # 2. Check Byte Length (Physical check for ES ID limit)
+            # UTF-8 characters can be up to 4 bytes.
+            if len(name.encode('utf-8')) > MAX_ID_BYTES:
+                ignored_garbage += 1
+                continue
+            # ------------------------------------
+
+            # Normalize Lang
             if lang and lang.lower() in ('und', 'zxx', 'mis', 'null', 'none'):
                 lang = None
 
-            # Cleanup empty lang strings
-            if not lang:
-                lang = None
-
-            # Reconstruct canonical ID
             canonical_id = f"{name}@{lang}" if lang else f"{name}@"
 
             # Detect script
@@ -224,7 +231,8 @@ def extract_toponyms_to_sqlite(
 
         places_processed += 1
 
-        if len(toponym_batch) >= batch_size:
+        # Insert batches
+        if len(toponym_batch) >= batch_size * 5: # Buffer up slightly more before DB write
             _insert_batch(conn, toponym_batch, namespace_batch)
             toponym_batch = []
             namespace_batch = []
@@ -237,52 +245,60 @@ def extract_toponyms_to_sqlite(
 
     conn.commit()
 
+    # Optimize DB now that data is loaded
+    optimize_db_after_load(conn)
+
     unique_count = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
 
     logger.info(f"Extracted {toponyms_extracted:,} occurrences from {places_processed:,} places")
+    logger.info(f"Ignored {ignored_garbage:,} garbage items (too long)")
     logger.info(f"Unique toponyms stored: {unique_count:,}")
 
     return places_processed, unique_count
 
 
-def _insert_batch(
-        conn: sqlite3.Connection,
-        toponym_batch: List[Tuple],
-        namespace_batch: List[Tuple],
-):
+def _insert_batch(conn, toponym_batch, namespace_batch):
     conn.executemany(
-        '''INSERT OR IGNORE INTO toponyms 
-           (toponym_id, name, lang, lang_variant, script)
-           VALUES (?, ?, ?, ?, ?)''',
+        'INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?)',
         toponym_batch
     )
+    # Note: We use INSERT OR IGNORE to handle duplicate namespaces for same toponym (if any)
+    # Since we removed the PK, we rely on rowid, but duplicates will be handled by GROUP BY later
+    # Actually, let's use DISTINCT in the select query to be safe.
     conn.executemany(
-        '''INSERT OR IGNORE INTO toponym_namespaces
-           (toponym_id, namespace)
-           VALUES (?, ?)''',
+        'INSERT INTO toponym_namespaces VALUES (?, ?)',
         namespace_batch
     )
 
 
 def aggregate_namespaces(conn: sqlite3.Connection) -> Iterator[Dict]:
     """Aggregate toponyms with their namespace lists."""
-    # Use pipe | separator to avoid comma confusion
+    logger.info("Starting aggregation query...")
+
+    # The DISTINCT in GROUP_CONCAT ensures we don't get 'osm|osm|osm'
     cursor = conn.execute('''
-                          SELECT t.toponym_id,
-                                 t.name,
-                                 t.lang,
-                                 t.lang_variant,
-                                 t.script,
-                                 GROUP_CONCAT(tn.namespace, '|') as namespaces
-                          FROM toponyms t
-                                   JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-                          GROUP BY t.toponym_id
-                          ''')
+        SELECT t.toponym_id,
+               t.name,
+               t.lang,
+               t.lang_variant,
+               t.script,
+               GROUP_CONCAT(DISTINCT tn.namespace) as namespaces
+        FROM toponyms t
+        JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+        GROUP BY t.toponym_id
+    ''')
 
     for row in cursor:
         toponym_id, name, lang, lang_variant, script, namespaces_str = row
 
-        namespaces = list(set(namespaces_str.split('|')))
+        # Handle edge case where GROUP_CONCAT might return None (shouldn't happen with JOIN)
+        if namespaces_str:
+            # Replace default comma with safe separator if needed, but here we assume comma is standard
+            # for default GROUP_CONCAT.
+            namespaces = namespaces_str.split(',')
+        else:
+            namespaces = []
+
         primary_ns = get_primary_namespace(namespaces)
 
         yield {
@@ -320,22 +336,18 @@ def bulk_index_toponyms(
     indexed = 0
     errors = 0
 
-    iterator = parallel_bulk(
+    # Increased thread_count and queue_size for throughput
+    iterator = helpers.parallel_bulk(
         es,
         generate_actions(),
-        thread_count=4,
+        thread_count=8,
+        queue_size=16,
         chunk_size=batch_size,
-        queue_size=4,
         raise_on_error=False
     )
 
     if tqdm:
-        iterator = tqdm(
-            iterator,
-            total=total,
-            desc="Indexing",
-            mininterval=30.0  # Log friendly updates
-        )
+        iterator = tqdm(iterator, total=total, desc="Indexing", mininterval=5.0)
 
     for success, info in iterator:
         if success:
@@ -384,7 +396,7 @@ def main():
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
     parser.add_argument('--sqlite-path', type=Path, default=f'{IX1_BASE}/data/toponyms.db')
     parser.add_argument('--scratch-dir', type=Path, default=None)
-    parser.add_argument('--batch-size', type=int, default=10000)
+    parser.add_argument('--batch-size', type=int, default=5000)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--confirm', action='store_true')
 
@@ -398,45 +410,47 @@ def main():
         logger.error(f"Schema file not found: {args.schema_path}")
         sys.exit(1)
 
-    es = Elasticsearch(args.es_host)
+    es = Elasticsearch(args.es_host, timeout=60) # Increased timeout
     if not es.ping():
         logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
         sys.exit(1)
 
     final_db_path = args.sqlite_path
 
-    # Use temporary directory for building
     with tempfile.TemporaryDirectory(dir=args.scratch_dir) as temp_dir:
         temp_db_path = Path(temp_dir) / "toponyms_working.db"
         logger.info(f"Building temporary database at: {temp_db_path}")
 
-        try:
-            # 1. Create DB (with check_same_thread=False)
+        try:# --- STEP 1: EXTRACTION ---
             conn = create_sqlite_db(str(temp_db_path))
-
-            # 2. Extract
             places_count, toponym_count = extract_toponyms_to_sqlite(
                 es, conn, args.places_index, args.batch_size, args.limit
             )
 
-            # 3. Recreate Index
+            # --- CHECKPOINT: SAVE DATABASE ---
+            logger.info("Extraction complete. Closing DB to checkpoint...")
+            conn.close() # Close to flush WAL and ensure integrity
+
+            logger.info(f"Checkpointing: Copying database to {final_db_path}")
+            shutil.copy2(temp_db_path, final_db_path)
+
+            # Re-open for reading (Reuse create_sqlite_db to set PRAGMAs)
+            logger.info("Re-opening temporary database for indexing...")
+            conn = create_sqlite_db(str(temp_db_path))
+
+            # --- STEP 2: RECREATE INDEX ---
             delete_index(es, args.toponyms_index)
             create_index(es, args.toponyms_index, args.schema_path)
 
-            # 4. Bulk Index
+            # --- STEP 3: BULK INDEX ---
             indexed = bulk_index_toponyms(
                 es, conn, args.toponyms_index, args.batch_size
             )
 
-            # 5. Finalize
+            # --- STEP 4: FINALIZE ---
             finalize_index(es, args.toponyms_index)
 
             conn.close()
-
-            # 6. Persist DB
-            logger.info(f"Copying database to persistent storage: {final_db_path}")
-            final_db_path.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(temp_db_path, final_db_path)
 
             logger.info("=" * 60)
             logger.info("Rebuild complete!")

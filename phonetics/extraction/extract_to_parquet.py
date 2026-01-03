@@ -486,11 +486,6 @@ def main():
         sys.exit(1)
     logger.info(f"Connected to Elasticsearch at {args.es_host}")
 
-    # TODO: REMOVE THIS AFTER INITIAL RUN - should have been included in rebuild_toponyms_index.py
-    logger.info("Saving checkpoint snapshot...")
-    create_checkpoint_snapshot(es, snapshot_name="toponyms_rebuild")
-    logger.info("... done")
-
     extract_to_parquet(
         es=es,
         output_dir=args.output_dir,
