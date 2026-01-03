@@ -24,7 +24,7 @@ import logging
 import sqlite3
 import sys
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple
 
@@ -296,7 +296,7 @@ def aggregate_namespaces(conn: sqlite3.Connection) -> Iterator[Dict]:
             'primary_namespace': primary_ns,
             'embedding': None,  # Populated after training
             'embedding_version': None,
-            'indexed_at': datetime.utcnow().isoformat(),
+            'indexed_at': datetime.now(timezone.utc).isoformat(),
         }
 
 
