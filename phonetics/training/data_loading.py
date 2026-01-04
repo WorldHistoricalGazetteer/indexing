@@ -17,9 +17,13 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Callable
 
+import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+import logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import pyarrow.parquet as pq
@@ -214,6 +218,7 @@ class Phase2Dataset(Dataset):
     """
     Dataset for Phase 2: Student-Teacher alignment.
     OPTIMIZED: Uses Pandas for instant loading.
+    SAFE: Filters out IDs that exceed model vocabulary limits.
     """
 
     def __init__(
@@ -221,11 +226,13 @@ class Phase2Dataset(Dataset):
             data_dir: Path,
             split: str = 'train',
             require_features: bool = True,
+            # Hard limits based on your logs (chars=3634, scripts=20)
+            vocab_limits: Dict[str, int] = {'char': 3634, 'script': 20}
     ):
         self.data_dir = Path(data_dir)
         print(f"Phase2Dataset: Loading {split} data (Vectorized)...")
 
-        # 1. Load Toponyms -> Pandas (Instant)
+        # 1. Load Toponyms -> Pandas
         toponyms_path = self.data_dir / 'toponyms'
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
@@ -236,14 +243,13 @@ class Phase2Dataset(Dataset):
             'split'
         ]
 
-        # Read directly to Pandas
         df = dataset.to_table(columns=columns).to_pandas()
 
         # 2. Vectorized Filtering
-        # Filter 1: Split
+
+        # A. Basic Filters (Split & Features)
         mask_split = (df['split'] == split)
 
-        # Filter 2: Features (if required)
         if require_features:
             mask_features = (
                     df['features'].notna() &
@@ -254,25 +260,56 @@ class Phase2Dataset(Dataset):
         else:
             df = df[mask_split]
 
-        # 3. Convert NumPy arrays back to Python lists
-        print(f"Phase2Dataset: ensuring features are Python lists...")
-        if 'features' in df.columns and not df.empty:
-            # Check first element to see if conversion is needed
+        # B. SANITIZATION (Critical Fix for CUDA Errors)
+        # ---------------------------------------------------------
+        print(f"Phase2Dataset: Sanitizing {len(df)} rows against vocab limits...")
+        initial_count = len(df)
+
+        # 1. Ensure Script IDs are valid (0 <= script < 20)
+        # Note: If 'script' is a string in the DF, this check is skipped/needs adjustment.
+        # Assuming it is the integer ID causing the crash.
+        if pd.api.types.is_integer_dtype(df['script']):
+            mask_script_safe = (df['script'] >= 0) & (df['script'] < vocab_limits['script'])
+            df = df[mask_script_safe]
+
+        # 2. Ensure Char IDs are valid (0 <= id < 3634)
+        # Since char_ids is a list, we check max value row-by-row
+        # (We optimize by only checking rows that weren't already dropped)
+        if not df.empty:
+            # Convert NumPy arrays to lists first (fixes the previous crash too)
             first_val = df['features'].iloc[0]
             if isinstance(first_val, np.ndarray):
-                # Apply conversion to the whole column
                 df['features'] = df['features'].apply(lambda x: x.tolist())
 
-        # 4. Convert to list of dicts
+            # Check Char IDs
+            # We assume char_ids are lists. We filter out any row where max(char_ids) >= limit
+            # or min(char_ids) < 0
+            limit = vocab_limits['char']
+
+            def is_safe_chars(ids):
+                if not ids: return True  # Empty list is technically safe (length 0)
+                # Quick check: min/max
+                if isinstance(ids, np.ndarray):
+                    return ids.min() >= 0 and ids.max() < limit
+                return min(ids) >= 0 and max(ids) < limit
+
+            # Apply filter
+            mask_chars_safe = df['char_ids'].apply(is_safe_chars)
+            df = df[mask_chars_safe]
+
+        dropped = initial_count - len(df)
+        if dropped > 0:
+            logger.warning(f"⚠️ Dropped {dropped} rows containing out-of-bounds IDs (Safe for training).")
+        # ---------------------------------------------------------
+
+        # 3. Final Conversion
         print(f"Phase2Dataset: converting {len(df)} rows to internal format...")
 
-        # Handle NaN langs safely
         if 'lang' in df.columns:
             df['lang'] = df['lang'].fillna('')
 
         self.samples = df.to_dict('records')
-
-        print(f"Phase2Dataset: {len(self.samples)} samples ready for {split}")
+        print(f"Phase2Dataset: {len(self.samples)} clean samples ready for {split}")
 
     def __len__(self) -> int:
         return len(self.samples)
