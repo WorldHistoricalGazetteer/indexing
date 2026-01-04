@@ -127,9 +127,8 @@ def apply_character_noise(
 class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
-
-    Loads pre-computed triplets (anchor, positive, negative) with
-    PanPhon feature vectors.
+    FIXED: Allows Pos/Neg examples to come from any split, as long as
+    Anchor is in the requested split.
     """
 
     def __init__(
@@ -139,41 +138,61 @@ class Phase1Dataset(Dataset):
     ):
         self.data_dir = Path(data_dir)
 
-        # Load triplets
+        # 1. Load Triplets
         triplets_path = self.data_dir / 'triplets' / 'phase1'
         self.triplets = ds.dataset(triplets_path, format='parquet').to_table()
 
-        # Load toponym data for features
+        # 2. Load Toponyms
         toponyms_path = self.data_dir / 'toponyms'
         self.toponyms = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        # Build index for fast lookup
+        # Load columns needed for caching
         table = self.toponyms.to_table(columns=[
             'toponym_id', 'features', 'feature_length', 'split'
         ])
 
-        # Filter by split
+        # 3. Build Cache & Split Filter
         self._feature_cache = {}
+        valid_anchor_ids = set() # IDs allowed to be Anchors for this split
+
         for i in range(len(table)):
             tid = table['toponym_id'][i].as_py()
             row_split = table['split'][i].as_py()
 
+            # If this toponym belongs to the requested split, it can be an Anchor
             if row_split == split:
-                features = table['features'][i].as_py()
-                feat_len = table['feature_length'][i].as_py()
+                valid_anchor_ids.add(tid)
 
-                if features and feat_len > 0:
-                    self._feature_cache[tid] = {
-                        'features': features,
-                        'feature_length': feat_len,
-                    }
+            # Cache features if valid (regardless of split)
+            # This allows 'train' anchors to compare against 'val' negatives
+            features = table['features'][i].as_py()
+            feat_len = table['feature_length'][i].as_py()
 
-        # Filter triplets to those with valid features
+            if features and feat_len > 0:
+                self._feature_cache[tid] = {
+                    'features': features,
+                    'feature_length': feat_len,
+                }
+
+        # 4. Filter Triplets
         valid_indices = []
+
+        # Optimization: Pre-fetch columns to avoid repetitive .as_py() calls
+        anchors = self.triplets['anchor_id']
+        positives = self.triplets['positive_id']
+        negatives = self.triplets['negative_id']
+
         for i in range(len(self.triplets)):
-            anchor_id = self.triplets['anchor_id'][i].as_py()
-            pos_id = self.triplets['positive_id'][i].as_py()
-            neg_id = self.triplets['negative_id'][i].as_py()
+            # Check indices directly (faster)
+            anchor_id = anchors[i].as_py()
+
+            # 1. The Anchor must belong to this split (e.g. 'train')
+            if anchor_id not in valid_anchor_ids:
+                continue
+
+            # 2. All three parts must have valid features (exist in cache)
+            pos_id = positives[i].as_py()
+            neg_id = negatives[i].as_py()
 
             if (anchor_id in self._feature_cache and
                     pos_id in self._feature_cache and
