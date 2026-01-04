@@ -1075,178 +1075,204 @@ EOF
 }
 
 # =============================================================================
-# EMBEDDING PIPELINE (ETL: Extract -> Transform -> Load)
+# INFERENCE PIPELINE (Extract [CPU] -> Compute [GPU] -> Push [CPU])
 # =============================================================================
 
-do_embed_extract() {
-    # Phase 1: Extract toponyms to Parquet (CPU node)
-    MODEL_VERSION=${2:-}
+do_update_embeddings() {
+    # Usage: source es.sh -update-embeddings [VERSION]
+    # Example: source es.sh -update-embeddings 1
 
-    if [[ ! -f "$STAGING_INFO_FILE" ]]; then
-        echo "ERROR: Staging ES not running."
-        echo "Run: source $0 -staging-start"
+    DATA_VERSION=${1:?Data version integer required}
+
+    # Check staging ES is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: Staging ES not running. Run -staging-start first."
+        return 1
+    fi
+    source "$STAGING_INFO_FILE"
+
+    # --- AUTOMATIC PATH RESOLUTION ---
+    BASE_DIR="/ix1/whcdh/models/phonetic"
+    VOCAB_DIR="${BASE_DIR}/data/v${DATA_VERSION}/vocab"
+    CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
+
+    # Auto-detect best model checkpoint
+    if [ -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
+        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase3_best.pt"
+    elif [ -f "${CHECKPOINT_DIR}/final_model.pt" ]; then
+        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/final_model.pt"
+    elif [ -f "${CHECKPOINT_DIR}/phase2_best.pt" ]; then
+        echo "WARNING: Phase 3 model not found. Falling back to Phase 2."
+        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase2_best.pt"
+    else
+        echo "ERROR: No valid checkpoint found in ${CHECKPOINT_DIR}"
+        echo "Expected phase3_best.pt or final_model.pt"
         return 1
     fi
 
-    source "$STAGING_INFO_FILE"
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
-    mkdir -p "$LOG_DIR"
-
-    VERSION_ARG=""
-    if [[ -n "$MODEL_VERSION" ]]; then
-        VERSION_ARG="--model-version $MODEL_VERSION"
+    # Verify Vocab
+    if [ ! -d "$VOCAB_DIR" ]; then
+        echo "ERROR: Vocab directory not found: $VOCAB_DIR"
+        return 1
     fi
 
-    echo "Submitting extraction job..."
+    # Generate a unique pipeline ID for logs/files
+    PIPE_ID=$(date +%s)
 
-    JOBID=$(sbatch --parsable <<EOF
+    # PATHS
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/inference_v${DATA_VERSION}_${PIPE_ID}"
+    # This must be SHARED storage so jobs running on different nodes can see it
+    HANDOFF_DIR="${BASE_DIR}/inference_cache/${PIPE_ID}"
+
+    mkdir -p "$LOG_DIR"
+    mkdir -p "$HANDOFF_DIR"
+
+    FILE_RAW="${HANDOFF_DIR}/toponyms_raw.parquet"
+    FILE_EMB="${HANDOFF_DIR}/toponyms_embeddings.parquet"
+
+    echo "=========================================="
+    echo "SUBMITTING INFERENCE PIPELINE (v${DATA_VERSION})"
+    echo "Pipeline ID: $PIPE_ID"
+    echo "Model:       $MODEL_CHECKPOINT"
+    echo "Vocab:       $VOCAB_DIR"
+    echo "=========================================="
+
+    # -------------------------------------------------------------------------
+    # JOB 1: EXTRACT (CPU / HTC Partition)
+    # ES -> Local Scratch -> Shared Storage
+    # -------------------------------------------------------------------------
+    JOB_ID_1=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-embed-extract
-#SBATCH --output=${LOG_DIR}/extract_%j.out
-#SBATCH --error=${LOG_DIR}/extract_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --job-name=whg-inf-1-extract
+#SBATCH --output=${LOG_DIR}/1_extract_%j.out
+#SBATCH --error=${LOG_DIR}/1_extract_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --partition=htc
+
+set -e
+source "${REPO_DIR}/environment_setup.sh"
+
+# Setup Fast Local Scratch
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT"
+LOCAL_RAW="\${SCRATCH_ROOT}/raw.parquet"
+
+echo "Starting Extraction to Local Scratch..."
+echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+
+python -m phonetics.inference.update_es extract \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --index toponyms \
+    --embedding-version $DATA_VERSION \
+    --output-file "\$LOCAL_RAW" \
+    --batch-size 5000 \
+    --scroll-size 5000
+
+echo "Extraction done. Moving to shared storage..."
+rsync -av "\$LOCAL_RAW" "$FILE_RAW"
+
+echo "Job 1 Complete."
+EOF
+)
+    echo "✓ Job 1 (Extract) Submitted: $JOB_ID_1 (Partition: htc)"
+
+
+    # -------------------------------------------------------------------------
+    # JOB 2: COMPUTE (GPU Partition)
+    # Shared Storage -> Local Scratch -> GPU -> Shared Storage
+    # -------------------------------------------------------------------------
+    JOB_ID_2=$(sbatch --parsable --dependency=afterok:${JOB_ID_1} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-inf-2-compute
+#SBATCH --output=${LOG_DIR}/2_compute_%j.out
+#SBATCH --error=${LOG_DIR}/2_compute_%j.err
+#SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-
-set -e
-
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-
-cd "$REPO_DIR"
-
-echo "Job Started: \$(date)"
-echo "Node: \$(hostname)"
-
-python -m processing.embed_extract $VERSION_ARG
-
-echo "Job Finished: \$(date)"
-EOF
-)
-
-    echo "✓ Extraction job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/extract_${JOBID}.out"
-}
-
-do_embed_transform() {
-    # Phase 2: Compute embeddings on GPU with local scratch
-    MODEL_VERSION=${2:?Model version integer required}
-
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
-    mkdir -p "$LOG_DIR"
-
-    echo "Submitting GPU embedding job for Model Version: ${MODEL_VERSION}..."
-
-    JOBID=$(sbatch --parsable <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-embed-gpu-v${MODEL_VERSION}
-#SBATCH --output=${LOG_DIR}/transform_%j.out
-#SBATCH --error=${LOG_DIR}/transform_%j.err
-#SBATCH --cluster=gpu
 #SBATCH --partition=a100
 #SBATCH --qos=gpu-a100-l
 #SBATCH --gres=gpu:1
-#SBATCH --time=48:00:00
-#SBATCH --nodes=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
 
 set -e
+source "${REPO_DIR}/environment_setup.sh"
 
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
+# Setup Fast Local Scratch
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT"
 
-cd "$REPO_DIR"
+LOCAL_RAW="\${SCRATCH_ROOT}/raw.parquet"
+LOCAL_EMB="\${SCRATCH_ROOT}/emb.parquet"
 
-# Setup local scratch (CRC convention)
-SCRATCH_DIR="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_DIR"
+echo "Staging input data to local scratch..."
+rsync -av "$FILE_RAW" "\$LOCAL_RAW"
 
-echo "Job Started: \$(date)"
-echo "Node: \$(hostname)"
-echo "GPU: \$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null || echo 'N/A')"
-echo "Scratch: \$SCRATCH_DIR"
-echo "Model Version: ${MODEL_VERSION}"
+echo "Starting Inference Phase..."
+python -m phonetics.inference.update_es compute \
+    --input-file "\$LOCAL_RAW" \
+    --output-file "\$LOCAL_EMB" \
+    --checkpoint "$MODEL_CHECKPOINT" \
+    --vocab-dir "$VOCAB_DIR" \
+    --batch-size 2048 \
+    --device cuda
 
-python -m processing.embed_transform --model-version ${MODEL_VERSION} --scratch-dir "\$SCRATCH_DIR"
+echo "Saving results back to shared storage..."
+rsync -av "\$LOCAL_EMB" "$FILE_EMB"
 
-# Cleanup scratch
-rm -rf "\$SCRATCH_DIR"
-
-echo "Job Finished: \$(date)"
+echo "Job 2 Complete."
 EOF
 )
+    echo "✓ Job 2 (Compute) Submitted: $JOB_ID_2 (Partition: a100, Depends on $JOB_ID_1)"
 
-    echo "✓ GPU embedding job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/transform_${JOBID}.out"
-}
 
-do_embed_load() {
-    # Phase 3: Load embeddings back to ES (CPU node)
-    MODEL_VERSION=${2:?Model version integer required}
-
-    if [[ ! -f "$STAGING_INFO_FILE" ]]; then
-        echo "ERROR: Staging ES not running."
-        echo "Run: source $0 -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
-    mkdir -p "$LOG_DIR"
-
-    echo "Submitting load job for Model Version: ${MODEL_VERSION}..."
-
-    JOBID=$(sbatch --parsable <<EOF
+    # -------------------------------------------------------------------------
+    # JOB 3: PUSH (CPU / HTC Partition)
+    # Shared Storage -> Local Scratch -> Elasticsearch
+    # -------------------------------------------------------------------------
+    JOB_ID_3=$(sbatch --parsable --dependency=afterok:${JOB_ID_2} <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-embed-load-v${MODEL_VERSION}
-#SBATCH --output=${LOG_DIR}/load_%j.out
-#SBATCH --error=${LOG_DIR}/load_%j.err
+#SBATCH --job-name=whg-inf-3-push
+#SBATCH --output=${LOG_DIR}/3_push_%j.out
+#SBATCH --error=${LOG_DIR}/3_push_%j.err
 #SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=32G
+#SBATCH --partition=htc
 
 set -e
+source "${REPO_DIR}/environment_setup.sh"
 
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
+# Setup Fast Local Scratch
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT"
+LOCAL_EMB="\${SCRATCH_ROOT}/emb.parquet"
 
-cd "$REPO_DIR"
+echo "Staging embeddings to local scratch..."
+rsync -av "$FILE_EMB" "\$LOCAL_EMB"
 
-echo "Job Started: \$(date)"
-echo "Node: \$(hostname)"
-echo "Model Version: ${MODEL_VERSION}"
+echo "Starting Push Phase..."
+echo "ES Host: http://${ES_NODE}:${ES_PORT}"
 
-python -m processing.embed_load --model-version ${MODEL_VERSION} --snapshot
+python -m phonetics.inference.update_es push \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --index toponyms \
+    --embedding-version $DATA_VERSION \
+    --input-file "\$LOCAL_EMB" \
+    --batch-size 2000
 
-echo "Job Finished: \$(date)"
+echo "Job 3 Complete. Pipeline Finished."
 EOF
 )
-
-    echo "✓ Load job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/load_${JOBID}.out"
+    echo "✓ Job 3 (Push) Submitted:    $JOB_ID_3 (Partition: htc, Depends on $JOB_ID_2)"
+    echo
+    echo "Monitor: squeue -u $USER"
 }
 
 # =============================================================================
@@ -1291,6 +1317,12 @@ case "$1" in
     -train-model)
       shift  # Remove -train-model from arguments
         do_train_model "$@"
+        ;;
+
+    # --- Inference / Embedding Pipeline ---
+    -update-embeddings)
+        shift  # Remove -update-embeddings from arguments
+        do_update_embeddings "$@"
         ;;
 
     # --- Production (VM) ---
@@ -1345,15 +1377,6 @@ case "$1" in
     -staging-logs)
         staging_logs
         ;;
-    -staging-embed-extract)
-        do_embed_extract "$@"
-        ;;
-    -staging-embed-transform)
-        do_embed_transform "$@"
-        ;;
-    -staging-embed-load)
-        do_embed_load "$@"
-        ;;
 
     # --- Help ---
     *)
@@ -1395,6 +1418,9 @@ case "$1" in
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION          Submit full training pipeline for model version"
         echo
+        echo "EMBEDDING UPDATE PIPELINE:"
+        echo "  -update-embeddings VERSION    Submit embedding update pipeline for model version"
+        echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
         echo "  -stop               Stop Elasticsearch + Kibana"
@@ -1411,11 +1437,6 @@ case "$1" in
         echo "  source $0 -staging-stop     Stop staging ES"
         echo "  source $0 -staging-status   Show status and index counts"
         echo "  source $0 -staging-logs     Show recent log output"
-        echo
-        echo "EMBEDDING PIPELINE (run on CRC login node, use 'source'):"
-        echo "  source $0 -staging-embed-extract [VERSION]    Extract toponyms to Parquet (CPU)"
-        echo "  source $0 -staging-embed-transform VERSION     Compute embeddings for specific model version (GPU)"
-        echo "  source $0 -staging-embed-load VERSION          Load embeddings back to ES for specific model version (CPU)"
         echo
         echo "Workflow:"
         echo "  1. Start staging ES: source es.sh -staging-start"

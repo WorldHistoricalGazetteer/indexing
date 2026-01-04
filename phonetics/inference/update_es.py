@@ -1,45 +1,39 @@
+# phonetics/inference/update_es.py
 """
-Update Elasticsearch toponyms index with phonetic embeddings.
+Multi-stage inference pipeline for populating Elasticsearch embeddings.
 
-This script loads a trained model and updates all toponyms in the
-ES index with their computed embeddings.
+Modes:
+  1. extract:  Dump toponyms from ES -> Parquet (Network I/O bound)
+  2. compute:  Calculate embeddings GPU -> Parquet (Compute bound)
+  3. push:     Bulk update embeddings -> ES (Network I/O bound)
 
 Usage:
-    python -m phonetics.inference.update_es \
-        --checkpoint /path/to/final_model.pt \
-        --vocab-dir /path/to/data/v2/vocab \
-        --es-host localhost:9200 \
-        --batch-size 500
-
-Options:
-    --checkpoint      Path to trained model checkpoint
-    --vocab-dir       Directory containing vocabulary JSON files
-    --es-host         Elasticsearch host (default: localhost:9200)
-    --index           Toponyms index name (default: toponyms)
-    --batch-size      Encoding batch size (default: 500)
-    --embedding-version  Version number for embeddings (default: 2)
-    --device          Device to use: cpu or cuda (default: cuda if available)
-    --subset          Optional file with toponym IDs to update (one per line)
+    python -m phonetics.inference.update_es extract --output-file /scr/job/data.parquet ...
+    python -m phonetics.inference.update_es compute --input-file /scr/job/data.parquet ...
+    python -m phonetics.inference.update_es push    --input-file /scr/job/embeddings.parquet ...
 """
 
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
+from typing import List, Dict, Any
 
 import torch
-
-from processing.settings import ES_HOST
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 try:
-    from elasticsearch import Elasticsearch
+    from elasticsearch import Elasticsearch, helpers
 except ImportError:
     print("Error: elasticsearch package required")
     sys.exit(1)
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from phonetics.inference.encoder import ToponymEncoder, ESIndexUpdater
+from phonetics.inference.encoder import ToponymEncoder
+from phonetics.utils.script_detection import Script
 
 logging.basicConfig(
     level=logging.INFO,
@@ -48,172 +42,255 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description='Update ES toponyms index with phonetic embeddings'
-    )
-    parser.add_argument(
-        '--checkpoint',
-        type=str,
-        required=True,
-        help='Path to trained model checkpoint'
-    )
-    parser.add_argument(
-        '--vocab-dir',
-        type=str,
-        required=True,
-        help='Directory containing vocabulary JSON files'
-    )
-    parser.add_argument(
-        '--es-host',
-        type=str,
-        default=ES_HOST,
-        help='Elasticsearch host'
-    )
-    parser.add_argument(
-        '--index',
-        type=str,
-        default='toponyms',
-        help='Toponyms index name'
-    )
-    parser.add_argument(
-        '--batch-size',
-        type=int,
-        default=500,
-        help='Encoding batch size'
-    )
-    parser.add_argument(
-        '--scroll-size',
-        type=int,
-        default=1000,
-        help='ES scroll batch size'
-    )
-    parser.add_argument(
-        '--embedding-version',
-        type=int,
-        default=2,
-        help='Version number for embeddings'
-    )
-    parser.add_argument(
-        '--device',
-        type=str,
-        default='cuda' if torch.cuda.is_available() else 'cpu',
-        help='Device to use (cpu or cuda)'
-    )
-    parser.add_argument(
-        '--subset',
-        type=str,
-        default=None,
-        help='Optional file with toponym IDs to update (one per line)'
-    )
-    parser.add_argument(
-        '--dry-run',
-        action='store_true',
-        help='Test mode: encode but do not update ES'
-    )
-    parser.add_argument(
-        '--force-update',
-        action='store_true',
-        help='Re-process all documents, even those already at current version'
+# =============================================================================
+# STEP 1: EXTRACT (ES -> Parquet)
+# =============================================================================
+def run_extract(args):
+    logger.info(f"Connecting to {args.es_host}...")
+    es = Elasticsearch(args.es_host, request_timeout=60)
+
+    # Define query based on update mode
+    if args.force:
+        query = {"query": {"match_all": {}}}
+        logger.info("Mode: Force update (extracting ALL documents)")
+    else:
+        query = {
+            "query": {
+                "bool": {
+                    "must_not": [
+                        {"term": {"embedding_version": args.embedding_version}}
+                    ]
+                }
+            }
+        }
+        logger.info(f"Mode: Incremental (skipping version {args.embedding_version})")
+
+    # Count
+    total = es.count(index=args.index, body=query)['count']
+    if total == 0:
+        logger.info("No documents need updating.")
+        return
+
+    logger.info(f"Extracting {total:,} documents to {args.output_file}")
+
+    # Output Schema
+    schema = pa.schema([
+        ('doc_id', pa.string()),
+        ('name', pa.string()),
+        ('lang', pa.string()),
+        ('script', pa.string()),
+    ])
+
+    query["_source"] = ["name", "lang", "script"]
+
+    # Scroll Scan
+    scan_iter = helpers.scan(
+        es,
+        index=args.index,
+        query=query,
+        scroll='60m',
+        size=args.scroll_size
     )
 
-    args = parser.parse_args()
+    writer = None
+    batch_buffer = []
+    count = 0
 
-    # Validate paths
-    if not Path(args.checkpoint).exists():
-        logger.error(f"Checkpoint not found: {args.checkpoint}")
+    for doc in scan_iter:
+        src = doc['_source']
+        batch_buffer.append({
+            'doc_id': doc['_id'],
+            'name': src.get('name', ''),
+            'lang': src.get('lang'),
+            'script': src.get('script', 'OTHER')
+        })
+
+        if len(batch_buffer) >= args.batch_size:
+            table = pa.Table.from_pylist(batch_buffer, schema=schema)
+            if writer is None:
+                writer = pq.ParquetWriter(args.output_file, schema, compression='snappy')
+            writer.write_table(table)
+            count += len(batch_buffer)
+            batch_buffer = []
+
+            if count % 100000 == 0:
+                logger.info(f"Extracted {count:,} / {total:,}...")
+
+    # Flush
+    if batch_buffer:
+        table = pa.Table.from_pylist(batch_buffer, schema=schema)
+        if writer is None:
+            writer = pq.ParquetWriter(args.output_file, schema, compression='snappy')
+        writer.write_table(table)
+        count += len(batch_buffer)
+
+    if writer:
+        writer.close()
+
+    logger.info(f"Extraction complete. Saved {count:,} records.")
+
+
+# =============================================================================
+# STEP 2: COMPUTE (Parquet -> GPU -> Parquet)
+# =============================================================================
+def run_compute(args):
+    if not Path(args.input_file).exists():
+        logger.error(f"Input file not found: {args.input_file}")
         sys.exit(1)
 
-    if not Path(args.vocab_dir).exists():
-        logger.error(f"Vocab directory not found: {args.vocab_dir}")
-        sys.exit(1)
-
-    # Connect to ES
-    es = Elasticsearch(args.es_host)
-    if not es.ping():
-        logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
-        sys.exit(1)
-
-    logger.info(f"Connected to Elasticsearch at {args.es_host}")
-
-    # Check index exists
-    if not es.indices.exists(index=args.index):
-        logger.error(f"Index '{args.index}' does not exist")
-        sys.exit(1)
-
-    # Load encoder
-    logger.info(f"Loading model from {args.checkpoint}")
-    logger.info(f"Using device: {args.device}")
-
+    logger.info(f"Loading model from {args.checkpoint}...")
     encoder = ToponymEncoder.from_checkpoint(
         args.checkpoint,
         args.vocab_dir,
-        device=args.device,
+        device=args.device
     )
 
-    logger.info(f"Model loaded: embed_dim={encoder.embed_dim}")
+    logger.info(f"Reading from {args.input_file}...")
+    parquet_file = pq.ParquetFile(args.input_file)
 
-    # Dry run: just test encoding
-    if args.dry_run:
-        logger.info("Dry run mode: testing encoding...")
+    # Output Schema
+    out_schema = pa.schema([
+        ('doc_id', pa.string()),
+        ('embedding', pa.list_(pa.float32())),
+    ])
 
-        # Fetch a few samples
-        response = es.search(
-            index=args.index,
-            body={
-                "size": 5,
-                "query": {"match_all": {}},
-                "_source": ["name", "lang", "script"]
-            }
-        )
+    writer = pq.ParquetWriter(args.output_file, out_schema, compression='snappy')
 
-        for hit in response['hits']['hits']:
-            name = hit['_source'].get('name', '')
-            lang = hit['_source'].get('lang')
+    total_rows = parquet_file.metadata.num_rows
+    processed = 0
+    start_time = time.time()
 
-            embedding = encoder.encode(name, lang=lang)
-            logger.info(f"  {name} ({lang}): shape={embedding.shape}, norm={embedding.norm():.4f}")
+    # Iterate over row groups (chunks)
+    for batch in parquet_file.iter_batches(batch_size=args.batch_size):
+        df = batch.to_pandas()
 
-        logger.info("Dry run complete")
-        return
+        # Prepare inputs for encoder
+        inputs = []
+        doc_ids = df['doc_id'].tolist()
 
-    # Create updater
-    updater = ESIndexUpdater(
-        encoder=encoder,
-        es_client=es,
-        index=args.index,
-        embedding_version=args.embedding_version,
-    )
+        # Zip name/lang safely
+        names = df['name'].fillna('').tolist()
+        langs = df['lang'].where(df['lang'].notnull(), None).tolist()
 
-    # Update subset or all
-    if args.subset:
-        logger.info(f"Updating subset from {args.subset}")
-        with open(args.subset, 'r') as f:
-            toponym_ids = [line.strip() for line in f if line.strip()]
+        inputs = list(zip(names, langs))
 
-        logger.info(f"Loaded {len(toponym_ids)} toponym IDs")
+        # Inference
+        embeddings = encoder.encode_batch(inputs, batch_size=args.batch_size)
 
-        stats = updater.update_subset(
-            toponym_ids=toponym_ids,
-            batch_size=args.batch_size,
-        )
-    else:
-        logger.info("Updating toponyms...")
+        # Write to output
+        out_batch = []
+        for i, doc_id in enumerate(doc_ids):
+            emb_list = embeddings[i].cpu().tolist()
+            out_batch.append({'doc_id': doc_id, 'embedding': emb_list})
 
-        stats = updater.update_all(
-            batch_size=args.batch_size,
-            scroll_size=args.scroll_size,
-            show_progress=True,
-            force_update=args.force_update,
-        )
+        table = pa.Table.from_pylist(out_batch, schema=out_schema)
+        writer.write_table(table)
 
-    # Summary
-    logger.info("=" * 60)
-    logger.info("Update complete!")
-    logger.info(f"  Processed: {stats['processed']:,}")
-    logger.info(f"  Updated:   {stats['updated']:,}")
-    logger.info(f"  Errors:    {stats['errors']:,}")
+        processed += len(doc_ids)
+        if processed % 10000 == 0:
+            elapsed = time.time() - start_time
+            rate = processed / elapsed
+            logger.info(f"Computed {processed:,} / {total_rows:,} ({rate:.1f} doc/s)")
 
+    writer.close()
+    logger.info(f"Computation complete. Embeddings saved to {args.output_file}")
+
+
+# =============================================================================
+# STEP 3: PUSH (Parquet -> ES)
+# =============================================================================
+def run_push(args):
+    if not Path(args.input_file).exists():
+        logger.error(f"Input file not found: {args.input_file}")
+        sys.exit(1)
+
+    logger.info(f"Connecting to {args.es_host}...")
+    es = Elasticsearch(args.es_host, request_timeout=60, max_retries=3)
+
+    parquet_file = pq.ParquetFile(args.input_file)
+    total_rows = parquet_file.metadata.num_rows
+    logger.info(f"Pushing {total_rows:,} embeddings to index '{args.index}'...")
+
+    def generate_actions():
+        for batch in parquet_file.iter_batches(batch_size=args.batch_size):
+            df = batch.to_pandas()
+            ids = df['doc_id'].tolist()
+            embs = df['embedding'].tolist()
+
+            for doc_id, emb in zip(ids, embs):
+                yield {
+                    '_op_type': 'update',
+                    '_index': args.index,
+                    '_id': doc_id,
+                    'doc': {
+                        'embedding': list(emb), # ensure python list
+                        'embedding_version': args.embedding_version
+                    }
+                }
+
+    # Parallel Bulk for speed
+    success_count = 0
+    error_count = 0
+
+    for success, info in helpers.parallel_bulk(
+        es,
+        generate_actions(),
+        thread_count=4,
+        chunk_size=args.batch_size,
+        raise_on_error=False
+    ):
+        if success:
+            success_count += 1
+        else:
+            error_count += 1
+            if error_count < 5:
+                logger.error(f"Error: {info}")
+
+        if (success_count + error_count) % 50000 == 0:
+            logger.info(f"Pushed {success_count:,} docs...")
+
+    # Refresh to make searchable
+    es.indices.refresh(index=args.index)
+    logger.info(f"Push complete. Success: {success_count:,}, Errors: {error_count:,}")
+
+
+# =============================================================================
+# MAIN CLI
+# =============================================================================
+def main():
+    parser = argparse.ArgumentParser(description="Multi-stage ES embedding update")
+    subparsers = parser.add_subparsers(dest='mode', required=True)
+
+    # --- SHARED ARGS ---
+    parent_parser = argparse.ArgumentParser(add_help=False)
+    parent_parser.add_argument('--es-host', default='localhost:9200')
+    parent_parser.add_argument('--index', default='toponyms')
+    parent_parser.add_argument('--embedding-version', type=int, default=2)
+    parent_parser.add_argument('--batch-size', type=int, default=2000)
+
+    # --- EXTRACT ---
+    p_extract = subparsers.add_parser('extract', parents=[parent_parser])
+    p_extract.add_argument('--output-file', required=True)
+    p_extract.add_argument('--scroll-size', type=int, default=5000)
+    p_extract.add_argument('--force', action='store_true', help="Ignore existing version")
+    p_extract.set_defaults(func=run_extract)
+
+    # --- COMPUTE ---
+    p_compute = subparsers.add_parser('compute', parents=[parent_parser])
+    p_compute.add_argument('--input-file', required=True)
+    p_compute.add_argument('--output-file', required=True)
+    p_compute.add_argument('--checkpoint', required=True)
+    p_compute.add_argument('--vocab-dir', required=True)
+    p_compute.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    p_compute.set_defaults(func=run_compute)
+
+    # --- PUSH ---
+    p_push = subparsers.add_parser('push', parents=[parent_parser])
+    p_push.add_argument('--input-file', required=True)
+    p_push.set_defaults(func=run_push)
+
+    args = parser.parse_args()
+    args.func(args)
 
 if __name__ == '__main__':
     main()

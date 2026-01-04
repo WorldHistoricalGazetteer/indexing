@@ -362,7 +362,7 @@ class ESIndexUpdater:
             encoder: ToponymEncoder,
             es_client,
             index: str = 'toponyms',
-            embedding_version: int = 2,
+            embedding_version: int = 1,
     ):
         self.encoder = encoder
         self.es = es_client
