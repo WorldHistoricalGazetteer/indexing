@@ -1143,15 +1143,6 @@ do_update_embeddings() {
         return 1
     fi
 
-    # Check staging ES is running (required for extract and push)
-    if [[ "$STAGE" == "all" || "$STAGE" == "extract" || "$STAGE" == "push" ]]; then
-        if [ ! -f "$STAGING_INFO_FILE" ]; then
-            echo "ERROR: Staging ES not running. Run -staging-start first."
-            return 1
-        fi
-        source "$STAGING_INFO_FILE"
-    fi
-
     # --- PATH CONFIGURATION ---
     local BASE_DIR="/ix1/whcdh/models/phonetic"
     local VOCAB_DIR="${BASE_DIR}/data/v${DATA_VERSION}/vocab"
@@ -1239,6 +1230,13 @@ do_update_embeddings() {
         if [ -f "$DONE_EXTRACT" ] && [ -f "$FILE_RAW" ]; then
             echo "EXTRACT: Already complete. Skipping. (Use --force to re-run)"
         else
+            # Check staging ES is running
+            if [ ! -f "$STAGING_INFO_FILE" ]; then
+                echo "ERROR: Staging ES not running. Run -staging-start first."
+                return 1
+            fi
+            source "$STAGING_INFO_FILE"
+
             echo "Submitting EXTRACT job..."
 
             JOB_ID_1=$(sbatch --parsable <<EOF
@@ -1406,6 +1404,13 @@ EOF
         if [ -f "$DONE_PUSH" ]; then
             echo "PUSH: Already complete. Skipping. (Use --force to re-run)"
         else
+            # Check staging ES is running
+            if [ ! -f "$STAGING_INFO_FILE" ]; then
+                echo "ERROR: Staging ES not running. Run -staging-start first."
+                return 1
+            fi
+            source "$STAGING_INFO_FILE"
+
             echo "Submitting PUSH job..."
 
             # Set dependency if compute was just submitted
