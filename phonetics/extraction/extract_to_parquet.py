@@ -45,8 +45,6 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Tuple
 
-from processing.utilities import create_checkpoint_snapshot
-
 try:
     from elasticsearch import Elasticsearch
     from elasticsearch.helpers import scan
@@ -73,6 +71,8 @@ from phonetics.utils.script_detection import Script, detect_script
 from phonetics.vocab.char_vocab import (
     CharacterVocabulary, ScriptVocabulary, LanguageVocabulary
 )
+
+from processing.settings import ES_HOST
 
 logging.basicConfig(
     level=logging.INFO,
@@ -466,7 +466,7 @@ def main():
     parser = argparse.ArgumentParser(
         description='Extract training data from ES toponyms to Parquet'
     )
-    parser.add_argument('--es-host', default='localhost:9200')
+    parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--toponyms-index', default='toponyms')
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--namespaces', nargs='+', default=['gn', 'pl', 'iv'])

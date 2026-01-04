@@ -37,6 +37,8 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Set, Tuple
 
+from processing.settings import ES_HOST
+
 try:
     from elasticsearch import Elasticsearch
     from elasticsearch.helpers import scan
@@ -650,7 +652,7 @@ def generate_curated_test_pairs(
 
 def main():
     parser = argparse.ArgumentParser(description='Generate pairs and triplets')
-    parser.add_argument('--es-host', default='localhost:9200')
+    parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--namespaces', nargs='+', default=['gn', 'pl', 'iv'])
     parser.add_argument('--batch-size', type=int, default=50000)
