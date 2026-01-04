@@ -1085,6 +1085,7 @@ BATCH_SCRIPT
 
     echo
     echo "Pipeline queued. Monitor: squeue -u $USER"
+    echo "tail -f ${LOG_DIR}/*_<JOBID>.*"
 }
 
 # =============================================================================
