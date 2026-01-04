@@ -209,7 +209,7 @@ class Phase1Dataset(Dataset):
 class Phase2Dataset(Dataset):
     """
     Dataset for Phase 2: Student-Teacher alignment.
-    OPTIMIZED: Uses Pandas for instant loading of 17M rows.
+    OPTIMIZED: Uses Pandas for instant loading.
     """
 
     def __init__(
@@ -232,7 +232,7 @@ class Phase2Dataset(Dataset):
             'split'
         ]
 
-        # Read directly to Pandas (skips the slow python loop)
+        # Read directly to Pandas
         df = dataset.to_table(columns=columns).to_pandas()
 
         # 2. Vectorized Filtering
@@ -241,7 +241,6 @@ class Phase2Dataset(Dataset):
 
         # Filter 2: Features (if required)
         if require_features:
-            # Must have non-null features, length > 0, and be supported by Epitran
             mask_features = (
                     df['features'].notna() &
                     (df['feature_length'] > 0) &
@@ -251,11 +250,19 @@ class Phase2Dataset(Dataset):
         else:
             df = df[mask_split]
 
-        # 3. Convert to efficient list of dicts
-        # to_dict('records') is highly optimized in Pandas
+        # 3. Convert NumPy arrays back to Python lists
+        print(f"Phase2Dataset: ensuring features are Python lists...")
+        if 'features' in df.columns and not df.empty:
+            # Check first element to see if conversion is needed
+            first_val = df['features'].iloc[0]
+            if isinstance(first_val, np.ndarray):
+                # Apply conversion to the whole column
+                df['features'] = df['features'].apply(lambda x: x.tolist())
+
+        # 4. Convert to list of dicts
         print(f"Phase2Dataset: converting {len(df)} rows to internal format...")
 
-        # We fill NaN langs with empty string to match previous logic
+        # Handle NaN langs safely
         if 'lang' in df.columns:
             df['lang'] = df['lang'].fillna('')
 
@@ -267,7 +274,6 @@ class Phase2Dataset(Dataset):
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict:
-        # Fast O(1) access
         return self.samples[idx]
 
 
