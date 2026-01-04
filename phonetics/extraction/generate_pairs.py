@@ -53,6 +53,12 @@ except ImportError:
     sys.exit(1)
 
 try:
+    from anyascii import anyascii
+except ImportError:
+    anyascii = None
+    logger.warning("anyascii not found! Cross-script pairs will be filtered out.")
+
+try:
     from tqdm import tqdm
 except ImportError:
     tqdm = None
@@ -89,7 +95,7 @@ def build_prefix_index(toponym_index: Dict[str, Dict]) -> Dict[str, List[str]]:
     prefix_map = defaultdict(list)
     for tid, data in toponym_index.items():
         name = data.get('name_normalized', '')
-        if name and len(name) >= 2: # Use 2 chars for better recall
+        if name and len(name) >= 2:  # Use 2 chars for better recall
             prefix = name[:2]
             prefix_map[prefix].append(tid)
     return prefix_map
@@ -146,6 +152,87 @@ def scan_places_for_pairs(
             yield place_id, namespace, toponyms
 
 
+def normalize_for_comparison(name: str) -> str:
+    """
+    Normalize a toponym for phonetic comparison.
+    Romanizes via anyascii and removes non-alphanumeric characters.
+    """
+    if not name:
+        return ""
+
+    # Romanize if possible
+    if anyascii:
+        normalized = anyascii(name).lower()
+    else:
+        normalized = name.lower()
+
+    # Keep only alphanumeric chars (removes hyphens, spaces, punctuation)
+    # This ensures "Non-Violence" == "nonviolence"
+    return ''.join(c for c in normalized if c.isalnum())
+
+
+def phonetic_similarity(name1: str, name2: str) -> float:
+    """
+    Compute phonetic similarity using normalized Levenshtein ratio.
+
+    Returns value between 0.0 (completely different) and 1.0 (identical).
+    Used to filter out semantically equivalent but phonetically unrelated
+    pairs like "Germany" / "Deutschland".
+    """
+    # 1. Normalize (Romanize + clean)
+    norm1 = normalize_for_comparison(name1)
+    norm2 = normalize_for_comparison(name2)
+
+    if not norm1 or not norm2:
+        return 0.0
+
+    # 2. Exact Match Shortcut (Fastest)
+    if norm1 == norm2:
+        return 1.0
+
+    # 3. Substring Shortcut (Fast)
+    # If "York" matches "New York", we consider that phonetically relevant
+    min_len = min(len(norm1), len(norm2))
+    if min_len >= 3 and (norm1 in norm2 or norm2 in norm1):
+        return 0.85
+
+    # 4. Length Heuristic (Fast)
+    # If one string is 3x longer than the other, they are likely different
+    # e.g. "US" vs "United States"
+    len1, len2 = len(norm1), len(norm2)
+    max_len = max(len1, len2)
+    if max_len > 3 * min_len:
+        return 0.0
+
+    # 5. Levenshtein Distance (Slow - Run only if necessary)
+    if len1 < len2:
+        return phonetic_similarity(name2, name1)
+
+    # Memory optimized row-based Levenshtein
+    previous_row = range(len2 + 1)
+    for i, c1 in enumerate(norm1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(norm2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+
+    distance = previous_row[len2]
+
+    return 1.0 - (distance / max_len)
+
+
+# Minimum phonetic similarity threshold for creating pairs
+# This filters out unrelated exonyms like "Germany"/"Deutschland"
+# Set relatively low (0.35) because:
+# - We want to catch obvious mismatches
+# - But not be too aggressive (some valid pairs have low scores)
+# - The model will learn finer distinctions during training
+MIN_PHONETIC_SIMILARITY = 0.35
+
+
 def generate_pairs_from_place(
         toponyms: List[Dict],
         toponym_index: Dict[str, Dict],
@@ -159,19 +246,53 @@ def generate_pairs_from_place(
     pairs = []
 
     # Build list of valid toponym IDs with their scripts
+    # ES places documents have toponym_id already defined (e.g., "Non-Violence@lb")
     valid_tops = []
     for top in toponyms:
-        name = top.get('toponym', '').strip()
-        lang = top.get('lang', '').strip() or ''
-        toponym_id = f"{name}@{lang}" if lang else f"{name}@"
+        # Use the pre-defined toponym_id from ES
+        toponym_id = top.get('toponym_id', '')
 
-        if toponym_id in toponym_index:
-            script = toponym_index[toponym_id].get('script', 'OTHER')
-            valid_tops.append((toponym_id, script))
+        if not toponym_id:
+            continue
 
-    # Generate all pairs
+        # Normalize to canonical format (name@lang or name@)
+        # The toponym_id from ES may have variants like "name@en-US"
+        # but our index uses "name@en"
+        if '@' in toponym_id:
+            at_pos = toponym_id.rfind('@')
+            name = toponym_id[:at_pos]
+            lang_part = toponym_id[at_pos + 1:]
+            # Strip variant (e.g., "en-US" -> "en")
+            if '-' in lang_part:
+                lang = lang_part.split('-', 1)[0]
+            else:
+                lang = lang_part
+            canonical_id = f"{name}@{lang}" if lang else f"{name}@"
+        else:
+            canonical_id = f"{toponym_id}@"
+
+        if canonical_id in toponym_index:
+            script = toponym_index[canonical_id].get('script', 'OTHER')
+            valid_tops.append((canonical_id, script))
+
+    # SAFETY CAP: If a place has too many names, sample them down
+    # to prevent O(N^2) explosion on super-nodes (like 'United States')
+    MAX_TOPONYMS_PER_PLACE = 50
+    if len(valid_tops) > MAX_TOPONYMS_PER_PLACE:
+        valid_tops = random.sample(valid_tops, MAX_TOPONYMS_PER_PLACE)
+
+    # Generate all pairs with phonetic similarity filtering
     for i, (id1, script1) in enumerate(valid_tops):
         for id2, script2 in valid_tops[i + 1:]:
+            # Get names for similarity check
+            name1 = toponym_index[id1].get('name', '')
+            name2 = toponym_index[id2].get('name', '')
+
+            # Filter semantic translations (Germany != Deutschland)
+            sim = phonetic_similarity(name1, name2)
+            if sim < MIN_PHONETIC_SIMILARITY:
+                continue
+
             is_cross_script = script1 != script2
             pairs.append({
                 'anchor_id': id1,
@@ -478,7 +599,8 @@ def generate_curated_test_pairs(
         {'query': 'Peking', 'target': 'Beijing@en', 'type': 'historical'},  # Legacy Romanization
         {'query': 'Bombay', 'target': 'Mumbai@en', 'type': 'historical'},  # Colonial renaming
         {'query': 'Danzig', 'target': 'Gdańsk@pl', 'type': 'historical'},  # German/Polish shift
-        {'query': 'Christiania', 'target': 'Oslo@no', 'type': 'historical'},  # Completely different roots (Semantic test)
+        {'query': 'Christiania', 'target': 'Oslo@no', 'type': 'historical'},
+        # Completely different roots (Semantic test)
 
         # --- 2. Typos & OCR Noise (The "Robustness" Test) ---
         {'query': 'Londn', 'target': 'London@en', 'type': 'typo'},
