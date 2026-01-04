@@ -865,7 +865,7 @@ do_train_model() {
     START_PHASE=${2:-1}      # Default: Start at Phase 1
     TARGET_EPOCHS=$3         # Optional: If set, implies RESUME + NEW EPOCH COUNT
 
-    # NETWORK PATHS (Permanent Storage)
+    # NETWORK PATHS
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
     CHECKPOINT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/training_v${DATA_VERSION}"
@@ -875,10 +875,7 @@ do_train_model() {
 
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
-    echo "Starting Phase: $START_PHASE"
-    if [ ! -z "$TARGET_EPOCHS" ]; then
-        echo "Resuming Phase $START_PHASE -> extending to $TARGET_EPOCHS epochs"
-    fi
+    echo "Config: 1x A100, 128GB RAM, 48H Limit"
     echo "=========================================="
 
     # Defaults
@@ -896,7 +893,8 @@ do_train_model() {
             [ -f "$CKPT" ] && P1_ARGS="--resume-from $CKPT"
         fi
 
-        JOB_ID_1=$(sbatch --parsable <<EOF
+        # Added "| cut -d';' -f1" to handle multi-cluster output
+        JOB_ID_1=$(sbatch --parsable <<EOF | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase1_%j.out
@@ -913,7 +911,6 @@ do_train_model() {
 set -e
 source "${REPO_DIR}/environment_setup.sh"
 
-# --- FAST DATA STAGING TO LOCAL SCRATCH ---
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data from ${DATA_DIR} to \${SCRATCH_ROOT}..."
 
@@ -921,11 +918,10 @@ mkdir -p \${SCRATCH_ROOT}/triplets
 mkdir -p \${SCRATCH_ROOT}/toponyms
 mkdir -p \${SCRATCH_ROOT}/vocab
 
-# Use tar pipe for faster copy of small files
 (cd "${DATA_DIR}/triplets" && tar cf - phase1) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
 (cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
-echo "Data staged. Starting Phase 1 (Teacher)..."
+echo "Starting Phase 1 (Teacher)..."
 python -m phonetics.training.train \
     --phase 1 \
     --data-dir "\${SCRATCH_ROOT}" \
@@ -964,7 +960,7 @@ EOF
             fi
         fi
 
-        JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF
+        JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase2_%j.out
@@ -985,7 +981,6 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data to \${SCRATCH_ROOT}..."
 
 mkdir -p \${SCRATCH_ROOT}
-# Phase 2 only needs toponyms and vocab
 (cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 2 (Student Alignment)..."
@@ -999,7 +994,7 @@ python -m phonetics.training.train \
     $P2_ARGS
 EOF
 )
-        echo "✓ Phase 2 submitted: $JOB_ID_2 ${DEP_FLAG}"
+        echo "✓ Phase 2 submitted: $JOB_ID_2"
         LAST_JOB_ID=$JOB_ID_2
     else
         echo "✓ Phase 2 skipped"
@@ -1028,7 +1023,7 @@ EOF
             fi
         fi
 
-        JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF
+        JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase3_%j.out
@@ -1052,7 +1047,6 @@ mkdir -p \${SCRATCH_ROOT}/triplets
 mkdir -p \${SCRATCH_ROOT}/toponyms
 mkdir -p \${SCRATCH_ROOT}/vocab
 
-# Phase 3 needs specific triplets
 (cd "${DATA_DIR}/triplets" && tar cf - phase3) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
 (cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
@@ -1067,7 +1061,7 @@ python -m phonetics.training.train \
     $P3_ARGS
 EOF
 )
-        echo "✓ Phase 3 submitted: $JOB_ID_3 ${DEP_FLAG}"
+        echo "✓ Phase 3 submitted: $JOB_ID_3"
     fi
 
     echo
