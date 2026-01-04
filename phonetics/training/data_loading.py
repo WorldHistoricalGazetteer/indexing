@@ -127,8 +127,8 @@ def apply_character_noise(
 class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
-    FIXED: Allows Pos/Neg examples to come from any split, as long as
-    Anchor is in the requested split.
+    OPTIMIZED: Uses Pandas vectorization for instant loading (<10s).
+    LOGIC: Anchors must match split; Pos/Neg can be from any split.
     """
 
     def __init__(
@@ -137,85 +137,72 @@ class Phase1Dataset(Dataset):
             split: str = 'train',
     ):
         self.data_dir = Path(data_dir)
+        print(f"Phase1Dataset: Loading data for split '{split}'...")
 
-        # 1. Load Triplets
+        # 1. Load Triplets -> Pandas (Instant Read)
         triplets_path = self.data_dir / 'triplets' / 'phase1'
-        self.triplets = ds.dataset(triplets_path, format='parquet').to_table()
+        self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
 
-        # 2. Load Toponyms
+        # 2. Load Toponyms -> Pandas
         toponyms_path = self.data_dir / 'toponyms'
-        self.toponyms = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
+        dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        # Load columns needed for caching
-        table = self.toponyms.to_table(columns=[
-            'toponym_id', 'features', 'feature_length', 'split'
-        ])
+        # Load only necessary columns
+        table = dataset.to_table(columns=['toponym_id', 'features', 'feature_length', 'split'])
+        topo_df = table.to_pandas()
 
-        # 3. Build Cache & Split Filter
-        self._feature_cache = {}
-        valid_anchor_ids = set() # IDs allowed to be Anchors for this split
+        # 3. Build Cache & Sets (Vectorized)
 
-        for i in range(len(table)):
-            tid = table['toponym_id'][i].as_py()
-            row_split = table['split'][i].as_py()
+        # A. Filter for valid features (Drop NaNs / Empty)
+        # This keeps features from ALL splits (Train + Val + Test)
+        valid_feats_df = topo_df[(topo_df['features'].notna()) & (topo_df['feature_length'] > 0)]
 
-            # If this toponym belongs to the requested split, it can be an Anchor
-            if row_split == split:
-                valid_anchor_ids.add(tid)
+        # B. Create Cache (Dict lookup)
+        # orient='index' is optimized for creating {id: {col: val}}
+        self._feature_cache = valid_feats_df.set_index('toponym_id')[['features', 'feature_length']].to_dict(
+            orient='index')
 
-            # Cache features if valid (regardless of split)
-            # This allows 'train' anchors to compare against 'val' negatives
-            features = table['features'][i].as_py()
-            feat_len = table['feature_length'][i].as_py()
+        # C. Identify IDs available in cache (Any split)
+        available_ids = set(self._feature_cache.keys())
 
-            if features and feat_len > 0:
-                self._feature_cache[tid] = {
-                    'features': features,
-                    'feature_length': feat_len,
-                }
+        # D. Identify IDs allowed as Anchors (Strict split filtering)
+        # We only filter the ANCHOR by the requested split (e.g., 'train')
+        valid_anchor_ids = set(topo_df[topo_df['split'] == split]['toponym_id'])
 
-        # 4. Filter Triplets
-        valid_indices = []
+        print(f"Phase1Dataset: Filtering {len(self.triplets_df)} raw triplets (Vectorized)...")
 
-        # Optimization: Pre-fetch columns to avoid repetitive .as_py() calls
-        anchors = self.triplets['anchor_id']
-        positives = self.triplets['positive_id']
-        negatives = self.triplets['negative_id']
+        # 4. Vectorized Filtering (The "Magic" Step)
 
-        for i in range(len(self.triplets)):
-            # Check indices directly (faster)
-            anchor_id = anchors[i].as_py()
+        # Step 4a: Anchor MUST be in the correct split
+        # isin() is C-optimized and extremely fast
+        df = self.triplets_df
+        mask_anchor_split = df['anchor_id'].isin(valid_anchor_ids)
 
-            # 1. The Anchor must belong to this split (e.g. 'train')
-            if anchor_id not in valid_anchor_ids:
-                continue
+        # Step 4b: ALL 3 parts must have valid features
+        # (Checks against 'available_ids', which contains ALL valid features from ANY split)
+        mask_features = (
+                df['anchor_id'].isin(available_ids) &
+                df['positive_id'].isin(available_ids) &
+                df['negative_id'].isin(available_ids)
+        )
 
-            # 2. All three parts must have valid features (exist in cache)
-            pos_id = positives[i].as_py()
-            neg_id = negatives[i].as_py()
+        # Apply combined mask
+        self.valid_df = df[mask_anchor_split & mask_features].reset_index(drop=True)
 
-            if (anchor_id in self._feature_cache and
-                    pos_id in self._feature_cache and
-                    neg_id in self._feature_cache):
-                valid_indices.append(i)
-
-        self.valid_indices = valid_indices
-        print(f"Phase1Dataset: {len(self.valid_indices)} valid triplets for {split}")
+        print(f"Phase1Dataset: {len(self.valid_df)} valid triplets for {split}")
 
     def __len__(self) -> int:
-        return len(self.valid_indices)
+        return len(self.valid_df)
 
     def __getitem__(self, idx: int) -> Dict:
-        triplet_idx = self.valid_indices[idx]
-
-        anchor_id = self.triplets['anchor_id'][triplet_idx].as_py()
-        pos_id = self.triplets['positive_id'][triplet_idx].as_py()
-        neg_id = self.triplets['negative_id'][triplet_idx].as_py()
+        # Fetch row from filtered DataFrame
+        # iloc is fast enough for __getitem__ access
+        row = self.valid_df.iloc[idx]
 
         return {
-            'anchor': self._feature_cache[anchor_id],
-            'positive': self._feature_cache[pos_id],
-            'negative': self._feature_cache[neg_id],
+            'anchor': self._feature_cache[row['anchor_id']],
+            'positive': self._feature_cache[row['positive_id']],
+            'negative': self._feature_cache[row['negative_id']],
         }
 
 

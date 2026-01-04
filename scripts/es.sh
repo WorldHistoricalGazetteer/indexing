@@ -1085,7 +1085,9 @@ BATCH_SCRIPT
 
     echo
     echo "Pipeline queued. Monitor: squeue -u $USER"
-    echo "tail -f ${LOG_DIR}/*_<JOBID>.*"
+    echo "tail -f ${LOG_DIR}/*_${JOB_ID_1}.*"
+    echo "tail -f ${LOG_DIR}/*_${JOB_ID_2}.*"
+    echo "tail -f ${LOG_DIR}/*_${JOB_ID_3}.*"
 }
 
 # =============================================================================
