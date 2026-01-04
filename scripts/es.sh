@@ -843,7 +843,7 @@ EOF
 
 do_train_model() {
     # Usage: source es.sh -train-model [DATA_VERSION]
-    DATA_VERSION=${2:?Data version integer required (e.g., 2)}
+    DATA_VERSION=${1:?Data version integer required (e.g., 2)}
 
     # Define paths
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
@@ -1190,11 +1190,13 @@ case "$1" in
 
     # --- Training Data Preparation ---
     -train-extract)
+        shift  # Remove -train-extract from arguments
         do_train_extract "$@"
         ;;
 
     # --- Training Pipeline ---
     -train-model)
+      shift  # Remove -train-model from arguments
         do_train_model "$@"
         ;;
 
@@ -1291,6 +1293,8 @@ case "$1" in
         echo
         echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms [OPTIONS]   Submit toponym index rebuild job to Slurm"
+        echo "  Use --limit N to limit number of toponyms processed (for testing)"
+        echo "  Use --resume if a valid database snapshot exists"
         echo
         echo "TRAINING DATA PREPARATION:"
         echo "  -train-extract VERSION        Extract toponyms and generate pairs for model version"

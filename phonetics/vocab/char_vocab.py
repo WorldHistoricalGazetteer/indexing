@@ -165,6 +165,12 @@ class CharacterVocabulary:
         if not self.allow_growth:
             return UNK_ID
 
+        if script in (Script.CJK, Script.HIRAGANA, Script.KATAKANA):
+            script = Script.LATIN
+
+        if script not in SCRIPT_RANGES:
+            script = Script.OTHER
+
         start, end = SCRIPT_RANGES.get(script, SCRIPT_RANGES[Script.OTHER])
 
         if self._next_id[script] >= end:
