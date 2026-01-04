@@ -209,11 +209,7 @@ class Phase1Dataset(Dataset):
 class Phase2Dataset(Dataset):
     """
     Dataset for Phase 2: Student-Teacher alignment.
-
-    Provides both character sequences (for Student) and phonetic
-    features (for Teacher) for the same toponyms.
-
-    Noise augmentation is applied in the collate function.
+    OPTIMIZED: Uses Pandas for instant loading of 17M rows.
     """
 
     def __init__(
@@ -223,8 +219,9 @@ class Phase2Dataset(Dataset):
             require_features: bool = True,
     ):
         self.data_dir = Path(data_dir)
+        print(f"Phase2Dataset: Loading {split} data (Vectorized)...")
 
-        # Load toponym data
+        # 1. Load Toponyms -> Pandas (Instant)
         toponyms_path = self.data_dir / 'toponyms'
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
@@ -234,40 +231,43 @@ class Phase2Dataset(Dataset):
             'features', 'feature_length', 'epitran_supported',
             'split'
         ]
-        table = dataset.to_table(columns=columns)
 
-        # Filter and cache
-        self.samples = []
-        for i in range(len(table)):
-            row_split = table['split'][i].as_py()
-            if row_split != split:
-                continue
+        # Read directly to Pandas (skips the slow python loop)
+        df = dataset.to_table(columns=columns).to_pandas()
 
-            features = table['features'][i].as_py()
-            feat_len = table['feature_length'][i].as_py()
-            epitran_ok = table['epitran_supported'][i].as_py()
+        # 2. Vectorized Filtering
+        # Filter 1: Split
+        mask_split = (df['split'] == split)
 
-            # Skip if features required but not available
-            if require_features and (not features or feat_len == 0 or not epitran_ok):
-                continue
+        # Filter 2: Features (if required)
+        if require_features:
+            # Must have non-null features, length > 0, and be supported by Epitran
+            mask_features = (
+                    df['features'].notna() &
+                    (df['feature_length'] > 0) &
+                    (df['epitran_supported'] == True)
+            )
+            df = df[mask_split & mask_features]
+        else:
+            df = df[mask_split]
 
-            self.samples.append({
-                'toponym_id': table['toponym_id'][i].as_py(),
-                'name': table['name'][i].as_py(),
-                'script': table['script'][i].as_py(),
-                'lang': table['lang'][i].as_py() or '',
-                'char_ids': table['char_ids'][i].as_py(),
-                'char_length': table['char_length'][i].as_py(),
-                'features': features,
-                'feature_length': feat_len,
-            })
+        # 3. Convert to efficient list of dicts
+        # to_dict('records') is highly optimized in Pandas
+        print(f"Phase2Dataset: converting {len(df)} rows to internal format...")
 
-        print(f"Phase2Dataset: {len(self.samples)} samples for {split}")
+        # We fill NaN langs with empty string to match previous logic
+        if 'lang' in df.columns:
+            df['lang'] = df['lang'].fillna('')
+
+        self.samples = df.to_dict('records')
+
+        print(f"Phase2Dataset: {len(self.samples)} samples ready for {split}")
 
     def __len__(self) -> int:
         return len(self.samples)
 
     def __getitem__(self, idx: int) -> Dict:
+        # Fast O(1) access
         return self.samples[idx]
 
 
