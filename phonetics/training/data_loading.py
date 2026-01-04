@@ -246,8 +246,6 @@ class Phase2Dataset(Dataset):
         df = dataset.to_table(columns=columns).to_pandas()
 
         # 2. Vectorized Filtering
-
-        # A. Basic Filters (Split & Features)
         mask_split = (df['split'] == split)
 
         if require_features:
@@ -260,37 +258,37 @@ class Phase2Dataset(Dataset):
         else:
             df = df[mask_split]
 
-        # B. SANITIZATION (Critical Fix for CUDA Errors)
+        # 3. SANITIZATION (Critical Fix for CUDA Errors)
         # ---------------------------------------------------------
         print(f"Phase2Dataset: Sanitizing {len(df)} rows against vocab limits...")
         initial_count = len(df)
 
-        # 1. Ensure Script IDs are valid (0 <= script < 20)
-        # Note: If 'script' is a string in the DF, this check is skipped/needs adjustment.
-        # Assuming it is the integer ID causing the crash.
+        # A. Ensure Script IDs are valid
         if pd.api.types.is_integer_dtype(df['script']):
             mask_script_safe = (df['script'] >= 0) & (df['script'] < vocab_limits['script'])
             df = df[mask_script_safe]
 
-        # 2. Ensure Char IDs are valid (0 <= id < 3634)
-        # Since char_ids is a list, we check max value row-by-row
-        # (We optimize by only checking rows that weren't already dropped)
+        # B. Ensure Char IDs are valid
         if not df.empty:
-            # Convert NumPy arrays to lists first (fixes the previous crash too)
+            # Convert features to Python lists first (prevent downstream crash)
             first_val = df['features'].iloc[0]
             if isinstance(first_val, np.ndarray):
                 df['features'] = df['features'].apply(lambda x: x.tolist())
 
-            # Check Char IDs
-            # We assume char_ids are lists. We filter out any row where max(char_ids) >= limit
-            # or min(char_ids) < 0
+            # Check Char IDs robustly (Handle both List and NumPy)
             limit = vocab_limits['char']
 
             def is_safe_chars(ids):
-                if not ids: return True  # Empty list is technically safe (length 0)
-                # Quick check: min/max
+                # Handle None/NaN
+                if ids is None: return True
+
+                # Handle NumPy Array
                 if isinstance(ids, np.ndarray):
+                    if ids.size == 0: return True
                     return ids.min() >= 0 and ids.max() < limit
+
+                # Handle Python List
+                if not ids: return True  # Empty list
                 return min(ids) >= 0 and max(ids) < limit
 
             # Apply filter
@@ -299,10 +297,9 @@ class Phase2Dataset(Dataset):
 
         dropped = initial_count - len(df)
         if dropped > 0:
-            logger.warning(f"⚠️ Dropped {dropped} rows containing out-of-bounds IDs (Safe for training).")
-        # ---------------------------------------------------------
+            logger.warning(f"⚠️ Dropped {dropped} rows containing out-of-bounds IDs.")
 
-        # 3. Final Conversion
+        # 4. Final Conversion
         print(f"Phase2Dataset: converting {len(df)} rows to internal format...")
 
         if 'lang' in df.columns:
@@ -321,72 +318,116 @@ class Phase2Dataset(Dataset):
 class Phase3Dataset(Dataset):
     """
     Dataset for Phase 3: Contrastive fine-tuning with hard negatives.
-
-    Similar to Phase2Dataset but uses hard negative triplets.
+    OPTIMIZED: Uses Pandas for instant loading.
+    SAFE: Sanitizes IDs to prevent CUDA crashes.
     """
 
     def __init__(
             self,
             data_dir: Path,
             split: str = 'train',
+            # Hard limits based on your logs (chars=3634, scripts=20)
+            vocab_limits: Dict[str, int] = {'char': 3634, 'script': 20}
     ):
         self.data_dir = Path(data_dir)
+        print(f"Phase3Dataset: Loading {split} data (Vectorized)...")
 
-        # Load hard negative triplets
+        # 1. Load Triplets -> Pandas (Instant)
         triplets_path = self.data_dir / 'triplets' / 'phase3'
-        self.triplets = ds.dataset(triplets_path, format='parquet').to_table()
+        self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
 
-        # Load toponym data
+        # 2. Load Toponyms -> Pandas
         toponyms_path = self.data_dir / 'toponyms'
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        table = dataset.to_table(columns=[
+        # Note: No 'features' needed for Phase 3 (Student only reads chars)
+        columns = [
             'toponym_id', 'name', 'script', 'lang',
             'char_ids', 'char_length', 'split'
-        ])
+        ]
 
-        # Build cache
-        self._cache = {}
-        for i in range(len(table)):
-            tid = table['toponym_id'][i].as_py()
-            self._cache[tid] = {
-                'name': table['name'][i].as_py(),
-                'script': table['script'][i].as_py(),
-                'lang': table['lang'][i].as_py() or '',
-                'char_ids': table['char_ids'][i].as_py(),
-                'char_length': table['char_length'][i].as_py(),
-                'split': table['split'][i].as_py(),
-            }
+        topo_df = dataset.to_table(columns=columns).to_pandas()
 
-        # Filter triplets
-        valid_indices = []
-        for i in range(len(self.triplets)):
-            anchor_id = self.triplets['anchor_id'][i].as_py()
+        # 3. SANITIZATION (Critical Fix)
+        print(f"Phase3Dataset: Sanitizing {len(topo_df)} rows against vocab limits...")
 
-            if anchor_id in self._cache:
-                anchor_split = self._cache[anchor_id]['split']
-                if anchor_split == split:
-                    valid_indices.append(i)
+        # A. Ensure Script IDs are valid
+        if pd.api.types.is_integer_dtype(topo_df['script']):
+            mask_script_safe = (topo_df['script'] >= 0) & (topo_df['script'] < vocab_limits['script'])
+            topo_df = topo_df[mask_script_safe]
 
-        self.valid_indices = valid_indices
-        print(f"Phase3Dataset: {len(self.valid_indices)} valid triplets for {split}")
+        # B. Ensure Char IDs are valid
+        if not topo_df.empty:
+            limit = vocab_limits['char']
+
+            def is_safe_chars(ids):
+                # Handle None/NaN
+                if ids is None: return True
+
+                # Handle NumPy Array
+                if isinstance(ids, np.ndarray):
+                    if ids.size == 0: return True
+                    return ids.min() >= 0 and ids.max() < limit
+
+                # Handle Python List
+                if not ids: return True
+                return min(ids) >= 0 and max(ids) < limit
+
+            # Apply filter
+            mask_chars_safe = topo_df['char_ids'].apply(is_safe_chars)
+            topo_df = topo_df[mask_chars_safe]
+
+        # 4. Build Cache (Dict lookup)
+        # Handle NaN langs
+        if 'lang' in topo_df.columns:
+            topo_df['lang'] = topo_df['lang'].fillna('')
+
+        # orient='index' is optimized
+        self._cache = topo_df.set_index('toponym_id')[
+            ['name', 'script', 'lang', 'char_ids', 'char_length', 'split']
+        ].to_dict(orient='index')
+
+        available_ids = set(self._cache.keys())
+
+        # 5. Vectorized Triplet Filtering
+        print(f"Phase3Dataset: Filtering {len(self.triplets_df)} raw triplets...")
+
+        # Step 5a: Anchor MUST be in the correct split
+        # We need to check the split of the anchor using the cache/dataframe
+        # Strategy: Get list of valid Anchor IDs for this split from toponyms df
+        valid_anchor_ids = set(topo_df[topo_df['split'] == split].index)
+
+        df = self.triplets_df
+
+        # Filter:
+        # 1. Anchor is in the correct split
+        # 2. Anchor, Positive, AND Negative exist in our safe cache
+        mask_valid = (
+                df['anchor_id'].isin(valid_anchor_ids) &
+                df['positive_id'].isin(available_ids) &
+                df['negative_id'].isin(available_ids)
+        )
+
+        self.valid_df = df[mask_valid].reset_index(drop=True)
+        print(f"Phase3Dataset: {len(self.valid_df)} valid triplets for {split}")
 
     def __len__(self) -> int:
-        return len(self.valid_indices)
+        return len(self.valid_df)
 
     def __getitem__(self, idx: int) -> Dict:
-        triplet_idx = self.valid_indices[idx]
+        row = self.valid_df.iloc[idx]
 
-        anchor_id = self.triplets['anchor_id'][triplet_idx].as_py()
-        pos_id = self.triplets['positive_id'][triplet_idx].as_py()
-        neg_id = self.triplets['negative_id'][triplet_idx].as_py()
-        neg_type = self.triplets['negative_type'][triplet_idx].as_py()
+        # Direct dictionary access is now safe because we pre-filtered
+        # ensuring all IDs exist in self._cache
+        anchor = self._cache[row['anchor_id']]
+        positive = self._cache[row['positive_id']]
+        negative = self._cache[row['negative_id']]
 
         return {
-            'anchor': self._cache.get(anchor_id, {}),
-            'positive': self._cache.get(pos_id, {}),
-            'negative': self._cache.get(neg_id, {}),
-            'negative_type': neg_type,
+            'anchor': anchor,
+            'positive': positive,
+            'negative': negative,
+            'negative_type': row['negative_type'],
         }
 
 
