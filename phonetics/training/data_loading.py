@@ -17,6 +17,7 @@ import random
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Callable
 
+import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
 
@@ -128,6 +129,7 @@ class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
     OPTIMIZED: Uses Pandas vectorization for instant loading (<10s).
+    FIXED: Converts NumPy arrays to Python lists to prevent DataLoader crashes.
     LOGIC: Anchors must match split; Pos/Neg can be from any split.
     """
 
@@ -154,8 +156,14 @@ class Phase1Dataset(Dataset):
         # 3. Build Cache & Sets (Vectorized)
 
         # A. Filter for valid features (Drop NaNs / Empty)
-        # This keeps features from ALL splits (Train + Val + Test)
         valid_feats_df = topo_df[(topo_df['features'].notna()) & (topo_df['feature_length'] > 0)]
+
+        # Ensure 'features' column contains Python lists, not NumPy arrays
+        if not valid_feats_df.empty and 'features' in valid_feats_df.columns:
+            first_val = valid_feats_df['features'].iloc[0]
+            if isinstance(first_val, np.ndarray):
+                valid_feats_df = valid_feats_df.copy()  # Avoid SettingWithCopyWarning
+                valid_feats_df['features'] = valid_feats_df['features'].apply(lambda x: x.tolist())
 
         # B. Create Cache (Dict lookup)
         # orient='index' is optimized for creating {id: {col: val}}
@@ -166,20 +174,17 @@ class Phase1Dataset(Dataset):
         available_ids = set(self._feature_cache.keys())
 
         # D. Identify IDs allowed as Anchors (Strict split filtering)
-        # We only filter the ANCHOR by the requested split (e.g., 'train')
         valid_anchor_ids = set(topo_df[topo_df['split'] == split]['toponym_id'])
 
         print(f"Phase1Dataset: Filtering {len(self.triplets_df)} raw triplets (Vectorized)...")
 
-        # 4. Vectorized Filtering (The "Magic" Step)
+        # 4. Vectorized Filtering
 
         # Step 4a: Anchor MUST be in the correct split
-        # isin() is C-optimized and extremely fast
         df = self.triplets_df
         mask_anchor_split = df['anchor_id'].isin(valid_anchor_ids)
 
         # Step 4b: ALL 3 parts must have valid features
-        # (Checks against 'available_ids', which contains ALL valid features from ANY split)
         mask_features = (
                 df['anchor_id'].isin(available_ids) &
                 df['positive_id'].isin(available_ids) &
@@ -196,7 +201,6 @@ class Phase1Dataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict:
         # Fetch row from filtered DataFrame
-        # iloc is fast enough for __getitem__ access
         row = self.valid_df.iloc[idx]
 
         return {
