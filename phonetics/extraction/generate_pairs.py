@@ -7,25 +7,6 @@ This script:
 2. Generates positive pairs for contrastive learning
 3. Creates triplets for Phase 1 (random negatives) and Phase 3 (hard negatives)
 4. Saves curated test pairs for evaluation
-
-Output:
-    /data/v2/
-    ├── pairs/
-    │   └── part-*.parquet
-    ├── triplets/
-    │   ├── phase1/
-    │   │   └── part-*.parquet
-    │   └── phase3/
-    │       └── part-*.parquet
-    └── test_pairs/
-        ├── cross_script.json
-        └── curated.json
-
-Usage:
-    python -m phonetics.extraction.generate_pairs \
-        --es-host localhost:9200 \
-        --data-dir /ix1/whcdh/models/phonetic/data/v2 \
-        --namespaces gn wd tgn pl iv gb
 """
 
 import argparse
@@ -58,7 +39,6 @@ try:
     from anyascii import anyascii
 except ImportError:
     anyascii = None
-    logger.warning("anyascii not found! Cross-script pairs will be filtered out.")
 
 try:
     from tqdm import tqdm
@@ -103,25 +83,40 @@ def build_prefix_index(toponym_index: Dict[str, Dict]) -> Dict[str, List[str]]:
     return prefix_map
 
 
-def load_toponym_index(data_dir: Path) -> Dict[str, Dict]:
-    """
-    Load toponym metadata into memory for fast lookup.
+def build_lang_index(toponym_index: Dict[str, Dict]) -> Dict[str, List[str]]:
+    logger.info("Building language index for fast negative sampling...")
+    lang_map = defaultdict(list)
+    for tid, data in toponym_index.items():
+        lang = data.get('lang')
+        if lang:
+            lang_map[lang].append(tid)
+    return lang_map
 
-    Returns:
-        Dict mapping toponym_id to metadata dict
-    """
+
+def load_toponym_index(data_dir: Path) -> Dict[str, Dict]:
     logger.info("Loading toponym index from Parquet...")
 
     dataset = ds.dataset(data_dir / 'toponyms', format='parquet', partitioning='hive')
-    table = dataset.to_table(columns=[
-        'toponym_id', 'name', 'name_normalized', 'script', 'lang',
-        'epitran_supported', 'split'
-    ])
 
-    index = {}
-    for i in range(len(table)):
-        row = {col: table[col][i].as_py() for col in table.column_names}
-        index[row['toponym_id']] = row
+    # Optimization: Use Pandas for faster loading if available
+    try:
+        table = dataset.to_table(columns=[
+            'toponym_id', 'name', 'name_normalized', 'script', 'lang'
+        ])
+        df = table.to_pandas()
+        # Drop duplicates based on ID to ensure unique index
+        df = df.drop_duplicates(subset=['toponym_id'])
+        # Vectorized dictionary creation
+        index = df.set_index('toponym_id').to_dict(orient='index')
+    except Exception:
+        # Fallback to pure PyArrow iteration
+        table = dataset.to_table(columns=[
+            'toponym_id', 'name', 'name_normalized', 'script', 'lang'
+        ])
+        index = {}
+        for i in range(len(table)):
+            row = {col: table[col][i].as_py() for col in table.column_names}
+            index[row['toponym_id']] = row
 
     logger.info(f"Loaded {len(index):,} toponyms")
     return index
@@ -134,17 +129,12 @@ def scan_places_for_pairs(
         batch_size: int = 1000,
         min_toponyms: int = 2,
 ) -> Iterator[Tuple[str, str, List[Dict]]]:
-    """
-    Scan places index and yield (place_id, namespace, toponyms) tuples.
-
-    Only yields places with at least min_toponyms.
-    """
     query = {
         "query": {"terms": {"namespace": namespaces}},
         "_source": ["namespace", "toponyms"]
     }
 
-    for doc in scan(es, index=index, query=query, scroll='10m', size=batch_size):
+    for doc in scan(es, index=index, query=query, scroll='20m', size=batch_size):
         place_id = doc['_id']
         source = doc['_source']
         namespace = source.get('namespace', 'other')
@@ -155,62 +145,33 @@ def scan_places_for_pairs(
 
 
 def normalize_for_comparison(name: str) -> str:
-    """
-    Normalize a toponym for phonetic comparison.
-    Romanizes via anyascii and removes non-alphanumeric characters.
-    """
     if not name:
         return ""
-
-    # Romanize if possible
     if anyascii:
         normalized = anyascii(name).lower()
     else:
         normalized = name.lower()
-
-    # Keep only alphanumeric chars (removes hyphens, spaces, punctuation)
-    # This ensures "Non-Violence" == "nonviolence"
     return ''.join(c for c in normalized if c.isalnum())
 
 
 def phonetic_similarity(name1: str, name2: str) -> float:
-    """
-    Compute phonetic similarity using normalized Levenshtein ratio.
-
-    Returns value between 0.0 (completely different) and 1.0 (identical).
-    Used to filter out semantically equivalent but phonetically unrelated
-    pairs like "Germany" / "Deutschland".
-    """
-    # 1. Normalize (Romanize + clean)
     norm1 = normalize_for_comparison(name1)
     norm2 = normalize_for_comparison(name2)
 
-    if not norm1 or not norm2:
-        return 0.0
+    if not norm1 or not norm2: return 0.0
+    if norm1 == norm2: return 1.0
 
-    # 2. Exact Match Shortcut (Fastest)
-    if norm1 == norm2:
-        return 1.0
-
-    # 3. Substring Shortcut (Fast)
-    # If "York" matches "New York", we consider that phonetically relevant
     min_len = min(len(norm1), len(norm2))
     if min_len >= 3 and (norm1 in norm2 or norm2 in norm1):
         return 0.85
 
-    # 4. Length Heuristic (Fast)
-    # If one string is 3x longer than the other, they are likely different
-    # e.g. "US" vs "United States"
     len1, len2 = len(norm1), len(norm2)
     max_len = max(len1, len2)
-    if max_len > 3 * min_len:
-        return 0.0
+    if max_len > 3 * min_len: return 0.0
 
-    # 5. Levenshtein Distance (Slow - Run only if necessary)
     if len1 < len2:
         return phonetic_similarity(name2, name1)
 
-    # Memory optimized row-based Levenshtein
     previous_row = range(len2 + 1)
     for i, c1 in enumerate(norm1):
         current_row = [i + 1]
@@ -222,16 +183,9 @@ def phonetic_similarity(name1: str, name2: str) -> float:
         previous_row = current_row
 
     distance = previous_row[len2]
-
     return 1.0 - (distance / max_len)
 
 
-# Minimum phonetic similarity threshold for creating pairs
-# This filters out unrelated exonyms like "Germany"/"Deutschland"
-# Set relatively low (0.35) because:
-# - We want to catch obvious mismatches
-# - But not be too aggressive (some valid pairs have low scores)
-# - The model will learn finer distinctions during training
 MIN_PHONETIC_SIMILARITY = 0.35
 
 
@@ -240,31 +194,18 @@ def generate_pairs_from_place(
         toponym_index: Dict[str, Dict],
         max_pairs: int = 50,
 ) -> List[Dict]:
-    """
-    Generate all positive pairs from a place's toponyms.
-
-    Returns list of pair dicts with cross-script detection.
-    """
     pairs = []
-
-    # Build list of valid toponym IDs with their scripts
-    # ES places documents have toponym_id already defined (e.g., "Non-Violence@lb")
     valid_tops = []
+
     for top in toponyms:
-        # Use the pre-defined toponym_id from ES
         toponym_id = top.get('toponym_id', '')
+        if not toponym_id: continue
 
-        if not toponym_id:
-            continue
-
-        # Normalize to canonical format (name@lang or name@)
-        # The toponym_id from ES may have variants like "name@en-US"
-        # but our index uses "name@en"
+        # Handle ID normalization
         if '@' in toponym_id:
             at_pos = toponym_id.rfind('@')
             name = toponym_id[:at_pos]
             lang_part = toponym_id[at_pos + 1:]
-            # Strip variant (e.g., "en-US" -> "en")
             if '-' in lang_part:
                 lang = lang_part.split('-', 1)[0]
             else:
@@ -277,23 +218,18 @@ def generate_pairs_from_place(
             script = toponym_index[canonical_id].get('script', 'OTHER')
             valid_tops.append((canonical_id, script))
 
-    # SAFETY CAP: If a place has too many names, sample them down
-    # to prevent O(N^2) explosion on super-nodes (like 'United States')
+    # Safety Cap
     MAX_TOPONYMS_PER_PLACE = 50
     if len(valid_tops) > MAX_TOPONYMS_PER_PLACE:
         valid_tops = random.sample(valid_tops, MAX_TOPONYMS_PER_PLACE)
 
-    # Generate all pairs with phonetic similarity filtering
     for i, (id1, script1) in enumerate(valid_tops):
         for id2, script2 in valid_tops[i + 1:]:
-            # Get names for similarity check
             name1 = toponym_index[id1].get('name', '')
             name2 = toponym_index[id2].get('name', '')
 
-            # Filter semantic translations (Germany != Deutschland)
             sim = phonetic_similarity(name1, name2)
-            if sim < MIN_PHONETIC_SIMILARITY:
-                continue
+            if sim < MIN_PHONETIC_SIMILARITY: continue
 
             is_cross_script = script1 != script2
             pairs.append({
@@ -313,58 +249,46 @@ def find_hard_negatives(
         positive_ids: Set[str],
         toponym_index: Dict[str, Dict],
         prefix_index: Dict[str, List[str]],
+        lang_index: Dict[str, List[str]],
         num_negatives: int = 5,
 ) -> List[Tuple[str, str]]:
-    """
-    Find hard negatives for a given anchor.
+    if anchor_id not in toponym_index: return []
 
-    Hard negative types:
-    - 'ortho_close': Similar orthography but different place
-    - 'cross_script': Same name in different script
-    - 'random': Random negative from same language
-
-    Returns list of (negative_id, negative_type) tuples.
-    """
-    anchor_data = toponym_index.get(anchor_id)
-    if not anchor_data:
-        return []
-
+    anchor_data = toponym_index[anchor_id]
     anchor_name = anchor_data['name_normalized']
-    anchor_script = anchor_data.get('script', 'OTHER')
-    anchor_lang = anchor_data.get('lang', '')
-
+    anchor_lang = anchor_data.get('lang')
     negatives = []
 
-    # Optimized Candidate Search
-    anchor_prefix = anchor_name[:2] if len(anchor_name) >= 2 else ""
-    raw_candidates = prefix_index.get(anchor_prefix, [])
+    # 1. Orthographic Negatives
+    prefix = anchor_name[:2] if len(anchor_name) >= 2 else ""
+    candidates = prefix_index.get(prefix, [])
+    if len(candidates) > 1000:
+        candidates = random.sample(candidates, 1000)
 
-    # Sample if too many to check (speed optimization)
-    if len(raw_candidates) > 1000:
-        raw_candidates = random.sample(raw_candidates, 1000)
+    for cand_id in candidates:
+        if cand_id == anchor_id or cand_id in positive_ids: continue
+        negatives.append((cand_id, 'ortho_close'))
+        if len(negatives) >= num_negatives: break
 
-    candidates = []
-    for tid in raw_candidates:
-        if tid in positive_ids or tid == anchor_id:
-            continue
-        candidates.append((tid, 'ortho_close'))
+    # 2. Same-Language Random Negatives
+    if len(negatives) < num_negatives and anchor_lang:
+        same_lang_candidates = lang_index.get(anchor_lang, [])
+        if same_lang_candidates:
+            needed = num_negatives - len(negatives)
+            samples = random.sample(same_lang_candidates, min(len(same_lang_candidates), needed * 2))
+            for tid in samples:
+                if tid not in positive_ids and tid != anchor_id:
+                    negatives.append((tid, 'random'))
+                    if len(negatives) >= num_negatives: break
 
-    # Sample from candidates
-    if candidates:
-        negatives.extend(random.sample(candidates, min(len(candidates), num_negatives // 2)))
+    return negatives
 
-    # Add random negatives from same language
-    if anchor_lang:
-        same_lang = [
-            (tid, 'random') for tid, tdata in toponym_index.items()
-            if tdata.get('lang') == anchor_lang
-               and tid not in positive_ids
-               and tid != anchor_id
-        ]
-        if same_lang:
-            negatives.extend(random.sample(same_lang, min(len(same_lang), num_negatives - len(negatives))))
 
-    return negatives[:num_negatives]
+def _write_batch(output_dir: Path, records: List[Dict], part_num: int, schema: pa.Schema):
+    """Generic function to write a batch of records (pairs or triplets) to Parquet."""
+    output_path = output_dir / f"part-{part_num:04d}.parquet"
+    table = pa.Table.from_pylist(records, schema=schema)
+    pq.write_table(table, output_path, compression='snappy')
 
 
 def generate_pairs(
@@ -375,35 +299,24 @@ def generate_pairs(
         batch_size: int = 50000,
         limit: Optional[int] = None,
 ) -> int:
-    """
-    Generate positive pairs from places index.
-
-    Returns number of pairs generated.
-    """
     logger.info("Generating positive pairs...")
-
     toponym_index = load_toponym_index(data_dir)
-
     output_dir.mkdir(parents=True, exist_ok=True)
 
     pairs_buffer = []
     total_pairs = 0
     part_num = 0
 
-    # Count places
     query = {"query": {"terms": {"namespace": namespaces}}}
     total_places = es.count(index='places', body=query)['count']
-    if limit:
-        total_places = min(total_places, limit)
+    if limit: total_places = min(total_places, limit)
 
     iterator = scan_places_for_pairs(es, namespaces)
-    if tqdm:
-        iterator = tqdm(iterator, total=total_places, desc="Scanning places")
+    if tqdm: iterator = tqdm(iterator, total=total_places, desc="Scanning places")
 
     places_processed = 0
     for place_id, namespace, toponyms in iterator:
         pairs = generate_pairs_from_place(toponyms, toponym_index)
-
         for pair in pairs:
             pair['namespace'] = namespace
             pair['place_id'] = place_id
@@ -412,28 +325,18 @@ def generate_pairs(
         total_pairs += len(pairs)
         places_processed += 1
 
-        # Flush buffer
         if len(pairs_buffer) >= batch_size:
-            _write_pairs_batch(output_dir, pairs_buffer, part_num, PAIRS_SCHEMA)
+            _write_batch(output_dir, pairs_buffer, part_num, PAIRS_SCHEMA)
             part_num += 1
             pairs_buffer = []
 
-        if limit and places_processed >= limit:
-            break
+        if limit and places_processed >= limit: break
 
-    # Final flush
     if pairs_buffer:
-        _write_pairs_batch(output_dir, pairs_buffer, part_num, PAIRS_SCHEMA)
+        _write_batch(output_dir, pairs_buffer, part_num, PAIRS_SCHEMA)
 
     logger.info(f"Generated {total_pairs:,} pairs from {places_processed:,} places")
     return total_pairs
-
-
-def _write_pairs_batch(output_dir: Path, records: List[Dict], part_num: int, schema: pa.Schema):
-    """Write a batch of pairs to Parquet."""
-    output_path = output_dir / f"part-{part_num:04d}.parquet"
-    table = pa.Table.from_pylist(records, schema=schema)
-    pq.write_table(table, output_path, compression='snappy')
 
 
 def generate_triplets(
@@ -444,101 +347,85 @@ def generate_triplets(
         batch_size: int = 100000,
         limit: Optional[int] = None,
 ) -> int:
-    """
-    Generate training triplets from pairs.
-
-    Args:
-        data_dir: Base data directory
-        output_dir: Output directory for triplets
-        phase: 'phase1' (random negatives) or 'phase3' (hard negatives)
-        negatives_per_pair: Number of negatives per positive pair
-        batch_size: Batch size for writing
-        limit: Limit number of triplets for testing
-
-    Returns:
-        Number of triplets generated
-    """
     logger.info(f"Generating triplets for {phase}...")
-
     toponym_index = load_toponym_index(data_dir)
-    all_toponym_ids = list(toponym_index.keys())
+    all_ids = list(toponym_index.keys())
 
-    prefix_index = build_prefix_index(toponym_index)
+    prefix_index = {}
+    lang_index = {}
+    if phase == 'phase3':
+        prefix_index = build_prefix_index(toponym_index)
+        lang_index = build_lang_index(toponym_index)
 
-    # Load pairs
-    pairs_dataset = ds.dataset(data_dir / 'pairs', format='parquet')
-    pairs_table = pairs_dataset.to_table(columns=['anchor_id', 'positive_id'])
-
+    dataset = ds.dataset(data_dir / 'pairs', format='parquet')
     output_dir.mkdir(parents=True, exist_ok=True)
-
-    triplets_buffer = []
-    total_triplets = 0
+    buffer = []
     part_num = 0
+    total_triplets = 0
 
-    # Build positive sets per anchor for hard negative mining
-    anchor_positives: Dict[str, Set[str]] = defaultdict(set)
-    for i in range(len(pairs_table)):
-        anchor = pairs_table['anchor_id'][i].as_py()
-        positive = pairs_table['positive_id'][i].as_py()
-        anchor_positives[anchor].add(positive)
-        anchor_positives[positive].add(anchor)  # Symmetric
+    logger.info("Building adjacency list for negative filtering...")
+    adj = defaultdict(set)
+    for batch in dataset.to_batches(columns=['anchor_id', 'positive_id']):
+        anchors = batch['anchor_id']
+        positives = batch['positive_id']
+        for a, p in zip(anchors, positives):
+            a_str = a.as_py()
+            p_str = p.as_py()
+            adj[a_str].add(p_str)
+            adj[p_str].add(a_str)
 
-    iterator = range(len(pairs_table))
-    if tqdm:
-        iterator = tqdm(iterator, desc=f"Generating {phase} triplets")
+    logger.info("Generating triplets...")
+    for batch in dataset.to_batches(columns=['anchor_id', 'positive_id']):
+        anchors = batch['anchor_id']
+        positives = batch['positive_id']
 
-    for i in iterator:
-        anchor_id = pairs_table['anchor_id'][i].as_py()
-        positive_id = pairs_table['positive_id'][i].as_py()
+        for i in range(len(anchors)):
+            anchor = anchors[i].as_py()
+            positive = positives[i].as_py()
+            forbidden = adj[anchor]
 
-        positives_for_anchor = anchor_positives[anchor_id]
+            if phase == 'phase1':
+                for _ in range(negatives_per_pair):
+                    neg = random.choice(all_ids)
+                    attempts = 0
+                    while (neg == anchor or neg in forbidden) and attempts < 10:
+                        neg = random.choice(all_ids)
+                        attempts += 1
+                    if attempts < 10:
+                        buffer.append({
+                            'anchor_id': anchor,
+                            'positive_id': positive,
+                            'negative_id': neg,
+                            'negative_type': 'random'
+                        })
+            else:
+                negs = find_hard_negatives(
+                    anchor, forbidden, toponym_index,
+                    prefix_index, lang_index,
+                    negatives_per_pair
+                )
+                for neg_id, neg_type in negs:
+                    buffer.append({
+                        'anchor_id': anchor,
+                        'positive_id': positive,
+                        'negative_id': neg_id,
+                        'negative_type': neg_type
+                    })
 
-        if phase == 'phase1':
-            # Random negatives
-            for _ in range(negatives_per_pair):
-                negative_id = random.choice(all_toponym_ids)
-                while negative_id in positives_for_anchor or negative_id == anchor_id:
-                    negative_id = random.choice(all_toponym_ids)
+            if len(buffer) >= batch_size:
+                _write_batch(output_dir, buffer, part_num, TRIPLETS_SCHEMA)
+                part_num += 1
+                total_triplets += len(buffer)
+                buffer = []
 
-                triplets_buffer.append({
-                    'anchor_id': anchor_id,
-                    'positive_id': positive_id,
-                    'negative_id': negative_id,
-                    'negative_type': 'random',
-                })
-        else:
-            # Hard negatives for phase3
-            hard_negs = find_hard_negatives(
-                anchor_id, positives_for_anchor, toponym_index,
-                prefix_index,
-                num_negatives=negatives_per_pair
-            )
+            if limit and total_triplets >= limit: break
+        if limit and total_triplets >= limit: break
 
-            for negative_id, neg_type in hard_negs:
-                triplets_buffer.append({
-                    'anchor_id': anchor_id,
-                    'positive_id': positive_id,
-                    'negative_id': negative_id,
-                    'negative_type': neg_type,
-                })
+    if buffer:
+        _write_batch(output_dir, buffer, part_num, TRIPLETS_SCHEMA)
+        total_triplets += len(buffer)
 
-        total_triplets += len(triplets_buffer) - (total_triplets % batch_size)
-
-        # Flush buffer
-        if len(triplets_buffer) >= batch_size:
-            _write_pairs_batch(output_dir, triplets_buffer, part_num, TRIPLETS_SCHEMA)
-            part_num += 1
-            triplets_buffer = []
-
-        if limit and total_triplets >= limit:
-            break
-
-    # Final flush
-    if triplets_buffer:
-        _write_pairs_batch(output_dir, triplets_buffer, part_num, TRIPLETS_SCHEMA)
-        total_triplets += len(triplets_buffer)
-
-    logger.info(f"Generated {total_triplets:,} triplets")
+    logger.info(f"Finished {phase}. Generated {total_triplets:,} triplets.")
     return total_triplets
 
 
