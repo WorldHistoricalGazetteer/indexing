@@ -18,11 +18,12 @@ import logging
 import sys
 import time
 from pathlib import Path
-from typing import List, Dict, Any
 
 import torch
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+from processing.settings import ES_HOST
 
 try:
     from elasticsearch import Elasticsearch, helpers
@@ -33,7 +34,6 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from phonetics.inference.encoder import ToponymEncoder
-from phonetics.utils.script_detection import Script
 
 logging.basicConfig(
     level=logging.INFO,
@@ -54,6 +54,7 @@ def run_extract(args):
         query = {"query": {"match_all": {}}}
         logger.info("Mode: Force update (extracting ALL documents)")
     else:
+        # Only fetch docs where version is missing OR version != current
         query = {
             "query": {
                 "bool": {
@@ -116,7 +117,7 @@ def run_extract(args):
             if count % 100000 == 0:
                 logger.info(f"Extracted {count:,} / {total:,}...")
 
-    # Flush
+    # Flush remaining
     if batch_buffer:
         table = pa.Table.from_pylist(batch_buffer, schema=schema)
         if writer is None:
@@ -165,7 +166,6 @@ def run_compute(args):
         df = batch.to_pandas()
 
         # Prepare inputs for encoder
-        inputs = []
         doc_ids = df['doc_id'].tolist()
 
         # Zip name/lang safely
@@ -223,7 +223,7 @@ def run_push(args):
                     '_index': args.index,
                     '_id': doc_id,
                     'doc': {
-                        'embedding': list(emb), # ensure python list
+                        'embedding': list(emb),  # ensure python list
                         'embedding_version': args.embedding_version
                     }
                 }
@@ -263,7 +263,7 @@ def main():
 
     # --- SHARED ARGS ---
     parent_parser = argparse.ArgumentParser(add_help=False)
-    parent_parser.add_argument('--es-host', default='localhost:9200')
+    parent_parser.add_argument('--es-host', default=ES_HOST)
     parent_parser.add_argument('--index', default='toponyms')
     parent_parser.add_argument('--embedding-version', type=int, default=2)
     parent_parser.add_argument('--batch-size', type=int, default=2000)
@@ -291,6 +291,7 @@ def main():
 
     args = parser.parse_args()
     args.func(args)
+
 
 if __name__ == '__main__':
     main()

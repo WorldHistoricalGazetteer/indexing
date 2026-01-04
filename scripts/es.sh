@@ -1093,117 +1093,238 @@ BATCH_SCRIPT
 # =============================================================================
 # INFERENCE PIPELINE (Extract [CPU] -> Compute [GPU] -> Push [CPU])
 # =============================================================================
+#
+# Replacement for do_update_embeddings in es.sh
+#
+# Features:
+#   - Checkpoint-based resumption (auto-skips completed stages)
+#   - Individual stage execution (--stage extract|compute|push)
+#   - Pre-extract before model is ready
+#   - Idempotent: safe to re-run after failures
+#
+# Usage:
+#   source es.sh -update-embeddings VERSION              # Run full pipeline
+#   source es.sh -update-embeddings VERSION extract      # Extract only
+#   source es.sh -update-embeddings VERSION compute      # Compute only (requires extract done)
+#   source es.sh -update-embeddings VERSION push         # Push only (requires compute done)
+#   source es.sh -update-embeddings VERSION --force      # Force re-run all stages
 
 do_update_embeddings() {
-    # Usage: source es.sh -update-embeddings [VERSION]
-    # Example: source es.sh -update-embeddings 1
+    # Usage: source es.sh -update-embeddings VERSION [STAGE] [--force]
+    # STAGE: extract | compute | push | (empty for full pipeline)
 
-    DATA_VERSION=${1:?Data version integer required}
+    local DATA_VERSION=""
+    local STAGE="all"
+    local FORCE=false
 
-    # Check staging ES is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: Staging ES not running. Run -staging-start first."
-        return 1
-    fi
-    source "$STAGING_INFO_FILE"
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --force)
+                FORCE=true
+                shift
+                ;;
+            extract|compute|push)
+                STAGE="$1"
+                shift
+                ;;
+            *)
+                if [[ -z "$DATA_VERSION" ]]; then
+                    DATA_VERSION="$1"
+                fi
+                shift
+                ;;
+        esac
+    done
 
-    # --- AUTOMATIC PATH RESOLUTION ---
-    BASE_DIR="/ix1/whcdh/models/phonetic"
-    VOCAB_DIR="${BASE_DIR}/data/v${DATA_VERSION}/vocab"
-    CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
-
-    # Auto-detect best model checkpoint
-    if [ -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
-        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase3_best.pt"
-    elif [ -f "${CHECKPOINT_DIR}/final_model.pt" ]; then
-        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/final_model.pt"
-    elif [ -f "${CHECKPOINT_DIR}/phase2_best.pt" ]; then
-        echo "WARNING: Phase 3 model not found. Falling back to Phase 2."
-        MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase2_best.pt"
-    else
-        echo "ERROR: No valid checkpoint found in ${CHECKPOINT_DIR}"
-        echo "Expected phase3_best.pt or final_model.pt"
-        return 1
-    fi
-
-    # Verify Vocab
-    if [ ! -d "$VOCAB_DIR" ]; then
-        echo "ERROR: Vocab directory not found: $VOCAB_DIR"
+    if [[ -z "$DATA_VERSION" ]]; then
+        echo "ERROR: Data version required"
+        echo "Usage: source es.sh -update-embeddings VERSION [extract|compute|push] [--force]"
         return 1
     fi
 
-    # Generate a unique pipeline ID for logs/files
-    PIPE_ID=$(date +%s)
+    # Check staging ES is running (required for extract and push)
+    if [[ "$STAGE" == "all" || "$STAGE" == "extract" || "$STAGE" == "push" ]]; then
+        if [ ! -f "$STAGING_INFO_FILE" ]; then
+            echo "ERROR: Staging ES not running. Run -staging-start first."
+            return 1
+        fi
+        source "$STAGING_INFO_FILE"
+    fi
 
-    # PATHS
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/inference_v${DATA_VERSION}_${PIPE_ID}"
-    # This must be SHARED storage so jobs running on different nodes can see it
-    HANDOFF_DIR="${BASE_DIR}/inference_cache/${PIPE_ID}"
+    # --- PATH CONFIGURATION ---
+    local BASE_DIR="/ix1/whcdh/models/phonetic"
+    local VOCAB_DIR="${BASE_DIR}/data/v${DATA_VERSION}/vocab"
+    local CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
+    local CACHE_DIR="${BASE_DIR}/inference_cache/v${DATA_VERSION}"
+    local LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/inference_v${DATA_VERSION}"
 
+    # Pipeline files (persistent across runs)
+    local FILE_RAW="${CACHE_DIR}/toponyms_raw.parquet"
+    local FILE_EMB="${CACHE_DIR}/toponyms_embeddings.parquet"
+    local DONE_EXTRACT="${CACHE_DIR}/.done_extract"
+    local DONE_COMPUTE="${CACHE_DIR}/.done_compute"
+    local DONE_PUSH="${CACHE_DIR}/.done_push_v${DATA_VERSION}"
+
+    mkdir -p "$CACHE_DIR"
     mkdir -p "$LOG_DIR"
-    mkdir -p "$HANDOFF_DIR"
 
-    FILE_RAW="${HANDOFF_DIR}/toponyms_raw.parquet"
-    FILE_EMB="${HANDOFF_DIR}/toponyms_embeddings.parquet"
+    # --- AUTO-DETECT MODEL CHECKPOINT ---
+    local MODEL_CHECKPOINT=""
+    if [[ "$STAGE" == "all" || "$STAGE" == "compute" ]]; then
+        if [ -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
+            MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase3_best.pt"
+        elif [ -f "${CHECKPOINT_DIR}/final_model.pt" ]; then
+            MODEL_CHECKPOINT="${CHECKPOINT_DIR}/final_model.pt"
+        elif [ -f "${CHECKPOINT_DIR}/phase2_best.pt" ]; then
+            echo "WARNING: Phase 3 model not found. Falling back to Phase 2."
+            MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase2_best.pt"
+        else
+            if [[ "$STAGE" == "compute" ]]; then
+                echo "ERROR: No valid checkpoint found in ${CHECKPOINT_DIR}"
+                echo "Expected: phase3_best.pt, final_model.pt, or phase2_best.pt"
+                return 1
+            fi
+            echo "NOTE: No model checkpoint found yet. Extract can proceed."
+        fi
+
+        # Verify vocab exists for compute stage
+        if [[ "$STAGE" == "compute" || "$STAGE" == "all" ]] && [[ -n "$MODEL_CHECKPOINT" ]]; then
+            if [ ! -d "$VOCAB_DIR" ]; then
+                echo "ERROR: Vocab directory not found: $VOCAB_DIR"
+                return 1
+            fi
+        fi
+    fi
 
     echo "=========================================="
-    echo "SUBMITTING INFERENCE PIPELINE (v${DATA_VERSION})"
-    echo "Pipeline ID: $PIPE_ID"
-    echo "Model:       $MODEL_CHECKPOINT"
-    echo "Vocab:       $VOCAB_DIR"
+    echo "INFERENCE PIPELINE (v${DATA_VERSION})"
     echo "=========================================="
+    echo "Stage:      $STAGE"
+    echo "Force:      $FORCE"
+    echo "Cache dir:  $CACHE_DIR"
+    [[ -n "$MODEL_CHECKPOINT" ]] && echo "Model:      $MODEL_CHECKPOINT"
+    echo
 
-    # -------------------------------------------------------------------------
-    # JOB 1: EXTRACT (CPU / HTC Partition)
-    # ES -> Local Scratch -> Shared Storage
-    # -------------------------------------------------------------------------
-    JOB_ID_1=$(sbatch --parsable <<EOF
+    # --- STATUS CHECK ---
+    echo "Pipeline Status:"
+    if [ -f "$DONE_EXTRACT" ]; then
+        echo "  ✓ Extract: COMPLETE ($(stat -c %y "$DONE_EXTRACT" 2>/dev/null | cut -d. -f1))"
+    else
+        echo "  ○ Extract: PENDING"
+    fi
+    if [ -f "$DONE_COMPUTE" ]; then
+        echo "  ✓ Compute: COMPLETE ($(stat -c %y "$DONE_COMPUTE" 2>/dev/null | cut -d. -f1))"
+    else
+        echo "  ○ Compute: PENDING"
+    fi
+    if [ -f "$DONE_PUSH" ]; then
+        echo "  ✓ Push:    COMPLETE ($(stat -c %y "$DONE_PUSH" 2>/dev/null | cut -d. -f1))"
+    else
+        echo "  ○ Push:    PENDING"
+    fi
+    echo
+
+    # --- FORCE MODE: CLEAR CHECKPOINTS ---
+    if $FORCE; then
+        echo "Force mode: Clearing pipeline checkpoints..."
+        rm -f "$DONE_EXTRACT" "$DONE_COMPUTE" "$DONE_PUSH"
+        rm -f "$FILE_RAW" "$FILE_EMB"
+    fi
+
+    # =========================================================================
+    # STAGE 1: EXTRACT (ES -> Parquet)
+    # =========================================================================
+    if [[ "$STAGE" == "all" || "$STAGE" == "extract" ]]; then
+        if [ -f "$DONE_EXTRACT" ] && [ -f "$FILE_RAW" ]; then
+            echo "EXTRACT: Already complete. Skipping. (Use --force to re-run)"
+        else
+            echo "Submitting EXTRACT job..."
+
+            JOB_ID_1=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-inf-1-extract
+#SBATCH --job-name=whg-inf-extract-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/1_extract_%j.out
 #SBATCH --error=${LOG_DIR}/1_extract_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --partition=htc
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
 
-# Setup Fast Local Scratch
-SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
-LOCAL_RAW="\${SCRATCH_ROOT}/raw.parquet"
-
-echo "Starting Extraction to Local Scratch..."
+echo "=========================================="
+echo "STAGE 1: EXTRACT"
+echo "=========================================="
+echo "Started: \$(date)"
 echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+
+# Load environment
+source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Use local scratch for speed, then copy to shared storage
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH"
+LOCAL_RAW="\${SCRATCH}/raw.parquet"
 
 python -m phonetics.inference.update_es extract \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --index toponyms \
-    --embedding-version $DATA_VERSION \
+    --embedding-version ${DATA_VERSION} \
     --output-file "\$LOCAL_RAW" \
     --batch-size 5000 \
     --scroll-size 5000
 
-echo "Extraction done. Moving to shared storage..."
-rsync -av "\$LOCAL_RAW" "$FILE_RAW"
+echo "Copying to shared storage..."
+cp "\$LOCAL_RAW" "$FILE_RAW"
 
-echo "Job 1 Complete."
+# Mark complete
+touch "$DONE_EXTRACT"
+
+echo "EXTRACT complete: \$(date)"
+echo "Output: $FILE_RAW"
 EOF
 )
-    echo "✓ Job 1 (Extract) Submitted: $JOB_ID_1 (Partition: htc)"
+            echo "  ✓ EXTRACT job submitted: $JOB_ID_1"
+            echo "    Log: tail -f ${LOG_DIR}/1_extract_${JOB_ID_1}.out"
+        fi
+    fi
 
+    # =========================================================================
+    # STAGE 2: COMPUTE (Parquet -> GPU -> Parquet)
+    # =========================================================================
+    if [[ "$STAGE" == "all" || "$STAGE" == "compute" ]]; then
+        # Check prerequisites
+        if [ ! -f "$DONE_EXTRACT" ] && [ ! -f "$FILE_RAW" ]; then
+            if [[ "$STAGE" == "compute" ]]; then
+                echo "ERROR: Extract stage not complete. Run extract first."
+                return 1
+            fi
+        fi
 
-    # -------------------------------------------------------------------------
-    # JOB 2: COMPUTE (GPU Partition)
-    # Shared Storage -> Local Scratch -> GPU -> Shared Storage
-    # -------------------------------------------------------------------------
-    JOB_ID_2=$(sbatch --parsable --dependency=afterok:${JOB_ID_1} <<EOF
+        if [[ -z "$MODEL_CHECKPOINT" ]]; then
+            echo "COMPUTE: Skipping - no model checkpoint available yet."
+        elif [ -f "$DONE_COMPUTE" ] && [ -f "$FILE_EMB" ]; then
+            echo "COMPUTE: Already complete. Skipping. (Use --force to re-run)"
+        else
+            echo "Submitting COMPUTE job..."
+
+            # Set dependency if extract was just submitted
+            DEP_FLAG=""
+            if [[ -n "${JOB_ID_1:-}" ]]; then
+                DEP_FLAG="--dependency=afterok:${JOB_ID_1}"
+            fi
+
+            JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-inf-2-compute
+#SBATCH --job-name=whg-inf-compute-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/2_compute_%j.out
 #SBATCH --error=${LOG_DIR}/2_compute_%j.err
 #SBATCH --time=48:00:00
@@ -1211,84 +1332,163 @@ EOF
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
+#SBATCH --cluster=gpu
 #SBATCH --partition=a100
 #SBATCH --qos=gpu-a100-l
 #SBATCH --gres=gpu:1
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
 
-# Setup Fast Local Scratch
-SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
+echo "=========================================="
+echo "STAGE 2: COMPUTE"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Model: $MODEL_CHECKPOINT"
 
-LOCAL_RAW="\${SCRATCH_ROOT}/raw.parquet"
-LOCAL_EMB="\${SCRATCH_ROOT}/emb.parquet"
+# Load environment
+source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
 
-echo "Staging input data to local scratch..."
-rsync -av "$FILE_RAW" "\$LOCAL_RAW"
+cd "$REPO_DIR"
 
-echo "Starting Inference Phase..."
+# Verify input exists
+if [ ! -f "$FILE_RAW" ]; then
+    echo "ERROR: Input file not found: $FILE_RAW"
+    exit 1
+fi
+
+# Use local scratch for speed
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH"
+
+echo "Staging input to local scratch..."
+cp "$FILE_RAW" "\${SCRATCH}/raw.parquet"
+
 python -m phonetics.inference.update_es compute \
-    --input-file "\$LOCAL_RAW" \
-    --output-file "\$LOCAL_EMB" \
+    --input-file "\${SCRATCH}/raw.parquet" \
+    --output-file "\${SCRATCH}/embeddings.parquet" \
     --checkpoint "$MODEL_CHECKPOINT" \
     --vocab-dir "$VOCAB_DIR" \
     --batch-size 2048 \
     --device cuda
 
-echo "Saving results back to shared storage..."
-rsync -av "\$LOCAL_EMB" "$FILE_EMB"
+echo "Copying to shared storage..."
+cp "\${SCRATCH}/embeddings.parquet" "$FILE_EMB"
 
-echo "Job 2 Complete."
+# Mark complete
+touch "$DONE_COMPUTE"
+
+echo "COMPUTE complete: \$(date)"
+echo "Output: $FILE_EMB"
 EOF
 )
-    echo "✓ Job 2 (Compute) Submitted: $JOB_ID_2 (Partition: a100, Depends on $JOB_ID_1)"
+            echo "  ✓ COMPUTE job submitted: $JOB_ID_2"
+            [[ -n "$DEP_FLAG" ]] && echo "    Depends on: $JOB_ID_1"
+            echo "    Log: tail -f ${LOG_DIR}/2_compute_${JOB_ID_2}.out"
+        fi
+    fi
 
+    # =========================================================================
+    # STAGE 3: PUSH (Parquet -> ES)
+    # =========================================================================
+    if [[ "$STAGE" == "all" || "$STAGE" == "push" ]]; then
+        # Check prerequisites
+        if [ ! -f "$DONE_COMPUTE" ] && [ ! -f "$FILE_EMB" ]; then
+            if [[ "$STAGE" == "push" ]]; then
+                echo "ERROR: Compute stage not complete. Run compute first."
+                return 1
+            fi
+        fi
 
-    # -------------------------------------------------------------------------
-    # JOB 3: PUSH (CPU / HTC Partition)
-    # Shared Storage -> Local Scratch -> Elasticsearch
-    # -------------------------------------------------------------------------
-    JOB_ID_3=$(sbatch --parsable --dependency=afterok:${JOB_ID_2} <<EOF
+        if [ -f "$DONE_PUSH" ]; then
+            echo "PUSH: Already complete. Skipping. (Use --force to re-run)"
+        else
+            echo "Submitting PUSH job..."
+
+            # Set dependency if compute was just submitted
+            DEP_FLAG=""
+            if [[ -n "${JOB_ID_2:-}" ]]; then
+                DEP_FLAG="--dependency=afterok:${JOB_ID_2}"
+            fi
+
+            JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-inf-3-push
+#SBATCH --job-name=whg-inf-push-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/3_push_%j.out
 #SBATCH --error=${LOG_DIR}/3_push_%j.err
-#SBATCH --time=48:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
-#SBATCH --partition=htc
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
 
-# Setup Fast Local Scratch
-SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
-LOCAL_EMB="\${SCRATCH_ROOT}/emb.parquet"
-
-echo "Staging embeddings to local scratch..."
-rsync -av "$FILE_EMB" "\$LOCAL_EMB"
-
-echo "Starting Push Phase..."
+echo "=========================================="
+echo "STAGE 3: PUSH"
+echo "=========================================="
+echo "Started: \$(date)"
 echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+
+# Load environment
+source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Verify input exists
+if [ ! -f "$FILE_EMB" ]; then
+    echo "ERROR: Input file not found: $FILE_EMB"
+    exit 1
+fi
+
+# Use local scratch for speed
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH"
+
+echo "Staging input to local scratch..."
+cp "$FILE_EMB" "\${SCRATCH}/embeddings.parquet"
 
 python -m phonetics.inference.update_es push \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --index toponyms \
-    --embedding-version $DATA_VERSION \
-    --input-file "\$LOCAL_EMB" \
+    --embedding-version ${DATA_VERSION} \
+    --input-file "\${SCRATCH}/embeddings.parquet" \
     --batch-size 2000
 
-echo "Job 3 Complete. Pipeline Finished."
+# Mark complete
+touch "$DONE_PUSH"
+
+echo "PUSH complete: \$(date)"
 EOF
 )
-    echo "✓ Job 3 (Push) Submitted:    $JOB_ID_3 (Partition: htc, Depends on $JOB_ID_2)"
+            echo "  ✓ PUSH job submitted: $JOB_ID_3"
+            [[ -n "$DEP_FLAG" ]] && echo "    Depends on: $JOB_ID_2"
+            echo "    Log: tail -f ${LOG_DIR}/3_push_${JOB_ID_3}.out"
+        fi
+    fi
+
+    # --- SUMMARY ---
     echo
-    echo "Monitor: squeue -u $USER"
+    echo "=========================================="
+    echo "PIPELINE SUMMARY"
+    echo "=========================================="
+    echo "Monitor jobs: squeue -u \$USER"
+    echo "Cache dir:    $CACHE_DIR"
+    echo "Log dir:      $LOG_DIR"
+    echo
+    echo "To re-run failed stages:"
+    echo "  source es.sh -update-embeddings $DATA_VERSION compute"
+    echo "  source es.sh -update-embeddings $DATA_VERSION push"
+    echo
+    echo "To force full re-run:"
+    echo "  source es.sh -update-embeddings $DATA_VERSION --force"
 }
 
 # =============================================================================

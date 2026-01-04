@@ -5,10 +5,12 @@ Inference module for phonetic embeddings.
 This module provides:
 - ToponymEncoder: High-level interface for encoding toponyms to embeddings
 - Batch encoding utilities for processing large datasets
-- ES index update functionality for populating embeddings
+- Similarity search utilities
+
+The actual ES update pipeline is handled by update_es.py which uses
+a 3-stage Parquet-based approach (extract -> compute -> push).
 
 Usage:
-    # Single toponym encoding
     from phonetics.inference import ToponymEncoder
 
     encoder = ToponymEncoder.from_checkpoint(
@@ -17,18 +19,16 @@ Usage:
         device='cuda'
     )
 
+    # Single encoding
     embedding = encoder.encode("London", lang="en")
+
+    # Batch encoding
     embeddings = encoder.encode_batch(["London", "Paris", "Москва"])
 
-    # Update ES index with embeddings
-    python -m phonetics.inference.update_es \
-        --checkpoint checkpoints/final_model.pt \
-        --vocab-dir data/v2/vocab \
-        --es-host localhost:9200 \
-        --batch-size 1000
+    # Find similar
+    results = encoder.find_similar("Londinium", ["London", "Londra", "Berlin"])
 """
 
-import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
@@ -36,7 +36,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import torch
 import torch.nn.functional as F
 
-from phonetics.models.models_v2 import UniversalEncoder, create_student, load_checkpoint
+from phonetics.models.models import UniversalEncoder, create_student
 from phonetics.vocab.char_vocab import CharacterVocabulary, ScriptVocabulary, LanguageVocabulary
 from phonetics.utils.script_detection import Script, detect_script
 
@@ -125,16 +125,16 @@ class ToponymEncoder:
                     f"scripts={len(script_vocab)}, langs={len(lang_vocab)}")
 
         # Load checkpoint to get config
-        checkpoint = torch.load(checkpoint_path, map_location=device)
+        checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
         config = checkpoint.get('config', {})
 
-        # Create model with same config
+        # Create model with same config (with safe defaults)
         model = create_student(
             vocab_size=len(char_vocab),
             num_scripts=len(script_vocab),
             num_langs=len(lang_vocab),
             embed_dim=config.get('embed_dim', 128),
-            hidden_dim=config.get('hidden_dim', 128),
+            hidden_dim=config.get('hidden_dim', 256),
             num_layers=config.get('num_layers', 2),
             dropout=config.get('dropout', 0.2),
             lang_dropout=0.0,  # No dropout at inference
@@ -232,6 +232,9 @@ class ToponymEncoder:
                 logger.warning(f"Skipping invalid input: {item}")
                 continue
 
+        if not normalized:
+            return torch.empty(0, self.embed_dim, device=self.device)
+
         # Prepare all inputs
         all_char_ids = []
         all_script_ids = []
@@ -250,7 +253,7 @@ class ToponymEncoder:
         if show_progress:
             try:
                 from tqdm import tqdm
-                iterator = tqdm(iterator, desc="Encoding", total=len(normalized) // batch_size + 1)
+                iterator = tqdm(iterator, desc="Encoding", total=(len(normalized) + batch_size - 1) // batch_size)
             except ImportError:
                 pass
 
@@ -349,229 +352,6 @@ class ToponymEncoder:
         return self
 
 
-class ESIndexUpdater:
-    """
-    Update Elasticsearch index with phonetic embeddings.
-
-    Scans the toponyms index and populates the embedding field
-    using the trained model.
-    """
-
-    def __init__(
-            self,
-            encoder: ToponymEncoder,
-            es_client,
-            index: str = 'toponyms',
-            embedding_version: int = 1,
-    ):
-        self.encoder = encoder
-        self.es = es_client
-        self.index = index
-        self.embedding_version = embedding_version
-
-    def update_all(
-            self,
-            batch_size: int = 500,
-            scroll_size: int = 1000,
-            show_progress: bool = True,
-            force_update: bool = False,
-    ) -> Dict[str, int]:
-        """
-        Update toponyms in the index with embeddings.
-
-        Skips documents that already have the current embedding_version
-        unless force_update=True.
-
-        Args:
-            batch_size: Number of toponyms to encode at once
-            scroll_size: ES scroll batch size
-            show_progress: Whether to show progress bar
-            force_update: If True, re-process all documents
-
-        Returns:
-            Statistics dict with counts
-        """
-        from elasticsearch.helpers import scan, bulk
-
-        # Get total count
-        total_docs = self.es.count(index=self.index)['count']
-
-        # Build query - skip already processed unless forced
-        if force_update:
-            query = {"query": {"match_all": {}}}
-        else:
-            # Only fetch docs where version is missing OR version != current
-            query = {
-                "query": {
-                    "bool": {
-                        "must_not": [
-                            {"term": {"embedding_version": self.embedding_version}}
-                        ]
-                    }
-                }
-            }
-
-        # Count remaining work
-        remaining = self.es.count(index=self.index, body=query)['count']
-
-        if remaining == 0:
-            logger.info("All documents are already up to date.")
-            return {'processed': 0, 'updated': 0, 'errors': 0}
-
-        logger.info(
-            f"Updating embeddings for {remaining:,} / {total_docs:,} toponyms (Version {self.embedding_version})")
-
-        stats = {
-            'processed': 0,
-            'updated': 0,
-            'errors': 0,
-        }
-
-        # Add source selection to query
-        query["_source"] = ["toponym_id", "name", "lang", "script"]
-
-        buffer = []
-
-        iterator = scan(
-            self.es,
-            index=self.index,
-            query=query,
-            scroll='60m',  # Increased scroll time for safety
-            size=scroll_size,
-        )
-
-        if show_progress:
-            try:
-                from tqdm import tqdm
-                iterator = tqdm(iterator, total=remaining, desc="Updating embeddings")
-            except ImportError:
-                pass
-
-        for doc in iterator:
-            doc_id = doc['_id']
-            source = doc['_source']
-
-            name = source.get('name', '')
-            lang = source.get('lang')
-            script_str = source.get('script', 'OTHER')
-
-            try:
-                script = Script(script_str)
-            except ValueError:
-                script = Script.OTHER
-
-            buffer.append({
-                'doc_id': doc_id,
-                'name': name,
-                'lang': lang,
-                'script': script,
-            })
-
-            # Process batch
-            if len(buffer) >= batch_size:
-                self._process_batch(buffer, stats)
-                buffer = []
-
-        # Process remaining
-        if buffer:
-            self._process_batch(buffer, stats)
-
-        # Refresh index
-        self.es.indices.refresh(index=self.index)
-
-        logger.info(f"Update complete: {stats}")
-        return stats
-
-    def _process_batch(self, buffer: List[Dict], stats: Dict):
-        """Process a batch of toponyms."""
-        from elasticsearch.helpers import bulk
-
-        # Prepare inputs
-        names = [item['name'] for item in buffer]
-        langs = [item['lang'] for item in buffer]
-        scripts = [item['script'] for item in buffer]
-
-        # Encode batch
-        inputs = list(zip(names, langs))
-        embeddings = self.encoder.encode_batch(inputs)
-
-        # Prepare bulk updates
-        actions = []
-        for i, item in enumerate(buffer):
-            embedding = embeddings[i].cpu().tolist()
-
-            actions.append({
-                '_op_type': 'update',
-                '_index': self.index,
-                '_id': item['doc_id'],
-                'doc': {
-                    'embedding': embedding,
-                    'embedding_version': self.embedding_version,
-                }
-            })
-
-        # Execute bulk update
-        success, errors = bulk(self.es, actions, raise_on_error=False)
-
-        stats['processed'] += len(buffer)
-        stats['updated'] += success
-        stats['errors'] += len(errors) if errors else 0
-
-    def update_subset(
-            self,
-            toponym_ids: List[str],
-            batch_size: int = 500,
-    ) -> Dict[str, int]:
-        """
-        Update embeddings for a specific list of toponym IDs.
-
-        Args:
-            toponym_ids: List of toponym IDs to update
-            batch_size: Processing batch size
-
-        Returns:
-            Statistics dict
-        """
-        from elasticsearch.helpers import bulk
-
-        stats = {'processed': 0, 'updated': 0, 'errors': 0}
-
-        for start_idx in range(0, len(toponym_ids), batch_size):
-            end_idx = min(start_idx + batch_size, len(toponym_ids))
-            batch_ids = toponym_ids[start_idx:end_idx]
-
-            # Fetch documents
-            response = self.es.mget(
-                index=self.index,
-                body={'ids': batch_ids},
-                _source=['name', 'lang', 'script']
-            )
-
-            buffer = []
-            for doc in response['docs']:
-                if not doc.get('found'):
-                    continue
-
-                source = doc['_source']
-                script_str = source.get('script', 'OTHER')
-                try:
-                    script = Script(script_str)
-                except ValueError:
-                    script = Script.OTHER
-
-                buffer.append({
-                    'doc_id': doc['_id'],
-                    'name': source.get('name', ''),
-                    'lang': source.get('lang'),
-                    'script': script,
-                })
-
-            if buffer:
-                self._process_batch(buffer, stats)
-
-        return stats
-
-
 def search_similar(
         es_client,
         query_embedding: List[float],
@@ -581,7 +361,7 @@ def search_similar(
         filters: Optional[Dict] = None,
 ) -> List[Dict]:
     """
-    Search for similar toponyms using vector similarity.
+    Search for similar toponyms in Elasticsearch using vector similarity.
 
     Args:
         es_client: Elasticsearch client
@@ -594,7 +374,7 @@ def search_similar(
     Returns:
         List of matching documents with scores
     """
-    # Build query
+    # Build query using script_score for cosine similarity
     script_query = {
         "script_score": {
             "query": filters if filters else {"match_all": {}},
@@ -627,29 +407,3 @@ def search_similar(
         })
 
     return results
-
-
-# Convenience function for quick encoding
-def encode_toponym(
-        name: str,
-        checkpoint_path: str,
-        vocab_dir: str,
-        lang: Optional[str] = None,
-        device: str = 'cpu',
-) -> List[float]:
-    """
-    Quick utility to encode a single toponym.
-
-    Args:
-        name: Toponym string
-        checkpoint_path: Path to model checkpoint
-        vocab_dir: Path to vocabulary directory
-        lang: Optional language code
-        device: Device to use
-
-    Returns:
-        Embedding as list of floats
-    """
-    encoder = ToponymEncoder.from_checkpoint(checkpoint_path, vocab_dir, device)
-    embedding = encoder.encode(name, lang=lang)
-    return embedding.cpu().tolist()

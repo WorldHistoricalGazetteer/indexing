@@ -488,8 +488,7 @@ def generate_curated_test_pairs(
         {'query': 'Peking', 'target': 'Beijing@en', 'type': 'historical'},  # Legacy Romanization
         {'query': 'Bombay', 'target': 'Mumbai@en', 'type': 'historical'},  # Colonial renaming
         {'query': 'Danzig', 'target': 'Gdańsk@pl', 'type': 'historical'},  # German/Polish shift
-        {'query': 'Christiania', 'target': 'Oslo@no', 'type': 'historical'},
-        # Completely different roots (Semantic test)
+        {'query': 'Christiania', 'target': 'Oslo@no', 'type': 'historical'},  # Completely different roots (Semantic test)
 
         # --- 2. Typos & OCR Noise (The "Robustness" Test) ---
         {'query': 'Londn', 'target': 'London@en', 'type': 'typo'},
