@@ -22,6 +22,25 @@ if [ -n "$JAVA_HOME" ] && [ -d "$JAVA_HOME/bin" ]; then
     export PATH="$JAVA_HOME/bin:$PATH"
 fi
 
+activate_environment() {
+    cat <<'EOF'
+# --- ENV SETUP ---
+CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+if [ -f "$CONDA_SETUP" ]; then
+    source "$CONDA_SETUP"
+else
+    export PATH="/ihome/whcdh/stg135/miniconda3/bin:$PATH"
+fi
+
+conda activate whg
+export PYTHONPATH="/ix1/whcdh/elastic:${PYTHONPATH}"
+
+echo "Environment: $(conda info --envs | grep '*' | awk '{print $1}')"
+echo "Python: $(which python)"
+echo "------------------------------------------------"
+EOF
+}
+
 # =============================================================================
 # INSTALLATION AND UPDATE
 # =============================================================================
@@ -893,8 +912,8 @@ do_train_model() {
             [ -f "$CKPT" ] && P1_ARGS="--resume-from $CKPT"
         fi
 
-        # Added "| cut -d';' -f1" to handle multi-cluster output
-        JOB_ID_1=$(sbatch --parsable <<EOF | cut -d';' -f1
+        # We call the function $(activate_environment) inside the heredoc
+        JOB_ID_1=$(sbatch --parsable <<BATCH_SCRIPT | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase1_%j.out
@@ -909,7 +928,7 @@ do_train_model() {
 #SBATCH --mem=128G
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
+$(activate_environment)
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data from ${DATA_DIR} to \${SCRATCH_ROOT}..."
@@ -929,7 +948,7 @@ python -m phonetics.training.train \
     --epochs $P1_EPOCHS \
     --batch-size 128 \
     $P1_ARGS
-EOF
+BATCH_SCRIPT
 )
         echo "✓ Phase 1 submitted: $JOB_ID_1"
         LAST_JOB_ID=$JOB_ID_1
@@ -960,7 +979,7 @@ EOF
             fi
         fi
 
-        JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF | cut -d';' -f1
+        JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<BATCH_SCRIPT | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase2_%j.out
@@ -975,7 +994,7 @@ EOF
 #SBATCH --mem=128G
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
+$(activate_environment)
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data to \${SCRATCH_ROOT}..."
@@ -992,7 +1011,7 @@ python -m phonetics.training.train \
     --epochs $P2_EPOCHS \
     --batch-size 128 \
     $P2_ARGS
-EOF
+BATCH_SCRIPT
 )
         echo "✓ Phase 2 submitted: $JOB_ID_2"
         LAST_JOB_ID=$JOB_ID_2
@@ -1023,7 +1042,7 @@ EOF
             fi
         fi
 
-        JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF | cut -d';' -f1
+        JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<BATCH_SCRIPT | cut -d';' -f1
 #!/bin/bash
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase3_%j.out
@@ -1038,7 +1057,7 @@ EOF
 #SBATCH --mem=128G
 
 set -e
-source "${REPO_DIR}/environment_setup.sh"
+$(activate_environment)
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data to \${SCRATCH_ROOT}..."
@@ -1059,7 +1078,7 @@ python -m phonetics.training.train \
     --epochs $P3_EPOCHS \
     --batch-size 128 \
     $P3_ARGS
-EOF
+BATCH_SCRIPT
 )
         echo "✓ Phase 3 submitted: $JOB_ID_3"
     fi
