@@ -742,8 +742,7 @@ do_train_extract() {
     # Define final destination
     FINAL_DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
 
-    # Setup local scratch directory variable (evaluated at runtime inside Slurm)
-    # We use a literal variable for the sbatch script
+    # Setup local scratch directory variable
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
     echo "Submitting training data extraction job..."
@@ -778,46 +777,68 @@ cd "$REPO_DIR"
 # Define Scratch Directory
 SCRATCH_DIR="$SCRATCH_VAR"
 mkdir -p "\$SCRATCH_DIR"
+mkdir -p "$FINAL_DATA_DIR"
 
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
 echo "Work Dir (Scratch): \$SCRATCH_DIR"
 echo "Final Dir: $FINAL_DATA_DIR"
 
-# STEP 1: Extract Toponyms to Parquet (Output to Scratch)
+# =============================================================================
+# STEP 1: EXTRACT TOPONYMS (Or Resume)
+# =============================================================================
 echo
-echo "=========================================="
-echo "STEP 1: Extracting Toponyms"
-echo "=========================================="
-python -m phonetics.extraction.extract_to_parquet \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --output-dir "\$SCRATCH_DIR" \
-    --namespaces gn pl iv \
-    --batch-size 2000
+echo "Checking for existing data in $FINAL_DATA_DIR..."
 
-# STEP 2: Generate Pairs and Triplets (Read/Write in Scratch)
+if [ -d "$FINAL_DATA_DIR/toponyms" ] && [ -d "$FINAL_DATA_DIR/vocab" ]; then
+    echo "FOUND EXISTING DATA. RESUMING..."
+    echo "Copying from Network Storage -> Local Scratch"
+
+    # Copy existing data to scratch so Step 2 can use it
+    rsync -av "$FINAL_DATA_DIR/" "\$SCRATCH_DIR/"
+
+    echo "✓ Data staged to scratch. Skipping Step 1."
+else
+    echo "NO EXISTING DATA FOUND. STARTING FRESH EXTRACTION..."
+    echo "=========================================="
+    echo "STEP 1: Extracting Toponyms"
+    echo "=========================================="
+
+    python -m phonetics.extraction.extract_to_parquet \
+        --es-host "http://${ES_NODE}:${ES_PORT}" \
+        --output-dir "\$SCRATCH_DIR" \
+        --namespaces gn pl iv \
+        --batch-size 2000
+
+    # CHECKPOINT: Save extracted data immediately
+    echo
+    echo "CHECKPOINT: Saving Extracted Toponyms to Network Storage"
+    rsync -av "\$SCRATCH_DIR/" "$FINAL_DATA_DIR/"
+fi
+
+# =============================================================================
+# STEP 2: GENERATE PAIRS AND TRIPLETS
+# =============================================================================
 echo
 echo "=========================================="
 echo "STEP 2: Generating Pairs and Triplets"
 echo "=========================================="
+# Runs on data in $SCRATCH_DIR (whether newly extracted or staged from checkpoint)
 python -m phonetics.extraction.generate_pairs \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --data-dir "\$SCRATCH_DIR" \
     --namespaces gn pl iv \
     --batch-size 50000
 
-# STEP 3: Copy to Persistent Storage
+# =============================================================================
+# STEP 3: FINAL SYNC
+# =============================================================================
 echo
 echo "=========================================="
-echo "STEP 3: Copying Data to Persistent Storage"
+echo "STEP 3: Copying Final Data to Persistent Storage"
 echo "=========================================="
 
-# Ensure parent directory exists
-mkdir -p "$FINAL_DATA_DIR"
-
-# Use rsync for safety (it handles existing directories better than cp)
-# -a: archive mode (preserves permissions/times)
-# -v: verbose
+# rsync again to capture the new 'triplets' folder from Step 2
 rsync -av "\$SCRATCH_DIR/" "$FINAL_DATA_DIR/"
 
 echo
@@ -826,9 +847,6 @@ echo "PIPELINE COMPLETE"
 echo "=========================================="
 echo "Data available at: $FINAL_DATA_DIR"
 echo "Job Finished: \$(date)"
-
-# Cleanup handled automatically by Slurm, but explicit check helps log intent
-echo "Scratch cleanup will be handled by Slurm epilog."
 EOF
 )
 
@@ -842,10 +860,12 @@ EOF
 # =============================================================================
 
 do_train_model() {
-    # Usage: source es.sh -train-model [DATA_VERSION]
-    DATA_VERSION=${1:?Data version integer required (e.g., 2)}
+    # Usage: source es.sh -train-model [DATA_VERSION] [START_PHASE] [TARGET_EPOCHS]
+    DATA_VERSION=${1:?Data version integer required}
+    START_PHASE=${2:-1}      # Default: Start at Phase 1
+    TARGET_EPOCHS=$3         # Optional: If set, implies RESUME + NEW EPOCH COUNT
 
-    # Define paths
+    # NETWORK PATHS (Permanent Storage)
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
     CHECKPOINT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/training_v${DATA_VERSION}"
@@ -855,15 +875,28 @@ do_train_model() {
 
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
+    echo "Starting Phase: $START_PHASE"
+    if [ ! -z "$TARGET_EPOCHS" ]; then
+        echo "Resuming Phase $START_PHASE -> extending to $TARGET_EPOCHS epochs"
+    fi
     echo "=========================================="
-    echo "Data:        $DATA_DIR"
-    echo "Checkpoints: $CHECKPOINT_DIR"
-    echo "Logs:        $LOG_DIR"
-    echo
 
-    # --- PHASE 1: TEACHER TRAINING ---
-    # ~2-4 hours, needs GPU
-    JOB_ID_1=$(sbatch --parsable <<EOF
+    # Defaults
+    P1_EPOCHS=50; P2_EPOCHS=50; P3_EPOCHS=30
+    LAST_JOB_ID=""
+
+    # -------------------------------------------------------------------------
+    # PHASE 1: TEACHER TRAINING
+    # -------------------------------------------------------------------------
+    if [ "$START_PHASE" -le 1 ]; then
+        P1_ARGS=""
+        if [ "$START_PHASE" -eq 1 ] && [ ! -z "$TARGET_EPOCHS" ]; then
+            P1_EPOCHS=$TARGET_EPOCHS
+            CKPT="${CHECKPOINT_DIR}/phase1_best.pt"
+            [ -f "$CKPT" ] && P1_ARGS="--resume-from $CKPT"
+        fi
+
+        JOB_ID_1=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase1_%j.out
@@ -875,33 +908,63 @@ do_train_model() {
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=32G
+#SBATCH --mem=64G
 
 set -e
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-cd "$REPO_DIR"
+source "${REPO_DIR}/environment_setup.sh"
 
-echo "Starting Phase 1 (Teacher)..."
+# --- FAST DATA STAGING TO LOCAL SCRATCH ---
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+echo "Staging data from ${DATA_DIR} to \${SCRATCH_ROOT}..."
+
+mkdir -p \${SCRATCH_ROOT}/triplets
+mkdir -p \${SCRATCH_ROOT}/toponyms
+mkdir -p \${SCRATCH_ROOT}/vocab
+
+# Use tar pipe for faster copy of small files
+(cd "${DATA_DIR}/triplets" && tar cf - phase1) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
+(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
+
+echo "Data staged. Starting Phase 1 (Teacher)..."
 python -m phonetics.training.train \
     --phase 1 \
-    --data-dir "$DATA_DIR" \
+    --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \
-    --epochs 50 \
-    --batch-size 128
+    --epochs $P1_EPOCHS \
+    --batch-size 128 \
+    $P1_ARGS
 EOF
 )
-    echo "✓ Phase 1 submitted: $JOB_ID_1"
+        echo "✓ Phase 1 submitted: $JOB_ID_1"
+        LAST_JOB_ID=$JOB_ID_1
+    else
+        echo "✓ Phase 1 skipped"
+        if [ ! -f "${CHECKPOINT_DIR}/phase1_best.pt" ]; then
+            echo "ERROR: phase1_best.pt missing. Cannot skip Phase 1."
+            return 1
+        fi
+    fi
 
-    # --- PHASE 2: STUDENT ALIGNMENT ---
-    # Depends on Phase 1 success
-    # ~12-24 hours, needs GPU
-    JOB_ID_2=$(sbatch --parsable --dependency=afterok:${JOB_ID_1} <<EOF
+    # -------------------------------------------------------------------------
+    # PHASE 2: STUDENT ALIGNMENT
+    # -------------------------------------------------------------------------
+    if [ "$START_PHASE" -le 2 ]; then
+        DEP_FLAG=""
+        [ ! -z "$LAST_JOB_ID" ] && DEP_FLAG="--dependency=afterok:${LAST_JOB_ID}"
+
+        P2_ARGS=""
+        if [ "$START_PHASE" -eq 2 ] && [ ! -z "$TARGET_EPOCHS" ]; then
+            P2_EPOCHS=$TARGET_EPOCHS
+            CKPT="${CHECKPOINT_DIR}/phase2_best.pt"
+            if [ -f "$CKPT" ]; then
+                P2_ARGS="--resume-from $CKPT"
+            else
+                 LATEST=$(ls -v ${CHECKPOINT_DIR}/phase2_epoch*.pt 2>/dev/null | tail -n 1)
+                 [ ! -z "$LATEST" ] && P2_ARGS="--resume-from $LATEST"
+            fi
+        fi
+
+        JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase2_%j.out
@@ -916,31 +979,56 @@ EOF
 #SBATCH --mem=64G
 
 set -e
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-cd "$REPO_DIR"
+source "${REPO_DIR}/environment_setup.sh"
+
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+echo "Staging data to \${SCRATCH_ROOT}..."
+
+mkdir -p \${SCRATCH_ROOT}
+# Phase 2 only needs toponyms and vocab
+(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 2 (Student Alignment)..."
 python -m phonetics.training.train \
     --phase 2 \
-    --data-dir "$DATA_DIR" \
+    --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \
     --teacher-checkpoint "${CHECKPOINT_DIR}/phase1_best.pt" \
-    --epochs 50 \
-    --batch-size 128
+    --epochs $P2_EPOCHS \
+    --batch-size 128 \
+    $P2_ARGS
 EOF
 )
-    echo "✓ Phase 2 submitted: $JOB_ID_2 (Depends on $JOB_ID_1)"
+        echo "✓ Phase 2 submitted: $JOB_ID_2 ${DEP_FLAG}"
+        LAST_JOB_ID=$JOB_ID_2
+    else
+        echo "✓ Phase 2 skipped"
+        if [ ! -f "${CHECKPOINT_DIR}/phase2_best.pt" ]; then
+            echo "ERROR: phase2_best.pt missing. Cannot skip Phase 2."
+            return 1
+        fi
+    fi
 
-    # --- PHASE 3: FINE TUNING ---
-    # Depends on Phase 2 success
-    # ~8-12 hours, needs GPU
-    JOB_ID_3=$(sbatch --parsable --dependency=afterok:${JOB_ID_2} <<EOF
+    # -------------------------------------------------------------------------
+    # PHASE 3: FINE TUNING
+    # -------------------------------------------------------------------------
+    if [ "$START_PHASE" -le 3 ]; then
+        DEP_FLAG=""
+        [ ! -z "$LAST_JOB_ID" ] && DEP_FLAG="--dependency=afterok:${LAST_JOB_ID}"
+
+        P3_ARGS=""
+        if [ "$START_PHASE" -eq 3 ] && [ ! -z "$TARGET_EPOCHS" ]; then
+            P3_EPOCHS=$TARGET_EPOCHS
+            CKPT="${CHECKPOINT_DIR}/phase3_best.pt"
+            if [ -f "$CKPT" ]; then
+                P3_ARGS="--resume-from $CKPT"
+            else
+                 LATEST=$(ls -v ${CHECKPOINT_DIR}/phase3_epoch*.pt 2>/dev/null | tail -n 1)
+                 [ ! -z "$LATEST" ] && P3_ARGS="--resume-from $LATEST"
+            fi
+        fi
+
+        JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/phase3_%j.out
@@ -955,30 +1043,35 @@ EOF
 #SBATCH --mem=64G
 
 set -e
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-cd "$REPO_DIR"
+source "${REPO_DIR}/environment_setup.sh"
+
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+echo "Staging data to \${SCRATCH_ROOT}..."
+
+mkdir -p \${SCRATCH_ROOT}/triplets
+mkdir -p \${SCRATCH_ROOT}/toponyms
+mkdir -p \${SCRATCH_ROOT}/vocab
+
+# Phase 3 needs specific triplets
+(cd "${DATA_DIR}/triplets" && tar cf - phase3) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
+(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 3 (Fine Tuning)..."
 python -m phonetics.training.train \
     --phase 3 \
-    --data-dir "$DATA_DIR" \
+    --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \
     --student-checkpoint "${CHECKPOINT_DIR}/phase2_best.pt" \
-    --epochs 30 \
-    --batch-size 128
+    --epochs $P3_EPOCHS \
+    --batch-size 128 \
+    $P3_ARGS
 EOF
 )
-    echo "✓ Phase 3 submitted: $JOB_ID_3 (Depends on $JOB_ID_2)"
+        echo "✓ Phase 3 submitted: $JOB_ID_3 ${DEP_FLAG}"
+    fi
+
     echo
-    echo "Pipeline queued successfully!"
-    echo "Monitor progress: squeue -u $USER"
-    echo "Final model will be at: ${CHECKPOINT_DIR}/final_model.pt"
+    echo "Pipeline queued. Monitor: squeue -u $USER"
 }
 
 # =============================================================================
