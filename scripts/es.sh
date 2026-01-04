@@ -792,7 +792,7 @@ echo "=========================================="
 python -m phonetics.extraction.extract_to_parquet \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --output-dir "\$SCRATCH_DIR" \
-    --namespaces gn wd tgn pl iv gb \
+    --namespaces gn pl iv \
     --batch-size 2000
 
 # STEP 2: Generate Pairs and Triplets (Read/Write in Scratch)
@@ -803,7 +803,7 @@ echo "=========================================="
 python -m phonetics.extraction.generate_pairs \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --data-dir "\$SCRATCH_DIR" \
-    --namespaces gn wd tgn pl iv gb \
+    --namespaces gn pl iv \
     --batch-size 50000
 
 # STEP 3: Copy to Persistent Storage
