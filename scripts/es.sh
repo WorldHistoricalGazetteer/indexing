@@ -908,7 +908,7 @@ do_train_model() {
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 
 set -e
 source "${REPO_DIR}/environment_setup.sh"
@@ -976,7 +976,7 @@ EOF
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 
 set -e
 source "${REPO_DIR}/environment_setup.sh"
@@ -1040,7 +1040,7 @@ EOF
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 
 set -e
 source "${REPO_DIR}/environment_setup.sh"
@@ -1146,7 +1146,7 @@ do_update_embeddings() {
 #SBATCH --job-name=whg-inf-1-extract
 #SBATCH --output=${LOG_DIR}/1_extract_%j.out
 #SBATCH --error=${LOG_DIR}/1_extract_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -1190,11 +1190,11 @@ EOF
 #SBATCH --job-name=whg-inf-2-compute
 #SBATCH --output=${LOG_DIR}/2_compute_%j.out
 #SBATCH --error=${LOG_DIR}/2_compute_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --partition=a100
 #SBATCH --qos=gpu-a100-l
 #SBATCH --gres=gpu:1
@@ -1239,7 +1239,7 @@ EOF
 #SBATCH --job-name=whg-inf-3-push
 #SBATCH --output=${LOG_DIR}/3_push_%j.out
 #SBATCH --error=${LOG_DIR}/3_push_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
