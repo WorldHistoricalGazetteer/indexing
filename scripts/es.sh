@@ -1393,13 +1393,28 @@ EOF
     # STAGE 3: PUSH (Parquet -> ES)
     # =========================================================================
     if [[ "$STAGE" == "all" || "$STAGE" == "push" ]]; then
-        # Check prerequisites
-        if [ ! -f "$DONE_COMPUTE" ] && [ ! -f "$FILE_EMB" ]; then
-            if [[ "$STAGE" == "push" ]]; then
-                echo "ERROR: Compute stage not complete. Run compute first."
-                return 1
-            fi
+
+        # --- SMART WAIT LOGIC ---
+        # If the Compute "Done" file is missing, we assume compute is still running.
+        # We wait for it rather than crashing.
+        if [ ! -f "$DONE_COMPUTE" ]; then
+            echo "🔄  PREREQUISITE CHECK: Waiting for Compute stage..."
+            echo "    Target: $DONE_COMPUTE"
+            echo "    (Checking every 2 minutes. Safe to Ctrl+C if you know it failed.)"
+
+            while [ ! -f "$DONE_COMPUTE" ]; do
+                # Optional: Check if the embedding file exists but is partial
+                if [ -f "$FILE_EMB" ]; then
+                     CURRENT_SIZE=$(du -h "$FILE_EMB" | cut -f1)
+                     echo "    ... waiting. Current embedding file size: $CURRENT_SIZE"
+                else
+                     echo "    ... waiting. Embedding file not created yet."
+                fi
+                sleep 120
+            done
+            echo "    ✅ Compute stage confirmed complete."
         fi
+        # ------------------------
 
         if [ -f "$DONE_PUSH" ]; then
             echo "PUSH: Already complete. Skipping. (Use --force to re-run)"
@@ -1413,17 +1428,13 @@ EOF
 
             echo "Submitting PUSH job..."
 
-            # Set dependency if compute was just submitted
-            DEP_FLAG=""
-            if [[ -n "${JOB_ID_2:-}" ]]; then
-                DEP_FLAG="--dependency=afterok:${JOB_ID_2}"
-            fi
-
-            JOB_ID_3=$(sbatch --parsable $DEP_FLAG <<EOF
+            # No dependencies needed, we self-regulated above
+            JOB_ID_3=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-inf-push-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/3_push_%j.out
 #SBATCH --error=${LOG_DIR}/3_push_%j.err
+#SBATCH --partition=htc
 #SBATCH --time=8:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1447,7 +1458,7 @@ fi
 
 cd "$REPO_DIR"
 
-# Verify input exists
+# Double check input exists inside the job to be safe
 if [ ! -f "$FILE_EMB" ]; then
     echo "ERROR: Input file not found: $FILE_EMB"
     exit 1
@@ -1474,7 +1485,6 @@ echo "PUSH complete: \$(date)"
 EOF
 )
             echo "  ✓ PUSH job submitted: $JOB_ID_3"
-            [[ -n "$DEP_FLAG" ]] && echo "    Depends on: $JOB_ID_2"
             echo "    Log: tail -f ${LOG_DIR}/3_push_${JOB_ID_3}.out"
         fi
     fi
