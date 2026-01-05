@@ -1,10 +1,14 @@
 {
   "settings": {
-    "number_of_shards": 1,
+    "number_of_shards": 4,
     "number_of_replicas": 0,
     "refresh_interval": "-1",
     "max_result_window": 10000,
     "index": {
+      "codec": "best_compression",
+      "translog.durability": "async",
+      "translog.sync_interval": "5s",
+      "translog.flush_threshold_size": "2gb",
       "sort.field": ["place_id"],
       "sort.order": ["asc"]
     }
