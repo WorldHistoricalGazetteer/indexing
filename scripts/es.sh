@@ -720,7 +720,7 @@ python -m phonetics.extraction.rebuild_toponyms_index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --scratch-dir "$SCRATCH_DIR" \
     --confirm \
-    --resume \
+#    --resume \
     $PYTHON_ARGS
 
 echo "Job Finished: \$(date)"
