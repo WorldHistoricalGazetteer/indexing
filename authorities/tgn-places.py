@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 """
-TGN Ingestion (Final Architecture)
-1. Loads PlaceMap (Inverted) to map CoordinateIDs -> ConceptIDs
-2. Loads Terms & Subjects to link Concepts -> Names
-3. Sanity Check: Verifies resolution chain before starting
-4. Iterates Coordinates -> PlaceID -> ConceptID -> TermID -> Name
+TGN Ingestion (Refined Production Version)
+1. Inverted PlaceMap (Place -> Concept)
+2. Strict Predicate Matching (prefLabel, altLabel only)
+3. Semantic Title Selection (Uses prefLabel for title if available)
 """
 
 import zipfile
@@ -25,7 +24,6 @@ def stream_nt(file_path, filename_in_zip):
     path = Path(file_path)
     with zipfile.ZipFile(path, 'r') as zf:
         if filename_in_zip not in zf.namelist():
-            # Fuzzy match for filenames (e.g. TGNOut_1Subjects.nt vs TGNOut_Subjects.nt)
             candidates = [n for n in zf.namelist() if filename_in_zip.replace("1", "") in n]
             if candidates:
                 filename_in_zip = candidates[0]
@@ -38,7 +36,6 @@ def stream_nt(file_path, filename_in_zip):
 
 
 def parse_nt(line):
-    """Parses N-Triples into Subject, Predicate, Object."""
     line = line.strip()
     if not line or line[0] != "<": return None
     try:
@@ -49,16 +46,13 @@ def parse_nt(line):
         pred = line[p_start + 1:p_end]
         rest = line[p_end + 1:].strip()
 
-        # Object is URI
         if rest.startswith("<"):
             return subj, pred, rest[1:rest.index(">")]
 
-        # Object is Literal
         if rest.startswith('"'):
             last_quote = rest.rindex('"')
             value = rest[1:last_quote]
             remaining = rest[last_quote + 1:].strip()
-            # Handle language tags (@en)
             lang = remaining[1:].split()[0].rstrip(".") if remaining.startswith("@") else ""
             return subj, pred, (value, lang)
         return None
@@ -69,22 +63,19 @@ def parse_nt(line):
 def build_side_index(zip_path):
     print("Building indexes...")
 
-    # 1. Place Map (The Critical "Backwards" Link)
+    # 1. Place Map (Inverted)
     place_map = {}
     print("Step 1/4: Loading Place Map (Place -> Concept)...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_PlaceMap.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
-        subj, pred, obj = parsed  # Subj=Concept, Obj=Place
-
+        subj, pred, obj = parsed
         if pred.endswith("focus"):
-            # Clean IDs (remove URI prefix)
             place_id = obj.split("/tgn/")[-1]
             concept_id = subj.split("/tgn/")[-1]
             place_map[place_id] = concept_id
-
         if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
-    print(f"\n  ✓ Mapped {len(place_map):,} places to concepts")
+    print(f"\n  ✓ Mapped {len(place_map):,} places")
 
     # 2. Coordinates
     coordinates = {}
@@ -94,16 +85,12 @@ def build_side_index(zip_path):
         if not parsed: continue
         subj, pred, obj = parsed
         if isinstance(obj, tuple): obj = obj[0]
-
         coord = coordinates.setdefault(subj, [None, None])
         if pred.endswith("#lat"):
             coord[0] = float(obj)
         elif pred.endswith("#long"):
             coord[1] = float(obj)
-
         if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
-
-    # Filter incomplete coordinates
     coordinates = {k: tuple(v) for k, v in coordinates.items() if None not in v}
     print(f"\n  ✓ Loaded {len(coordinates):,} coords")
 
@@ -114,70 +101,76 @@ def build_side_index(zip_path):
         parsed = parse_nt(line)
         if not parsed: continue
         subj, pred, obj = parsed
-        if pred.endswith("literalForm"):
+        if "literalForm" in pred:
             if not isinstance(obj, tuple): obj = (obj, "")
             term_literals[subj] = obj
         if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
     print(f"\n  ✓ {len(term_literals):,} terms")
 
-    # 4. Subject Links (Concept -> Term)
+    # 4. Subject Links (Refined Predicate Matching)
     place_terms = defaultdict(list)
     place_pref = {}
+
+    # Allowed predicates for linking Concepts to Label Nodes
+    VALID_LABEL_PREDS = ("prefLabel", "altLabel", "prefLabelGVP")
+
     print("Step 4/4: Loading Concept-Term Links...")
+    count_links = 0
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_1Subjects.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
-        subj, pred, obj = parsed  # Subj=Concept, Obj=TermURI
-        if isinstance(obj, tuple): obj = obj[0]
+        subj, pred, obj = parsed
+        if isinstance(obj, tuple): continue
 
-        tgn_id = subj.split("/tgn/")[-1]
+        # Strict check: Must be one of the known label predicates
+        if pred.endswith(VALID_LABEL_PREDS):
+            tgn_id = subj.split("/tgn/")[-1]
 
-        # Capture standard and GVP preferred labels
-        if "prefLabel" in pred or "Label" in pred:
+            # Store preferred label separately for title selection
             if pred.endswith("prefLabelGVP") or pred.endswith("prefLabel"):
                 place_pref[tgn_id] = obj
+
             place_terms[tgn_id].append(obj)
+            count_links += 1
 
         if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
-    print(f"\n  ✓ Linked terms for {len(place_terms):,} concepts")
 
+    print(f"\n  ✓ Found {count_links:,} links for {len(place_terms):,} concepts")
     return coordinates, place_map, term_literals, place_pref, place_terms
 
 
 def index_tgn(zip_path, places_index):
     print("=" * 60)
-    print(f"INDEXING TGN (Final Arch)")
+    print(f"INDEXING TGN (Final Production)")
     print("=" * 60)
 
     coordinates, place_map, term_literals, place_pref, place_terms = build_side_index(zip_path)
 
-    # --- SANITY CHECK START ---
+    # --- SANITY CHECK ---
     print("\n🔎 RUNNING SANITY CHECK (First 5 records)...")
     sample_coords = list(coordinates.keys())[:5]
     failures = 0
     for uri in sample_coords:
         raw_place_id = uri.split("/tgn/")[-1]
-
-        if raw_place_id in place_map:
-            concept_id = place_map[raw_place_id]
-            status = "✅ MAP HIT"
-        else:
-            concept_id = raw_place_id.replace("-place", "")
-            status = "⚠️ FALLBACK"
-
+        concept_id = place_map.get(raw_place_id, raw_place_id.replace("-place", ""))
         terms = place_terms.get(concept_id, [])
-        term_count = len(terms)
 
-        print(f"   [{status}] {raw_place_id} -> Concept: {concept_id} -> Terms: {term_count}")
-        if term_count == 0:
-            failures += 1
+        # Check if resolved to literal
+        resolved = 0
+        first_name = "None"
+        for t in terms:
+            if t in term_literals:
+                resolved += 1
+                if first_name == "None": first_name = term_literals[t][0]
+
+        print(f"   {raw_place_id} -> Concept:{concept_id} -> Names:{resolved} (e.g. {first_name})")
+        if resolved == 0: failures += 1
 
     if failures == 5:
-        print("\n❌ CRITICAL: First 5 records failed to resolve terms.")
-        print("   Aborting to prevent empty index. Check map keys or subject IDs.")
+        print("\n❌ CRITICAL: First 5 records failed. Aborting.")
         sys.exit(1)
     print("   Sanity Check Passed. Starting Ingestion.\n")
-    # --- SANITY CHECK END ---
+    # ---------------------
 
     batch = []
     count = 0
@@ -188,29 +181,21 @@ def index_tgn(zip_path, places_index):
     for place_uri, (lat, lon) in coordinates.items():
         processed += 1
 
-        # 1. Get the Coordinate ID (e.g., "2742337-place")
         raw_place_id = place_uri.split("/tgn/")[-1]
+        tgn_id = place_map.get(raw_place_id, raw_place_id.replace("-place", ""))
 
-        # 2. RESOLVE to Concept ID using the Map
-        if raw_place_id in place_map:
-            tgn_id = place_map[raw_place_id]
-        else:
-            # Fallback for IDs that aren't in the map (usually safe simple records)
-            tgn_id = raw_place_id.replace("-place", "")
-
-        # 3. Get Terms for the Concept ID
+        # Get all terms
         term_uris = set(place_terms.get(tgn_id, []))
-        if place_pref.get(tgn_id): term_uris.add(place_pref[tgn_id])
 
         toponyms = []
         seen_ids = set()
 
+        # Build Toponyms List
         for term_uri in term_uris:
             literal_data = term_literals.get(term_uri)
             if not literal_data: continue
             name, lang = literal_data
 
-            # Format REQUIRED by pipeline: "Name@lang"
             toponym_id = f"{name}@{lang}"
             if toponym_id in seen_ids: continue
 
@@ -220,10 +205,23 @@ def index_tgn(zip_path, places_index):
             })
             seen_ids.add(toponym_id)
 
-        # Fallback Title
-        title = toponyms[0]["toponym_id"].split("@")[0] if toponyms else f"TGN {tgn_id}"
-        place_id = f"tgn:{tgn_id}"
+        # SEMANTIC TITLE SELECTION
+        title = None
+        # 1. Try Preferred Label first
+        if tgn_id in place_pref:
+            pref_uri = place_pref[tgn_id]
+            if pref_uri in term_literals:
+                title = term_literals[pref_uri][0]
 
+        # 2. Fallback to first available toponym
+        if not title and toponyms:
+            title = toponyms[0]["toponym_id"].split("@")[0]
+
+        # 3. Last Resort
+        if not title:
+            title = f"TGN {tgn_id}"
+
+        place_id = f"tgn:{tgn_id}"
         doc = {
             "place_id": place_id,
             "title": title,
@@ -260,7 +258,6 @@ if __name__ == "__main__":
     SOURCE_FILE = f"{DATA_DIR}/authorities/tgn/explicit.zip"
     PLACES_INDEX = "places"
 
-    # Slurm Scratch Logic
     scratch_dir = os.environ.get("TMPDIR")
     if scratch_dir and os.path.isdir(scratch_dir):
         print(f"🚀 SLURM DETECTED: Copying to {scratch_dir}")
@@ -268,9 +265,8 @@ if __name__ == "__main__":
         try:
             shutil.copy2(SOURCE_FILE, target_path)
             SOURCE_FILE = target_path
-            print("   ✅ Copy successful.")
-        except Exception as e:
-            print(f"   ⚠️ Copy failed ({e}). Using network path.")
+        except Exception:
+            pass
 
     if not Path(SOURCE_FILE).exists(): sys.exit(1)
 
