@@ -36,7 +36,6 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch, helpers
 
-from processing.deduplicate_toponyms_fast import deduplicate_and_index_toponyms
 from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_LOG_FILE, OSM_STATE_FILE
 
 es = Elasticsearch(ES_HOST)
@@ -388,7 +387,9 @@ def main():
 
     if not args.delete_only and not namespaces:
         # Only run deduplication if processing all authorities
-        deduplicate_and_index_toponyms(es, PLACES_INDEX, TOPONYMS_INDEX)
+        # deduplicate_and_index_toponyms(es, PLACES_INDEX, TOPONYMS_INDEX)
+        # Superseded by /phonetics/extraction/rebuild_toponyms_index.py
+        pass
     elif not args.delete_only:
         print("\nNote: Skipping toponyms deduplication (only runs when processing all authorities)")
         print("      Run without -n flag to deduplicate toponyms across all authorities")
