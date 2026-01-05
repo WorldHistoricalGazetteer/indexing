@@ -96,58 +96,37 @@ def build_side_index(zip_path):
 
     # 3. Term Definitions
     term_literals = {}
-    print("Step 3/4: Loading Term Definitions...")
+    place_terms = defaultdict(list)
+    place_pref = {}
+
+    VALID_LABEL_PREDS = ("prefLabelGVP", "altLabel", "prefLabel")
+
+    print("Step 3/4: Loading Terms and Concept-Term Links...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_2Terms.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
         subj, pred, obj = parsed
+
+        # literalForm: Term -> Literal name
         if "literalForm" in pred:
             if not isinstance(obj, tuple): obj = (obj, "")
             term_literals[subj] = obj
-        if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
-    print(f"\n  ✓ {len(term_literals):,} terms")
 
-    # 4. Subject Links (Refined Predicate Matching)
-    place_terms = defaultdict(list)
-    place_pref = {}
-
-    # Allowed predicates for linking Concepts to Label Nodes
-    VALID_LABEL_PREDS = ("prefLabel", "altLabel", "prefLabelGVP")
-
-    print("Step 4/4: Loading Concept-Term Links...")
-    count_links = 0
-    for i, line in enumerate(stream_nt(zip_path, "TGNOut_1Subjects.nt"), 1):
-        parsed = parse_nt(line)
-        if not parsed: continue
-        subj, pred, obj = parsed
-        if isinstance(obj, tuple): continue
-
-        # DEBUG: Print first 20 predicates to see their actual format
-        if i <= 20:
-            print(f"  DEBUG pred: {pred}")
-
-        # Strict check: Must be one of the known label predicates
-        if pred.endswith(VALID_LABEL_PREDS):
+        # Label predicates: Concept -> Term
+        elif pred.endswith(VALID_LABEL_PREDS):
+            if isinstance(obj, tuple): continue  # Skip literals
             tgn_id = subj.split("/tgn/")[-1]
 
-            # Store preferred label separately for title selection
             if pred.endswith("prefLabelGVP") or pred.endswith("prefLabel"):
                 place_pref[tgn_id] = obj
 
             place_terms[tgn_id].append(obj)
-            count_links += 1
 
-        if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
+        if i % 1_000_000 == 0:
+            sys.stdout.write(f"\r  {i:,} triples")
+            sys.stdout.flush()
 
-    print(f"\n  DEBUG: Sample term URIs from place_terms:")
-    for concept_id, terms in list(place_terms.items())[:3]:
-        print(f"    Concept {concept_id}: {terms[:2]}")
-
-    print(f"\n  DEBUG: Sample term URIs from term_literals:")
-    for uri in list(term_literals.keys())[:3]:
-        print(f"    {uri}")
-
-    print(f"\n  ✓ Found {count_links:,} links for {len(place_terms):,} concepts")
+    print(f"\n  ✓ {len(term_literals):,} terms, {len(place_terms):,} concepts linked")
     return coordinates, place_map, term_literals, place_pref, place_terms
 
 
