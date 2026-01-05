@@ -24,6 +24,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from processing.settings import ES_HOST
+from processing.utilities import create_checkpoint_snapshot
 
 try:
     from elasticsearch import Elasticsearch, helpers
@@ -252,6 +253,11 @@ def run_push(args):
     # Refresh to make searchable
     es.indices.refresh(index=args.index)
     logger.info(f"Push complete. Success: {success_count:,}, Errors: {error_count:,}")
+
+    # Create snapshot
+    logger.info("Creating snapshot...")
+    create_checkpoint_snapshot(es, 'toponym_embeddings')
+    logger.info("...done.")
 
 
 # =============================================================================
