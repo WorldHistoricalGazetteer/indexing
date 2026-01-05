@@ -143,10 +143,6 @@ def main():
 
     # 3. DELETE ORIGINAL
     print("\n--- STEP 2: Delete Original Index ---")
-    confirm = input(f"Are you sure you want to DELETE '{ORIGINAL_INDEX}'? (Type 'DELETE'): ")
-    if confirm != "DELETE":
-        sys.exit(0)
-
     es.indices.delete(index=ORIGINAL_INDEX)
     print(f"🗑️  Deleted {ORIGINAL_INDEX}.")
 
