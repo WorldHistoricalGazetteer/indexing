@@ -5,16 +5,10 @@ Interactive phonetic similarity search.
 Test the trained model by searching for similar toponyms.
 
 Usage:
-    python -m phonetics.inference.search \
-        --checkpoint /path/to/final_model.pt \
-        --vocab-dir /path/to/data/v2/vocab \
-        --es-host localhost:9200
+    python -m phonetics.inference.search
 
     # Or with a query:
     python -m phonetics.inference.search \
-        --checkpoint /path/to/final_model.pt \
-        --vocab-dir /path/to/data/v2/vocab \
-        --es-host localhost:9200 \
         --query "Londinium" \
         --lang la
 """
@@ -57,7 +51,7 @@ def interactive_search(
     print("Phonetic Similarity Search")
     print("=" * 60)
     print("Enter a toponym to find similar names.")
-    print("Format: <name> [lang]  (e.g., 'Londres fr' or just 'London')")
+    print("Format: <name>[@lang]  (e.g., 'New York@en' or just 'London')")
     print("Commands: :quit, :help, :topk <n>")
     print("=" * 60 + "\n")
 
@@ -83,7 +77,7 @@ def interactive_search(
                 print("  :help, :h     Show this help")
                 print("\nQuery format:")
                 print("  <name>        Search for toponym")
-                print("  <name> <lang> Search with language hint (e.g., 'Londres fr')")
+                print("  <name>@<lang> Search with language hint (e.g., 'Londres@fr')")
                 print()
                 continue
             elif user_input.startswith(':topk'):
@@ -97,10 +91,15 @@ def interactive_search(
                 print(f"Unknown command: {user_input}")
                 continue
 
-        # Parse query
-        parts = user_input.split()
-        query_name = parts[0]
-        query_lang = parts[1] if len(parts) > 1 else None
+        # Parse query: "name@lang" or just "name" (name can contain spaces)
+        if '@' in user_input:
+            # Split on last @ to handle names with @ in them (unlikely but safe)
+            at_idx = user_input.rfind('@')
+            query_name = user_input[:at_idx].strip()
+            query_lang = user_input[at_idx + 1:].strip() or None
+        else:
+            query_name = user_input.strip()
+            query_lang = None
 
         # Encode query
         try:
@@ -185,8 +184,12 @@ def main():
     parser = argparse.ArgumentParser(
         description='Interactive phonetic similarity search'
     )
-    parser.add_argument('--checkpoint', type=str, required=True)
-    parser.add_argument('--vocab-dir', type=str, required=True)
+    parser.add_argument('--checkpoint', type=str,
+                        default='/ix1/whcdh/models/phonetic/checkpoints/v1/phase3_best.pt',
+                        help='Path to model checkpoint')
+    parser.add_argument('--vocab-dir', type=str,
+                        default='/ix1/whcdh/models/phonetic/data/v1/vocab',
+                        help='Directory containing vocab JSON files')
     parser.add_argument('--es-host', type=str, default=ES_HOST)
     parser.add_argument('--index', type=str, default='toponyms')
     parser.add_argument('--device', type=str,
