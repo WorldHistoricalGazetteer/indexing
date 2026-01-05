@@ -122,6 +122,10 @@ def build_side_index(zip_path):
         subj, pred, obj = parsed
         if isinstance(obj, tuple): continue
 
+        # DEBUG: Print first 20 predicates to see their actual format
+        if i <= 20:
+            print(f"  DEBUG pred: {pred}")
+
         # Strict check: Must be one of the known label predicates
         if pred.endswith(VALID_LABEL_PREDS):
             tgn_id = subj.split("/tgn/")[-1]
@@ -134,6 +138,14 @@ def build_side_index(zip_path):
             count_links += 1
 
         if i % 1_000_000 == 0: sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
+
+    print(f"\n  DEBUG: Sample term URIs from place_terms:")
+    for concept_id, terms in list(place_terms.items())[:3]:
+        print(f"    Concept {concept_id}: {terms[:2]}")
+
+    print(f"\n  DEBUG: Sample term URIs from term_literals:")
+    for uri in list(term_literals.keys())[:3]:
+        print(f"    {uri}")
 
     print(f"\n  ✓ Found {count_links:,} links for {len(place_terms):,} concepts")
     return coordinates, place_map, term_literals, place_pref, place_terms
