@@ -173,6 +173,15 @@ def run_compute(args):
         names = df['name'].fillna('').tolist()
         langs = df['lang'].where(df['lang'].notnull(), None).tolist()
 
+        # Filter out empty names
+        valid_indices = [i for i, n in enumerate(names) if n.strip()]
+        if len(valid_indices) < len(names):
+            logger.warning(f"Skipping {len(names) - len(valid_indices)} empty names")
+
+        doc_ids = [doc_ids[i] for i in valid_indices]
+        names = [names[i] for i in valid_indices]
+        langs = [langs[i] for i in valid_indices]
+
         inputs = list(zip(names, langs))
 
         # Inference

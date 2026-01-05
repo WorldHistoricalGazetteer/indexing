@@ -1365,7 +1365,7 @@ mkdir -p "\$SCRATCH"
 echo "Staging input to local scratch..."
 cp "$FILE_RAW" "\${SCRATCH}/raw.parquet"
 
-python -m phonetics.inference.update_es compute \
+CUDA_LAUNCH_BLOCKING=1 python -m phonetics.inference.update_es compute \
     --input-file "\${SCRATCH}/raw.parquet" \
     --output-file "\${SCRATCH}/embeddings.parquet" \
     --checkpoint "$MODEL_CHECKPOINT" \
