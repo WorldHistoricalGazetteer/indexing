@@ -1325,7 +1325,7 @@ EOF
 #SBATCH --job-name=whg-inf-compute-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/2_compute_%j.out
 #SBATCH --error=${LOG_DIR}/2_compute_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=18:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -1424,7 +1424,7 @@ EOF
 #SBATCH --job-name=whg-inf-push-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/3_push_%j.out
 #SBATCH --error=${LOG_DIR}/3_push_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
