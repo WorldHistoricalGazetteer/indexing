@@ -202,6 +202,10 @@ class CharacterVocabulary:
         if char == ' ':
             return SPACE_ID
 
+        # If growth not allowed, return UNK for unknown chars
+        if not self.allow_growth:
+            return UNK_ID
+
         script = self._get_script_for_char(char)
         return self._add_char(char, script)
 
