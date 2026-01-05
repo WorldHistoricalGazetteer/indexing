@@ -15,6 +15,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple
 
+from processing.utilities import create_checkpoint_snapshot
+
 try:
     from elasticsearch import Elasticsearch, helpers
 except ImportError:
@@ -29,7 +31,7 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from phonetics.utils.script_detection import Script, detect_script, get_primary_namespace
-from processing.settings import ES_HOST, IX1_BASE
+from processing.settings import ES_HOST, IX1_BASE, STAGING_REPO_NAME
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -186,8 +188,6 @@ def extract_toponyms_to_sqlite(es, conn, places_index, batch_size, limit=None):
     optimize_db_after_load(conn)
     return places_processed, toponyms_extracted
 
-
-# --- NEW: JSONL BUFFERING LOGIC ---
 
 def dump_to_jsonl(conn: sqlite3.Connection, output_path: Path) -> int:
     """
@@ -382,7 +382,15 @@ def main():
             )
 
             # Finalize
+            logger.info("--- FINALIZING ---")
+            logger.info("Refreshing and creating snapshot...")
             es.indices.refresh(index=args.toponyms_index)
+            create_checkpoint_snapshot(
+                es,
+                snapshot_name="rebuilt_toponyms",
+                repo_name=STAGING_REPO_NAME
+            )
+            logger.info("...done.")
 
             logger.info("=" * 60)
             logger.info("SUCCESS")
