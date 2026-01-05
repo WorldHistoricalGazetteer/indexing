@@ -273,6 +273,17 @@ class ToponymEncoder:
             for i, ids in enumerate(batch_char_ids):
                 padded[i, :len(ids)] = torch.tensor(ids, dtype=torch.long)
 
+            max_id = padded.max().item()
+            vocab_size = len(self.char_vocab)
+            if max_id >= vocab_size:
+                logger.error(f"OOB: max_id={max_id}, vocab_size={vocab_size}")
+                for i, ids in enumerate(batch_char_ids):
+                    for j, cid in enumerate(ids):
+                        if cid >= vocab_size:
+                            name = normalized[start_idx + i][0]
+                            logger.error(f"  ID {cid} at pos {j} in '{name}'")
+                raise ValueError("Out of bounds")
+
             # Create tensors
             script_ids_t = torch.tensor(batch_script_ids, dtype=torch.long, device=self.device)
             lang_ids_t = torch.tensor(batch_lang_ids, dtype=torch.long, device=self.device)
