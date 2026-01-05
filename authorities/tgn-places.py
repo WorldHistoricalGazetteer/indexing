@@ -10,6 +10,7 @@ import zipfile
 import sys
 import shutil
 import os
+import re
 import time
 from pathlib import Path
 from collections import defaultdict
@@ -18,6 +19,19 @@ from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
 es = Elasticsearch(ES_HOST, request_timeout=180)
+
+
+def decode_nt_string(s):
+    """Decode N-Triples Unicode escapes like \\uXXXX and \\UXXXXXXXX"""
+
+    def replace_escape(match):
+        return chr(int(match.group(1), 16))
+
+    # Handle \uXXXX (4 hex digits)
+    s = re.sub(r'\\u([0-9A-Fa-f]{4})', replace_escape, s)
+    # Handle \UXXXXXXXX (8 hex digits) for characters outside BMP
+    s = re.sub(r'\\U([0-9A-Fa-f]{8})', replace_escape, s)
+    return s
 
 
 def stream_nt(file_path, filename_in_zip):
@@ -52,6 +66,7 @@ def parse_nt(line):
         if rest.startswith('"'):
             last_quote = rest.rindex('"')
             value = rest[1:last_quote]
+            value = decode_nt_string(value)
             remaining = rest[last_quote + 1:].strip()
             lang = remaining[1:].split()[0].rstrip(".") if remaining.startswith("@") else ""
             return subj, pred, (value, lang)
@@ -65,7 +80,7 @@ def build_side_index(zip_path):
 
     # 1. Place Map (Inverted)
     place_map = {}
-    print("Step 1/4: Loading Place Map (Place -> Concept)...")
+    print("Step 1/3: Loading Place Map (Place -> Concept)...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_PlaceMap.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
@@ -79,7 +94,7 @@ def build_side_index(zip_path):
 
     # 2. Coordinates
     coordinates = {}
-    print("Step 2/4: Loading Coordinates...")
+    print("Step 2/3: Loading Coordinates...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_Coordinates.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
@@ -101,7 +116,7 @@ def build_side_index(zip_path):
 
     VALID_LABEL_PREDS = ("prefLabelGVP", "altLabel", "prefLabel")
 
-    print("Step 3/4: Loading Terms and Concept-Term Links...")
+    print("Step 3/3: Loading Terms and Concept-Term Links...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_2Terms.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
