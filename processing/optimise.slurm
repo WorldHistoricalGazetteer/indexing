@@ -27,7 +27,7 @@ echo "Running on node: $(hostname)"
 echo "======================================================"
 
 # 3. Run the script
-echo python processing/optimise_places.py
+python processing/optimise_places.py
 
 echo "======================================================"
 echo "Job finished at $(date)"
