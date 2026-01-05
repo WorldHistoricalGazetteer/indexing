@@ -326,13 +326,12 @@ class Phase3Dataset(Dataset):
             self,
             data_dir: Path,
             split: str = 'train',
-            # Hard limits based on your logs (chars=3634, scripts=20)
             vocab_limits: Dict[str, int] = {'char': 3634, 'script': 20}
     ):
         self.data_dir = Path(data_dir)
         print(f"Phase3Dataset: Loading {split} data (Vectorized)...")
 
-        # 1. Load Triplets -> Pandas (Instant)
+        # 1. Load Triplets -> Pandas
         triplets_path = self.data_dir / 'triplets' / 'phase3'
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
 
@@ -340,15 +339,13 @@ class Phase3Dataset(Dataset):
         toponyms_path = self.data_dir / 'toponyms'
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        # Note: No 'features' needed for Phase 3 (Student only reads chars)
         columns = [
             'toponym_id', 'name', 'script', 'lang',
             'char_ids', 'char_length', 'split'
         ]
-
         topo_df = dataset.to_table(columns=columns).to_pandas()
 
-        # 3. SANITIZATION (Critical Fix)
+        # 3. SANITIZATION
         print(f"Phase3Dataset: Sanitizing {len(topo_df)} rows against vocab limits...")
 
         # A. Ensure Script IDs are valid
@@ -361,28 +358,20 @@ class Phase3Dataset(Dataset):
             limit = vocab_limits['char']
 
             def is_safe_chars(ids):
-                # Handle None/NaN
                 if ids is None: return True
-
-                # Handle NumPy Array
                 if isinstance(ids, np.ndarray):
                     if ids.size == 0: return True
                     return ids.min() >= 0 and ids.max() < limit
-
-                # Handle Python List
                 if not ids: return True
                 return min(ids) >= 0 and max(ids) < limit
 
-            # Apply filter
             mask_chars_safe = topo_df['char_ids'].apply(is_safe_chars)
             topo_df = topo_df[mask_chars_safe]
 
-        # 4. Build Cache (Dict lookup)
-        # Handle NaN langs
+        # 4. Build Cache
         if 'lang' in topo_df.columns:
             topo_df['lang'] = topo_df['lang'].fillna('')
 
-        # orient='index' is optimized
         self._cache = topo_df.set_index('toponym_id')[
             ['name', 'script', 'lang', 'char_ids', 'char_length', 'split']
         ].to_dict(orient='index')
@@ -392,16 +381,9 @@ class Phase3Dataset(Dataset):
         # 5. Vectorized Triplet Filtering
         print(f"Phase3Dataset: Filtering {len(self.triplets_df)} raw triplets...")
 
-        # Step 5a: Anchor MUST be in the correct split
-        # We need to check the split of the anchor using the cache/dataframe
-        # Strategy: Get list of valid Anchor IDs for this split from toponyms df
-        valid_anchor_ids = set(topo_df[topo_df['split'] == split].index)
+        valid_anchor_ids = set(topo_df[topo_df['split'] == split]['toponym_id'])
 
         df = self.triplets_df
-
-        # Filter:
-        # 1. Anchor is in the correct split
-        # 2. Anchor, Positive, AND Negative exist in our safe cache
         mask_valid = (
                 df['anchor_id'].isin(valid_anchor_ids) &
                 df['positive_id'].isin(available_ids) &
@@ -416,17 +398,10 @@ class Phase3Dataset(Dataset):
 
     def __getitem__(self, idx: int) -> Dict:
         row = self.valid_df.iloc[idx]
-
-        # Direct dictionary access is now safe because we pre-filtered
-        # ensuring all IDs exist in self._cache
-        anchor = self._cache[row['anchor_id']]
-        positive = self._cache[row['positive_id']]
-        negative = self._cache[row['negative_id']]
-
         return {
-            'anchor': anchor,
-            'positive': positive,
-            'negative': negative,
+            'anchor': self._cache[row['anchor_id']],
+            'positive': self._cache[row['positive_id']],
+            'negative': self._cache[row['negative_id']],
             'negative_type': row['negative_type'],
         }
 
