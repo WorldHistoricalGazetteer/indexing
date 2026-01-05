@@ -163,11 +163,16 @@ def index_tgn(zip_path, places_index):
 
     for place_uri, (lat, lon) in coordinates.items():
         processed += 1
-        tgn_id = place_uri.split("/tgn/")[-1]
+
+        raw_id = place_uri.split("/tgn/")[-1]
+
+        # We use the clean ID (no "-place") to look up terms
+        tgn_id = raw_id.replace("-place", "")
 
         # Build Toponyms
         term_uris = set(place_terms.get(tgn_id, []))
-        if place_pref.get(tgn_id): term_uris.add(place_pref[tgn_id])
+        if place_pref.get(tgn_id):
+            term_uris.add(place_pref[tgn_id])
 
         toponyms = []
         seen_ids = set()
@@ -177,7 +182,7 @@ def index_tgn(zip_path, places_index):
             if not literal_data: continue
 
             name, lang = literal_data
-            toponym_id = f"{name}@{lang}"  # Required format for pipeline
+            toponym_id = f"{name}@{lang}"
 
             if toponym_id in seen_ids: continue
 
@@ -188,7 +193,12 @@ def index_tgn(zip_path, places_index):
             seen_ids.add(toponym_id)
 
         # Fallback Title
-        title = toponyms[0]["toponym_id"].split("@")[0] if toponyms else f"TGN {tgn_id}"
+        if toponyms:
+            title = toponyms[0]["toponym_id"].split("@")[0]
+        else:
+            title = f"TGN {tgn_id}"
+
+        # We construct the final ID to match what we want in ES (usually clean)
         place_id = f"tgn:{tgn_id}"
 
         doc = {
