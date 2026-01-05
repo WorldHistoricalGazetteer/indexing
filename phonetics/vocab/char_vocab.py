@@ -197,7 +197,11 @@ class CharacterVocabulary:
             Token ID (UNK_ID if not in vocab and growth disabled)
         """
         if char in self.char_to_id:
-            return self.char_to_id[char]
+            cid = self.char_to_id[char]
+            # Return UNK if ID is out of bounds (vocab corruption)
+            if cid >= len(self.char_to_id):
+                return UNK_ID
+            return cid
 
         if char == ' ':
             return SPACE_ID
