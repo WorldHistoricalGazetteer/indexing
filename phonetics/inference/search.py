@@ -251,6 +251,22 @@ def main():
         ids = vocab.encode(name, script)
         print(f"{name:20} -> {processed:20} -> {ids[:10]}...")
 
+    names = ["London", "Paris", "Berlin", "Tokyo", "Moscow", "Beijing",
+             "Londres", "Londinium", "Sar-e Tanōr", "München", "Москва"]
+
+    embs = encoder.encode_batch(names)
+    print(f"Embedding mean: {embs.mean().item():.4f}")
+    print(f"Embedding std: {embs.std().item():.4f}")
+    print(f"Per-dim std: {embs.std(dim=0).mean().item():.4f}")
+
+    # Check pairwise similarities
+    for i, n1 in enumerate(names):
+        for j, n2 in enumerate(names):
+            if i < j:
+                sim = encoder.similarity(embs[i], embs[j]).item()
+                if sim > 0.9 or (n1 in ["London", "Londres", "Londinium"] and n2 in ["London", "Londres", "Londinium"]):
+                    print(f"{n1:15} vs {n2:15}: {sim:.4f}")
+
     ##############################################
 
     # Run search
