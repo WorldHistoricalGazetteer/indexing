@@ -231,6 +231,18 @@ def main():
     )
     logger.info(f"Model loaded (embed_dim={encoder.embed_dim})")
 
+    # DEBUGGING: Test embeddings and similarities
+    emb1 = encoder.encode("Sar-e Tanōr")
+    emb2 = encoder.encode("Londres")
+    emb3 = encoder.encode("London")
+    emb4 = encoder.encode("Londinium")
+
+    print(f"Sar-e Tanōr vs Londres: {encoder.similarity(emb1, emb2).item():.4f}")
+    print(f"London vs Londinium: {encoder.similarity(emb3, emb4).item():.4f}")
+    print(f"London vs Londres: {encoder.similarity(emb3, emb2).item():.4f}")
+    print(f"Londinium vs Londres: {encoder.similarity(emb4, emb2).item():.4f}")
+    ##############################################
+
     # Run search
     if args.query:
         single_search(
