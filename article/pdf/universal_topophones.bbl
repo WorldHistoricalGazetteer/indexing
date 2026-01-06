@@ -1,9 +1,17 @@
-\begin{thebibliography}{22}
+\begin{thebibliography}{21}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
   \providecommand{\doi}[1]{doi: #1}\else
   \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Artetxe et~al.(2018)Artetxe, Labaka, and Agirre]{artetxe2018}
+Mikel Artetxe, Gorka Labaka, and Eneko Agirre.
+\newblock A robust self-learning method for fully unsupervised cross-lingual
+  mappings of word embeddings.
+\newblock In \emph{Proceedings of the 56th Annual Meeting of the Association
+  for Computational Linguistics}, pages 789--798, 2018.
+\newblock [UNVERIFIED - requires author verification].
 
 \bibitem[Benites et~al.(2020)Benites, Duivesteijn, von D{\"a}niken, and
   Cieliebak]{translit2020}
@@ -11,9 +19,7 @@ Fernando Benites, Gilbert~Fran{\c{c}}ois Duivesteijn, Pius von D{\"a}niken, and
   Mark Cieliebak.
 \newblock {TRANSLIT}: A large-scale name transliteration resource.
 \newblock In \emph{Proceedings of the 12th Conference on Language Resources and
-  Evaluation (LREC)}, pages 3265--3271, Marseille, France, 2020. European
-  Language Resources Association.
-\newblock ISBN 979-10-95546-34-4.
+  Evaluation (LREC)}, pages 3265--3271, 2020.
 \newblock URL \url{https://aclanthology.org/2020.lrec-1.399/}.
 
 \bibitem[Bromley et~al.(1993)Bromley, Guyon, LeCun, Säckinger, and
@@ -33,39 +39,27 @@ Sumit Chopra, Raia Hadsell, and Yann LeCun.
   Computer Vision and Pattern Recognition (CVPR)}, volume~1, pages 539--546,
   2005.
 \newblock \doi{10.1109/CVPR.2005.202}.
-\newblock URL \url{https://ieeexplore.ieee.org/document/1467314}.
 
-\bibitem[Coll~Ardanuy and Sporleder(2017)]{ardanuy2017}
-Mariona Coll~Ardanuy and Caroline Sporleder.
-\newblock Toponym disambiguation in historical documents using semantic and
-  geographic features.
-\newblock In \emph{Proceedings of the 2nd International Conference on Digital
-  Access to Textual Cultural Heritage (DATeCH)}, pages 175--180, 2017.
-\newblock \doi{10.1145/3078081.3078096}.
-
-\bibitem[Ehrmann et~al.(2020)Ehrmann, Romanello, Flückiger, and
-  Clematide]{ehrmann2020}
-Maud Ehrmann, Matteo Romanello, Alex Flückiger, and Simon Clematide.
-\newblock Extended overview of {CLEF HIPE} 2020: {Named Entity Processing} on
-  {Historical Newspapers}.
-\newblock In \emph{Proceedings of the CLEF 2020 Conference and Labs of the
-  Evaluation Forum}, 2020.
-\newblock URL \url{https://ceur-ws.org/Vol-2696/paper_253.pdf}.
-
-\bibitem[Ehrmann et~al.(2022)Ehrmann, Romanello, Najem-Meyer, Doucet, and
-  Clematide]{ehrmann2022}
-Maud Ehrmann, Matteo Romanello, Sven Najem-Meyer, Antoine Doucet, and Simon
-  Clematide.
-\newblock Extended overview of {HIPE}-2022: {Named Entity Recognition} and
-  {Linking} in {Multilingual Historical Documents}.
-\newblock In \emph{Proceedings of the CLEF 2022 Conference and Labs of the
-  Evaluation Forum}, 2022.
-\newblock URL \url{https://ceur-ws.org/Vol-3180/paper-83.pdf}.
+\bibitem[Conneau et~al.(2018)Conneau, Lample, Ranzato, Denoyer, and
+  Jégou]{conneau2018}
+Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
+  Hervé Jégou.
+\newblock Word translation without parallel data.
+\newblock In \emph{Proceedings of the International Conference on Learning
+  Representations}, 2018.
+\newblock [UNVERIFIED - requires author verification].
 
 \bibitem[Gadd and Litvine(2024)]{indexvillaris2024}
 Stephen~James Gadd and Alexis Litvine.
 \newblock Index villaris, 1680, 2024.
 \newblock URL \url{https://doi.org/10.5281/zenodo.10659931}.
+
+\bibitem[Kondrak(2000)]{kondrak2000}
+Grzegorz Kondrak.
+\newblock A new algorithm for the alignment of phonetic sequences.
+\newblock In \emph{Proceedings of the 1st North American Chapter of the
+  Association for Computational Linguistics Conference}, pages 288--295, 2000.
+\newblock [UNVERIFIED - requires author verification].
 
 \bibitem[Lin et~al.(2017)Lin, Feng, Santos, Yu, Xiang, Zhou, and
   Bengio]{lin2017structured}
@@ -132,7 +126,7 @@ Taraka Rama.
 \newblock Siamese convolutional networks for cognate identification.
 \newblock In \emph{Proceedings of COLING 2016, the 26th International
   Conference on Computational Linguistics: Technical Papers}, pages 1018--1027,
-  Osaka, Japan, 2016. The COLING 2016 Organizing Committee.
+  2016.
 \newblock URL \url{https://aclanthology.org/C16-1097/}.
 
 \bibitem[Recchia and Louwerse(2013)]{recchia2013}
@@ -156,7 +150,6 @@ Tomer Sagi, Moran Zaga, Sinai Rusinek, Marcell~Richard Fekete, Johannes Bjerva,
 \newblock \emph{Language Resources and Evaluation}, 59\penalty0 (3):\penalty0
   2427--2451, 2025.
 \newblock \doi{10.1007/s10579-025-09812-9}.
-\newblock Associated with the MEHDIE project.
 
 \bibitem[Santos et~al.(2018)Santos, Murrieta-Flores, Calafiore, and
   Martins]{santos2018}
@@ -173,13 +166,5 @@ Florian Schroff, Dmitry Kalenichenko, and James Philbin.
 \newblock \emph{2015 IEEE Conference on Computer Vision and Pattern Recognition
   (CVPR)}, pages 815--823, 2015.
 \newblock \doi{10.1109/CVPR.2015.7298682}.
-\newblock URL \url{https://api.semanticscholar.org/CorpusID:206592766}.
-
-\bibitem[Schuster and Paliwal(1997)]{schuster1997}
-Mike Schuster and Kuldip~K. Paliwal.
-\newblock Bidirectional recurrent neural networks.
-\newblock \emph{IEEE Transactions on Signal Processing}, 45\penalty0
-  (11):\penalty0 2673--2681, 1997.
-\newblock \doi{10.1109/78.650093}.
 
 \end{thebibliography}

@@ -19,6 +19,17 @@
 \usepackage{subcaption}
 \usepackage{listings}
 
+% --- Script Support ---
+% Define fonts for specific scripts.
+% "Script=Arabic" ensures correct letter joining.
+\newfontfamily\arabicfont{Noto Naskh Arabic}[Script=Arabic]
+\newfontfamily\chinesefont{Noto Serif CJK SC}
+
+% Create helper commands to wrap the text
+\newcommand{\textar}[1]{{\arabicfont #1}}
+\newcommand{\textcn}[1]{{\chinesefont #1}}
+% ----------------------
+
 % Custom commands
 \newcommand{\todo}[1]{\textcolor{red}{[TODO: #1]}}
 \newcommand{\placeholder}[1]{\textcolor{blue}{[#1]}}
@@ -41,17 +52,17 @@
 \maketitle
 
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``موسکو'' recognisably the same place. We present a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Our approach uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Pleiades, and Index Villaris, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness, historical variant linking performance.}
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. We present a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Our approach uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Pleiades, and Index Villaris, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness, historical variant linking performance.}
 \end{abstract}
 
 \section{Introduction}
 \label{sec:introduction}
 
-Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes nearly 67 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``伦敦'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
+Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes nearly 67 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
 
-The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``東京'' to ``Tokyo''.
+The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
-Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. We lack a system that can place ``Москва'', ``Moscow'', ``موسکو'', and ``モスクワ'' near each other in embedding space using only the raw character sequences as input.
+Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. We lack a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' near each other in embedding space using only the raw character sequences as input.
 
 This paper presents such a system. Our key contributions are:
 
@@ -123,7 +134,7 @@ Our system employs a Teacher-Student architecture where a Teacher network, train
 
 Three principles guide our architecture:
 
-\paragraph{Script Awareness Without Script Dependence.} The model must handle 20+ writing systems but produce embeddings in a unified space where script boundaries are transparent. We achieve this through deterministic script detection (via Unicode block analysis) combined with learned script embeddings that allow the model to interpret characters appropriately for each script.
+\paragraph{Script Awareness Without Script Dependence.} The model must handle 20 writing systems but produce embeddings in a unified space where script boundaries are transparent. We achieve this through deterministic script detection (via Unicode block analysis) combined with learned script embeddings that allow the model to interpret characters appropriately for each script.
 
 \paragraph{Phonetic Grounding.} Embedding similarity must reflect phonetic similarity, not orthographic or semantic similarity. We ground the embedding space through the Teacher network, which operates on articulatory features derived from IPA transcriptions.
 
@@ -143,7 +154,7 @@ Character vocabulary construction balances coverage against tractability:
     \item \textbf{Korean Hangul}: Rather than treating 11,172 syllable blocks as atomic units, we decompose into Jamo (lead consonant, vowel, optional tail consonant), yielding approximately 60 tokens with explicit phonetic structure.
 \end{itemize}
 
-The resulting vocabulary contains approximately 1,100 tokens across all scripts, each tagged with its source script for embedding lookup.
+The resulting vocabulary contains 3,634 tokens across all scripts (and 829 languages), each tagged with its source script for embedding lookup.
 
 \subsection{Teacher Network: Phonetic Feature Encoder}
 
@@ -201,19 +212,20 @@ We construct training data from three complementary gazetteer sources:
 
 \paragraph{Index Villaris} (\texttt{iv}): A digitised 17th-century gazetteer of English places~\citep{indexvillaris2024}, providing historical spelling variants that test the model's handling of early modern orthography.
 
-We deliberately exclude OpenStreetMap (OSM) data from training despite its availability in WHG's places index. OSM's toponyms are predominantly contemporary and exhibit less linguistic diversity than the scholarly sources; including them would bias the model toward modern standard forms. The WHG places index also includes data from Wikidata, the Getty Thesaurus of Geographic Names (TGN), and contributor-curated collections, but these either substantially overlap with GeoNames or serve different purposes in the reconciliation pipeline.
+\bigskip
+We deliberately exclude OpenStreetMap (OSM) data from training, despite its availability in WHG's places index, because it is  less-rigorously curated than the scholarly sources. The WHG places index also includes data from Wikidata, the Getty Thesaurus of Geographic Names (TGN), and contributor-curated collections, but these either substantially overlap with GeoNames or serve different purposes in the reconciliation pipeline.
 
 \subsection{Pair Generation with Phonetic Filtering}
 
 Training requires pairs of toponyms that refer to the same place. We extract these from co-located name attestations: if GeoNames lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' for the same coordinates, we generate pairs among all combinations.
 
-A critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``日本'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
+A critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``\textcn{日本}'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
 
 We apply phonetic similarity filtering using a simple heuristic: after romanisation via AnyAscii, we compute normalised Levenshtein similarity between name pairs. Pairs below a threshold of 0.35 are excluded from positive training examples. This successfully filters:
 
 \begin{itemize}
     \item ``Germany'' / ``Deutschland'' (similarity 0.18)
-    \item ``Japan'' / ``日本'' $\rightarrow$ ``Ri Ben'' (similarity 0.22)
+    \item ``Japan'' / ``\textcn{日本}'' $\rightarrow$ ``Ri Ben'' (similarity 0.22)
     \item ``Finland'' / ``Suomi'' (similarity 0.15)
 \end{itemize}
 
