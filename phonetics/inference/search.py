@@ -30,6 +30,7 @@ from pathlib import Path
 
 import torch
 
+from phonetics.utils.script_detection import detect_script
 from processing.settings import ES_HOST
 
 try:
@@ -241,6 +242,15 @@ def main():
     print(f"London vs Londinium: {encoder.similarity(emb3, emb4).item():.4f}")
     print(f"London vs Londres: {encoder.similarity(emb3, emb2).item():.4f}")
     print(f"Londinium vs Londres: {encoder.similarity(emb4, emb2).item():.4f}")
+
+    vocab = encoder.char_vocab
+
+    for name in ["Sar-e Tanōr", "Londres", "London", "Londinium"]:
+        script, _ = detect_script(name)
+        processed = vocab.preprocess_text(name, script)
+        ids = vocab.encode(name, script)
+        print(f"{name:20} -> {processed:20} -> {ids[:10]}...")
+
     ##############################################
 
     # Run search
