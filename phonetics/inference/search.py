@@ -44,7 +44,7 @@ def interactive_search(
         encoder: ToponymEncoder,
         es: Elasticsearch,
         index: str = 'toponyms',
-        top_k: int = 10,
+        top_k: int = 30,
 ):
     """Run interactive search loop."""
     print("\n" + "=" * 60)
@@ -73,7 +73,7 @@ def interactive_search(
             elif user_input == ':help' or user_input == ':h':
                 print("\nCommands:")
                 print("  :quit, :q     Exit")
-                print("  :topk <n>     Set number of results (default: 10)")
+                print("  :topk <n>     Set number of results (default: 30)")
                 print("  :help, :h     Show this help")
                 print("\nQuery format:")
                 print("  <name>        Search for toponym")
@@ -115,7 +115,7 @@ def interactive_search(
                 query_embedding=query_embedding.cpu().tolist(),
                 index=index,
                 top_k=top_k,
-                min_score=0.3,
+                min_score=0.85,
             )
         except Exception as e:
             print(f"Error searching: {e}")
@@ -203,7 +203,12 @@ def main():
     args = parser.parse_args()
 
     # Connect to ES
-    es = Elasticsearch(args.es_host)
+    es = Elasticsearch(
+        args.es_host,
+        request_timeout=120,
+        retry_on_timeout=True,
+        max_retries=3
+    )
     if not es.ping():
         logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
         sys.exit(1)
