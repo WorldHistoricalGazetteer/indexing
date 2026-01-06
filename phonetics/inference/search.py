@@ -5,6 +5,15 @@ Interactive phonetic similarity search.
 Test the trained model by searching for similar toponyms.
 
 Usage:
+
+    First start an interactive shell:
+    srun -p htc --pty bash
+
+    Switch to the repository directory:
+    cd /ix1/whcdh/elastic
+
+    Then run:
+
     python -m phonetics.inference.search
 
     # Or with a query:
