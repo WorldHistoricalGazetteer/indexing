@@ -232,40 +232,194 @@ def main():
     )
     logger.info(f"Model loaded (embed_dim={encoder.embed_dim})")
 
-    # DEBUGGING: Test embeddings and similarities
-    emb1 = encoder.encode("Sar-e Tanōr")
-    emb2 = encoder.encode("Londres")
-    emb3 = encoder.encode("London")
-    emb4 = encoder.encode("Londinium")
+    # ===========================================================================
+    # DEBUGGING: Comprehensive embedding quality tests
+    # ===========================================================================
 
-    print(f"Sar-e Tanōr vs Londres: {encoder.similarity(emb1, emb2).item():.4f}")
-    print(f"London vs Londinium: {encoder.similarity(emb3, emb4).item():.4f}")
-    print(f"London vs Londres: {encoder.similarity(emb3, emb2).item():.4f}")
-    print(f"Londinium vs Londres: {encoder.similarity(emb4, emb2).item():.4f}")
+    print("\n" + "=" * 70)
+    print("EMBEDDING QUALITY DIAGNOSTICS")
+    print("=" * 70)
 
-    vocab = encoder.char_vocab
+    # ---------------------------------------------------------------------------
+    # Test 1: Core phonetic cognates (should all be > 0.85)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 1] Phonetic cognates (expected: > 0.85)")
+    print("-" * 50)
 
-    for name in ["Sar-e Tanōr", "Londres", "London", "Londinium"]:
+    cognate_pairs = [
+        ("London", "Londres"),  # English/French
+        ("London", "Londra"),  # English/Italian
+        ("London", "Лондон"),  # English/Russian
+        ("Moscow", "Москва"),  # English/Russian
+        ("Moscow", "Moscou"),  # English/French
+        ("Munich", "München"),  # English/German
+        ("Vienna", "Wien"),  # English/German
+        ("Rome", "Roma"),  # English/Italian
+        ("Paris", "Париж"),  # English/Russian
+        ("Athens", "Αθήνα"),  # English/Greek
+        ("Beijing", "北京"),  # English/Chinese
+        ("Tokyo", "東京"),  # English/Japanese
+        ("Seoul", "서울"),  # English/Korean
+    ]
+
+    for n1, n2 in cognate_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim > 0.85 else "✗"
+        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 2: Historical variants (should be > 0.80)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 2] Historical variants (expected: > 0.80)")
+    print("-" * 50)
+
+    historical_pairs = [
+        ("London", "Londinium"),  # Modern/Roman
+        ("Paris", "Lutetia"),  # Modern/Roman
+        ("Lyon", "Lugdunum"),  # Modern/Roman
+        ("Cologne", "Colonia"),  # Modern/Roman
+        ("Vienna", "Vindobona"),  # Modern/Roman
+        ("Istanbul", "Constantinople"),  # Modern/Byzantine
+        ("Istanbul", "Byzantium"),  # Modern/Ancient
+    ]
+
+    for n1, n2 in historical_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim > 0.80 else "✗"
+        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 3: Unrelated pairs (should be < 0.70)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 3] Unrelated pairs (expected: < 0.70)")
+    print("-" * 50)
+
+    unrelated_pairs = [
+        ("London", "Tokyo"),
+        ("Paris", "Beijing"),
+        ("Berlin", "Cairo"),
+        ("Moscow", "Sydney"),
+        ("Rome", "Seoul"),
+        ("Londres", "Sar-e Tanōr"),  # The problematic pair
+        ("London", "Sar-e Tanōr"),
+        ("Munich", "Bangkok"),
+        ("Athens", "Lima"),
+        ("Vienna", "Hanoi"),
+    ]
+
+    for n1, n2 in unrelated_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim < 0.70 else "✗"
+        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 4: Cross-script same name (should be > 0.90)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 4] Cross-script equivalents (expected: > 0.90)")
+    print("-" * 50)
+
+    cross_script = [
+        ("Moskva", "Москва"),  # Latin/Cyrillic transliteration
+        ("Athina", "Αθήνα"),  # Latin/Greek transliteration
+        ("Parizh", "Париж"),  # Latin/Cyrillic transliteration
+        ("London", "لندن"),  # Latin/Arabic
+        ("Moskva", "موسكو"),  # Latin/Arabic
+    ]
+
+    for n1, n2 in cross_script:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim > 0.90 else "✗"
+        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 5: Spelling variants (should be > 0.95)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 5] Spelling variants (expected: > 0.95)")
+    print("-" * 50)
+
+    spelling_variants = [
+        ("Nuremberg", "Nürnberg"),
+        ("Zurich", "Zürich"),
+        ("Cologne", "Köln"),
+        ("Munich", "Muenchen"),
+        ("Gdansk", "Gdańsk"),
+        ("Krakow", "Kraków"),
+        ("Malmo", "Malmö"),
+    ]
+
+    for n1, n2 in spelling_variants:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim > 0.95 else "✗"
+        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 6: Embedding space statistics
+    # ---------------------------------------------------------------------------
+    print("\n[Test 6] Embedding space statistics")
+    print("-" * 50)
+
+    test_names = [
+        "London", "Paris", "Berlin", "Tokyo", "Moscow", "Beijing",
+        "Cairo", "Sydney", "Mumbai", "Lagos", "Lima", "Toronto",
+        "Londres", "Londinium", "Sar-e Tanōr", "München", "Москва",
+        "東京", "서울", "北京", "Αθήνα", "القاهرة"
+    ]
+
+    embs = encoder.encode_batch(test_names)
+
+    print(f"  Embedding shape: {embs.shape}")
+    print(f"  Mean: {embs.mean().item():.6f}")
+    print(f"  Std:  {embs.std().item():.6f}")
+    print(f"  Min:  {embs.min().item():.6f}")
+    print(f"  Max:  {embs.max().item():.6f}")
+    print(f"  Per-dim std (mean): {embs.std(dim=0).mean().item():.6f}")
+    print(f"  L2 norms (should be ~1.0): {embs.norm(dim=1).mean().item():.4f} ± {embs.norm(dim=1).std().item():.4f}")
+
+    # Pairwise similarity distribution
+    n = len(test_names)
+    sims = []
+    for i in range(n):
+        for j in range(i + 1, n):
+            sims.append(encoder.similarity(embs[i], embs[j]).item())
+
+    sims = torch.tensor(sims)
+    print(f"\n  Pairwise similarity distribution (n={len(sims)}):")
+    print(f"    Mean: {sims.mean().item():.4f}")
+    print(f"    Std:  {sims.std().item():.4f}")
+    print(f"    Min:  {sims.min().item():.4f}")
+    print(f"    Max:  {sims.max().item():.4f}")
+    print(f"    Median: {sims.median().item():.4f}")
+
+    # ---------------------------------------------------------------------------
+    # Test 7: Character sequence debugging for problematic pair
+    # ---------------------------------------------------------------------------
+    print("\n[Test 7] Problematic pair deep dive: 'Sar-e Tanōr' vs 'Londres'")
+    print("-" * 50)
+
+    for name in ["Sar-e Tanōr", "Londres", "London"]:
         script, _ = detect_script(name)
-        processed = vocab.preprocess_text(name, script)
-        ids = vocab.encode(name, script)
-        print(f"{name:20} -> {processed:20} -> {ids[:10]}...")
+        processed = encoder.char_vocab.preprocess_text(name, script)
+        ids = encoder.char_vocab.encode(name, script)
+        emb = encoder.encode(name)
 
-    names = ["London", "Paris", "Berlin", "Tokyo", "Moscow", "Beijing",
-             "Londres", "Londinium", "Sar-e Tanōr", "München", "Москва"]
+        print(f"\n  '{name}':")
+        print(f"    Script: {script}")
+        print(f"    Processed: '{processed}'")
+        print(f"    IDs: {ids}")
+        print(f"    Embedding[:5]: {emb[:5].tolist()}")
+        print(f"    Embedding norm: {emb.norm().item():.4f}")
 
-    embs = encoder.encode_batch(names)
-    print(f"Embedding mean: {embs.mean().item():.4f}")
-    print(f"Embedding std: {embs.std().item():.4f}")
-    print(f"Per-dim std: {embs.std(dim=0).mean().item():.4f}")
-
-    # Check pairwise similarities
-    for i, n1 in enumerate(names):
-        for j, n2 in enumerate(names):
-            if i < j:
-                sim = encoder.similarity(embs[i], embs[j]).item()
-                if sim > 0.9 or (n1 in ["London", "Londres", "Londinium"] and n2 in ["London", "Londres", "Londinium"]):
-                    print(f"{n1:15} vs {n2:15}: {sim:.4f}")
+    # ---------------------------------------------------------------------------
+    # Summary
+    # ---------------------------------------------------------------------------
+    print("\n" + "=" * 70)
+    print("END DIAGNOSTICS")
+    print("=" * 70 + "\n")
 
     ##############################################
 
