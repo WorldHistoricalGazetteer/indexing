@@ -3,8 +3,8 @@
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=20G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
 #SBATCH --output=/ix1/whcdh/es/staging-logs/slurm-%j.out
 #SBATCH --error=/ix1/whcdh/es/staging-logs/slurm-%j.err
 
@@ -126,7 +126,7 @@ cleanup() {
 trap cleanup EXIT
 
 # --- JVM settings for bulk indexing ---
-export ES_JAVA_OPTS="-Xms8g -Xmx8g"
+export ES_JAVA_OPTS="-Xms31g -Xmx31g"
 
 # --- Start Elasticsearch ---
 echo "Starting Elasticsearch..."
