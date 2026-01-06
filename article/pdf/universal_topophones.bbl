@@ -9,9 +9,12 @@
 Mikel Artetxe, Gorka Labaka, and Eneko Agirre.
 \newblock A robust self-learning method for fully unsupervised cross-lingual
   mappings of word embeddings.
-\newblock In \emph{Proceedings of the 56th Annual Meeting of the Association
-  for Computational Linguistics}, pages 789--798, 2018.
-\newblock [UNVERIFIED - requires author verification].
+\newblock In Iryna Gurevych and Yusuke Miyao, editors, \emph{Proceedings of the
+  56th Annual Meeting of the Association for Computational Linguistics (Volume
+  1: Long Papers)}, pages 789--798, Melbourne, Australia, July 2018.
+  Association for Computational Linguistics.
+\newblock \doi{10.18653/v1/P18-1073}.
+\newblock URL \url{https://aclanthology.org/P18-1073/}.
 
 \bibitem[Benites et~al.(2020)Benites, Duivesteijn, von D{\"a}niken, and
   Cieliebak]{translit2020}
@@ -47,10 +50,9 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 \newblock Word translation without parallel data.
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations}, 2018.
-\newblock [UNVERIFIED - requires author verification].
 
 \bibitem[Gadd and Litvine(2024)]{indexvillaris2024}
-Stephen~James Gadd and Alexis Litvine.
+Stephen Gadd and Alexis Litvine.
 \newblock Index villaris, 1680, 2024.
 \newblock URL \url{https://doi.org/10.5281/zenodo.10659931}.
 
@@ -58,8 +60,8 @@ Stephen~James Gadd and Alexis Litvine.
 Grzegorz Kondrak.
 \newblock A new algorithm for the alignment of phonetic sequences.
 \newblock In \emph{Proceedings of the 1st North American Chapter of the
-  Association for Computational Linguistics Conference}, pages 288--295, 2000.
-\newblock [UNVERIFIED - requires author verification].
+  Association for Computational Linguistics Conference}, NAACL 2000, page
+  288–295, USA, 2000. Association for Computational Linguistics.
 
 \bibitem[Lin et~al.(2017)Lin, Feng, Santos, Yu, Xiang, Zhou, and
   Bengio]{lin2017structured}

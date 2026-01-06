@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  6 JAN 2026 05:40
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  6 JAN 2026 05:49
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1071,7 +1071,7 @@ Package rerunfilecheck Info: File `universal_topophones.out' has not changed.
 Here is how much of TeX's memory you used:
  29920 strings out of 478149
  632098 string characters out of 5853103
- 965911 words of memory out of 5000000
+ 966911 words of memory out of 5000000
  50029 multiletter control sequences out of 15000+600000
  476140 words of font info for 94 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191

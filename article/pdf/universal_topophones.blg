@@ -7,43 +7,43 @@ Warning--entry type for "indexvillaris2024" isn't style-file defined
 --line 161 of file references.bib
 You've used 21 entries,
             2773 wiz_defined-function locations,
-            733 strings with 9729 characters,
-and the built_in function-call counts, 12337 in all, are:
-= -- 1146
-> -- 674
+            739 strings with 9866 characters,
+and the built_in function-call counts, 12433 in all, are:
+= -- 1164
+> -- 682
 < -- 22
-+ -- 228
-- -- 207
-* -- 956
-:= -- 1774
-add.period$ -- 84
++ -- 230
+- -- 209
+* -- 964
+:= -- 1789
+add.period$ -- 85
 call.type$ -- 21
 change.case$ -- 132
 chr.to.int$ -- 21
 cite$ -- 42
-duplicate$ -- 579
-empty$ -- 996
-format.name$ -- 234
-if$ -- 2700
+duplicate$ -- 589
+empty$ -- 990
+format.name$ -- 236
+if$ -- 2729
 int.to.chr$ -- 1
 int.to.str$ -- 1
 missing$ -- 19
-newline$ -- 133
-num.names$ -- 84
-pop$ -- 285
+newline$ -- 132
+num.names$ -- 86
+pop$ -- 283
 preamble$ -- 1
 purify$ -- 111
 quote$ -- 0
-skip$ -- 495
+skip$ -- 506
 stack$ -- 0
-substring$ -- 569
-swap$ -- 151
+substring$ -- 555
+swap$ -- 160
 text.length$ -- 14
 text.prefix$ -- 0
 top$ -- 0
 type$ -- 231
 warning$ -- 0
-while$ -- 107
+while$ -- 106
 width$ -- 0
-write$ -- 319
+write$ -- 322
 (There was 1 warning)
