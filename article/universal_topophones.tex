@@ -62,7 +62,7 @@ Historical gazetteers aggregate place references from sources spanning millennia
 
 The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
-Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. We lack a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' near each other in embedding space using only the raw character sequences as input.
+Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. Until now, we have lacked a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' near each other in embedding space using only the raw character sequences as input.
 
 This paper presents such a system. Our key contributions are:
 
@@ -202,26 +202,47 @@ Noise is applied with 30\% probability per training example, with the target bei
 \section{Training Data}
 \label{sec:data}
 
-\subsection{Data Sources}
+\subsection{Data Selection and Curation Criteria}
+\label{subsec:selection_criteria}
 
-We construct training data from three complementary gazetteer sources:
+The World Historical Gazetteer (WHG) infrastructure separates data into a \texttt{places} index, which aggregates geographic entities with their attributions, and a \texttt{toponyms} index, which abstracts individual name variants by script and language. Our data selection strategy leverages this architecture to filter high-quality training data from major namespace authorities---GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn})---while excluding less strictly curated sources like OpenStreetMap.
 
-\paragraph{GeoNames} (\texttt{gn}): The largest open gazetteer, containing approximately 12 million places with alternate names in multiple languages. GeoNames provides broad geographic and linguistic coverage with names drawn from national mapping agencies and user contributions.
+Training requires pairs of toponyms that refer to the same place. We extract these from co-located name attestations: if an authority lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' within the same `place`, we generate pairs among all combinations.
 
-\paragraph{Pleiades} (\texttt{pl}): A community-curated gazetteer of ancient places, focused on the classical Mediterranean world. Pleiades provides high-quality attestations of historical toponyms with scholarly provenance, essential for evaluating historical variant linking.
+To address the inherent script and language imbalances in the raw corpus, we define our training data selection based on five strict criteria.
 
-\paragraph{Index Villaris} (\texttt{iv}): A digitised 17th-century gazetteer of English places~\citep{indexvillaris2024}, providing historical spelling variants that test the model's handling of early modern orthography.
+\paragraph{1. Script-Stratified Sampling.}
+Rather than ingesting all available pairs from the \texttt{toponyms} index, which would result in a corpus heavily skewed toward Latin script and European languages, we implement a quota-based sampling strategy. We define target script pairs (e.g., Latin-Cyrillic, Latin-Devanagari, Arabic-Hebrew) and sample up to $N=100,000$ pairs for each combination. This prevents high-resource scripts from dominating the gradient descent while ensuring sufficient signal for low-resource script pairs.
 
-\bigskip
-We deliberately exclude OpenStreetMap (OSM) data from training, despite its availability in WHG's places index, because it is  less-rigorously curated than the scholarly sources. The WHG places index also includes data from Wikidata, the Getty Thesaurus of Geographic Names (TGN), and contributor-curated collections, but these either substantially overlap with GeoNames or serve different purposes in the reconciliation pipeline.
+\paragraph{2. Namespace Filtering and Coverage.}
+We restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \texttt{wd} namespaces. Within this allowed pool, the inclusion of \texttt{wd} (Wikidata) is critical for meeting the stratification quotas defined above. As a direct result of our sampling criteria, Wikidata records are frequently selected to populate South Asian (Devanagari, Tamil, Telugu, Kannada, Malayalam, Bengali) and Southeast Asian (Thai, Khmer, Lao, Myanmar) script pairs, where other gazetteers lack the necessary depth of multi-script correspondence.
+
+\paragraph{3. Global Vocabulary Construction.}
+To prevent out-of-vocabulary (OOV) errors at inference time, we decouple vocabulary construction from pair generation.
+\begin{itemize}
+    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} index (representing 67M records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters , while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently.
+    \item \textbf{Pass 2 (Training Pairs):} We generate candidate triplets from the \texttt{places} index, which groups name variants by entity. These candidates are then restricted to the stratified quotas defined above.
+\end{itemize}
+
+\paragraph{4. Isorthographic Phonetic Consistency.}
+We explicitly retain ``same-string, different-language'' pairs (isorthographs) regardless of whether their pronunciation differs.
+\begin{itemize}
+    \item \textbf{Teacher Signal:} The Teacher network receives sequences of PanPhon articulatory feature vectors derived from IPA transcriptions. It provides the ground truth: if the pronunciation differs (e.g., ``Paris'' in French vs. English), the Teacher pushes the target embeddings apart; if pronunciation is stable (e.g., ``Berlin'' in German vs. English), it keeps them close.
+    \item \textbf{Student Signal:} The Student receives identical character sequences but distinct Language Embeddings.
+\end{itemize}
+By retaining both diverging and stable isorthographs, we force the Student network to learn when to rely on the Language Embedding to modify its phonetic prediction and when the script alone is sufficient.
+
+\paragraph{5. Cross-Script Phonetic Alignment.}
+We prioritise pairs that maximize script distance while minimizing phonetic distance. During sampling from the \texttt{places} index, we heavily weight pairs where the source and target scripts differ (e.g., \textcn{北京} vs. Beijing) over same-script variants (Beijing vs. Peking), as the primary architectural goal is to bridge disjoint character spaces.
+
+\subsection{Dataset Composition}
+Following these criteria, the training distribution is forcibly balanced. While the total volume of Latin script tokens remains high due to its ubiquity as a pivot script, the relative representation of Devanagari, Bengali, Tamil, Telugu, Thai, and other under-resourced scripts is boosted to meet minimum training thresholds.
 
 \subsection{Pair Generation with Phonetic Filtering}
 
-Training requires pairs of toponyms that refer to the same place. We extract these from co-located name attestations: if GeoNames lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' for the same coordinates, we generate pairs among all combinations.
-
 A critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``\textcn{日本}'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
 
-We apply phonetic similarity filtering using a simple heuristic: after romanisation via AnyAscii, we compute normalised Levenshtein similarity between name pairs. Pairs below a threshold of 0.35 are excluded from positive training examples. This successfully filters:
+We apply phonetic similarity filtering using a simple heuristic: we compute normalised Levenshtein similarity between name pairs (after romanisation via AnyAscii in the case of CJK). Pairs below a threshold of 0.35 are excluded from positive training examples. This successfully filters:
 
 \begin{itemize}
     \item ``Germany'' / ``Deutschland'' (similarity 0.18)
@@ -241,17 +262,47 @@ While retaining genuine phonetic cognates:
 
 The Teacher network requires IPA transcriptions. We use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages covering the majority of GeoNames entries. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction. Names in languages without Epitran support are excluded from Teacher training but can still be processed by the Student, which learns to generalise from related scripts.
 
-\subsection{Dataset Statistics}
+\subsection{Dataset Statistics}\placeholder{REVISE}
 
-\placeholder{Final statistics pending extraction completion:}
+Training data comprises 17.1 million toponym records drawn from three sources: GeoNames (~17M, 99.8\%), Pleiades (24,768), and Index Villaris (16,995). Of these, 4.4 million (26\%) have phonetic embeddings via Epitran and PanPhon suitable for Teacher training. The data spans 829 languages and 20 script categories.
+
+Positive pairs are generated dynamically during training from co-located name attestations sharing geographic coordinates. After deduplication, 2.55 million unique pairs remain, of which 45.3\% are cross-script. Analysis of pair frequency revealed significant redundancy from common place names (Georgetown, Springfield, Salem) appearing across multiple locations. Additionally, same-string pairs (e.g., ``Georgetown'' $\leftrightarrow$ ``Georgetown'' for different places) provide no phonetic learning signal. \placeholder Future iterations will filter such pairs to focus training on phonetically informative examples.
+
 \begin{itemize}
-    \item Total unique places: \placeholder{X million}
-    \item Total toponym tokens: \placeholder{Y million}
-    \item Positive pairs after filtering: \placeholder{Z million}
-    \item Script distribution: \placeholder{breakdown by script}
-    \item Language distribution: \placeholder{top 20 languages}
+    \item Total toponym tokens: 17.1 million
+    \item Script distribution (top 10 identified):
+        Latin (14.2M, 83.3\%),
+        Cyrillic (816k, 4.8\%),
+        CJK (752k, 4.4\%),
+        Arabic (709k, 4.2\%),
+        Thai (166k, 1.0\%),
+        Hangul (144k, 0.8\%),
+        Other (111k, 0.6\%),
+        Katakana (64k, 0.4\%),
+        Hiragana (41k, 0.2\%),
+        Armenian (38k, 0.2\%).
+    \item Language distribution (Top 20 identified):
+        English (647k),
+        Chinese (604k),
+        Norwegian (427k),
+        Russian (398k),
+        Spanish (349k),
+        Persian (307k),
+        Indonesian (282k),
+        Finnish (241k),
+        Arabic (231k),
+        French (179k),
+        Thai (176k),
+        Japanese (171k),
+        Portuguese (147k),
+        Ukrainian (117k),
+        German (117k),
+        Korean (113k),
+        Dutch (74k),
+        Latin-Uncertain/Other (72k),
+        Italian (70k),
+        Swedish (68k).
 \end{itemize}
-
 
 \section{Training Methodology}
 \label{sec:training}
@@ -280,7 +331,7 @@ Negatives are sampled from the same batch (in-batch negatives), ensuring the Tea
 
 \subsection{Phase 2: Student-Teacher Alignment}
 
-The Student learns to approximate Teacher embeddings from character sequences. Given a toponym with both character sequence (Student input) and IPA transcription (Teacher input), we minimise the distance between their embeddings:
+The Student learns to approximate Teacher embeddings from character sequences. Given a toponym with both character sequence (Student input) and IPA transcription (Teacher input) \placeholder{Shouldn't this be PanPhon embedding?}, we minimise the distance between their embeddings:
 
 \begin{equation}
 \mathcal{L}_{\text{distill}} = \alpha \cdot \text{MSE}(e_S, e_T) + (1 - \alpha) \cdot (1 - \cos(e_S, e_T))
@@ -307,13 +358,15 @@ During this phase:
 
 The final phase sharpens discrimination between similar but distinct toponyms. We generate hard negatives: pairs that are orthographically or phonetically similar but refer to different places.
 
+\placeholder Phase 3 noise: asymmetric local perturbation applied to anchors only, intended to encourage invariance within an already-defined equivalence class, not to introduce new phonetic evidence.
+
 Training uses triplet loss with mixed negative sampling:
 \begin{itemize}
     \item 50\% hard negatives (phonetically similar, different place)
     \item 50\% random negatives (in-batch sampling)
 \end{itemize}
 
-Both Teacher and Student are fine-tuned jointly, allowing end-to-end optimisation of the embedding space.
+The Student alone is fine-tuned using triplet loss, with the Teacher's role complete after Phase 2 distillation.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -333,9 +386,71 @@ Checkpoints are saved after each epoch, with the best model selected by validati
 \section{Evaluation}
 \label{sec:evaluation}
 
-\placeholder{This section describes the evaluation methodology. Results are pending completion of Phase 3 training.}
+\subsection{Preliminary Results}
+
+We present interim results from initial training runs to characterise model behaviour prior to full evaluation. These results use the Phase 2 checkpoint (Student-Teacher alignment complete, before hard negative fine-tuning).
+
+\paragraph{Cross-script equivalents.} As shown in Table~\ref{tab:cross-script}, these pairs achieve high similarity as intended.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{ll r}
+\toprule
+\textbf{Name 1} & \textbf{Name 2} & \textbf{Similarity} \\
+\midrule
+Moskva & Москва & 0.998 \\
+Parizh & Париж & 0.995 \\
+Moscow & Moscou & 0.986 \\
+London & Лондон & 0.997 \\
+\bottomrule
+\end{tabular}
+\caption{Cross-script transliteration pairs.}
+\label{tab:cross-script}
+\end{table}
+
+\paragraph{Historical variants.} These pairs show moderate to strong similarity, with results summarised in Table~\ref{tab:historical}.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{ll r}
+\toprule
+\textbf{Modern} & \textbf{Historical} & \textbf{Similarity} \\
+\midrule
+London & Londinium & 0.938 \\
+Cologne & Colonia & 0.968 \\
+Lyon & Lugdunum & 0.683 \\
+Istanbul & Constantinople & 0.582 \\
+\bottomrule
+\end{tabular}
+\caption{Historical variant pairs.}
+\label{tab:historical}
+\end{table}
+
+\paragraph{Unrelated pairs.} Conversely, unrelated pairs are appropriately separated (Table~\ref{tab:unrelated}).
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{ll r}
+\toprule
+\textbf{Name 1} & \textbf{Name 2} & \textbf{Similarity} \\
+\midrule
+London & Tokyo & 0.335 \\
+Paris & Beijing & 0.268 \\
+Berlin & Cairo & $-$0.116 \\
+\bottomrule
+\end{tabular}
+\caption{Unrelated toponym pairs.}
+\label{tab:unrelated}
+\end{table}
+
+\bigskip
+The pairwise similarity distribution across 22 diverse toponyms shows mean 0.092 ($\sigma=0.348$), indicating the embedding space has not collapsed and maintains discrimination between unrelated names.
+
+\paragraph{Limitations observed.} Same-script cross-lingual variants show weaker performance than cross-script pairs: London--Londres (0.754) and Munich--München (0.923) fall below the 0.95 target, suggesting the model relies partly on script differences as a cue for phonetic equivalence. Phase 3 hard negative training aims to address this but requires careful curation to avoid introducing false equivalences.
 
 \subsection{Evaluation Tasks}
+
+\placeholder{This section describes the evaluation methodology. Results are pending completion of Phase 3 training.}
 
 We evaluate on four tasks designed to test the core claims of the system:
 

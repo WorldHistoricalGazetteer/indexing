@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  6 JAN 2026 05:52
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  7 JAN 2026 14:57
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1057,24 +1057,66 @@ irectional LSTM processes the sequence: $\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10
 /10.95 )$ 
  []
 
-[6] [7] [8]
-Overfull \hbox (0.18446pt too wide) in paragraph at lines 271--272
+[6] [7]
+Overfull \hbox (22.88593pt too wide) in paragraph at lines 228--229
+ []\TU/LiberationSerif(0)/b/n/10.95 4. Isorthographic Phonetic Consistency.[] \
+TU/LiberationSerif(0)/m/n/10.95 We explicitly retain “same-string, different-
+ []
+
+[8]
+Overfull \hbox (3.6705pt too wide) in paragraph at lines 245--246
+\TU/LiberationSerif(0)/m/n/10.95 malised Levenshtein similarity between name pa
+irs (after romanisation via AnyAscii
+ []
+
+[9]
+Overfull \hbox (3.57893pt too wide) in paragraph at lines 267--268
+[]\TU/LiberationSerif(0)/m/n/10.95 Training data comprises 17.1 million toponym
+ records drawn from three sources:
+ []
+
+
+Overfull \hbox (5.69817pt too wide) in paragraph at lines 269--270
+\TU/LiberationSerif(0)/m/n/10.95 attestations sharing geographic coordinates. A
+fter deduplication, 2.55 million unique
+ []
+
+
+Overfull \hbox (6.27396pt too wide) in paragraph at lines 269--270
+\TU/LiberationSerif(0)/m/n/10.95 significant redundancy from common place names
+ (Georgetown, Springfield, Salem)
+ []
+
+
+Overfull \hbox (15.86629pt too wide) in paragraph at lines 284--305
+\TU/LiberationSerif(0)/m/n/10.95 sian (282k), Finnish (241k), Arabic (231k), Fr
+ench (179k), Thai (176k), Japanese
+ []
+
+
+Overfull \hbox (1.07309pt too wide) in paragraph at lines 284--305
+\TU/LiberationSerif(0)/m/n/10.95 (171k), Portuguese (147k), Ukrainian (117k), G
+erman (117k), Korean (113k),
+ []
+
+[10]
+Overfull \hbox (0.18446pt too wide) in paragraph at lines 322--323
 \TU/LiberationSerif(0)/m/n/10.95 Teacher learns to distinguish phonetically sim
 ilar but geographically distinct names. 
  []
 
-[9] [10] [11] [12] (pdf/universal_topophones.bbl [13] [14] [15]) [16]
+[11] [12] [13] [14] [15] (pdf/universal_topophones.bbl [16] [17]) [18]
 (pdf/universal_topophones.aux)
 Package rerunfilecheck Info: File `universal_topophones.out' has not changed.
-(rerunfilecheck)             Checksum: 4934D357695B5FE02C2877CDCC39B96A;5460.
+(rerunfilecheck)             Checksum: 9D420FD0EC0CFE26432A458E20638991;5901.
  ) 
 Here is how much of TeX's memory you used:
- 29920 strings out of 478149
- 632098 string characters out of 5853103
- 966911 words of memory out of 5000000
- 50029 multiletter control sequences out of 15000+600000
+ 29931 strings out of 478149
+ 632303 string characters out of 5853103
+ 966714 words of memory out of 5000000
+ 50040 multiletter control sequences out of 15000+600000
  476140 words of font info for 94 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 84i,14n,80p,1573b,480s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,14n,80p,1573b,462s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/universal_topophones.pdf (16 pages).
+Output written on pdf/universal_topophones.pdf (18 pages).
