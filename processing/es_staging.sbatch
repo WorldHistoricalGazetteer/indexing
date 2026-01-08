@@ -183,20 +183,30 @@ curl -s -X PUT "$ES_URL/_snapshot/$STAGING_REPO_NAME" \
 }" | python3 -m json.tool
 echo
 
-# --- Find latest snapshot containing both indices ---
+# --- Find latest snapshot containing required indices ---
 echo "Checking for existing snapshots..."
+
+# Determine which indices to restore
+if [ "${RESTORE_PLACES_ONLY:-0}" = "1" ]; then
+    echo "Mode: places-only (toponyms will be rebuilt separately)"
+    REQUIRED_INDEX="places"
+    RESTORE_INDICES="places"
+else
+    REQUIRED_INDEX="places"  # At minimum need places
+    RESTORE_INDICES="places,toponyms"
+fi
+
 LATEST_SNAPSHOT=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     snapshots = data.get('snapshots', [])
-    # Find snapshots that contain both places and toponyms
-    complete = [s for s in snapshots
-                if s['state'] == 'SUCCESS'
-                and 'places' in s['indices']
-                and 'toponyms' in s['indices']]
-    if complete:
-        latest = max(complete, key=lambda x: x['start_time'])
+    # Find snapshots that contain the required index
+    valid = [s for s in snapshots
+             if s['state'] == 'SUCCESS'
+             and '$REQUIRED_INDEX' in s['indices']]
+    if valid:
+        latest = max(valid, key=lambda x: x['start_time'])
         print(latest['snapshot'])
 except:
     pass
@@ -205,12 +215,13 @@ except:
 if [ -n "$LATEST_SNAPSHOT" ]; then
     # --- Restore from snapshot ---
     echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
+    echo "  Indices: $RESTORE_INDICES"
     curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore?wait_for_completion=true" \
-        -H 'Content-Type: application/json' -d '{
-      "indices": "places,toponyms",
-      "ignore_unavailable": true,
-      "include_global_state": false
-    }' | python3 -m json.tool
+        -H 'Content-Type: application/json' -d "{
+      \"indices\": \"$RESTORE_INDICES\",
+      \"ignore_unavailable\": true,
+      \"include_global_state\": false
+    }" | python3 -m json.tool
     echo
 else
     # --- Create empty indices ---

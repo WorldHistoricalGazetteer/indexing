@@ -373,6 +373,20 @@ stop_kibana() {
 # =============================================================================
 
 staging_start() {
+    # Parse arguments
+    local PLACES_ONLY=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --places-only)
+                PLACES_ONLY=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
     # Check if staging already running
     if [ -f "$STAGING_INFO_FILE" ]; then
         source "$STAGING_INFO_FILE"
@@ -401,11 +415,19 @@ staging_start() {
     fi
 
     echo "Launching staging Elasticsearch on Slurm..."
+    if $PLACES_ONLY; then
+        echo "  Mode: places-only (toponyms will be rebuilt separately)"
+    fi
 
     # Ensure log directory exists
     mkdir -p "$STAGING_SLURM_LOGS"
 
-    JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
+    # Pass places-only flag via sbatch --export
+    if $PLACES_ONLY; then
+        JOBID=$(sbatch --parsable --export=ALL,RESTORE_PLACES_ONLY=1 "$STAGING_SCRIPT")
+    else
+        JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
+    fi
 
     if [ -z "$JOBID" ]; then
         echo "ERROR: Failed to submit Slurm job"
@@ -688,7 +710,7 @@ do_rebuild_toponyms() {
     # Setup local scratch (CRC convention)
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
-    # Capture extra args (e.g., --limit 1000, --skip-es-index)
+    # Capture extra args (e.g., --limit 1000)
     PYTHON_ARGS="$@"
 
     echo "Submitting consolidated rebuild + training extraction job..."
@@ -702,7 +724,9 @@ do_rebuild_toponyms() {
     echo "  2. Filter pre-romanized forms (lang-script mismatches)"
     echo "  3. Generate vocabulary (expanded Unicode ranges)"
     echo "  4. Export training data to Parquet (with IPA/PanPhon features)"
-    echo "  5. Rebuild ES toponyms index (with attestations + name_search)"
+    echo
+    echo "Note: ES toponyms index is NOT populated until embeddings are computed."
+    echo "      Use -update-embeddings to create the index with embeddings."
 
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
@@ -743,7 +767,7 @@ echo "Output:  $OUTPUT_DIR"
 echo
 
 # Run the consolidated rebuild script
-# This handles: extraction, vocabulary, training export, ES indexing
+# Skip ES indexing - toponyms index will be created when embeddings are ready
 python -m phonetics.extraction.rebuild_toponyms_index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --sqlite-path "${SQLITE_PATH}" \
@@ -752,6 +776,7 @@ python -m phonetics.extraction.rebuild_toponyms_index \
     --training-namespaces gn wd tgn \
     --train-ratio 0.8 \
     --val-ratio 0.1 \
+    --skip-es-index \
     --confirm \
     $PYTHON_ARGS
 
@@ -764,6 +789,10 @@ echo "  - vocab/           Character, language, script vocabularies"
 echo "  - training/        Parquet files with IPA/features"
 echo "  - splits/          Train/val/test ID lists"
 echo "  - toponyms.db      SQLite checkpoint"
+echo
+echo "Next steps:"
+echo "  1. Train model:         source es.sh -train-model $DATA_VERSION"
+echo "  2. Update embeddings:   source es.sh -update-embeddings $DATA_VERSION"
 echo
 echo "Job Finished: \$(date)"
 EOF
@@ -991,25 +1020,25 @@ BATCH_SCRIPT
 }
 
 # =============================================================================
-# INFERENCE PIPELINE (Compute [GPU] -> Push [CPU])
+# INFERENCE PIPELINE (Compute [GPU] -> Index [CPU])
 # =============================================================================
 #
-# Updates ES with embeddings computed from the trained model.
-# Uses the training Parquet files directly (no separate extract step needed).
+# Creates the ES toponyms index with embeddings computed from the trained model.
+# Uses training Parquet files directly - no ES toponyms index needed until now.
 #
 # Stages:
 #   1. compute:  Load training Parquet -> GPU inference -> embeddings Parquet
-#   2. push:     Bulk update embeddings -> ES
+#   2. index:    Create full ES toponyms index from training data + embeddings
 #
 # Usage:
 #   source es.sh -update-embeddings VERSION              # Run full pipeline
 #   source es.sh -update-embeddings VERSION compute      # Compute only
-#   source es.sh -update-embeddings VERSION push         # Push only (requires compute done)
+#   source es.sh -update-embeddings VERSION index        # Index only (requires compute done)
 #   source es.sh -update-embeddings VERSION --force      # Force re-run all stages
 
 do_update_embeddings() {
     # Usage: source es.sh -update-embeddings VERSION [STAGE] [--force]
-    # STAGE: compute | push | (empty for full pipeline)
+    # STAGE: compute | index | (empty for full pipeline)
 
     local DATA_VERSION=""
     local STAGE="all"
@@ -1022,7 +1051,7 @@ do_update_embeddings() {
                 FORCE=true
                 shift
                 ;;
-            compute|push)
+            compute|index)
                 STAGE="$1"
                 shift
                 ;;
@@ -1037,7 +1066,7 @@ do_update_embeddings() {
 
     if [[ -z "$DATA_VERSION" ]]; then
         echo "ERROR: Data version required"
-        echo "Usage: source es.sh -update-embeddings VERSION [compute|push] [--force]"
+        echo "Usage: source es.sh -update-embeddings VERSION [compute|index] [--force]"
         return 1
     fi
 
@@ -1046,6 +1075,7 @@ do_update_embeddings() {
     local DATA_DIR="${BASE_DIR}/data/v${DATA_VERSION}"
     local VOCAB_DIR="${DATA_DIR}/vocab"
     local TRAINING_DIR="${DATA_DIR}/training"
+    local SQLITE_FILE="${DATA_DIR}/toponyms.db"
     local CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
     local CACHE_DIR="${BASE_DIR}/inference_cache/v${DATA_VERSION}"
     local LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/inference_v${DATA_VERSION}"
@@ -1058,9 +1088,15 @@ do_update_embeddings() {
     mkdir -p "$CACHE_DIR"
     mkdir -p "$LOG_DIR"
 
-    # Check training data exists
+    # Check required files exist
     if [ ! -d "$TRAINING_DIR" ]; then
         echo "ERROR: Training data not found: $TRAINING_DIR"
+        echo "Run: source es.sh -rebuild-toponyms $DATA_VERSION"
+        return 1
+    fi
+
+    if [ ! -f "$SQLITE_FILE" ]; then
+        echo "ERROR: SQLite database not found: $SQLITE_FILE"
         echo "Run: source es.sh -rebuild-toponyms $DATA_VERSION"
         return 1
     fi
@@ -1106,9 +1142,9 @@ do_update_embeddings() {
         echo "  ○ Compute: PENDING"
     fi
     if [ -f "$DONE_PUSH" ]; then
-        echo "  ✓ Push:    COMPLETE ($(stat -c %y "$DONE_PUSH" 2>/dev/null | cut -d. -f1))"
+        echo "  ✓ Index:   COMPLETE ($(stat -c %y "$DONE_PUSH" 2>/dev/null | cut -d. -f1))"
     else
-        echo "  ○ Push:    PENDING"
+        echo "  ○ Index:   PENDING"
     fi
     echo
 
@@ -1191,9 +1227,9 @@ EOF
     fi
 
     # =========================================================================
-    # STAGE 2: PUSH (Embeddings Parquet -> ES)
+    # STAGE 2: INDEX (Create full ES index from training data + embeddings)
     # =========================================================================
-    if [[ "$STAGE" == "all" || "$STAGE" == "push" ]]; then
+    if [[ "$STAGE" == "all" || "$STAGE" == "index" ]]; then
 
         # --- SMART WAIT LOGIC ---
         if [ ! -f "$DONE_COMPUTE" ]; then
@@ -1214,7 +1250,7 @@ EOF
         fi
 
         if [ -f "$DONE_PUSH" ]; then
-            echo "PUSH: Already complete. Skipping. (Use --force to re-run)"
+            echo "INDEX: Already complete. Skipping. (Use --force to re-run)"
         else
             # Check staging ES is running
             if [ ! -f "$STAGING_INFO_FILE" ]; then
@@ -1223,27 +1259,29 @@ EOF
             fi
             source "$STAGING_INFO_FILE"
 
-            echo "Submitting PUSH job..."
+            echo "Submitting INDEX job..."
 
             JOB_ID_2=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-inf-push-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/2_push_%j.out
-#SBATCH --error=${LOG_DIR}/2_push_%j.err
+#SBATCH --job-name=whg-inf-index-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/2_index_%j.out
+#SBATCH --error=${LOG_DIR}/2_index_%j.err
 #SBATCH --partition=htc
-#SBATCH --time=8:00:00
+#SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
 
 set -e
 
 echo "=========================================="
-echo "STAGE 2: PUSH EMBEDDINGS TO ES"
+echo "STAGE 2: CREATE TOPONYMS INDEX"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+echo "SQLite DB: $SQLITE_FILE"
+echo "Embeddings: $FILE_EMB"
 
 # Load environment
 source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
@@ -1255,7 +1293,12 @@ fi
 cd "$REPO_DIR"
 
 if [ ! -f "$FILE_EMB" ]; then
-    echo "ERROR: Input file not found: $FILE_EMB"
+    echo "ERROR: Embeddings file not found: $FILE_EMB"
+    exit 1
+fi
+
+if [ ! -f "$SQLITE_FILE" ]; then
+    echo "ERROR: SQLite database not found: $SQLITE_FILE"
     exit 1
 fi
 
@@ -1263,24 +1306,28 @@ fi
 SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH"
 
-echo "Staging input to local scratch..."
+echo "Staging files to local scratch..."
 cp "$FILE_EMB" "\${SCRATCH}/embeddings.parquet"
+cp "$SQLITE_FILE" "\${SCRATCH}/toponyms.db"
 
-python -m phonetics.inference.update_es push \
+# Create full index from SQLite (all toponyms) + embeddings (training subset)
+python -m phonetics.inference.update_es index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --index toponyms \
     --embedding-version ${DATA_VERSION} \
-    --input-file "\${SCRATCH}/embeddings.parquet" \
+    --sqlite-file "\${SCRATCH}/toponyms.db" \
+    --embeddings-file "\${SCRATCH}/embeddings.parquet" \
+    --schema-file "$REPO_DIR/schemas/toponyms.json" \
     --batch-size 2000
 
 # Mark complete
 touch "$DONE_PUSH"
 
-echo "PUSH complete: \$(date)"
+echo "INDEX complete: \$(date)"
 EOF
 )
-            echo "  ✓ PUSH job submitted: $JOB_ID_2"
-            echo "    Log: tail -f ${LOG_DIR}/2_push_${JOB_ID_2}.out"
+            echo "  ✓ INDEX job submitted: $JOB_ID_2"
+            echo "    Log: tail -f ${LOG_DIR}/2_index_${JOB_ID_2}.out"
         fi
     fi
 
@@ -1295,7 +1342,7 @@ EOF
     echo
     echo "To re-run failed stages:"
     echo "  source es.sh -update-embeddings $DATA_VERSION compute"
-    echo "  source es.sh -update-embeddings $DATA_VERSION push"
+    echo "  source es.sh -update-embeddings $DATA_VERSION index"
     echo
     echo "To force full re-run:"
     echo "  source es.sh -update-embeddings $DATA_VERSION --force"
@@ -1386,7 +1433,8 @@ case "$1" in
 
     # --- Staging (Slurm) ---
     -staging-start)
-        staging_start
+        shift  # Remove -staging-start from arguments
+        staging_start "$@"
         ;;
     -staging-stop)
         staging_stop
@@ -1451,8 +1499,11 @@ case "$1" in
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
         echo "                                 PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
         echo
-        echo "EMBEDDING UPDATE PIPELINE:"
-        echo "  -update-embeddings VERSION    Submit embedding update pipeline for model version"
+        echo "EMBEDDING / INDEX PIPELINE:"
+        echo "  -update-embeddings VERSION [STAGE]"
+        echo "      Compute embeddings and create full toponyms index"
+        echo "      STAGE: compute (GPU), index (create ES index), or omit for both"
+        echo "      Use --force to re-run completed stages"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
@@ -1466,22 +1517,21 @@ case "$1" in
         echo "  kibana-restart      Restart Kibana only"
         echo
         echo "STAGING (run on CRC login node, use 'source'):"
-        echo "  source $0 -staging-start    Launch staging ES on Slurm"
-        echo "  source $0 -staging-stop     Stop staging ES"
-        echo "  source $0 -staging-status   Show status and index counts"
-        echo "  source $0 -staging-logs     Show recent log output"
+        echo "  source $0 -staging-start              Launch staging ES on Slurm"
+        echo "  source $0 -staging-start --places-only  Launch with only places index"
+        echo "  source $0 -staging-stop               Stop staging ES"
+        echo "  source $0 -staging-status             Show status and index counts"
+        echo "  source $0 -staging-logs               Show recent log output"
         echo
         echo "Typical workflow:"
-        echo "  1. Start staging ES:    source es.sh -staging-start"
-        echo "  2. Rebuild + Extract:   source es.sh -rebuild-toponyms 3"
+        echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
+        echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
         echo "  3. Train model:         source es.sh -train-model 3 1  (Phase 1)"
         echo "                          source es.sh -train-model 3 2  (Phase 2)"
         echo "                          source es.sh -train-model 3 3  (Phase 3)"
-        echo "  4. Update embeddings:   source es.sh -update-embeddings 3"
+        echo "  4. Create ES index:     source es.sh -update-embeddings 3"
         echo
         echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
-        echo "  - raw_chunk_NNNN.parquet    (Phase 1 output)"
-        echo "  - vectors_chunk_NNNN.parquet (Phase 2 output)"
         echo
         echo "NOTES:"
         echo "  - Staging: one instance at a time (port $STAGING_ES_PORT)"

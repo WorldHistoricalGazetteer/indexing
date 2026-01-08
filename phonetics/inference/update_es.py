@@ -219,6 +219,178 @@ def run_push(args):
 
 
 # =============================================================================
+# STEP 3: INDEX (Create full toponyms index from SQLite + embeddings)
+# =============================================================================
+def run_index(args):
+    """
+    Create the full toponyms index from SQLite database + embeddings.
+
+    The SQLite database contains ALL toponyms (not just training subset).
+    Embeddings are only available for training toponyms - others get null embedding.
+
+    Workflow:
+    1. rebuild_toponyms_index.py -> SQLite (all toponyms) + Parquet (training subset)
+    2. Train model on Parquet subset
+    3. update_es.py compute -> embeddings for training subset
+    4. update_es.py index -> ES index with ALL toponyms (embeddings where available)
+    """
+    import sqlite3
+    from datetime import datetime, timezone
+    import json
+
+    sqlite_path = Path(args.sqlite_file)
+    embeddings_path = Path(args.embeddings_file)
+    schema_path = Path(args.schema_file)
+
+    if not sqlite_path.exists():
+        logger.error(f"SQLite database not found: {sqlite_path}")
+        sys.exit(1)
+    if not embeddings_path.exists():
+        logger.error(f"Embeddings file not found: {embeddings_path}")
+        sys.exit(1)
+    if not schema_path.exists():
+        logger.error(f"Schema file not found: {schema_path}")
+        sys.exit(1)
+
+    logger.info(f"Connecting to {args.es_host}...")
+    es = Elasticsearch(args.es_host, request_timeout=120, max_retries=3)
+
+    # Load embeddings into memory (doc_id -> embedding)
+    logger.info(f"Loading embeddings from {embeddings_path}...")
+    emb_table = pq.read_table(embeddings_path)
+    embeddings_map = {}
+    for batch in emb_table.to_batches():
+        doc_ids = batch.column('doc_id').to_pylist()
+        embs = batch.column('embedding').to_pylist()
+        for doc_id, emb in zip(doc_ids, embs):
+            embeddings_map[doc_id] = list(emb)
+    logger.info(f"Loaded {len(embeddings_map):,} embeddings")
+
+    # Load schema and create index
+    logger.info(f"Creating index '{args.index}' from schema...")
+    with open(schema_path) as f:
+        schema = json.load(f)
+
+    # Delete existing index if present
+    if es.indices.exists(index=args.index):
+        logger.info(f"Deleting existing index '{args.index}'...")
+        es.indices.delete(index=args.index)
+
+    # Disable refresh for bulk loading
+    schema.setdefault('settings', {})['refresh_interval'] = '-1'
+    es.indices.create(index=args.index, body=schema)
+    logger.info(f"Index '{args.index}' created")
+
+    # Connect to SQLite
+    logger.info(f"Reading toponyms from {sqlite_path}...")
+    conn = sqlite3.connect(str(sqlite_path))
+    conn.row_factory = sqlite3.Row
+
+    # Get total count
+    total_rows = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
+    logger.info(f"Total toponyms in database: {total_rows:,}")
+
+    indexed_at = datetime.now(timezone.utc).isoformat()
+
+    def generate_actions():
+        with_embedding = 0
+        without_embedding = 0
+
+        # Query all toponyms with their namespaces and attestations
+        cursor = conn.execute('''
+            SELECT t.toponym_id,
+                   t.name,
+                   t.name_romanized,
+                   t.lang,
+                   t.lang_variant,
+                   t.script,
+                   GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
+                   GROUP_CONCAT(DISTINCT ta.place_id) as attestations
+            FROM toponyms t
+            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+            LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+            GROUP BY t.toponym_id
+        ''')
+
+        for row in cursor:
+            toponym_id = row['toponym_id']
+            namespaces = row['namespaces'].split(',') if row['namespaces'] else []
+            attestations = row['attestations'].split(',') if row['attestations'] else []
+
+            embedding = embeddings_map.get(toponym_id)
+            if embedding:
+                with_embedding += 1
+            else:
+                without_embedding += 1
+
+            doc = {
+                'name': row['name'],
+                'lang': row['lang'] or None,
+                'lang_variant': row['lang_variant'] or None,
+                'script': row['script'],
+                'namespaces': namespaces,
+                'primary_namespace': namespaces[0] if namespaces else None,
+                'attestations': attestations,
+                'indexed_at': indexed_at,
+            }
+
+            # Add name_romanized if present
+            if row['name_romanized']:
+                doc['name_romanized'] = row['name_romanized']
+
+            # Add embedding if available
+            if embedding:
+                doc['embedding'] = embedding
+                doc['embedding_version'] = args.embedding_version
+
+            # Remove None values
+            doc = {k: v for k, v in doc.items() if v is not None}
+
+            yield {
+                '_index': args.index,
+                '_id': toponym_id,
+                '_source': doc,
+            }
+
+        logger.info(f"Toponyms with embedding: {with_embedding:,}")
+        logger.info(f"Toponyms without embedding: {without_embedding:,}")
+
+    # Bulk index
+    logger.info("Bulk indexing...")
+    success_count = 0
+    error_count = 0
+
+    for success, info in helpers.parallel_bulk(
+        es,
+        generate_actions(),
+        thread_count=4,
+        chunk_size=args.batch_size,
+        raise_on_error=False
+    ):
+        if success:
+            success_count += 1
+        else:
+            error_count += 1
+            if error_count < 5:
+                logger.error(f"Error: {info}")
+
+        if (success_count + error_count) % 100000 == 0:
+            logger.info(f"Indexed {success_count:,} docs...")
+
+    # Enable refresh
+    logger.info("Enabling refresh...")
+    es.indices.put_settings(index=args.index, body={'refresh_interval': '1s'})
+    es.indices.refresh(index=args.index)
+
+    logger.info(f"Indexing complete. Success: {success_count:,}, Errors: {error_count:,}")
+
+    # Create snapshot
+    logger.info("Creating snapshot...")
+    create_checkpoint_snapshot(es, f'toponyms_v{args.embedding_version}')
+    logger.info("...done.")
+
+
+# =============================================================================
 # MAIN CLI
 # =============================================================================
 def main():
@@ -246,12 +418,23 @@ def main():
     p_compute.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     p_compute.set_defaults(func=run_compute)
 
-    # --- PUSH ---
+    # --- PUSH (legacy - updates existing index) ---
     p_push = subparsers.add_parser('push', parents=[parent_parser],
-                                    help='Push embeddings to ES')
+                                    help='Push embeddings to existing ES index (legacy)')
     p_push.add_argument('--input-file', required=True,
                         help='Embeddings Parquet file')
     p_push.set_defaults(func=run_push)
+
+    # --- INDEX (creates full index from SQLite + embeddings) ---
+    p_index = subparsers.add_parser('index', parents=[parent_parser],
+                                     help='Create full toponyms index from SQLite database + embeddings')
+    p_index.add_argument('--sqlite-file', required=True,
+                         help='SQLite database with all toponyms')
+    p_index.add_argument('--embeddings-file', required=True,
+                         help='Embeddings Parquet file (for training subset)')
+    p_index.add_argument('--schema-file', required=True,
+                         help='ES index schema JSON file')
+    p_index.set_defaults(func=run_index)
 
     args = parser.parse_args()
     args.func(args)
