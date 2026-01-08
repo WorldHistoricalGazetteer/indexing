@@ -60,7 +60,7 @@ Linking place names across historical sources, languages, and writing systems re
 \section{Introduction}
 \label{sec:introduction}
 
-Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes nearly \placeholder{67} million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
+Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes over 112 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
 
 The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
@@ -98,8 +98,11 @@ These sections have \placeholder{} markers and need actual data:
 
 \begin{enumerate}
 \item Abstract: Results pending placeholder
-\item Section 1 (Introduction): "67 million" placeholder
-\item Section 4.4 (Dataset Statistics): Entire section marked \placeholder{REVISE} - needs new statistics from gn/wd/tgn extraction
+\section*{Sections Still Requiring Updates After Retraining}
+These sections have \placeholder{} markers and need actual data:
+
+\begin{enumerate}
+\item Abstract: Results pending placeholder
 \item Section 6.4 (Results): Placeholder
 \item Section 7 (Discussion): Placeholder
 \item Section 8 (Conclusion): Summary placeholder
@@ -186,7 +189,7 @@ Character vocabulary construction balances coverage against tractability:
     \item \textbf{Korean Hangul}: Rather than treating 11,172 syllable blocks as atomic units, we decompose into Jamo (lead consonant, vowel, optional tail consonant), yielding approximately 60 tokens with explicit phonetic structure.
 \end{itemize}
 
-The resulting vocabulary contains approximately 3,500--4,000 tokens across all scripts, each tagged with its source script for embedding lookup. The exact size depends on the character distribution in the corpus at extraction time.
+The resulting vocabulary contains approximately 11,000 tokens across all scripts, each tagged with its source script for embedding lookup.
 
 \subsection{Teacher Network: Phonetic Feature Encoder}
 
@@ -252,7 +255,7 @@ We restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \te
 \paragraph{3. Global Vocabulary Construction.}
 To prevent out-of-vocabulary (OOV) errors at inference time, we decouple vocabulary construction from pair generation.
 \begin{itemize}
-    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} index (representing 67M records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters, while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently.
+    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} corpus (112 million records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters, while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
     \item \textbf{Pass 2 (Training Pairs):} We generate candidate triplets from the \texttt{places} index, which groups name variants by entity. These candidates are then restricted to the stratified quotas defined above.
 \end{itemize}
 
@@ -294,47 +297,50 @@ While retaining genuine phonetic cognates:
 
 The Teacher network requires IPA transcriptions. We use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages covering the majority of GeoNames entries. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction. Names in languages without Epitran support are excluded from Teacher training but can still be processed by the Student, which learns to generalise from related scripts.
 
-\subsection{Dataset Statistics}\placeholder{REVISE}
+\subsection{Dataset Statistics}
 
-Training data comprises 17.1 million toponym records drawn from three sources: GeoNames (~17M, 99.8\%), Pleiades (24,768), and Index Villaris (16,995). Of these, 4.4 million (26\%) have phonetic embeddings via Epitran and PanPhon suitable for Teacher training. The data spans 829 languages and 20 script categories.
+The full WHG \texttt{places} index contains 47.1 million place records, from which we extract 112.0 million toponym records spanning 1,944 languages and 20 script categories. During extraction, 1.77 million toponyms (1.6\%) are filtered as ``pre-romanised'' forms---cases where the language tag implies a non-Latin script but the name is written in Latin characters (e.g., Chinese names romanised to Pinyin without explicit tagging). These are excluded to prevent the model from learning spurious orthographic similarities.
 
-Positive pairs are generated dynamically during training from co-located name attestations sharing geographic coordinates. After deduplication, 2.55 million unique pairs remain, of which 45.3\% are cross-script. Analysis of pair frequency revealed significant redundancy from common place names (Georgetown, Springfield, Salem) appearing across multiple locations.
+For training, we restrict to the three high-quality namespace authorities: GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn}). This yields 57.6 million training toponyms with the following script distribution:
 
-\begin{itemize}
-    \item Total toponym tokens: 17.1 million
-    \item Script distribution (top 10 identified):
-        Latin (14.2M, 83.3\%),
-        Cyrillic (816k, 4.8\%),
-        CJK (752k, 4.4\%),
-        Arabic (709k, 4.2\%),
-        Thai (166k, 1.0\%),
-        Hangul (144k, 0.8\%),
-        Other (111k, 0.6\%),
-        Katakana (64k, 0.4\%),
-        Hiragana (41k, 0.2\%),
-        Armenian (38k, 0.2\%).
-    \item Language distribution (Top 20 identified):
-        English (647k),
-        Chinese (604k),
-        Norwegian (427k),
-        Russian (398k),
-        Spanish (349k),
-        Persian (307k),
-        Indonesian (282k),
-        Finnish (241k),
-        Arabic (231k),
-        French (179k),
-        Thai (176k),
-        Japanese (171k),
-        Portuguese (147k),
-        Ukrainian (117k),
-        German (117k),
-        Korean (113k),
-        Dutch (74k),
-        Latin-Uncertain/Other (72k),
-        Italian (70k),
-        Swedish (68k).
-\end{itemize}
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{lrrrl}
+\toprule
+\textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{Languages} & \textbf{Top Languages} \\
+\midrule
+LATIN & 50,068,496 & 86.9\% & 874 & en, ceb, fr, nl, de \\
+CYRILLIC & 2,903,698 & 5.0\% & 195 & ru, uk, ce, tt, bg \\
+CJK & 1,857,832 & 3.2\% & 86 & zh, ja, wuu, gan, yue \\
+ARABIC & 1,751,075 & 3.0\% & 129 & fa, ar, arz, azb, ur \\
+KATAKANA & 310,691 & 0.5\% & 32 & ja \\
+HANGUL & 270,407 & 0.5\% & 36 & ko \\
+OTHER & 243,259 & 0.4\% & 401 & lauc, my, en, pa, si \\
+THAI & 211,956 & 0.4\% & 32 & th \\
+GREEK & 172,879 & 0.3\% & 72 & el, grc, pnt \\
+ARMENIAN & 148,266 & 0.3\% & 39 & hy, hyw \\
+HEBREW & 133,232 & 0.2\% & 49 & he, yi \\
+DEVANAGARI & 131,785 & 0.2\% & 58 & hi, mr, ne, sa \\
+BENGALI & 97,931 & 0.2\% & 28 & bn, as \\
+GEORGIAN & 93,334 & 0.2\% & 33 & ka \\
+MALAYALAM & 53,570 & 0.1\% & 8 & ml \\
+TAMIL & 47,748 & 0.1\% & 14 & ta \\
+HIRAGANA & 47,695 & 0.1\% & 18 & ja \\
+TELUGU & 47,646 & 0.1\% & 14 & te \\
+KANNADA & 21,372 & 0.04\% & 14 & kn \\
+GUJARATI & 20,340 & 0.04\% & 6 & gu \\
+\bottomrule
+\end{tabular}
+\caption{Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.}
+\label{tab:script-distribution}
+\end{table}
+
+The character vocabulary is constructed by scanning all 112M toponyms (not just training data), ensuring coverage of rare characters that may appear at inference time. After preprocessing---romanisation of CJK via AnyAscii and decomposition of Hangul to Jamo---the final vocabulary contains 11,122 tokens. The vocabulary is expanded to include full Unicode ranges for each observed script, ensuring the model can handle characters not seen in the training corpus.
+
+\paragraph{Namespace Contribution.} Within the training data, Wikidata contributes the majority of non-Latin script coverage. For example, in the Devanagari script, Wikidata provides 130,110 toponyms compared to GeoNames' 17,676 and TGN's 2,035. This pattern holds across most South Asian and Middle Eastern scripts, validating our decision to include Wikidata despite its heterogeneous quality.
+
+\paragraph{Filtered Lang-Script Mismatches.} The top filtered combinations were: Chinese/Latin (923,079), Persian/Latin (197,099), Japanese/Latin (111,945), Russian/Latin (100,805), and Kazakh/Latin (77,768). These represent pre-romanised forms that would otherwise introduce noise into the training signal.
 
 \section{Training Methodology}
 \label{sec:training}
