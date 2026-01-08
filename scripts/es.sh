@@ -569,7 +569,7 @@ do_ingest() {
     cat > "$INGEST_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=es-ingest
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -691,7 +691,7 @@ do_rebuild_toponyms() {
 #SBATCH --job-name=whg-rebuild-topo
 #SBATCH --output=${LOG_DIR}/rebuild_%j.out
 #SBATCH --error=${LOG_DIR}/rebuild_%j.err
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
