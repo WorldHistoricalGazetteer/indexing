@@ -52,13 +52,13 @@
 \maketitle
 
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. We present a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Our approach uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Pleiades, and Index Villaris, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness, historical variant linking performance.}
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. We present a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Our approach uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Wikidata, and TGN, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness.}
 \end{abstract}
 
 \section{Introduction}
 \label{sec:introduction}
 
-Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes nearly 67 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
+Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes nearly \placeholder{67} million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
 
 The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
@@ -266,7 +266,7 @@ The Teacher network requires IPA transcriptions. We use Epitran~\citep{mortensen
 
 Training data comprises 17.1 million toponym records drawn from three sources: GeoNames (~17M, 99.8\%), Pleiades (24,768), and Index Villaris (16,995). Of these, 4.4 million (26\%) have phonetic embeddings via Epitran and PanPhon suitable for Teacher training. The data spans 829 languages and 20 script categories.
 
-Positive pairs are generated dynamically during training from co-located name attestations sharing geographic coordinates. After deduplication, 2.55 million unique pairs remain, of which 45.3\% are cross-script. Analysis of pair frequency revealed significant redundancy from common place names (Georgetown, Springfield, Salem) appearing across multiple locations. Additionally, same-string pairs (e.g., ``Georgetown'' $\leftrightarrow$ ``Georgetown'' for different places) provide no phonetic learning signal. \placeholder Future iterations will filter such pairs to focus training on phonetically informative examples.
+Positive pairs are generated dynamically during training from co-located name attestations sharing geographic coordinates. After deduplication, 2.55 million unique pairs remain, of which 45.3\% are cross-script. Analysis of pair frequency revealed significant redundancy from common place names (Georgetown, Springfield, Salem) appearing across multiple locations.
 
 \begin{itemize}
     \item Total toponym tokens: 17.1 million
@@ -354,26 +354,27 @@ During this phase:
     \item Epochs: 50
 \end{itemize}
 
-\subsection{Phase 3: Hard Negative Fine-Tuning}
+\subsection{Stage 3: Discriminative Fine-Tuning}
+\label{subsec:stage3}
 
-The final phase sharpens discrimination between similar but distinct toponyms. We generate hard negatives: pairs that are orthographically or phonetically similar but refer to different places.
+While the distillation phase aligns the Student with the Teacher's general phonetic space, the Student may still struggle with \emph{minimal pairs}---names with high orthographic similarity but distinct phonetic realizations (e.g., ``Austria'' vs. ``Australia'', or ``Laughter'' vs. ``Slaughter'').
 
-\placeholder Phase 3 noise: asymmetric local perturbation applied to anchors only, intended to encourage invariance within an already-defined equivalence class, not to introduce new phonetic evidence.
+In this final phase, we fine-tune the Student using triplet loss to sharpen these boundaries without degrading the learned cross-script equivalences.
 
-Training uses triplet loss with mixed negative sampling:
+\paragraph{Hard Negative Mining Strategy.}
+We define negatives strictly phonetically by mining triplets $(a, p, n)$ where:
 \begin{itemize}
-    \item 50\% hard negatives (phonetically similar, different place)
-    \item 50\% random negatives (in-batch sampling)
+    \item \textbf{Anchor ($a$) \& Positive ($p$):} A cross-script pair confirmed to be phonetically equivalent by the Teacher (low Teacher-space distance).
+    \item \textbf{Hard Negative ($n$):} A toponym selected such that it has high orthographic similarity to the anchor (Levenshtein similarity $> 0.7$) but is phonetically distinct (high Teacher-space distance).
 \end{itemize}
 
-The Student alone is fine-tuned using triplet loss, with the Teacher's role complete after Phase 2 distillation.
+Crucially, we explicitly \textbf{exclude} isorthographs from being selected as negatives. If two records share the name ``Georgetown'' but refer to different locations, they are treated as identical in the embedding space. The loss function penalizes the Student only when it places phonetically distinct names closer than phonetically equivalent ones.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
-    \item Optimiser: AdamW with weight decay 0.01
-    \item Learning rate: $1 \times 10^{-4}$ with cosine annealing
-    \item Batch size: 512 triplets
-    \item Epochs: 30
+    \item \textbf{Loss Function:} Triplet Margin Loss ($m=0.2$).
+    \item \textbf{Teacher Status:} Frozen (used only to validate true phonetic distances for negative sampling).
+    \item \textbf{Optimiser:} AdamW with a reduced learning rate ($1 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Stage 2.
 \end{itemize}
 
 \subsection{Implementation Details}
@@ -387,6 +388,8 @@ Checkpoints are saved after each epoch, with the best model selected by validati
 \label{sec:evaluation}
 
 \subsection{Preliminary Results}
+
+\placeholder{DEPRECATED: THESE RESULTS ARE FROM A PROTOTYPE MODEL}
 
 We present interim results from initial training runs to characterise model behaviour prior to full evaluation. These results use the Phase 2 checkpoint (Student-Teacher alignment complete, before hard negative fine-tuning).
 

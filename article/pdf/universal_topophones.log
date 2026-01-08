@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  7 JAN 2026 14:57
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  7 JAN 2026 22:02
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1108,15 +1108,15 @@ ilar but geographically distinct names.
 [11] [12] [13] [14] [15] (pdf/universal_topophones.bbl [16] [17]) [18]
 (pdf/universal_topophones.aux)
 Package rerunfilecheck Info: File `universal_topophones.out' has not changed.
-(rerunfilecheck)             Checksum: 9D420FD0EC0CFE26432A458E20638991;5901.
+(rerunfilecheck)             Checksum: 7A385408A038EE8066A521BDFB2012D1;5903.
  ) 
 Here is how much of TeX's memory you used:
- 29931 strings out of 478149
- 632303 string characters out of 5853103
- 966714 words of memory out of 5000000
- 50040 multiletter control sequences out of 15000+600000
+ 29933 strings out of 478149
+ 632338 string characters out of 5853103
+ 966820 words of memory out of 5000000
+ 50042 multiletter control sequences out of 15000+600000
  476140 words of font info for 94 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 84i,14n,80p,1573b,462s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,14n,80p,1522b,462s stack positions out of 5000i,500n,10000p,200000b,80000s
 
 Output written on pdf/universal_topophones.pdf (18 pages).
