@@ -1010,6 +1010,7 @@ python -m phonetics.training.train \
 BATCH_SCRIPT
 )
         echo "✓ Phase 3 submitted: $JOB_ID_3"
+        LAST_JOB_ID=$JOB_ID_3
     fi
 
     echo
@@ -1017,18 +1018,254 @@ BATCH_SCRIPT
     echo "tail -f ${LOG_DIR}/*_${JOB_ID_1}.*"
     echo "tail -f ${LOG_DIR}/*_${JOB_ID_2}.*"
     echo "tail -f ${LOG_DIR}/*_${JOB_ID_3}.*"
+
+    # Return the last job ID for chaining (used by -train-and-update)
+    echo "$LAST_JOB_ID"
 }
 
 # =============================================================================
-# INFERENCE PIPELINE (Compute [GPU] -> Index [CPU])
+# FULL PIPELINE: TRAIN + UPDATE EMBEDDINGS + CREATE INDEX
 # =============================================================================
 #
-# Creates the ES toponyms index with embeddings computed from the trained model.
-# Uses training Parquet files directly - no ES toponyms index needed until now.
+# Runs training phases 1-3, then computes embeddings and creates the ES index.
+# All jobs are chained via Slurm dependencies so they run sequentially.
 #
-# Stages:
-#   1. compute:  Load training Parquet -> GPU inference -> embeddings Parquet
-#   2. index:    Create full ES toponyms index from training data + embeddings
+# Usage:
+#   source es.sh -train-and-update VERSION
+#
+# This is equivalent to running:
+#   source es.sh -train-model VERSION
+#   source es.sh -update-embeddings VERSION
+#
+# The final index job creates a snapshot when complete.
+
+do_train_and_update() {
+    local DATA_VERSION=${1:?Data version required (e.g., 3)}
+
+    echo "=========================================="
+    echo "FULL PIPELINE: TRAIN + UPDATE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo
+    echo "This will:"
+    echo "  1. Train Phase 1 (Teacher)"
+    echo "  2. Train Phase 2 (Student Alignment)"
+    echo "  3. Train Phase 3 (Fine Tuning)"
+    echo "  4. Compute embeddings (GPU)"
+    echo "  5. Create ES toponyms index"
+    echo "  6. Create snapshot"
+    echo
+
+    # --- PATH CONFIGURATION ---
+    local BASE_DIR="/ix1/whcdh/models/phonetic"
+    local DATA_DIR="${BASE_DIR}/data/v${DATA_VERSION}"
+    local VOCAB_DIR="${DATA_DIR}/vocab"
+    local TRAINING_DIR="${DATA_DIR}/training"
+    local SQLITE_FILE="${DATA_DIR}/toponyms.db"
+    local CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
+    local CACHE_DIR="${BASE_DIR}/inference_cache/v${DATA_VERSION}"
+    local LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    local TRAIN_LOG_DIR="${LOG_DIR}/training_v${DATA_VERSION}"
+    local INF_LOG_DIR="${LOG_DIR}/inference_v${DATA_VERSION}"
+
+    # Pipeline files
+    local FILE_EMB="${CACHE_DIR}/toponyms_embeddings.parquet"
+    local DONE_COMPUTE="${CACHE_DIR}/.done_compute"
+    local DONE_PUSH="${CACHE_DIR}/.done_push_v${DATA_VERSION}"
+
+    mkdir -p "$CACHE_DIR" "$TRAIN_LOG_DIR" "$INF_LOG_DIR"
+
+    # Check required files exist
+    if [ ! -d "$TRAINING_DIR" ]; then
+        echo "ERROR: Training data not found: $TRAINING_DIR"
+        echo "Run: source es.sh -rebuild-toponyms $DATA_VERSION"
+        return 1
+    fi
+    if [ ! -f "$SQLITE_FILE" ]; then
+        echo "ERROR: SQLite database not found: $SQLITE_FILE"
+        echo "Run: source es.sh -rebuild-toponyms $DATA_VERSION"
+        return 1
+    fi
+    if [ ! -d "$VOCAB_DIR" ]; then
+        echo "ERROR: Vocab directory not found: $VOCAB_DIR"
+        return 1
+    fi
+
+    # Check staging ES is running (needed for index step)
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: Staging ES not running. Run -staging-start first."
+        return 1
+    fi
+    source "$STAGING_INFO_FILE"
+
+    # Clear any previous completion markers
+    rm -f "$DONE_COMPUTE" "$DONE_PUSH" "$FILE_EMB"
+
+    # -------------------------------------------------------------------------
+    # TRAINING PHASES 1-3
+    # -------------------------------------------------------------------------
+    echo "Submitting training jobs..."
+
+    # Capture the last job ID from do_train_model
+    TRAIN_OUTPUT=$(do_train_model "$DATA_VERSION" 2>&1)
+    echo "$TRAIN_OUTPUT" | grep -v "^[0-9]*$"  # Print output except raw job ID
+    LAST_TRAIN_JOB=$(echo "$TRAIN_OUTPUT" | grep "^[0-9]*$" | tail -1)
+
+    if [ -z "$LAST_TRAIN_JOB" ]; then
+        echo "ERROR: Failed to get training job ID"
+        return 1
+    fi
+
+    echo
+    echo "Last training job: $LAST_TRAIN_JOB"
+
+    # -------------------------------------------------------------------------
+    # COMPUTE EMBEDDINGS (depends on Phase 3)
+    # -------------------------------------------------------------------------
+    echo
+    echo "Submitting COMPUTE job (depends on training)..."
+
+    JOB_COMPUTE=$(sbatch --parsable --dependency=afterok:${LAST_TRAIN_JOB} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-inf-compute-v${DATA_VERSION}
+#SBATCH --output=${INF_LOG_DIR}/1_compute_%j.out
+#SBATCH --error=${INF_LOG_DIR}/1_compute_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
+#SBATCH --cluster=gpu
+#SBATCH --partition=a100
+#SBATCH --qos=gpu-a100-l
+#SBATCH --gres=gpu:1
+
+set -e
+
+echo "=========================================="
+echo "COMPUTE EMBEDDINGS (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+
+# Load environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+# Find best checkpoint
+MODEL_CHECKPOINT=""
+if [ -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
+    MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase3_best.pt"
+elif [ -f "${CHECKPOINT_DIR}/phase2_best.pt" ]; then
+    MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase2_best.pt"
+else
+    echo "ERROR: No checkpoint found"
+    exit 1
+fi
+
+echo "Model: \$MODEL_CHECKPOINT"
+echo "Input: $TRAINING_DIR"
+
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH"
+
+CUDA_LAUNCH_BLOCKING=1 python -m phonetics.inference.update_es compute \\
+    --input-file "$TRAINING_DIR" \\
+    --output-file "\${SCRATCH}/embeddings.parquet" \\
+    --checkpoint "\$MODEL_CHECKPOINT" \\
+    --vocab-dir "$VOCAB_DIR" \\
+    --batch-size 2048 \\
+    --device cuda
+
+cp "\${SCRATCH}/embeddings.parquet" "$FILE_EMB"
+touch "$DONE_COMPUTE"
+
+echo "COMPUTE complete: \$(date)"
+EOF
+)
+
+    echo "✓ COMPUTE job submitted: $JOB_COMPUTE (depends on $LAST_TRAIN_JOB)"
+
+    # -------------------------------------------------------------------------
+    # CREATE INDEX (depends on Compute)
+    # -------------------------------------------------------------------------
+    echo
+    echo "Submitting INDEX job (depends on compute)..."
+
+    JOB_INDEX=$(sbatch --parsable --dependency=afterok:${JOB_COMPUTE} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-inf-index-v${DATA_VERSION}
+#SBATCH --output=${INF_LOG_DIR}/2_index_%j.out
+#SBATCH --error=${INF_LOG_DIR}/2_index_%j.err
+#SBATCH --partition=htc
+#SBATCH --time=12:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+
+echo "=========================================="
+echo "CREATE TOPONYMS INDEX (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+
+# Load environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH"
+
+cp "$FILE_EMB" "\${SCRATCH}/embeddings.parquet"
+cp "$SQLITE_FILE" "\${SCRATCH}/toponyms.db"
+
+# Create index + snapshot
+python -m phonetics.inference.update_es index \\
+    --es-host "http://${ES_NODE}:${ES_PORT}" \\
+    --index toponyms \\
+    --embedding-version ${DATA_VERSION} \\
+    --sqlite-file "\${SCRATCH}/toponyms.db" \\
+    --embeddings-file "\${SCRATCH}/embeddings.parquet" \\
+    --schema-file "$REPO_DIR/schemas/toponyms.json" \\
+    --batch-size 2000
+
+touch "$DONE_PUSH"
+
+echo "INDEX complete: \$(date)"
+echo "Snapshot created: toponyms_v${DATA_VERSION}"
+EOF
+)
+
+    echo "✓ INDEX job submitted: $JOB_INDEX (depends on $JOB_COMPUTE)"
+
+    # -------------------------------------------------------------------------
+    # SUMMARY
+    # -------------------------------------------------------------------------
+    echo
+    echo "=========================================="
+    echo "FULL PIPELINE SUBMITTED"
+    echo "=========================================="
+    echo
+    echo "Job chain:"
+    echo "  Training Phase 1 → Phase 2 → Phase 3"
+    echo "  → Compute embeddings ($JOB_COMPUTE)"
+    echo "  → Create ES index ($JOB_INDEX)"
+    echo "  → Snapshot: toponyms_v${DATA_VERSION}"
+    echo
+    echo "Monitor: squeue -u \$USER"
+    echo "Logs:"
+    echo "  Training: tail -f ${TRAIN_LOG_DIR}/*.out"
+    echo "  Inference: tail -f ${INF_LOG_DIR}/*.out"
+}
 #
 # Usage:
 #   source es.sh -update-embeddings VERSION              # Run full pipeline
@@ -1386,6 +1623,12 @@ case "$1" in
         do_train_model "$@"
         ;;
 
+    # --- Full Pipeline: Train + Embeddings + Index ---
+    -train-and-update)
+        shift
+        do_train_and_update "$@"
+        ;;
+
     # --- Inference / Embedding Pipeline ---
     -update-embeddings)
         shift  # Remove -update-embeddings from arguments
@@ -1499,7 +1742,12 @@ case "$1" in
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
         echo "                                 PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
         echo
-        echo "EMBEDDING / INDEX PIPELINE:"
+        echo "FULL PIPELINE (train + embeddings + index):"
+        echo "  -train-and-update VERSION"
+        echo "      Chains all jobs: Train (P1→P2→P3) → Compute embeddings → Create ES index"
+        echo "      Creates snapshot 'toponyms_vN' when complete"
+        echo
+        echo "EMBEDDING / INDEX PIPELINE (if training already done):"
         echo "  -update-embeddings VERSION [STAGE]"
         echo "      Compute embeddings and create full toponyms index"
         echo "      STAGE: compute (GPU), index (create ES index), or omit for both"
@@ -1523,12 +1771,15 @@ case "$1" in
         echo "  source $0 -staging-status             Show status and index counts"
         echo "  source $0 -staging-logs               Show recent log output"
         echo
-        echo "Typical workflow:"
+        echo "Typical workflow (simple):"
         echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
         echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
-        echo "  3. Train model:         source es.sh -train-model 3 1  (Phase 1)"
-        echo "                          source es.sh -train-model 3 2  (Phase 2)"
-        echo "                          source es.sh -train-model 3 3  (Phase 3)"
+        echo "  3. Train + Index:       source es.sh -train-and-update 3"
+        echo
+        echo "Typical workflow (step-by-step):"
+        echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
+        echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
+        echo "  3. Train model:         source es.sh -train-model 3"
         echo "  4. Create ES index:     source es.sh -update-embeddings 3"
         echo
         echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
