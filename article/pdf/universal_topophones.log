@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  8 JAN 2026 07:48
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  8 JAN 2026 22:39
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1050,123 +1050,412 @@ se curriculum \TU/LiberationSerif(0)/m/n/10.95 progressing from phonetic featur
 e learning through
  []
 
-[2] [3]
-Overfull \hbox (19.86441pt too wide) in paragraph at lines 125--126
-\TU/LiberationSerif(0)/m/n/10.95 output representations. They have been success
-fully applied to face verification ([][]Schroff
+[2]
+./universal_topophones.tex:91: Missing $ inserted.
+<inserted text> 
+                $
+l.91 \item Review extraction_
+                             stats.json for actual numbers
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+
+./universal_topophones.tex:92: LaTeX Error: Command \item invalid in math mode.
+
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.92 \item
+           Update Section 4.4 of the .tex with new statistics
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+./universal_topophones.tex:92: LaTeX Error: Something's wrong--perhaps a missin
+g \item.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.92 \item U
+            pdate Section 4.4 of the .tex with new statistics
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+./universal_topophones.tex:92: LaTeX Error: Something's wrong--perhaps a missin
+g \item.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.92 \item U
+            pdate Section 4.4 of the .tex with new statistics
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+
+./universal_topophones.tex:93: LaTeX Error: Command \item invalid in math mode.
+
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.93 \item
+           Proceed with model training
+Try typing  <return>  to proceed.
+If that doesn't work, type  X <return>  to quit.
+
+./universal_topophones.tex:93: Missing $ inserted.
+<inserted text> 
+                $
+l.93 \item P
+            roceed with model training
+I've inserted a begin-math/end-math symbol since I think
+you left one out. Proceed, with fingers crossed.
+
+./universal_topophones.tex:93: Missing } inserted.
+<inserted text> 
+                }
+l.93 \item P
+            roceed with model training
+I've inserted something that you may have forgotten.
+(See the <inserted text> above.)
+With luck, this will get me unwedged. But if you
+really didn't forget anything, try typing `2' now; then
+my insertion and my current dilemma will both disappear.
+
+
+Overfull \hbox (108.46503pt too wide) in paragraph at lines 91--93
+[]\TU/LiberationSerif(0)/m/n/10.95 Review extraction$[]\OML/cmm/m/it/10.95 tats
+:jsonforactualnumbers[]UpdateSection\OT1/cmr/m/n/10.95 4\OML/cmm/m/it/10.95 :\O
+T1/cmr/m/n/10.95 4\OML/cmm/m/it/10.95 ofthe[]:tex[]withnewstatistics[][]$ 
+ []
+
+./universal_topophones.tex:93: Extra }, or forgotten \endgroup.
+\par ...m \@noitemerr {\@@par }\fi \else {\@@par }
+                                                  \fi 
+l.93 \item P
+            roceed with model training
+I've deleted a group-closing symbol because it seems to be
+spurious, as in `$x}$'. But perhaps the } is legitimate and
+you forgot something else, as in `\hbox{$x}'. In such cases
+the way to recover is to insert both the forgotten and the
+deleted material, e.g., by typing `I$}'.
+
+
+Overfull \hbox (15.58516pt too wide) in paragraph at lines 114--115
+[]\TU/LiberationSerif(0)/m/n/10.95 Add architecture diagram: Consider adding a 
+TikZ figure showing Teacher-
+ []
+
+
+Overfull \hbox (3.10786pt too wide) in paragraph at lines 126--127
+\TU/LiberationSerif(0)/m/n/10.95 correspondences. Metaphone ([][]Philips[][], [
+][]1990[][]) and Double Metaphone ([][]Philips[][],
+ []
+
+[3]
+Overfull \hbox (7.82626pt too wide) in paragraph at lines 132--133
+\TU/LiberationSerif(0)/m/n/10.95 Edit distance metrics (Levenshtein, Damerau-Le
+venshtein, Jaro-Winkler) mea-
  []
 
 [4]
-Overfull \hbox (6.00418pt too wide) in paragraph at lines 133--134
-\TU/LiberationSerif(0)/m/n/10.95 Our system employs a Teacher-Student architect
-ure where a Teacher network, trained
+Overfull \hbox (4.86633pt too wide) in paragraph at lines 142--143
+\TU/LiberationSerif(0)/m/n/10.95 approach investigates direct transliteration b
+etween Hebrew and Arabic scripts
+ []
+
+
+Overfull \hbox (2.44846pt too wide) in paragraph at lines 142--143
+\TU/LiberationSerif(0)/m/n/10.95 Semitic languages. They find that direct trans
+literation between related scripts
+ []
+
+
+Overfull \hbox (6.16023pt too wide) in paragraph at lines 142--143
+\TU/LiberationSerif(0)/m/n/10.95 ploited for toponym matching—while highlightin
+g the limitations of language-
+ []
+
+
+Overfull \hbox (0.95438pt too wide) in paragraph at lines 144--145
+[]\TU/LiberationSerif(0)/m/n/10.95 Rama ([][]Rama[][], [][]2016[][]) applied Si
+amese convolutional networks to cognate iden-
+ []
+
+
+Overfull \hbox (42.1367pt too wide) in paragraph at lines 154--155
+\TU/LiberationSerif(0)/m/n/10.95 conversion for over 100 languages, outputting 
+IPA transcriptions. PanPhon ([][]Mortensen
  []
 
 [5]
-Overfull \hbox (0.33855pt too wide) in paragraph at lines 169--170
-[]\TU/LiberationSerif(0)/b/n/10.95 Projection\TU/LiberationSerif(0)/m/n/10.95 :
- Linear layer projects features to hidden dimension: $\OML/cmm/m/it/10.95 h[] \
-OT1/cmr/m/n/10.95 = \OML/cmm/m/it/10.95 W[]f[] \OT1/cmr/m/n/10.95 +
+Overfull \hbox (1.4096pt too wide) in paragraph at lines 160--161
+[]\TU/LiberationSerif(0)/m/n/10.95 For text matching, Mueller and Thyagarajan (
+[][]Mueller and Thyagarajan[][], [][]2016[][])
  []
 
 
-Overfull \hbox (55.27068pt too wide) in paragraph at lines 170--171
-[]\TU/LiberationSerif(0)/b/n/10.95 BiLSTM\TU/LiberationSerif(0)/m/n/10.95 : Bid
-irectional LSTM processes the sequence: $\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10
-.95 ; []\OT1/cmr/m/n/10.95 ) = [](\OML/cmm/m/it/10.95 h[]; [] ; h[]\OT1/cmr/m/n
-/10.95 )$ 
+Overfull \hbox (0.91518pt too wide) in paragraph at lines 172--173
+\TU/LiberationSerif(0)/m/n/10.95 dings that allow the model to interpret charac
+ters appropriately for each script. 
  []
 
-[6] [7]
-Overfull \hbox (22.88593pt too wide) in paragraph at lines 230--231
- []\TU/LiberationSerif(0)/b/n/10.95 4. Isorthographic Phonetic Consistency.[] \
-TU/LiberationSerif(0)/m/n/10.95 We explicitly retain “same-string, different-
+[6]
+Overfull \hbox (4.77979pt too wide) in paragraph at lines 196--197
+\TU/LiberationSerif(0)/m/n/10.95 ing Epitran ([][]Mortensen et al.[][], [][]201
+8[][]), then extract PanPhon features ([][]Mortensen
+ []
+
+[7]
+Overfull \hbox (6.578pt too wide) in paragraph at lines 213--214
+\TU/LiberationSerif(0)/m/n/10.95 The Student network processes raw character se
+quences, optionally augmented
+ []
+
+
+Overfull \hbox (11.49939pt too wide) in paragraph at lines 216--217
+[]\TU/LiberationSerif(0)/b/n/10.95 Character Embedding\TU/LiberationSerif(0)/m/
+n/10.95 : Each character maps to a learned 96-dimensional
+ []
+
+
+Overfull \hbox (2.39398pt too wide) in paragraph at lines 230--231
+[]\TU/LiberationSerif(0)/b/n/10.95 Substitution\TU/LiberationSerif(0)/m/n/10.95
+ : Random character replaced with another from same script
  []
 
 [8]
-Overfull \hbox (3.6705pt too wide) in paragraph at lines 247--248
-\TU/LiberationSerif(0)/m/n/10.95 malised Levenshtein similarity between name pa
-irs (after romanisation via AnyAscii
+Overfull \hbox (0.67873pt too wide) in paragraph at lines 253--254
+ []\TU/LiberationSerif(0)/b/n/10.95 2. Namespace Filtering and Coverage.[] \TU/
+LiberationSerif(0)/m/n/10.95 We restrict training data to records
+ []
+
+
+Overfull \hbox (2.87617pt too wide) in paragraph at lines 256--257
+ []\TU/LiberationSerif(0)/b/n/10.95 3. Global Vocabulary Construction.[] \TU/Li
+berationSerif(0)/m/n/10.95 To prevent out-of-vocabulary (OOV)
  []
 
 [9]
-Overfull \hbox (3.57893pt too wide) in paragraph at lines 269--270
-[]\TU/LiberationSerif(0)/m/n/10.95 Training data comprises 17.1 million toponym
- records drawn from three sources:
+Overfull \hbox (5.99162pt too wide) in paragraph at lines 259--260
+[]\TU/LiberationSerif(0)/b/n/10.95 Pass 2 (Training Pairs): \TU/LiberationSerif
+(0)/m/n/10.95 We generate candidate triplets from the \TU/lmtt/m/n/10.95 places
+
  []
 
 
-Overfull \hbox (5.69817pt too wide) in paragraph at lines 271--272
-\TU/LiberationSerif(0)/m/n/10.95 attestations sharing geographic coordinates. A
-fter deduplication, 2.55 million unique
+Overfull \hbox (7.1107pt too wide) in paragraph at lines 263--264
+ []\TU/LiberationSerif(0)/b/n/10.95 4. Isorthographic Phonetic Consistency.[] \
+TU/LiberationSerif(0)/m/n/10.95 We explicitly retain “same-string,
+ []
+
+[10] [11]
+Overfull \hbox (6.74734pt too wide) in paragraph at lines 304--305
+[]\TU/LiberationSerif(0)/m/n/10.95 For training, we restrict to the three high-
+quality namespace authorities: GeoN-
+ []
+
+[12]
+Missing character: There is no ب (U+0628) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no ا (U+0627) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no ر (U+0631) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no ي (U+064A) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no س (U+0633) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no 巴 (U+5DF4) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no 黎 (U+9ECE) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no パ (U+30D1) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+Missing character: There is no リ (U+30EA) in font Liberation Serif/OT:script=la
+tn;language=dflt;mapping=tex-text;!
+[13] [14]
+Overfull \hbox (3.77325pt too wide) in paragraph at lines 422--423
+\TU/LiberationSerif(0)/m/n/10.95 proximately 2M parameters; the Student approxi
+mately 4M parameters (larger
  []
 
 
-Overfull \hbox (6.27396pt too wide) in paragraph at lines 271--272
-\TU/LiberationSerif(0)/m/n/10.95 significant redundancy from common place names
- (Georgetown, Springfield, Salem)
- []
-
-
-Overfull \hbox (15.86629pt too wide) in paragraph at lines 286--307
-\TU/LiberationSerif(0)/m/n/10.95 sian (282k), Finnish (241k), Arabic (231k), Fr
-ench (179k), Thai (176k), Japanese
- []
-
-
-Overfull \hbox (1.07309pt too wide) in paragraph at lines 286--307
-\TU/LiberationSerif(0)/m/n/10.95 (171k), Portuguese (147k), Ukrainian (117k), G
-erman (117k), Korean (113k),
- []
-
-[10]
-Overfull \hbox (0.18446pt too wide) in paragraph at lines 324--325
-\TU/LiberationSerif(0)/m/n/10.95 Teacher learns to distinguish phonetically sim
-ilar but geographically distinct names. 
- []
-
-[11] [12] [13] [14]
-Overfull \hbox (4.9376pt too wide) in paragraph at lines 497--498
- []\TU/LiberationSerif(0)/b/n/10.95 MEHDIE Benchmark.[] \TU/LiberationSerif(0)/
-m/n/10.95 We additionally evaluate on the MEHDIE Hebrew-Arabic
- []
-
-
-Overfull \hbox (0.61932pt too wide) in paragraph at lines 497--498
-\TU/LiberationSerif(0)/m/n/10.95 two related Semitic scripts—a challenging case
- where our phonetic approach should
+Overfull \hbox (7.9496pt too wide) in paragraph at lines 424--425
+[]\TU/LiberationSerif(0)/m/n/10.95 The embedding dimension of 128 was chosen to
+ balance expressiveness against
  []
 
 [15]
-Overfull \hbox (2.231pt too wide) in paragraph at lines 513--514
-\TU/LiberationSerif(0)/m/n/10.95 sises art-historically significant locations. 
-Performance on under-represented scripts
+
+LaTeX Warning: Reference `fig:training-curves' on page 16 undefined on input li
+ne 430.
+
+
+Overfull \hbox (3.80583pt too wide) in paragraph at lines 446--447
+[]\TU/LiberationSerif(0)/m/n/10.95 [DEPRECATED: THESE RESULTS ARE FROM A PROTOT
+YPE MODEL][] 
  []
 
 
-Overfull \hbox (0.56049pt too wide) in paragraph at lines 534--535
-[][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LiberationSerif(0)/m/n/10.95 ), 
-Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][][]$[][])
-, and the Getty
+Overfull \hbox (3.79341pt too wide) in paragraph at lines 506--507
+ []\TU/LiberationSerif(0)/b/n/10.95 Limitations observed.[] \TU/LiberationSerif
+(0)/m/n/10.95 Same-script cross-lingual variants show weaker per-
  []
 
-[16]
-Overfull \hbox (173.04045pt too wide) in paragraph at lines 538--539
+
+Overfull \hbox (20.57309pt too wide) in paragraph at lines 506--507
+\TU/LiberationSerif(0)/m/n/10.95 formance than cross-script pairs: London–Londr
+es (0.754) and Munich–München
+ []
+
+[16] [17]
+Overfull \hbox (2.41718pt too wide) in paragraph at lines 525--526
+[]\TU/LiberationSerif(0)/m/n/10.95 Pleiades classical toponyms linked to their 
+modern equivalents via Wiki-
+ []
+
+
+Overfull \hbox (4.53087pt too wide) in paragraph at lines 543--544
+[]\TU/LiberationSerif(0)/b/n/10.95 Elasticsearch fuzzy match\TU/LiberationSerif
+(0)/m/n/10.95 : Built-in fuzzy query with fuzziness=AUTO 
+ []
+
+
+Overfull \hbox (2.5209pt too wide) in paragraph at lines 547--548
+ []\TU/LiberationSerif(0)/b/n/10.95 MEHDIE Benchmark.[] \TU/LiberationSerif(0)/
+m/n/10.95 We additionally evaluate on the MEHDIE Hebrew-
+ []
+
+
+Overfull \hbox (6.09254pt too wide) in paragraph at lines 547--548
+\TU/LiberationSerif(0)/m/n/10.95 script matching between two related Semitic sc
+ripts—a challenging case where
+ []
+
+[18]
+Overfull \hbox (1.12617pt too wide) in paragraph at lines 563--564
+\TU/LiberationSerif(0)/m/n/10.95 pends on volunteer contributions, which skew t
+oward places of encyclopaedic
+ []
+
+
+Overfull \hbox (0.48683pt too wide) in paragraph at lines 565--566
+\TU/LiberationSerif(0)/m/n/10.95 languages. PanPhon features do not encode supr
+asegmental properties. Tonal
+ []
+
+
+Overfull \hbox (2.23128pt too wide) in paragraph at lines 569--570
+ []\TU/LiberationSerif(0)/b/n/10.95 Computational Cost.[] \TU/LiberationSerif(0
+)/m/n/10.95 Embedding 60M toponyms requires significant com-
+ []
+
+
+Overfull \hbox (6.44185pt too wide) in paragraph at lines 575--576
+\TU/LiberationSerif(0)/m/n/10.95 We have presented a neural embedding system fo
+r cross-script toponym match-
+ []
+
+[19]
+Overfull \hbox (18.39943pt too wide) in paragraph at lines 584--585
+\TU/LiberationSerif(0)/m/n/10.95 ([][]$[][][][][] [] [] [] [][][] [] [][][][][]
+[][][] [] [][][][]$[][]), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][]
+[][][][] [] [][][][]$[][]),
+ []
+
+
+Overfull \hbox (135.98117pt too wide) in paragraph at lines 584--585
+\TU/LiberationSerif(0)/m/n/10.95 for evaluation is available via the supplement
+ary file link at https://link.springer.com/article/10.1007/s10579-
+ []
+
+
+Overfull \hbox (200.41544pt too wide) in paragraph at lines 588--589
 \TU/LiberationSerif(0)/m/n/10.95 Training code, model weights, and inference ut
 ilities are available at https://github.com/WorldHistoricalGazetteer/indexing.
  []
 
-(pdf/universal_topophones.bbl [17] [18]) [19] (pdf/universal_topophones.aux)
-Package rerunfilecheck Info: File `universal_topophones.out' has not changed.
-(rerunfilecheck)             Checksum: 5C438977DCE2D7D49FC17BB0FC0CC7BE;5903.
- ) 
-Here is how much of TeX's memory you used:
- 29957 strings out of 478149
- 633054 string characters out of 5853103
- 968587 words of memory out of 5000000
- 50066 multiletter control sequences out of 15000+600000
- 476140 words of font info for 94 fonts, out of 8000000 for 9000
- 14 hyphenation exceptions out of 8191
- 84i,14n,80p,1522b,467s stack positions out of 5000i,500n,10000p,200000b,80000s
+[20] (pdf/universal_topophones.bbl
+Underfull \hbox (badness 10000) in paragraph at lines 30--36
+[]\TU/LiberationSerif(0)/m/n/10.95 Jane Bromley, Isabelle Guyon, Yann LeCun, Ed
+uard Säckinger,
+ []
 
-Output written on pdf/universal_topophones.pdf (19 pages).
+
+Underfull \hbox (badness 10000) in paragraph at lines 30--36
+\TU/LiberationSerif(0)/m/n/10.95 and Roopak Shah.  Signature verification using
+ a “siamese”
+ []
+
+
+Underfull \hbox (badness 7151) in paragraph at lines 30--36
+\TU/LiberationSerif(0)/m/n/10.95 time delay neural network.  In \TU/LiberationS
+erif(0)/m/it/10.95 Advances in Neural Informa-
+ []
+
+
+Underfull \hbox (badness 2717) in paragraph at lines 30--36
+\TU/LiberationSerif(0)/m/it/10.95 tion Processing Systems (NIPS)\TU/LiberationS
+erif(0)/m/n/10.95 , volume 6, pages 737–744, 1993.
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 30--36
+\TU/LiberationSerif(0)/m/n/10.95 URL [][]$[][][][][] [] [] [] [][][][][][][][][
+][][] [] [][][][][][][] [] [][] [] [][][][][] [] [][][][] [] [][][][] []
+ []
+
+[21] [22]) [23]
+
+./universal_topophones.tex:600: LaTeX Error: \begin{enumerate} on input line 99
+ ended by \end{document}.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.600 \end{document}
+                    
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+(pdf/universal_topophones.aux)
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+
+Package rerunfilecheck Warning: File `universal_topophones.out' has changed.
+(rerunfilecheck)                Rerun to get outlines right
+(rerunfilecheck)                or use package `bookmark'.
+
+Package rerunfilecheck Info: Checksums for `universal_topophones.out':
+(rerunfilecheck)             Before: 5C438977DCE2D7D49FC17BB0FC0CC7BE;5903
+(rerunfilecheck)             After:  52B04DCDCCE64D656604D1993B090D17;6039.
+ )
+(\end occurred inside a group at level 1)
+
+### semi simple group (level 1) entered at line 99 (\begingroup)
+### bottom level 
+Here is how much of TeX's memory you used:
+ 29974 strings out of 478149
+ 633416 string characters out of 5853103
+ 969588 words of memory out of 5000000
+ 50079 multiletter control sequences out of 15000+600000
+ 477855 words of font info for 104 fonts, out of 8000000 for 9000
+ 14 hyphenation exceptions out of 8191
+ 84i,14n,80p,1522b,603s stack positions out of 5000i,500n,10000p,200000b,80000s
+
+Output written on pdf/universal_topophones.pdf (23 pages).

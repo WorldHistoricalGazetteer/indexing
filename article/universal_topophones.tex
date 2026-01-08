@@ -342,6 +342,8 @@ The character vocabulary is constructed by scanning all 112M toponyms (not just 
 
 \paragraph{Filtered Lang-Script Mismatches.} The top filtered combinations were: Chinese/Latin (923,079), Persian/Latin (197,099), Japanese/Latin (111,945), Russian/Latin (100,805), and Kazakh/Latin (77,768). These represent pre-romanised forms that would otherwise introduce noise into the training signal.
 
+\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), باريس (ar), 巴黎 (zh), パリ (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ after romanisation). With approximately 15 million places containing two or more toponyms, and an average of 8 valid pairs per such place after filtering, we estimate 100--120 million training pairs, of which approximately 45\% are cross-script. This yields abundant training signal---two orders of magnitude more than comparable toponym matching systems.
+
 \section{Training Methodology}
 \label{sec:training}
 
