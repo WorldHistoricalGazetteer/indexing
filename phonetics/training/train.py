@@ -7,26 +7,32 @@ Implements the three-phase training pipeline:
 - Phase 2: Align Student to Teacher (distillation + noise)
 - Phase 3: Fine-tune Student with hard negatives (contrastive)
 
+Data is expected to be extracted using extract_to_parquet.py with the
+two-pass strategy (vocabulary from full corpus, training from gn/wd/tgn).
+
 Usage:
+    # Phase 1: Train Teacher
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v2 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints \
+        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
+        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
         --phase 1 \
         --epochs 50
 
+    # Phase 2: Align Student to Teacher
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v2 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints \
+        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
+        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
         --phase 2 \
         --teacher-checkpoint phase1_best.pt \
-        --epochs 30
+        --epochs 50
 
+    # Phase 3: Fine-tune with hard negatives
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v2 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints \
+        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
+        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
         --phase 3 \
         --student-checkpoint phase2_best.pt \
-        --epochs 20
+        --epochs 30
 """
 
 import argparse
@@ -69,6 +75,82 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Training Metrics Logger (for generating training curves)
+# ============================================================================
+
+class TrainingMetrics:
+    """
+    Collects and saves training metrics for visualization.
+
+    Saves metrics to JSON file that can be used to generate
+    training curves for the paper.
+    """
+
+    def __init__(self, output_dir: Path, phase: str):
+        self.output_dir = Path(output_dir)
+        self.phase = phase
+        self.metrics = {
+            'phase': phase,
+            'epochs': [],
+            'train_loss': [],
+            'val_loss': [],
+            'learning_rate': [],
+            'best_epoch': None,
+            'best_val_loss': float('inf'),
+        }
+        # Phase-specific metrics
+        if phase == 'phase2':
+            self.metrics['cosine_sim'] = []
+            self.metrics['mse_loss'] = []
+            self.metrics['cosine_loss'] = []
+
+    def log_epoch(
+        self,
+        epoch: int,
+        train_loss: float,
+        val_loss: float,
+        lr: float,
+        **extra_metrics
+    ):
+        """Log metrics for one epoch."""
+        self.metrics['epochs'].append(epoch)
+        self.metrics['train_loss'].append(train_loss)
+        self.metrics['val_loss'].append(val_loss)
+        self.metrics['learning_rate'].append(lr)
+
+        # Track best
+        if val_loss < self.metrics['best_val_loss']:
+            self.metrics['best_val_loss'] = val_loss
+            self.metrics['best_epoch'] = epoch
+
+        # Log extra metrics (e.g., cosine_sim for phase2)
+        for key, value in extra_metrics.items():
+            if key not in self.metrics:
+                self.metrics[key] = []
+            self.metrics[key].append(value)
+
+        # Save after each epoch (for crash recovery)
+        self.save()
+
+    def save(self):
+        """Save metrics to JSON file."""
+        output_path = self.output_dir / f'{self.phase}_metrics.json'
+        with open(output_path, 'w') as f:
+            json.dump(self.metrics, f, indent=2)
+
+    @classmethod
+    def load(cls, output_dir: Path, phase: str) -> 'TrainingMetrics':
+        """Load existing metrics (for resuming training)."""
+        metrics_path = Path(output_dir) / f'{phase}_metrics.json'
+        instance = cls(output_dir, phase)
+        if metrics_path.exists():
+            with open(metrics_path) as f:
+                instance.metrics = json.load(f)
+        return instance
+
 
 # ============================================================================
 # Training Configuration
@@ -171,6 +253,9 @@ def train_phase1(
     # Loss function
     criterion = TripletMarginLossWithMining(margin=config['triplet_margin'])
 
+    # Metrics logger for training curves
+    metrics = TrainingMetrics.load(output_dir, 'phase1') if resume_from else TrainingMetrics(output_dir, 'phase1')
+
     # Training loop
     for epoch in range(start_epoch, epochs):
         teacher.train()
@@ -211,6 +296,7 @@ def train_phase1(
                 iterator.set_postfix(loss=loss.item())
 
         avg_train_loss = epoch_loss / num_batches
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
 
         # Validation
@@ -218,6 +304,9 @@ def train_phase1(
             val_loss = evaluate_phase1(teacher, val_loader, criterion, device)
 
             logger.info(f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, val_loss={val_loss:.4f}")
+
+            # Log metrics for training curves
+            metrics.log_epoch(epoch + 1, avg_train_loss, val_loss, current_lr)
 
             # Save best model
             if val_loss < best_loss:
@@ -372,6 +461,9 @@ def train_phase2(
         cosine_weight=config['cosine_weight'],
     )
 
+    # Metrics logger for training curves
+    metrics_logger = TrainingMetrics.load(output_dir, 'phase2') if resume_from else TrainingMetrics(output_dir, 'phase2')
+
     # Training loop
     for epoch in range(start_epoch, epochs):
         student.train()
@@ -400,7 +492,7 @@ def train_phase2(
             student_emb = student(char_ids, script_ids, lang_ids, char_lengths)
 
             # Compute loss
-            loss, metrics = criterion(student_emb, teacher_emb)
+            loss, batch_metrics = criterion(student_emb, teacher_emb)
 
             # Backward pass
             optimizer.zero_grad()
@@ -409,15 +501,16 @@ def train_phase2(
             optimizer.step()
 
             epoch_loss += loss.item()
-            for k, v in metrics.items():
+            for k, v in batch_metrics.items():
                 epoch_metrics[k] += v
             num_batches += 1
 
             if tqdm and batch_idx % config['log_interval'] == 0:
-                iterator.set_postfix(loss=loss.item(), sim=metrics['cosine_sim'])
+                iterator.set_postfix(loss=loss.item(), sim=batch_metrics['cosine_sim'])
 
         avg_train_loss = epoch_loss / num_batches
         avg_metrics = {k: v / num_batches for k, v in epoch_metrics.items()}
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
 
         # Validation
@@ -429,6 +522,14 @@ def train_phase2(
             logger.info(
                 f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, "
                 f"val_loss={val_loss:.4f}, val_sim={val_metrics['cosine_sim']:.4f}"
+            )
+
+            # Log metrics for training curves
+            metrics_logger.log_epoch(
+                epoch + 1, avg_train_loss, val_loss, current_lr,
+                cosine_sim=val_metrics['cosine_sim'],
+                mse_loss=val_metrics['mse_loss'],
+                cosine_loss=val_metrics['cosine_loss'],
             )
 
             # Save best model
@@ -573,6 +674,9 @@ def train_phase3(
     # Loss function
     criterion = TripletMarginLossWithMining(margin=config['triplet_margin'])
 
+    # Metrics logger for training curves
+    metrics_logger = TrainingMetrics.load(output_dir, 'phase3') if resume_from else TrainingMetrics(output_dir, 'phase3')
+
     # Training loop
     for epoch in range(start_epoch, epochs):
         student.train()
@@ -621,6 +725,7 @@ def train_phase3(
                 iterator.set_postfix(loss=loss.item())
 
         avg_train_loss = epoch_loss / num_batches
+        current_lr = scheduler.get_last_lr()[0]
         scheduler.step()
 
         # Validation
@@ -628,6 +733,9 @@ def train_phase3(
             val_loss = evaluate_phase3(student, val_loader, criterion, device)
 
             logger.info(f"Epoch {epoch + 1}: train_loss={avg_train_loss:.4f}, val_loss={val_loss:.4f}")
+
+            # Log metrics for training curves
+            metrics_logger.log_epoch(epoch + 1, avg_train_loss, val_loss, current_lr)
 
             # Save best model
             if val_loss < best_loss:

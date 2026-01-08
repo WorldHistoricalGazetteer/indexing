@@ -778,7 +778,7 @@ do_train_extract() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=64G
+#SBATCH --mem=300G
 
 set -e
 
@@ -826,8 +826,9 @@ else
     python -m phonetics.extraction.extract_to_parquet \
         --es-host "http://${ES_NODE}:${ES_PORT}" \
         --output-dir "\$SCRATCH_DIR" \
-        --namespaces gn pl iv \
-        --batch-size 2000
+        --namespaces gn wd tgn \
+        --workers 12 \
+        --batch-size 5000
 
     # CHECKPOINT: Save extracted data immediately
     echo
@@ -846,7 +847,7 @@ echo "=========================================="
 python -m phonetics.extraction.generate_pairs \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
     --data-dir "\$SCRATCH_DIR" \
-    --namespaces gn pl iv \
+    --namespaces gn wd tgn \
     --batch-size 50000
 
 # =============================================================================

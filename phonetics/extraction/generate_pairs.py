@@ -2,11 +2,19 @@
 """
 Generate positive pairs and training triplets from extracted Parquet data.
 
-This script:
+This script runs AFTER extract_to_parquet.py and:
 1. Scans the ES places index to find co-located toponyms
-2. Generates positive pairs for contrastive learning
+2. Generates positive pairs with phonetic similarity filtering (>= 0.35)
 3. Creates triplets for Phase 1 (random negatives) and Phase 3 (hard negatives)
 4. Saves curated test pairs for evaluation
+
+Default namespaces: gn (GeoNames), wd (Wikidata), tgn (Getty TGN)
+
+Usage:
+    python -m phonetics.extraction.generate_pairs \
+        --es-host "http://localhost:9200" \
+        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
+        --namespaces gn wd tgn
 """
 
 import argparse
@@ -540,7 +548,8 @@ def main():
     parser = argparse.ArgumentParser(description='Generate pairs and triplets')
     parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--data-dir', type=Path, required=True)
-    parser.add_argument('--namespaces', nargs='+', default=['gn', 'pl', 'iv'])
+    parser.add_argument('--namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
+                        help='Namespaces to use for pair generation (default: gn wd tgn)')
     parser.add_argument('--batch-size', type=int, default=50000)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--skip-pairs', action='store_true', help='Skip pair generation')

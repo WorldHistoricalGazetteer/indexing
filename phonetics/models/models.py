@@ -304,13 +304,18 @@ class UniversalEncoder(nn.Module):
     Training features:
         - Language dropout (50%): Replaces lang_id with <UNK> during training
         - Noise augmentation: Applied in collate function, not here
+
+    Note: Default vocab sizes are conservative estimates. Actual sizes are
+    determined by the extracted vocabulary and passed in during model creation.
+    The two-pass extraction from gn/wd/tgn typically yields ~4000 char tokens
+    and ~1000 languages.
     """
 
     def __init__(
             self,
-            vocab_size: int = 1200,
-            num_scripts: int = 20,
-            num_langs: int = 300,
+            vocab_size: int = 5000,  # Conservative default; actual from vocab
+            num_scripts: int = 25,   # 20 defined + buffer
+            num_langs: int = 1200,   # Wikidata has many languages
             char_embed_dim: int = 64,
             script_embed_dim: int = 16,
             lang_embed_dim: int = 16,

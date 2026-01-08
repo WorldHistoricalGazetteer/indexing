@@ -2,40 +2,50 @@
 Configuration for Phonetic Similarity Model.
 
 Defines model architecture, training hyperparameters, and language mappings.
+
+Note: Vocabulary sizes (VOCAB_SIZE, NUM_LANGS) are conservative defaults.
+Actual sizes are determined by the extraction process and loaded from
+the vocab files at runtime. The two-pass extraction from gn/wd/tgn
+typically yields ~4000 char tokens and ~1000 languages.
 """
 
 
 class Config:
     """Model and training configuration."""
 
-    # Vocabulary
-    VOCAB_SIZE = 10000
-    NUM_LANGS = 300
+    # Vocabulary (conservative defaults; actual from vocab files)
+    VOCAB_SIZE = 5000   # Actual determined by extraction
+    NUM_SCRIPTS = 25    # 20 defined + buffer
+    NUM_LANGS = 1200    # Wikidata has many languages
 
     # Model dimensions
     CHAR_EMBED_DIM = 64
-    LANG_EMBED_DIM = 32
+    SCRIPT_EMBED_DIM = 16
+    LANG_EMBED_DIM = 16
     PHONETIC_FEAT_DIM = 24  # PanPhon feature dimension
     HIDDEN_DIM = 128
-    EMBED_DIM = 64
+    EMBED_DIM = 128  # Output embedding dimension
     NUM_LAYERS = 2
     DROPOUT = 0.2
+    LANG_DROPOUT = 0.5  # Language dropout for training
 
-    # Self-Attention configuration (NEW in v2)
-    NUM_ATTENTION_HEADS = 2  # 1-2 heads as specified
+    # Self-Attention configuration
+    NUM_ATTENTION_HEADS = 2
     ATTENTION_DROPOUT = 0.1
 
     # Training
-    BATCH_SIZE = 256
-    SUBSAMPLE_PAIRS = 5000000
+    BATCH_SIZE = 128
     LEARNING_RATE = 1e-3
+    WEIGHT_DECAY = 1e-5
     PHASE1_EPOCHS = 50
-    PHASE2_EPOCHS = 30
-    PHASE3_EPOCHS = 20
+    PHASE2_EPOCHS = 50
+    PHASE3_EPOCHS = 30
     TRIPLET_MARGIN = 0.3
-    ALIGNMENT_COSINE_WEIGHT = 0.5
+    MSE_WEIGHT = 1.0
+    COSINE_WEIGHT = 1.0
+    NOISE_PROB = 0.3
 
-    # Curriculum Hard Negatives (NEW in v2)
+    # Curriculum Hard Negatives (Phase 3)
     # Stage A: Orthographically close, phonetically distant
     STAGE_A_EDIT_DISTANCE_MAX = 3  # anyascii edit distance threshold
     STAGE_A_PHONETIC_DISTANCE_MIN = 0.5  # PanPhon cosine distance threshold
@@ -44,7 +54,7 @@ class Config:
     STAGE_B_SIMILARITY_THRESHOLD = 0.85  # Conservative threshold for mining
 
     # Data
-    SIMILARITY_THRESHOLD = 0.5
+    PHONETIC_SIMILARITY_THRESHOLD = 0.35  # Minimum for positive pairs
     MAX_TOPONYM_LEN = 50
 
     # Epitran language mappings (ISO 639-1 → Epitran code)

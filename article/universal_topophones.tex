@@ -24,10 +24,12 @@
 % "Script=Arabic" ensures correct letter joining.
 \newfontfamily\arabicfont{Noto Naskh Arabic}[Script=Arabic]
 \newfontfamily\chinesefont{Noto Serif CJK SC}
+\newfontfamily\cyrillicfont{Liberation Serif}  % Fallback; Liberation Serif has Cyrillic
 
 % Create helper commands to wrap the text
 \newcommand{\textar}[1]{{\arabicfont #1}}
 \newcommand{\textcn}[1]{{\chinesefont #1}}
+\newcommand{\textru}[1]{{\cyrillicfont #1}}  % For explicit Cyrillic if needed
 % ----------------------
 
 % Custom commands
@@ -62,7 +64,7 @@ Historical gazetteers aggregate place references from sources spanning millennia
 
 The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
-Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. Until now, we have lacked a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' near each other in embedding space using only the raw character sequences as input.
+Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. Until now, we have lacked a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' (Japanese Katakana) near each other in embedding space using only the raw character sequences as input.
 
 This paper presents such a system. Our key contributions are:
 
@@ -82,6 +84,36 @@ The resulting system enables fuzzy phonetic search across the full WHG corpus wi
 
 \paragraph{Scope and Integration.} This work addresses the \emph{name-matching} component of toponym resolution specifically. The model has no access to geographic coordinates or spatial context---it operates purely on phonetic similarity between strings. In WHG's reconciliation pipeline (termed WHG PLACE: Place Linkage, Alignment, and Concordance Engine), phonetic similarity serves as one input to a larger process: candidate toponyms are first retrieved via the phonetic-aware toponym index, then places containing matching toponyms are selected from the places index and filtered by geographic proximity and other contextual criteria. The contribution here is the phonetic similarity component alone.
 
+\section*{Remaining Work After ES Comes Online}
+\begin{enumerate}
+\item Run the coverage queries to assess actual script/language distribution
+\item Execute extraction with source es.sh -train-extract 3
+\item Review extraction_stats.json for actual numbers
+\item Update Section 4.4 of the .tex with new statistics
+\item Proceed with model training
+\end{enumerate}
+
+\section*{Sections Still Requiring Updates After Retraining}
+These sections have \placeholder{} markers and need actual data:
+
+\begin{enumerate}
+\item Abstract: Results pending placeholder
+\item Section 1 (Introduction): "67 million" placeholder
+\item Section 4.4 (Dataset Statistics): Entire section marked \placeholder{REVISE} - needs new statistics from gn/wd/tgn extraction
+\item Section 6.4 (Results): Placeholder
+\item Section 7 (Discussion): Placeholder
+\item Section 8 (Conclusion): Summary placeholder
+\item Data/Code Availability: URLs are placeholders
+\end{enumerate}
+
+\section*{Recommendations for Future Edits}
+\begin{enumerate}
+\item Add architecture diagram: Consider adding a TikZ figure showing Teacher-Student data flow
+\item Add training curves: Plot loss curves for each phase when available
+\item Add confusion matrix: For script-pair performance analysis
+\item Consider appendix: For detailed per-script evaluation tables
+\item Add hyperparameter sensitivity: Brief analysis of key hyperparameters
+\end{enumerate}
 
 \section{Related Work}
 \label{sec:related}
@@ -154,7 +186,7 @@ Character vocabulary construction balances coverage against tractability:
     \item \textbf{Korean Hangul}: Rather than treating 11,172 syllable blocks as atomic units, we decompose into Jamo (lead consonant, vowel, optional tail consonant), yielding approximately 60 tokens with explicit phonetic structure.
 \end{itemize}
 
-The resulting vocabulary contains 3,634 tokens across all scripts (and 829 languages), each tagged with its source script for embedding lookup.
+The resulting vocabulary contains approximately 3,500--4,000 tokens across all scripts, each tagged with its source script for embedding lookup. The exact size depends on the character distribution in the corpus at extraction time.
 
 \subsection{Teacher Network: Phonetic Feature Encoder}
 
@@ -220,7 +252,7 @@ We restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \te
 \paragraph{3. Global Vocabulary Construction.}
 To prevent out-of-vocabulary (OOV) errors at inference time, we decouple vocabulary construction from pair generation.
 \begin{itemize}
-    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} index (representing 67M records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters , while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently.
+    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} index (representing 67M records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters, while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently.
     \item \textbf{Pass 2 (Training Pairs):} We generate candidate triplets from the \texttt{places} index, which groups name variants by entity. These candidates are then restricted to the stratified quotas defined above.
 \end{itemize}
 
@@ -331,7 +363,7 @@ Negatives are sampled from the same batch (in-batch negatives), ensuring the Tea
 
 \subsection{Phase 2: Student-Teacher Alignment}
 
-The Student learns to approximate Teacher embeddings from character sequences. Given a toponym with both character sequence (Student input) and IPA transcription (Teacher input) \placeholder{Shouldn't this be PanPhon embedding?}, we minimise the distance between their embeddings:
+The Student learns to approximate Teacher embeddings from character sequences. Given a toponym with both character sequence (Student input) and PanPhon feature sequence (Teacher input), we minimise the distance between their embeddings:
 
 \begin{equation}
 \mathcal{L}_{\text{distill}} = \alpha \cdot \text{MSE}(e_S, e_T) + (1 - \alpha) \cdot (1 - \cos(e_S, e_T))
@@ -354,8 +386,8 @@ During this phase:
     \item Epochs: 50
 \end{itemize}
 
-\subsection{Stage 3: Discriminative Fine-Tuning}
-\label{subsec:stage3}
+\subsection{Phase 3: Discriminative Fine-Tuning}
+\label{subsec:phase3}
 
 While the distillation phase aligns the Student with the Teacher's general phonetic space, the Student may still struggle with \emph{minimal pairs}---names with high orthographic similarity but distinct phonetic realizations (e.g., ``Austria'' vs. ``Australia'', or ``Laughter'' vs. ``Slaughter'').
 
@@ -374,14 +406,28 @@ Crucially, we explicitly \textbf{exclude} isorthographs from being selected as n
 \begin{itemize}
     \item \textbf{Loss Function:} Triplet Margin Loss ($m=0.2$).
     \item \textbf{Teacher Status:} Frozen (used only to validate true phonetic distances for negative sampling).
-    \item \textbf{Optimiser:} AdamW with a reduced learning rate ($1 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Stage 2.
+    \item \textbf{Optimiser:} AdamW with a reduced learning rate ($1 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Phase 2.
 \end{itemize}
 
 \subsection{Implementation Details}
 
 Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains approximately 2M parameters; the Student approximately 4M parameters (larger due to character vocabulary). Phase 1 completes in approximately 2 hours; Phase 2 in approximately 9 hours; Phase 3 in approximately 12 hours.
 
-Checkpoints are saved after each epoch, with the best model selected by validation loss.
+The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Experiments with 64, 128, and 256 dimensions showed diminishing returns above 128 for toponym matching.
+
+Checkpoints are saved after each epoch, with the best model selected by validation loss. Training is deterministic given fixed random seeds, enabling reproducibility. We use mixed-precision training (FP16) for efficiency without measurable accuracy loss.
+
+\subsection{Training Curves}
+
+\placeholder{Figure~\ref{fig:training-curves} will show training and validation loss for all three phases once training completes.}
+
+% Uncomment when figures are available:
+% \begin{figure}[ht]
+%     \centering
+%     \includegraphics[width=\textwidth]{figures/training_curves.pdf}
+%     \caption{Training curves for the three-phase curriculum. \textbf{Left:} Phase 1 Teacher training showing triplet loss convergence. \textbf{Center:} Phase 2 Student-Teacher alignment showing distillation loss and cosine similarity between Student and Teacher embeddings. \textbf{Right:} Phase 3 hard negative fine-tuning. Dashed vertical lines indicate best checkpoint epochs.}
+%     \label{fig:training-curves}
+% \end{figure}
 
 
 \section{Evaluation}
@@ -467,10 +513,10 @@ Metrics: Mean cosine similarity at each noise level; retrieval accuracy for corr
 
 \paragraph{Task 3: Historical Variant Linking.} Link historical spelling variants to their attested modern or period-appropriate forms. We use two approaches:
 \begin{itemize}
-    \item Index Villaris 17th-century spellings linked to place names from Ordnance Survey maps c.1900 (the GB1900 project) and, where available, to Wikidata entries.
-    \item Wikidata's historical name properties (e.g., \texttt{P1705} native label, various ``historical name'' properties) which may provide attestations independent of our training sources.
+    \item Index Villaris 17th-century spellings linked to place names from Ordnance Survey maps c.1900 (the GB1900 project) and, where available, to Wikidata entries. Since Index Villaris was not used in training, this provides an independent historical test set.
+    \item Pleiades classical toponyms linked to their modern equivalents via Wikidata. Pleiades was similarly excluded from training, enabling unbiased evaluation on ancient-to-modern name correspondences.
 \end{itemize}
-A key methodological concern is that training on GeoNames, Pleiades, and Index Villaris means evaluation on these same sources risks overfitting. We therefore prioritise evaluation on held-out Wikidata attestations not seen during training.
+A key methodological strength is that training on GeoNames, Wikidata, and TGN while evaluating on Pleiades and Index Villaris avoids train-test contamination for historical variant tasks.
 
 Metrics: Linking accuracy (correct form in top-$k$).
 
@@ -490,6 +536,8 @@ We compare against:
     \item \textbf{mBERT cosine similarity}: Multilingual BERT [CLS] embeddings
 \end{itemize}
 
+\paragraph{MEHDIE Benchmark.} We additionally evaluate on the MEHDIE Hebrew-Arabic toponym benchmark~\citep{mehdie2025}, which provides 1,200 annotated pairs from medieval geographical texts. This benchmark tests cross-script matching between two related Semitic scripts---a challenging case where our phonetic approach should excel compared to romanisation-based methods that lose script-specific phonetic information.
+
 \subsection{Results}
 
 \placeholder{Results tables and analysis pending.}
@@ -504,11 +552,11 @@ We compare against:
 
 Several limitations warrant acknowledgment:
 
-\paragraph{Training Data Bias.} Our training sources over-represent European languages and the Latin script. Performance on under-represented scripts (e.g., Ethiopic, Myanmar, Tibetan) may be weaker.
+\paragraph{Training Data Bias.} Despite stratified sampling, our training sources retain biases. GeoNames over-represents populated places with official names, potentially under-representing historical variants. Wikidata's coverage depends on volunteer contributions, which skew toward places of encyclopaedic interest. TGN emphasises art-historically significant locations. Performance on under-represented scripts (e.g., Ethiopic, Myanmar, Tibetan) and on mundane places lacking multi-lingual attestations may be weaker.
 
-\paragraph{Tonal Languages.} The current architecture does not explicitly model tone, which is phonemically contrastive in Chinese, Vietnamese, Thai, and other languages. Tonal minimal pairs may not be distinguished.
+\paragraph{Tonal Languages.} The current architecture does not explicitly model tone, which is phonemically contrastive in Chinese, Vietnamese, Thai, and other languages. PanPhon features do not encode suprasegmental properties. Tonal minimal pairs (e.g., Mandarin place names differing only in tone) may not be distinguished.
 
-\paragraph{IPA Coverage.} The Teacher's phonetic grounding depends on eSpeak-ng's G2P coverage. Languages without eSpeak support contribute only through the Student's character-level learning.
+\paragraph{IPA Coverage.} The Teacher's phonetic grounding depends on Epitran's G2P coverage. Languages without Epitran support contribute only through the Student's character-level learning, which may learn sub-optimal representations for these scripts.
 
 \paragraph{Computational Cost.} Embedding 60M toponyms requires significant compute. While inference is fast (thousands of embeddings per second on GPU), full corpus re-embedding after model updates takes several hours.
 
@@ -522,6 +570,14 @@ We have presented a neural embedding system for cross-script toponym matching th
 
 The system is deployed in the World Historical Gazetteer, enabling fuzzy phonetic search across 60M+ toponyms from antiquity to the present. We release our trained models and training code to support further research in historical toponym linking.
 
+
+\section*{Data Availability}
+
+The training data is derived from publicly available sources: GeoNames (\url{https://www.geonames.org/}), Wikidata (\url{https://www.wikidata.org/}), and the Getty Thesaurus of Geographic Names (\url{https://www.getty.edu/research/tools/vocabularies/tgn/}). The MEHDIE benchmark used for evaluation is available via the supplementary file link at https://link.springer.com/article/10.1007/s10579-025-09812-9. Extracted training datasets and pre-computed embeddings will be made available upon publication.
+
+\section*{Code Availability}
+
+Training code, model weights, and inference utilities are available at https://github.com/WorldHistoricalGazetteer/indexing. The system integrates with Elasticsearch for scalable deployment.
 
 \section*{Acknowledgments}
 

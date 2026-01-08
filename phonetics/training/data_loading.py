@@ -11,6 +11,12 @@ Training phases:
 - Phase 1: Teacher training on phonetic features (triplet loss)
 - Phase 2: Student alignment to Teacher (distillation loss + noise)
 - Phase 3: Student fine-tuning with hard negatives (contrastive loss + noise)
+
+Data is extracted using the two-pass strategy from extract_to_parquet.py:
+- Pass 1 builds vocabulary from entire corpus (~67M toponyms)
+- Pass 2 extracts training data from gn, wd, tgn namespaces
+
+Vocabulary limits are read dynamically from the vocab files rather than hardcoded.
 """
 
 import random
@@ -30,6 +36,54 @@ try:
     import pyarrow.dataset as ds
 except ImportError:
     raise ImportError("pyarrow required: pip install pyarrow")
+
+
+def load_vocab_limits(data_dir: Path) -> Dict[str, int]:
+    """
+    Load vocabulary limits from the extracted data directory.
+
+    This reads the actual vocabulary sizes from the vocab files created
+    during extraction, rather than using hardcoded values.
+
+    Args:
+        data_dir: Path to extracted data directory
+
+    Returns:
+        Dict with 'char', 'script', 'lang' limits
+    """
+    import json
+    vocab_dir = Path(data_dir) / 'vocab'
+
+    limits = {'char': 5000, 'script': 25, 'lang': 1000}  # Safe defaults
+
+    try:
+        # Load char vocab
+        char_path = vocab_dir / 'char_vocab.json'
+        if char_path.exists():
+            with open(char_path) as f:
+                char_data = json.load(f)
+                limits['char'] = len(char_data.get('char_to_id', {}))
+
+        # Load script vocab
+        script_path = vocab_dir / 'script_vocab.json'
+        if script_path.exists():
+            with open(script_path) as f:
+                script_data = json.load(f)
+                limits['script'] = len(script_data.get('script_to_id', {}))
+
+        # Load lang vocab
+        lang_path = vocab_dir / 'lang_vocab.json'
+        if lang_path.exists():
+            with open(lang_path) as f:
+                lang_data = json.load(f)
+                limits['lang'] = len(lang_data.get('lang_to_id', {}))
+
+        logger.info(f"Loaded vocab limits: char={limits['char']}, script={limits['script']}, lang={limits['lang']}")
+
+    except Exception as e:
+        logger.warning(f"Could not load vocab limits from {vocab_dir}: {e}. Using defaults.")
+
+    return limits
 
 # ============================================================================
 # Noise Augmentation
@@ -226,11 +280,14 @@ class Phase2Dataset(Dataset):
             data_dir: Path,
             split: str = 'train',
             require_features: bool = True,
-            # Hard limits based on your logs (chars=3634, scripts=20)
-            vocab_limits: Dict[str, int] = {'char': 3634, 'script': 20}
+            vocab_limits: Optional[Dict[str, int]] = None,
     ):
         self.data_dir = Path(data_dir)
         print(f"Phase2Dataset: Loading {split} data (Vectorized)...")
+
+        # Load vocab limits dynamically if not provided
+        if vocab_limits is None:
+            vocab_limits = load_vocab_limits(self.data_dir)
 
         # 1. Load Toponyms -> Pandas
         toponyms_path = self.data_dir / 'toponyms'
@@ -326,10 +383,14 @@ class Phase3Dataset(Dataset):
             self,
             data_dir: Path,
             split: str = 'train',
-            vocab_limits: Dict[str, int] = {'char': 3634, 'script': 20}
+            vocab_limits: Optional[Dict[str, int]] = None,
     ):
         self.data_dir = Path(data_dir)
         print(f"Phase3Dataset: Loading {split} data (Vectorized)...")
+
+        # Load vocab limits dynamically if not provided
+        if vocab_limits is None:
+            vocab_limits = load_vocab_limits(self.data_dir)
 
         # 1. Load Triplets -> Pandas
         triplets_path = self.data_dir / 'triplets' / 'phase3'

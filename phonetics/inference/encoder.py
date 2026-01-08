@@ -14,8 +14,8 @@ Usage:
     from phonetics.inference import ToponymEncoder
 
     encoder = ToponymEncoder.from_checkpoint(
-        checkpoint_path='checkpoints/final_model.pt',
-        vocab_dir='data/v2/vocab',
+        checkpoint_path='checkpoints/vN/final_model.pt',
+        vocab_dir='data/vN/vocab',
         device='cuda'
     )
 
