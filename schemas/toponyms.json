@@ -55,11 +55,24 @@
           }
         }
       },
+      "name_romanized": {
+        "type": "text",
+        "analyzer": "toponym_analyzer",
+        "fields": {
+          "keyword": { "type": "keyword" },
+          "prefix": {
+            "type": "text",
+            "analyzer": "edge_ngram_analyzer",
+            "search_analyzer": "standard"
+          }
+        }
+      },
       "lang": { "type": "keyword" },
       "lang_variant": { "type": "keyword" },
       "script": { "type": "keyword" },
       "namespaces": { "type": "keyword" },
       "primary_namespace": { "type": "keyword" },
+      "attestations": { "type": "keyword" },
       "embedding": {
         "type": "dense_vector",
         "dims": 128,

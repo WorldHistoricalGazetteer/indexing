@@ -653,10 +653,16 @@ SBATCH_EOF
 }
 
 # ==============================================================================
-# TOPONYM INDEX REBUILD (Slurm batch job)
+# TOPONYM INDEX REBUILD + TRAINING DATA EXTRACTION (Consolidated Slurm job)
 # ==============================================================================
 
 do_rebuild_toponyms() {
+    # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS...]
+    # Options are passed through to rebuild_toponyms_index.py
+
+    DATA_VERSION=${1:-3}
+    shift 2>/dev/null || true  # Remove version from remaining args
+
     # Check staging is running
     if [ ! -f "$STAGING_INFO_FILE" ]; then
         echo "ERROR: No staging ES instance running"
@@ -675,105 +681,34 @@ do_rebuild_toponyms() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
     mkdir -p "$LOG_DIR"
 
+    # Output directory for training data
+    OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    SQLITE_PATH="${OUTPUT_DIR}/toponyms.db"
+
     # Setup local scratch (CRC convention)
-    SCRATCH_DIR="/scratch/slurm-\${SLURM_JOB_ID}"
-    mkdir -p "\$SCRATCH_DIR"
-
-    # Capture extra args (e.g., --limit 1000)
-    PYTHON_ARGS="$@"
-
-    echo "Submitting toponym index rebuild job..."
-    echo "  ES Host: http://${ES_NODE}:${ES_PORT}"
-    echo "  Args:    $PYTHON_ARGS"
-
-    JOBID=$(sbatch --parsable <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-rebuild-topo
-#SBATCH --output=${LOG_DIR}/rebuild_%j.out
-#SBATCH --error=${LOG_DIR}/rebuild_%j.err
-#SBATCH --time=48:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-
-set -e
-
-# Load Environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-
-cd "$REPO_DIR"
-
-echo "Job Started: \$(date)"
-echo "Node: \$(hostname)"
-echo "Using scratch: $SCRATCH_DIR"
-
-# Run the rebuild
-# Note: We hardcode --confirm here because this is an intentional manual Slurm submission
-python -m phonetics.extraction.rebuild_toponyms_index \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --scratch-dir "$SCRATCH_DIR" \
-    --confirm \
-#    --resume \
-    $PYTHON_ARGS
-
-echo "Job Finished: \$(date)"
-EOF
-)
-
-    echo "✓ Rebuild job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/rebuild_${JOBID}.out"
-}
-
-# =============================================================================
-# TRAINING DATA PREPARATION (Extract -> Generate Pairs)
-# =============================================================================
-
-do_train_extract() {
-    # Usage: source es.sh -train-extract [VERSION]
-    DATA_VERSION=${1:?Data version integer required (e.g., 2)}
-
-    # Check staging is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: Staging ES not running."
-        echo "Run: source $0 -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    # Verify ES connectivity
-    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-        return 1
-    fi
-
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
-    mkdir -p "$LOG_DIR"
-
-    # Define final destination
-    FINAL_DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
-
-    # Setup local scratch directory variable
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
-    echo "Submitting training data extraction job..."
-    echo "  Version: $DATA_VERSION"
-    echo "  Dest:    $FINAL_DATA_DIR"
-    echo "  ES Host: http://${ES_NODE}:${ES_PORT}"
+    # Capture extra args (e.g., --limit 1000, --skip-es-index)
+    PYTHON_ARGS="$@"
+
+    echo "Submitting consolidated rebuild + training extraction job..."
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  Output Dir:   ${OUTPUT_DIR}"
+    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    echo "  Extra Args:   ${PYTHON_ARGS:-none}"
+    echo
+    echo "This job will:"
+    echo "  1. Extract toponyms from places index (with attestations)"
+    echo "  2. Filter pre-romanized forms (lang-script mismatches)"
+    echo "  3. Generate vocabulary (expanded Unicode ranges)"
+    echo "  4. Export training data to Parquet (with IPA/PanPhon features)"
+    echo "  5. Rebuild ES toponyms index (with attestations + name_search)"
 
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
-#SBATCH --job-name=whg-train-extract-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/train_extract_v${DATA_VERSION}_%j.out
-#SBATCH --error=${LOG_DIR}/train_extract_v${DATA_VERSION}_%j.err
+#SBATCH --job-name=whg-rebuild-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -793,86 +728,50 @@ fi
 
 cd "$REPO_DIR"
 
-# Define Scratch Directory
+# Setup scratch
 SCRATCH_DIR="$SCRATCH_VAR"
 mkdir -p "\$SCRATCH_DIR"
-mkdir -p "$FINAL_DATA_DIR"
+mkdir -p "$OUTPUT_DIR"
 
+echo "=============================================="
+echo "WHG TOPONYMS REBUILD + TRAINING DATA EXPORT"
+echo "=============================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
-echo "Work Dir (Scratch): \$SCRATCH_DIR"
-echo "Final Dir: $FINAL_DATA_DIR"
-
-# =============================================================================
-# STEP 1: EXTRACT TOPONYMS (Or Resume)
-# =============================================================================
+echo "Scratch: \$SCRATCH_DIR"
+echo "Output:  $OUTPUT_DIR"
 echo
-echo "Checking for existing data in $FINAL_DATA_DIR..."
 
-if [ -d "$FINAL_DATA_DIR/toponyms" ] && [ -d "$FINAL_DATA_DIR/vocab" ]; then
-    echo "FOUND EXISTING DATA. RESUMING..."
-    echo "Copying from Network Storage -> Local Scratch"
-
-    # Copy existing data to scratch so Step 2 can use it
-    rsync -av "$FINAL_DATA_DIR/" "\$SCRATCH_DIR/"
-
-    echo "✓ Data staged to scratch. Skipping Step 1."
-else
-    echo "NO EXISTING DATA FOUND. STARTING FRESH EXTRACTION..."
-    echo "=========================================="
-    echo "STEP 1: Extracting Toponyms"
-    echo "=========================================="
-
-    python -m phonetics.extraction.extract_to_parquet \
-        --es-host "http://${ES_NODE}:${ES_PORT}" \
-        --output-dir "\$SCRATCH_DIR" \
-        --namespaces gn wd tgn \
-        --workers 12 \
-        --batch-size 5000
-
-    # CHECKPOINT: Save extracted data immediately
-    echo
-    echo "CHECKPOINT: Saving Extracted Toponyms to Network Storage"
-    rsync -av "\$SCRATCH_DIR/" "$FINAL_DATA_DIR/"
-fi
-
-# =============================================================================
-# STEP 2: GENERATE PAIRS AND TRIPLETS
-# =============================================================================
-echo
-echo "=========================================="
-echo "STEP 2: Generating Pairs and Triplets"
-echo "=========================================="
-# Runs on data in $SCRATCH_DIR (whether newly extracted or staged from checkpoint)
-python -m phonetics.extraction.generate_pairs \
+# Run the consolidated rebuild script
+# This handles: extraction, vocabulary, training export, ES indexing
+python -m phonetics.extraction.rebuild_toponyms_index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --data-dir "\$SCRATCH_DIR" \
-    --namespaces gn wd tgn \
-    --batch-size 50000
-
-# =============================================================================
-# STEP 3: FINAL SYNC
-# =============================================================================
-echo
-echo "=========================================="
-echo "STEP 3: Copying Final Data to Persistent Storage"
-echo "=========================================="
-
-# rsync again to capture the new 'triplets' folder from Step 2
-rsync -av "\$SCRATCH_DIR/" "$FINAL_DATA_DIR/"
+    --sqlite-path "${SQLITE_PATH}" \
+    --output-dir "${OUTPUT_DIR}" \
+    --scratch-dir "\$SCRATCH_DIR" \
+    --training-namespaces gn wd tgn \
+    --train-ratio 0.8 \
+    --val-ratio 0.1 \
+    --confirm \
+    $PYTHON_ARGS
 
 echo
-echo "=========================================="
-echo "PIPELINE COMPLETE"
-echo "=========================================="
-echo "Data available at: $FINAL_DATA_DIR"
+echo "=============================================="
+echo "JOB COMPLETE"
+echo "=============================================="
+echo "Output directory: $OUTPUT_DIR"
+echo "  - vocab/           Character, language, script vocabularies"
+echo "  - training/        Parquet files with IPA/features"
+echo "  - splits/          Train/val/test ID lists"
+echo "  - toponyms.db      SQLite checkpoint"
+echo
 echo "Job Finished: \$(date)"
 EOF
 )
 
-    echo "✓ Training preparation job submitted: $JOBID"
+    echo "✓ Rebuild job submitted: $JOBID"
     echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/train_extract_v${DATA_VERSION}_${JOBID}.out"
+    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.out"
 }
 
 # =============================================================================
@@ -1092,27 +991,25 @@ BATCH_SCRIPT
 }
 
 # =============================================================================
-# INFERENCE PIPELINE (Extract [CPU] -> Compute [GPU] -> Push [CPU])
+# INFERENCE PIPELINE (Compute [GPU] -> Push [CPU])
 # =============================================================================
 #
-# Replacement for do_update_embeddings in es.sh
+# Updates ES with embeddings computed from the trained model.
+# Uses the training Parquet files directly (no separate extract step needed).
 #
-# Features:
-#   - Checkpoint-based resumption (auto-skips completed stages)
-#   - Individual stage execution (--stage extract|compute|push)
-#   - Pre-extract before model is ready
-#   - Idempotent: safe to re-run after failures
+# Stages:
+#   1. compute:  Load training Parquet -> GPU inference -> embeddings Parquet
+#   2. push:     Bulk update embeddings -> ES
 #
 # Usage:
 #   source es.sh -update-embeddings VERSION              # Run full pipeline
-#   source es.sh -update-embeddings VERSION extract      # Extract only
-#   source es.sh -update-embeddings VERSION compute      # Compute only (requires extract done)
+#   source es.sh -update-embeddings VERSION compute      # Compute only
 #   source es.sh -update-embeddings VERSION push         # Push only (requires compute done)
 #   source es.sh -update-embeddings VERSION --force      # Force re-run all stages
 
 do_update_embeddings() {
     # Usage: source es.sh -update-embeddings VERSION [STAGE] [--force]
-    # STAGE: extract | compute | push | (empty for full pipeline)
+    # STAGE: compute | push | (empty for full pipeline)
 
     local DATA_VERSION=""
     local STAGE="all"
@@ -1125,7 +1022,7 @@ do_update_embeddings() {
                 FORCE=true
                 shift
                 ;;
-            extract|compute|push)
+            compute|push)
                 STAGE="$1"
                 shift
                 ;;
@@ -1140,26 +1037,33 @@ do_update_embeddings() {
 
     if [[ -z "$DATA_VERSION" ]]; then
         echo "ERROR: Data version required"
-        echo "Usage: source es.sh -update-embeddings VERSION [extract|compute|push] [--force]"
+        echo "Usage: source es.sh -update-embeddings VERSION [compute|push] [--force]"
         return 1
     fi
 
     # --- PATH CONFIGURATION ---
     local BASE_DIR="/ix1/whcdh/models/phonetic"
-    local VOCAB_DIR="${BASE_DIR}/data/v${DATA_VERSION}/vocab"
+    local DATA_DIR="${BASE_DIR}/data/v${DATA_VERSION}"
+    local VOCAB_DIR="${DATA_DIR}/vocab"
+    local TRAINING_DIR="${DATA_DIR}/training"
     local CHECKPOINT_DIR="${BASE_DIR}/checkpoints/v${DATA_VERSION}"
     local CACHE_DIR="${BASE_DIR}/inference_cache/v${DATA_VERSION}"
     local LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}/inference_v${DATA_VERSION}"
 
     # Pipeline files (persistent across runs)
-    local FILE_RAW="${CACHE_DIR}/toponyms_raw.parquet"
     local FILE_EMB="${CACHE_DIR}/toponyms_embeddings.parquet"
-    local DONE_EXTRACT="${CACHE_DIR}/.done_extract"
     local DONE_COMPUTE="${CACHE_DIR}/.done_compute"
     local DONE_PUSH="${CACHE_DIR}/.done_push_v${DATA_VERSION}"
 
     mkdir -p "$CACHE_DIR"
     mkdir -p "$LOG_DIR"
+
+    # Check training data exists
+    if [ ! -d "$TRAINING_DIR" ]; then
+        echo "ERROR: Training data not found: $TRAINING_DIR"
+        echo "Run: source es.sh -rebuild-toponyms $DATA_VERSION"
+        return 1
+    fi
 
     # --- AUTO-DETECT MODEL CHECKPOINT ---
     local MODEL_CHECKPOINT=""
@@ -1172,39 +1076,30 @@ do_update_embeddings() {
             echo "WARNING: Phase 3 model not found. Falling back to Phase 2."
             MODEL_CHECKPOINT="${CHECKPOINT_DIR}/phase2_best.pt"
         else
-            if [[ "$STAGE" == "compute" ]]; then
-                echo "ERROR: No valid checkpoint found in ${CHECKPOINT_DIR}"
-                echo "Expected: phase3_best.pt, final_model.pt, or phase2_best.pt"
-                return 1
-            fi
-            echo "NOTE: No model checkpoint found yet. Extract can proceed."
+            echo "ERROR: No valid checkpoint found in ${CHECKPOINT_DIR}"
+            echo "Expected: phase3_best.pt, final_model.pt, or phase2_best.pt"
+            return 1
         fi
 
-        # Verify vocab exists for compute stage
-        if [[ "$STAGE" == "compute" || "$STAGE" == "all" ]] && [[ -n "$MODEL_CHECKPOINT" ]]; then
-            if [ ! -d "$VOCAB_DIR" ]; then
-                echo "ERROR: Vocab directory not found: $VOCAB_DIR"
-                return 1
-            fi
+        # Verify vocab exists
+        if [ ! -d "$VOCAB_DIR" ]; then
+            echo "ERROR: Vocab directory not found: $VOCAB_DIR"
+            return 1
         fi
     fi
 
     echo "=========================================="
     echo "INFERENCE PIPELINE (v${DATA_VERSION})"
     echo "=========================================="
-    echo "Stage:      $STAGE"
-    echo "Force:      $FORCE"
-    echo "Cache dir:  $CACHE_DIR"
-    [[ -n "$MODEL_CHECKPOINT" ]] && echo "Model:      $MODEL_CHECKPOINT"
+    echo "Stage:        $STAGE"
+    echo "Force:        $FORCE"
+    echo "Training dir: $TRAINING_DIR"
+    echo "Cache dir:    $CACHE_DIR"
+    [[ -n "$MODEL_CHECKPOINT" ]] && echo "Model:        $MODEL_CHECKPOINT"
     echo
 
     # --- STATUS CHECK ---
     echo "Pipeline Status:"
-    if [ -f "$DONE_EXTRACT" ]; then
-        echo "  ✓ Extract: COMPLETE ($(stat -c %y "$DONE_EXTRACT" 2>/dev/null | cut -d. -f1))"
-    else
-        echo "  ○ Extract: PENDING"
-    fi
     if [ -f "$DONE_COMPUTE" ]; then
         echo "  ✓ Compute: COMPLETE ($(stat -c %y "$DONE_COMPUTE" 2>/dev/null | cut -d. -f1))"
     else
@@ -1220,112 +1115,25 @@ do_update_embeddings() {
     # --- FORCE MODE: CLEAR CHECKPOINTS ---
     if $FORCE; then
         echo "Force mode: Clearing pipeline checkpoints..."
-        rm -f "$DONE_EXTRACT" "$DONE_COMPUTE" "$DONE_PUSH"
-        rm -f "$FILE_RAW" "$FILE_EMB"
+        rm -f "$DONE_COMPUTE" "$DONE_PUSH"
+        rm -f "$FILE_EMB"
     fi
 
     # =========================================================================
-    # STAGE 1: EXTRACT (ES -> Parquet)
-    # =========================================================================
-    if [[ "$STAGE" == "all" || "$STAGE" == "extract" ]]; then
-        if [ -f "$DONE_EXTRACT" ] && [ -f "$FILE_RAW" ]; then
-            echo "EXTRACT: Already complete. Skipping. (Use --force to re-run)"
-        else
-            # Check staging ES is running
-            if [ ! -f "$STAGING_INFO_FILE" ]; then
-                echo "ERROR: Staging ES not running. Run -staging-start first."
-                return 1
-            fi
-            source "$STAGING_INFO_FILE"
-
-            echo "Submitting EXTRACT job..."
-
-            JOB_ID_1=$(sbatch --parsable <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-inf-extract-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/1_extract_%j.out
-#SBATCH --error=${LOG_DIR}/1_extract_%j.err
-#SBATCH --time=8:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-
-set -e
-
-echo "=========================================="
-echo "STAGE 1: EXTRACT"
-echo "=========================================="
-echo "Started: \$(date)"
-echo "ES Host: http://${ES_NODE}:${ES_PORT}"
-
-# Load environment
-source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
-
-cd "$REPO_DIR"
-
-# Use local scratch for speed, then copy to shared storage
-SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH"
-LOCAL_RAW="\${SCRATCH}/raw.parquet"
-
-python -m phonetics.inference.update_es extract \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --index toponyms \
-    --embedding-version ${DATA_VERSION} \
-    --output-file "\$LOCAL_RAW" \
-    --batch-size 5000 \
-    --scroll-size 5000
-
-echo "Copying to shared storage..."
-cp "\$LOCAL_RAW" "$FILE_RAW"
-
-# Mark complete
-touch "$DONE_EXTRACT"
-
-echo "EXTRACT complete: \$(date)"
-echo "Output: $FILE_RAW"
-EOF
-)
-            echo "  ✓ EXTRACT job submitted: $JOB_ID_1"
-            echo "    Log: tail -f ${LOG_DIR}/1_extract_${JOB_ID_1}.out"
-        fi
-    fi
-
-    # =========================================================================
-    # STAGE 2: COMPUTE (Parquet -> GPU -> Parquet)
+    # STAGE 1: COMPUTE (Training Parquet -> GPU -> Embeddings Parquet)
     # =========================================================================
     if [[ "$STAGE" == "all" || "$STAGE" == "compute" ]]; then
-        # Check prerequisites
-        if [ ! -f "$DONE_EXTRACT" ] && [ ! -f "$FILE_RAW" ]; then
-            if [[ "$STAGE" == "compute" ]]; then
-                echo "ERROR: Extract stage not complete. Run extract first."
-                return 1
-            fi
-        fi
-
-        if [[ -z "$MODEL_CHECKPOINT" ]]; then
-            echo "COMPUTE: Skipping - no model checkpoint available yet."
-        elif [ -f "$DONE_COMPUTE" ] && [ -f "$FILE_EMB" ]; then
+        if [ -f "$DONE_COMPUTE" ] && [ -f "$FILE_EMB" ]; then
             echo "COMPUTE: Already complete. Skipping. (Use --force to re-run)"
         else
             echo "Submitting COMPUTE job..."
+            echo "  Input: $TRAINING_DIR (training Parquet)"
 
-            # Set dependency if extract was just submitted
-            DEP_FLAG=""
-            if [[ -n "${JOB_ID_1:-}" ]]; then
-                DEP_FLAG="--dependency=afterok:${JOB_ID_1}"
-            fi
-
-            JOB_ID_2=$(sbatch --parsable $DEP_FLAG <<EOF
+            JOB_ID_1=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-inf-compute-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/2_compute_%j.out
-#SBATCH --error=${LOG_DIR}/2_compute_%j.err
+#SBATCH --output=${LOG_DIR}/1_compute_%j.out
+#SBATCH --error=${LOG_DIR}/1_compute_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1339,10 +1147,11 @@ EOF
 set -e
 
 echo "=========================================="
-echo "STAGE 2: COMPUTE"
+echo "STAGE 1: COMPUTE EMBEDDINGS"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "Model: $MODEL_CHECKPOINT"
+echo "Input: $TRAINING_DIR"
 
 # Load environment
 source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
@@ -1353,28 +1162,20 @@ fi
 
 cd "$REPO_DIR"
 
-# Verify input exists
-if [ ! -f "$FILE_RAW" ]; then
-    echo "ERROR: Input file not found: $FILE_RAW"
-    exit 1
-fi
-
-# Use local scratch for speed
+# Use local scratch for output speed
 SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH"
 
-echo "Staging input to local scratch..."
-cp "$FILE_RAW" "\${SCRATCH}/raw.parquet"
-
+# Run compute directly from training Parquet (no copy needed, it's read-only)
 CUDA_LAUNCH_BLOCKING=1 python -m phonetics.inference.update_es compute \
-    --input-file "\${SCRATCH}/raw.parquet" \
+    --input-file "$TRAINING_DIR" \
     --output-file "\${SCRATCH}/embeddings.parquet" \
     --checkpoint "$MODEL_CHECKPOINT" \
     --vocab-dir "$VOCAB_DIR" \
     --batch-size 2048 \
     --device cuda
 
-echo "Copying to shared storage..."
+echo "Copying embeddings to shared storage..."
 cp "\${SCRATCH}/embeddings.parquet" "$FILE_EMB"
 
 # Mark complete
@@ -1384,27 +1185,23 @@ echo "COMPUTE complete: \$(date)"
 echo "Output: $FILE_EMB"
 EOF
 )
-            echo "  ✓ COMPUTE job submitted: $JOB_ID_2"
-            [[ -n "$DEP_FLAG" ]] && echo "    Depends on: $JOB_ID_1"
-            echo "    Log: tail -f ${LOG_DIR}/2_compute_${JOB_ID_2}.out"
+            echo "  ✓ COMPUTE job submitted: $JOB_ID_1"
+            echo "    Log: tail -f ${LOG_DIR}/1_compute_${JOB_ID_1}.out"
         fi
     fi
 
     # =========================================================================
-    # STAGE 3: PUSH (Parquet -> ES)
+    # STAGE 2: PUSH (Embeddings Parquet -> ES)
     # =========================================================================
     if [[ "$STAGE" == "all" || "$STAGE" == "push" ]]; then
 
         # --- SMART WAIT LOGIC ---
-        # If the Compute "Done" file is missing, we assume compute is still running.
-        # We wait for it rather than crashing.
         if [ ! -f "$DONE_COMPUTE" ]; then
             echo "🔄  PREREQUISITE CHECK: Waiting for Compute stage..."
             echo "    Target: $DONE_COMPUTE"
-            echo "    (Checking every 2 minutes. Safe to Ctrl+C if you know it failed.)"
+            echo "    (Checking every 2 minutes. Ctrl+C to cancel.)"
 
             while [ ! -f "$DONE_COMPUTE" ]; do
-                # Optional: Check if the embedding file exists but is partial
                 if [ -f "$FILE_EMB" ]; then
                      CURRENT_SIZE=$(du -h "$FILE_EMB" | cut -f1)
                      echo "    ... waiting. Current embedding file size: $CURRENT_SIZE"
@@ -1415,7 +1212,6 @@ EOF
             done
             echo "    ✅ Compute stage confirmed complete."
         fi
-        # ------------------------
 
         if [ -f "$DONE_PUSH" ]; then
             echo "PUSH: Already complete. Skipping. (Use --force to re-run)"
@@ -1429,12 +1225,11 @@ EOF
 
             echo "Submitting PUSH job..."
 
-            # No dependencies needed, we self-regulated above
-            JOB_ID_3=$(sbatch --parsable <<EOF
+            JOB_ID_2=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-inf-push-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/3_push_%j.out
-#SBATCH --error=${LOG_DIR}/3_push_%j.err
+#SBATCH --output=${LOG_DIR}/2_push_%j.out
+#SBATCH --error=${LOG_DIR}/2_push_%j.err
 #SBATCH --partition=htc
 #SBATCH --time=8:00:00
 #SBATCH --nodes=1
@@ -1445,7 +1240,7 @@ EOF
 set -e
 
 echo "=========================================="
-echo "STAGE 3: PUSH"
+echo "STAGE 2: PUSH EMBEDDINGS TO ES"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "ES Host: http://${ES_NODE}:${ES_PORT}"
@@ -1459,7 +1254,6 @@ fi
 
 cd "$REPO_DIR"
 
-# Double check input exists inside the job to be safe
 if [ ! -f "$FILE_EMB" ]; then
     echo "ERROR: Input file not found: $FILE_EMB"
     exit 1
@@ -1485,8 +1279,8 @@ touch "$DONE_PUSH"
 echo "PUSH complete: \$(date)"
 EOF
 )
-            echo "  ✓ PUSH job submitted: $JOB_ID_3"
-            echo "    Log: tail -f ${LOG_DIR}/3_push_${JOB_ID_3}.out"
+            echo "  ✓ PUSH job submitted: $JOB_ID_2"
+            echo "    Log: tail -f ${LOG_DIR}/2_push_${JOB_ID_2}.out"
         fi
     fi
 
@@ -1537,12 +1331,6 @@ case "$1" in
     -rebuild-toponyms)
         shift  # Remove -rebuild-toponyms from arguments
         do_rebuild_toponyms "$@"
-        ;;
-
-    # --- Training Data Preparation ---
-    -train-extract)
-        shift  # Remove -train-extract from arguments
-        do_train_extract "$@"
         ;;
 
     # --- Training Pipeline ---
@@ -1639,16 +1427,29 @@ case "$1" in
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
         echo
-        echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
-        echo "  -rebuild-toponyms [OPTIONS]   Submit toponym index rebuild job to Slurm"
-        echo "  Use --limit N to limit number of toponyms processed (for testing)"
-        echo "  Use --resume if a valid database snapshot exists"
+        echo "REBUILD TOPONYMS INDEX + TRAINING DATA (requires staging ES running):"
+        echo "  -rebuild-toponyms VERSION [OPTIONS]"
+        echo "      Consolidated job that:"
+        echo "        1. Extracts toponyms from places (with attestations)"
+        echo "        2. Filters pre-romanized forms (lang-script mismatches)"
+        echo "        3. Generates vocabulary (full Unicode ranges)"
+        echo "        4. Exports training data to Parquet (with IPA/PanPhon)"
+        echo "        5. Rebuilds ES toponyms index"
         echo
-        echo "TRAINING DATA PREPARATION:"
-        echo "  -train-extract VERSION        Extract toponyms and generate pairs for model version"
+        echo "  Options:"
+        echo "    --skip-es-index          Skip ES indexing (extract + training only)"
+        echo "    --skip-training-export   Skip Parquet export (ES rebuild only)"
+        echo "    --resume                 Resume from existing SQLite checkpoint"
+        echo "    --limit N                Limit places processed (for testing)"
+        echo
+        echo "  Examples:"
+        echo "    $0 -rebuild-toponyms 3                    # Full rebuild v3"
+        echo "    $0 -rebuild-toponyms 3 --skip-es-index    # Training data only"
+        echo "    $0 -rebuild-toponyms 3 --limit 10000      # Test with subset"
         echo
         echo "MODEL TRAINING PIPELINE:"
-        echo "  -train-model VERSION          Submit full training pipeline for model version"
+        echo "  -train-model VERSION [PHASE]   Submit training job for model version"
+        echo "                                 PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
         echo
         echo "EMBEDDING UPDATE PIPELINE:"
         echo "  -update-embeddings VERSION    Submit embedding update pipeline for model version"
@@ -1670,13 +1471,15 @@ case "$1" in
         echo "  source $0 -staging-status   Show status and index counts"
         echo "  source $0 -staging-logs     Show recent log output"
         echo
-        echo "Workflow:"
-        echo "  1. Start staging ES: source es.sh -staging-start"
-        echo "  2. Extract: source es.sh -staging-embed-extract 1"
-        echo "  3. Run GPU job: source es.sh -staging-embed-transform 1"
-        echo "  4. Load results: source es.sh -staging-embed-load 1"
+        echo "Typical workflow:"
+        echo "  1. Start staging ES:    source es.sh -staging-start"
+        echo "  2. Rebuild + Extract:   source es.sh -rebuild-toponyms 3"
+        echo "  3. Train model:         source es.sh -train-model 3 1  (Phase 1)"
+        echo "                          source es.sh -train-model 3 2  (Phase 2)"
+        echo "                          source es.sh -train-model 3 3  (Phase 3)"
+        echo "  4. Update embeddings:   source es.sh -update-embeddings 3"
         echo
-        echo "Data directory: $REPO_DIR/data/embed_pipeline/"
+        echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
         echo "  - raw_chunk_NNNN.parquet    (Phase 1 output)"
         echo "  - vectors_chunk_NNNN.parquet (Phase 2 output)"
         echo
