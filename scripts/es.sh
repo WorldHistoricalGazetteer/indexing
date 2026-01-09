@@ -791,8 +791,9 @@ echo "  - splits/          Train/val/test ID lists"
 echo "  - toponyms.db      SQLite checkpoint"
 echo
 echo "Next steps:"
-echo "  1. Train model:         source es.sh -train-model $DATA_VERSION"
-echo "  2. Update embeddings:   source es.sh -update-embeddings $DATA_VERSION"
+echo "  1. Generate pairs:      source es.sh -generate-pairs $DATA_VERSION"
+echo "  2. Train model:         source es.sh -train-model $DATA_VERSION"
+echo "  3. Update embeddings:   source es.sh -update-embeddings $DATA_VERSION"
 echo
 echo "Job Finished: \$(date)"
 EOF
@@ -801,6 +802,115 @@ EOF
     echo "✓ Rebuild job submitted: $JOBID"
     echo "  Monitor: squeue -j $JOBID"
     echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.out"
+}
+
+# ==============================================================================
+# TRAINING PAIR/TRIPLET GENERATION (Requires ES + extracted toponyms)
+# ==============================================================================
+
+do_generate_pairs() {
+    # Usage: source es.sh -generate-pairs VERSION
+    # Generates pairs and triplets from co-located toponyms in places index
+
+    DATA_VERSION=${1:-3}
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    # Output directory for training data
+    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+
+    # Check that toponyms parquet exists
+    if [ ! -d "${DATA_DIR}/toponyms" ]; then
+        echo "ERROR: Toponyms not found at ${DATA_DIR}/toponyms"
+        echo "Run -rebuild-toponyms first."
+        return 1
+    fi
+
+    echo "Submitting pair/triplet generation job..."
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  Data Dir:     ${DATA_DIR}"
+    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    echo
+    echo "This job will:"
+    echo "  1. Scan places index for co-located toponyms"
+    echo "  2. Generate positive pairs (phonetic similarity >= 0.35)"
+    echo "  3. Generate Phase 1 triplets (random negatives)"
+    echo "  4. Generate Phase 3 triplets (hard negatives)"
+    echo
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-pairs-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/pairs_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/pairs_v${DATA_VERSION}_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
+
+set -e
+
+# Load Environment
+if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
+    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
+    source "\$HOME/miniconda/etc/profile.d/conda.sh"
+    conda activate whg
+fi
+
+cd "$REPO_DIR"
+
+echo "=============================================="
+echo "PAIR/TRIPLET GENERATION"
+echo "=============================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Data Dir: $DATA_DIR"
+echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+echo
+
+python -m phonetics.extraction.generate_pairs \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --data-dir "${DATA_DIR}" \
+    --namespaces gn wd tgn \
+    --batch-size 50000
+
+echo
+echo "=============================================="
+echo "JOB COMPLETE"
+echo "=============================================="
+echo "Output:"
+echo "  - ${DATA_DIR}/pairs/          Positive pairs"
+echo "  - ${DATA_DIR}/triplets/phase1 Phase 1 triplets"
+echo "  - ${DATA_DIR}/triplets/phase3 Phase 3 triplets"
+echo
+echo "Next: source es.sh -train-model $DATA_VERSION"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ Pair generation job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/pairs_v${DATA_VERSION}_${JOBID}.out"
 }
 
 # =============================================================================
@@ -1617,6 +1727,12 @@ case "$1" in
         do_rebuild_toponyms "$@"
         ;;
 
+    # --- Generate Training Pairs/Triplets ---
+    -generate-pairs)
+        shift
+        do_generate_pairs "$@"
+        ;;
+
     # --- Training Pipeline ---
     -train-model)
       shift  # Remove -train-model from arguments
@@ -1725,18 +1841,23 @@ case "$1" in
         echo "        2. Filters pre-romanized forms (lang-script mismatches)"
         echo "        3. Generates vocabulary (full Unicode ranges)"
         echo "        4. Exports training data to Parquet (with IPA/PanPhon)"
-        echo "        5. Rebuilds ES toponyms index"
         echo
         echo "  Options:"
-        echo "    --skip-es-index          Skip ES indexing (extract + training only)"
-        echo "    --skip-training-export   Skip Parquet export (ES rebuild only)"
+        echo "    --skip-es-index          Skip ES indexing (default: skipped)"
+        echo "    --skip-training-export   Skip Parquet export"
         echo "    --resume                 Resume from existing SQLite checkpoint"
         echo "    --limit N                Limit places processed (for testing)"
         echo
         echo "  Examples:"
         echo "    $0 -rebuild-toponyms 3                    # Full rebuild v3"
-        echo "    $0 -rebuild-toponyms 3 --skip-es-index    # Training data only"
         echo "    $0 -rebuild-toponyms 3 --limit 10000      # Test with subset"
+        echo
+        echo "GENERATE TRAINING PAIRS/TRIPLETS (requires staging ES + extracted toponyms):"
+        echo "  -generate-pairs VERSION"
+        echo "      Scans places index for co-located toponyms and generates:"
+        echo "        - Positive pairs (phonetic similarity >= 0.35)"
+        echo "        - Phase 1 triplets (random negatives for Teacher)"
+        echo "        - Phase 3 triplets (hard negatives for fine-tuning)"
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
@@ -1774,13 +1895,15 @@ case "$1" in
         echo "Typical workflow (simple):"
         echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
         echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
-        echo "  3. Train + Index:       source es.sh -train-and-update 3"
+        echo "  3. Generate pairs:      source es.sh -generate-pairs 3"
+        echo "  4. Train + Index:       source es.sh -train-and-update 3"
         echo
         echo "Typical workflow (step-by-step):"
         echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
         echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
-        echo "  3. Train model:         source es.sh -train-model 3"
-        echo "  4. Create ES index:     source es.sh -update-embeddings 3"
+        echo "  3. Generate pairs:      source es.sh -generate-pairs 3"
+        echo "  4. Train model:         source es.sh -train-model 3"
+        echo "  5. Create ES index:     source es.sh -update-embeddings 3"
         echo
         echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
         echo

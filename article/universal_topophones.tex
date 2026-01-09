@@ -18,6 +18,7 @@
 \usetikzlibrary{shapes,arrows,positioning,fit,backgrounds}
 \usepackage{subcaption}
 \usepackage{listings}
+\usepackage[normalem]{ulem} % for \sout strikethrough
 
 % --- Script Support ---
 % Define fonts for specific scripts.
@@ -60,7 +61,7 @@ Linking place names across historical sources, languages, and writing systems re
 \section{Introduction}
 \label{sec:introduction}
 
-Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes over 112 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. These records are distinct but include language tags, so there is naturally some replication of unlanguaged name forms across records. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
+Historical gazetteers aggregate place references from sources spanning millennia, dozens of languages, and multiple writing systems. The World Historical Gazetteer (WHG) alone indexes over 112 million toponym records from antiquity to the present, drawn from sources as diverse as classical Latin itineraries, medieval Arabic geographies, and modern national mapping agencies. Each toponym record is tagged with language and script metadata, though the same surface form (e.g., ``London'') may appear multiple times when attested in different languages. Linking these references---determining that ``Londinium'', ``Londres'', ``Лондон'', and ``\textcn{伦敦}'' all denote the same city---is essential for cross-cultural historical research but remains technically challenging.
 
 The core difficulty is that place name similarity is fundamentally \emph{phonetic}, not orthographic. English speakers recognise ``Munich'' and ``München'' as the same city not because the spellings match, but because the sounds are similar enough to suggest common origin. Yet computational approaches to toponym matching have largely relied on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for single languages (Soundex, Metaphone for English; Cologne phonetic for German). These approaches fail catastrophically when names cross script boundaries: no amount of edit distance tuning will link ``\textcn{東京}'' to ``Tokyo''.
 
@@ -86,18 +87,11 @@ The resulting system enables fuzzy phonetic search across the full WHG corpus wi
 
 \section*{Remaining Work After ES Comes Online}
 \begin{enumerate}
-\item Run the coverage queries to assess actual script/language distribution
-\item Execute extraction with source es.sh -train-extract 3
-\item Review extraction_stats.json for actual numbers
+\item Review extraction\_stats.json for actual numbers
 \item Update Section 4.4 of the .tex with new statistics
 \item Proceed with model training
 \end{enumerate}
 
-\section*{Sections Still Requiring Updates After Retraining}
-These sections have \placeholder{} markers and need actual data:
-
-\begin{enumerate}
-\item Abstract: Results pending placeholder
 \section*{Sections Still Requiring Updates After Retraining}
 These sections have \placeholder{} markers and need actual data:
 
@@ -111,8 +105,7 @@ These sections have \placeholder{} markers and need actual data:
 
 \section*{Recommendations for Future Edits}
 \begin{enumerate}
-\item Add architecture diagram: Consider adding a TikZ figure showing Teacher-Student data flow
-\item Add training curves: Plot loss curves for each phase when available
+\item Add training curves: Plot loss curves for each phase when available - use phonetics.training.plot\_curves
 \item Add confusion matrix: For script-pair performance analysis
 \item Consider appendix: For detailed per-script evaluation tables
 \item Add hyperparameter sensitivity: Brief analysis of key hyperparameters
@@ -174,6 +167,81 @@ Three principles guide our architecture:
 \paragraph{Phonetic Grounding.} Embedding similarity must reflect phonetic similarity, not orthographic or semantic similarity. We ground the embedding space through the Teacher network, which operates on articulatory features derived from IPA transcriptions.
 
 \paragraph{Inference Efficiency.} The deployed model must encode toponyms without runtime phonetic conversion, language identification, or external resources. All phonetic knowledge is distilled into the Student's parameters during training.
+
+\subsection{Architecture Overview}
+
+Figure~\ref{fig:architecture} illustrates the Teacher-Student architecture and the three-phase training curriculum.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 1.2cm,
+    box/.style={rectangle, draw, rounded corners, minimum width=2.2cm, minimum height=0.7cm, align=center, font=\small},
+    widebox/.style={rectangle, draw, rounded corners, minimum width=3.2cm, minimum height=0.7cm, align=center, font=\small},
+    input/.style={box, fill=blue!15},
+    process/.style={box, fill=green!15},
+    encoder/.style={widebox, fill=orange!20, minimum height=1.2cm},
+    output/.style={box, fill=purple!15},
+    loss/.style={box, fill=red!15, dashed},
+    arrow/.style={->, >=stealth, thick},
+    dashedarrow/.style={->, >=stealth, thick, dashed},
+    label/.style={font=\footnotesize\bfseries},
+]
+
+% === TEACHER SIDE (left) ===
+\node[input] (toponym1) {Toponym};
+\node[process, below=of toponym1] (epitran) {Epitran\\(G2P)};
+\node[process, below=of epitran] (panphon) {PanPhon\\Features};
+\node[encoder, below=of panphon] (teacher) {Teacher\\Encoder\\{\footnotesize BiLSTM + Attn}};
+\node[output, below=of teacher] (temb) {$e_T \in \mathbb{R}^{128}$};
+
+\draw[arrow] (toponym1) -- (epitran);
+\draw[arrow] (epitran) -- (panphon);
+\draw[arrow] (panphon) -- (teacher);
+\draw[arrow] (teacher) -- (temb);
+
+% === STUDENT SIDE (right) ===
+\node[input, right=3.5cm of toponym1] (toponym2) {Toponym};
+\node[process, below=of toponym2] (chars) {Characters\\+ Script};
+\node[process, below=of chars] (lang) {Language\\(optional)};
+\node[encoder, below=of lang] (student) {Student\\Encoder\\{\footnotesize BiLSTM + Attn}};
+\node[output, below=of student] (semb) {$e_S \in \mathbb{R}^{128}$};
+
+\draw[arrow] (toponym2) -- (chars);
+\draw[arrow] (chars) -- (lang);
+\draw[arrow] (lang) -- (student);
+\draw[arrow] (student) -- (semb);
+
+% === TRAINING PHASES (center) ===
+\node[loss, below right=0.3cm and -0.5cm of temb] (phase1) {Phase 1:\\Triplet Loss};
+\node[loss, right=0.8cm of phase1] (phase2) {Phase 2:\\Distillation};
+\node[loss, right=0.8cm of phase2] (phase3) {Phase 3:\\Hard Neg.};
+
+\draw[dashedarrow] (temb) -- (phase1);
+\draw[dashedarrow] (temb) -- (phase2);
+\draw[dashedarrow] (semb) -- (phase2);
+\draw[dashedarrow] (semb) -- (phase3);
+
+% === LABELS ===
+\node[label, above=0.1cm of toponym1] {Training Path};
+\node[label, above=0.1cm of toponym2] {Inference Path};
+
+% === INFERENCE ANNOTATION ===
+\node[font=\scriptsize, text=gray, right=0.2cm of student] (inf) {Deployed};
+\draw[->, gray, thick] (inf) -- (student);
+
+% === BACKGROUND BOXES ===
+\begin{scope}[on background layer]
+    \node[fit=(toponym1)(epitran)(panphon)(teacher)(temb),
+          fill=blue!5, rounded corners, inner sep=0.3cm] {};
+    \node[fit=(toponym2)(chars)(lang)(student)(semb),
+          fill=green!5, rounded corners, inner sep=0.3cm] {};
+\end{scope}
+
+\end{tikzpicture}
+\caption{Teacher-Student architecture. \textbf{Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf{Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf{Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.}
+\label{fig:architecture}
+\end{figure}
 
 \subsection{Script Detection and Character Vocabulary}
 
