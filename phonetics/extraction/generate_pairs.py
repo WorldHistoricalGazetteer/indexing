@@ -112,25 +112,59 @@ def load_toponym_index(data_dir: Path) -> Dict[str, Dict]:
 
     dataset = ds.dataset(training_path, format='parquet', partitioning='hive')
 
+    # Check available columns - schema may vary between old and new extractions
+    available_columns = set(dataset.schema.names)
+
+    # Core columns we need
+    columns = ['toponym_id', 'name', 'script', 'lang']
+
+    # Add normalized name column (different names in old vs new schema)
+    if 'name_romanized' in available_columns:
+        columns.append('name_romanized')
+        name_norm_col = 'name_romanized'
+    elif 'name_normalized' in available_columns:
+        columns.append('name_normalized')
+        name_norm_col = 'name_normalized'
+    else:
+        name_norm_col = None
+
     # Optimization: Use Pandas for faster loading if available
     try:
-        table = dataset.to_table(columns=[
-            'toponym_id', 'name', 'name_normalized', 'script', 'lang'
-        ])
+        table = dataset.to_table(columns=columns)
         df = table.to_pandas()
+
+        # Create name_normalized column if we have a source for it
+        if name_norm_col and name_norm_col != 'name_normalized':
+            df['name_normalized'] = df[name_norm_col]
+        elif name_norm_col is None:
+            # Fall back to normalizing name on the fly
+            df['name_normalized'] = df['name'].apply(
+                lambda x: normalize_for_comparison(x) if x else ''
+            )
+
         # Drop duplicates based on ID to ensure unique index
         df = df.drop_duplicates(subset=['toponym_id'])
         # Vectorized dictionary creation
-        index = df.set_index('toponym_id').to_dict(orient='index')
-    except Exception:
+        index = df.set_index('toponym_id')[['name', 'name_normalized', 'script', 'lang']].to_dict(orient='index')
+    except Exception as e:
+        logger.warning(f"Pandas loading failed: {e}, falling back to PyArrow iteration")
         # Fallback to pure PyArrow iteration
-        table = dataset.to_table(columns=[
-            'toponym_id', 'name', 'name_normalized', 'script', 'lang'
-        ])
+        table = dataset.to_table(columns=columns)
         index = {}
         for i in range(len(table)):
             row = {col: table[col][i].as_py() for col in table.column_names}
-            index[row['toponym_id']] = row
+            tid = row['toponym_id']
+            # Normalize name
+            name = row.get('name', '')
+            name_norm = row.get(name_norm_col, '') if name_norm_col else ''
+            if not name_norm:
+                name_norm = normalize_for_comparison(name) if name else ''
+            index[tid] = {
+                'name': name,
+                'name_normalized': name_norm,
+                'script': row.get('script', 'OTHER'),
+                'lang': row.get('lang'),
+            }
 
     logger.info(f"Loaded {len(index):,} toponyms")
     return index
