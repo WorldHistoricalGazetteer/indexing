@@ -992,7 +992,9 @@ mkdir -p \${SCRATCH_ROOT}/vocab
 (cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 1 (Teacher)..."
-python -m phonetics.training.train \
+# Force GPU isolation and unbuffered Python output
+export CUDA_VISIBLE_DEVICES=0
+python -u -m phonetics.training.train \
     --phase 1 \
     --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \
@@ -1054,7 +1056,9 @@ mkdir -p \${SCRATCH_ROOT}
 (cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 2 (Student Alignment)..."
-python -m phonetics.training.train \
+# Force GPU isolation and unbuffered Python output
+export CUDA_VISIBLE_DEVICES=0
+python -u -m phonetics.training.train \
     --phase 2 \
     --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \
@@ -1121,7 +1125,9 @@ mkdir -p \${SCRATCH_ROOT}/vocab
 (cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 3 (Fine Tuning)..."
-python -m phonetics.training.train \
+# Force GPU isolation and unbuffered Python output
+export CUDA_VISIBLE_DEVICES=0
+python -u -m phonetics.training.train \
     --phase 3 \
     --data-dir "\${SCRATCH_ROOT}" \
     --output-dir "$CHECKPOINT_DIR" \

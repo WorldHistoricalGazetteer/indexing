@@ -215,18 +215,18 @@ class Phase1Dataset(Dataset):
     ):
         self.data_dir = Path(data_dir)
         self.split = split
-        print(f"Phase1Dataset: Loading data for split '{split}'...")
+        print(f"Phase1Dataset: Loading data for split '{split}'...", flush=True)
 
         # 1. Load Triplets -> Pandas (small: ~500MB for 5M triplets)
         triplets_path = self.data_dir / 'triplets' / 'phase1'
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
-        print(f"Phase1Dataset: Loaded {len(self.triplets_df):,} triplets")
+        print(f"Phase1Dataset: Loaded {len(self.triplets_df):,} triplets", flush=True)
 
         # 2. Get unique toponym IDs from triplets (only ~10-15M unique, not 57M)
         needed_ids = set(self.triplets_df['anchor_id'].unique()) | \
                      set(self.triplets_df['positive_id'].unique()) | \
                      set(self.triplets_df['negative_id'].unique())
-        print(f"Phase1Dataset: {len(needed_ids):,} unique toponym IDs needed")
+        print(f"Phase1Dataset: {len(needed_ids):,} unique toponym IDs needed", flush=True)
 
         # 3. Load ONLY the needed toponyms from Parquet
         toponyms_path = get_training_data_path(self.data_dir)
@@ -237,7 +237,7 @@ class Phase1Dataset(Dataset):
         needed_ids_list = list(needed_ids)
 
         # Load in chunks to avoid memory spike
-        print(f"Phase1Dataset: Loading features for needed toponyms...")
+        print(f"Phase1Dataset: Loading features for needed toponyms...", flush=True)
         self._feature_cache = {}
         valid_anchor_ids = set()
 
@@ -279,14 +279,14 @@ class Phase1Dataset(Dataset):
 
             loaded_count += len(valid_rows)
             if loaded_count % 500000 == 0:
-                print(f"  Loaded {loaded_count:,} toponyms with features...")
+                print(f"  Loaded {loaded_count:,} toponyms with features...", flush=True)
 
-        print(f"Phase1Dataset: Cached {len(self._feature_cache):,} toponyms with valid features")
+        print(f"Phase1Dataset: Cached {len(self._feature_cache):,} toponyms with valid features", flush=True)
 
         # 4. Filter triplets - anchor must be in split, all must have features
         available_ids = set(self._feature_cache.keys())
 
-        print(f"Phase1Dataset: Filtering triplets...")
+        print(f"Phase1Dataset: Filtering triplets...", flush=True)
         df = self.triplets_df
 
         # Vectorized filtering
@@ -302,7 +302,7 @@ class Phase1Dataset(Dataset):
         # Free memory
         del self.triplets_df
 
-        print(f"Phase1Dataset: {len(self.valid_df):,} valid triplets for {split}")
+        print(f"Phase1Dataset: {len(self.valid_df):,} valid triplets for {split}", flush=True)
 
     def __len__(self) -> int:
         return len(self.valid_df)
