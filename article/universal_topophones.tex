@@ -91,7 +91,7 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 \section*{Remaining Work}
 \begin{enumerate}
 \item \sout{Phase 1 training} \textit{Complete (50 epochs, best val\_loss=0.0040, final train\_loss=0.0002)}
-\item \sout{Phase 2 training} \textit{In progress (Epoch 1/50, 20\% complete as of 2026-01-09 14:59)}
+\item \sout{Phase 2 training} \textit{In progress (Epoch 2/50, 21\% complete as of 2026-01-09 16:28)}
 \item Phase 3 training (hard negative fine-tuning)
 \item Update evaluation sections after training completes
 \item Generate training curves figure
@@ -529,8 +529,10 @@ During this phase:
     \item Learning rate: $10^{-3}$ with cosine annealing
     \item Batch size: 128
     \item Epochs: 50
-    \item Training time: $\sim$81 minutes/epoch ($\sim$37 batches/second on A100)
+    \item Training time: $\sim$82 minutes/epoch ($\sim$37 batches/second on A100)
 \end{itemize}
+
+\paragraph{Convergence.} Early results show rapid alignment: after epoch 1, validation loss reached 0.0381 with cosine similarity 0.9625 between Student and Teacher embeddings, indicating the Student quickly learns to approximate the Teacher's phonetic space.
 
 \subsection{Phase 3: Discriminative Fine-Tuning}
 \label{subsec:phase3}
@@ -561,7 +563,7 @@ Crucially, we explicitly \textbf{exclude} co-located toponyms from being selecte
 
 \subsection{Implementation Details}
 
-Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 requires approximately 68 hours (50 epochs $\times$ 81 minutes/epoch); Phase 3 timing pending.
+Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 requires approximately 68 hours (50 epochs $\times$ 82 minutes/epoch); Phase 3 timing pending.
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Experiments with 64, 128, and 256 dimensions showed diminishing returns above 128 for toponym matching.
 
