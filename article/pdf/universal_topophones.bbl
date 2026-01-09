@@ -1,4 +1,4 @@
-\begin{thebibliography}{20}
+\begin{thebibliography}{21}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -97,6 +97,14 @@ Paul Neculoiu, Maarten Versteegh, and Mihai Rotaru.
 \newblock In \emph{Proceedings of the 1st Workshop on Representation Learning
   for NLP}, pages 148--157, 2016.
 \newblock URL \url{https://aclanthology.org/W16-1617/}.
+
+\bibitem[Novak et~al.(2016)Novak, Minematsu, and Hirose]{novak2016}
+Josef~R. Novak, Nobuaki Minematsu, and Keikichi Hirose.
+\newblock Phonetisaurus: Exploring grapheme-to-phoneme conversion with joint
+  n-gram models in the {WFST} framework.
+\newblock \emph{Natural Language Engineering}, 22\penalty0 (6):\penalty0
+  907--938, 2016.
+\newblock \doi{10.1017/S1351324915000315}.
 
 \bibitem[Philips(1990)]{philips1990}
 Lawrence Philips.

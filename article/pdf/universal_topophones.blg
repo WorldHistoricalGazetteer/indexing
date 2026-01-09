@@ -3,44 +3,44 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: pdf/universal_topophones.aux
 The style file: plainnat.bst
 Database file #1: references.bib
-You've used 20 entries,
+You've used 21 entries,
             2773 wiz_defined-function locations,
-            734 strings with 9773 characters,
-and the built_in function-call counts, 12085 in all, are:
-= -- 1135
-> -- 661
+            742 strings with 10034 characters,
+and the built_in function-call counts, 12605 in all, are:
+= -- 1184
+> -- 691
 < -- 21
-+ -- 223
-- -- 203
-* -- 943
-:= -- 1738
-add.period$ -- 83
-call.type$ -- 20
-change.case$ -- 127
-chr.to.int$ -- 20
-cite$ -- 40
-duplicate$ -- 574
-empty$ -- 958
-format.name$ -- 227
-if$ -- 2654
++ -- 233
+- -- 212
+* -- 993
+:= -- 1818
+add.period$ -- 87
+call.type$ -- 21
+change.case$ -- 133
+chr.to.int$ -- 21
+cite$ -- 42
+duplicate$ -- 595
+empty$ -- 999
+format.name$ -- 237
+if$ -- 2761
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 19
-newline$ -- 128
-num.names$ -- 82
-pop$ -- 269
+missing$ -- 20
+newline$ -- 134
+num.names$ -- 86
+pop$ -- 278
 preamble$ -- 1
-purify$ -- 107
+purify$ -- 112
 quote$ -- 0
-skip$ -- 489
+skip$ -- 504
 stack$ -- 0
-substring$ -- 553
-swap$ -- 159
+substring$ -- 580
+swap$ -- 160
 text.length$ -- 14
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 220
+type$ -- 231
 warning$ -- 0
-while$ -- 103
+while$ -- 108
 width$ -- 0
-write$ -- 312
+write$ -- 327

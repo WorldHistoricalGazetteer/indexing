@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  9 JAN 2026 04:41
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  9 JAN 2026 06:13
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -203,12 +203,22 @@ Package: booktabs 2020/01/12 v1.61803398 Publication quality tables
 \@lastruleclass=\count288
 \@thisrulewidth=\dimen165
 )
+(/usr/share/texlive/texmf-dist/tex/latex/tools/array.sty
+Package: array 2021/10/04 v2.5f Tabular extension package (FMi)
+\col@sep=\dimen166
+\ar@mcellbox=\box53
+\extrarowheight=\dimen167
+\NC@list=\toks22
+\extratabsurround=\skip52
+\backup@length=\skip53
+\ar@cellbox=\box54
+)
 (/usr/share/texlive/texmf-dist/tex/latex/multirow/multirow.sty
 Package: multirow 2021/03/15 v2.8 Span multiple rows of a table
-\multirow@colwidth=\skip52
+\multirow@colwidth=\skip54
 \multirow@cntb=\count289
-\multirow@dima=\skip53
-\bigstrutjot=\dimen166
+\multirow@dima=\skip55
+\bigstrutjot=\dimen168
 )
 (/usr/share/texlive/texmf-dist/tex/latex/xcolor/xcolor.sty
 Package: xcolor 2021/10/31 v2.13 LaTeX color extensions (UK)
@@ -267,7 +277,7 @@ Package: auxhook 2019-12-17 v1.6 Hooks for auxiliary files (HO)
 (/usr/share/texlive/texmf-dist/tex/latex/kvoptions/kvoptions.sty
 Package: kvoptions 2020-10-07 v3.14 Key value format for package options (HO)
 )
-\@linkdim=\dimen167
+\@linkdim=\dimen169
 \Hy@linkcounter=\count290
 \Hy@pagecounter=\count291
 
@@ -304,7 +314,7 @@ Package hyperref Info: Bookmarks ON on input line 4445.
 Package: url 2013/09/16  ver 3.4  Verb mode for urls, etc.
 )
 LaTeX Info: Redefining \url on input line 4804.
-\XeTeXLinkMargin=\dimen168
+\XeTeXLinkMargin=\dimen170
 
 (/usr/share/texlive/texmf-dist/tex/generic/bitset/bitset.sty
 Package: bitset 2019/12/09 v1.3 Handle bit-vector datatype (HO)
@@ -314,8 +324,8 @@ Package: bigintcalc 2019/12/15 v1.5 Expandable calculations on big integers (HO
 )
 ))
 \Fld@menulength=\count294
-\Field@Width=\dimen169
-\Fld@charsize=\dimen170
+\Field@Width=\dimen171
+\Fld@charsize=\dimen172
 Package hyperref Info: Hyper figures OFF on input line 6076.
 Package hyperref Info: Link nesting OFF on input line 6081.
 Package hyperref Info: Hyper index ON on input line 6084.
@@ -343,7 +353,7 @@ File: hxetex.def 2021-06-07 v7.00m Hyperref driver for XeTeX
 Package: stringenc 2019/11/29 v1.12 Convert strings between diff. encodings (HO
 )
 )
-\pdfm@box=\box53
+\pdfm@box=\box55
 \c@Hy@AnnotLevel=\count298
 \HyField@AnnotCount=\count299
 \Fld@listcount=\count300
@@ -363,7 +373,7 @@ Package: uniquecounter 2019/12/15 v1.4 Provide unlimited unique counter (HO)
 Package uniquecounter Info: New unique counter `rerunfilecheck' on input line 2
 86.
 )
-\Hy@SectionHShift=\skip54
+\Hy@SectionHShift=\skip56
 )
 (/usr/share/texlive/texmf-dist/tex/latex/cleveref/cleveref.sty
 Package: cleveref 2018/03/27 v0.21.4 Intelligent cross-referencing
@@ -381,8 +391,8 @@ LaTeX Info: Redefining \labelcpageref on input line 2370.
 )
 (/usr/share/texlive/texmf-dist/tex/latex/natbib/natbib.sty
 Package: natbib 2010/09/13 8.31b (PWD, AO)
-\bibhang=\skip55
-\bibsep=\skip56
+\bibhang=\skip57
+\bibsep=\skip58
 LaTeX Info: Redefining \cite on input line 694.
 \c@NAT@ctr=\count302
 )
@@ -394,15 +404,15 @@ nment
 (/usr/share/texlive/texmf-dist/tex/latex/float/float.sty
 Package: float 2001/11/08 v1.3d Float enhancements (AL)
 \c@float@type=\count303
-\float@exts=\toks22
-\float@box=\box54
-\@float@everytoks=\toks23
-\@floatcapt=\box55
+\float@exts=\toks23
+\float@box=\box56
+\@float@everytoks=\toks24
+\@floatcapt=\box57
 )
 (/usr/share/texlive/texmf-dist/tex/latex/base/ifthen.sty
 Package: ifthen 2020/11/24 v1.1c Standard LaTeX ifthen package (DPC)
 )
-\@float@every@algorithm=\toks24
+\@float@every@algorithm=\toks25
 \c@algorithm=\count304
 )
 (/usr/share/texlive/texmf-dist/tex/latex/algorithmicx/algpseudocode.sty
@@ -415,26 +425,26 @@ Document Style algorithmicx 1.2 - a greatly improved `algorithmic' style
 \c@ALG@line=\count305
 \c@ALG@rem=\count306
 \c@ALG@nested=\count307
-\ALG@tlm=\skip57
-\ALG@thistlm=\skip58
+\ALG@tlm=\skip59
+\ALG@thistlm=\skip60
 \c@ALG@Lnr=\count308
 \c@ALG@blocknr=\count309
 \c@ALG@storecount=\count310
 \c@ALG@tmpcounter=\count311
-\ALG@tmplength=\skip59
+\ALG@tmplength=\skip61
 )
 Document Style - pseudocode environments for use with the `algorithmicx' style
 ) (/usr/share/texlive/texmf-dist/tex/latex/pgf/frontendlayer/tikz.sty
 (/usr/share/texlive/texmf-dist/tex/latex/pgf/basiclayer/pgf.sty
 (/usr/share/texlive/texmf-dist/tex/latex/pgf/utilities/pgfrcs.sty
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-common.tex
-\pgfutil@everybye=\toks25
-\pgfutil@tempdima=\dimen171
-\pgfutil@tempdimb=\dimen172
+\pgfutil@everybye=\toks26
+\pgfutil@tempdima=\dimen173
+\pgfutil@tempdimb=\dimen174
 
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-common-lists.t
 ex)) (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfutil-latex.def
-\pgfutil@abb=\box56
+\pgfutil@abb=\box58
 ) (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfrcs.code.tex
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/pgf.revision.tex)
 Package: pgfrcs 2021/05/15 v3.1.9a (3.1.9a)
@@ -447,32 +457,32 @@ Package: pgf 2021/05/15 v3.1.9a (3.1.9a)
 Package: pgfsys 2021/05/15 v3.1.9a (3.1.9a)
 
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfkeys.code.tex
-\pgfkeys@pathtoks=\toks26
-\pgfkeys@temptoks=\toks27
+\pgfkeys@pathtoks=\toks27
+\pgfkeys@temptoks=\toks28
 
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/utilities/pgfkeysfiltered.code.t
 ex
-\pgfkeys@tmptoks=\toks28
+\pgfkeys@tmptoks=\toks29
 ))
-\pgf@x=\dimen173
-\pgf@y=\dimen174
-\pgf@xa=\dimen175
-\pgf@ya=\dimen176
-\pgf@xb=\dimen177
-\pgf@yb=\dimen178
-\pgf@xc=\dimen179
-\pgf@yc=\dimen180
-\pgf@xd=\dimen181
-\pgf@yd=\dimen182
+\pgf@x=\dimen175
+\pgf@y=\dimen176
+\pgf@xa=\dimen177
+\pgf@ya=\dimen178
+\pgf@xb=\dimen179
+\pgf@yb=\dimen180
+\pgf@xc=\dimen181
+\pgf@yc=\dimen182
+\pgf@xd=\dimen183
+\pgf@yd=\dimen184
 \w@pgf@writea=\write3
 \r@pgf@reada=\read2
 \c@pgf@counta=\count312
 \c@pgf@countb=\count313
 \c@pgf@countc=\count314
 \c@pgf@countd=\count315
-\t@pgf@toka=\toks29
-\t@pgf@tokb=\toks30
-\t@pgf@tokc=\toks31
+\t@pgf@toka=\toks30
+\t@pgf@tokb=\toks31
+\t@pgf@tokc=\toks32
 \pgf@sys@id@count=\count316
  (/usr/share/texlive/texmf-dist/tex/generic/pgf/systemlayer/pgf.cfg
 File: pgf.cfg 2021/05/15 v3.1.9a (3.1.9a)
@@ -508,12 +518,12 @@ Package: pgfcore 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathcalc.code.tex
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathutil.code.tex)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathparser.code.tex
-\pgfmath@dimen=\dimen183
+\pgfmath@dimen=\dimen185
 \pgfmath@count=\count320
-\pgfmath@box=\box57
-\pgfmath@toks=\toks32
-\pgfmath@stack@operand=\toks33
-\pgfmath@stack@operation=\toks34
+\pgfmath@box=\box59
+\pgfmath@toks=\toks33
+\pgfmath@stack@operand=\toks34
+\pgfmath@stack@operation=\toks35
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.code.tex
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmathfunctions.basic.code
@@ -539,52 +549,52 @@ thmetics.code.tex)))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepoints.code.te
 x
 File: pgfcorepoints.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@picminx=\dimen184
-\pgf@picmaxx=\dimen185
-\pgf@picminy=\dimen186
-\pgf@picmaxy=\dimen187
-\pgf@pathminx=\dimen188
-\pgf@pathmaxx=\dimen189
-\pgf@pathminy=\dimen190
-\pgf@pathmaxy=\dimen191
-\pgf@xx=\dimen192
-\pgf@xy=\dimen193
-\pgf@yx=\dimen194
-\pgf@yy=\dimen195
-\pgf@zx=\dimen196
-\pgf@zy=\dimen197
+\pgf@picminx=\dimen186
+\pgf@picmaxx=\dimen187
+\pgf@picminy=\dimen188
+\pgf@picmaxy=\dimen189
+\pgf@pathminx=\dimen190
+\pgf@pathmaxx=\dimen191
+\pgf@pathminy=\dimen192
+\pgf@pathmaxy=\dimen193
+\pgf@xx=\dimen194
+\pgf@xy=\dimen195
+\pgf@yx=\dimen196
+\pgf@yy=\dimen197
+\pgf@zx=\dimen198
+\pgf@zy=\dimen199
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepathconstruct.
 code.tex
 File: pgfcorepathconstruct.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@path@lastx=\dimen198
-\pgf@path@lasty=\dimen199
+\pgf@path@lastx=\dimen256
+\pgf@path@lasty=\dimen257
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorepathusage.code
 .tex
 File: pgfcorepathusage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@shorten@end@additional=\dimen256
-\pgf@shorten@start@additional=\dimen257
+\pgf@shorten@end@additional=\dimen258
+\pgf@shorten@start@additional=\dimen259
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorescopes.code.te
 x
 File: pgfcorescopes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgfpic=\box58
-\pgf@hbox=\box59
-\pgf@layerbox@main=\box60
+\pgfpic=\box60
+\pgf@hbox=\box61
+\pgf@layerbox@main=\box62
 \pgf@picture@serial@count=\count322
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoregraphicstate.c
 ode.tex
 File: pgfcoregraphicstate.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgflinewidth=\dimen258
+\pgflinewidth=\dimen260
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoretransformation
 s.code.tex
 File: pgfcoretransformations.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@pt@x=\dimen259
-\pgf@pt@y=\dimen260
-\pgf@pt@temp=\dimen261
+\pgf@pt@x=\dimen261
+\pgf@pt@y=\dimen262
+\pgf@pt@temp=\dimen263
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorequick.code.tex
 File: pgfcorequick.code.tex 2021/05/15 v3.1.9a (3.1.9a)
@@ -600,11 +610,11 @@ File: pgfcorepathprocessing.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorearrows.code.te
 x
 File: pgfcorearrows.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgfarrowsep=\dimen262
+\pgfarrowsep=\dimen264
 )
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreshade.code.tex
 File: pgfcoreshade.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@max=\dimen263
+\pgf@max=\dimen265
 \pgf@sys@shading@range@num=\count323
 \pgf@shadingcount=\count324
 )
@@ -614,7 +624,7 @@ File: pgfcoreimage.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcoreexternal.code.
 tex
 File: pgfcoreexternal.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgfexternal@startupbox=\box61
+\pgfexternal@startupbox=\box63
 ))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/basiclayer/pgfcorelayers.code.te
 x
@@ -633,15 +643,15 @@ File: pgfcorerdf.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 )))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmoduleshapes.code.tex
 File: pgfmoduleshapes.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgfnodeparttextbox=\box62
+\pgfnodeparttextbox=\box64
 ) (/usr/share/texlive/texmf-dist/tex/generic/pgf/modules/pgfmoduleplot.code.tex
 File: pgfmoduleplot.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 )
 (/usr/share/texlive/texmf-dist/tex/latex/pgf/compatibility/pgfcomp-version-0-65
 .sty
 Package: pgfcomp-version-0-65 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@nodesepstart=\dimen264
-\pgf@nodesepend=\dimen265
+\pgf@nodesepstart=\dimen266
+\pgf@nodesepend=\dimen267
 )
 (/usr/share/texlive/texmf-dist/tex/latex/pgf/compatibility/pgfcomp-version-1-18
 .sty
@@ -655,10 +665,10 @@ Package: pgfcomp-version-1-18 2021/05/15 v3.1.9a (3.1.9a)
 Package: pgffor 2021/05/15 v3.1.9a (3.1.9a)
 
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/math/pgfmath.code.tex)
-\pgffor@iter=\dimen266
-\pgffor@skip=\dimen267
-\pgffor@stack=\toks35
-\pgffor@toks=\toks36
+\pgffor@iter=\dimen268
+\pgffor@skip=\dimen269
+\pgffor@stack=\toks36
+\pgffor@toks=\toks37
 ))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/tikz.code.tex
 Package: tikz 2021/05/15 v3.1.9a (3.1.9a)
@@ -667,20 +677,20 @@ Package: tikz 2021/05/15 v3.1.9a (3.1.9a)
 .code.tex
 File: pgflibraryplothandlers.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 \pgf@plot@mark@count=\count325
-\pgfplotmarksize=\dimen268
+\pgfplotmarksize=\dimen270
 )
-\tikz@lastx=\dimen269
-\tikz@lasty=\dimen270
-\tikz@lastxsaved=\dimen271
-\tikz@lastysaved=\dimen272
-\tikz@lastmovetox=\dimen273
-\tikz@lastmovetoy=\dimen274
-\tikzleveldistance=\dimen275
-\tikzsiblingdistance=\dimen276
-\tikz@figbox=\box63
-\tikz@figbox@bg=\box64
-\tikz@tempbox=\box65
-\tikz@tempbox@bg=\box66
+\tikz@lastx=\dimen271
+\tikz@lasty=\dimen272
+\tikz@lastxsaved=\dimen273
+\tikz@lastysaved=\dimen274
+\tikz@lastmovetox=\dimen275
+\tikz@lastmovetoy=\dimen276
+\tikzleveldistance=\dimen277
+\tikzsiblingdistance=\dimen278
+\tikz@figbox=\box65
+\tikz@figbox@bg=\box66
+\tikz@tempbox=\box67
+\tikz@tempbox@bg=\box68
 \tikztreelevel=\count326
 \tikznumberofchildren=\count327
 \tikznumberofcurrentchild=\count328
@@ -745,26 +755,26 @@ File: tikzlibraryshapes.multipart.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/shapes/pgflibraryshape
 s.multipart.code.tex
 File: pgflibraryshapes.multipart.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgfnodepartlowerbox=\box67
-\pgfnodeparttwobox=\box68
-\pgfnodepartthreebox=\box69
-\pgfnodepartfourbox=\box70
-\pgfnodeparttwentybox=\box71
-\pgfnodepartnineteenbox=\box72
-\pgfnodeparteighteenbox=\box73
-\pgfnodepartseventeenbox=\box74
-\pgfnodepartsixteenbox=\box75
-\pgfnodepartfifteenbox=\box76
-\pgfnodepartfourteenbox=\box77
-\pgfnodepartthirteenbox=\box78
-\pgfnodeparttwelvebox=\box79
-\pgfnodepartelevenbox=\box80
-\pgfnodeparttenbox=\box81
-\pgfnodepartninebox=\box82
-\pgfnodeparteightbox=\box83
-\pgfnodepartsevenbox=\box84
-\pgfnodepartsixbox=\box85
-\pgfnodepartfivebox=\box86
+\pgfnodepartlowerbox=\box69
+\pgfnodeparttwobox=\box70
+\pgfnodepartthreebox=\box71
+\pgfnodepartfourbox=\box72
+\pgfnodeparttwentybox=\box73
+\pgfnodepartnineteenbox=\box74
+\pgfnodeparteighteenbox=\box75
+\pgfnodepartseventeenbox=\box76
+\pgfnodepartsixteenbox=\box77
+\pgfnodepartfifteenbox=\box78
+\pgfnodepartfourteenbox=\box79
+\pgfnodepartthirteenbox=\box80
+\pgfnodeparttwelvebox=\box81
+\pgfnodepartelevenbox=\box82
+\pgfnodeparttenbox=\box83
+\pgfnodepartninebox=\box84
+\pgfnodeparteightbox=\box85
+\pgfnodepartsevenbox=\box86
+\pgfnodepartsixbox=\box87
+\pgfnodepartfivebox=\box88
 )))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
 zlibraryarrows.code.tex
@@ -773,7 +783,7 @@ File: tikzlibraryarrows.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/libraries/pgflibraryarrows.code.
 tex
 File: pgflibraryarrows.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\arrowsize=\dimen277
+\arrowsize=\dimen279
 ))
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
 zlibrarypositioning.code.tex
@@ -786,8 +796,8 @@ File: tikzlibraryfit.code.tex 2021/05/15 v3.1.9a (3.1.9a)
 (/usr/share/texlive/texmf-dist/tex/generic/pgf/frontendlayer/tikz/libraries/tik
 zlibrarybackgrounds.code.tex
 File: tikzlibrarybackgrounds.code.tex 2021/05/15 v3.1.9a (3.1.9a)
-\pgf@layerbox@background=\box87
-\pgf@layerboxsaved@background=\box88
+\pgf@layerbox@background=\box89
+\pgf@layerboxsaved@background=\box90
 )
 (/usr/share/texlive/texmf-dist/tex/latex/caption/subcaption.sty
 Package: subcaption 2020/10/07 v1.3j Sub-captions (AR)
@@ -797,13 +807,13 @@ Package: caption 2020/10/26 v3.5g Customizing captions (AR)
 
 (/usr/share/texlive/texmf-dist/tex/latex/caption/caption3.sty
 Package: caption3 2020/10/21 v2.2e caption3 kernel (AR)
-\captionmargin=\dimen278
-\captionmargin@=\dimen279
-\captionwidth=\dimen280
-\caption@tempdima=\dimen281
-\caption@indent=\dimen282
-\caption@parindent=\dimen283
-\caption@hangindent=\dimen284
+\captionmargin=\dimen280
+\captionmargin@=\dimen281
+\captionwidth=\dimen282
+\caption@tempdima=\dimen283
+\caption@indent=\dimen284
+\caption@parindent=\dimen285
+\caption@hangindent=\dimen286
 Package caption Info: Standard document class detected.
 )
 \c@caption@flags=\count334
@@ -816,23 +826,23 @@ Package caption Info: hyperref package is loaded.
 )
 (/usr/share/texlive/texmf-dist/tex/latex/listings/listings.sty
 \lst@mode=\count338
-\lst@gtempboxa=\box89
-\lst@token=\toks37
+\lst@gtempboxa=\box91
+\lst@token=\toks38
 \lst@length=\count339
-\lst@currlwidth=\dimen285
+\lst@currlwidth=\dimen287
 \lst@column=\count340
 \lst@pos=\count341
-\lst@lostspace=\dimen286
-\lst@width=\dimen287
+\lst@lostspace=\dimen288
+\lst@width=\dimen289
 \lst@newlines=\count342
 \lst@lineno=\count343
-\lst@maxwidth=\dimen288
+\lst@maxwidth=\dimen290
 
 (/usr/share/texlive/texmf-dist/tex/latex/listings/lstmisc.sty
 File: lstmisc.sty 2020/03/24 1.8d (Carsten Heinz)
 \c@lstnumber=\count344
 \lst@skipnumbers=\count345
-\lst@framebox=\box90
+\lst@framebox=\box92
 )
 (/usr/share/texlive/texmf-dist/tex/latex/listings/listings.cfg
 File: listings.cfg 2020/03/24 1.8d listings configuration
@@ -840,16 +850,16 @@ File: listings.cfg 2020/03/24 1.8d listings configuration
 Package: listings 2020/03/24 1.8d (Carsten Heinz)
 
 (/usr/share/texlive/texmf-dist/tex/generic/ulem/ulem.sty
-\UL@box=\box91
-\UL@hyphenbox=\box92
-\UL@skip=\skip60
-\UL@hook=\toks38
-\UL@height=\dimen289
+\UL@box=\box93
+\UL@hyphenbox=\box94
+\UL@skip=\skip62
+\UL@hook=\toks39
+\UL@height=\dimen291
 \UL@pe=\count346
-\UL@pixel=\dimen290
-\ULC@box=\box93
+\UL@pixel=\dimen292
+\ULC@box=\box95
 Package: ulem 2019/11/18
-\ULdepth=\dimen291
+\ULdepth=\dimen293
 )
 
 Package fontspec Info: Could not resolve font "Noto Naskh Arabic/I" (it
@@ -917,96 +927,96 @@ Package fontspec Info: Font family 'LiberationSerif(1)' created for font
 (pdf/universal_topophones.aux)
 \openout1 = `universal_topophones.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 53.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 54.
 LaTeX Font Info:    Trying to load font information for TS1+cmr on input line 5
-3.
+4.
 
 (/usr/share/texlive/texmf-dist/tex/latex/base/ts1cmr.fd
 File: ts1cmr.fd 2019/12/16 v2.5j Standard LaTeX font definitions
 )
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 53.
-LaTeX Font Info:    ... okay on input line 53.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 54.
+LaTeX Font Info:    ... okay on input line 54.
 
 Package fontspec Info: Adjusting the maths setup (use [no-math] to avoid
 (fontspec)             this).
 
 \symlegacymaths=\mathgroup6
 LaTeX Font Info:    Overwriting symbol font `legacymaths' in version `bold'
-(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 53.
-LaTeX Font Info:    Redeclaring math accent \acute on input line 53.
-LaTeX Font Info:    Redeclaring math accent \grave on input line 53.
-LaTeX Font Info:    Redeclaring math accent \ddot on input line 53.
-LaTeX Font Info:    Redeclaring math accent \tilde on input line 53.
-LaTeX Font Info:    Redeclaring math accent \bar on input line 53.
-LaTeX Font Info:    Redeclaring math accent \breve on input line 53.
-LaTeX Font Info:    Redeclaring math accent \check on input line 53.
-LaTeX Font Info:    Redeclaring math accent \hat on input line 53.
-LaTeX Font Info:    Redeclaring math accent \dot on input line 53.
-LaTeX Font Info:    Redeclaring math accent \mathring on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Delta on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Theta on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Xi on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Pi on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Phi on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Psi on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \Omega on input line 53.
-LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 53.
-LaTeX Font Info:    Redeclaring symbol font `operators' on input line 53.
+(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 54.
+LaTeX Font Info:    Redeclaring math accent \acute on input line 54.
+LaTeX Font Info:    Redeclaring math accent \grave on input line 54.
+LaTeX Font Info:    Redeclaring math accent \ddot on input line 54.
+LaTeX Font Info:    Redeclaring math accent \tilde on input line 54.
+LaTeX Font Info:    Redeclaring math accent \bar on input line 54.
+LaTeX Font Info:    Redeclaring math accent \breve on input line 54.
+LaTeX Font Info:    Redeclaring math accent \check on input line 54.
+LaTeX Font Info:    Redeclaring math accent \hat on input line 54.
+LaTeX Font Info:    Redeclaring math accent \dot on input line 54.
+LaTeX Font Info:    Redeclaring math accent \mathring on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 54.
+LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 54.
+LaTeX Font Info:    Redeclaring symbol font `operators' on input line 54.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `normal' on input line 53.
+(Font)              `operators' in the math version `normal' on input line 54.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  OT1/cmr/m/n --> TU/LiberationSerif(0)/m/n on input line
- 53.
+ 54.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `bold' on input line 53.
+(Font)              `operators' in the math version `bold' on input line 54.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  OT1/cmr/bx/n --> TU/LiberationSerif(0)/m/n on input lin
-e 53.
+e 54.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  TU/LiberationSerif(0)/m/n --> TU/LiberationSerif(0)/m/n
- on input line 53.
+ on input line 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
 (Font)                  OT1/cmr/m/it --> TU/LiberationSerif(0)/m/it on input li
-ne 53.
+ne 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
 (Font)                  OT1/cmr/bx/n --> TU/LiberationSerif(0)/b/n on input lin
-e 53.
+e 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 53.
+(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 53.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 54.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  TU/LiberationSerif(0)/m/n --> TU/LiberationSerif(0)/b/n
- on input line 53.
+ on input line 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
 (Font)                  OT1/cmr/bx/it --> TU/LiberationSerif(0)/b/it on input l
-ine 53.
+ine 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 53.
+(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 54.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 53.
-Package hyperref Info: Link coloring ON on input line 53.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 54.
+Package hyperref Info: Link coloring ON on input line 54.
 
 (/usr/share/texlive/texmf-dist/tex/latex/hyperref/nameref.sty
 Package: nameref 2021-04-02 v2.47 Cross-referencing by name of section
@@ -1019,9 +1029,9 @@ Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
 )
 \c@section@level=\count347
 )
-LaTeX Info: Redefining \ref on input line 53.
-LaTeX Info: Redefining \pageref on input line 53.
-LaTeX Info: Redefining \nameref on input line 53.
+LaTeX Info: Redefining \ref on input line 54.
+LaTeX Info: Redefining \pageref on input line 54.
+LaTeX Info: Redefining \nameref on input line 54.
 
 (pdf/universal_topophones.out) (pdf/universal_topophones.out)
 \@outlinefile=\write4
@@ -1031,111 +1041,71 @@ Package caption Info: Begin \AtBeginDocument code.
 Package caption Info: listings package is loaded.
 Package caption Info: End \AtBeginDocument code.
 \c@lstlisting=\count348
-LaTeX Font Info:    Trying to load font information for U+msa on input line 56.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 57.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 56.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 57.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-Overfull \hbox (1.87892pt too wide) in paragraph at lines 58--59
+Overfull \hbox (1.87892pt too wide) in paragraph at lines 59--60
 \TU/LiberationSerif(0)/m/n/10 systems remains a fundamental challenge in digita
 l humanities and geographic
+ []
+
+
+Overfull \hbox (4.3454pt too wide) in paragraph at lines 59--60
+\TU/LiberationSerif(0)/m/n/10 feature extraction) produces target embeddings, w
+hile a Student network learns
  []
 
 [1
 
 ]
-Overfull \hbox (2.59761pt too wide) in paragraph at lines 73--74
+Overfull \hbox (2.59761pt too wide) in paragraph at lines 74--75
 \TU/LiberationSerif(0)/m/n/10.95 ponyms from 20+ writing systems into a unified
  128-dimensional space where
  []
 
 
-Overfull \hbox (7.75264pt too wide) in paragraph at lines 81--82
+Overfull \hbox (7.75264pt too wide) in paragraph at lines 82--83
 []\TU/LiberationSerif(0)/m/n/10.95 A \TU/LiberationSerif(0)/b/n/10.95 three-pha
 se curriculum \TU/LiberationSerif(0)/m/n/10.95 progressing from phonetic featur
 e learning through
  []
 
-[2] [3] [4]
-Overfull \hbox (21.78934pt too wide) in paragraph at lines 142--143
-\TU/LiberationSerif(0)/m/n/10.95 tures, we provide the model with vectors that 
-already encode phonetic properties—
- []
-
-[5]
-Overfull \hbox (19.86441pt too wide) in paragraph at lines 159--160
+[2] [3] [4] [5]
+Overfull \hbox (19.86441pt too wide) in paragraph at lines 162--163
 \TU/LiberationSerif(0)/m/n/10.95 output representations. They have been success
 fully applied to face verification ([][]Schroff
  []
 
-
-Underfull \hbox (badness 10000) in paragraph at lines 180--180
-[]\TU/LiberationSerif(0)/m/n/10 Input Representa-
- []
-
-
-Underfull \hbox (badness 5119) in paragraph at lines 180--181
-[]\TU/LiberationSerif(0)/m/n/10 Articulatory feature vec-
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 182--182
-[]\TU/LiberationSerif(0)/m/n/10 Phonetic Knowl-
- []
-
-
-Underfull \hbox (badness 4254) in paragraph at lines 182--183
-[]\TU/LiberationSerif(0)/m/n/10 Explicit (engineered fea-
- []
-
-
-Underfull \hbox (badness 1845) in paragraph at lines 184--184
-[]\TU/LiberationSerif(0)/m/n/10 Contrastive loss (Eu-
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 186--186
-[]\TU/LiberationSerif(0)/m/n/10 Minimal preprocess-
- []
-
-
-Underfull \hbox (badness 10000) in paragraph at lines 186--187
-[]\TU/LiberationSerif(0)/m/n/10 Cross-lingual generalisa-
- []
-
-
-Overfull \hbox (57.88579pt too wide) in paragraph at lines 176--191
- [][] 
- []
-
-
-Overfull \hbox (6.00418pt too wide) in paragraph at lines 199--200
+[6]
+Overfull \hbox (6.00418pt too wide) in paragraph at lines 205--206
 \TU/LiberationSerif(0)/m/n/10.95 Our system employs a Teacher-Student architect
 ure where a Teacher network, trained
  []
 
-[6] [7] [8]
-Overfull \hbox (5.07956pt too wide) in paragraph at lines 300--301
+[7] [8]
+Overfull \hbox (5.07956pt too wide) in paragraph at lines 306--307
 []\TU/LiberationSerif(0)/m/n/10.95 The resulting vocabulary contains approximat
 ely 11,000 tokens across all scripts,
  []
 
 
-Overfull \hbox (0.33855pt too wide) in paragraph at lines 310--311
+Overfull \hbox (0.33855pt too wide) in paragraph at lines 316--317
 []\TU/LiberationSerif(0)/b/n/10.95 Projection\TU/LiberationSerif(0)/m/n/10.95 :
  Linear layer projects features to hidden dimension: $\OML/cmm/m/it/10.95 h[] \
 OT1/cmr/m/n/10.95 = \OML/cmm/m/it/10.95 W[]f[] \OT1/cmr/m/n/10.95 +
  []
 
 
-Overfull \hbox (55.27068pt too wide) in paragraph at lines 311--312
+Overfull \hbox (55.27068pt too wide) in paragraph at lines 317--318
 []\TU/LiberationSerif(0)/b/n/10.95 BiLSTM\TU/LiberationSerif(0)/m/n/10.95 : Bid
 irectional LSTM processes the sequence: $\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10
 .95 ; []\OT1/cmr/m/n/10.95 ) = [](\OML/cmm/m/it/10.95 h[]; [] ; h[]\OT1/cmr/m/n
@@ -1143,85 +1113,80 @@ irectional LSTM processes the sequence: $\OT1/cmr/m/n/10.95 ([]\OML/cmm/m/it/10
  []
 
 [9] [10]
-Overfull \hbox (22.88593pt too wide) in paragraph at lines 371--372
- []\TU/LiberationSerif(0)/b/n/10.95 4. Isorthographic Phonetic Consistency.[] \
-TU/LiberationSerif(0)/m/n/10.95 We explicitly retain “same-string, different-
+Overfull \hbox (11.62184pt too wide) in paragraph at lines 362--363
+\OT1/cmr/m/n/10.95 100\OML/cmm/m/it/10.95 ; \OT1/cmr/m/n/10.95 000$ \TU/Liberat
+ionSerif(0)/m/n/10.95 pairs for each script-pair combination (e.g., Latin-Cyril
+lic, Latin-Devanagari,
  []
 
 [11]
-Overfull \hbox (3.6705pt too wide) in paragraph at lines 388--389
+Overfull \hbox (1.88675pt too wide) in paragraph at lines 381--382
+\TU/LiberationSerif(0)/m/n/10.95 Cuba, and the Philippines, each generating San
+tiago@es/Santiago@en pairs). With-
+ []
+
+
+Overfull \hbox (3.6705pt too wide) in paragraph at lines 390--391
 \TU/LiberationSerif(0)/m/n/10.95 malised Levenshtein similarity between name pa
 irs (after romanisation via AnyAscii
  []
 
 [12]
-Overfull \hbox (7.08914pt too wide) in paragraph at lines 451--452
+Overfull \hbox (0.29608pt too wide) in paragraph at lines 410--411
+[]\TU/LiberationSerif(0)/m/n/10.95 Toponyms in languages without Epitran suppor
+t are excluded from both Teacher
+ []
+
+
+Overfull \hbox (7.08914pt too wide) in paragraph at lines 455--456
 \TU/LiberationSerif(0)/m/n/10.95 se/Latin (923,079), Persian/Latin (197,099), J
 apanese/Latin (111,945), Russian/Latin
  []
 
-Missing character: There is no ب (U+0628) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no ا (U+0627) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no ر (U+0631) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no ي (U+064A) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no س (U+0633) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no 巴 (U+5DF4) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no 黎 (U+9ECE) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no パ (U+30D1) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
-Missing character: There is no リ (U+30EA) in font Liberation Serif/OT:script=la
-tn;language=dflt;mapping=tex-text;!
 
-Overfull \hbox (4.40652pt too wide) in paragraph at lines 453--454
+Overfull \hbox (4.40652pt too wide) in paragraph at lines 457--458
  []\TU/LiberationSerif(0)/b/n/10.95 Training Pair Generation.[] \TU/LiberationS
 erif(0)/m/n/10.95 Positive pairs are generated from co-located toponyms
  []
 
 [13] [14]
-Overfull \hbox (0.18446pt too wide) in paragraph at lines 470--471
+Overfull \hbox (0.18446pt too wide) in paragraph at lines 474--475
 \TU/LiberationSerif(0)/m/n/10.95 Teacher learns to distinguish phonetically sim
 ilar but geographically distinct names. 
  []
 
-[15]
+[15] [16]
 
-LaTeX Warning: Reference `fig:training-curves' on page 16 undefined on input li
-ne 538.
+LaTeX Warning: Reference `fig:training-curves' on page 17 undefined on input li
+ne 542.
 
-[16] [17] [18]
-Overfull \hbox (4.9376pt too wide) in paragraph at lines 655--656
+[17] [18]
+Overfull \hbox (4.9376pt too wide) in paragraph at lines 659--660
  []\TU/LiberationSerif(0)/b/n/10.95 MEHDIE Benchmark.[] \TU/LiberationSerif(0)/
 m/n/10.95 We additionally evaluate on the MEHDIE Hebrew-Arabic
  []
 
 
-Overfull \hbox (0.61932pt too wide) in paragraph at lines 655--656
+Overfull \hbox (0.61932pt too wide) in paragraph at lines 659--660
 \TU/LiberationSerif(0)/m/n/10.95 two related Semitic scripts—a challenging case
  where our phonetic approach should
  []
 
-
-Overfull \hbox (2.231pt too wide) in paragraph at lines 671--672
+[19]
+Overfull \hbox (2.231pt too wide) in paragraph at lines 675--676
 \TU/LiberationSerif(0)/m/n/10.95 sises art-historically significant locations. 
 Performance on under-represented scripts
  []
 
-[19]
-Overfull \hbox (0.56049pt too wide) in paragraph at lines 692--693
+[20]
+Overfull \hbox (0.56049pt too wide) in paragraph at lines 696--697
 [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LiberationSerif(0)/m/n/10.95 ), 
 Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][][]$[][])
 , and the Getty
  []
 
-[20]
-Overfull \hbox (173.04045pt too wide) in paragraph at lines 696--697
+
+Overfull \hbox (173.04045pt too wide) in paragraph at lines 700--701
 \TU/LiberationSerif(0)/m/n/10.95 Training code, model weights, and inference ut
 ilities are available at https://github.com/WorldHistoricalGazetteer/indexing.
  []
@@ -1234,12 +1199,12 @@ Package rerunfilecheck Info: File `universal_topophones.out' has not changed.
 (rerunfilecheck)             Checksum: 5675C443A4A8204117ED6CB9BB02BA12;6437.
  ) 
 Here is how much of TeX's memory you used:
- 30296 strings out of 478149
- 639271 string characters out of 5853103
- 974283 words of memory out of 5000000
- 50394 multiletter control sequences out of 15000+600000
- 477977 words of font info for 107 fonts, out of 8000000 for 9000
+ 30376 strings out of 478149
+ 640484 string characters out of 5853103
+ 973286 words of memory out of 5000000
+ 50467 multiletter control sequences out of 15000+600000
+ 479522 words of font info for 113 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 84i,14n,80p,1522b,980s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,14n,80p,1537b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
 
 Output written on pdf/universal_topophones.pdf (23 pages).

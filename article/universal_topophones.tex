@@ -7,6 +7,7 @@
 \usepackage{amsmath,amssymb}
 \usepackage{graphicx}
 \usepackage{booktabs}
+\usepackage{array}
 \usepackage{multirow}
 \usepackage{xcolor}
 \usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
@@ -55,7 +56,7 @@
 \maketitle
 
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. We present a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Our approach uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Wikidata, and TGN, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness.}
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. We present \textbf{Symphony}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language pair-specific resources. Symphony uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters, guided by script and optional language embeddings. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. We train on co-located toponym pairs from GeoNames, Wikidata, and TGN, applying phonetic similarity filtering to exclude false cognates. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination. \placeholder{Results pending: cross-script retrieval accuracy, noise robustness.}
 \end{abstract}
 
 \section{Introduction}
@@ -67,7 +68,7 @@ The core difficulty is that place name similarity is fundamentally \emph{phoneti
 
 Recent work has applied neural embeddings to geographic entity matching, but existing systems either operate within single scripts, require language identification at inference time, or depend on curated transliteration resources that don't scale to the long tail of historical languages. Until now, we have lacked a system that can place ``Москва'', ``Moscow'', ``\textar{موسکو}'', and ``\textcn{モスクワ}'' (Japanese Katakana) near each other in embedding space using only the raw character sequences as input.
 
-This paper presents such a system. Our key contributions are:
+This paper presents such a system, which we call \emph{Symphony}. Our key contributions are:
 
 \begin{enumerate}
     \item A \textbf{script-aware but script-agnostic embedding architecture} that maps toponyms from 20+ writing systems into a unified \embdim-dimensional space where proximity reflects phonetic similarity.
@@ -132,14 +133,16 @@ Phonetic-aware edit distances~\citep{kondrak2000} weight substitutions by articu
 
 Recent work applies neural embeddings to geographic entity resolution. Qiu et al.~\citep{qiu2024geobert} proposed GeoBERT, combining a BERT model pre-trained on Chinese geographic text with the Enhanced Sequential Inference Model (ESIM) architecture for toponym pair classification. Their approach integrates multiple Chinese-specific features including Pinyin romanisation, Wubi keyboard encoding, character radicals, and stroke counts. On Chinese address matching datasets, GeoBERT achieved F1 scores exceeding 0.97. However, the Chinese-specific features have no analogues in other writing systems, and the geographic pre-training corpus is monolingual, limiting cross-lingual application.
 
-Most relevant is the MEHDIE project~\citep{mehdie2025}, which developed tools for matching toponyms between historical Hebrew and Arabic sources. Sagi et al.\ present a benchmark comprising place pairs from 13th-century Arabic geographical texts and 12th-century Hebrew travel narratives. Their approach investigates direct transliteration between Hebrew and Arabic scripts using a custom rule-based library that exploits the phonetic affinity between Semitic languages. They find that direct transliteration between related scripts often outperforms romanisation due to the loss of phonetic information in standard Latin transliteration schemes. The MEHDIE work validates our central hypothesis---that phonetic relationships between languages can be exploited for toponym matching---while highlighting the limitations of language-pair-specific approaches.
+Most relevant is the MEHDIE project~\citep{mehdie2025}, which developed tools for matching toponyms between historical Hebrew and Arabic sources. Sagi et al.\ present a benchmark comprising place pairs from 13th-century Arabic geographical texts and 12th-century Hebrew travel narratives. Their approach investigates direct transliteration between Hebrew and Arabic scripts using Phonetisaurus~\citep{novak2016} for grapheme-to-phoneme conversion and a custom rule-based transliteration library (Translit) that exploits the phonetic affinity between Semitic languages.
+
+The MEHDIE work demonstrates that direct transliteration between related scripts often outperforms romanisation, which loses phonetic information in standard Latin schemes. However, their approach requires language-pair-specific rules: the Hebrew-Arabic transliteration exploits shared Semitic phonology that does not generalise to unrelated language pairs. In contrast, our use of Epitran for G2P conversion supports over 100 languages with a unified IPA output, and PanPhon provides language-agnostic articulatory features. This enables our model to learn phonetic relationships across arbitrary script pairs without requiring manual transliteration rules for each combination.
 
 Rama~\citep{rama2016} applied Siamese convolutional networks to cognate identification using character embeddings, demonstrating that neural architectures can learn sound correspondences between related languages. The key distinction from our work lies in the \emph{phonetic priors} provided to the model:
 
 \begin{itemize}
     \item \textbf{Rama (Implicit Learning):} The Siamese CNN operates on raw character embeddings, requiring the model to learn from scratch that characters like `b' and `p' are phonetically related by observing them in similar contexts across training examples. This implicit learning demands large amounts of training data and may fail to generalise to low-resource language pairs.
 
-    \item \textbf{Our Approach (Explicit Features):} By using PanPhon articulatory features, we provide the model with vectors that already encode phonetic properties---both `b' and `p' are marked as \texttt{+bilabial}, \texttt{-continuant}, etc. The model need not learn these relationships; it is \emph{informed} of them, enabling better generalisation to scripts and languages with limited training data.
+    \item \textbf{Symphony (Explicit Features):} By using PanPhon articulatory features, we provide the model with vectors that already encode phonetic properties---both `b' and `p' are marked as \texttt{+bilabial}, \texttt{-continuant}, etc. The model need not learn these relationships; it is \emph{informed} of them, enabling better generalisation to scripts and languages with limited training data.
 \end{itemize}
 
 This distinction is particularly important for toponym matching, where the long tail of historical languages and rare scripts cannot be adequately covered by implicit learning alone.
@@ -172,23 +175,26 @@ Table~\ref{tab:approach-comparison} summarises the key technical distinctions be
 
 \begin{table}[ht]
 \centering
-\small
-\begin{tabular}{p{2.8cm}p{3.2cm}p{3.2cm}p{3.8cm}}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{@{}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.0cm}>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{2.2cm}>{\raggedright\arraybackslash}p{2.8cm}@{}}
 \toprule
-\textbf{Feature} & \textbf{Rama (2016)}  & \textbf{Mueller \& Thyagarajan (2016)} & \textbf{Our Approach} \\
+\textbf{Feature} & \textbf{Rama (2016)}  & \textbf{Mueller \& Thyagarajan} & \textbf{Sagi et al.\ (MEHDIE)} & \textbf{Symphony} \\
 \midrule
-Input Representation & Character embeddings & Word/sentence embeddings & Articulatory feature vectors (PanPhon) \\
+Input & Character embeddings & Word/sentence embeddings & Transliterated strings & Articulatory features (PanPhon) \\
 \addlinespace
-Phonetic Knowledge & Implicit (learned from data) & None (semantic focus) & Explicit (engineered features) \\
+Phonetic Knowledge & Implicit (learned) & None (semantic) & Rule-based translit. & Explicit (engineered) \\
 \addlinespace
-Distance Metric & Contrastive loss (Euclidean) & Manhattan ($L_1$) & Cosine + triplet margin \\
+G2P Method & None & None & Phonetisaurus & Epitran (100+ langs) \\
 \addlinespace
-Primary Strength & Minimal preprocessing & Gradient stability & Cross-lingual generalisation \\
+Distance Metric & Contrastive (Eucl.) & Manhattan ($L_1$) & Edit distance & Cosine + triplet \\
 \addlinespace
-Script Handling & Single script & Single script & 20 scripts unified \\
+Scripts & Single & Single & Hebrew-Arabic & 20 unified \\
+\addlinespace
+Strength & Minimal preproc. & Gradient stability & Semitic affinity & Cross-lingual \\
 \bottomrule
 \end{tabular}
-\caption{Comparison of neural approaches to string similarity. Our use of explicit articulatory features and cosine-based similarity enables cross-script phonetic matching without requiring implicit learning of phonetic relationships from large corpora.}
+\caption{Comparison of approaches to string similarity. Sagi et al.\ use rule-based transliteration exploiting Semitic phonetic affinity. Symphony uses Epitran/PanPhon articulatory features, enabling cross-script matching across 20 writing systems without language-pair-specific rules.}
 \label{tab:approach-comparison}
 \end{table}
 
@@ -448,7 +454,7 @@ The character vocabulary is constructed by scanning all 112M toponyms (not just 
 
 \paragraph{Filtered Lang-Script Mismatches.} The top filtered combinations were: Chinese/Latin (923,079), Persian/Latin (197,099), Japanese/Latin (111,945), Russian/Latin (100,805), and Kazakh/Latin (77,768). These represent pre-romanised forms that would otherwise introduce noise into the training signal.
 
-\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), باريس (ar), 巴黎 (zh), パリ (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ after romanisation). With approximately 15 million places containing two or more toponyms, and an average of 8 valid pairs per such place after filtering, we estimate 100--120 million training pairs, of which approximately 45\% are cross-script. This yields abundant training signal---two orders of magnitude more than comparable toponym matching systems.
+\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ after romanisation). With approximately 15 million places containing two or more toponyms, and an average of 8 valid pairs per such place after filtering, we estimate 100--120 million training pairs, of which approximately 45\% are cross-script. This yields abundant training signal---two orders of magnitude more than comparable toponym matching systems.
 
 \section{Training Methodology}
 \label{sec:training}
