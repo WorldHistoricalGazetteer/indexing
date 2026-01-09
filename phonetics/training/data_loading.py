@@ -404,8 +404,13 @@ class Phase1Dataset(Dataset):
 class Phase2Dataset(Dataset):
     """
     Dataset for Phase 2: Student-Teacher alignment.
-    OPTIMIZED: Uses Pandas for instant loading.
-    SAFE: Filters out IDs that exceed model vocabulary limits.
+
+    MEMORY-OPTIMIZED: Uses PyArrow predicate pushdown to filter at the
+    Parquet level before loading into memory. This avoids loading 57M rows
+    just to filter down to ~23M.
+
+    The filtered Arrow table stays in Arrow format (columnar, compressed)
+    which is much more memory-efficient than Python dicts.
     """
 
     def __init__(
@@ -416,93 +421,72 @@ class Phase2Dataset(Dataset):
             vocab_limits: Optional[Dict[str, int]] = None,
     ):
         self.data_dir = Path(data_dir)
-        print(f"Phase2Dataset: Loading {split} data (Vectorized)...")
+        self.split = split
+        self.require_features = require_features
+        print(f"Phase2Dataset: Loading {split} data (Predicate Pushdown)...", flush=True)
 
         # Load vocab limits dynamically if not provided
         if vocab_limits is None:
             vocab_limits = load_vocab_limits(self.data_dir)
+        self.vocab_limits = vocab_limits
 
-        # 1. Load Toponyms -> Pandas
+        # Load dataset with filter pushdown
         toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        columns = [
-            'toponym_id', 'name', 'script', 'lang',
-            'char_ids', 'char_length',
-            'features', 'feature_length', 'epitran_supported',
-            'split'
-        ]
+        import pyarrow.compute as pc
 
-        df = dataset.to_table(columns=columns).to_pandas()
-
-        # 2. Vectorized Filtering
-        mask_split = (df['split'] == split)
+        # Build filter expression (pushed down to Parquet reader)
+        filter_expr = pc.field('split') == split
 
         if require_features:
-            mask_features = (
-                    df['features'].notna() &
-                    (df['feature_length'] > 0) &
-                    (df['epitran_supported'] == True)
-            )
-            df = df[mask_split & mask_features]
-        else:
-            df = df[mask_split]
+            # Filter for valid features - these filters are pushed to Parquet scan
+            filter_expr = filter_expr & pc.is_valid(pc.field('features'))
+            filter_expr = filter_expr & (pc.field('feature_length') > 0)
+            filter_expr = filter_expr & (pc.field('epitran_supported') == True)
 
-        # 3. SANITIZATION (Critical Fix for CUDA Errors)
-        # ---------------------------------------------------------
-        print(f"Phase2Dataset: Sanitizing {len(df)} rows against vocab limits...")
-        initial_count = len(df)
+        # Script bounds filter
+        filter_expr = filter_expr & (pc.field('script') >= 0)
+        filter_expr = filter_expr & (pc.field('script') < vocab_limits['script'])
 
-        # A. Ensure Script IDs are valid
-        if pd.api.types.is_integer_dtype(df['script']):
-            mask_script_safe = (df['script'] >= 0) & (df['script'] < vocab_limits['script'])
-            df = df[mask_script_safe]
+        # Scan with filter pushdown - only matching rows are read from disk
+        print(f"Phase2Dataset: Scanning with predicate pushdown...", flush=True)
 
-        # B. Ensure Char IDs are valid
-        if not df.empty:
-            # Convert features to Python lists first (prevent downstream crash)
-            first_val = df['features'].iloc[0]
-            if isinstance(first_val, np.ndarray):
-                df['features'] = df['features'].apply(lambda x: x.tolist())
+        self._table = dataset.to_table(
+            columns=[
+                'toponym_id', 'name', 'script', 'lang',
+                'char_ids', 'char_length',
+                'features', 'feature_length'
+            ],
+            filter=filter_expr
+        )
 
-            # Check Char IDs robustly (Handle both List and NumPy)
-            limit = vocab_limits['char']
-
-            def is_safe_chars(ids):
-                # Handle None/NaN
-                if ids is None: return True
-
-                # Handle NumPy Array
-                if isinstance(ids, np.ndarray):
-                    if ids.size == 0: return True
-                    return ids.min() >= 0 and ids.max() < limit
-
-                # Handle Python List
-                if not ids: return True  # Empty list
-                return min(ids) >= 0 and max(ids) < limit
-
-            # Apply filter
-            mask_chars_safe = df['char_ids'].apply(is_safe_chars)
-            df = df[mask_chars_safe]
-
-        dropped = initial_count - len(df)
-        if dropped > 0:
-            logger.warning(f"⚠️ Dropped {dropped} rows containing out-of-bounds IDs.")
-
-        # 4. Final Conversion
-        print(f"Phase2Dataset: converting {len(df)} rows to internal format...")
-
-        if 'lang' in df.columns:
-            df['lang'] = df['lang'].fillna('')
-
-        self.samples = df.to_dict('records')
-        print(f"Phase2Dataset: {len(self.samples)} clean samples ready for {split}")
+        self._count = len(self._table)
+        print(f"Phase2Dataset: {self._count:,} valid samples for {split}", flush=True)
 
     def __len__(self) -> int:
-        return len(self.samples)
+        return self._count
 
     def __getitem__(self, idx: int) -> Dict:
-        return self.samples[idx]
+        """Get item from PyArrow table."""
+        row = {
+            'toponym_id': self._table['toponym_id'][idx].as_py(),
+            'name': self._table['name'][idx].as_py(),
+            'script': self._table['script'][idx].as_py(),
+            'lang': self._table['lang'][idx].as_py() or '',
+            'char_ids': self._table['char_ids'][idx].as_py(),
+            'char_length': self._table['char_length'][idx].as_py(),
+            'features': self._table['features'][idx].as_py(),
+            'feature_length': self._table['feature_length'][idx].as_py(),
+        }
+
+        # Convert numpy arrays to lists if needed
+        if hasattr(row['features'], 'tolist'):
+            row['features'] = row['features'].tolist()
+        if hasattr(row['char_ids'], 'tolist'):
+            row['char_ids'] = row['char_ids'].tolist()
+
+        return row
 
 
 class Phase3Dataset(Dataset):
