@@ -347,6 +347,8 @@ def optimize_db_after_load(conn: sqlite3.Connection):
     conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_id ON toponym_attestations(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
+    # Composite index for efficient ROW_NUMBER() window function in generate_pairs.py
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
     conn.execute('ANALYZE')
     conn.commit()
     logger.info("Database optimized.")

@@ -889,6 +889,12 @@ python -m phonetics.extraction.generate_pairs \
 # Copy results from scratch to permanent storage
 echo
 echo "Copying results to permanent storage..."
+
+# Clear existing data to avoid mixing stale results
+rm -rf "${DATA_DIR}/pairs"
+rm -rf "${DATA_DIR}/triplets"
+rm -f "${DATA_DIR}/pair_generation_stats.json"
+
 mkdir -p "${DATA_DIR}/pairs"
 mkdir -p "${DATA_DIR}/triplets/phase1"
 mkdir -p "${DATA_DIR}/triplets/phase3"
