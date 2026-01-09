@@ -985,11 +985,11 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data from ${DATA_DIR} to \${SCRATCH_ROOT}..."
 
 mkdir -p \${SCRATCH_ROOT}/triplets
-mkdir -p \${SCRATCH_ROOT}/toponyms
+mkdir -p \${SCRATCH_ROOT}/training
 mkdir -p \${SCRATCH_ROOT}/vocab
 
 (cd "${DATA_DIR}/triplets" && tar cf - phase1) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
-(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
+(cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 1 (Teacher)..."
 python -m phonetics.training.train \
@@ -1051,7 +1051,7 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data to \${SCRATCH_ROOT}..."
 
 mkdir -p \${SCRATCH_ROOT}
-(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
+(cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 2 (Student Alignment)..."
 python -m phonetics.training.train \
@@ -1114,11 +1114,11 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 echo "Staging data to \${SCRATCH_ROOT}..."
 
 mkdir -p \${SCRATCH_ROOT}/triplets
-mkdir -p \${SCRATCH_ROOT}/toponyms
+mkdir -p \${SCRATCH_ROOT}/training
 mkdir -p \${SCRATCH_ROOT}/vocab
 
 (cd "${DATA_DIR}/triplets" && tar cf - phase3) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
-(cd "${DATA_DIR}" && tar cf - toponyms vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
+(cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 3 (Fine Tuning)..."
 python -m phonetics.training.train \
