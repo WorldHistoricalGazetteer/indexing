@@ -632,13 +632,8 @@ echo "Arguments: $PYTHON_ARGS"
 echo
 
 # Activate conda environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
 
 cd "$REPO_DIR"
 
@@ -742,13 +737,8 @@ do_rebuild_toponyms() {
 set -e
 
 # Load Environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
 
 cd "$REPO_DIR"
 
@@ -854,13 +844,8 @@ do_generate_pairs() {
 set -e
 
 # Load Environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-elif [ -f "\$HOME/miniconda/etc/profile.d/conda.sh" ]; then
-    source "\$HOME/miniconda/etc/profile.d/conda.sh"
-    conda activate whg
-fi
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
 
 cd "$REPO_DIR"
 
@@ -886,11 +871,19 @@ echo
 # Run pair generation using local scratch for SQLite
 # Output goes directly to network storage (pairs are small)
 # Uses script-stratified sampling with 100K pairs per script-pair quota
+# Uses parallel processing with available CPUs (leaving 2 for system)
+NUM_WORKERS=\$((SLURM_CPUS_PER_TASK - 2))
+if [ "\$NUM_WORKERS" -lt 1 ]; then
+    NUM_WORKERS=1
+fi
+echo "Using \${NUM_WORKERS} worker processes..."
+
 python -m phonetics.extraction.generate_pairs \
     --data-dir "\${SCRATCH}" \
     --namespaces gn wd tgn \
     --script-pair-quota 100000 \
-    --batch-size 50000
+    --batch-size 50000 \
+    --num-workers \${NUM_WORKERS}
 
 # Copy results from scratch to permanent storage
 echo
@@ -1269,8 +1262,8 @@ echo "=========================================="
 echo "Started: \$(date)"
 
 # Load environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+if [ -f "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
     conda activate whg
 fi
 
@@ -1337,8 +1330,8 @@ echo "Started: \$(date)"
 echo "ES Host: http://${ES_NODE}:${ES_PORT}"
 
 # Load environment
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+if [ -f "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
     conda activate whg
 fi
 
@@ -1550,8 +1543,8 @@ echo "Input: $TRAINING_DIR"
 
 # Load environment
 source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+if [ -f "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
     conda activate whg
 fi
 
@@ -1644,8 +1637,8 @@ echo "Embeddings: $FILE_EMB"
 
 # Load environment
 source "${REPO_DIR}/environment_setup.sh" 2>/dev/null || true
-if [ -f "/ix1/whcdh/miniconda/etc/profile.d/conda.sh" ]; then
-    source "/ix1/whcdh/miniconda/etc/profile.d/conda.sh"
+if [ -f "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" ]; then
+    source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
     conda activate whg
 fi
 
