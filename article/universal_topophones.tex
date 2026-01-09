@@ -134,7 +134,15 @@ Recent work applies neural embeddings to geographic entity resolution. Qiu et al
 
 Most relevant is the MEHDIE project~\citep{mehdie2025}, which developed tools for matching toponyms between historical Hebrew and Arabic sources. Sagi et al.\ present a benchmark comprising place pairs from 13th-century Arabic geographical texts and 12th-century Hebrew travel narratives. Their approach investigates direct transliteration between Hebrew and Arabic scripts using a custom rule-based library that exploits the phonetic affinity between Semitic languages. They find that direct transliteration between related scripts often outperforms romanisation due to the loss of phonetic information in standard Latin transliteration schemes. The MEHDIE work validates our central hypothesis---that phonetic relationships between languages can be exploited for toponym matching---while highlighting the limitations of language-pair-specific approaches.
 
-Rama~\citep{rama2016} applied Siamese convolutional networks to cognate identification using character embeddings, demonstrating that neural architectures can learn sound correspondences between related languages. Our work differs in using explicit phonetic features via PanPhon rather than learning phonetic patterns implicitly from characters alone.
+Rama~\citep{rama2016} applied Siamese convolutional networks to cognate identification using character embeddings, demonstrating that neural architectures can learn sound correspondences between related languages. The key distinction from our work lies in the \emph{phonetic priors} provided to the model:
+
+\begin{itemize}
+    \item \textbf{Rama (Implicit Learning):} The Siamese CNN operates on raw character embeddings, requiring the model to learn from scratch that characters like `b' and `p' are phonetically related by observing them in similar contexts across training examples. This implicit learning demands large amounts of training data and may fail to generalise to low-resource language pairs.
+
+    \item \textbf{Our Approach (Explicit Features):} By using PanPhon articulatory features, we provide the model with vectors that already encode phonetic properties---both `b' and `p' are marked as \texttt{+bilabial}, \texttt{-continuant}, etc. The model need not learn these relationships; it is \emph{informed} of them, enabling better generalisation to scripts and languages with limited training data.
+\end{itemize}
+
+This distinction is particularly important for toponym matching, where the long tail of historical languages and rare scripts cannot be adequately covered by implicit learning alone.
 
 \subsection{Cross-Lingual Representation Learning}
 
@@ -150,7 +158,39 @@ The use of phonetic features in natural language processing has a long history. 
 
 Siamese networks~\citep{bromley1993,chopra2005} learn similarity functions by processing two inputs through identical sub-networks and comparing their output representations. They have been successfully applied to face verification~\citep{schroff2015}, signature verification, and text similarity~\citep{mueller2016,neculoiu2016}.
 
-For text matching, Mueller and Thyagarajan~\citep{mueller2016} demonstrated that Siamese LSTMs with Manhattan distance achieve strong performance on sentence similarity tasks. Lin et al.~\citep{lin2017structured} introduced structured self-attention for sentence embeddings. Our architecture extends this line of work by incorporating self-attention mechanisms and operating on phonetic feature sequences.
+For text matching, Mueller and Thyagarajan~\citep{mueller2016} demonstrated that Siamese LSTMs with Manhattan distance ($L_1$) achieve strong performance on sentence similarity tasks. However, the choice of distance metric carries important implications for toponym matching:
+
+\paragraph{Manhattan Distance Limitations.} The $L_1$ norm is additive across dimensions, which creates a \emph{length penalty}: toponyms varying significantly in character count (e.g., ``Oa'' vs.\ ``Constantinople'') may produce large distances purely due to embedding magnitude rather than phonetic dissimilarity. Additionally, Manhattan distance assumes that the optimal path between embeddings follows axis-aligned grid lines, which poorly captures the directional relationships in phonetic space where the \emph{ratio} of articulatory features often matters more than their absolute magnitudes.
+
+\paragraph{Cosine Similarity Advantages.} Cosine similarity normalises for vector magnitude, measuring only the angle between embeddings. For phonetic representations, this is preferable: two names with similar phonetic ``direction'' (ratio of nasality to voicing, place to manner, etc.) should be considered similar regardless of sequence length. We therefore use cosine similarity for inference and incorporate it into our training loss.
+
+Lin et al.~\citep{lin2017structured} introduced structured self-attention for sentence embeddings. Our architecture extends this line of work by incorporating self-attention mechanisms and operating on phonetic feature sequences, with distance metrics chosen specifically for the phonetic domain.
+
+\subsection{Summary of Technical Distinctions}
+
+Table~\ref{tab:approach-comparison} summarises the key technical distinctions between our approach and related neural matching methods.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{p{2.8cm}p{3.2cm}p{3.2cm}p{3.8cm}}
+\toprule
+\textbf{Feature} & \textbf{Rama (2016)}  & \textbf{Mueller \& Thyagarajan (2016)} & \textbf{Our Approach} \\
+\midrule
+Input Representation & Character embeddings & Word/sentence embeddings & Articulatory feature vectors (PanPhon) \\
+\addlinespace
+Phonetic Knowledge & Implicit (learned from data) & None (semantic focus) & Explicit (engineered features) \\
+\addlinespace
+Distance Metric & Contrastive loss (Euclidean) & Manhattan ($L_1$) & Cosine + triplet margin \\
+\addlinespace
+Primary Strength & Minimal preprocessing & Gradient stability & Cross-lingual generalisation \\
+\addlinespace
+Script Handling & Single script & Single script & 20 scripts unified \\
+\bottomrule
+\end{tabular}
+\caption{Comparison of neural approaches to string similarity. Our use of explicit articulatory features and cosine-based similarity enables cross-script phonetic matching without requiring implicit learning of phonetic relationships from large corpora.}
+\label{tab:approach-comparison}
+\end{table}
 
 
 \section{Architecture}

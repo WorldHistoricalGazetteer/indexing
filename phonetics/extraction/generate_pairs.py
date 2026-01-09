@@ -2,21 +2,20 @@
 """
 Generate positive pairs and training triplets from SQLite database.
 
-This script runs AFTER rebuild_toponyms_index.py and:
-1. Uses the SQLite database (toponym_attestations table) to find co-located toponyms
-2. Generates positive pairs with phonetic similarity filtering (>= 0.35)
-3. Creates triplets for Phase 1 (random negatives) and Phase 3 (hard negatives)
-4. Saves curated test pairs for evaluation
+This script runs AFTER rebuild_toponyms_index.py and implements the
+Data Selection and Curation Criteria from the paper:
 
-This approach is more efficient than scanning ES because:
-- The toponym_attestations table already has place→toponym mappings
-- SQLite can do indexed joins efficiently
-- No network overhead from ES queries
+1. Script-Stratified Sampling: Quota-based sampling (default 100K pairs per script-pair)
+2. Namespace Filtering: Only gn, wd, tgn namespaces
+3. Phonetic Similarity Filtering: Pairs must have similarity >= 0.35
+4. Cross-Script Weighting: Prioritise cross-script pairs over same-script
+5. Isorthographic Retention: Keep same-string different-language pairs
 
 Usage:
     python -m phonetics.extraction.generate_pairs \
         --data-dir /ix1/whcdh/models/phonetic/data/v3 \
-        --namespaces gn wd tgn
+        --namespaces gn wd tgn \
+        --script-pair-quota 100000
 """
 
 import argparse
@@ -25,7 +24,7 @@ import logging
 import random
 import sqlite3
 import sys
-from collections import defaultdict
+from collections import defaultdict, Counter
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Set, Tuple
 
@@ -53,6 +52,113 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+# Default quota per script-pair combination (from .tex Section 4.1)
+DEFAULT_SCRIPT_PAIR_QUOTA = 100_000
+
+# Minimum phonetic similarity for positive pairs (from .tex Section 4.3)
+MIN_PHONETIC_SIMILARITY = 0.35
+
+# Cross-script pairs are weighted higher than same-script (from .tex Section 4.1.5)
+CROSS_SCRIPT_WEIGHT = 3.0  # 3x more likely to be selected when quota limited
+
+# Known scripts for stratification
+SCRIPTS = [
+    'LATIN', 'CYRILLIC', 'ARABIC', 'CJK', 'GREEK', 'HEBREW',
+    'DEVANAGARI', 'BENGALI', 'TAMIL', 'TELUGU', 'MALAYALAM',
+    'KANNADA', 'GUJARATI', 'THAI', 'GEORGIAN', 'ARMENIAN',
+    'HANGUL', 'HIRAGANA', 'KATAKANA', 'OTHER'
+]
+
+
+# =============================================================================
+# SCRIPT-PAIR QUOTA MANAGER
+# =============================================================================
+
+class ScriptPairQuotaManager:
+    """
+    Manages quota-based sampling for script pairs.
+
+    Implements criterion 1 (Script-Stratified Sampling) from the paper:
+    - Maintains a quota for each script-pair combination
+    - Prioritises cross-script pairs (criterion 5)
+    - Tracks statistics for reporting
+    """
+
+    def __init__(self, quota_per_pair: int = DEFAULT_SCRIPT_PAIR_QUOTA):
+        self.quota = quota_per_pair
+        self.counts: Dict[Tuple[str, str], int] = defaultdict(int)
+        self.rejected: Dict[Tuple[str, str], int] = defaultdict(int)
+
+    def _normalize_pair(self, script1: str, script2: str) -> Tuple[str, str]:
+        """Normalize script pair to canonical order."""
+        return tuple(sorted([script1, script2]))
+
+    def can_accept(self, script1: str, script2: str) -> bool:
+        """Check if we can accept another pair for this script combination."""
+        key = self._normalize_pair(script1, script2)
+        return self.counts[key] < self.quota
+
+    def accept(self, script1: str, script2: str) -> bool:
+        """
+        Try to accept a pair. Returns True if accepted, False if quota full.
+        """
+        key = self._normalize_pair(script1, script2)
+        if self.counts[key] < self.quota:
+            self.counts[key] += 1
+            return True
+        else:
+            self.rejected[key] += 1
+            return False
+
+    def should_sample(self, script1: str, script2: str) -> bool:
+        """
+        Determine if a pair should be sampled based on quota fullness.
+
+        When quotas are filling up, we use weighted random sampling
+        to prioritise cross-script pairs.
+        """
+        key = self._normalize_pair(script1, script2)
+        current = self.counts[key]
+
+        # Always accept if under 50% of quota
+        if current < self.quota * 0.5:
+            return True
+
+        # Use weighted sampling when approaching quota
+        is_cross_script = script1 != script2
+        weight = CROSS_SCRIPT_WEIGHT if is_cross_script else 1.0
+
+        # Probability decreases as quota fills
+        fill_ratio = current / self.quota
+        prob = weight * (1.0 - fill_ratio)
+
+        return random.random() < prob
+
+    def get_statistics(self) -> Dict:
+        """Return statistics about pair distribution."""
+        stats = {
+            'total_pairs': sum(self.counts.values()),
+            'cross_script_pairs': sum(
+                count for (s1, s2), count in self.counts.items() if s1 != s2
+            ),
+            'same_script_pairs': sum(
+                count for (s1, s2), count in self.counts.items() if s1 == s2
+            ),
+            'pairs_by_script_combination': dict(self.counts),
+            'rejected_over_quota': dict(self.rejected),
+            'quota_per_pair': self.quota,
+        }
+        return stats
+
+
+# =============================================================================
+# PARQUET SCHEMAS
+# =============================================================================
+
 # Parquet schemas
 PAIRS_SCHEMA = pa.schema([
     ('anchor_id', pa.string()),
@@ -60,6 +166,7 @@ PAIRS_SCHEMA = pa.schema([
     ('namespace', pa.string()),
     ('place_id', pa.string()),
     ('is_cross_script', pa.bool_()),
+    ('script_pair', pa.string()),  # e.g., "LATIN-CYRILLIC" for analysis
 ])
 
 TRIPLETS_SCHEMA = pa.schema([
@@ -235,14 +342,20 @@ def phonetic_similarity(name1: str, name2: str) -> float:
     return 1.0 - (distance / max_len)
 
 
-MIN_PHONETIC_SIMILARITY = 0.35
-
-
 def generate_pairs_from_place(
         toponyms: List[Dict],
         toponym_index: Dict[str, Dict],
-        max_pairs: int = 50,
+        quota_manager: Optional[ScriptPairQuotaManager] = None,
+        max_pairs: int = 100,
 ) -> List[Dict]:
+    """
+    Generate candidate pairs from co-located toponyms within a single place.
+
+    Implements:
+    - Phonetic similarity filtering (>= 0.35)
+    - Cross-script pair identification
+    - Quota-aware sampling when quota_manager provided
+    """
     pairs = []
     valid_tops = []
 
@@ -250,45 +363,62 @@ def generate_pairs_from_place(
         toponym_id = top.get('toponym_id', '')
         if not toponym_id: continue
 
-        # Handle ID normalization
-        if '@' in toponym_id:
-            at_pos = toponym_id.rfind('@')
-            name = toponym_id[:at_pos]
-            lang_part = toponym_id[at_pos + 1:]
-            if '-' in lang_part:
-                lang = lang_part.split('-', 1)[0]
-            else:
-                lang = lang_part
-            canonical_id = f"{name}@{lang}" if lang else f"{name}@"
-        else:
-            canonical_id = f"{toponym_id}@"
+        # Use toponym_id directly if it's in the index
+        if toponym_id in toponym_index:
+            script = toponym_index[toponym_id].get('script', 'OTHER')
+            valid_tops.append((toponym_id, script))
 
-        if canonical_id in toponym_index:
-            script = toponym_index[canonical_id].get('script', 'OTHER')
-            valid_tops.append((canonical_id, script))
-
-    # Safety Cap
+    # Safety Cap - limit toponyms per place to avoid combinatorial explosion
     MAX_TOPONYMS_PER_PLACE = 50
     if len(valid_tops) > MAX_TOPONYMS_PER_PLACE:
         valid_tops = random.sample(valid_tops, MAX_TOPONYMS_PER_PLACE)
 
+    # Generate all candidate pairs
+    candidate_pairs = []
     for i, (id1, script1) in enumerate(valid_tops):
         for id2, script2 in valid_tops[i + 1:]:
             name1 = toponym_index[id1].get('name', '')
             name2 = toponym_index[id2].get('name', '')
 
+            # Phonetic similarity filter
             sim = phonetic_similarity(name1, name2)
-            if sim < MIN_PHONETIC_SIMILARITY: continue
+            if sim < MIN_PHONETIC_SIMILARITY:
+                continue
 
             is_cross_script = script1 != script2
-            pairs.append({
+            script_pair = '-'.join(sorted([script1, script2]))
+
+            candidate_pairs.append({
                 'anchor_id': id1,
                 'positive_id': id2,
                 'is_cross_script': is_cross_script,
+                'script1': script1,
+                'script2': script2,
+                'script_pair': script_pair,
+                'similarity': sim,
             })
 
-    if len(pairs) > max_pairs:
-        pairs = random.sample(pairs, max_pairs)
+    # Sort by cross-script (prioritise) then by similarity (higher first)
+    candidate_pairs.sort(key=lambda p: (-int(p['is_cross_script']), -p['similarity']))
+
+    # Apply quota-based filtering if manager provided
+    for pair in candidate_pairs:
+        if quota_manager is not None:
+            # Check if this script-pair can accept more
+            if not quota_manager.should_sample(pair['script1'], pair['script2']):
+                continue
+            if not quota_manager.accept(pair['script1'], pair['script2']):
+                continue
+
+        pairs.append({
+            'anchor_id': pair['anchor_id'],
+            'positive_id': pair['positive_id'],
+            'is_cross_script': pair['is_cross_script'],
+            'script_pair': pair['script_pair'],
+        })
+
+        if len(pairs) >= max_pairs:
+            break
 
     return pairs
 
@@ -345,13 +475,37 @@ def generate_pairs(
         data_dir: Path,
         namespaces: List[str],
         output_dir: Path,
+        script_pair_quota: int = DEFAULT_SCRIPT_PAIR_QUOTA,
         batch_size: int = 50000,
         limit: Optional[int] = None,
-) -> int:
-    """Generate positive pairs from co-located toponyms."""
-    logger.info("Generating positive pairs...")
+) -> Tuple[int, Dict]:
+    """
+    Generate positive pairs from co-located toponyms.
+
+    Implements the Data Selection and Curation Criteria:
+    1. Script-Stratified Sampling with quotas
+    2. Namespace filtering (gn, wd, tgn)
+    3. Phonetic similarity filtering (>= 0.35)
+    4. Cross-script weighting/prioritisation
+    5. Deduplication - each (anchor, positive) pair appears only once
+
+    Returns:
+        Tuple of (total_pairs, statistics_dict)
+    """
+    logger.info("Generating positive pairs with script-stratified sampling...")
+    logger.info(f"  Script-pair quota: {script_pair_quota:,}")
+    logger.info(f"  Namespaces: {namespaces}")
+
     toponym_index = load_toponym_index(data_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Initialize quota manager for script-stratified sampling
+    quota_manager = ScriptPairQuotaManager(quota_per_pair=script_pair_quota)
+
+    # Track seen pairs to eliminate duplicates
+    # Key is normalized (min_id, max_id) to handle bidirectional pairs
+    seen_pairs: Set[Tuple[str, str]] = set()
+    duplicates_skipped = 0
 
     pairs_buffer = []
     total_pairs = 0
@@ -366,21 +520,42 @@ def generate_pairs(
 
     if limit:
         total_places = min(total_places, limit)
-    logger.info(f"Scanning {total_places:,} places with >= 2 toponyms...")
+    logger.info(f"Scanning {total_places:,} places...")
 
     iterator = scan_places_for_pairs(conn, namespaces)
     if tqdm:
         iterator = tqdm(iterator, total=total_places, desc="Scanning places")
 
     places_processed = 0
-    for place_id, namespace, toponyms in iterator:
-        pairs = generate_pairs_from_place(toponyms, toponym_index)
-        for pair in pairs:
-            pair['namespace'] = namespace
-            pair['place_id'] = place_id
-            pairs_buffer.append(pair)
+    places_with_pairs = 0
 
-        total_pairs += len(pairs)
+    for place_id, namespace, toponyms in iterator:
+        pairs = generate_pairs_from_place(
+            toponyms,
+            toponym_index,
+            quota_manager=quota_manager,
+        )
+
+        if pairs:
+            new_pairs = []
+            for pair in pairs:
+                # Normalize pair key for deduplication (order-independent)
+                pair_key = tuple(sorted([pair['anchor_id'], pair['positive_id']]))
+
+                if pair_key in seen_pairs:
+                    duplicates_skipped += 1
+                    continue
+
+                seen_pairs.add(pair_key)
+                pair['namespace'] = namespace
+                pair['place_id'] = place_id
+                new_pairs.append(pair)
+
+            if new_pairs:
+                places_with_pairs += 1
+                pairs_buffer.extend(new_pairs)
+                total_pairs += len(new_pairs)
+
         places_processed += 1
 
         if len(pairs_buffer) >= batch_size:
@@ -388,13 +563,35 @@ def generate_pairs(
             part_num += 1
             pairs_buffer = []
 
-        if limit and places_processed >= limit: break
+        if limit and places_processed >= limit:
+            break
 
     if pairs_buffer:
         _write_batch(output_dir, pairs_buffer, part_num, PAIRS_SCHEMA)
 
-    logger.info(f"Generated {total_pairs:,} pairs from {places_processed:,} places")
-    return total_pairs
+    # Get statistics from quota manager
+    stats = quota_manager.get_statistics()
+    stats['places_scanned'] = places_processed
+    stats['places_with_pairs'] = places_with_pairs
+    stats['duplicates_skipped'] = duplicates_skipped
+    stats['unique_pairs'] = len(seen_pairs)
+
+    # Log summary
+    logger.info(f"Pair generation complete:")
+    logger.info(f"  Places scanned: {places_processed:,}")
+    logger.info(f"  Places with pairs: {places_with_pairs:,}")
+    logger.info(f"  Unique pairs: {stats['unique_pairs']:,}")
+    logger.info(f"  Duplicates skipped: {duplicates_skipped:,}")
+    logger.info(f"  Cross-script pairs: {stats['cross_script_pairs']:,} ({100*stats['cross_script_pairs']/max(1,stats['total_pairs']):.1f}%)")
+    logger.info(f"  Same-script pairs: {stats['same_script_pairs']:,}")
+
+    # Save statistics to JSON
+    stats_path = output_dir / 'pair_generation_stats.json'
+    with open(stats_path, 'w') as f:
+        json.dump(stats, f, indent=2, default=str)
+    logger.info(f"  Statistics saved to: {stats_path}")
+
+    return total_pairs, stats
 
 
 def generate_triplets(
@@ -595,23 +792,53 @@ def generate_curated_test_pairs(
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate pairs and triplets')
-    parser.add_argument('--data-dir', type=Path, required=True)
+    parser = argparse.ArgumentParser(
+        description='Generate pairs and triplets with script-stratified sampling',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Standard generation with default quotas
+  python -m phonetics.extraction.generate_pairs --data-dir /path/to/data
+
+  # Custom quota (200K pairs per script-pair)
+  python -m phonetics.extraction.generate_pairs --data-dir /path/to/data --script-pair-quota 200000
+
+  # Skip triplet generation (pairs only)
+  python -m phonetics.extraction.generate_pairs --data-dir /path/to/data --skip-triplets
+        """
+    )
+    parser.add_argument('--data-dir', type=Path, required=True,
+                        help='Directory containing toponyms.db and where output will be written')
     parser.add_argument('--namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
                         help='Namespaces to use for pair generation (default: gn wd tgn)')
-    parser.add_argument('--batch-size', type=int, default=50000)
-    parser.add_argument('--limit', type=int, default=None)
-    parser.add_argument('--skip-pairs', action='store_true', help='Skip pair generation')
-    parser.add_argument('--skip-triplets', action='store_true', help='Skip triplet generation')
+    parser.add_argument('--script-pair-quota', type=int, default=DEFAULT_SCRIPT_PAIR_QUOTA,
+                        help=f'Maximum pairs per script-pair combination (default: {DEFAULT_SCRIPT_PAIR_QUOTA:,})')
+    parser.add_argument('--batch-size', type=int, default=50000,
+                        help='Batch size for writing Parquet files')
+    parser.add_argument('--limit', type=int, default=None,
+                        help='Limit number of places to process (for testing)')
+    parser.add_argument('--skip-pairs', action='store_true',
+                        help='Skip pair generation')
+    parser.add_argument('--skip-triplets', action='store_true',
+                        help='Skip triplet generation')
+    parser.add_argument('--skip-curated', action='store_true',
+                        help='Skip curated test pair generation')
     args = parser.parse_args()
 
     # Generate pairs
     if not args.skip_pairs:
-        with sqlite3.connect(args.data_dir / 'toponyms.db') as conn:
-            generate_pairs(
+        db_path = args.data_dir / 'toponyms.db'
+        if not db_path.exists():
+            logger.error(f"Database not found: {db_path}")
+            sys.exit(1)
+
+        with sqlite3.connect(str(db_path)) as conn:
+            total_pairs, stats = generate_pairs(
                 conn, args.data_dir, args.namespaces,
                 args.data_dir / 'pairs',
-                args.batch_size, args.limit
+                script_pair_quota=args.script_pair_quota,
+                batch_size=args.batch_size,
+                limit=args.limit
             )
 
     # Generate triplets
@@ -631,7 +858,8 @@ def main():
         )
 
     # Generate curated test pairs
-    generate_curated_test_pairs(args.data_dir, args.data_dir / 'test_pairs')
+    if not args.skip_curated:
+        generate_curated_test_pairs(args.data_dir, args.data_dir / 'test_pairs')
 
     logger.info("Done!")
 

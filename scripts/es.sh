@@ -885,9 +885,11 @@ echo
 
 # Run pair generation using local scratch for SQLite
 # Output goes directly to network storage (pairs are small)
+# Uses script-stratified sampling with 100K pairs per script-pair quota
 python -m phonetics.extraction.generate_pairs \
     --data-dir "\${SCRATCH}" \
     --namespaces gn wd tgn \
+    --script-pair-quota 100000 \
     --batch-size 50000
 
 # Copy results from scratch to permanent storage
