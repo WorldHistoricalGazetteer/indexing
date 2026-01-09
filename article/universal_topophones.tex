@@ -90,8 +90,8 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 
 \section*{Remaining Work}
 \begin{enumerate}
-\item \sout{Phase 1 training} \textit{In progress (Epoch 8/50 as of 2026-01-09 11:48)}
-\item Phase 2 training (Student-Teacher alignment)
+\item \sout{Phase 1 training} \textit{Complete (50 epochs, best val\_loss=0.0040, final train\_loss=0.0002)}
+\item \sout{Phase 2 training} \textit{In progress (Epoch 1/50, 20\% complete as of 2026-01-09 14:59)}
 \item Phase 3 training (hard negative fine-tuning)
 \item Update evaluation sections after training completes
 \item Generate training curves figure
@@ -500,6 +500,8 @@ Despite this reduction, the training set remains adequate: 467K triplets $\times
     \item Training time: $\sim$3 minutes/epoch ($\sim$20 batches/second on A100)
 \end{itemize}
 
+\paragraph{Convergence.} Phase 1 training converged smoothly, with training loss decreasing from 0.0228 (epoch 1) to 0.0002 (epoch 50) and validation loss from 0.0117 to \textbf{0.0040}. The best model was saved at epoch 48. The near-zero training loss indicates the Teacher successfully learned to separate co-located toponyms from random negatives in the phonetic feature space.
+
 \subsection{Phase 2: Student-Teacher Alignment}
 
 The Student learns to approximate Teacher embeddings from character sequences. Given a toponym with both character sequence (Student input) and PanPhon feature sequence (Teacher input), we minimise the distance between their embeddings:
@@ -517,12 +519,17 @@ During this phase:
     \item Teacher weights are frozen
 \end{itemize}
 
+\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. This yields \textbf{23,223,184 training samples} and \textbf{2,902,533 validation samples}---substantially more than Phase 1's triplet-based training.
+
 \paragraph{Training Configuration.}
 \begin{itemize}
-    \item Optimiser: AdamW with weight decay 0.01
-    \item Learning rate: $3 \times 10^{-4}$ with cosine annealing
-    \item Batch size: 512
+    \item Model: UniversalEncoder (Student) with \textbf{1,761,217 parameters}
+    \item Vocabularies: 11,122 characters, 20 scripts, 1,944 languages
+    \item Optimiser: AdamW with weight decay $10^{-5}$
+    \item Learning rate: $10^{-3}$ with cosine annealing
+    \item Batch size: 128
     \item Epochs: 50
+    \item Training time: $\sim$81 minutes/epoch ($\sim$37 batches/second on A100)
 \end{itemize}
 
 \subsection{Phase 3: Discriminative Fine-Tuning}
@@ -554,7 +561,7 @@ Crucially, we explicitly \textbf{exclude} co-located toponyms from being selecte
 
 \subsection{Implementation Details}
 
-Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student is larger due to the character embedding vocabulary (exact count pending Phase 2 completion). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 and Phase 3 timing pending.
+Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 requires approximately 68 hours (50 epochs $\times$ 81 minutes/epoch); Phase 3 timing pending.
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Experiments with 64, 128, and 256 dimensions showed diminishing returns above 128 for toponym matching.
 
