@@ -457,7 +457,14 @@ The character vocabulary is constructed by scanning all 112M toponyms (not just 
 
 \paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ for cross-script pairs, $\geq 0.60$ for same-script pairs after romanisation). Same-script cross-language pairs (e.g., London@en vs Londres@fr) are sampled at 20\% to prevent domination by isorthographs.
 
-From an estimated 429 million candidate pairs across 67 million toponyms, our pipeline scanned 175 million before script-pair quotas (100K per combination) were exhausted. Of these, 130 million (74\%) passed similarity thresholds. After quota-based stratified sampling and deduplication (800K duplicates removed), the final training set contains \textbf{5.09 million unique pairs}. While smaller than the raw count suggests, this curated set ensures balanced representation across script pairs and prevents any single script combination from dominating training. Each pair represents a genuine phonetic correspondence verified through co-location in authoritative gazetteer sources.
+From an estimated 428,956,662 candidate pairs across 66,924,548 toponyms, our pipeline scanned 174,636,677 before script-pair quotas (100K per combination) were exhausted. Of these, 130,329,534 (74.6\%) passed similarity thresholds. After quota-based stratified sampling and deduplication (802,283 duplicates removed), the final training set contains \textbf{5,088,419 unique pairs}. While smaller than the raw count suggests, this curated set ensures balanced representation across script pairs and prevents any single script combination from dominating training. Each pair represents a genuine phonetic correspondence verified through co-location in authoritative gazetteer sources.
+
+From these pairs, we generate triplets for contrastive training:
+\begin{itemize}
+    \item \textbf{Phase 1 triplets:} 5,088,419 triplets with random negatives sampled from the full toponym pool
+    \item \textbf{Phase 3 triplets:} 5,088,419 triplets with hard negatives---orthographically similar names (same 2-character prefix, same script) from different places
+\end{itemize}
+The hard negative mining for Phase 3 uses a prefix index of 11,182,368 entries spanning 11,617 prefix/script combinations.
 
 \section{Training Methodology}
 \label{sec:training}
@@ -517,13 +524,17 @@ While the distillation phase aligns the Student with the Teacher's general phone
 In this final phase, we fine-tune the Student using triplet loss to sharpen these boundaries without degrading the learned cross-script equivalences.
 
 \paragraph{Hard Negative Mining Strategy.}
-We define negatives strictly phonetically by mining triplets $(a, p, n)$ where:
+We define negatives by mining triplets $(a, p, n)$ where:
 \begin{itemize}
-    \item \textbf{Anchor ($a$) \& Positive ($p$):} A cross-script pair confirmed to be phonetically equivalent by the Teacher (low Teacher-space distance).
-    \item \textbf{Hard Negative ($n$):} A toponym selected such that it has high orthographic similarity to the anchor (Levenshtein similarity $> 0.7$) but is phonetically distinct (high Teacher-space distance).
+    \item \textbf{Anchor ($a$) \& Positive ($p$):} A pair of toponyms confirmed to refer to the same place through co-location in authoritative gazetteer records.
+    \item \textbf{Hard Negative ($n$):} A toponym selected such that it has high orthographic similarity to the anchor (same 2-character prefix after romanisation, same script) but is not known to refer to the same place.
 \end{itemize}
 
-Crucially, we explicitly \textbf{exclude} isorthographs from being selected as negatives. If two records share the name ``Georgetown'' but refer to different locations, they are treated as identical in the embedding space. The loss function penalizes the Student only when it places phonetically distinct names closer than phonetically equivalent ones.
+The ``different place'' constraint is enforced through an \textbf{adjacency set} containing all 10.2 million toponym pairs that co-occur within place records. A candidate negative is rejected if it appears in any positive pair with the anchor.
+
+This approach has a known limitation: it cannot detect cross-authority duplicates. If ``Springfield'' appears in both GeoNames and Wikidata records for the same city but those records are not linked in our index, the Wikidata toponym could be incorrectly selected as a hard negative for the GeoNames toponym. We mitigate this by (a) the relatively low probability of such collisions given 67M toponyms and prefix-based sampling, and (b) the observation that even when such ``false negatives'' occur, they typically have identical or near-identical embeddings, producing negligible gradient signal. The triplet loss margin prevents the model from over-optimising on pairs that are already well-separated.
+
+Crucially, we explicitly \textbf{exclude} co-located toponyms from being selected as negatives. If two toponyms share a place record (e.g., ``Munich'' and ``München'' in the same Wikidata entry), they are excluded via the adjacency check regardless of their surface similarity.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
