@@ -85,6 +85,21 @@ def load_vocab_limits(data_dir: Path) -> Dict[str, int]:
 
     return limits
 
+
+def get_training_data_path(data_dir: Path) -> Path:
+    """
+    Get the path to training data, checking both new ('training') and old ('toponyms') locations.
+    """
+    training_path = Path(data_dir) / 'training'
+    if training_path.exists():
+        return training_path
+    # Fallback to old path for backward compatibility
+    toponyms_path = Path(data_dir) / 'toponyms'
+    if toponyms_path.exists():
+        return toponyms_path
+    raise FileNotFoundError(f"Training data not found in {data_dir}/training or {data_dir}/toponyms")
+
+
 # ============================================================================
 # Noise Augmentation
 # ============================================================================
@@ -204,7 +219,7 @@ class Phase1Dataset(Dataset):
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
 
         # 2. Load Toponyms -> Pandas
-        toponyms_path = self.data_dir / 'toponyms'
+        toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
         # Load only necessary columns
@@ -290,7 +305,7 @@ class Phase2Dataset(Dataset):
             vocab_limits = load_vocab_limits(self.data_dir)
 
         # 1. Load Toponyms -> Pandas
-        toponyms_path = self.data_dir / 'toponyms'
+        toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
         columns = [
@@ -397,7 +412,7 @@ class Phase3Dataset(Dataset):
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
 
         # 2. Load Toponyms -> Pandas
-        toponyms_path = self.data_dir / 'toponyms'
+        toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
         columns = [

@@ -104,7 +104,13 @@ def build_lang_index(toponym_index: Dict[str, Dict]) -> Dict[str, List[str]]:
 def load_toponym_index(data_dir: Path) -> Dict[str, Dict]:
     logger.info("Loading toponym index from Parquet...")
 
-    dataset = ds.dataset(data_dir / 'toponyms', format='parquet', partitioning='hive')
+    # Training data is in 'training/' subdirectory with hive partitioning by script
+    training_path = data_dir / 'training'
+    if not training_path.exists():
+        # Fallback to 'toponyms/' for backward compatibility
+        training_path = data_dir / 'toponyms'
+
+    dataset = ds.dataset(training_path, format='parquet', partitioning='hive')
 
     # Optimization: Use Pandas for faster loading if available
     try:

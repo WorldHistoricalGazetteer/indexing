@@ -835,9 +835,9 @@ do_generate_pairs() {
     # Output directory for training data
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
 
-    # Check that toponyms parquet exists
-    if [ ! -d "${DATA_DIR}/toponyms" ]; then
-        echo "ERROR: Toponyms not found at ${DATA_DIR}/toponyms"
+    # Check that training parquet exists
+    if [ ! -d "${DATA_DIR}/training" ]; then
+        echo "ERROR: Training data not found at ${DATA_DIR}/training"
         echo "Run -rebuild-toponyms first."
         return 1
     fi
