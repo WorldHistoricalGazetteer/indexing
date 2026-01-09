@@ -348,35 +348,31 @@ Noise is applied with 30\% probability per training example, with the target bei
 \subsection{Data Selection and Curation Criteria}
 \label{subsec:selection_criteria}
 
-The World Historical Gazetteer (WHG) infrastructure separates data into a \texttt{places} index, which aggregates geographic entities with their attributions, and a \texttt{toponyms} index, which abstracts individual name variants by script and language. Our data selection strategy leverages this architecture to filter high-quality training data from major namespace authorities---GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn})---while excluding less strictly curated sources like OpenStreetMap.
+The World Historical Gazetteer (WHG) infrastructure separates data into a \texttt{places} index, which aggregates geographic entities with their attributions, and a \texttt{toponyms} index, which stores individual name variants with script and language metadata. Our data selection strategy leverages this architecture to filter high-quality training data from major namespace authorities---GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn})---while excluding less strictly curated sources like OpenStreetMap.
 
-Training requires pairs of toponyms that refer to the same place. We extract these from co-located name attestations: if an authority lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' within the same `place`, we generate pairs among all combinations.
-
-To address the inherent script and language imbalances in the raw corpus, we define our training data selection based on five strict criteria.
+Training requires pairs of toponyms that refer to the same place. We extract these from co-located name attestations: if an authority lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' within the same place record, we generate pairs among all combinations. To address the inherent script and language imbalances in the raw corpus, we define our training data selection based on six criteria.
 
 \paragraph{1. Script-Stratified Sampling.}
-Rather than ingesting all available pairs from the \texttt{toponyms} index, which would result in a corpus heavily skewed toward Latin script and European languages, we implement a quota-based sampling strategy. We define target script pairs (e.g., Latin-Cyrillic, Latin-Devanagari, Arabic-Hebrew) and sample up to $N=100,000$ pairs for each combination. This prevents high-resource scripts from dominating the gradient descent while ensuring sufficient signal for low-resource script pairs.
+Rather than ingesting all available pairs, which would result in a corpus heavily skewed toward Latin script and European languages, we implement a quota-based sampling strategy. We sample up to $N=100,000$ pairs for each script-pair combination (e.g., Latin-Cyrillic, Latin-Devanagari, Arabic-Hebrew). This prevents high-resource scripts from dominating the gradient signal while ensuring sufficient coverage for low-resource script pairs.
 
-\paragraph{2. Namespace Filtering and Coverage.}
-We restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \texttt{wd} namespaces. Within this allowed pool, the inclusion of \texttt{wd} (Wikidata) is critical for meeting the stratification quotas defined above. As a direct result of our sampling criteria, Wikidata records are frequently selected to populate South Asian (Devanagari, Tamil, Telugu, Kannada, Malayalam, Bengali) and Southeast Asian (Thai, Khmer, Lao, Myanmar) script pairs, where other gazetteers lack the necessary depth of multi-script correspondence.
+\paragraph{2. Namespace Filtering.}
+We restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \texttt{wd} namespaces. The inclusion of Wikidata is critical for meeting the stratification quotas: Wikidata provides the majority of non-Latin script coverage, particularly for South Asian scripts (Devanagari, Tamil, Telugu, Kannada, Malayalam, Bengali) and Middle Eastern scripts (Arabic, Hebrew), where GeoNames and TGN lack sufficient multi-script correspondence.
 
 \paragraph{3. Global Vocabulary Construction.}
 To prevent out-of-vocabulary (OOV) errors at inference time, we decouple vocabulary construction from pair generation.
 \begin{itemize}
-    \item \textbf{Pass 1 (Vocabulary):} We scan the entire \texttt{toponyms} corpus (112 million records) to build the character vocabulary. Crucially, this scan is followed by script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii to reduce the intractable logographic space to Latin characters, while Korean Hangul is decomposed into constitutive Jamo to expose phonetic structure. This ensures the vocabulary captures every token the model will encounter, covering rare characters in scripts retained in their native forms (e.g., Cyrillic, Arabic, Devanagari) while handling large-inventory scripts efficiently. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
-    \item \textbf{Pass 2 (Training Pairs):} We generate candidate triplets from the \texttt{places} index, which groups name variants by entity. These candidates are then restricted to the stratified quotas defined above.
+    \item \textbf{Pass 1 (Vocabulary):} We scan the entire corpus (112 million toponyms) to build the character vocabulary, applying script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii, while Korean Hangul is decomposed into Jamo. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
+    \item \textbf{Pass 2 (Training Pairs):} We generate candidate pairs from co-located toponyms, restricted to the stratified quotas defined above.
 \end{itemize}
 
-\paragraph{4. Isorthographic Phonetic Consistency.}
-We explicitly retain ``same-string, different-language'' pairs (isorthographs) regardless of whether their pronunciation differs.
-\begin{itemize}
-    \item \textbf{Teacher Signal:} The Teacher network receives sequences of PanPhon articulatory feature vectors derived from IPA transcriptions. It provides the ground truth: if the pronunciation differs (e.g., ``Paris'' in French vs. English), the Teacher pushes the target embeddings apart; if pronunciation is stable (e.g., ``Berlin'' in German vs. English), it keeps them close.
-    \item \textbf{Student Signal:} The Student receives identical character sequences but distinct Language Embeddings.
-\end{itemize}
-By retaining both diverging and stable isorthographs, we force the Student network to learn when to rely on the Language Embedding to modify its phonetic prediction and when the script alone is sufficient.
+\paragraph{4. Isorthographic Retention.}
+We retain ``same-string, different-language'' pairs (isorthographs) regardless of whether their pronunciation differs. The Teacher network, operating on IPA-derived articulatory features, provides ground truth: if pronunciation differs (e.g., ``Paris'' in French vs.\ English), the Teacher pushes embeddings apart; if pronunciation is stable (e.g., ``Berlin''), it keeps them close. The Student receives identical character sequences but distinct language embeddings, learning when language context modifies phonetic interpretation.
 
-\paragraph{5. Cross-Script Phonetic Alignment.}
-We prioritise pairs that maximize script distance while minimizing phonetic distance. During sampling from the \texttt{places} index, we heavily weight pairs where the source and target scripts differ (e.g., \textcn{北京} vs. Beijing) over same-script variants (Beijing vs. Peking), as the primary architectural goal is to bridge disjoint character spaces.
+\paragraph{5. Cross-Script Prioritisation.}
+We weight cross-script pairs (e.g., \textcn{北京} vs.\ Beijing) higher than same-script variants (Beijing vs.\ Peking) during sampling. When approaching quota limits, cross-script pairs are 3$\times$ more likely to be accepted than same-script pairs, as bridging disjoint character spaces is the primary architectural goal.
+
+\paragraph{6. Deduplication.}
+Duplicate pairs arise from two sources: (a) the same place appearing in multiple authorities (e.g., London exists in GeoNames, Wikidata, and TGN, each providing the pair London@en/Londres@fr), and (b) different places sharing the same name variants (e.g., ``Santiago'' refers to cities in Chile, Spain, Cuba, and the Philippines, each generating Santiago@es/Santiago@en pairs). Without deduplication, identical toponym pairs would be massively over-represented. We maintain a global set of seen pairs and emit each unique (anchor, positive) combination only once, regardless of provenance.
 
 \subsection{Dataset Composition}
 Following these criteria, the training distribution is forcibly balanced. While the total volume of Latin script tokens remains high due to its ubiquity as a pivot script, the relative representation of Devanagari, Bengali, Tamil, Telugu, Thai, and other under-resourced scripts is boosted to meet minimum training thresholds.
@@ -403,7 +399,9 @@ While retaining genuine phonetic cognates:
 
 \subsection{IPA Transcription}
 
-The Teacher network requires IPA transcriptions. We use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages covering the majority of GeoNames entries. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction. Names in languages without Epitran support are excluded from Teacher training but can still be processed by the Student, which learns to generalise from related scripts.
+The Teacher network requires IPA transcriptions. We use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction.
+
+Toponyms in languages without Epitran support are excluded from both Teacher training (Phase 1) and Student distillation (Phase 2), as these phases require Teacher embeddings derived from IPA features. However, these toponyms remain in the corpus and can be processed by the trained Student at inference time, since the Student operates on character sequences without requiring IPA conversion. The degree to which the Student generalises to unseen language/script combinations depends on their phonetic similarity to supported languages---an empirical question we address in Section~\ref{sec:evaluation}.
 
 \subsection{Dataset Statistics}
 
