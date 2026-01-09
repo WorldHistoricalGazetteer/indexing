@@ -945,8 +945,8 @@ do_train_model() {
 
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
-    echo "Config: 1x A100, 128GB RAM, 48H Limit"
-    echo "=========================================="
+    echo "Config: 1x A100, 300GB RAM, 48H Limit"
+    echo "==========================================""
 
     # Defaults
     P1_EPOCHS=50; P2_EPOCHS=50; P3_EPOCHS=30

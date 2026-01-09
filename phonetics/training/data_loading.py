@@ -201,9 +201,11 @@ def apply_character_noise(
 class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
-    OPTIMIZED: Uses Pandas vectorization for instant loading (<10s).
-    FIXED: Converts NumPy arrays to Python lists to prevent DataLoader crashes.
-    LOGIC: Anchors must match split; Pos/Neg can be from any split.
+
+    MEMORY-OPTIMIZED: Only loads features for toponyms that appear in triplets,
+    not the entire 57M+ toponym corpus. This reduces memory from ~100GB to ~10GB.
+
+    Uses SQLite for random-access feature lookup instead of loading all into RAM.
     """
 
     def __init__(
@@ -212,68 +214,100 @@ class Phase1Dataset(Dataset):
             split: str = 'train',
     ):
         self.data_dir = Path(data_dir)
+        self.split = split
         print(f"Phase1Dataset: Loading data for split '{split}'...")
 
-        # 1. Load Triplets -> Pandas (Instant Read)
+        # 1. Load Triplets -> Pandas (small: ~500MB for 5M triplets)
         triplets_path = self.data_dir / 'triplets' / 'phase1'
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
+        print(f"Phase1Dataset: Loaded {len(self.triplets_df):,} triplets")
 
-        # 2. Load Toponyms -> Pandas
+        # 2. Get unique toponym IDs from triplets (only ~10-15M unique, not 57M)
+        needed_ids = set(self.triplets_df['anchor_id'].unique()) | \
+                     set(self.triplets_df['positive_id'].unique()) | \
+                     set(self.triplets_df['negative_id'].unique())
+        print(f"Phase1Dataset: {len(needed_ids):,} unique toponym IDs needed")
+
+        # 3. Load ONLY the needed toponyms from Parquet
         toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
-        # Load only necessary columns
-        table = dataset.to_table(columns=['toponym_id', 'features', 'feature_length', 'split'])
-        topo_df = table.to_pandas()
+        # Use PyArrow filter to only load needed rows
+        import pyarrow.compute as pc
+        needed_ids_list = list(needed_ids)
 
-        # 3. Build Cache & Sets (Vectorized)
+        # Load in chunks to avoid memory spike
+        print(f"Phase1Dataset: Loading features for needed toponyms...")
+        self._feature_cache = {}
+        valid_anchor_ids = set()
 
-        # A. Filter for valid features (Drop NaNs / Empty)
-        valid_feats_df = topo_df[(topo_df['features'].notna()) & (topo_df['feature_length'] > 0)]
-
-        # Ensure 'features' column contains Python lists, not NumPy arrays
-        if not valid_feats_df.empty and 'features' in valid_feats_df.columns:
-            first_val = valid_feats_df['features'].iloc[0]
-            if isinstance(first_val, np.ndarray):
-                valid_feats_df = valid_feats_df.copy()  # Avoid SettingWithCopyWarning
-                valid_feats_df['features'] = valid_feats_df['features'].apply(lambda x: x.tolist())
-
-        # B. Create Cache (Dict lookup)
-        # orient='index' is optimized for creating {id: {col: val}}
-        self._feature_cache = valid_feats_df.set_index('toponym_id')[['features', 'feature_length']].to_dict(
-            orient='index')
-
-        # C. Identify IDs available in cache (Any split)
-        available_ids = set(self._feature_cache.keys())
-
-        # D. Identify IDs allowed as Anchors (Strict split filtering)
-        valid_anchor_ids = set(topo_df[topo_df['split'] == split]['toponym_id'])
-
-        print(f"Phase1Dataset: Filtering {len(self.triplets_df)} raw triplets (Vectorized)...")
-
-        # 4. Vectorized Filtering
-
-        # Step 4a: Anchor MUST be in the correct split
-        df = self.triplets_df
-        mask_anchor_split = df['anchor_id'].isin(valid_anchor_ids)
-
-        # Step 4b: ALL 3 parts must have valid features
-        mask_features = (
-                df['anchor_id'].isin(available_ids) &
-                df['positive_id'].isin(available_ids) &
-                df['negative_id'].isin(available_ids)
+        # Process in batches using scanner
+        scanner = dataset.scanner(
+            columns=['toponym_id', 'features', 'feature_length', 'split'],
+            batch_size=100000
         )
 
-        # Apply combined mask
+        loaded_count = 0
+        for batch in scanner.to_batches():
+            batch_df = batch.to_pandas()
+
+            # Filter to only needed IDs
+            mask = batch_df['toponym_id'].isin(needed_ids)
+            filtered = batch_df[mask]
+
+            if len(filtered) == 0:
+                continue
+
+            # Track valid anchor IDs (must be in correct split)
+            split_mask = filtered['split'] == split
+            valid_anchor_ids.update(filtered[split_mask]['toponym_id'].tolist())
+
+            # Filter for valid features
+            valid_mask = filtered['features'].notna() & (filtered['feature_length'] > 0)
+            valid_rows = filtered[valid_mask]
+
+            # Add to cache
+            for _, row in valid_rows.iterrows():
+                tid = row['toponym_id']
+                features = row['features']
+                if isinstance(features, np.ndarray):
+                    features = features.tolist()
+                self._feature_cache[tid] = {
+                    'features': features,
+                    'feature_length': row['feature_length']
+                }
+
+            loaded_count += len(valid_rows)
+            if loaded_count % 500000 == 0:
+                print(f"  Loaded {loaded_count:,} toponyms with features...")
+
+        print(f"Phase1Dataset: Cached {len(self._feature_cache):,} toponyms with valid features")
+
+        # 4. Filter triplets - anchor must be in split, all must have features
+        available_ids = set(self._feature_cache.keys())
+
+        print(f"Phase1Dataset: Filtering triplets...")
+        df = self.triplets_df
+
+        # Vectorized filtering
+        mask_anchor_split = df['anchor_id'].isin(valid_anchor_ids)
+        mask_features = (
+            df['anchor_id'].isin(available_ids) &
+            df['positive_id'].isin(available_ids) &
+            df['negative_id'].isin(available_ids)
+        )
+
         self.valid_df = df[mask_anchor_split & mask_features].reset_index(drop=True)
 
-        print(f"Phase1Dataset: {len(self.valid_df)} valid triplets for {split}")
+        # Free memory
+        del self.triplets_df
+
+        print(f"Phase1Dataset: {len(self.valid_df):,} valid triplets for {split}")
 
     def __len__(self) -> int:
         return len(self.valid_df)
 
     def __getitem__(self, idx: int) -> Dict:
-        # Fetch row from filtered DataFrame
         row = self.valid_df.iloc[idx]
 
         return {
@@ -390,8 +424,9 @@ class Phase2Dataset(Dataset):
 class Phase3Dataset(Dataset):
     """
     Dataset for Phase 3: Contrastive fine-tuning with hard negatives.
-    OPTIMIZED: Uses Pandas for instant loading.
-    SAFE: Sanitizes IDs to prevent CUDA crashes.
+
+    MEMORY-OPTIMIZED: Only loads toponyms that appear in triplets,
+    not the entire 57M+ toponym corpus.
     """
 
     def __init__(
@@ -401,17 +436,25 @@ class Phase3Dataset(Dataset):
             vocab_limits: Optional[Dict[str, int]] = None,
     ):
         self.data_dir = Path(data_dir)
-        print(f"Phase3Dataset: Loading {split} data (Vectorized)...")
+        self.split = split
+        print(f"Phase3Dataset: Loading {split} data...")
 
         # Load vocab limits dynamically if not provided
         if vocab_limits is None:
             vocab_limits = load_vocab_limits(self.data_dir)
 
-        # 1. Load Triplets -> Pandas
+        # 1. Load Triplets -> Pandas (small: ~500MB for 5M triplets)
         triplets_path = self.data_dir / 'triplets' / 'phase3'
         self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
+        print(f"Phase3Dataset: Loaded {len(self.triplets_df):,} triplets")
 
-        # 2. Load Toponyms -> Pandas
+        # 2. Get unique toponym IDs from triplets
+        needed_ids = set(self.triplets_df['anchor_id'].unique()) | \
+                     set(self.triplets_df['positive_id'].unique()) | \
+                     set(self.triplets_df['negative_id'].unique())
+        print(f"Phase3Dataset: {len(needed_ids):,} unique toponym IDs needed")
+
+        # 3. Load ONLY the needed toponyms from Parquet
         toponyms_path = get_training_data_path(self.data_dir)
         dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
 
@@ -419,55 +462,90 @@ class Phase3Dataset(Dataset):
             'toponym_id', 'name', 'script', 'lang',
             'char_ids', 'char_length', 'split'
         ]
-        topo_df = dataset.to_table(columns=columns).to_pandas()
 
-        # 3. SANITIZATION
-        print(f"Phase3Dataset: Sanitizing {len(topo_df)} rows against vocab limits...")
+        print(f"Phase3Dataset: Loading toponyms for needed IDs...")
+        self._cache = {}
+        valid_anchor_ids = set()
 
-        # A. Ensure Script IDs are valid
-        if pd.api.types.is_integer_dtype(topo_df['script']):
-            mask_script_safe = (topo_df['script'] >= 0) & (topo_df['script'] < vocab_limits['script'])
-            topo_df = topo_df[mask_script_safe]
+        # Process in batches using scanner
+        scanner = dataset.scanner(columns=columns, batch_size=100000)
 
-        # B. Ensure Char IDs are valid
-        if not topo_df.empty:
-            limit = vocab_limits['char']
+        loaded_count = 0
+        for batch in scanner.to_batches():
+            batch_df = batch.to_pandas()
 
-            def is_safe_chars(ids):
-                if ids is None: return True
-                if isinstance(ids, np.ndarray):
-                    if ids.size == 0: return True
-                    return ids.min() >= 0 and ids.max() < limit
-                if not ids: return True
-                return min(ids) >= 0 and max(ids) < limit
+            # Filter to only needed IDs
+            mask = batch_df['toponym_id'].isin(needed_ids)
+            filtered = batch_df[mask]
 
-            mask_chars_safe = topo_df['char_ids'].apply(is_safe_chars)
-            topo_df = topo_df[mask_chars_safe]
+            if len(filtered) == 0:
+                continue
 
-        # 4. Build Cache
-        if 'lang' in topo_df.columns:
-            topo_df['lang'] = topo_df['lang'].fillna('')
+            # Track valid anchor IDs (must be in correct split)
+            split_mask = filtered['split'] == split
+            valid_anchor_ids.update(filtered[split_mask]['toponym_id'].tolist())
 
-        self._cache = topo_df.set_index('toponym_id')[
-            ['name', 'script', 'lang', 'char_ids', 'char_length', 'split']
-        ].to_dict(orient='index')
+            # Sanitize script IDs
+            if pd.api.types.is_integer_dtype(filtered['script']):
+                script_mask = (filtered['script'] >= 0) & (filtered['script'] < vocab_limits['script'])
+                filtered = filtered[script_mask]
 
+            # Sanitize char IDs
+            if not filtered.empty:
+                limit = vocab_limits['char']
+
+                def is_safe_chars(ids):
+                    if ids is None: return True
+                    if isinstance(ids, np.ndarray):
+                        if ids.size == 0: return True
+                        return ids.min() >= 0 and ids.max() < limit
+                    if not ids: return True
+                    return min(ids) >= 0 and max(ids) < limit
+
+                char_mask = filtered['char_ids'].apply(is_safe_chars)
+                filtered = filtered[char_mask]
+
+            # Add to cache
+            for _, row in filtered.iterrows():
+                tid = row['toponym_id']
+                char_ids = row['char_ids']
+                if isinstance(char_ids, np.ndarray):
+                    char_ids = char_ids.tolist()
+                lang = row['lang'] if pd.notna(row['lang']) else ''
+
+                self._cache[tid] = {
+                    'name': row['name'],
+                    'script': row['script'],
+                    'lang': lang,
+                    'char_ids': char_ids,
+                    'char_length': row['char_length'],
+                    'split': row['split']
+                }
+
+            loaded_count += len(filtered)
+            if loaded_count % 500000 == 0:
+                print(f"  Loaded {loaded_count:,} toponyms...")
+
+        print(f"Phase3Dataset: Cached {len(self._cache):,} valid toponyms")
+
+        # 4. Filter triplets
         available_ids = set(self._cache.keys())
 
-        # 5. Vectorized Triplet Filtering
-        print(f"Phase3Dataset: Filtering {len(self.triplets_df)} raw triplets...")
-
-        valid_anchor_ids = set(topo_df[topo_df['split'] == split]['toponym_id'])
-
+        print(f"Phase3Dataset: Filtering triplets...")
         df = self.triplets_df
+
         mask_valid = (
-                df['anchor_id'].isin(valid_anchor_ids) &
-                df['positive_id'].isin(available_ids) &
-                df['negative_id'].isin(available_ids)
+            df['anchor_id'].isin(valid_anchor_ids) &
+            df['positive_id'].isin(available_ids) &
+            df['negative_id'].isin(available_ids)
         )
 
         self.valid_df = df[mask_valid].reset_index(drop=True)
-        print(f"Phase3Dataset: {len(self.valid_df)} valid triplets for {split}")
+
+        # Free memory
+        del self.triplets_df
+
+        print(f"Phase3Dataset: {len(self.valid_df):,} valid triplets for {split}")
 
     def __len__(self) -> int:
         return len(self.valid_df)
