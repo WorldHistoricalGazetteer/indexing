@@ -198,6 +198,90 @@ def apply_character_noise(
 # Dataset Classes
 # ============================================================================
 
+class Phase1DatasetEnriched(Dataset):
+    """
+    FAST Dataset for Phase 1: Uses pre-enriched triplets with embedded features.
+
+    This avoids the expensive join at load time by reading triplet files that
+    already contain anchor/positive/negative features. Loading is instant (~10s)
+    instead of ~30 minutes.
+
+    Use this if triplets were generated with --enrich-triplets flag.
+    Falls back to Phase1Dataset if enriched triplets not found.
+    """
+
+    def __init__(
+            self,
+            data_dir: Path,
+            split: str = 'train',
+    ):
+        self.data_dir = Path(data_dir)
+        self.split = split
+
+        # Check for enriched triplets
+        enriched_path = self.data_dir / 'triplets' / 'phase1_enriched'
+        if not enriched_path.exists():
+            print(f"Phase1DatasetEnriched: Enriched triplets not found, falling back to Phase1Dataset", flush=True)
+            # Delegate to standard loader
+            self._delegate = Phase1Dataset(data_dir, split)
+            self._use_delegate = True
+            return
+
+        self._use_delegate = False
+        print(f"Phase1DatasetEnriched: Loading enriched triplets for split '{split}'...", flush=True)
+
+        # Load enriched triplets directly - they already contain features!
+        dataset = ds.dataset(enriched_path, format='parquet')
+
+        # Filter by split and ensure features exist
+        df = dataset.to_table().to_pandas()
+
+        # Filter to split
+        mask = df['split'] == split
+        self.triplets_df = df[mask].reset_index(drop=True)
+
+        print(f"Phase1DatasetEnriched: {len(self.triplets_df):,} triplets for {split}", flush=True)
+
+    def __len__(self) -> int:
+        if self._use_delegate:
+            return len(self._delegate)
+        return len(self.triplets_df)
+
+    def __getitem__(self, idx: int) -> Dict:
+        if self._use_delegate:
+            return self._delegate[idx]
+
+        row = self.triplets_df.iloc[idx]
+
+        # Features are already embedded in the triplet
+        anchor_features = row['anchor_features']
+        positive_features = row['positive_features']
+        negative_features = row['negative_features']
+
+        # Convert numpy arrays to lists if needed
+        if hasattr(anchor_features, 'tolist'):
+            anchor_features = anchor_features.tolist()
+        if hasattr(positive_features, 'tolist'):
+            positive_features = positive_features.tolist()
+        if hasattr(negative_features, 'tolist'):
+            negative_features = negative_features.tolist()
+
+        return {
+            'anchor': {
+                'features': anchor_features,
+                'feature_length': row['anchor_feature_length'],
+            },
+            'positive': {
+                'features': positive_features,
+                'feature_length': row['positive_feature_length'],
+            },
+            'negative': {
+                'features': negative_features,
+                'feature_length': row['negative_feature_length'],
+            },
+        }
+
+
 class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
@@ -794,9 +878,26 @@ def create_phase1_dataloader(
         batch_size: int = 128,
         num_workers: int = 4,
         shuffle: bool = True,
+        use_enriched: bool = True,
 ) -> DataLoader:
-    """Create DataLoader for Phase 1 training."""
-    dataset = Phase1Dataset(data_dir, split)
+    """
+    Create DataLoader for Phase 1 training.
+
+    Args:
+        use_enriched: If True, prefer Phase1DatasetEnriched (instant load).
+                      Falls back to Phase1Dataset if enriched not available.
+    """
+    # Try enriched dataset first (instant load vs 30+ minutes)
+    if use_enriched:
+        enriched_path = Path(data_dir) / 'triplets' / 'phase1_enriched'
+        if enriched_path.exists():
+            dataset = Phase1DatasetEnriched(data_dir, split)
+        else:
+            print(f"Enriched triplets not found at {enriched_path}, using standard loader", flush=True)
+            dataset = Phase1Dataset(data_dir, split)
+    else:
+        dataset = Phase1Dataset(data_dir, split)
+
     return DataLoader(
         dataset,
         batch_size=batch_size,

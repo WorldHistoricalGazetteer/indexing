@@ -877,6 +877,7 @@ echo
 
 # Run pair generation using SQLite-driven streaming with parallel similarity
 # Uses scratch for staging DB, output goes to network storage
+# Enrichment is ON by default for faster training data loading
 echo "Running parallel pair generation with \$NUM_WORKERS workers..."
 
 python -m phonetics.extraction.generate_pairs \
@@ -897,6 +898,7 @@ rm -f "${DATA_DIR}/pair_generation_stats.json"
 
 mkdir -p "${DATA_DIR}/pairs"
 mkdir -p "${DATA_DIR}/triplets/phase1"
+mkdir -p "${DATA_DIR}/triplets/phase1_enriched"
 mkdir -p "${DATA_DIR}/triplets/phase3"
 
 rsync -av "\${SCRATCH}/pairs/" "${DATA_DIR}/pairs/"
@@ -988,7 +990,8 @@ mkdir -p \${SCRATCH_ROOT}/triplets
 mkdir -p \${SCRATCH_ROOT}/training
 mkdir -p \${SCRATCH_ROOT}/vocab
 
-(cd "${DATA_DIR}/triplets" && tar cf - phase1) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
+# Stage triplets (prefer enriched if available for instant loading)
+(cd "${DATA_DIR}/triplets" && tar cf - phase1 phase1_enriched 2>/dev/null) | (cd \${SCRATCH_ROOT}/triplets && tar xf -)
 (cd "${DATA_DIR}" && tar cf - training vocab) | (cd \${SCRATCH_ROOT} && tar xf -)
 
 echo "Starting Phase 1 (Teacher)..."

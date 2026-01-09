@@ -919,6 +919,154 @@ def generate_triplets(
 
 
 # =============================================================================
+# TRIPLET ENRICHMENT (Add features to avoid join at training time)
+# =============================================================================
+
+def enrich_triplets_with_features(
+    data_dir: Path,
+    triplets_dir: Path,
+    output_dir: Path,
+    num_workers: int = DEFAULT_NUM_WORKERS,
+) -> Dict:
+    """
+    Enrich triplet Parquet files with pre-computed features.
+
+    This avoids the expensive join at training time by embedding
+    anchor/positive/negative features directly in the triplet file.
+
+    Args:
+        data_dir: Directory containing training/ Parquet files
+        triplets_dir: Directory containing triplet Parquet files
+        output_dir: Output directory for enriched triplets
+        num_workers: Number of parallel workers
+
+    Returns:
+        Statistics dictionary
+    """
+    import pyarrow.dataset as ds
+
+    logger.info("=" * 60)
+    logger.info("ENRICHING TRIPLETS WITH FEATURES")
+    logger.info("=" * 60)
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Load training data with features
+    training_path = data_dir / 'training'
+    if not training_path.exists():
+        logger.error(f"Training data not found: {training_path}")
+        return {}
+
+    logger.info("Loading feature index from training Parquet...")
+    training_ds = ds.dataset(training_path, format='parquet', partitioning='hive')
+
+    # Build feature lookup dict (only load needed columns)
+    feature_index = {}
+    scanner = training_ds.scanner(
+        columns=['toponym_id', 'features', 'feature_length', 'split'],
+        batch_size=100000
+    )
+
+    loaded = 0
+    for batch in scanner.to_batches():
+        df = batch.to_pandas()
+        valid = df[df['features'].notna() & (df['feature_length'] > 0)]
+        for _, row in valid.iterrows():
+            features = row['features']
+            if hasattr(features, 'tolist'):
+                features = features.tolist()
+            feature_index[row['toponym_id']] = {
+                'features': features,
+                'feature_length': int(row['feature_length']),
+                'split': row['split'],
+            }
+        loaded += len(valid)
+        if loaded % 1000000 == 0:
+            logger.info(f"  Indexed {loaded:,} toponyms with features...")
+
+    logger.info(f"Feature index: {len(feature_index):,} toponyms")
+
+    # Load triplets and enrich
+    triplets_ds = ds.dataset(triplets_dir, format='parquet')
+
+    schema = pa.schema([
+        ('anchor_id', pa.string()),
+        ('positive_id', pa.string()),
+        ('negative_id', pa.string()),
+        ('negative_type', pa.string()),
+        ('anchor_features', pa.list_(pa.float32())),
+        ('anchor_feature_length', pa.int16()),
+        ('positive_features', pa.list_(pa.float32())),
+        ('positive_feature_length', pa.int16()),
+        ('negative_features', pa.list_(pa.float32())),
+        ('negative_feature_length', pa.int16()),
+        ('split', pa.string()),  # From anchor
+    ])
+
+    buffer = []
+    part_num = 0
+    total = 0
+    skipped = 0
+
+    logger.info("Enriching triplets...")
+
+    for batch in triplets_ds.to_batches():
+        for i in range(len(batch)):
+            anchor_id = batch['anchor_id'][i].as_py()
+            positive_id = batch['positive_id'][i].as_py()
+            negative_id = batch['negative_id'][i].as_py()
+            neg_type = batch['negative_type'][i].as_py()
+
+            # Look up features
+            anchor_info = feature_index.get(anchor_id)
+            positive_info = feature_index.get(positive_id)
+            negative_info = feature_index.get(negative_id)
+
+            # Skip if any missing features
+            if not anchor_info or not positive_info or not negative_info:
+                skipped += 1
+                continue
+
+            buffer.append({
+                'anchor_id': anchor_id,
+                'positive_id': positive_id,
+                'negative_id': negative_id,
+                'negative_type': neg_type,
+                'anchor_features': anchor_info['features'],
+                'anchor_feature_length': anchor_info['feature_length'],
+                'positive_features': positive_info['features'],
+                'positive_feature_length': positive_info['feature_length'],
+                'negative_features': negative_info['features'],
+                'negative_feature_length': negative_info['feature_length'],
+                'split': anchor_info['split'],
+            })
+            total += 1
+
+            if len(buffer) >= BATCH_SIZE:
+                table = pa.Table.from_pylist(buffer, schema=schema)
+                pq.write_table(table, output_dir / f"part-{part_num:04d}.parquet", compression='snappy')
+                part_num += 1
+                buffer = []
+                if total % 500000 == 0:
+                    logger.info(f"  Enriched {total:,} triplets...")
+
+    # Write remaining
+    if buffer:
+        table = pa.Table.from_pylist(buffer, schema=schema)
+        pq.write_table(table, output_dir / f"part-{part_num:04d}.parquet", compression='snappy')
+
+    logger.info(f"Enriched {total:,} triplets ({skipped:,} skipped due to missing features)")
+
+    # Free memory
+    del feature_index
+
+    return {
+        'total_enriched': total,
+        'skipped': skipped,
+    }
+
+
+# =============================================================================
 # CLI
 # =============================================================================
 
@@ -942,6 +1090,8 @@ def main():
                         help='Skip pair generation')
     parser.add_argument('--skip-triplets', action='store_true',
                         help='Skip triplet generation')
+    parser.add_argument('--skip-enrichment', action='store_true',
+                        help='Skip triplet enrichment (enrichment is ON by default for faster training)')
     args = parser.parse_args()
 
     db_path = args.data_dir / 'toponyms.db'
@@ -978,6 +1128,23 @@ def main():
             limit=args.limit,
             scratch_dir=args.scratch_dir,
         )
+
+    # Enrich triplets with pre-computed features (default ON for faster training)
+    if not args.skip_enrichment:
+        # Enrich Phase 1 triplets
+        enrich_triplets_with_features(
+            data_dir=args.data_dir,
+            triplets_dir=args.data_dir / 'triplets' / 'phase1',
+            output_dir=args.data_dir / 'triplets' / 'phase1_enriched',
+            num_workers=args.num_workers,
+        )
+
+        # Enrich Phase 3 triplets (uses char_ids, not features, but same pattern)
+        # Note: Phase 3 uses char_ids not features, so we'd need a different enrichment
+        # For now, only Phase 1 benefits from feature enrichment
+        logger.info("Phase 3 uses char_ids (embedded in Student), enrichment not needed")
+    else:
+        logger.info("Skipping triplet enrichment (--skip-enrichment specified)")
 
     logger.info("Done!")
 
