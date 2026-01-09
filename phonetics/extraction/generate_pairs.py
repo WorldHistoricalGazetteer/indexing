@@ -558,8 +558,8 @@ def generate_pairs(
     stats.update(quota.get_stats())
     stats['unique_pairs'] = final_count
 
-    # Save stats
-    stats_path = output_dir / 'pair_generation_stats.json'
+    # Save stats to PARENT directory (not in pairs/ to avoid PyArrow confusion)
+    stats_path = output_dir.parent / 'pair_generation_stats.json'
     with open(stats_path, 'w') as f:
         json.dump(stats, f, indent=2)
     logger.info(f"Statistics saved to: {stats_path}")

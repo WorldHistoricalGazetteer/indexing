@@ -895,15 +895,18 @@ mkdir -p "${DATA_DIR}/triplets/phase3"
 
 rsync -av "\${SCRATCH}/pairs/" "${DATA_DIR}/pairs/"
 rsync -av "\${SCRATCH}/triplets/" "${DATA_DIR}/triplets/"
+# Copy stats file (saved to parent of pairs/)
+cp "\${SCRATCH}/pair_generation_stats.json" "${DATA_DIR}/" 2>/dev/null || true
 
 echo
 echo "=============================================="
 echo "JOB COMPLETE"
 echo "=============================================="
 echo "Output:"
-echo "  - ${DATA_DIR}/pairs/          Positive pairs"
-echo "  - ${DATA_DIR}/triplets/phase1 Phase 1 triplets (random negatives)"
-echo "  - ${DATA_DIR}/triplets/phase3 Phase 3 triplets (hard negatives)"
+echo "  - ${DATA_DIR}/pairs/                    Positive pairs"
+echo "  - ${DATA_DIR}/triplets/phase1           Phase 1 triplets (random negatives)"
+echo "  - ${DATA_DIR}/triplets/phase3           Phase 3 triplets (hard negatives)"
+echo "  - ${DATA_DIR}/pair_generation_stats.json Statistics"
 echo
 echo "Next: source es.sh -train-model $DATA_VERSION"
 echo
