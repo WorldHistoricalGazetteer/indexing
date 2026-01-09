@@ -90,8 +90,11 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 
 \section*{Remaining Work}
 \begin{enumerate}
-\item Proceed with model training (Phases 1--3)
+\item \sout{Phase 1 training} \textit{In progress (Epoch 8/50 as of 2026-01-09 11:48)}
+\item Phase 2 training (Student-Teacher alignment)
+\item Phase 3 training (hard negative fine-tuning)
 \item Update evaluation sections after training completes
+\item Generate training curves figure
 \end{enumerate}
 
 \section*{Sections Still Requiring Updates After Retraining}
@@ -481,14 +484,20 @@ The Teacher network learns to produce embeddings where phonetically similar topo
 
 where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and negative (different place) toponyms, and $m$ is the margin (we use $m = 0.3$).
 
-Negatives are sampled from the same batch (in-batch negatives), ensuring the Teacher learns to distinguish phonetically similar but geographically distinct names.
+Negatives are sampled randomly from the full toponym pool for Phase 1, ensuring broad coverage of the phonetic space before hard negative mining in Phase 3.
+
+\paragraph{Effective Training Set.} Of the 5,088,419 generated triplets, only those where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 7,987,814 unique toponym IDs referenced in triplets, 3,663,966 (45.9\%) have Epitran-supported language codes and valid PanPhon features. After filtering, \textbf{467,546 triplets} remain for training and \textbf{58,316} for validation. This reduction (to 9.2\% of generated triplets) follows from the joint probability: if 45.9\% of toponyms have features, the probability all three in a triplet have features is approximately $0.459^3 \approx 9.7\%$.
+
+Despite this reduction, the training set remains adequate: 467K triplets $\times$ 50 epochs yields 23.4M training examples, comparable to successful Siamese network training regimes in prior work. The Student network in Phase 2, operating on raw characters rather than IPA, will generalise to the remaining languages and scripts not covered by Epitran.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
-    \item Optimiser: AdamW with weight decay 0.01
-    \item Learning rate: $5 \times 10^{-4}$ with cosine annealing
-    \item Batch size: 256 triplets
+    \item Model: PhoneticEncoder with \textbf{1,008,513 parameters}
+    \item Optimiser: AdamW with weight decay $10^{-5}$
+    \item Learning rate: $10^{-3}$ with cosine annealing
+    \item Batch size: 128 triplets
     \item Epochs: 50
+    \item Training time: $\sim$3 minutes/epoch ($\sim$20 batches/second on A100)
 \end{itemize}
 
 \subsection{Phase 2: Student-Teacher Alignment}
@@ -545,7 +554,7 @@ Crucially, we explicitly \textbf{exclude} co-located toponyms from being selecte
 
 \subsection{Implementation Details}
 
-Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains approximately 2M parameters; the Student approximately 4M parameters (larger due to character vocabulary). Phase 1 completes in approximately 2 hours; Phase 2 in approximately 9 hours; Phase 3 in approximately 12 hours.
+Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student is larger due to the character embedding vocabulary (exact count pending Phase 2 completion). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 and Phase 3 timing pending.
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Experiments with 64, 128, and 256 dimensions showed diminishing returns above 128 for toponym matching.
 
