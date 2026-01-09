@@ -805,29 +805,14 @@ EOF
 }
 
 # ==============================================================================
-# TRAINING PAIR/TRIPLET GENERATION (Requires ES + extracted toponyms)
+# TRAINING PAIR/TRIPLET GENERATION (Uses SQLite - no ES required)
 # ==============================================================================
 
 do_generate_pairs() {
     # Usage: source es.sh -generate-pairs VERSION
-    # Generates pairs and triplets from co-located toponyms in places index
+    # Generates pairs and triplets from SQLite database (toponym_attestations table)
 
     DATA_VERSION=${1:-3}
-
-    # Check staging is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: No staging ES instance running"
-        echo "Start one first with: source es.sh -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    # Verify ES is responding
-    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-        return 1
-    fi
 
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
     mkdir -p "$LOG_DIR"
@@ -835,9 +820,9 @@ do_generate_pairs() {
     # Output directory for training data
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
 
-    # Check that training parquet exists
-    if [ ! -d "${DATA_DIR}/training" ]; then
-        echo "ERROR: Training data not found at ${DATA_DIR}/training"
+    # Check that SQLite database exists
+    if [ ! -f "${DATA_DIR}/toponyms.db" ]; then
+        echo "ERROR: SQLite database not found at ${DATA_DIR}/toponyms.db"
         echo "Run -rebuild-toponyms first."
         return 1
     fi
@@ -845,13 +830,14 @@ do_generate_pairs() {
     echo "Submitting pair/triplet generation job..."
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Data Dir:     ${DATA_DIR}"
-    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    echo "  SQLite DB:    ${DATA_DIR}/toponyms.db"
     echo
     echo "This job will:"
-    echo "  1. Scan places index for co-located toponyms"
-    echo "  2. Generate positive pairs (phonetic similarity >= 0.35)"
-    echo "  3. Generate Phase 1 triplets (random negatives)"
-    echo "  4. Generate Phase 3 triplets (hard negatives)"
+    echo "  1. Load toponyms from SQLite database"
+    echo "  2. Scan toponym_attestations for co-located toponyms"
+    echo "  3. Generate positive pairs (phonetic similarity >= 0.35)"
+    echo "  4. Generate Phase 1 triplets (random negatives)"
+    echo "  5. Generate Phase 3 triplets (hard negatives)"
     echo
 
     JOBID=$(sbatch --parsable <<EOF
@@ -859,11 +845,11 @@ do_generate_pairs() {
 #SBATCH --job-name=whg-pairs-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/pairs_v${DATA_VERSION}_%j.out
 #SBATCH --error=${LOG_DIR}/pairs_v${DATA_VERSION}_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --time=24:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=256G
 
 set -e
 
@@ -878,20 +864,43 @@ fi
 
 cd "$REPO_DIR"
 
+# Use fast local scratch disk
+SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\${SCRATCH}"
+
 echo "=============================================="
 echo "PAIR/TRIPLET GENERATION"
 echo "=============================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
 echo "Data Dir: $DATA_DIR"
-echo "ES Host: http://${ES_NODE}:${ES_PORT}"
+echo "Scratch Dir: \${SCRATCH}"
 echo
 
+# Copy SQLite database to fast local scratch
+echo "Copying SQLite database to scratch..."
+cp "${DATA_DIR}/toponyms.db" "\${SCRATCH}/toponyms.db"
+echo "  Done (\$(ls -lh \${SCRATCH}/toponyms.db | awk '{print \$5}'))"
+echo
+
+# Run pair generation using local scratch for SQLite
+# Output goes directly to network storage (pairs are small)
 python -m phonetics.extraction.generate_pairs \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --data-dir "${DATA_DIR}" \
+    --data-dir "\${SCRATCH}" \
     --namespaces gn wd tgn \
     --batch-size 50000
+
+# Copy results from scratch to permanent storage
+echo
+echo "Copying results to permanent storage..."
+mkdir -p "${DATA_DIR}/pairs"
+mkdir -p "${DATA_DIR}/triplets/phase1"
+mkdir -p "${DATA_DIR}/triplets/phase3"
+mkdir -p "${DATA_DIR}/test_pairs"
+
+rsync -av "\${SCRATCH}/pairs/" "${DATA_DIR}/pairs/"
+rsync -av "\${SCRATCH}/triplets/" "${DATA_DIR}/triplets/"
+rsync -av "\${SCRATCH}/test_pairs/" "${DATA_DIR}/test_pairs/"
 
 echo
 echo "=============================================="
@@ -901,6 +910,7 @@ echo "Output:"
 echo "  - ${DATA_DIR}/pairs/          Positive pairs"
 echo "  - ${DATA_DIR}/triplets/phase1 Phase 1 triplets"
 echo "  - ${DATA_DIR}/triplets/phase3 Phase 3 triplets"
+echo "  - ${DATA_DIR}/test_pairs/     Curated test pairs"
 echo
 echo "Next: source es.sh -train-model $DATA_VERSION"
 echo
@@ -1852,12 +1862,13 @@ case "$1" in
         echo "    $0 -rebuild-toponyms 3                    # Full rebuild v3"
         echo "    $0 -rebuild-toponyms 3 --limit 10000      # Test with subset"
         echo
-        echo "GENERATE TRAINING PAIRS/TRIPLETS (requires staging ES + extracted toponyms):"
+        echo "GENERATE TRAINING PAIRS/TRIPLETS (uses SQLite - no ES required):"
         echo "  -generate-pairs VERSION"
-        echo "      Scans places index for co-located toponyms and generates:"
+        echo "      Uses SQLite database to find co-located toponyms and generates:"
         echo "        - Positive pairs (phonetic similarity >= 0.35)"
         echo "        - Phase 1 triplets (random negatives for Teacher)"
         echo "        - Phase 3 triplets (hard negatives for fine-tuning)"
+        echo "      Uses fast local scratch disk for SQLite queries."
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"

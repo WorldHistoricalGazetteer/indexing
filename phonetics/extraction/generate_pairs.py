@@ -1,18 +1,20 @@
 # extractions/generate_pairs.py
 """
-Generate positive pairs and training triplets from extracted Parquet data.
+Generate positive pairs and training triplets from SQLite database.
 
-This script runs AFTER extract_to_parquet.py and:
-1. Scans the ES places index to find co-located toponyms
+This script runs AFTER rebuild_toponyms_index.py and:
+1. Uses the SQLite database (toponym_attestations table) to find co-located toponyms
 2. Generates positive pairs with phonetic similarity filtering (>= 0.35)
 3. Creates triplets for Phase 1 (random negatives) and Phase 3 (hard negatives)
 4. Saves curated test pairs for evaluation
 
-Default namespaces: gn (GeoNames), wd (Wikidata), tgn (Getty TGN)
+This approach is more efficient than scanning ES because:
+- The toponym_attestations table already has place→toponym mappings
+- SQLite can do indexed joins efficiently
+- No network overhead from ES queries
 
 Usage:
     python -m phonetics.extraction.generate_pairs \
-        --es-host "http://localhost:9200" \
         --data-dir /ix1/whcdh/models/phonetic/data/v3 \
         --namespaces gn wd tgn
 """
@@ -21,19 +23,11 @@ import argparse
 import json
 import logging
 import random
+import sqlite3
 import sys
 from collections import defaultdict
 from pathlib import Path
 from typing import Dict, Iterator, List, Optional, Set, Tuple
-
-from processing.settings import ES_HOST
-
-try:
-    from elasticsearch import Elasticsearch
-    from elasticsearch.helpers import scan
-except ImportError:
-    print("Error: elasticsearch package required")
-    sys.exit(1)
 
 try:
     import pyarrow as pa
@@ -52,10 +46,6 @@ try:
     from tqdm import tqdm
 except ImportError:
     tqdm = None
-
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
-
-from phonetics.utils.script_detection import Script
 
 logging.basicConfig(
     level=logging.INFO,
@@ -102,94 +92,105 @@ def build_lang_index(toponym_index: Dict[str, Dict]) -> Dict[str, List[str]]:
 
 
 def load_toponym_index(data_dir: Path) -> Dict[str, Dict]:
-    logger.info("Loading toponym index from Parquet...")
+    """Load toponym index from SQLite database."""
+    logger.info("Loading toponym index from SQLite...")
 
-    # Training data is in 'training/' subdirectory with hive partitioning by script
-    training_path = data_dir / 'training'
-    if not training_path.exists():
-        # Fallback to 'toponyms/' for backward compatibility
-        training_path = data_dir / 'toponyms'
+    db_path = data_dir / 'toponyms.db'
+    if not db_path.exists():
+        raise FileNotFoundError(f"SQLite database not found: {db_path}")
 
-    dataset = ds.dataset(training_path, format='parquet', partitioning='hive')
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.cursor()
 
-    # Check available columns - schema may vary between old and new extractions
-    available_columns = set(dataset.schema.names)
+    # Query the toponyms table (name_romanized is the normalized form)
+    query = """
+    SELECT toponym_id, name, name_romanized, script, lang
+    FROM toponyms
+    """
 
-    # Core columns we need
-    columns = ['toponym_id', 'name', 'script', 'lang']
+    cursor.execute(query)
 
-    # Add normalized name column (different names in old vs new schema)
-    if 'name_romanized' in available_columns:
-        columns.append('name_romanized')
-        name_norm_col = 'name_romanized'
-    elif 'name_normalized' in available_columns:
-        columns.append('name_normalized')
-        name_norm_col = 'name_normalized'
-    else:
-        name_norm_col = None
+    index = {}
+    for row in cursor:
+        tid, name, name_romanized, script, lang = row
+        # Use name_romanized as normalized form, fall back to computing it
+        name_norm = name_romanized if name_romanized else normalize_for_comparison(name) if name else ''
+        index[tid] = {
+            'name': name or '',
+            'name_normalized': name_norm,
+            'script': script or 'OTHER',
+            'lang': lang,
+        }
 
-    # Optimization: Use Pandas for faster loading if available
-    try:
-        table = dataset.to_table(columns=columns)
-        df = table.to_pandas()
-
-        # Create name_normalized column if we have a source for it
-        if name_norm_col and name_norm_col != 'name_normalized':
-            df['name_normalized'] = df[name_norm_col]
-        elif name_norm_col is None:
-            # Fall back to normalizing name on the fly
-            df['name_normalized'] = df['name'].apply(
-                lambda x: normalize_for_comparison(x) if x else ''
-            )
-
-        # Drop duplicates based on ID to ensure unique index
-        df = df.drop_duplicates(subset=['toponym_id'])
-        # Vectorized dictionary creation
-        index = df.set_index('toponym_id')[['name', 'name_normalized', 'script', 'lang']].to_dict(orient='index')
-    except Exception as e:
-        logger.warning(f"Pandas loading failed: {e}, falling back to PyArrow iteration")
-        # Fallback to pure PyArrow iteration
-        table = dataset.to_table(columns=columns)
-        index = {}
-        for i in range(len(table)):
-            row = {col: table[col][i].as_py() for col in table.column_names}
-            tid = row['toponym_id']
-            # Normalize name
-            name = row.get('name', '')
-            name_norm = row.get(name_norm_col, '') if name_norm_col else ''
-            if not name_norm:
-                name_norm = normalize_for_comparison(name) if name else ''
-            index[tid] = {
-                'name': name,
-                'name_normalized': name_norm,
-                'script': row.get('script', 'OTHER'),
-                'lang': row.get('lang'),
-            }
-
+    conn.close()
     logger.info(f"Loaded {len(index):,} toponyms")
     return index
 
 
 def scan_places_for_pairs(
-        es: Elasticsearch,
+        conn: sqlite3.Connection,
         namespaces: List[str],
-        index: str = 'places',
-        batch_size: int = 1000,
         min_toponyms: int = 2,
 ) -> Iterator[Tuple[str, str, List[Dict]]]:
-    query = {
-        "query": {"terms": {"namespace": namespaces}},
-        "_source": ["namespace", "toponyms"]
-    }
+    """
+    Scan places and yield those with multiple toponyms.
 
-    for doc in scan(es, index=index, query=query, scroll='20m', size=batch_size):
-        place_id = doc['_id']
-        source = doc['_source']
-        namespace = source.get('namespace', 'other')
-        toponyms = source.get('toponyms', [])
+    Uses toponym_attestations to group toponyms by place_id,
+    filtering to specified namespaces.
+    """
+    cursor = conn.cursor()
 
-        if len(toponyms) >= min_toponyms:
-            yield place_id, namespace, toponyms
+    # Build namespace filter - place_id is like 'gn:12345' so we use LIKE
+    namespace_conditions = ' OR '.join([f"ta.place_id LIKE '{ns}:%'" for ns in namespaces])
+
+    # Join toponyms with attestations to get all toponyms per place
+    # Order by place_id to enable grouping
+    query = f"""
+    SELECT 
+        ta.place_id,
+        t.toponym_id,
+        t.name,
+        t.script,
+        t.lang
+    FROM toponym_attestations ta
+    JOIN toponyms t ON ta.toponym_id = t.toponym_id
+    WHERE {namespace_conditions}
+    ORDER BY ta.place_id
+    """
+
+    cursor.execute(query)
+
+    current_place = None
+    current_namespace = None
+    toponyms = []
+
+    for row in cursor:
+        place_id, toponym_id, name, script, lang = row
+
+        # Extract namespace from place_id (e.g., 'gn:12345' -> 'gn')
+        namespace = place_id.split(':')[0] if ':' in place_id else 'unknown'
+
+        if current_place != place_id:
+            # Yield previous place if it has enough toponyms
+            if current_place is not None and len(toponyms) >= min_toponyms:
+                yield current_place, current_namespace, toponyms
+
+            current_place = place_id
+            current_namespace = namespace
+            toponyms = []
+
+        toponyms.append({
+            'toponym_id': toponym_id,
+            'name': name,
+            'script': script,
+            'lang': lang,
+        })
+
+    # Don't forget the last place
+    if current_place is not None and len(toponyms) >= min_toponyms:
+        yield current_place, current_namespace, toponyms
+
+    cursor.close()
 
 
 def normalize_for_comparison(name: str) -> str:
@@ -340,13 +341,14 @@ def _write_batch(output_dir: Path, records: List[Dict], part_num: int, schema: p
 
 
 def generate_pairs(
-        es: Elasticsearch,
+        conn: sqlite3.Connection,
         data_dir: Path,
         namespaces: List[str],
         output_dir: Path,
         batch_size: int = 50000,
         limit: Optional[int] = None,
 ) -> int:
+    """Generate positive pairs from co-located toponyms."""
     logger.info("Generating positive pairs...")
     toponym_index = load_toponym_index(data_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -355,12 +357,20 @@ def generate_pairs(
     total_pairs = 0
     part_num = 0
 
-    query = {"query": {"terms": {"namespace": namespaces}}}
-    total_places = es.count(index='places', body=query)['count']
-    if limit: total_places = min(total_places, limit)
+    # Count total places for progress bar
+    cursor = conn.cursor()
+    namespace_conditions = ' OR '.join([f"place_id LIKE '{ns}:%'" for ns in namespaces])
+    cursor.execute(f"SELECT COUNT(DISTINCT place_id) FROM toponym_attestations WHERE {namespace_conditions}")
+    total_places = cursor.fetchone()[0]
+    cursor.close()
 
-    iterator = scan_places_for_pairs(es, namespaces)
-    if tqdm: iterator = tqdm(iterator, total=total_places, desc="Scanning places")
+    if limit:
+        total_places = min(total_places, limit)
+    logger.info(f"Scanning {total_places:,} places with >= 2 toponyms...")
+
+    iterator = scan_places_for_pairs(conn, namespaces)
+    if tqdm:
+        iterator = tqdm(iterator, total=total_places, desc="Scanning places")
 
     places_processed = 0
     for place_id, namespace, toponyms in iterator:
@@ -586,7 +596,6 @@ def generate_curated_test_pairs(
 
 def main():
     parser = argparse.ArgumentParser(description='Generate pairs and triplets')
-    parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--data-dir', type=Path, required=True)
     parser.add_argument('--namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
                         help='Namespaces to use for pair generation (default: gn wd tgn)')
@@ -596,18 +605,14 @@ def main():
     parser.add_argument('--skip-triplets', action='store_true', help='Skip triplet generation')
     args = parser.parse_args()
 
-    es = Elasticsearch(args.es_host)
-    if not es.ping():
-        logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
-        sys.exit(1)
-
     # Generate pairs
     if not args.skip_pairs:
-        generate_pairs(
-            es, args.data_dir, args.namespaces,
-            args.data_dir / 'pairs',
-            args.batch_size, args.limit
-        )
+        with sqlite3.connect(args.data_dir / 'toponyms.db') as conn:
+            generate_pairs(
+                conn, args.data_dir, args.namespaces,
+                args.data_dir / 'pairs',
+                args.batch_size, args.limit
+            )
 
     # Generate triplets
     if not args.skip_triplets:
