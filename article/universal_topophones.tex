@@ -88,11 +88,10 @@ The resulting system enables fuzzy phonetic search across the full WHG corpus wi
 
 In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote{\url{https://docs.whgazetteer.org/content/technical/apis.html\#reconciliation-service-api}} (v2.0), facilitating the work of digital humanities and GLAM (galleries, libraries, archives, museums) professionals who seek to link place references in historical documents, archival catalogues, and research datasets to WHG's consolidated index. Once linked, these references become entry points to a web of related materials---other sources attesting the same places, variant historical names, and cross-references across collections---even when the original materials span multiple scripts, languages, and historical periods.
 
-\section*{Remaining Work After ES Comes Online}
+\section*{Remaining Work}
 \begin{enumerate}
-\item Review extraction\_stats.json for actual numbers
-\item Update Section 4.4 of the .tex with new statistics
-\item Proceed with model training
+\item Proceed with model training (Phases 1--3)
+\item Update evaluation sections after training completes
 \end{enumerate}
 
 \section*{Sections Still Requiring Updates After Retraining}
@@ -456,7 +455,9 @@ The character vocabulary is constructed by scanning all 112M toponyms (not just 
 
 \paragraph{Filtered Lang-Script Mismatches.} The top filtered combinations were: Chinese/Latin (923,079), Persian/Latin (197,099), Japanese/Latin (111,945), Russian/Latin (100,805), and Kazakh/Latin (77,768). These represent pre-romanised forms that would otherwise introduce noise into the training signal.
 
-\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ after romanisation). With approximately 15 million places containing two or more toponyms, and an average of 8 valid pairs per such place after filtering, we estimate 100--120 million training pairs, of which approximately 45\% are cross-script. This yields abundant training signal---two orders of magnitude more than comparable toponym matching systems.
+\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. We generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ for cross-script pairs, $\geq 0.60$ for same-script pairs after romanisation). Same-script cross-language pairs (e.g., London@en vs Londres@fr) are sampled at 20\% to prevent domination by isorthographs.
+
+From an estimated 429 million candidate pairs across 67 million toponyms, our pipeline scanned 175 million before script-pair quotas (100K per combination) were exhausted. Of these, 130 million (74\%) passed similarity thresholds. After quota-based stratified sampling and deduplication (800K duplicates removed), the final training set contains \textbf{5.09 million unique pairs}. While smaller than the raw count suggests, this curated set ensures balanced representation across script pairs and prevents any single script combination from dominating training. Each pair represents a genuine phonetic correspondence verified through co-location in authoritative gazetteer sources.
 
 \section{Training Methodology}
 \label{sec:training}
