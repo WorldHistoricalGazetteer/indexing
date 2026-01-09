@@ -839,7 +839,7 @@ do_generate_pairs() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=256G
+#SBATCH --mem=300G
 
 set -e
 
@@ -853,12 +853,19 @@ cd "$REPO_DIR"
 SCRATCH="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\${SCRATCH}"
 
+# Calculate workers (leave 2 cores for system)
+NUM_WORKERS=\$((SLURM_CPUS_PER_TASK - 2))
+if [ "\$NUM_WORKERS" -lt 1 ]; then
+    NUM_WORKERS=1
+fi
+
 echo "=============================================="
 echo "PAIR/TRIPLET GENERATION"
 echo "=============================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
 echo "Data Dir: $DATA_DIR"
+echo "Workers: \$NUM_WORKERS"
 echo "Scratch Dir: \${SCRATCH}"
 echo
 
@@ -868,21 +875,15 @@ cp "${DATA_DIR}/toponyms.db" "\${SCRATCH}/toponyms.db"
 echo "  Done (\$(ls -lh \${SCRATCH}/toponyms.db | awk '{print \$5}'))"
 echo
 
-# Run pair generation using local scratch for SQLite
-# Output goes directly to network storage (pairs are small)
-# Uses script-stratified sampling with 100K pairs per script-pair quota
-# Uses parallel processing with available CPUs (leaving 2 for system)
-NUM_WORKERS=\$((SLURM_CPUS_PER_TASK - 2))
-if [ "\$NUM_WORKERS" -lt 1 ]; then
-    NUM_WORKERS=1
-fi
-echo "Using \${NUM_WORKERS} worker processes..."
+# Run pair generation using SQLite-driven streaming with parallel similarity
+# Uses scratch for staging DB, output goes to network storage
+echo "Running parallel pair generation with \$NUM_WORKERS workers..."
 
 python -m phonetics.extraction.generate_pairs \
     --data-dir "\${SCRATCH}" \
     --namespaces gn wd tgn \
     --script-pair-quota 100000 \
-    --batch-size 50000 \
+    --scratch-dir "\${SCRATCH}" \
     --num-workers \${NUM_WORKERS}
 
 # Copy results from scratch to permanent storage
@@ -891,11 +892,9 @@ echo "Copying results to permanent storage..."
 mkdir -p "${DATA_DIR}/pairs"
 mkdir -p "${DATA_DIR}/triplets/phase1"
 mkdir -p "${DATA_DIR}/triplets/phase3"
-mkdir -p "${DATA_DIR}/test_pairs"
 
 rsync -av "\${SCRATCH}/pairs/" "${DATA_DIR}/pairs/"
 rsync -av "\${SCRATCH}/triplets/" "${DATA_DIR}/triplets/"
-rsync -av "\${SCRATCH}/test_pairs/" "${DATA_DIR}/test_pairs/"
 
 echo
 echo "=============================================="
@@ -903,9 +902,8 @@ echo "JOB COMPLETE"
 echo "=============================================="
 echo "Output:"
 echo "  - ${DATA_DIR}/pairs/          Positive pairs"
-echo "  - ${DATA_DIR}/triplets/phase1 Phase 1 triplets"
-echo "  - ${DATA_DIR}/triplets/phase3 Phase 3 triplets"
-echo "  - ${DATA_DIR}/test_pairs/     Curated test pairs"
+echo "  - ${DATA_DIR}/triplets/phase1 Phase 1 triplets (random negatives)"
+echo "  - ${DATA_DIR}/triplets/phase3 Phase 3 triplets (hard negatives)"
 echo
 echo "Next: source es.sh -train-model $DATA_VERSION"
 echo
