@@ -976,7 +976,7 @@ do_train_model() {
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=300G
 
 set -e
 $(activate_environment)
@@ -1042,7 +1042,7 @@ BATCH_SCRIPT
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=300G
 
 set -e
 $(activate_environment)
@@ -1105,7 +1105,7 @@ BATCH_SCRIPT
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=300G
 
 set -e
 $(activate_environment)
@@ -1255,7 +1255,7 @@ do_train_and_update() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=300G
 #SBATCH --cluster=gpu
 #SBATCH --partition=a100
 #SBATCH --qos=gpu-a100-l
@@ -1533,7 +1533,7 @@ do_update_embeddings() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
+#SBATCH --mem=300G
 #SBATCH --cluster=gpu
 #SBATCH --partition=a100
 #SBATCH --qos=gpu-a100-l
