@@ -445,9 +445,8 @@ class Phase2Dataset(Dataset):
             filter_expr = filter_expr & (pc.field('feature_length') > 0)
             filter_expr = filter_expr & (pc.field('epitran_supported') == True)
 
-        # Script bounds filter
-        filter_expr = filter_expr & (pc.field('script') >= 0)
-        filter_expr = filter_expr & (pc.field('script') < vocab_limits['script'])
+        # Note: 'script' is a string field (e.g., "LATIN"), not an integer ID
+        # No need for bounds checking - all script names are valid
 
         # Scan with filter pushdown - only matching rows are read from disk
         print(f"Phase2Dataset: Scanning with predicate pushdown...", flush=True)
