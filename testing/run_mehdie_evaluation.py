@@ -95,19 +95,44 @@ def get_latest_version(base_path: str) -> str:
     return max(versions, key=lambda x: x[0])[1]
 
 
-def create_symphonym_similarity_fn(encoder):
+def create_symphonym_similarity_fn(encoder, benchmark: 'MEHDIEBenchmark' = None):
     """
     Create a similarity function from a ToponymEncoder.
 
+    If benchmark is provided, pre-computes all embeddings for efficiency.
+
     Args:
         encoder: ToponymEncoder instance
+        benchmark: Optional MEHDIEBenchmark to pre-compute embeddings for
 
     Returns:
         Function that takes two strings and returns similarity score
     """
     embedding_cache = {}
 
-    def get_embedding(name: str) -> torch.Tensor:
+    # Pre-compute embeddings for all names in benchmark if provided
+    if benchmark is not None:
+        print("  Pre-computing embeddings for all benchmark names...")
+        all_names = set()
+        for testset in benchmark.testsets.values():
+            for record in testset.dataset1.values():
+                all_names.update(record['all_names'])
+            for record in testset.dataset2.values():
+                all_names.update(record['all_names'])
+
+        # Filter empty names
+        all_names = [n for n in all_names if n]
+        print(f"  Found {len(all_names):,} unique names to encode...")
+
+        # Batch encode
+        if all_names:
+            embeddings = encoder.encode_batch(all_names, batch_size=256, show_progress=True)
+            for name, emb in zip(all_names, embeddings):
+                embedding_cache[name] = emb
+
+        print(f"  Cached {len(embedding_cache):,} embeddings")
+
+    def get_embedding(name: str):
         if name in embedding_cache:
             return embedding_cache[name]
 
@@ -176,8 +201,10 @@ def run_evaluation(
             vocab_dir,
             device=device,
         )
-        methods['Symphonym'] = create_symphonym_similarity_fn(encoder)
         print(f"Model loaded (embed_dim={encoder.embed_dim})")
+
+        # Create similarity function with pre-computed embeddings
+        methods['Symphonym'] = create_symphonym_similarity_fn(encoder, benchmark)
 
     # Run evaluation
     print("\n" + "=" * 80)
