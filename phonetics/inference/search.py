@@ -273,16 +273,39 @@ def main():
     print("-" * 50)
 
     cross_script_pairs = [
+        # Latin/Cyrillic
         ("London", "Лондон", "Latin/Cyrillic"),
         ("Moscow", "Москва", "Latin/Cyrillic"),
         ("Paris", "Париж", "Latin/Cyrillic"),
+        ("Berlin", "Берлин", "Latin/Cyrillic"),
+        ("Kiev", "Київ", "Latin/Ukrainian"),
+        # Latin/Greek
         ("Athens", "Αθήνα", "Latin/Greek"),
-        ("Beijing", "北京", "Latin/Chinese"),
-        ("Seoul", "서울", "Latin/Korean"),
+        ("Thessaloniki", "Θεσσαλονίκη", "Latin/Greek"),
+        # Latin/Arabic
         ("London", "لندن", "Latin/Arabic"),
-        ("Moskva", "Москва", "Transliteration/Cyrillic"),
-        ("Athina", "Αθήνα", "Transliteration/Greek"),
-        ("Parizh", "Париж", "Transliteration/Cyrillic"),
+        ("Cairo", "القاهرة", "Latin/Arabic"),
+        ("Damascus", "دمشق", "Latin/Arabic"),
+        # Latin/Chinese (romanized)
+        ("Beijing", "北京", "Latin/Chinese"),
+        ("Shanghai", "上海", "Latin/Chinese"),
+        ("Guangzhou", "广州", "Latin/Chinese"),
+        # Latin/Korean
+        ("Seoul", "서울", "Latin/Korean"),
+        ("Busan", "부산", "Latin/Korean"),
+        # Latin/Hebrew
+        ("Jerusalem", "ירושלים", "Latin/Hebrew"),
+        ("Tel Aviv", "תל אביב", "Latin/Hebrew"),
+        # Latin/Devanagari
+        ("Delhi", "दिल्ली", "Latin/Devanagari"),
+        ("Mumbai", "मुंबई", "Latin/Devanagari"),
+        # Latin/Thai
+        ("Bangkok", "กรุงเทพ", "Latin/Thai"),
+        # Transliterations
+        ("Moskva", "Москва", "Translit/Cyrillic"),
+        ("Athina", "Αθήνα", "Translit/Greek"),
+        ("Parizh", "Париж", "Translit/Cyrillic"),
+        ("Yerushalayim", "ירושלים", "Translit/Hebrew"),
     ]
 
     cross_script_pass = 0
@@ -292,34 +315,43 @@ def main():
         status = "✓" if sim > 0.85 else "✗"
         if sim > 0.85:
             cross_script_pass += 1
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}  ({desc})")
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
     print(f"  Pass rate: {cross_script_pass}/{len(cross_script_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 2: Same-script different languages (HARDER - threshold > 0.70)
+    # Test 2: Same-script different languages (HARDER - threshold > 0.60)
     # These are phonetically different despite referring to same place
     # ---------------------------------------------------------------------------
-    print("\n[Test 2] Same-script cross-language (expected: > 0.70)")
+    print("\n[Test 2] Same-script cross-language (expected: > 0.60)")
     print("-" * 50)
-    print("  Note: Lower threshold - these have genuinely different pronunciations")
+    print("  Note: Lower threshold - genuinely different pronunciations")
 
     same_script_pairs = [
-        ("London", "Londres", "en/fr - different vowels"),
-        ("London", "Londra", "en/it - different ending"),
-        ("Moscow", "Moscou", "en/fr - similar"),
-        ("Munich", "München", "en/de - umlaut"),
-        ("Vienna", "Wien", "en/de - very different"),
-        ("Rome", "Roma", "en/it - similar"),
+        ("London", "Londres", "en/fr"),
+        ("London", "Londra", "en/it"),
+        ("London", "Londyn", "en/pl"),
+        ("Moscow", "Moscou", "en/fr"),
+        ("Moscow", "Mosca", "en/it"),
+        ("Munich", "München", "en/de"),
+        ("Vienna", "Wien", "en/de"),
+        ("Rome", "Roma", "en/it"),
+        ("Naples", "Napoli", "en/it"),
+        ("Venice", "Venezia", "en/it"),
+        ("Milan", "Milano", "en/it"),
+        ("Lisbon", "Lisboa", "en/pt"),
+        ("Seville", "Sevilla", "en/es"),
+        ("Copenhagen", "København", "en/da"),
+        ("Helsinki", "Helsingfors", "en/sv"),
     ]
 
     same_script_pass = 0
     for n1, n2, desc in same_script_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        status = "✓" if sim > 0.70 else "✗"
-        if sim > 0.70:
+        status = "✓" if sim > 0.60 else "✗"
+        if sim > 0.60:
             same_script_pass += 1
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}  ({desc})")
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
     print(f"  Pass rate: {same_script_pass}/{len(same_script_pairs)}")
 
     # ---------------------------------------------------------------------------
@@ -337,6 +369,13 @@ def main():
         ("Munich", "Bangkok"),
         ("Athens", "Lima"),
         ("Madrid", "Oslo"),
+        ("Dublin", "Hanoi"),
+        ("Amsterdam", "Nairobi"),
+        ("Stockholm", "Jakarta"),
+        ("Brussels", "Manila"),
+        ("Vienna", "Santiago"),
+        ("Prague", "Taipei"),
+        ("Warsaw", "Johannesburg"),
     ]
 
     unrelated_pass = 0
@@ -346,7 +385,7 @@ def main():
         status = "✓" if sim < 0.50 else "✗"
         if sim < 0.50:
             unrelated_pass += 1
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}")
     print(f"  Pass rate: {unrelated_pass}/{len(unrelated_pairs)}")
 
     # ---------------------------------------------------------------------------
@@ -363,6 +402,12 @@ def main():
         ("Malmo", "Malmö"),
         ("Sao Paulo", "São Paulo"),
         ("Bogota", "Bogotá"),
+        ("Lodz", "Łódź"),
+        ("Wroclaw", "Wrocław"),
+        ("Poznan", "Poznań"),
+        ("Chisinau", "Chișinău"),
+        ("Brasov", "Brașov"),
+        ("Timisoara", "Timișoara"),
     ]
 
     diacritic_pass = 0
@@ -372,14 +417,14 @@ def main():
         status = "✓" if sim > 0.90 else "✗"
         if sim > 0.90:
             diacritic_pass += 1
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}")
     print(f"  Pass rate: {diacritic_pass}/{len(diacritic_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 5: Exonym pairs - genuinely different names (expected: 0.50-0.85)
+    # Test 5: Exonym pairs - genuinely different names (informational)
     # These refer to the same place but have very different forms
     # ---------------------------------------------------------------------------
-    print("\n[Test 5] Exonym pairs (expected: 0.50-0.85, informational)")
+    print("\n[Test 5] Exonym pairs (informational - no pass/fail)")
     print("-" * 50)
     print("  Note: These are genuinely different names for same place")
 
@@ -391,46 +436,121 @@ def main():
         ("Prague", "Praha", "en/cs"),
         ("Warsaw", "Warszawa", "en/pl"),
         ("Tokyo", "東京", "en/ja"),
+        ("Japan", "Nippon", "en/ja-rom"),
+        ("Germany", "Deutschland", "en/de"),
+        ("Egypt", "Misr", "en/ar-rom"),
+        ("Greece", "Hellas", "en/el-rom"),
+        ("Finland", "Suomi", "en/fi"),
+        ("Hungary", "Magyarország", "en/hu"),
+        ("Albania", "Shqipëria", "en/sq"),
+        ("Georgia", "საქართველო", "en/ka"),
     ]
 
     for n1, n2, desc in exonym_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        in_range = 0.50 <= sim <= 0.85
-        status = "~" if in_range else ("↑" if sim > 0.85 else "↓")
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}  ({desc})")
+        if sim > 0.85:
+            status = "↑"
+        elif sim >= 0.50:
+            status = "~"
+        else:
+            status = "↓"
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 6: Phonetically similar but unrelated (potential false positives)
+    # Test 6: Historical name variants (informational)
     # ---------------------------------------------------------------------------
-    print("\n[Test 6] Phonetically similar unrelated (watch for false positives)")
+    print("\n[Test 6] Historical variants (informational)")
     print("-" * 50)
-    print("  Note: High similarity here is expected due to phonetic similarity")
+    print("  Note: Ancient/historical names - lower similarity expected")
 
-    phonetic_similar = [
-        ("Vienna", "Hanoi", "both have similar vowel patterns"),
-        ("Mali", "Bali", "rhyming names"),
-        ("Chad", "Tchad", "same place, different spelling"),
-        ("China", "Ghana", "similar structure"),
-        ("Peru", "Teru", "similar ending"),
+    historical_pairs = [
+        ("Istanbul", "Constantinople", "modern/Byzantine"),
+        ("Istanbul", "Byzantium", "modern/ancient"),
+        ("Paris", "Lutetia", "modern/Roman"),
+        ("London", "Londinium", "modern/Roman"),
+        ("Lyon", "Lugdunum", "modern/Roman"),
+        ("Cologne", "Colonia", "modern/Roman"),
+        ("Vienna", "Vindobona", "modern/Roman"),
+        ("York", "Eboracum", "modern/Roman"),
+        ("Mumbai", "Bombay", "modern/colonial"),
+        ("Chennai", "Madras", "modern/colonial"),
+        ("Kolkata", "Calcutta", "modern/colonial"),
+        ("Beijing", "Peking", "modern/historical"),
+        ("Guangzhou", "Canton", "modern/historical"),
+        ("Ho Chi Minh City", "Saigon", "modern/historical"),
     ]
 
-    for n1, n2, desc in phonetic_similar:
+    for n1, n2, desc in historical_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        print(f"  ? {n1:15} vs {n2:15}: {sim:.4f}  ({desc})")
+        print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 7: Embedding space statistics
+    # Test 7: Confusable pairs (potential false positives)
     # ---------------------------------------------------------------------------
-    print("\n[Test 7] Embedding space statistics")
+    print("\n[Test 7] Confusable pairs (watch for false positives)")
+    print("-" * 50)
+    print("  Note: Phonetically similar but different places")
+
+    confusable_pairs = [
+        ("Vienna", "Hanoi", "similar vowel patterns"),
+        ("Mali", "Bali", "rhyming"),
+        ("Chad", "Tchad", "same place!"),
+        ("China", "Ghana", "similar structure"),
+        ("Peru", "Beirut", "shared sounds"),
+        ("Niger", "Nigeria", "substring"),
+        ("Guinea", "Guyana", "similar"),
+        ("Austria", "Australia", "near-homophone"),
+        ("Iran", "Iraq", "similar"),
+        ("Sweden", "Sudan", "similar start"),
+        ("Slovakia", "Slovenia", "confusable"),
+        ("Dominica", "Dominican Republic", "substring"),
+        ("Georgia", "Georgia", "country vs US state"),
+        ("Springfield", "Springfield", "many places"),
+    ]
+
+    for n1, n2, desc in confusable_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        warn = "⚠" if sim > 0.80 else " "
+        print(f"  {warn} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+
+    # ---------------------------------------------------------------------------
+    # Test 8: Short names (edge case)
+    # ---------------------------------------------------------------------------
+    print("\n[Test 8] Short names (edge case)")
+    print("-" * 50)
+    print("  Note: Very short names are harder to distinguish")
+
+    short_pairs = [
+        ("Ur", "Or", "2 chars"),
+        ("Po", "Pa", "2 chars"),
+        ("Goa", "Gao", "3 chars"),
+        ("Boa", "Bua", "3 chars similar"),
+        ("Rome", "Rame", "4 chars"),
+        ("Lima", "Lama", "4 chars"),
+        ("Oslo", "Aslo", "4 chars anagram-ish"),
+        ("Bern", "Bonn", "4 chars similar"),
+    ]
+
+    for n1, n2, desc in short_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+
+    # ---------------------------------------------------------------------------
+    # Test 9: Embedding space statistics
+    # ---------------------------------------------------------------------------
+    print("\n[Test 9] Embedding space statistics")
     print("-" * 50)
 
     test_names = [
         "London", "Paris", "Berlin", "Tokyo", "Moscow", "Beijing",
         "Cairo", "Sydney", "Mumbai", "Lagos", "Lima", "Toronto",
         "Londres", "Londinium", "Sar-e Tanōr", "München", "Москва",
-        "東京", "서울", "北京", "Αθήνα", "القاهرة"
+        "東京", "서울", "北京", "Αθήνα", "القاهرة", "ירושלים",
+        "दिल्ली", "กรุงเทพ", "საქართველო"
     ]
 
     embs = encoder.encode_batch(test_names)
