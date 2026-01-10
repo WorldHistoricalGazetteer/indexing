@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-Run full MEHDIE benchmark evaluation and compare with published results.
+Run MEHDIE benchmark evaluation using the trained Symphonym model.
 
 This script evaluates:
 1. Baseline string similarity methods (Levenshtein, Jaro-Winkler)
-2. Our trained phonetic similarity model
-3. Comparison with MEHDIE paper results (orthographic + phonetic methods)
+2. Our trained phonetic similarity model (Symphonym)
+3. Comparison with MEHDIE paper results
 
 Reference:
     Sagi et al. (2025) "Utilizing phonetic similarity for cross-source and
@@ -13,10 +13,14 @@ Reference:
     Language Resources and Evaluation, 59:2427-2451
 
 Usage:
-    python run_mehdie_evaluation.py \
-        --testsets /path/to/mehdie-testsets \
-        --model /path/to/phonetic_phase3.pt \
-        --output results/mehdie_evaluation.json
+    # Run with auto-detected latest model
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets
+
+    # Run with specific model version
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v3
+
+    # Run baselines only (no model)
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --baselines-only
 """
 
 import argparse
@@ -33,131 +37,118 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from testing.mehdie_benchmark import (
     MEHDIEBenchmark,
-    create_model_similarity_fn,
     levenshtein_similarity,
     jaro_winkler_similarity,
 )
 
+
 # =============================================================================
 # Published results from MEHDIE paper (Sagi et al., 2025)
-# Values extracted from Figures 2-4, Section 5.1.2
 # =============================================================================
-#
-# IMPORTANT: The paper uses F-5 as primary metric (recall 5x more important
-# than precision). This reflects their user preference for high recall with
-# tolerance for low precision.
-#
-# From Figure 4 (best F-5 by dataset pair and method, threshold 0.9):
-# - Phonetic method uses Hamming feature distance over IPA representations
-# - Orthographic method uses Jaro distance over transliterated variants
-#
-# Note: The paper reports that BOTH methods should be used in combination
-# for best results, as they capture different matches.
 
 MEHDIE_PAPER_RESULTS = {
-    # Pairing 2 in paper: Yaqut Al-Sham (687) ↔ Kima Al-Sham (1899), 30 matches
     'testset7-YaqutSham_KimaSham': {
         'num_matches': 30,
         'orthographic': {'f5': 0.67, 'threshold': 0.9},
         'phonetic': {'f5': 0.77, 'threshold': 0.9},
     },
-    # Pairing 3 in paper: Kima Al-Sham (1899) ↔ Thuraya Al-Sham (291), 21 matches
     'testset8-KimaShamThurayyaSham': {
         'num_matches': 21,
         'orthographic': {'f5': 0.65, 'threshold': 0.9},
         'phonetic': {'f5': 0.68, 'threshold': 0.9},
     },
-    # Pairing 4 in paper: Tudela (306) ↔ Althurayya (2241), 18 matches
     'testset9-TudelaThurayya': {
         'num_matches': 18,
-        'orthographic': {'f5': 0.92, 'threshold': 0.9},  # Orthographic better here
+        'orthographic': {'f5': 0.92, 'threshold': 0.9},
         'phonetic': {'f5': 0.70, 'threshold': 0.9},
     },
-    # Pairing 1 in paper: Yaqut Andalus/Magreb (484) ↔ Kima Andalus/Magreb (559), 28 matches
     'testset10-YaqutAndalusMagrebKima-KimaMagrebAndalusMapped': {
         'num_matches': 28,
         'orthographic': {'f5': 0.75, 'threshold': 0.9},
         'phonetic': {'f5': 0.77, 'threshold': 0.9},
     },
-    # Pairing 5 in paper: Damast (447) ↔ Tudela (306), 32 matches
     'testset11-DamastTudela': {
         'num_matches': 32,
         'orthographic': {'f5': 0.78, 'threshold': 0.9},
-        'phonetic': {'f5': 0.88, 'threshold': 0.9},  # Best phonetic result
+        'phonetic': {'f5': 0.88, 'threshold': 0.9},
     },
 }
 
-# Average results from Figure 2 (across all dataset pairs)
-MEHDIE_AVERAGE_RESULTS = {
-    'phonetic_0.95': {'precision': 0.53, 'recall': 0.10, 'f1': 0.17, 'f5': 0.11},
-    'phonetic_0.9': {'precision': 0.08, 'recall': 0.55, 'f1': 0.14, 'f5': 0.32},
-    'phonetic_0.85': {'precision': 0.04, 'recall': 0.85, 'f1': 0.08, 'f5': 0.58},
-    'orthographic_0.9': {'precision': 0.32, 'recall': 0.22, 'f1': 0.26, 'f5': 0.22},
-    'orthographic_0.8': {'precision': 0.15, 'recall': 0.36, 'f1': 0.21, 'f5': 0.30},
-    'orthographic_0.7': {'precision': 0.08, 'recall': 0.50, 'f1': 0.14, 'f5': 0.32},
-}
+
+def get_latest_version(base_path: str) -> str:
+    """Find the latest version directory (e.g., v3 > v2 > v1)."""
+    base = Path(base_path)
+    if not base.exists():
+        return "v1"
+
+    versions = []
+    for d in base.iterdir():
+        if d.is_dir() and d.name.startswith('v'):
+            try:
+                versions.append((int(d.name[1:]), d.name))
+            except ValueError:
+                continue
+
+    if not versions:
+        return "v1"
+
+    return max(versions, key=lambda x: x[0])[1]
 
 
-def load_model(model_path: str, device: str = 'cuda'):
-    """Load trained model and vocabularies."""
-    from phonetics.models import HybridPhoneticModel, PhoneticEncoder, CharEncoder
-    from phonetics.vocab import CharVocab, LangVocab
+def create_symphonym_similarity_fn(encoder):
+    """
+    Create a similarity function from a ToponymEncoder.
 
-    checkpoint = torch.load(model_path, map_location=device)
+    Args:
+        encoder: ToponymEncoder instance
 
-    # Load vocabularies
-    vocab_dir = Path(model_path).parent
-    base_name = Path(model_path).stem
+    Returns:
+        Function that takes two strings and returns similarity score
+    """
+    embedding_cache = {}
 
-    char_vocab_path = vocab_dir / f'{base_name}_char_vocab.pkl'
-    lang_vocab_path = vocab_dir / f'{base_name}_lang_vocab.pkl'
+    def get_embedding(name: str) -> torch.Tensor:
+        if name in embedding_cache:
+            return embedding_cache[name]
 
-    if not char_vocab_path.exists() or not lang_vocab_path.exists():
-        raise FileNotFoundError(
-            f"Vocabulary files not found. Expected:\n"
-            f"  {char_vocab_path}\n"
-            f"  {lang_vocab_path}"
-        )
+        emb = encoder.encode(name)
+        embedding_cache[name] = emb
+        return emb
 
-    char_vocab = CharVocab.load(char_vocab_path)
-    lang_vocab = LangVocab.load(lang_vocab_path)
+    def similarity_fn(name1: str, name2: str) -> float:
+        if not name1 or not name2:
+            return 0.0
 
-    # Reconstruct model
-    phonetic_encoder = PhoneticEncoder()
-    char_encoder = CharEncoder(
-        vocab_size=checkpoint['char_vocab_size'],
-        num_langs=checkpoint['num_langs']
-    )
-    model = HybridPhoneticModel(phonetic_encoder, char_encoder)
-    model.load_state_dict(checkpoint['model_state'])
-    model = model.to(device)
-    model.eval()
+        emb1 = get_embedding(name1)
+        emb2 = get_embedding(name2)
 
-    return model, char_vocab, lang_vocab
+        sim = encoder.similarity(emb1, emb2).item()
+        return max(0.0, sim)
+
+    return similarity_fn
 
 
 def run_evaluation(
         testsets_dir: str,
-        model_path: str = None,
+        checkpoint_path: str = None,
+        vocab_dir: str = None,
         output_path: str = None,
         thresholds: list = None,
         device: str = 'cuda',
-        skip_baselines: bool = False
+        baselines_only: bool = False,
 ):
     """Run full MEHDIE benchmark evaluation."""
 
     if thresholds is None:
-        # Match paper's threshold range
         thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
 
     print("=" * 80)
     print("MEHDIE BENCHMARK EVALUATION")
     print("=" * 80)
     print(f"Testsets directory: {testsets_dir}")
-    print(f"Model: {model_path or 'None (baselines only)'}")
+    print(f"Model checkpoint: {checkpoint_path or 'None (baselines only)'}")
     print(f"Thresholds: {thresholds}")
     print(f"Device: {device}")
-    print(f"Skip Baselines: {skip_baselines}")
     print()
 
     # Load benchmark
@@ -170,22 +161,23 @@ def run_evaluation(
     # Define methods to evaluate
     methods = {}
 
-    if not skip_baselines:
-        methods['Levenshtein'] = levenshtein_similarity
-        methods['Jaro-Winkler'] = jaro_winkler_similarity
+    # Always include baselines
+    methods['Levenshtein'] = levenshtein_similarity
+    methods['Jaro-Winkler'] = jaro_winkler_similarity
 
-    # Add trained model if provided
-    if model_path:
-        print(f"\nLoading model from {model_path}...")
-        model, char_vocab, lang_vocab = load_model(model_path, device)
-        methods['OurModel'] = create_model_similarity_fn(
-            model, char_vocab, lang_vocab, device
+    # Add Symphonym model if not baselines-only
+    if not baselines_only and checkpoint_path:
+        print(f"\nLoading Symphonym model from {checkpoint_path}...")
+
+        from phonetics.inference.encoder import ToponymEncoder
+
+        encoder = ToponymEncoder.from_checkpoint(
+            checkpoint_path,
+            vocab_dir,
+            device=device,
         )
-        print("Model loaded successfully.")
-
-    if not methods:
-        print("ERROR: No methods to evaluate. Provide a model or remove --skip-baselines.")
-        return None
+        methods['Symphonym'] = create_symphonym_similarity_fn(encoder)
+        print(f"Model loaded (embed_dim={encoder.embed_dim})")
 
     # Run evaluation
     print("\n" + "=" * 80)
@@ -194,15 +186,14 @@ def run_evaluation(
 
     all_results = benchmark.compare_methods(methods, thresholds)
 
-    # Print comparison table (now using F-5 as primary metric)
+    # Print comparison table
     print_f5_comparison(benchmark, all_results)
 
     # Compare with MEHDIE paper results
     print("\n" + "=" * 80)
     print("COMPARISON WITH MEHDIE PAPER RESULTS (F-5 metric)")
     print("=" * 80)
-    print("\nNote: Paper uses F-5 which weights recall 5x more than precision.")
-    print("This reflects user preference for finding all matches over precision.\n")
+    print("\nNote: Paper uses F-5 which weights recall 5x more than precision.\n")
 
     comparison_data = []
 
@@ -216,7 +207,6 @@ def run_evaluation(
             row['num_matches'] = paper_results.get('num_matches', 'N/A')
             row['MEHDIE_orthographic_f5'] = paper_results.get('orthographic', {}).get('f5', 'N/A')
             row['MEHDIE_phonetic_f5'] = paper_results.get('phonetic', {}).get('f5', 'N/A')
-            # Best of the two methods (paper recommends using both)
             orth_f5 = paper_results.get('orthographic', {}).get('f5', 0)
             phon_f5 = paper_results.get('phonetic', {}).get('f5', 0)
             row['MEHDIE_best_f5'] = max(orth_f5, phon_f5)
@@ -233,7 +223,8 @@ def run_evaluation(
         comparison_data.append(row)
 
     # Print detailed comparison
-    print(f"{'Testset':<30} {'GT':>4} {'MEHDIE-O':>10} {'MEHDIE-P':>10} {'Ours':>10} {'Δ':>8}")
+    our_method = 'Symphonym' if 'Symphonym' in methods else 'Jaro-Winkler'
+    print(f"{'Testset':<30} {'GT':>4} {'MEHDIE-O':>10} {'MEHDIE-P':>10} {our_method:>12} {'Δ':>8}")
     print("-" * 80)
 
     deltas = []
@@ -243,7 +234,7 @@ def run_evaluation(
         mehdie_orth = row.get('MEHDIE_orthographic_f5', 'N/A')
         mehdie_phon = row.get('MEHDIE_phonetic_f5', 'N/A')
         mehdie_best = row.get('MEHDIE_best_f5', 'N/A')
-        our_f5 = row.get('OurModel_f5', row.get('Jaro-Winkler_f5', 'N/A'))
+        our_f5 = row.get(f'{our_method}_f5', 'N/A')
 
         if isinstance(mehdie_best, float) and isinstance(our_f5, float):
             delta = our_f5 - mehdie_best
@@ -256,13 +247,12 @@ def run_evaluation(
         mehdie_phon_str = f"{mehdie_phon:.2f}" if isinstance(mehdie_phon, float) else str(mehdie_phon)
         our_str = f"{our_f5:.3f}" if isinstance(our_f5, float) else str(our_f5)
 
-        print(
-            f"{testset:<30} {num_matches:>4} {mehdie_orth_str:>10} {mehdie_phon_str:>10} {our_str:>10} {delta_str:>8}")
+        print(f"{testset:<30} {num_matches:>4} {mehdie_orth_str:>10} {mehdie_phon_str:>10} {our_str:>12} {delta_str:>8}")
 
     if deltas:
         avg_delta = np.mean(deltas)
         print("-" * 80)
-        print(f"{'AVERAGE DELTA vs MEHDIE best':<30} {''}")
+        print(f"{'AVERAGE DELTA vs MEHDIE best':<56} {avg_delta:+.3f}")
 
     # Print per-testset detail
     print("\n" + "=" * 80)
@@ -289,7 +279,7 @@ def run_evaluation(
         output_data = {
             'timestamp': datetime.now().isoformat(),
             'testsets_dir': testsets_dir,
-            'model_path': model_path,
+            'checkpoint_path': checkpoint_path,
             'thresholds': thresholds,
             'primary_metric': 'F-5 (recall weighted 5x)',
             'mehdie_paper_results': MEHDIE_PAPER_RESULTS,
@@ -359,24 +349,26 @@ def print_f5_comparison(benchmark, all_results):
 
 
 def main():
+    # Determine default paths based on latest version
+    checkpoints_base = '/ix1/whcdh/models/phonetic/checkpoints'
+    data_base = '/ix1/whcdh/models/phonetic/data'
+
     parser = argparse.ArgumentParser(
         description='Run MEHDIE benchmark evaluation',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+    # Run with auto-detected latest model
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets
+
+    # Run with specific version
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v3
+
     # Run baselines only
-    python run_mehdie_evaluation.py --testsets /path/to/mehdie-testsets
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --baselines-only
 
-    # Run with trained model
-    python run_mehdie_evaluation.py \
-        --testsets /path/to/mehdie-testsets \
-        --model /path/to/phonetic_phase3.pt \
-        --output results/evaluation.json
-
-    # Run with CPU (for baselines or if no GPU available)
-    python run_mehdie_evaluation.py \
-        --testsets /path/to/mehdie-testsets \
-        --device cpu
+    # Save results to file
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --output results/mehdie.json
         """
     )
 
@@ -385,8 +377,16 @@ Examples:
         help='Path to MEHDIE testsets directory'
     )
     parser.add_argument(
-        '--model',
-        help='Path to trained model checkpoint (Phase 3 recommended)'
+        '--version',
+        help='Model version to use (e.g., v3). If not specified, uses latest.'
+    )
+    parser.add_argument(
+        '--checkpoint',
+        help='Path to model checkpoint (overrides --version)'
+    )
+    parser.add_argument(
+        '--vocab-dir',
+        help='Path to vocab directory (overrides --version)'
     )
     parser.add_argument(
         '--output',
@@ -395,15 +395,15 @@ Examples:
     parser.add_argument(
         '--thresholds', type=float, nargs='+',
         default=[0.7, 0.8, 0.85, 0.9, 0.95],
-        help='Similarity thresholds to evaluate (default matches paper range)'
+        help='Similarity thresholds to evaluate'
     )
     parser.add_argument(
         '--device', default='cuda',
         help='Device for model inference (cuda/cpu)'
     )
     parser.add_argument(
-        '--skip-baselines', action='store_true',
-        help='Skip baseline string similarity methods'
+        '--baselines-only', action='store_true',
+        help='Run only baseline methods (no neural model)'
     )
 
     args = parser.parse_args()
@@ -413,15 +413,37 @@ Examples:
         print("CUDA not available, falling back to CPU")
         args.device = 'cpu'
 
+    # Determine checkpoint and vocab paths
+    if args.checkpoint:
+        checkpoint_path = args.checkpoint
+        vocab_dir = args.vocab_dir or str(Path(args.checkpoint).parent.parent / 'data' / Path(args.checkpoint).parent.name / 'vocab')
+    elif not args.baselines_only:
+        version = args.version or get_latest_version(checkpoints_base)
+        checkpoint_path = f'{checkpoints_base}/{version}/phase3_best.pt'
+        vocab_dir = f'{data_base}/{version}/vocab'
+
+        # Check if checkpoint exists
+        if not Path(checkpoint_path).exists():
+            print(f"WARNING: Checkpoint not found at {checkpoint_path}")
+            print("Falling back to baselines only.")
+            args.baselines_only = True
+            checkpoint_path = None
+            vocab_dir = None
+    else:
+        checkpoint_path = None
+        vocab_dir = None
+
     run_evaluation(
         testsets_dir=args.testsets,
-        model_path=args.model,
+        checkpoint_path=checkpoint_path,
+        vocab_dir=vocab_dir,
         output_path=args.output,
         thresholds=args.thresholds,
         device=args.device,
-        skip_baselines=args.skip_baselines
+        baselines_only=args.baselines_only,
     )
 
 
 if __name__ == '__main__':
     main()
+

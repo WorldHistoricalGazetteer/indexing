@@ -446,88 +446,15 @@ class MEHDIEBenchmark:
 
 def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
     """
-    Create a similarity function from a trained HybridPhoneticModel.
-    Takes RAW text, detects language, romanizes, and infers.
+    DEPRECATED: Use run_mehdie_evaluation.create_symphonym_similarity_fn instead.
+
+    This legacy function is kept for backwards compatibility but should not be used
+    with the current Symphonym model architecture.
     """
-    import torch.nn.functional as F
+    raise NotImplementedError(
+        "This function is deprecated. Use run_mehdie_evaluation.py with ToponymEncoder instead."
+    )
 
-    model = model.to(device)
-    model.eval()
-
-    embedding_cache = {}
-
-    def get_embedding(name: str) -> torch.Tensor:
-        if name in embedding_cache:
-            return embedding_cache[name]
-
-        # 1. Detect language from RAW script
-        lang = detect_language(name)
-
-        # 2. Romanize for the character encoder
-        romanized = anyascii(name).lower()
-        if not romanized:
-             romanized = name.lower()
-
-        # Encode
-        char_ids = torch.tensor([char_vocab.encode(romanized)], dtype=torch.long, device=device)
-        lang_ids = torch.tensor([lang_vocab.encode(lang)], dtype=torch.long, device=device)
-
-        # Keep lengths on CPU (because pack_padded_sequence expects it)
-        encoded_list = char_vocab.encode(romanized)
-        char_ids = torch.tensor([encoded_list], dtype=torch.long, device=device)
-        lengths = torch.tensor([len(encoded_list)], dtype=torch.long, device='cpu')
-
-        with torch.no_grad():
-            emb = model.encode_char_only(char_ids, lang_ids, lengths)
-
-        embedding_cache[name] = emb
-        return emb
-
-    def similarity_fn(name1: str, name2: str) -> float:
-        if not name1 or not name2:
-            return 0.0
-
-        # Pass raw names to get_embedding
-        emb1 = get_embedding(name1)
-        emb2 = get_embedding(name2)
-
-        # Cosine similarity
-        sim = F.cosine_similarity(emb1, emb2).item()
-        return max(0.0, sim)
-
-    return similarity_fn
-
-
-def detect_language(text: str) -> str:
-    """Detect language based on Unicode script. Returns ISO 639-1 codes."""
-    if not text:
-        return 'en'
-
-    # Check first non-space character
-    for char in text:
-        if char.isspace():
-            continue
-        code = ord(char)
-
-        # Hebrew: U+0590–U+05FF
-        if 0x0590 <= code <= 0x05FF:
-            return 'he'
-
-        # Arabic: U+0600–U+06FF, U+0750–U+077F, U+08A0–U+08FF
-        if (0x0600 <= code <= 0x06FF or
-                0x0750 <= code <= 0x077F or
-                0x08A0 <= code <= 0x08FF):
-            return 'ar'
-
-        # Syriac: U+0700–U+074F
-        if 0x0700 <= code <= 0x074F:
-            return 'arc'
-
-        # Latin
-        if code < 0x0250:
-            return 'en'
-
-    return 'en'
 
 
 # =============================================================================
@@ -630,11 +557,14 @@ def jaro_winkler_similarity(s1: str, s2: str) -> float:
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='MEHDIE Benchmark Evaluation')
+    parser = argparse.ArgumentParser(
+        description='MEHDIE Benchmark Evaluation (Baselines Only)',
+        epilog="""
+For evaluation with the Symphonym model, use:
+    python -m testing.run_mehdie_evaluation --testsets /path/to/mehdie-testsets
+        """
+    )
     parser.add_argument('testsets_dir', help='Path to MEHDIE testsets directory')
-    parser.add_argument('--model', help='Path to trained model checkpoint')
-    parser.add_argument('--baselines', action='store_true',
-                        help='Run baseline methods (Levenshtein, Jaro-Winkler)')
     parser.add_argument('--thresholds', type=float, nargs='+',
                         default=[0.7, 0.8, 0.85, 0.9, 0.95],
                         help='Similarity thresholds to evaluate')
@@ -646,55 +576,12 @@ if __name__ == '__main__':
     # Load benchmark
     benchmark = MEHDIEBenchmark(args.testsets_dir)
 
-    methods = {}
-
-    # Add baselines if requested
-    if args.baselines:
-        methods['Levenshtein'] = levenshtein_similarity
-        methods['Jaro-Winkler'] = jaro_winkler_similarity
-
-    # Add trained model if provided
-    if args.model:
-        # Import model classes
-        import sys
-
-        sys.path.insert(0, str(Path(__file__).parent.parent))
-
-        from phonetics.models import HybridPhoneticModel, PhoneticEncoder, CharEncoder
-        from phonetics.vocab import CharVocab, LangVocab
-
-        # Load checkpoint
-        checkpoint = torch.load(args.model, map_location='cpu')
-
-        # Load vocabularies
-        vocab_dir = Path(args.model).parent
-        base_name = Path(args.model).stem
-        char_vocab = CharVocab.load(vocab_dir / f'{base_name}_char_vocab.pkl')
-        lang_vocab = LangVocab.load(vocab_dir / f'{base_name}_lang_vocab.pkl')
-
-        # Reconstruct model
-        phonetic_encoder = PhoneticEncoder()
-        char_encoder = CharEncoder(
-            vocab_size=checkpoint['char_vocab_size'],
-            num_langs=checkpoint['num_langs']
-        )
-        model = HybridPhoneticModel(phonetic_encoder, char_encoder)
-        model.load_state_dict(checkpoint['model_state'])
-
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-        methods['PhoneticModel'] = create_model_similarity_fn(
-            model, char_vocab, lang_vocab, device
-        )
-
-    if not methods:
-        print("No methods to evaluate. Use --baselines and/or --model")
-        exit(1)
+    # Run baselines
+    methods = {
+        'Levenshtein': levenshtein_similarity,
+        'Jaro-Winkler': jaro_winkler_similarity,
+    }
 
     # Run evaluation
-    if len(methods) == 1:
-        name, fn = list(methods.items())[0]
-        results = benchmark.evaluate_model(fn, args.thresholds)
-        benchmark.print_results(results, latex=args.latex)
-    else:
-        all_results = benchmark.compare_methods(methods, args.thresholds)
-        benchmark.print_comparison(all_results)
+    all_results = benchmark.compare_methods(methods, args.thresholds)
+    benchmark.print_comparison(all_results)
