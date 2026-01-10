@@ -20,150 +20,156 @@
 \newlabel{sec:introduction}{{1}{1}{Introduction}{section.1}{}}
 \newlabel{sec:introduction@cref}{{[section][1][]1}{[1][1][]1}}
 \citation{grossner2021whg}
-\@writefile{toc}{\contentsline {paragraph}{Scope and Integration.}{3}{section*.1}\protected@file@percent }
 \citation{odell1918}
 \citation{philips1990}
 \citation{philips2000}
-\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{4}{section.2}\protected@file@percent }
-\newlabel{sec:related}{{2}{4}{Related Work}{section.2}{}}
-\newlabel{sec:related@cref}{{[section][2][]2}{[1][4][]4}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Classical Phonetic Algorithms}{4}{subsection.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Scope and Integration.}{3}{section*.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {2}Related Work}{3}{section.2}\protected@file@percent }
+\newlabel{sec:related}{{2}{3}{Related Work}{section.2}{}}
+\newlabel{sec:related@cref}{{[section][2][]2}{[1][3][]3}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.1}Classical Phonetic Algorithms}{3}{subsection.2.1}\protected@file@percent }
 \citation{recchia2013}
 \citation{santos2018}
 \citation{kondrak2000}
 \citation{qiu2024geobert}
 \citation{mehdie2025}
 \citation{novak2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}String Similarity Metrics}{5}{subsection.2.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Neural Approaches to Entity Matching}{5}{subsection.2.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.2}String Similarity Metrics}{4}{subsection.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.3}Neural Approaches to Entity Matching}{4}{subsection.2.3}\protected@file@percent }
 \citation{rama2016}
 \citation{conneau2018}
 \citation{artetxe2018}
 \citation{translit2020}
 \citation{mortensen2018}
 \citation{mortensen2016}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Cross-Lingual Representation Learning}{5}{subsection.2.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Phonetic Representations in NLP}{5}{subsection.2.5}\protected@file@percent }
 \citation{bromley1993,chopra2005}
 \citation{schroff2015}
 \citation{mueller2016,neculoiu2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Cross-Lingual Representation Learning}{6}{subsection.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Phonetic Representations in NLP}{6}{subsection.2.5}\protected@file@percent }
 \citation{mueller2016}
 \citation{lin2017structured}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Siamese Networks for Similarity Learning}{7}{subsection.2.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Manhattan Distance Limitations.}{7}{section*.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Cosine Similarity Advantages.}{7}{section*.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Summary of Technical Distinctions}{7}{subsection.2.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Siamese Networks for Similarity Learning}{6}{subsection.2.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Manhattan Distance Limitations.}{6}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Cosine Similarity Advantages.}{6}{section*.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Summary of Technical Distinctions}{6}{subsection.2.7}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Comparison of neural matching approaches. Symphonym differs from prior work in its \emph  {learned} (vs.\ rule-based) phonetic representations and unified multi-script architecture enabling cross-script matching without transliteration.\relax }}{7}{table.caption.4}\protected@file@percent }
+\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
+\newlabel{tab:approach-comparison}{{1}{7}{Comparison of neural matching approaches. Symphonym differs from prior work in its \emph {learned} (vs.\ rule-based) phonetic representations and unified multi-script architecture enabling cross-script matching without transliteration.\relax }{table.caption.4}{}}
+\newlabel{tab:approach-comparison@cref}{{[table][1][]1}{[1][6][]7}}
 \@writefile{toc}{\contentsline {section}{\numberline {3}Architecture}{7}{section.3}\protected@file@percent }
 \newlabel{sec:architecture}{{3}{7}{Architecture}{section.3}{}}
-\newlabel{sec:architecture@cref}{{[section][3][]3}{[1][7][]7}}
-\@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Comparison of neural matching approaches. Symphonym differs from prior work primarily in its use of explicit articulatory features and unified multi-script architecture.\relax }}{8}{table.caption.7}\protected@file@percent }
-\providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
-\newlabel{tab:approach-comparison}{{1}{8}{Comparison of neural matching approaches. Symphonym differs from prior work primarily in its use of explicit articulatory features and unified multi-script architecture.\relax }{table.caption.7}{}}
-\newlabel{tab:approach-comparison@cref}{{[table][1][]1}{[1][7][]8}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Design Principles}{8}{subsection.3.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Script Awareness Without Script Dependence.}{8}{section*.8}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Phonetic Grounding.}{8}{section*.9}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Inference Efficiency.}{8}{section*.10}\protected@file@percent }
+\newlabel{sec:architecture@cref}{{[section][3][]3}{[1][6][]7}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Design Principles}{7}{subsection.3.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Script Awareness Without Script Dependence.}{7}{section*.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phonetic Grounding.}{7}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Inference Efficiency.}{8}{section*.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Architecture Overview}{8}{subsection.3.2}\protected@file@percent }
-\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Teacher-Student architecture. \textbf  {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf  {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf  {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }}{9}{figure.caption.11}\protected@file@percent }
-\newlabel{fig:architecture}{{1}{9}{Teacher-Student architecture. \textbf {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }{figure.caption.11}{}}
-\newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][8][]9}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Script Detection and Character Vocabulary}{9}{subsection.3.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Teacher-Student architecture. \textbf  {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf  {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf  {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }}{8}{figure.caption.8}\protected@file@percent }
+\newlabel{fig:architecture}{{1}{8}{Teacher-Student architecture. \textbf {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }{figure.caption.8}{}}
+\newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][8][]8}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Script Detection and Character Vocabulary}{8}{subsection.3.3}\protected@file@percent }
 \citation{mortensen2018}
 \citation{mortensen2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Teacher Network: Phonetic Feature Encoder}{10}{subsection.3.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Teacher Network: Phonetic Feature Encoder}{9}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Generalisation Through Articulatory Features}{10}{subsection.3.5}\protected@file@percent }
 \newlabel{subsec:panphon-generalisation}{{3.5}{10}{Generalisation Through Articulatory Features}{subsection.3.5}{}}
-\newlabel{subsec:panphon-generalisation@cref}{{[subsection][5][3]3.5}{[1][10][]10}}
-\@writefile{toc}{\contentsline {paragraph}{Language-Agnostic Feature Space.}{11}{section*.12}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Implicit Cross-Lingual Transfer.}{11}{section*.13}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Example: Unseen Script Generalisation.}{11}{section*.14}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Phonological Universals as Inductive Bias.}{11}{section*.15}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Teacher Model for Untrained Scripts.}{11}{section*.16}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Student Network: Universal Character Encoder}{12}{subsection.3.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Noise Augmentation}{12}{subsection.3.7}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {4}Training Data}{13}{section.4}\protected@file@percent }
-\newlabel{sec:data}{{4}{13}{Training Data}{section.4}{}}
-\newlabel{sec:data@cref}{{[section][4][]4}{[1][12][]13}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Data Selection and Curation Criteria}{13}{subsection.4.1}\protected@file@percent }
-\newlabel{subsec:selection_criteria}{{4.1}{13}{Data Selection and Curation Criteria}{subsection.4.1}{}}
-\newlabel{subsec:selection_criteria@cref}{{[subsection][1][4]4.1}{[1][12][]13}}
-\@writefile{toc}{\contentsline {paragraph}{1. Script-Stratified Sampling.}{13}{section*.17}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{2. Namespace Filtering.}{13}{section*.18}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{3. Global Vocabulary Construction.}{13}{section*.19}\protected@file@percent }
+\newlabel{subsec:panphon-generalisation@cref}{{[subsection][5][3]3.5}{[1][9][]10}}
+\@writefile{toc}{\contentsline {paragraph}{Language-Agnostic Feature Space.}{10}{section*.9}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Implicit Cross-Lingual Transfer.}{10}{section*.10}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Example: Georgian Script.}{10}{section*.11}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phonological Universals as Inductive Bias.}{10}{section*.12}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Teacher Model for Untrained Scripts.}{11}{section*.13}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Student Network: Universal Character Encoder}{11}{subsection.3.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Noise Augmentation}{11}{subsection.3.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {4}Training Data}{12}{section.4}\protected@file@percent }
+\newlabel{sec:data}{{4}{12}{Training Data}{section.4}{}}
+\newlabel{sec:data@cref}{{[section][4][]4}{[1][11][]12}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.1}Data Selection and Curation Criteria}{12}{subsection.4.1}\protected@file@percent }
+\newlabel{subsec:selection_criteria}{{4.1}{12}{Data Selection and Curation Criteria}{subsection.4.1}{}}
+\newlabel{subsec:selection_criteria@cref}{{[subsection][1][4]4.1}{[1][11][]12}}
+\@writefile{toc}{\contentsline {paragraph}{1. Script-Stratified Sampling.}{12}{section*.14}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{2. Namespace Filtering.}{12}{section*.15}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{3. Global Vocabulary Construction.}{12}{section*.16}\protected@file@percent }
 \citation{mortensen2018}
-\@writefile{toc}{\contentsline {paragraph}{4. Orthographic Twin Retention.}{14}{section*.20}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{5. Cross-Script Prioritisation.}{14}{section*.21}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{6. Deduplication.}{14}{section*.22}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}IPA Transcription and Feature Extraction}{14}{subsection.4.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Phonetic Similarity Filtering}{14}{subsection.4.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Dataset Statistics}{15}{subsection.4.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Namespace Contribution.}{15}{section*.24}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Filtered Lang-Script Mismatches.}{15}{section*.25}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.\relax }}{16}{table.caption.23}\protected@file@percent }
-\newlabel{tab:script-distribution}{{2}{16}{Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.\relax }{table.caption.23}{}}
-\newlabel{tab:script-distribution@cref}{{[table][2][]2}{[1][15][]16}}
-\@writefile{toc}{\contentsline {paragraph}{Training Pair Generation.}{16}{section*.26}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {5}Training Methodology}{17}{section.5}\protected@file@percent }
-\newlabel{sec:training}{{5}{17}{Training Methodology}{section.5}{}}
-\newlabel{sec:training@cref}{{[section][5][]5}{[1][17][]17}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Phase 1: Teacher Training on Phonetic Features}{17}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{4. Orthographic Twin Retention.}{13}{section*.17}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{5. Cross-Script Prioritisation.}{13}{section*.18}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{6. Deduplication.}{13}{section*.19}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}IPA Transcription and Feature Extraction}{13}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Phonetic Similarity Filtering}{13}{subsection.4.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Dataset Statistics}{14}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Namespace Contribution.}{14}{section*.21}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Filtered Lang-Script Mismatches.}{14}{section*.22}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.\relax }}{15}{table.caption.20}\protected@file@percent }
+\newlabel{tab:script-distribution}{{2}{15}{Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.\relax }{table.caption.20}{}}
+\newlabel{tab:script-distribution@cref}{{[table][2][]2}{[1][14][]15}}
+\@writefile{toc}{\contentsline {paragraph}{Training Pair Generation.}{15}{section*.23}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {5}Training Methodology}{16}{section.5}\protected@file@percent }
+\newlabel{sec:training}{{5}{16}{Training Methodology}{section.5}{}}
+\newlabel{sec:training@cref}{{[section][5][]5}{[1][16][]16}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Phase 1: Teacher Training on Phonetic Features}{16}{subsection.5.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{16}{section*.24}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Training Configuration.}{16}{section*.25}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Convergence.}{17}{section*.26}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Phase 2: Student-Teacher Alignment}{17}{subsection.5.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{17}{section*.27}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Training Configuration.}{17}{section*.28}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Convergence.}{18}{section*.29}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.2}Phase 2: Student-Teacher Alignment}{18}{subsection.5.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{18}{section*.30}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Training Configuration.}{18}{section*.31}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Convergence.}{19}{section*.32}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Phase 3: Discriminative Fine-Tuning}{19}{subsection.5.3}\protected@file@percent }
-\newlabel{subsec:phase3}{{5.3}{19}{Phase 3: Discriminative Fine-Tuning}{subsection.5.3}{}}
-\newlabel{subsec:phase3@cref}{{[subsection][3][5]5.3}{[1][19][]19}}
-\@writefile{toc}{\contentsline {paragraph}{Hard Negative Mining Strategy.}{19}{section*.33}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{20}{section*.34}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Training Configuration.}{20}{section*.35}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Trade-off: Cross-Script vs.\ Same-Script Performance.}{20}{section*.36}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Implementation Details}{21}{subsection.5.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Training Curves}{21}{subsection.5.5}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.3}Phase 3: Discriminative Fine-Tuning}{18}{subsection.5.3}\protected@file@percent }
+\newlabel{subsec:phase3}{{5.3}{18}{Phase 3: Discriminative Fine-Tuning}{subsection.5.3}{}}
+\newlabel{subsec:phase3@cref}{{[subsection][3][5]5.3}{[1][18][]18}}
+\@writefile{toc}{\contentsline {paragraph}{Hard Negative Mining Strategy.}{18}{section*.30}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{19}{section*.31}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Training Configuration.}{19}{section*.32}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Trade-off: Cross-Script vs.\ Same-Script Performance.}{19}{section*.33}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.4}Implementation Details}{20}{subsection.5.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {5.5}Training Curves}{20}{subsection.5.5}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {2}{\ignorespaces Training curves for the three-phase curriculum. \textbf  {Left:} Phase 1 Teacher training showing triplet loss convergence. \textbf  {Center:} Phase 2 Student-Teacher alignment showing distillation loss and cosine similarity between Student and Teacher embeddings. \textbf  {Right:} Phase 3 hard negative fine-tuning.\relax }}{20}{figure.caption.34}\protected@file@percent }
+\newlabel{fig:training-curves}{{2}{20}{Training curves for the three-phase curriculum. \textbf {Left:} Phase 1 Teacher training showing triplet loss convergence. \textbf {Center:} Phase 2 Student-Teacher alignment showing distillation loss and cosine similarity between Student and Teacher embeddings. \textbf {Right:} Phase 3 hard negative fine-tuning.\relax }{figure.caption.34}{}}
+\newlabel{fig:training-curves@cref}{{[figure][2][]2}{[1][20][]20}}
 \@writefile{toc}{\contentsline {section}{\numberline {6}Evaluation}{21}{section.6}\protected@file@percent }
 \newlabel{sec:evaluation}{{6}{21}{Evaluation}{section.6}{}}
-\newlabel{sec:evaluation@cref}{{[section][6][]6}{[1][21][]21}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Preliminary Results}{21}{subsection.6.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Cross-script equivalents.}{21}{section*.37}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Cross-script transliteration pairs.\relax }}{21}{table.caption.38}\protected@file@percent }
-\newlabel{tab:cross-script}{{3}{21}{Cross-script transliteration pairs.\relax }{table.caption.38}{}}
-\newlabel{tab:cross-script@cref}{{[table][3][]3}{[1][21][]21}}
-\@writefile{toc}{\contentsline {paragraph}{Historical variants.}{22}{section*.39}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces Historical variant pairs. Lower scores for phonetically distant pairs (Lyon--Lugdunum, Istanbul--Constantinople) are expected and correct; historical linkage is handled through place-level attestation records rather than phonetic inference.\relax }}{22}{table.caption.40}\protected@file@percent }
-\newlabel{tab:historical}{{4}{22}{Historical variant pairs. Lower scores for phonetically distant pairs (Lyon--Lugdunum, Istanbul--Constantinople) are expected and correct; historical linkage is handled through place-level attestation records rather than phonetic inference.\relax }{table.caption.40}{}}
-\newlabel{tab:historical@cref}{{[table][4][]4}{[1][22][]22}}
-\@writefile{toc}{\contentsline {paragraph}{Unrelated pairs.}{22}{section*.41}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces Unrelated toponym pairs.\relax }}{22}{table.caption.42}\protected@file@percent }
-\newlabel{tab:unrelated}{{5}{22}{Unrelated toponym pairs.\relax }{table.caption.42}{}}
-\newlabel{tab:unrelated@cref}{{[table][5][]5}{[1][22][]22}}
-\@writefile{toc}{\contentsline {paragraph}{Limitations observed.}{22}{section*.43}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Evaluation Tasks}{22}{subsection.6.2}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Task 1: Cross-Script Retrieval.}{23}{section*.44}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Task 2: Noise Robustness.}{23}{section*.45}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Task 3: Historical Variant Linking.}{23}{section*.46}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Task 4: Scalability.}{23}{section*.47}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}Baselines}{23}{subsection.6.3}\protected@file@percent }
+\newlabel{sec:evaluation@cref}{{[section][6][]6}{[1][20][]21}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.1}Training Convergence}{21}{subsection.6.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phase 1 (Teacher).}{21}{section*.35}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phase 2 (Student-Teacher Alignment).}{21}{section*.36}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phase 3 (Hard Negative Fine-tuning).}{21}{section*.37}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.2}Embedding Quality}{21}{subsection.6.2}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {3}{\ignorespaces Embedding quality diagnostics after Phase 3 training. Cross-script matching is the primary design goal; the model achieves perfect accuracy on this category while maintaining strong performance on related tasks.\relax }}{21}{table.caption.38}\protected@file@percent }
+\newlabel{tab:embedding-quality}{{3}{21}{Embedding quality diagnostics after Phase 3 training. Cross-script matching is the primary design goal; the model achieves perfect accuracy on this category while maintaining strong performance on related tasks.\relax }{table.caption.38}{}}
+\newlabel{tab:embedding-quality@cref}{{[table][3][]3}{[1][21][]21}}
 \citation{mehdie2025}
+\@writefile{toc}{\contentsline {paragraph}{Cross-script Equivalents.}{22}{section*.39}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Same-script Cross-language.}{22}{section*.40}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Historical Variants.}{22}{section*.41}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Script-Pair Analysis.}{22}{section*.42}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {6.3}MEHDIE Benchmark}{22}{subsection.6.3}\protected@file@percent }
 \citation{mehdie2025}
-\@writefile{toc}{\contentsline {paragraph}{MEHDIE Benchmark.}{24}{section*.48}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {6.4}Results}{24}{subsection.6.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{MEHDIE Benchmark Results.}{24}{section*.49}\protected@file@percent }
-\@writefile{lot}{\contentsline {table}{\numberline {6}{\ignorespaces MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better. Symphonym achieves 89.2\% Recall@1, meaning the correct cross-script match is ranked first in nearly 9 out of 10 queries.\relax }}{24}{table.caption.50}\protected@file@percent }
-\newlabel{tab:mehdie-results}{{6}{24}{MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better. Symphonym achieves 89.2\% Recall@1, meaning the correct cross-script match is ranked first in nearly 9 out of 10 queries.\relax }{table.caption.50}{}}
-\newlabel{tab:mehdie-results@cref}{{[table][6][]6}{[1][24][]24}}
-\@writefile{toc}{\contentsline {paragraph}{Comparison with MEHDIE System.}{24}{section*.51}\protected@file@percent }
-\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{25}{section.7}\protected@file@percent }
-\newlabel{sec:discussion}{{7}{25}{Discussion}{section.7}{}}
-\newlabel{sec:discussion@cref}{{[section][7][]7}{[1][25][]25}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Limitations}{25}{subsection.7.1}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Training Data Bias.}{25}{section*.52}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Tonal Languages.}{26}{section*.53}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{IPA Coverage.}{26}{section*.54}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Computational Cost.}{26}{section*.55}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {4}{\ignorespaces MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better.\relax }}{23}{table.caption.43}\protected@file@percent }
+\newlabel{tab:mehdie-results}{{4}{23}{MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better.\relax }{table.caption.43}{}}
+\newlabel{tab:mehdie-results@cref}{{[table][4][]4}{[1][22][]23}}
+\@writefile{lot}{\contentsline {table}{\numberline {5}{\ignorespaces MEHDIE results by testset. Symphonym achieves perfect R@1 on TS8 and substantially outperforms baselines on TS9 and TS10.\relax }}{23}{table.caption.44}\protected@file@percent }
+\newlabel{tab:mehdie-per-testset}{{5}{23}{MEHDIE results by testset. Symphonym achieves perfect R@1 on TS8 and substantially outperforms baselines on TS9 and TS10.\relax }{table.caption.44}{}}
+\newlabel{tab:mehdie-per-testset@cref}{{[table][5][]5}{[1][22][]23}}
+\@writefile{toc}{\contentsline {paragraph}{Comparison with MEHDIE System.}{23}{section*.45}\protected@file@percent }
+\@writefile{toc}{\contentsline {section}{\numberline {7}Discussion}{24}{section.7}\protected@file@percent }
+\newlabel{sec:discussion}{{7}{24}{Discussion}{section.7}{}}
+\newlabel{sec:discussion@cref}{{[section][7][]7}{[1][23][]24}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.1}Key Findings}{24}{subsection.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Cross-script Generalisation.}{24}{section*.46}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Retrieval vs.\ Classification.}{24}{section*.47}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Same-script Limitations.}{24}{section*.48}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Hard Negative Training.}{24}{section*.49}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.2}Operational Implications}{25}{subsection.7.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Scalability and Deployment.}{25}{section*.50}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{No Runtime Phonetics.}{25}{section*.51}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Complementary Methods.}{25}{section*.52}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Historical Orthographic Variation.}{25}{section*.53}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {7.3}Limitations}{25}{subsection.7.3}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Training Data Bias.}{26}{section*.54}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Tonal Languages.}{26}{section*.55}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{IPA Coverage.}{26}{section*.56}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Confusable Pairs.}{26}{section*.57}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {8}Conclusion}{26}{section.8}\protected@file@percent }
 \newlabel{sec:conclusion}{{8}{26}{Conclusion}{section.8}{}}
 \newlabel{sec:conclusion@cref}{{[section][8][]8}{[1][26][]26}}
@@ -191,4 +197,4 @@
 \bibcite{mehdie2025}{{20}{2025}{{Sagi et~al.}}{{Sagi, Zaga, Rusinek, Fekete, Bjerva, and Hose}}}
 \bibcite{santos2018}{{21}{2018}{{Santos et~al.}}{{Santos, Murrieta-Flores, Calafiore, and Martins}}}
 \bibcite{schroff2015}{{22}{2015}{{Schroff et~al.}}{{Schroff, Kalenichenko, and Philbin}}}
-\gdef \@abspage@last{29}
+\gdef \@abspage@last{30}

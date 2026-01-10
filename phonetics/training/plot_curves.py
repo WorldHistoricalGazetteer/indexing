@@ -13,7 +13,7 @@ Output:
 
 Usage:
     python -m phonetics.training.plot_curves \
-        --metrics-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
+        --metrics-dir /home/stephen/PycharmProjects/indexing/training/metrics \
         --output-dir /home/stephen/PycharmProjects/indexing/article/figures
 """
 
@@ -266,9 +266,9 @@ def main():
         return
 
     parser = argparse.ArgumentParser(description='Generate training curves for paper')
-    parser.add_argument('--metrics-dir', type=Path, required=True,
+    parser.add_argument('--metrics-dir', type=Path, default='metrics',
                         help='Directory containing *_metrics.json files')
-    parser.add_argument('--output-dir', type=Path, required=True,
+    parser.add_argument('--output-dir', type=Path, default='/home/stephen/PycharmProjects/indexing/article/figures',
                         help='Directory to save figures')
     args = parser.parse_args()
 

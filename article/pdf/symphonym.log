@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  10 JAN 2026 16:09
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  10 JAN 2026 18:01
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1001,101 +1001,126 @@ Package fontspec Info: Font family 'NotoSerifDevanagari-Regular.ttf(0)'
 v2;language=dflt;"
 (fontspec)             - 'small caps'  (m/sc) with NFSS spec.: 
 
+
+Package fontspec Info: Font family 'NotoSerifCJK-Regular.ttc(1)' created for
+(fontspec)             font 'NotoSerifCJK-Regular.ttc' with options
+(fontspec)             [Path=fonts/,Path=fonts/,FontIndex=1].
+(fontspec)              
+(fontspec)              This font family consists of the following NFSS
+(fontspec)             series/shapes:
+(fontspec)              
+(fontspec)             - 'normal' (m/n) with NFSS spec.:
+(fontspec)             <->"[fonts/NotoSerifCJK-Regular.ttc:1]/OT:script=latn;la
+nguage=dflt;"
+(fontspec)             - 'small caps'  (m/sc) with NFSS spec.: 
+(fontspec)             - 'bold' (b/n) with NFSS spec.:
+(fontspec)             <->"[fonts/NotoSerifCJK-Regular.ttc:1]/OT:script=latn;la
+nguage=dflt;"
+(fontspec)             - 'bold small caps'  (b/sc) with NFSS spec.: 
+(fontspec)             - 'italic' (m/it) with NFSS spec.:
+(fontspec)             <->"[fonts/NotoSerifCJK-Regular.ttc:1]/OT:script=latn;la
+nguage=dflt;"
+(fontspec)             - 'italic small caps'  (m/scit) with NFSS spec.: 
+(fontspec)             - 'bold italic' (b/it) with NFSS spec.:
+(fontspec)             <->"[fonts/NotoSerifCJK-Regular.ttc:1]/OT:script=latn;la
+nguage=dflt;"
+(fontspec)             - 'bold italic small caps'  (b/scit) with NFSS spec.: 
+
 Package translations Info: No language package found. I am going to use `englis
-h' as default language. on input line 75.
+h' as default language. on input line 80.
 
 (pdf/symphonym.aux)
 \openout1 = `symphonym.aux'.
 
-LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 75.
-LaTeX Font Info:    Trying to load font information for TS1+cmr on input line 7
-5.
+LaTeX Font Info:    Checking defaults for OML/cmm/m/it on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for OMS/cmsy/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for OT1/cmr/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for T1/cmr/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for TS1/cmr/m/n on input line 80.
+LaTeX Font Info:    Trying to load font information for TS1+cmr on input line 8
+0.
  (/usr/share/texlive/texmf-dist/tex/latex/base/ts1cmr.fd
 File: ts1cmr.fd 2019/12/16 v2.5j Standard LaTeX font definitions
 )
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
-LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 75.
-LaTeX Font Info:    ... okay on input line 75.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for TU/lmr/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for OMX/cmex/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for U/cmr/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for PD1/pdf/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
+LaTeX Font Info:    Checking defaults for PU/pdf/m/n on input line 80.
+LaTeX Font Info:    ... okay on input line 80.
 
 Package fontspec Info: Adjusting the maths setup (use [no-math] to avoid
 (fontspec)             this).
 
 \symlegacymaths=\mathgroup6
 LaTeX Font Info:    Overwriting symbol font `legacymaths' in version `bold'
-(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 75.
-LaTeX Font Info:    Redeclaring math accent \acute on input line 75.
-LaTeX Font Info:    Redeclaring math accent \grave on input line 75.
-LaTeX Font Info:    Redeclaring math accent \ddot on input line 75.
-LaTeX Font Info:    Redeclaring math accent \tilde on input line 75.
-LaTeX Font Info:    Redeclaring math accent \bar on input line 75.
-LaTeX Font Info:    Redeclaring math accent \breve on input line 75.
-LaTeX Font Info:    Redeclaring math accent \check on input line 75.
-LaTeX Font Info:    Redeclaring math accent \hat on input line 75.
-LaTeX Font Info:    Redeclaring math accent \dot on input line 75.
-LaTeX Font Info:    Redeclaring math accent \mathring on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Delta on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Theta on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Xi on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Pi on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Phi on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Psi on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \Omega on input line 75.
-LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 75.
-LaTeX Font Info:    Redeclaring symbol font `operators' on input line 75.
+(Font)                  OT1/cmr/m/n --> OT1/cmr/bx/n on input line 80.
+LaTeX Font Info:    Redeclaring math accent \acute on input line 80.
+LaTeX Font Info:    Redeclaring math accent \grave on input line 80.
+LaTeX Font Info:    Redeclaring math accent \ddot on input line 80.
+LaTeX Font Info:    Redeclaring math accent \tilde on input line 80.
+LaTeX Font Info:    Redeclaring math accent \bar on input line 80.
+LaTeX Font Info:    Redeclaring math accent \breve on input line 80.
+LaTeX Font Info:    Redeclaring math accent \check on input line 80.
+LaTeX Font Info:    Redeclaring math accent \hat on input line 80.
+LaTeX Font Info:    Redeclaring math accent \dot on input line 80.
+LaTeX Font Info:    Redeclaring math accent \mathring on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Gamma on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Delta on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Theta on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Lambda on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Xi on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Pi on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Sigma on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Upsilon on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Phi on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Psi on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \Omega on input line 80.
+LaTeX Font Info:    Redeclaring math symbol \mathdollar on input line 80.
+LaTeX Font Info:    Redeclaring symbol font `operators' on input line 80.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `normal' on input line 75.
+(Font)              `operators' in the math version `normal' on input line 80.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  OT1/cmr/m/n --> TU/LinLibertine_R.otf(0)/m/n on input l
-ine 75.
+ine 80.
 LaTeX Font Info:    Encoding `OT1' has changed to `TU' for symbol font
-(Font)              `operators' in the math version `bold' on input line 75.
+(Font)              `operators' in the math version `bold' on input line 80.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  OT1/cmr/bx/n --> TU/LinLibertine_R.otf(0)/m/n on input 
-line 75.
+line 80.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `normal'
 (Font)                  TU/LinLibertine_R.otf(0)/m/n --> TU/LinLibertine_R.otf(
-0)/m/n on input line 75.
+0)/m/n on input line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `normal'
 (Font)                  OT1/cmr/m/it --> TU/LinLibertine_R.otf(0)/m/it on input
- line 75.
+ line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathbf' in version `normal'
 (Font)                  OT1/cmr/bx/n --> TU/LinLibertine_R.otf(0)/b/n on input 
-line 75.
+line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `normal'
-(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 75.
+(Font)                  OT1/cmss/m/n --> TU/lmss/m/n on input line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `normal'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 75.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/m/n on input line 80.
 LaTeX Font Info:    Overwriting symbol font `operators' in version `bold'
 (Font)                  TU/LinLibertine_R.otf(0)/m/n --> TU/LinLibertine_R.otf(
-0)/b/n on input line 75.
+0)/b/n on input line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathit' in version `bold'
 (Font)                  OT1/cmr/bx/it --> TU/LinLibertine_R.otf(0)/b/it on inpu
-t line 75.
+t line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathsf' in version `bold'
-(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 75.
+(Font)                  OT1/cmss/bx/n --> TU/lmss/b/n on input line 80.
 LaTeX Font Info:    Overwriting math alphabet `\mathtt' in version `bold'
-(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 75.
-Package hyperref Info: Link coloring ON on input line 75.
+(Font)                  OT1/cmtt/m/n --> TU/lmtt/b/n on input line 80.
+Package hyperref Info: Link coloring ON on input line 80.
 
 (/usr/share/texlive/texmf-dist/tex/latex/hyperref/nameref.sty
 Package: nameref 2021-04-02 v2.47 Cross-referencing by name of section
@@ -1108,9 +1133,9 @@ Package: gettitlestring 2019/12/15 v1.6 Cleanup title references (HO)
 )
 \c@section@level=\count357
 )
-LaTeX Info: Redefining \ref on input line 75.
-LaTeX Info: Redefining \pageref on input line 75.
-LaTeX Info: Redefining \nameref on input line 75.
+LaTeX Info: Redefining \ref on input line 80.
+LaTeX Info: Redefining \pageref on input line 80.
+LaTeX Info: Redefining \nameref on input line 80.
 
 (pdf/symphonym.out) (pdf/symphonym.out)
 \@outlinefile=\write4
@@ -1127,95 +1152,120 @@ File: translations-basic-dictionary-english.trsl (english translation file `tra
 nslations-basic-dictionary')
 )
 Package translations Info: loading dictionary `translations-basic-dictionary' f
-or `english'. on input line 75.
-LaTeX Font Info:    Trying to load font information for U+msa on input line 78.
+or `english'. on input line 80.
+LaTeX Font Info:    Trying to load font information for U+msa on input line 83.
 
  (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsa.fd
 File: umsa.fd 2013/01/14 v3.01 AMS symbols A
 )
-LaTeX Font Info:    Trying to load font information for U+msb on input line 78.
+LaTeX Font Info:    Trying to load font information for U+msb on input line 83.
 
 
 (/usr/share/texlive/texmf-dist/tex/latex/amsfonts/umsb.fd
 File: umsb.fd 2013/01/14 v3.01 AMS symbols B
 )
-Overfull \hbox (9.88336pt too wide) in paragraph at lines 80--81
+Overfull \hbox (9.88336pt too wide) in paragraph at lines 85--86
 \TU/LinLibertine_R.otf(0)/m/n/10 capture the phonetic relationships that make “
 Moscow”, “Москва”, and “\TU/Amiri-Regular.ttf(0)/m/n/10 موسکو\TU/LinLibertine_R
 .otf(0)/m/n/10 ”
  []
 
+
+Overfull \hbox (4.68225pt too wide) in paragraph at lines 85--86
+\TU/LinLibertine_R.otf(0)/m/n/10 netic conversion or language-specific resource
+s. Symphonym uses a Teacher-
+ []
+
+
+Overfull \hbox (2.15335pt too wide) in paragraph at lines 85--86
+\TU/LinLibertine_R.otf(0)/m/n/10 strates 89.2% Recall@1, outperforming Levensht
+ein (81.5%) and Jaro-Winkler
+ []
+
+
+Overfull \hbox (8.71005pt too wide) in paragraph at lines 85--86
+\TU/LinLibertine_R.otf(0)/m/n/10 Gazetteer, enabling phonetic search and reconc
+iliation across 67M+ toponyms. 
+ []
+
 [1
 
 ]
-Overfull \hbox (5.49919pt too wide) in paragraph at lines 99--100
+Overfull \hbox (5.49919pt too wide) in paragraph at lines 104--105
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 A \TU/LinLibertine_R.otf(0)/b/n/10.95 noi
 se-aware training regime \TU/LinLibertine_R.otf(0)/m/n/10.95 with strategic lan
 guage dropout that forces
  []
 
-
-Overfull \hbox (1.63109pt too wide) in paragraph at lines 106--107
+[2]
+Overfull \hbox (1.63109pt too wide) in paragraph at lines 111--112
 \TU/LinLibertine_R.otf(0)/m/n/10.95 pus without language identification, script
 -specific preprocessing, or runtime pho-
  []
 
-[2]
-Overfull \hbox (0.72499pt too wide) in paragraph at lines 108--109
+
+Overfull \hbox (10.19395pt too wide) in paragraph at lines 111--112
+\TU/LinLibertine_R.otf(0)/m/n/10.95 proach naturally handles \TU/LinLibertine_R
+.otf(0)/m/it/10.95 historical orthographic variation\TU/LinLibertine_R.otf(0)/m
+/n/10.95 —the inconsistent spellings
+ []
+
+
+Overfull \hbox (0.72499pt too wide) in paragraph at lines 113--114
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Both Symphonym and WHG’s reconciliation pip
 eline (termed WHG PLACE: Place
  []
 
 
-Underfull \hbox (badness 10000) in paragraph at lines 110--110
+Underfull \hbox (badness 10000) in paragraph at lines 115--115
 [][][][][]$[][][][][] [] [] [] [][][][] [] [][][][][][][][][][][] [] [][][] [] 
 [][][][][][][] [] [][][][][][][][][] [] [][][][] [] [][][][] []
  []
 
-[3]
-Overfull \hbox (7.83243pt too wide) in paragraph at lines 146--147
+
+Overfull \hbox (7.83243pt too wide) in paragraph at lines 123--124
 \TU/LinLibertine_R.otf(0)/m/n/10.95 The earliest computational approaches to ph
 onetic matching emerged from English-
  []
 
-[4] [5]
-Overfull \hbox (19.3181pt too wide) in paragraph at lines 171--172
+[3] [4]
+Overfull \hbox (19.3181pt too wide) in paragraph at lines 148--149
 \TU/LinLibertine_R.otf(0)/m/n/10.95 tures, I provide the model with vectors tha
 t already encode phonetic properties—
  []
 
 
-Overfull \hbox (6.2827pt too wide) in paragraph at lines 184--185
+Overfull \hbox (6.2827pt too wide) in paragraph at lines 161--162
 \TU/LinLibertine_R.otf(0)/m/n/10.95 version for over 100 languages, outputting 
 IPA transcriptions. PanPhon ([][]Mortensen
  []
 
-[6]
-Overfull \hbox (10.05165pt too wide) in paragraph at lines 207--224
+[5]
+Overfull \hbox (10.05165pt too wide) in paragraph at lines 184--201
  [][] 
  []
 
-[7] [8]
-Overfull \hbox (2.40857pt too wide) in paragraph at lines 326--327
+[6] [7] [8]
+Overfull \hbox (2.40857pt too wide) in paragraph at lines 303--304
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 Alphabetic scripts \TU/LinLibertine_R.otf
 (0)/m/n/10.95 (Latin, Cyrillic, Greek, Arabic, Hebrew, Brahmic scripts,
  []
 
-[9]
-Overfull \hbox (9.45862pt too wide) in paragraph at lines 333--334
+
+Overfull \hbox (9.45862pt too wide) in paragraph at lines 310--311
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 The resulting vocabulary contains approxi
 mately 11,000 tokens across all scripts,
  []
 
 
-Overfull \hbox (7.4562pt too wide) in paragraph at lines 343--344
+Overfull \hbox (7.4562pt too wide) in paragraph at lines 320--321
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 Projection\TU/LinLibertine_R.otf(0)/m/n/1
 0.95 : Linear layer projects features to hidden dimension: $\OML/cmm/m/it/10.95
  h[] \OT1/cmr/m/n/10.95 = \OML/cmm/m/it/10.95 W[]f[] \OT1/cmr/m/n/10.95 +
  []
 
 
-Overfull \hbox (49.24547pt too wide) in paragraph at lines 344--345
+Overfull \hbox (49.24547pt too wide) in paragraph at lines 321--322
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 BiLSTM\TU/LinLibertine_R.otf(0)/m/n/10.95
  : Bidirectional LSTM processes the sequence: $\OT1/cmr/m/n/10.95 ([]\OML/cmm/m
 /it/10.95 ; []\OT1/cmr/m/n/10.95 ) = [](\OML/cmm/m/it/10.95 h[]; [] ; h[]\OT1/c
@@ -1223,154 +1273,179 @@ mr/m/n/10.95 )$
  []
 
 
-Overfull \hbox (3.62033pt too wide) in paragraph at lines 346--347
+Overfull \hbox (3.62033pt too wide) in paragraph at lines 323--324
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 Attention Pooling\TU/LinLibertine_R.otf(0
 )/m/n/10.95 : Learned attention weights aggregate sequence to fixed-
  []
 
-[10]
-Overfull \hbox (2.40852pt too wide) in paragraph at lines 365--366
+[9]
+Overfull \hbox (2.40852pt too wide) in paragraph at lines 342--343
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Teacher pathway to generate embeddings that
  participate fully in the phonetically-
  []
 
-[11]
-Overfull \hbox (0.9294pt too wide) in paragraph at lines 399--400
+[10]
+Overfull \hbox (0.9294pt too wide) in paragraph at lines 376--377
 \TU/LinLibertine_R.otf(0)/m/n/10.95 The World Historical Gazetteer (WHG) infras
 tructure separates data into a \TU/lmtt/m/n/10.95 places
  []
 
 
-Overfull \hbox (7.6025pt too wide) in paragraph at lines 399--400
+Overfull \hbox (7.6025pt too wide) in paragraph at lines 376--377
 \TU/LinLibertine_R.otf(0)/m/n/10.95 index, which aggregates geographic entities
  with their attributions, and a \TU/lmtt/m/n/10.95 toponyms
  []
 
-[12]
-Overfull \hbox (1.94133pt too wide) in paragraph at lines 404--405
+[11]
+Overfull \hbox (1.94133pt too wide) in paragraph at lines 381--382
 \TU/LinLibertine_R.otf(0)/m/n/10.95 guages, I implement a quota-based sampling 
 strategy. I sample up to $\OML/cmm/m/it/10.95 N \OT1/cmr/m/n/10.95 = 100\OML/cm
 m/m/it/10.95 ; \OT1/cmr/m/n/10.95 000$
  []
 
 
-Overfull \hbox (17.2312pt too wide) in paragraph at lines 404--405
+Overfull \hbox (17.2312pt too wide) in paragraph at lines 381--382
 \TU/LinLibertine_R.otf(0)/m/n/10.95 pairs for each script-pair combination (e.g
 ., Latin–Cyrillic, Latin–Devanagari, Arabic–
  []
 
-[13]
-Overfull \hbox (8.70355pt too wide) in paragraph at lines 423--424
+[12]
+Overfull \hbox (8.70355pt too wide) in paragraph at lines 400--401
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Cuba, and the Philippines, each generating 
 Santiago@es/Santiago@en pairs). With-
  []
 
-[14]
-Overfull \hbox (10.88745pt too wide) in paragraph at lines 492--493
+[13]
+Overfull \hbox (10.88745pt too wide) in paragraph at lines 469--470
 \TU/LinLibertine_R.otf(0)/m/n/10.95 nese/Latin (923,079), Persian/Latin (197,09
 9), Japanese/Latin (111,945), Russian/Latin
  []
 
-[15] [16] [17]
-Overfull \hbox (0.17838pt too wide) in paragraph at lines 536--537
+[14] [15] [16]
+Overfull \hbox (0.17838pt too wide) in paragraph at lines 513--514
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Convergence.[] \TU/LinLibertine_R.otf(0)
 /m/n/10.95 Phase 1 training converged smoothly, with training loss decreas-
  []
 
-[18] [19]
-Overfull \hbox (5.2312pt too wide) in paragraph at lines 620--621
+[17] [18] [19]
+Overfull \hbox (5.2312pt too wide) in paragraph at lines 597--598
 \TU/LinLibertine_R.otf(0)/b/n/10.95 parameters\TU/LinLibertine_R.otf(0)/m/n/10.
 95 ; the Student contains \TU/LinLibertine_R.otf(0)/b/n/10.95 1,761,217 paramet
 ers \TU/LinLibertine_R.otf(0)/m/n/10.95 (larger due to the 11,122-
  []
 
-[20]
-Overfull \hbox (1.40677pt too wide) in paragraph at lines 622--623
+
+Overfull \hbox (1.40677pt too wide) in paragraph at lines 599--600
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 The embedding dimension of 128 was chosen
  to balance expressiveness against
  []
 
-
-LaTeX Warning: Reference `fig:training-curves' on page 21 undefined on input li
-ne 628.
-
-
-Overfull \hbox (0.10054pt too wide) in paragraph at lines 646--647
-\TU/LinLibertine_R.otf(0)/m/n/10.95 haviour prior to full evaluation. These res
-ults use the Phase 2 checkpoint (Student-
+File: figures/training_curves.pdf Graphic file (type pdf)
+<use figures/training_curves.pdf>
+[20]
+Overfull \hbox (31.47713pt too wide) in paragraph at lines 622--623
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 Phase 1 (Teacher).[] \TU/LinLibertine_R.
+otf(0)/m/n/10.95 The Teacher encoder trained for 50 epochs on 467,546 phonetica
+lly-
  []
 
 
-Overfull \hbox (41.85402pt too wide) in paragraph at lines 666--667
- []\TU/LinLibertine_R.otf(0)/b/n/10.95 Historical variants.[] \TU/LinLibertine_
-R.otf(0)/m/n/10.95 Diachronic name changes (Paris–Lutetia, Istanbul–Constantino
-ple)
+Overfull \hbox (43.58058pt too wide) in paragraph at lines 634--646
+ [][] 
  []
 
-[21] [22]
-Overfull \hbox (0.2915pt too wide) in paragraph at lines 716--717
- []\TU/LinLibertine_R.otf(0)/b/n/10.95 Task 2: Noise Robustness.[] \TU/LinLiber
-tine_R.otf(0)/m/n/10.95 Measure embedding stability under synthetic noise
+[21]
+Overfull \hbox (4.21724pt too wide) in paragraph at lines 686--687
+[]\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 89.2% Recall@1—the cor
+rect cross-script match is ranked
  []
 
-[23] [24]
-Overfull \hbox (7.59883pt too wide) in paragraph at lines 796--797
+[22] [23]
+Overfull \hbox (0.35722pt too wide) in paragraph at lines 727--728
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 Retrieval vs. Classification.[] \TU/LinL
+ibertine_R.otf(0)/m/n/10.95 Symphonym excels at \TU/LinLibertine_R.otf(0)/m/it/
+10.95 ranking \TU/LinLibertine_R.otf(0)/m/n/10.95 candidates by pho-
+ []
+
+
+Overfull \hbox (1.51425pt too wide) in paragraph at lines 735--736
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 Scalability and Deployment.[] \TU/LinLib
+ertine_R.otf(0)/m/n/10.95 Symphonym embeddings integrate directly with
+ []
+
+
+Overfull \hbox (2.27348pt too wide) in paragraph at lines 735--736
+\TU/LinLibertine_R.otf(0)/m/n/10.95 mal: encoding a toponym requires a single f
+orward pass through a 1.7M-parameter
+ []
+
+[24]
+Overfull \hbox (10.7123pt too wide) in paragraph at lines 737--738
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 No Runtime Phonetics.[] \TU/LinLibertine
+_R.otf(0)/m/n/10.95 The Student encoder requires only raw character input—
+ []
+
+
+Overfull \hbox (8.13054pt too wide) in paragraph at lines 741--742
+\TU/LinLibertine_R.otf(0)/m/n/10.95 thographic variation in historical sources.
+ The same parish might appear as “Leyces-
+ []
+
+
+Overfull \hbox (6.2544pt too wide) in paragraph at lines 747--748
+\TU/LinLibertine_R.otf(0)/m/n/10.95 places with official names, potentially und
+er-representing historical variants. Wiki-
+ []
+
+[25]
+Overfull \hbox (7.59883pt too wide) in paragraph at lines 749--750
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Tonal Languages.[] \TU/LinLibertine_R.ot
 f(0)/m/n/10.95 The current architecture does not explicitly model tone, which
  []
 
-[25]
-Overfull \hbox (1.34909pt too wide) in paragraph at lines 800--801
- []\TU/LinLibertine_R.otf(0)/b/n/10.95 Computational Cost.[] \TU/LinLibertine_R
-.otf(0)/m/n/10.95 Embedding 60M toponyms requires significant compute.
+[26]
+Overfull \hbox (2.60202pt too wide) in paragraph at lines 763--764
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 97% accuracy \TU/LinLibertine_R.otf(0)/m/
+n/10.95 on cross-script diagnostic pairs (66/68), spanning Latin, Cyril-
  []
 
 
-Overfull \hbox (3.40137pt too wide) in paragraph at lines 806--807
-\TU/LinLibertine_R.otf(0)/m/n/10.95 that places phonetically similar names near
- each other in a unified 128-dimensional
+Overfull \hbox (29.71603pt too wide) in paragraph at lines 764--765
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 89.2% Recall@1 \TU/LinLibertine_R.otf(0)/
+m/n/10.95 and \TU/LinLibertine_R.otf(0)/b/n/10.95 MRR of 0.930 \TU/LinLibertine
+_R.otf(0)/m/n/10.95 on the MEHDIE Hebrew-Arabic benchmark—
  []
 
 
-Overfull \hbox (4.7336pt too wide) in paragraph at lines 806--807
-\TU/LinLibertine_R.otf(0)/m/n/10.95 training on articulatory phonetic features 
-while requiring only character sequences
+Overfull \hbox (4.45253pt too wide) in paragraph at lines 764--765
+\TU/LinLibertine_R.otf(0)/m/n/10.95 outperforming Levenshtein (81.5% R@1) and J
+aro-Winkler (78.5% R@1) base-
  []
 
 
-Overfull \hbox (13.48991pt too wide) in paragraph at lines 815--816
+Overfull \hbox (13.48991pt too wide) in paragraph at lines 774--775
 [] [] [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LinLibertine_R.otf(0)/m/n/
 10.95 ), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][
 ][]$[][]), and the Getty
  []
 
 
-Overfull \hbox (0.45209pt too wide) in paragraph at lines 815--816
+Overfull \hbox (0.45209pt too wide) in paragraph at lines 774--775
 \TU/LinLibertine_R.otf(0)/m/n/10.95 via the supplementary file link at https://
 link.springer.com/article/10.1007/s10579-
  []
 
-
-Overfull \hbox (183.80989pt too wide) in paragraph at lines 819--820
-\TU/LinLibertine_R.otf(0)/m/n/10.95 Training code, model weights, and inference
- utilities are available at https://github.com/WorldHistoricalGazetteer/indexin
-g.
- []
-
-[26] (pdf/symphonym.bbl [27] [28]) [29] (pdf/symphonym.aux)
-
-LaTeX Warning: There were undefined references.
-
+(pdf/symphonym.bbl [27] [28] [29]) [30] (pdf/symphonym.aux)
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
-(rerunfilecheck)             Checksum: D7D8AB442B88B4E19F5F6A068CE5DABE;6636.
+(rerunfilecheck)             Checksum: BB7152C3C0992B2B923F5C83509B9B2A;6893.
  ) 
 Here is how much of TeX's memory you used:
- 34029 strings out of 478149
- 747735 string characters out of 5853103
- 1054357 words of memory out of 5000000
- 54100 multiletter control sequences out of 15000+600000
- 480271 words of font info for 114 fonts, out of 8000000 for 9000
+ 34076 strings out of 478149
+ 749467 string characters out of 5853103
+ 1053734 words of memory out of 5000000
+ 54135 multiletter control sequences out of 15000+600000
+ 480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 84i,14n,85p,1529b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,14n,85p,1851b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.pdf (29 pages).
+Output written on pdf/symphonym.pdf (30 pages).
