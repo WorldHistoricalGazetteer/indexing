@@ -28,6 +28,7 @@ import json
 import sys
 from pathlib import Path
 from datetime import datetime
+from typing import Dict
 
 import numpy as np
 import torch
@@ -153,6 +154,82 @@ def create_symphonym_similarity_fn(encoder, benchmark: 'MEHDIEBenchmark' = None)
     return similarity_fn
 
 
+def diagnose_symphonym_scores(encoder, benchmark: 'MEHDIEBenchmark'):
+    """
+    Diagnose Symphonym similarity score distribution on MEHDIE benchmark.
+    """
+    print("\n" + "=" * 80)
+    print("SYMPHONYM SCORE DIAGNOSTICS")
+    print("=" * 80)
+
+    import random
+
+    for testset_name, testset in benchmark.testsets.items():
+        print(f"\n{testset_name}")
+        print("-" * 60)
+
+        # Get ground truth pairs
+        gt_set = set(testset.ground_truth)
+
+        # Sample some ground truth pairs and compute their scores
+        gt_scores = []
+        gt_samples = []
+        for id1, id2 in list(gt_set)[:10]:
+            if id1 in testset.dataset1 and id2 in testset.dataset2:
+                record1 = testset.dataset1[id1]
+                record2 = testset.dataset2[id2]
+                name1 = record1['title']
+                name2 = record2['title']
+
+                emb1 = encoder.encode(name1)
+                emb2 = encoder.encode(name2)
+                sim = encoder.similarity(emb1, emb2).item()
+                gt_scores.append(sim)
+                gt_samples.append((name1, name2, sim))
+
+        # Sample some random non-matching pairs
+        non_gt_scores = []
+        non_gt_samples = []
+        ids1 = list(testset.dataset1.keys())
+        ids2 = list(testset.dataset2.keys())
+
+        for _ in range(min(20, len(ids1))):
+            id1 = random.choice(ids1)
+            id2 = random.choice(ids2)
+            if (id1, id2) not in gt_set:
+                record1 = testset.dataset1[id1]
+                record2 = testset.dataset2[id2]
+                name1 = record1['title']
+                name2 = record2['title']
+
+                emb1 = encoder.encode(name1)
+                emb2 = encoder.encode(name2)
+                sim = encoder.similarity(emb1, emb2).item()
+                non_gt_scores.append(sim)
+                if len(non_gt_samples) < 5:
+                    non_gt_samples.append((name1, name2, sim))
+
+        # Print statistics
+        if gt_scores:
+            print(f"  Ground truth pairs (n={len(gt_scores)}):")
+            print(f"    Mean: {np.mean(gt_scores):.3f}, Min: {min(gt_scores):.3f}, Max: {max(gt_scores):.3f}")
+            print(f"    Samples:")
+            for n1, n2, s in gt_samples[:5]:
+                print(f"      '{n1}' vs '{n2}': {s:.3f}")
+
+        if non_gt_scores:
+            print(f"  Non-matching pairs (n={len(non_gt_scores)}):")
+            print(f"    Mean: {np.mean(non_gt_scores):.3f}, Min: {min(non_gt_scores):.3f}, Max: {max(non_gt_scores):.3f}")
+            print(f"    Samples:")
+            for n1, n2, s in non_gt_samples:
+                print(f"      '{n1}' vs '{n2}': {s:.3f}")
+
+        # Separation
+        if gt_scores and non_gt_scores:
+            separation = np.mean(gt_scores) - np.mean(non_gt_scores)
+            print(f"  Score separation (GT mean - non-GT mean): {separation:+.3f}")
+
+
 def run_evaluation(
         testsets_dir: str,
         checkpoint_path: str = None,
@@ -161,8 +238,18 @@ def run_evaluation(
         thresholds: list = None,
         device: str = 'cuda',
         baselines_only: bool = False,
+        diagnose: bool = False,
+        use_thresholds: bool = False,
 ):
-    """Run full MEHDIE benchmark evaluation."""
+    """
+    Run MEHDIE benchmark evaluation.
+
+    By default, uses ranking-based metrics (Recall@K, MRR) which are appropriate
+    for embedding-based retrieval systems like Symphonym.
+
+    Use --use-thresholds for threshold-based F-5 evaluation (for comparison with
+    the original MEHDIE paper results).
+    """
 
     if thresholds is None:
         thresholds = [0.7, 0.8, 0.85, 0.9, 0.95]
@@ -172,7 +259,7 @@ def run_evaluation(
     print("=" * 80)
     print(f"Testsets directory: {testsets_dir}")
     print(f"Model checkpoint: {checkpoint_path or 'None (baselines only)'}")
-    print(f"Thresholds: {thresholds}")
+    print(f"Evaluation mode: {'Threshold-based (F-5)' if use_thresholds else 'Ranking-based (Recall@K, MRR)'}")
     print(f"Device: {device}")
     print()
 
@@ -203,6 +290,10 @@ def run_evaluation(
         )
         print(f"Model loaded (embed_dim={encoder.embed_dim})")
 
+        # Run diagnostics if requested
+        if diagnose:
+            diagnose_symphonym_scores(encoder, benchmark)
+
         # Create similarity function with pre-computed embeddings
         methods['Symphonym'] = create_symphonym_similarity_fn(encoder, benchmark)
 
@@ -211,12 +302,65 @@ def run_evaluation(
     print("RUNNING EVALUATION")
     print("=" * 80)
 
-    all_results = benchmark.compare_methods(methods, thresholds)
+    if use_thresholds:
+        # Original threshold-based evaluation (for comparison with MEHDIE paper)
+        all_results = benchmark.compare_methods(methods, thresholds)
+        print_f5_comparison(benchmark, all_results)
+        print_mehdie_comparison(benchmark, methods, all_results)
+    else:
+        # Ranking-based evaluation (appropriate for Symphonym)
+        all_results = benchmark.compare_methods_ranking(methods)
+        print_ranking_comparison(all_results)
 
-    # Print comparison table
-    print_f5_comparison(benchmark, all_results)
+    # Save results if output path provided
+    if output_path:
+        save_results(output_path, testsets_dir, checkpoint_path, thresholds,
+                     all_results, use_thresholds)
 
-    # Compare with MEHDIE paper results
+    return all_results
+
+
+def print_ranking_comparison(all_results: Dict[str, Dict[str, dict]]):
+    """Print ranking-based comparison table."""
+    print("\n" + "=" * 100)
+    print("RANKING-BASED EVALUATION (Recall@K, MRR)")
+    print("=" * 100)
+    print("\nNote: These metrics measure retrieval quality - can we find the correct")
+    print("match among all candidates? Higher is better.\n")
+
+    methods = list(all_results.keys())
+    testsets = list(next(iter(all_results.values())).keys())
+
+    # Print per-testset results
+    for testset in testsets:
+        short_name = testset.replace('testset', 'TS').split('-')[0]
+        print(f"\n{short_name}:")
+        print(f"  {'Method':<15} {'R@1':>8} {'R@5':>8} {'R@10':>8} {'R@20':>8} {'MRR':>8} {'MeanRank':>10}")
+        print(f"  {'-'*70}")
+
+        for method in methods:
+            r = all_results[method][testset]
+            print(f"  {method:<15} {r['recall_at_1']:>8.3f} {r['recall_at_5']:>8.3f} "
+                  f"{r['recall_at_10']:>8.3f} {r['recall_at_20']:>8.3f} "
+                  f"{r['mrr']:>8.3f} {r['mean_rank']:>10.1f}")
+
+    # Summary table
+    print("\n" + "=" * 100)
+    print("SUMMARY (Average across testsets)")
+    print("=" * 100)
+    print(f"\n{'Method':<15} {'R@1':>8} {'R@5':>8} {'R@10':>8} {'MRR':>8}")
+    print("-" * 50)
+
+    for method in methods:
+        avg_r1 = np.mean([all_results[method][ts]['recall_at_1'] for ts in testsets])
+        avg_r5 = np.mean([all_results[method][ts]['recall_at_5'] for ts in testsets])
+        avg_r10 = np.mean([all_results[method][ts]['recall_at_10'] for ts in testsets])
+        avg_mrr = np.mean([all_results[method][ts]['mrr'] for ts in testsets])
+        print(f"{method:<15} {avg_r1:>8.3f} {avg_r5:>8.3f} {avg_r10:>8.3f} {avg_mrr:>8.3f}")
+
+
+def print_mehdie_comparison(benchmark, methods, all_results):
+    """Print comparison with MEHDIE paper results (threshold-based)."""
     print("\n" + "=" * 80)
     print("COMPARISON WITH MEHDIE PAPER RESULTS (F-5 metric)")
     print("=" * 80)
@@ -229,7 +373,6 @@ def run_evaluation(
 
         row = {'testset': testset_name}
 
-        # Paper results
         if paper_results:
             row['num_matches'] = paper_results.get('num_matches', 'N/A')
             row['MEHDIE_orthographic_f5'] = paper_results.get('orthographic', {}).get('f5', 'N/A')
@@ -238,7 +381,6 @@ def run_evaluation(
             phon_f5 = paper_results.get('phonetic', {}).get('f5', 0)
             row['MEHDIE_best_f5'] = max(orth_f5, phon_f5)
 
-        # Our results (best F-5 across thresholds)
         for method_name in methods.keys():
             if testset_name in all_results.get(method_name, {}):
                 best = max(all_results[method_name][testset_name], key=lambda r: r.f5)
@@ -249,7 +391,6 @@ def run_evaluation(
 
         comparison_data.append(row)
 
-    # Print detailed comparison
     our_method = 'Symphonym' if 'Symphonym' in methods else 'Jaro-Winkler'
     print(f"{'Testset':<30} {'GT':>4} {'MEHDIE-O':>10} {'MEHDIE-P':>10} {our_method:>12} {'Δ':>8}")
     print("-" * 80)
@@ -281,38 +422,21 @@ def run_evaluation(
         print("-" * 80)
         print(f"{'AVERAGE DELTA vs MEHDIE best':<56} {avg_delta:+.3f}")
 
-    # Print per-testset detail
-    print("\n" + "=" * 80)
-    print("DETAILED RESULTS BY TESTSET")
-    print("=" * 80)
 
-    for row in comparison_data:
-        testset = row['testset']
-        print(f"\n{testset}")
-        print(f"  Ground truth matches: {row.get('num_matches', '?')}")
-        print(f"  MEHDIE orthographic F-5: {row.get('MEHDIE_orthographic_f5', 'N/A')}")
-        print(f"  MEHDIE phonetic F-5:     {row.get('MEHDIE_phonetic_f5', 'N/A')}")
+def save_results(output_path, testsets_dir, checkpoint_path, thresholds, all_results, use_thresholds):
+    """Save evaluation results to JSON."""
+    output_data = {
+        'timestamp': datetime.now().isoformat(),
+        'testsets_dir': testsets_dir,
+        'checkpoint_path': checkpoint_path,
+        'evaluation_mode': 'threshold' if use_thresholds else 'ranking',
+        'results': {},
+    }
 
-        for method in methods.keys():
-            f5 = row.get(f'{method}_f5')
-            thresh = row.get(f'{method}_threshold')
-            prec = row.get(f'{method}_precision')
-            rec = row.get(f'{method}_recall')
-            if f5 is not None:
-                print(f"  {method}: F5={f5:.3f} (θ={thresh}, P={prec:.3f}, R={rec:.3f})")
-
-    # Save results if output path provided
-    if output_path:
-        output_data = {
-            'timestamp': datetime.now().isoformat(),
-            'testsets_dir': testsets_dir,
-            'checkpoint_path': checkpoint_path,
-            'thresholds': thresholds,
-            'primary_metric': 'F-5 (recall weighted 5x)',
-            'mehdie_paper_results': MEHDIE_PAPER_RESULTS,
-            'results': {},
-            'comparison': comparison_data,
-        }
+    if use_thresholds:
+        output_data['thresholds'] = thresholds
+        output_data['primary_metric'] = 'F-5 (recall weighted 5x)'
+        output_data['mehdie_paper_results'] = MEHDIE_PAPER_RESULTS
 
         for method_name, method_results in all_results.items():
             output_data['results'][method_name] = {}
@@ -330,13 +454,14 @@ def run_evaluation(
                     }
                     for r in testset_results
                 ]
+    else:
+        output_data['primary_metric'] = 'Recall@K, MRR'
+        output_data['results'] = all_results
 
-        Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-        with open(output_path, 'w') as f:
-            json.dump(output_data, f, indent=2)
-        print(f"\nResults saved to: {output_path}")
-
-    return all_results
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, 'w') as f:
+        json.dump(output_data, f, indent=2)
+    print(f"\nResults saved to: {output_path}")
 
 
 def print_f5_comparison(benchmark, all_results):
@@ -432,6 +557,15 @@ Examples:
         '--baselines-only', action='store_true',
         help='Run only baseline methods (no neural model)'
     )
+    parser.add_argument(
+        '--diagnose', action='store_true',
+        help='Run diagnostics on Symphonym score distributions'
+    )
+    parser.add_argument(
+        '--use-thresholds', action='store_true',
+        help='Use threshold-based F-5 evaluation (for comparison with MEHDIE paper). '
+             'Default is ranking-based evaluation (Recall@K, MRR).'
+    )
 
     args = parser.parse_args()
 
@@ -468,6 +602,8 @@ Examples:
         thresholds=args.thresholds,
         device=args.device,
         baselines_only=args.baselines_only,
+        diagnose=args.diagnose,
+        use_thresholds=args.use_thresholds,
     )
 
 

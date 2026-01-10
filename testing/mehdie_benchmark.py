@@ -443,6 +443,154 @@ class MEHDIEBenchmark:
             row += f" {avg_f5:>15.3f}"
         print(row)
 
+    def evaluate_ranking(
+            self,
+            similarity_fn: Callable[[str, str], float],
+            testset_names: Optional[List[str]] = None,
+            verbose: bool = True
+    ) -> Dict[str, dict]:
+        """
+        Evaluate using ranking metrics (Recall@K, MRR) rather than thresholds.
+
+        For each ground truth pair (id1, id2), we query with all names from id1
+        and rank all records in dataset2 by maximum similarity. We then check
+        where id2 appears in the ranking.
+
+        This is the appropriate evaluation for embedding-based retrieval systems
+        like Symphonym.
+
+        Returns:
+            Dict mapping testset name to metrics dict containing:
+            - recall_at_1, recall_at_5, recall_at_10, recall_at_20
+            - mrr (Mean Reciprocal Rank)
+            - mean_rank
+        """
+        results = {}
+
+        testsets_to_eval = testset_names or list(self.testsets.keys())
+
+        for testset_name in testsets_to_eval:
+            if testset_name not in self.testsets:
+                print(f"Warning: Testset {testset_name} not found")
+                continue
+
+            testset = self.testsets[testset_name]
+
+            if verbose:
+                print(f"\nEvaluating {testset_name} (ranking mode)...")
+
+            # Pre-compute all similarities from dataset1 to dataset2
+            # For each record in dataset1, compute max similarity to each record in dataset2
+            if verbose:
+                print(f"  Computing similarities for {len(testset.dataset1)} queries...")
+
+            # Build similarity matrix: for each id1, rank all id2s
+            query_rankings = {}  # id1 -> [(id2, score), ...] sorted by score desc
+
+            for id1, record1 in testset.dataset1.items():
+                scores = []
+                for id2, record2 in testset.dataset2.items():
+                    # Max similarity across all name pairs
+                    max_score = 0.0
+                    for name1 in record1['all_names']:
+                        for name2 in record2['all_names']:
+                            if name1 and name2:
+                                score = similarity_fn(name1, name2)
+                                max_score = max(max_score, score)
+                    scores.append((id2, max_score))
+
+                # Sort by score descending
+                scores.sort(key=lambda x: -x[1])
+                query_rankings[id1] = scores
+
+            # Now evaluate: for each ground truth pair, find rank of correct answer
+            ranks = []
+            reciprocal_ranks = []
+
+            # Group ground truth by query (id1)
+            gt_by_query = {}
+            for id1, id2 in testset.ground_truth:
+                if id1 not in gt_by_query:
+                    gt_by_query[id1] = set()
+                gt_by_query[id1].add(id2)
+
+            for id1, correct_ids in gt_by_query.items():
+                if id1 not in query_rankings:
+                    continue
+
+                ranking = query_rankings[id1]
+
+                # Find rank of first correct answer
+                for rank, (id2, score) in enumerate(ranking, start=1):
+                    if id2 in correct_ids:
+                        ranks.append(rank)
+                        reciprocal_ranks.append(1.0 / rank)
+                        break
+                else:
+                    # Correct answer not found (shouldn't happen)
+                    ranks.append(len(ranking) + 1)
+                    reciprocal_ranks.append(0.0)
+
+            # Compute metrics
+            if ranks:
+                recall_at_1 = sum(1 for r in ranks if r <= 1) / len(ranks)
+                recall_at_5 = sum(1 for r in ranks if r <= 5) / len(ranks)
+                recall_at_10 = sum(1 for r in ranks if r <= 10) / len(ranks)
+                recall_at_20 = sum(1 for r in ranks if r <= 20) / len(ranks)
+                mrr = np.mean(reciprocal_ranks)
+                mean_rank = np.mean(ranks)
+            else:
+                recall_at_1 = recall_at_5 = recall_at_10 = recall_at_20 = 0.0
+                mrr = 0.0
+                mean_rank = float('inf')
+
+            results[testset_name] = {
+                'recall_at_1': recall_at_1,
+                'recall_at_5': recall_at_5,
+                'recall_at_10': recall_at_10,
+                'recall_at_20': recall_at_20,
+                'mrr': mrr,
+                'mean_rank': mean_rank,
+                'num_queries': len(gt_by_query),
+                'corpus_size': len(testset.dataset2),
+            }
+
+            if verbose:
+                print(f"  Queries: {len(gt_by_query)}, Corpus: {len(testset.dataset2)}")
+                print(f"  Recall@1:  {recall_at_1:.3f}")
+                print(f"  Recall@5:  {recall_at_5:.3f}")
+                print(f"  Recall@10: {recall_at_10:.3f}")
+                print(f"  Recall@20: {recall_at_20:.3f}")
+                print(f"  MRR:       {mrr:.3f}")
+                print(f"  Mean Rank: {mean_rank:.1f}")
+
+        return results
+
+    def compare_methods_ranking(
+            self,
+            methods: Dict[str, Callable[[str, str], float]],
+            verbose: bool = True
+    ) -> Dict[str, Dict[str, dict]]:
+        """
+        Compare multiple methods using ranking metrics.
+
+        Returns:
+            Dict mapping method name to results from evaluate_ranking
+        """
+        all_results = {}
+
+        for method_name, similarity_fn in methods.items():
+            if verbose:
+                print(f"\n{'=' * 60}")
+                print(f"Evaluating method: {method_name}")
+                print('=' * 60)
+
+            all_results[method_name] = self.evaluate_ranking(
+                similarity_fn, verbose=verbose
+            )
+
+        return all_results
+
 
 def create_model_similarity_fn(model, char_vocab, lang_vocab, device='cuda'):
     """
