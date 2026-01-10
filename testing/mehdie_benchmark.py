@@ -447,7 +447,8 @@ class MEHDIEBenchmark:
             self,
             similarity_fn: Callable[[str, str], float],
             testset_names: Optional[List[str]] = None,
-            verbose: bool = True
+            verbose: bool = True,
+            embedding_cache: Optional[Dict[str, 'torch.Tensor']] = None,
     ) -> Dict[str, dict]:
         """
         Evaluate using ranking metrics (Recall@K, MRR) rather than thresholds.
@@ -458,6 +459,13 @@ class MEHDIEBenchmark:
 
         This is the appropriate evaluation for embedding-based retrieval systems
         like Symphonym.
+
+        Args:
+            similarity_fn: Function that computes similarity between two strings
+            testset_names: Optional list of testsets to evaluate
+            verbose: Print progress
+            embedding_cache: Optional pre-computed embeddings dict (name -> tensor)
+                            If provided, uses fast matrix operations
 
         Returns:
             Dict mapping testset name to metrics dict containing:
@@ -479,29 +487,15 @@ class MEHDIEBenchmark:
             if verbose:
                 print(f"\nEvaluating {testset_name} (ranking mode)...")
 
-            # Pre-compute all similarities from dataset1 to dataset2
-            # For each record in dataset1, compute max similarity to each record in dataset2
-            if verbose:
-                print(f"  Computing similarities for {len(testset.dataset1)} queries...")
-
-            # Build similarity matrix: for each id1, rank all id2s
-            query_rankings = {}  # id1 -> [(id2, score), ...] sorted by score desc
-
-            for id1, record1 in testset.dataset1.items():
-                scores = []
-                for id2, record2 in testset.dataset2.items():
-                    # Max similarity across all name pairs
-                    max_score = 0.0
-                    for name1 in record1['all_names']:
-                        for name2 in record2['all_names']:
-                            if name1 and name2:
-                                score = similarity_fn(name1, name2)
-                                max_score = max(max_score, score)
-                    scores.append((id2, max_score))
-
-                # Sort by score descending
-                scores.sort(key=lambda x: -x[1])
-                query_rankings[id1] = scores
+            # Use fast matrix computation if embeddings are cached
+            if embedding_cache is not None:
+                query_rankings = self._compute_rankings_fast(
+                    testset, embedding_cache, verbose
+                )
+            else:
+                query_rankings = self._compute_rankings_slow(
+                    testset, similarity_fn, verbose
+                )
 
             # Now evaluate: for each ground truth pair, find rank of correct answer
             ranks = []
@@ -566,18 +560,131 @@ class MEHDIEBenchmark:
 
         return results
 
+    def _compute_rankings_fast(
+            self,
+            testset: TestSet,
+            embedding_cache: Dict[str, 'torch.Tensor'],
+            verbose: bool = True
+    ) -> Dict[str, List[Tuple[str, float]]]:
+        """
+        Compute rankings using fast matrix operations on pre-computed embeddings.
+        """
+        import torch
+        import torch.nn.functional as F
+
+        if verbose:
+            print(f"  Computing rankings (fast matrix mode)...")
+
+        # Build name-to-embedding lookup and record-to-names mapping
+        # For each record, get all its name embeddings
+
+        # Dataset2: build matrix of all name embeddings with record mapping
+        d2_names = []
+        d2_record_ids = []
+        d2_name_to_idx = {}
+
+        for id2, record2 in testset.dataset2.items():
+            for name in record2['all_names']:
+                if name and name in embedding_cache:
+                    idx = len(d2_names)
+                    d2_names.append(name)
+                    d2_record_ids.append(id2)
+                    if name not in d2_name_to_idx:
+                        d2_name_to_idx[name] = []
+                    d2_name_to_idx[name].append(idx)
+
+        if not d2_names:
+            return {}
+
+        # Stack embeddings into matrix
+        d2_embeddings = torch.stack([embedding_cache[n] for n in d2_names])
+        # Normalize for cosine similarity
+        d2_embeddings = F.normalize(d2_embeddings, p=2, dim=1)
+
+        query_rankings = {}
+
+        # Process each query record
+        for id1, record1 in testset.dataset1.items():
+            # Get embeddings for all names in this record
+            q_names = [n for n in record1['all_names'] if n and n in embedding_cache]
+            if not q_names:
+                continue
+
+            q_embeddings = torch.stack([embedding_cache[n] for n in q_names])
+            q_embeddings = F.normalize(q_embeddings, p=2, dim=1)
+
+            # Compute all similarities at once: [num_query_names, num_d2_names]
+            sim_matrix = torch.mm(q_embeddings, d2_embeddings.t())
+
+            # For each d2 record, get max similarity across all name pairs
+            record_scores = {}
+            for idx, id2 in enumerate(d2_record_ids):
+                # Max similarity from any query name to this d2 name
+                max_sim = sim_matrix[:, idx].max().item()
+                if id2 not in record_scores:
+                    record_scores[id2] = max_sim
+                else:
+                    record_scores[id2] = max(record_scores[id2], max_sim)
+
+            # Sort by score descending
+            ranking = sorted(record_scores.items(), key=lambda x: -x[1])
+            query_rankings[id1] = ranking
+
+        return query_rankings
+
+    def _compute_rankings_slow(
+            self,
+            testset: TestSet,
+            similarity_fn: Callable[[str, str], float],
+            verbose: bool = True
+    ) -> Dict[str, List[Tuple[str, float]]]:
+        """
+        Compute rankings using pairwise similarity function (slow fallback).
+        """
+        if verbose:
+            print(f"  Computing similarities for {len(testset.dataset1)} queries (slow mode)...")
+
+        query_rankings = {}
+
+        for id1, record1 in testset.dataset1.items():
+            scores = []
+            for id2, record2 in testset.dataset2.items():
+                # Max similarity across all name pairs
+                max_score = 0.0
+                for name1 in record1['all_names']:
+                    for name2 in record2['all_names']:
+                        if name1 and name2:
+                            score = similarity_fn(name1, name2)
+                            max_score = max(max_score, score)
+                scores.append((id2, max_score))
+
+            # Sort by score descending
+            scores.sort(key=lambda x: -x[1])
+            query_rankings[id1] = scores
+
+        return query_rankings
+
     def compare_methods_ranking(
             self,
             methods: Dict[str, Callable[[str, str], float]],
-            verbose: bool = True
+            verbose: bool = True,
+            embedding_caches: Optional[Dict[str, Dict[str, 'torch.Tensor']]] = None,
     ) -> Dict[str, Dict[str, dict]]:
         """
         Compare multiple methods using ranking metrics.
+
+        Args:
+            methods: Dict mapping method name to similarity function
+            verbose: Print progress
+            embedding_caches: Optional dict mapping method name to its embedding cache
 
         Returns:
             Dict mapping method name to results from evaluate_ranking
         """
         all_results = {}
+
+        if embedding_caches is None:
+            embedding_caches = {}
 
         for method_name, similarity_fn in methods.items():
             if verbose:
@@ -585,8 +692,9 @@ class MEHDIEBenchmark:
                 print(f"Evaluating method: {method_name}")
                 print('=' * 60)
 
+            cache = embedding_caches.get(method_name)
             all_results[method_name] = self.evaluate_ranking(
-                similarity_fn, verbose=verbose
+                similarity_fn, verbose=verbose, embedding_cache=cache
             )
 
         return all_results

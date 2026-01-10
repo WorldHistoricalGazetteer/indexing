@@ -114,8 +114,9 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 \item \sout{Phase 1 training} \textit{Complete (50 epochs, best val\_loss=0.0040)}
 \item \sout{Phase 2 training} \textit{Complete (5 epochs, best val\_loss=0.0342, val\_sim=0.9663)}
 \item \sout{Phase 3 training} \textit{In progress (Epoch 10/30, 33\% complete; 97.1\% test pass rate, 29/29 cross-script)}
-\item Update evaluation sections after training completes
+\item \sout{MEHDIE benchmark evaluation} \textit{Complete (R@1=0.892, MRR=0.930, outperforms baselines)}
 \item Generate training curves figure
+\item Complete remaining evaluation tasks (cross-script retrieval, noise robustness, historical variants)
 \end{enumerate}
 
 \section*{Sections Still Requiring Updates After Retraining}
@@ -741,11 +742,44 @@ I compare against:
     \item \textbf{mBERT cosine similarity}: Multilingual BERT [CLS] embeddings
 \end{itemize}
 
-\paragraph{MEHDIE Benchmark.} I additionally evaluate on the MEHDIE Hebrew-Arabic toponym benchmark~\citep{mehdie2025}, which provides 1,200 annotated pairs from medieval geographical texts. This benchmark tests cross-script matching between two related Semitic scripts---a challenging case where my phonetic approach should excel compared to romanisation-based methods that lose script-specific phonetic information.
+\paragraph{MEHDIE Benchmark.} I additionally evaluate on the MEHDIE Hebrew-Arabic toponym benchmark~\citep{mehdie2025}, which provides annotated place matches from medieval geographical texts. This benchmark tests cross-script matching between Hebrew and Arabic---a challenging case where phonetic approaches should excel compared to romanisation-based methods.
 
 \subsection{Results}
 
-\placeholder{Results tables and analysis pending.}
+\paragraph{MEHDIE Benchmark Results.} Table~\ref{tab:mehdie-results} presents retrieval performance on the MEHDIE benchmark using ranking-based metrics appropriate for embedding systems. Symphonym significantly outperforms traditional string similarity baselines.
+
+\begin{table}[ht]
+\centering
+\begin{tabular}{l cccc}
+\toprule
+\textbf{Method} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{MRR} \\
+\midrule
+Levenshtein (romanised) & 0.815 & 0.976 & 0.994 & 0.885 \\
+Jaro-Winkler (romanised) & 0.785 & 0.963 & 0.978 & 0.863 \\
+\textbf{Symphonym} & \textbf{0.892} & \textbf{0.988} & 0.988 & \textbf{0.930} \\
+\bottomrule
+\end{tabular}
+\caption{MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better. Symphonym achieves 89.2\% Recall@1, meaning the correct cross-script match is ranked first in nearly 9 out of 10 queries.}
+\label{tab:mehdie-results}
+\end{table}
+
+Symphonym achieves perfect Recall@1 (1.000) on testset 8 (Kima Al-Sham $\leftrightarrow$ Thurayya Al-Sham) and 94.4\% on testset 9 (Tudela $\leftrightarrow$ Thurayya). The improvement over baselines is most pronounced on testset 10 (Yaqut $\leftrightarrow$ Kima), where Symphonym achieves 84.8\% R@1 compared to 66.7\% for Levenshtein and 54.5\% for Jaro-Winkler.
+
+\paragraph{Comparison with MEHDIE System.} Direct comparison with the MEHDIE system~\citep{mehdie2025} requires care because the systems optimise for different use cases. MEHDIE reports F-5 scores (recall weighted 5$\times$ over precision) at fixed similarity thresholds, reflecting a \emph{classification} task: given a threshold, which pairs should be flagged as matches? Their phonetic method achieves F-5 scores of 0.68--0.88 across testsets at $\theta=0.9$.
+
+Symphonym is designed for \emph{retrieval}: given a query, rank all candidates by similarity and return the best matches. This reflects typical gazetteer reconciliation workflows where users review a ranked list rather than accept/reject based on a threshold. For this task, ranking metrics (Recall@$k$, MRR) are more appropriate.
+
+The approaches are complementary:
+\begin{itemize}
+    \item \textbf{MEHDIE} uses IPA transcription via Phonetisaurus G2P, then computes Hamming distance over phonetic feature vectors. This requires language-specific G2P models and explicit phonetic conversion at query time.
+    \item \textbf{Symphonym} learns to map characters directly to a phonetic embedding space, requiring no runtime phonetic conversion. The model generalises to script pairs not seen in training (e.g., Hebrew-Arabic).
+\end{itemize}
+
+Both systems outperform simple romanisation-based baselines, confirming that phonetic similarity is valuable for cross-script toponym matching. Symphonym's advantage is operational: it requires only character input and scales to real-time search over millions of toponyms via approximate nearest neighbour indexing.
+
+These results validate the core design: Symphonym correctly ranks phonetically equivalent cross-script names above unrelated alternatives, even for script pairs (Hebrew-Arabic) not explicitly represented in training data.
+
+\placeholder{Additional evaluation results pending (cross-script retrieval, noise robustness, historical variants).}
 
 
 \section{Discussion}

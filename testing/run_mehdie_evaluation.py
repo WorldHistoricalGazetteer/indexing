@@ -107,7 +107,9 @@ def create_symphonym_similarity_fn(encoder, benchmark: 'MEHDIEBenchmark' = None)
         benchmark: Optional MEHDIEBenchmark to pre-compute embeddings for
 
     Returns:
-        Function that takes two strings and returns similarity score
+        Tuple of (similarity_fn, embedding_cache)
+        - similarity_fn: Function that takes two strings and returns similarity score
+        - embedding_cache: Dict mapping name to embedding tensor (for fast matrix ops)
     """
     embedding_cache = {}
 
@@ -151,7 +153,7 @@ def create_symphonym_similarity_fn(encoder, benchmark: 'MEHDIEBenchmark' = None)
         sim = encoder.similarity(emb1, emb2).item()
         return max(0.0, sim)
 
-    return similarity_fn
+    return similarity_fn, embedding_cache
 
 
 def diagnose_symphonym_scores(encoder, benchmark: 'MEHDIEBenchmark'):
@@ -272,6 +274,7 @@ def run_evaluation(
 
     # Define methods to evaluate
     methods = {}
+    embedding_caches = {}  # For fast matrix-based evaluation
 
     # Always include baselines
     methods['Levenshtein'] = levenshtein_similarity
@@ -295,7 +298,9 @@ def run_evaluation(
             diagnose_symphonym_scores(encoder, benchmark)
 
         # Create similarity function with pre-computed embeddings
-        methods['Symphonym'] = create_symphonym_similarity_fn(encoder, benchmark)
+        sim_fn, emb_cache = create_symphonym_similarity_fn(encoder, benchmark)
+        methods['Symphonym'] = sim_fn
+        embedding_caches['Symphonym'] = emb_cache
 
     # Run evaluation
     print("\n" + "=" * 80)
@@ -309,7 +314,10 @@ def run_evaluation(
         print_mehdie_comparison(benchmark, methods, all_results)
     else:
         # Ranking-based evaluation (appropriate for Symphonym)
-        all_results = benchmark.compare_methods_ranking(methods)
+        # Pass embedding caches for fast matrix computation
+        all_results = benchmark.compare_methods_ranking(
+            methods, embedding_caches=embedding_caches
+        )
         print_ranking_comparison(all_results)
 
     # Save results if output path provided
