@@ -532,7 +532,6 @@ class Phase3Dataset(Dataset):
 
         print(f"Phase3Dataset: Loading toponyms for needed IDs...")
         self._cache = {}
-        valid_anchor_ids = set()
 
         # Process in batches using scanner
         scanner = dataset.scanner(columns=columns, batch_size=100000)
@@ -547,10 +546,6 @@ class Phase3Dataset(Dataset):
 
             if len(filtered) == 0:
                 continue
-
-            # Track valid anchor IDs (must be in correct split)
-            split_mask = filtered['split'] == split
-            valid_anchor_ids.update(filtered[split_mask]['toponym_id'].tolist())
 
             # Sanitize script IDs
             if pd.api.types.is_integer_dtype(filtered['script']):
@@ -600,6 +595,11 @@ class Phase3Dataset(Dataset):
 
         print(f"Phase3Dataset: Filtering triplets...")
         df = self.triplets_df
+
+        valid_anchor_ids = {
+            tid for tid, data in self._cache.items()
+            if data['split'] == split
+        }
 
         mask_valid = (
             df['anchor_id'].isin(valid_anchor_ids) &
