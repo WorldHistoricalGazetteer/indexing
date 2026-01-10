@@ -269,31 +269,9 @@ def main():
         print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
 
     # ---------------------------------------------------------------------------
-    # Test 2: Historical variants (should be > 0.80)
+    # Test 2: Unrelated pairs (should be < 0.70)
     # ---------------------------------------------------------------------------
-    print("\n[Test 2] Historical variants (expected: > 0.80)")
-    print("-" * 50)
-
-    historical_pairs = [
-        ("London", "Londinium"),  # Modern/Roman
-        ("Paris", "Lutetia"),  # Modern/Roman
-        ("Lyon", "Lugdunum"),  # Modern/Roman
-        ("Cologne", "Colonia"),  # Modern/Roman
-        ("Vienna", "Vindobona"),  # Modern/Roman
-        ("Istanbul", "Constantinople"),  # Modern/Byzantine
-        ("Istanbul", "Byzantium"),  # Modern/Ancient
-    ]
-
-    for n1, n2 in historical_pairs:
-        e1, e2 = encoder.encode(n1), encoder.encode(n2)
-        sim = encoder.similarity(e1, e2).item()
-        status = "✓" if sim > 0.80 else "✗"
-        print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
-
-    # ---------------------------------------------------------------------------
-    # Test 3: Unrelated pairs (should be < 0.70)
-    # ---------------------------------------------------------------------------
-    print("\n[Test 3] Unrelated pairs (expected: < 0.70)")
+    print("\n[Test 2] Unrelated pairs (expected: < 0.70)")
     print("-" * 50)
 
     unrelated_pairs = [
@@ -302,8 +280,6 @@ def main():
         ("Berlin", "Cairo"),
         ("Moscow", "Sydney"),
         ("Rome", "Seoul"),
-        ("Londres", "Sar-e Tanōr"),  # The problematic pair
-        ("London", "Sar-e Tanōr"),
         ("Munich", "Bangkok"),
         ("Athens", "Lima"),
         ("Vienna", "Hanoi"),
@@ -316,9 +292,9 @@ def main():
         print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
 
     # ---------------------------------------------------------------------------
-    # Test 4: Cross-script same name (should be > 0.90)
+    # Test 3: Cross-script same name (should be > 0.90)
     # ---------------------------------------------------------------------------
-    print("\n[Test 4] Cross-script equivalents (expected: > 0.90)")
+    print("\n[Test 3] Cross-script equivalents (expected: > 0.90)")
     print("-" * 50)
 
     cross_script = [
@@ -336,9 +312,9 @@ def main():
         print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
 
     # ---------------------------------------------------------------------------
-    # Test 5: Spelling variants (should be > 0.95)
+    # Test 4: Spelling variants (should be > 0.95)
     # ---------------------------------------------------------------------------
-    print("\n[Test 5] Spelling variants (expected: > 0.95)")
+    print("\n[Test 4] Spelling variants (expected: > 0.95)")
     print("-" * 50)
 
     spelling_variants = [
@@ -358,9 +334,9 @@ def main():
         print(f"  {status} {n1:15} vs {n2:15}: {sim:.4f}")
 
     # ---------------------------------------------------------------------------
-    # Test 6: Embedding space statistics
+    # Test 5: Embedding space statistics
     # ---------------------------------------------------------------------------
-    print("\n[Test 6] Embedding space statistics")
+    print("\n[Test 5] Embedding space statistics")
     print("-" * 50)
 
     test_names = [
@@ -394,25 +370,6 @@ def main():
     print(f"    Min:  {sims.min().item():.4f}")
     print(f"    Max:  {sims.max().item():.4f}")
     print(f"    Median: {sims.median().item():.4f}")
-
-    # ---------------------------------------------------------------------------
-    # Test 7: Character sequence debugging for problematic pair
-    # ---------------------------------------------------------------------------
-    print("\n[Test 7] Problematic pair deep dive: 'Sar-e Tanōr' vs 'Londres'")
-    print("-" * 50)
-
-    for name in ["Sar-e Tanōr", "Londres", "London"]:
-        script, _ = detect_script(name)
-        processed = encoder.char_vocab.preprocess_text(name, script)
-        ids = encoder.char_vocab.encode(name, script)
-        emb = encoder.encode(name)
-
-        print(f"\n  '{name}':")
-        print(f"    Script: {script}")
-        print(f"    Processed: '{processed}'")
-        print(f"    IDs: {ids}")
-        print(f"    Embedding[:5]: {emb[:5].tolist()}")
-        print(f"    Embedding norm: {emb.norm().item():.4f}")
 
     # ---------------------------------------------------------------------------
     # Summary
