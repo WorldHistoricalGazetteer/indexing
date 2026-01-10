@@ -611,6 +611,9 @@ Crucially, I explicitly \textbf{exclude} co-located toponyms from being selected
     \item \textbf{Training time:} $\sim$22 minutes/epoch ($\sim$20 batches/second on A100)
 \end{itemize}
 
+\paragraph{Trade-off: Cross-Script vs.\ Same-Script Performance.}
+Hard negative training sharpens discrimination between orthographically similar names at a modest cost to same-script cross-language pairs. Between epochs 5 and 6, cross-script accuracy improved from 28/29 to 29/29 (Thessaloniki/$\Theta\varepsilon\sigma\sigma\alpha\lambda o\nu\acute{\iota}\kappa\eta$ rose from 0.848 to 0.929), while same-script pairs like London/Londra declined slightly (0.617 to 0.598). This is expected: hard negatives are sampled from the \emph{same} script, teaching the model to be more discriminating within scripts. Since Symphonym's primary goal is cross-script matching---linking ``\textcn{北京}'' to ``Beijing'' rather than distinguishing ``London'' from ``Londres''---this trade-off is acceptable. Same-script variants remain linked at the place level through co-location in gazetteer records. Moreover, same-script matching can be effectively handled by traditional string similarity methods (Levenshtein distance, Jaro-Winkler) that complement Symphonym's cross-script capabilities; a hybrid pipeline might apply Symphonym for cross-script candidate retrieval and fall back to edit-distance methods for same-script refinement.
+
 \subsection{Implementation Details}
 
 Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 completes in approximately 7 hours (5 epochs $\times$ 82 minutes/epoch); Phase 3 requires approximately 11 hours (30 epochs $\times$ 22 minutes/epoch).
