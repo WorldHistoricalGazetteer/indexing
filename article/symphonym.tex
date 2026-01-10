@@ -111,9 +111,9 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 
 \section*{Remaining Work}
 \begin{enumerate}
-\item \sout{Phase 1 training} \textit{Complete (50 epochs, best val\_loss=0.0040, final train\_loss=0.0002)}
-\item \sout{Phase 2 training} \textit{In progress (Epoch 2/50, 21\% complete as of 2026-01-09 16:28)}
-\item Phase 3 training (hard negative fine-tuning)
+\item \sout{Phase 1 training} \textit{Complete (50 epochs, best val\_loss=0.0040)}
+\item \sout{Phase 2 training} \textit{Complete (5 epochs, best val\_loss=0.0342, val\_sim=0.9663)}
+\item \sout{Phase 3 training} \textit{In progress (Epoch 1/30, 17\% complete as of 2026-01-10 03:10)}
 \item Update evaluation sections after training completes
 \item Generate training curves figure
 \end{enumerate}
@@ -560,11 +560,25 @@ During this phase:
     \item Optimiser: AdamW with weight decay $10^{-5}$
     \item Learning rate: $10^{-3}$ with cosine annealing
     \item Batch size: 128
-    \item Epochs: 50
+    \item Epochs: 5 (early stopping; validation loss plateaued)
     \item Training time: $\sim$82 minutes/epoch ($\sim$37 batches/second on A100)
 \end{itemize}
 
-\paragraph{Convergence.} Early results show rapid alignment: after epoch 1, validation loss reached 0.0381 with cosine similarity 0.9625 between Student and Teacher embeddings, indicating the Student quickly learns to approximate the Teacher's phonetic space.
+\paragraph{Convergence.} Phase 2 converged rapidly over 5 epochs:
+\begin{center}
+\begin{tabular}{cccc}
+\toprule
+\textbf{Epoch} & \textbf{Train Loss} & \textbf{Val Loss} & \textbf{Val Similarity} \\
+\midrule
+1 & 0.0837 & 0.0381 & 0.9625 \\
+2 & 0.0766 & 0.0359 & 0.9647 \\
+3 & 0.0750 & 0.0347 & 0.9658 \\
+4 & 0.0742 & 0.0344 & 0.9661 \\
+5 & 0.0736 & 0.0342 & 0.9663 \\
+\bottomrule
+\end{tabular}
+\end{center}
+The final cosine similarity of \textbf{0.9663} indicates that Student embeddings align very closely with Teacher embeddings, successfully transferring the phonetic knowledge from IPA-based to character-based representations. Training was stopped after epoch 5 as validation loss improvements had diminished to $<$1\% per epoch.
 
 \subsection{Phase 3: Discriminative Fine-Tuning}
 \label{subsec:phase3}
@@ -586,16 +600,20 @@ This approach has a known limitation: it cannot detect cross-authority duplicate
 
 Crucially, I explicitly \textbf{exclude} co-located toponyms from being selected as negatives. If two toponyms share a place record (e.g., ``Munich'' and ``München'' in the same Wikidata entry), they are excluded via the adjacency check regardless of their surface similarity.
 
+\paragraph{Effective Training Set.} Phase 3 loads 5,088,419 hard negative triplets. After filtering for valid toponyms (those with character encodings within the vocabulary), \textbf{3,333,767 triplets} remain for training and \textbf{417,335} for validation. The higher retention rate (65.5\%) compared to Phase 1 (9.2\%) reflects that Phase 3 operates on the character-based Student, which does not require Epitran/IPA coverage.
+
 \paragraph{Training Configuration.}
 \begin{itemize}
     \item \textbf{Loss Function:} Triplet Margin Loss ($m=0.2$).
     \item \textbf{Teacher Status:} Frozen (used only to validate true phonetic distances for negative sampling).
     \item \textbf{Optimiser:} AdamW with a reduced learning rate ($1 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Phase 2.
+    \item \textbf{Epochs:} 30
+    \item \textbf{Training time:} $\sim$22 minutes/epoch ($\sim$20 batches/second on A100)
 \end{itemize}
 
 \subsection{Implementation Details}
 
-Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 requires approximately 68 hours (50 epochs $\times$ 82 minutes/epoch); Phase 3 timing pending.
+Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 completes in approximately 7 hours (5 epochs $\times$ 82 minutes/epoch); Phase 3 requires approximately 11 hours (30 epochs $\times$ 22 minutes/epoch).
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Experiments with 64, 128, and 256 dimensions showed diminishing returns above 128 for toponym matching.
 

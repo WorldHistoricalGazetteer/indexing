@@ -190,15 +190,40 @@ def single_search(
         print(f"{i:2}. {name} {lang_str:6} (score: {score:.4f}) [{namespaces}]")
 
 
+def get_latest_version(base_path: str) -> str:
+    """Find the latest version directory (e.g., v3 > v2 > v1)."""
+    base = Path(base_path)
+    if not base.exists():
+        return "v1"  # fallback
+
+    versions = []
+    for d in base.iterdir():
+        if d.is_dir() and d.name.startswith('v'):
+            try:
+                versions.append((int(d.name[1:]), d.name))
+            except ValueError:
+                continue
+
+    if not versions:
+        return "v1"  # fallback
+
+    return max(versions, key=lambda x: x[0])[1]
+
+
 def main():
+    # Determine latest version for defaults
+    checkpoints_base = '/ix1/whcdh/models/phonetic/checkpoints'
+    data_base = '/ix1/whcdh/models/phonetic/data'
+    latest_version = get_latest_version(checkpoints_base)
+
     parser = argparse.ArgumentParser(
         description='Interactive phonetic similarity search'
     )
     parser.add_argument('--checkpoint', type=str,
-                        default='/ix1/whcdh/models/phonetic/checkpoints/v1/phase3_best.pt',
+                        default=f'{checkpoints_base}/{latest_version}/phase3_best.pt',
                         help='Path to model checkpoint')
     parser.add_argument('--vocab-dir', type=str,
-                        default='/ix1/whcdh/models/phonetic/data/v1/vocab',
+                        default=f'{data_base}/{latest_version}/vocab',
                         help='Directory containing vocab JSON files')
     parser.add_argument('--es-host', type=str, default=ES_HOST)
     parser.add_argument('--index', type=str, default='toponyms')
