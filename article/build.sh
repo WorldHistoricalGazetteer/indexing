@@ -50,6 +50,9 @@ cp *.png *.jpg *.jpeg *.pdf $SUBMISSION_DIR/ 2>/dev/null || :
 # Copy the FONTS folder
 cp -r fonts $SUBMISSION_DIR/
 
+# Copy the FIGURES folder
+cp -r figures $SUBMISSION_DIR/
+
 # Remove the compiled PDF if it got copied by mistake
 rm -f $SUBMISSION_DIR/symphonym.pdf
 
