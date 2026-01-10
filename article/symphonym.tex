@@ -82,7 +82,7 @@
 \maketitle
 
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. I present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and TGN, with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. Evaluation on the MEHDIE Hebrew-Arabic benchmark demonstrates 89.2\% Recall@1, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym will be deployed in the World Historical Gazetteer, enabling phonetic search and reconciliation across 67M+ toponyms.
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. I present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and TGN, with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. Evaluation on the MEHDIE Hebrew-Arabic benchmark demonstrates 87.5\% Recall@1, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym will be deployed in the World Historical Gazetteer, enabling phonetic search and reconciliation across 67M+ toponyms.
 \end{abstract}
 
 \section{Introduction}
@@ -623,11 +623,11 @@ All three training phases converged successfully, as shown in Figure~\ref{fig:tr
 
 \paragraph{Phase 2 (Student-Teacher Alignment).} The Student encoder aligned with the frozen Teacher over 5 epochs on 23.2M toponyms. Distillation loss (MSE + cosine) decreased from 0.0381 to 0.0342, while Student-Teacher cosine similarity increased from 0.962 to 0.966. The relatively short Phase 2 reflects that the Student quickly learns to mimic the Teacher's output distribution.
 
-\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 3.3M hard negative triplets for 17 epochs further improved discrimination. Validation loss decreased from 0.0149 to 0.0051---a 66\% reduction---demonstrating that the model learned to distinguish phonetically similar but geographically distinct names. Training continued with a reduced learning rate ($10^{-4}$ with cosine decay) to preserve cross-script alignment learned in Phase 2.
+\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 3.3M hard negative triplets for 30 epochs further improved discrimination. Validation loss decreased from 0.0149 to 0.0049---a 67\% reduction---demonstrating that the model learned to distinguish orthographically similar but geographically distinct names (negatives share the same two-character prefix and script as the anchor). Training continued with a reduced learning rate ($10^{-4}$ with cosine decay) to preserve cross-script alignment learned in Phase 2.
 
 \subsection{Embedding Quality}
 
-Table~\ref{tab:embedding-quality} summarises embedding quality across diagnostic categories after Phase 3 training.
+Table~\ref{tab:embedding-quality} summarises embedding quality across diagnostic categories after Phase 3 training (30 epochs).
 
 \begin{table}[ht]
 \centering
@@ -635,34 +635,34 @@ Table~\ref{tab:embedding-quality} summarises embedding quality across diagnostic
 \toprule
 \textbf{Test Category} & \textbf{Pass Rate} & \textbf{Description} \\
 \midrule
-Cross-script equivalents & 29/29 (100\%) & Latin $\leftrightarrow$ Cyrillic, Greek, Arabic, CJK, etc. \\
+Cross-script equivalents & 27/29 (93\%) & Latin $\leftrightarrow$ Cyrillic, Greek, Arabic, CJK, etc. \\
 Same-script cross-language & 12/14 (86\%) & London/Londres, Vienna/Wien \\
 Unrelated pairs & 15/15 (100\%) & Correctly separated ($<0.50$) \\
-Diacritic variants & 10/10 (100\%) & Zurich/Zürich, Gdansk/Gdańsk \\
+Diacritic variants & 9/10 (90\%) & Zurich/Zürich, Gdansk/Gdańsk \\
 \midrule
-\textbf{Total} & \textbf{66/68 (97.1\%)} & \\
+\textbf{Total} & \textbf{63/68 (92.6\%)} & \\
 \bottomrule
 \end{tabular}
-\caption{Embedding quality diagnostics after Phase 3 training. Cross-script matching is the primary design goal; the model achieves perfect accuracy on this category while maintaining strong performance on related tasks.}
+\caption{Embedding quality diagnostics after Phase 3 training (30 epochs, best val\_loss=0.00485). Cross-script matching is the primary design goal.}
 \label{tab:embedding-quality}
 \end{table}
 
-\paragraph{Cross-script Equivalents.} The model achieves perfect performance on cross-script matching, the primary design goal. Representative pairs and their cosine similarities:
+\paragraph{Cross-script Equivalents.} The model achieves strong performance on cross-script matching, the primary design goal. Representative pairs and their cosine similarities:
 
 \begin{itemize}
     \item London / Лондон (Cyrillic): 0.995
-    \item Beijing / \textcn{北京} (Chinese): 0.966
-    \item Seoul / \textko{서울} (Korean): 0.986
-    \item Jerusalem / \texthebrew{ירושלים} (Hebrew): 0.980
-    \item Tbilisi / \textgeorgian{თბილისი} (Georgian): 0.976
-    \item Delhi / \textdevanagari{दिल्ली} (Devanagari): 0.950
+    \item Beijing / \textcn{北京} (Chinese): 0.964
+    \item Seoul / \textko{서울} (Korean): 0.990
+    \item Jerusalem / \texthebrew{ירושלים} (Hebrew): 0.982
+    \item Tbilisi / \textgeorgian{თბილისი} (Georgian): 0.972
+    \item Delhi / \textdevanagari{दिल्ली} (Devanagari): 0.968
 \end{itemize}
 
-\paragraph{Same-script Cross-language.} Performance is slightly lower (86\%) for same-script pairs with genuinely different pronunciations, such as London/Londres (0.480) and London/Londra (0.592). This is expected: these pairs represent different phonetic realisations, and the model correctly assigns lower similarity. For gazetteer reconciliation, such pairs are linked at the place level through co-location in source records, not through phonetic similarity.
+\paragraph{Same-script Cross-language.} Performance is slightly lower (86\%) for same-script pairs with genuinely different pronunciations, such as London/Londres (0.474) and London/Londra (0.574). This is expected: these pairs represent different phonetic realisations, and the model correctly assigns lower similarity. For gazetteer reconciliation, such pairs are linked at the place level through co-location in source records, not through phonetic similarity.
 
-\paragraph{Historical Variants.} As noted in Section~\ref{sec:training}, the model captures synchronic phonetic similarity rather than diachronic derivation. Pairs like Istanbul/Constantinople (0.681) and Paris/Lutetia (0.398) correctly receive moderate to low similarity; historical linkage is handled through curated place attestations.
+\paragraph{Historical Variants.} As noted in Section~\ref{sec:training}, the model captures synchronic phonetic similarity rather than diachronic derivation. Pairs like Istanbul/Constantinople (0.719) and Paris/Lutetia (0.374) correctly receive moderate to low similarity; historical linkage is handled through curated place attestations.
 
-\paragraph{Script-Pair Analysis.} Performance varies by script pair, reflecting both linguistic distance and training data coverage. Latin$\leftrightarrow$Cyrillic pairs achieve near-perfect similarity (mean 0.97) due to abundant training examples and close phonetic correspondence. Latin$\leftrightarrow$CJK pairs also perform strongly (mean 0.98) because romanisation (Pinyin, Romaji) creates direct phonetic mappings. More challenging are pairs involving scripts with complex orthography-phonology relationships: Latin$\leftrightarrow$Arabic achieves 0.91 mean similarity, reflecting the omission of short vowels in Arabic script.
+\paragraph{Script-Pair Analysis.} Performance varies by script pair, reflecting both linguistic distance and training data coverage. Latin$\leftrightarrow$Cyrillic pairs achieve high similarity (mean 0.95) due to abundant training examples and close phonetic correspondence. Latin$\leftrightarrow$CJK pairs perform strongly (mean 0.97) because romanisation (Pinyin, Romaji) creates direct phonetic mappings. More challenging are pairs involving scripts with complex orthography-phonology relationships: Latin$\leftrightarrow$Arabic achieves 0.94 mean similarity, though exonyms like Cairo/\textar{القاهرة} (al-Qahira) correctly receive lower scores (0.62) reflecting genuine phonetic divergence.
 
 \subsection{MEHDIE Benchmark}
 
@@ -676,14 +676,14 @@ Table~\ref{tab:mehdie-results} presents retrieval performance on the MEHDIE Hebr
 \midrule
 Levenshtein (romanised) & 0.815 & 0.976 & 0.994 & 0.885 \\
 Jaro-Winkler (romanised) & 0.785 & 0.963 & 0.978 & 0.863 \\
-\textbf{Symphonym} & \textbf{0.892} & \textbf{0.988} & 0.988 & \textbf{0.930} \\
+\textbf{Symphonym} & \textbf{0.875} & \textbf{0.982} & 0.988 & \textbf{0.923} \\
 \bottomrule
 \end{tabular}
 \caption{MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better.}
 \label{tab:mehdie-results}
 \end{table}
 
-Symphonym achieves 89.2\% Recall@1---the correct cross-script match is ranked first in nearly 9 out of 10 queries---compared to 81.5\% for Levenshtein and 78.5\% for Jaro-Winkler. The improvement is most pronounced on testset 10 (Yaqut $\leftrightarrow$ Kima), where Symphonym achieves 84.8\% R@1 compared to 66.7\% for Levenshtein. Table~\ref{tab:mehdie-per-testset} breaks down results by testset.
+Symphonym achieves 87.5\% Recall@1---the correct cross-script match is ranked first in nearly 9 out of 10 queries---compared to 81.5\% for Levenshtein and 78.5\% for Jaro-Winkler. The improvement is most pronounced on testset 10 (Yaqut $\leftrightarrow$ Kima Maghreb), where Symphonym achieves 84.8\% R@1 compared to 66.7\% for Levenshtein. Table~\ref{tab:mehdie-per-testset} breaks down results by testset.
 
 \begin{table}[ht]
 \centering
@@ -693,11 +693,11 @@ Symphonym achieves 89.2\% Recall@1---the correct cross-script match is ranked fi
 \cmidrule(lr){2-4} \cmidrule(lr){5-7}
 \textbf{Testset} & \textbf{Lev.} & \textbf{J-W} & \textbf{Sym.} & \textbf{Lev.} & \textbf{J-W} & \textbf{Sym.} \\
 \midrule
-TS7 (Yaqut-Kima Sham) & 0.758 & 0.758 & 0.697 & 0.837 & 0.864 & 0.812 \\
+TS7 (Yaqut-Kima Sham) & 0.758 & 0.758 & 0.667 & 0.837 & 0.864 & 0.808 \\
 TS8 (Kima-Thurayya Sham) & 0.905 & 0.905 & \textbf{1.000} & 0.944 & 0.914 & \textbf{1.000} \\
-TS9 (Tudela-Thurayya) & 0.778 & 0.778 & \textbf{0.944} & 0.875 & 0.866 & \textbf{0.972} \\
-TS10 (Yaqut-Kima Maghreb) & 0.667 & 0.545 & \textbf{0.848} & 0.796 & 0.719 & \textbf{0.888} \\
-TS11 (Damast-Tudela) & 0.969 & 0.938 & 0.969 & 0.973 & 0.954 & 0.977 \\
+TS9 (Tudela-Thurayya) & 0.778 & 0.778 & \textbf{0.889} & 0.875 & 0.866 & \textbf{0.935} \\
+TS10 (Yaqut-Kima Maghreb) & 0.667 & 0.545 & \textbf{0.848} & 0.796 & 0.719 & \textbf{0.895} \\
+TS11 (Damast-Tudela) & 0.969 & 0.938 & 0.969 & 0.973 & 0.954 & \textbf{0.975} \\
 \bottomrule
 \end{tabular}
 \caption{MEHDIE results by testset. Symphonym achieves perfect R@1 on TS8 and substantially outperforms baselines on TS9 and TS10.}
@@ -722,13 +722,13 @@ The evaluation results support Symphonym's central claim: that a character-level
 
 \subsection{Key Findings}
 
-\paragraph{Cross-script Generalisation.} The model achieves strong accuracy on cross-script equivalents in diagnostic tests (29/29 pairs) and 89.2\% Recall@1 on the MEHDIE Hebrew-Arabic benchmark. The MEHDIE evaluation is particularly notable because the benchmark sources (medieval Hebrew and Arabic geographical texts) are independent of the modern gazetteers used for training, even though Hebrew and Arabic scripts appear in the training data through GeoNames and Wikidata entries. The strong performance suggests the model has learned general cross-script phonetic mappings rather than memorising specific toponyms. This generalisation emerges from the Teacher-Student architecture: the Teacher learns language-specific phonetic mappings from IPA features, then transfers this knowledge to the Student through distillation.
+\paragraph{Cross-script Generalisation.} The model achieves strong accuracy on cross-script equivalents in diagnostic tests (27/29 pairs, 93\%) and 87.5\% Recall@1 on the MEHDIE Hebrew-Arabic benchmark. The two diagnostic failures (Moscow/Москва at 0.845 and Damascus/\textar{دمشق} at 0.848) fall just below the 0.85 threshold but would still rank correctly in retrieval. The MEHDIE evaluation is particularly notable because the benchmark sources (medieval Hebrew and Arabic geographical texts) are independent of the modern gazetteers used for training, even though Hebrew and Arabic scripts appear in the training data through GeoNames and Wikidata entries. The strong performance suggests the model has learned general cross-script phonetic mappings rather than memorising specific toponyms. This generalisation emerges from the Teacher-Student architecture: the Teacher learns language-specific phonetic mappings from IPA features, then transfers this knowledge to the Student through distillation.
 
 \paragraph{Retrieval vs.\ Classification.} Symphonym excels at \emph{ranking} candidates by phonetic similarity but is not optimised for \emph{classification} at fixed thresholds. The MEHDIE benchmark comparison illustrates this: when evaluated with ranking metrics (R@1, MRR), Symphonym substantially outperforms baselines; threshold-based metrics (F-5) favour methods tuned for specific cutoff points. For interactive gazetteer reconciliation, where users review ranked candidate lists, retrieval metrics better reflect operational utility.
 
-\paragraph{Same-script Limitations.} Performance on same-script cross-language pairs (86\% pass rate) is lower than cross-script pairs (100\%). This reflects a design trade-off: the model uses script differences as a signal for phonetic equivalence, which helps cross-script matching but provides less discrimination within scripts. For same-script matching, traditional string similarity methods (Levenshtein, Jaro-Winkler) remain effective and can complement Symphonym in a hybrid pipeline.
+\paragraph{Same-script Limitations.} Performance on same-script cross-language pairs (86\% pass rate) is comparable to cross-script pairs (93\%). This reflects a design trade-off: the model uses script differences as a signal for phonetic equivalence, which helps cross-script matching but provides less discrimination within scripts. For same-script matching, traditional string similarity methods (Levenshtein, Jaro-Winkler) remain effective and can complement Symphonym in a hybrid pipeline.
 
-\paragraph{Hard Negative Training.} Phase 3 training substantially improved discrimination (validation loss reduced 66\% from 0.015 to 0.005) without degrading cross-script performance. The prefix-based negative sampling strategy (Section~\ref{subsec:phase3}) proved effective: by selecting negatives that share orthographic prefixes but represent different places, the model learned to distinguish phonetically similar but geographically distinct names.
+\paragraph{Hard Negative Training.} Phase 3 training substantially improved discrimination (validation loss reduced 67\% from 0.015 to 0.0049 over 30 epochs) while maintaining strong cross-script performance (93\% pass rate). The prefix-based negative sampling strategy (Section~\ref{subsec:phase3}) proved effective: by selecting negatives that share orthographic prefixes but represent different places, the model learned to distinguish orthographically similar but geographically distinct names.
 
 \subsection{Operational Implications}
 
@@ -760,8 +760,8 @@ I have presented Symphonym, a neural embedding system for cross-script toponym m
 
 Evaluation demonstrates strong performance:
 \begin{itemize}
-    \item \textbf{97\% accuracy} on cross-script diagnostic pairs (66/68), spanning Latin, Cyrillic, Greek, Arabic, Chinese, Korean, Hebrew, Devanagari, and Georgian scripts
-    \item \textbf{89.2\% Recall@1} and \textbf{MRR of 0.930} on the MEHDIE Hebrew-Arabic benchmark---comprising medieval toponyms from sources independent of training data---outperforming Levenshtein (81.5\% R@1) and Jaro-Winkler (78.5\% R@1) baselines
+    \item \textbf{93\% accuracy} on cross-script diagnostic pairs (63/68), spanning Latin, Cyrillic, Greek, Arabic, Chinese, Korean, Hebrew, Devanagari, and Georgian scripts
+    \item \textbf{87.5\% Recall@1} and \textbf{MRR of 0.923} on the MEHDIE Hebrew-Arabic benchmark---comprising medieval toponyms from sources independent of training data---outperforming Levenshtein (81.5\% R@1) and Jaro-Winkler (78.5\% R@1) baselines
 \end{itemize}
 
 The system addresses a practical need: linking place references across languages, scripts, and historical periods without requiring language-specific rules or phonetic lookup tables. By learning directly from the statistical structure of multi-script toponyms attested in linked authority datasets, Symphonym captures phonetic correspondences that would be difficult to enumerate manually.

@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  10 JAN 2026 18:08
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  10 JAN 2026 22:44
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1178,7 +1178,7 @@ s. Symphonym uses a Teacher-
 
 
 Overfull \hbox (2.15335pt too wide) in paragraph at lines 85--86
-\TU/LinLibertine_R.otf(0)/m/n/10 strates 89.2% Recall@1, outperforming Levensht
+\TU/LinLibertine_R.otf(0)/m/n/10 strates 87.5% Recall@1, outperforming Levensht
 ein (81.5%) and Jaro-Winkler
  []
 
@@ -1355,16 +1355,41 @@ Overfull \hbox (43.58058pt too wide) in paragraph at lines 634--646
  []
 
 [21]
+Overfull \hbox (38.31357pt too wide) in paragraph at lines 665--666
+\TU/LinLibertine_R.otf(0)/m/n/10.95 pairs involving scripts with complex orthog
+raphy-phonology relationships: Latin$\OMS/cmsy/m/n/10.95 $$\TU/LinLibertine_R.o
+tf(0)/m/n/10.95 Arabic
+ []
+
+
 Overfull \hbox (4.21724pt too wide) in paragraph at lines 686--687
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 89.2% Recall@1—the cor
+[]\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 87.5% Recall@1—the cor
 rect cross-script match is ranked
  []
 
 [22] [23]
+Overfull \hbox (7.27913pt too wide) in paragraph at lines 725--726
+\TU/LinLibertine_R.otf(0)/m/n/10.95 MEHDIE Hebrew-Arabic benchmark. The two dia
+gnostic failures (Moscow/Москва
+ []
+
+
+Overfull \hbox (0.69945pt too wide) in paragraph at lines 725--726
+\TU/LinLibertine_R.otf(0)/m/n/10.95 language-specific phonetic mappings from IP
+A features, then transfers this knowl-
+ []
+
+
 Overfull \hbox (0.35722pt too wide) in paragraph at lines 727--728
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Retrieval vs. Classification.[] \TU/LinL
 ibertine_R.otf(0)/m/n/10.95 Symphonym excels at \TU/LinLibertine_R.otf(0)/m/it/
 10.95 ranking \TU/LinLibertine_R.otf(0)/m/n/10.95 candidates by pho-
+ []
+
+
+Overfull \hbox (1.81725pt too wide) in paragraph at lines 729--730
+\TU/LinLibertine_R.otf(0)/m/n/10.95 For same-script matching, traditional strin
+g similarity methods (Levenshtein, Jaro-
  []
 
 
@@ -1405,14 +1430,14 @@ f(0)/m/n/10.95 The current architecture does not explicitly model tone, which
 
 [26]
 Overfull \hbox (2.60202pt too wide) in paragraph at lines 763--764
-[]\TU/LinLibertine_R.otf(0)/b/n/10.95 97% accuracy \TU/LinLibertine_R.otf(0)/m/
-n/10.95 on cross-script diagnostic pairs (66/68), spanning Latin, Cyril-
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 93% accuracy \TU/LinLibertine_R.otf(0)/m/
+n/10.95 on cross-script diagnostic pairs (63/68), spanning Latin, Cyril-
  []
 
 
 Overfull \hbox (29.71603pt too wide) in paragraph at lines 764--765
-[]\TU/LinLibertine_R.otf(0)/b/n/10.95 89.2% Recall@1 \TU/LinLibertine_R.otf(0)/
-m/n/10.95 and \TU/LinLibertine_R.otf(0)/b/n/10.95 MRR of 0.930 \TU/LinLibertine
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 87.5% Recall@1 \TU/LinLibertine_R.otf(0)/
+m/n/10.95 and \TU/LinLibertine_R.otf(0)/b/n/10.95 MRR of 0.923 \TU/LinLibertine
 _R.otf(0)/m/n/10.95 on the MEHDIE Hebrew-Arabic benchmark—
  []
 
@@ -1442,7 +1467,7 @@ Package rerunfilecheck Info: File `symphonym.out' has not changed.
 Here is how much of TeX's memory you used:
  34076 strings out of 478149
  749467 string characters out of 5853103
- 1053734 words of memory out of 5000000
+ 1052661 words of memory out of 5000000
  54135 multiletter control sequences out of 15000+600000
  480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
