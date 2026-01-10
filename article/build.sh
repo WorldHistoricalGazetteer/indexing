@@ -11,22 +11,22 @@ echo "1. Creating output directory..."
 mkdir -p pdf
 
 echo "2. Running XeLaTeX (Pass 1)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf universal_topophones.tex
+xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
 
 echo "3. Running BibTeX..."
 # We point bibtex to the .aux file inside the pdf folder
-bibtex pdf/universal_topophones
+bibtex pdf/symphonym
 
 echo "4. Running XeLaTeX (Pass 2)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf universal_topophones.tex
+xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
 
 echo "5. Running XeLaTeX (Pass 3)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf universal_topophones.tex
+xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
 
 echo "6. Running XeLaTeX (Pass 4 - Final)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf universal_topophones.tex
+xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
 
-echo "Build complete! Output: article/pdf/universal_topophones.pdf"
+echo "Build complete! Output: article/pdf/symphonym.pdf"
 
 # ----------------------
 # PART 2: ARXIV BUNDLING
@@ -42,8 +42,8 @@ rm -f arxiv_submission.zip
 mkdir -p $SUBMISSION_DIR
 
 # Copy Files
-cp universal_topophones.tex $SUBMISSION_DIR/
-cp pdf/universal_topophones.bbl $SUBMISSION_DIR/
+cp symphonym.tex $SUBMISSION_DIR/
+cp pdf/symphonym.bbl $SUBMISSION_DIR/
 cp *.cls *.sty *.bst $SUBMISSION_DIR/ 2>/dev/null || :
 cp *.png *.jpg *.jpeg *.pdf $SUBMISSION_DIR/ 2>/dev/null || :
 
@@ -51,7 +51,7 @@ cp *.png *.jpg *.jpeg *.pdf $SUBMISSION_DIR/ 2>/dev/null || :
 cp -r fonts $SUBMISSION_DIR/
 
 # Remove the compiled PDF if it got copied by mistake
-rm -f $SUBMISSION_DIR/universal_topophones.pdf
+rm -f $SUBMISSION_DIR/symphonym.pdf
 
 # --- CHANGED SECTION ---
 # Enter the directory and zip the CONTENTS, not the directory itself

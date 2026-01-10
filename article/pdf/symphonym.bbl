@@ -1,0 +1,183 @@
+\begin{thebibliography}{22}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Artetxe et~al.(2018)Artetxe, Labaka, and Agirre]{artetxe2018}
+Mikel Artetxe, Gorka Labaka, and Eneko Agirre.
+\newblock A robust self-learning method for fully unsupervised cross-lingual
+  mappings of word embeddings.
+\newblock In Iryna Gurevych and Yusuke Miyao, editors, \emph{Proceedings of the
+  56th Annual Meeting of the Association for Computational Linguistics (Volume
+  1: Long Papers)}, pages 789--798, Melbourne, Australia, July 2018.
+  Association for Computational Linguistics.
+\newblock \doi{10.18653/v1/P18-1073}.
+\newblock URL \url{https://aclanthology.org/P18-1073/}.
+
+\bibitem[Benites et~al.(2020)Benites, Duivesteijn, von D{\"a}niken, and
+  Cieliebak]{translit2020}
+Fernando Benites, Gilbert~Fran{\c{c}}ois Duivesteijn, Pius von D{\"a}niken, and
+  Mark Cieliebak.
+\newblock {TRANSLIT}: A large-scale name transliteration resource.
+\newblock In \emph{Proceedings of the 12th Conference on Language Resources and
+  Evaluation (LREC)}, pages 3265--3271, 2020.
+\newblock URL \url{https://aclanthology.org/2020.lrec-1.399/}.
+
+\bibitem[Bromley et~al.(1993)Bromley, Guyon, LeCun, Säckinger, and
+  Shah]{bromley1993}
+Jane Bromley, Isabelle Guyon, Yann LeCun, Eduard Säckinger, and Roopak Shah.
+\newblock Signature verification using a ``siamese'' time delay neural network.
+\newblock In \emph{Advances in Neural Information Processing Systems (NIPS)},
+  volume~6, pages 737--744, 1993.
+\newblock URL
+  \url{https://proceedings.neurips.cc/paper/1993/file/288cc0ff022877bd3df94bc9360b9c5d-Paper.pdf}.
+
+\bibitem[Chopra et~al.(2005)Chopra, Hadsell, and LeCun]{chopra2005}
+Sumit Chopra, Raia Hadsell, and Yann LeCun.
+\newblock Learning a similarity metric discriminatively, with application to
+  face verification.
+\newblock In \emph{Proceedings of the IEEE Computer Society Conference on
+  Computer Vision and Pattern Recognition (CVPR)}, volume~1, pages 539--546,
+  2005.
+\newblock \doi{10.1109/CVPR.2005.202}.
+
+\bibitem[Conneau et~al.(2018)Conneau, Lample, Ranzato, Denoyer, and
+  Jégou]{conneau2018}
+Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
+  Hervé Jégou.
+\newblock Word translation without parallel data.
+\newblock In \emph{Proceedings of the International Conference on Learning
+  Representations}, 2018.
+
+\bibitem[Grossner and Mostern(2021)]{grossner2021whg}
+Karl~E. Grossner and Ruth Mostern.
+\newblock Linked places in {World Historical Gazetteer}.
+\newblock In \emph{Proceedings of the 4th ACM SIGSPATIAL International Workshop
+  on Geospatial Humanities (GeoHumanities)}, pages 40--43, 2021.
+\newblock \doi{10.1145/3486187.3490203}.
+
+\bibitem[Kondrak(2000)]{kondrak2000}
+Grzegorz Kondrak.
+\newblock A new algorithm for the alignment of phonetic sequences.
+\newblock In \emph{Proceedings of the 1st North American Chapter of the
+  Association for Computational Linguistics Conference}, NAACL 2000, page
+  288–295, USA, 2000. Association for Computational Linguistics.
+
+\bibitem[Lin et~al.(2017)Lin, Feng, Santos, Yu, Xiang, Zhou, and
+  Bengio]{lin2017structured}
+Zhouhan Lin, Minwei Feng, Cicero~Nogueira Santos, Mo~Yu, Bing Xiang, Bowen
+  Zhou, and Yoshua Bengio.
+\newblock A structured self-attentive sentence embedding.
+\newblock In \emph{Proceedings of the International Conference on Learning
+  Representations (ICLR)}, 2017.
+\newblock URL \url{https://arxiv.org/abs/1703.03130}.
+
+\bibitem[Mortensen et~al.(2016)Mortensen, Littell, Bharadwaj, Goyal, Dyer, and
+  Levin]{mortensen2016}
+David~R. Mortensen, Patrick Littell, Akash Bharadwaj, Kartik Goyal, Chris Dyer,
+  and Lori Levin.
+\newblock Panphon: A resource for mapping {IPA} segments to articulatory
+  feature vectors.
+\newblock In \emph{Proceedings of the 26th International Conference on
+  Computational Linguistics (COLING)}, pages 3475--3484, 2016.
+\newblock URL \url{https://aclanthology.org/C16-1328/}.
+
+\bibitem[Mortensen et~al.(2018)Mortensen, Dalmia, and Littell]{mortensen2018}
+David~R. Mortensen, Siddharth Dalmia, and Patrick Littell.
+\newblock Epitran: Precision {G2P} for many languages.
+\newblock In \emph{Proceedings of the Eleventh International Conference on
+  Language Resources and Evaluation (LREC)}, pages 2634--2639, 2018.
+\newblock URL \url{https://aclanthology.org/L18-1140/}.
+
+\bibitem[Mueller and Thyagarajan(2016)]{mueller2016}
+Jonas Mueller and Aditya Thyagarajan.
+\newblock Siamese recurrent architectures for learning sentence similarity.
+\newblock In \emph{Proceedings of the Thirtieth AAAI Conference on Artificial
+  Intelligence}, pages 2786--2792, 2016.
+\newblock URL \url{https://dl.acm.org/doi/10.5555/3016100.3016291}.
+
+\bibitem[Neculoiu et~al.(2016)Neculoiu, Versteegh, and Rotaru]{neculoiu2016}
+Paul Neculoiu, Maarten Versteegh, and Mihai Rotaru.
+\newblock Learning text similarity with siamese recurrent networks.
+\newblock In \emph{Proceedings of the 1st Workshop on Representation Learning
+  for NLP}, pages 148--157, 2016.
+\newblock URL \url{https://aclanthology.org/W16-1617/}.
+
+\bibitem[Novak et~al.(2016)Novak, Minematsu, and Hirose]{novak2016}
+Josef~R. Novak, Nobuaki Minematsu, and Keikichi Hirose.
+\newblock Phonetisaurus: Exploring grapheme-to-phoneme conversion with joint
+  n-gram models in the {WFST} framework.
+\newblock \emph{Natural Language Engineering}, 22\penalty0 (6):\penalty0
+  907--938, 2016.
+\newblock \doi{10.1017/S1351324915000315}.
+
+\bibitem[Philips(1990)]{philips1990}
+Lawrence Philips.
+\newblock Hanging on the metaphone.
+\newblock \emph{Computer Language}, 7\penalty0 (12):\penalty0 39--43, 1990.
+
+\bibitem[Philips(2000)]{philips2000}
+Lawrence Philips.
+\newblock The double metaphone search algorithm.
+\newblock \emph{C/C++ Users Journal}, 18\penalty0 (6):\penalty0 38--43, 2000.
+\newblock \doi{10.5555/349124.349132}.
+
+\bibitem[Qiu et~al.(2024)Qiu, Li, Hu, Tian, Ma, and Zhu]{qiu2024geobert}
+Qinjun Qiu, Haiyan Li, Xinxin Hu, Miao Tian, Kai Ma, and Yunqiang Zhu.
+\newblock A deep neural network model for chinese toponym matching with
+  geographic pre-training model.
+\newblock \emph{International Journal of Digital Earth}, 17\penalty0
+  (1):\penalty0 2353111, 2024.
+\newblock \doi{10.1080/17538947.2024.2353111}.
+\newblock Proposal of the GeoBERT model.
+
+\bibitem[Rama(2016)]{rama2016}
+Taraka Rama.
+\newblock Siamese convolutional networks for cognate identification.
+\newblock In \emph{Proceedings of COLING 2016, the 26th International
+  Conference on Computational Linguistics: Technical Papers}, pages 1018--1027,
+  2016.
+\newblock URL \url{https://aclanthology.org/C16-1097/}.
+
+\bibitem[Recchia and Louwerse(2013)]{recchia2013}
+Gabriel Recchia and Max Louwerse.
+\newblock A comparison of string similarity measures for toponym matching.
+\newblock In \emph{Vagueness in Communication}, pages 54--67. Springer, 2013.
+\newblock \doi{10.1007/978-3-642-18446-8_4}.
+
+\bibitem[Russell(1918)]{odell1918}
+Robert~C. Russell.
+\newblock Index.
+\newblock U.S. Patent 1,261,167, 1918.
+\newblock URL \url{https://patents.google.com/patent/US1261167A/}.
+\newblock Patented Apr. 2, 1918.
+
+\bibitem[Sagi et~al.(2025)Sagi, Zaga, Rusinek, Fekete, Bjerva, and
+  Hose]{mehdie2025}
+Tomer Sagi, Moran Zaga, Sinai Rusinek, Marcell~Richard Fekete, Johannes Bjerva,
+  and Katja Hose.
+\newblock Utilizing phonetic similarity for cross-source and cross-language
+  toponym matching: a benchmark and prototype.
+\newblock \emph{Language Resources and Evaluation}, 59\penalty0 (3):\penalty0
+  2427--2451, 2025.
+\newblock \doi{10.1007/s10579-025-09812-9}.
+
+\bibitem[Santos et~al.(2018)Santos, Murrieta-Flores, Calafiore, and
+  Martins]{santos2018}
+Rodrigo Santos, Patricia Murrieta-Flores, Pablo Calafiore, and Bruno Martins.
+\newblock Learning to combine multiple string similarity metrics for effective
+  toponym matching.
+\newblock \emph{International Journal of Digital Earth}, 11\penalty0
+  (9):\penalty0 949--965, 2018.
+\newblock \doi{10.1080/17538947.2017.1371253}.
+
+\bibitem[Schroff et~al.(2015)Schroff, Kalenichenko, and Philbin]{schroff2015}
+Florian Schroff, Dmitry Kalenichenko, and James Philbin.
+\newblock Facenet: A unified embedding for face recognition and clustering.
+\newblock \emph{2015 IEEE Conference on Computer Vision and Pattern Recognition
+  (CVPR)}, pages 815--823, 2015.
+\newblock \doi{10.1109/CVPR.2015.7298682}.
+
+\end{thebibliography}
