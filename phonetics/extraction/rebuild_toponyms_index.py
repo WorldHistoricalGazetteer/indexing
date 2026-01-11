@@ -1045,7 +1045,7 @@ def export_training_parquet(
             WHERE tn2.toponym_id = t.toponym_id 
             AND tn2.namespace IN ({ns_placeholders})
         )
-        GROUP BY t.toponym_id
+        GROUP BY t.toponym_id, t.name, t.name_romanized, t.script, t.lang, t.ipa, t.panphon_features
     '''
 
     result = conn.execute(query, namespaces)
@@ -1298,7 +1298,7 @@ def dump_to_jsonl(
         FROM toponyms t
         JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
         LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-        GROUP BY t.toponym_id
+        GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
     ''')
 
     # Track total DB updates for logging
