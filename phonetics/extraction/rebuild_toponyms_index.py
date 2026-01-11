@@ -75,6 +75,41 @@ from phonetics.utils.script_detection import (
 from phonetics.utils.korean import decompose_text
 from processing.settings import ES_HOST, IX1_BASE, STAGING_REPO_NAME
 
+
+def bulk_insert_duckdb(conn, table_name: str, columns: List[str], data: List[Tuple]):
+    """
+    Fast bulk insert into DuckDB using PyArrow.
+
+    DuckDB's executemany is extremely slow (~350 rows/sec) because it
+    doesn't batch operations. Using PyArrow tables is ~20-50x faster.
+    """
+    if not data:
+        return
+
+    if PYARROW_AVAILABLE:
+        # Build PyArrow table from columnar data
+        col_data = {col: [] for col in columns}
+        for row in data:
+            for i, col in enumerate(columns):
+                col_data[col].append(row[i])
+
+        arrow_table = pa.table(col_data)
+        conn.execute(f"INSERT INTO {table_name} SELECT * FROM arrow_table")
+    else:
+        # Fallback to batch VALUES (still much faster than executemany)
+        if len(data) > 1000:
+            # Process in chunks to avoid SQL statement size limits
+            chunk_size = 1000
+            for i in range(0, len(data), chunk_size):
+                chunk = data[i:i+chunk_size]
+                placeholders = ','.join(['(' + ','.join(['?'] * len(columns)) + ')'] * len(chunk))
+                flat_values = [v for row in chunk for v in row]
+                conn.execute(f"INSERT INTO {table_name} VALUES {placeholders}", flat_values)
+        else:
+            placeholders = ','.join(['(' + ','.join(['?'] * len(columns)) + ')'] * len(data))
+            flat_values = [v for row in data for v in row]
+            conn.execute(f"INSERT INTO {table_name} VALUES {placeholders}", flat_values)
+
 # --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
@@ -422,9 +457,11 @@ def create_db(db_path: str):
     conn.execute("SET threads TO 16")
     conn.execute("SET memory_limit = '32GB'")
 
+    # Note: No PRIMARY KEY during bulk loading for speed
+    # Deduplication happens after loading via SQL
     conn.execute('''
         CREATE TABLE IF NOT EXISTS toponyms (
-            toponym_id VARCHAR PRIMARY KEY,
+            toponym_id VARCHAR,
             name VARCHAR NOT NULL,
             name_romanized VARCHAR,
             lang VARCHAR,
@@ -477,8 +514,25 @@ def create_db(db_path: str):
 
 
 def optimize_db_after_load(conn):
-    """Create indexes for DuckDB after bulk loading."""
+    """Deduplicate and create indexes for DuckDB after bulk loading."""
+
+    # Deduplicate toponyms table (keep first occurrence)
+    logger.info("Deduplicating toponyms table...")
+    before_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
+
+    conn.execute('''
+        CREATE TABLE toponyms_deduped AS
+        SELECT DISTINCT ON (toponym_id) *
+        FROM toponyms
+    ''')
+    conn.execute('DROP TABLE toponyms')
+    conn.execute('ALTER TABLE toponyms_deduped RENAME TO toponyms')
+
+    after_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
+    logger.info(f"Deduplication: {before_count:,} -> {after_count:,} ({before_count - after_count:,} duplicates removed)")
+
     logger.info("Creating DuckDB indexes...")
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_id ON toponym_attestations(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
@@ -658,11 +712,14 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
         places_processed += 1
 
         if len(toponym_batch) >= batch_size * 5:
-            conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?, ?, ?)', toponym_batch)
-            conn.executemany('INSERT INTO toponym_namespaces VALUES (?, ?)', namespace_batch)
-            conn.executemany('INSERT INTO toponym_attestations VALUES (?, ?)', attestation_batch)
+            # Use fast bulk insert with PyArrow
+            bulk_insert_duckdb(conn, 'toponyms',
+                ['toponym_id', 'name', 'name_romanized', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+                toponym_batch)
+            bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
+            bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
             if skipped_batch:
-                conn.executemany('INSERT INTO skipped_toponyms VALUES (?, ?, ?, ?)', skipped_batch)
+                bulk_insert_duckdb(conn, 'skipped_toponyms', ['toponym_id', 'reason', 'lang', 'script'], skipped_batch)
             toponym_batch = []
             namespace_batch = []
             attestation_batch = []
@@ -672,23 +729,24 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
 
     # Final batch
     if toponym_batch:
-        conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?, ?, ?)', toponym_batch)
-        conn.executemany('INSERT INTO toponym_namespaces VALUES (?, ?)', namespace_batch)
-        conn.executemany('INSERT INTO toponym_attestations VALUES (?, ?)', attestation_batch)
+        bulk_insert_duckdb(conn, 'toponyms',
+            ['toponym_id', 'name', 'name_romanized', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+            toponym_batch)
+        bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
+        bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
     if skipped_batch:
-        conn.executemany('INSERT INTO skipped_toponyms VALUES (?, ?, ?, ?)', skipped_batch)
+        bulk_insert_duckdb(conn, 'skipped_toponyms', ['toponym_id', 'reason', 'lang', 'script'], skipped_batch)
 
-    # Save character vocabulary to SQLite
+    # Save character vocabulary
     logger.info("Saving character vocabulary to database...")
     char_batch = []
     for script_val, counts in char_counts.items():
         for char, count in counts.items():
             char_batch.append((char, script_val, count))
 
-    conn.executemany(
-        'INSERT OR REPLACE INTO observed_chars VALUES (?, ?, ?)',
-        char_batch
-    )
+    # Use INSERT OR REPLACE for small batches (char vocab is small)
+    if char_batch:
+        bulk_insert_duckdb(conn, 'observed_chars', ['char', 'script', 'count'], char_batch)
 
     # Save script statistics
     for script_val, count in script_counts.items():
