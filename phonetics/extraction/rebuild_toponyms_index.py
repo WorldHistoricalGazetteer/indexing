@@ -47,13 +47,8 @@ except ImportError:
     print("Error: elasticsearch package required.")
     sys.exit(1)
 
-try:
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    PYARROW_AVAILABLE = True
-except ImportError:
-    PYARROW_AVAILABLE = False
-    print("Warning: pyarrow not available. Parquet export disabled.")
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 try:
     from tqdm import tqdm
@@ -79,36 +74,15 @@ from processing.settings import ES_HOST, IX1_BASE, STAGING_REPO_NAME
 def bulk_insert_duckdb(conn, table_name: str, columns: List[str], data: List[Tuple]):
     """
     Fast bulk insert into DuckDB using PyArrow.
-
-    DuckDB's executemany is extremely slow (~350 rows/sec) because it
-    doesn't batch operations. Using PyArrow tables is ~20-50x faster.
     """
     if not data:
         return
 
-    if PYARROW_AVAILABLE:
-        # Build PyArrow table from columnar data
-        col_data = {col: [] for col in columns}
-        for row in data:
-            for i, col in enumerate(columns):
-                col_data[col].append(row[i])
-
-        arrow_table = pa.table(col_data)
-        conn.execute(f"INSERT INTO {table_name} SELECT * FROM arrow_table")
-    else:
-        # Fallback to batch VALUES (still much faster than executemany)
-        if len(data) > 1000:
-            # Process in chunks to avoid SQL statement size limits
-            chunk_size = 1000
-            for i in range(0, len(data), chunk_size):
-                chunk = data[i:i+chunk_size]
-                placeholders = ','.join(['(' + ','.join(['?'] * len(columns)) + ')'] * len(chunk))
-                flat_values = [v for row in chunk for v in row]
-                conn.execute(f"INSERT INTO {table_name} VALUES {placeholders}", flat_values)
-        else:
-            placeholders = ','.join(['(' + ','.join(['?'] * len(columns)) + ')'] * len(data))
-            flat_values = [v for row in data for v in row]
-            conn.execute(f"INSERT INTO {table_name} VALUES {placeholders}", flat_values)
+    # Build columnar data efficiently using zip (avoids nested loops)
+    # zip(*data) transposes rows to columns
+    col_data = dict(zip(columns, zip(*data)))
+    arrow_table = pa.table(col_data)
+    conn.execute(f"INSERT INTO {table_name} SELECT * FROM arrow_table")
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -488,9 +462,10 @@ def create_db(db_path: str):
 
     conn.execute('''
         CREATE TABLE IF NOT EXISTS observed_chars (
-            char VARCHAR PRIMARY KEY,
+            char VARCHAR,
             script VARCHAR,
-            count INTEGER DEFAULT 1
+            count INTEGER DEFAULT 1,
+            PRIMARY KEY (char, script)
         )
     ''')
 
@@ -744,7 +719,6 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
         for char, count in counts.items():
             char_batch.append((char, script_val, count))
 
-    # Use INSERT OR REPLACE for small batches (char vocab is small)
     if char_batch:
         bulk_insert_duckdb(conn, 'observed_chars', ['char', 'script', 'count'], char_batch)
 
@@ -796,8 +770,12 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # Load observed characters and scripts
+    # With composite key (char, script), a char can appear in multiple scripts
     cursor = conn.execute('SELECT char, script, count FROM observed_chars')
-    observed_chars = {row[0]: (row[1], row[2]) for row in cursor}
+    observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+    for row in cursor:
+        char, script, count = row
+        observed_chars[char].append((script, count))
 
     cursor = conn.execute('SELECT script, count FROM script_stats')
     observed_scripts = {row[0] for row in cursor}
@@ -885,11 +863,13 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
         logger.info(f"  {script_name}: {count_added:,} characters")
 
     # 4. Add any observed characters not yet in vocab (edge cases)
-    for char, (script, count) in observed_chars.items():
+    for char, script_counts in observed_chars.items():
         if char not in vocab and char.strip():
             vocab[char] = next_id
             next_id += 1
-            script_char_counts['OTHER'] += 1
+            # Use the script with highest count for categorization
+            best_script = max(script_counts, key=lambda x: x[1])[0] if script_counts else 'OTHER'
+            script_char_counts[best_script] += 1
 
     # Save vocabulary
     vocab_data = {
@@ -983,7 +963,7 @@ TRAINING_SCHEMA = pa.schema([
     ('namespaces', pa.list_(pa.string())),
     ('attestations', pa.list_(pa.string())),  # Back-references to places
     ('split', pa.string()),  # train/val/test
-]) if PYARROW_AVAILABLE else None
+])
 
 
 def export_training_parquet(
@@ -1016,9 +996,6 @@ def export_training_parquet(
     Returns:
         Statistics dictionary
     """
-    if not PYARROW_AVAILABLE:
-        logger.warning("PyArrow not available, skipping Parquet export")
-        return {}
 
     logger.info("=" * 60)
     logger.info("Exporting training data to Parquet")
@@ -1232,9 +1209,12 @@ def dump_to_jsonl(
     output_path: Path,
     training_namespaces: List[str] = None,
     num_workers: int = None,
+    batch_size: int = 10000,
 ) -> Tuple[int, Dict]:
     """
     Dump aggregated documents to a flat JSONL file on Scratch.
+
+    Uses streaming batch architecture for O(1) memory usage regardless of corpus size.
 
     For toponyms in training_namespaces, computes (in parallel):
     - IPA transcription via Epitran
@@ -1246,6 +1226,7 @@ def dump_to_jsonl(
         output_path: Path for JSONL output
         training_namespaces: Namespaces for which to compute PanPhon (default: ['gn', 'wd', 'tgn'])
         num_workers: Number of parallel workers (default: CPU count - 2)
+        batch_size: Number of documents to process per batch (default: 10000)
 
     Returns:
         Tuple of (total_count, stats_dict)
@@ -1261,28 +1242,11 @@ def dump_to_jsonl(
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
     logger.info(f"Using {num_workers} parallel workers for IPA/PanPhon computation")
+    logger.info(f"Batch size: {batch_size:,} documents")
 
-    # PHASE 1: Stream all documents, collecting those needing phonetic processing
-    logger.info("Phase 1: Reading documents and identifying training namespace toponyms...")
-
-    cursor = conn.execute('''
-                          SELECT t.toponym_id,
-                                 t.name,
-                                 t.name_romanized,
-                                 t.lang,
-                                 t.lang_variant,
-                                 t.script,
-                                 GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
-                                 GROUP_CONCAT(DISTINCT ta.place_id) as attestations
-                          FROM toponyms t
-                                   JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-                                   LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-                          GROUP BY t.toponym_id
-                          ''')
-
-    # Collect all documents and identify those needing phonetics
-    all_docs = []
-    phonetics_needed = []  # (toponym_id, name, lang, script) for parallel processing
+    # Get total count for progress reporting
+    total_count = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
+    logger.info(f"Total toponyms to process: {total_count:,}")
 
     stats = {
         'total': 0,
@@ -1294,106 +1258,132 @@ def dump_to_jsonl(
         'by_script_lang_ipa': Counter(),
     }
 
-    for row in cursor:
-        toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
-        namespaces = namespaces_str.split(',') if namespaces_str else []
-        attestations = attestations_str.split(',') if attestations_str else []
-        primary_ns = get_primary_namespace(namespaces)
+    # Stream from DuckDB using cursor as iterator (not fetchall!)
+    cursor = conn.execute('''
+        SELECT t.toponym_id,
+               t.name,
+               t.name_romanized,
+               t.lang,
+               t.lang_variant,
+               t.script,
+               GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
+               GROUP_CONCAT(DISTINCT ta.place_id) as attestations
+        FROM toponyms t
+        JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+        LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+        GROUP BY t.toponym_id
+    ''')
 
-        doc = {
-            'toponym_id': toponym_id,
-            'name': name,
-            'lang': lang,
-            'lang_variant': lang_variant,
-            'script': script,
-            'namespaces': namespaces,
-            'primary_namespace': primary_ns,
-            'attestations': attestations,
-            'embedding': None,
-            'embedding_version': None,
-            'indexed_at': datetime.now(timezone.utc).isoformat(),
-        }
+    # Track total DB updates for logging
+    total_db_updates = 0
 
-        if name_romanized:
-            doc['name_romanized'] = name_romanized
-            stats['with_romanized'] += 1
+    with open(output_path, 'w', encoding='utf-8') as f, \
+         ProcessPoolExecutor(max_workers=num_workers) as executor:
 
-        stats['by_script'][script] += 1
-
-        is_in_training_ns = bool(training_ns_set & set(namespaces))
-        if is_in_training_ns:
-            stats['in_training_ns'] += 1
-            phonetics_needed.append((toponym_id, name, lang, script))
-
-        all_docs.append(doc)
-        stats['total'] += 1
-
-        if stats['total'] % 1000000 == 0:
-            logger.info(f"Read {stats['total']:,} documents, {len(phonetics_needed):,} need phonetics...")
-
-    logger.info(f"Read {stats['total']:,} total documents")
-    logger.info(f"Need phonetics for {len(phonetics_needed):,} documents")
-
-    # PHASE 2: Parallel IPA/PanPhon computation
-    logger.info(f"Phase 2: Computing IPA/PanPhon in parallel ({num_workers} workers)...")
-
-    # Process in batches for parallel execution
-    batch_size = 5000
-    phonetics_results = {}  # toponym_id -> (ipa, packed_features, embedding)
-
-    batches = [phonetics_needed[i:i + batch_size] for i in range(0, len(phonetics_needed), batch_size)]
-
-    processed_count = 0
-    with ProcessPoolExecutor(max_workers=num_workers) as executor:
         worker_fn = partial(_compute_phonetics_for_batch, epitran_lang_map=EPITRAN_LANG_MAP)
-        futures = {executor.submit(worker_fn, batch): len(batch) for batch in batches}
+        batch_docs = []
+        batch_phonetics_needed = []
 
-        for future in as_completed(futures):
-            batch_results = future.result()
-            for toponym_id, ipa, packed_features, embedding in batch_results:
-                phonetics_results[toponym_id] = (ipa, packed_features, embedding)
+        def process_and_write_batch():
+            """Process current batch: compute phonetics, write to JSONL, update DuckDB."""
+            nonlocal total_db_updates
 
-            processed_count += futures[future]
-            if processed_count % 100000 < batch_size:
-                logger.info(f"Processed {processed_count:,} / {len(phonetics_needed):,} ({100*processed_count/len(phonetics_needed):.1f}%)")
+            if not batch_docs:
+                return
 
-    logger.info(f"Computed phonetics for {len(phonetics_results):,} toponyms")
+            # Compute phonetics for this batch only
+            phonetics_results = {}
+            if batch_phonetics_needed:
+                # Submit batch for parallel processing
+                future = executor.submit(worker_fn, batch_phonetics_needed)
+                batch_results = future.result()
+                for toponym_id, ipa, packed_features, embedding in batch_results:
+                    phonetics_results[toponym_id] = (ipa, packed_features, embedding)
 
-    # PHASE 3: Write JSONL with phonetics merged in
-    logger.info("Phase 3: Writing JSONL with phonetics...")
+            # Merge results and write batch to disk immediately
+            current_db_updates = []
+            for doc in batch_docs:
+                toponym_id = doc['toponym_id']
 
-    # Also prepare DuckDB updates
-    db_updates = []
+                if toponym_id in phonetics_results:
+                    ipa, packed_features, embedding = phonetics_results[toponym_id]
+                    doc['ipa'] = ipa
+                    doc['panphon_embedding'] = embedding
+                    stats['with_ipa'] += 1
+                    stats['with_panphon'] += 1
+                    stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
 
-    with open(output_path, 'w', encoding='utf-8') as f:
-        for doc in all_docs:
-            toponym_id = doc['toponym_id']
+                    current_db_updates.append((ipa, packed_features, toponym_id))
 
-            if toponym_id in phonetics_results:
-                ipa, packed_features, embedding = phonetics_results[toponym_id]
-                doc['ipa'] = ipa
-                doc['panphon_embedding'] = embedding
-                stats['with_ipa'] += 1
-                stats['with_panphon'] += 1
-                stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
+                f.write(json.dumps(doc) + '\n')
 
-                db_updates.append((ipa, packed_features, toponym_id))
+            # Update DuckDB for THIS batch only (O(1) memory per batch)
+            if current_db_updates:
+                ipas, features, ids = zip(*current_db_updates)
+                update_table = pa.table({
+                    'ipa': ipas,
+                    'panphon_features': features,
+                    'toponym_id': ids
+                })
+                conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
+                conn.execute("""
+                    UPDATE toponyms 
+                    SET ipa = u.ipa, panphon_features = u.panphon_features
+                    FROM updates u
+                    WHERE toponyms.toponym_id = u.toponym_id
+                """)
+                conn.execute("DROP TABLE updates")
+                total_db_updates += len(current_db_updates)
 
-            f.write(json.dumps(doc) + '\n')
+        # Stream through cursor row by row
+        for row in cursor:
+            toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
+            namespaces = namespaces_str.split(',') if namespaces_str else []
+            attestations = attestations_str.split(',') if attestations_str else []
+            primary_ns = get_primary_namespace(namespaces)
 
-    # PHASE 4: Batch update DuckDB with IPA and features
-    logger.info(f"Phase 4: Updating DuckDB with {len(db_updates):,} IPA/PanPhon records...")
+            doc = {
+                'toponym_id': toponym_id,
+                'name': name,
+                'lang': lang,
+                'lang_variant': lang_variant,
+                'script': script,
+                'namespaces': namespaces,
+                'primary_namespace': primary_ns,
+                'attestations': attestations,
+                'embedding': None,
+                'embedding_version': None,
+                'indexed_at': datetime.now(timezone.utc).isoformat(),
+            }
 
-    # Update in batches for efficiency
-    update_batch_size = 50000
-    for i in range(0, len(db_updates), update_batch_size):
-        batch = db_updates[i:i + update_batch_size]
-        conn.executemany(
-            'UPDATE toponyms SET ipa = ?, panphon_features = ? WHERE toponym_id = ?',
-            batch
-        )
-        if (i + update_batch_size) % 200000 < update_batch_size:
-            logger.info(f"Updated {min(i + update_batch_size, len(db_updates)):,} / {len(db_updates):,}")
+            if name_romanized:
+                doc['name_romanized'] = name_romanized
+                stats['with_romanized'] += 1
+
+            stats['by_script'][script] += 1
+
+            is_in_training_ns = bool(training_ns_set & set(namespaces))
+            if is_in_training_ns:
+                stats['in_training_ns'] += 1
+                batch_phonetics_needed.append((toponym_id, name, lang, script))
+
+            batch_docs.append(doc)
+            stats['total'] += 1
+
+            # Process batch when full
+            if len(batch_docs) >= batch_size:
+                process_and_write_batch()
+                batch_docs = []
+                batch_phonetics_needed = []
+
+                if stats['total'] % 500000 == 0:
+                    logger.info(f"Processed {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%)")
+
+        # Process final batch
+        process_and_write_batch()
+
+    logger.info(f"JSONL export complete: {stats['total']:,} documents written")
+    logger.info(f"DuckDB updates complete: {total_db_updates:,} IPA/PanPhon records")
 
     # Log final statistics
     logger.info(f"Buffering complete. Total documents: {stats['total']:,}")

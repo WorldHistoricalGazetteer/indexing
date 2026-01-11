@@ -454,7 +454,7 @@ class Phase2Dataset(Dataset):
         self._table = dataset.to_table(
             columns=[
                 'toponym_id', 'name', 'script', 'lang',
-                'char_ids', 'char_length',
+                'char_ids',
                 'features', 'feature_length'
             ],
             filter=filter_expr
@@ -474,7 +474,6 @@ class Phase2Dataset(Dataset):
             'script': self._table['script'][idx].as_py(),
             'lang': self._table['lang'][idx].as_py() or '',
             'char_ids': self._table['char_ids'][idx].as_py(),
-            'char_length': self._table['char_length'][idx].as_py(),
             'features': self._table['features'][idx].as_py(),
             'feature_length': self._table['feature_length'][idx].as_py(),
         }
@@ -527,7 +526,7 @@ class Phase3Dataset(Dataset):
 
         columns = [
             'toponym_id', 'name', 'script', 'lang',
-            'char_ids', 'char_length', 'split'
+            'char_ids', 'split'
         ]
 
         print(f"Phase3Dataset: Loading toponyms for needed IDs...")
@@ -580,7 +579,6 @@ class Phase3Dataset(Dataset):
                     'script': row['script'],
                     'lang': lang,
                     'char_ids': char_ids,
-                    'char_length': row['char_length'],
                     'split': row['split']
                 }
 

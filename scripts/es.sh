@@ -717,11 +717,11 @@ do_rebuild_toponyms() {
     echo "  Extra Args:   ${PYTHON_ARGS:-none}"
     echo
     echo "This job will:"
-    echo "  1. Extract toponyms from places index (with attestations)"
+    echo "  1. Extract ALL toponyms from places index (with attestations)"
     echo "  2. Filter pre-romanized forms (lang-script mismatches)"
     echo "  3. Generate vocabulary (expanded Unicode ranges)"
-    echo "  4. Compute IPA + PanPhon embeddings for training namespaces"
-    echo "  5. Index to ES toponyms with panphon_embedding field"
+    echo "  4. Compute IPA + PanPhon embeddings for training namespace toponyms"
+    echo "  5. Index ALL toponyms to ES (panphon_embedding where available)"
     echo "  6. Refresh index and create snapshot"
     echo
 
@@ -791,6 +791,135 @@ EOF
     echo "✓ Rebuild job submitted: $JOBID"
     echo "  Monitor: squeue -j $JOBID"
     echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.out"
+}
+
+# ==============================================================================
+# GENERATE TRAINING DATA (v4 Pipeline Phase 2)
+# ==============================================================================
+
+do_generate_training_data() {
+    # Usage: source es.sh -generate-training-data [VERSION]
+    # Generates training data for all three phases from the toponyms index
+
+    DATA_VERSION=${1:-4}
+    shift 2>/dev/null || true
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
+
+    # Check that rebuild has completed
+    if [ ! -f "$DB_PATH" ]; then
+        echo "ERROR: DuckDB not found at $DB_PATH"
+        echo "Run -rebuild-toponyms first."
+        return 1
+    fi
+
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+    PYTHON_ARGS="$@"
+
+    echo "=========================================="
+    echo "v4 PIPELINE - PHASE 2: GENERATE TRAINING DATA"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  Output Dir:   ${OUTPUT_DIR}"
+    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    echo "  DuckDB:       ${DB_PATH}"
+    echo
+    echo "This job will:"
+    echo "  1. Generate positive pairs from co-located toponyms (PanPhon similarity)"
+    echo "  2. Balance samples by script+language pair"
+    echo "  3. Generate Phase 1 triplets (Teacher training)"
+    echo "  4. Generate Phase 2 samples (Student alignment)"
+    echo "  5. Generate Phase 3 triplets (hard negatives from ES)"
+    echo "  6. Export all to Parquet"
+    echo
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-traindata-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=300G
+
+set -e
+
+# Load Environment
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "$REPO_DIR"
+
+# Setup scratch
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+
+echo "=========================================="
+echo "v4 PIPELINE - PHASE 2: GENERATE TRAINING DATA"
+echo "=========================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Scratch: \$SCRATCH_DIR"
+echo "Output:  $OUTPUT_DIR"
+echo
+
+# Run the training data generation script
+python -m phonetics.extraction.generate_training_data \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --db-path "${DB_PATH}" \
+    --output-dir "${OUTPUT_DIR}" \
+    --scratch-dir "\$SCRATCH_DIR" \
+    --training-namespaces gn wd tgn \
+    $PYTHON_ARGS
+
+echo
+echo "=========================================="
+echo "JOB COMPLETE"
+echo "=========================================="
+echo "Output directory: $OUTPUT_DIR"
+echo "  - pairs/          Positive pairs Parquet"
+echo "  - triplets/       Phase 1 & 3 triplets"
+echo "  - training/       Phase 2 samples"
+echo "  - training_stats.json  Sample distribution"
+echo
+echo "Next steps:"
+echo "  1. Review training_stats.json for balance"
+echo "  2. Train model: source es.sh -train-model $DATA_VERSION"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ Training data job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/traindata_v${DATA_VERSION}_${JOBID}.out"
+}
+
+# Alias for backward compatibility
+do_generate_pairs() {
+    echo "Note: -generate-pairs is deprecated for v4. Use -generate-training-data instead."
+    do_generate_training_data "$@"
 }
 
 # =============================================================================
@@ -1332,7 +1461,13 @@ case "$1" in
         do_rebuild_toponyms "$@"
         ;;
 
-    # --- Generate Training Pairs/Triplets ---
+    # --- Generate Training Data (v4) ---
+    -generate-training-data)
+        shift
+        do_generate_training_data "$@"
+        ;;
+
+    # --- Generate Training Pairs/Triplets (legacy, redirects to above) ---
     -generate-pairs)
         shift
         do_generate_pairs "$@"
