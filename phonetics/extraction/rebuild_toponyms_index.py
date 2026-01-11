@@ -650,7 +650,7 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
                 if char.strip():  # Skip whitespace
                     char_counts[script_value][char] += 1
 
-            toponym_batch.append((canonical_id, name, name_romanized, lang, lang_variant, script_value))
+            toponym_batch.append((canonical_id, name, name_romanized, lang, lang_variant, script_value, None, None))
             namespace_batch.append((canonical_id, namespace))
             attestation_batch.append((canonical_id, place_id))
             toponyms_extracted += 1
@@ -658,7 +658,7 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
         places_processed += 1
 
         if len(toponym_batch) >= batch_size * 5:
-            conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?)', toponym_batch)
+            conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?, ?, ?)', toponym_batch)
             conn.executemany('INSERT INTO toponym_namespaces VALUES (?, ?)', namespace_batch)
             conn.executemany('INSERT INTO toponym_attestations VALUES (?, ?)', attestation_batch)
             if skipped_batch:
@@ -672,7 +672,7 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
 
     # Final batch
     if toponym_batch:
-        conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?)', toponym_batch)
+        conn.executemany('INSERT OR IGNORE INTO toponyms VALUES (?, ?, ?, ?, ?, ?, ?, ?)', toponym_batch)
         conn.executemany('INSERT INTO toponym_namespaces VALUES (?, ?)', namespace_batch)
         conn.executemany('INSERT INTO toponym_attestations VALUES (?, ?)', attestation_batch)
     if skipped_batch:
