@@ -71,8 +71,8 @@
 \author{
     Stephen Gadd \\
     {\small ORCiD: 0000-0003-3060-0181} \\
-    World Historical Gazetteer / University of Pittsburgh \\
-    \texttt{stephen@docuracy.co.uk}
+    University of London / University of Pittsburgh \\
+    \texttt{stephen.gadd@sas.ac.uk}
 }
 
 \date{Draft: \today}
@@ -738,7 +738,7 @@ The evaluation results support Symphonym's central claim: that a character-level
 
 \paragraph{Complementary Methods.} Symphonym is designed as one component of a larger reconciliation pipeline. Cross-script candidate retrieval benefits from phonetic embeddings; same-script refinement may use edit distance; final disambiguation incorporates geographic proximity and temporal constraints. The embedding similarity score provides a phonetic prior that downstream components can weigh against other evidence.
 
-\paragraph{Historical Orthographic Variation.} Before the standardisation of spelling in many languages (in English, largely during the 18th century), place names were typically written as they sounded to individual scribes, yielding considerable orthographic variation in historical sources. The same parish might appear as ``Leycester'', ``Leycestre'', ``Lecestre'', and ``Leicester'' across different medieval documents. Because Symphonym embeds based on phonetic similarity rather than exact orthography, it naturally groups such variants together: all sound-alike spellings of a place will cluster near the modern canonical form. This enables a practical application beyond cross-script matching: given a historical spelling variant, Symphonym can suggest the most likely modern canonical form by retrieving the nearest neighbours in the embedding space. This is particularly valuable for transcribed historical documents, parish registers, and archival catalogues where inconsistent historical spellings must be linked to standardised gazetteer entries.
+\paragraph{Historical Orthographic Variation.} Before the standardisation of spelling in many languages (in English, largely during the 18th century), place names were typically written as they sounded to individual scribes, yielding considerable orthographic variation in historical sources. The same city might appear as ``Leycester'', ``Leycestre'', ``Lecestre'', and ``Leicester'' across different medieval documents. Because Symphonym embeds based on phonetic similarity rather than exact orthography, it naturally groups such variants together: all sound-alike spellings of a place will cluster near the modern canonical form. This enables a practical application beyond cross-script matching: given a historical spelling variant, Symphonym can suggest the most likely modern canonical form by retrieving the nearest neighbours in the embedding space. This is particularly valuable for transcribed historical documents, parish registers, and archival catalogues where inconsistent historical spellings must be linked to standardised gazetteer entries.
 
 \subsection{Limitations}
 
@@ -767,6 +767,51 @@ Evaluation demonstrates strong performance:
 The system addresses a practical need: linking place references across languages, scripts, and historical periods without requiring language-specific rules or phonetic lookup tables. By learning directly from the statistical structure of multi-script toponyms attested in linked authority datasets, Symphonym captures phonetic correspondences that would be difficult to enumerate manually.
 
 Symphonym is to be deployed in the World Historical Gazetteer, enabling fuzzy phonetic search and reconciliation across 67M+ toponyms from antiquity to the present. The trained models and training code are released to support further research in historical toponym linking and cross-lingual named entity matching.
+
+
+\section{Future Work}
+\label{sec:future}
+
+While Symphonym achieves strong cross-script performance, analysis of the training pipeline reveals several deficiencies that a revised data preparation strategy could address.
+
+\subsection{Limitations of Current Training Data}
+
+\paragraph{Late Feature Filtering.} The current pipeline generates positive pairs based on co-location and string similarity, then generates triplets, and only filters for valid phonetic features (IPA/PanPhon) at training time. This late filtering causes substantial dropout: of 5.1M Phase 1 triplets, only 467K (9.2\%) survive because all three elements (anchor, positive, negative) must have valid features. The multiplicative effect of requiring three valid toponyms per triplet, combined with approximately 50\% Epitran coverage, explains this 90\% loss.
+
+\paragraph{Script-Language Imbalance.} The quota system balances pairs by \emph{script pair} (e.g., Latin-Cyrillic), but the post-filtering distribution becomes skewed because Epitran coverage varies by language. Latin-German pairs may retain 80\% of samples while Latin-Thai pairs retain only 10\%, undermining the intended balance.
+
+\paragraph{Crude Similarity Thresholding.} Positive pairs are selected using a fixed phonetic similarity threshold (0.35 on normalised Levenshtein distance). This fails for places with toponyms falling into more than two phonetic groups---a common case for major cities with names in dozens of languages.
+
+\paragraph{Orthographic Hard Negatives.} Phase 3 hard negatives are selected by orthographic prefix (first two characters) rather than phonetic similarity. ``Munich'' and ``Murmansk'' share the prefix ``Mu'' but are phonetically distinct, making them weak hard negatives.
+
+\subsection{Proposed Improvements}
+
+A revised pipeline would address these issues through feature-aware data generation:
+
+\paragraph{Phonetic Clustering for Pair Generation.} Rather than thresholding string similarity, cluster each place's toponyms by PanPhon cosine similarity. This groups phonetically equivalent names regardless of script, naturally handling places with multiple phonetic variants. All within-cluster pairs become positive training examples.
+
+\paragraph{Early Feature Filtering.} Generate pairs only from toponyms with valid PanPhon embeddings. This eliminates training-time dropout and ensures that quota balancing reflects the actual training distribution.
+
+\paragraph{Script-Language Stratification.} Balance training data by \emph{script-language pair} rather than script pair alone. This finer granularity ensures adequate representation of under-resourced languages within well-resourced scripts (e.g., Latin-Swahili vs.\ Latin-English).
+
+\paragraph{Phonetic Hard Negatives.} Select Phase 3 negatives using PanPhon similarity: find toponyms in the same script-language pair with high phonetic similarity but no shared attestations. This creates genuinely challenging negatives that teach fine-grained discrimination.
+
+\paragraph{Unified Bin-Balancing Algorithm.} Apply consistent sampling across all phases: cap over-represented script-language bins, oversample under-represented bins (up to 3--5$\times$), and exclude bins below a minimum threshold (e.g., 1,000 samples) where oversampling would cause severe repetition.
+
+\paragraph{Pre-computed Teacher Embeddings.} Generate all training data---except Teacher embeddings for Phase 2---before training begins. This eliminates GPU idle time during data preparation and enables efficient batch processing.
+
+\subsection{Expected Impact}
+
+These improvements should yield several benefits:
+
+\begin{itemize}
+    \item \textbf{Increased effective training data}: Eliminating the 90\% triplet dropout would increase Phase 1 training from 467K to approximately 4--5M triplets.
+    \item \textbf{Balanced script-language coverage}: Stratified sampling should improve performance on under-represented language pairs currently disadvantaged by post-hoc filtering.
+    \item \textbf{Improved discrimination}: Phonetically-grounded hard negatives should sharpen the model's ability to distinguish similar-sounding but distinct toponyms.
+    \item \textbf{Principled pair generation}: Clustering by phonetic similarity provides a linguistically motivated alternative to arbitrary similarity thresholds.
+\end{itemize}
+
+Evaluation of a model trained on the revised pipeline will quantify these expected gains.
 
 
 \section*{Data Availability}

@@ -1,32 +1,45 @@
 """
-Rebuild the ES toponyms index with vocabulary generation.
+Rebuild the ES toponyms index with vocabulary generation and PanPhon embeddings.
+
+v4 Pipeline - Phase 1: Extraction and ES Indexing
 
 This script:
 1. Scans all places to extract toponyms with attestations (back-references to places)
 2. Builds character vocabulary covering all observed scripts + full Unicode ranges
-3. Indexes toponyms to ES with attestations for simplified pair generation
+3. Computes IPA and PanPhon embeddings for toponyms in training namespaces
+4. Indexes toponyms to ES with panphon_embedding for phonetic similarity queries
+5. Refreshes index and creates snapshot
+
+The panphon_embedding field enables:
+- Phonetic clustering for pair generation (replacing string similarity thresholds)
+- Phonetic hard negative mining (replacing orthographic prefix matching)
 
 Vocabulary output enables subsequent training without re-scanning the corpus.
 
-Reliability Update: Uses JSONL buffer on scratch disk to decouple SQL from HTTP.
-Supports resuming from an existing SQLite database.
+Reliability: Uses JSONL buffer on scratch disk to decouple DuckDB from HTTP.
+Supports resuming from an existing DuckDB database.
 """
 
 import argparse
 import hashlib
 import json
 import logging
+import multiprocessing as mp
 import shutil
-import sqlite3
+import struct
 import sys
 import tempfile
 import unicodedata
 from collections import Counter, defaultdict
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
+from functools import partial
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple, Set
 
 from processing.utilities import create_checkpoint_snapshot
+
+import duckdb
 
 try:
     from elasticsearch import Elasticsearch, helpers
@@ -188,6 +201,7 @@ class IPAConverter:
             return None
 
     def to_features(self, ipa: str) -> Optional[List[float]]:
+        """Get raw PanPhon features (24 features per segment, variable length)."""
         if not self._check_panphon() or ipa is None:
             return None
         try:
@@ -200,6 +214,105 @@ class IPAConverter:
             return features
         except Exception:
             return None
+
+    def to_embedding(self, ipa: str) -> Optional[List[float]]:
+        """
+        Compute 192-dimensional PanPhon embedding using 8-bin position pooling.
+
+        This creates a fixed-size vector suitable for ES dense_vector storage
+        and cosine similarity queries. The embedding preserves positional
+        information by dividing the word into 8 bins and averaging features
+        within each bin.
+
+        Architecture:
+            - 8 positional bins (capturing word shape: start, middle, end)
+            - 24 articulatory features per bin
+            - Total: 8 × 24 = 192 dimensions
+
+        This preserves more information than simple averaging because:
+            - "Paris" and "Sirap" will have different embeddings
+            - Word beginnings/endings are captured distinctly
+            - Variable-length sequences map to fixed representation
+
+        Returns:
+            List of 192 floats, or None if conversion fails
+        """
+        if not self._check_panphon() or ipa is None:
+            return None
+        try:
+            segments = self._panphon_ft.word_fts(ipa)
+            if not segments:
+                return None
+
+            num_segments = len(segments)
+            num_bins = 8
+            features_per_bin = 24
+
+            # Initialize bins: 8 bins × 24 features each
+            bins = [[0.0] * features_per_bin for _ in range(num_bins)]
+            bin_counts = [0] * num_bins
+
+            # Assign each segment to a bin based on position
+            for seg_idx, seg in enumerate(segments):
+                # Compute which bin this segment falls into
+                # Position is normalized to [0, 1), then mapped to bin index
+                position = seg_idx / num_segments
+                bin_idx = min(int(position * num_bins), num_bins - 1)
+
+                # Add segment features to the bin
+                features = seg.numeric()
+                for i, val in enumerate(features):
+                    bins[bin_idx][i] += val
+                bin_counts[bin_idx] += 1
+
+            # Compute mean for each bin (zero-padded bins stay zero)
+            embedding = []
+            for bin_idx in range(num_bins):
+                if bin_counts[bin_idx] > 0:
+                    bin_avg = [v / bin_counts[bin_idx] for v in bins[bin_idx]]
+                else:
+                    bin_avg = [0.0] * features_per_bin
+                embedding.extend(bin_avg)
+
+            return embedding
+        except Exception:
+            return None
+
+
+def _compute_phonetics_for_batch(batch: List[Tuple], epitran_lang_map: Dict) -> List[Tuple]:
+    """
+    Worker function for parallel IPA/PanPhon computation.
+
+    Args:
+        batch: List of (toponym_id, name, lang, script) tuples
+        epitran_lang_map: Language mapping for Epitran
+
+    Returns:
+        List of (toponym_id, ipa, full_features_packed, embedding_192) tuples
+    """
+    # Create converter in worker process (Epitran not picklable)
+    converter = IPAConverter()
+    results = []
+
+    for toponym_id, name, lang, script in batch:
+        try:
+            script_enum = Script(script)
+        except ValueError:
+            script_enum = Script.OTHER
+
+        ipa = converter.to_ipa(name, lang, script_enum)
+        if not ipa:
+            continue
+
+        full_features = converter.to_features(ipa)
+        embedding = converter.to_embedding(ipa)
+
+        if embedding:
+            packed = struct.pack(f'{len(full_features)}f', *full_features) if full_features else None
+            results.append((toponym_id, ipa, packed, embedding))
+
+    return results
+
 
 # Languages that are expected to use specific scripts
 # Used to detect and filter pre-romanized forms (e.g., "Beijing" tagged as zh)
@@ -292,66 +405,88 @@ def is_script_mismatch(lang: Optional[str], script: Script) -> bool:
     return False
 
 
-def create_sqlite_db(db_path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path, check_same_thread=False)
-    conn.execute('PRAGMA journal_mode=WAL')
-    conn.execute('PRAGMA synchronous=OFF')
-    conn.execute('PRAGMA cache_size=-4000000')  # 4GB Cache
-    conn.execute('PRAGMA temp_store=MEMORY')
+def create_db(db_path: str):
+    """
+    Create DuckDB database with optimized columnar storage.
 
-    conn.executescript('''
-                       CREATE TABLE IF NOT EXISTS toponyms
-                       (
-                           toponym_id TEXT PRIMARY KEY,
-                           name TEXT NOT NULL,
-                           name_romanized TEXT,
-                           lang TEXT,
-                           lang_variant TEXT,
-                           script TEXT
-                       );
-                       CREATE TABLE IF NOT EXISTS toponym_namespaces
-                       (
-                           toponym_id TEXT NOT NULL,
-                           namespace TEXT NOT NULL
-                       );
-                       CREATE TABLE IF NOT EXISTS toponym_attestations
-                       (
-                           toponym_id TEXT NOT NULL,
-                           place_id TEXT NOT NULL
-                       );
-                       CREATE TABLE IF NOT EXISTS observed_chars
-                       (
-                           char TEXT PRIMARY KEY,
-                           script TEXT,
-                           count INTEGER DEFAULT 1
-                       );
-                       CREATE TABLE IF NOT EXISTS script_stats
-                       (
-                           script TEXT PRIMARY KEY,
-                           count INTEGER DEFAULT 0
-                       );
-                       CREATE TABLE IF NOT EXISTS skipped_toponyms
-                       (
-                           toponym_id TEXT,
-                           reason TEXT,
-                           lang TEXT,
-                           script TEXT
-                       );
-                       ''')
-    conn.commit()
+    DuckDB advantages for this workload:
+    - Columnar storage: better for analytical queries
+    - Native Parquet export: direct export without serialization
+    - Parallel query execution: automatic multi-core utilization
+    - Better compression: ~30-50% smaller database files
+    - Vectorized operations: faster aggregations and JOINs
+    """
+    conn = duckdb.connect(db_path)
+
+    # Configure for bulk loading
+    conn.execute("SET threads TO 16")
+    conn.execute("SET memory_limit = '32GB'")
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS toponyms (
+            toponym_id VARCHAR PRIMARY KEY,
+            name VARCHAR NOT NULL,
+            name_romanized VARCHAR,
+            lang VARCHAR,
+            lang_variant VARCHAR,
+            script VARCHAR,
+            ipa VARCHAR,
+            panphon_features BLOB
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS toponym_namespaces (
+            toponym_id VARCHAR NOT NULL,
+            namespace VARCHAR NOT NULL
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS toponym_attestations (
+            toponym_id VARCHAR NOT NULL,
+            place_id VARCHAR NOT NULL
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS observed_chars (
+            char VARCHAR PRIMARY KEY,
+            script VARCHAR,
+            count INTEGER DEFAULT 1
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS script_stats (
+            script VARCHAR PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        )
+    ''')
+
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS skipped_toponyms (
+            toponym_id VARCHAR,
+            reason VARCHAR,
+            lang VARCHAR,
+            script VARCHAR
+        )
+    ''')
+
     return conn
 
 
-def optimize_db_after_load(conn: sqlite3.Connection):
-    logger.info("Optimizing SQLite database...")
+def optimize_db_after_load(conn):
+    """Create indexes for DuckDB after bulk loading."""
+    logger.info("Creating DuckDB indexes...")
     conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_id ON toponym_attestations(toponym_id)')
     conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
-    # Composite index for efficient ROW_NUMBER() window function in generate_pairs.py
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+    # Composite index for efficient window functions
     conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
-    conn.execute('ANALYZE')
-    conn.commit()
-    logger.info("Database optimized.")
+    logger.info("DuckDB indexes created.")
 
 
 def scan_places(es: Elasticsearch, index: str, batch_size: int = 2000) -> Iterator[Tuple[str, Dict]]:
@@ -414,9 +549,9 @@ def generate_name_romanized(name: str, script: Script) -> Optional[str]:
     return None
 
 
-def extract_toponyms_to_sqlite(es, conn, places_index, batch_size, limit=None):
+def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     """
-    Extract toponyms from places index to SQLite, collecting:
+    Extract toponyms from places index to DuckDB, collecting:
     - Toponym records with script detection
     - Namespace associations
     - Attestation back-references (place_ids)
@@ -586,7 +721,7 @@ def extract_toponyms_to_sqlite(es, conn, places_index, batch_size, limit=None):
     return places_processed, toponyms_extracted, toponyms_skipped
 
 
-def generate_vocabulary(conn: sqlite3.Connection, output_dir: Path) -> Dict:
+def generate_vocabulary(conn, output_dir: Path) -> Dict:
     """
     Generate expanded character vocabulary from observed characters.
 
@@ -784,11 +919,9 @@ TRAINING_SCHEMA = pa.schema([
     ('lang', pa.string()),
     ('char_ids', pa.list_(pa.int16())),
     ('char_length', pa.int16()),
-    ('epitran_code', pa.string()),
-    ('epitran_supported', pa.bool_()),
     ('ipa', pa.string()),
-    ('features', pa.list_(pa.float32())),
-    ('feature_length', pa.int16()),
+    ('features', pa.list_(pa.float32())),  # Full PanPhon features (variable length)
+    ('feature_length', pa.int16()),  # Number of segments (features.length / 24)
     ('namespaces', pa.list_(pa.string())),
     ('attestations', pa.list_(pa.string())),  # Back-references to places
     ('split', pa.string()),  # train/val/test
@@ -796,7 +929,7 @@ TRAINING_SCHEMA = pa.schema([
 
 
 def export_training_parquet(
-    conn: sqlite3.Connection,
+    conn,
     vocab: Dict[str, int],
     output_dir: Path,
     namespaces: List[str],
@@ -809,12 +942,12 @@ def export_training_parquet(
 
     This creates training-ready data with:
     - Pre-encoded char_ids (using the vocabulary)
-    - IPA transcription and PanPhon features (for Teacher training)
+    - IPA transcription and PanPhon features (read from DuckDB, pre-computed during Phase 1)
     - Train/val/test splits
     - Attestations for pair generation
 
     Args:
-        conn: SQLite connection
+        conn: DuckDB connection
         vocab: Character vocabulary (char -> id mapping)
         output_dir: Output directory for Parquet files
         namespaces: Namespaces to include (e.g., ['gn', 'wd', 'tgn'])
@@ -837,10 +970,7 @@ def export_training_parquet(
     parquet_dir = output_dir / 'training'
     parquet_dir.mkdir(parents=True, exist_ok=True)
 
-    # Initialize IPA converter
-    ipa_converter = IPAConverter()
-
-    # Query toponyms with their namespaces and attestations
+    # Query toponyms with their namespaces, attestations, and pre-computed IPA/PanPhon
     # Filter to only include toponyms from specified namespaces
     ns_placeholders = ','.join('?' * len(namespaces))
 
@@ -850,6 +980,8 @@ def export_training_parquet(
                t.name_romanized,
                t.script,
                t.lang,
+               t.ipa,
+               t.panphon_features,
                GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
                GROUP_CONCAT(DISTINCT ta.place_id) as attestations
         FROM toponyms t
@@ -900,6 +1032,14 @@ def export_training_parquet(
                 ids.append(1)  # UNK_ID
         return ids
 
+    def unpack_features(packed: bytes) -> Optional[List[float]]:
+        """Unpack PanPhon features from DuckDB BLOB."""
+        if not packed:
+            return None
+        import struct
+        num_floats = len(packed) // 4
+        return list(struct.unpack(f'{num_floats}f', packed))
+
     def flush_buffer(script: str):
         """Write buffer to Parquet file."""
         records = buffers[script]
@@ -924,36 +1064,22 @@ def export_training_parquet(
     last_log = 0
 
     for row in cursor:
-        toponym_id, name, name_romanized, script, lang, namespaces_str, attestations_str = row
+        toponym_id, name, name_romanized, script, lang, ipa, panphon_packed, namespaces_str, attestations_str = row
 
         namespaces_list = namespaces_str.split(',') if namespaces_str else []
         attestations_list = attestations_str.split(',') if attestations_str else []
 
-        # Parse script
-        try:
-            script_enum = Script(script)
-        except ValueError:
-            script_enum = Script.OTHER
-
         # Encode characters
         char_ids = encode_chars(name_romanized, name, script)
 
-        # Get IPA and features
-        epitran_code = ipa_converter.get_epitran_code(lang or '', script_enum)
-        epitran_supported = epitran_code is not None
+        # Unpack pre-computed PanPhon features from DuckDB
+        features = unpack_features(panphon_packed)
+        feature_length = len(features) // 24 if features else 0
 
-        ipa = None
-        features = None
-        feature_length = 0
-
-        if epitran_supported:
-            ipa = ipa_converter.to_ipa(name, lang, script_enum)
-            if ipa:
-                stats['with_ipa'] += 1
-                features = ipa_converter.to_features(ipa)
-                if features:
-                    feature_length = len(features) // 24  # PanPhon has 24 features per segment
-                    stats['with_features'] += 1
+        if ipa:
+            stats['with_ipa'] += 1
+        if features:
+            stats['with_features'] += 1
 
         # Assign split
         split_hash = compute_split_hash(toponym_id)
@@ -967,8 +1093,6 @@ def export_training_parquet(
             'lang': lang or '',
             'char_ids': char_ids,
             'char_length': len(char_ids),
-            'epitran_code': epitran_code,
-            'epitran_supported': epitran_supported,
             'ipa': ipa,
             'features': features,
             'feature_length': feature_length,
@@ -1045,12 +1169,43 @@ def export_training_parquet(
     return stats
 
 
-def dump_to_jsonl(conn: sqlite3.Connection, output_path: Path) -> int:
+def dump_to_jsonl(
+    conn,
+    output_path: Path,
+    training_namespaces: List[str] = None,
+    num_workers: int = None,
+) -> Tuple[int, Dict]:
     """
-    Step 1: Dump aggregated documents to a flat JSONL file on Scratch.
-    Now includes attestations (list of place_ids) and name_romanized (romanized form).
+    Dump aggregated documents to a flat JSONL file on Scratch.
+
+    For toponyms in training_namespaces, computes (in parallel):
+    - IPA transcription via Epitran
+    - PanPhon embedding (192-dim position-pooled articulatory features) for ES
+    - Full PanPhon feature sequence stored in DuckDB for training data assembly
+
+    Args:
+        conn: DuckDB connection
+        output_path: Path for JSONL output
+        training_namespaces: Namespaces for which to compute PanPhon (default: ['gn', 'wd', 'tgn'])
+        num_workers: Number of parallel workers (default: CPU count - 2)
+
+    Returns:
+        Tuple of (total_count, stats_dict)
     """
+    if training_namespaces is None:
+        training_namespaces = ['gn', 'wd', 'tgn']
+
+    if num_workers is None:
+        num_workers = max(1, mp.cpu_count() - 2)
+
+    training_ns_set = set(training_namespaces)
+
     logger.info(f"Buffering documents to disk: {output_path}")
+    logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
+    logger.info(f"Using {num_workers} parallel workers for IPA/PanPhon computation")
+
+    # PHASE 1: Stream all documents, collecting those needing phonetic processing
+    logger.info("Phase 1: Reading documents and identifying training namespace toponyms...")
 
     cursor = conn.execute('''
                           SELECT t.toponym_id,
@@ -1067,43 +1222,134 @@ def dump_to_jsonl(conn: sqlite3.Connection, output_path: Path) -> int:
                           GROUP BY t.toponym_id
                           ''')
 
-    count = 0
-    with_search = 0
+    # Collect all documents and identify those needing phonetics
+    all_docs = []
+    phonetics_needed = []  # (toponym_id, name, lang, script) for parallel processing
+
+    stats = {
+        'total': 0,
+        'with_romanized': 0,
+        'in_training_ns': 0,
+        'with_ipa': 0,
+        'with_panphon': 0,
+        'by_script': Counter(),
+        'by_script_lang_ipa': Counter(),
+    }
+
+    for row in cursor:
+        toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
+        namespaces = namespaces_str.split(',') if namespaces_str else []
+        attestations = attestations_str.split(',') if attestations_str else []
+        primary_ns = get_primary_namespace(namespaces)
+
+        doc = {
+            'toponym_id': toponym_id,
+            'name': name,
+            'lang': lang,
+            'lang_variant': lang_variant,
+            'script': script,
+            'namespaces': namespaces,
+            'primary_namespace': primary_ns,
+            'attestations': attestations,
+            'embedding': None,
+            'embedding_version': None,
+            'indexed_at': datetime.now(timezone.utc).isoformat(),
+        }
+
+        if name_romanized:
+            doc['name_romanized'] = name_romanized
+            stats['with_romanized'] += 1
+
+        stats['by_script'][script] += 1
+
+        is_in_training_ns = bool(training_ns_set & set(namespaces))
+        if is_in_training_ns:
+            stats['in_training_ns'] += 1
+            phonetics_needed.append((toponym_id, name, lang, script))
+
+        all_docs.append(doc)
+        stats['total'] += 1
+
+        if stats['total'] % 1000000 == 0:
+            logger.info(f"Read {stats['total']:,} documents, {len(phonetics_needed):,} need phonetics...")
+
+    logger.info(f"Read {stats['total']:,} total documents")
+    logger.info(f"Need phonetics for {len(phonetics_needed):,} documents")
+
+    # PHASE 2: Parallel IPA/PanPhon computation
+    logger.info(f"Phase 2: Computing IPA/PanPhon in parallel ({num_workers} workers)...")
+
+    # Process in batches for parallel execution
+    batch_size = 5000
+    phonetics_results = {}  # toponym_id -> (ipa, packed_features, embedding)
+
+    batches = [phonetics_needed[i:i + batch_size] for i in range(0, len(phonetics_needed), batch_size)]
+
+    processed_count = 0
+    with ProcessPoolExecutor(max_workers=num_workers) as executor:
+        worker_fn = partial(_compute_phonetics_for_batch, epitran_lang_map=EPITRAN_LANG_MAP)
+        futures = {executor.submit(worker_fn, batch): len(batch) for batch in batches}
+
+        for future in as_completed(futures):
+            batch_results = future.result()
+            for toponym_id, ipa, packed_features, embedding in batch_results:
+                phonetics_results[toponym_id] = (ipa, packed_features, embedding)
+
+            processed_count += futures[future]
+            if processed_count % 100000 < batch_size:
+                logger.info(f"Processed {processed_count:,} / {len(phonetics_needed):,} ({100*processed_count/len(phonetics_needed):.1f}%)")
+
+    logger.info(f"Computed phonetics for {len(phonetics_results):,} toponyms")
+
+    # PHASE 3: Write JSONL with phonetics merged in
+    logger.info("Phase 3: Writing JSONL with phonetics...")
+
+    # Also prepare DuckDB updates
+    db_updates = []
+
     with open(output_path, 'w', encoding='utf-8') as f:
-        for row in cursor:
-            toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
-            namespaces = namespaces_str.split(',') if namespaces_str else []
-            attestations = attestations_str.split(',') if attestations_str else []
-            primary_ns = get_primary_namespace(namespaces)
+        for doc in all_docs:
+            toponym_id = doc['toponym_id']
 
-            doc = {
-                'toponym_id': toponym_id,
-                'name': name,
-                'lang': lang,
-                'lang_variant': lang_variant,
-                'script': script,
-                'namespaces': namespaces,
-                'primary_namespace': primary_ns,
-                'attestations': attestations,
-                'embedding': None,
-                'embedding_version': None,
-                'indexed_at': datetime.now(timezone.utc).isoformat(),
-            }
+            if toponym_id in phonetics_results:
+                ipa, packed_features, embedding = phonetics_results[toponym_id]
+                doc['ipa'] = ipa
+                doc['panphon_embedding'] = embedding
+                stats['with_ipa'] += 1
+                stats['with_panphon'] += 1
+                stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
 
-            # Only include name_romanized if it exists and differs from name
-            if name_romanized:
-                doc['name_romanized'] = name_romanized
-                with_search += 1
+                db_updates.append((ipa, packed_features, toponym_id))
 
             f.write(json.dumps(doc) + '\n')
-            count += 1
 
-            if count % 1000000 == 0:
-                logger.info(f"Buffered {count:,} documents...")
+    # PHASE 4: Batch update DuckDB with IPA and features
+    logger.info(f"Phase 4: Updating DuckDB with {len(db_updates):,} IPA/PanPhon records...")
 
-    logger.info(f"Buffering complete. Total documents: {count:,}")
-    logger.info(f"Documents with name_romanized: {with_search:,} ({100*with_search/count:.1f}%)")
-    return count
+    # Update in batches for efficiency
+    update_batch_size = 50000
+    for i in range(0, len(db_updates), update_batch_size):
+        batch = db_updates[i:i + update_batch_size]
+        conn.executemany(
+            'UPDATE toponyms SET ipa = ?, panphon_features = ? WHERE toponym_id = ?',
+            batch
+        )
+        if (i + update_batch_size) % 200000 < update_batch_size:
+            logger.info(f"Updated {min(i + update_batch_size, len(db_updates)):,} / {len(db_updates):,}")
+
+    # Log final statistics
+    logger.info(f"Buffering complete. Total documents: {stats['total']:,}")
+    logger.info(f"Documents with name_romanized: {stats['with_romanized']:,} ({100*stats['with_romanized']/stats['total']:.1f}%)")
+    logger.info(f"Documents in training namespaces: {stats['in_training_ns']:,}")
+    logger.info(f"  With IPA: {stats['with_ipa']:,} ({100*stats['with_ipa']/max(1,stats['in_training_ns']):.1f}%)")
+    logger.info(f"  With PanPhon embedding: {stats['with_panphon']:,} ({100*stats['with_panphon']/max(1,stats['in_training_ns']):.1f}%)")
+
+    # Log top script+lang combinations with successful IPA
+    logger.info("Top script+lang pairs with IPA transcription:")
+    for key, count in stats['by_script_lang_ipa'].most_common(20):
+        logger.info(f"  {key}: {count:,}")
+
+    return stats['total'], stats
 
 
 def yield_from_jsonl(file_path: Path) -> Iterator[Dict]:
@@ -1167,76 +1413,80 @@ def bulk_index_from_file(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='Rebuild ES toponyms index with attestations, generate vocabulary, and export training data'
+        description='v4 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
     )
     parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--places-index', default='places')
     parser.add_argument('--toponyms-index', default='toponyms')
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
-    parser.add_argument('--sqlite-path', type=Path, default=f'{IX1_BASE}/data/toponyms.db')
+    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.duckdb',
+                        help='Path for DuckDB database file')
     parser.add_argument('--output-dir', type=Path, default=None,
-                        help='Output directory for vocab and training data (default: sqlite-path parent)')
+                        help='Output directory for vocab and stats (default: db-path parent)')
     parser.add_argument('--scratch-dir', type=Path, default=None)
     parser.add_argument('--batch-size', type=int, default=2500)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--confirm', action='store_true')
-    parser.add_argument('--resume', action='store_true', help="Resume from existing SQLite DB")
+    parser.add_argument('--resume', action='store_true', help="Resume from existing DuckDB database")
     parser.add_argument('--skip-es-index', action='store_true',
-                        help="Skip ES indexing (only extract to SQLite, generate vocab, and export training)")
+                        help="Skip ES indexing (only extract to DuckDB and generate vocab)")
 
-    # Training export options
+    # Parallelism options
+    parser.add_argument('--num-workers', type=int, default=None,
+                        help='Number of parallel workers for IPA/PanPhon (default: CPU count - 2)')
+
+    # Training namespace options
     parser.add_argument('--training-namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
-                        help='Namespaces to include in training data (default: gn wd tgn)')
-    parser.add_argument('--train-ratio', type=float, default=0.8,
-                        help='Proportion of data for training split (default: 0.8)')
-    parser.add_argument('--val-ratio', type=float, default=0.1,
-                        help='Proportion of data for validation split (default: 0.1)')
-    parser.add_argument('--skip-training-export', action='store_true',
-                        help='Skip training data export to Parquet')
+                        help='Namespaces for which to compute PanPhon embeddings (default: gn wd tgn)')
 
     args = parser.parse_args()
 
+    # Determine number of workers
+    if args.num_workers is None:
+        args.num_workers = max(1, mp.cpu_count() - 2)
+
     if not args.confirm:
+        print("=" * 60)
+        print("v4 PIPELINE - PHASE 1: EXTRACTION & ES INDEXING")
+        print("=" * 60)
+        print()
         print("Run with --confirm to proceed.")
+        print()
         print("This script will:")
         print("  1. Scan all places to extract toponyms with attestations")
         print("  2. Filter out pre-romanized forms (lang-script mismatches)")
         print("  3. Generate expanded character vocabulary")
-        print("  4. Export training data to Parquet with IPA/PanPhon features")
-        print("  5. Rebuild the ES toponyms index (unless --skip-es-index)")
+        print(f"  4. Compute IPA and PanPhon embeddings ({args.num_workers} parallel workers)")
+        print("  5. Rebuild the ES toponyms index with panphon_embedding field")
+        print("  6. Refresh index and create snapshot")
         print()
-        print(f"Training namespaces: {args.training_namespaces}")
-        print(f"Train/Val/Test split: {args.train_ratio}/{args.val_ratio}/{1-args.train_ratio-args.val_ratio}")
+        print(f"Training namespaces (for PanPhon): {args.training_namespaces}")
+        print()
+        print("Next steps after this phase:")
+        print("  - Run coverage analysis: es -analyse-coverage VERSION")
+        print("  - Generate training pairs: es -generate-training-data VERSION")
         sys.exit(1)
 
     # Set output directory
-    output_dir = args.output_dir or args.sqlite_path.parent
+    output_dir = args.output_dir or args.db_path.parent
 
-    es = None
-    if not args.skip_es_index:
-        es = Elasticsearch(
-            args.es_host,
-            max_retries=5,
-            retry_on_timeout=True
-        )
-        if not es.ping():
-            logger.error(f"Cannot connect to {args.es_host}")
-            sys.exit(1)
-    else:
-        # Still need ES for extraction
-        es = Elasticsearch(args.es_host, max_retries=5, retry_on_timeout=True)
-        if not es.ping():
-            logger.error(f"Cannot connect to {args.es_host}")
-            sys.exit(1)
+    # Connect to ES
+    es = Elasticsearch(args.es_host, max_retries=5, retry_on_timeout=True)
+    if not es.ping():
+        logger.error(f"Cannot connect to {args.es_host}")
+        sys.exit(1)
 
-    final_db_path = args.sqlite_path
+    final_db_path = args.db_path
     final_db_path.parent.mkdir(parents=True, exist_ok=True)
     output_dir.mkdir(parents=True, exist_ok=True)
     vocab_dir = output_dir / 'vocab'
 
+    logger.info(f"Using DuckDB database engine")
+    logger.info(f"Parallel workers: {args.num_workers}")
+
     with tempfile.TemporaryDirectory(dir=args.scratch_dir) as temp_dir:
         temp_dir_path = Path(temp_dir)
-        temp_db_path = temp_dir_path / "toponyms_working.db"
+        temp_db_path = temp_dir_path / "toponyms_working.duckdb"
         jsonl_path = temp_dir_path / "buffer.jsonl"
 
         try:
@@ -1245,115 +1495,140 @@ def main():
                 logger.info(f"Copying existing DB to scratch: {temp_db_path}")
                 shutil.copy2(final_db_path, temp_db_path)
             else:
-                # PHASE 1: EXTRACTION (ES -> SQLite)
+                # STEP 1: EXTRACTION (ES places -> DuckDB)
                 logger.info("=" * 60)
-                logger.info("PHASE 1: EXTRACTION (ES -> SQLite)")
+                logger.info("STEP 1: EXTRACTION (ES places -> DuckDB)")
                 logger.info("=" * 60)
-                conn = create_sqlite_db(str(temp_db_path))
-                places_count, toponyms_count, skipped_count = extract_toponyms_to_sqlite(
+
+                conn = create_db(str(temp_db_path))
+
+                places_count, toponyms_count, skipped_count = extract_toponyms_to_db(
                     es, conn, args.places_index, args.batch_size, args.limit
                 )
                 logger.info(f"Extracted {toponyms_count:,} toponyms from {places_count:,} places")
                 logger.info(f"Skipped {skipped_count:,} pre-romanized/mismatched toponyms")
 
-                # Checkpoint DB
-                logger.info("--- Checkpointing database ---")
+                # Checkpoint DB to persistent storage
+                logger.info("--- Checkpointing database to persistent storage ---")
                 conn.close()
                 shutil.copy2(temp_db_path, final_db_path)
 
-            # Reopen DB from Scratch (whether resumed or just created)
-            conn = create_sqlite_db(str(temp_db_path))
+            # Reopen DB from scratch (whether resumed or just created)
+            conn = create_db(str(temp_db_path))
+            optimize_db_after_load(conn)
 
-            # PHASE 2: VOCABULARY GENERATION
+            # STEP 2: VOCABULARY GENERATION
             logger.info("=" * 60)
-            logger.info("PHASE 2: VOCABULARY GENERATION")
+            logger.info("STEP 2: VOCABULARY GENERATION")
             logger.info("=" * 60)
             vocab_stats, char_vocab = generate_vocabulary(conn, vocab_dir)
             logger.info(f"Vocabulary stats: {json.dumps(vocab_stats, indent=2)}")
 
-            # PHASE 3: TRAINING DATA EXPORT (SQLite -> Parquet on scratch)
-            if args.skip_training_export:
-                logger.info("Skipping training data export (--skip-training-export)")
-            else:
-                logger.info("=" * 60)
-                logger.info("PHASE 3: TRAINING DATA EXPORT (SQLite -> Parquet)")
-                logger.info("=" * 60)
-
-                # Write to scratch first for speed
-                scratch_training_dir = temp_dir_path / 'training_output'
-                scratch_training_dir.mkdir(parents=True, exist_ok=True)
-
-                export_stats = export_training_parquet(
-                    conn,
-                    char_vocab,
-                    scratch_training_dir,
-                    args.training_namespaces,
-                    args.train_ratio,
-                    args.val_ratio,
-                )
-
-                # Copy from scratch to network storage
-                logger.info("Copying training data from scratch to network storage...")
-                import subprocess
-                subprocess.run([
-                    'rsync', '-av', '--progress',
-                    str(scratch_training_dir) + '/',
-                    str(output_dir) + '/'
-                ], check=True)
-                logger.info("Training data copied to network storage.")
-
-            # PHASE 4: BUFFER TO JSONL (SQLite -> scratch) for ES indexing
+            # STEP 3: BUFFER TO JSONL WITH PANPHON (DuckDB -> scratch)
             logger.info("=" * 60)
-            logger.info("PHASE 4: BUFFERING (SQLite -> JSONL)")
+            logger.info("STEP 3: BUFFERING WITH PANPHON (DuckDB -> JSONL)")
             logger.info("=" * 60)
-            total_docs = dump_to_jsonl(conn, jsonl_path)
+            total_docs, buffer_stats = dump_to_jsonl(
+                conn,
+                jsonl_path,
+                training_namespaces=args.training_namespaces,
+                num_workers=args.num_workers,
+            )
             conn.close()
+
+            # Save coverage stats for analysis
+            coverage_stats_path = output_dir / 'coverage_stats.json'
+            with open(coverage_stats_path, 'w') as f:
+                json.dump({
+                    'total_toponyms': buffer_stats['total'],
+                    'in_training_namespaces': buffer_stats['in_training_ns'],
+                    'with_ipa': buffer_stats['with_ipa'],
+                    'with_panphon_embedding': buffer_stats['with_panphon'],
+                    'panphon_coverage_pct': 100 * buffer_stats['with_panphon'] / max(1, buffer_stats['in_training_ns']),
+                    'by_script': dict(buffer_stats['by_script']),
+                    'by_script_lang_ipa': dict(buffer_stats['by_script_lang_ipa'].most_common(100)),
+                    'training_namespaces': args.training_namespaces,
+                    'num_workers': args.num_workers,
+                    'db_engine': 'DuckDB',
+                }, f, indent=2)
+            logger.info(f"Coverage stats saved to: {coverage_stats_path}")
 
             if args.skip_es_index:
                 logger.info("Skipping ES indexing (--skip-es-index)")
             else:
-                # PHASE 5: INDEXING (Disk -> ES)
+                # STEP 4: INDEXING (JSONL -> ES)
                 logger.info("=" * 60)
-                logger.info("PHASE 5: INDEXING (JSONL -> ES)")
+                logger.info("STEP 4: INDEXING (JSONL -> ES)")
                 logger.info("=" * 60)
 
+                # Delete existing index
                 if es.indices.exists(index=args.toponyms_index):
+                    logger.info(f"Deleting existing index: {args.toponyms_index}")
                     es.indices.delete(index=args.toponyms_index)
 
+                # Create index with schema
                 with open(args.schema_path, 'r') as f:
                     schema = json.load(f)
 
-                # Ensure refresh_interval is disabled for speed
-                if 'settings' not in schema: schema['settings'] = {}
+                # Ensure refresh_interval is disabled for bulk indexing speed
+                if 'settings' not in schema:
+                    schema['settings'] = {}
                 schema['settings']['refresh_interval'] = "-1"
 
+                logger.info(f"Creating index: {args.toponyms_index}")
                 es.indices.create(index=args.toponyms_index, body=schema)
 
+                # Bulk index
                 indexed = bulk_index_from_file(
                     es, jsonl_path, total_docs, args.toponyms_index, args.batch_size
                 )
+                logger.info(f"Indexed {indexed:,} documents")
 
-                # Finalize
-                logger.info("--- FINALIZING ---")
-                logger.info("Refreshing and creating snapshot...")
-                es.indices.refresh(index=args.toponyms_index)
-                create_checkpoint_snapshot(
-                    es,
-                    snapshot_name="rebuilt_toponyms",
-                    repo_name=STAGING_REPO_NAME
+                # STEP 5: FINALIZE (refresh + snapshot)
+                logger.info("=" * 60)
+                logger.info("STEP 5: FINALIZE (refresh + snapshot)")
+                logger.info("=" * 60)
+
+                # Re-enable refresh
+                logger.info("Re-enabling refresh interval...")
+                es.indices.put_settings(
+                    index=args.toponyms_index,
+                    body={"index": {"refresh_interval": "1s"}}
                 )
 
+                logger.info("Refreshing index...")
+                es.indices.refresh(index=args.toponyms_index)
+
+                # Get final count
+                final_count = es.count(index=args.toponyms_index)['count']
+                logger.info(f"Final document count: {final_count:,}")
+
+                # Create snapshot
+                logger.info("Creating snapshot...")
+                snapshot_name = f"toponyms_v4_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                create_checkpoint_snapshot(
+                    es,
+                    snapshot_name=snapshot_name,
+                    repo_name=STAGING_REPO_NAME
+                )
+                logger.info(f"Snapshot created: {snapshot_name}")
+
+            # Final summary
             logger.info("=" * 60)
-            logger.info("SUCCESS")
+            logger.info("PHASE 1 COMPLETE")
             logger.info("=" * 60)
-            logger.info(f"Database saved: {final_db_path}")
+            logger.info(f"DuckDB database: {final_db_path}")
             logger.info(f"Output directory: {output_dir}")
             logger.info(f"  - Vocabulary: {vocab_dir}")
-            if not args.skip_training_export:
-                logger.info(f"  - Training data: {output_dir / 'training'}")
-                logger.info(f"  - Splits: {output_dir / 'splits'}")
+            logger.info(f"  - Coverage stats: {coverage_stats_path}")
             if not args.skip_es_index:
                 logger.info(f"ES index: {args.toponyms_index}")
+                logger.info(f"  - Total documents: {final_count:,}")
+                logger.info(f"  - With PanPhon embeddings: {buffer_stats['with_panphon']:,}")
+            logger.info("")
+            logger.info("Next steps:")
+            logger.info("  1. Review coverage stats")
+            logger.info("  2. Generate training pairs: es -generate-training-data VERSION")
 
         except Exception as e:
             logger.error(f"Process failed: {e}")
@@ -1364,3 +1639,26 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

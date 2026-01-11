@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  10 JAN 2026 22:44
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 14:26
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1411,12 +1411,6 @@ _R.otf(0)/m/n/10.95 The Student encoder requires only raw character input—
  []
 
 
-Overfull \hbox (8.13054pt too wide) in paragraph at lines 741--742
-\TU/LinLibertine_R.otf(0)/m/n/10.95 thographic variation in historical sources.
- The same parish might appear as “Leyces-
- []
-
-
 Overfull \hbox (6.2544pt too wide) in paragraph at lines 747--748
 \TU/LinLibertine_R.otf(0)/m/n/10.95 places with official names, potentially und
 er-representing historical variants. Wiki-
@@ -1448,29 +1442,53 @@ aro-Winkler (78.5% R@1) base-
  []
 
 
-Overfull \hbox (13.48991pt too wide) in paragraph at lines 774--775
+Overfull \hbox (2.1567pt too wide) in paragraph at lines 775--776
+\TU/LinLibertine_R.otf(0)/m/n/10.95 While Symphonym achieves strong cross-scrip
+t performance, analysis of the train-
+ []
+
+[27]
+Overfull \hbox (3.71767pt too wide) in paragraph at lines 791--792
+\TU/LinLibertine_R.otf(0)/m/n/10.95 similarity, cluster each place’s toponyms b
+y PanPhon cosine similarity. This groups
+ []
+
+
+Overfull \hbox (11.26707pt too wide) in paragraph at lines 799--800
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 Unified Bin-Balancing Algorithm.[] \TU/L
+inLibertine_R.otf(0)/m/n/10.95 Apply consistent sampling across all phases:
+ []
+
+
+Overfull \hbox (13.25266pt too wide) in paragraph at lines 801--802
+ []\TU/LinLibertine_R.otf(0)/b/n/10.95 Pre-computed Teacher Embeddings.[] \TU/L
+inLibertine_R.otf(0)/m/n/10.95 Generate all training data—except Teacher
+ []
+
+[28]
+Overfull \hbox (13.48991pt too wide) in paragraph at lines 819--820
 [] [] [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LinLibertine_R.otf(0)/m/n/
 10.95 ), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][
 ][]$[][]), and the Getty
  []
 
 
-Overfull \hbox (0.45209pt too wide) in paragraph at lines 774--775
+Overfull \hbox (0.45209pt too wide) in paragraph at lines 819--820
 \TU/LinLibertine_R.otf(0)/m/n/10.95 via the supplementary file link at https://
 link.springer.com/article/10.1007/s10579-
  []
 
-(pdf/symphonym.bbl [27] [28] [29]) [30] (pdf/symphonym.aux)
+(pdf/symphonym.bbl [29] [30] [31]) [32] (pdf/symphonym.aux)
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
-(rerunfilecheck)             Checksum: BB7152C3C0992B2B923F5C83509B9B2A;6893.
+(rerunfilecheck)             Checksum: 739B58F4FE7DFC6CAC7D80F38A42BD85;7547.
  ) 
 Here is how much of TeX's memory you used:
- 34076 strings out of 478149
- 749467 string characters out of 5853103
- 1052661 words of memory out of 5000000
- 54135 multiletter control sequences out of 15000+600000
+ 34079 strings out of 478149
+ 749507 string characters out of 5853103
+ 1053432 words of memory out of 5000000
+ 54138 multiletter control sequences out of 15000+600000
  480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  84i,14n,85p,1851b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.pdf (30 pages).
+Output written on pdf/symphonym.pdf (32 pages).
