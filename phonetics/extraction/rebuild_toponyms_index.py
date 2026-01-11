@@ -909,7 +909,7 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
 
     # Also save language vocabulary from observed languages
     languages = sorted(row[0] for row in conn.execute(
-        'SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ""'
+        "SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ''"
     ).fetchall())
 
     lang_vocab = {'<UNK>': 0}
