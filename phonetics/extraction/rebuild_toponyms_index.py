@@ -488,34 +488,53 @@ def create_db(db_path: str):
     return conn
 
 
-def optimize_db_after_load(conn):
-    """Deduplicate and create indexes for DuckDB after bulk loading."""
+def optimize_db_after_load(conn, force: bool = False):
+    """Deduplicate and create indexes for DuckDB after bulk loading.
 
-    # Deduplicate toponyms table (keep first occurrence)
-    logger.info("Deduplicating toponyms table...")
+    Args:
+        conn: DuckDB connection
+        force: If True, always run deduplication. If False, skip if no duplicates exist.
+    """
+
+    # Check if deduplication is needed
     before_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
+    distinct_count = conn.execute("SELECT COUNT(DISTINCT toponym_id) FROM toponyms").fetchone()[0]
 
-    conn.execute('''
-        CREATE TABLE toponyms_deduped AS
-        SELECT DISTINCT ON (toponym_id) *
-        FROM toponyms
-    ''')
-    conn.execute('DROP TABLE toponyms')
-    conn.execute('ALTER TABLE toponyms_deduped RENAME TO toponyms')
+    if before_count == distinct_count and not force:
+        logger.info(f"Deduplication already done ({before_count:,} unique toponyms), skipping...")
+    else:
+        # Deduplicate toponyms table (keep first occurrence)
+        logger.info("Deduplicating toponyms table...")
 
-    after_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
-    logger.info(f"Deduplication: {before_count:,} -> {after_count:,} ({before_count - after_count:,} duplicates removed)")
+        conn.execute('''
+            CREATE TABLE toponyms_deduped AS
+            SELECT DISTINCT ON (toponym_id) *
+            FROM toponyms
+        ''')
+        conn.execute('DROP TABLE toponyms')
+        conn.execute('ALTER TABLE toponyms_deduped RENAME TO toponyms')
 
-    logger.info("Creating DuckDB indexes...")
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_id ON toponym_attestations(toponym_id)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
-    # Composite index for efficient window functions
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
-    logger.info("DuckDB indexes created.")
+        after_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
+        logger.info(f"Deduplication: {before_count:,} -> {after_count:,} ({before_count - after_count:,} duplicates removed)")
+
+    # Check if indexes exist before creating
+    existing_indexes = set(row[0] for row in conn.execute(
+        "SELECT index_name FROM duckdb_indexes() WHERE table_name = 'toponyms'"
+    ).fetchall())
+
+    if 'idx_toponyms_id' not in existing_indexes:
+        logger.info("Creating DuckDB indexes...")
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_id ON toponym_namespaces(toponym_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_id ON toponym_attestations(toponym_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+        # Composite index for efficient window functions
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
+        logger.info("DuckDB indexes created.")
+    else:
+        logger.info("DuckDB indexes already exist, skipping...")
 
 
 def scan_places(es: Elasticsearch, index: str, batch_size: int = 2000) -> Iterator[Tuple[str, Dict]]:
