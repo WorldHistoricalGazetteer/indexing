@@ -790,14 +790,12 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
 
     # Load observed characters and scripts
     # With composite key (char, script), a char can appear in multiple scripts
-    cursor = conn.execute('SELECT char, script, count FROM observed_chars')
     observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
-    for row in cursor:
+    for row in conn.execute('SELECT char, script, count FROM observed_chars').fetchall():
         char, script, count = row
         observed_chars[char].append((script, count))
 
-    cursor = conn.execute('SELECT script, count FROM script_stats')
-    observed_scripts = {row[0] for row in cursor}
+    observed_scripts = {row[0] for row in conn.execute('SELECT script, count FROM script_stats').fetchall()}
 
     logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
 
@@ -910,8 +908,9 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Total vocabulary size: {len(vocab):,}")
 
     # Also save language vocabulary from observed languages
-    cursor = conn.execute('SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ""')
-    languages = sorted(row[0] for row in cursor)
+    languages = sorted(row[0] for row in conn.execute(
+        'SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ""'
+    ).fetchall())
 
     lang_vocab = {'<UNK>': 0}
     for i, lang in enumerate(languages, start=1):
@@ -1028,7 +1027,7 @@ def export_training_parquet(
     # Filter to only include toponyms from specified namespaces
     ns_placeholders = ','.join('?' * len(namespaces))
 
-    cursor = conn.execute(f'''
+    query = f'''
         SELECT t.toponym_id,
                t.name,
                t.name_romanized,
@@ -1047,7 +1046,9 @@ def export_training_parquet(
             AND tn2.namespace IN ({ns_placeholders})
         )
         GROUP BY t.toponym_id
-    ''', namespaces)
+    '''
+
+    result = conn.execute(query, namespaces)
 
     # Get total count for progress bar
     count_cursor = conn.execute(f'''
@@ -1117,61 +1118,68 @@ def export_training_parquet(
     processed = 0
     last_log = 0
 
-    for row in cursor:
-        toponym_id, name, name_romanized, script, lang, ipa, panphon_packed, namespaces_str, attestations_str = row
+    # Stream results using fetchmany() for memory efficiency
+    fetch_batch_size = 10000
+    while True:
+        rows = result.fetchmany(fetch_batch_size)
+        if not rows:
+            break
 
-        namespaces_list = namespaces_str.split(',') if namespaces_str else []
-        attestations_list = attestations_str.split(',') if attestations_str else []
+        for row in rows:
+            toponym_id, name, name_romanized, script, lang, ipa, panphon_packed, namespaces_str, attestations_str = row
 
-        # Encode characters
-        char_ids = encode_chars(name_romanized, name, script)
+            namespaces_list = namespaces_str.split(',') if namespaces_str else []
+            attestations_list = attestations_str.split(',') if attestations_str else []
 
-        # Unpack pre-computed PanPhon features from DuckDB
-        features = unpack_features(panphon_packed)
-        feature_length = len(features) // 24 if features else 0
+            # Encode characters
+            char_ids = encode_chars(name_romanized, name, script)
 
-        if ipa:
-            stats['with_ipa'] += 1
-        if features:
-            stats['with_features'] += 1
+            # Unpack pre-computed PanPhon features from DuckDB
+            features = unpack_features(panphon_packed)
+            feature_length = len(features) // 24 if features else 0
 
-        # Assign split
-        split_hash = compute_split_hash(toponym_id)
-        split = assign_split(split_hash, train_ratio, val_ratio)
+            if ipa:
+                stats['with_ipa'] += 1
+            if features:
+                stats['with_features'] += 1
 
-        record = {
-            'toponym_id': toponym_id,
-            'name': name,
-            'name_romanized': name_romanized,
-            'script': script,
-            'lang': lang or '',
-            'char_ids': char_ids,
-            'char_length': len(char_ids),
-            'ipa': ipa,
-            'features': features,
-            'feature_length': feature_length,
-            'namespaces': namespaces_list,
-            'attestations': attestations_list,
-            'split': split,
-        }
+            # Assign split
+            split_hash = compute_split_hash(toponym_id)
+            split = assign_split(split_hash, train_ratio, val_ratio)
 
-        buffers[script].append(record)
-        stats['total_exported'] += 1
-        stats['by_script'][script] += 1
-        stats['by_split'][split] += 1
-        for ns in namespaces_list:
-            if ns in namespaces:
-                stats['by_namespace'][ns] += 1
+            record = {
+                'toponym_id': toponym_id,
+                'name': name,
+                'name_romanized': name_romanized,
+                'script': script,
+                'lang': lang or '',
+                'char_ids': char_ids,
+                'char_length': len(char_ids),
+                'ipa': ipa,
+                'features': features,
+                'feature_length': feature_length,
+                'namespaces': namespaces_list,
+                'attestations': attestations_list,
+                'split': split,
+            }
 
-        # Flush if buffer is full
-        if len(buffers[script]) >= batch_size:
-            flush_buffer(script)
+            buffers[script].append(record)
+            stats['total_exported'] += 1
+            stats['by_script'][script] += 1
+            stats['by_split'][split] += 1
+            for ns in namespaces_list:
+                if ns in namespaces:
+                    stats['by_namespace'][ns] += 1
 
-        # Progress logging
-        processed += 1
-        if processed - last_log >= 100000:
-            logger.info(f"Processed {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%)")
-            last_log = processed
+            # Flush if buffer is full
+            if len(buffers[script]) >= batch_size:
+                flush_buffer(script)
+
+            # Progress logging
+            processed += 1
+            if processed - last_log >= 100000:
+                logger.info(f"Processed {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%)")
+                last_log = processed
 
     # Flush remaining buffers
     for script in list(buffers.keys()):
@@ -1277,8 +1285,8 @@ def dump_to_jsonl(
         'by_script_lang_ipa': Counter(),
     }
 
-    # Stream from DuckDB using cursor as iterator (not fetchall!)
-    cursor = conn.execute('''
+    # Stream from DuckDB using fetchmany() for memory efficiency
+    result = conn.execute('''
         SELECT t.toponym_id,
                t.name,
                t.name_romanized,
@@ -1354,49 +1362,55 @@ def dump_to_jsonl(
                 conn.execute("DROP TABLE updates")
                 total_db_updates += len(current_db_updates)
 
-        # Stream through cursor row by row
-        for row in cursor:
-            toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
-            namespaces = namespaces_str.split(',') if namespaces_str else []
-            attestations = attestations_str.split(',') if attestations_str else []
-            primary_ns = get_primary_namespace(namespaces)
+        # Stream through result using fetchmany() for memory efficiency
+        fetch_batch_size = 10000
+        while True:
+            rows = result.fetchmany(fetch_batch_size)
+            if not rows:
+                break
 
-            doc = {
-                'toponym_id': toponym_id,
-                'name': name,
-                'lang': lang,
-                'lang_variant': lang_variant,
-                'script': script,
-                'namespaces': namespaces,
-                'primary_namespace': primary_ns,
-                'attestations': attestations,
-                'embedding': None,
-                'embedding_version': None,
-                'indexed_at': datetime.now(timezone.utc).isoformat(),
-            }
+            for row in rows:
+                toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
+                namespaces = namespaces_str.split(',') if namespaces_str else []
+                attestations = attestations_str.split(',') if attestations_str else []
+                primary_ns = get_primary_namespace(namespaces)
 
-            if name_romanized:
-                doc['name_romanized'] = name_romanized
-                stats['with_romanized'] += 1
+                doc = {
+                    'toponym_id': toponym_id,
+                    'name': name,
+                    'lang': lang,
+                    'lang_variant': lang_variant,
+                    'script': script,
+                    'namespaces': namespaces,
+                    'primary_namespace': primary_ns,
+                    'attestations': attestations,
+                    'embedding': None,
+                    'embedding_version': None,
+                    'indexed_at': datetime.now(timezone.utc).isoformat(),
+                }
 
-            stats['by_script'][script] += 1
+                if name_romanized:
+                    doc['name_romanized'] = name_romanized
+                    stats['with_romanized'] += 1
 
-            is_in_training_ns = bool(training_ns_set & set(namespaces))
-            if is_in_training_ns:
-                stats['in_training_ns'] += 1
-                batch_phonetics_needed.append((toponym_id, name, lang, script))
+                stats['by_script'][script] += 1
 
-            batch_docs.append(doc)
-            stats['total'] += 1
+                is_in_training_ns = bool(training_ns_set & set(namespaces))
+                if is_in_training_ns:
+                    stats['in_training_ns'] += 1
+                    batch_phonetics_needed.append((toponym_id, name, lang, script))
 
-            # Process batch when full
-            if len(batch_docs) >= batch_size:
-                process_and_write_batch()
-                batch_docs = []
-                batch_phonetics_needed = []
+                batch_docs.append(doc)
+                stats['total'] += 1
 
-                if stats['total'] % 500000 == 0:
-                    logger.info(f"Processed {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%)")
+                # Process batch when full
+                if len(batch_docs) >= batch_size:
+                    process_and_write_batch()
+                    batch_docs = []
+                    batch_phonetics_needed = []
+
+                    if stats['total'] % 500000 == 0:
+                        logger.info(f"Processed {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%)")
 
         # Process final batch
         process_and_write_batch()
