@@ -494,7 +494,7 @@ The Teacher network learns to produce embeddings where phonetically similar topo
 
 where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and negative (different place) toponyms, and $m$ is the margin (I use $m = 0.3$).
 
-Negatives are sampled randomly from the full toponym pool for Phase 1, ensuring broad coverage of the phonetic space before hard negative mining in Phase 3.
+\paragraph{Script-Aware Negative Sampling.} To prevent the model from learning trivial script-based boundaries (where cross-script pairs are always ``different''), I implemented a script-aware negative sampling strategy: 80\% of random negatives are sampled from the \emph{same writing system} as the anchor, while 20\% are sampled globally. This forces the Teacher to learn fine-grained phonetic discrimination within scripts rather than simply encoding script identity. The global negatives maintain broad coverage of the phonetic space before hard negative mining in Phase 3.
 
 \paragraph{Effective Training Set.} Of the 5,088,419 generated triplets, only those where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 7,987,814 unique toponym IDs referenced in triplets, 3,663,966 (45.9\%) have Epitran-supported language codes and valid PanPhon features. After filtering, \textbf{467,546 triplets} remain for training and \textbf{58,316} for validation. This reduction (to 9.2\% of generated triplets) follows from the joint probability: if 45.9\% of toponyms have features, the probability all three in a triplet have features is approximately $0.459^3 \approx 9.7\%$.
 

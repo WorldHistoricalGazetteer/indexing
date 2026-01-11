@@ -31,12 +31,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-try:
-    import pyarrow.parquet as pq
-    import pyarrow.dataset as ds
-except ImportError:
-    raise ImportError("pyarrow required: pip install pyarrow")
-
+import pyarrow.parquet as pq
+import pyarrow.dataset as ds
 
 def load_vocab_limits(data_dir: Path) -> Dict[str, int]:
     """

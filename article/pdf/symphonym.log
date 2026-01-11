@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 14:26
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 22:55
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1361,13 +1361,13 @@ raphy-phonology relationships: Latin$\OMS/cmsy/m/n/10.95 $$\TU/LinLibertine_R.o
 tf(0)/m/n/10.95 Arabic
  []
 
-
+[22]
 Overfull \hbox (4.21724pt too wide) in paragraph at lines 686--687
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 87.5% Recall@1—the cor
 rect cross-script match is ranked
  []
 
-[22] [23]
+[23]
 Overfull \hbox (7.27913pt too wide) in paragraph at lines 725--726
 \TU/LinLibertine_R.otf(0)/m/n/10.95 MEHDIE Hebrew-Arabic benchmark. The two dia
 gnostic failures (Moscow/Москва
@@ -1392,7 +1392,7 @@ Overfull \hbox (1.81725pt too wide) in paragraph at lines 729--730
 g similarity methods (Levenshtein, Jaro-
  []
 
-
+[24]
 Overfull \hbox (1.51425pt too wide) in paragraph at lines 735--736
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Scalability and Deployment.[] \TU/LinLib
 ertine_R.otf(0)/m/n/10.95 Symphonym embeddings integrate directly with
@@ -1404,19 +1404,19 @@ Overfull \hbox (2.27348pt too wide) in paragraph at lines 735--736
 orward pass through a 1.7M-parameter
  []
 
-[24]
+
 Overfull \hbox (10.7123pt too wide) in paragraph at lines 737--738
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 No Runtime Phonetics.[] \TU/LinLibertine
 _R.otf(0)/m/n/10.95 The Student encoder requires only raw character input—
  []
 
-
+[25]
 Overfull \hbox (6.2544pt too wide) in paragraph at lines 747--748
 \TU/LinLibertine_R.otf(0)/m/n/10.95 places with official names, potentially und
 er-representing historical variants. Wiki-
  []
 
-[25]
+
 Overfull \hbox (7.59883pt too wide) in paragraph at lines 749--750
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Tonal Languages.[] \TU/LinLibertine_R.ot
 f(0)/m/n/10.95 The current architecture does not explicitly model tone, which
@@ -1459,13 +1459,13 @@ Overfull \hbox (11.26707pt too wide) in paragraph at lines 799--800
 inLibertine_R.otf(0)/m/n/10.95 Apply consistent sampling across all phases:
  []
 
-
+[28]
 Overfull \hbox (13.25266pt too wide) in paragraph at lines 801--802
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Pre-computed Teacher Embeddings.[] \TU/L
 inLibertine_R.otf(0)/m/n/10.95 Generate all training data—except Teacher
  []
 
-[28]
+
 Overfull \hbox (13.48991pt too wide) in paragraph at lines 819--820
 [] [] [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LinLibertine_R.otf(0)/m/n/
 10.95 ), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][
@@ -1478,7 +1478,7 @@ Overfull \hbox (0.45209pt too wide) in paragraph at lines 819--820
 link.springer.com/article/10.1007/s10579-
  []
 
-(pdf/symphonym.bbl [29] [30] [31]) [32] (pdf/symphonym.aux)
+[29] (pdf/symphonym.bbl [30] [31]) [32] (pdf/symphonym.aux)
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
 (rerunfilecheck)             Checksum: 739B58F4FE7DFC6CAC7D80F38A42BD85;7547.
  ) 

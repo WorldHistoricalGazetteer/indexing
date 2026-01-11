@@ -18,21 +18,17 @@ import json
 import logging
 import random
 import struct
-import sys
+import time
 import zlib
-from collections import Counter, defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Tuple, Set, Any
+from collections import defaultdict, Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from functools import lru_cache
 
 import duckdb
-
-try:
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    PYARROW_AVAILABLE = True
-except ImportError:
-    PYARROW_AVAILABLE = False
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 try:
     from tqdm import tqdm
@@ -65,14 +61,134 @@ TRAINING_NAMESPACES = ['gn', 'wd', 'tgn']
 MIN_COSINE_SIMILARITY = 0.7  # Desired minimum cosine similarity
 ES_SCORE_THRESHOLD = (1 + MIN_COSINE_SIMILARITY) / 2  # = 0.85 for ES KNN scores
 
-MAX_TOPONYMS_PER_PLACE = 50  # Cap to prevent combinatorial explosion
-PHASE1_SAMPLES_PER_BIN = 50000  # Target samples per script+lang bin for Phase 1
-PHASE3_SAMPLES_PER_BIN = 50000  # Target samples per script+lang bin for Phase 3
-MIN_BIN_SIZE = 100  # Minimum bin size to include (else drop with warning)
+MAX_TOPONYMS_PER_PLACE = 50  # Cap to prevent combinatorial explosion (O(n²) pairs)
 KNN_CANDIDATES = 100  # Number of candidates for KNN queries
 ES_BATCH_SIZE = 500  # Batch size for ES bulk operations
-ES_PARALLEL_WORKERS = 16  # Number of parallel threads for ES queries (network I/O bound)
+ES_PARALLEL_WORKERS = 8  # Reduced from 16 to prevent ES request storms
 MSEARCH_BATCH_SIZE = 100  # Number of queries per _msearch request
+
+# ============================================================================
+# ES RESILIENCE PARAMETERS
+# ============================================================================
+# Elasticsearch can become overloaded during heavy KNN operations. These settings
+# implement exponential backoff with retry to prevent job failures.
+ES_MAX_RETRIES = 5  # Maximum retry attempts per request
+ES_INITIAL_BACKOFF = 1.0  # Initial backoff in seconds
+ES_MAX_BACKOFF = 60.0  # Maximum backoff in seconds
+ES_BACKOFF_FACTOR = 2.0  # Exponential backoff multiplier
+ES_FAILURE_THRESHOLD = 0.1  # Abort if >10% of ES calls fail after retries
+
+# ============================================================================
+# PHASE 1 NEGATIVE SAMPLING
+# ============================================================================
+# Phase 1 negatives should mostly respect script to avoid teaching easy shortcuts.
+# If negatives are script-agnostic, the Teacher learns "different script = different"
+# rather than learning fine-grained phonetic discrimination.
+PHASE1_SAME_SCRIPT_NEGATIVE_RATIO = 0.8  # 80% same-script, 20% any-script
+
+# ============================================================================
+# REPRODUCIBILITY
+# ============================================================================
+# Fixed random seed for reproducible train/val splits across runs.
+# Note: Phase 2 uses deterministic zlib.crc32 hash of toponym_id for splitting,
+# which is inherently reproducible. Phases 1 and 3 use this seed for shuffling
+# and sampling operations.
+RANDOM_SEED = 42
+
+# ============================================================================
+# UNIFIED BIN-BALANCING PARAMETERS
+# ============================================================================
+# Script-language stratification ensures adequate representation of under-resourced
+# languages within well-resourced scripts (e.g., Latin-Swahili vs Latin-English)
+
+# Target samples per script+language bin (capping for over-represented bins)
+TARGET_SAMPLES_PER_BIN = 50000
+
+# Minimum bin size to include (bins smaller than this are dropped to prevent
+# severe overfitting from extreme oversampling)
+MIN_BIN_SIZE = 1000
+
+# Maximum oversampling factor (small bins can be oversampled up to this factor)
+# Setting to 5 means a bin with 2000 samples can contribute up to 10000
+MAX_OVERSAMPLE_FACTOR = 5
+
+# Validation/test split ratios
+VAL_RATIO = 0.1
+TEST_RATIO = 0.1  # Only used in Phase 2
+
+
+def apply_bin_balancing(
+    samples_by_bin: Dict[str, List],
+    target_per_bin: int = TARGET_SAMPLES_PER_BIN,
+    min_bin_size: int = MIN_BIN_SIZE,
+    max_oversample: int = MAX_OVERSAMPLE_FACTOR,
+) -> Tuple[List, Dict[str, int]]:
+    """
+    Apply unified bin-balancing algorithm across all phases.
+
+    Strategy:
+    1. Drop bins below MIN_BIN_SIZE (would require extreme oversampling)
+    2. Cap bins above TARGET_SAMPLES_PER_BIN
+    3. Oversample bins between MIN_BIN_SIZE and TARGET_SAMPLES_PER_BIN
+       (up to MAX_OVERSAMPLE_FACTOR to prevent severe repetition)
+
+    Args:
+        samples_by_bin: Dict mapping bin_key (script:lang) to list of samples
+        target_per_bin: Target number of samples per bin
+        min_bin_size: Minimum samples required (else drop bin)
+        max_oversample: Maximum oversampling factor
+
+    Returns:
+        Tuple of (balanced_samples list, stats dict)
+    """
+    balanced = []
+    stats = {
+        'bins_total': len(samples_by_bin),
+        'bins_dropped': 0,
+        'bins_capped': 0,
+        'bins_oversampled': 0,
+        'bins_unchanged': 0,
+        'dropped_bins': [],
+        'samples_by_bin': {},
+    }
+
+    for bin_key, samples in samples_by_bin.items():
+        bin_size = len(samples)
+
+        # 1. Drop bins below minimum threshold
+        if bin_size < min_bin_size:
+            stats['bins_dropped'] += 1
+            stats['dropped_bins'].append((bin_key, bin_size))
+            continue
+
+        # 2. Cap over-represented bins
+        if bin_size >= target_per_bin:
+            selected = random.sample(samples, target_per_bin)
+            stats['bins_capped'] += 1
+            stats['samples_by_bin'][bin_key] = target_per_bin
+
+        # 3. Oversample under-represented bins (with limit)
+        elif bin_size < target_per_bin:
+            # Calculate how many samples we can reasonably add
+            max_samples = min(target_per_bin, bin_size * max_oversample)
+
+            if max_samples > bin_size:
+                # Use random.choices for oversampling (with replacement)
+                selected = random.choices(samples, k=max_samples)
+                stats['bins_oversampled'] += 1
+            else:
+                selected = samples
+                stats['bins_unchanged'] += 1
+
+            stats['samples_by_bin'][bin_key] = len(selected)
+        else:
+            selected = samples
+            stats['bins_unchanged'] += 1
+            stats['samples_by_bin'][bin_key] = bin_size
+
+        balanced.extend(selected)
+
+    return balanced, stats
 
 
 def es_score_to_cosine(score: float) -> float:
@@ -114,27 +230,123 @@ def get_script_lang_key(script: str, lang: Optional[str]) -> str:
     return f"{script}:{lang_part}"
 
 
+def es_retry_with_backoff(func, *args, **kwargs):
+    """
+    Execute an ES operation with exponential backoff retry.
+
+    Implements resilience against ES overload by:
+    1. Retrying failed requests up to ES_MAX_RETRIES times
+    2. Using exponential backoff between retries
+    3. Logging warnings for retries
+
+    Returns:
+        Result of func(*args, **kwargs), or None if all retries fail
+    """
+    last_exception = None
+    backoff = ES_INITIAL_BACKOFF
+
+    for attempt in range(ES_MAX_RETRIES):
+        try:
+            return func(*args, **kwargs)
+        except Exception as e:
+            last_exception = e
+            if attempt < ES_MAX_RETRIES - 1:
+                logger.debug(f"ES request failed (attempt {attempt + 1}/{ES_MAX_RETRIES}): {e}")
+                logger.debug(f"Backing off for {backoff:.1f}s...")
+                time.sleep(backoff)
+                backoff = min(backoff * ES_BACKOFF_FACTOR, ES_MAX_BACKOFF)
+            else:
+                logger.warning(f"ES request failed after {ES_MAX_RETRIES} attempts: {e}")
+
+    return None
+
+
 class ESKNNHelper:
-    """Helper class for ES KNN operations."""
+    """
+    Helper class for ES KNN operations with retry/throttle support.
+
+    Features:
+    - LRU-bounded embedding cache (MAX_CACHE_SIZE entries)
+    - Exponential backoff retry on ES failures
+    - Failure rate tracking with abort threshold
+    - Batched operations via _msearch and mget
+    """
+
+    # Maximum number of embeddings to cache (each ~768 bytes for 192 floats)
+    # 100K embeddings ≈ 77MB cache
+    MAX_CACHE_SIZE = 100000
 
     def __init__(self, es: Elasticsearch, index: str = "toponyms"):
         self.es = es
         self.index = index
         self._embedding_cache: Dict[str, List[float]] = {}
+        self._cache_order: List[str] = []  # Track insertion order for LRU eviction
+
+        # Failure tracking
+        self._total_requests = 0
+        self._failed_requests = 0
+
+    def _record_request(self, success: bool):
+        """Record request outcome for failure rate tracking."""
+        self._total_requests += 1
+        if not success:
+            self._failed_requests += 1
+
+    def get_failure_rate(self) -> float:
+        """Get current failure rate."""
+        if self._total_requests == 0:
+            return 0.0
+        return self._failed_requests / self._total_requests
+
+    def check_failure_threshold(self):
+        """Check if failure rate exceeds threshold, raise if so."""
+        if self._total_requests > 100:  # Only check after sufficient samples
+            rate = self.get_failure_rate()
+            if rate > ES_FAILURE_THRESHOLD:
+                raise RuntimeError(
+                    f"ES failure rate ({rate:.1%}) exceeds threshold ({ES_FAILURE_THRESHOLD:.0%}). "
+                    f"Aborting to prevent data quality issues. "
+                    f"({self._failed_requests}/{self._total_requests} requests failed)"
+                )
+
+    def reset_failure_tracking(self):
+        """Reset failure counters (call between phases)."""
+        self._total_requests = 0
+        self._failed_requests = 0
+
+    def _cache_embedding(self, toponym_id: str, embedding: List[float]):
+        """Add embedding to cache with LRU eviction."""
+        if toponym_id in self._embedding_cache:
+            return  # Already cached
+
+        # Evict oldest entries if cache is full
+        while len(self._embedding_cache) >= self.MAX_CACHE_SIZE:
+            oldest = self._cache_order.pop(0)
+            self._embedding_cache.pop(oldest, None)
+
+        self._embedding_cache[toponym_id] = embedding
+        self._cache_order.append(toponym_id)
+
+    def clear_cache(self):
+        """Clear embedding cache (call between phases to free memory)."""
+        self._embedding_cache.clear()
+        self._cache_order.clear()
 
     def get_embedding(self, toponym_id: str) -> Optional[List[float]]:
-        """Get embedding for a toponym from ES."""
+        """Get embedding for a toponym from ES with retry support."""
         if toponym_id in self._embedding_cache:
             return self._embedding_cache[toponym_id]
 
-        try:
+        def _fetch():
             doc = self.es.get(index=self.index, id=toponym_id, _source=['panphon_embedding'])
-            emb = doc['_source'].get('panphon_embedding')
-            if emb:
-                self._embedding_cache[toponym_id] = emb
-            return emb
-        except Exception:
-            return None
+            return doc['_source'].get('panphon_embedding')
+
+        emb = es_retry_with_backoff(_fetch)
+        self._record_request(emb is not None)
+
+        if emb:
+            self._cache_embedding(toponym_id, emb)
+        return emb
 
     def find_similar_in_place(
         self,
@@ -176,36 +388,39 @@ class ESKNNHelper:
         similar_pairs: Set[Tuple[str, str]] = set()
 
         for anchor_id, anchor_emb in embeddings.items():
-            try:
-                # KNN query filtered by attestations (same place)
-                query = {
-                    "size": min(len(toponym_ids), 50),
-                    "knn": {
-                        "field": "panphon_embedding",
-                        "query_vector": anchor_emb,
-                        "k": min(len(toponym_ids), 50),
-                        "num_candidates": KNN_CANDIDATES,
-                        "filter": {
-                            "term": {"attestations": place_id}
-                        }
-                    },
-                    "_source": False
-                }
+            # KNN query filtered by attestations (same place)
+            query = {
+                "size": min(len(toponym_ids), 50),
+                "knn": {
+                    "field": "panphon_embedding",
+                    "query_vector": anchor_emb,
+                    "k": min(len(toponym_ids), 50),
+                    "num_candidates": KNN_CANDIDATES,
+                    "filter": {
+                        "term": {"attestations": place_id}
+                    }
+                },
+                "_source": False
+            }
 
-                results = self.es.search(index=self.index, body=query)
+            def _search():
+                return self.es.search(index=self.index, body=query)
 
-                for hit in results['hits']['hits']:
-                    candidate_id = hit['_id']
-                    es_score = hit['_score']
+            results = es_retry_with_backoff(_search)
+            self._record_request(results is not None)
 
-                    # ES KNN score = (1 + cosine) / 2, so compare against adjusted threshold
-                    if candidate_id != anchor_id and es_score >= es_score_threshold:
-                        pair = tuple(sorted([anchor_id, candidate_id]))
-                        similar_pairs.add(pair)
+            if results is None:
+                continue  # Skip this anchor on failure
 
-            except Exception as e:
-                logger.debug(f"KNN query failed for {anchor_id}: {e}")
-                continue
+            for hit in results['hits']['hits']:
+                candidate_id = hit['_id']
+                es_score = hit['_score']
+
+                # ES KNN score = (1 + cosine) / 2, so compare against adjusted threshold
+                if candidate_id != anchor_id and es_score >= es_score_threshold:
+                    pair = tuple(sorted([anchor_id, candidate_id]))
+                    similar_pairs.add(pair)
+
 
         # Build clusters using union-find
         parent = {tid: tid for tid in embeddings.keys()}
@@ -278,7 +493,7 @@ class ESKNNHelper:
             return None
 
     def batch_get_embeddings(self, toponym_ids: List[str]) -> Dict[str, List[float]]:
-        """Get embeddings for multiple toponyms efficiently using mget."""
+        """Get embeddings for multiple toponyms efficiently using mget with retry."""
         result = {}
 
         # Filter out already cached
@@ -292,23 +507,25 @@ class ESKNNHelper:
         if not to_fetch:
             return result
 
-        # Batch fetch from ES
-        try:
-            docs = self.es.mget(
+        # Batch fetch from ES with retry
+        def _mget():
+            return self.es.mget(
                 index=self.index,
                 body={"ids": to_fetch},
                 _source=['panphon_embedding']
             )
 
+        docs = es_retry_with_backoff(_mget)
+        self._record_request(docs is not None)
+
+        if docs:
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     emb = doc['_source'].get('panphon_embedding')
                     if emb:
-                        self._embedding_cache[doc['_id']] = emb
+                        self._cache_embedding(doc['_id'], emb)
                         result[doc['_id']] = emb
 
-        except Exception as e:
-            logger.warning(f"Batch embedding fetch failed: {e}")
 
         return result
 
@@ -352,10 +569,13 @@ class ESKNNHelper:
                 "_source": False
             })
 
-        try:
-            responses = self.es.msearch(body=bodies)['responses']
-        except Exception as e:
-            logger.warning(f"Batch hard negative search failed: {e}")
+        def _msearch():
+            return self.es.msearch(body=bodies)['responses']
+
+        responses = es_retry_with_backoff(_msearch)
+        self._record_request(responses is not None)
+
+        if responses is None:
             return [None] * len(anchors)
 
         # Process responses
@@ -424,11 +644,19 @@ class TrainingDataGenerator:
         logger.info("=" * 60)
         self.generate_phase1_triplets(pairs_by_bin)
 
+        # Clear embedding cache and reset failure tracking between phases
+        logger.info("Clearing embedding cache and resetting ES failure tracking...")
+        self.knn.clear_cache()
+        self.knn.reset_failure_tracking()
+
         # Step 3: Generate Phase 2 samples (all toponyms with embeddings)
         logger.info("\n" + "=" * 60)
         logger.info("STEP 3: GENERATE PHASE 2 SAMPLES")
         logger.info("=" * 60)
         self.generate_phase2_samples()
+
+        # Reset failure tracking before Phase 3 (heavy ES usage)
+        self.knn.reset_failure_tracking()
 
         # Step 4: Generate Phase 3 triplets (hard negatives from ES)
         logger.info("\n" + "=" * 60)
@@ -458,13 +686,19 @@ class TrainingDataGenerator:
         - E.g., "London" (English), "Londres" (French), "Лондон" (Russian) might form
           one cluster, while "Lundúnir" (Icelandic) forms another if sufficiently different.
 
+        Note on deduplication: We do NOT deduplicate pairs globally across places.
+        The same toponym pair may appear in multiple authorities (e.g., GeoNames + Wikidata
+        both have London/Londres). This is intentional:
+        - Duplicate positives across different places are not harmful
+        - Global deduplication couples unrelated places and uses unbounded memory
+        - We dedupe within each place's cluster to avoid true duplicates
+
         Uses ThreadPoolExecutor to parallelize ES KNN queries across places.
 
         Returns:
             Dict mapping script+lang key to list of (toponym_id_a, toponym_id_b, similarity) tuples
         """
         pairs_by_bin: Dict[str, List[Tuple]] = defaultdict(list)
-        seen_pairs: Set[Tuple[str, str]] = set()
 
         # Statistics
         cluster_stats = {
@@ -474,6 +708,7 @@ class TrainingDataGenerator:
             'singleton_clusters': 0,
             'multi_clusters': 0,  # Places with >1 cluster
             'cluster_sizes': Counter(),
+            'duplicate_pairs_within_place': 0,  # Track place-local duplicates
         }
 
         # Query places with multiple toponyms in training namespaces
@@ -557,6 +792,9 @@ class TrainingDataGenerator:
                 if len(clusters) > 1:
                     cluster_stats['multi_clusters'] += 1
 
+                # Place-local deduplication (pairs can repeat across places, but not within)
+                seen_in_place: Set[Tuple[str, str]] = set()
+
                 for cluster in clusters:
                     cluster_stats['cluster_sizes'][len(cluster)] += 1
 
@@ -570,11 +808,12 @@ class TrainingDataGenerator:
                             script_a, lang_a = id_to_info[id_a]
                             script_b, lang_b = id_to_info[id_b]
 
-                            # Create canonical pair key for deduplication
+                            # Place-local deduplication only
                             pair_key = tuple(sorted([id_a, id_b]))
-                            if pair_key in seen_pairs:
+                            if pair_key in seen_in_place:
+                                cluster_stats['duplicate_pairs_within_place'] += 1
                                 continue
-                            seen_pairs.add(pair_key)
+                            seen_in_place.add(pair_key)
 
                             # Determine bin key (use script+lang pair)
                             key_a = get_script_lang_key(script_a, lang_a)
@@ -586,7 +825,16 @@ class TrainingDataGenerator:
                             pairs_by_bin[bin_key_str].append((id_a, id_b, 0.0))
                             total_pairs += 1
 
-        logger.info(f"Generated {total_pairs:,} unique positive pairs")
+                # Periodically check ES failure rate
+                if cluster_stats['places_processed'] % 10000 == 0:
+                    self.knn.check_failure_threshold()
+
+        # Final ES failure rate check and logging
+        failure_rate = self.knn.get_failure_rate()
+        logger.info(f"ES failure rate: {failure_rate:.2%} ({self.knn._failed_requests}/{self.knn._total_requests} requests)")
+        self.knn.check_failure_threshold()
+
+        logger.info(f"Generated {total_pairs:,} positive pairs")
         logger.info(f"Distributed across {len(pairs_by_bin)} script+language bins")
 
         # Log clustering statistics
@@ -596,6 +844,8 @@ class TrainingDataGenerator:
         logger.info(f"  Total clusters formed: {cluster_stats['total_clusters']:,}")
         logger.info(f"  Places with multiple clusters: {cluster_stats['multi_clusters']:,}")
         logger.info(f"  Singleton clusters (no pairs): {cluster_stats['singleton_clusters']:,}")
+        if cluster_stats['duplicate_pairs_within_place'] > 0:
+            logger.info(f"  Duplicate pairs within places (skipped): {cluster_stats['duplicate_pairs_within_place']:,}")
         logger.info(f"  Cluster size distribution:")
         for size, count in sorted(cluster_stats['cluster_sizes'].items())[:10]:
             logger.info(f"    Size {size}: {count:,} clusters")
@@ -628,7 +878,7 @@ class TrainingDataGenerator:
                     'bin': bin_key,
                 })
 
-        if PYARROW_AVAILABLE and all_pairs:
+        if all_pairs:
             table = pa.Table.from_pylist(all_pairs)
             pq.write_table(table, pairs_dir / 'positive_pairs.parquet')
             logger.info(f"Saved pairs to {pairs_dir / 'positive_pairs.parquet'}")
@@ -642,8 +892,15 @@ class TrainingDataGenerator:
         For each positive pair (anchor, positive), sample a random negative
         that is NOT in the same place (not adjacent).
 
-        Balance across bins using round-robin sampling.
+        Uses unified bin-balancing algorithm:
+        - Caps over-represented script+language bins
+        - Oversamples under-represented bins (up to MAX_OVERSAMPLE_FACTOR)
+        - Drops bins below MIN_BIN_SIZE
         """
+        logger.info("=" * 60)
+        logger.info("PHASE 1: Generating triplets with random negatives")
+        logger.info("=" * 60)
+
         logger.info("Building adjacency set...")
         adjacency: Set[Tuple[str, str]] = set()
         for pairs in pairs_by_bin.values():
@@ -653,68 +910,139 @@ class TrainingDataGenerator:
 
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
-        # Get all toponym IDs for negative sampling
-        logger.info("Loading all toponym IDs for negative sampling...")
-        all_ids = [row[0] for row in self.conn.execute(
-            "SELECT toponym_id FROM toponyms WHERE panphon_features IS NOT NULL"
-        ).fetchall()]
-        logger.info(f"Loaded {len(all_ids):,} candidate negatives")
+        # Pre-load anchor info to avoid per-pair DB queries (CRITICAL for performance)
+        logger.info("Pre-loading toponym info for all anchors...")
+        all_anchor_ids = set()
+        for pairs in pairs_by_bin.values():
+            for id_a, id_b, _ in pairs:
+                all_anchor_ids.add(id_a)
+                all_anchor_ids.add(id_b)
 
-        # Sample from each bin with balancing
+        # Batch query for all anchor info
+        anchor_info_map = {}
+        anchor_list = list(all_anchor_ids)
+        batch_size = 50000
+        for i in range(0, len(anchor_list), batch_size):
+            batch = anchor_list[i:i+batch_size]
+            placeholders = ','.join(['?' for _ in batch])
+            results = self.conn.execute(
+                f"SELECT toponym_id, script, lang FROM toponyms WHERE toponym_id IN ({placeholders})",
+                batch
+            ).fetchall()
+            for toponym_id, script, lang in results:
+                anchor_info_map[toponym_id] = (script, lang)
+
+        logger.info(f"Loaded info for {len(anchor_info_map):,} unique toponyms")
+
+        # Get all toponym IDs for negative sampling, grouped by script
+        # This enables script-aware negative sampling to avoid teaching easy shortcuts
+        logger.info("Loading toponym IDs for negative sampling (grouped by script)...")
+
+        all_ids = []
+        ids_by_script: Dict[str, List[str]] = defaultdict(list)
+
+        for row in self.conn.execute(
+            "SELECT toponym_id, script FROM toponyms WHERE panphon_features IS NOT NULL"
+        ).fetchall():
+            toponym_id, script = row
+            all_ids.append(toponym_id)
+            if script:
+                ids_by_script[script].append(toponym_id)
+
+        logger.info(f"Loaded {len(all_ids):,} candidate negatives across {len(ids_by_script)} scripts")
+        logger.info(f"Phase 1 negative sampling: {PHASE1_SAME_SCRIPT_NEGATIVE_RATIO:.0%} same-script, {1-PHASE1_SAME_SCRIPT_NEGATIVE_RATIO:.0%} any-script")
+
+        # Apply unified bin-balancing to pairs
+        logger.info(f"Applying bin-balancing (target={TARGET_SAMPLES_PER_BIN}, min={MIN_BIN_SIZE}, max_oversample={MAX_OVERSAMPLE_FACTOR}x)...")
+
+        balanced_pairs, balance_stats = apply_bin_balancing(
+            pairs_by_bin,
+            target_per_bin=TARGET_SAMPLES_PER_BIN,
+            min_bin_size=MIN_BIN_SIZE,
+            max_oversample=MAX_OVERSAMPLE_FACTOR,
+        )
+
+        # Log balancing results
+        logger.info(f"Bin balancing results:")
+        logger.info(f"  Total bins: {balance_stats['bins_total']}")
+        logger.info(f"  Bins dropped (< {MIN_BIN_SIZE}): {balance_stats['bins_dropped']}")
+        logger.info(f"  Bins capped (> {TARGET_SAMPLES_PER_BIN}): {balance_stats['bins_capped']}")
+        logger.info(f"  Bins oversampled: {balance_stats['bins_oversampled']}")
+        logger.info(f"  Bins unchanged: {balance_stats['bins_unchanged']}")
+
+        if balance_stats['dropped_bins']:
+            logger.info(f"  Dropped bins (top 10):")
+            for bin_key, size in balance_stats['dropped_bins'][:10]:
+                logger.info(f"    {bin_key}: {size} samples")
+
+        logger.info(f"Balanced pairs: {len(balanced_pairs):,}")
+
+        # Generate triplets from balanced pairs (using pre-loaded anchor info)
+        logger.info("Generating triplets...")
         triplets = []
-        bin_keys = list(pairs_by_bin.keys())
 
-        # Calculate samples per bin
-        total_target = PHASE1_SAMPLES_PER_BIN * len(bin_keys)
-        samples_per_bin = {k: min(len(v), PHASE1_SAMPLES_PER_BIN) for k, v in pairs_by_bin.items()}
+        for pair in balanced_pairs:
+            anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
 
-        # Filter out bins that are too small
-        valid_bins = {k: v for k, v in samples_per_bin.items() if v >= MIN_BIN_SIZE}
-        dropped_bins = set(samples_per_bin.keys()) - set(valid_bins.keys())
-        if dropped_bins:
-            logger.warning(f"Dropping {len(dropped_bins)} bins with < {MIN_BIN_SIZE} samples")
+            # Use pre-loaded anchor info (no DB query!)
+            if anchor not in anchor_info_map:
+                continue
 
-        logger.info(f"Generating triplets from {len(valid_bins)} bins...")
+            script, lang = anchor_info_map[anchor]
 
-        for bin_key in valid_bins:
-            pairs = pairs_by_bin[bin_key]
-            n_samples = samples_per_bin[bin_key]
+            # Use seeded RNG for reproducible negative sampling
+            # Seed is based on anchor ID so same anchor always gets same negative
+            rng = random.Random(RANDOM_SEED + (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff))
 
-            # Sample pairs (with replacement if needed)
-            if len(pairs) >= n_samples:
-                sampled_pairs = random.sample(pairs, n_samples)
-            else:
-                # Oversample small bins
-                sampled_pairs = random.choices(pairs, k=n_samples)
+            # Find a negative that's not adjacent
+            # CRITICAL: Use script-aware sampling to avoid teaching easy shortcuts
+            # 80% same-script negatives teach fine-grained phonetic discrimination
+            # 20% any-script negatives provide global contrast
+            for _ in range(10):  # Max attempts
+                use_same_script = rng.random() < PHASE1_SAME_SCRIPT_NEGATIVE_RATIO
 
-            for anchor, positive, sim in sampled_pairs:
-                # Find a negative that's not adjacent
-                for _ in range(10):  # Max attempts
-                    negative = random.choice(all_ids)
-                    if (anchor, negative) not in adjacency and (positive, negative) not in adjacency:
-                        triplets.append({
-                            'anchor_id': anchor,
-                            'positive_id': positive,
-                            'negative_id': negative,
-                            'bin': bin_key,
-                        })
-                        break
+                if use_same_script and script and script in ids_by_script and len(ids_by_script[script]) > 0:
+                    # Sample from same script
+                    negative = rng.choice(ids_by_script[script])
+                else:
+                    # Sample from any script
+                    negative = rng.choice(all_ids)
+
+                if (anchor, negative) not in adjacency and (positive, negative) not in adjacency:
+                    bin_key = get_script_lang_key(script, lang)
+                    triplets.append({
+                        'anchor_id': anchor,
+                        'positive_id': positive,
+                        'negative_id': negative,
+                        'bin': bin_key,
+                    })
+                    break
 
         logger.info(f"Generated {len(triplets):,} Phase 1 triplets")
         self.stats['phase1']['triplets'] = len(triplets)
+        self.stats['phase1']['balance_stats'] = balance_stats
 
         # Save to Parquet in directory structure expected by training
         triplets_dir = self.output_dir / 'triplets' / 'phase1'
         triplets_dir.mkdir(parents=True, exist_ok=True)
 
-        if PYARROW_AVAILABLE and triplets:
-            # Shuffle before saving
-            random.shuffle(triplets)
+        if triplets:
+            # Use deterministic split based on anchor_id hash (reproducible across runs)
+            # crc32 % 10: 0 = val, 1-9 = train (90/10 split)
+            train_triplets = []
+            val_triplets = []
 
-            # Split into train/val
-            val_size = int(len(triplets) * 0.1)
-            val_triplets = triplets[:val_size]
-            train_triplets = triplets[val_size:]
+            for triplet in triplets:
+                hash_val = (zlib.crc32(triplet['anchor_id'].encode('utf-8')) & 0xffffffff) % 10
+                if hash_val == 0:
+                    val_triplets.append(triplet)
+                else:
+                    train_triplets.append(triplet)
+
+            # Shuffle within each split (with fixed seed for reproducibility)
+            rng = random.Random(RANDOM_SEED)
+            rng.shuffle(train_triplets)
+            rng.shuffle(val_triplets)
 
             train_table = pa.Table.from_pylist(train_triplets)
             val_table = pa.Table.from_pylist(val_triplets)
@@ -722,28 +1050,31 @@ class TrainingDataGenerator:
             pq.write_table(train_table, triplets_dir / 'train.parquet')
             pq.write_table(val_table, triplets_dir / 'val.parquet')
 
-            logger.info(f"Saved {len(train_triplets):,} train, {len(val_triplets):,} val triplets")
+            logger.info(f"Saved {len(train_triplets):,} train, {len(val_triplets):,} val triplets (deterministic split)")
 
     def generate_phase2_samples(self):
         """
-        Generate Phase 2 samples: all toponyms with PanPhon embeddings.
+        Generate Phase 2 samples: balanced toponyms with PanPhon embeddings.
 
-        Phase 2 trains the Student to mimic Teacher outputs, so we need
-        the full corpus of toponyms with their features.
+        Phase 2 trains the Student to mimic Teacher outputs. We use the unified
+        bin-balancing algorithm to ensure balanced representation across
+        script+language pairs.
 
-        Note: Only toponyms with valid PanPhon features are included here.
-        Toponyms without features (unsupported scripts/languages) cannot be
-        used for Teacher-Student alignment because we can't compute a target
-        embedding. However, the trained Student can still process these at
-        inference time using character-level generalization.
+        Uses unified bin-balancing algorithm:
+        - Groups samples by script+language bin
+        - Caps over-represented bins (e.g., LATIN:en)
+        - Oversamples under-represented bins (up to MAX_OVERSAMPLE_FACTOR)
+        - Drops bins below MIN_BIN_SIZE
 
         Exports data in the format expected by Phase2Dataset:
         - toponym_id, name, script, lang
-        - char_ids (list of int), char_length (int)
+        - char_ids (list of int)
         - features (list of float), feature_length (int)
         - split ('train'/'val'/'test'), epitran_supported (bool)
         """
-        logger.info("Generating Phase 2 samples...")
+        logger.info("=" * 60)
+        logger.info("PHASE 2: GENERATING BALANCED TRAINING SAMPLES")
+        logger.info("=" * 60)
 
         # Create output directory (training/ is expected by data_loading.py)
         training_dir = self.output_dir / 'training'
@@ -787,7 +1118,84 @@ class TrainingDataGenerator:
         logger.info(f"  Without features (excluded): {without_features:,}")
         logger.info(f"  PanPhon coverage: {coverage_pct:.1f}%")
 
-        # Query all toponyms with features
+        # ============================================================
+        # MEMORY-EFFICIENT TWO-PASS APPROACH
+        # Pass 1: Count samples per bin (no data stored)
+        # Pass 2: Stream and sample based on bin quotas
+        # ============================================================
+
+        # Pass 1: Count bin sizes
+        logger.info("Pass 1: Counting samples per script+language bin...")
+        bin_counts: Counter = Counter()
+
+        count_query = f'''
+            SELECT t.script, t.lang, COUNT(*) as cnt
+            FROM toponyms t
+            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+            WHERE tn.namespace IN ({ns_filter})
+              AND t.panphon_features IS NOT NULL
+            GROUP BY t.script, t.lang
+        '''
+
+        for script, lang, count in self.conn.execute(count_query).fetchall():
+            bin_key = get_script_lang_key(script, lang)
+            bin_counts[bin_key] = count
+
+        logger.info(f"Found {len(bin_counts)} script+language bins")
+
+        # Log top bins
+        logger.info("Top 10 bins (before balancing):")
+        for bin_key, count in bin_counts.most_common(10):
+            logger.info(f"  {bin_key}: {count:,}")
+
+        # Calculate sampling probabilities for each bin
+        logger.info(f"Calculating sampling quotas (target={TARGET_SAMPLES_PER_BIN}, min={MIN_BIN_SIZE}, max_oversample={MAX_OVERSAMPLE_FACTOR}x)...")
+
+        bin_quotas = {}  # bin_key -> (target_count, sampling_prob)
+        dropped_bins = []
+        stats = {'bins_total': len(bin_counts), 'bins_dropped': 0, 'bins_capped': 0,
+                 'bins_oversampled': 0, 'bins_unchanged': 0}
+
+        for bin_key, count in bin_counts.items():
+            if count < MIN_BIN_SIZE:
+                dropped_bins.append((bin_key, count))
+                stats['bins_dropped'] += 1
+                continue
+
+            if count >= TARGET_SAMPLES_PER_BIN:
+                # Cap: sample TARGET_SAMPLES_PER_BIN from count
+                target = TARGET_SAMPLES_PER_BIN
+                prob = TARGET_SAMPLES_PER_BIN / count
+                stats['bins_capped'] += 1
+            else:
+                # Oversample up to MAX_OVERSAMPLE_FACTOR
+                max_target = min(TARGET_SAMPLES_PER_BIN, count * MAX_OVERSAMPLE_FACTOR)
+                if max_target > count:
+                    target = max_target
+                    prob = max_target / count  # > 1.0 means oversample
+                    stats['bins_oversampled'] += 1
+                else:
+                    target = count
+                    prob = 1.0
+                    stats['bins_unchanged'] += 1
+
+            bin_quotas[bin_key] = (target, prob)
+
+        logger.info(f"Bin balancing plan:")
+        logger.info(f"  Bins dropped (< {MIN_BIN_SIZE}): {stats['bins_dropped']}")
+        logger.info(f"  Bins capped (> {TARGET_SAMPLES_PER_BIN}): {stats['bins_capped']}")
+        logger.info(f"  Bins oversampled: {stats['bins_oversampled']}")
+        logger.info(f"  Bins unchanged: {stats['bins_unchanged']}")
+
+        if dropped_bins:
+            logger.info(f"  Dropped bins:")
+            for bin_key, size in dropped_bins[:20]:
+                logger.info(f"    {bin_key}: {size} samples")
+
+        # Pass 2: Stream data, sample, and write incrementally to Parquet
+        # This uses ParquetWriter for incremental writes to minimize memory usage
+        logger.info("Pass 2: Streaming, sampling, and writing incrementally to Parquet...")
+
         query = f'''
             SELECT DISTINCT
                 t.toponym_id,
@@ -802,16 +1210,47 @@ class TrainingDataGenerator:
               AND t.panphon_features IS NOT NULL
         '''
 
-        logger.info("Querying and transforming toponyms...")
+        # Track samples per bin and per split (counts only, not data)
+        bin_sample_counts: Counter = Counter()
+        split_counts = {'train': 0, 'val': 0, 'test': 0}
 
-        # Process in batches to manage memory
-        samples_by_split = {'train': [], 'val': [], 'test': []}
-        bin_stats: Counter = Counter()
+        # Create split directories
+        for split_name in ['train', 'val', 'test']:
+            split_dir = training_dir / f'split={split_name}'
+            split_dir.mkdir(exist_ok=True)
 
-        # Use cursor for streaming large results
+        # Set up incremental Parquet writers (one per split)
+        # This writes data in batches without holding everything in memory
+        writers = {}
+        write_buffers = {'train': [], 'val': [], 'test': []}
+        WRITE_BATCH_SIZE = 50000  # Write to disk every 50K samples
+        schema = None  # Will be set from first sample
+
         cursor = self.conn.execute(query)
         batch_size = 100000
         processed = 0
+
+        def flush_buffer(split_name: str):
+            """Write buffered samples to Parquet and clear buffer."""
+            nonlocal schema, writers
+            buffer = write_buffers[split_name]
+            if not buffer:
+                return
+
+            split_dir = training_dir / f'split={split_name}'
+
+            table = pa.Table.from_pylist(buffer)
+            if schema is None:
+                schema = table.schema
+
+            # Use append mode if file exists
+            parquet_path = split_dir / 'data.parquet'
+            if split_name not in writers:
+                writers[split_name] = pq.ParquetWriter(str(parquet_path), schema)
+
+            writers[split_name].write_table(table)
+
+            write_buffers[split_name] = []
 
         while True:
             rows = cursor.fetchmany(batch_size)
@@ -820,8 +1259,34 @@ class TrainingDataGenerator:
 
             for row in rows:
                 toponym_id, name, script, lang, ipa, panphon_blob = row
+                bin_key = get_script_lang_key(script, lang)
 
-                # Unpack panphon_features from binary blob
+                # Skip dropped bins
+                if bin_key not in bin_quotas:
+                    continue
+
+                target, prob = bin_quotas[bin_key]
+
+                # Reservoir sampling with oversampling support
+                # For prob > 1.0 (oversampling), we may include the same item multiple times
+                # For prob < 1.0 (capping), we sample with that probability
+
+                # Use seeded RNG for reproducibility
+                rng = random.Random(RANDOM_SEED + (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff))
+
+                if prob >= 1.0:
+                    # Oversampling: include at least once, maybe more
+                    num_copies = int(prob)
+                    if rng.random() < (prob - num_copies):
+                        num_copies += 1
+                else:
+                    # Capping: include with probability
+                    num_copies = 1 if rng.random() < prob else 0
+
+                if num_copies == 0:
+                    continue
+
+                # Unpack features
                 features = unpack_embedding(panphon_blob)
                 if not features:
                     continue
@@ -829,9 +1294,8 @@ class TrainingDataGenerator:
                 # Convert name to char_ids
                 char_ids = [char_to_id.get(c, unk_id) for c in name]
 
-                # Determine split using stable hash (zlib.crc32 is deterministic across runs)
-                # crc32 % 10: 0 = test, 1 = val, 2-9 = train (80/10/10 split)
-                hash_val = zlib.crc32(toponym_id.encode('utf-8')) % 10
+                # Determine split using stable hash (reproducible across runs)
+                hash_val = (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff) % 10
                 if hash_val == 0:
                     split = 'test'
                 elif hash_val == 1:
@@ -839,8 +1303,7 @@ class TrainingDataGenerator:
                 else:
                     split = 'train'
 
-                # Build sample dict in format expected by training
-                # Note: char_length is intentionally omitted - it's recomputed during collation
+                # Build sample dict
                 sample = {
                     'toponym_id': toponym_id,
                     'name': name,
@@ -848,42 +1311,45 @@ class TrainingDataGenerator:
                     'lang': lang or '',
                     'char_ids': char_ids,
                     'features': features,
-                    'feature_length': len(features) // 24,  # 24 = panphon feature dim
+                    'feature_length': len(features) // 24,
+                    'epitran_supported': True,
                     'split': split,
-                    'epitran_supported': True,  # Only exporting those with features
                 }
 
-                samples_by_split[split].append(sample)
+                # Add copies to buffer (for oversampling)
+                for _ in range(num_copies):
+                    write_buffers[split].append(sample.copy())
+                    bin_sample_counts[bin_key] += 1
+                    split_counts[split] += 1
 
-                # Track bin stats
-                bin_key = get_script_lang_key(script, lang)
-                bin_stats[bin_key] += 1
+                # Flush buffers when they get large
+                for split_name in ['train', 'val', 'test']:
+                    if len(write_buffers[split_name]) >= WRITE_BATCH_SIZE:
+                        flush_buffer(split_name)
 
             processed += len(rows)
             if processed % 500000 == 0:
-                logger.info(f"  Processed {processed:,} toponyms...")
+                total_sampled = sum(split_counts.values())
+                logger.info(f"  Processed {processed:,} toponyms, sampled {total_sampled:,}...")
 
-        logger.info(f"Processed {processed:,} total toponyms")
+        # Flush any remaining samples in buffers
+        for split_name in ['train', 'val', 'test']:
+            flush_buffer(split_name)
+
+        # Close all writers
+        for writer in writers.values():
+            writer.close()
 
         # Update stats
-        total_samples = sum(len(s) for s in samples_by_split.values())
+        total_samples = sum(split_counts.values())
         self.stats['phase2']['samples'] = total_samples
-        self.stats['phase2']['by_bin'] = dict(bin_stats.most_common(50))
-        logger.info(f"Distribution across {len(bin_stats)} script+language bins")
+        self.stats['phase2']['balance_stats'] = stats
+        self.stats['phase2']['by_split'] = dict(split_counts)
 
-        # Save to Parquet files with hive partitioning by split
-        if PYARROW_AVAILABLE:
-            for split_name, samples in samples_by_split.items():
-                if not samples:
-                    continue
-
-                # Create split directory (hive partitioning: split=train/, split=val/, etc.)
-                split_dir = training_dir / f'split={split_name}'
-                split_dir.mkdir(exist_ok=True)
-
-                table = pa.Table.from_pylist(samples)
-                pq.write_table(table, split_dir / 'data.parquet')
-                logger.info(f"Saved {len(samples):,} {split_name} samples")
+        logger.info(f"Sampled {total_samples:,} total samples (incremental write)")
+        logger.info(f"Split distribution:")
+        for split_name, count in split_counts.items():
+            logger.info(f"  {split_name}: {count:,}")
 
         logger.info(f"Phase 2 export complete: {total_samples:,} total samples")
 
@@ -900,8 +1366,12 @@ class TrainingDataGenerator:
         This teaches the model to discriminate between similar-sounding
         but geographically distinct names.
 
-        Uses batched _msearch for 50-100x speedup over individual queries.
+        Uses unified bin-balancing algorithm and batched _msearch for efficiency.
         """
+        logger.info("=" * 60)
+        logger.info("PHASE 3: GENERATING TRIPLETS WITH HARD NEGATIVES")
+        logger.info("=" * 60)
+
         logger.info("Building adjacency set for Phase 3...")
         adjacency: Set[Tuple[str, str]] = set()
         for pairs in pairs_by_bin.values():
@@ -911,37 +1381,64 @@ class TrainingDataGenerator:
 
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
-        # Get anchor info for ES KNN queries
-        logger.info("Loading anchor info for hard negative mining...")
+        # Apply unified bin-balancing to pairs FIRST (before generating triplets)
+        logger.info(f"Applying bin-balancing to pairs (target={TARGET_SAMPLES_PER_BIN}, min={MIN_BIN_SIZE}, max_oversample={MAX_OVERSAMPLE_FACTOR}x)...")
+
+        balanced_pairs, balance_stats = apply_bin_balancing(
+            pairs_by_bin,
+            target_per_bin=TARGET_SAMPLES_PER_BIN,
+            min_bin_size=MIN_BIN_SIZE,
+            max_oversample=MAX_OVERSAMPLE_FACTOR,
+        )
+
+        # Log balancing results
+        logger.info(f"Bin balancing results:")
+        logger.info(f"  Total bins: {balance_stats['bins_total']}")
+        logger.info(f"  Bins dropped (< {MIN_BIN_SIZE}): {balance_stats['bins_dropped']}")
+        logger.info(f"  Bins capped (> {TARGET_SAMPLES_PER_BIN}): {balance_stats['bins_capped']}")
+        logger.info(f"  Bins oversampled: {balance_stats['bins_oversampled']}")
+        logger.info(f"  Bins unchanged: {balance_stats['bins_unchanged']}")
+
+        logger.info(f"Balanced pairs for hard negative mining: {len(balanced_pairs):,}")
+
+        # Collect unique anchor IDs from balanced pairs
+        logger.info("Collecting unique anchor IDs from balanced pairs...")
+        unique_anchors = set()
+        for pair in balanced_pairs:
+            anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
+            unique_anchors.add(anchor)
+            unique_anchors.add(positive)
+
+        logger.info(f"Found {len(unique_anchors):,} unique toponyms in balanced pairs")
+
+        # Load anchor info ONLY for toponyms we need (not entire corpus!)
+        logger.info("Loading anchor info for needed toponyms only...")
         anchor_info = {}  # toponym_id -> (script, lang)
 
-        results = self.conn.execute('''
-            SELECT toponym_id, script, lang
-            FROM toponyms
-            WHERE panphon_features IS NOT NULL
-        ''').fetchall()
-
-        for toponym_id, script, lang in results:
-            anchor_info[toponym_id] = (script, lang)
+        anchor_list = list(unique_anchors)
+        batch_size = 50000
+        for i in range(0, len(anchor_list), batch_size):
+            batch = anchor_list[i:i+batch_size]
+            placeholders = ','.join(['?' for _ in batch])
+            results = self.conn.execute(
+                f"SELECT toponym_id, script, lang FROM toponyms WHERE toponym_id IN ({placeholders})",
+                batch
+            ).fetchall()
+            for toponym_id, script, lang in results:
+                anchor_info[toponym_id] = (script, lang)
 
         logger.info(f"Loaded info for {len(anchor_info):,} toponyms")
 
-        # Sample from bins with balancing
-        valid_bins = {k: v for k, v in pairs_by_bin.items()
-                      if len(v) >= MIN_BIN_SIZE}
-
-        logger.info(f"Mining hard negatives from {len(valid_bins)} bins using batched ES KNN...")
-
-        # Collect all (anchor, positive) pairs we need to process
+        # Use balanced pairs (already capped/oversampled appropriately)
         all_pairs_to_process = []
-        for bin_key, pairs in valid_bins.items():
-            n_samples = min(len(pairs), PHASE3_SAMPLES_PER_BIN)
-            sampled_pairs = random.sample(pairs, n_samples) if len(pairs) >= n_samples else pairs
-            for anchor, positive, _ in sampled_pairs:
-                if anchor in anchor_info:
-                    all_pairs_to_process.append((anchor, positive, bin_key))
+        for pair in balanced_pairs:
+            anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
+            if anchor in anchor_info:
+                script, lang = anchor_info[anchor]
+                bin_key = get_script_lang_key(script, lang)
+                all_pairs_to_process.append((anchor, positive, bin_key))
 
-        logger.info(f"Processing {len(all_pairs_to_process):,} pairs for hard negatives...")
+        logger.info(f"Processing {len(all_pairs_to_process):,} balanced pairs for hard negatives...")
 
         # Batch fetch embeddings from ES (using mget)
         all_anchors = list(set(p[0] for p in all_pairs_to_process))
@@ -993,6 +1490,7 @@ class TrainingDataGenerator:
         iterator = batches
         iterator = tqdm(iterator, desc="Batched hard negative mining (_msearch)")
 
+        batches_processed = 0
         for batch in iterator:
             # Use batched _msearch
             hard_negs = self.knn.find_hard_negatives_batch(
@@ -1012,22 +1510,44 @@ class TrainingDataGenerator:
                         'bin': item['bin'],
                     })
 
+            # Periodically check ES failure rate
+            batches_processed += 1
+            if batches_processed % 100 == 0:
+                self.knn.check_failure_threshold()
+
+        # Final ES failure rate check and logging for Phase 3
+        failure_rate = self.knn.get_failure_rate()
+        logger.info(f"Phase 3 ES failure rate: {failure_rate:.2%} ({self.knn._failed_requests}/{self.knn._total_requests} requests)")
+        self.knn.check_failure_threshold()
+
         if failed_lookups > 0:
             logger.warning(f"Failed to find embedding for {failed_lookups:,} anchors")
 
         logger.info(f"Generated {len(triplets):,} Phase 3 triplets")
         self.stats['phase3']['triplets'] = len(triplets)
+        self.stats['phase3']['balance_stats'] = balance_stats
 
         # Save to Parquet in directory structure expected by training
         triplets_dir = self.output_dir / 'triplets' / 'phase3'
         triplets_dir.mkdir(parents=True, exist_ok=True)
 
-        if PYARROW_AVAILABLE and triplets:
-            random.shuffle(triplets)
+        if triplets:
+            # Use deterministic split based on anchor_id hash (reproducible across runs)
+            # crc32 % 10: 0 = val, 1-9 = train (90/10 split)
+            train_triplets = []
+            val_triplets = []
 
-            val_size = int(len(triplets) * 0.1)
-            val_triplets = triplets[:val_size]
-            train_triplets = triplets[val_size:]
+            for triplet in triplets:
+                hash_val = (zlib.crc32(triplet['anchor_id'].encode('utf-8')) & 0xffffffff) % 10
+                if hash_val == 0:
+                    val_triplets.append(triplet)
+                else:
+                    train_triplets.append(triplet)
+
+            # Shuffle within each split (with fixed seed for reproducibility)
+            rng = random.Random(RANDOM_SEED)
+            rng.shuffle(train_triplets)
+            rng.shuffle(val_triplets)
 
             train_table = pa.Table.from_pylist(train_triplets)
             val_table = pa.Table.from_pylist(val_triplets)
@@ -1035,7 +1555,7 @@ class TrainingDataGenerator:
             pq.write_table(train_table, triplets_dir / 'train.parquet')
             pq.write_table(val_table, triplets_dir / 'val.parquet')
 
-            logger.info(f"Saved {len(train_triplets):,} train, {len(val_triplets):,} val triplets")
+            logger.info(f"Saved {len(train_triplets):,} train, {len(val_triplets):,} val triplets (deterministic split)")
 
 
 
