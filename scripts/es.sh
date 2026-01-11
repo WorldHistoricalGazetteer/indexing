@@ -700,7 +700,7 @@ do_rebuild_toponyms() {
 
     # Output directory for data
     OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
-    SQLITE_PATH="${OUTPUT_DIR}/toponyms.db"
+    DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
 
     # Setup local scratch (CRC convention)
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
@@ -761,7 +761,7 @@ echo
 # Run the rebuild script
 python -m phonetics.extraction.rebuild_toponyms_index \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --sqlite-path "${SQLITE_PATH}" \
+    --db-path "${DB_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
     --training-namespaces gn wd tgn \
@@ -775,7 +775,7 @@ echo "=========================================="
 echo "Output directory: $OUTPUT_DIR"
 echo "  - vocab/           Character, language, script vocabularies"
 echo "  - coverage_stats.json  PanPhon coverage by script+language"
-echo "  - toponyms.db      SQLite checkpoint"
+echo "  - toponyms.duckdb  DuckDB checkpoint"
 echo
 echo "ES index: toponyms"
 echo "  - Includes panphon_embedding for phonetic similarity queries"
@@ -1299,129 +1299,6 @@ SBATCH_EOF
     echo "Note: The staging ES instance must remain running for the duration."
 }
 
-# ==============================================================================
-# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS (v4 Pipeline Phase 1)
-# ==============================================================================
-
-do_rebuild_toponyms() {
-    # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS...]
-    # Options are passed through to rebuild_toponyms_index.py
-
-    DATA_VERSION=${1:-4}
-    shift 2>/dev/null || true  # Remove version from remaining args
-
-    # Check staging is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: No staging ES instance running"
-        echo "Start one first with: source $0 -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    # Verify ES is responding
-    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-        return 1
-    fi
-
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
-    mkdir -p "$LOG_DIR"
-
-    # Output directory for data
-    OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
-    SQLITE_PATH="${OUTPUT_DIR}/toponyms.db"
-
-    # Setup local scratch (CRC convention)
-    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
-
-    # Capture extra args (e.g., --limit 1000)
-    PYTHON_ARGS="$@"
-
-    echo "=========================================="
-    echo "v4 PIPELINE - PHASE 1: REBUILD TOPONYMS"
-    echo "=========================================="
-    echo "  Data Version: v${DATA_VERSION}"
-    echo "  Output Dir:   ${OUTPUT_DIR}"
-    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
-    echo "  Extra Args:   ${PYTHON_ARGS:-none}"
-    echo
-    echo "This job will:"
-    echo "  1. Extract toponyms from places index (with attestations)"
-    echo "  2. Filter pre-romanized forms (lang-script mismatches)"
-    echo "  3. Generate vocabulary (expanded Unicode ranges)"
-    echo "  4. Compute IPA + PanPhon embeddings for training namespaces"
-    echo "  5. Index to ES toponyms with panphon_embedding field"
-    echo "  6. Refresh index and create snapshot"
-    echo
-
-    JOBID=$(sbatch --parsable <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-rebuild-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
-#SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
-#SBATCH --time=48:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=300G
-
-set -e
-
-# Load Environment
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
-conda activate whg
-
-cd "$REPO_DIR"
-
-# Setup scratch
-SCRATCH_DIR="$SCRATCH_VAR"
-mkdir -p "\$SCRATCH_DIR"
-mkdir -p "$OUTPUT_DIR"
-
-echo "=========================================="
-echo "v4 PIPELINE - PHASE 1: REBUILD TOPONYMS"
-echo "=========================================="
-echo "Job Started: \$(date)"
-echo "Node: \$(hostname)"
-echo "Scratch: \$SCRATCH_DIR"
-echo "Output:  $OUTPUT_DIR"
-echo
-
-# Run the rebuild script
-python -m phonetics.extraction.rebuild_toponyms_index \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --sqlite-path "${SQLITE_PATH}" \
-    --output-dir "${OUTPUT_DIR}" \
-    --scratch-dir "\$SCRATCH_DIR" \
-    --training-namespaces gn wd tgn \
-    --confirm \
-    $PYTHON_ARGS
-
-echo
-echo "=========================================="
-echo "JOB COMPLETE"
-echo "=========================================="
-echo "Output directory: $OUTPUT_DIR"
-echo "  - vocab/           Character, language, script vocabularies"
-echo "  - coverage_stats.json  PanPhon coverage by script+language"
-echo "  - toponyms.db      SQLite checkpoint"
-echo
-echo "ES index: toponyms"
-echo "  - Includes panphon_embedding for phonetic similarity queries"
-echo
-echo "Next steps:"
-echo "  1. Review coverage_stats.json"
-echo "  2. Generate training data: source es.sh -generate-training-data $DATA_VERSION"
-echo
-echo "Job Finished: \$(date)"
-EOF
-)
-
-    echo "✓ Rebuild job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.out"
-}
 
 # =============================================================================
 # MAIN
