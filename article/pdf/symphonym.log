@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 22:55
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 23:39
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1246,18 +1246,6 @@ Overfull \hbox (10.05165pt too wide) in paragraph at lines 184--201
  []
 
 [6] [7] [8]
-Overfull \hbox (2.40857pt too wide) in paragraph at lines 303--304
-[]\TU/LinLibertine_R.otf(0)/b/n/10.95 Alphabetic scripts \TU/LinLibertine_R.otf
-(0)/m/n/10.95 (Latin, Cyrillic, Greek, Arabic, Hebrew, Brahmic scripts,
- []
-
-
-Overfull \hbox (9.45862pt too wide) in paragraph at lines 310--311
-[]\TU/LinLibertine_R.otf(0)/m/n/10.95 The resulting vocabulary contains approxi
-mately 11,000 tokens across all scripts,
- []
-
-
 Overfull \hbox (7.4562pt too wide) in paragraph at lines 320--321
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 Projection\TU/LinLibertine_R.otf(0)/m/n/1
 0.95 : Linear layer projects features to hidden dimension: $\OML/cmm/m/it/10.95
@@ -1278,13 +1266,13 @@ Overfull \hbox (3.62033pt too wide) in paragraph at lines 323--324
 )/m/n/10.95 : Learned attention weights aggregate sequence to fixed-
  []
 
-[9]
+[9] [10]
 Overfull \hbox (2.40852pt too wide) in paragraph at lines 342--343
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Teacher pathway to generate embeddings that
  participate fully in the phonetically-
  []
 
-[10]
+[11]
 Overfull \hbox (0.9294pt too wide) in paragraph at lines 376--377
 \TU/LinLibertine_R.otf(0)/m/n/10.95 The World Historical Gazetteer (WHG) infras
 tructure separates data into a \TU/lmtt/m/n/10.95 places
@@ -1296,7 +1284,7 @@ Overfull \hbox (7.6025pt too wide) in paragraph at lines 376--377
  with their attributions, and a \TU/lmtt/m/n/10.95 toponyms
  []
 
-[11]
+
 Overfull \hbox (1.94133pt too wide) in paragraph at lines 381--382
 \TU/LinLibertine_R.otf(0)/m/n/10.95 guages, I implement a quota-based sampling 
 strategy. I sample up to $\OML/cmm/m/it/10.95 N \OT1/cmr/m/n/10.95 = 100\OML/cm
@@ -1316,12 +1304,18 @@ Santiago@es/Santiago@en pairs). With-
  []
 
 [13]
+Overfull \hbox (7.7473pt too wide) in paragraph at lines 465--466
+\TU/LinLibertine_R.otf(0)/m/n/10.95 coverage of rare characters that may appear
+ at inference time. After preprocessing—
+ []
+
+[14]
 Overfull \hbox (10.88745pt too wide) in paragraph at lines 469--470
 \TU/LinLibertine_R.otf(0)/m/n/10.95 nese/Latin (923,079), Persian/Latin (197,09
 9), Japanese/Latin (111,945), Russian/Latin
  []
 
-[14] [15] [16]
+[15] [16]
 Overfull \hbox (0.17838pt too wide) in paragraph at lines 513--514
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Convergence.[] \TU/LinLibertine_R.otf(0)
 /m/n/10.95 Phase 1 training converged smoothly, with training loss decreas-
@@ -1386,13 +1380,13 @@ ibertine_R.otf(0)/m/n/10.95 Symphonym excels at \TU/LinLibertine_R.otf(0)/m/it/
 10.95 ranking \TU/LinLibertine_R.otf(0)/m/n/10.95 candidates by pho-
  []
 
-
+[24]
 Overfull \hbox (1.81725pt too wide) in paragraph at lines 729--730
 \TU/LinLibertine_R.otf(0)/m/n/10.95 For same-script matching, traditional strin
 g similarity methods (Levenshtein, Jaro-
  []
 
-[24]
+
 Overfull \hbox (1.51425pt too wide) in paragraph at lines 735--736
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Scalability and Deployment.[] \TU/LinLib
 ertine_R.otf(0)/m/n/10.95 Symphonym embeddings integrate directly with
@@ -1453,13 +1447,13 @@ Overfull \hbox (3.71767pt too wide) in paragraph at lines 791--792
 y PanPhon cosine similarity. This groups
  []
 
-
+[28]
 Overfull \hbox (11.26707pt too wide) in paragraph at lines 799--800
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Unified Bin-Balancing Algorithm.[] \TU/L
 inLibertine_R.otf(0)/m/n/10.95 Apply consistent sampling across all phases:
  []
 
-[28]
+
 Overfull \hbox (13.25266pt too wide) in paragraph at lines 801--802
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Pre-computed Teacher Embeddings.[] \TU/L
 inLibertine_R.otf(0)/m/n/10.95 Generate all training data—except Teacher
@@ -1485,7 +1479,7 @@ Package rerunfilecheck Info: File `symphonym.out' has not changed.
 Here is how much of TeX's memory you used:
  34079 strings out of 478149
  749507 string characters out of 5853103
- 1053432 words of memory out of 5000000
+ 1052433 words of memory out of 5000000
  54138 multiletter control sequences out of 15000+600000
  480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191

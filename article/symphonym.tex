@@ -295,19 +295,19 @@ Figure~\ref{fig:architecture} illustrates the Teacher-Student architecture and t
 
 \subsection{Script Detection and Character Vocabulary}
 
-I detect script from Unicode code points, mapping each character to one of 20 script categories: Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Bengali, Tamil, Telugu, Malayalam, Kannada, Gujarati, Thai, Georgian, Armenian, Chinese (Han), Japanese (Hiragana, Katakana), Korean (Hangul), and Other.
+I detect script from Unicode code points, mapping each character to one of 20 script categories: Latin, Cyrillic, Greek, Arabic, Hebrew, Devanagari, Bengali, Tamil, Telugu, Malayalam, Kannada, Gujarati, Thai, Georgian, Armenian, Chinese (Han), Japanese (Hiragana, Katakana), Korean (Hangul), and Other. Analysis of the 66.9 million toponyms reveals 8,448 unique observed characters across these scripts.
 
 Character vocabulary construction balances coverage against tractability:
 
 \begin{itemize}
-    \item \textbf{Alphabetic scripts} (Latin, Cyrillic, Greek, Arabic, Hebrew, Brahmic scripts, Georgian, Armenian, Thai): I retain native characters, yielding vocabularies of 50--200 tokens per script.
+    \item \textbf{Alphabetic scripts}: Native characters are retained with expansion to full Unicode ranges for each observed script. This yields script-specific vocabularies ranging from 72 tokens (Tamil) to 1,368 tokens (Arabic extended), with intermediate sizes for Cyrillic (450), Greek (373), Devanagari (162), Georgian (128), and others.
 
-    \item \textbf{Chinese and Japanese}: The tens of thousands of Han characters would create an intractable vocabulary. I romanise via AnyAscii, reducing to the Latin character set while preserving approximate phonetic content.
+    \item \textbf{Chinese and Japanese}: The tens of thousands of Han characters would create an intractable vocabulary. I romanise via AnyAscii, reducing to the ASCII character set while preserving approximate phonetic content. Hiragana and Katakana are similarly romanised.
 
-    \item \textbf{Korean Hangul}: Rather than treating 11,172 syllable blocks as atomic units, I decompose into Jamo (lead consonant, vowel, optional tail consonant), yielding approximately 60 tokens with explicit phonetic structure.
+    \item \textbf{Korean Hangul}: Rather than treating 11,172 syllable blocks as atomic units, I decompose into Jamo (lead consonant, vowel, optional tail consonant), yielding 51 Jamo tokens with explicit phonetic structure.
 \end{itemize}
 
-The resulting vocabulary contains approximately 11,000 tokens across all scripts, each tagged with its source script for embedding lookup.
+The resulting vocabulary contains 11,122 tokens: 94 ASCII characters (for romanised CJK and base Latin), 51 Korean Jamo, and script-specific character sets totalling approximately 10,977 tokens across 17 native scripts. Each token is tagged with its source script for embedding lookup. The vocabulary additionally supports 1,944 distinct language codes observed in the corpus.
 
 \subsection{Teacher Network: Phonetic Feature Encoder}
 
@@ -386,7 +386,7 @@ I restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \tex
 \paragraph{3. Global Vocabulary Construction.}
 To prevent out-of-vocabulary (OOV) errors at inference time, I decouple vocabulary construction from pair generation.
 \begin{itemize}
-    \item \textbf{Pass 1 (Vocabulary):} I scan the entire corpus (112 million toponyms) to build the character vocabulary, applying script-specific preprocessing: CJK and Japanese Kana are romanised via AnyAscii, while Korean Hangul is decomposed into Jamo. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
+    \item \textbf{Pass 1 (Vocabulary):} I scan the entire corpus (66.9 million unique toponyms) to build the character vocabulary, observing 8,448 distinct characters across 20 scripts. Script-specific preprocessing is applied: CJK and Japanese Kana are romanised via AnyAscii, while Korean Hangul is decomposed into Jamo. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
     \item \textbf{Pass 2 (Training Pairs):} I generate candidate pairs from co-located toponyms, restricted to the stratified quotas defined above.
 \end{itemize}
 
@@ -425,7 +425,7 @@ While retaining genuine phonetic cognates:
 
 \subsection{Dataset Statistics}
 
-The full WHG \texttt{places} index contains 47.1 million place records, from which I extract 112.0 million toponym records spanning 1,944 languages and 20 script categories. During extraction, 1.77 million toponyms (1.6\%) are filtered as ``pre-romanised'' forms---cases where the language tag implies a non-Latin script but the name is written in Latin characters (e.g., Chinese names romanised to Pinyin without explicit tagging). These are excluded to prevent the model from learning spurious orthographic similarities.
+The full WHG \texttt{places} index contains 47.1 million place records, from which I extract 112.0 million toponym records spanning 1,944 languages and 20 script categories. During extraction, 1.77 million toponyms (1.6\%) are filtered as ``pre-romanised'' forms---cases where the language tag implies a non-Latin script but the name is written in Latin characters (e.g., Chinese names romanised to Pinyin without explicit tagging). These are excluded to prevent the model from learning spurious orthographic similarities. After deduplication by toponym identifier, \textbf{66.9 million unique toponyms} remain.
 
 For training, I restrict to the three high-quality namespace authorities: GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn}). This yields 57.6 million training toponyms with the following script distribution:
 
@@ -462,7 +462,7 @@ GUJARATI & 20,340 & 0.04\% & 6 & gu \\
 \label{tab:script-distribution}
 \end{table}
 
-The character vocabulary is constructed by scanning all 112M toponyms (not just training data), ensuring coverage of rare characters that may appear at inference time. After preprocessing---romanisation of CJK via AnyAscii and decomposition of Hangul to Jamo---the final vocabulary contains 11,122 tokens. The vocabulary is expanded to include full Unicode ranges for each observed script, ensuring the model can handle characters not seen in the training corpus.
+The character vocabulary is constructed by scanning all 66.9M unique toponyms (not just training data), observing 8,448 distinct characters and ensuring coverage of rare characters that may appear at inference time. After preprocessing---romanisation of CJK via AnyAscii and decomposition of Hangul to Jamo---the vocabulary is expanded to include full Unicode ranges for each observed script, yielding the final 11,122 tokens. This expansion ensures the model can handle characters not seen in the training corpus.
 
 \paragraph{Namespace Contribution.} Within the training data, Wikidata contributes the majority of non-Latin script coverage. For example, in the Devanagari script, Wikidata provides 130,110 toponyms compared to GeoNames' 17,676 and TGN's 2,035. This pattern holds across most South Asian and Middle Eastern scripts, validating my decision to include Wikidata despite its heterogeneous quality.
 
