@@ -1352,6 +1352,9 @@ def dump_to_jsonl(
 
         # Stream through result using fetchmany() for memory efficiency
         fetch_batch_size = 10000
+        batches_processed = 0
+        logger.info("Starting streaming from DuckDB...")
+
         while True:
             rows = result.fetchmany(fetch_batch_size)
             if not rows:
@@ -1396,13 +1399,16 @@ def dump_to_jsonl(
                     process_and_write_batch()
                     batch_docs = []
                     batch_phonetics_needed = []
+                    batches_processed += 1
 
-                    # Log progress every 100,000 documents
-                    if stats['total'] % 100000 == 0:
-                        logger.info(f"Progress: {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%) - IPA: {stats['with_ipa']:,}")
+                    # Log progress every 50,000 documents (5 batches)
+                    if stats['total'] % 50000 == 0:
+                        pct = 100 * stats['total'] / total_count
+                        logger.info(f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - IPA: {stats['with_ipa']:,} - Batches: {batches_processed}")
 
         # Process final batch
         process_and_write_batch()
+        logger.info(f"Streaming complete. Total batches processed: {batches_processed + 1}")
 
     # Flush and sync to ensure all data is written
     logger.info("Flushing JSONL file to disk...")
