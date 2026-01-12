@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  12 JAN 2026 18:48
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  12 JAN 2026 20:43
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1234,13 +1234,13 @@ Overfull \hbox (19.3181pt too wide) in paragraph at lines 148--149
 t already encode phonetic properties—
  []
 
-
+[5]
 Overfull \hbox (6.2827pt too wide) in paragraph at lines 161--162
 \TU/LinLibertine_R.otf(0)/m/n/10.95 version for over 100 languages, outputting 
 IPA transcriptions. PanPhon ([][]Mortensen
  []
 
-[5]
+
 Overfull \hbox (10.05165pt too wide) in paragraph at lines 184--201
  [][] 
  []
@@ -1260,13 +1260,13 @@ Overfull \hbox (49.24547pt too wide) in paragraph at lines 321--322
 mr/m/n/10.95 )$ 
  []
 
-
+[9]
 Overfull \hbox (3.62033pt too wide) in paragraph at lines 323--324
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 Attention Pooling\TU/LinLibertine_R.otf(0
 )/m/n/10.95 : Learned attention weights aggregate sequence to fixed-
  []
 
-[9] [10]
+[10]
 Overfull \hbox (2.40852pt too wide) in paragraph at lines 342--343
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Teacher pathway to generate embeddings that
  participate fully in the phonetically-
@@ -1322,13 +1322,13 @@ Overfull \hbox (3.18964pt too wide) in paragraph at lines 468--469
 k (436K), Hangul:ko (229K), Thai:th (210K),
  []
 
-
+[15]
 Overfull \hbox (7.7473pt too wide) in paragraph at lines 470--471
 \TU/LinLibertine_R.otf(0)/m/n/10.95 coverage of rare characters that may appear
  at inference time. After preprocessing—
  []
 
-[15]
+
 Overfull \hbox (10.88745pt too wide) in paragraph at lines 474--475
 \TU/LinLibertine_R.otf(0)/m/n/10.95 nese/Latin (923,079), Persian/Latin (197,09
 9), Japanese/Latin (111,945), Russian/Latin
@@ -1352,14 +1352,14 @@ Overfull \hbox (0.17838pt too wide) in paragraph at lines 534--535
 /m/n/10.95 Phase 1 training converged smoothly, with training loss decreas-
  []
 
-[19] [20]
+[19] [20] [21]
 Overfull \hbox (5.2312pt too wide) in paragraph at lines 618--619
 \TU/LinLibertine_R.otf(0)/b/n/10.95 parameters\TU/LinLibertine_R.otf(0)/m/n/10.
 95 ; the Student contains \TU/LinLibertine_R.otf(0)/b/n/10.95 1,761,217 paramet
 ers \TU/LinLibertine_R.otf(0)/m/n/10.95 (larger due to the 11,122-
  []
 
-[21]
+
 Overfull \hbox (1.40677pt too wide) in paragraph at lines 620--621
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 The embedding dimension of 128 was chosen
  to balance expressiveness against

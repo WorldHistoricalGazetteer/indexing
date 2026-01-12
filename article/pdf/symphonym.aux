@@ -40,37 +40,37 @@
 \citation{conneau2018}
 \citation{artetxe2018}
 \citation{translit2020}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Cross-Lingual Representation Learning}{5}{subsection.2.4}\protected@file@percent }
 \citation{mortensen2018}
 \citation{mortensen2016}
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.4}Cross-Lingual Representation Learning}{5}{subsection.2.4}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Phonetic Representations in NLP}{5}{subsection.2.5}\protected@file@percent }
 \citation{bromley1993,chopra2005}
 \citation{schroff2015}
 \citation{mueller2016,neculoiu2016}
 \citation{mueller2016}
 \citation{lin2017structured}
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.5}Phonetic Representations in NLP}{6}{subsection.2.5}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {2.6}Siamese Networks for Similarity Learning}{6}{subsection.2.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Manhattan Distance Limitations.}{6}{section*.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Cosine Similarity Advantages.}{6}{section*.3}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Summary of Technical Distinctions}{6}{subsection.2.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {2.7}Summary of Technical Distinctions}{7}{subsection.2.7}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {1}{\ignorespaces Comparison of neural matching approaches. Symphonym differs from prior work in its \emph  {learned} (vs.\ rule-based) phonetic representations and unified multi-script architecture enabling cross-script matching without transliteration.\relax }}{7}{table.caption.4}\protected@file@percent }
 \providecommand*\caption@xref[2]{\@setref\relax\@undefined{#1}}
 \newlabel{tab:approach-comparison}{{1}{7}{Comparison of neural matching approaches. Symphonym differs from prior work in its \emph {learned} (vs.\ rule-based) phonetic representations and unified multi-script architecture enabling cross-script matching without transliteration.\relax }{table.caption.4}{}}
 \newlabel{tab:approach-comparison@cref}{{[table][1][]1}{[1][6][]7}}
 \@writefile{toc}{\contentsline {section}{\numberline {3}Architecture}{7}{section.3}\protected@file@percent }
 \newlabel{sec:architecture}{{3}{7}{Architecture}{section.3}{}}
-\newlabel{sec:architecture@cref}{{[section][3][]3}{[1][6][]7}}
+\newlabel{sec:architecture@cref}{{[section][3][]3}{[1][7][]7}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.1}Design Principles}{7}{subsection.3.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Script Awareness Without Script Dependence.}{7}{section*.5}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{Phonetic Grounding.}{7}{section*.6}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Phonetic Grounding.}{8}{section*.6}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Inference Efficiency.}{8}{section*.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.2}Architecture Overview}{8}{subsection.3.2}\protected@file@percent }
 \@writefile{lof}{\contentsline {figure}{\numberline {1}{\ignorespaces Teacher-Student architecture. \textbf  {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf  {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf  {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }}{8}{figure.caption.8}\protected@file@percent }
 \newlabel{fig:architecture}{{1}{8}{Teacher-Student architecture. \textbf {Left}: The Teacher pathway converts toponyms to IPA via Epitran, extracts PanPhon articulatory features, and encodes to 128-d embeddings. Used only during training. \textbf {Right}: The Student pathway processes raw characters with script/language metadata. Deployed at inference time without phonetic resources. \textbf {Bottom}: Three training phases progressively transfer phonetic knowledge from Teacher to Student.\relax }{figure.caption.8}{}}
 \newlabel{fig:architecture@cref}{{[figure][1][]1}{[1][8][]8}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Script Detection and Character Vocabulary}{8}{subsection.3.3}\protected@file@percent }
 \citation{mortensen2018}
 \citation{mortensen2016}
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.3}Script Detection and Character Vocabulary}{9}{subsection.3.3}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.4}Teacher Network: Phonetic Feature Encoder}{9}{subsection.3.4}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.5}Generalisation Through Articulatory Features}{10}{subsection.3.5}\protected@file@percent }
 \newlabel{subsec:panphon-generalisation}{{3.5}{10}{Generalisation Through Articulatory Features}{subsection.3.5}{}}
@@ -81,7 +81,7 @@
 \@writefile{toc}{\contentsline {paragraph}{Phonological Universals as Inductive Bias.}{11}{section*.12}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Teacher Model for Untrained Scripts.}{11}{section*.13}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {3.6}Student Network: Universal Character Encoder}{11}{subsection.3.6}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Noise Augmentation}{11}{subsection.3.7}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {3.7}Noise Augmentation}{12}{subsection.3.7}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {4}Training Data}{12}{section.4}\protected@file@percent }
 \newlabel{sec:data}{{4}{12}{Training Data}{section.4}{}}
 \newlabel{sec:data@cref}{{[section][4][]4}{[1][12][]12}}
@@ -89,17 +89,17 @@
 \newlabel{subsec:selection_criteria}{{4.1}{12}{Data Selection and Curation Criteria}{subsection.4.1}{}}
 \newlabel{subsec:selection_criteria@cref}{{[subsection][1][4]4.1}{[1][12][]12}}
 \@writefile{toc}{\contentsline {paragraph}{1. Script-Stratified Sampling.}{12}{section*.14}\protected@file@percent }
-\@writefile{toc}{\contentsline {paragraph}{2. Namespace Filtering.}{12}{section*.15}\protected@file@percent }
 \citation{mortensen2018}
+\@writefile{toc}{\contentsline {paragraph}{2. Namespace Filtering.}{13}{section*.15}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{3. Global Vocabulary Construction.}{13}{section*.16}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{4. Orthographic Twin Retention.}{13}{section*.17}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{5. Cross-Script Prioritisation.}{13}{section*.18}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{6. Deduplication.}{13}{section*.19}\protected@file@percent }
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}IPA Transcription and Feature Extraction}{13}{subsection.4.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.2}IPA Transcription and Feature Extraction}{14}{subsection.4.2}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.3}Phonetic Clustering for Pair Generation}{14}{subsection.4.3}\protected@file@percent }
 \newlabel{subsec:clustering}{{4.3}{14}{Phonetic Clustering for Pair Generation}{subsection.4.3}{}}
 \newlabel{subsec:clustering@cref}{{[subsection][3][4]4.3}{[1][14][]14}}
-\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Dataset Statistics}{14}{subsection.4.4}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {4.4}Dataset Statistics}{15}{subsection.4.4}\protected@file@percent }
 \@writefile{lot}{\contentsline {table}{\numberline {2}{\ignorespaces Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful Epitran transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Scripts marked ``---'' lack Epitran support or show negligible coverage; their toponyms contribute only to Phase 2--3 character-level training.\relax }}{15}{table.caption.20}\protected@file@percent }
 \newlabel{tab:script-distribution}{{2}{15}{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful Epitran transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Scripts marked ``---'' lack Epitran support or show negligible coverage; their toponyms contribute only to Phase 2--3 character-level training.\relax }{table.caption.20}{}}
 \newlabel{tab:script-distribution@cref}{{[table][2][]2}{[1][15][]15}}
@@ -109,7 +109,7 @@
 \@writefile{toc}{\contentsline {paragraph}{Training Pair Generation.}{16}{section*.24}\protected@file@percent }
 \@writefile{toc}{\contentsline {subsection}{\numberline {4.5}Training Pipeline Infrastructure}{17}{subsection.4.5}\protected@file@percent }
 \newlabel{subsec:pipeline}{{4.5}{17}{Training Pipeline Infrastructure}{subsection.4.5}{}}
-\newlabel{subsec:pipeline@cref}{{[subsection][5][4]4.5}{[1][16][]17}}
+\newlabel{subsec:pipeline@cref}{{[subsection][5][4]4.5}{[1][17][]17}}
 \@writefile{toc}{\contentsline {paragraph}{DuckDB for Intermediate Storage.}{17}{section*.25}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Producer-Consumer Streaming.}{17}{section*.26}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Incremental Checkpointing.}{17}{section*.27}\protected@file@percent }
@@ -117,7 +117,7 @@
 \@writefile{toc}{\contentsline {paragraph}{Elasticsearch Throttling.}{17}{section*.29}\protected@file@percent }
 \@writefile{toc}{\contentsline {section}{\numberline {5}Training Methodology}{18}{section.5}\protected@file@percent }
 \newlabel{sec:training}{{5}{18}{Training Methodology}{section.5}{}}
-\newlabel{sec:training@cref}{{[section][5][]5}{[1][17][]18}}
+\newlabel{sec:training@cref}{{[section][5][]5}{[1][18][]18}}
 \@writefile{toc}{\contentsline {subsection}{\numberline {5.1}Phase 1: Teacher Training on Phonetic Features}{18}{subsection.5.1}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Script-Aware Negative Sampling.}{18}{section*.30}\protected@file@percent }
 \@writefile{toc}{\contentsline {paragraph}{Effective Training Set.}{18}{section*.31}\protected@file@percent }
