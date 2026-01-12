@@ -77,7 +77,7 @@ This method clusters toponyms within a place using **HDBSCAN density-based clust
 | Parameter | Value | Purpose |
 |-----------|-------|---------|
 | `min_cluster_size` | 2 | Minimum points to form a cluster |
-| `min_samples` | 1 | Allows small, tight clusters to form |
+| `min_samples` | 2 | Provides denoising; prevents weak links from merging distinct clusters |
 | `metric` | 'cosine' | Measures phonetic similarity in embedding space |
 | `allow_single_cluster` | True | Returns all points in one cluster if naturally similar |
 | `cluster_selection_epsilon` | 0.0 | Let algorithm decide cluster boundaries |
@@ -192,5 +192,26 @@ From these 3 clusters, the training data generator creates positive pairs:
    - n=1: single-element cluster
    - n=2: falls back to simple cosine threshold (HDBSCAN needs ≥3 points)
    - n≥3: full HDBSCAN clustering
+
+---
+
+## Stochastic Oversampling
+
+When bins are under-represented and need oversampling, the system implements **stochastic oversampling** rather than simple duplication:
+
+### Phase 1 (Random Negatives)
+- Each copy of an oversampled (anchor, positive) pair gets a **different negative**
+- Achieved by including `triplet_idx` in the RNG seed
+- Prevents the model from memorising identical triplets
+
+### Phase 3 (Hard Negatives)
+- Each copy queries ES KNN for the same candidates (same anchor embedding)
+- But selects **randomly** from valid candidates using `sample_idx`
+- Provides variety even when ES returns the same candidate list
+
+**Benefits:**
+- Same class balance as simple oversampling
+- Better generalisation (no identical triplets)
+- Preserves reproducibility (deterministic seeds)
 
 

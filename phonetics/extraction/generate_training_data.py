@@ -391,7 +391,7 @@ class ESKNNHelper:
         try:
             clusterer = hdbscan.HDBSCAN(
                 min_cluster_size=2,
-                min_samples=1,  # Allow small, tight clusters
+                min_samples=2,  # Provides better denoising than min_samples=1
                 metric='cosine',
                 cluster_selection_epsilon=0.0,
                 allow_single_cluster=True  # Critical: allows all points in one cluster
@@ -508,6 +508,7 @@ class ESKNNHelper:
         anchors: List[Dict],
         adjacency: Set[Tuple[str, str]],
         k: int = 20,
+        stochastic: bool = True,
     ) -> List[Optional[str]]:
         """
         Find hard negatives for multiple anchors using ES _msearch.
@@ -515,9 +516,10 @@ class ESKNNHelper:
         This reduces network round-trips by 50-100x compared to individual queries.
 
         Args:
-            anchors: List of dicts with keys: 'anchor_id', 'embedding', 'script'
+            anchors: List of dicts with keys: 'anchor_id', 'embedding', 'script', optionally 'sample_idx'
             adjacency: Set of adjacent (anchor, candidate) pairs to exclude
             k: Number of candidates to retrieve per anchor
+            stochastic: If True, randomly select from valid candidates (for oversampling diversity)
 
         Returns:
             List of hard negative toponym_ids (or None if not found), same order as anchors
@@ -559,11 +561,24 @@ class ESKNNHelper:
             hard_neg = None
 
             if 'hits' in response and 'hits' in response['hits']:
+                # Collect all valid candidates (not self, not adjacent)
+                valid_candidates = []
                 for hit in response['hits']['hits']:
                     candidate_id = hit['_id']
                     if candidate_id != anchor_id and (anchor_id, candidate_id) not in adjacency:
-                        hard_neg = candidate_id
-                        break
+                        valid_candidates.append(candidate_id)
+
+                if valid_candidates:
+                    if stochastic and len(valid_candidates) > 1:
+                        # Use sample_idx if provided (for oversampled pairs) to get different negatives
+                        sample_idx = anchors[i].get('sample_idx', 0)
+                        # Deterministic but varied selection based on anchor + sample index
+                        seed = RANDOM_SEED + (zlib.crc32(anchor_id.encode('utf-8')) & 0xffffffff) + sample_idx
+                        rng = random.Random(seed)
+                        hard_neg = rng.choice(valid_candidates)
+                    else:
+                        # Take the first (most similar) candidate
+                        hard_neg = valid_candidates[0]
 
             results.append(hard_neg)
 
@@ -951,10 +966,12 @@ class TrainingDataGenerator:
         logger.info(f"Balanced pairs: {len(balanced_pairs):,}")
 
         # Generate triplets from balanced pairs (using pre-loaded anchor info)
-        logger.info("Generating triplets...")
+        # STOCHASTIC OVERSAMPLING: Each copy of an oversampled pair gets a different
+        # negative, preventing the model from memorising identical triplets.
+        logger.info("Generating triplets (with stochastic negative sampling)...")
         triplets = []
 
-        for pair in balanced_pairs:
+        for triplet_idx, pair in enumerate(balanced_pairs):
             anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
 
             # Use pre-loaded anchor info (no DB query!)
@@ -964,8 +981,10 @@ class TrainingDataGenerator:
             script, lang = anchor_info_map[anchor]
 
             # Use seeded RNG for reproducible negative sampling
-            # Seed is based on anchor ID so same anchor always gets same negative
-            rng = random.Random(RANDOM_SEED + (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff))
+            # Seed includes triplet_idx so oversampled pairs get DIFFERENT negatives
+            # This implements stochastic oversampling: same (anchor, positive) but varying negatives
+            seed = RANDOM_SEED + (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff) + triplet_idx
+            rng = random.Random(seed)
 
             # Find a negative that's not adjacent
             # CRITICAL: Use script-aware sampling to avoid teaching easy shortcuts
@@ -1429,6 +1448,7 @@ class TrainingDataGenerator:
         logger.info(f"Fetched {len(anchor_embeddings):,} embeddings total")
 
         # Process in batches using _msearch for hard negative mining
+        # STOCHASTIC OVERSAMPLING: Track sample_idx so oversampled pairs get different hard negatives
         triplets = []
         failed_lookups = 0
 
@@ -1436,7 +1456,7 @@ class TrainingDataGenerator:
         batches = []
         current_batch = []
 
-        for anchor, positive, bin_key in all_pairs_to_process:
+        for sample_idx, (anchor, positive, bin_key) in enumerate(all_pairs_to_process):
             if anchor not in anchor_embeddings:
                 failed_lookups += 1
                 continue
@@ -1448,6 +1468,7 @@ class TrainingDataGenerator:
                 'embedding': anchor_embeddings[anchor],
                 'script': script,
                 'bin': bin_key,
+                'sample_idx': sample_idx,  # Enables stochastic hard negative selection
             })
 
             if len(current_batch) >= MSEARCH_BATCH_SIZE:
