@@ -403,25 +403,28 @@ Duplicate pairs arise from two sources: (a) the same place appearing in multiple
 
 The Teacher network requires IPA transcriptions. I use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages covering the majority of GeoNames entries. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction. Names in languages without Epitran support are excluded from Teacher training but can still be processed by the Student, which learns to generalise from related scripts.
 
-\subsection{Phonetic Similarity Filtering}
+\subsection{Phonetic Clustering for Pair Generation}
+\label{subsec:clustering}
 
 A critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``\textcn{日本}'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
 
-I apply phonetic similarity filtering using a simple heuristic: after romanisation via AnyAscii, I compute normalised Levenshtein similarity between name pairs. Pairs below a threshold of 0.35 are excluded from positive training examples. This successfully filters:
+Rather than applying arbitrary similarity thresholds, I use density-based clustering on PanPhon articulatory embeddings to identify phonetically coherent groups within each place's toponyms. For each place record with multiple name variants, I:
 
+\begin{enumerate}
+    \item Extract 192-dimensional PanPhon embeddings for all toponyms with valid IPA transcriptions
+    \item Apply HDBSCAN clustering with \texttt{min\_cluster\_size=2} and \texttt{min\_samples=2} to identify natural phonetic groupings
+    \item Generate positive pairs only from toponyms within the same cluster
+\end{enumerate}
+
+This approach correctly separates phonetically distinct name families. For example, a place record for Cologne might contain:
 \begin{itemize}
-    \item ``Germany'' / ``Deutschland'' (similarity 0.18)
-    \item ``Japan'' / ``\textcn{日本}'' $\rightarrow$ ``Ri Ben'' (similarity 0.22)
-    \item ``Finland'' / ``Suomi'' (similarity 0.15)
+    \item \textbf{Cluster 1 (Germanic):} Köln (de), Keulen (nl)
+    \item \textbf{Cluster 2 (Romance/English):} Cologne (en/fr), Colonia (es/it), Colonia (la)
 \end{itemize}
 
-While retaining genuine phonetic cognates:
+Pairs are generated within clusters (Köln--Keulen, Cologne--Colonia) but not across them (Köln--Cologne), preventing the model from learning that phonetically unrelated exonyms should cluster together.
 
-\begin{itemize}
-    \item ``London'' / ``Londres'' (similarity 0.57)
-    \item ``München'' / ``Munich'' (similarity 0.57)
-    \item ``Москва'' $\rightarrow$ ``Moskva'' / ``Moscow'' (similarity 0.71)
-\end{itemize}
+For places with only two toponyms---where HDBSCAN cannot determine density structure---I fall back to a cosine similarity threshold of 0.5 on the PanPhon embeddings. This threshold balances capturing significant phonetic shifts in historical exonyms (e.g., Munich/München at 0.79, Beijing/Peking at 0.93) while excluding unrelated administrative labels (e.g., Germany/Deutschland at 0.18).
 
 \subsection{Dataset Statistics}
 
@@ -434,33 +437,35 @@ For training, I restrict to the three high-quality namespace authorities: GeoNam
 \small
 \begin{tabular}{lrrrl}
 \toprule
-\textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{Languages} & \textbf{Top Languages} \\
+\textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{IPA Coverage} & \textbf{Top Languages (IPA)} \\
 \midrule
-LATIN & 50,068,496 & 86.9\% & 874 & en, ceb, fr, nl, de \\
-CYRILLIC & 2,903,698 & 5.0\% & 195 & ru, uk, ce, tt, bg \\
-CJK & 1,857,832 & 3.2\% & 86 & zh, ja, wuu, gan, yue \\
-ARABIC & 1,751,075 & 3.0\% & 129 & fa, ar, arz, azb, ur \\
-KATAKANA & 310,691 & 0.5\% & 32 & ja \\
-HANGUL & 270,407 & 0.5\% & 36 & ko \\
-OTHER & 243,259 & 0.4\% & 401 & lauc, my, en, pa, si \\
-THAI & 211,956 & 0.4\% & 32 & th \\
-GREEK & 172,879 & 0.3\% & 72 & el, grc, pnt \\
-ARMENIAN & 148,266 & 0.3\% & 39 & hy, hyw \\
-HEBREW & 133,232 & 0.2\% & 49 & he, yi \\
-DEVANAGARI & 131,785 & 0.2\% & 58 & hi, mr, ne, sa \\
-BENGALI & 97,931 & 0.2\% & 28 & bn, as \\
-GEORGIAN & 93,334 & 0.2\% & 33 & ka \\
-MALAYALAM & 53,570 & 0.1\% & 8 & ml \\
-TAMIL & 47,748 & 0.1\% & 14 & ta \\
-HIRAGANA & 47,695 & 0.1\% & 18 & ja \\
-TELUGU & 47,646 & 0.1\% & 14 & te \\
-KANNADA & 21,372 & 0.04\% & 14 & kn \\
-GUJARATI & 20,340 & 0.04\% & 6 & gu \\
+LATIN & 55,617,677 & 83.1\% & 41.9\% & en, fr, nl, de, sv \\
+CYRILLIC & 3,614,762 & 5.4\% & 40.8\% & ru, uk, sr \\
+CJK & 2,973,525 & 4.4\% & 43.8\% & zh \\
+ARABIC & 2,098,089 & 3.1\% & 52.4\% & fa, ar, ur \\
+HANGUL & 393,996 & 0.6\% & 58.0\% & ko \\
+OTHER & 342,642 & 0.5\% & --- & --- \\
+KATAKANA & 340,555 & 0.5\% & --- & ja \\
+THAI & 251,458 & 0.4\% & 83.6\% & th \\
+GREEK & 217,997 & 0.3\% & --- & el \\
+DEVANAGARI & 166,957 & 0.2\% & 51.0\% & hi, mr \\
+ARMENIAN & 153,467 & 0.2\% & --- & hy \\
+HIRAGANA & 151,980 & 0.2\% & --- & ja \\
+HEBREW & 151,960 & 0.2\% & --- & he \\
+BENGALI & 106,896 & 0.2\% & 72.9\% & bn \\
+GEORGIAN & 105,902 & 0.2\% & 81.2\% & ka \\
+MALAYALAM & 68,176 & 0.1\% & 78.5\% & ml \\
+TAMIL & 52,486 & 0.1\% & 90.9\% & ta \\
+TELUGU & 51,440 & 0.1\% & 92.6\% & te \\
+KANNADA & 43,155 & 0.1\% & --- & kn \\
+GUJARATI & 21,428 & 0.03\% & --- & gu \\
 \bottomrule
 \end{tabular}
-\caption{Script distribution in training data (gn/wd/tgn namespaces). The ``Languages'' column shows the number of distinct ISO 639 language codes observed for each script.}
+\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful Epitran transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Scripts marked ``---'' lack Epitran support or show negligible coverage; their toponyms contribute only to Phase 2--3 character-level training.}
 \label{tab:script-distribution}
 \end{table}
+
+\paragraph{IPA Coverage by Language.} The 29.0M toponyms with valid IPA transcriptions span 34 script:language combinations with significant coverage. The top contributors are: Latin:en (8.0M), Latin:fr (2.3M), Latin:nl (2.3M), Latin:de (2.1M), Latin:sv (1.7M), Latin:es (1.5M), CJK:zh (1.3M), Latin:id (0.9M), and Cyrillic:ru (0.8M). Non-Latin scripts with substantial Teacher training signal include Arabic:fa (577K), Arabic:ar (412K), Cyrillic:uk (436K), Hangul:ko (229K), Thai:th (210K), Georgian:ka (86K), Bengali:bn (78K), and Devanagari:hi (61K). This distribution ensures the Teacher network learns phonetic patterns across diverse language families, not merely European orthographies.
 
 The character vocabulary is constructed by scanning all 66.9M unique toponyms (not just training data), observing 8,448 distinct characters and ensuring coverage of rare characters that may appear at inference time. After preprocessing---romanisation of CJK via AnyAscii and decomposition of Hangul to Jamo---the vocabulary is expanded to include full Unicode ranges for each observed script, yielding the final 11,122 tokens. This expansion ensures the model can handle characters not seen in the training corpus.
 
@@ -468,16 +473,32 @@ The character vocabulary is constructed by scanning all 66.9M unique toponyms (n
 
 \paragraph{Filtered Lang-Script Mismatches.} The top filtered combinations were: Chinese/Latin (923,079), Persian/Latin (197,099), Japanese/Latin (111,945), Russian/Latin (100,805), and Kazakh/Latin (77,768). These represent pre-romanised forms that would otherwise introduce noise into the training signal.
 
-\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. I generate pairs from all combinations of co-located toponyms that pass phonetic similarity filtering (normalised Levenshtein $\geq 0.35$ for cross-script pairs, $\geq 0.60$ for same-script pairs after romanisation). Same-script cross-language pairs (e.g., London@en vs Londres@fr) are sampled at 20\% to prevent domination by orthographic twins.
+\paragraph{Training Pair Generation.} Positive pairs are generated from co-located toponyms within each place record using the HDBSCAN clustering approach described in Section~\ref{subsec:clustering}. A place entry for ``Paris'' in Wikidata, for instance, contains variants in dozens of languages: Paris (en/fr), París (es), Париж (ru), \textar{باريس} (ar), \textcn{巴黎} (zh), \textcn{パリ} (ja), etc. Rather than generating pairs from all combinations, I cluster these by PanPhon cosine similarity and generate pairs only within phonetically coherent clusters. This prevents false cognates (names that share a place but not phonetics) from corrupting the training signal.
 
-From an estimated 428,956,662 candidate pairs across 66,924,548 toponyms, my pipeline scanned 174,636,677 before script-pair quotas (100K per combination) were exhausted. Of these, 130,329,534 (74.6\%) passed similarity thresholds. After quota-based stratified sampling and deduplication (802,283 duplicates removed), the final training set contains \textbf{5,088,419 unique pairs}. While smaller than the raw count suggests, this curated set ensures balanced representation across script pairs and prevents any single script combination from dominating training. Each pair represents a genuine phonetic correspondence verified through co-location in authoritative gazetteer sources.
+To address script-language imbalance, pairs are binned by script:language combination (e.g., LATIN:en, CYRILLIC:ru, ARABIC:ar) rather than script pair alone. Each bin is capped at a maximum size, with under-represented bins oversampled up to 5$\times$ their original size. Critically, oversampling is \emph{stochastic}: each copy uses a different negative sample, preventing memorisation of identical triplets.
+
+\textit{[v4 statistics pending: total pairs generated, pairs per phase, bin distribution]}
 
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
-    \item \textbf{Phase 1 triplets:} 5,088,419 triplets with random negatives sampled from the full toponym pool
-    \item \textbf{Phase 3 triplets:} 5,088,419 triplets with hard negatives---orthographically similar names (same 2-character prefix, same script) from different places
+    \item \textbf{Phase 1 triplets:} Triplets with script-aware random negatives (80\% same-script, 20\% global) sampled from the full toponym pool
+    \item \textbf{Phase 3 triplets:} Triplets with hard negatives---phonetically similar names (high PanPhon cosine similarity, same script) from different places, with no shared attestations
 \end{itemize}
-The hard negative mining for Phase 3 uses a prefix index of 11,182,368 entries spanning 11,617 prefix/script combinations.
+
+\subsection{Training Pipeline Infrastructure}
+\label{subsec:pipeline}
+
+Processing 67 million toponyms with phonetic feature extraction presents significant engineering challenges. I developed a scalable pipeline with several key design decisions.
+
+\paragraph{DuckDB for Intermediate Storage.} Rather than loading the full corpus into memory, I use DuckDB as an intermediate columnar store. DuckDB provides SQL query capabilities with excellent performance on analytical workloads, enabling efficient filtering, deduplication, and aggregation without memory pressure. The 66.9M toponym corpus requires approximately 27GB in DuckDB format. Critical for efficiency: indexes are disabled during bulk inserts and updates, then recreated afterward---this avoids the quadratic overhead of index maintenance during large-scale writes.
+
+\paragraph{Producer-Consumer Streaming.} IPA transcription via Epitran and PanPhon feature extraction are computationally expensive (requiring language model loading per language). I employ a producer-consumer architecture with 46 parallel workers: the main thread streams toponyms from DuckDB in batches of 50,000; worker processes handle IPA/PanPhon computation; results are written incrementally to JSONL buffer files on fast local scratch storage. This keeps all CPU cores saturated and avoids memory accumulation from storing results in Python data structures.
+
+\paragraph{Incremental Checkpointing.} Long-running jobs on shared HPC clusters risk preemption or timeout. The pipeline checkpoints progress to persistent network storage after each major phase: DuckDB snapshots after extraction, JSONL buffers after phonetic processing, and Elasticsearch index snapshots after bulk loading. Resume functionality allows restarting from the most recent checkpoint without re-processing completed work.
+
+\paragraph{Fast Local Scratch.} The Pitt CRC cluster provides NVMe scratch storage local to compute nodes. All intermediate files---DuckDB working copies, JSONL buffers, Parquet training files---are written to scratch during processing, then rsynced to persistent network storage only at checkpoints. This eliminates network I/O as a bottleneck during computation.
+
+\paragraph{Elasticsearch Throttling.} Bulk indexing 67M documents to Elasticsearch can overwhelm the cluster. The pipeline implements retry-with-backoff for ES operations: if bulk requests fail or timeout, the batch size is reduced and retried after an exponential delay. Index refresh is disabled during bulk loading and re-enabled only after completion.
 
 \section{Training Methodology}
 \label{sec:training}
@@ -745,6 +766,7 @@ The evaluation results support Symphonym's central claim: that a character-level
 \paragraph{Historical Orthographic Variation.} Before the standardisation of spelling in many languages (in English, largely during the 18th century), place names were typically written as they sounded to individual scribes, yielding considerable orthographic variation in historical sources. The same city might appear as ``Leycester'', ``Leycestre'', ``Lecestre'', and ``Leicester'' across different medieval documents. Because Symphonym embeds based on phonetic similarity rather than exact orthography, it naturally groups such variants together: all sound-alike spellings of a place will cluster near the modern canonical form. This enables a practical application beyond cross-script matching: given a historical spelling variant, Symphonym can suggest the most likely modern canonical form by retrieving the nearest neighbours in the embedding space. This is particularly valuable for transcribed historical documents, parish registers, and archival catalogues where inconsistent historical spellings must be linked to standardised gazetteer entries.
 
 \subsection{Limitations}
+\label{subsec:limitations}
 
 Several limitations warrant acknowledgment:
 
@@ -752,7 +774,7 @@ Several limitations warrant acknowledgment:
 
 \paragraph{Tonal Languages.} The current architecture does not explicitly model tone, which is phonemically contrastive in Chinese, Vietnamese, Thai, and other languages. The PanPhon features (Section~\ref{subsec:panphon-generalisation}) encode segmental articulatory properties but not suprasegmental features. In principle, tonal minimal pairs in place names would not be distinguished. However, tonal minimal pairs are rare among toponyms in practice: Chinese place names like Beijing (\textcn{北京}, b\v{e}ij\={\i}ng) and Shanghai (\textcn{上海}, sh\`{a}ngh\v{a}i) have distinct segmental content that Symphonym captures effectively (0.97--0.99 similarity with romanised forms). The limitation would matter most for hypothetical pairs differing only in tone, which are uncommon in geographic naming.
 
-\paragraph{IPA Coverage.} The Teacher's phonetic grounding depends on Epitran's G2P coverage. Of 57.6M training toponyms, only 29M (50.4\%) yielded valid IPA transcriptions; the remainder contribute only through Phase 2 and 3 character-level training. This gap correlates with script: Latin-script toponyms achieve near-complete coverage (Epitran supports most European languages), while scripts like Thai and Georgian have limited G2P support. The strong performance on Georgian (Tbilisi/\textka{თბილისი} = 0.976) despite limited Teacher coverage suggests the Student learns effective representations through character-level patterns, but scripts with both limited training data \emph{and} limited Epitran support may underperform.
+\paragraph{IPA Coverage.} The Teacher's phonetic grounding depends on Epitran's G2P coverage. Of 57.6M training toponyms, 29.0M (50.4\%) yielded valid IPA transcriptions and PanPhon embeddings; the remainder contribute only through Phase 2 and 3 character-level training. Coverage varies significantly by script (see Table~\ref{tab:script-distribution}): South Asian scripts (Tamil 90.9\%, Telugu 92.6\%, Bengali 72.9\%) achieve high coverage through Epitran's Indic language support, while scripts like Greek, Hebrew, and Armenian lack G2P models entirely. The strong performance on Georgian (Tbilisi/\textka{თბილისი} = 0.972) despite Georgian representing only 0.2\% of training data suggests the Student learns effective representations through character-level patterns and cross-script transfer.
 
 \paragraph{Confusable Pairs.} The model correctly assigns high similarity to phonetically similar strings regardless of semantic relationship. Pairs like Austria/Australia (0.883) and China/Ghana (0.932) receive high scores because they \emph{are} phonetically similar. Disambiguation requires geographic or contextual evidence beyond phonetic similarity.
 
@@ -776,46 +798,33 @@ Symphonym is to be deployed in the World Historical Gazetteer, enabling fuzzy ph
 \section{Future Work}
 \label{sec:future}
 
-While Symphonym achieves strong cross-script performance, analysis of the training pipeline reveals several deficiencies that a revised data preparation strategy could address.
+While Symphonym achieves strong cross-script performance, several directions remain for future investigation.
 
-\subsection{Limitations of Current Training Data}
+\subsection{Remaining Technical Challenges}
 
-\paragraph{Late Feature Filtering.} The current pipeline generates positive pairs based on co-location and string similarity, then generates triplets, and only filters for valid phonetic features (IPA/PanPhon) at training time. This late filtering causes substantial dropout: of 5.1M Phase 1 triplets, only 467K (9.2\%) survive because all three elements (anchor, positive, negative) must have valid features. The multiplicative effect of requiring three valid toponyms per triplet, combined with approximately 50\% Epitran coverage, explains this 90\% loss.
+\paragraph{Tonal Language Support.} The current architecture does not model tone, which is phonemically contrastive in Chinese, Vietnamese, Thai, and other languages. While tonal minimal pairs are rare among toponyms in practice (see Section~\ref{subsec:limitations}), explicit tone modelling could improve performance on languages where tone carries semantic weight.
 
-\paragraph{Script-Language Imbalance.} The quota system balances pairs by \emph{script pair} (e.g., Latin-Cyrillic), but the post-filtering distribution becomes skewed because Epitran coverage varies by language. Latin-German pairs may retain 80\% of samples while Latin-Thai pairs retain only 10\%, undermining the intended balance.
+\paragraph{Suprasegmental Features.} PanPhon encodes articulatory properties of individual segments but not prosodic features like stress patterns, syllable structure, or intonation. Toponyms that differ primarily in stress placement (e.g., certain Greek names with movable accent) may not be adequately distinguished.
 
-\paragraph{Crude Similarity Thresholding.} Positive pairs are selected using a fixed phonetic similarity threshold (0.35 on normalised Levenshtein distance). This fails for places with toponyms falling into more than two phonetic groups---a common case for major cities with names in dozens of languages.
+\paragraph{Historical Orthography.} The model is trained on modern standardised spellings. Performance on pre-standardisation documents---where spellings reflect local pronunciation and writer idiosyncrasy---remains to be systematically evaluated. The phonetic grounding should help (sound-alike variants cluster together), but the character vocabulary may lack rare historical graphemes.
 
-\paragraph{Orthographic Hard Negatives.} Phase 3 hard negatives are selected by orthographic prefix (first two characters) rather than phonetic similarity. ``Munich'' and ``Murmansk'' share the prefix ``Mu'' but are phonetically distinct, making them weak hard negatives.
+\paragraph{Expanded Script Coverage.} The current system covers 20 script categories, but scripts like Ethiopic, Myanmar, Tibetan, and historical scripts (Linear B, Cuneiform) are absent or under-represented. Expanding coverage requires both training data (multi-script gazetteer entries) and G2P resources (Epitran support for additional languages).
 
-\subsection{Proposed Improvements}
+\subsection{Architectural Extensions}
 
-A revised pipeline would address these issues through feature-aware data generation:
+\paragraph{Multi-Task Learning.} The current pipeline treats toponym matching as a standalone task. Joint training with related tasks---language identification, script detection, transliteration---could provide additional supervisory signal and improve representations.
 
-\paragraph{Phonetic Clustering for Pair Generation.} Rather than thresholding string similarity, cluster each place's toponyms by PanPhon cosine similarity. This groups phonetically equivalent names regardless of script, naturally handling places with multiple phonetic variants. All within-cluster pairs become positive training examples.
+\paragraph{Contextual Embeddings.} Symphonym embeds individual toponyms without context. For ambiguous names (``Paris'' in France vs.\ Texas), incorporating surrounding text or geographic constraints could improve disambiguation. This would require architectural changes to accept longer input sequences.
 
-\paragraph{Early Feature Filtering.} Generate pairs only from toponyms with valid PanPhon embeddings. This eliminates training-time dropout and ensures that quota balancing reflects the actual training distribution.
+\paragraph{Incremental Model Updates.} As the WHG index grows and new authorities are ingested, the model should be updatable without full retraining. Techniques like experience replay or elastic weight consolidation could enable continual learning while preserving performance on established script pairs.
 
-\paragraph{Script-Language Stratification.} Balance training data by \emph{script-language pair} rather than script pair alone. This finer granularity ensures adequate representation of under-resourced languages within well-resourced scripts (e.g., Latin-Swahili vs.\ Latin-English).
+\subsection{Deployment and Integration}
 
-\paragraph{Phonetic Hard Negatives.} Select Phase 3 negatives using PanPhon similarity: find toponyms in the same script-language pair with high phonetic similarity but no shared attestations. This creates genuinely challenging negatives that teach fine-grained discrimination.
+\paragraph{Hybrid Retrieval Pipeline.} The current evaluation treats Symphonym in isolation. Production deployment would benefit from a hybrid approach: phonetic embeddings for cross-script candidate retrieval, traditional string metrics for same-script refinement, and geographic filtering for final disambiguation. Systematic evaluation of such hybrid pipelines remains future work.
 
-\paragraph{Unified Bin-Balancing Algorithm.} Apply consistent sampling across all phases: cap over-represented script-language bins, oversample under-represented bins (up to 3--5$\times$), and exclude bins below a minimum threshold (e.g., 1,000 samples) where oversampling would cause severe repetition.
+\paragraph{User Studies.} The ultimate measure of success is whether Symphonym helps researchers link historical sources. User studies with digital humanities practitioners would provide qualitative feedback on false positive/negative rates in realistic workflows.
 
-\paragraph{Pre-computed Teacher Embeddings.} Generate all training data---except Teacher embeddings for Phase 2---before training begins. This eliminates GPU idle time during data preparation and enables efficient batch processing.
-
-\subsection{Expected Impact}
-
-These improvements should yield several benefits:
-
-\begin{itemize}
-    \item \textbf{Increased effective training data}: Eliminating the 90\% triplet dropout would increase Phase 1 training from 467K to approximately 4--5M triplets.
-    \item \textbf{Balanced script-language coverage}: Stratified sampling should improve performance on under-represented language pairs currently disadvantaged by post-hoc filtering.
-    \item \textbf{Improved discrimination}: Phonetically-grounded hard negatives should sharpen the model's ability to distinguish similar-sounding but distinct toponyms.
-    \item \textbf{Principled pair generation}: Clustering by phonetic similarity provides a linguistically motivated alternative to arbitrary similarity thresholds.
-\end{itemize}
-
-Evaluation of a model trained on the revised pipeline will quantify these expected gains.
+\paragraph{Benchmark Expansion.} The MEHDIE benchmark provides valuable Hebrew-Arabic evaluation data. Additional benchmarks spanning other script pairs (Latin-Chinese, Cyrillic-Georgian, Devanagari-Arabic) would enable more comprehensive evaluation of cross-script generalisation.
 
 
 \section*{Data Availability}
