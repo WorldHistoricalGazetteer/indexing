@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  11 JAN 2026 23:39
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  12 JAN 2026 09:53
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1334,155 +1334,168 @@ Overfull \hbox (1.40677pt too wide) in paragraph at lines 599--600
  to balance expressiveness against
  []
 
+
+Overfull \hbox (12.92328pt too wide) in paragraph at lines 601--602
+\TU/LinLibertine_R.otf(0)/m/n/10.95 tity are clustered using HDBSCAN density-ba
+sed clustering on their 192-dimensional
+ []
+
+
+Overfull \hbox (5.82767pt too wide) in paragraph at lines 601--602
+\TU/LinLibertine_R.otf(0)/m/n/10.95 trary similarity cutoffs, HDBSCAN automatic
+ally identifies natural phonetic group-
+ []
+
+[20]
 File: figures/training_curves.pdf Graphic file (type pdf)
 <use figures/training_curves.pdf>
-[20]
-Overfull \hbox (31.47713pt too wide) in paragraph at lines 622--623
+
+Overfull \hbox (31.47713pt too wide) in paragraph at lines 624--625
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Phase 1 (Teacher).[] \TU/LinLibertine_R.
 otf(0)/m/n/10.95 The Teacher encoder trained for 50 epochs on 467,546 phonetica
 lly-
  []
 
-
-Overfull \hbox (43.58058pt too wide) in paragraph at lines 634--646
+[21]
+Overfull \hbox (43.58058pt too wide) in paragraph at lines 636--648
  [][] 
  []
 
-[21]
-Overfull \hbox (38.31357pt too wide) in paragraph at lines 665--666
+[22]
+Overfull \hbox (38.31357pt too wide) in paragraph at lines 667--668
 \TU/LinLibertine_R.otf(0)/m/n/10.95 pairs involving scripts with complex orthog
 raphy-phonology relationships: Latin$\OMS/cmsy/m/n/10.95 $$\TU/LinLibertine_R.o
 tf(0)/m/n/10.95 Arabic
  []
 
-[22]
-Overfull \hbox (4.21724pt too wide) in paragraph at lines 686--687
+
+Overfull \hbox (4.21724pt too wide) in paragraph at lines 688--689
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 87.5% Recall@1—the cor
 rect cross-script match is ranked
  []
 
 [23]
-Overfull \hbox (7.27913pt too wide) in paragraph at lines 725--726
+Overfull \hbox (7.27913pt too wide) in paragraph at lines 727--728
 \TU/LinLibertine_R.otf(0)/m/n/10.95 MEHDIE Hebrew-Arabic benchmark. The two dia
 gnostic failures (Moscow/Москва
  []
 
 
-Overfull \hbox (0.69945pt too wide) in paragraph at lines 725--726
+Overfull \hbox (0.69945pt too wide) in paragraph at lines 727--728
 \TU/LinLibertine_R.otf(0)/m/n/10.95 language-specific phonetic mappings from IP
 A features, then transfers this knowl-
  []
 
-
-Overfull \hbox (0.35722pt too wide) in paragraph at lines 727--728
+[24]
+Overfull \hbox (0.35722pt too wide) in paragraph at lines 729--730
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Retrieval vs. Classification.[] \TU/LinL
 ibertine_R.otf(0)/m/n/10.95 Symphonym excels at \TU/LinLibertine_R.otf(0)/m/it/
 10.95 ranking \TU/LinLibertine_R.otf(0)/m/n/10.95 candidates by pho-
  []
 
-[24]
-Overfull \hbox (1.81725pt too wide) in paragraph at lines 729--730
+
+Overfull \hbox (1.81725pt too wide) in paragraph at lines 731--732
 \TU/LinLibertine_R.otf(0)/m/n/10.95 For same-script matching, traditional strin
 g similarity methods (Levenshtein, Jaro-
  []
 
 
-Overfull \hbox (1.51425pt too wide) in paragraph at lines 735--736
+Overfull \hbox (1.51425pt too wide) in paragraph at lines 737--738
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Scalability and Deployment.[] \TU/LinLib
 ertine_R.otf(0)/m/n/10.95 Symphonym embeddings integrate directly with
  []
 
 
-Overfull \hbox (2.27348pt too wide) in paragraph at lines 735--736
+Overfull \hbox (2.27348pt too wide) in paragraph at lines 737--738
 \TU/LinLibertine_R.otf(0)/m/n/10.95 mal: encoding a toponym requires a single f
 orward pass through a 1.7M-parameter
  []
 
-
-Overfull \hbox (10.7123pt too wide) in paragraph at lines 737--738
+[25]
+Overfull \hbox (10.7123pt too wide) in paragraph at lines 739--740
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 No Runtime Phonetics.[] \TU/LinLibertine
 _R.otf(0)/m/n/10.95 The Student encoder requires only raw character input—
  []
 
-[25]
-Overfull \hbox (6.2544pt too wide) in paragraph at lines 747--748
+
+Overfull \hbox (6.2544pt too wide) in paragraph at lines 749--750
 \TU/LinLibertine_R.otf(0)/m/n/10.95 places with official names, potentially und
 er-representing historical variants. Wiki-
  []
 
 
-Overfull \hbox (7.59883pt too wide) in paragraph at lines 749--750
+Overfull \hbox (7.59883pt too wide) in paragraph at lines 751--752
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Tonal Languages.[] \TU/LinLibertine_R.ot
 f(0)/m/n/10.95 The current architecture does not explicitly model tone, which
  []
 
 [26]
-Overfull \hbox (2.60202pt too wide) in paragraph at lines 763--764
+Overfull \hbox (2.60202pt too wide) in paragraph at lines 765--766
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 93% accuracy \TU/LinLibertine_R.otf(0)/m/
 n/10.95 on cross-script diagnostic pairs (63/68), spanning Latin, Cyril-
  []
 
 
-Overfull \hbox (29.71603pt too wide) in paragraph at lines 764--765
+Overfull \hbox (29.71603pt too wide) in paragraph at lines 766--767
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 87.5% Recall@1 \TU/LinLibertine_R.otf(0)/
 m/n/10.95 and \TU/LinLibertine_R.otf(0)/b/n/10.95 MRR of 0.923 \TU/LinLibertine
 _R.otf(0)/m/n/10.95 on the MEHDIE Hebrew-Arabic benchmark—
  []
 
 
-Overfull \hbox (4.45253pt too wide) in paragraph at lines 764--765
+Overfull \hbox (4.45253pt too wide) in paragraph at lines 766--767
 \TU/LinLibertine_R.otf(0)/m/n/10.95 outperforming Levenshtein (81.5% R@1) and J
 aro-Winkler (78.5% R@1) base-
  []
 
-
-Overfull \hbox (2.1567pt too wide) in paragraph at lines 775--776
+[27]
+Overfull \hbox (2.1567pt too wide) in paragraph at lines 777--778
 \TU/LinLibertine_R.otf(0)/m/n/10.95 While Symphonym achieves strong cross-scrip
 t performance, analysis of the train-
  []
 
-[27]
-Overfull \hbox (3.71767pt too wide) in paragraph at lines 791--792
+[28]
+Overfull \hbox (3.71767pt too wide) in paragraph at lines 793--794
 \TU/LinLibertine_R.otf(0)/m/n/10.95 similarity, cluster each place’s toponyms b
 y PanPhon cosine similarity. This groups
  []
 
-[28]
-Overfull \hbox (11.26707pt too wide) in paragraph at lines 799--800
+
+Overfull \hbox (11.26707pt too wide) in paragraph at lines 801--802
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Unified Bin-Balancing Algorithm.[] \TU/L
 inLibertine_R.otf(0)/m/n/10.95 Apply consistent sampling across all phases:
  []
 
 
-Overfull \hbox (13.25266pt too wide) in paragraph at lines 801--802
+Overfull \hbox (13.25266pt too wide) in paragraph at lines 803--804
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Pre-computed Teacher Embeddings.[] \TU/L
 inLibertine_R.otf(0)/m/n/10.95 Generate all training data—except Teacher
  []
 
-
-Overfull \hbox (13.48991pt too wide) in paragraph at lines 819--820
+[29]
+Overfull \hbox (13.48991pt too wide) in paragraph at lines 821--822
 [] [] [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LinLibertine_R.otf(0)/m/n/
 10.95 ), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][
 ][]$[][]), and the Getty
  []
 
 
-Overfull \hbox (0.45209pt too wide) in paragraph at lines 819--820
+Overfull \hbox (0.45209pt too wide) in paragraph at lines 821--822
 \TU/LinLibertine_R.otf(0)/m/n/10.95 via the supplementary file link at https://
 link.springer.com/article/10.1007/s10579-
  []
 
-[29] (pdf/symphonym.bbl [30] [31]) [32] (pdf/symphonym.aux)
+(pdf/symphonym.bbl [30] [31] [32]) [33] (pdf/symphonym.aux)
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
 (rerunfilecheck)             Checksum: 739B58F4FE7DFC6CAC7D80F38A42BD85;7547.
  ) 
 Here is how much of TeX's memory you used:
  34079 strings out of 478149
  749507 string characters out of 5853103
- 1052433 words of memory out of 5000000
+ 1054433 words of memory out of 5000000
  54138 multiletter control sequences out of 15000+600000
  480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  84i,14n,85p,1851b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.pdf (32 pages).
+Output written on pdf/symphonym.pdf (33 pages).
