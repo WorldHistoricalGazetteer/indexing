@@ -605,8 +605,15 @@ class TrainingDataGenerator:
         # ES KNN helper for similarity queries
         self.knn = ESKNNHelper(es, index="toponyms")
 
-        # Connect to DuckDB
-        self.conn = duckdb.connect(db_path, read_only=True)
+        # DuckDB connection is now optional - we read from ES directly
+        # Keep db_path for reference but don't require connection
+        self.conn = None
+        if db_path and Path(db_path).exists():
+            try:
+                self.conn = duckdb.connect(db_path, read_only=True)
+                logger.info(f"Connected to DuckDB at {db_path} (optional, for fallback)")
+            except Exception as e:
+                logger.warning(f"Could not connect to DuckDB: {e} (will use ES only)")
 
         # Statistics
         self.stats = {
@@ -684,6 +691,8 @@ class TrainingDataGenerator:
 
         Uses ThreadPoolExecutor to parallelize ES KNN queries across places.
 
+        NOTE: Reads from ES toponyms index (not DuckDB) to get toponyms with panphon_embedding.
+
         Returns:
             Dict mapping script+lang key to list of (toponym_id_a, toponym_id_b, similarity) tuples
         """
@@ -700,32 +709,44 @@ class TrainingDataGenerator:
             'duplicate_pairs_within_place': 0,  # Track place-local duplicates
         }
 
-        # Query places with multiple toponyms in training namespaces
-        # Get place_id -> list of (toponym_id, script, lang) from DuckDB
-        query = '''
-            SELECT 
-                ta.place_id,
-                t.toponym_id,
-                t.script,
-                t.lang
-            FROM toponym_attestations ta
-            JOIN toponyms t ON ta.toponym_id = t.toponym_id
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            WHERE tn.namespace IN (''' + ','.join([f"'{ns}'" for ns in self.training_namespaces]) + ''')
-              AND t.panphon_features IS NOT NULL
-            ORDER BY ta.place_id
-        '''
+        # Query ES for toponyms with PanPhon embeddings in training namespaces
+        # Group by attestations (place_id)
+        logger.info("Querying ES for toponyms with PanPhon embeddings...")
 
-        logger.info("Querying toponyms with PanPhon embeddings from DuckDB...")
-        results = self.conn.execute(query).fetchall()
-        logger.info(f"Found {len(results):,} toponym attestations")
+        # Build ES query - scroll through all toponyms with embeddings in training namespaces
+        ns_filter = [{"term": {"namespaces": ns}} for ns in self.training_namespaces]
 
-        # Group by place_id
+        query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"exists": {"field": "panphon_embedding"}}
+                    ],
+                    "should": ns_filter,
+                    "minimum_should_match": 1
+                }
+            },
+            "_source": ["attestations", "script", "lang"]
+        }
+
+        # Use scroll API to get all matching toponyms
         places: Dict[str, List[Tuple[str, str, str]]] = defaultdict(list)
-        for row in results:
-            place_id, toponym_id, script, lang = row
-            places[place_id].append((toponym_id, script, lang))
+        total_attestations = 0
 
+        for hit in tqdm(scan(self.es, index="toponyms", query=query, scroll='5m', size=5000),
+                       desc="Scanning ES for toponyms"):
+            toponym_id = hit['_id']
+            source = hit['_source']
+            script = source.get('script', 'UNKNOWN')
+            lang = source.get('lang', '')
+            attestations = source.get('attestations', [])
+
+            # Add this toponym to each place it appears in
+            for place_id in attestations:
+                places[place_id].append((toponym_id, script, lang))
+                total_attestations += 1
+
+        logger.info(f"Found {total_attestations:,} toponym attestations from ES")
         logger.info(f"Grouped into {len(places):,} places")
 
         # Filter to places with multiple toponyms and cap per place
@@ -906,33 +927,45 @@ class TrainingDataGenerator:
                 all_anchor_ids.add(id_a)
                 all_anchor_ids.add(id_b)
 
-        # Batch query for all anchor info
+        # Batch query for all anchor info from ES using mget
         anchor_info_map = {}
         anchor_list = list(all_anchor_ids)
-        batch_size = 50000
+        batch_size = 5000
+        logger.info(f"Loading anchor info from ES for {len(anchor_list):,} toponyms...")
+
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i+batch_size]
-            placeholders = ','.join(['?' for _ in batch])
-            results = self.conn.execute(
-                f"SELECT toponym_id, script, lang FROM toponyms WHERE toponym_id IN ({placeholders})",
-                batch
-            ).fetchall()
-            for toponym_id, script, lang in results:
-                anchor_info_map[toponym_id] = (script, lang)
+            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['script', 'lang'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    toponym_id = doc['_id']
+                    source = doc['_source']
+                    anchor_info_map[toponym_id] = (source.get('script', 'UNKNOWN'), source.get('lang', ''))
+
+            if (i + batch_size) % 50000 < batch_size:
+                logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
 
         logger.info(f"Loaded info for {len(anchor_info_map):,} unique toponyms")
 
         # Get all toponym IDs for negative sampling, grouped by script
         # This enables script-aware negative sampling to avoid teaching easy shortcuts
-        logger.info("Loading toponym IDs for negative sampling (grouped by script)...")
+        logger.info("Loading toponym IDs for negative sampling (grouped by script) from ES...")
 
         all_ids = []
         ids_by_script: Dict[str, List[str]] = defaultdict(list)
 
-        for row in self.conn.execute(
-            "SELECT toponym_id, script FROM toponyms WHERE panphon_features IS NOT NULL"
-        ).fetchall():
-            toponym_id, script = row
+        # Use ES scan to get all toponym IDs with panphon_embedding
+        neg_query = {
+            "query": {
+                "exists": {"field": "panphon_embedding"}
+            },
+            "_source": ["script"]
+        }
+
+        for hit in tqdm(scan(self.es, index="toponyms", query=neg_query, scroll='5m', size=10000),
+                       desc="Loading negative candidates from ES"):
+            toponym_id = hit['_id']
+            script = hit['_source'].get('script', 'UNKNOWN')
             all_ids.append(toponym_id)
             if script:
                 ids_by_script[script].append(toponym_id)
@@ -1063,9 +1096,11 @@ class TrainingDataGenerator:
         - char_ids (list of int)
         - features (list of float), feature_length (int)
         - split ('train'/'val'/'test'), epitran_supported (bool)
+
+        NOTE: Reads from ES toponyms index (not DuckDB) to get toponyms with panphon_embedding.
         """
         logger.info("=" * 60)
-        logger.info("PHASE 2: GENERATING BALANCED TRAINING SAMPLES")
+        logger.info("PHASE 2: GENERATING BALANCED TRAINING SAMPLES (from ES)")
         logger.info("=" * 60)
 
         # Create output directory (training/ is expected by data_loading.py)
@@ -1085,53 +1120,99 @@ class TrainingDataGenerator:
         unk_id = char_to_id.get('<UNK>', 1)
         logger.info(f"Loaded char vocabulary with {len(char_to_id)} characters")
 
-        # Build namespace filter
-        ns_filter = ','.join([f"'{ns}'" for ns in self.training_namespaces])
+        # Query ES for coverage statistics
+        ns_filter = [{"term": {"namespaces": ns}} for ns in self.training_namespaces]
 
-        # Get coverage statistics
-        total_count = self.conn.execute(f'''
-            SELECT COUNT(*) FROM toponyms t
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            WHERE tn.namespace IN ({ns_filter})
-        ''').fetchone()[0]
+        # Count total in training namespaces
+        total_query = {
+            "query": {
+                "bool": {
+                    "should": ns_filter,
+                    "minimum_should_match": 1
+                }
+            }
+        }
+        total_count = self.es.count(index="toponyms", body=total_query)['count']
 
-        with_features = self.conn.execute(f'''
-            SELECT COUNT(*) FROM toponyms t
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            WHERE tn.namespace IN ({ns_filter})
-              AND t.panphon_features IS NOT NULL
-        ''').fetchone()[0]
+        # Count with panphon_embedding
+        with_emb_query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"exists": {"field": "panphon_embedding"}}
+                    ],
+                    "should": ns_filter,
+                    "minimum_should_match": 1
+                }
+            }
+        }
+        with_features = self.es.count(index="toponyms", body=with_emb_query)['count']
 
         without_features = total_count - with_features
         coverage_pct = (with_features / total_count * 100) if total_count > 0 else 0
 
-        logger.info(f"Found {with_features:,} toponyms with PanPhon features")
+        logger.info(f"Found {with_features:,} toponyms with PanPhon embeddings (from ES)")
         logger.info(f"  Total in training namespaces: {total_count:,}")
-        logger.info(f"  Without features (excluded): {without_features:,}")
+        logger.info(f"  Without embeddings (excluded): {without_features:,}")
         logger.info(f"  PanPhon coverage: {coverage_pct:.1f}%")
 
         # ============================================================
-        # MEMORY-EFFICIENT TWO-PASS APPROACH
-        # Pass 1: Count samples per bin (no data stored)
-        # Pass 2: Stream and sample based on bin quotas
+        # MEMORY-EFFICIENT TWO-PASS APPROACH (using ES)
+        # Pass 1: Count samples per bin using ES aggregation
+        # Pass 2: Stream from ES and sample based on bin quotas
         # ============================================================
 
-        # Pass 1: Count bin sizes
-        logger.info("Pass 1: Counting samples per script+language bin...")
+        # Pass 1: Count bin sizes using ES aggregation
+        logger.info("Pass 1: Counting samples per script+language bin (from ES)...")
         bin_counts: Counter = Counter()
 
-        count_query = f'''
-            SELECT t.script, t.lang, COUNT(*) as cnt
-            FROM toponyms t
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            WHERE tn.namespace IN ({ns_filter})
-              AND t.panphon_features IS NOT NULL
-            GROUP BY t.script, t.lang
-        '''
+        # Use ES composite aggregation to get script+lang counts
+        agg_query = {
+            "size": 0,
+            "query": {
+                "bool": {
+                    "must": [
+                        {"exists": {"field": "panphon_embedding"}}
+                    ],
+                    "should": ns_filter,
+                    "minimum_should_match": 1
+                }
+            },
+            "aggs": {
+                "script_lang": {
+                    "composite": {
+                        "size": 10000,  # Large enough to get all combinations
+                        "sources": [
+                            {"script": {"terms": {"field": "script"}}},
+                            {"lang": {"terms": {"field": "lang"}}}
+                        ]
+                    }
+                }
+            }
+        }
 
-        for script, lang, count in self.conn.execute(count_query).fetchall():
-            bin_key = get_script_lang_key(script, lang)
-            bin_counts[bin_key] = count
+        # Use composite aggregation to handle pagination
+        after_key = None
+        while True:
+            if after_key:
+                agg_query["aggs"]["script_lang"]["composite"]["after"] = after_key
+
+            result = self.es.search(index="toponyms", body=agg_query)
+            buckets = result['aggregations']['script_lang']['buckets']
+
+            if not buckets:
+                break
+
+            for bucket in buckets:
+                script = bucket['key']['script'] or 'UNKNOWN'
+                lang = bucket['key']['lang'] or ''
+                count = bucket['doc_count']
+                bin_key = get_script_lang_key(script, lang)
+                bin_counts[bin_key] = count
+
+            after_key = result['aggregations']['script_lang'].get('after_key')
+            if not after_key:
+                break
 
         logger.info(f"Found {len(bin_counts)} script+language bins")
 
@@ -1184,28 +1265,6 @@ class TrainingDataGenerator:
             for bin_key, size in dropped_bins[:20]:
                 logger.info(f"    {bin_key}: {size} samples")
 
-        # Pass 2: Stream data, sample, and write incrementally to Parquet
-        # This uses ParquetWriter for incremental writes to minimize memory usage
-        logger.info("Pass 2: Streaming, sampling, and writing incrementally to Parquet...")
-
-        query = f'''
-            SELECT DISTINCT
-                t.toponym_id,
-                t.name,
-                t.script,
-                t.lang,
-                t.ipa,
-                t.panphon_features
-            FROM toponyms t
-            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-            WHERE tn.namespace IN ({ns_filter})
-              AND t.panphon_features IS NOT NULL
-        '''
-
-        # Track samples per bin and per split (counts only, not data)
-        bin_sample_counts: Counter = Counter()
-        split_counts = {'train': 0, 'val': 0, 'test': 0}
-
         # Create split directories
         for split_name in ['train', 'val', 'test']:
             split_dir = training_dir / f'split={split_name}'
@@ -1218,8 +1277,9 @@ class TrainingDataGenerator:
         WRITE_BATCH_SIZE = 50000  # Write to disk every 50K samples
         schema = None  # Will be set from first sample
 
-        cursor = self.conn.execute(query)
-        batch_size = 100000
+        # Track samples per bin and per split (counts only, not data)
+        bin_sample_counts: Counter = Counter()
+        split_counts = {'train': 0, 'val': 0, 'test': 0}
         processed = 0
 
         def flush_buffer(split_name: str):
@@ -1244,82 +1304,100 @@ class TrainingDataGenerator:
 
             write_buffers[split_name] = []
 
-        while True:
-            rows = cursor.fetchmany(batch_size)
-            if not rows:
-                break
+        # Pass 2: Stream from ES using scroll API
+        logger.info("Pass 2: Streaming from ES, sampling, and writing incrementally to Parquet...")
 
-            for row in rows:
-                toponym_id, name, script, lang, ipa, panphon_blob = row
-                bin_key = get_script_lang_key(script, lang)
-
-                # Skip dropped bins
-                if bin_key not in bin_quotas:
-                    continue
-
-                target, prob = bin_quotas[bin_key]
-
-                # Reservoir sampling with oversampling support
-                # For prob > 1.0 (oversampling), we may include the same item multiple times
-                # For prob < 1.0 (capping), we sample with that probability
-
-                # Use seeded RNG for reproducibility
-                rng = random.Random(RANDOM_SEED + (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff))
-
-                if prob >= 1.0:
-                    # Oversampling: include at least once, maybe more
-                    num_copies = int(prob)
-                    if rng.random() < (prob - num_copies):
-                        num_copies += 1
-                else:
-                    # Capping: include with probability
-                    num_copies = 1 if rng.random() < prob else 0
-
-                if num_copies == 0:
-                    continue
-
-                # Unpack features
-                features = unpack_embedding(panphon_blob)
-                if not features:
-                    continue
-
-                # Convert name to char_ids
-                char_ids = [char_to_id.get(c, unk_id) for c in name]
-
-                # Determine split using stable hash (reproducible across runs)
-                hash_val = (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff) % 10
-                if hash_val == 0:
-                    split = 'test'
-                elif hash_val == 1:
-                    split = 'val'
-                else:
-                    split = 'train'
-
-                # Build sample dict
-                sample = {
-                    'toponym_id': toponym_id,
-                    'name': name,
-                    'script': script,
-                    'lang': lang or '',
-                    'char_ids': char_ids,
-                    'features': features,
-                    'feature_length': len(features) // 24,
-                    'epitran_supported': True,
-                    'split': split,
+        es_query = {
+            "query": {
+                "bool": {
+                    "must": [
+                        {"exists": {"field": "panphon_embedding"}}
+                    ],
+                    "should": ns_filter,
+                    "minimum_should_match": 1
                 }
+            },
+            "_source": ["name", "script", "lang", "ipa", "panphon_embedding"]
+        }
 
-                # Add copies to buffer (for oversampling)
-                for _ in range(num_copies):
-                    write_buffers[split].append(sample.copy())
-                    bin_sample_counts[bin_key] += 1
-                    split_counts[split] += 1
+        for hit in tqdm(scan(self.es, index="toponyms", query=es_query, scroll='5m', size=5000),
+                       total=with_features, desc="Streaming from ES"):
+            toponym_id = hit['_id']
+            source = hit['_source']
+            name = source.get('name', '')
+            script = source.get('script', 'UNKNOWN')
+            lang = source.get('lang', '')
+            panphon_features = source.get('panphon_embedding', [])
 
-                # Flush buffers when they get large
-                for split_name in ['train', 'val', 'test']:
-                    if len(write_buffers[split_name]) >= WRITE_BATCH_SIZE:
-                        flush_buffer(split_name)
+            bin_key = get_script_lang_key(script, lang)
 
-            processed += len(rows)
+            # Skip dropped bins
+            if bin_key not in bin_quotas:
+                continue
+
+            target, prob = bin_quotas[bin_key]
+
+            # Reservoir sampling with oversampling support
+            # For prob > 1.0 (oversampling), we may include the same item multiple times
+            # For prob < 1.0 (capping), we sample with that probability
+
+            # Use seeded RNG for reproducibility
+            rng = random.Random(RANDOM_SEED + (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff))
+
+            if prob >= 1.0:
+                # Oversampling: include at least once, maybe more
+                num_copies = int(prob)
+                if rng.random() < (prob - num_copies):
+                    num_copies += 1
+            else:
+                # Capping: include with probability
+                num_copies = 1 if rng.random() < prob else 0
+
+            if num_copies == 0:
+                continue
+
+            # Features are already a list from ES (not binary blob)
+            features = panphon_features
+            if not features:
+                continue
+
+            # Convert name to char_ids
+            char_ids = [char_to_id.get(c, unk_id) for c in name]
+
+            # Determine split using stable hash (reproducible across runs)
+            hash_val = (zlib.crc32(toponym_id.encode('utf-8')) & 0xffffffff) % 10
+            if hash_val == 0:
+                split = 'test'
+            elif hash_val == 1:
+                split = 'val'
+            else:
+                split = 'train'
+
+            # Build sample dict
+            sample = {
+                'toponym_id': toponym_id,
+                'name': name,
+                'script': script,
+                'lang': lang or '',
+                'char_ids': char_ids,
+                'features': features,
+                'feature_length': len(features) // 24 if len(features) >= 24 else len(features),
+                'epitran_supported': True,
+                'split': split,
+            }
+
+            # Add copies to buffer (for oversampling)
+            for _ in range(num_copies):
+                write_buffers[split].append(sample.copy())
+                bin_sample_counts[bin_key] += 1
+                split_counts[split] += 1
+
+            # Flush buffers when they get large
+            for split_name in ['train', 'val', 'test']:
+                if len(write_buffers[split_name]) >= WRITE_BATCH_SIZE:
+                    flush_buffer(split_name)
+
+            processed += 1
             if processed % 500000 == 0:
                 total_sampled = sum(split_counts.values())
                 logger.info(f"  Processed {processed:,} toponyms, sampled {total_sampled:,}...")
@@ -1403,21 +1481,23 @@ class TrainingDataGenerator:
 
         logger.info(f"Found {len(unique_anchors):,} unique toponyms in balanced pairs")
 
-        # Load anchor info ONLY for toponyms we need (not entire corpus!)
-        logger.info("Loading anchor info for needed toponyms only...")
+        # Load anchor info ONLY for toponyms we need from ES (not entire corpus!)
+        logger.info("Loading anchor info for needed toponyms only (from ES)...")
         anchor_info = {}  # toponym_id -> (script, lang)
 
         anchor_list = list(unique_anchors)
-        batch_size = 50000
+        batch_size = 5000
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i+batch_size]
-            placeholders = ','.join(['?' for _ in batch])
-            results = self.conn.execute(
-                f"SELECT toponym_id, script, lang FROM toponyms WHERE toponym_id IN ({placeholders})",
-                batch
-            ).fetchall()
-            for toponym_id, script, lang in results:
-                anchor_info[toponym_id] = (script, lang)
+            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['script', 'lang'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    toponym_id = doc['_id']
+                    source = doc['_source']
+                    anchor_info[toponym_id] = (source.get('script', 'UNKNOWN'), source.get('lang', ''))
+
+            if (i + batch_size) % 50000 < batch_size:
+                logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
 
         logger.info(f"Loaded info for {len(anchor_info):,} toponyms")
 
@@ -1559,8 +1639,8 @@ def main():
     )
     parser.add_argument('--es-host', default='http://localhost:9200',
                         help='Elasticsearch host URL')
-    parser.add_argument('--db-path', required=True,
-                        help='Path to DuckDB database')
+    parser.add_argument('--db-path', default=None,
+                        help='Path to DuckDB database (optional, for fallback/reference)')
     parser.add_argument('--output-dir', required=True,
                         help='Output directory for training data')
     parser.add_argument('--scratch-dir', default='/tmp',

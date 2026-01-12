@@ -825,12 +825,24 @@ do_generate_training_data() {
     OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
     DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
 
-    # Check that rebuild has completed
-    if [ ! -f "$DB_PATH" ]; then
-        echo "ERROR: DuckDB not found at $DB_PATH"
-        echo "Run -rebuild-toponyms first."
+    # DuckDB is now optional - we read training data from ES toponyms index
+    # But still pass the path in case it exists for fallback/reference
+    DB_ARG=""
+    if [ -f "$DB_PATH" ]; then
+        DB_ARG="--db-path \"${DB_PATH}\""
+        echo "  DuckDB found: ${DB_PATH} (optional, for fallback)"
+    else
+        echo "  DuckDB not found - will read from ES toponyms index"
+    fi
+
+    # Check ES toponyms index exists
+    TOPONYM_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/toponyms/_count" | jq -r '.count // 0')
+    if [ "$TOPONYM_COUNT" -eq 0 ]; then
+        echo "ERROR: No documents in ES toponyms index"
+        echo "Run -rebuild-toponyms first to populate the index."
         return 1
     fi
+    echo "  ES toponyms: ${TOPONYM_COUNT} documents"
 
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
     PYTHON_ARGS="$@"
@@ -841,7 +853,6 @@ do_generate_training_data() {
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
     echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
-    echo "  DuckDB:       ${DB_PATH}"
     echo
     echo "This job will:"
     echo "  1. Generate positive pairs from co-located toponyms (PanPhon similarity)"
@@ -887,7 +898,7 @@ echo
 # Run the training data generation script
 python -m phonetics.extraction.generate_training_data \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --db-path "${DB_PATH}" \
+    ${DB_ARG} \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
     --training-namespaces gn wd tgn \
@@ -1574,35 +1585,44 @@ case "$1" in
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
         echo
-        echo "REBUILD TOPONYMS INDEX + TRAINING DATA (requires staging ES running):"
+        echo "v4 PIPELINE - REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms VERSION [OPTIONS]"
-        echo "      Consolidated job that:"
+        echo "      Phase 1 of v4 pipeline:"
         echo "        1. Extracts toponyms from places (with attestations)"
         echo "        2. Filters pre-romanized forms (lang-script mismatches)"
         echo "        3. Generates vocabulary (full Unicode ranges)"
-        echo "        4. Exports training data to Parquet (with IPA/PanPhon)"
+        echo "        4. Computes IPA + PanPhon embeddings for training namespaces"
+        echo "        5. Indexes ALL toponyms to ES (with panphon_embedding where available)"
+        echo "        6. Creates snapshot"
         echo
         echo "  Options:"
-        echo "    --skip-es-index          Skip ES indexing (default: skipped)"
-        echo "    --skip-training-export   Skip Parquet export"
         echo "    --resume                 Resume from existing DuckDB checkpoint"
         echo "    --limit N                Limit places processed (for testing)"
         echo
         echo "  Examples:"
-        echo "    $0 -rebuild-toponyms 3                    # Full rebuild v3"
-        echo "    $0 -rebuild-toponyms 3 --limit 10000      # Test with subset"
+        echo "    $0 -rebuild-toponyms 4                    # Full rebuild v4"
+        echo "    $0 -rebuild-toponyms 4 --limit 10000      # Test with subset"
+        echo "    $0 -rebuild-toponyms 4 --resume           # Resume interrupted job"
         echo
-        echo "GENERATE TRAINING PAIRS/TRIPLETS (uses DuckDB - no ES required):"
-        echo "  -generate-pairs VERSION"
-        echo "      Uses DuckDB database to find co-located toponyms and generates:"
-        echo "        - Positive pairs (phonetic similarity >= 0.35)"
-        echo "        - Phase 1 triplets (random negatives for Teacher)"
-        echo "        - Phase 3 triplets (hard negatives for fine-tuning)"
-        echo "      Uses fast local scratch disk for DuckDB queries."
+        echo "v4 PIPELINE - GENERATE TRAINING DATA (reads from ES toponyms index):"
+        echo "  -generate-training-data VERSION"
+        echo "      Phase 2 of v4 pipeline - reads PanPhon embeddings from ES:"
+        echo "        1. Generate positive pairs (HDBSCAN clustering on PanPhon cosine)"
+        echo "        2. Balance samples by script+language pair"
+        echo "        3. Generate Phase 1 triplets (script-aware random negatives)"
+        echo "        4. Generate Phase 2 samples (Student alignment - streaming)"
+        echo "        5. Generate Phase 3 triplets (ES KNN hard negatives)"
+        echo "        6. Export all to Parquet"
+        echo
+        echo "  Examples:"
+        echo "    $0 -generate-training-data 4              # Generate all training data"
+        echo
+        echo "  Note: -generate-pairs is deprecated. Use -generate-training-data for v4."
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
         echo "                                 PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
+        echo "                                 Omit PHASE to run all three sequentially"
         echo
         echo "FULL PIPELINE (train + embeddings + index):"
         echo "  -train-and-update VERSION"
@@ -1633,18 +1653,18 @@ case "$1" in
         echo "  source $0 -staging-status             Show status and index counts"
         echo "  source $0 -staging-logs               Show recent log output"
         echo
-        echo "Typical workflow (simple):"
-        echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
-        echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
-        echo "  3. Generate pairs:      source es.sh -generate-pairs 3"
-        echo "  4. Train + Index:       source es.sh -train-and-update 3"
+        echo "v4 WORKFLOW (recommended):"
+        echo "  1. Start staging ES:      source es.sh -staging-start --places-only"
+        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 4"
+        echo "  3. Generate training:     source es.sh -generate-training-data 4"
+        echo "  4. Train model:           source es.sh -train-model 4"
+        echo "  5. Update embeddings:     source es.sh -update-embeddings 4"
         echo
-        echo "Typical workflow (step-by-step):"
-        echo "  1. Start staging ES:    source es.sh -staging-start --places-only"
-        echo "  2. Extract + Parquet:   source es.sh -rebuild-toponyms 3"
-        echo "  3. Generate pairs:      source es.sh -generate-pairs 3"
-        echo "  4. Train model:         source es.sh -train-model 3"
-        echo "  5. Create ES index:     source es.sh -update-embeddings 3"
+        echo "v4 WORKFLOW (full pipeline - chains steps 4-5):"
+        echo "  1. Start staging ES:      source es.sh -staging-start --places-only"
+        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 4"
+        echo "  3. Generate training:     source es.sh -generate-training-data 4"
+        echo "  4. Train + Index:         source es.sh -train-and-update 4"
         echo
         echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
         echo

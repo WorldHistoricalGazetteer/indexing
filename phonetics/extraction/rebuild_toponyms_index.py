@@ -1712,6 +1712,11 @@ def main():
             )
             conn.close()
 
+            # CRITICAL: Checkpoint DB with PanPhon features to persistent storage
+            logger.info("--- Checkpointing DuckDB with PanPhon features to persistent storage ---")
+            shutil.copy2(temp_db_path, final_db_path)
+            logger.info(f"DuckDB saved to: {final_db_path}")
+
             # Save coverage stats for analysis
             coverage_stats_path = output_dir / 'coverage_stats.json'
             with open(coverage_stats_path, 'w') as f:
