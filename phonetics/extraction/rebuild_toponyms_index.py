@@ -1301,8 +1301,8 @@ def dump_to_jsonl(
         GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
     ''')
 
-    # Track total DB updates for logging
-    total_db_updates = 0
+    # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
+    all_db_updates = []
 
     with open(output_path, 'w', encoding='utf-8') as f, \
          ProcessPoolExecutor(max_workers=num_workers) as executor:
@@ -1312,8 +1312,8 @@ def dump_to_jsonl(
         batch_phonetics_needed = []
 
         def process_and_write_batch():
-            """Process current batch: compute phonetics, write to JSONL, update DuckDB."""
-            nonlocal total_db_updates
+            """Process current batch: compute phonetics, write to JSONL."""
+            nonlocal all_db_updates
 
             if not batch_docs:
                 return
@@ -1345,22 +1345,10 @@ def dump_to_jsonl(
                 f.write(json.dumps(doc) + '\n')
 
             # Update DuckDB for THIS batch only (O(1) memory per batch)
+            # NOTE: We accumulate updates and apply them AFTER the streaming loop
+            # to avoid invalidating the main result cursor
             if current_db_updates:
-                ipas, features, ids = zip(*current_db_updates)
-                update_table = pa.table({
-                    'ipa': ipas,
-                    'panphon_features': features,
-                    'toponym_id': ids
-                })
-                conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
-                conn.execute("""
-                    UPDATE toponyms 
-                    SET ipa = u.ipa, panphon_features = u.panphon_features
-                    FROM updates u
-                    WHERE toponyms.toponym_id = u.toponym_id
-                """)
-                conn.execute("DROP TABLE updates")
-                total_db_updates += len(current_db_updates)
+                all_db_updates.extend(current_db_updates)
 
         # Stream through result using fetchmany() for memory efficiency
         fetch_batch_size = 10000
@@ -1409,14 +1397,48 @@ def dump_to_jsonl(
                     batch_docs = []
                     batch_phonetics_needed = []
 
-                    if stats['total'] % 500000 == 0:
-                        logger.info(f"Processed {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%)")
+                    # Log progress every 100,000 documents
+                    if stats['total'] % 100000 == 0:
+                        logger.info(f"Progress: {stats['total']:,} / {total_count:,} ({100*stats['total']/total_count:.1f}%) - IPA: {stats['with_ipa']:,}")
 
         # Process final batch
         process_and_write_batch()
 
+    # Flush and sync to ensure all data is written
+    logger.info("Flushing JSONL file to disk...")
+
+    # Now apply all accumulated DuckDB updates in batches
+    # (Doing this after the streaming loop avoids cursor invalidation)
+    total_db_updates = 0
+    if all_db_updates:
+        logger.info(f"Applying {len(all_db_updates):,} IPA/PanPhon updates to DuckDB...")
+
+        # Process in batches to avoid memory issues
+        update_batch_size = 100000
+        for i in range(0, len(all_db_updates), update_batch_size):
+            batch = all_db_updates[i:i + update_batch_size]
+            ipas, features, ids = zip(*batch)
+            update_table = pa.table({
+                'ipa': ipas,
+                'panphon_features': features,
+                'toponym_id': ids
+            })
+            conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
+            conn.execute("""
+                UPDATE toponyms 
+                SET ipa = u.ipa, panphon_features = u.panphon_features
+                FROM updates u
+                WHERE toponyms.toponym_id = u.toponym_id
+            """)
+            conn.execute("DROP TABLE updates")
+
+            if (i + update_batch_size) % 500000 == 0:
+                logger.info(f"  Updated {i + len(batch):,} / {len(all_db_updates):,} records")
+
+        total_db_updates = len(all_db_updates)
+        logger.info(f"DuckDB updates complete: {total_db_updates:,} records")
+
     logger.info(f"JSONL export complete: {stats['total']:,} documents written")
-    logger.info(f"DuckDB updates complete: {total_db_updates:,} IPA/PanPhon records")
 
     # Log final statistics
     logger.info(f"Buffering complete. Total documents: {stats['total']:,}")
@@ -1642,6 +1664,19 @@ def main():
                 logger.info("STEP 4: INDEXING (JSONL -> ES)")
                 logger.info("=" * 60)
 
+                # Verify JSONL file has expected content
+                logger.info("Verifying JSONL file...")
+                jsonl_line_count = sum(1 for _ in open(jsonl_path, 'r', encoding='utf-8'))
+                logger.info(f"JSONL file contains {jsonl_line_count:,} lines")
+
+                if jsonl_line_count != total_docs:
+                    logger.warning(f"JSONL line count ({jsonl_line_count:,}) != expected ({total_docs:,})")
+                    logger.warning("This may indicate incomplete processing. Proceeding anyway...")
+
+                if jsonl_line_count < 1000:
+                    logger.error(f"JSONL file has only {jsonl_line_count} lines - this seems too few!")
+                    raise RuntimeError(f"JSONL file appears incomplete: only {jsonl_line_count} lines")
+
                 # Delete existing index
                 if es.indices.exists(index=args.toponyms_index):
                     logger.info(f"Deleting existing index: {args.toponyms_index}")
@@ -1686,7 +1721,7 @@ def main():
 
                 # Create snapshot
                 logger.info("Creating snapshot...")
-                snapshot_name = f"toponyms_v4_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                snapshot_name = f"toponyms_v4"
                 create_checkpoint_snapshot(
                     es,
                     snapshot_name=snapshot_name,
