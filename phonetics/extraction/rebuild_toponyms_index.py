@@ -858,6 +858,13 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
             script_char_counts['JAMO'] += 1
 
     # 3. For each observed script (except romanized ones), add full Unicode range
+    # NOTE: This "backfills" characters not seen in training data. These characters
+    # will have random (untrained) embeddings at inference time - functionally similar
+    # to <UNK> but with consistent IDs across model versions. This provides:
+    # - Stable vocab size for model comparisons
+    # - No runtime errors on rare characters
+    # - Foundation for future fine-tuning on expanded data
+    # Cost: ~2,700 extra embedding rows (~345K params, 1.3MB) - negligible.
     logger.info("Expanding to full Unicode ranges for observed scripts...")
 
     for script_name in observed_scripts:
