@@ -1460,6 +1460,18 @@ def dump_to_jsonl(
     if all_db_updates:
         logger.info(f"Applying {len(all_db_updates):,} IPA/PanPhon updates to DuckDB...")
 
+        # OPTIMIZATION: Drop indexes before bulk updates, rebuild afterward
+        # This dramatically speeds up UPDATE operations on large tables
+        # by avoiding index rebalancing on every row update
+        logger.info("Dropping indexes on toponyms table for faster bulk updates...")
+        try:
+            conn.execute("DROP INDEX IF EXISTS idx_toponyms_id")
+            conn.execute("DROP INDEX IF EXISTS idx_toponyms_script")
+            conn.execute("DROP INDEX IF EXISTS idx_toponyms_lang")
+            logger.info("Indexes dropped. Starting bulk updates...")
+        except Exception as e:
+            logger.warning(f"Could not drop indexes (may not exist): {e}")
+
         # Process in batches to avoid memory issues
         update_batch_size = 100000
         for i in range(0, len(all_db_updates), update_batch_size):
@@ -1484,6 +1496,13 @@ def dump_to_jsonl(
 
         total_db_updates = len(all_db_updates)
         logger.info(f"DuckDB updates complete: {total_db_updates:,} records")
+
+        # OPTIMIZATION: Rebuild indexes after bulk updates
+        logger.info("Rebuilding indexes on toponyms table...")
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+        logger.info("Indexes rebuilt.")
 
     logger.info(f"JSONL export complete: {stats['total']:,} documents written")
 
