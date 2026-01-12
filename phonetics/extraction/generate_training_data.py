@@ -18,17 +18,19 @@ import json
 import logging
 import random
 import struct
+import sys
 import time
 import zlib
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Set, Any
+from typing import Dict, List, Optional, Tuple, Set
 from collections import defaultdict, Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from functools import lru_cache
 
 import duckdb
+import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+import hdbscan
 
 try:
     from tqdm import tqdm
@@ -55,11 +57,9 @@ logger = logging.getLogger(__name__)
 # Constants
 TRAINING_NAMESPACES = ['gn', 'wd', 'tgn']
 
-# ES KNN returns scores in range [0, 1] where score = (1 + cosine_similarity) / 2
-# So cosine_similarity = 2 * score - 1
-# For min cosine similarity of 0.7, the ES score threshold is (1 + 0.7) / 2 = 0.85
-MIN_COSINE_SIMILARITY = 0.7  # Desired minimum cosine similarity
-ES_SCORE_THRESHOLD = (1 + MIN_COSINE_SIMILARITY) / 2  # = 0.85 for ES KNN scores
+# Fallback threshold for edge cases (n=2 toponyms where HDBSCAN can't work)
+# This is only used when exactly 2 toponyms exist in a place
+PAIR_SIMILARITY_THRESHOLD = 0.5  # Generous threshold for the n=2 edge case
 
 MAX_TOPONYMS_PER_PLACE = 50  # Cap to prevent combinatorial explosion (O(n²) pairs)
 KNN_CANDIDATES = 100  # Number of candidates for KNN queries
@@ -189,29 +189,6 @@ def apply_bin_balancing(
         balanced.extend(selected)
 
     return balanced, stats
-
-
-def es_score_to_cosine(score: float) -> float:
-    """
-    Convert ES KNN score to cosine similarity.
-
-    ES KNN with cosine similarity returns: score = (1 + cosine) / 2
-    So: cosine = 2 * score - 1
-
-    This maps ES scores [0, 1] to cosine similarity [-1, 1]
-    """
-    return 2 * score - 1
-
-
-def cosine_to_es_score(cosine: float) -> float:
-    """
-    Convert cosine similarity to ES KNN score.
-
-    ES KNN with cosine similarity returns: score = (1 + cosine) / 2
-
-    This maps cosine similarity [-1, 1] to ES scores [0, 1]
-    """
-    return (1 + cosine) / 2
 
 
 def unpack_embedding(blob: bytes) -> Optional[List[float]]:
@@ -352,23 +329,32 @@ class ESKNNHelper:
         self,
         place_id: str,
         toponym_ids: List[str],
-        min_similarity: float = MIN_COSINE_SIMILARITY,
     ) -> List[List[str]]:
         """
-        Cluster toponyms within a place using ES KNN.
+        Cluster toponyms within a place using HDBSCAN density-based clustering.
 
-        For each toponym, find others in the same place with similarity >= threshold.
-        Uses union-find to build clusters.
+        Uses PanPhon embeddings to find natural phonetic clusters without
+        arbitrary similarity thresholds. HDBSCAN automatically determines
+        the number of clusters based on local density structure.
 
-        Note on ES scores: ES KNN with cosine similarity returns scores in [0, 1]
-        where score = (1 + cosine_similarity) / 2. We convert the min_similarity
-        threshold accordingly.
+        Handles edge cases:
+        - 0 toponyms: returns []
+        - 1 toponym: returns [[tid]]
+        - 2 toponyms: uses simple cosine similarity check (HDBSCAN needs ≥3)
+        - N toponyms: uses HDBSCAN with allow_single_cluster=True
 
         Returns:
             List of clusters, where each cluster is a list of toponym_ids
         """
-        if len(toponym_ids) < 2:
-            return [toponym_ids] if toponym_ids else []
+        n = len(toponym_ids)
+
+        # Edge case: no toponyms
+        if n == 0:
+            return []
+
+        # Edge case: single toponym
+        if n == 1:
+            return [toponym_ids]
 
         # Get embeddings for all toponyms in this place
         embeddings = {}
@@ -377,74 +363,62 @@ class ESKNNHelper:
             if emb:
                 embeddings[tid] = emb
 
-        if len(embeddings) < 2:
-            return [list(embeddings.keys())] if embeddings else []
+        ids = list(embeddings.keys())
+        n_with_emb = len(ids)
 
-        # Convert cosine similarity threshold to ES score threshold
-        # ES returns score = (1 + cosine) / 2, so threshold = (1 + min_sim) / 2
-        es_score_threshold = cosine_to_es_score(min_similarity)
+        # Edge case: 0 or 1 toponym with valid embeddings
+        if n_with_emb == 0:
+            return []
+        if n_with_emb == 1:
+            return [ids]
 
-        # Use ES KNN to find similar pairs
-        similar_pairs: Set[Tuple[str, str]] = set()
+        # Edge case: exactly 2 toponyms - HDBSCAN needs ≥3 points
+        if n_with_emb == 2:
+            vec1 = np.array(embeddings[ids[0]])
+            vec2 = np.array(embeddings[ids[1]])
+            # Compute cosine similarity
+            norm1, norm2 = np.linalg.norm(vec1), np.linalg.norm(vec2)
+            if norm1 > 0 and norm2 > 0:
+                cos_sim = np.dot(vec1, vec2) / (norm1 * norm2)
+                if cos_sim >= PAIR_SIMILARITY_THRESHOLD:
+                    return [ids]  # Similar enough - one cluster
+            return [[ids[0]], [ids[1]]]  # Different clusters
 
-        for anchor_id, anchor_emb in embeddings.items():
-            # KNN query filtered by attestations (same place)
-            query = {
-                "size": min(len(toponym_ids), 50),
-                "knn": {
-                    "field": "panphon_embedding",
-                    "query_vector": anchor_emb,
-                    "k": min(len(toponym_ids), 50),
-                    "num_candidates": KNN_CANDIDATES,
-                    "filter": {
-                        "term": {"attestations": place_id}
-                    }
-                },
-                "_source": False
-            }
+        # Main case: ≥3 toponyms - use HDBSCAN
 
-            def _search():
-                return self.es.search(index=self.index, body=query)
+        vectors = np.array([embeddings[tid] for tid in ids])
 
-            results = es_retry_with_backoff(_search)
-            self._record_request(results is not None)
+        try:
+            clusterer = hdbscan.HDBSCAN(
+                min_cluster_size=2,
+                min_samples=1,  # Allow small, tight clusters
+                metric='cosine',
+                cluster_selection_epsilon=0.0,
+                allow_single_cluster=True  # Critical: allows all points in one cluster
+            )
+            labels = clusterer.fit_predict(vectors)
+        except Exception as e:
+            logger.warning(f"HDBSCAN failed for place {place_id}: {e}, returning single cluster")
+            return [ids]
 
-            if results is None:
-                continue  # Skip this anchor on failure
+        # Group by cluster label
+        clusters_dict: Dict[int, List[str]] = defaultdict(list)
+        noise_points = []
 
-            for hit in results['hits']['hits']:
-                candidate_id = hit['_id']
-                es_score = hit['_score']
+        for tid, label in zip(ids, labels):
+            if label >= 0:
+                clusters_dict[label].append(tid)
+            else:
+                noise_points.append(tid)
 
-                # ES KNN score = (1 + cosine) / 2, so compare against adjusted threshold
-                if candidate_id != anchor_id and es_score >= es_score_threshold:
-                    pair = tuple(sorted([anchor_id, candidate_id]))
-                    similar_pairs.add(pair)
+        result = list(clusters_dict.values())
 
+        # Each noise point becomes its own singleton cluster
+        for tid in noise_points:
+            result.append([tid])
 
-        # Build clusters using union-find
-        parent = {tid: tid for tid in embeddings.keys()}
+        return result
 
-        def find(x):
-            if parent[x] != x:
-                parent[x] = find(parent[x])
-            return parent[x]
-
-        def union(x, y):
-            px, py = find(x), find(y)
-            if px != py:
-                parent[px] = py
-
-        for id_a, id_b in similar_pairs:
-            if id_a in parent and id_b in parent:
-                union(id_a, id_b)
-
-        # Group by root
-        clusters_dict: Dict[str, List[str]] = defaultdict(list)
-        for tid in embeddings.keys():
-            clusters_dict[find(tid)].append(tid)
-
-        return list(clusters_dict.values())
 
     def find_hard_negative(
         self,
@@ -758,7 +732,6 @@ class TrainingDataGenerator:
             clusters = self.knn.find_similar_in_place(
                 place_id=place_id,
                 toponym_ids=toponym_ids,
-                min_similarity=MIN_COSINE_SIMILARITY,
             )
 
             return place_id, clusters, id_to_info
