@@ -20,6 +20,12 @@ Reliability: Uses JSONL buffer on scratch disk to decouple DuckDB from HTTP.
 Supports resuming from an existing DuckDB database.
 """
 
+# Suppress warnings early - before any imports that might trigger them
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
+warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
+warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
+
 import argparse
 import hashlib
 import json
@@ -31,9 +37,7 @@ import sys
 import tempfile
 import unicodedata
 from collections import Counter, defaultdict
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
-from functools import partial
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple, Set
 
@@ -288,19 +292,40 @@ class IPAConverter:
             return None
 
 
-def _compute_phonetics_for_batch(batch: List[Tuple], epitran_lang_map: Dict) -> List[Tuple]:
+# Global worker context - cached per process to avoid re-initialization
+_WORKER_CONVERTER = None
+
+
+def _init_worker():
+    """Initialize worker process with cached converter and suppressed warnings."""
+    global _WORKER_CONVERTER
+    import warnings
+    warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
+    warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
+    _WORKER_CONVERTER = IPAConverter()
+
+
+def _get_worker_converter() -> IPAConverter:
+    """Get the cached converter for this worker process."""
+    global _WORKER_CONVERTER
+    if _WORKER_CONVERTER is None:
+        _init_worker()
+    return _WORKER_CONVERTER
+
+
+def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
     """
     Worker function for parallel IPA/PanPhon computation.
 
+    Uses global cached converter to avoid re-initialization overhead.
+
     Args:
         batch: List of (toponym_id, name, lang, script) tuples
-        epitran_lang_map: Language mapping for Epitran
 
     Returns:
         List of (toponym_id, ipa, full_features_packed, embedding_192) tuples
     """
-    # Create converter in worker process (Epitran not picklable)
-    converter = IPAConverter()
+    converter = _get_worker_converter()
     results = []
 
     for toponym_id, name, lang, script in batch:
@@ -1266,10 +1291,16 @@ def dump_to_jsonl(
 
     training_ns_set = set(training_namespaces)
 
+    # Increased batch sizes for better throughput at scale
+    processing_batch_size = 50000  # Documents per phonetics batch (was 10000)
+    io_batch_size = 5000  # Documents per JSONL write (reduce filesystem overhead)
+    chunksize = max(100, processing_batch_size // num_workers // 4)  # For imap_unordered
+
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
     logger.info(f"Using {num_workers} parallel workers for IPA/PanPhon computation")
-    logger.info(f"Batch size: {batch_size:,} documents")
+    logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
+    logger.info(f"Worker chunksize: {chunksize}")
 
     # Get total count for progress reporting
     total_count = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
@@ -1304,61 +1335,31 @@ def dump_to_jsonl(
     # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
     all_db_updates = []
 
+    logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
+
+    # Use multiprocessing.Pool with initializer for cached converters
     with open(output_path, 'w', encoding='utf-8') as f, \
-         ProcessPoolExecutor(max_workers=num_workers) as executor:
+         mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
 
-        worker_fn = partial(_compute_phonetics_for_batch, epitran_lang_map=EPITRAN_LANG_MAP)
-        batch_docs = []
-        batch_phonetics_needed = []
-
-        def process_and_write_batch():
-            """Process current batch: compute phonetics, write to JSONL."""
-            nonlocal all_db_updates
-
-            if not batch_docs:
-                return
-
-            # Compute phonetics for this batch only
-            phonetics_results = {}
-            if batch_phonetics_needed:
-                # Submit batch for parallel processing
-                future = executor.submit(worker_fn, batch_phonetics_needed)
-                batch_results = future.result()
-                for toponym_id, ipa, packed_features, embedding in batch_results:
-                    phonetics_results[toponym_id] = (ipa, packed_features, embedding)
-
-            # Merge results and write batch to disk immediately
-            current_db_updates = []
-            for doc in batch_docs:
-                toponym_id = doc['toponym_id']
-
-                if toponym_id in phonetics_results:
-                    ipa, packed_features, embedding = phonetics_results[toponym_id]
-                    doc['ipa'] = ipa
-                    doc['panphon_embedding'] = embedding
-                    stats['with_ipa'] += 1
-                    stats['with_panphon'] += 1
-                    stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
-
-                    current_db_updates.append((ipa, packed_features, toponym_id))
-
-                f.write(json.dumps(doc) + '\n')
-
-            # Update DuckDB for THIS batch only (O(1) memory per batch)
-            # NOTE: We accumulate updates and apply them AFTER the streaming loop
-            # to avoid invalidating the main result cursor
-            if current_db_updates:
-                all_db_updates.extend(current_db_updates)
-
-        # Stream through result using fetchmany() for memory efficiency
-        fetch_batch_size = 10000
+        fetch_batch_size = processing_batch_size
         batches_processed = 0
-        logger.info("Starting streaming from DuckDB...")
+        pending_writes = []  # Buffer for JSONL writes
+
+        def flush_writes():
+            """Write pending documents to JSONL file."""
+            nonlocal pending_writes
+            for doc in pending_writes:
+                f.write(json.dumps(doc) + '\n')
+            pending_writes = []
 
         while True:
             rows = result.fetchmany(fetch_batch_size)
             if not rows:
                 break
+
+            # Phase 1: Build documents and identify those needing phonetics
+            batch_docs = []
+            phonetics_work = []  # List of (toponym_id, name, lang, script) for workers
 
             for row in rows:
                 toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
@@ -1389,26 +1390,66 @@ def dump_to_jsonl(
                 is_in_training_ns = bool(training_ns_set & set(namespaces))
                 if is_in_training_ns:
                     stats['in_training_ns'] += 1
-                    batch_phonetics_needed.append((toponym_id, name, lang, script))
+                    phonetics_work.append((toponym_id, name, lang, script))
 
                 batch_docs.append(doc)
                 stats['total'] += 1
 
-                # Process batch when full
-                if len(batch_docs) >= batch_size:
-                    process_and_write_batch()
-                    batch_docs = []
-                    batch_phonetics_needed = []
-                    batches_processed += 1
+            # Phase 2: Parallel phonetics computation using imap_unordered
+            # Split work into sub-batches for workers
+            phonetics_results = {}
+            if phonetics_work:
+                # Create sub-batches for parallel processing
+                sub_batch_size = max(100, len(phonetics_work) // num_workers)
+                sub_batches = [
+                    phonetics_work[i:i + sub_batch_size]
+                    for i in range(0, len(phonetics_work), sub_batch_size)
+                ]
 
-                    # Log progress every 50,000 documents (5 batches)
-                    if stats['total'] % 50000 == 0:
-                        pct = 100 * stats['total'] / total_count
-                        logger.info(f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - IPA: {stats['with_ipa']:,} - Batches: {batches_processed}")
+                # Process all sub-batches in parallel with imap_unordered
+                # This keeps workers saturated and returns results as they complete
+                for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
+                    for toponym_id, ipa, packed_features, embedding in batch_results:
+                        phonetics_results[toponym_id] = (ipa, packed_features, embedding)
 
-        # Process final batch
-        process_and_write_batch()
-        logger.info(f"Streaming complete. Total batches processed: {batches_processed + 1}")
+            # Phase 3: Merge results and queue for writing
+            current_db_updates = []
+            for doc in batch_docs:
+                toponym_id = doc['toponym_id']
+
+                if toponym_id in phonetics_results:
+                    ipa, packed_features, embedding = phonetics_results[toponym_id]
+                    doc['ipa'] = ipa
+                    doc['panphon_embedding'] = embedding
+                    stats['with_ipa'] += 1
+                    stats['with_panphon'] += 1
+                    stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
+                    current_db_updates.append((ipa, packed_features, toponym_id))
+
+                pending_writes.append(doc)
+
+                # Flush writes in batches to reduce filesystem overhead
+                if len(pending_writes) >= io_batch_size:
+                    flush_writes()
+
+            # Accumulate DB updates
+            if current_db_updates:
+                all_db_updates.extend(current_db_updates)
+
+            batches_processed += 1
+
+            # Log progress every batch (processing batches are now larger)
+            pct = 100 * stats['total'] / total_count
+            logger.info(
+                f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
+                f"IPA: {stats['with_ipa']:,} - Batch {batches_processed}"
+            )
+
+        # Flush any remaining writes
+        if pending_writes:
+            flush_writes()
+
+    logger.info(f"Streaming complete. Total batches processed: {batches_processed}")
 
     # Flush and sync to ensure all data is written
     logger.info("Flushing JSONL file to disk...")
