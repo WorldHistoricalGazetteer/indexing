@@ -798,11 +798,45 @@ EOF
 # ==============================================================================
 
 do_generate_training_data() {
-    # Usage: source es.sh -generate-training-data [VERSION]
+    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume]
     # Generates training data for all three phases from the toponyms index
+    #
+    # Options:
+    #   --force   Force regeneration of all phases, ignoring checkpoints
+    #   --resume  Resume from checkpoints (default behavior)
+    #
+    # Checkpoints are saved after each phase:
+    #   - pairs/positive_pairs.parquet       (Step 1: Positive pairs)
+    #   - triplets/phase1/{train,val}.parquet (Step 2: Phase 1 triplets)
+    #   - training/phase2/{train,val}.parquet (Step 3: Phase 2 samples)
+    #   - triplets/phase3/{train,val}.parquet (Step 4: Phase 3 triplets)
+    #
+    # If a job fails, re-running will automatically resume from the last checkpoint.
 
     DATA_VERSION=${1:-4}
     shift 2>/dev/null || true
+
+    # Parse flags
+    FORCE_FLAG=""
+    PYTHON_ARGS=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                FORCE_FLAG="--force"
+                echo "  Mode: FORCE (will regenerate all phases)"
+                shift
+                ;;
+            --resume)
+                # Default behavior, but allow explicit flag for clarity
+                echo "  Mode: RESUME (will skip completed phases)"
+                shift
+                ;;
+            *)
+                PYTHON_ARGS="$PYTHON_ARGS $1"
+                shift
+                ;;
+        esac
+    done
 
     # Check staging is running
     if [ ! -f "$STAGING_INFO_FILE" ]; then
@@ -844,23 +878,54 @@ do_generate_training_data() {
     fi
     echo "  ES toponyms: ${TOPONYM_COUNT} documents"
 
-    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
-    PYTHON_ARGS="$@"
+    # Show checkpoint status
+    echo
+    echo "Checkpoint status:"
+    if [ -f "${OUTPUT_DIR}/pairs/positive_pairs.parquet" ]; then
+        echo "  ✓ pairs/positive_pairs.parquet exists"
+    else
+        echo "  ○ pairs/positive_pairs.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/triplets/phase1/train.parquet" ] && [ -f "${OUTPUT_DIR}/triplets/phase1/val.parquet" ]; then
+        echo "  ✓ triplets/phase1/{train,val}.parquet exist"
+    else
+        echo "  ○ triplets/phase1/{train,val}.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/training/phase2/train.parquet" ] && [ -f "${OUTPUT_DIR}/training/phase2/val.parquet" ]; then
+        echo "  ✓ training/phase2/{train,val}.parquet exist"
+    else
+        echo "  ○ training/phase2/{train,val}.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/triplets/phase3/train.parquet" ] && [ -f "${OUTPUT_DIR}/triplets/phase3/val.parquet" ]; then
+        echo "  ✓ triplets/phase3/{train,val}.parquet exist"
+    else
+        echo "  ○ triplets/phase3/{train,val}.parquet (pending)"
+    fi
 
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    echo
     echo "=========================================="
     echo "v4 PIPELINE - PHASE 2: GENERATE TRAINING DATA"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
     echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    if [ -n "$FORCE_FLAG" ]; then
+        echo "  Mode:         FORCE (regenerate all)"
+    else
+        echo "  Mode:         RESUME (skip completed phases)"
+    fi
     echo
     echo "This job will:"
-    echo "  1. Generate positive pairs from co-located toponyms (PanPhon similarity)"
+    echo "  1. Generate positive pairs from co-located toponyms (HDBSCAN clustering)"
     echo "  2. Balance samples by script+language pair"
     echo "  3. Generate Phase 1 triplets (Teacher training)"
     echo "  4. Generate Phase 2 samples (Student alignment)"
     echo "  5. Generate Phase 3 triplets (hard negatives from ES)"
     echo "  6. Export all to Parquet"
+    echo
+    echo "Checkpoints are saved after each step. Re-run to resume from failure."
     echo
 
     JOBID=$(sbatch --parsable <<EOF
@@ -902,6 +967,7 @@ python -m phonetics.extraction.generate_training_data \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
     --training-namespaces gn wd tgn \
+    $FORCE_FLAG \
     $PYTHON_ARGS
 
 echo
@@ -1605,7 +1671,7 @@ case "$1" in
         echo "    $0 -rebuild-toponyms 4 --resume           # Resume interrupted job"
         echo
         echo "v4 PIPELINE - GENERATE TRAINING DATA (reads from ES toponyms index):"
-        echo "  -generate-training-data VERSION"
+        echo "  -generate-training-data VERSION [OPTIONS]"
         echo "      Phase 2 of v4 pipeline - reads PanPhon embeddings from ES:"
         echo "        1. Generate positive pairs (HDBSCAN clustering on PanPhon cosine)"
         echo "        2. Balance samples by script+language pair"
@@ -1614,8 +1680,19 @@ case "$1" in
         echo "        5. Generate Phase 3 triplets (ES KNN hard negatives)"
         echo "        6. Export all to Parquet"
         echo
+        echo "  Options:"
+        echo "    --force            Force regeneration, ignoring checkpoints"
+        echo "    --resume           Resume from checkpoints (default)"
+        echo
+        echo "  Checkpoints (auto-saved after each step):"
+        echo "    pairs/positive_pairs.parquet        (Step 1)"
+        echo "    triplets/phase1/{train,val}.parquet (Step 2)"
+        echo "    training/phase2/{train,val}.parquet (Step 3)"
+        echo "    triplets/phase3/{train,val}.parquet (Step 4)"
+        echo
         echo "  Examples:"
-        echo "    $0 -generate-training-data 4              # Generate all training data"
+        echo "    $0 -generate-training-data 4              # Generate (resume if interrupted)"
+        echo "    $0 -generate-training-data 4 --force      # Regenerate from scratch"
         echo
         echo "  Note: -generate-pairs is deprecated. Use -generate-training-data for v4."
         echo

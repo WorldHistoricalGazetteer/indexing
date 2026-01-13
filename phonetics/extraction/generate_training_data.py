@@ -603,12 +603,14 @@ class TrainingDataGenerator:
         output_dir: Path,
         scratch_dir: Path,
         training_namespaces: List[str],
+        force_regenerate: bool = False,
     ):
         self.es = es
         self.db_path = db_path
         self.output_dir = output_dir
         self.scratch_dir = scratch_dir
         self.training_namespaces = training_namespaces
+        self.force_regenerate = force_regenerate
 
         # ES KNN helper for similarity queries
         self.knn = ESKNNHelper(es, index="toponyms")
@@ -630,8 +632,51 @@ class TrainingDataGenerator:
             'phase3': {'triplets': 0, 'by_bin': {}},
         }
 
+    def _check_phase_complete(self, phase: str) -> bool:
+        """
+        Check if a phase's output files already exist (checkpoint detection).
+
+        Returns True if the phase can be skipped (outputs exist and force_regenerate is False).
+        """
+        # If force regeneration is enabled, always return False
+        if self.force_regenerate:
+            return False
+
+        if phase == 'pairs':
+            pairs_file = self.output_dir / 'pairs' / 'positive_pairs.parquet'
+            return pairs_file.exists()
+        elif phase == 'phase1':
+            train_file = self.output_dir / 'triplets' / 'phase1' / 'train.parquet'
+            val_file = self.output_dir / 'triplets' / 'phase1' / 'val.parquet'
+            return train_file.exists() and val_file.exists()
+        elif phase == 'phase2':
+            train_file = self.output_dir / 'training' / 'phase2' / 'train.parquet'
+            val_file = self.output_dir / 'training' / 'phase2' / 'val.parquet'
+            return train_file.exists() and val_file.exists()
+        elif phase == 'phase3':
+            train_file = self.output_dir / 'triplets' / 'phase3' / 'train.parquet'
+            val_file = self.output_dir / 'triplets' / 'phase3' / 'val.parquet'
+            return train_file.exists() and val_file.exists()
+        return False
+
+    def _load_pairs_from_checkpoint(self) -> Dict[str, List[Tuple]]:
+        """Load positive pairs from checkpoint Parquet file."""
+        pairs_file = self.output_dir / 'pairs' / 'positive_pairs.parquet'
+        logger.info(f"Loading pairs from checkpoint: {pairs_file}")
+
+        table = pq.read_table(pairs_file)
+        df = table.to_pandas()
+
+        pairs_by_bin: Dict[str, List[Tuple]] = defaultdict(list)
+        for _, row in df.iterrows():
+            # We don't store similarity in the checkpoint, use 1.0 as placeholder
+            pairs_by_bin[row['bin']].append((row['anchor'], row['positive'], 1.0))
+
+        logger.info(f"Loaded {len(df):,} pairs across {len(pairs_by_bin)} bins")
+        return pairs_by_bin
+
     def generate_all(self):
-        """Generate training data for all phases."""
+        """Generate training data for all phases with checkpoint support."""
         logger.info("=" * 60)
         logger.info("GENERATING TRAINING DATA FOR ALL PHASES")
         logger.info("=" * 60)
@@ -640,13 +685,26 @@ class TrainingDataGenerator:
         logger.info("\n" + "=" * 60)
         logger.info("STEP 1: GENERATE POSITIVE PAIRS")
         logger.info("=" * 60)
-        pairs_by_bin = self.generate_positive_pairs()
+
+        if self._check_phase_complete('pairs'):
+            logger.info("✓ Positive pairs checkpoint found, loading from disk...")
+            pairs_by_bin = self._load_pairs_from_checkpoint()
+        else:
+            pairs_by_bin = self.generate_positive_pairs()
 
         # Step 2: Generate Phase 1 triplets (random negatives)
         logger.info("\n" + "=" * 60)
         logger.info("STEP 2: GENERATE PHASE 1 TRIPLETS")
         logger.info("=" * 60)
-        self.generate_phase1_triplets(pairs_by_bin)
+
+        if self._check_phase_complete('phase1'):
+            logger.info("✓ Phase 1 checkpoint found, skipping...")
+            # Load stats if available
+            phase1_train = pq.read_table(self.output_dir / 'triplets' / 'phase1' / 'train.parquet')
+            phase1_val = pq.read_table(self.output_dir / 'triplets' / 'phase1' / 'val.parquet')
+            self.stats['phase1']['triplets'] = len(phase1_train) + len(phase1_val)
+        else:
+            self.generate_phase1_triplets(pairs_by_bin)
 
         # Clear embedding cache and reset failure tracking between phases
         logger.info("Clearing embedding cache and resetting ES failure tracking...")
@@ -657,7 +715,15 @@ class TrainingDataGenerator:
         logger.info("\n" + "=" * 60)
         logger.info("STEP 3: GENERATE PHASE 2 SAMPLES")
         logger.info("=" * 60)
-        self.generate_phase2_samples()
+
+        if self._check_phase_complete('phase2'):
+            logger.info("✓ Phase 2 checkpoint found, skipping...")
+            # Load stats if available
+            phase2_train = pq.read_table(self.output_dir / 'training' / 'phase2' / 'train.parquet')
+            phase2_val = pq.read_table(self.output_dir / 'training' / 'phase2' / 'val.parquet')
+            self.stats['phase2']['samples'] = len(phase2_train) + len(phase2_val)
+        else:
+            self.generate_phase2_samples()
 
         # Reset failure tracking before Phase 3 (heavy ES usage)
         self.knn.reset_failure_tracking()
@@ -666,7 +732,15 @@ class TrainingDataGenerator:
         logger.info("\n" + "=" * 60)
         logger.info("STEP 4: GENERATE PHASE 3 TRIPLETS")
         logger.info("=" * 60)
-        self.generate_phase3_triplets(pairs_by_bin)
+
+        if self._check_phase_complete('phase3'):
+            logger.info("✓ Phase 3 checkpoint found, skipping...")
+            # Load stats if available
+            phase3_train = pq.read_table(self.output_dir / 'triplets' / 'phase3' / 'train.parquet')
+            phase3_val = pq.read_table(self.output_dir / 'triplets' / 'phase3' / 'val.parquet')
+            self.stats['phase3']['triplets'] = len(phase3_train) + len(phase3_val)
+        else:
+            self.generate_phase3_triplets(pairs_by_bin)
 
         # Save statistics
         stats_path = self.output_dir / 'training_stats.json'
@@ -1656,6 +1730,10 @@ def main():
     parser.add_argument('--training-namespaces', nargs='+',
                         default=['gn', 'wd', 'tgn'],
                         help='Namespaces to include in training')
+    parser.add_argument('--force', action='store_true',
+                        help='Force regeneration, ignoring existing checkpoints')
+    parser.add_argument('--resume', action='store_true',
+                        help='Resume from checkpoints (default behavior, explicit for clarity)')
 
     args = parser.parse_args()
 
@@ -1673,6 +1751,12 @@ def main():
 
     logger.info(f"Connected to Elasticsearch at {args.es_host}")
 
+    # Checkpoint mode
+    if args.force:
+        logger.info("Mode: FORCE (ignoring checkpoints, regenerating all data)")
+    else:
+        logger.info("Mode: RESUME (will skip phases with existing checkpoints)")
+
     # Generate training data
     generator = TrainingDataGenerator(
         es=es,
@@ -1680,6 +1764,7 @@ def main():
         output_dir=output_dir,
         scratch_dir=scratch_dir,
         training_namespaces=args.training_namespaces,
+        force_regenerate=args.force,
     )
 
     stats = generator.generate_all()
