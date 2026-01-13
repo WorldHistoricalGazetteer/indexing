@@ -1118,7 +1118,8 @@ conda activate whg
 cd "${REPO_DIR}"
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
+mkdir -p "\$SCRATCH_ROOT/triplets/phase1"
+mkdir -p "\$SCRATCH_ROOT/vocab"
 
 echo "Environment: whg"
 echo "Python: \$(which python)"
@@ -1186,15 +1187,16 @@ conda activate whg
 cd "${REPO_DIR}"
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
+mkdir -p "\$SCRATCH_ROOT/training"
+mkdir -p "\$SCRATCH_ROOT/vocab"
 
 echo "Environment: whg"
 echo "Python: \$(which python)"
 echo "------------------------------------------------"
 
-# Stage data to scratch
+# Stage data to scratch (training/ contains Hive-partitioned data: split=train/, split=val/, split=test/)
 echo "Staging data to \$SCRATCH_ROOT..."
-rsync -a "${DATA_DIR}/training/phase2/" "\$SCRATCH_ROOT/training/phase2/"
+rsync -a "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
 rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 
 echo "Starting Phase 2 (Student Alignment)..."
@@ -1254,7 +1256,8 @@ conda activate whg
 cd "${REPO_DIR}"
 
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
-mkdir -p "\$SCRATCH_ROOT"
+mkdir -p "\$SCRATCH_ROOT/triplets/phase3"
+mkdir -p "\$SCRATCH_ROOT/vocab"
 
 echo "Environment: whg"
 echo "Python: \$(which python)"
