@@ -19,6 +19,172 @@ from elasticsearch import Elasticsearch
 # Configuration
 ES_HOST = os.environ.get("ES_HOST", "http://htc-n30:9201")
 
+
+def test_place_clustering(es, city_name):
+    """Test HDBSCAN clustering for a specific city."""
+
+    # Search for the city
+    result = es.search(
+        index="toponyms",
+        size=100,
+        query={
+            "bool": {
+                "must": [
+                    {"match": {"name": city_name}},
+                    {"exists": {"field": "panphon_embedding"}}
+                ]
+            }
+        },
+        _source=["toponym_id", "name", "lang", "script", "panphon_embedding", "attestations"]
+    )
+
+    hits = result["hits"]["hits"]
+    if not hits:
+        print(f"{city_name} not found in index")
+        return
+
+    # Get the attestation (place_id) from the first hit that matches the city name closely
+    place_id = None
+    for h in hits:
+        src = h["_source"]
+        if src.get("name", "").lower() == city_name.lower():
+            attestations = src.get("attestations", [])
+            if attestations:
+                place_id = attestations[0]
+                break
+
+    if not place_id:
+        # Fall back to first hit
+        place_id = hits[0]["_source"].get("attestations", [None])[0]
+
+    if not place_id:
+        print(f"No place_id found for {city_name}")
+        return
+
+    print(f"Found {city_name} place: {place_id}")
+
+    # Get all toponyms for this place
+    toponyms_result = es.search(
+        index="toponyms",
+        size=200,
+        query={
+            "bool": {
+                "must": [
+                    {"term": {"attestations": place_id}},
+                    {"exists": {"field": "panphon_embedding"}}
+                ]
+            }
+        },
+        _source=["name", "lang", "script", "panphon_embedding"]
+    )
+
+    toponyms = []
+    for h in toponyms_result["hits"]["hits"]:
+        src = h["_source"]
+        emb = src.get("panphon_embedding", [])
+        if emb:
+            toponyms.append({
+                "name": src.get("name", "?"),
+                "lang": src.get("lang", "?"),
+                "script": src.get("script", "?"),
+                "embedding": emb
+            })
+
+    if len(toponyms) < 2:
+        print(f"{city_name} has insufficient toponyms ({len(toponyms)})")
+        return
+
+    print(f"\n{city_name} has {len(toponyms)} toponyms with embeddings")
+
+    # Show all toponyms grouped by script
+    by_script = defaultdict(list)
+    for t in toponyms:
+        by_script[t['script']].append(t)
+
+    print("\nToponyms by script:")
+    for script, items in sorted(by_script.items()):
+        print(f"  {script} ({len(items)}):")
+        for t in items[:5]:
+            print(f"    {t['name']:25} ({t['lang']})")
+        if len(items) > 5:
+            print(f"    ... and {len(items) - 5} more")
+
+    if len(toponyms) < 3:
+        # For 2 toponyms, just check similarity threshold
+        vectors = np.array([t["embedding"] for t in toponyms])
+        sim = 1 - cosine_distances(vectors)[0][1]
+        print(f"\n2 toponyms - similarity: {sim:.4f}")
+        if sim >= 0.5:
+            print(f"  Would form positive pair: {toponyms[0]['name']} <-> {toponyms[1]['name']}")
+        else:
+            print(f"  Too dissimilar for pair")
+        return
+
+    # Run HDBSCAN clustering
+    vectors = np.array([t["embedding"] for t in toponyms])
+    distance_matrix = cosine_distances(vectors)
+
+    clusterer = hdbscan.HDBSCAN(
+        min_cluster_size=2,
+        min_samples=1,
+        metric='precomputed',
+        cluster_selection_epsilon=0.0,
+        allow_single_cluster=True
+    )
+    labels = clusterer.fit_predict(distance_matrix)
+
+    # Group results
+    clusters = defaultdict(list)
+    for t, label in zip(toponyms, labels):
+        clusters[int(label)].append(t)
+
+    n_clusters = len([l for l in set(labels) if l >= 0])
+    n_noise = list(labels).count(-1)
+
+    print(f"\nClustering results: {n_clusters} clusters, {n_noise} noise points")
+
+    # Show clusters with details
+    for label in sorted(clusters.keys()):
+        if label >= 0:
+            members = clusters[label]
+            scripts = set(t['script'] for t in members)
+            langs = set(t['lang'] for t in members)
+
+            script_str = "/".join(sorted(scripts))
+            print(f"\n  Cluster {label} ({len(members)} members, scripts: {script_str}):")
+            for t in members[:8]:
+                print(f"    {t['name']:25} ({t['lang']:5}, {t['script']})")
+            if len(members) > 8:
+                print(f"    ... and {len(members) - 8} more")
+
+            # Calculate intra-cluster similarity
+            if len(members) >= 2:
+                member_indices = [i for i, (t, l) in enumerate(zip(toponyms, labels)) if l == label]
+                intra_dists = []
+                for i, idx1 in enumerate(member_indices):
+                    for idx2 in member_indices[i+1:]:
+                        intra_dists.append(1 - distance_matrix[idx1][idx2])
+                if intra_dists:
+                    print(f"    Intra-cluster similarity: {np.mean(intra_dists):.3f} (min: {min(intra_dists):.3f}, max: {max(intra_dists):.3f})")
+
+    if -1 in clusters:
+        print(f"\n  Noise ({len(clusters[-1])} points):")
+        for t in clusters[-1][:5]:
+            print(f"    {t['name']:25} ({t['lang']:5}, {t['script']})")
+        if len(clusters[-1]) > 5:
+            print(f"    ... and {len(clusters[-1]) - 5} more")
+
+    # Summary: would generate pairs
+    total_pairs = 0
+    for label, members in clusters.items():
+        if label >= 0 and len(members) >= 2:
+            n = len(members)
+            pairs = n * (n - 1) // 2
+            total_pairs += pairs
+
+    print(f"\n  Total positive pairs that would be generated: {total_pairs}")
+
+
 def main():
     print("=" * 60)
     print("HDBSCAN CLUSTERING TEST ON REAL TOPONYMS")
@@ -190,87 +356,17 @@ def main():
 
     print("\n✓ HDBSCAN clustering test complete")
 
-    # Also test a place we know should have multiple phonetic groups
-    print("\n" + "=" * 60)
-    print("BONUS: Testing on 'Moscow' (if available)")
-    print("=" * 60)
+    # Test specific well-known places
+    test_cities = ["London", "Moscow", "Beijing", "Paris"]
 
-    # Search for Moscow
-    moscow_result = es.search(
-        index="toponyms",
-        size=100,
-        query={
-            "bool": {
-                "must": [
-                    {"match": {"name": "Moscow"}},
-                    {"exists": {"field": "panphon_embedding"}}
-                ]
-            }
-        },
-        _source=["toponym_id", "name", "lang", "script", "panphon_embedding", "attestations"]
-    )
+    for city_name in test_cities:
+        print("\n" + "=" * 60)
+        print(f"TESTING: {city_name}")
+        print("=" * 60)
 
-    moscow_hits = moscow_result["hits"]["hits"]
-    if moscow_hits:
-        # Get the attestation (place_id) from the first hit
-        moscow_place = moscow_hits[0]["_source"].get("attestations", [None])[0]
-        if moscow_place:
-            print(f"Found Moscow place: {moscow_place}")
+        test_place_clustering(es, city_name)
 
-            # Get all toponyms for Moscow
-            moscow_toponyms_result = es.search(
-                index="toponyms",
-                size=100,
-                query={
-                    "bool": {
-                        "must": [
-                            {"term": {"attestations": moscow_place}},
-                            {"exists": {"field": "panphon_embedding"}}
-                        ]
-                    }
-                },
-                _source=["name", "lang", "script", "panphon_embedding"]
-            )
 
-            moscow_toponyms = []
-            for h in moscow_toponyms_result["hits"]["hits"]:
-                src = h["_source"]
-                emb = src.get("panphon_embedding", [])
-                if emb:
-                    moscow_toponyms.append({
-                        "name": src.get("name", "?"),
-                        "lang": src.get("lang", "?"),
-                        "script": src.get("script", "?"),
-                        "embedding": emb
-                    })
-
-            if len(moscow_toponyms) >= 3:
-                print(f"\nMoscow has {len(moscow_toponyms)} toponyms with embeddings")
-                for t in moscow_toponyms[:10]:
-                    print(f"  {t['name']:20} ({t['lang']:5}, {t['script']})")
-
-                vectors = np.array([t["embedding"] for t in moscow_toponyms])
-                distance_matrix = cosine_distances(vectors)
-
-                clusterer = hdbscan.HDBSCAN(
-                    min_cluster_size=2,
-                    min_samples=1,
-                    metric='precomputed',
-                    allow_single_cluster=True
-                )
-                labels = clusterer.fit_predict(distance_matrix)
-
-                clusters = defaultdict(list)
-                for t, label in zip(moscow_toponyms, labels):
-                    clusters[int(label)].append(f"{t['name']} ({t['lang']}, {t['script']})")
-
-                n_clusters = len([l for l in set(labels) if l >= 0])
-                print(f"\nMoscow clustering: {n_clusters} clusters")
-                for label in sorted(clusters.keys()):
-                    if label >= 0:
-                        print(f"  Cluster {label}: {clusters[label][:5]}")
-    else:
-        print("Moscow not found in index")
 
 
 if __name__ == "__main__":
