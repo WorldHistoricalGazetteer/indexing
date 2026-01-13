@@ -650,8 +650,9 @@ class TrainingDataGenerator:
             val_file = self.output_dir / 'triplets' / 'phase1' / 'val.parquet'
             return train_file.exists() and val_file.exists()
         elif phase == 'phase2':
-            train_file = self.output_dir / 'training' / 'phase2' / 'train.parquet'
-            val_file = self.output_dir / 'training' / 'phase2' / 'val.parquet'
+            # Phase 2 data is stored in training/split={train,val,test}/data.parquet
+            train_file = self.output_dir / 'training' / 'split=train' / 'data.parquet'
+            val_file = self.output_dir / 'training' / 'split=val' / 'data.parquet'
             return train_file.exists() and val_file.exists()
         elif phase == 'phase3':
             train_file = self.output_dir / 'triplets' / 'phase3' / 'train.parquet'
@@ -676,7 +677,19 @@ class TrainingDataGenerator:
         return pairs_by_bin
 
     def generate_all(self):
-        """Generate training data for all phases with checkpoint support."""
+        """Generate training data for all phases with checkpoint support.
+
+        IMPORTANT: Order matters! Phase 2 data (training/ with features) must be
+        generated BEFORE Phase 1 triplets, because Phase 1 training needs to look up
+        features from the training data. Similarly, Phase 3 must come last as it
+        depends on ES KNN queries against the same data.
+
+        Generation order:
+        1. Positive pairs (clustering co-located toponyms)
+        2. Phase 2 samples (all toponyms with features - needed by Phase 1 & 3 training)
+        3. Phase 1 triplets (random negatives - IDs only, features from Phase 2)
+        4. Phase 3 triplets (hard negatives via ES KNN)
+        """
         logger.info("=" * 60)
         logger.info("GENERATING TRAINING DATA FOR ALL PHASES")
         logger.info("=" * 60)
@@ -692,9 +705,35 @@ class TrainingDataGenerator:
         else:
             pairs_by_bin = self.generate_positive_pairs()
 
-        # Step 2: Generate Phase 1 triplets (random negatives)
+        # Step 2: Generate Phase 2 samples FIRST (all toponyms with embeddings)
+        # CRITICAL: This must happen BEFORE Phase 1 triplets because Phase 1 training
+        # needs to look up features from the training/ directory
         logger.info("\n" + "=" * 60)
-        logger.info("STEP 2: GENERATE PHASE 1 TRIPLETS")
+        logger.info("STEP 2: GENERATE PHASE 2 SAMPLES (training data with features)")
+        logger.info("=" * 60)
+
+        if self._check_phase_complete('phase2'):
+            logger.info("✓ Phase 2 checkpoint found, skipping...")
+            # Count samples from existing files
+            training_dir = self.output_dir / 'training'
+            total_samples = 0
+            for split in ['train', 'val', 'test']:
+                split_file = training_dir / f'split={split}' / 'data.parquet'
+                if split_file.exists():
+                    total_samples += pq.read_table(split_file).num_rows
+            self.stats['phase2']['samples'] = total_samples
+        else:
+            self.generate_phase2_samples()
+
+        # Clear embedding cache and reset failure tracking between phases
+        logger.info("Clearing embedding cache and resetting ES failure tracking...")
+        self.knn.clear_cache()
+        self.knn.reset_failure_tracking()
+
+        # Step 3: Generate Phase 1 triplets (random negatives)
+        # These are IDs only - Phase 1 training joins them to features from Phase 2 data
+        logger.info("\n" + "=" * 60)
+        logger.info("STEP 3: GENERATE PHASE 1 TRIPLETS")
         logger.info("=" * 60)
 
         if self._check_phase_complete('phase1'):
@@ -705,25 +744,6 @@ class TrainingDataGenerator:
             self.stats['phase1']['triplets'] = len(phase1_train) + len(phase1_val)
         else:
             self.generate_phase1_triplets(pairs_by_bin)
-
-        # Clear embedding cache and reset failure tracking between phases
-        logger.info("Clearing embedding cache and resetting ES failure tracking...")
-        self.knn.clear_cache()
-        self.knn.reset_failure_tracking()
-
-        # Step 3: Generate Phase 2 samples (all toponyms with embeddings)
-        logger.info("\n" + "=" * 60)
-        logger.info("STEP 3: GENERATE PHASE 2 SAMPLES")
-        logger.info("=" * 60)
-
-        if self._check_phase_complete('phase2'):
-            logger.info("✓ Phase 2 checkpoint found, skipping...")
-            # Load stats if available
-            phase2_train = pq.read_table(self.output_dir / 'training' / 'phase2' / 'train.parquet')
-            phase2_val = pq.read_table(self.output_dir / 'training' / 'phase2' / 'val.parquet')
-            self.stats['phase2']['samples'] = len(phase2_train) + len(phase2_val)
-        else:
-            self.generate_phase2_samples()
 
         # Reset failure tracking before Phase 3 (heavy ES usage)
         self.knn.reset_failure_tracking()
@@ -983,6 +1003,10 @@ class TrainingDataGenerator:
         For each positive pair (anchor, positive), sample a random negative
         that is NOT in the same place (not adjacent).
 
+        IMPORTANT: This generates SELF-CONTAINED triplets that include all data
+        needed for training (panphon features). Training does NOT need to look up
+        features from any other data source.
+
         Uses unified bin-balancing algorithm:
         - Caps over-represented script+language bins
         - Oversamples under-represented bins (up to MAX_OVERSAMPLE_FACTOR)
@@ -1001,33 +1025,45 @@ class TrainingDataGenerator:
 
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
-        # Pre-load anchor info to avoid per-pair DB queries (CRITICAL for performance)
-        logger.info("Pre-loading toponym info for all anchors...")
+        # Pre-load toponym info AND features for all anchors/positives
+        # This is CRITICAL - Phase 1 triplets must be self-contained
+        logger.info("Pre-loading toponym info and features for all anchors/positives...")
         all_anchor_ids = set()
         for pairs in pairs_by_bin.values():
             for id_a, id_b, _ in pairs:
                 all_anchor_ids.add(id_a)
                 all_anchor_ids.add(id_b)
 
-        # Batch query for all anchor info from ES using mget
-        anchor_info_map = {}
+        # Batch query for all anchor info AND features from ES using mget
+        # We need: script, lang, panphon_embedding (the 192-dim features)
+        toponym_data_map = {}  # toponym_id -> {script, lang, features, feature_length}
         anchor_list = list(all_anchor_ids)
         batch_size = 5000
-        logger.info(f"Loading anchor info from ES for {len(anchor_list):,} toponyms...")
+        logger.info(f"Loading toponym data from ES for {len(anchor_list):,} toponyms...")
 
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i+batch_size]
-            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['script', 'lang'])
+            docs = self.es.mget(index="toponyms", body={"ids": batch},
+                               _source=['script', 'lang', 'panphon_embedding'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
                     source = doc['_source']
-                    anchor_info_map[toponym_id] = (source.get('script', 'UNKNOWN'), source.get('lang', ''))
+                    embedding = source.get('panphon_embedding')
+
+                    # Only include if has valid embedding
+                    if embedding and len(embedding) > 0:
+                        toponym_data_map[toponym_id] = {
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                            'features': embedding,
+                            'feature_length': len(embedding) // 24,  # 24 = panphon feature dim
+                        }
 
             if (i + batch_size) % 50000 < batch_size:
                 logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
 
-        logger.info(f"Loaded info for {len(anchor_info_map):,} unique toponyms")
+        logger.info(f"Loaded data for {len(toponym_data_map):,} unique toponyms with valid features")
 
         # Get all toponym IDs for negative sampling, grouped by script
         # This enables script-aware negative sampling to avoid teaching easy shortcuts
@@ -1080,52 +1116,113 @@ class TrainingDataGenerator:
 
         logger.info(f"Balanced pairs: {len(balanced_pairs):,}")
 
-        # Generate triplets from balanced pairs (using pre-loaded anchor info)
-        # STOCHASTIC OVERSAMPLING: Each copy of an oversampled pair gets a different
-        # negative, preventing the model from memorising identical triplets.
+        # Generate triplets from balanced pairs
+        # CRITICAL: We must include the actual features in each triplet so training is self-contained
+        # We already have features for anchors/positives in toponym_data_map
+        # For negatives, we need to batch-fetch features as we generate triplets
+
         logger.info("Generating triplets (with stochastic negative sampling)...")
-        triplets = []
+
+        # First pass: select negatives and collect all negative IDs we need
+        logger.info("  Pass 1: Selecting negatives...")
+        triplet_specs = []  # List of (anchor, positive, negative, bin_key) tuples
+        negative_ids_needed = set()
 
         for triplet_idx, pair in enumerate(balanced_pairs):
             anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
 
-            # Use pre-loaded anchor info (no DB query!)
-            if anchor not in anchor_info_map:
+            # Skip if anchor or positive don't have features
+            if anchor not in toponym_data_map or positive not in toponym_data_map:
                 continue
 
-            script, lang = anchor_info_map[anchor]
+            anchor_data = toponym_data_map[anchor]
+            script = anchor_data['script']
+            lang = anchor_data['lang']
 
             # Use seeded RNG for reproducible negative sampling
-            # Seed includes triplet_idx so oversampled pairs get DIFFERENT negatives
-            # This implements stochastic oversampling: same (anchor, positive) but varying negatives
             seed = RANDOM_SEED + (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff) + triplet_idx
             rng = random.Random(seed)
 
             # Find a negative that's not adjacent
-            # CRITICAL: Use script-aware sampling to avoid teaching easy shortcuts
-            # 80% same-script negatives teach fine-grained phonetic discrimination
-            # 20% any-script negatives provide global contrast
             for _ in range(10):  # Max attempts
                 use_same_script = rng.random() < PHASE1_SAME_SCRIPT_NEGATIVE_RATIO
 
                 if use_same_script and script and script in ids_by_script and len(ids_by_script[script]) > 0:
-                    # Sample from same script
                     negative = rng.choice(ids_by_script[script])
                 else:
-                    # Sample from any script
                     negative = rng.choice(all_ids)
 
                 if (anchor, negative) not in adjacency and (positive, negative) not in adjacency:
                     bin_key = get_script_lang_key(script, lang)
-                    triplets.append({
-                        'anchor_id': anchor,
-                        'positive_id': positive,
-                        'negative_id': negative,
-                        'bin': bin_key,
-                    })
+                    triplet_specs.append((anchor, positive, negative, bin_key))
+                    # Track negative for feature fetching (unless already in toponym_data_map)
+                    if negative not in toponym_data_map:
+                        negative_ids_needed.add(negative)
                     break
 
-        logger.info(f"Generated {len(triplets):,} Phase 1 triplets")
+        logger.info(f"  Selected {len(triplet_specs):,} triplets, need features for {len(negative_ids_needed):,} negatives")
+
+        # Batch fetch features for negatives that aren't already loaded
+        if negative_ids_needed:
+            logger.info("  Pass 2: Loading features for negatives...")
+            neg_list = list(negative_ids_needed)
+
+            for i in range(0, len(neg_list), batch_size):
+                batch = neg_list[i:i+batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                   _source=['script', 'lang', 'panphon_embedding'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        toponym_id = doc['_id']
+                        source = doc['_source']
+                        embedding = source.get('panphon_embedding')
+
+                        if embedding and len(embedding) > 0:
+                            toponym_data_map[toponym_id] = {
+                                'script': source.get('script', 'UNKNOWN'),
+                                'lang': source.get('lang', ''),
+                                'features': embedding,
+                                'feature_length': len(embedding) // 24,
+                            }
+
+                if (i + batch_size) % 100000 < batch_size:
+                    logger.info(f"    Loaded {min(i + batch_size, len(neg_list)):,} / {len(neg_list):,}...")
+
+        # Build final triplets with embedded features
+        logger.info("  Pass 3: Building triplets with features...")
+        triplets = []
+        skipped_missing_features = 0
+
+        for anchor, positive, negative, bin_key in triplet_specs:
+            # Verify all three have features
+            if anchor not in toponym_data_map or \
+               positive not in toponym_data_map or \
+               negative not in toponym_data_map:
+                skipped_missing_features += 1
+                continue
+
+            anchor_data = toponym_data_map[anchor]
+            positive_data = toponym_data_map[positive]
+            negative_data = toponym_data_map[negative]
+
+            triplets.append({
+                'anchor_id': anchor,
+                'positive_id': positive,
+                'negative_id': negative,
+                'bin': bin_key,
+                # Embed the actual features (self-contained triplet)
+                'anchor_features': anchor_data['features'],
+                'anchor_feature_length': anchor_data['feature_length'],
+                'positive_features': positive_data['features'],
+                'positive_feature_length': positive_data['feature_length'],
+                'negative_features': negative_data['features'],
+                'negative_feature_length': negative_data['feature_length'],
+            })
+
+        if skipped_missing_features > 0:
+            logger.info(f"  Skipped {skipped_missing_features:,} triplets due to missing features")
+
+        logger.info(f"Generated {len(triplets):,} Phase 1 triplets (self-contained with features)")
         self.stats['phase1']['triplets'] = len(triplets)
         self.stats['phase1']['balance_stats'] = balance_stats
 
