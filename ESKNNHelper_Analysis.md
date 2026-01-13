@@ -78,9 +78,9 @@ This method clusters toponyms within a place using **HDBSCAN density-based clust
 |-----------|-------|---------|
 | `min_cluster_size` | 2 | Minimum points to form a cluster |
 | `min_samples` | 2 | Provides denoising; prevents weak links from merging distinct clusters |
-| `metric` | 'cosine' | Measures phonetic similarity in embedding space |
+| `metric` | 'precomputed' | Uses precomputed cosine distance matrix for phonetic similarity |
 | `allow_single_cluster` | True | Returns all points in one cluster if naturally similar |
-| `cluster_selection_epsilon` | 0.0 | Let algorithm decide cluster boundaries |
+| `cluster_selection_epsilon` | 0.2 | Merge clusters within cosine distance 0.2 (similarity ≥ 0.8). Creates larger, more meaningful clusters. |
 
 ---
 

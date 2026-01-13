@@ -394,11 +394,14 @@ class ESKNNHelper:
             from sklearn.metrics.pairwise import cosine_distances
             distance_matrix = cosine_distances(vectors)
 
+            # Use cluster_selection_epsilon=0.2 (cosine distance) to merge clusters
+            # where members are within ~0.8 cosine similarity of each other.
+            # This creates larger, more meaningful clusters for phonetically similar names.
             clusterer = hdbscan.HDBSCAN(
                 min_cluster_size=2,
-                min_samples=1,  # Allow small clusters (pairs) to be detected
+                min_samples=2,  # Require at least 2 points in core neighborhood (better denoising)
                 metric='precomputed',  # Use precomputed distance matrix
-                cluster_selection_epsilon=0.0,
+                cluster_selection_epsilon=0.2,  # Merge clusters within cosine distance 0.2 (sim >= 0.8)
                 allow_single_cluster=True  # Critical: allows all points in one cluster
             )
             labels = clusterer.fit_predict(distance_matrix)

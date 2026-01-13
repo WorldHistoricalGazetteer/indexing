@@ -124,11 +124,14 @@ def test_place_clustering(es, city_name):
     vectors = np.array([t["embedding"] for t in toponyms])
     distance_matrix = cosine_distances(vectors)
 
+    # Use cluster_selection_epsilon=0.2 (cosine distance) to merge clusters
+    # where members are within ~0.8 cosine similarity of each other.
+    # This creates larger, more meaningful clusters for phonetically similar names.
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=2,
-        min_samples=1,
+        min_samples=2,  # Better denoising
         metric='precomputed',
-        cluster_selection_epsilon=0.0,
+        cluster_selection_epsilon=0.2,  # Merge clusters within cosine distance 0.2 (sim >= 0.8)
         allow_single_cluster=True
     )
     labels = clusterer.fit_predict(distance_matrix)
@@ -300,14 +303,17 @@ def main():
 
     # Run HDBSCAN
     print("\n" + "=" * 60)
-    print("HDBSCAN CLUSTERING (min_cluster_size=2, min_samples=1)")
+    print("HDBSCAN CLUSTERING (min_cluster_size=2, min_samples=2, epsilon=0.2)")
     print("=" * 60)
 
+    # Use cluster_selection_epsilon=0.2 (cosine distance) to merge clusters
+    # where members are within ~0.8 cosine similarity of each other.
+    # This creates larger, more meaningful clusters for phonetically similar names.
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=2,
-        min_samples=1,
+        min_samples=2,  # Better denoising
         metric='precomputed',
-        cluster_selection_epsilon=0.0,
+        cluster_selection_epsilon=0.2,  # Merge clusters within cosine distance 0.2 (sim >= 0.8)
         allow_single_cluster=True
     )
     labels = clusterer.fit_predict(distance_matrix)
