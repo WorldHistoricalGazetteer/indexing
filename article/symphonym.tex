@@ -412,7 +412,7 @@ Rather than applying arbitrary similarity thresholds, I use density-based cluste
 
 \begin{enumerate}
     \item Extract 192-dimensional PanPhon embeddings for all toponyms with valid IPA transcriptions
-    \item Apply HDBSCAN clustering with \texttt{min\_cluster\_size=2} and \texttt{min\_samples=2} to identify natural phonetic groupings
+    \item Apply HDBSCAN clustering with \texttt{min\_cluster\_size=2}, \texttt{min\_samples=2}, and \texttt{cluster\_selection\_epsilon=0.2} (the epsilon parameter merges clusters within cosine distance 0.2, i.e., similarity $\geq$0.8)
     \item Generate positive pairs only from toponyms within the same cluster
 \end{enumerate}
 
@@ -424,24 +424,41 @@ This approach correctly separates phonetically distinct name families. For examp
 
 Pairs are generated within clusters (Köln--Keulen, Cologne--Colonia) but not across them (Köln--Cologne), preventing the model from learning that phonetically unrelated exonyms should cluster together.
 
-Real-world examples demonstrate the power of this approach. A London place record (wd:Q1001456) with 21 multilingual toponyms yields 5 clusters that respect phonetic boundaries across scripts:
+Real-world examples demonstrate the power of this approach. With appropriately tuned HDBSCAN parameters (\texttt{cluster\_selection\_epsilon=0.2} to merge clusters within cosine distance 0.2), the algorithm produces large, phonetically coherent cross-script clusters while isolating true outliers.
+
+A \textbf{London} place record (wd:Q1001456) with 21 multilingual toponyms yields a single dominant cluster of 17 members spanning Arabic, CJK, Cyrillic, and Latin scripts, with intra-cluster similarity of 0.91:
 
 \begin{itemize}
-    \item \textbf{Arabic cluster (3 members):} \textar{لندن} (fa), \textar{لندن} (ar), \textar{لندن} (ur)---identical orthography across Persian, Arabic, and Urdu, with intra-cluster similarity of 0.98
-    \item \textbf{Cyrillic-Latin cross-script cluster:} Лондон (ru/uk) clusters with Latin transcriptions London (hu, cs, es, it, tr) at similarity 1.00, demonstrating successful phonetic alignment
-    \item \textbf{Noise detection:} Bengali \textbn{লন্ডন}, Chinese \textcn{伦敦}, and certain Latin variants (London@en, London@pt) are correctly classified as noise---phonetically distinct singletons that should not form training pairs
+    \item \textbf{Main cluster (17 members):} London (de, vi, pl, hu, cs, es, it, tr, nl, sv, en), \textar{لندن} (fa, ar, ur), Лондон (ru, uk), and \textcn{伦敦} (zh) all cluster together---demonstrating that phonetically equivalent forms across 4 scripts are correctly recognised as a single group
+    \item \textbf{Noise detection (4 points):} London (fr, pt), Bengali \textbn{লন্ডন}, and Serbian Ландон are correctly isolated---these either have distinct pronunciations (French/Portuguese /lɔ̃dʁ/) or are phonetically distant from the dominant cluster
 \end{itemize}
 
-A Moscow place record (wd:Q499927) with 33 multilingual toponyms across 11 scripts yields 9 clusters that respect both script and phonetic boundaries:
+This single cluster generates 136 positive training pairs, efficiently capturing all cross-script phonetic equivalences.
+
+A \textbf{Moscow} place record (wd:Q499927) with 33 multilingual toponyms across 11 scripts yields 2 major clusters:
 
 \begin{itemize}
-    \item \textbf{Indic cluster (3 members):} Devanagari \texthi{मॉस्को} (mr/hi) and Bengali \textbn{মস্কো} cluster together with similarity 0.97, reflecting shared phonetic structure across related scripts
-    \item \textbf{South Indian cluster:} Tamil \textta{மாஸ்கோ} and Telugu \textte{మాస్కో} form their own cluster (similarity 0.98)
-    \item \textbf{Cross-script alignment:} Cyrillic Москоу (ru) clusters with Latin forms Moscow (ro, pt, es) at similarity 0.97
-    \item \textbf{Noise:} Georgian \textge{მოსკოვი}, Thai \textth{มอสโก}, and Arabic variants are classified as noise---phonetically isolated from other forms
+    \item \textbf{Cluster 1 (20 members):} Cyrillic Москов (uk), Hangul \textko{모스코}, and Latin forms (vi, fi, sv, tr, fr, ms, nl, ro, pt, es, cs, id, pl, hu) cluster together with similarity 0.82, reflecting the shared /mosk-/ phonetic core
+    \item \textbf{Cluster 2 (8 members):} South Asian and Middle Eastern forms cluster together: Tamil \textta{மாஸ்கோ}, Arabic \textar{موسكو}, Devanagari \texthi{मॉस्को} (mr, hi), Thai \textth{มอสโก}, Bengali \textbn{মস্কো}, and Telugu \textte{మాస్కో}---capturing the /masko/ pronunciation variant common to these language families (similarity 0.85)
+    \item \textbf{Noise (5 points):} Georgian \textge{მოსკოვი}, CJK \textcn{莫斯科}, and some Arabic variants are correctly isolated as phonetically distinct
 \end{itemize}
 
-A Beijing place record (gn:1816670) with 36 toponyms demonstrates cross-script phonetic alignment: Chinese \textcn{北京} (zh) clusters directly with Korean \textko{베이징} (ko) at similarity 1.00, while ``Peking'' variants (Peking@nl, Peking@cs, Peking@de) form a separate cluster from ``Beijing'' variants (Beijing@ro, Beijing@de). Georgian \textge{პეკინი} clusters with Italian ``Pechino'' (similarity 0.90), capturing the shared /pekin/ phonetic core despite different scripts.
+A \textbf{Beijing} place record (gn:1816670) with 36 toponyms demonstrates nuanced phonetic clustering across 3 groups:
+
+\begin{itemize}
+    \item \textbf{``Beijing'' cluster (10 members):} Chinese \textcn{北京}, Korean \textko{베이징}, Thai \textth{ปักกิ่ง}, Tamil \textth{பெய்ஜிங்}, Vietnamese ``Bắc Kinh'', and Latin Beijing forms---all sharing the /bei-dʒiŋ/ phonetic pattern (similarity 0.83)
+    \item \textbf{``Peking'' cluster (9 members):} Cyrillic Пекин/Пекінг (ru, uk, sr), Latin Peking (nl, cs, de, hu, fi, sv)---the historical romanisation variant forms its own coherent group (similarity 0.90)
+    \item \textbf{``Pechino/Pekin'' cluster (9 members):} Georgian \textge{პეკინი}, Italian ``Pechino'', and additional Latin variants---capturing the /pek-/ phonetic core across scripts (similarity 0.72)
+\end{itemize}
+
+A \textbf{Paris} place record (gn:2988507) with 38 toponyms produces 3 clusters totalling 33 members and 292 positive pairs:
+
+\begin{itemize}
+    \item \textbf{Main cluster (24 members):} Latin forms (vi, hu, ms, ro, sw, es, tr, id, de, sv, en, pt), Cyrillic Париж/Париз (ru, sr), Arabic \textar{باريس}, Devanagari \texthi{पैरिस}, Tamil \textta{பாரிஸ்}, Telugu \textte{పారిస్}, and Thai \textth{ปารีส}---demonstrating successful alignment across 7 scripts (similarity 0.91)
+    \item \textbf{East Asian cluster (4 members):} Chinese \textcn{巴黎}, Korean \textko{파리}, Vietnamese ``Pa-ri'', and French ``Paris''---the tonal languages cluster with the source form
+    \item \textbf{``Parigi'' cluster (5 members):} Italian ``Parigi'', Finnish ``Pariisi'', Dutch ``Parijs'', Malayalam \textth{പാരിസ്}, Georgian \textge{პარიზი}---the /pariʒi/ variant
+\end{itemize}
+
 
 For places with only two toponyms---where HDBSCAN cannot determine density structure---I fall back to a cosine similarity threshold of 0.5 on the PanPhon embeddings. This threshold balances capturing significant phonetic shifts in historical exonyms (e.g., Munich/München at 0.79, Beijing/Peking at 0.93) while excluding unrelated administrative labels (e.g., Germany/Deutschland at 0.18).
 
@@ -638,7 +655,7 @@ Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,51
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Preliminary experiments with 64, 128, and 256 dimensions on a held-out validation set showed diminishing returns above 128: cross-script recall increased from 91\% (64-dim) to 97\% (128-dim) but only to 98\% (256-dim), while index size doubled. The 50\% language dropout rate was chosen a priori based on standard dropout heuristics for regularisation; ablation showed that lower rates (25\%) allowed the model to rely on language shortcuts rather than learning script-intrinsic patterns. The Phase 3 margin (0.2 vs.\ 0.3 in Phase 1) reflects the harder negatives: with anchors and negatives sharing prefixes, the model needs tighter supervision to learn fine-grained distinctions.
 
-To ensure phonetic integrity, toponym variants within a single geographic entity are clustered using HDBSCAN density-based clustering on their 192-dimensional articulatory embeddings. Unlike threshold-based approaches that impose arbitrary similarity cutoffs, HDBSCAN automatically identifies natural phonetic groupings based on local density structure---correctly separating, for example, the German cluster (Köln, Keulen) from the Latin cluster (Colonia, Kolonia) within a single place record. For geographic entities containing only two toponymic variants, where density-based clustering is not applicable (HDBSCAN requires $\geq$3 points), a fallback cosine similarity threshold of 0.5 is employed. This value balances capturing significant phonetic shifts in historical exonyms (e.g., Munich/München, Beijing/Peking) while excluding unrelated administrative labels that may be co-located within gazetteer records. Furthermore, to maximise discriminative power, Phase 1 training employs a script-aware negative sampling strategy: 80\% of negatives are drawn from the same writing system as the anchor. This prevents the Teacher from learning the trivial shortcut that ``different script = different place,'' forcing it instead to learn fine-grained phonetic discrimination within scripts.
+To ensure phonetic integrity, toponym variants within a single geographic entity are clustered using HDBSCAN density-based clustering on their 192-dimensional articulatory embeddings. Unlike threshold-based approaches that impose arbitrary similarity cutoffs, HDBSCAN automatically identifies natural phonetic groupings based on local density structure. The key parameter \texttt{cluster\_selection\_epsilon=0.2} (cosine distance) encourages cluster merging for entries within 80\% similarity, producing larger cross-script clusters that capture phonetic equivalence across writing systems---for example, grouping Latin ``London'' with Arabic \textar{لندن}, Cyrillic Лондон, and Chinese \textcn{伦敦} into a single cluster of 17 members. For geographic entities containing only two toponymic variants, where density-based clustering is not applicable (HDBSCAN requires $\geq$3 points), a fallback cosine similarity threshold of 0.5 is employed. This value balances capturing significant phonetic shifts in historical exonyms (e.g., Munich/München, Beijing/Peking) while excluding unrelated administrative labels that may be co-located within gazetteer records. Furthermore, to maximise discriminative power, Phase 1 training employs a script-aware negative sampling strategy: 80\% of negatives are drawn from the same writing system as the anchor. This prevents the Teacher from learning the trivial shortcut that ``different script = different place,'' forcing it instead to learn fine-grained phonetic discrimination within scripts.
 
 To address class imbalance across script-language pairs, under-represented bins are oversampled up to 5$\times$ their original size. Critically, this oversampling is \emph{stochastic}: each copy of an oversampled positive pair is assigned a different negative sample (in Phase 1) or a different hard negative from the ES candidate set (in Phase 3). This prevents the model from memorising identical triplets while maintaining balanced gradients across all script-language combinations.
 

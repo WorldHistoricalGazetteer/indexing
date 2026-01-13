@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  12 JAN 2026 20:43
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  13 JAN 2026 05:14
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1310,235 +1310,565 @@ o identify phonetically coherent groups
  []
 
 
-Overfull \hbox (15.24464pt too wide) in paragraph at lines 415--416
+Overfull \hbox (1.94038pt too wide) in paragraph at lines 415--416
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 Apply HDBSCAN clustering with \TU/lmtt/m/
-n/10.95 min_cluster_size=2 \TU/LinLibertine_R.otf(0)/m/n/10.95 and \TU/lmtt/m/n
-/10.95 min_samples=2
+n/10.95 min_cluster_size=2\TU/LinLibertine_R.otf(0)/m/n/10.95 , \TU/lmtt/m/n/10
+.95 min_samples=2\TU/LinLibertine_R.otf(0)/m/n/10.95 ,
  []
 
 [14]
-Overfull \hbox (3.18964pt too wide) in paragraph at lines 468--469
+./symphonym.tex:433: Undefined control sequence.
+l.433 ...oints):} London (fr, pt), Bengali \textbn
+                                                  {লন্ডন}, and Serbian Ландо...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ল (U+09B2) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ন (U+09A8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ্ (U+09CD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ড (U+09A1) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ন (U+09A8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:442: Undefined control sequence.
+l.442 ...ern forms cluster together: Tamil \textta
+                                                  {மாஸ்கோ}, Arabic \textar{م...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ம (U+0BAE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ா (U+0BBE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ஸ (U+0BB8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ் (U+0BCD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no க (U+0B95) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ோ (U+0BCB) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:442: Undefined control sequence.
+l.442 ...ri \texthi{मॉस्को} (mr, hi), Thai \textth
+                                                  {มอสโก}, Bengali \textbn{ম...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ม (U+0E21) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no อ (U+0E2D) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ส (U+0E2A) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no โ (U+0E42) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ก (U+0E01) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:442: Undefined control sequence.
+l.442 ...hi), Thai \textth{มอสโก}, Bengali \textbn
+                                                  {মস্কো}, and Telugu \textt...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ম (U+09AE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no স (U+09B8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ্ (U+09CD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ক (U+0995) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ো (U+09CB) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:442: Undefined control sequence.
+l.442 ...engali \textbn{মস্কো}, and Telugu \textte
+                                                  {మాస్కో}---capturing the /...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no మ (U+0C2E) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ా (U+0C3E) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no స (U+0C38) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ్ (U+0C4D) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no క (U+0C15) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ో (U+0C4B) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+
+./symphonym.tex:443: LaTeX Error: Command \textge unavailable in encoding TU.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.443 ...extbf{Noise (5 points):} Georgian \textge
+                                                  {მოსკოვი}, CJK \textcn{莫斯科...
+
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+Missing character: There is no მ (U+10DB) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ო (U+10DD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ს (U+10E1) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no კ (U+10D9) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ო (U+10DD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ვ (U+10D5) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ი (U+10D8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:449: Undefined control sequence.
+l.449 ...cn{北京}, Korean \textko{베이징}, Thai \textth
+                                                  {ปักกิ่ง}, Tamil \textth{ப...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ป (U+0E1B) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ั (U+0E31) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ก (U+0E01) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ก (U+0E01) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ิ (U+0E34) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ่ (U+0E48) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ง (U+0E07) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:449: Undefined control sequence.
+l.449 ...이징}, Thai \textth{ปักกิ่ง}, Tamil \textth
+                                                  {பெய்ஜிங்}, Vietnamese ``B...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ப (U+0BAA) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ெ (U+0BC6) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ய (U+0BAF) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ் (U+0BCD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ஜ (U+0B9C) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ி (U+0BBF) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ங (U+0B99) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ் (U+0BCD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+
+Overfull \hbox (17.88815pt too wide) in paragraph at lines 449--450
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 “Beijing” cluster (10 members): \TU/LinLi
+bertine_R.otf(0)/m/n/10.95 Chinese \TU/NotoSerifCJK-Regular.ttc(0)/m/n/10.95 北京
+\TU/LinLibertine_R.otf(0)/m/n/10.95 , Korean \TU/NotoSerifCJK-Regular.ttc(1)/m/
+n/10.95 베이징\TU/LinLibertine_R.otf(0)/m/n/10.95 , Thai ปักกิ่ง,
+ []
+
+
+./symphonym.tex:451: LaTeX Error: Command \textge unavailable in encoding TU.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.451 ...'' cluster (9 members):} Georgian \textge
+                                                  {პეკინი}, Italian ``Pechin...
+
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+Missing character: There is no პ (U+10DE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ე (U+10D4) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no კ (U+10D9) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ი (U+10D8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ნ (U+10DC) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ი (U+10D8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+
+Overfull \hbox (10.02603pt too wide) in paragraph at lines 451--452
+[]\TU/LinLibertine_R.otf(0)/b/n/10.95 “Pechino/Pekin” cluster (9 members): \TU/
+LinLibertine_R.otf(0)/m/n/10.95 Georgian პეკინი, Italian “Pechino”,
+ []
+
+./symphonym.tex:457: Undefined control sequence.
+l.457 ... Devanagari \texthi{पैरिस}, Tamil \textta
+                                                  {பாரிஸ்}, Telugu \textte{ప...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ப (U+0BAA) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ா (U+0BBE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ர (U+0BB0) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ி (U+0BBF) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ஸ (U+0BB8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ் (U+0BCD) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:457: Undefined control sequence.
+l.457 ...स}, Tamil \textta{பாரிஸ்}, Telugu \textte
+                                                  {పారిస్}, and Thai \textth...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ప (U+0C2A) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ా (U+0C3E) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ర (U+0C30) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ి (U+0C3F) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no స (U+0C38) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ్ (U+0C4D) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+./symphonym.tex:457: Undefined control sequence.
+l.457 ... Telugu \textte{పారిస్}, and Thai \textth
+                                                  {ปารีส}---demonstrating su...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no ป (U+0E1B) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no า (U+0E32) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ร (U+0E23) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ี (U+0E35) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ส (U+0E2A) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+[15]
+./symphonym.tex:459: Undefined control sequence.
+l.459 ...si'', Dutch ``Parijs'', Malayalam \textth
+                                                  {പാരിസ്}, Georgian \textge...
+The control sequence at the end of the top line
+of your error message was never \def'ed. If you have
+misspelled it (e.g., `\hobx'), type `I' and the correct
+spelling (e.g., `I\hbox'). Otherwise just continue,
+and I'll forget about whatever was undefined.
+
+Missing character: There is no പ (U+0D2A) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ാ (U+0D3E) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ര (U+0D30) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ി (U+0D3F) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no സ (U+0D38) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ് (U+0D4D) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+
+./symphonym.tex:459: LaTeX Error: Command \textge unavailable in encoding TU.
+
+See the LaTeX manual or LaTeX Companion for explanation.
+Type  H <return>  for immediate help.
+ ...                                              
+                                                  
+l.459 ...layalam \textth{പാരിസ്}, Georgian \textge
+                                                  {პარიზი}---the /pariʒi/ va...
+
+Your command was ignored.
+Type  I <command> <return>  to replace it with another command,
+or  <return>  to continue without it.
+
+Missing character: There is no პ (U+10DE) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ა (U+10D0) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no რ (U+10E0) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ი (U+10D8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ზ (U+10D6) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+Missing character: There is no ი (U+10D8) in font [fonts/LinLibertine_R.otf]/OT
+:script=latn;language=dflt;mapping=tex-text;!
+
+Overfull \hbox (3.18964pt too wide) in paragraph at lines 504--505
 \TU/LinLibertine_R.otf(0)/m/n/10.95 bic:fa (577K), Arabic:ar (412K), Cyrillic:u
 k (436K), Hangul:ko (229K), Thai:th (210K),
  []
 
-[15]
-Overfull \hbox (7.7473pt too wide) in paragraph at lines 470--471
+
+Overfull \hbox (7.7473pt too wide) in paragraph at lines 506--507
 \TU/LinLibertine_R.otf(0)/m/n/10.95 coverage of rare characters that may appear
  at inference time. After preprocessing—
  []
 
-
-Overfull \hbox (10.88745pt too wide) in paragraph at lines 474--475
+[16]
+Overfull \hbox (10.88745pt too wide) in paragraph at lines 510--511
 \TU/LinLibertine_R.otf(0)/m/n/10.95 nese/Latin (923,079), Persian/Latin (197,09
 9), Japanese/Latin (111,945), Russian/Latin
  []
 
-
-Overfull \hbox (5.65704pt too wide) in paragraph at lines 478--479
+[17]
+Overfull \hbox (5.65704pt too wide) in paragraph at lines 514--515
 \TU/LinLibertine_R.otf(0)/m/n/10.95 copy uses a different negative sample, prev
 enting memorisation of identical triplets. 
  []
 
-[16]
-Overfull \hbox (11.55545pt too wide) in paragraph at lines 499--500
+[18]
+Overfull \hbox (11.55545pt too wide) in paragraph at lines 535--536
 \TU/LinLibertine_R.otf(0)/m/n/10.95 buffers, Parquet training files—are written
  to scratch during processing, then rsynced
  []
 
-[17] [18]
-Overfull \hbox (0.17838pt too wide) in paragraph at lines 534--535
+[19]
+Overfull \hbox (0.17838pt too wide) in paragraph at lines 570--571
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Convergence.[] \TU/LinLibertine_R.otf(0)
 /m/n/10.95 Phase 1 training converged smoothly, with training loss decreas-
  []
 
-[19] [20] [21]
-Overfull \hbox (5.2312pt too wide) in paragraph at lines 618--619
+[20] [21] [22]
+Overfull \hbox (5.2312pt too wide) in paragraph at lines 654--655
 \TU/LinLibertine_R.otf(0)/b/n/10.95 parameters\TU/LinLibertine_R.otf(0)/m/n/10.
 95 ; the Student contains \TU/LinLibertine_R.otf(0)/b/n/10.95 1,761,217 paramet
 ers \TU/LinLibertine_R.otf(0)/m/n/10.95 (larger due to the 11,122-
  []
 
 
-Overfull \hbox (1.40677pt too wide) in paragraph at lines 620--621
+Overfull \hbox (1.40677pt too wide) in paragraph at lines 656--657
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 The embedding dimension of 128 was chosen
  to balance expressiveness against
  []
 
-
-Overfull \hbox (12.92328pt too wide) in paragraph at lines 622--623
+[23]
+Overfull \hbox (12.92328pt too wide) in paragraph at lines 658--659
 \TU/LinLibertine_R.otf(0)/m/n/10.95 tity are clustered using HDBSCAN density-ba
 sed clustering on their 192-dimensional
  []
 
 
-Overfull \hbox (5.82767pt too wide) in paragraph at lines 622--623
+Overfull \hbox (5.82767pt too wide) in paragraph at lines 658--659
 \TU/LinLibertine_R.otf(0)/m/n/10.95 trary similarity cutoffs, HDBSCAN automatic
 ally identifies natural phonetic group-
  []
 
-[22]
+
+Overfull \hbox (54.65338pt too wide) in paragraph at lines 658--659
+\TU/LinLibertine_R.otf(0)/m/n/10.95 ings based on local density structure. The 
+key parameter \TU/lmtt/m/n/10.95 cluster_selection_epsilon=0.2
+ []
+
 File: figures/training_curves.pdf Graphic file (type pdf)
 <use figures/training_curves.pdf>
 
-Overfull \hbox (31.47713pt too wide) in paragraph at lines 647--648
+Overfull \hbox (31.47713pt too wide) in paragraph at lines 683--684
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Phase 1 (Teacher).[] \TU/LinLibertine_R.
 otf(0)/m/n/10.95 The Teacher encoder trained for 50 epochs on 467,546 phonetica
 lly-
  []
 
-[23]
-Overfull \hbox (43.58058pt too wide) in paragraph at lines 659--671
+[24]
+Overfull \hbox (43.58058pt too wide) in paragraph at lines 695--707
  [][] 
  []
 
-[24]
-Overfull \hbox (38.31357pt too wide) in paragraph at lines 690--691
+[25]
+Overfull \hbox (38.31357pt too wide) in paragraph at lines 726--727
 \TU/LinLibertine_R.otf(0)/m/n/10.95 pairs involving scripts with complex orthog
 raphy-phonology relationships: Latin$\OMS/cmsy/m/n/10.95 $$\TU/LinLibertine_R.o
 tf(0)/m/n/10.95 Arabic
  []
 
-
-Overfull \hbox (4.21724pt too wide) in paragraph at lines 711--712
+[26]
+Overfull \hbox (4.21724pt too wide) in paragraph at lines 747--748
 []\TU/LinLibertine_R.otf(0)/m/n/10.95 Symphonym achieves 87.5% Recall@1—the cor
 rect cross-script match is ranked
  []
 
-[25]
-Overfull \hbox (7.27913pt too wide) in paragraph at lines 750--751
+[27]
+Overfull \hbox (7.27913pt too wide) in paragraph at lines 786--787
 \TU/LinLibertine_R.otf(0)/m/n/10.95 MEHDIE Hebrew-Arabic benchmark. The two dia
 gnostic failures (Moscow/Москва
  []
 
 
-Overfull \hbox (0.69945pt too wide) in paragraph at lines 750--751
+Overfull \hbox (0.69945pt too wide) in paragraph at lines 786--787
 \TU/LinLibertine_R.otf(0)/m/n/10.95 language-specific phonetic mappings from IP
 A features, then transfers this knowl-
  []
 
 
-Overfull \hbox (0.35722pt too wide) in paragraph at lines 752--753
+Overfull \hbox (0.35722pt too wide) in paragraph at lines 788--789
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Retrieval vs. Classification.[] \TU/LinL
 ibertine_R.otf(0)/m/n/10.95 Symphonym excels at \TU/LinLibertine_R.otf(0)/m/it/
 10.95 ranking \TU/LinLibertine_R.otf(0)/m/n/10.95 candidates by pho-
  []
 
-[26]
-Overfull \hbox (1.81725pt too wide) in paragraph at lines 754--755
+
+Overfull \hbox (1.81725pt too wide) in paragraph at lines 790--791
 \TU/LinLibertine_R.otf(0)/m/n/10.95 For same-script matching, traditional strin
 g similarity methods (Levenshtein, Jaro-
  []
 
-
-Overfull \hbox (1.51425pt too wide) in paragraph at lines 760--761
+[28]
+Overfull \hbox (1.51425pt too wide) in paragraph at lines 796--797
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Scalability and Deployment.[] \TU/LinLib
 ertine_R.otf(0)/m/n/10.95 Symphonym embeddings integrate directly with
  []
 
 
-Overfull \hbox (2.27348pt too wide) in paragraph at lines 760--761
+Overfull \hbox (2.27348pt too wide) in paragraph at lines 796--797
 \TU/LinLibertine_R.otf(0)/m/n/10.95 mal: encoding a toponym requires a single f
 orward pass through a 1.7M-parameter
  []
 
 
-Overfull \hbox (10.7123pt too wide) in paragraph at lines 762--763
+Overfull \hbox (10.7123pt too wide) in paragraph at lines 798--799
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 No Runtime Phonetics.[] \TU/LinLibertine
 _R.otf(0)/m/n/10.95 The Student encoder requires only raw character input—
  []
 
-[27]
-Overfull \hbox (6.2544pt too wide) in paragraph at lines 773--774
+[29]
+Overfull \hbox (6.2544pt too wide) in paragraph at lines 809--810
 \TU/LinLibertine_R.otf(0)/m/n/10.95 places with official names, potentially und
 er-representing historical variants. Wiki-
  []
 
 
-Overfull \hbox (7.59883pt too wide) in paragraph at lines 775--776
+Overfull \hbox (7.59883pt too wide) in paragraph at lines 811--812
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Tonal Languages.[] \TU/LinLibertine_R.ot
 f(0)/m/n/10.95 The current architecture does not explicitly model tone, which
  []
 
-[28]
-Overfull \hbox (2.60202pt too wide) in paragraph at lines 789--790
+[30]
+Overfull \hbox (2.60202pt too wide) in paragraph at lines 825--826
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 93% accuracy \TU/LinLibertine_R.otf(0)/m/
 n/10.95 on cross-script diagnostic pairs (63/68), spanning Latin, Cyril-
  []
 
 
-Overfull \hbox (29.71603pt too wide) in paragraph at lines 790--791
+Overfull \hbox (29.71603pt too wide) in paragraph at lines 826--827
 []\TU/LinLibertine_R.otf(0)/b/n/10.95 87.5% Recall@1 \TU/LinLibertine_R.otf(0)/
 m/n/10.95 and \TU/LinLibertine_R.otf(0)/b/n/10.95 MRR of 0.923 \TU/LinLibertine
 _R.otf(0)/m/n/10.95 on the MEHDIE Hebrew-Arabic benchmark—
  []
 
 
-Overfull \hbox (4.45253pt too wide) in paragraph at lines 790--791
+Overfull \hbox (4.45253pt too wide) in paragraph at lines 826--827
 \TU/LinLibertine_R.otf(0)/m/n/10.95 outperforming Levenshtein (81.5% R@1) and J
 aro-Winkler (78.5% R@1) base-
  []
 
-[29]
-Overfull \hbox (1.06168pt too wide) in paragraph at lines 805--806
+
+Overfull \hbox (1.06168pt too wide) in paragraph at lines 841--842
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Tonal Language Support.[] \TU/LinLiberti
 ne_R.otf(0)/m/n/10.95 The current architecture does not model tone, which
  []
 
 
-Overfull \hbox (9.10626pt too wide) in paragraph at lines 809--810
+Overfull \hbox (9.10626pt too wide) in paragraph at lines 845--846
  []\TU/LinLibertine_R.otf(0)/b/n/10.95 Historical Orthography.[] \TU/LinLiberti
 ne_R.otf(0)/m/n/10.95 The model is trained on modern standardised spellings.
  []
 
 
-Overfull \hbox (0.44847pt too wide) in paragraph at lines 809--810
+Overfull \hbox (0.44847pt too wide) in paragraph at lines 845--846
 \TU/LinLibertine_R.otf(0)/m/n/10.95 Performance on pre-standardisation document
 s—where spellings reflect local pro-
  []
 
-
-Overfull \hbox (22.69528pt too wide) in paragraph at lines 811--812
+[31]
+Overfull \hbox (22.69528pt too wide) in paragraph at lines 847--848
 \TU/LinLibertine_R.otf(0)/m/n/10.95 but scripts like Ethiopic, Myanmar, Tibetan
 , and historical scripts (Linear B, Cuneiform)
  []
 
 
-Overfull \hbox (4.52432pt too wide) in paragraph at lines 817--818
+Overfull \hbox (4.52432pt too wide) in paragraph at lines 853--854
 \TU/LinLibertine_R.otf(0)/m/n/10.95 rounding text or geographic constraints cou
 ld improve disambiguation. This would
  []
 
-[30]
-Overfull \hbox (3.41594pt too wide) in paragraph at lines 823--824
+
+Overfull \hbox (3.41594pt too wide) in paragraph at lines 859--860
 \TU/LinLibertine_R.otf(0)/m/n/10.95 embeddings for cross-script candidate retri
 eval, traditional string metrics for same-
  []
 
-
-Overfull \hbox (13.48991pt too wide) in paragraph at lines 832--833
+[32]
+Overfull \hbox (13.48991pt too wide) in paragraph at lines 868--869
 [] [] [][][] [] [][][][][][][][] [] [][][][]$[][]\TU/LinLibertine_R.otf(0)/m/n/
 10.95 ), Wikidata ([][]$[][][][][] [] [] [] [][][] [] [][][][][][][][] [] [][][
 ][]$[][]), and the Getty
  []
 
 
-Overfull \hbox (0.45209pt too wide) in paragraph at lines 832--833
+Overfull \hbox (0.45209pt too wide) in paragraph at lines 868--869
 \TU/LinLibertine_R.otf(0)/m/n/10.95 via the supplementary file link at https://
 link.springer.com/article/10.1007/s10579-
  []
 
-[31] (pdf/symphonym.bbl [32] [33]) [34] (pdf/symphonym.aux)
+(pdf/symphonym.bbl [33] [34]) [35] (pdf/symphonym.aux)
 Package rerunfilecheck Info: File `symphonym.out' has not changed.
 (rerunfilecheck)             Checksum: 7F4636B9AF9C1122F23D26B5B3768E45;7864.
  ) 
 Here is how much of TeX's memory you used:
- 34085 strings out of 478149
- 749634 string characters out of 5853103
- 1053208 words of memory out of 5000000
- 54144 multiletter control sequences out of 15000+600000
+ 34087 strings out of 478149
+ 749651 string characters out of 5853103
+ 1055207 words of memory out of 5000000
+ 54146 multiletter control sequences out of 15000+600000
  480335 words of font info for 122 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
  84i,14n,85p,1851b,976s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.pdf (34 pages).
+Output written on pdf/symphonym.pdf (35 pages).
