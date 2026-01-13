@@ -513,7 +513,9 @@ The character vocabulary is constructed by scanning all 66.9M unique toponyms (n
 
 To address script-language imbalance, pairs are binned by script:language combination (e.g., LATIN:en, CYRILLIC:ru, ARABIC:ar) rather than script pair alone. Each bin is capped at a maximum size, with under-represented bins oversampled up to 5$\times$ their original size. Critically, oversampling is \emph{stochastic}: each copy uses a different negative sample, preventing memorisation of identical triplets.
 
-\textit{[v4 statistics pending: total pairs generated, pairs per phase, bin distribution]}
+From 8.2 million places with at least two toponyms, the HDBSCAN clustering process generates \textbf{65.1 million positive pairs} distributed across \textbf{595 script:language bins}. The cluster statistics reveal the algorithm's behaviour: 18.3 million total clusters were formed, with 4.0 million places (49\%) yielding multiple phonetic clusters. Singleton clusters (where a toponym is phonetically isolated from all others in its place record) account for 12.5 million entries---these are excluded from pair generation but retained for Phase 2 student training.
+
+The top 10 script:language bins by pair count are: LATIN:en|LATIN:nl (1.49M), LATIN:de|LATIN:en (1.31M), LATIN:en|LATIN:fr (1.05M), LATIN:en|LATIN:es (0.98M), LATIN:en|LATIN:sv (0.90M), LATIN:es|LATIN:nl (0.83M), LATIN:de|LATIN:nl (0.81M), LATIN:en|LATIN:en (0.78M same-language spelling variants), LATIN:nl|LATIN:sv (0.70M), and LATIN:de|LATIN:es (0.69M). The adjacency set for negative filtering contains 108.3 million edges.
 
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
