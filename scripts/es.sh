@@ -1092,9 +1092,12 @@ python -u -m phonetics.training.train \\
     --batch-size 128
 EOF
 )
+            # Extract just the job ID (parsable output may include ";cluster")
+            PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
             mkdir -p "${LOG_DIR}/training_v${DATA_VERSION}"
             echo "✓ Phase 1 submitted: $PHASE1_JOB"
-            PHASE1_DEP="--dependency=afterok:$PHASE1_JOB"
+            # Dependencies work within the same cluster
+            PHASE1_DEP="--dependency=afterok:${PHASE1_JOB}"
         fi
     else
         echo "✓ Phase 1 skipped"
@@ -1148,8 +1151,11 @@ python -u -m phonetics.training.train \\
     --batch-size 128
 EOF
 )
+            # Extract just the job ID (parsable output may include ";cluster")
+            PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
             echo "✓ Phase 2 submitted: $PHASE2_JOB"
-            PHASE2_DEP="--dependency=afterok:$PHASE2_JOB"
+            # Dependencies work within the same cluster
+            PHASE2_DEP="--dependency=afterok:${PHASE2_JOB}"
         fi
     else
         echo "✓ Phase 2 skipped"
@@ -1202,6 +1208,8 @@ python -u -m phonetics.training.train \\
     --batch-size 128
 EOF
 )
+            # Extract just the job ID (parsable output may include ";cluster")
+            PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
             echo "✓ Phase 3 submitted: $PHASE3_JOB"
         fi
     else
