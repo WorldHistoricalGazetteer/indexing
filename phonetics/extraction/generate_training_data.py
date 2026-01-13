@@ -389,14 +389,19 @@ class ESKNNHelper:
         vectors = np.array([embeddings[tid] for tid in ids])
 
         try:
+            # Precompute cosine distance matrix (1 - cosine_similarity)
+            # This is more compatible across HDBSCAN versions than metric='cosine'
+            from sklearn.metrics.pairwise import cosine_distances
+            distance_matrix = cosine_distances(vectors)
+
             clusterer = hdbscan.HDBSCAN(
                 min_cluster_size=2,
-                min_samples=2,  # Provides better denoising than min_samples=1
-                metric='cosine',
+                min_samples=1,  # Allow small clusters (pairs) to be detected
+                metric='precomputed',  # Use precomputed distance matrix
                 cluster_selection_epsilon=0.0,
                 allow_single_cluster=True  # Critical: allows all points in one cluster
             )
-            labels = clusterer.fit_predict(vectors)
+            labels = clusterer.fit_predict(distance_matrix)
         except Exception as e:
             logger.warning(f"HDBSCAN failed for place {place_id}: {e}, returning single cluster")
             return [ids]
