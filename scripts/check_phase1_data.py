@@ -52,6 +52,14 @@ def main():
         has_features = 'anchor_features' in [f.name for f in schema]
         print(f"\n  Self-contained (has features): {has_features}")
 
+        if not has_features:
+            print(f"\n  ⚠️  WARNING: Triplets missing embedded features!")
+            print(f"      Phase 1 training requires features embedded in triplets.")
+            print(f"      This data was generated with an older version of the pipeline.")
+            print(f"      ACTION: Regenerate with latest code:")
+            print(f"        rm -rf {triplets_dir}")
+            print(f"        es -generate-training-data VERSION")
+
         if has_features:
             # Read a small sample to verify data
             print(f"\n  Sample data (first row):")

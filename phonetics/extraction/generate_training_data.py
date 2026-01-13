@@ -731,9 +731,10 @@ class TrainingDataGenerator:
         self.knn.reset_failure_tracking()
 
         # Step 3: Generate Phase 1 triplets (random negatives)
-        # These are IDs only - Phase 1 training joins them to features from Phase 2 data
+        # v4+: Triplets are SELF-CONTAINED with embedded PanPhon features
+        # Training does NOT need external feature lookup
         logger.info("\n" + "=" * 60)
-        logger.info("STEP 3: GENERATE PHASE 1 TRIPLETS")
+        logger.info("STEP 3: GENERATE PHASE 1 TRIPLETS (self-contained with features)")
         logger.info("=" * 60)
 
         if self._check_phase_complete('phase1'):
