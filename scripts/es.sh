@@ -1106,6 +1106,12 @@ EOF
     # Phase 2: Align Student to Teacher
     PHASE2_DEP=""
     if [ "$START_PHASE" -le 2 ] && [ "$END_PHASE" -ge 2 ]; then
+        # Phase 2 requires Phase 1 checkpoint
+        if [ ! -f "${OUTPUT_DIR}/phase1_best.pt" ] && [ -z "$PHASE1_JOB" ]; then
+            echo "ERROR: Phase 1 checkpoint not found and no Phase 1 job submitted"
+            echo "Either run Phase 1 first or provide checkpoint at ${OUTPUT_DIR}/phase1_best.pt"
+            return 1
+        fi
         if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
             echo "✓ Phase 2 checkpoint exists, skipping"
         else
@@ -1163,6 +1169,12 @@ EOF
 
     # Phase 3: Fine-tune with hard negatives
     if [ "$START_PHASE" -le 3 ] && [ "$END_PHASE" -ge 3 ]; then
+        # Phase 3 requires Phase 2 checkpoint
+        if [ ! -f "${OUTPUT_DIR}/phase2_best.pt" ] && [ -z "$PHASE2_JOB" ]; then
+            echo "ERROR: Phase 2 checkpoint not found and no Phase 2 job submitted"
+            echo "Either run Phase 2 first or provide checkpoint at ${OUTPUT_DIR}/phase2_best.pt"
+            return 1
+        fi
         if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
             echo "✓ Phase 3 checkpoint exists, skipping"
         else
