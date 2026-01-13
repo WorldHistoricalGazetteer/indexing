@@ -108,9 +108,9 @@ This paper presents such a system, which I call \emph{Symphonym}. The key contri
     \item A \textbf{three-phase curriculum} progressing from phonetic feature learning through knowledge distillation to hard negative discrimination.
 \end{enumerate}
 
-The resulting system enables fuzzy phonetic search across the full WHG corpus without language identification, script-specific preprocessing, or runtime phonetic conversion. Beyond cross-script matching, the phonetic embedding approach naturally handles \emph{historical orthographic variation}---the inconsistent spellings characteristic of pre-standardisation documents---by grouping sound-alike variants near their modern canonical forms.
+The resulting system will enable fuzzy phonetic search across the full WHG corpus without language identification, script-specific preprocessing, or runtime phonetic conversion. Beyond cross-script matching, the phonetic embedding approach naturally handles \emph{historical orthographic variation}---the inconsistent spellings characteristic of pre-standardisation documents---by grouping sound-alike variants near their modern canonical forms.
 
-\paragraph{Scope and Integration.} This work addresses the \emph{name-matching} component of toponym resolution specifically. The model has no access to geographic coordinates or spatial context---it operates purely on phonetic similarity between strings. Both Symphonym and WHG's reconciliation pipeline (termed WHG PLACE: Place Linkage, Alignment, and Concordance Engine) build on architecture developed by \citet{grossner2021whg}. Within PLACE, phonetic similarity serves as one input to a larger process: candidate toponyms are first retrieved via the phonetic-aware toponym index, then places containing matching toponyms are selected from the places index and filtered by geographic proximity and other contextual criteria. The contribution here is the phonetic similarity component alone.
+\paragraph{Scope and Integration.} This work addresses the \emph{name-matching} component of toponym resolution specifically. The model has no access to geographic coordinates or spatial context---it operates purely on phonetic similarity between strings. Both Symphonym and WHG's new reconciliation pipeline (termed WHG PLACE: Place Linkage, Alignment, and Concordance Engine) build on architecture developed by \citet{grossner2021whg}. Within PLACE, phonetic similarity serves as one input to a larger process: candidate toponyms are first retrieved via the phonetic-aware toponym index, then places containing matching toponyms are selected from the places index and filtered by geographic proximity and other contextual criteria. The contribution here is the phonetic similarity component alone.
 
 In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote{\url{https://docs.whgazetteer.org/content/technical/apis.html\#reconciliation-service-api}} (v2.0), facilitating the work of digital humanities and GLAM (galleries, libraries, archives, museums) professionals who seek to link place references in historical documents, archival catalogues, and research datasets to WHG's consolidated index. Once linked, these references become entry points to a web of related materials---other sources attesting the same places, variant historical names, and cross-references across collections---even when the original materials span multiple scripts, languages, and historical periods.
 
@@ -355,7 +355,7 @@ The Student network processes raw character sequences, optionally augmented with
 
 \subsection{Noise Augmentation}
 
-To handle OCR errors, historical spelling variations, and transcription inconsistencies, I apply character-level noise during Student training:
+To handle OCR errors, historical spelling variations, and transcription inconsistencies, I apply character-level noise during Student training (Phases~2 and~3):
 
 \begin{itemize}
     \item \textbf{Insertion}: Random character from same script inserted (probability 0.1)
@@ -377,8 +377,8 @@ The World Historical Gazetteer (WHG) infrastructure separates data into a \textt
 
 Training requires pairs of toponyms that refer to the same place, which are used to construct the triplets described in Section~\ref{sec:architecture}. I extract these from co-located name attestations: if an authority lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' within the same place record, I generate pairs among all combinations. To address the inherent script and language imbalances in the raw corpus, I define the training data selection based on six criteria.
 
-\paragraph{1. Script-Stratified Sampling.}
-Rather than ingesting all available pairs, which would result in a corpus heavily skewed toward Latin script and European languages, I implement a quota-based sampling strategy. I sample up to $N=100,000$ pairs for each script-pair combination (e.g., Latin--Cyrillic, Latin--Devanagari, Arabic--Hebrew). This prevents high-resource scripts from dominating the gradient signal while ensuring sufficient coverage for low-resource script pairs.
+\paragraph{1. Script-Language Stratified Sampling.}
+Rather than ingesting all available pairs, which would result in a corpus heavily skewed toward Latin script and European languages, I implement a quota-based sampling strategy. Stratification is by \emph{script+language pair} (e.g., LATIN:en, LATIN:fr, CYRILLIC:ru) rather than script-pair, ensuring adequate representation of under-resourced languages within well-resourced scripts (e.g., Latin-Swahili vs.\ Latin-English). Each bin is capped at $N=50,000$ samples; bins below 1,000 samples are dropped (to avoid extreme oversampling), while small bins between 1,000 and 50,000 may be oversampled up to 5$\times$. This prevents high-resource bins from dominating the gradient signal while ensuring sufficient coverage across all script-language combinations.
 
 \paragraph{2. Namespace Filtering.}
 I restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \texttt{wd} namespaces. The inclusion of Wikidata is critical for meeting the stratification quotas: Wikidata provides the majority of non-Latin script coverage, particularly for South Asian scripts (Devanagari, Tamil, Telugu, Kannada, Malayalam, Bengali) and Middle Eastern scripts (Arabic, Hebrew), where GeoNames and TGN lack sufficient multi-script correspondence.
@@ -393,11 +393,11 @@ To prevent out-of-vocabulary (OOV) errors at inference time, I decouple vocabula
 \paragraph{4. Orthographic Twin Retention.}
 I retain ``same-string, different-language'' pairs (e.g., ``Paris''@en vs ``Paris''@fr) regardless of whether their pronunciation differs. The Teacher network, operating on IPA-derived articulatory features, provides ground truth: if pronunciation differs (e.g., ``Paris'' in French vs.\ English), the Teacher pushes embeddings apart; if pronunciation is stable (e.g., ``Berlin''), it keeps them close. The Student receives identical character sequences but distinct language embeddings, learning when language context modifies phonetic interpretation.
 
-\paragraph{5. Cross-Script Prioritisation.}
-I weight cross-script pairs (e.g., \textcn{北京} vs.\ Beijing) higher than same-script variants (Beijing vs.\ Peking) during sampling. When approaching quota limits, cross-script pairs are 3$\times$ more likely to be accepted than same-script pairs, as bridging disjoint character spaces is the primary architectural goal.
+\paragraph{5. Cross-Script Pairs via Clustering.}
+Cross-script pairs (e.g., \textcn{北京} vs.\ Beijing) naturally emerge from the HDBSCAN clustering process described in Section~\ref{subsec:clustering}. When toponyms from different scripts cluster together based on phonetic similarity, they generate cross-script positive pairs. This data-driven approach captures genuine phonetic relationships rather than relying on heuristic weighting, ensuring the model learns from pairs that are phonetically meaningful regardless of their scripts.
 
-\paragraph{6. Deduplication.}
-Duplicate pairs arise from two sources: (a) the same place appearing in multiple authorities (e.g., London exists in GeoNames, Wikidata, and TGN, each providing the pair London@en/Londres@fr), and (b) different places sharing the same name variants (e.g., ``Santiago'' refers to cities in Chile, Spain, Cuba, and the Philippines, each generating Santiago@es/Santiago@en pairs). Without deduplication, identical toponym pairs would be massively over-represented. I maintain a global set of seen pairs and emit each unique (anchor, positive) combination only once, regardless of provenance.
+\paragraph{6. Place-Local Deduplication.}
+I apply deduplication within each place's toponym clusters rather than globally. The same toponym pair may appear across multiple authorities (e.g., GeoNames, Wikidata, and TGN all list London/Londres). Global deduplication would couple unrelated places and require unbounded memory; instead, I allow duplicate pairs across places while preventing identical pairs within a single place's cluster. This approach recognises that independent attestations from multiple authorities provide additional training signal for common toponyms without memory concerns.
 
 \subsection{IPA Transcription and Feature Extraction}
 

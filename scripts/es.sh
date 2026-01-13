@@ -1014,22 +1014,42 @@ do_train_model() {
     # Arguments:
     #   VERSION      Data version (default: 4)
     #   START_PHASE  First phase to run (default: 1)
-    #   END_PHASE    Last phase to run (default: 3)
+    #   END_PHASE    Last phase to run (default: same as START_PHASE if only 2 args, else 3)
     #
     # Examples:
     #   source es.sh -train-model 4        # Train all 3 phases
+    #   source es.sh -train-model 4 1      # Train phase 1 only
     #   source es.sh -train-model 4 2 3    # Train phases 2 and 3 only
-    #   source es.sh -train-model 4 3 3    # Train phase 3 only
+    #   source es.sh -train-model 4 3      # Train phase 3 only
 
     DATA_VERSION=${1:-4}
     START_PHASE=${2:-1}
-    END_PHASE=${3:-3}
+    # If only 2 args provided, END_PHASE = START_PHASE (single phase mode)
+    # If 3 args provided, use the third arg
+    if [ -n "$2" ] && [ -z "$3" ]; then
+        END_PHASE=$START_PHASE
+    else
+        END_PHASE=${3:-3}
+    fi
 
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
     OUTPUT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/staging-logs}"
 
-    mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
+    # Ensure REPO_DIR is set (from .env)
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/whcdh/elastic"
+    fi
+
+    # Create log and output directories BEFORE submitting jobs
+    # (Slurm needs the log directory to exist when the job starts)
+    TRAIN_LOG_DIR="${LOG_DIR}/training_v${DATA_VERSION}"
+    mkdir -p "$TRAIN_LOG_DIR" "$OUTPUT_DIR"
+
+    echo "  Data dir: ${DATA_DIR}"
+    echo "  Output dir: ${OUTPUT_DIR}"
+    echo "  Log dir: ${TRAIN_LOG_DIR}"
+    echo "  Repo dir: ${REPO_DIR}"
 
     # Verify training data exists
     if [ ! -d "${DATA_DIR}/triplets" ] && [ ! -d "${DATA_DIR}/training" ]; then
@@ -1041,9 +1061,8 @@ do_train_model() {
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
     echo "Config: 1x A100, 300GB RAM, 48H Limit"
+    echo "Phases: ${START_PHASE} to ${END_PHASE}"
     echo "=========================================="
-
-    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
     # Phase 1: Train Teacher
     PHASE1_DEP=""
@@ -1054,8 +1073,8 @@ do_train_model() {
             PHASE1_JOB=$(sbatch --parsable -M gpu <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase1_%j.out
-#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase1_%j.err
+#SBATCH --output=${TRAIN_LOG_DIR}/phase1_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:1
@@ -1064,14 +1083,41 @@ do_train_model() {
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
+# Immediately log job start (before any potential failures)
+echo "===========================================" >&2
+echo "Phase 1 Training Job Started" >&2
+echo "Job ID: \$SLURM_JOB_ID" >&2
+echo "Node: \$(hostname)" >&2
+echo "Time: \$(date)" >&2
+echo "===========================================" >&2
+
+# Print diagnostics first (before set -e)
+echo "Job started on \$(hostname) at \$(date)"
+echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
+echo "Working directory: \$(pwd)"
+echo "Data directory: ${DATA_DIR}"
+echo "Output directory: ${OUTPUT_DIR}"
+echo "Repo directory: ${REPO_DIR}"
+
+# Check paths exist
+if [ ! -d "${DATA_DIR}" ]; then
+    echo "ERROR: Data directory not found: ${DATA_DIR}" >&2
+    exit 1
+fi
+
+if [ ! -d "${REPO_DIR}" ]; then
+    echo "ERROR: Repo directory not found: ${REPO_DIR}" >&2
+    exit 1
+fi
+
 set -e
 
 source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
-cd "$REPO_DIR"
+cd "${REPO_DIR}"
 
-SCRATCH_ROOT="$SCRATCH_VAR"
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT"
 
 echo "Environment: whg"
@@ -1094,7 +1140,6 @@ EOF
 )
             # Extract just the job ID (parsable output may include ";cluster")
             PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
-            mkdir -p "${LOG_DIR}/training_v${DATA_VERSION}"
             echo "✓ Phase 1 submitted: $PHASE1_JOB"
             # Dependencies work within the same cluster
             PHASE1_DEP="--dependency=afterok:${PHASE1_JOB}"
@@ -1118,8 +1163,8 @@ EOF
             PHASE2_JOB=$(sbatch --parsable -M gpu $PHASE1_DEP <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase2_%j.out
-#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase2_%j.err
+#SBATCH --output=${TRAIN_LOG_DIR}/phase2_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:1
@@ -1128,14 +1173,19 @@ EOF
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
+# Print diagnostics first (before set -e)
+echo "Job started on \$(hostname) at \$(date)"
+echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
+echo "Working directory: \$(pwd)"
+
 set -e
 
 source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
-cd "$REPO_DIR"
+cd "${REPO_DIR}"
 
-SCRATCH_ROOT="$SCRATCH_VAR"
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT"
 
 echo "Environment: whg"
@@ -1181,8 +1231,8 @@ EOF
             PHASE3_JOB=$(sbatch --parsable -M gpu $PHASE2_DEP <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
-#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase3_%j.out
-#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase3_%j.err
+#SBATCH --output=${TRAIN_LOG_DIR}/phase3_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=a100
 #SBATCH --gres=gpu:1
@@ -1191,14 +1241,19 @@ EOF
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
+# Print diagnostics first (before set -e)
+echo "Job started on \$(hostname) at \$(date)"
+echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
+echo "Working directory: \$(pwd)"
+
 set -e
 
 source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
-cd "$REPO_DIR"
+cd "${REPO_DIR}"
 
-SCRATCH_ROOT="$SCRATCH_VAR"
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT"
 
 echo "Environment: whg"
@@ -1230,7 +1285,7 @@ EOF
 
     echo
     echo "Pipeline queued. Monitor: squeue -u stg135"
-    echo "tail -f ${LOG_DIR}/training_v${DATA_VERSION}/*_.*"
+    echo "tail -f ${TRAIN_LOG_DIR}/*_.*"
 }
 
 # ==============================================================================
