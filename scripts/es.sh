@@ -1058,6 +1058,19 @@ do_train_model() {
         return 1
     fi
 
+    # Pre-flight check: show directory structure
+    echo ""
+    echo "Pre-flight directory check:"
+    echo "  ${DATA_DIR}/triplets:"
+    ls -la "${DATA_DIR}/triplets" 2>/dev/null || echo "    [not found]"
+    echo "  ${DATA_DIR}/triplets/phase1:"
+    ls -la "${DATA_DIR}/triplets/phase1" 2>/dev/null || echo "    [not found]"
+    echo "  ${DATA_DIR}/training:"
+    ls -la "${DATA_DIR}/training" 2>/dev/null | head -10 || echo "    [not found]"
+    echo "  ${DATA_DIR}/vocab:"
+    ls -la "${DATA_DIR}/vocab" 2>/dev/null || echo "    [not found]"
+    echo ""
+
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
     echo "Config: 1x A100, 300GB RAM, 48H Limit"
@@ -1110,6 +1123,30 @@ if [ ! -d "${REPO_DIR}" ]; then
     exit 1
 fi
 
+# Verify Phase 1 training data exists
+if [ ! -d "${DATA_DIR}/triplets/phase1" ]; then
+    echo "ERROR: Phase 1 triplets not found at ${DATA_DIR}/triplets/phase1" >&2
+    echo "Contents of ${DATA_DIR}:" >&2
+    ls -la "${DATA_DIR}" >&2
+    echo "Contents of ${DATA_DIR}/triplets (if exists):" >&2
+    ls -la "${DATA_DIR}/triplets" 2>/dev/null || echo "  triplets directory missing" >&2
+    exit 1
+fi
+
+if [ ! -f "${DATA_DIR}/triplets/phase1/train.parquet" ]; then
+    echo "ERROR: Phase 1 train.parquet not found" >&2
+    echo "Contents of ${DATA_DIR}/triplets/phase1:" >&2
+    ls -la "${DATA_DIR}/triplets/phase1" 2>/dev/null || echo "  directory empty or missing" >&2
+    exit 1
+fi
+
+if [ ! -d "${DATA_DIR}/training" ]; then
+    echo "ERROR: Training data directory not found at ${DATA_DIR}/training" >&2
+    echo "This contains toponym features required for Phase 1 training." >&2
+    echo "Run -generate-training-data first to create it." >&2
+    exit 1
+fi
+
 set -e
 
 source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
@@ -1120,15 +1157,26 @@ cd "${REPO_DIR}"
 SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT/triplets/phase1"
 mkdir -p "\$SCRATCH_ROOT/vocab"
+mkdir -p "\$SCRATCH_ROOT/training"
 
 echo "Environment: whg"
 echo "Python: \$(which python)"
 echo "------------------------------------------------"
 
 # Stage data to scratch
+# Phase 1 needs: triplets/phase1/ (triplet IDs), vocab/ (vocabularies),
+# and training/ (toponym features for lookup via Phase1Dataset)
 echo "Staging data from ${DATA_DIR} to \$SCRATCH_ROOT..."
-rsync -a "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/"
-rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+echo "Source contents:"
+ls -la "${DATA_DIR}/triplets/phase1/" || echo "Cannot list source directory"
+echo "Rsyncing triplets..."
+rsync -av "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/" || { echo "rsync triplets failed"; exit 1; }
+echo "Rsyncing vocab..."
+rsync -av "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/" || { echo "rsync vocab failed"; exit 1; }
+echo "Rsyncing training..."
+rsync -av "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/" || { echo "rsync training failed"; exit 1; }
+echo "Staging complete. Scratch contents:"
+ls -laR "\$SCRATCH_ROOT" | head -50
 
 echo "Starting Phase 1 (Teacher)..."
 python -u -m phonetics.training.train \\
