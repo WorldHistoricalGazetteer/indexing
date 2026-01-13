@@ -517,6 +517,8 @@ From 8.2 million places with at least two toponyms, the HDBSCAN clustering proce
 
 The top 10 script:language bins by pair count are: LATIN:en|LATIN:nl (1.49M), LATIN:de|LATIN:en (1.31M), LATIN:en|LATIN:fr (1.05M), LATIN:en|LATIN:es (0.98M), LATIN:en|LATIN:sv (0.90M), LATIN:es|LATIN:nl (0.83M), LATIN:de|LATIN:nl (0.81M), LATIN:en|LATIN:en (0.78M same-language spelling variants), LATIN:nl|LATIN:sv (0.70M), and LATIN:de|LATIN:es (0.69M). The adjacency set for negative filtering contains 108.3 million edges.
 
+\paragraph{Bin Balancing.} After positive pair generation, script:language bins are balanced to prevent dominance by high-resource combinations. Of the 595 bins, 264 exceed the 50,000 sample cap and are downsampled; 329 smaller bins are oversampled up to 5$\times$; only 2 bins fall below the 1,000 minimum threshold (LATIN:sw|LATIN:sw with 948 samples, ARABIC:ur|ARABIC:ur with 682) and are dropped. This yields \textbf{27.6 million balanced pairs} for triplet generation.
+
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
     \item \textbf{Phase 1 triplets:} Triplets with script-aware random negatives (80\% same-script, 20\% global) sampled from the full toponym pool
@@ -555,9 +557,9 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 \paragraph{Script-Aware Negative Sampling.} To prevent the model from learning trivial script-based boundaries (where cross-script pairs are always ``different''), I implemented a script-aware negative sampling strategy: 80\% of random negatives are sampled from the \emph{same writing system} as the anchor, while 20\% are sampled globally. This forces the Teacher to learn fine-grained phonetic discrimination within scripts rather than simply encoding script identity. The global negatives maintain broad coverage of the phonetic space before hard negative mining in Phase 3.
 
-\paragraph{Effective Training Set.} Of the 5,088,419 generated triplets, only those where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 7,987,814 unique toponym IDs referenced in triplets, 3,663,966 (45.9\%) have Epitran-supported language codes and valid PanPhon features. After filtering, \textbf{467,546 triplets} remain for training and \textbf{58,316} for validation. This reduction (to 9.2\% of generated triplets) follows from the joint probability: if 45.9\% of toponyms have features, the probability all three in a triplet have features is approximately $0.459^3 \approx 9.7\%$.
+\paragraph{Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,559,050 Phase 1 triplets}, split deterministically into \textbf{24,803,658 training} and \textbf{2,755,392 validation} samples (90:10 ratio).
 
-Despite this reduction, the training set remains adequate: 467K triplets $\times$ 50 epochs yields 23.4M training examples, comparable to successful Siamese network training regimes in prior work. The Student network in Phase 2, operating on raw characters rather than IPA, will generalise to the remaining languages and scripts not covered by Epitran.
+The substantial increase from v3's 467K usable triplets to v4's 27.6M reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -588,7 +590,7 @@ During this phase:
     \item Teacher weights are frozen
 \end{itemize}
 
-\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. This yields \textbf{23,223,184 training samples} and \textbf{2,902,533 validation samples}---substantially more than Phase 1's triplet-based training.
+\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. After bin-balancing by script:language (34 bins, each capped at 50,000 samples with up to 5$\times$ oversampling for under-represented combinations), this yields \textbf{1,358,376 training samples}, \textbf{169,346 validation samples}, and \textbf{170,203 test samples}---a deliberately compressed set that ensures balanced gradient contribution from all script:language combinations rather than dominance by high-resource languages like English.
 
 \paragraph{Training Configuration.}
 \begin{itemize}

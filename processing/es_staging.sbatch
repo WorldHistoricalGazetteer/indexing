@@ -216,13 +216,30 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
     # --- Restore from snapshot ---
     echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
     echo "  Indices: $RESTORE_INDICES"
-    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore?wait_for_completion=true" \
+    # Start restore WITHOUT wait_for_completion so ES remains responsive
+    curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore" \
         -H 'Content-Type: application/json' -d "{
       \"indices\": \"$RESTORE_INDICES\",
       \"ignore_unavailable\": true,
       \"include_global_state\": false
     }" | python3 -m json.tool
     echo
+
+    # Wait for restore to complete by checking recovery status
+    echo "Waiting for snapshot restore to complete..."
+    echo "  (This may take 10-30 minutes for large indices)"
+    while true; do
+        RECOVERING=$(curl -s "$ES_URL/_cat/recovery?active_only=true" 2>/dev/null | wc -l)
+        if [ "$RECOVERING" -eq 0 ]; then
+            echo "Snapshot restore complete!"
+            break
+        fi
+        echo -n "  Shards still recovering: $RECOVERING"
+        # Show progress
+        PROGRESS=$(curl -s "$ES_URL/_cat/recovery?v&active_only=true" 2>/dev/null | head -5 || true)
+        echo "$PROGRESS" | tail -1 | awk '{print " - " $NF}'
+        sleep 10
+    done
 else
     # --- Create empty indices ---
     echo "No complete snapshots found - creating empty indices..."

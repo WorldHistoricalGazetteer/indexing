@@ -999,6 +999,256 @@ do_generate_pairs() {
     do_generate_training_data "$@"
 }
 
+# ==============================================================================
+# TRAIN MODEL (v4 Pipeline Phase 3)
+# ==============================================================================
+
+do_train_model() {
+    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE]
+    #
+    # Trains the phonetic embedding model in three phases:
+    #   Phase 1: Train Teacher (PhoneticEncoder) on triplets with phonetic features
+    #   Phase 2: Align Student (UniversalEncoder) to Teacher outputs
+    #   Phase 3: Fine-tune Student with hard negatives
+    #
+    # Arguments:
+    #   VERSION      Data version (default: 4)
+    #   START_PHASE  First phase to run (default: 1)
+    #   END_PHASE    Last phase to run (default: 3)
+    #
+    # Examples:
+    #   source es.sh -train-model 4        # Train all 3 phases
+    #   source es.sh -train-model 4 2 3    # Train phases 2 and 3 only
+    #   source es.sh -train-model 4 3 3    # Train phase 3 only
+
+    DATA_VERSION=${1:-4}
+    START_PHASE=${2:-1}
+    END_PHASE=${3:-3}
+
+    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    OUTPUT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/staging-logs}"
+
+    mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
+
+    # Verify training data exists
+    if [ ! -d "${DATA_DIR}/triplets" ] && [ ! -d "${DATA_DIR}/training" ]; then
+        echo "ERROR: Training data not found at ${DATA_DIR}"
+        echo "Run -generate-training-data ${DATA_VERSION} first"
+        return 1
+    fi
+
+    echo "=========================================="
+    echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
+    echo "Config: 1x A100, 300GB RAM, 48H Limit"
+    echo "=========================================="
+
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    # Phase 1: Train Teacher
+    PHASE1_DEP=""
+    if [ "$START_PHASE" -le 1 ] && [ "$END_PHASE" -ge 1 ]; then
+        if [ -f "${OUTPUT_DIR}/phase1_best.pt" ]; then
+            echo "✓ Phase 1 checkpoint exists, skipping"
+        else
+            PHASE1_JOB=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase1_%j.out
+#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase1_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "$REPO_DIR"
+
+SCRATCH_ROOT="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_ROOT"
+
+echo "Environment: whg"
+echo "Python: \$(which python)"
+echo "------------------------------------------------"
+
+# Stage data to scratch
+echo "Staging data from ${DATA_DIR} to \$SCRATCH_ROOT..."
+rsync -a "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/"
+rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+
+echo "Starting Phase 1 (Teacher)..."
+python -u -m phonetics.training.train \\
+    --phase 1 \\
+    --data-dir "\$SCRATCH_ROOT" \\
+    --output-dir "${OUTPUT_DIR}" \\
+    --epochs 50 \\
+    --batch-size 128
+EOF
+)
+            mkdir -p "${LOG_DIR}/training_v${DATA_VERSION}"
+            echo "✓ Phase 1 submitted: $PHASE1_JOB"
+            PHASE1_DEP="--dependency=afterok:$PHASE1_JOB"
+        fi
+    else
+        echo "✓ Phase 1 skipped"
+    fi
+
+    # Phase 2: Align Student to Teacher
+    PHASE2_DEP=""
+    if [ "$START_PHASE" -le 2 ] && [ "$END_PHASE" -ge 2 ]; then
+        if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
+            echo "✓ Phase 2 checkpoint exists, skipping"
+        else
+            PHASE2_JOB=$(sbatch --parsable -M gpu $PHASE1_DEP <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase2_%j.out
+#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase2_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "$REPO_DIR"
+
+SCRATCH_ROOT="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_ROOT"
+
+echo "Environment: whg"
+echo "Python: \$(which python)"
+echo "------------------------------------------------"
+
+# Stage data to scratch
+echo "Staging data to \$SCRATCH_ROOT..."
+rsync -a "${DATA_DIR}/training/phase2/" "\$SCRATCH_ROOT/training/phase2/"
+rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+
+echo "Starting Phase 2 (Student Alignment)..."
+python -u -m phonetics.training.train \\
+    --phase 2 \\
+    --data-dir "\$SCRATCH_ROOT" \\
+    --output-dir "${OUTPUT_DIR}" \\
+    --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \\
+    --epochs 50 \\
+    --batch-size 128
+EOF
+)
+            echo "✓ Phase 2 submitted: $PHASE2_JOB"
+            PHASE2_DEP="--dependency=afterok:$PHASE2_JOB"
+        fi
+    else
+        echo "✓ Phase 2 skipped"
+    fi
+
+    # Phase 3: Fine-tune with hard negatives
+    if [ "$START_PHASE" -le 3 ] && [ "$END_PHASE" -ge 3 ]; then
+        if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
+            echo "✓ Phase 3 checkpoint exists, skipping"
+        else
+            PHASE3_JOB=$(sbatch --parsable -M gpu $PHASE2_DEP <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/training_v${DATA_VERSION}/phase3_%j.out
+#SBATCH --error=${LOG_DIR}/training_v${DATA_VERSION}/phase3_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "$REPO_DIR"
+
+SCRATCH_ROOT="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_ROOT"
+
+echo "Environment: whg"
+echo "Python: \$(which python)"
+echo "------------------------------------------------"
+
+# Stage data to scratch
+echo "Staging data to \$SCRATCH_ROOT..."
+rsync -a "${DATA_DIR}/triplets/phase3/" "\$SCRATCH_ROOT/triplets/phase3/"
+rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+
+echo "Starting Phase 3 (Fine Tuning)..."
+python -u -m phonetics.training.train \\
+    --phase 3 \\
+    --data-dir "\$SCRATCH_ROOT" \\
+    --output-dir "${OUTPUT_DIR}" \\
+    --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \\
+    --epochs 30 \\
+    --batch-size 128
+EOF
+)
+            echo "✓ Phase 3 submitted: $PHASE3_JOB"
+        fi
+    else
+        echo "✓ Phase 3 skipped"
+    fi
+
+    echo
+    echo "Pipeline queued. Monitor: squeue -u stg135"
+    echo "tail -f ${LOG_DIR}/training_v${DATA_VERSION}/*_.*"
+}
+
+# ==============================================================================
+# TRAIN AND UPDATE (Full Pipeline)
+# ==============================================================================
+
+do_train_and_update() {
+    # Usage: source es.sh -train-and-update [VERSION]
+    #
+    # Runs the complete pipeline:
+    #   1. Train model (all 3 phases)
+    #   2. Generate embeddings for all toponyms
+    #   3. Update ES index with new embeddings
+    #
+    # Arguments:
+    #   VERSION      Data version (default: 4)
+
+    DATA_VERSION=${1:-4}
+
+    echo "=========================================="
+    echo "FULL PIPELINE: TRAIN AND UPDATE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo
+    echo "This will:"
+    echo "  1. Train model phases 1-3"
+    echo "  2. Generate embeddings for all toponyms"
+    echo "  3. Update ES toponyms index"
+    echo
+
+    # First, train the model
+    do_train_model "$DATA_VERSION"
+
+    echo
+    echo "Note: After training completes, run:"
+    echo "  source es.sh -update-embeddings $DATA_VERSION"
+    echo "to generate and index the embeddings."
+}
+
 # =============================================================================
 # HEALTH CHECKS
 # =============================================================================
@@ -1552,7 +1802,7 @@ case "$1" in
 
     # --- Training Pipeline ---
     -train-model)
-      shift  # Remove -train-model from arguments
+        shift  # Remove -train-model from arguments
         do_train_model "$@"
         ;;
 
