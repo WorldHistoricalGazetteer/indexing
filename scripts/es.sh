@@ -1179,11 +1179,11 @@ echo "Staging complete. Scratch contents:"
 ls -laR "\$SCRATCH_ROOT" | head -50
 
 echo "Starting Phase 1 (Teacher)..."
-python -u -m phonetics.training.train \\
-    --phase 1 \\
-    --data-dir "\$SCRATCH_ROOT" \\
-    --output-dir "${OUTPUT_DIR}" \\
-    --epochs 50 \\
+python -u -m phonetics.training.train \
+    --phase 1 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --epochs 50 \
     --batch-size 128
 EOF
 )
@@ -1248,12 +1248,12 @@ rsync -a "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
 rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 
 echo "Starting Phase 2 (Student Alignment)..."
-python -u -m phonetics.training.train \\
-    --phase 2 \\
-    --data-dir "\$SCRATCH_ROOT" \\
-    --output-dir "${OUTPUT_DIR}" \\
-    --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \\
-    --epochs 50 \\
+python -u -m phonetics.training.train \
+    --phase 2 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
+    --epochs 50 \
     --batch-size 128
 EOF
 )
@@ -1317,12 +1317,12 @@ rsync -a "${DATA_DIR}/triplets/phase3/" "\$SCRATCH_ROOT/triplets/phase3/"
 rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 
 echo "Starting Phase 3 (Fine Tuning)..."
-python -u -m phonetics.training.train \\
-    --phase 3 \\
-    --data-dir "\$SCRATCH_ROOT" \\
-    --output-dir "${OUTPUT_DIR}" \\
-    --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \\
-    --epochs 30 \\
+python -u -m phonetics.training.train \
+    --phase 3 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
+    --epochs 30 \
     --batch-size 128
 EOF
 )
