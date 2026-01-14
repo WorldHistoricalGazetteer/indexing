@@ -1,15 +1,25 @@
 #!/usr/bin/env python3
 """
-generate_training_data - Memory-optimized training data generation for Symphonym.
+phonetics.extraction - Memory-optimized training data generation for Symphonym.
+
+This package provides streaming, memory-efficient generation of training data
+for the Symphonym phonetic embedding model.
+
+Modules:
+    constants: Configuration constants and utility functions
+    es_knn_helper: Elasticsearch KNN operations with caching
+    streaming_writer: Memory-efficient Parquet writers
+    generator: Main TrainingDataGenerator class
+    main: CLI entry point
 """
 
-from .constants import (
+from phonetics.extraction.constants import (
     TRAINING_NAMESPACES, RANDOM_SEED, TARGET_SAMPLES_PER_BIN,
     MIN_BIN_SIZE, MAX_OVERSAMPLE_FACTOR, PARQUET_BATCH_SIZE
 )
-from .es_knn_helper import ESKNNHelper
-from .generator import TrainingDataGenerator
-from .streaming_writer import (
+from phonetics.extraction.es_knn_helper import ESKNNHelper
+from phonetics.extraction.generator import TrainingDataGenerator
+from phonetics.extraction.streaming_writer import (
     StreamingParquetWriter, MultiSplitStreamingWriter, TripletStreamingWriter
 )
 

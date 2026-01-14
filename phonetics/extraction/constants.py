@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Constants and utility functions for training data generation.
+
+Part of phonetics.extraction package.
 """
 
 import logging

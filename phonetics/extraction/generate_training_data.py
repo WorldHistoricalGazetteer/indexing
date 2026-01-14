@@ -2,19 +2,22 @@
 """
 v4 Training Data Generation Pipeline (Memory-Optimized)
 
+Entry point for: python -m phonetics.extraction.main
+
 Generates training data for all three phases of Symphonym training:
 - Phase 1: Teacher training with phonetic features (triplets)
 - Phase 2: Student alignment (all toponyms with PanPhon embeddings)
 - Phase 3: Hard negative fine-tuning (triplets from ES similarity)
 
-Key differences from previous versions:
-- Uses STREAMING WRITES to avoid OOM on large triplet datasets
-- Stores embeddings as numpy float32 arrays (60-70% memory savings)
-- Incremental Parquet writing with pq.ParquetWriter
-- Explicit garbage collection between phases
+KEY MEMORY OPTIMIZATIONS:
+1. STREAMING WRITES: Uses pq.ParquetWriter to write incrementally
+2. NUMPY FLOAT32: Stores embeddings as np.float32 arrays (60-70% savings)
+3. BOUNDED CACHES: Limits cache sizes with LRU eviction
+4. EXPLICIT GC: Calls gc.collect() between phases
 
 Usage:
-    python -m generate_training_data --es-host "http://localhost:9200" \
+    python -m phonetics.extraction.main \
+        --es-host "http://localhost:9200" \
         --output-dir "/path/to/output" \
         --training-namespaces gn wd tgn
 """
@@ -29,8 +32,8 @@ except ImportError:
     print("ERROR: elasticsearch package required")
     sys.exit(1)
 
-from .constants import logger
-from .generator import TrainingDataGenerator
+from phonetics.extraction.constants import logger
+from phonetics.extraction.generator import TrainingDataGenerator
 
 
 def main():

@@ -23,27 +23,27 @@ except ImportError:
     def tqdm(x, **kwargs):
         return x
 
-from .constants import (
+from phonetics.extraction.constants import (
     ES_PARALLEL_WORKERS, MAX_OVERSAMPLE_FACTOR, MAX_TOPONYMS_PER_PLACE,
     MIN_BIN_SIZE, MSEARCH_BATCH_SIZE, PARQUET_BATCH_SIZE,
     PHASE1_SAME_SCRIPT_NEGATIVE_RATIO, RANDOM_SEED, TARGET_SAMPLES_PER_BIN,
     apply_bin_balancing, get_script_lang_key, logger
 )
-from .es_knn_helper import ESKNNHelper
-from .streaming_writer import TripletStreamingWriter, MultiSplitStreamingWriter
+from phonetics.extraction.es_knn_helper import ESKNNHelper
+from phonetics.extraction.streaming_writer import TripletStreamingWriter, MultiSplitStreamingWriter
 
 
 class TrainingDataGenerator:
     """Generates training data for all phases from ES."""
 
     def __init__(
-        self,
-        es,
-        db_path: str,
-        output_dir: Path,
-        scratch_dir: Path,
-        training_namespaces: List[str],
-        force_regenerate: bool = False,
+            self,
+            es,
+            db_path: str,
+            output_dir: Path,
+            scratch_dir: Path,
+            training_namespaces: List[str],
+            force_regenerate: bool = False,
     ):
         self.es = es
         self.db_path = db_path
@@ -209,7 +209,7 @@ class TrainingDataGenerator:
         total_attestations = 0
 
         for hit in tqdm(scan(self.es, index="toponyms", query=query, scroll='5m', size=5000),
-                       desc="Scanning ES for toponyms"):
+                        desc="Scanning ES for toponyms"):
             toponym_id = hit['_id']
             source = hit['_source']
             script = source.get('script', 'UNKNOWN')
@@ -274,7 +274,7 @@ class TrainingDataGenerator:
                         continue
 
                     for i, id_a in enumerate(cluster):
-                        for id_b in cluster[i+1:]:
+                        for id_b in cluster[i + 1:]:
                             script_a, lang_a = id_to_info[id_a]
                             script_b, lang_b = id_to_info[id_b]
 
@@ -446,7 +446,8 @@ class TrainingDataGenerator:
 
             bin_quotas[bin_key] = (target, prob)
 
-        logger.info(f"Bin balancing: dropped={stats['bins_dropped']}, capped={stats['bins_capped']}, oversampled={stats['bins_oversampled']}")
+        logger.info(
+            f"Bin balancing: dropped={stats['bins_dropped']}, capped={stats['bins_capped']}, oversampled={stats['bins_oversampled']}")
 
         # Use streaming writer
         writer = MultiSplitStreamingWriter(training_dir, batch_size=PARQUET_BATCH_SIZE)
@@ -467,7 +468,7 @@ class TrainingDataGenerator:
 
         processed = 0
         for hit in tqdm(scan(self.es, index="toponyms", query=es_query, scroll='5m', size=5000),
-                       total=with_features, desc="Streaming"):
+                        total=with_features, desc="Streaming"):
             toponym_id = hit['_id']
             source = hit['_source']
             name = source.get('name', '')
@@ -494,9 +495,11 @@ class TrainingDataGenerator:
             if num_copies == 0:
                 continue
 
-            features = panphon_features
-            if not features:
+            if not panphon_features:
                 continue
+
+            # Convert to numpy float32 for efficient Parquet storage
+            features = np.array(panphon_features, dtype=np.float32)
 
             char_ids = [char_to_id.get(c, unk_id) for c in name]
 
@@ -574,9 +577,9 @@ class TrainingDataGenerator:
         batch_size = 5000
 
         for i in range(0, len(anchor_list), batch_size):
-            batch = anchor_list[i:i+batch_size]
+            batch = anchor_list[i:i + batch_size]
             docs = self.es.mget(index="toponyms", body={"ids": batch},
-                               _source=['script', 'lang', 'panphon_embedding'])
+                                _source=['script', 'lang', 'panphon_embedding'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
@@ -608,7 +611,7 @@ class TrainingDataGenerator:
         }
 
         for hit in tqdm(scan(self.es, index="toponyms", query=neg_query, scroll='5m', size=10000),
-                       desc="Loading negatives"):
+                        desc="Loading negatives"):
             toponym_id = hit['_id']
             script = hit['_source'].get('script', 'UNKNOWN')
             all_ids.append(toponym_id)
@@ -632,19 +635,19 @@ class TrainingDataGenerator:
         triplets_dir.mkdir(parents=True, exist_ok=True)
         writer = TripletStreamingWriter(triplets_dir, batch_size=PARQUET_BATCH_SIZE)
 
-        # STREAMING GENERATION: Process triplets and write incrementally
-        logger.info("Streaming triplet generation and writing...")
+        # TWO-PASS APPROACH for efficiency:
+        # Pass 1: Select all negatives, collect IDs needing feature fetch
+        # Pass 2: Batch fetch negative features, then stream triplets
 
-        triplet_count = 0
-        skipped_missing = 0
-        negative_feature_cache = {}  # Small cache for negative features
+        logger.info("Pass 1: Selecting negatives...")
+        triplet_specs = []  # (anchor, positive, negative, bin_key)
+        negatives_to_fetch = set()
+        skipped_no_negative = 0
 
-        for triplet_idx, pair in enumerate(tqdm(balanced_pairs, desc="Generating triplets")):
+        for triplet_idx, pair in enumerate(tqdm(balanced_pairs, desc="Selecting negatives")):
             anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
 
-            # Skip if anchor or positive don't have features
             if anchor not in toponym_data_map or positive not in toponym_data_map:
-                skipped_missing += 1
                 continue
 
             anchor_data = toponym_data_map[anchor]
@@ -669,51 +672,77 @@ class TrainingDataGenerator:
                     break
 
             if negative is None:
-                skipped_missing += 1
+                skipped_no_negative += 1
                 continue
 
-            # Get negative features (from cache, toponym_data_map, or ES)
+            bin_key = get_script_lang_key(script, lang)
+            triplet_specs.append((anchor, positive, negative, bin_key))
+
+            # Track negatives that need feature fetching
+            if negative not in toponym_data_map:
+                negatives_to_fetch.add(negative)
+
+        logger.info(
+            f"Selected {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
+        if skipped_no_negative > 0:
+            logger.info(f"Skipped {skipped_no_negative:,} pairs (no valid negative found)")
+
+        # Pass 2: Batch fetch negative features
+        negative_features = {}  # negative_id -> {features, feature_length}
+        if negatives_to_fetch:
+            logger.info("Pass 2: Batch fetching negative features...")
+            neg_list = list(negatives_to_fetch)
+            batch_size = 5000
+
+            for i in range(0, len(neg_list), batch_size):
+                batch = neg_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['panphon_embedding'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        emb = doc['_source'].get('panphon_embedding')
+                        if emb and len(emb) > 0:
+                            negative_features[doc['_id']] = {
+                                'features': np.array(emb, dtype=np.float32),
+                                'feature_length': len(emb) // 24,
+                            }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"  Fetched {min(i + batch_size, len(neg_list)):,} / {len(neg_list):,}...")
+
+            logger.info(f"Fetched features for {len(negative_features):,} negatives")
+
+        # Pass 3: Stream triplets to Parquet
+        logger.info("Pass 3: Streaming triplets to Parquet...")
+        triplet_count = 0
+        skipped_missing_features = 0
+
+        for anchor, positive, negative, bin_key in tqdm(triplet_specs, desc="Writing triplets"):
+            anchor_data = toponym_data_map[anchor]
+            positive_data = toponym_data_map[positive]
+
+            # Get negative features
             if negative in toponym_data_map:
                 negative_data = toponym_data_map[negative]
-            elif negative in negative_feature_cache:
-                negative_data = negative_feature_cache[negative]
+            elif negative in negative_features:
+                negative_data = negative_features[negative]
             else:
-                # Fetch from ES
-                try:
-                    doc = self.es.get(index="toponyms", id=negative, _source=['panphon_embedding'])
-                    emb = doc['_source'].get('panphon_embedding', [])
-                    if emb:
-                        negative_data = {
-                            'features': np.array(emb, dtype=np.float32),
-                            'feature_length': len(emb) // 24,
-                        }
-                        # Keep cache bounded
-                        if len(negative_feature_cache) > 100000:
-                            negative_feature_cache.clear()
-                        negative_feature_cache[negative] = negative_data
-                    else:
-                        skipped_missing += 1
-                        continue
-                except Exception:
-                    skipped_missing += 1
-                    continue
+                skipped_missing_features += 1
+                continue
 
-            # Build triplet (convert numpy back to list for Parquet)
-            bin_key = get_script_lang_key(script, lang)
             triplet = {
                 'anchor_id': anchor,
                 'positive_id': positive,
                 'negative_id': negative,
                 'bin': bin_key,
-                'anchor_features': anchor_data['features'].tolist(),
+                'anchor_features': anchor_data['features'],
                 'anchor_feature_length': anchor_data['feature_length'],
-                'positive_features': toponym_data_map[positive]['features'].tolist(),
-                'positive_feature_length': toponym_data_map[positive]['feature_length'],
-                'negative_features': negative_data['features'].tolist(),
+                'positive_features': positive_data['features'],
+                'positive_feature_length': positive_data['feature_length'],
+                'negative_features': negative_data['features'],
                 'negative_feature_length': negative_data['feature_length'],
             }
 
-            # Determine split and write
             split_hash = (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff) % 10
             writer.add_triplet(triplet, split_hash)
             triplet_count += 1
@@ -721,7 +750,8 @@ class TrainingDataGenerator:
         # Close writer
         train_count, val_count = writer.close()
 
-        logger.info(f"Generated {triplet_count:,} triplets (skipped {skipped_missing:,})")
+        total_skipped = skipped_no_negative + skipped_missing_features
+        logger.info(f"Generated {triplet_count:,} triplets (skipped {total_skipped:,})")
         logger.info(f"Saved {train_count:,} train, {val_count:,} val triplets")
 
         self.stats['phase1']['triplets'] = triplet_count
@@ -729,7 +759,8 @@ class TrainingDataGenerator:
 
         # Free memory
         del toponym_data_map
-        del negative_feature_cache
+        del negative_features
+        del triplet_specs
         gc.collect()
 
     def generate_phase3_triplets_streaming(self, pairs_by_bin: Dict[str, List[Tuple]]):
@@ -767,44 +798,54 @@ class TrainingDataGenerator:
             unique_anchors.add(positive)
         logger.info(f"Unique toponyms: {len(unique_anchors):,}")
 
-        # Load anchor info
-        logger.info("Loading anchor info...")
-        anchor_info = {}
+        # Load anchor info AND features (for self-contained triplets)
+        logger.info("Loading anchor info and features...")
+        toponym_data_map = {}  # toponym_id -> {script, lang, features, feature_length}
         anchor_list = list(unique_anchors)
         batch_size = 5000
 
         for i in range(0, len(anchor_list), batch_size):
-            batch = anchor_list[i:i+batch_size]
-            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['script', 'lang'])
+            batch = anchor_list[i:i + batch_size]
+            docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                _source=['script', 'lang', 'panphon_embedding'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
                     source = doc['_source']
-                    anchor_info[toponym_id] = (source.get('script', 'UNKNOWN'), source.get('lang', ''))
+                    embedding = source.get('panphon_embedding')
+
+                    if embedding and len(embedding) > 0:
+                        toponym_data_map[toponym_id] = {
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                            'features': np.array(embedding, dtype=np.float32),
+                            'feature_length': len(embedding) // 24,
+                        }
 
             if (i + batch_size) % 50000 < batch_size:
                 logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
 
-        logger.info(f"Loaded info for {len(anchor_info):,} toponyms")
+        logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
 
         # Build pairs to process
         all_pairs_to_process = []
         for pair in balanced_pairs:
             anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
-            if anchor in anchor_info:
-                script, lang = anchor_info[anchor]
+            if anchor in toponym_data_map and positive in toponym_data_map:
+                script = toponym_data_map[anchor]['script']
+                lang = toponym_data_map[anchor]['lang']
                 bin_key = get_script_lang_key(script, lang)
                 all_pairs_to_process.append((anchor, positive, bin_key))
 
         logger.info(f"Processing {len(all_pairs_to_process):,} pairs...")
 
-        # Pre-fetch embeddings
+        # Pre-fetch embeddings for KNN queries (these are used for the KNN search)
         all_anchors = list(set(p[0] for p in all_pairs_to_process))
         logger.info(f"Pre-fetching embeddings for {len(all_anchors):,} anchors...")
 
         anchor_embeddings = {}
         for i in range(0, len(all_anchors), 5000):
-            batch = all_anchors[i:i+5000]
+            batch = all_anchors[i:i + 5000]
             batch_embs = self.knn.batch_get_embeddings(batch)
             anchor_embeddings.update(batch_embs)
             if (i + 5000) % 50000 < 5000:
@@ -827,12 +868,12 @@ class TrainingDataGenerator:
                 failed_lookups += 1
                 continue
 
-            script, lang = anchor_info[anchor]
+            anchor_data = toponym_data_map[anchor]
             current_batch.append({
                 'anchor_id': anchor,
                 'positive_id': positive,
                 'embedding': anchor_embeddings[anchor],
-                'script': script,
+                'script': anchor_data['script'],
                 'bin': bin_key,
                 'sample_idx': sample_idx,
             })
@@ -846,7 +887,14 @@ class TrainingDataGenerator:
 
         logger.info(f"Processing {len(batches)} batches...")
 
-        triplet_count = 0
+        # TWO-PASS APPROACH:
+        # Pass 1: Run all _msearch queries to collect hard negatives
+        # Pass 2: Batch fetch features for negatives not in toponym_data_map
+        # Pass 3: Build and stream triplets
+
+        logger.info("Pass 1: Mining hard negatives...")
+        triplet_specs = []  # (anchor_id, positive_id, negative_id, bin_key)
+        negatives_to_fetch = set()
         batches_processed = 0
 
         for batch in tqdm(batches, desc="Hard negative mining"):
@@ -858,21 +906,83 @@ class TrainingDataGenerator:
 
             for item, hard_neg in zip(batch, hard_negs):
                 if hard_neg:
-                    triplet = {
-                        'anchor_id': item['anchor_id'],
-                        'positive_id': item['positive_id'],
-                        'negative_id': hard_neg,
-                        'negative_type': 'hard',
-                        'bin': item['bin'],
-                    }
+                    anchor_id = item['anchor_id']
+                    positive_id = item['positive_id']
 
-                    split_hash = (zlib.crc32(item['anchor_id'].encode('utf-8')) & 0xffffffff) % 10
-                    writer.add_triplet(triplet, split_hash)
-                    triplet_count += 1
+                    # Verify anchor and positive have data
+                    if anchor_id in toponym_data_map and positive_id in toponym_data_map:
+                        triplet_specs.append((anchor_id, positive_id, hard_neg, item['bin']))
+
+                        # Track negatives needing feature fetch
+                        if hard_neg not in toponym_data_map:
+                            negatives_to_fetch.add(hard_neg)
 
             batches_processed += 1
             if batches_processed % 100 == 0:
                 self.knn.check_failure_threshold()
+
+        logger.info(f"Found {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
+
+        # Pass 2: Batch fetch negative features
+        negative_features = {}
+        if negatives_to_fetch:
+            logger.info("Pass 2: Batch fetching negative features...")
+            neg_list = list(negatives_to_fetch)
+            batch_size = 5000
+
+            for i in range(0, len(neg_list), batch_size):
+                batch = neg_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['panphon_embedding'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        emb = doc['_source'].get('panphon_embedding')
+                        if emb and len(emb) > 0:
+                            negative_features[doc['_id']] = {
+                                'features': np.array(emb, dtype=np.float32),
+                                'feature_length': len(emb) // 24,
+                            }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"  Fetched {min(i + batch_size, len(neg_list)):,} / {len(neg_list):,}...")
+
+            logger.info(f"Fetched features for {len(negative_features):,} negatives")
+
+        # Pass 3: Stream triplets to Parquet
+        logger.info("Pass 3: Streaming triplets to Parquet...")
+        triplet_count = 0
+        skipped_missing = 0
+
+        for anchor_id, positive_id, hard_neg, bin_key in tqdm(triplet_specs, desc="Writing triplets"):
+            anchor_data = toponym_data_map[anchor_id]
+            positive_data = toponym_data_map[positive_id]
+
+            # Get negative features
+            if hard_neg in toponym_data_map:
+                negative_data = toponym_data_map[hard_neg]
+            elif hard_neg in negative_features:
+                negative_data = negative_features[hard_neg]
+            else:
+                skipped_missing += 1
+                continue
+
+            triplet = {
+                'anchor_id': anchor_id,
+                'positive_id': positive_id,
+                'negative_id': hard_neg,
+                'negative_type': 'hard',
+                'bin': bin_key,
+                'anchor_features': anchor_data['features'],
+                'anchor_feature_length': anchor_data['feature_length'],
+                'positive_features': positive_data['features'],
+                'positive_feature_length': positive_data['feature_length'],
+                'negative_features': negative_data['features'],
+                'negative_feature_length': negative_data['feature_length'],
+            }
+
+            split_hash = (zlib.crc32(anchor_id.encode('utf-8')) & 0xffffffff) % 10
+            writer.add_triplet(triplet, split_hash)
+            triplet_count += 1
 
         # Final checks
         failure_rate = self.knn.get_failure_rate()
@@ -880,7 +990,9 @@ class TrainingDataGenerator:
         self.knn.check_failure_threshold()
 
         if failed_lookups > 0:
-            logger.warning(f"Failed lookups: {failed_lookups:,}")
+            logger.warning(f"Failed embedding lookups: {failed_lookups:,}")
+        if skipped_missing > 0:
+            logger.warning(f"Skipped triplets (missing features): {skipped_missing:,}")
 
         train_count, val_count = writer.close()
 
@@ -889,3 +1001,9 @@ class TrainingDataGenerator:
 
         self.stats['phase3']['triplets'] = triplet_count
         self.stats['phase3']['balance_stats'] = balance_stats
+
+        # Free memory
+        del toponym_data_map
+        del negative_features
+        del triplet_specs
+        gc.collect()

@@ -2,8 +2,7 @@
 """
 Memory-efficient streaming Parquet writer.
 
-This module provides utilities for writing large datasets to Parquet
-without holding everything in memory.
+Part of phonetics.extraction package.
 """
 
 from pathlib import Path
@@ -13,7 +12,7 @@ import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from .constants import PARQUET_BATCH_SIZE, logger
+from phonetics.extraction.constants import PARQUET_BATCH_SIZE, logger
 
 
 class StreamingParquetWriter:

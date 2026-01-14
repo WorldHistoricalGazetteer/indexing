@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """
 Elasticsearch KNN helper with caching and retry support.
+
+Part of phonetics.extraction package.
 """
 
 import random
@@ -12,7 +14,7 @@ import hdbscan
 import numpy as np
 from sklearn.metrics.pairwise import cosine_distances
 
-from .constants import (
+from phonetics.extraction.constants import (
     ES_FAILURE_THRESHOLD, KNN_CANDIDATES, PAIR_SIMILARITY_THRESHOLD,
     RANDOM_SEED, es_retry_with_backoff, logger
 )
@@ -95,11 +97,8 @@ class ESKNNHelper:
         if n == 1:
             return [toponym_ids]
 
-        embeddings = {}
-        for tid in toponym_ids:
-            emb = self.get_embedding(tid)
-            if emb:
-                embeddings[tid] = emb
+        # Batch fetch all embeddings at once (more efficient than individual calls)
+        embeddings = self.batch_get_embeddings(toponym_ids)
 
         ids = list(embeddings.keys())
         n_with_emb = len(ids)
