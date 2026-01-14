@@ -84,6 +84,139 @@ class TrainingDataGenerator:
             return train.exists() and val.exists()
         return False
 
+    def _check_phase3_has_text_fields(self) -> bool:
+        """Check if Phase 3 triplets have the text fields needed for Student training."""
+        train_path = self.output_dir / 'triplets' / 'phase3' / 'train.parquet'
+        if not train_path.exists():
+            return False
+
+        schema = pq.read_schema(train_path)
+        required_fields = ['anchor_name', 'anchor_script', 'anchor_lang',
+                           'positive_name', 'positive_script', 'positive_lang',
+                           'negative_name', 'negative_script', 'negative_lang']
+
+        existing_fields = set(schema.names)
+        return all(f in existing_fields for f in required_fields)
+
+    def _augment_phase3_with_text_fields(self):
+        """
+        Augment existing Phase 3 triplets with text fields for Student training.
+
+        Uses chunked processing to avoid loading entire files into memory.
+        Reads in batches, fetches metadata, writes to new file, then swaps.
+        """
+        logger.info("=" * 60)
+        logger.info("AUGMENTING PHASE 3 WITH TEXT FIELDS")
+        logger.info("=" * 60)
+
+        phase3_dir = self.output_dir / 'triplets' / 'phase3'
+
+        for split in ['train', 'val']:
+            parquet_path = phase3_dir / f'{split}.parquet'
+            if not parquet_path.exists():
+                logger.warning(f"Phase 3 {split} file not found, skipping")
+                continue
+
+            logger.info(f"Processing {split}...")
+
+            # First pass: collect all unique toponym IDs without loading full data
+            logger.info("  Pass 1: Collecting unique toponym IDs...")
+            all_ids = set()
+            parquet_file = pq.ParquetFile(parquet_path)
+            total_rows = parquet_file.metadata.num_rows
+
+            for batch in parquet_file.iter_batches(batch_size=50000,
+                                                   columns=['anchor_id', 'positive_id', 'negative_id']):
+                df_batch = batch.to_pandas()
+                all_ids.update(df_batch['anchor_id'].tolist())
+                all_ids.update(df_batch['positive_id'].tolist())
+                all_ids.update(df_batch['negative_id'].tolist())
+
+            logger.info(f"  Found {len(all_ids):,} unique toponym IDs in {total_rows:,} triplets")
+
+            # Second pass: batch fetch text metadata from ES
+            logger.info("  Pass 2: Fetching text metadata from ES...")
+            text_metadata = {}  # id -> {name, script, lang}
+            id_list = list(all_ids)
+            batch_size = 5000
+
+            for i in range(0, len(id_list), batch_size):
+                batch = id_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['name', 'script', 'lang'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        source = doc['_source']
+                        text_metadata[doc['_id']] = {
+                            'name': source.get('name', ''),
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                        }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"    Fetched {min(i + batch_size, len(id_list)):,} / {len(id_list):,}...")
+
+            logger.info(f"  Fetched metadata for {len(text_metadata):,} toponyms")
+            del all_ids, id_list  # Free memory
+
+            # Third pass: stream through data, add text fields, write to new file
+            logger.info("  Pass 3: Writing augmented file...")
+
+            temp_path = phase3_dir / f'{split}_augmented_temp.parquet'
+
+            def get_text_field(toponym_id, field):
+                meta = text_metadata.get(toponym_id, {})
+                return meta.get(field, '' if field != 'script' else 'UNKNOWN')
+
+            writer = None
+            rows_written = 0
+
+            for batch in parquet_file.iter_batches(batch_size=50000):
+                df_batch = batch.to_pandas()
+
+                # Add text columns
+                df_batch['anchor_name'] = df_batch['anchor_id'].apply(lambda x: get_text_field(x, 'name'))
+                df_batch['anchor_script'] = df_batch['anchor_id'].apply(lambda x: get_text_field(x, 'script'))
+                df_batch['anchor_lang'] = df_batch['anchor_id'].apply(lambda x: get_text_field(x, 'lang'))
+                df_batch['positive_name'] = df_batch['positive_id'].apply(lambda x: get_text_field(x, 'name'))
+                df_batch['positive_script'] = df_batch['positive_id'].apply(lambda x: get_text_field(x, 'script'))
+                df_batch['positive_lang'] = df_batch['positive_id'].apply(lambda x: get_text_field(x, 'lang'))
+                df_batch['negative_name'] = df_batch['negative_id'].apply(lambda x: get_text_field(x, 'name'))
+                df_batch['negative_script'] = df_batch['negative_id'].apply(lambda x: get_text_field(x, 'script'))
+                df_batch['negative_lang'] = df_batch['negative_id'].apply(lambda x: get_text_field(x, 'lang'))
+
+                # Convert to pyarrow table
+                batch_table = pa.Table.from_pandas(df_batch, preserve_index=False)
+
+                # Initialize writer with schema from first batch
+                if writer is None:
+                    writer = pq.ParquetWriter(temp_path, batch_table.schema)
+
+                writer.write_table(batch_table)
+                rows_written += len(df_batch)
+
+                if rows_written % 200000 < 50000:
+                    logger.info(f"    Written {rows_written:,} / {total_rows:,}...")
+
+            if writer:
+                writer.close()
+
+            del text_metadata  # Free memory
+
+            # Swap files
+            backup_path = phase3_dir / f'{split}_backup_no_text.parquet'
+            if not backup_path.exists():
+                logger.info(f"  Backing up original to {backup_path.name}")
+                parquet_path.rename(backup_path)
+            else:
+                # Backup already exists from previous run, just remove original
+                parquet_path.unlink()
+
+            temp_path.rename(parquet_path)
+            logger.info(f"  ✓ {split} augmented: {rows_written:,} triplets")
+
+        logger.info("Phase 3 augmentation complete")
+
     def _load_pairs_from_checkpoint(self) -> Dict[str, List[Tuple]]:
         """Load positive pairs from checkpoint Parquet file."""
         pairs_file = self.output_dir / 'pairs' / 'positive_pairs.parquet'
@@ -162,7 +295,15 @@ class TrainingDataGenerator:
         logger.info("=" * 60)
 
         if self._check_phase_complete('phase3'):
-            logger.info("✓ Phase 3 checkpoint found, skipping...")
+            logger.info("✓ Phase 3 checkpoint found")
+
+            # Check if text fields exist (needed for Student training)
+            if not self._check_phase3_has_text_fields():
+                logger.info("⚠ Phase 3 missing text fields, augmenting...")
+                self._augment_phase3_with_text_fields()
+            else:
+                logger.info("✓ Phase 3 has text fields, skipping...")
+
             phase3_train = pq.read_table(self.output_dir / 'triplets' / 'phase3' / 'train.parquet')
             phase3_val = pq.read_table(self.output_dir / 'triplets' / 'phase3' / 'val.parquet')
             self.stats['phase3']['triplets'] = len(phase3_train) + len(phase3_val)
@@ -799,15 +940,16 @@ class TrainingDataGenerator:
         logger.info(f"Unique toponyms: {len(unique_anchors):,}")
 
         # Load anchor info AND features (for self-contained triplets)
+        # Include 'name' for Student training (Phase 3 trains Student on hard negatives)
         logger.info("Loading anchor info and features...")
-        toponym_data_map = {}  # toponym_id -> {script, lang, features, feature_length}
+        toponym_data_map = {}  # toponym_id -> {script, lang, name, features, feature_length}
         anchor_list = list(unique_anchors)
         batch_size = 5000
 
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i + batch_size]
             docs = self.es.mget(index="toponyms", body={"ids": batch},
-                                _source=['script', 'lang', 'panphon_embedding'])
+                                _source=['name', 'script', 'lang', 'panphon_embedding'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
@@ -816,6 +958,7 @@ class TrainingDataGenerator:
 
                     if embedding and len(embedding) > 0:
                         toponym_data_map[toponym_id] = {
+                            'name': source.get('name', ''),
                             'script': source.get('script', 'UNKNOWN'),
                             'lang': source.get('lang', ''),
                             'features': np.array(embedding, dtype=np.float32),
@@ -923,7 +1066,7 @@ class TrainingDataGenerator:
 
         logger.info(f"Found {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
 
-        # Pass 2: Batch fetch negative features
+        # Pass 2: Batch fetch negative features (and names for Student training)
         negative_features = {}
         if negatives_to_fetch:
             logger.info("Pass 2: Batch fetching negative features...")
@@ -933,12 +1076,16 @@ class TrainingDataGenerator:
             for i in range(0, len(neg_list), batch_size):
                 batch = neg_list[i:i + batch_size]
                 docs = self.es.mget(index="toponyms", body={"ids": batch},
-                                    _source=['panphon_embedding'])
+                                    _source=['name', 'script', 'lang', 'panphon_embedding'])
                 for doc in docs.get('docs', []):
                     if doc.get('found') and '_source' in doc:
-                        emb = doc['_source'].get('panphon_embedding')
+                        source = doc['_source']
+                        emb = source.get('panphon_embedding')
                         if emb and len(emb) > 0:
                             negative_features[doc['_id']] = {
+                                'name': source.get('name', ''),
+                                'script': source.get('script', 'UNKNOWN'),
+                                'lang': source.get('lang', ''),
                                 'features': np.array(emb, dtype=np.float32),
                                 'feature_length': len(emb) // 24,
                             }
@@ -972,6 +1119,17 @@ class TrainingDataGenerator:
                 'negative_id': hard_neg,
                 'negative_type': 'hard',
                 'bin': bin_key,
+                # Text data for Student training (Phase 3 trains Student on hard negatives)
+                'anchor_name': anchor_data['name'],
+                'anchor_script': anchor_data['script'],
+                'anchor_lang': anchor_data['lang'],
+                'positive_name': positive_data['name'],
+                'positive_script': positive_data['script'],
+                'positive_lang': positive_data['lang'],
+                'negative_name': negative_data['name'],
+                'negative_script': negative_data['script'],
+                'negative_lang': negative_data['lang'],
+                # Phonetic features for Teacher training (optional, enables Teacher fine-tuning)
                 'anchor_features': anchor_data['features'],
                 'anchor_feature_length': anchor_data['feature_length'],
                 'positive_features': positive_data['features'],

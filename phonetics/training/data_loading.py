@@ -198,10 +198,10 @@ class Phase1Dataset(Dataset):
     """
     Dataset for Phase 1: Teacher training on phonetic features.
 
-    v4+ Format: Triplets are SELF-CONTAINED with embedded features.
-    No external feature lookup required - data is directly in the Parquet file.
+    Expects self-contained triplets with phonetic features embedded
+    directly in the Parquet file. No external lookup required.
 
-    Expected columns in triplet Parquet:
+    Expected columns:
     - anchor_id, positive_id, negative_id (str)
     - anchor_features, positive_features, negative_features (list[float])
     - anchor_feature_length, positive_feature_length, negative_feature_length (int)
@@ -225,93 +225,31 @@ class Phase1Dataset(Dataset):
         self.triplets_df = pq.read_table(triplets_path).to_pandas()
         print(f"Phase1Dataset: Loaded {len(self.triplets_df):,} triplets", flush=True)
 
-        # Check if this is the new self-contained format (v4+)
-        has_features = 'anchor_features' in self.triplets_df.columns
-
-        if has_features:
-            print(f"Phase1Dataset: Using self-contained triplets with embedded features", flush=True)
-            self._use_external_features = False
-
-            # Filter out any rows with missing features
-            valid_mask = (
-                self.triplets_df['anchor_features'].notna() &
-                self.triplets_df['positive_features'].notna() &
-                self.triplets_df['negative_features'].notna()
+        # Verify feature fields exist
+        if 'anchor_features' not in self.triplets_df.columns:
+            raise ValueError(
+                f"Phase 1 triplets missing feature fields (anchor_features, etc.). "
+                f"Regenerate training data with `es -generate-training-data VERSION`"
             )
-            self.valid_df = self.triplets_df[valid_mask].reset_index(drop=True)
 
-            if len(self.valid_df) < len(self.triplets_df):
-                print(f"Phase1Dataset: Filtered to {len(self.valid_df):,} triplets with valid features", flush=True)
-
-            if len(self.valid_df) == 0:
-                raise ValueError(
-                    f"Phase 1 triplets have feature columns but all values are null. "
-                    f"Regenerate training data with `es -generate-training-data VERSION`"
-                )
-        else:
-            # Legacy format: triplets only have IDs, need to look up features
-            # Check if external features actually exist before trying to load them
-            try:
-                training_path = get_training_data_path(self.data_dir)
-                print(f"Phase1Dataset: Legacy format detected - loading features from {training_path}", flush=True)
-                self._use_external_features = True
-                self._load_external_features()
-            except FileNotFoundError as e:
-                raise FileNotFoundError(
-                    f"Phase 1 triplets are in legacy format (no embedded features) but training data "
-                    f"for feature lookup was not found. Either regenerate triplets with embedded features "
-                    f"using the v4+ data pipeline, or ensure Phase 2 training data exists. Original error: {e}"
-                )
-
-    def _load_external_features(self):
-        """Load features from training data for legacy triplet format."""
-        # Get unique toponym IDs from triplets
-        needed_ids = set(self.triplets_df['anchor_id'].unique()) | \
-                     set(self.triplets_df['positive_id'].unique()) | \
-                     set(self.triplets_df['negative_id'].unique())
-        print(f"Phase1Dataset: {len(needed_ids):,} unique toponym IDs needed", flush=True)
-
-        # Load features from training data
-        toponyms_path = get_training_data_path(self.data_dir)
-        dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
-
-        print(f"Phase1Dataset: Loading features for needed toponyms...", flush=True)
-        self._feature_cache = {}
-
-        scanner = dataset.scanner(
-            columns=['toponym_id', 'features', 'feature_length', 'split'],
-            batch_size=100000
+        # Filter out any rows with missing features
+        valid_mask = (
+            self.triplets_df['anchor_features'].notna() &
+            self.triplets_df['positive_features'].notna() &
+            self.triplets_df['negative_features'].notna()
         )
+        self.valid_df = self.triplets_df[valid_mask].reset_index(drop=True)
 
-        for batch in scanner.to_batches():
-            batch_df = batch.to_pandas()
-            mask = batch_df['toponym_id'].isin(needed_ids)
-            filtered = batch_df[mask]
+        if len(self.valid_df) < len(self.triplets_df):
+            print(f"Phase1Dataset: Filtered to {len(self.valid_df):,} triplets with valid features", flush=True)
 
-            valid_mask = filtered['features'].notna() & (filtered['feature_length'] > 0)
-            valid_rows = filtered[valid_mask]
+        if len(self.valid_df) == 0:
+            raise ValueError(
+                f"Phase 1 triplets have feature columns but all values are null. "
+                f"Regenerate training data with `es -generate-training-data VERSION`"
+            )
 
-            for _, row in valid_rows.iterrows():
-                tid = row['toponym_id']
-                features = row['features']
-                if isinstance(features, np.ndarray):
-                    features = features.tolist()
-                self._feature_cache[tid] = {
-                    'features': features,
-                    'feature_length': row['feature_length']
-                }
-
-        print(f"Phase1Dataset: Cached {len(self._feature_cache):,} toponyms with valid features", flush=True)
-
-        # Filter triplets to those with available features
-        available_ids = set(self._feature_cache.keys())
-        mask = (
-            self.triplets_df['anchor_id'].isin(available_ids) &
-            self.triplets_df['positive_id'].isin(available_ids) &
-            self.triplets_df['negative_id'].isin(available_ids)
-        )
-        self.valid_df = self.triplets_df[mask].reset_index(drop=True)
-        print(f"Phase1Dataset: {len(self.valid_df):,} valid triplets for {self.split}", flush=True)
+        print(f"Phase1Dataset: {len(self.valid_df):,} valid triplets for {self.split}")
 
     def __len__(self) -> int:
         return len(self.valid_df)
@@ -319,41 +257,32 @@ class Phase1Dataset(Dataset):
     def __getitem__(self, idx: int) -> Dict:
         row = self.valid_df.iloc[idx]
 
-        if self._use_external_features:
-            # Legacy: lookup from cache
-            return {
-                'anchor': self._feature_cache[row['anchor_id']],
-                'positive': self._feature_cache[row['positive_id']],
-                'negative': self._feature_cache[row['negative_id']],
-            }
-        else:
-            # v4+: features are embedded in the triplet
-            anchor_features = row['anchor_features']
-            positive_features = row['positive_features']
-            negative_features = row['negative_features']
+        anchor_features = row['anchor_features']
+        positive_features = row['positive_features']
+        negative_features = row['negative_features']
 
-            # Convert numpy arrays to lists if needed
-            if hasattr(anchor_features, 'tolist'):
-                anchor_features = anchor_features.tolist()
-            if hasattr(positive_features, 'tolist'):
-                positive_features = positive_features.tolist()
-            if hasattr(negative_features, 'tolist'):
-                negative_features = negative_features.tolist()
+        # Convert numpy arrays to lists if needed
+        if hasattr(anchor_features, 'tolist'):
+            anchor_features = anchor_features.tolist()
+        if hasattr(positive_features, 'tolist'):
+            positive_features = positive_features.tolist()
+        if hasattr(negative_features, 'tolist'):
+            negative_features = negative_features.tolist()
 
-            return {
-                'anchor': {
-                    'features': anchor_features,
-                    'feature_length': row['anchor_feature_length'],
-                },
-                'positive': {
-                    'features': positive_features,
-                    'feature_length': row['positive_feature_length'],
-                },
-                'negative': {
-                    'features': negative_features,
-                    'feature_length': row['negative_feature_length'],
-                },
-            }
+        return {
+            'anchor': {
+                'features': anchor_features,
+                'feature_length': row['anchor_feature_length'],
+            },
+            'positive': {
+                'features': positive_features,
+                'feature_length': row['positive_feature_length'],
+            },
+            'negative': {
+                'features': negative_features,
+                'feature_length': row['negative_feature_length'],
+            },
+        }
 
 
 class Phase2Dataset(Dataset):
@@ -446,8 +375,16 @@ class Phase3Dataset(Dataset):
     """
     Dataset for Phase 3: Contrastive fine-tuning with hard negatives.
 
-    MEMORY-OPTIMIZED: Only loads toponyms that appear in triplets,
-    not the entire 57M+ toponym corpus.
+    Expects self-contained triplets with text fields (name, script, lang)
+    embedded directly in the Parquet file. No external lookup required.
+
+    Expected columns:
+    - anchor_id, positive_id, negative_id (str)
+    - anchor_name, positive_name, negative_name (str)
+    - anchor_script, positive_script, negative_script (str)
+    - anchor_lang, positive_lang, negative_lang (str)
+    - negative_type (str)
+    - bin (str)
     """
 
     def __init__(
@@ -460,123 +397,63 @@ class Phase3Dataset(Dataset):
         self.split = split
         print(f"Phase3Dataset: Loading {split} data...")
 
-        # Load vocab limits dynamically if not provided
-        if vocab_limits is None:
-            vocab_limits = load_vocab_limits(self.data_dir)
+        # Load triplets
+        triplets_path = self.data_dir / 'triplets' / 'phase3' / f'{split}.parquet'
+        if not triplets_path.exists():
+            raise FileNotFoundError(f"Phase 3 triplets not found at {triplets_path}")
 
-        # 1. Load Triplets -> Pandas (small: ~500MB for 5M triplets)
-        triplets_path = self.data_dir / 'triplets' / 'phase3'
-        self.triplets_df = ds.dataset(triplets_path, format='parquet').to_table().to_pandas()
+        self.triplets_df = pq.read_table(triplets_path).to_pandas()
         print(f"Phase3Dataset: Loaded {len(self.triplets_df):,} triplets")
 
-        # 2. Get unique toponym IDs from triplets
-        needed_ids = set(self.triplets_df['anchor_id'].unique()) | \
-                     set(self.triplets_df['positive_id'].unique()) | \
-                     set(self.triplets_df['negative_id'].unique())
-        print(f"Phase3Dataset: {len(needed_ids):,} unique toponym IDs needed")
+        # Verify text fields exist
+        if 'anchor_name' not in self.triplets_df.columns:
+            raise ValueError(
+                f"Phase 3 triplets missing text fields (anchor_name, etc.). "
+                f"Regenerate or augment training data with `es -generate-training-data VERSION`"
+            )
 
-        # 3. Load ONLY the needed toponyms from Parquet
-        toponyms_path = get_training_data_path(self.data_dir)
-        dataset = ds.dataset(toponyms_path, format='parquet', partitioning='hive')
-
-        columns = [
-            'toponym_id', 'name', 'script', 'lang',
-            'char_ids', 'split'
-        ]
-
-        print(f"Phase3Dataset: Loading toponyms for needed IDs...")
-        self._cache = {}
-
-        # Process in batches using scanner
-        scanner = dataset.scanner(columns=columns, batch_size=100000)
-
-        loaded_count = 0
-        for batch in scanner.to_batches():
-            batch_df = batch.to_pandas()
-
-            # Filter to only needed IDs
-            mask = batch_df['toponym_id'].isin(needed_ids)
-            filtered = batch_df[mask]
-
-            if len(filtered) == 0:
-                continue
-
-            # Sanitize script IDs
-            if pd.api.types.is_integer_dtype(filtered['script']):
-                script_mask = (filtered['script'] >= 0) & (filtered['script'] < vocab_limits['script'])
-                filtered = filtered[script_mask]
-
-            # Sanitize char IDs
-            if not filtered.empty:
-                limit = vocab_limits['char']
-
-                def is_safe_chars(ids):
-                    if ids is None: return True
-                    if isinstance(ids, np.ndarray):
-                        if ids.size == 0: return True
-                        return ids.min() >= 0 and ids.max() < limit
-                    if not ids: return True
-                    return min(ids) >= 0 and max(ids) < limit
-
-                char_mask = filtered['char_ids'].apply(is_safe_chars)
-                filtered = filtered[char_mask]
-
-            # Add to cache
-            for _, row in filtered.iterrows():
-                tid = row['toponym_id']
-                char_ids = row['char_ids']
-                if isinstance(char_ids, np.ndarray):
-                    char_ids = char_ids.tolist()
-                lang = row['lang'] if pd.notna(row['lang']) else ''
-
-                self._cache[tid] = {
-                    'name': row['name'],
-                    'script': row['script'],
-                    'lang': lang,
-                    'char_ids': char_ids,
-                    'split': row['split']
-                }
-
-            loaded_count += len(filtered)
-            if loaded_count % 500000 == 0:
-                print(f"  Loaded {loaded_count:,} toponyms...")
-
-        print(f"Phase3Dataset: Cached {len(self._cache):,} valid toponyms")
-
-        # 4. Filter triplets
-        available_ids = set(self._cache.keys())
-
-        print(f"Phase3Dataset: Filtering triplets...")
-        df = self.triplets_df
-
-        valid_anchor_ids = {
-            tid for tid, data in self._cache.items()
-            if data['split'] == split
-        }
-
-        mask_valid = (
-            df['anchor_id'].isin(valid_anchor_ids) &
-            df['positive_id'].isin(available_ids) &
-            df['negative_id'].isin(available_ids)
+        # Filter out any rows with missing text fields
+        valid_mask = (
+            self.triplets_df['anchor_name'].notna() &
+            self.triplets_df['positive_name'].notna() &
+            self.triplets_df['negative_name'].notna()
         )
+        self.valid_df = self.triplets_df[valid_mask].reset_index(drop=True)
 
-        self.valid_df = df[mask_valid].reset_index(drop=True)
+        if len(self.valid_df) < len(self.triplets_df):
+            print(f"Phase3Dataset: Filtered to {len(self.valid_df):,} triplets with valid text fields", flush=True)
 
-        # Free memory
-        del self.triplets_df
+        if len(self.valid_df) == 0:
+            raise ValueError(
+                f"Phase 3 triplets have text columns but all values are null. "
+                f"Regenerate training data with `es -generate-training-data VERSION`"
+            )
 
-        print(f"Phase3Dataset: {len(self.valid_df):,} valid triplets for {split}")
+        print(f"Phase3Dataset: {len(self.valid_df):,} valid triplets for {self.split}")
 
     def __len__(self) -> int:
         return len(self.valid_df)
 
     def __getitem__(self, idx: int) -> Dict:
         row = self.valid_df.iloc[idx]
+
         return {
-            'anchor': self._cache[row['anchor_id']],
-            'positive': self._cache[row['positive_id']],
-            'negative': self._cache[row['negative_id']],
-            'negative_type': row['negative_type'],
+            'anchor': {
+                'name': row['anchor_name'],
+                'script': row['anchor_script'],
+                'lang': row['anchor_lang'] if pd.notna(row['anchor_lang']) else '',
+            },
+            'positive': {
+                'name': row['positive_name'],
+                'script': row['positive_script'],
+                'lang': row['positive_lang'] if pd.notna(row['positive_lang']) else '',
+            },
+            'negative': {
+                'name': row['negative_name'],
+                'script': row['negative_script'],
+                'lang': row['negative_lang'] if pd.notna(row['negative_lang']) else '',
+            },
+            'negative_type': row.get('negative_type', 'hard'),
         }
 
 
@@ -818,9 +695,7 @@ def create_phase1_dataloader(
     """
     Create DataLoader for Phase 1 training.
 
-    Uses Phase1Dataset which auto-detects:
-    - v4+ self-contained format (features embedded in triplets)
-    - Legacy format (features looked up from Phase 2 training data)
+    Uses Phase1Dataset with self-contained triplets (features embedded).
     """
     dataset = Phase1Dataset(data_dir, split)
 
@@ -878,7 +753,11 @@ def create_phase3_dataloader(
         shuffle: bool = True,
         noise_prob: float = 0.3,
 ) -> DataLoader:
-    """Create DataLoader for Phase 3 training."""
+    """
+    Create DataLoader for Phase 3 training.
+
+    Uses Phase3Dataset with self-contained triplets (text fields embedded).
+    """
     dataset = Phase3Dataset(data_dir, split)
 
     training = (split == 'train')
