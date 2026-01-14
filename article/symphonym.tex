@@ -2,6 +2,8 @@
 \documentclass[11pt,a4paper]{article}
 
 \usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{english}
 % Main font set in Script Support section below (with Path for ArXiv compatibility)
 
 \usepackage{amsmath,amssymb}
@@ -23,41 +25,140 @@
 \usepackage{siunitx}        % for consistent number formatting
 \sisetup{group-separator={,}, group-minimum-digits=4}
 
+% bidi package MUST be loaded after graphicx, hyperref, tikz, array, natbib, listings
+\usepackage{bidi}
+
 % --- Script Support ---
 
-% Set font search path to include local fonts directory
-\defaultfontfeatures{Path=fonts/}
+% Main font (Linux Libertine)
+\setmainfont[
+    Path=fonts/,
+    UprightFont=LinLibertine_R,
+    BoldFont=LinLibertine_RB,
+    ItalicFont=LinLibertine_RI,
+    BoldItalicFont=LinLibertine_RBI,
+    Extension=.otf
+]{LinLibertine}
 
-% Main font (Liberation Serif - already in fonts/)
-\setmainfont{LinLibertine_R.otf}[
-    BoldFont=LinLibertine_RB.otf,
-    ItalicFont=LinLibertine_RI.otf,
-    BoldItalicFont=LinLibertine_RBI.otf
-]
+% Script-specific fonts - all from fonts/ directory for ArXiv compatibility
+% Note: All Noto fonts can be downloaded from: https://fonts.google.com/noto
 
-% Script-specific fonts
-% Note: For ArXiv, download these fonts and place in fonts/ directory
-\newfontfamily\arabicfont{Amiri-Regular.ttf}[Script=Arabic, Path=fonts/]
-\newfontfamily\chinesefont[Path=fonts/, FontIndex=0]{NotoSerifCJK-Regular.ttc}
-\newfontfamily\cyrillicfont{LinLibertine_R.otf}[Path=fonts/]  % Liberation includes Cyrillic
-\newfontfamily\georgianfont{NotoSerifGeorgian-Regular.ttf}[Script=Georgian, Path=fonts/]
-\newfontfamily\greekfont{LinLibertine_R.otf}[Path=fonts/]     % Liberation includes Greek
-\newfontfamily\hebrewfont{NotoSerifHebrew-Regular.ttf}[Script=Hebrew, Path=fonts/]
-\newfontfamily\devanagarifont{NotoSerifDevanagari-Regular.ttf}[Script=Devanagari, Path=fonts/]
-\newfontfamily\koreanfont[Path=fonts/, FontIndex=1]{NotoSerifCJK-Regular.ttc}  % Korean from CJK font
+\newfontfamily\arabicfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Arabic,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{Amiri-Regular}
 
-% Create helper commands to wrap the text
-\newcommand{\textar}[1]{{\arabicfont #1}}           % Arabic
-\newcommand{\textcn}[1]{{\chinesefont #1}}          % Chinese/Japanese
-\newcommand{\textru}[1]{{\cyrillicfont #1}}         % Cyrillic
-\newcommand{\textka}[1]{{\georgianfont #1}}         % Georgian (ka = ISO 639-1 code)
-\newcommand{\textgeorgian}[1]{{\georgianfont #1}}   % Georgian (alias)
-\newcommand{\textel}[1]{{\greekfont #1}}            % Greek (el = ISO 639-1 code)
-\newcommand{\texthe}[1]{{\hebrewfont #1}}           % Hebrew
-\newcommand{\texthebrew}[1]{{\hebrewfont #1}}       % Hebrew (alias)
-\newcommand{\texthi}[1]{{\devanagarifont #1}}       % Hindi/Devanagari
-\newcommand{\textdevanagari}[1]{{\devanagarifont #1}} % Devanagari (alias)
-\newcommand{\textko}[1]{{\koreanfont #1}}           % Korean
+\newfontfamily\bengalifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Bengali,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifBengali-Regular}
+
+\newfontfamily\chinesefont[
+    Path=fonts/,
+    Extension=.ttc,
+    FontIndex=0,
+    Scale=1.0
+]{NotoSerifCJK-Regular}
+
+\newfontfamily\cyrillicfont[
+    Path=fonts/,
+    Extension=.otf,
+    Scale=1.0
+]{LinLibertine_R}  % Liberation includes Cyrillic
+
+\newfontfamily\georgianfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Georgian,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifGeorgian-Regular}
+
+\newfontfamily\greekfont[
+    Path=fonts/,
+    Extension=.otf,
+    Scale=1.0
+]{LinLibertine_R}     % Liberation includes Greek
+
+\newfontfamily\hebrewfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Hebrew,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifHebrew-Regular}
+
+\newfontfamily\devanagarifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Devanagari,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifDevanagari-Regular}
+
+\newfontfamily\koreanfont[
+    Path=fonts/,
+    Extension=.ttc,
+    FontIndex=1,
+    Scale=1.0
+]{NotoSerifCJK-Regular}  % Korean from CJK font
+
+\newfontfamily\malayalamfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Malayalam,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifMalayalam-Regular}
+
+\newfontfamily\tamilfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Tamil,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifTamil-Regular}
+
+\newfontfamily\telugufont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Telugu,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifTelugu-Regular}
+
+\newfontfamily\thaifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Thai,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifThai-Regular}
+
+% Create helper commands to wrap the text with proper direction and script settings
+\newcommand{\textar}[1]{{\arabicfont\RL{#1}}}           % Arabic (right-to-left)
+\newcommand{\textbn}[1]{{\bengalifont #1}}              % Bengali
+\newcommand{\textcn}[1]{{\chinesefont #1}}              % Chinese/Japanese
+\newcommand{\textru}[1]{{\cyrillicfont #1}}             % Cyrillic
+\newcommand{\textka}[1]{{\georgianfont #1}}             % Georgian (ka = ISO 639-1 code)
+\newcommand{\textge}[1]{{\georgianfont #1}}             % Georgian (ge alias used in text)
+\newcommand{\textgeorgian}[1]{{\georgianfont #1}}       % Georgian (alias)
+\newcommand{\textel}[1]{{\greekfont #1}}                % Greek (el = ISO 639-1 code)
+\newcommand{\texthe}[1]{{\hebrewfont\RL{#1}}}           % Hebrew (right-to-left)
+\newcommand{\texthebrew}[1]{{\hebrewfont\RL{#1}}}       % Hebrew (alias)
+\newcommand{\texthi}[1]{{\devanagarifont #1}}           % Hindi/Devanagari
+\newcommand{\textdevanagari}[1]{{\devanagarifont #1}}   % Devanagari (alias)
+\newcommand{\textko}[1]{{\koreanfont #1}}               % Korean
+\newcommand{\textml}[1]{{\malayalamfont #1}}            % Malayalam
+\newcommand{\textta}[1]{{\tamilfont #1}}                % Tamil
+\newcommand{\textte}[1]{{\telugufont #1}}               % Telugu
+\newcommand{\textth}[1]{{\thaifont #1}}                 % Thai
 % ----------------------
 
 % Custom commands
@@ -71,7 +172,7 @@
 \author{
     Stephen Gadd \\
     {\small ORCiD: 0000-0003-3060-0181} \\
-    University of London / University of Pittsburgh \\
+    School of Advanced Study, University of London / University of Pittsburgh \\
     \texttt{stephen.gadd@sas.ac.uk}
 }
 
@@ -81,8 +182,10 @@
 
 \maketitle
 
+\textbf{Keywords:} toponym matching; phonetic embeddings; cross-script; teacher-student distillation; neural networks; digital humanities; geographic information retrieval; Symphonym
+
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. I present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and TGN, with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. Evaluation on the MEHDIE Hebrew-Arabic benchmark demonstrates 87.5\% Recall@1, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym will be deployed in the World Historical Gazetteer, enabling phonetic search and reconciliation across 67M+ toponyms.
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. The objective of this research is to present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme (G2P) conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and the Getty Thesaurus of Geographic Names (TGN), with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. The system achieves 93\% accuracy on cross-script equivalents and 87.5\% Recall@1 on the MEHDIE (Multi-Entity Hebrew-to-Arabic Data Interchange Exchange) Hebrew-Arabic benchmark, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym effectively addresses the challenge of cross-script toponym matching by providing a phonetically grounded embedding space, demonstrating strong performance on key benchmarks. Its deployment in the World Historical Gazetteer (WHG) will enable phonetic search and reconciliation across 67M+ toponyms, offering a scalable solution for digital humanities research.
 \end{abstract}
 
 \section{Introduction}
@@ -110,7 +213,7 @@ This paper presents such a system, which I call \emph{Symphonym}. The key contri
 
 The resulting system will enable fuzzy phonetic search across the full WHG corpus without language identification, script-specific preprocessing, or runtime phonetic conversion. Beyond cross-script matching, the phonetic embedding approach naturally handles \emph{historical orthographic variation}---the inconsistent spellings characteristic of pre-standardisation documents---by grouping sound-alike variants near their modern canonical forms.
 
-\paragraph{Scope and Integration.} This work addresses the \emph{name-matching} component of toponym resolution specifically. The model has no access to geographic coordinates or spatial context---it operates purely on phonetic similarity between strings. Both Symphonym and WHG's new reconciliation pipeline (termed WHG PLACE: Place Linkage, Alignment, and Concordance Engine) build on architecture developed by \citet{grossner2021whg}. Within PLACE, phonetic similarity serves as one input to a larger process: candidate toponyms are first retrieved via the phonetic-aware toponym index, then places containing matching toponyms are selected from the places index and filtered by geographic proximity and other contextual criteria. The contribution here is the phonetic similarity component alone.
+\paragraph{Scope and Integration.} This work addresses the \emph{name-matching} component of toponym resolution specifically. The model has no access to geographic coordinates or spatial context---it operates purely on phonetic similarity between strings. Both Symphonym and WHG's new reconciliation pipeline (termed WHG PLACE: Place Linkage, Alignment, and Concordance Engine) build on architecture developed by \citet{grossner2021whg}. Within the Place Linkage, Alignment, and Concordance Engine (PLACE), phonetic similarity serves as one input to a larger process: candidate toponyms are first retrieved via the phonetic-aware toponym index, then places containing matching toponyms are selected from the places index and filtered by geographic proximity and other contextual criteria. The contribution here is the phonetic similarity component alone.
 
 In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote{\url{https://docs.whgazetteer.org/content/technical/apis.html\#reconciliation-service-api}} (v2.0), facilitating the work of digital humanities and GLAM (galleries, libraries, archives, museums) professionals who seek to link place references in historical documents, archival catalogues, and research datasets to WHG's consolidated index. Once linked, these references become entry points to a web of related materials---other sources attesting the same places, variant historical names, and cross-references across collections---even when the original materials span multiple scripts, languages, and historical periods.
 
@@ -138,7 +241,7 @@ Recent work applies neural embeddings to geographic entity resolution. Qiu et al
 
 Most relevant is the MEHDIE project~\citep{mehdie2025}, which developed tools for matching toponyms between historical Hebrew and Arabic sources. Sagi et al.\ present a benchmark comprising place pairs from 13th-century Arabic geographical texts and 12th-century Hebrew travel narratives. Their approach investigates direct transliteration between Hebrew and Arabic scripts using Phonetisaurus~\citep{novak2016} for grapheme-to-phoneme conversion and a custom rule-based transliteration library (Translit) that exploits the phonetic affinity between Semitic languages.
 
-The MEHDIE work demonstrates that direct transliteration between related scripts often outperforms romanisation, which loses phonetic information in standard Latin schemes. However, their approach requires language-pair-specific rules: the Hebrew-Arabic transliteration exploits shared Semitic phonology that does not generalise to unrelated language pairs. In contrast, my use of Epitran for G2P conversion supports over 100 languages with a unified IPA output, and PanPhon provides language-agnostic articulatory features. This enables my model to learn phonetic relationships across arbitrary script pairs without requiring manual transliteration rules for each combination.
+The MEHDIE work demonstrates that direct transliteration between related scripts often outperforms romanisation, which loses phonetic information in standard Latin schemes. However, their approach requires language-pair-specific rules: the Hebrew-Arabic transliteration exploits shared Semitic phonology that does not generalise to unrelated language pairs. In contrast, my use of Epitran for Grapheme-to-Phoneme (G2P) conversion supports over 100 languages with a unified IPA output, and PanPhon provides language-agnostic articulatory features. This enables my model to learn phonetic relationships across arbitrary script pairs without requiring manual transliteration rules for each combination.
 
 Rama~\citep{rama2016} applied Siamese convolutional networks to cognate identification using character embeddings, demonstrating that neural architectures can learn sound correspondences between related languages. The key distinction from my work lies in the \emph{phonetic priors} provided to the model:
 
@@ -154,7 +257,7 @@ This distinction is particularly important for toponym matching, where the long 
 
 The broader literature on cross-lingual embeddings provides relevant techniques. Conneau et al.~\citep{conneau2018} show that monolingual embedding spaces can be aligned post-hoc using small bilingual dictionaries. Artetxe et al.~\citep{artetxe2018} demonstrate unsupervised alignment using only monolingual corpora. However, these approaches target semantic similarity (``dog'' near ``chien'') rather than phonetic similarity (``Paris'' near ``Париж'').
 
-The TRANSLIT resource~\citep{translit2020} provides 1.6 million name variants across 180 languages for training transliteration systems. While valuable for capturing conventionalised transliteration standards---the specific ways humans have historically decided to map sounds between scripts, which don't always follow strict phonetic logic---TRANSLIT focuses primarily on \emph{personal names} rather than toponyms. More significantly, Symphonym's architecture sidesteps much of the transliteration variance that TRANSLIT addresses: CJK characters are uniformly romanised via AnyAscii (eliminating Wade-Giles vs.\ Pinyin distinctions), Hangul is decomposed to Jamo, and non-Latin scripts like Cyrillic, Arabic, and Greek are processed natively through PanPhon rather than romanised. This means competing romanisation conventions (e.g., Gorbachev/Gorbachyov/Gorbatchev) are handled at the phonetic level, where the underlying sounds are equivalent regardless of Latin spelling choices.
+The Transliteration resource (TRANSLIT)~\citep{translit2020} provides 1.6 million name variants across 180 languages for training transliteration systems. While valuable for capturing conventionalised transliteration standards---the specific ways humans have historically decided to map sounds between scripts, which don't always follow strict phonetic logic---TRANSLIT focuses primarily on \emph{personal names} rather than toponyms. More significantly, Symphonym's architecture sidesteps much of the transliteration variance that TRANSLIT addresses: Chinese, Japanese, and Korean (CJK) characters are uniformly romanised via AnyAscii (eliminating Wade-Giles vs.\ Pinyin distinctions), Hangul is decomposed to Jamo, and non-Latin scripts like Cyrillic, Arabic, and Greek are processed natively through PanPhon rather than romanised. This means competing romanisation conventions (e.g., Gorbachev/Gorbachyov/Gorbatchev) are handled at the phonetic level, where the underlying sounds are equivalent regardless of Latin spelling choices.
 
 \subsection{Phonetic Representations in NLP}
 
@@ -164,7 +267,7 @@ The use of phonetic features in natural language processing has a long history. 
 
 Siamese networks~\citep{bromley1993,chopra2005} learn similarity functions by processing two inputs through identical sub-networks and comparing their output representations. They have been successfully applied to face verification~\citep{schroff2015}, signature verification, and text similarity~\citep{mueller2016,neculoiu2016}.
 
-For text matching, Mueller and Thyagarajan~\citep{mueller2016} demonstrated that Siamese LSTMs with Manhattan distance ($L_1$) achieve strong performance on sentence similarity tasks. However, the choice of distance metric carries important implications for toponym matching:
+For text matching, Mueller and Thyagarajan~\citep{mueller2016} demonstrated that Siamese Long Short-Term Memory (LSTM) networks with Manhattan distance ($L_1$) achieve strong performance on sentence similarity tasks. However, the choice of distance metric carries important implications for toponym matching:
 
 \paragraph{Manhattan Distance Limitations.} The $L_1$ norm is additive across dimensions, which creates a \emph{length penalty}: toponyms varying significantly in character count (e.g., ``Oa'' vs.\ ``Constantinople'') may produce large distances purely due to embedding magnitude rather than phonetic dissimilarity. Additionally, Manhattan distance assumes that the optimal path between embeddings follows axis-aligned grid lines, which poorly captures the directional relationships in phonetic space where the \emph{ratio} of articulatory features often matters more than their absolute magnitudes.
 
@@ -318,7 +421,7 @@ The Teacher architecture:
 \begin{enumerate}
     \item \textbf{Input}: Sequence of PanPhon feature vectors, $(f_1, f_2, \ldots, f_T)$ where $f_i \in \{0,1\}^{24}$
     \item \textbf{Projection}: Linear layer projects features to hidden dimension: $h_i = W_f f_i + b_f$
-    \item \textbf{BiLSTM}: Bidirectional LSTM processes the sequence: $(\overrightarrow{h_i}, \overleftarrow{h_i}) = \text{BiLSTM}(h_1, \ldots, h_T)$
+    \item \textbf{BiLSTM}: Bidirectional Long Short-Term Memory (BiLSTM) processes the sequence: $(\overrightarrow{h_i}, \overleftarrow{h_i}) = \text{BiLSTM}(h_1, \ldots, h_T)$
     \item \textbf{Self-Attention}: Multi-head self-attention captures long-range dependencies
     \item \textbf{Attention Pooling}: Learned attention weights aggregate sequence to fixed-length vector
     \item \textbf{Output Projection}: Linear layer to \embdim{} dimensions with L2 normalisation
@@ -348,7 +451,7 @@ The Student network processes raw character sequences, optionally augmented with
 \begin{enumerate}
     \item \textbf{Character Embedding}: Each character maps to a learned 96-dimensional vector via script-partitioned vocabulary lookup
     \item \textbf{Script Embedding}: Deterministically detected script maps to a learned 16-dimensional vector, concatenated to each character embedding
-    \item \textbf{Language Embedding}: When available, ISO 639 language code maps to a learned 16-dimensional vector; otherwise, a special \texttt{<UNK>} token is used. During training, known languages are randomly replaced with \texttt{<UNK>} with 50\% probability, forcing the model to learn script-intrinsic patterns.
+    \item \textbf{Language Embedding}: When available, ISO 639 language code maps to a learned 16-dimensional vector; otherwise, a special Unknown (\texttt{<UNK>}) token is used. During training, known languages are randomly replaced with \texttt{<UNK>} with 50\% probability, forcing the model to learn script-intrinsic patterns.
     \item \textbf{BiLSTM + Self-Attention + Attention Pooling}: Identical architecture to Teacher
     \item \textbf{Output Projection}: Linear layer to \embdim{} dimensions with L2 normalisation
 \end{enumerate}
@@ -373,7 +476,7 @@ Noise is applied with 30\% probability per training example, with the target bei
 \subsection{Data Selection and Curation Criteria}
 \label{subsec:selection_criteria}
 
-The World Historical Gazetteer (WHG) infrastructure separates data into a \texttt{places} index, which aggregates geographic entities with their attributions, and a \texttt{toponyms} index, which stores individual name variants with script and language metadata. My data selection strategy leverages this architecture to filter high-quality training data from major namespace authorities---GeoNames (\texttt{gn}), Wikidata (\texttt{wd}), and the Getty Thesaurus of Geographic Names (\texttt{tgn})---while excluding less strictly curated sources like OpenStreetMap.
+The WHG infrastructure separates data into a \texttt{places} index, which aggregates geographic entities with their attributions, and a \texttt{toponyms} index, which stores individual name variants with script and language metadata. My data selection strategy leverages this architecture to filter high-quality training data from major namespace authorities---GeoNames, Wikidata, and TGN---while excluding less strictly curated sources like OpenStreetMap.
 
 Training requires pairs of toponyms that refer to the same place, which are used to construct the triplets described in Section~\ref{sec:architecture}. I extract these from co-located name attestations: if an authority lists ``London'', ``Londres'', ``Londra'', and ``Лондон'' within the same place record, I generate pairs among all combinations. To address the inherent script and language imbalances in the raw corpus, I define the training data selection based on six criteria.
 
@@ -439,16 +542,16 @@ A \textbf{Moscow} place record (wd:Q499927) with 33 multilingual toponyms across
 
 \begin{itemize}
     \item \textbf{Cluster 1 (20 members):} Cyrillic Москов (uk), Hangul \textko{모스코}, and Latin forms (vi, fi, sv, tr, fr, ms, nl, ro, pt, es, cs, id, pl, hu) cluster together with similarity 0.82, reflecting the shared /mosk-/ phonetic core
-    \item \textbf{Cluster 2 (8 members):} South Asian and Middle Eastern forms cluster together: Tamil \textta{மாஸ்கோ}, Arabic \textar{موسكو}, Devanagari \texthi{मॉस्को} (mr, hi), Thai \textth{มอสโก}, Bengali \textbn{মস্কো}, and Telugu \textte{మాస్కో}---capturing the /masko/ pronunciation variant common to these language families (similarity 0.85)
-    \item \textbf{Noise (5 points):} Georgian \textge{მოსკოვი}, CJK \textcn{莫斯科}, and some Arabic variants are correctly isolated as phonetically distinct
+    \item \textbf{Cluster 2 (8 members):} South Asian and Middle Eastern forms cluster together: Tamil \textta{மாஸ்கோ}, Arabic \textar{موسکو}, Devanagari \texthi{मॉस्को} (mr, hi), Thai \textth{มอสโก}, Bengali \textbn{মস্কো}, and Telugu \textte{మాస్కో}---capturing the /masko/ pronunciation variant common to these language families (similarity 0.85)
+    \item \textbf{Noise (5 points):} Georgian \textka{მოსკოვი}, CJK \textcn{莫斯科}, and some Arabic variants are correctly isolated as phonetically distinct
 \end{itemize}
 
 A \textbf{Beijing} place record (gn:1816670) with 36 toponyms demonstrates nuanced phonetic clustering across 3 groups:
 
 \begin{itemize}
-    \item \textbf{``Beijing'' cluster (10 members):} Chinese \textcn{北京}, Korean \textko{베이징}, Thai \textth{ปักกิ่ง}, Tamil \textth{பெய்ஜிங்}, Vietnamese ``Bắc Kinh'', and Latin Beijing forms---all sharing the /bei-dʒiŋ/ phonetic pattern (similarity 0.83)
+    \item \textbf{``Beijing'' cluster (10 members):} Chinese \textcn{北京}, Korean \textko{베이징}, Thai \textth{ปักกิ่ง}, Tamil \textta{பெய்ஜிங்}, Vietnamese ``Bắc Kinh'', and Latin Beijing forms---all sharing the /bei-dʒiŋ/ phonetic pattern (similarity 0.83)
     \item \textbf{``Peking'' cluster (9 members):} Cyrillic Пекин/Пекінг (ru, uk, sr), Latin Peking (nl, cs, de, hu, fi, sv)---the historical romanisation variant forms its own coherent group (similarity 0.90)
-    \item \textbf{``Pechino/Pekin'' cluster (9 members):} Georgian \textge{პეკინი}, Italian ``Pechino'', and additional Latin variants---capturing the /pek-/ phonetic core across scripts (similarity 0.72)
+    \item \textbf{``Pechino/Pekin'' cluster (9 members):} Georgian \textka{პეკინი}, Italian ``Pechino'', and additional Latin variants---capturing the /pek-/ phonetic core across scripts (similarity 0.72)
 \end{itemize}
 
 A \textbf{Paris} place record (gn:2988507) with 38 toponyms produces 3 clusters totalling 33 members and 292 positive pairs:
@@ -456,7 +559,7 @@ A \textbf{Paris} place record (gn:2988507) with 38 toponyms produces 3 clusters 
 \begin{itemize}
     \item \textbf{Main cluster (24 members):} Latin forms (vi, hu, ms, ro, sw, es, tr, id, de, sv, en, pt), Cyrillic Париж/Париз (ru, sr), Arabic \textar{باريس}, Devanagari \texthi{पैरिस}, Tamil \textta{பாரிஸ்}, Telugu \textte{పారిస్}, and Thai \textth{ปารีส}---demonstrating successful alignment across 7 scripts (similarity 0.91)
     \item \textbf{East Asian cluster (4 members):} Chinese \textcn{巴黎}, Korean \textko{파리}, Vietnamese ``Pa-ri'', and French ``Paris''---the tonal languages cluster with the source form
-    \item \textbf{``Parigi'' cluster (5 members):} Italian ``Parigi'', Finnish ``Pariisi'', Dutch ``Parijs'', Malayalam \textth{പാരിസ്}, Georgian \textge{პარიზი}---the /pariʒi/ variant
+    \item \textbf{``Parigi'' cluster (5 members):} Italian ``Parigi'', Finnish ``Pariisi'', Dutch ``Parijs'', Malayalam \textml{പാരിസ്}, Georgian \textka{პარიზი}---the /pariʒi/ variant
 \end{itemize}
 
 
@@ -521,8 +624,8 @@ The top 10 script:language bins by pair count are: LATIN:en|LATIN:nl (1.49M), LA
 
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
-    \item \textbf{Phase 1 triplets:} Triplets with script-aware random negatives (80\% same-script, 20\% global) sampled from the full toponym pool
-    \item \textbf{Phase 3 triplets:} Triplets with hard negatives---phonetically similar names (high PanPhon cosine similarity, same script) from different places, with no shared attestations
+    \item \textbf{Phase 1 (Teacher Training) triplets:} Triplets with script-aware random negatives (80\% same-script, 20\% global) sampled from the full toponym pool.
+    \item \textbf{Phase 3 (Discriminative Fine-Tuning) triplets:} Triplets with hard negatives---phonetically similar names (high PanPhon cosine similarity, same script) from different places, with no shared attestations.
 \end{itemize}
 
 \subsection{Training Pipeline Infrastructure}
@@ -557,7 +660,7 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 \paragraph{Script-Aware Negative Sampling.} To prevent the model from learning trivial script-based boundaries (where cross-script pairs are always ``different''), I implemented a script-aware negative sampling strategy: 80\% of random negatives are sampled from the \emph{same writing system} as the anchor, while 20\% are sampled globally. This forces the Teacher to learn fine-grained phonetic discrimination within scripts rather than simply encoding script identity. The global negatives maintain broad coverage of the phonetic space before hard negative mining in Phase 3.
 
-\paragraph{Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,559,050 Phase 1 triplets}, split deterministically into \textbf{24,803,658 training} and \textbf{2,755,392 validation} samples (90:10 ratio).
+\paragraph{Enhanced Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,559,050 Phase 1 triplets}, split deterministically into \textbf{24,803,658 training} and \textbf{2,755,392 validation} samples (90:10 ratio).
 
 The substantial increase from v3's 467K usable triplets to v4's 27.6M reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
 
@@ -657,7 +760,7 @@ Hard negative training sharpens discrimination between orthographically similar 
 
 Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 completes in approximately 7 hours (5 epochs $\times$ 82 minutes/epoch); Phase 3 requires approximately 11 hours (30 epochs $\times$ 22 minutes/epoch).
 
-The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's HNSW index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Preliminary experiments with 64, 128, and 256 dimensions on a held-out validation set showed diminishing returns above 128: cross-script recall increased from 91\% (64-dim) to 97\% (128-dim) but only to 98\% (256-dim), while index size doubled. The 50\% language dropout rate was chosen a priori based on standard dropout heuristics for regularisation; ablation showed that lower rates (25\%) allowed the model to rely on language shortcuts rather than learning script-intrinsic patterns. The Phase 3 margin (0.2 vs.\ 0.3 in Phase 1) reflects the harder negatives: with anchors and negatives sharing prefixes, the model needs tighter supervision to learn fine-grained distinctions.
+The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's Hierarchical Navigable Small Worlds (HNSW) index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Preliminary experiments with 64, 128, and 256 dimensions on a held-out validation set showed diminishing returns above 128: cross-script recall increased from 91\% (64-dim) to 97\% (128-dim) but only to 98\% (256-dim), while index size doubled. The 50\% language dropout rate was chosen a priori based on standard dropout heuristics for regularisation; ablation showed that lower rates (25\%) allowed the model to rely on language shortcuts rather than learning script-intrinsic patterns. The Phase 3 margin (0.2 vs.\ 0.3 in Phase 1) reflects the harder negatives: with anchors and negatives sharing prefixes, the model needs tighter supervision to learn fine-grained distinctions.
 
 To ensure phonetic integrity, toponym variants within a single geographic entity are clustered using HDBSCAN density-based clustering on their 192-dimensional articulatory embeddings. Unlike threshold-based approaches that impose arbitrary similarity cutoffs, HDBSCAN automatically identifies natural phonetic groupings based on local density structure. The key parameter \texttt{cluster\_selection\_epsilon=0.2} (cosine distance) encourages cluster merging for entries within 80\% similarity, producing larger cross-script clusters that capture phonetic equivalence across writing systems---for example, grouping Latin ``London'' with Arabic \textar{لندن}, Cyrillic Лондон, and Chinese \textcn{伦敦} into a single cluster of 17 members. For geographic entities containing only two toponymic variants, where density-based clustering is not applicable (HDBSCAN requires $\geq$3 points), a fallback cosine similarity threshold of 0.5 is employed. This value balances capturing significant phonetic shifts in historical exonyms (e.g., Munich/München, Beijing/Peking) while excluding unrelated administrative labels that may be co-located within gazetteer records. Furthermore, to maximise discriminative power, Phase 1 training employs a script-aware negative sampling strategy: 80\% of negatives are drawn from the same writing system as the anchor. This prevents the Teacher from learning the trivial shortcut that ``different script = different place,'' forcing it instead to learn fine-grained phonetic discrimination within scripts.
 
@@ -819,22 +922,6 @@ Several limitations warrant acknowledgment:
 \paragraph{Confusable Pairs.} The model correctly assigns high similarity to phonetically similar strings regardless of semantic relationship. Pairs like Austria/Australia (0.883) and China/Ghana (0.932) receive high scores because they \emph{are} phonetically similar. Disambiguation requires geographic or contextual evidence beyond phonetic similarity.
 
 
-\section{Conclusion}
-\label{sec:conclusion}
-
-I have presented Symphonym, a neural embedding system for cross-script toponym matching that places phonetically similar names near each other in a unified \embdim-dimensional space regardless of writing system. The three-phase training curriculum---phonetic feature learning, student-teacher distillation, and hard negative fine-tuning---enables the model to generalise across scripts without requiring phonetic resources at inference time.
-
-Evaluation demonstrates strong performance:
-\begin{itemize}
-    \item \textbf{93\% accuracy} on cross-script diagnostic pairs (63/68), spanning Latin, Cyrillic, Greek, Arabic, Chinese, Korean, Hebrew, Devanagari, and Georgian scripts
-    \item \textbf{87.5\% Recall@1} and \textbf{MRR of 0.923} on the MEHDIE Hebrew-Arabic benchmark---comprising medieval toponyms from sources independent of training data---outperforming Levenshtein (81.5\% R@1) and Jaro-Winkler (78.5\% R@1) baselines
-\end{itemize}
-
-The system addresses a practical need: linking place references across languages, scripts, and historical periods without requiring language-specific rules or phonetic lookup tables. By learning directly from the statistical structure of multi-script toponyms attested in linked authority datasets, Symphonym captures phonetic correspondences that would be difficult to enumerate manually.
-
-Symphonym is to be deployed in the World Historical Gazetteer, enabling fuzzy phonetic search and reconciliation across 67M+ toponyms from antiquity to the present. The trained models and training code are released to support further research in historical toponym linking and cross-lingual named entity matching.
-
-
 \section{Future Work}
 \label{sec:future}
 
@@ -865,6 +952,22 @@ While Symphonym achieves strong cross-script performance, several directions rem
 \paragraph{User Studies.} The ultimate measure of success is whether Symphonym helps researchers link historical sources. User studies with digital humanities practitioners would provide qualitative feedback on false positive/negative rates in realistic workflows.
 
 \paragraph{Benchmark Expansion.} The MEHDIE benchmark provides valuable Hebrew-Arabic evaluation data. Additional benchmarks spanning other script pairs (Latin-Chinese, Cyrillic-Georgian, Devanagari-Arabic) would enable more comprehensive evaluation of cross-script generalisation.
+
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+I have presented Symphonym, a neural embedding system for cross-script toponym matching that places phonetically similar names near each other in a unified \embdim-dimensional space regardless of writing system. The three-phase training curriculum---phonetic feature learning, student-teacher distillation, and hard negative fine-tuning---enables the model to generalise across scripts without requiring phonetic resources at inference time.
+
+Evaluation demonstrates strong performance:
+\begin{itemize}
+    \item \textbf{93\%} accuracy on cross-script diagnostic pairs (63/68), spanning Latin, Cyrillic, Greek, Arabic, Chinese, Korean, Hebrew, Devanagari, and Georgian scripts
+    \item \textbf{87.5\%} Recall@1 and \textbf{MRR of 0.923} on the MEHDIE Hebrew-Arabic benchmark---comprising medieval toponyms from sources independent of training data---outperforming Levenshtein (81.5\% R@1) and Jaro-Winkler (78.5\% R@1) baselines
+\end{itemize}
+
+The system addresses a practical need: linking place references across languages, scripts, and historical periods without requiring language-specific rules or phonetic lookup tables. By learning directly from the statistical structure of multi-script toponyms attested in linked authority datasets, Symphonym captures phonetic correspondences that would be difficult to enumerate manually.
+
+Symphonym is to be deployed in the World Historical Gazetteer, enabling fuzzy phonetic search and reconciliation across 67M+ toponyms from antiquity to the present. The trained models and training code are released to support further research in historical toponym linking and cross-lingual named entity matching.
 
 
 \section*{Data Availability}
