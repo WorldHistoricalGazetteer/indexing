@@ -506,10 +506,23 @@ I apply deduplication within each place's toponym clusters rather than globally.
 
 The Teacher network requires IPA transcriptions. I use Epitran~\citep{mortensen2018} for grapheme-to-phoneme conversion, which supports approximately 100 languages covering the majority of GeoNames entries. Epitran provides rule-based G2P that outputs IPA transcriptions suitable for PanPhon feature extraction. Names in languages without Epitran support are excluded from Teacher training but can still be processed by the Student, which learns to generalise from related scripts.
 
+\subsection{Attestation-Based Negative Validation}
+\label{subsec:attestation-validation}
+
+A subtle but critical challenge in toponym matching is that the same toponym \emph{string} may refer to multiple distinct places. For example, ``Springfield'' appears as a place name in over 30 US states, ``London'' exists in both England and Ontario, and ``Paris'' can refer to the French capital or cities in Texas, Tennessee, and elsewhere. Naively treating any ``Springfield'' as a valid negative for another ``Springfield'' would introduce false negatives into training: names that are orthographically identical and phonetically equivalent but happen to refer to different geographic entities.
+
+I address this through \textbf{attestation-based validation}: a candidate negative is valid only if it shares \emph{no attestations} with the anchor. Formally, given toponyms $a$ (anchor) and $n$ (candidate negative), where $\text{Att}(t)$ denotes the set of place identifiers that attest toponym $t$ in their records:
+
+\begin{equation}
+n \text{ is valid} \iff \text{Att}(a) \cap \text{Att}(n) = \emptyset
+\end{equation}
+
+This ensures that even if ``Springfield'' appears in both the anchor and negative candidate pools, the two instances will not be paired as negatives if they share any common place record. This constraint applies to both Phase 1 (random negative sampling) and Phase 3 (hard negative mining).
+
 \subsection{Phonetic Clustering for Pair Generation}
 \label{subsec:clustering}
 
-A critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``\textcn{日本}'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
+A second critical challenge is \textbf{false cognates}: exonyms that refer to the same place but share no phonetic relationship. For example, ``Germany'' and ``Deutschland'', or ``\textcn{日本}'' (Nihon) and ``Japan'', denote the same entity but should not be trained as phonetically similar. Naively including such pairs would corrupt the embedding space.
 
 Rather than applying arbitrary similarity thresholds, I use density-based clustering on PanPhon articulatory embeddings to identify phonetically coherent groups within each place's toponyms. For each place record with multiple name variants, I:
 
@@ -660,9 +673,11 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 \paragraph{Script-Aware Negative Sampling.} To prevent the model from learning trivial script-based boundaries (where cross-script pairs are always ``different''), I implemented a script-aware negative sampling strategy: 80\% of random negatives are sampled from the \emph{same writing system} as the anchor, while 20\% are sampled globally. This forces the Teacher to learn fine-grained phonetic discrimination within scripts rather than simply encoding script identity. The global negatives maintain broad coverage of the phonetic space before hard negative mining in Phase 3.
 
+Additionally, negative selection enforces \textbf{attestation disjointness} (see Section~\ref{subsec:attestation-validation}): candidates sharing any attestation with the anchor are rejected. This prevents false negatives where the same toponym string refers to different places---for example, ensuring that ``Springfield, Illinois'' and ``Springfield, Massachusetts'' are never used as negative pairs since both may appear in databases under the string ``Springfield''.
+
 \paragraph{Enhanced Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,559,050 Phase 1 triplets}, split deterministically into \textbf{24,803,658 training} and \textbf{2,755,392 validation} samples (90:10 ratio).
 
-The substantial increase from v3's 467K usable triplets to v4's 27.6M reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
+The substantial increase over previous extraction methods reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -733,14 +748,12 @@ In this final phase, I fine-tune the Student using triplet loss to sharpen these
 I define negatives by mining triplets $(a, p, n)$ where:
 \begin{itemize}
     \item \textbf{Anchor ($a$) \& Positive ($p$):} A pair of toponyms confirmed to refer to the same place through co-location in authoritative gazetteer records.
-    \item \textbf{Hard Negative ($n$):} A toponym selected such that it has high orthographic similarity to the anchor (same 2-character prefix after romanisation, same script) but is not known to refer to the same place.
+    \item \textbf{Hard Negative ($n$):} A toponym selected such that it has high orthographic similarity to the anchor (same 2-character prefix after romanisation, same script) but \emph{shares no attestations} with the anchor (see Section~\ref{subsec:attestation-validation}).
 \end{itemize}
 
-The ``different place'' constraint is enforced through an \textbf{adjacency set} containing all 10.2 million toponym pairs that co-occur within place records. This set is derived from the 5.09 million positive training pairs (each pair contributes two directed edges); the larger count reflects that multiple toponyms per place create dense local connectivity. A candidate negative is rejected if it appears in any positive pair with the anchor.
+The attestation disjointness constraint is critical for hard negatives specifically because they are chosen for phonetic similarity to the anchor—precisely the cases most likely to be legitimate variants of the same place appearing under different authorities or spellings. A candidate negative $n$ is rejected if $\text{Att}(a) \cap \text{Att}(n) \neq \emptyset$, where $\text{Att}(t)$ denotes the set of all place identifiers for which toponym $t$ is attested. This catches cases that simple co-occurrence checks would miss: even if ``Springfield'' and ``Springfeld'' never appear together in a single place record, the attestation check will reject the pair if they share \emph{any} common place reference across the entire index.
 
 This approach has a known limitation: it cannot detect cross-authority duplicates. If ``Springfield'' appears in both GeoNames and Wikidata records for the same city but those records are not linked in my index, the Wikidata toponym could be incorrectly selected as a hard negative for the GeoNames toponym. I mitigate this by (a) the relatively low probability of such collisions given 67M toponyms and prefix-based sampling, and (b) the observation that even when such ``false negatives'' occur, they typically have identical or near-identical embeddings, producing negligible gradient signal. The triplet loss margin prevents the model from over-optimising on pairs that are already well-separated.
-
-Crucially, I explicitly \textbf{exclude} co-located toponyms from being selected as negatives. If two toponyms share a place record (e.g., ``Munich'' and ``München'' in the same Wikidata entry), they are excluded via the adjacency check regardless of their surface similarity.
 
 \paragraph{Effective Training Set.} Phase 3 loads 5,088,419 hard negative triplets. After filtering for valid toponyms (those with character encodings within the vocabulary), \textbf{3,333,767 triplets} remain for training and \textbf{417,335} for validation. The higher retention rate (65.5\%) compared to Phase 1 (9.2\%) reflects that Phase 3 operates on the character-based Student, which does not require Epitran/IPA coverage.
 
