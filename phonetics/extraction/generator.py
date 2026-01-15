@@ -238,16 +238,25 @@ class TrainingDataGenerator:
         logger.info("GENERATING TRAINING DATA FOR ALL PHASES")
         logger.info("=" * 60)
 
-        # Step 1: Generate positive pairs
+        # Check what needs to be done
+        need_phase1 = not self._check_phase_complete('phase1')
+        need_phase3_generate = not self._check_phase_complete('phase3')
+        need_phase3_augment = self._check_phase_complete('phase3') and not self._check_phase3_has_text_fields()
+
+        # Step 1: Load/generate positive pairs (only if needed for generation)
         logger.info("\n" + "=" * 60)
-        logger.info("STEP 1: GENERATE POSITIVE PAIRS")
+        logger.info("STEP 1: POSITIVE PAIRS")
         logger.info("=" * 60)
 
-        if self._check_phase_complete('pairs'):
-            logger.info("✓ Positive pairs checkpoint found, loading...")
-            pairs_by_bin = self._load_pairs_from_checkpoint()
+        pairs_by_bin = None
+        if need_phase1 or need_phase3_generate:
+            if self._check_phase_complete('pairs'):
+                logger.info("✓ Positive pairs checkpoint found, loading...")
+                pairs_by_bin = self._load_pairs_from_checkpoint()
+            else:
+                pairs_by_bin = self.generate_positive_pairs()
         else:
-            pairs_by_bin = self.generate_positive_pairs()
+            logger.info("✓ Pairs not needed (Phase 1 & 3 complete), skipping...")
 
         # Step 2: Generate Phase 2 samples
         logger.info("\n" + "=" * 60)
