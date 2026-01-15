@@ -85,9 +85,9 @@ class ESKNNHelper:
         return emb
 
     def find_similar_in_place(
-        self,
-        place_id: str,
-        toponym_ids: List[str],
+            self,
+            place_id: str,
+            toponym_ids: List[str],
     ) -> List[List[str]]:
         """Cluster toponyms within a place using HDBSCAN."""
         n = len(toponym_ids)
@@ -184,29 +184,50 @@ class ESKNNHelper:
         return result
 
     def find_hard_negatives_batch(
-        self,
-        anchors: List[Dict],
-        adjacency: Set[Tuple[str, str]],
-        k: int = 20,
-        stochastic: bool = True,
+            self,
+            anchors: List[Dict],
+            adjacency: Set[Tuple[str, str]],
+            attestation_map: Dict[str, Set[str]],
+            k: int = 20,
+            stochastic: bool = True,
     ) -> List[Optional[str]]:
-        """Find hard negatives for multiple anchors using ES _msearch."""
+        """
+        Find hard negatives for multiple anchors using ES _msearch.
+
+        A valid negative must:
+        1. Not be the anchor itself
+        2. Not be in the adjacency set (not a known positive pair)
+        3. Share NO attestations with the anchor (disjoint place sets)
+
+        Args:
+            anchors: List of anchor dicts with 'anchor_id', 'embedding', 'script', etc.
+            adjacency: Set of (toponym_id, toponym_id) positive pairs
+            attestation_map: Dict mapping toponym_id -> Set of attestation strings
+            k: Number of candidates to retrieve from KNN
+            stochastic: If True, randomly select from valid candidates
+
+        Returns:
+            List of negative toponym_ids (or None if no valid negative found)
+        """
         if not anchors:
             return []
+
+        # Request more candidates since some may be filtered out by attestation check
+        fetch_k = min(k * 3, 100)
 
         bodies = []
         for a in anchors:
             bodies.append({"index": self.index})
             bodies.append({
-                "size": k,
+                "size": fetch_k,
                 "knn": {
                     "field": "panphon_embedding",
                     "query_vector": a['embedding'],
-                    "k": k,
+                    "k": fetch_k,
                     "num_candidates": KNN_CANDIDATES,
                     "filter": {"term": {"script": a['script']}}
                 },
-                "_source": False
+                "_source": ["attestations"]
             })
 
         def _msearch():
@@ -221,14 +242,28 @@ class ESKNNHelper:
         results = []
         for i, response in enumerate(responses):
             anchor_id = anchors[i]['anchor_id']
+            anchor_attestations = attestation_map.get(anchor_id, set())
             hard_neg = None
 
             if 'hits' in response and 'hits' in response['hits']:
                 valid_candidates = []
                 for hit in response['hits']['hits']:
                     candidate_id = hit['_id']
-                    if candidate_id != anchor_id and (anchor_id, candidate_id) not in adjacency:
-                        valid_candidates.append(candidate_id)
+
+                    # Skip if same as anchor
+                    if candidate_id == anchor_id:
+                        continue
+
+                    # Skip if in adjacency (known positive pair)
+                    if (anchor_id, candidate_id) in adjacency:
+                        continue
+
+                    # Skip if shares any attestations with anchor
+                    candidate_attestations = set(hit.get('_source', {}).get('attestations', []))
+                    if not anchor_attestations.isdisjoint(candidate_attestations):
+                        continue
+
+                    valid_candidates.append(candidate_id)
 
                 if valid_candidates:
                     if stochastic and len(valid_candidates) > 1:

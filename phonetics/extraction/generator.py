@@ -721,15 +721,17 @@ class TrainingDataGenerator:
                 all_anchor_ids.add(id_b)
 
         # Load toponym data with features using NUMPY arrays (60-70% memory savings)
+        # Also load attestations for negative validation
         logger.info(f"Loading toponym data for {len(all_anchor_ids):,} toponyms...")
         toponym_data_map = {}
+        attestation_map = {}  # toponym_id -> Set[attestation_id]
         anchor_list = list(all_anchor_ids)
         batch_size = 5000
 
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i + batch_size]
             docs = self.es.mget(index="toponyms", body={"ids": batch},
-                                _source=['script', 'lang', 'panphon_embedding'])
+                                _source=['script', 'lang', 'panphon_embedding', 'attestations'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
@@ -744,13 +746,15 @@ class TrainingDataGenerator:
                             'features': np.array(embedding, dtype=np.float32),
                             'feature_length': len(embedding) // 24,
                         }
+                        # Store attestations as a set for O(1) intersection checks
+                        attestation_map[toponym_id] = set(source.get('attestations', []))
 
             if (i + batch_size) % 50000 < batch_size:
                 logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
 
         logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
 
-        # Load negative candidates grouped by script
+        # Load negative candidates grouped by script (attestations fetched lazily during validation)
         logger.info("Loading negative candidates by script...")
         all_ids = []
         ids_by_script: Dict[str, List[str]] = defaultdict(list)
@@ -763,7 +767,8 @@ class TrainingDataGenerator:
         for hit in tqdm(scan(self.es, index="toponyms", query=neg_query, scroll='5m', size=10000),
                         desc="Loading negatives"):
             toponym_id = hit['_id']
-            script = hit['_source'].get('script', 'UNKNOWN')
+            source = hit['_source']
+            script = source.get('script', 'UNKNOWN')
             all_ids.append(toponym_id)
             if script:
                 ids_by_script[script].append(toponym_id)
@@ -785,16 +790,18 @@ class TrainingDataGenerator:
         triplets_dir.mkdir(parents=True, exist_ok=True)
         writer = TripletStreamingWriter(triplets_dir, batch_size=PARQUET_BATCH_SIZE)
 
-        # TWO-PASS APPROACH for efficiency:
-        # Pass 1: Select all negatives, collect IDs needing feature fetch
-        # Pass 2: Batch fetch negative features, then stream triplets
+        # THREE-PASS APPROACH for memory-efficient attestation validation:
+        # Pass 1a: Generate candidate negatives (adjacency check only)
+        # Pass 1b: Batch fetch attestations for all unique candidates
+        # Pass 1c: Validate against attestations, select final negatives
+        # Pass 2: Batch fetch negative features
+        # Pass 3: Stream triplets to Parquet
 
-        logger.info("Pass 1: Selecting negatives...")
-        triplet_specs = []  # (anchor, positive, negative, bin_key)
-        negatives_to_fetch = set()
-        skipped_no_negative = 0
+        logger.info("Pass 1a: Generating candidate negatives...")
+        pending_triplets = []  # (anchor, positive, [candidates], bin_key, anchor_attestations)
+        all_candidates = set()
 
-        for triplet_idx, pair in enumerate(tqdm(balanced_pairs, desc="Selecting negatives")):
+        for triplet_idx, pair in enumerate(tqdm(balanced_pairs, desc="Generating candidates")):
             anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
 
             if anchor not in toponym_data_map or positive not in toponym_data_map:
@@ -803,13 +810,15 @@ class TrainingDataGenerator:
             anchor_data = toponym_data_map[anchor]
             script = anchor_data['script']
             lang = anchor_data['lang']
+            anchor_attestations = attestation_map.get(anchor, set())
 
             # Deterministic negative sampling
             seed = RANDOM_SEED + (zlib.crc32(anchor.encode('utf-8')) & 0xffffffff) + triplet_idx
             rng = random.Random(seed)
 
-            negative = None
-            for _ in range(10):
+            # Generate candidate negatives (adjacency check only, attestation check deferred)
+            candidates = []
+            for _ in range(50):
                 use_same_script = rng.random() < PHASE1_SAME_SCRIPT_NEGATIVE_RATIO
 
                 if use_same_script and script and script in ids_by_script and len(ids_by_script[script]) > 0:
@@ -817,7 +826,54 @@ class TrainingDataGenerator:
                 else:
                     candidate = rng.choice(all_ids)
 
-                if (anchor, candidate) not in adjacency and (positive, candidate) not in adjacency:
+                # Quick check: skip if in adjacency (known positive pairs)
+                if (anchor, candidate) in adjacency or (positive, candidate) in adjacency:
+                    continue
+
+                candidates.append(candidate)
+                all_candidates.add(candidate)
+
+                if len(candidates) >= 10:  # Keep top 10 candidates per triplet
+                    break
+
+            if candidates:
+                bin_key = get_script_lang_key(script, lang)
+                pending_triplets.append((anchor, positive, candidates, bin_key, anchor_attestations))
+
+        logger.info(
+            f"Generated candidates for {len(pending_triplets):,} triplets, {len(all_candidates):,} unique candidates")
+
+        # Pass 1b: Batch fetch attestations for all candidates
+        logger.info("Pass 1b: Fetching attestations for candidates...")
+        candidate_attestations_map = {}
+        candidate_list = list(all_candidates)
+        batch_size = 5000
+
+        for i in range(0, len(candidate_list), batch_size):
+            batch = candidate_list[i:i + batch_size]
+            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['attestations'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    candidate_attestations_map[doc['_id']] = set(doc['_source'].get('attestations', []))
+
+            if (i + batch_size) % 100000 < batch_size:
+                logger.info(f"  Fetched {min(i + batch_size, len(candidate_list)):,} / {len(candidate_list):,}...")
+
+        logger.info(f"Fetched attestations for {len(candidate_attestations_map):,} candidates")
+
+        # Pass 1c: Validate candidates and select final negatives
+        logger.info("Pass 1c: Validating candidates...")
+        triplet_specs = []  # (anchor, positive, negative, bin_key)
+        negatives_to_fetch = set()
+        skipped_no_negative = 0
+
+        for anchor, positive, candidates, bin_key, anchor_attestations in tqdm(pending_triplets, desc="Validating"):
+            negative = None
+            for candidate in candidates:
+                candidate_attestations = candidate_attestations_map.get(candidate, set())
+
+                # Valid if no attestation overlap
+                if anchor_attestations.isdisjoint(candidate_attestations):
                     negative = candidate
                     break
 
@@ -825,12 +881,14 @@ class TrainingDataGenerator:
                 skipped_no_negative += 1
                 continue
 
-            bin_key = get_script_lang_key(script, lang)
             triplet_specs.append((anchor, positive, negative, bin_key))
 
             # Track negatives that need feature fetching
             if negative not in toponym_data_map:
                 negatives_to_fetch.add(negative)
+
+        # Free memory
+        del pending_triplets, all_candidates, candidate_attestations_map
 
         logger.info(
             f"Selected {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
@@ -950,15 +1008,17 @@ class TrainingDataGenerator:
 
         # Load anchor info AND features (for self-contained triplets)
         # Include 'name' for Student training (Phase 3 trains Student on hard negatives)
-        logger.info("Loading anchor info and features...")
+        # Include 'attestations' for negative validation
+        logger.info("Loading anchor info, features, and attestations...")
         toponym_data_map = {}  # toponym_id -> {script, lang, name, features, feature_length}
+        attestation_map = {}  # toponym_id -> Set[attestation_id]
         anchor_list = list(unique_anchors)
         batch_size = 5000
 
         for i in range(0, len(anchor_list), batch_size):
             batch = anchor_list[i:i + batch_size]
             docs = self.es.mget(index="toponyms", body={"ids": batch},
-                                _source=['name', 'script', 'lang', 'panphon_embedding'])
+                                _source=['name', 'script', 'lang', 'panphon_embedding', 'attestations'])
             for doc in docs.get('docs', []):
                 if doc.get('found') and '_source' in doc:
                     toponym_id = doc['_id']
@@ -973,6 +1033,8 @@ class TrainingDataGenerator:
                             'features': np.array(embedding, dtype=np.float32),
                             'feature_length': len(embedding) // 24,
                         }
+                        # Store attestations as a set for O(1) intersection checks
+                        attestation_map[toponym_id] = set(source.get('attestations', []))
 
             if (i + batch_size) % 50000 < batch_size:
                 logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
@@ -1053,6 +1115,7 @@ class TrainingDataGenerator:
             hard_negs = self.knn.find_hard_negatives_batch(
                 anchors=batch,
                 adjacency=adjacency,
+                attestation_map=attestation_map,
                 k=20,
             )
 
