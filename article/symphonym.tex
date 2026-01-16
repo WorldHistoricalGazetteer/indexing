@@ -253,6 +253,8 @@ Rama~\citep{rama2016} applied Siamese convolutional networks to cognate identifi
 
 This distinction is particularly important for toponym matching, where the long tail of historical languages and rare scripts cannot be adequately covered by implicit learning alone.
 
+Most directly relevant to my architectural choices is the PWESUITE work of \citet{zouhar2024pwesuite}, which systematically evaluates phonetic word embedding methods using PanPhon articulatory features. Their triplet margin model---an LSTM encoder trained with triplet loss where positive/negative pairs are determined by articulatory distance---achieves the best overall performance across their evaluation suite, outperforming metric learning, autoencoder, and count-based approaches. Critically, they demonstrate that using articulatory feature vectors as input substantially improves cross-language transfer compared to IPA or character inputs (Table 2 in their work), and that models trained on one language generalise well to others when grounded in articulatory features (their Figure 3). These findings directly inform my Teacher network design. However, PWESUITE addresses monolingual word embeddings within single scripts; it does not tackle the cross-script matching problem central to toponym resolution. My contribution extends their validated approach---triplet loss with articulatory supervision---to the multilingual, multi-script setting, adding the Teacher-Student distillation that enables inference without phonetic resources and the cross-script training regime that learns to align representations across writing systems.
+
 \subsection{Cross-Lingual Representation Learning}
 
 The broader literature on cross-lingual embeddings provides relevant techniques. Conneau et al.~\citep{conneau2018} show that monolingual embedding spaces can be aligned post-hoc using small bilingual dictionaries. Artetxe et al.~\citep{artetxe2018} demonstrate unsupervised alignment using only monolingual corpora. However, these approaches target semantic similarity (``dog'' near ``chien'') rather than phonetic similarity (``Paris'' near ``Париж'').
@@ -633,7 +635,7 @@ From 8.2 million places with at least two toponyms, the HDBSCAN clustering proce
 
 The top 10 script:language bins by pair count are: LATIN:en|LATIN:nl (1.49M), LATIN:de|LATIN:en (1.31M), LATIN:en|LATIN:fr (1.05M), LATIN:en|LATIN:es (0.98M), LATIN:en|LATIN:sv (0.90M), LATIN:es|LATIN:nl (0.83M), LATIN:de|LATIN:nl (0.81M), LATIN:en|LATIN:en (0.78M same-language spelling variants), LATIN:nl|LATIN:sv (0.70M), and LATIN:de|LATIN:es (0.69M). The adjacency set for negative filtering contains 108.3 million edges.
 
-\paragraph{Bin Balancing.} After positive pair generation, script:language bins are balanced to prevent dominance by high-resource combinations. Of the 595 bins, 264 exceed the 50,000 sample cap and are downsampled; 329 smaller bins are oversampled up to 5$\times$; only 2 bins fall below the 1,000 minimum threshold (LATIN:sw|LATIN:sw with 948 samples, ARABIC:ur|ARABIC:ur with 682) and are dropped. This yields \textbf{27.6 million balanced pairs} for triplet generation.
+\paragraph{Bin Balancing.} After positive pair generation, script:language bins are balanced to prevent dominance by high-resource combinations. Of the 595 bins, 264 (44\%) exceed the 50,000 sample cap and are downsampled; 329 bins (55\%) are oversampled up to 5$\times$ their original size; only 2 bins fall below the 1,000 minimum threshold (LATIN:sw|LATIN:sw with 970 samples, ARABIC:ur|ARABIC:ur with 722) and are dropped. This yields \textbf{27.6 million balanced pairs} for triplet generation. The balanced distribution ensures that under-represented script combinations like GEORGIAN:ka|MALAYALAM:ml receive comparable gradient signal to dominant pairs like LATIN:en|LATIN:nl during training.
 
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
@@ -675,7 +677,7 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 Additionally, negative selection enforces \textbf{attestation disjointness} (see Section~\ref{subsec:attestation-validation}): candidates sharing any attestation with the anchor are rejected. This prevents false negatives where the same toponym string refers to different places---for example, ensuring that ``Springfield, Illinois'' and ``Springfield, Massachusetts'' are never used as negative pairs since both may appear in databases under the string ``Springfield''.
 
-\paragraph{Enhanced Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,559,050 Phase 1 triplets}, split deterministically into \textbf{24,803,658 training} and \textbf{2,755,392 validation} samples (90:10 ratio).
+\paragraph{Enhanced Effective Training Set.} From the 27.6 million balanced pairs, I generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{27,556,400 Phase 1 triplets}, split deterministically into \textbf{24,800,760 training} and \textbf{2,755,640 validation} samples (90:10 ratio).
 
 The substantial increase over previous extraction methods reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
 
@@ -708,7 +710,7 @@ During this phase:
     \item Teacher weights are frozen
 \end{itemize}
 
-\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. After bin-balancing by script:language (34 bins, each capped at 50,000 samples with up to 5$\times$ oversampling for under-represented combinations), this yields \textbf{1,358,376 training samples}, \textbf{169,346 validation samples}, and \textbf{170,203 test samples}---a deliberately compressed set that ensures balanced gradient contribution from all script:language combinations rather than dominance by high-resource languages like English.
+\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. After bin-balancing by script:language (34 bins, each capped at 50,000 samples with up to 5$\times$ oversampling for under-represented combinations), this yields \textbf{1,697,925 total samples} (\textbf{1,358,340 training}, \textbf{169,792 validation}, \textbf{169,793 test})---a deliberately compressed set that ensures balanced gradient contribution from all script:language combinations rather than dominance by high-resource languages like English.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -755,7 +757,7 @@ The attestation disjointness constraint is critical for hard negatives specifica
 
 This approach has a known limitation: it cannot detect cross-authority duplicates. If ``Springfield'' appears in both GeoNames and Wikidata records for the same city but those records are not linked in my index, the Wikidata toponym could be incorrectly selected as a hard negative for the GeoNames toponym. I mitigate this by (a) the relatively low probability of such collisions given 67M toponyms and prefix-based sampling, and (b) the observation that even when such ``false negatives'' occur, they typically have identical or near-identical embeddings, producing negligible gradient signal. The triplet loss margin prevents the model from over-optimising on pairs that are already well-separated.
 
-\paragraph{Effective Training Set.} Phase 3 loads 5,088,419 hard negative triplets. After filtering for valid toponyms (those with character encodings within the vocabulary), \textbf{3,333,767 triplets} remain for training and \textbf{417,335} for validation. The higher retention rate (65.5\%) compared to Phase 1 (9.2\%) reflects that Phase 3 operates on the character-based Student, which does not require Epitran/IPA coverage.
+\paragraph{Effective Training Set.} Phase 3 uses the same 27.6 million balanced pairs as Phase 1 but with hard negatives instead of random negatives. Hard negative mining via Elasticsearch KNN queries produces \textbf{27,556,307 triplets} (90:10 train/val split: \textbf{24,800,677 training}, \textbf{2,755,630 validation}). The near-identical count to Phase 1 (27,556,400) reflects that most pairs successfully found valid hard negatives—toponyms with high phonetic similarity in the same script but no shared place attestations.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -804,7 +806,7 @@ All three training phases converged successfully, as shown in Figure~\ref{fig:tr
 
 \paragraph{Phase 2 (Student-Teacher Alignment).} The Student encoder aligned with the frozen Teacher over 5 epochs on 23.2M toponyms. Distillation loss (MSE + cosine) decreased from 0.0381 to 0.0342, while Student-Teacher cosine similarity increased from 0.962 to 0.966. The relatively short Phase 2 reflects that the Student quickly learns to mimic the Teacher's output distribution.
 
-\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 3.3M hard negative triplets for 30 epochs further improved discrimination. Validation loss decreased from 0.0149 to 0.0049---a 67\% reduction---demonstrating that the model learned to distinguish orthographically similar but geographically distinct names (negatives share the same two-character prefix and script as the anchor). Training continued with a reduced learning rate ($10^{-4}$ with cosine decay) to preserve cross-script alignment learned in Phase 2.
+\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 27.6M hard negative triplets for 30 epochs further improved discrimination. Validation loss decreased from 0.0149 to 0.0049---a 67\% reduction---demonstrating that the model learned to distinguish phonetically similar but geographically distinct names (negatives are sampled from the same script with high PanPhon similarity but no shared place attestations). Training continued with a reduced learning rate ($10^{-4}$ with cosine decay) to preserve cross-script alignment learned in Phase 2.
 
 \subsection{Embedding Quality}
 
