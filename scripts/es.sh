@@ -1061,10 +1061,20 @@ do_train_model() {
     # Pre-flight check: show directory structure
     echo ""
     echo "Pre-flight directory check:"
-    echo "  ${DATA_DIR}/triplets:"
-    ls -la "${DATA_DIR}/triplets" 2>/dev/null || echo "    [not found]"
     echo "  ${DATA_DIR}/triplets/phase1:"
-    ls -la "${DATA_DIR}/triplets/phase1" 2>/dev/null || echo "    [not found]"
+    if [ -f "${DATA_DIR}/triplets/phase1/train.parquet" ] && [ -f "${DATA_DIR}/triplets/phase1/val.parquet" ]; then
+        ls -lh "${DATA_DIR}/triplets/phase1/"*.parquet 2>/dev/null
+    else
+        echo "    [not found - run: es -generate-training-data ${DATA_VERSION}]"
+    fi
+
+    echo "  ${DATA_DIR}/triplets/phase3:"
+    if [ -f "${DATA_DIR}/triplets/phase3/train.parquet" ] && [ -f "${DATA_DIR}/triplets/phase3/val.parquet" ]; then
+        ls -lh "${DATA_DIR}/triplets/phase3/"*.parquet 2>/dev/null
+    else
+        echo "    [not found - will be skipped if running phase 3]"
+    fi
+
     echo "  ${DATA_DIR}/training:"
     ls -la "${DATA_DIR}/training" 2>/dev/null | head -10 || echo "    [not found]"
     echo "  ${DATA_DIR}/vocab:"
