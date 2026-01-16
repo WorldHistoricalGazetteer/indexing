@@ -1,70 +1,52 @@
 #!/bin/bash
 
-# Stop the script if any command fails
-set -e
+# We don't use 'set -e' here because XeLaTeX warnings
+# return a non-zero exit code that would stop the script.
 
-# ----------------------
-# PART 1: COMPILATION
-# ----------------------
-
-echo "1. Creating output directory..."
+echo "1. Cleaning previous build artifacts..."
+rm -rf pdf arxiv_submission arxiv_submission.zip
 mkdir -p pdf
 
-echo "2. Running XeLaTeX (Pass 1)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
+echo "2. Compiling with latexmk..."
+# -f forces completion even with the bidi warnings
+latexmk -f symphonym.tex
 
-echo "3. Running BibTeX..."
-# We point bibtex to the .aux file inside the pdf folder
-bibtex pdf/symphonym
+echo "3. Verifying PDF and BBL..."
+if [ -f pdf/symphonym.pdf ] && [ -f pdf/symphonym.bbl ]; then
+    echo "   ✓ PDF generated successfully."
+    echo "   ✓ Bibliography (.bbl) found."
+else
+    echo "   ✗ ERROR: Build failed to produce PDF or BBL. Check pdf/symphonym.log"
+    exit 1
+fi
 
-echo "4. Running XeLaTeX (Pass 2)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
+echo "4. Packaging for arXiv..."
+SUBMIT="arxiv_submission"
+mkdir -p $SUBMIT
 
-echo "5. Running XeLaTeX (Pass 3)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
+# REQUIRED FOR ARXIVE XELATEX
+echo "defaultopt: xelatex" > $SUBMIT/00README.config
 
-echo "6. Running XeLaTeX (Pass 4 - Final)..."
-xelatex -file-line-error -interaction=nonstopmode -output-directory=pdf symphonym.tex
+# Copy main files (ArXiv needs .bbl in the same folder as .tex)
+cp symphonym.tex $SUBMIT/
+cp pdf/symphonym.bbl $SUBMIT/
 
-echo "Build complete! Output: article/pdf/symphonym.pdf"
+# Copy all dependencies
+# Using 2>/dev/null to ignore errors if specific extensions don't exist
+cp *.cls *.sty *.bst $SUBMIT/ 2>/dev/null || :
+cp -r fonts $SUBMIT/ 2>/dev/null || :
+cp -r figures $SUBMIT/ 2>/dev/null || :
+cp *.png *.jpg *.jpeg *.pdf $SUBMIT/ 2>/dev/null || :
 
-# ----------------------
-# PART 2: ARXIV BUNDLING
-# ----------------------
+# Remove the compiled main PDF from the ZIP (arXiv compiles its own)
+rm -f $SUBMIT/symphonym.pdf
 
-echo "6. Packaging for arXiv..."
+echo "5. Creating ZIP..."
+(cd $SUBMIT && zip -r ../arxiv_submission.zip .)
 
-SUBMISSION_DIR="arxiv_submission"
-
-# Clean up
-rm -rf $SUBMISSION_DIR
-rm -f arxiv_submission.zip
-mkdir -p $SUBMISSION_DIR
-
-# Copy Files
-cp symphonym.tex $SUBMISSION_DIR/
-cp pdf/symphonym.bbl $SUBMISSION_DIR/
-cp *.cls *.sty *.bst $SUBMISSION_DIR/ 2>/dev/null || :
-cp *.png *.jpg *.jpeg *.pdf $SUBMISSION_DIR/ 2>/dev/null || :
-
-# Copy the FONTS folder
-cp -r fonts $SUBMISSION_DIR/
-
-# Copy the FIGURES folder
-cp -r figures $SUBMISSION_DIR/
-
-# Remove the compiled PDF if it got copied by mistake
-rm -f $SUBMISSION_DIR/symphonym.pdf
-
-# --- CHANGED SECTION ---
-# Enter the directory and zip the CONTENTS, not the directory itself
-cd $SUBMISSION_DIR
-zip -r ../arxiv_submission.zip .
-cd ..
-# -----------------------
-
-rm -rf $SUBMISSION_DIR
+# Optional: clean up the temporary folder
+# rm -rf $SUBMIT
 
 echo "------------------------------------------------------"
-echo "✅ ZIP Created: article/arxiv_submission.zip"
+echo "✅ SUCCESS: arxiv_submission.zip created."
 echo "------------------------------------------------------"

@@ -1,4 +1,4 @@
-\begin{thebibliography}{23}
+\begin{thebibliography}{24}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -17,7 +17,7 @@ Mikel Artetxe, Gorka Labaka, and Eneko Agirre.
 \newblock URL \url{https://aclanthology.org/P18-1073/}.
 
 \bibitem[Benites et~al.(2020)Benites, Duivesteijn, von D{\"a}niken, and
-  Cieliebak]{translit2020}
+  Cieliebak]{benites2020translit}
 Fernando Benites, Gilbert~Fran{\c{c}}ois Duivesteijn, Pius von D{\"a}niken, and
   Mark Cieliebak.
 \newblock {TRANSLIT}: A large-scale name transliteration resource.
@@ -50,6 +50,13 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 \newblock Word translation without parallel data.
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations}, 2018.
+
+\bibitem[Feng et~al.(2022)Feng, Yang, Cer, Arivazhagan, and
+  Wang]{feng2022labse}
+Fangxiaoyu Feng, Yinfei Yang, Daniel Cer, Naveen Arivazhagan, and Wei Wang.
+\newblock Language-agnostic bert sentence embedding.
+\newblock \emph{arXiv preprint arXiv:2007.01852}, 2022.
+\newblock URL \url{https://arxiv.org/abs/2007.01852}.
 
 \bibitem[Grossner and Mostern(2021)]{grossner2021whg}
 Karl~E. Grossner and Ruth Mostern.
