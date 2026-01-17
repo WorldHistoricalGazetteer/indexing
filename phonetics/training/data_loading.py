@@ -691,6 +691,7 @@ def create_phase1_dataloader(
         batch_size: int = 128,
         num_workers: int = 4,
         shuffle: bool = True,
+        prefetch_factor: int = 2,
 ) -> DataLoader:
     """
     Create DataLoader for Phase 1 training.
@@ -706,6 +707,8 @@ def create_phase1_dataloader(
         num_workers=num_workers,
         collate_fn=collate_phase1,
         pin_memory=True,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
+        persistent_workers=True if num_workers > 0 else False,
     )
 
 
@@ -719,6 +722,7 @@ def create_phase2_dataloader(
         num_workers: int = 4,
         shuffle: bool = True,
         noise_prob: float = 0.3,
+        prefetch_factor: int = 2,
 ) -> DataLoader:
     """Create DataLoader for Phase 2 training."""
     dataset = Phase2Dataset(data_dir, split)
@@ -739,6 +743,7 @@ def create_phase2_dataloader(
         num_workers=num_workers,
         collate_fn=collate_fn,
         pin_memory=True,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
     )
 
 
@@ -752,6 +757,7 @@ def create_phase3_dataloader(
         num_workers: int = 4,
         shuffle: bool = True,
         noise_prob: float = 0.3,
+        prefetch_factor: int = 2,
 ) -> DataLoader:
     """
     Create DataLoader for Phase 3 training.
@@ -776,4 +782,5 @@ def create_phase3_dataloader(
         num_workers=num_workers,
         collate_fn=collate_fn,
         pin_memory=True,
+        prefetch_factor=prefetch_factor if num_workers > 0 else None,
     )

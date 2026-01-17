@@ -47,6 +47,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.cuda.amp import autocast, GradScaler
 
 try:
     from tqdm import tqdm
@@ -176,11 +177,30 @@ DEFAULT_CONFIG = {
     'mse_weight': 1.0,
     'cosine_weight': 1.0,
 
-    # Misc
+    # DataLoader defaults (conservative, safe for all phases)
     'num_workers': 4,
+    'prefetch_factor': 2,
+
+    # Misc
     'log_interval': 100,
     'eval_interval': 1,  # Epochs
     'save_interval': 5,  # Epochs
+}
+
+# Phase-specific overrides for optimal GPU utilization
+PHASE_CONFIGS = {
+    1: {  # Phase 1: Largest dataset (27.6M triplets) - needs high worker count
+        'num_workers': 8,
+        'prefetch_factor': 4,
+    },
+    2: {  # Phase 2: Smaller dataset (~1.7M samples) - standard config is fine
+        'num_workers': 4,
+        'prefetch_factor': 2,
+    },
+    3: {  # Phase 3: Medium dataset - standard config
+        'num_workers': 4,
+        'prefetch_factor': 2,
+    },
 }
 
 
@@ -225,6 +245,9 @@ def train_phase1(
         weight_decay=config['weight_decay'],
     )
 
+    # Create GradScaler for mixed precision training
+    scaler = GradScaler() if 'cuda' in device else None
+
     # Resume if specified
     start_epoch = 0
     best_loss = float('inf')
@@ -239,11 +262,13 @@ def train_phase1(
         data_dir, split='train',
         batch_size=config['batch_size'],
         num_workers=config['num_workers'],
+        prefetch_factor=config.get('prefetch_factor', 2),
     )
     val_loader = create_phase1_dataloader(
         data_dir, split='val',
         batch_size=config['batch_size'],
         num_workers=config['num_workers'],
+        prefetch_factor=config.get('prefetch_factor', 2),
         shuffle=False,
     )
 
@@ -275,19 +300,27 @@ def train_phase1(
             neg_feats = batch['negative_features'].to(device)
             neg_lens = batch['negative_lengths']
 
-            # Forward pass
-            anchor_emb = teacher(anchor_feats, anchor_lens)
-            pos_emb = teacher(pos_feats, pos_lens)
-            neg_emb = teacher(neg_feats, neg_lens)
+            # Forward pass with mixed precision
+            with autocast(enabled=(scaler is not None)):
+                anchor_emb = teacher(anchor_feats, anchor_lens)
+                pos_emb = teacher(pos_feats, pos_lens)
+                neg_emb = teacher(neg_feats, neg_lens)
 
-            # Compute loss
-            loss = criterion(anchor_emb, pos_emb, neg_emb)
+                # Compute loss
+                loss = criterion(anchor_emb, pos_emb, neg_emb)
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(teacher.parameters(), max_norm=1.0)
+                optimizer.step()
 
             epoch_loss += loss.item()
             num_batches += 1
@@ -348,11 +381,12 @@ def evaluate_phase1(
             neg_feats = batch['negative_features'].to(device)
             neg_lens = batch['negative_lengths']
 
-            anchor_emb = model(anchor_feats, anchor_lens)
-            pos_emb = model(pos_feats, pos_lens)
-            neg_emb = model(neg_feats, neg_lens)
+            with autocast(enabled=('cuda' in device)):
+                anchor_emb = model(anchor_feats, anchor_lens)
+                pos_emb = model(pos_feats, pos_lens)
+                neg_emb = model(neg_feats, neg_lens)
 
-            loss = criterion(anchor_emb, pos_emb, neg_emb)
+                loss = criterion(anchor_emb, pos_emb, neg_emb)
             total_loss += loss.item()
             num_batches += 1
 
@@ -426,6 +460,9 @@ def train_phase2(
         weight_decay=config['weight_decay'],
     )
 
+    # Create GradScaler for mixed precision training
+    scaler = GradScaler() if 'cuda' in device else None
+
     # Resume if specified
     start_epoch = 0
     best_loss = float('inf')
@@ -435,20 +472,24 @@ def train_phase2(
         best_loss = meta['best_loss']
         logger.info(f"Resumed from epoch {start_epoch}")
 
-    # Create data loaders
+    # Create data loaders with optimizations for GPU utilization
+    # Phase 2 benefits from higher num_workers due to larger dataset
     train_loader = create_phase2_dataloader(
         data_dir, char_vocab, script_vocab, lang_vocab,
         split='train',
         batch_size=config['batch_size'],
-        num_workers=config['num_workers'],
+        num_workers=config.get('num_workers', 8),  # Increased default for Phase 2
         noise_prob=config['noise_prob'],
+        prefetch_factor=config.get('prefetch_factor', 4),  # Higher prefetch for Phase 2
     )
     val_loader = create_phase2_dataloader(
         data_dir, char_vocab, script_vocab, lang_vocab,
         split='val',
         batch_size=config['batch_size'],
-        num_workers=config['num_workers'],
+        num_workers=config.get('num_workers', 8),
         noise_prob=0.0,  # No noise for validation
+        shuffle=False,
+        prefetch_factor=config.get('prefetch_factor', 4),
     )
 
     # Scheduler - use CosineAnnealingLR for stable alignment
@@ -488,17 +529,25 @@ def train_phase2(
             with torch.no_grad():
                 teacher_emb = teacher(features, feature_lengths)
 
-            # Get Student embeddings
-            student_emb = student(char_ids, script_ids, lang_ids, char_lengths)
+            # Get Student embeddings with mixed precision
+            with autocast(enabled=(scaler is not None)):
+                student_emb = student(char_ids, script_ids, lang_ids, char_lengths)
 
-            # Compute loss
-            loss, batch_metrics = criterion(student_emb, teacher_emb)
+                # Compute loss
+                loss, batch_metrics = criterion(student_emb, teacher_emb)
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+                optimizer.step()
 
             epoch_loss += loss.item()
             for k, v in batch_metrics.items():
@@ -644,6 +693,9 @@ def train_phase3(
         weight_decay=config['weight_decay'],
     )
 
+    # Create GradScaler for mixed precision training
+    scaler = GradScaler() if 'cuda' in device else None
+
     # Resume if specified
     start_epoch = 0
     best_loss = float('inf')
@@ -652,13 +704,14 @@ def train_phase3(
         start_epoch = meta['epoch'] + 1
         best_loss = meta['best_loss']
 
-    # Create data loaders
+    # Create data loaders - Phase 3 uses triplet data
     train_loader = create_phase3_dataloader(
         data_dir, char_vocab, script_vocab, lang_vocab,
         split='train',
         batch_size=config['batch_size'],
         num_workers=config['num_workers'],
         noise_prob=config['noise_prob'],
+        prefetch_factor=config.get('prefetch_factor', 2),
     )
     val_loader = create_phase3_dataloader(
         data_dir, char_vocab, script_vocab, lang_vocab,
@@ -666,6 +719,8 @@ def train_phase3(
         batch_size=config['batch_size'],
         num_workers=config['num_workers'],
         noise_prob=0.0,
+        shuffle=False,
+        prefetch_factor=config.get('prefetch_factor', 2),
     )
 
     # Scheduler
@@ -704,19 +759,27 @@ def train_phase3(
             neg_scripts = batch['negative_script_ids'].to(device)
             neg_langs = batch['negative_lang_ids'].to(device)
 
-            # Forward pass
-            anchor_emb = student(anchor_chars, anchor_scripts, anchor_langs, anchor_lens)
-            pos_emb = student(pos_chars, pos_scripts, pos_langs, pos_lens)
-            neg_emb = student(neg_chars, neg_scripts, neg_langs, neg_lens)
+            # Forward pass with mixed precision
+            with autocast(enabled=(scaler is not None)):
+                anchor_emb = student(anchor_chars, anchor_scripts, anchor_langs, anchor_lens)
+                pos_emb = student(pos_chars, pos_scripts, pos_langs, pos_lens)
+                neg_emb = student(neg_chars, neg_scripts, neg_langs, neg_lens)
 
-            # Compute loss
-            loss = criterion(anchor_emb, pos_emb, neg_emb)
+                # Compute loss
+                loss = criterion(anchor_emb, pos_emb, neg_emb)
 
             # Backward pass
             optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
-            optimizer.step()
+            if scaler is not None:
+                scaler.scale(loss).backward()
+                scaler.unscale_(optimizer)
+                torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+                scaler.step(optimizer)
+                scaler.update()
+            else:
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(student.parameters(), max_norm=1.0)
+                optimizer.step()
 
             epoch_loss += loss.item()
             num_batches += 1
@@ -827,6 +890,11 @@ def main():
     if args.config:
         with open(args.config) as f:
             config.update(json.load(f))
+
+    # Apply phase-specific overrides
+    if args.phase in PHASE_CONFIGS:
+        logger.info(f"Applying Phase {args.phase} config overrides: {PHASE_CONFIGS[args.phase]}")
+        config.update(PHASE_CONFIGS[args.phase])
 
     # Override with command line args
     config['batch_size'] = args.batch_size
