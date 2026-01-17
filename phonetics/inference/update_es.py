@@ -4,14 +4,22 @@ Inference pipeline for populating Elasticsearch with toponym embeddings.
 
 Modes:
   1. compute:  Load training Parquet -> GPU inference -> embeddings Parquet
-  2. push:     Bulk update embeddings -> ES
+  2. index:    DuckDB + embeddings -> Full ES toponyms index (rebuild from scratch)
 
 The compute stage reads directly from the training Parquet files generated
-by rebuild_toponyms_index.py, eliminating the need for a separate extract step.
+by rebuild_toponyms_index.py. The index stage rebuilds the entire toponyms
+index from the DuckDB database (which contains all toponyms) combined with
+the embeddings Parquet (which contains only training subset embeddings).
 
 Usage:
     python -m phonetics.inference.update_es compute --input-file /path/to/training --output-file embeddings.parquet ...
-    python -m phonetics.inference.update_es push    --input-file embeddings.parquet ...
+    python -m phonetics.inference.update_es index --duckdb-file toponyms.duckdb --embeddings-file embeddings.parquet ...
+
+Workflow:
+    1. rebuild_toponyms_index.py -> DuckDB (all toponyms) + Parquet (training subset)
+    2. Train Student model (phases 1-3)
+    3. update_es.py compute -> embeddings for training subset
+    4. update_es.py index -> Full ES index (all toponyms, embeddings where available)
 """
 
 import argparse
@@ -156,94 +164,31 @@ def run_compute(args):
 
 
 # =============================================================================
-# STEP 2: PUSH (Parquet -> ES)
-# =============================================================================
-def run_push(args):
-    if not Path(args.input_file).exists():
-        logger.error(f"Input file not found: {args.input_file}")
-        sys.exit(1)
-
-    logger.info(f"Connecting to {args.es_host}...")
-    es = Elasticsearch(args.es_host, request_timeout=60, max_retries=3)
-
-    parquet_file = pq.ParquetFile(args.input_file)
-    total_rows = parquet_file.metadata.num_rows
-    logger.info(f"Pushing {total_rows:,} embeddings to index '{args.index}'...")
-
-    def generate_actions():
-        for batch in parquet_file.iter_batches(batch_size=args.batch_size):
-            df = batch.to_pandas()
-            ids = df['doc_id'].tolist()
-            embs = df['embedding'].tolist()
-
-            for doc_id, emb in zip(ids, embs):
-                yield {
-                    '_op_type': 'update',
-                    '_index': args.index,
-                    '_id': doc_id,
-                    'doc': {
-                        'embedding': list(emb),  # ensure python list
-                        'embedding_version': args.embedding_version
-                    }
-                }
-
-    # Parallel Bulk for speed
-    success_count = 0
-    error_count = 0
-
-    for success, info in helpers.parallel_bulk(
-        es,
-        generate_actions(),
-        thread_count=4,
-        chunk_size=args.batch_size,
-        raise_on_error=False
-    ):
-        if success:
-            success_count += 1
-        else:
-            error_count += 1
-            if error_count < 5:
-                logger.error(f"Error: {info}")
-
-        if (success_count + error_count) % 50000 == 0:
-            logger.info(f"Pushed {success_count:,} docs...")
-
-    # Refresh to make searchable
-    es.indices.refresh(index=args.index)
-    logger.info(f"Push complete. Success: {success_count:,}, Errors: {error_count:,}")
-
-    # Create snapshot
-    logger.info("Creating snapshot...")
-    create_checkpoint_snapshot(es, 'toponym_embeddings')
-    logger.info("...done.")
-
-
-# =============================================================================
-# STEP 3: INDEX (Create full toponyms index from SQLite + embeddings)
+# STEP 2: INDEX (Create full toponyms index from DuckDB + embeddings)
 # =============================================================================
 def run_index(args):
     """
-    Create the full toponyms index from SQLite database + embeddings.
+    Create the full toponyms index from DuckDB database + embeddings.
 
-    The SQLite database contains ALL toponyms (not just training subset).
+    The DuckDB database contains ALL toponyms (not just training subset).
     Embeddings are only available for training toponyms - others get null embedding.
 
     Workflow:
-    1. rebuild_toponyms_index.py -> SQLite (all toponyms) + Parquet (training subset)
+    1. rebuild_toponyms_index.py -> DuckDB (all toponyms) + Parquet (training subset)
     2. Train model on Parquet subset
     3. update_es.py compute -> embeddings for training subset
     4. update_es.py index -> ES index with ALL toponyms (embeddings where available)
     """
-    import sqlite3
+    import duckdb
     from datetime import datetime, timezone
     import json
 
-    sqlite_path = Path(args.sqlite_file)
+    duckdb_path = Path(args.duckdb_file)
     embeddings_path = Path(args.embeddings_file)
     schema_path = Path(args.schema_file)
 
-    if not sqlite_path.exists():
-        logger.error(f"SQLite database not found: {sqlite_path}")
+    if not duckdb_path.exists():
+        logger.error(f"DuckDB database not found: {duckdb_path}")
         sys.exit(1)
     if not embeddings_path.exists():
         logger.error(f"Embeddings file not found: {embeddings_path}")
@@ -281,10 +226,9 @@ def run_index(args):
     es.indices.create(index=args.index, body=schema)
     logger.info(f"Index '{args.index}' created")
 
-    # Connect to SQLite
-    logger.info(f"Reading toponyms from {sqlite_path}...")
-    conn = sqlite3.connect(str(sqlite_path))
-    conn.row_factory = sqlite3.Row
+    # Connect to DuckDB
+    logger.info(f"Reading toponyms from {duckdb_path}...")
+    conn = duckdb.connect(str(duckdb_path), read_only=True)
 
     # Get total count
     total_rows = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
@@ -309,13 +253,13 @@ def run_index(args):
             FROM toponyms t
             JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
             LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-            GROUP BY t.toponym_id
+            GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
         ''')
 
-        for row in cursor:
-            toponym_id = row['toponym_id']
-            namespaces = row['namespaces'].split(',') if row['namespaces'] else []
-            attestations = row['attestations'].split(',') if row['attestations'] else []
+        for row in cursor.fetchall():
+            toponym_id = row[0]
+            namespaces = row[6].split(',') if row[6] else []
+            attestations = row[7].split(',') if row[7] else []
 
             embedding = embeddings_map.get(toponym_id)
             if embedding:
@@ -324,10 +268,10 @@ def run_index(args):
                 without_embedding += 1
 
             doc = {
-                'name': row['name'],
-                'lang': row['lang'] or None,
-                'lang_variant': row['lang_variant'] or None,
-                'script': row['script'],
+                'name': row[1],
+                'lang': row[3] or None,
+                'lang_variant': row[4] or None,
+                'script': row[5],
                 'namespaces': namespaces,
                 'primary_namespace': namespaces[0] if namespaces else None,
                 'attestations': attestations,
@@ -335,8 +279,8 @@ def run_index(args):
             }
 
             # Add name_romanized if present
-            if row['name_romanized']:
-                doc['name_romanized'] = row['name_romanized']
+            if row[2]:
+                doc['name_romanized'] = row[2]
 
             # Add embedding if available
             if embedding:
@@ -394,14 +338,14 @@ def run_index(args):
 # MAIN CLI
 # =============================================================================
 def main():
-    parser = argparse.ArgumentParser(description="ES embedding inference pipeline (compute + push)")
+    parser = argparse.ArgumentParser(description="ES embedding inference pipeline (compute + index)")
     subparsers = parser.add_subparsers(dest='mode', required=True)
 
     # --- SHARED ARGS ---
     parent_parser = argparse.ArgumentParser(add_help=False)
     parent_parser.add_argument('--es-host', default=ES_HOST)
     parent_parser.add_argument('--index', default='toponyms')
-    parent_parser.add_argument('--embedding-version', type=int, default=2)
+    parent_parser.add_argument('--embedding-version', type=int, required=True)
     parent_parser.add_argument('--batch-size', type=int, default=2000)
 
     # --- COMPUTE ---
@@ -418,18 +362,11 @@ def main():
     p_compute.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
     p_compute.set_defaults(func=run_compute)
 
-    # --- PUSH (legacy - updates existing index) ---
-    p_push = subparsers.add_parser('push', parents=[parent_parser],
-                                    help='Push embeddings to existing ES index (legacy)')
-    p_push.add_argument('--input-file', required=True,
-                        help='Embeddings Parquet file')
-    p_push.set_defaults(func=run_push)
-
-    # --- INDEX (creates full index from SQLite + embeddings) ---
+    # --- INDEX (creates full index from DuckDB + embeddings) ---
     p_index = subparsers.add_parser('index', parents=[parent_parser],
-                                     help='Create full toponyms index from SQLite database + embeddings')
-    p_index.add_argument('--sqlite-file', required=True,
-                         help='SQLite database with all toponyms')
+                                     help='Create full toponyms index from DuckDB database + embeddings')
+    p_index.add_argument('--duckdb-file', required=True,
+                         help='DuckDB database with all toponyms')
     p_index.add_argument('--embeddings-file', required=True,
                          help='Embeddings Parquet file (for training subset)')
     p_index.add_argument('--schema-file', required=True,
@@ -442,3 +379,5 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+

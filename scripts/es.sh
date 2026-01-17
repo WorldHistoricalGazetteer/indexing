@@ -1385,6 +1385,382 @@ do_train_and_update() {
     echo "to generate and index the embeddings."
 }
 
+# ==============================================================================
+# UPDATE EMBEDDINGS (Compute + Index)
+# ==============================================================================
+
+do_update_embeddings() {
+    # Usage: source es.sh -update-embeddings [VERSION]
+    #
+    # Generates embeddings for all toponyms and rebuilds ES index.
+    # This should be run AFTER Phase 3 training completes.
+    #
+    # Steps:
+    #   1. Compute embeddings for training subset (GPU)
+    #   2. Rebuild ES index from DuckDB + embeddings (CPU)
+    #
+
+    DATA_VERSION=${1:-5}
+
+    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    CHECKPOINT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/staging-logs}"
+
+    # Ensure REPO_DIR is set
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/whcdh/elastic"
+    fi
+
+    EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
+    mkdir -p "$EMBEDDINGS_LOG_DIR"
+
+    # Verify required files exist
+    if [ ! -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
+        echo "ERROR: Phase 3 checkpoint not found at ${CHECKPOINT_DIR}/phase3_best.pt"
+        echo "Train the model first: es -train-model ${DATA_VERSION}"
+        return 1
+    fi
+
+    if [ ! -f "${DATA_DIR}/toponyms.duckdb" ]; then
+        echo "ERROR: DuckDB database not found at ${DATA_DIR}/toponyms.duckdb"
+        echo "Rebuild toponyms first: es -rebuild-toponyms ${DATA_VERSION}"
+        return 1
+    fi
+
+    if [ ! -d "${DATA_DIR}/training" ]; then
+        echo "ERROR: Training data not found at ${DATA_DIR}/training"
+        echo "Generate training data first: es -generate-training-data ${DATA_VERSION}"
+        return 1
+    fi
+
+    # Check if staging ES is running (needed for index step)
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    echo "=========================================="
+    echo "EMBEDDING PIPELINE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo "  Checkpoint: ${CHECKPOINT_DIR}/phase3_best.pt"
+    echo "  DuckDB:     ${DATA_DIR}/toponyms.duckdb"
+    echo "  Training:   ${DATA_DIR}/training"
+    echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
+    echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
+    echo
+
+    EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
+
+    # ==============================================================================
+    # STEP 1: COMPUTE EMBEDDINGS (GPU)
+    # ==============================================================================
+
+    echo "Step 1: Submitting compute job (GPU)..."
+
+    COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-compute-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
+#SBATCH --time=24:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=100G
+
+echo "=========================================="
+echo "COMPUTE EMBEDDINGS (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+echo "Computing embeddings from training data..."
+python -u -m phonetics.inference.update_es compute \
+    --input-file "${DATA_DIR}/training" \
+    --output-file "${EMBEDDINGS_FILE}" \
+    --checkpoint "${CHECKPOINT_DIR}/phase3_best.pt" \
+    --vocab-dir "${DATA_DIR}/vocab" \
+    --embedding-version ${DATA_VERSION} \
+    --batch-size 2000 \
+    --device cuda
+
+echo
+echo "Embeddings saved to: ${EMBEDDINGS_FILE}"
+echo "Finished: \$(date)"
+EOF
+)
+
+    COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
+    echo "✓ Compute job submitted: ${COMPUTE_JOB}"
+    echo "  Monitor: squeue -j ${COMPUTE_JOB} -M gpu"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/compute_${COMPUTE_JOB}.err"
+    echo
+
+    # ==============================================================================
+    # STEP 2: INDEX TO ELASTICSEARCH (CPU, depends on compute)
+    # ==============================================================================
+
+    echo "Step 2: Submitting index job (CPU, will wait for compute)..."
+
+    INDEX_JOB=$(sbatch --parsable --dependency=afterok:${COMPUTE_JOB} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=100G
+
+echo "=========================================="
+echo "INDEX EMBEDDINGS (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+# Verify embeddings file exists
+if [ ! -f "${EMBEDDINGS_FILE}" ]; then
+    echo "ERROR: Embeddings file not found: ${EMBEDDINGS_FILE}"
+    echo "Compute job may have failed."
+    exit 1
+fi
+
+echo "Rebuilding ES index from DuckDB + embeddings..."
+python -u -m phonetics.inference.update_es index \
+    --duckdb-file "${DATA_DIR}/toponyms.duckdb" \
+    --embeddings-file "${EMBEDDINGS_FILE}" \
+    --schema-file "${REPO_DIR}/schemas/toponyms.json" \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --index toponyms \
+    --embedding-version ${DATA_VERSION} \
+    --batch-size 2000
+
+echo
+echo "Index rebuilt successfully."
+echo "Snapshot created: toponyms_v${DATA_VERSION}"
+echo "Finished: \$(date)"
+EOF
+)
+
+    INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
+    echo "✓ Index job submitted: ${INDEX_JOB}"
+    echo "  Monitor: squeue -j ${INDEX_JOB}"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_${INDEX_JOB}.err"
+    echo
+
+    echo "=========================================="
+    echo "PIPELINE SUBMITTED"
+    echo "=========================================="
+    echo "Compute job: ${COMPUTE_JOB} (GPU)"
+    echo "Index job:   ${INDEX_JOB} (CPU, waiting for compute)"
+    echo
+    echo "Monitor overall progress:"
+    echo "  squeue -u \$USER"
+    echo "  tail -f ${EMBEDDINGS_LOG_DIR}/*.err"
+}
+
+# ==============================================================================
+# REBUILD TOPONYMS INDEX (v4 Pipeline Phase 1)
+# ==============================================================================
+
+do_rebuild_toponyms() {
+    # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS]
+    #
+    # Phase 1 of v4 pipeline: Rebuild toponyms index from places
+    #
+    # Arguments:
+    #   VERSION      Data version (default: 4)
+    echo "=========================================="
+    echo
+    echo "  Checkpoint: $CHECKPOINT"
+    echo "  DuckDB:     $DUCKDB_FILE"
+    echo "  Output:     $EMBEDDINGS_FILE"
+    echo "  Schema:     $SCHEMA_FILE"
+    echo
+
+    # Validate required files
+    if [ ! -f "$CHECKPOINT" ]; then
+        echo "ERROR: Phase 3 checkpoint not found at $CHECKPOINT" >&2
+        echo "Train the model first with: es -train-model $DATA_VERSION" >&2
+        return 1
+    fi
+
+    if [ ! -d "$VOCAB_DIR" ]; then
+        echo "ERROR: Vocabulary directory not found at $VOCAB_DIR" >&2
+        return 1
+    fi
+
+    if [ ! -d "$TRAINING_DIR" ]; then
+        echo "ERROR: Training data directory not found at $TRAINING_DIR" >&2
+        echo "This should have been created during rebuild_toponyms_index." >&2
+        return 1
+    fi
+
+    if [ ! -f "$DUCKDB_FILE" ]; then
+        echo "ERROR: DuckDB database not found at $DUCKDB_FILE" >&2
+        echo "Run -rebuild-toponyms first to create the database." >&2
+        return 1
+    fi
+
+    if [ ! -f "$SCHEMA_FILE" ]; then
+        echo "ERROR: Schema file not found at $SCHEMA_FILE" >&2
+        return 1
+    fi
+
+    mkdir -p "$EMBEDDING_LOG_DIR"
+
+    # Get ES connection info
+    if [ -f /ix1/whcdh/esinfo/es-staging.env ]; then
+        source /ix1/whcdh/esinfo/es-staging.env
+        ES_HOST="${ES_STAGING_URL}"
+    else
+        echo "ERROR: ES staging environment not found. Is ES running?" >&2
+        echo "Start ES with: es -staging-start" >&2
+        return 1
+    fi
+
+    echo "=========================================="
+    echo "STEP 1: COMPUTE EMBEDDINGS (GPU)"
+    echo "=========================================="
+    echo
+
+    # Submit compute job to GPU partition
+    COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-emb-compute-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDING_LOG_DIR}/compute_%j.out
+#SBATCH --error=${EMBEDDING_LOG_DIR}/compute_%j.err
+#SBATCH --time=4:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+echo "==========================================="
+echo "Embedding Compute Job Started"
+echo "Job ID: \$SLURM_JOB_ID"
+echo "Node: \$(hostname)"
+echo "Time: \$(date)"
+echo "==========================================="
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd /ix1/whcdh/elastic
+
+echo "Computing embeddings for training subset..."
+python -m phonetics.inference.update_es compute \\
+    --input-file "${TRAINING_DIR}" \\
+    --output-file "${EMBEDDINGS_FILE}" \\
+    --checkpoint "${CHECKPOINT}" \\
+    --vocab-dir "${VOCAB_DIR}" \\
+    --embedding-version ${DATA_VERSION} \\
+    --batch-size 4000 \\
+    --device cuda
+
+echo "Compute complete: ${EMBEDDINGS_FILE}"
+EOF
+)
+
+    COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
+    echo "✓ Compute job submitted: $COMPUTE_JOB (gpu)"
+    echo "  Monitor: squeue -M gpu -j $COMPUTE_JOB"
+    echo "  Logs: tail -f ${EMBEDDING_LOG_DIR}/compute_${COMPUTE_JOB}.{out,err}"
+    echo
+
+    echo "=========================================="
+    echo "STEP 2: INDEX TO ELASTICSEARCH (CPU)"
+    echo "=========================================="
+    echo
+
+    # Submit index job to HTC partition (CPU-only, depends on compute job)
+    INDEX_JOB=$(sbatch --parsable -M htc --dependency=afterok:${COMPUTE_JOB} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-emb-index-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDING_LOG_DIR}/index_%j.out
+#SBATCH --error=${EMBEDDING_LOG_DIR}/index_%j.err
+#SBATCH --time=6:00:00
+#SBATCH --partition=htc
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=128G
+
+echo "==========================================="
+echo "Embedding Index Job Started"
+echo "Job ID: \$SLURM_JOB_ID"
+echo "Node: \$(hostname)"
+echo "Time: \$(date)"
+echo "==========================================="
+
+set -e
+
+source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+conda activate whg
+
+cd /ix1/whcdh/elastic
+
+echo "Rebuilding ES index from DuckDB + embeddings..."
+python -m phonetics.inference.update_es index \\
+    --duckdb-file "${DUCKDB_FILE}" \\
+    --embeddings-file "${EMBEDDINGS_FILE}" \\
+    --schema-file "${SCHEMA_FILE}" \\
+    --es-host "${ES_HOST}" \\
+    --index toponyms \\
+    --embedding-version ${DATA_VERSION} \\
+    --batch-size 2000
+
+echo "Index rebuild complete!"
+EOF
+)
+
+    INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
+    echo "✓ Index job submitted: $INDEX_JOB (htc)"
+    echo "  Monitor: squeue -M htc -j $INDEX_JOB"
+    echo "  Logs: tail -f ${EMBEDDING_LOG_DIR}/index_${INDEX_JOB}.{out,err}"
+    echo
+
+    echo "=========================================="
+    echo "PIPELINE SUBMITTED"
+    echo "=========================================="
+    echo
+    echo "Jobs queued:"
+    echo "  1. Compute (GPU): $COMPUTE_JOB"
+    echo "  2. Index (CPU):   $INDEX_JOB (after compute)"
+    echo
+    echo "Monitor all jobs:"
+    echo "  squeue -M gpu,htc -u \$USER"
+    echo
+    echo "View logs:"
+    echo "  tail -f ${EMBEDDING_LOG_DIR}/*.{out,err}"
+}
+
 # =============================================================================
 # HEALTH CHECKS
 # =============================================================================
@@ -2092,11 +2468,13 @@ case "$1" in
         echo "      Chains all jobs: Train (P1→P2→P3) → Compute embeddings → Create ES index"
         echo "      Creates snapshot 'toponyms_vN' when complete"
         echo
-        echo "EMBEDDING / INDEX PIPELINE (if training already done):"
-        echo "  -update-embeddings VERSION [STAGE]"
-        echo "      Compute embeddings and create full toponyms index"
-        echo "      STAGE: compute (GPU), index (create ES index), or omit for both"
-        echo "      Use --force to re-run completed stages"
+        echo "EMBEDDING / INDEX PIPELINE (run AFTER training completes):"
+        echo "  -update-embeddings VERSION"
+        echo "      Compute embeddings and rebuild ES toponyms index from DuckDB"
+        echo "      Steps:"
+        echo "        1. Compute embeddings (GPU, requires phase3_best.pt)"
+        echo "        2. Rebuild ES index from DuckDB + embeddings (CPU)"
+        echo "      Creates snapshot 'toponyms_vN' when complete"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
