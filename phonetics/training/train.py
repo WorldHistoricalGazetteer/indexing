@@ -190,14 +190,17 @@ DEFAULT_CONFIG = {
 # Phase-specific overrides for optimal GPU utilization
 PHASE_CONFIGS = {
     1: {  # Phase 1: Largest dataset (27.6M triplets) - needs high worker count
+        'learning_rate': 1e-4,  # 0.0001 - conservative for phonetic feature learning
         'num_workers': 8,
         'prefetch_factor': 4,
     },
     2: {  # Phase 2: Smaller dataset (~1.7M samples) - standard config is fine
+        'learning_rate': 1e-4,  # 0.0001 - same as Phase 1, distillation to match teacher
         'num_workers': 4,
         'prefetch_factor': 2,
     },
-    3: {  # Phase 3: Medium dataset - standard config
+    3: {  # Phase 3: Medium dataset - fine-tuning with hard negatives
+        'learning_rate': 5e-5,  # 0.00005 - lower rate for fine-tuning
         'num_workers': 4,
         'prefetch_factor': 2,
     },
@@ -876,7 +879,8 @@ def main():
     parser.add_argument('--phase', type=int, required=True, choices=[1, 2, 3])
     parser.add_argument('--epochs', type=int, default=50)
     parser.add_argument('--batch-size', type=int, default=128)
-    parser.add_argument('--learning-rate', type=float, default=1e-4)
+    parser.add_argument('--learning-rate', type=float, default=None,
+                        help='Learning rate (if not set, uses phase-specific defaults)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
     parser.add_argument('--teacher-checkpoint', type=str, help='Teacher checkpoint for Phase 2')
     parser.add_argument('--student-checkpoint', type=str, help='Student checkpoint for Phase 3')
@@ -896,9 +900,11 @@ def main():
         logger.info(f"Applying Phase {args.phase} config overrides: {PHASE_CONFIGS[args.phase]}")
         config.update(PHASE_CONFIGS[args.phase])
 
-    # Override with command line args
+    # Override with command line args (only if explicitly set)
     config['batch_size'] = args.batch_size
-    config['learning_rate'] = args.learning_rate
+    if args.learning_rate is not None:
+        config['learning_rate'] = args.learning_rate
+        logger.info(f"Using command-line learning rate: {args.learning_rate}")
 
     logger.info(f"Config: {json.dumps(config, indent=2)}")
     logger.info(f"Device: {args.device}")
