@@ -33,7 +33,7 @@ import torch
 from phonetics.utils.script_detection import detect_script
 try:
     from processing.settings import ES_HOST
-except ImportError:
+except EnvironmentError:
     print("Elasticsearch is not running. Skipping ES connection.")
     ES_HOST = None
 
