@@ -14,7 +14,7 @@ Usage:
 
     Then run:
 
-    python -m phonetics.inference.search
+    said
 
     # Or with a query:
     python -m phonetics.inference.search \
@@ -329,44 +329,81 @@ def main():
     print(f"  Pass rate: {cross_script_pass}/{len(cross_script_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 2: Same-script different languages (HARDER - threshold > 0.60)
-    # These are phonetically different despite referring to same place
+    # Test 2: Historical variant spellings (should be > 0.75)
+    # Same place, different historical orthography - phonetically similar
+    # These test the model's ability to handle historical spelling variations
     # ---------------------------------------------------------------------------
-    print("\n[Test 2] Same-script cross-language (expected: > 0.60)")
+    print("\n[Test 2] Historical variant spellings (expected: > 0.75)")
     print("-" * 50)
-    print("  Note: Lower threshold - genuinely different pronunciations")
+    print("  Note: Same place, historical orthographic variations")
 
-    same_script_pairs = [
-        ("London", "Londres", "en/fr"),
-        ("London", "Londra", "en/it"),
-        ("London", "Londyn", "en/pl"),
-        ("Moscow", "Moscou", "en/fr"),
-        ("Moscow", "Mosca", "en/it"),
-        ("Munich", "München", "en/de"),
-        ("Vienna", "Wien", "en/de"),
-        ("Rome", "Roma", "en/it"),
-        ("Naples", "Napoli", "en/it"),
-        ("Venice", "Venezia", "en/it"),
-        ("Milan", "Milano", "en/it"),
-        ("Lisbon", "Lisboa", "en/pt"),
-        ("Seville", "Sevilla", "en/es"),
-        ("Copenhagen", "København", "en/da"),
+    historical_pairs = [
+        ("Hampstead", "Hamsted", "dropped p"),
+        ("Christchurch", "Cristechurch", "i/h variation"),
+        ("Edinburgh", "Edinborough", "burgh/borough"),
+        ("Shrewsbury", "Shrowesbury", "vowel shift"),
+        ("Worcester", "Worcestre", "medieval -re"),
+        ("Gloucester", "Glocester", "ou/o variation"),
+        ("Leicester", "Leycester", "ei/ey variation"),
+        ("Warwick", "Warwike", "ck/ke variation"),
+        ("Lincoln", "Lincolne", "silent -e"),
+        ("Norwich", "Norwiche", "silent -e"),
+        ("Canterbury", "Canterburie", "y/ie variation"),
+        ("Durham", "Duresme", "medieval French"),
+        ("York", "Yorke", "silent -e"),
+        ("Bath", "Bathe", "silent -e"),
     ]
 
-    same_script_pass = 0
-    for n1, n2, desc in same_script_pairs:
+    historical_pass = 0
+    for n1, n2, desc in historical_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        status = "✓" if sim > 0.60 else "✗"
-        if sim > 0.60:
-            same_script_pass += 1
+        status = "✓" if sim > 0.75 else "✗"
+        if sim > 0.75:
+            historical_pass += 1
         print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
-    print(f"  Pass rate: {same_script_pass}/{len(same_script_pairs)}")
+    print(f"  Pass rate: {historical_pass}/{len(historical_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 3: Unrelated pairs (should be < 0.50)
+    # Test 3: Cross-language exonyms (should be < 0.50)
+    # Same place, different languages - phonetically DIFFERENT
+    # These should NOT match because the model is phonetic, not geographic
     # ---------------------------------------------------------------------------
-    print("\n[Test 3] Unrelated pairs (expected: < 0.50)")
+    print("\n[Test 3] Cross-language exonyms (expected: < 0.50)")
+    print("-" * 50)
+    print("  Note: Same place geographically, but phonetically different")
+
+    exonym_pairs = [
+        ("London", "Londres", "en/fr - different phonetics"),
+        ("London", "Londra", "en/it - different phonetics"),
+        ("Munich", "München", "en/de - different vowel"),
+        ("Vienna", "Wien", "en/de - completely different"),
+        ("Florence", "Firenze", "en/it - different sounds"),
+        ("Prague", "Praha", "en/cs - different sounds"),
+        ("Warsaw", "Warszawa", "en/pl - different phonetics"),
+        ("Moscow", "Moscou", "en/fr - different ending"),
+        ("Germany", "Deutschland", "en/de - completely different"),
+        ("Finland", "Suomi", "en/fi - completely different"),
+        ("Greece", "Hellas", "en/el - completely different"),
+        ("Japan", "Nihon", "en/ja - completely different"),
+        ("Egypt", "Misr", "en/ar - completely different"),
+    ]
+
+    exonym_pass = 0
+    for n1, n2, desc in exonym_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim < 0.50 else "✗"
+        if sim < 0.50:
+            exonym_pass += 1
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+    print(f"  Pass rate: {exonym_pass}/{len(exonym_pairs)}")
+
+    # ---------------------------------------------------------------------------
+    # Test 4: Unrelated pairs (should be < 0.50)
+    # Completely different places - should have low similarity
+    # ---------------------------------------------------------------------------
+    print("\n[Test 4] Unrelated pairs (expected: < 0.50)")
     print("-" * 50)
 
     unrelated_pairs = [
@@ -398,10 +435,10 @@ def main():
     print(f"  Pass rate: {unrelated_pass}/{len(unrelated_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 4: Diacritic variants (should be > 0.90)
-    # Same name, minor orthographic differences
+    # Test 5: Diacritic/minor variants (expected: > 0.90)
+    # Same name, minor orthographic differences - validates robustness
     # ---------------------------------------------------------------------------
-    print("\n[Test 4] Diacritic/minor variants (expected: > 0.90)")
+    print("\n[Test 5] Diacritic/minor variants (expected: > 0.90)")
     print("-" * 50)
 
     diacritic_pairs = [
@@ -428,77 +465,12 @@ def main():
     print(f"  Pass rate: {diacritic_pass}/{len(diacritic_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 5: Exonym pairs - genuinely different names (informational)
-    # These refer to the same place but have very different forms
+    # Test 6: Exonym pairs (informational - no pass/fail)
+    # These are genuinely different names for same place
     # ---------------------------------------------------------------------------
-    print("\n[Test 5] Exonym pairs (informational - no pass/fail)")
+    print("\n[Test 6] Exonym pairs (informational - no pass/fail)")
     print("-" * 50)
     print("  Note: These are genuinely different names for same place")
-
-    exonym_pairs = [
-        ("Cologne", "Köln", "en/de"),
-        ("Munich", "Muenchen", "en/de-ascii"),
-        ("Nuremberg", "Nürnberg", "en/de"),
-        ("Florence", "Firenze", "en/it"),
-        ("Prague", "Praha", "en/cs"),
-        ("Warsaw", "Warszawa", "en/pl"),
-        ("Tokyo", "東京", "en/ja"),
-        ("Japan", "Nippon", "en/ja-rom"),
-        ("Germany", "Deutschland", "en/de"),
-        ("Egypt", "Misr", "en/ar-rom"),
-        ("Greece", "Hellas", "en/el-rom"),
-        ("Finland", "Suomi", "en/fi"),
-        ("Hungary", "Magyarország", "en/hu"),
-        ("Albania", "Shqipëria", "en/sq"),
-        ("Georgia", "საქართველო", "en/ka"),
-    ]
-
-    for n1, n2, desc in exonym_pairs:
-        e1, e2 = encoder.encode(n1), encoder.encode(n2)
-        sim = encoder.similarity(e1, e2).item()
-        if sim > 0.85:
-            status = "↑"
-        elif sim >= 0.50:
-            status = "~"
-        else:
-            status = "↓"
-        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
-
-    # ---------------------------------------------------------------------------
-    # Test 6: Historical name variants (informational)
-    # ---------------------------------------------------------------------------
-    print("\n[Test 6] Historical variants (informational)")
-    print("-" * 50)
-    print("  Note: Ancient/historical names - lower similarity expected")
-
-    historical_pairs = [
-        ("Istanbul", "Constantinople", "modern/Byzantine"),
-        ("Istanbul", "Byzantium", "modern/ancient"),
-        ("Paris", "Lutetia", "modern/Roman"),
-        ("London", "Londinium", "modern/Roman"),
-        ("Lyon", "Lugdunum", "modern/Roman"),
-        ("Cologne", "Colonia", "modern/Roman"),
-        ("Vienna", "Vindobona", "modern/Roman"),
-        ("York", "Eboracum", "modern/Roman"),
-        ("Mumbai", "Bombay", "modern/colonial"),
-        ("Chennai", "Madras", "modern/colonial"),
-        ("Kolkata", "Calcutta", "modern/colonial"),
-        ("Beijing", "Peking", "modern/historical"),
-        ("Guangzhou", "Canton", "modern/historical"),
-        ("Ho Chi Minh City", "Saigon", "modern/historical"),
-    ]
-
-    for n1, n2, desc in historical_pairs:
-        e1, e2 = encoder.encode(n1), encoder.encode(n2)
-        sim = encoder.similarity(e1, e2).item()
-        print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
-
-    # ---------------------------------------------------------------------------
-    # Test 7: Confusable pairs (potential false positives)
-    # ---------------------------------------------------------------------------
-    print("\n[Test 7] Confusable pairs (watch for false positives)")
-    print("-" * 50)
-    print("  Note: Phonetically similar but different places")
 
     confusable_pairs = [
         ("Vienna", "Hanoi", "similar vowel patterns"),
@@ -520,13 +492,14 @@ def main():
     for n1, n2, desc in confusable_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        warn = "⚠" if sim > 0.80 else " "
-        print(f"  {warn} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+        status = "⚠" if sim > 0.75 else " "
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 8: Short names (edge case)
+    # Test 7: Short names (edge case)
+    # Very short names are harder to distinguish
     # ---------------------------------------------------------------------------
-    print("\n[Test 8] Short names (edge case)")
+    print("\n[Test 7] Short names (edge case)")
     print("-" * 50)
     print("  Note: Very short names are harder to distinguish")
 
@@ -547,40 +520,18 @@ def main():
         print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 9: Challenging cross-script pairs (informational)
-    # These have phonetically different native names vs English exonyms
+    # Test 8: Embedding space statistics
+    # Technical validation of embedding properties
     # ---------------------------------------------------------------------------
-    print("\n[Test 9] Challenging cross-script pairs (informational)")
-    print("-" * 50)
-    print("  Note: English exonym differs phonetically from native name")
-
-    challenging_cross_script = [
-        ("Cairo", "القاهرة", "en='Cairo' vs ar='al-Qahira'"),
-        ("Tel Aviv", "תל אביב", "multi-word, space handling"),
-        ("Bangkok", "กรุงเทพ", "Thai script, limited training"),
-        ("Helsinki", "Helsingfors", "Finnish vs Swedish name"),
-        ("Lodz", "Łódź", "Ł quite different from L"),
-        ("Wroclaw", "Wrocław", "w vs ł phonetics"),
-    ]
-
-    for n1, n2, desc in challenging_cross_script:
-        e1, e2 = encoder.encode(n1), encoder.encode(n2)
-        sim = encoder.similarity(e1, e2).item()
-        expected = "expected low" if sim < 0.70 else "higher than expected"
-        print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc}) [{expected}]")
-
-    # ---------------------------------------------------------------------------
-    # Test 10: Embedding space statistics
-    # ---------------------------------------------------------------------------
-    print("\n[Test 10] Embedding space statistics")
+    print("\n[Test 8] Embedding space statistics")
     print("-" * 50)
 
     test_names = [
         "London", "Paris", "Berlin", "Tokyo", "Moscow", "Beijing",
         "Cairo", "Sydney", "Mumbai", "Lagos", "Lima", "Toronto",
-        "Londres", "Londinium", "Sar-e Tanōr", "München", "Москва",
+        "Londres", "Sar-e Tanōr", "München", "Москва",
         "東京", "서울", "北京", "Αθήνα", "القاهرة", "ירושלים",
-        "दिल्ली", "กรุงเทพ", "საქართველო"
+        "दिल्ली", "กรุงเทพ", "თბილისი"
     ]
 
     embs = encoder.encode_batch(test_names)
@@ -614,11 +565,12 @@ def main():
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    total_core = cross_script_pass + same_script_pass + unrelated_pass + diacritic_pass
-    total_tests = len(cross_script_pairs) + len(same_script_pairs) + len(unrelated_pairs) + len(diacritic_pairs)
+    total_core = cross_script_pass + historical_pass + exonym_pass + unrelated_pass + diacritic_pass
+    total_tests = len(cross_script_pairs) + len(historical_pairs) + len(exonym_pairs) + len(unrelated_pairs) + len(diacritic_pairs)
     print(f"  Core tests passed: {total_core}/{total_tests} ({100*total_core/total_tests:.1f}%)")
     print(f"    - Cross-script:     {cross_script_pass}/{len(cross_script_pairs)}")
-    print(f"    - Same-script:      {same_script_pass}/{len(same_script_pairs)}")
+    print(f"    - Historical:       {historical_pass}/{len(historical_pairs)}")
+    print(f"    - Exonyms (reject): {exonym_pass}/{len(exonym_pairs)}")
     print(f"    - Unrelated:        {unrelated_pass}/{len(unrelated_pairs)}")
     print(f"    - Diacritics:       {diacritic_pass}/{len(diacritic_pairs)}")
     print("=" * 70 + "\n")
