@@ -480,7 +480,7 @@ def main():
         candidate_embs = torch.stack(candidate_embs)
 
         # Compute similarities and rank
-        sims = encoder.similarity_batch(query_emb, candidate_embs)
+        sims = encoder.similarity(query_emb, candidate_embs)
         ranks = torch.argsort(sims, descending=True)
 
         # Find rank of correct answer (index 0)
