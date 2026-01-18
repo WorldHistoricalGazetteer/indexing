@@ -201,9 +201,9 @@ PHASE_CONFIGS = {
     },
     3: {  # Phase 3: Large dataset (24.8M triplets) - maximize GPU throughput
         'learning_rate': 5e-5,  # 0.00005 - lower rate for fine-tuning
-        'batch_size': 512,     # 4x larger batch for better GPU utilization
-        'num_workers': 8,      # More workers for large dataset
-        'prefetch_factor': 4,  # Higher prefetch for sustained throughput
+        'batch_size': 768,     # 6x larger batch - GPU has 36GB free memory
+        'num_workers': 12,     # More workers to saturate GPU (currently only 64% util)
+        'prefetch_factor': 6,  # Higher prefetch for sustained throughput
     },
 }
 
