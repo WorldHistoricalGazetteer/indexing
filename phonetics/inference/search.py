@@ -331,6 +331,7 @@ def main():
 
     cross_script_pass = 0
     script_results = {}  # Track per-script performance
+    rank_results = []  # Track ranking performance
 
     for n1, lang1, n2, lang2, desc, threshold in cross_script_pairs:
         # Encode with language hints for ambiguous scripts
@@ -348,6 +349,9 @@ def main():
             script_results[script_key] = []
         script_results[script_key].append((sim, threshold))
 
+        # For rank-based metric: store for later evaluation
+        rank_results.append((n1, n2, lang1, lang2, sim, desc))
+
         # Show threshold inline
         print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f} (>{threshold:.2f}) {desc}")
 
@@ -360,6 +364,148 @@ def main():
         avg_sim = sum(sims) / len(sims)
         passed = sum(1 for s, t in results if s > t)
         print(f"    {script_key:30} avg={avg_sim:.3f} pass={passed}/{len(results)}")
+
+    # Rank-based evaluation: Would the correct match be retrieved in top-k?
+    print("\n  Rank-based retrieval test:")
+    print("    (Tests if correct cross-script match would rank in top-k among distractors)")
+
+    # Create a large multi-script pool of distractor names for ranking test
+    # This ensures the model is tested against diverse phonetic and orthographic patterns
+    distractor_pool = [
+        # Latin script - Europe
+        "Paris", "Madrid", "Rome", "Vienna", "Berlin", "Prague", "Warsaw", "Athens",
+        "Brussels", "Amsterdam", "Stockholm", "Copenhagen", "Oslo", "Helsinki",
+        "Dublin", "Lisbon", "Budapest", "Bucharest", "Sofia", "Zagreb", "Belgrade",
+        "Milan", "Naples", "Venice", "Munich", "Hamburg", "Lyon", "Marseille",
+        "Barcelona", "Seville", "Valencia", "Krakow", "Gdansk", "Riga", "Vilnius",
+
+        # Latin script - Americas
+        "Toronto", "Montreal", "Vancouver", "Chicago", "Boston", "Seattle", "Miami",
+        "Lima", "Bogota", "Santiago", "Caracas", "Quito", "Montevideo", "Asuncion",
+        "Mexico", "Guadalajara", "Havana", "Panama", "Kingston", "Nassau",
+
+        # Latin script - Asia/Pacific
+        "Tokyo", "Sydney", "Melbourne", "Brisbane", "Auckland", "Wellington",
+        "Singapore", "Jakarta", "Manila", "Bangkok", "Hanoi", "Saigon",
+        "Kuala Lumpur", "Yangon", "Phnom Penh", "Vientiane", "Dili",
+
+        # Latin script - Africa
+        "Cairo", "Lagos", "Nairobi", "Johannesburg", "Cape Town", "Casablanca",
+        "Tunis", "Algiers", "Tripoli", "Addis Ababa", "Dakar", "Accra", "Kinshasa",
+        "Luanda", "Maputo", "Harare", "Lusaka", "Kampala", "Dar es Salaam",
+
+        # Arabic script
+        "دمشق", "بيروت", "بغداد", "الرياض", "دبي", "القاهرة", "الدوحة", "عمان",
+        "الكويت", "صنعاء", "طرابلس", "الجزائر", "تونس", "الرباط", "مسقط",
+
+        # Cyrillic script
+        "Москва", "Санкт-Петербург", "Киев", "Минск", "Варшава", "София", "Белград",
+        "Тбилиси", "Ереван", "Баку", "Ташкент", "Алматы", "Бишкек", "Душанбе",
+
+        # Greek script
+        "Αθήνα", "Θεσσαλονίκη", "Πάτρα", "Ηράκλειο", "Λάρισα", "Βόλος",
+
+        # Hebrew script
+        "ירושלים", "תל אביב", "חיפה", "באר שבע", "נצרת", "אילת",
+
+        # CJK scripts
+        "北京", "上海", "广州", "深圳", "南京", "杭州", "成都", "重庆", "西安", "武汉",
+        "東京", "大阪", "京都", "名古屋", "横浜", "神戸", "福岡", "札幌",
+        "서울", "부산", "인천", "대구", "대전", "광주", "울산",
+
+        # Devanagari script
+        "दिल्ली", "मुंबई", "कोलकाता", "चेन्नई", "बेंगलुरु", "हैदराबाद", "अहमदाबाद",
+
+        # Thai script
+        "กรุงเทพ", "เชียงใหม่", "ภูเก็ต", "พัทยา", "นครราชสีมา",
+
+        # Georgian script
+        "თბილისი", "ბათუმი", "ქუთაისი", "რუსთავი",
+
+        # Armenian script
+        "Երևան", "Գյումրի", "Վանաձոր",
+
+        # Bengali script
+        "ঢাকা", "চট্টগ্রাম", "খুলনা", "রাজশাহী",
+
+        # Hangul script (additional)
+        "평양", "개성", "원산", "함흥",
+
+        # Tamil script
+        "சென்னை", "கோயம்புத்தூர்", "மதுரை",
+
+        # Telugu script
+        "హైదరాబాద్", "విజయవాడ", "విశాఖపట్నం",
+
+        # Kannada script
+        "ಬೆಂಗಳೂರು", "ಮೈಸೂರು", "ಮಂಗಳೂರು",
+
+        # Malayalam script
+        "തിരുവനന്തപുരം", "കൊച്ചി", "കോഴിക്കോട്",
+
+        # Gujarati script
+        "અમદાવાદ", "સુરત", "વડોદરા",
+    ]
+
+    rank_at_1 = 0
+    rank_at_5 = 0
+    rank_at_10 = 0
+    rank_at_20 = 0
+    rank_at_50 = 0
+    mrr_sum = 0.0
+
+    import random
+
+    for n1, n2, lang1, lang2, sim, desc in rank_results:
+        # Create candidate set: target + 99 randomly sampled distractors from diverse pool
+        # This creates a challenging 100-way ranking task with multi-script distractors
+        available_distractors = [d for d in distractor_pool if d != n1 and d != n2]
+        sampled_distractors = random.sample(available_distractors, min(99, len(available_distractors)))
+        candidates = [n2] + sampled_distractors
+
+        # Encode query
+        query_emb = encoder.encode(n1, lang=lang1) if lang1 else encoder.encode(n1)
+
+        # Encode all candidates with appropriate language hints
+        candidate_embs = []
+        for cand in candidates:
+            if cand == n2:
+                # Use correct language for target
+                emb = encoder.encode(cand, lang=lang2) if lang2 else encoder.encode(cand)
+            else:
+                # Distractors use no language hint
+                emb = encoder.encode(cand)
+            candidate_embs.append(emb)
+
+        candidate_embs = torch.stack(candidate_embs)
+
+        # Compute similarities and rank
+        sims = encoder.similarity_batch(query_emb, candidate_embs)
+        ranks = torch.argsort(sims, descending=True)
+
+        # Find rank of correct answer (index 0)
+        target_rank = (ranks == 0).nonzero(as_tuple=True)[0].item() + 1
+
+        if target_rank == 1:
+            rank_at_1 += 1
+        if target_rank <= 5:
+            rank_at_5 += 1
+        if target_rank <= 10:
+            rank_at_10 += 1
+        if target_rank <= 20:
+            rank_at_20 += 1
+        if target_rank <= 50:
+            rank_at_50 += 1
+        mrr_sum += 1.0 / target_rank
+
+    total_pairs = len(rank_results)
+    print(f"    (100-way ranking: 1 target + 99 multi-script distractors per query)")
+    print(f"    Recall@1:  {rank_at_1}/{total_pairs} ({100*rank_at_1/total_pairs:.1f}%)")
+    print(f"    Recall@5:  {rank_at_5}/{total_pairs} ({100*rank_at_5/total_pairs:.1f}%)")
+    print(f"    Recall@10: {rank_at_10}/{total_pairs} ({100*rank_at_10/total_pairs:.1f}%)")
+    print(f"    Recall@20: {rank_at_20}/{total_pairs} ({100*rank_at_20/total_pairs:.1f}%)")
+    print(f"    Recall@50: {rank_at_50}/{total_pairs} ({100*rank_at_50/total_pairs:.1f}%)")
+    print(f"    MRR: {mrr_sum/total_pairs:.3f}")
 
     # ---------------------------------------------------------------------------
     # Test 2: Historical variant spellings (should be > 0.75)
@@ -654,6 +800,7 @@ def main():
     print("    ✓ Script-specific thresholds (vowel-poor scripts get lower thresholds)")
     print("    ✓ Language hints for ambiguous scripts (Greek, Hebrew, Arabic)")
     print("    ✓ Separated phonetic equivalence from semantic equivalence")
+    print("    ✓ Rank-based metrics (Recall@k, MRR) complement absolute thresholds")
     print("    ✓ Per-script performance distributions logged")
     print("=" * 70 + "\n")
 
