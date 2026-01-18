@@ -1004,7 +1004,7 @@ do_generate_pairs() {
 # ==============================================================================
 
 do_train_model() {
-    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE]
+    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume-from CHECKPOINT]
     #
     # Trains the phonetic embedding model in three phases:
     #   Phase 1: Train Teacher (PhoneticEncoder) on triplets with phonetic features
@@ -1015,21 +1015,34 @@ do_train_model() {
     #   VERSION      Data version (default: 4)
     #   START_PHASE  First phase to run (default: 1)
     #   END_PHASE    Last phase to run (default: same as START_PHASE if only 2 args, else 3)
+    #   --resume-from Path to checkpoint file (optional, for resuming interrupted training)
     #
     # Examples:
     #   source es.sh -train-model 4        # Train all 3 phases
     #   source es.sh -train-model 4 1      # Train phase 1 only
     #   source es.sh -train-model 4 2 3    # Train phases 2 and 3 only
     #   source es.sh -train-model 4 3      # Train phase 3 only
+    #   source es.sh -train-model 5 3 --resume-from /path/to/checkpoint.pt  # Resume Phase 3
 
     DATA_VERSION=${1:-4}
     START_PHASE=${2:-1}
-    # If only 2 args provided, END_PHASE = START_PHASE (single phase mode)
-    # If 3 args provided, use the third arg
-    if [ -n "$2" ] && [ -z "$3" ]; then
+
+    # Parse optional --resume-from flag
+    RESUME_FROM=""
+    if [ "$3" = "--resume-from" ]; then
+        RESUME_FROM="$4"
         END_PHASE=$START_PHASE
+    elif [ "$4" = "--resume-from" ]; then
+        END_PHASE=$3
+        RESUME_FROM="$5"
     else
-        END_PHASE=${3:-3}
+        # If only 2 args provided, END_PHASE = START_PHASE (single phase mode)
+        # If 3 args provided, use the third arg
+        if [ -n "$2" ] && [ -z "$3" ]; then
+            END_PHASE=$START_PHASE
+        else
+            END_PHASE=${3:-3}
+        fi
     fi
 
     DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
@@ -1194,7 +1207,8 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --epochs 50 \
-    --batch-size 128
+    --batch-size 128${RESUME_FROM:+ \\
+    --resume-from "${RESUME_FROM}"}
 EOF
 )
             # Extract just the job ID (parsable output may include ";cluster")
@@ -1264,7 +1278,8 @@ python -u -m phonetics.training.train \
     --output-dir "${OUTPUT_DIR}" \
     --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
     --epochs 50 \
-    --batch-size 128
+    --batch-size 128${RESUME_FROM:+ \\
+    --resume-from "${RESUME_FROM}"}
 EOF
 )
             # Extract just the job ID (parsable output may include ";cluster")
@@ -1333,7 +1348,8 @@ python -u -m phonetics.training.train \
     --output-dir "${OUTPUT_DIR}" \
     --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
     --epochs 30 \
-    --batch-size 128
+    --batch-size 512${RESUME_FROM:+ \\
+    --resume-from "${RESUME_FROM}"}
 EOF
 )
             # Extract just the job ID (parsable output may include ";cluster")

@@ -47,7 +47,7 @@ import torch
 import torch.nn as nn
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 
 try:
     from tqdm import tqdm
@@ -199,10 +199,11 @@ PHASE_CONFIGS = {
         'num_workers': 4,
         'prefetch_factor': 2,
     },
-    3: {  # Phase 3: Medium dataset - fine-tuning with hard negatives
+    3: {  # Phase 3: Large dataset (24.8M triplets) - maximize GPU throughput
         'learning_rate': 5e-5,  # 0.00005 - lower rate for fine-tuning
-        'num_workers': 4,
-        'prefetch_factor': 2,
+        'batch_size': 512,     # 4x larger batch for better GPU utilization
+        'num_workers': 8,      # More workers for large dataset
+        'prefetch_factor': 4,  # Higher prefetch for sustained throughput
     },
 }
 
@@ -249,7 +250,7 @@ def train_phase1(
     )
 
     # Create GradScaler for mixed precision training
-    scaler = GradScaler() if 'cuda' in device else None
+    scaler = GradScaler('cuda') if 'cuda' in device else None
 
     # Resume if specified
     start_epoch = 0
@@ -304,7 +305,7 @@ def train_phase1(
             neg_lens = batch['negative_lengths']
 
             # Forward pass with mixed precision
-            with autocast(enabled=(scaler is not None)):
+            with autocast('cuda', enabled=(scaler is not None)):
                 anchor_emb = teacher(anchor_feats, anchor_lens)
                 pos_emb = teacher(pos_feats, pos_lens)
                 neg_emb = teacher(neg_feats, neg_lens)
@@ -384,7 +385,7 @@ def evaluate_phase1(
             neg_feats = batch['negative_features'].to(device)
             neg_lens = batch['negative_lengths']
 
-            with autocast(enabled=('cuda' in device)):
+            with autocast('cuda', enabled=('cuda' in device)):
                 anchor_emb = model(anchor_feats, anchor_lens)
                 pos_emb = model(pos_feats, pos_lens)
                 neg_emb = model(neg_feats, neg_lens)
@@ -464,7 +465,7 @@ def train_phase2(
     )
 
     # Create GradScaler for mixed precision training
-    scaler = GradScaler() if 'cuda' in device else None
+    scaler = GradScaler('cuda') if 'cuda' in device else None
 
     # Resume if specified
     start_epoch = 0
@@ -533,7 +534,7 @@ def train_phase2(
                 teacher_emb = teacher(features, feature_lengths)
 
             # Get Student embeddings with mixed precision
-            with autocast(enabled=(scaler is not None)):
+            with autocast('cuda', enabled=(scaler is not None)):
                 student_emb = student(char_ids, script_ids, lang_ids, char_lengths)
 
                 # Compute loss
@@ -689,15 +690,16 @@ def train_phase3(
     load_checkpoint(student_checkpoint, student, device=device)
     logger.info("Loaded Student from Phase 2")
 
-    # Create optimizer (lower learning rate for fine-tuning)
+    # Create optimizer
+    # Note: Phase 3 learning rate is already reduced in PHASE_CONFIGS (5e-5 vs 1e-4)
     optimizer = AdamW(
         student.parameters(),
-        lr=config['learning_rate'] * 0.1,
+        lr=config['learning_rate'],
         weight_decay=config['weight_decay'],
     )
 
     # Create GradScaler for mixed precision training
-    scaler = GradScaler() if 'cuda' in device else None
+    scaler = GradScaler('cuda') if 'cuda' in device else None
 
     # Resume if specified
     start_epoch = 0
@@ -763,7 +765,7 @@ def train_phase3(
             neg_langs = batch['negative_lang_ids'].to(device)
 
             # Forward pass with mixed precision
-            with autocast(enabled=(scaler is not None)):
+            with autocast('cuda', enabled=(scaler is not None)):
                 anchor_emb = student(anchor_chars, anchor_scripts, anchor_langs, anchor_lens)
                 pos_emb = student(pos_chars, pos_scripts, pos_langs, pos_lens)
                 neg_emb = student(neg_chars, neg_scripts, neg_langs, neg_lens)
