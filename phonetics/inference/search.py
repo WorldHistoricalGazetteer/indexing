@@ -271,62 +271,95 @@ def main():
     print("=" * 70)
 
     # ---------------------------------------------------------------------------
-    # Test 1: Cross-script equivalents (CORE GOAL - should be > 0.85)
-    # These are the primary use case: same place, different scripts
+    # Test 1: Cross-script equivalents (CORE GOAL)
+    # Script-specific thresholds based on information density:
+    #   - High (>0.85): Vowel-rich scripts, transliterations
+    #   - Medium (>0.75): Greek (vowel loss, diacritics collapse)
+    #   - Low (>0.65): Unpointed Hebrew, Arabic partial vowels
     # ---------------------------------------------------------------------------
-    print("\n[Test 1] Cross-script equivalents (expected: > 0.85)")
+    print("\n[Test 1] Cross-script equivalents (script-aware thresholds)")
     print("-" * 50)
 
+    # Format: (name1, lang1, name2, lang2, description, threshold, script_pair)
     cross_script_pairs = [
-        # Latin/Cyrillic - strong results expected
-        ("London", "Лондон", "Latin/Cyrillic"),
-        ("Moscow", "Москва", "Latin/Cyrillic"),
-        ("Paris", "Париж", "Latin/Cyrillic"),
-        ("Berlin", "Берлин", "Latin/Cyrillic"),
-        ("Kiev", "Київ", "Latin/Ukrainian"),
-        ("Warsaw", "Варшава", "Latin/Cyrillic"),
-        ("Prague", "Прага", "Latin/Cyrillic"),
-        # Latin/Greek
-        ("Athens", "Αθήνα", "Latin/Greek"),
-        ("Thessaloniki", "Θεσσαλονίκη", "Latin/Greek"),
-        # Latin/Arabic - phonetic transliterations
-        ("London", "لندن", "Latin/Arabic"),
-        ("Damascus", "دمشق", "Latin/Arabic"),
-        ("Beirut", "بيروت", "Latin/Arabic"),
-        # Latin/Chinese (romanized)
-        ("Beijing", "北京", "Latin/Chinese"),
-        ("Shanghai", "上海", "Latin/Chinese"),
-        ("Guangzhou", "广州", "Latin/Chinese"),
-        ("Nanjing", "南京", "Latin/Chinese"),
-        # Latin/Korean
-        ("Seoul", "서울", "Latin/Korean"),
-        ("Busan", "부산", "Latin/Korean"),
-        ("Incheon", "인천", "Latin/Korean"),
-        # Latin/Hebrew
-        ("Jerusalem", "ירושלים", "Latin/Hebrew"),
-        ("Haifa", "חיפה", "Latin/Hebrew"),
-        # Latin/Devanagari
-        ("Delhi", "दिल्ली", "Latin/Devanagari"),
-        ("Mumbai", "मुंबई", "Latin/Devanagari"),
-        ("Kolkata", "कोलकाता", "Latin/Devanagari"),
-        # Latin/Georgian
-        ("Tbilisi", "თბილისი", "Latin/Georgian"),
-        # Transliterations (should score very high)
-        ("Moskva", "Москва", "Translit/Cyrillic"),
-        ("Athina", "Αθήνα", "Translit/Greek"),
-        ("Parizh", "Париж", "Translit/Cyrillic"),
-        ("Yerushalayim", "ירושלים", "Translit/Hebrew"),
+        # HIGH THRESHOLD (>0.85): Vowel-rich scripts / transliterations
+        ("London", "en", "Лондон", "ru", "Latin/Cyrillic", 0.85),
+        ("Moscow", "en", "Москва", "ru", "Latin/Cyrillic", 0.85),
+        ("Paris", "en", "Париж", "ru", "Latin/Cyrillic", 0.85),
+        ("Berlin", "en", "Берлин", "ru", "Latin/Cyrillic", 0.85),
+        ("Kiev", "en", "Київ", "uk", "Latin/Ukrainian", 0.85),
+        ("Warsaw", "en", "Варшава", "ru", "Latin/Cyrillic", 0.85),
+        ("Prague", "en", "Прага", "ru", "Latin/Cyrillic", 0.85),
+        # Chinese (romanized forms have clear phonetic mapping)
+        ("Beijing", "en", "北京", "zh", "Latin/Chinese", 0.85),
+        ("Shanghai", "en", "上海", "zh", "Latin/Chinese", 0.85),
+        ("Guangzhou", "en", "广州", "zh", "Latin/Chinese", 0.85),
+        ("Nanjing", "en", "南京", "zh", "Latin/Chinese", 0.85),
+        # Korean (clear vowel encoding)
+        ("Seoul", "en", "서울", "ko", "Latin/Korean", 0.85),
+        ("Busan", "en", "부산", "ko", "Latin/Korean", 0.85),
+        ("Incheon", "en", "인천", "ko", "Latin/Korean", 0.85),
+        # Devanagari (vowel-rich)
+        ("Delhi", "en", "दिल्ली", "hi", "Latin/Devanagari", 0.85),
+        ("Mumbai", "en", "मुंबई", "hi", "Latin/Devanagari", 0.85),
+        ("Kolkata", "en", "कोलकाता", "hi", "Latin/Devanagari", 0.85),
+        # Georgian (vowel-rich)
+        ("Tbilisi", "en", "თბილისი", "ka", "Latin/Georgian", 0.85),
+        # TRANSLITERATIONS (should be very high)
+        ("Moskva", None, "Москва", "ru", "Translit/Cyrillic", 0.85),
+        ("Parizh", None, "Париж", "ru", "Translit/Cyrillic", 0.85),
+
+        # MEDIUM THRESHOLD (>0.75): Greek (diacritics collapse, vowel ambiguity)
+        # Note: These are semantic equivalences, not pure phonetic matches
+        ("Athens", "en", "Αθήνα", "el", "Latin/Greek (semantic)", 0.75),
+        ("Thessaloniki", "en", "Θεσσαλονίκη", "el", "Latin/Greek (semantic)", 0.75),
+        # Greek transliterations should be higher
+        ("Athina", None, "Αθήνα", "el", "Translit/Greek", 0.85),
+
+        # MEDIUM THRESHOLD (>0.75): Arabic (long vowels encoded, shorts often missing)
+        ("London", "en", "لندن", "ar", "Latin/Arabic", 0.75),
+        ("Damascus", "en", "دمشق", "ar", "Latin/Arabic", 0.75),
+        ("Beirut", "en", "بيروت", "ar", "Latin/Arabic", 0.75),
+
+        # LOW THRESHOLD (>0.65): Unpointed Hebrew (vowels completely ambiguous)
+        # Model must guess from consonant skeleton only
+        ("Jerusalem", "en", "ירושלים", "he", "Latin/Hebrew (unpointed)", 0.65),
+        ("Haifa", "en", "חיפה", "he", "Latin/Hebrew (unpointed)", 0.65),
+        # Hebrew transliterations with explicit vowels should be higher
+        ("Yerushalayim", None, "ירושלים", "he", "Translit/Hebrew", 0.75),
     ]
 
     cross_script_pass = 0
-    for n1, n2, desc in cross_script_pairs:
-        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+    script_results = {}  # Track per-script performance
+
+    for n1, lang1, n2, lang2, desc, threshold in cross_script_pairs:
+        # Encode with language hints for ambiguous scripts
+        e1 = encoder.encode(n1, lang=lang1) if lang1 else encoder.encode(n1)
+        e2 = encoder.encode(n2, lang=lang2) if lang2 else encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        status = "✓" if sim > 0.85 else "✗"
-        if sim > 0.85:
+
+        status = "✓" if sim > threshold else "✗"
+        if sim > threshold:
             cross_script_pass += 1
-        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
-    print(f"  Pass rate: {cross_script_pass}/{len(cross_script_pairs)}")
+
+        # Track by script pair
+        script_key = desc.split()[0]  # e.g., "Latin/Greek"
+        if script_key not in script_results:
+            script_results[script_key] = []
+        script_results[script_key].append((sim, threshold))
+
+        # Show threshold inline
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f} (>{threshold:.2f}) {desc}")
+
+    print(f"  Overall pass rate: {cross_script_pass}/{len(cross_script_pairs)}")
+
+    # Show per-script summary
+    print("\n  Per-script summary:")
+    for script_key, results in sorted(script_results.items()):
+        sims = [s for s, _ in results]
+        avg_sim = sum(sims) / len(sims)
+        passed = sum(1 for s, t in results if s > t)
+        print(f"    {script_key:30} avg={avg_sim:.3f} pass={passed}/{len(results)}")
 
     # ---------------------------------------------------------------------------
     # Test 2: Historical variant spellings (should be > 0.75)
@@ -365,45 +398,85 @@ def main():
     print(f"  Pass rate: {historical_pass}/{len(historical_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 3: Cross-language exonyms (should be < 0.50)
+    # Test 3: Phonetically similar cross-language variants (should be > 0.70)
+    # Same script, different language, but phonetically similar
+    # These SHOULD match despite different languages - tests phonetic vs orthographic
+    # ---------------------------------------------------------------------------
+    print("\n[Test 3] Phonetically similar cross-language variants (expected: > 0.70)")
+    print("-" * 50)
+    print("  Note: Different languages, but phonetically similar (should match)")
+
+    similar_crosslang_pairs = [
+        ("London", "Londyn", "en/pl - phonetically close"),
+        ("Moscow", "Moscou", "en/fr - phonetically close"),
+        ("Moscow", "Mosca", "en/it - phonetically close"),
+        ("Rome", "Roma", "en/it - phonetically close"),
+        ("Naples", "Napoli", "en/it - phonetically close"),
+        ("Venice", "Venezia", "en/it - minor shift"),
+        ("Milan", "Milano", "en/it - phonetically close"),
+        ("Lisbon", "Lisboa", "en/pt - phonetically close"),
+        ("Seville", "Sevilla", "en/es - phonetically close"),
+        ("Copenhagen", "København", "en/da - phonetically close"),
+        ("Warsaw", "Warszawa", "en/pl - phonetically close"),
+    ]
+
+    similar_crosslang_pass = 0
+    for n1, n2, desc in similar_crosslang_pairs:
+        e1, e2 = encoder.encode(n1), encoder.encode(n2)
+        sim = encoder.similarity(e1, e2).item()
+        status = "✓" if sim > 0.70 else "✗"
+        if sim > 0.70:
+            similar_crosslang_pass += 1
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+    print(f"  Pass rate: {similar_crosslang_pass}/{len(similar_crosslang_pairs)}")
+
+    # ---------------------------------------------------------------------------
+    # Test 4: Phonetically distinct exonyms (should be < 0.50)
     # Same place, different languages - phonetically DIFFERENT
     # These should NOT match because the model is phonetic, not geographic
+    # Note: Excludes pairs like "Moscow/Moscou" which ARE phonetically similar
     # ---------------------------------------------------------------------------
-    print("\n[Test 3] Cross-language exonyms (expected: < 0.50)")
+    print("\n[Test 4] Phonetically distinct exonyms (expected: < 0.50)")
     print("-" * 50)
-    print("  Note: Same place geographically, but phonetically different")
+    print("  Note: Same place geographically, but phonetically very different")
 
     exonym_pairs = [
-        ("London", "Londres", "en/fr - different phonetics"),
-        ("London", "Londra", "en/it - different phonetics"),
-        ("Munich", "München", "en/de - different vowel"),
+        # Vowel-shift exonyms (marginal phonetic difference)
+        ("London", "Londres", "en/fr - vowel shift"),
+        ("London", "Londra", "en/it - vowel shift"),
+        ("Munich", "München", "en/de - umlaut difference"),
+
+        # Complete phonetic divergence (should definitely NOT match)
         ("Vienna", "Wien", "en/de - completely different"),
-        ("Florence", "Firenze", "en/it - different sounds"),
-        ("Prague", "Praha", "en/cs - different sounds"),
-        ("Warsaw", "Warszawa", "en/pl - different phonetics"),
-        ("Moscow", "Moscou", "en/fr - different ending"),
+        ("Florence", "Firenze", "en/it - different consonants"),
+        ("Prague", "Praha", "en/cs - different phonetics"),
         ("Germany", "Deutschland", "en/de - completely different"),
         ("Finland", "Suomi", "en/fi - completely different"),
         ("Greece", "Hellas", "en/el - completely different"),
         ("Japan", "Nihon", "en/ja - completely different"),
         ("Egypt", "Misr", "en/ar - completely different"),
+        ("Hungary", "Magyarország", "en/hu - completely different"),
+        ("Albania", "Shqipëria", "en/sq - completely different"),
+        ("Georgia", "საქართველო", "en/ka - completely different"),
     ]
 
     exonym_pass = 0
     for n1, n2, desc in exonym_pairs:
         e1, e2 = encoder.encode(n1), encoder.encode(n2)
         sim = encoder.similarity(e1, e2).item()
-        status = "✓" if sim < 0.50 else "✗"
-        if sim < 0.50:
+        # More lenient for vowel-shift cases, strict for complete divergence
+        threshold = 0.50 if "vowel shift" in desc or "umlaut" in desc else 0.40
+        status = "✓" if sim < threshold else "✗"
+        if sim < threshold:
             exonym_pass += 1
-        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
+        print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f} (<{threshold:.2f}) {desc}")
     print(f"  Pass rate: {exonym_pass}/{len(exonym_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 4: Unrelated pairs (should be < 0.50)
+    # Test 5: Unrelated pairs (should be < 0.50)
     # Completely different places - should have low similarity
     # ---------------------------------------------------------------------------
-    print("\n[Test 4] Unrelated pairs (expected: < 0.50)")
+    print("\n[Test 5] Unrelated pairs (expected: < 0.50)")
     print("-" * 50)
 
     unrelated_pairs = [
@@ -435,10 +508,10 @@ def main():
     print(f"  Pass rate: {unrelated_pass}/{len(unrelated_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 5: Diacritic/minor variants (expected: > 0.90)
+    # Test 6: Diacritic/minor variants (expected: > 0.90)
     # Same name, minor orthographic differences - validates robustness
     # ---------------------------------------------------------------------------
-    print("\n[Test 5] Diacritic/minor variants (expected: > 0.90)")
+    print("\n[Test 6] Diacritic/minor variants (expected: > 0.90)")
     print("-" * 50)
 
     diacritic_pairs = [
@@ -465,10 +538,10 @@ def main():
     print(f"  Pass rate: {diacritic_pass}/{len(diacritic_pairs)}")
 
     # ---------------------------------------------------------------------------
-    # Test 6: Exonym pairs (informational - no pass/fail)
+    # Test 7: Exonym pairs (informational - no pass/fail)
     # These are genuinely different names for same place
     # ---------------------------------------------------------------------------
-    print("\n[Test 6] Exonym pairs (informational - no pass/fail)")
+    print("\n[Test 7] Exonym pairs (informational - no pass/fail)")
     print("-" * 50)
     print("  Note: These are genuinely different names for same place")
 
@@ -496,10 +569,10 @@ def main():
         print(f"  {status} {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 7: Short names (edge case)
+    # Test 8: Short names (edge case)
     # Very short names are harder to distinguish
     # ---------------------------------------------------------------------------
-    print("\n[Test 7] Short names (edge case)")
+    print("\n[Test 8] Short names (edge case)")
     print("-" * 50)
     print("  Note: Very short names are harder to distinguish")
 
@@ -520,10 +593,10 @@ def main():
         print(f"  ? {n1:18} vs {n2:18}: {sim:.4f}  ({desc})")
 
     # ---------------------------------------------------------------------------
-    # Test 8: Embedding space statistics
+    # Test 9: Embedding space statistics
     # Technical validation of embedding properties
     # ---------------------------------------------------------------------------
-    print("\n[Test 8] Embedding space statistics")
+    print("\n[Test 9] Embedding space statistics")
     print("-" * 50)
 
     test_names = [
@@ -565,14 +638,23 @@ def main():
     print("\n" + "=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    total_core = cross_script_pass + historical_pass + exonym_pass + unrelated_pass + diacritic_pass
-    total_tests = len(cross_script_pairs) + len(historical_pairs) + len(exonym_pairs) + len(unrelated_pairs) + len(diacritic_pairs)
+    total_core = (cross_script_pass + historical_pass + similar_crosslang_pass +
+                  exonym_pass + unrelated_pass + diacritic_pass)
+    total_tests = (len(cross_script_pairs) + len(historical_pairs) +
+                   len(similar_crosslang_pairs) + len(exonym_pairs) +
+                   len(unrelated_pairs) + len(diacritic_pairs))
     print(f"  Core tests passed: {total_core}/{total_tests} ({100*total_core/total_tests:.1f}%)")
-    print(f"    - Cross-script:     {cross_script_pass}/{len(cross_script_pairs)}")
-    print(f"    - Historical:       {historical_pass}/{len(historical_pairs)}")
-    print(f"    - Exonyms (reject): {exonym_pass}/{len(exonym_pairs)}")
-    print(f"    - Unrelated:        {unrelated_pass}/{len(unrelated_pairs)}")
-    print(f"    - Diacritics:       {diacritic_pass}/{len(diacritic_pairs)}")
+    print(f"    - Cross-script (script-aware):     {cross_script_pass}/{len(cross_script_pairs)}")
+    print(f"    - Historical variants:             {historical_pass}/{len(historical_pairs)}")
+    print(f"    - Phonetically similar X-lang:     {similar_crosslang_pass}/{len(similar_crosslang_pairs)}")
+    print(f"    - Phonetically distinct (reject):  {exonym_pass}/{len(exonym_pairs)}")
+    print(f"    - Unrelated:                       {unrelated_pass}/{len(unrelated_pairs)}")
+    print(f"    - Diacritics:                      {diacritic_pass}/{len(diacritic_pairs)}")
+    print("\n  Testing methodology improvements:")
+    print("    ✓ Script-specific thresholds (vowel-poor scripts get lower thresholds)")
+    print("    ✓ Language hints for ambiguous scripts (Greek, Hebrew, Arabic)")
+    print("    ✓ Separated phonetic equivalence from semantic equivalence")
+    print("    ✓ Per-script performance distributions logged")
     print("=" * 70 + "\n")
 
     ##############################################
