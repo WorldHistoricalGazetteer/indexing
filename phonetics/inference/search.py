@@ -31,7 +31,11 @@ from pathlib import Path
 import torch
 
 from phonetics.utils.script_detection import detect_script
-from processing.settings import ES_HOST
+try:
+    from processing.settings import ES_HOST
+except ImportError:
+    print("Elasticsearch is not running. Skipping ES connection.")
+    ES_HOST = None
 
 try:
     from elasticsearch import Elasticsearch
@@ -237,16 +241,17 @@ def main():
 
     args = parser.parse_args()
 
-    # Connect to ES
-    es = Elasticsearch(
-        args.es_host,
-        request_timeout=120,
-        retry_on_timeout=True,
-        max_retries=3
-    )
-    if not es.ping():
-        logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
-        sys.exit(1)
+    if ES_HOST:
+        # Connect to ES
+        es = Elasticsearch(
+            args.es_host,
+            request_timeout=120,
+            retry_on_timeout=True,
+            max_retries=3
+        )
+        if not es.ping():
+            logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
+            sys.exit(1)
 
     # Load encoder
     logger.info(f"Loading model from {args.checkpoint}")
@@ -620,23 +625,24 @@ def main():
 
     ##############################################
 
-    # Run search
-    if args.query:
-        single_search(
-            encoder=encoder,
-            es=es,
-            query=args.query,
-            lang=args.lang,
-            index=args.index,
-            top_k=args.top_k,
-        )
-    else:
-        interactive_search(
-            encoder=encoder,
-            es=es,
-            index=args.index,
-            top_k=args.top_k,
-        )
+    if ES_HOST:
+        # Run search
+        if args.query:
+            single_search(
+                encoder=encoder,
+                es=es,
+                query=args.query,
+                lang=args.lang,
+                index=args.index,
+                top_k=args.top_k,
+            )
+        else:
+            interactive_search(
+                encoder=encoder,
+                es=es,
+                index=args.index,
+                top_k=args.top_k,
+            )
 
 
 if __name__ == '__main__':
