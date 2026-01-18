@@ -242,6 +242,8 @@ def run_evaluation(
         baselines_only: bool = False,
         diagnose: bool = False,
         use_thresholds: bool = False,
+        skip_baselines: bool = True,
+        phase: int = None,
 ):
     """
     Run MEHDIE benchmark evaluation.
@@ -251,6 +253,10 @@ def run_evaluation(
 
     Use --use-thresholds for threshold-based F-5 evaluation (for comparison with
     the original MEHDIE paper results).
+
+    Args:
+        skip_baselines: If True (default), skip Levenshtein and Jaro-Winkler tests.
+                       Use --include-baselines to run them.
     """
 
     if thresholds is None:
@@ -260,8 +266,10 @@ def run_evaluation(
     print("MEHDIE BENCHMARK EVALUATION")
     print("=" * 80)
     print(f"Testsets directory: {testsets_dir}")
-    print(f"Model checkpoint: {checkpoint_path or 'None (baselines only)'}")
+    phase_label = f" (Phase {phase})" if phase else ""
+    print(f"Model checkpoint: {checkpoint_path or 'None (baselines only)'}{phase_label}")
     print(f"Evaluation mode: {'Threshold-based (F-5)' if use_thresholds else 'Ranking-based (Recall@K, MRR)'}")
+    print(f"Baselines: {'Skipped' if skip_baselines else 'Included (Levenshtein, Jaro-Winkler)'}")
     print(f"Device: {device}")
     print()
 
@@ -276,9 +284,10 @@ def run_evaluation(
     methods = {}
     embedding_caches = {}  # For fast matrix-based evaluation
 
-    # Always include baselines
-    methods['Levenshtein'] = levenshtein_similarity
-    methods['Jaro-Winkler'] = jaro_winkler_similarity
+    # Include baselines only if requested
+    if not skip_baselines:
+        methods['Levenshtein'] = levenshtein_similarity
+        methods['Jaro-Winkler'] = jaro_winkler_similarity
 
     # Add Symphonym model if not baselines-only
     if not baselines_only and checkpoint_path:
@@ -518,11 +527,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # Run with auto-detected latest model
+    # Run with auto-detected latest model (Phase 3 by default)
     python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets
 
+    # Test Phase 2 (pre-fine-tuning) to see if it performs better on cross-script matching
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --phase 2
+
     # Run with specific version
-    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v3
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v5
+
+    # Compare Phase 2 vs Phase 3 for version v5
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v5 --phase 2
+    python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --version v5 --phase 3
 
     # Run baselines only
     python -m testing.run_mehdie_evaluation --testsets testing/mehdie-testsets --baselines-only
@@ -543,6 +559,11 @@ Examples:
     parser.add_argument(
         '--checkpoint',
         help='Path to model checkpoint (overrides --version)'
+    )
+    parser.add_argument(
+        '--phase', type=int, choices=[1, 2, 3],
+        help='Which phase checkpoint to use (1=Teacher, 2=Student, 3=Fine-tuned). '
+             'Default is 3 (phase3_best.pt). Use 2 to test pre-fine-tuning performance.'
     )
     parser.add_argument(
         '--vocab-dir',
@@ -574,6 +595,11 @@ Examples:
         help='Use threshold-based F-5 evaluation (for comparison with MEHDIE paper). '
              'Default is ranking-based evaluation (Recall@K, MRR).'
     )
+    parser.add_argument(
+        '--include-baselines', action='store_true',
+        help='Include baseline methods (Levenshtein, Jaro-Winkler). '
+             'By default, baselines are skipped to save time.'
+    )
 
     args = parser.parse_args()
 
@@ -588,7 +614,17 @@ Examples:
         vocab_dir = args.vocab_dir or str(Path(args.checkpoint).parent.parent / 'data' / Path(args.checkpoint).parent.name / 'vocab')
     elif not args.baselines_only:
         version = args.version or get_latest_version(checkpoints_base)
-        checkpoint_path = f'{checkpoints_base}/{version}/phase3_best.pt'
+
+        # Determine which phase checkpoint to use
+        phase = args.phase or 3  # Default to phase 3 (fine-tuned)
+        if phase == 1:
+            checkpoint_name = 'teacher_best.pt'
+        elif phase == 2:
+            checkpoint_name = 'phase2_best.pt'
+        else:  # phase == 3
+            checkpoint_name = 'phase3_best.pt'
+
+        checkpoint_path = f'{checkpoints_base}/{version}/{checkpoint_name}'
         vocab_dir = f'{data_base}/{version}/vocab'
 
         # Check if checkpoint exists
@@ -612,6 +648,8 @@ Examples:
         baselines_only=args.baselines_only,
         diagnose=args.diagnose,
         use_thresholds=args.use_thresholds,
+        skip_baselines=not args.include_baselines,
+        phase=args.phase,
     )
 
 

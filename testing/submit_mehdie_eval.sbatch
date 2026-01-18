@@ -28,7 +28,9 @@ cd /ix1/whcdh/elastic
 
 # Run evaluation with CPU
 # Note: Uses ranking-based metrics (Recall@K, MRR) by default
+# Baselines (Levenshtein, Jaro-Winkler) are SKIPPED by default
 # Add --use-thresholds for F-5 comparison with MEHDIE paper
+# Add --include-baselines to also run Levenshtein and Jaro-Winkler tests
 python -m testing.run_mehdie_evaluation \
     --testsets testing/mehdie-testsets \
     --version v5 \
