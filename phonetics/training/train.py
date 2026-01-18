@@ -880,7 +880,8 @@ def main():
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--phase', type=int, required=True, choices=[1, 2, 3])
     parser.add_argument('--epochs', type=int, default=50)
-    parser.add_argument('--batch-size', type=int, default=128)
+    parser.add_argument('--batch-size', type=int, default=None,
+                        help='Batch size (if not set, uses phase-specific defaults)')
     parser.add_argument('--learning-rate', type=float, default=None,
                         help='Learning rate (if not set, uses phase-specific defaults)')
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu')
@@ -903,7 +904,9 @@ def main():
         config.update(PHASE_CONFIGS[args.phase])
 
     # Override with command line args (only if explicitly set)
-    config['batch_size'] = args.batch_size
+    if args.batch_size is not None:
+        config['batch_size'] = args.batch_size
+        logger.info(f"Using command-line batch size: {args.batch_size}")
     if args.learning_rate is not None:
         config['learning_rate'] = args.learning_rate
         logger.info(f"Using command-line learning rate: {args.learning_rate}")

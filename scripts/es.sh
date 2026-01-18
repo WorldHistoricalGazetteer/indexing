@@ -1206,8 +1206,7 @@ python -u -m phonetics.training.train \
     --phase 1 \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
-    --epochs 50 \
-    --batch-size 128${RESUME_FROM:+ \\
+    --epochs 50${RESUME_FROM:+ \\
     --resume-from "${RESUME_FROM}"}
 EOF
 )
@@ -1277,8 +1276,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
-    --epochs 50 \
-    --batch-size 128${RESUME_FROM:+ \\
+    --epochs 50${RESUME_FROM:+ \\
     --resume-from "${RESUME_FROM}"}
 EOF
 )
@@ -1347,8 +1345,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
-    --epochs 30 \
-    --batch-size 512${RESUME_FROM:+ \\
+    --epochs 30${RESUME_FROM:+ \\
     --resume-from "${RESUME_FROM}"}
 EOF
 )
