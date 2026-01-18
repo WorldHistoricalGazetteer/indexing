@@ -27,9 +27,11 @@ conda activate whg
 cd /ix1/whcdh/elastic
 
 # Run evaluation with CPU
+# Note: Uses ranking-based metrics (Recall@K, MRR) by default
+# Add --use-thresholds for F-5 comparison with MEHDIE paper
 python -m testing.run_mehdie_evaluation \
     --testsets testing/mehdie-testsets \
-    --version v3 \
+    --version v5 \
     --device cpu \
     --output /ix1/whcdh/es/staging-logs/mehdie_results_${SLURM_JOB_ID}.json
 
