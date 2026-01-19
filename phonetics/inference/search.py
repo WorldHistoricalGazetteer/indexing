@@ -518,7 +518,7 @@ def main():
 
     historical_pairs = [
         ("Hampstead", "Hamsted", "dropped p"),
-        ("Christchurch", "Cristechurch", "i/h variation"),
+        ("Christchurch", "Cristechirche", "i/h variation"),
         ("Edinburgh", "Edinborough", "burgh/borough"),
         ("Shrewsbury", "Shrowesbury", "vowel shift"),
         ("Worcester", "Worcestre", "medieval -re"),
