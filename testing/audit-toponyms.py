@@ -231,39 +231,40 @@ SCRIPT_MAP = {
     "SINHALA": "Sinh"
 }
 
+REVERSE_SCRIPT_MAP = {v.upper(): k for k, v in SCRIPT_MAP.items()}
+
 
 def get_iso_identity(raw_code, script):
-    """
-    Normalizes the identity.
-    Returns: (name, iso3, was_inferred)
-    """
-    # 1. Determine if we need to default based on script
-    code_to_lookup = raw_code
     inferred = False
 
-    is_und = not raw_code or raw_code == 'und' or len(raw_code) not in [2, 3]
+    # Normalise script FIRST
+    script_norm = None
+    if script:
+        script_norm = script.upper()
+        script_norm = REVERSE_SCRIPT_MAP.get(script_norm, script_norm)
 
-    if is_und and script in SCRIPT_DEFAULTS:
-        iso3 = SCRIPT_DEFAULTS[script]
-        name = iso3.upper() + " (script default)"
-        return (name, iso3, True)
-    elif is_und:
+    is_und = raw_code in (None, "", "und") or (isinstance(raw_code, str) and len(raw_code) not in (2, 3))
+
+    if is_und and script_norm in SCRIPT_DEFAULTS:
+        iso3 = SCRIPT_DEFAULTS[script_norm]
+        return (iso3.upper() + " (script default)", iso3, True)
+
+    # Fallbacks unchanged
+    if not raw_code:
         return ("Undetermined", "und", False)
 
-    # 2. Perform ISO lookup
     try:
-        lang_obj = None
-        if len(code_to_lookup) == 2:
-            lang_obj = pycountry.languages.get(alpha_2=code_to_lookup.lower())
-        elif len(code_to_lookup) == 3:
-            lang_obj = pycountry.languages.get(alpha_3=code_to_lookup.lower())
-
-        if lang_obj:
-            return (lang_obj.name, lang_obj.alpha_3, inferred)
+        if len(raw_code) == 2:
+            lang = pycountry.languages.get(alpha_2=raw_code.lower())
+        else:
+            lang = pycountry.languages.get(alpha_3=raw_code.lower())
+        if lang:
+            return (lang.name, lang.alpha_3, False)
     except:
         pass
 
     return ("Undetermined", "und", False)
+
 
 
 def fetch_and_aggregate():
