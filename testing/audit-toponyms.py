@@ -333,15 +333,20 @@ def audit_report():
     rows = []
 
     for (iso3, script), info in aggregated_data.items():
-        script_iso = SCRIPT_MAP.get(script.upper(), script.capitalize()[:4]) if script else "None"
+        script_norm = SCRIPT_MAP.get((script or "").upper(), script or "None")
 
         epitran_key = "None"
         if iso3 != "und":
-            test_key = f"{iso3}-{script_iso}"
+            test_key = f"{iso3}-{script_norm}"
+
+            # Special case: Japanese with CJK script → Hiragana
+            if iso3 == "jpn" and script_norm == "CJK":
+                test_key = "jpn-Hira"
+
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
-            # Special case for CJK
-            elif iso3 == "zho" and (script or "").upper() == "CJK":
+            # Special case for Chinese
+            elif iso3 == "zho" and script_norm == "CJK":
                 epitran_key = "cmn-Hans"
 
         # Determine Status
