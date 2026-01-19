@@ -1,6 +1,8 @@
 import json
 import duckdb
 import os
+from elasticsearch import Elasticsearch
+from processing.settings import ES_HOST
 
 # Paths
 VOCAB_PATH = '/ix1/whcdh/models/phonetic/data/v5/vocab/script_vocab.json'
@@ -83,3 +85,72 @@ cross_query = f"""
 cross_count = con.execute(cross_query).fetchone()[0]
 print("-" * 60)
 print(f"Total Cross-Script Pairs: {cross_count:,}")
+
+# 6. Check Elasticsearch for missing scripts
+print("\n" + "=" * 60)
+print("ELASTICSEARCH PANPHON EMBEDDING CHECK")
+print("=" * 60)
+
+try:
+    es = Elasticsearch([ES_HOST], timeout=30)
+    print(f"Connected to ES at: {ES_HOST}")
+
+    if missing_scripts:
+        print("\nChecking missing scripts in ES 'toponyms' index...")
+        print("(Looking for toponyms WITH panphon_embedding)")
+
+        for script in missing_scripts:
+            # Count toponyms with this script that HAVE panphon embeddings
+            query = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"script": script}},
+                            {"exists": {"field": "panphon_embedding"}}
+                        ]
+                    }
+                }
+            }
+
+            try:
+                result = es.count(index="toponyms", body=query)
+                count = result['count']
+
+                if count > 0:
+                    print(f"  ✓ {script:15} - {count:,} toponyms WITH panphon_embedding")
+
+                    # Get a sample to see what languages are present
+                    sample = es.search(
+                        index="toponyms",
+                        body={
+                            "query": query["query"],
+                            "size": 5,
+                            "_source": ["name", "lang", "script"]
+                        }
+                    )
+
+                    if sample['hits']['hits']:
+                        langs = set(hit['_source'].get('lang', 'unknown') for hit in sample['hits']['hits'])
+                        print(f"      Languages: {', '.join(sorted(langs))}")
+                        print(f"      Sample: {sample['hits']['hits'][0]['_source']['name']}")
+                else:
+                    print(f"  ✗ {script:15} - 0 toponyms with panphon_embedding")
+
+            except Exception as e:
+                print(f"  ERROR checking {script}: {e}")
+
+    # Also check total counts for missing scripts (with or without embeddings)
+    print("\n" + "-" * 60)
+    print("Total toponyms per missing script (regardless of panphon):")
+    for script in missing_scripts:
+        query = {"query": {"term": {"script": script}}}
+        try:
+            result = es.count(index="toponyms", body=query)
+            count = result['count']
+            print(f"  {script:15} - {count:,} total toponyms")
+        except Exception as e:
+            print(f"  {script:15} - ERROR: {e}")
+
+except Exception as e:
+    print(f"Failed to connect to Elasticsearch: {e}")
+    print("Skipping ES checks.")
