@@ -12,7 +12,7 @@ from elasticsearch import Elasticsearch
 from prettytable import PrettyTable
 
 from processing.settings import ES_HOST
-# es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST)
 
 # Official Epitran mapping list
 EPITRAN_SUPPORTED = {
@@ -219,7 +219,8 @@ def get_iso3_from_iso1(iso1_code):
 
 def get_iso_info(code):
     """Validates code and returns (English Name, ISO-3 version)."""
-    if code == 'und': return ("Undetermined", "und")
+    if not code or code == 'und' or len(code) not in [2, 3]:
+        return ("Undetermined", "und")
     try:
         lang_obj = None
         if len(code) == 2:
@@ -231,113 +232,95 @@ def get_iso_info(code):
             return (lang_obj.name, lang_obj.alpha_3)
     except:
         pass
-    return (None, None)
+    return ("Undetermined", "und")  # ROGUE defaults to und
 
 
 def fetch_pairs():
-    print(f"Fetching aggregations from {ES_HOST} (with extended timeout)...")
-
-    # Increase timeout to 60 seconds and disable request retries on timeout
-    es_client = Elasticsearch(
-        ES_HOST,
-        request_timeout=60,
-        retry_on_timeout=False
-    )
-
+    print(f"Fetching aggregations from {ES_HOST}...")
     query = {
         "size": 0,
         "aggs": {
             "lang_script_pairs": {
                 "composite": {
-                    "size": 500,  # Reduced batch size to help shard response time
+                    "size": 500,
                     "sources": [
-                        {
-                            "lang": {
-                                "terms": {
-                                    "field": "lang",
-                                    "missing_bucket": True  # Natively handles nulls as a bucket
-                                }
-                            }
-                        },
-                        {
-                            "script": {
-                                "terms": {
-                                    "field": "script"
-                                }
-                            }
-                        }
+                        {"lang": {"terms": {"field": "lang", "missing_bucket": True}}},
+                        {"script": {"terms": {"field": "script"}}}
                     ]
                 }
             }
         }
     }
 
-    pairs = []
+    aggregated_data = []
     while True:
-        try:
-            res = es_client.search(index="toponyms", body=query)
-            buckets = res['aggregations']['lang_script_pairs']['buckets']
+        res = es.search(index="toponyms", body=query)
+        buckets = res['aggregations']['lang_script_pairs']['buckets']
+        for b in buckets:
+            lang = b['key']['lang']
+            script = b['key']['script']
+            count = b['doc_count']
+            aggregated_data.append({'lang': lang, 'script': script, 'count': count})
 
-            for b in buckets:
-                # 'missing_bucket' returns None for the key; we map it to 'und'
-                lang = b['key']['lang'] if b['key']['lang'] is not None else 'und'
-                script = b['key']['script']
-                count = b['doc_count']
-
-                if len(lang) in [2, 3] or lang == 'und':
-                    pairs.append({'lang': lang, 'script': script, 'count': count})
-
-            after_key = res['aggregations']['lang_script_pairs'].get('after_key')
-            if not after_key:
-                break
-            query['aggs']['lang_script_pairs']['composite']['after'] = after_key
-
-        except Exception as e:
-            print(f"\n[Error] Shard request timed out or failed: {e}")
-            print("Suggest running with fewer sources or a smaller composite size.")
-            break
-
-    return pairs
+        after_key = res['aggregations']['lang_script_pairs'].get('after_key')
+        if not after_key: break
+        query['aggs']['lang_script_pairs']['composite']['after'] = after_key
+    return aggregated_data
 
 
 def audit_report():
     raw_pairs = fetch_pairs()
 
-    table = PrettyTable()
-    table.field_names = ["Lang", "ISO-3", "Script", "Count", "ISO Name", "Epitran Key", "Status"]
-    table.align["Lang"] = "l"
-    table.align["ISO Name"] = "l"
-    table.sortby = "Count"
-    table.reversesort = True
-
+    # Process and sanitize data
+    processed_rows = []
     for p in raw_pairs:
         name, iso3 = get_iso_info(p['lang'])
 
-        # 1. Resolve Script to Epitran format
+        # Normalize script for Epitran key construction
         script_val = p['script'].upper()
         epi_script = SCRIPT_MAP.get(script_val, script_val.capitalize()[:4])
 
-        # 2. Construct and validate Epitran Key
+        # Epitran Key Logic
         epitran_key = "None"
-        if iso3:
+        if iso3 and iso3 != "und":
             test_key = f"{iso3}-{epi_script}"
-            # Check if this exact pair exists in Epitran's manifest
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
 
-        # 3. Handle Status
-        status = "LEGIT" if name else "ROGUE"
-        if name and epitran_key == "None":
-            status = "GAP (Needs Charsiu)"
+        # Status Logic
+        if iso3 == "und":
+            status = "NEEDS_DETECTION"
+        elif epitran_key == "None":
+            status = "GAP (ByT5)"
+        else:
+            status = "EPITRAN"
 
+        processed_rows.append({
+            "ISO3": iso3,
+            "Script": p['script'],
+            "Count": p['count'],
+            "ISO_Name": name,
+            "Epitran_Key": epitran_key,
+            "Status": status
+        })
+
+    # Sort: Count DESC, Script ASC, ISO3 ASC
+    processed_rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
+
+    # Tabulate
+    table = PrettyTable()
+    table.field_names = ["ISO-3", "Script", "Count", "ISO Name", "Epitran Key", "Status"]
+    table.align["ISO Name"] = "l"
+    table.align["Count"] = "r"
+
+    for row in processed_rows:
         table.add_row([
-            p['lang'],
-            iso3 if iso3 else "???",
-            p['script'],
-            f"{p['count']:,}",
-            name if name else "N/A",
-            epitran_key,
-            status
+            row['ISO3'],
+            row['Script'],
+            f"{row['Count']:,}",
+            row['ISO_Name'],
+            row['Epitran_Key'],
+            row['Status']
         ])
 
     print(table)
