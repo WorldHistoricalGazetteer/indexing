@@ -15,10 +15,11 @@ from collections import defaultdict
 from processing.settings import ES_HOST
 es = Elasticsearch(ES_HOST, request_timeout=60)
 
+# ----------------------------
 # 1. Script-to-Language Defaults for "und" entries
+# ----------------------------
 SCRIPT_DEFAULTS = {
-    "LATIN": "eng",      # English
-    "CJK": "zho",        # Default to Mandarin (Simplified)
+    "CJK": "zho",        # Mandarin (Simplified)
     "HANGUL": "kor",     # Korean
     "THAI": "tha",       # Thai
     "GREEK": "ell",      # Modern Greek
@@ -34,11 +35,13 @@ SCRIPT_DEFAULTS = {
     "KANNADA": "kan",    # Kannada
     "MALAYALAM": "mal",  # Malayalam
     "TELUGU": "tel",     # Telugu
-    "CYRILLIC": "rus",   # Default to Russian (statistically most likely)
-    "ARABIC": "ara"      # Literary Arabic
+    "CYRILLIC": "rus",   # Russian (default for Cyrillic)
+    "ARABIC": "ara"      # Arabic
 }
 
+# ----------------------------
 # 2. Epitran support table
+# ----------------------------
 EPITRAN_SUPPORTED = {
     "aar-Latn": "Afar",
     "afr-Latn": "Afrikanns",
@@ -200,10 +203,12 @@ EPITRAN_SUPPORTED = {
     "zul-Latn": "Zulu",
 }
 
-# Reverse the map for lookup
+# Reverse lookup for Epitran keys
 EPITRAN_LOOKUP = {v: k for k, v in EPITRAN_SUPPORTED.items()}
 
+# ----------------------------
 # 3. ES Script -> ISO 15924 Mapping
+# ----------------------------
 SCRIPT_MAP = {
     "LATIN": "Latn",
     "CYRILLIC": "Cyrl",
@@ -231,28 +236,37 @@ SCRIPT_MAP = {
     "SINHALA": "Sinh"
 }
 
+# Reverse mapping for normalization
 REVERSE_SCRIPT_MAP = {v.upper(): k for k, v in SCRIPT_MAP.items()}
 
-
+# ----------------------------
+# 4. Identity resolution
+# ----------------------------
 def get_iso_identity(raw_code, script):
+    """
+    Normalize language code and optionally apply script defaults
+    Returns: (display_name, iso3, inferred)
+    """
     inferred = False
 
-    # Normalise script FIRST
-    script_norm = None
-    if script:
+    # Normalize script
+    if script in (None, ""):
+        script_norm = None
+    else:
         script_norm = script.upper()
         script_norm = REVERSE_SCRIPT_MAP.get(script_norm, script_norm)
 
+    # Determine if raw_code is missing / und
     is_und = raw_code in (None, "", "und") or (isinstance(raw_code, str) and len(raw_code) not in (2, 3))
 
+    # Apply script default if appropriate
     if is_und and script_norm in SCRIPT_DEFAULTS:
         iso3 = SCRIPT_DEFAULTS[script_norm]
-        return (iso3.upper() + " (script default)", iso3, True)
+        return (f"{iso3.upper()} (script default)", iso3, True)
 
-    # Fallbacks unchanged
+    # Otherwise try pycountry lookup
     if not raw_code:
         return ("Undetermined", "und", False)
-
     try:
         if len(raw_code) == 2:
             lang = pycountry.languages.get(alpha_2=raw_code.lower())
@@ -265,8 +279,9 @@ def get_iso_identity(raw_code, script):
 
     return ("Undetermined", "und", False)
 
-
-
+# ----------------------------
+# 5. Fetch from Elasticsearch and aggregate
+# ----------------------------
 def fetch_and_aggregate():
     print(f"Aggregating from ES and applying Script Defaults...")
     query = {
@@ -277,14 +292,13 @@ def fetch_and_aggregate():
                     "size": 1000,
                     "sources": [
                         {"lang": {"terms": {"field": "lang", "missing_bucket": True}}},
-                        {"script": {"terms": {"field": "script"}}}
+                        {"script": {"terms": {"field": "script", "missing_bucket": True}}}
                     ]
                 }
             }
         }
     }
 
-    # Store aggregated totals: {(iso3, script): {'count': int, 'name': str, 'inferred': bool}}
     final_agg = defaultdict(lambda: {'count': 0, 'name': '', 'inferred': False})
 
     while True:
@@ -296,29 +310,30 @@ def fetch_and_aggregate():
             script = b['key']['script']
             count = b['doc_count']
 
-            # THE FIX: Resolve identity BEFORE creating aggregation key
             name, iso3, inferred = get_iso_identity(raw_lang, script)
 
             key = (iso3, script)
             final_agg[key]['count'] += count
             final_agg[key]['name'] = name
-            # If any part of this bucket was inferred, mark it so we can see in status
             if inferred:
                 final_agg[key]['inferred'] = True
 
         after_key = res['aggregations']['pairs'].get('after_key')
-        if not after_key: break
+        if not after_key:
+            break
         query['aggs']['pairs']['composite']['after'] = after_key
 
     return final_agg
 
-
+# ----------------------------
+# 6. Generate audit report
+# ----------------------------
 def audit_report():
     aggregated_data = fetch_and_aggregate()
     rows = []
 
     for (iso3, script), info in aggregated_data.items():
-        script_iso = SCRIPT_MAP.get(script.upper(), script.capitalize()[:4])
+        script_iso = SCRIPT_MAP.get(script.upper(), script.capitalize()[:4]) if script else "None"
 
         epitran_key = "None"
         if iso3 != "und":
@@ -326,7 +341,7 @@ def audit_report():
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
             # Special case for CJK
-            elif iso3 == "zho" and script.upper() == "CJK":
+            elif iso3 == "zho" and (script or "").upper() == "CJK":
                 epitran_key = "cmn-Hans"
 
         # Determine Status
@@ -349,7 +364,7 @@ def audit_report():
     rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
 
     table = PrettyTable(["ISO-3", "Script", "Count", "ISO Name", "Epitran Key", "Status"])
-    table.align["ISO Name"] = "l";
+    table.align["ISO Name"] = "l"
     table.align["Count"] = "r"
 
     for r in rows:
@@ -357,6 +372,8 @@ def audit_report():
 
     print(table)
 
-
+# ----------------------------
+# 7. Main
+# ----------------------------
 if __name__ == "__main__":
     audit_report()
