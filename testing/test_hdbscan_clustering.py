@@ -6,7 +6,7 @@ Usage:
 
 srun -p htc --mem=64G --cpus-per-task=4 --pty bash
 cd /ix1/whcdh/elastic
-python testing/test_hdbscan_clustering.py
+python -m testing.test_hdbscan_clustering
 
 """
 

@@ -5,7 +5,7 @@ Usage:
 
 srun -p htc --mem=64G --cpus-per-task=4 --pty bash
 cd /ix1/whcdh/elastic
-python testing/inspect_pairs.py
+python -m testing.inspect_pairs
 
 """
 
@@ -103,7 +103,7 @@ print("ELASTICSEARCH PANPHON EMBEDDING CHECK")
 print("=" * 60)
 
 try:
-    es = Elasticsearch([ES_HOST], timeout=30)
+    es = Elasticsearch([ES_HOST])
     print(f"Connected to ES at: {ES_HOST}")
 
     if missing_scripts:
