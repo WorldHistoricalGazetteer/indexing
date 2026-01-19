@@ -232,37 +232,45 @@ SCRIPT_MAP = {
 }
 
 
-def get_iso_info(code, script=None):
-    # Normalize input: Treat None, 'und', or long rogue strings as candidate for defaulting
-    is_undetermined = not code or code == 'und' or len(code) not in [2, 3]
+def get_iso_identity(raw_code, script):
+    """
+    Normalizes the identity.
+    Returns: (name, iso3, was_inferred)
+    """
+    # 1. Determine if we need to default based on script
+    code_to_lookup = raw_code
+    inferred = False
 
-    lookup_code = code
-    if is_undetermined and script and script.upper() in SCRIPT_DEFAULTS:
-        lookup_code = SCRIPT_DEFAULTS[script.upper()]
-    elif is_undetermined:
-        return ("Undetermined", "und")
+    is_und = not raw_code or raw_code == 'und' or len(raw_code) not in [2, 3]
 
+    if is_und and script in SCRIPT_DEFAULTS:
+        code_to_lookup = SCRIPT_DEFAULTS[script]
+        inferred = True
+    elif is_und:
+        return ("Undetermined", "und", False)
+
+    # 2. Perform ISO lookup
     try:
         lang_obj = None
-        if len(lookup_code) == 2:
-            lang_obj = pycountry.languages.get(alpha_2=lookup_code.lower())
-        elif len(lookup_code) == 3:
-            lang_obj = pycountry.languages.get(alpha_3=lookup_code.lower())
+        if len(code_to_lookup) == 2:
+            lang_obj = pycountry.languages.get(alpha_2=code_to_lookup.lower())
+        elif len(code_to_lookup) == 3:
+            lang_obj = pycountry.languages.get(alpha_3=code_to_lookup.lower())
 
         if lang_obj:
-            return (lang_obj.name, lang_obj.alpha_3)
+            return (lang_obj.name, lang_obj.alpha_3, inferred)
     except:
         pass
 
-    return ("Undetermined", "und")
+    return ("Undetermined", "und", False)
 
 
 def fetch_and_aggregate():
-    print(f"Fetching and aggregating data from {ES_HOST}...")
+    print(f"Aggregating from ES and applying Script Defaults...")
     query = {
         "size": 0,
         "aggs": {
-            "lang_script_pairs": {
+            "pairs": {
                 "composite": {
                     "size": 1000,
                     "sources": [
@@ -274,86 +282,76 @@ def fetch_and_aggregate():
         }
     }
 
-    aggregated = defaultdict(lambda: {"count": 0, "name": ""})
+    # Store aggregated totals: {(iso3, script): {'count': int, 'name': str, 'inferred': bool}}
+    final_agg = defaultdict(lambda: {'count': 0, 'name': '', 'inferred': False})
 
     while True:
         res = es.search(index="toponyms", body=query)
-        buckets = res['aggregations']['lang_script_pairs']['buckets']
+        buckets = res['aggregations']['pairs']['buckets']
 
         for b in buckets:
             raw_lang = b['key']['lang']
             script = b['key']['script']
             count = b['doc_count']
 
-            # Use Script Defaulting logic
-            name, iso3 = get_iso_info(raw_lang, script)
+            # THE FIX: Resolve identity BEFORE creating aggregation key
+            name, iso3, inferred = get_iso_identity(raw_lang, script)
 
-            # Aggregate based on the new sanitized identity
-            agg_key = (iso3, script)
-            aggregated[agg_key]["count"] += count
-            aggregated[agg_key]["name"] = name
+            key = (iso3, script)
+            final_agg[key]['count'] += count
+            final_agg[key]['name'] = name
+            # If any part of this bucket was inferred, mark it so we can see in status
+            if inferred:
+                final_agg[key]['inferred'] = True
 
-        after_key = res['aggregations']['lang_script_pairs'].get('after_key')
+        after_key = res['aggregations']['pairs'].get('after_key')
         if not after_key: break
-        query['aggs']['lang_script_pairs']['composite']['after'] = after_key
+        query['aggs']['pairs']['composite']['after'] = after_key
 
-    return aggregated
+    return final_agg
 
 
 def audit_report():
     aggregated_data = fetch_and_aggregate()
-    final_rows = []
+    rows = []
 
     for (iso3, script), info in aggregated_data.items():
-        script_upper = script.upper()
-        epi_script = SCRIPT_MAP.get(script_upper, script.capitalize()[:4])
+        script_iso = SCRIPT_MAP.get(script.upper(), script.capitalize()[:4])
 
         epitran_key = "None"
         if iso3 != "und":
-            # Attempt to match ISO-3 key
-            test_key = f"{iso3}-{epi_script}"
+            test_key = f"{iso3}-{script_iso}"
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
-            else:
-                # Special check for CJK handling (Mandarin Hans vs Hant)
-                if iso3 == "zho" and script_upper == "CJK":
-                    epitran_key = "cmn-Hans"
+            # Special case for CJK
+            elif iso3 == "zho" and script.upper() == "CJK":
+                epitran_key = "cmn-Hans"
 
-        # Status Logic
+        # Determine Status
         if iso3 == "und":
             status = "NEEDS_DETECTION"
         elif epitran_key != "None":
-            status = "EPITRAN (via Default)" if (iso3 in SCRIPT_DEFAULTS.values()) else "EPITRAN"
+            status = "EPITRAN (Inferred)" if info['inferred'] else "EPITRAN"
         else:
             status = "GAP (ByT5)"
 
-        final_rows.append({
+        rows.append({
             "ISO3": iso3,
             "Script": script,
-            "Count": info["count"],
-            "ISO_Name": info["name"],
+            "Count": info['count'],
+            "ISO_Name": info['name'],
             "Epitran_Key": epitran_key,
             "Status": status
         })
 
-    # Sort: Count DESC, Script ASC, ISO3 ASC
-    final_rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
+    rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
 
-    # Tabulate
-    table = PrettyTable()
-    table.field_names = ["ISO-3", "Script", "Count", "ISO Name", "Epitran Key", "Status"]
-    table.align["ISO Name"] = "l"
+    table = PrettyTable(["ISO-3", "Script", "Count", "ISO Name", "Epitran Key", "Status"])
+    table.align["ISO Name"] = "l";
     table.align["Count"] = "r"
 
-    for row in final_rows:
-        table.add_row([
-            row['ISO3'],
-            row['Script'],
-            f"{row['Count']:,}",
-            row['ISO_Name'],
-            row['Epitran_Key'],
-            row['Status']
-        ])
+    for r in rows:
+        table.add_row([r['ISO3'], r['Script'], f"{r['Count']:,}", r['ISO_Name'], r['Epitran_Key'], r['Status']])
 
     print(table)
 
