@@ -15,7 +15,29 @@ from collections import defaultdict
 from processing.settings import ES_HOST
 es = Elasticsearch(ES_HOST, request_timeout=60)
 
-# Official Epitran mapping list
+# 1. Script-to-Language Defaults for "und" entries
+SCRIPT_DEFAULTS = {
+    "CJK": "zho",        # Default to Mandarin (Simplified)
+    "HANGUL": "kor",     # Korean
+    "THAI": "tha",       # Thai
+    "GREEK": "ell",      # Modern Greek
+    "KATAKANA": "jpn",   # Japanese
+    "HIRAGANA": "jpn",   # Japanese
+    "HEBREW": "heb",     # Hebrew
+    "GEORGIAN": "kat",   # Georgian
+    "DEVANAGARI": "hin", # Hindi
+    "BENGALI": "ben",    # Bengali
+    "ARMENIAN": "hye",   # Armenian
+    "GUJARATI": "guj",   # Gujarati
+    "TAMIL": "tam",      # Tamil
+    "KANNADA": "kan",    # Kannada
+    "MALAYALAM": "mal",  # Malayalam
+    "TELUGU": "tel",     # Telugu
+    "CYRILLIC": "rus",   # Default to Russian (statistically most likely)
+    "ARABIC": "ara"      # Literary Arabic
+}
+
+# 2. Epitran support table
 EPITRAN_SUPPORTED = {
     "aar-Latn": "Afar",
     "afr-Latn": "Afrikanns",
@@ -180,7 +202,7 @@ EPITRAN_SUPPORTED = {
 # Reverse the map for lookup
 EPITRAN_LOOKUP = {v: k for k, v in EPITRAN_SUPPORTED.items()}
 
-# Map ES 'script' values to Epitran's ISO 15924 codes
+# 3. ES Script -> ISO 15924 Mapping
 SCRIPT_MAP = {
     "LATIN": "Latn",
     "CYRILLIC": "Cyrl",
@@ -209,10 +231,15 @@ SCRIPT_MAP = {
 }
 
 
-def get_iso_info(code):
-    """Validates code. Returns (Name, ISO-3). Rogues/None return ('Undetermined', 'und')."""
+def get_iso_info(code, script=None):
+    """Validates code. If und, attempts script-based default."""
+    # Handle rogue strings or empty codes
     if not code or code == 'und' or len(code) not in [2, 3]:
-        return ("Undetermined", "und")
+        if script and script in SCRIPT_DEFAULTS:
+            code = SCRIPT_DEFAULTS[script]
+        else:
+            return ("Undetermined", "und")
+
     try:
         lang_obj = None
         if len(code) == 2:
@@ -244,8 +271,6 @@ def fetch_and_aggregate():
         }
     }
 
-    # Use a dictionary to aggregate counts by the sanitized (iso3, script) key
-    # Key: (iso3, script), Value: {count: int, name: str}
     aggregated = defaultdict(lambda: {"count": 0, "name": ""})
 
     while True:
@@ -257,8 +282,8 @@ def fetch_and_aggregate():
             script = b['key']['script']
             count = b['doc_count']
 
-            # Normalize ROGUE to 'und' and get ISO-3
-            name, iso3 = get_iso_info(raw_lang)
+            # Use Script Defaulting logic
+            name, iso3 = get_iso_info(raw_lang, script)
 
             # Aggregate based on the new sanitized identity
             agg_key = (iso3, script)
@@ -277,24 +302,27 @@ def audit_report():
     final_rows = []
 
     for (iso3, script), info in aggregated_data.items():
-        # Normalize script for Epitran key construction
         script_upper = script.upper()
         epi_script = SCRIPT_MAP.get(script_upper, script.capitalize()[:4])
 
-        # Epitran Key Logic
         epitran_key = "None"
         if iso3 != "und":
+            # Attempt to match ISO-3 key
             test_key = f"{iso3}-{epi_script}"
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
+            else:
+                # Special check for CJK handling (Mandarin Hans vs Hant)
+                if iso3 == "zho" and script_upper == "CJK":
+                    epitran_key = "cmn-Hans"
 
         # Status Logic
         if iso3 == "und":
             status = "NEEDS_DETECTION"
-        elif epitran_key == "None":
-            status = "GAP (ByT5)"
+        elif epitran_key != "None":
+            status = "EPITRAN (via Default)" if (iso3 in SCRIPT_DEFAULTS.values()) else "EPITRAN"
         else:
-            status = "EPITRAN"
+            status = "GAP (ByT5)"
 
         final_rows.append({
             "ISO3": iso3,
