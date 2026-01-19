@@ -162,6 +162,55 @@ try:
         except Exception as e:
             print(f"  {script:15} - ERROR: {e}")
 
+    # NEW: Check language field presence
+    print("\n" + "-" * 60)
+    print("Language field analysis for missing scripts:")
+    print("(Testing assumption: these scripts fail because lang=None)")
+    for script in missing_scripts:
+        try:
+            # Count toponyms WITH lang field
+            query_with_lang = {
+                "query": {
+                    "bool": {
+                        "must": [
+                            {"term": {"script": script}},
+                            {"exists": {"field": "lang"}}
+                        ]
+                    }
+                }
+            }
+            with_lang = es.count(index="toponyms", body=query_with_lang)['count']
+
+            # Count total for this script
+            query_total = {"query": {"term": {"script": script}}}
+            total = es.count(index="toponyms", body=query_total)['count']
+
+            without_lang = total - with_lang
+            pct_without = (without_lang / total * 100) if total > 0 else 0
+
+            print(f"  {script:15} - {with_lang:8,} with lang ({100-pct_without:5.1f}%), "
+                  f"{without_lang:8,} without ({pct_without:5.1f}%)")
+
+            # If some have lang, show top languages
+            if with_lang > 0:
+                agg_query = {
+                    "query": query_with_lang["query"],
+                    "size": 0,
+                    "aggs": {
+                        "top_langs": {
+                            "terms": {"field": "lang", "size": 5}
+                        }
+                    }
+                }
+                agg_result = es.search(index="toponyms", body=agg_query)
+                if 'aggregations' in agg_result and 'top_langs' in agg_result['aggregations']:
+                    buckets = agg_result['aggregations']['top_langs']['buckets']
+                    langs = [f"{b['key']}({b['doc_count']:,})" for b in buckets]
+                    print(f"      Top languages: {', '.join(langs)}")
+
+        except Exception as e:
+            print(f"  {script:15} - ERROR: {e}")
+
 except Exception as e:
     print(f"Failed to connect to Elasticsearch: {e}")
     print("Skipping ES checks.")
