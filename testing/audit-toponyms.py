@@ -10,9 +10,10 @@ python -m testing.audit-toponyms
 import pycountry
 from elasticsearch import Elasticsearch
 from prettytable import PrettyTable
+from collections import defaultdict
 
 from processing.settings import ES_HOST
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST, request_timeout=60)
 
 # Official Epitran mapping list
 EPITRAN_SUPPORTED = {
@@ -208,17 +209,8 @@ SCRIPT_MAP = {
 }
 
 
-def get_iso3_from_iso1(iso1_code):
-    """Converts a 2-letter ISO code to a 3-letter ISO code."""
-    try:
-        language = pycountry.languages.get(alpha_2=iso1_code.lower())
-        return language.alpha_3 if language else None
-    except:
-        return None
-
-
 def get_iso_info(code):
-    """Validates code and returns (English Name, ISO-3 version)."""
+    """Validates code. Returns (Name, ISO-3). Rogues/None return ('Undetermined', 'und')."""
     if not code or code == 'und' or len(code) not in [2, 3]:
         return ("Undetermined", "und")
     try:
@@ -232,17 +224,17 @@ def get_iso_info(code):
             return (lang_obj.name, lang_obj.alpha_3)
     except:
         pass
-    return ("Undetermined", "und")  # ROGUE defaults to und
+    return ("Undetermined", "und")
 
 
-def fetch_pairs():
-    print(f"Fetching aggregations from {ES_HOST}...")
+def fetch_and_aggregate():
+    print(f"Fetching and aggregating data from {ES_HOST}...")
     query = {
         "size": 0,
         "aggs": {
             "lang_script_pairs": {
                 "composite": {
-                    "size": 500,
+                    "size": 1000,
                     "sources": [
                         {"lang": {"terms": {"field": "lang", "missing_bucket": True}}},
                         {"script": {"terms": {"field": "script"}}}
@@ -252,37 +244,46 @@ def fetch_pairs():
         }
     }
 
-    aggregated_data = []
+    # Use a dictionary to aggregate counts by the sanitized (iso3, script) key
+    # Key: (iso3, script), Value: {count: int, name: str}
+    aggregated = defaultdict(lambda: {"count": 0, "name": ""})
+
     while True:
         res = es.search(index="toponyms", body=query)
         buckets = res['aggregations']['lang_script_pairs']['buckets']
+
         for b in buckets:
-            lang = b['key']['lang']
+            raw_lang = b['key']['lang']
             script = b['key']['script']
             count = b['doc_count']
-            aggregated_data.append({'lang': lang, 'script': script, 'count': count})
+
+            # Normalize ROGUE to 'und' and get ISO-3
+            name, iso3 = get_iso_info(raw_lang)
+
+            # Aggregate based on the new sanitized identity
+            agg_key = (iso3, script)
+            aggregated[agg_key]["count"] += count
+            aggregated[agg_key]["name"] = name
 
         after_key = res['aggregations']['lang_script_pairs'].get('after_key')
         if not after_key: break
         query['aggs']['lang_script_pairs']['composite']['after'] = after_key
-    return aggregated_data
+
+    return aggregated
 
 
 def audit_report():
-    raw_pairs = fetch_pairs()
+    aggregated_data = fetch_and_aggregate()
+    final_rows = []
 
-    # Process and sanitize data
-    processed_rows = []
-    for p in raw_pairs:
-        name, iso3 = get_iso_info(p['lang'])
-
+    for (iso3, script), info in aggregated_data.items():
         # Normalize script for Epitran key construction
-        script_val = p['script'].upper()
-        epi_script = SCRIPT_MAP.get(script_val, script_val.capitalize()[:4])
+        script_upper = script.upper()
+        epi_script = SCRIPT_MAP.get(script_upper, script.capitalize()[:4])
 
         # Epitran Key Logic
         epitran_key = "None"
-        if iso3 and iso3 != "und":
+        if iso3 != "und":
             test_key = f"{iso3}-{epi_script}"
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
@@ -295,17 +296,17 @@ def audit_report():
         else:
             status = "EPITRAN"
 
-        processed_rows.append({
+        final_rows.append({
             "ISO3": iso3,
-            "Script": p['script'],
-            "Count": p['count'],
-            "ISO_Name": name,
+            "Script": script,
+            "Count": info["count"],
+            "ISO_Name": info["name"],
             "Epitran_Key": epitran_key,
             "Status": status
         })
 
     # Sort: Count DESC, Script ASC, ISO3 ASC
-    processed_rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
+    final_rows.sort(key=lambda x: (-x['Count'], x['Script'], x['ISO3']))
 
     # Tabulate
     table = PrettyTable()
@@ -313,7 +314,7 @@ def audit_report():
     table.align["ISO Name"] = "l"
     table.align["Count"] = "r"
 
-    for row in processed_rows:
+    for row in final_rows:
         table.add_row([
             row['ISO3'],
             row['Script'],
