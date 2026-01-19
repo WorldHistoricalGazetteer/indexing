@@ -1,3 +1,14 @@
+"""
+Test script to inspect the pairs Parquet file for missing scripts, and verify existence of panphon embeddings in Elasticsearch.
+
+Usage:
+
+srun -p htc --mem=64G --cpus-per-task=4 --pty bash
+cd /ix1/whcdh/elastic
+python testing/inspect_pairs.py
+
+"""
+
 import json
 import duckdb
 import os

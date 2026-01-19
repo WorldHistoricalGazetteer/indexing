@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """
 Test HDBSCAN clustering on real toponyms from Elasticsearch.
-Run on cluster with: srun --time=00:10:00 --mem=8G python3 testing/test_hdbscan_clustering.py
+
+Usage:
+
+srun -p htc --mem=64G --cpus-per-task=4 --pty bash
+cd /ix1/whcdh/elastic
+python testing/test_hdbscan_clustering.py
+
 """
 
 import sys
