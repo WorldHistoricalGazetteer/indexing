@@ -17,6 +17,7 @@ es = Elasticsearch(ES_HOST, request_timeout=60)
 
 # 1. Script-to-Language Defaults for "und" entries
 SCRIPT_DEFAULTS = {
+    "LATIN": "eng",      # English
     "CJK": "zho",        # Default to Mandarin (Simplified)
     "HANGUL": "kor",     # Korean
     "THAI": "tha",       # Thai
