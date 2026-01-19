@@ -244,8 +244,9 @@ def get_iso_identity(raw_code, script):
     is_und = not raw_code or raw_code == 'und' or len(raw_code) not in [2, 3]
 
     if is_und and script in SCRIPT_DEFAULTS:
-        code_to_lookup = SCRIPT_DEFAULTS[script]
-        inferred = True
+        iso3 = SCRIPT_DEFAULTS[script]
+        name = iso3.upper() + " (script default)"
+        return (name, iso3, True)
     elif is_und:
         return ("Undetermined", "und", False)
 
