@@ -109,20 +109,17 @@ def test_epitran_coverage():
 
 
 def test_charsiu_fallback(es, failed_langs):
-    """Test Charsiu G2P using ByT5-small from Hugging Face."""
+    """Test Charsiu G2P using ByT5-small with corrected PanPhon API calls."""
     print("\n" + "=" * 70)
     print("CHARSIU G2P (BYT5) FALLBACK TEST")
     print("=" * 70)
 
-    if not HAS_TRANSFORMERS or not HAS_PANPHON:
-        print("ERROR: transformers or panphon not installed")
-        return
-
-    # Load Model from HF
-    print("\nLoading charsiu/g2p_multilingual_byT5_small_100...")
+    # Initialize Models
     model_id = "charsiu/g2p_multilingual_byT5_small_100"
     tokenizer = AutoTokenizer.from_pretrained("google/byt5-small")
     model = T5ForConditionalGeneration.from_pretrained(model_id)
+
+    # Correct PanPhon Initialization
     ft = panphon.FeatureTable()
 
     script_map = {
@@ -148,7 +145,6 @@ def test_charsiu_fallback(es, failed_langs):
             success_count = 0
             for h in hits:
                 name = h["_source"]["name"]
-                # Prep input: "<lang>: <text>"
                 input_text = f"<{char_iso}>: {name}"
                 inputs = tokenizer(input_text, return_tensors="pt")
 
@@ -156,12 +152,16 @@ def test_charsiu_fallback(es, failed_langs):
                     out = model.generate(**inputs, max_length=50)
                 ipa = tokenizer.decode(out[0], skip_special_tokens=True)
 
-                segs = ft.word_to_segs(ipa)
+                # Use ipa_segs to get the list of phonemes
+                segs = ft.ipa_segs(ipa)
+
                 if segs:
+                    # Use word_to_vector_list to get actual articulatory features
+                    vectors = ft.word_to_vector_list(ipa)
                     success_count += 1
-                    print(f"  ✓ '{name}' → IPA: '{ipa}' ({len(segs)} PanPhon segs)")
+                    print(f"  ✓ '{name}' → IPA: '{ipa}' ({len(segs)} segments, {len(vectors)} vectors)")
                 else:
-                    print(f"  ✗ '{name}' → Predicted IPA '{ipa}' failed PanPhon validation")
+                    print(f"  ✗ '{name}' → Predicted IPA '{ipa}' yielded 0 PanPhon segments")
 
             results[f"{v_script}:{lang}"] = (success_count, len(hits))
         except Exception as e:
