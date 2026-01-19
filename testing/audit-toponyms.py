@@ -343,6 +343,10 @@ def audit_report():
             if iso3 == "jpn" and script_norm == "CJK":
                 test_key = "jpn-Hira"
 
+            # Special case: Map all Norwegian variants (nob|nor|nno) to nno
+            if iso3 in ("nob", "nor", "nno") and script_norm == "Latn":
+                test_key = "nno-Latn"
+
             if test_key in EPITRAN_SUPPORTED:
                 epitran_key = test_key
             # Special case for Chinese
