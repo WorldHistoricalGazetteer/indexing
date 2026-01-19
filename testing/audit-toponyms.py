@@ -12,7 +12,7 @@ from elasticsearch import Elasticsearch
 from prettytable import PrettyTable
 
 from processing.settings import ES_HOST
-es = Elasticsearch(ES_HOST)
+# es = Elasticsearch(ES_HOST)
 
 # Official Epitran mapping list
 EPITRAN_SUPPORTED = {
@@ -235,19 +235,27 @@ def get_iso_info(code):
 
 
 def fetch_pairs():
-    print(f"Fetching aggregations from {ES_HOST}...")
+    print(f"Fetching aggregations from {ES_HOST} (with extended timeout)...")
+
+    # Increase timeout to 60 seconds and disable request retries on timeout
+    es_client = Elasticsearch(
+        ES_HOST,
+        request_timeout=60,
+        retry_on_timeout=False
+    )
 
     query = {
         "size": 0,
         "aggs": {
             "lang_script_pairs": {
                 "composite": {
-                    "size": 1000,
+                    "size": 500,  # Reduced batch size to help shard response time
                     "sources": [
                         {
                             "lang": {
                                 "terms": {
-                                    "script": "doc['lang'].size() == 0 ? 'und' : doc['lang'].value"
+                                    "field": "lang",
+                                    "missing_bucket": True  # Natively handles nulls as a bucket
                                 }
                             }
                         },
@@ -266,22 +274,28 @@ def fetch_pairs():
 
     pairs = []
     while True:
-        res = es.search(index="toponyms", body=query)
-        buckets = res['aggregations']['lang_script_pairs']['buckets']
+        try:
+            res = es_client.search(index="toponyms", body=query)
+            buckets = res['aggregations']['lang_script_pairs']['buckets']
 
-        for b in buckets:
-            lang = b['key']['lang']
-            script = b['key']['script']
-            count = b['doc_count']
+            for b in buckets:
+                # 'missing_bucket' returns None for the key; we map it to 'und'
+                lang = b['key']['lang'] if b['key']['lang'] is not None else 'und'
+                script = b['key']['script']
+                count = b['doc_count']
 
-            # Filter for 2, 3 chars or 'und'
-            if len(lang) in [2, 3] or lang == 'und':
-                pairs.append({'lang': lang, 'script': script, 'count': count})
+                if len(lang) in [2, 3] or lang == 'und':
+                    pairs.append({'lang': lang, 'script': script, 'count': count})
 
-        after_key = res['aggregations']['lang_script_pairs'].get('after_key')
-        if not after_key:
+            after_key = res['aggregations']['lang_script_pairs'].get('after_key')
+            if not after_key:
+                break
+            query['aggs']['lang_script_pairs']['composite']['after'] = after_key
+
+        except Exception as e:
+            print(f"\n[Error] Shard request timed out or failed: {e}")
+            print("Suggest running with fewer sources or a smaller composite size.")
             break
-        query['aggs']['lang_script_pairs']['composite']['after'] = after_key
 
     return pairs
 
