@@ -233,25 +233,27 @@ SCRIPT_MAP = {
 
 
 def get_iso_info(code, script=None):
-    """Validates code. If und, attempts script-based default."""
-    # Handle rogue strings or empty codes
-    if not code or code == 'und' or len(code) not in [2, 3]:
-        if script and script in SCRIPT_DEFAULTS:
-            code = SCRIPT_DEFAULTS[script]
-        else:
-            return ("Undetermined", "und")
+    # Normalize input: Treat None, 'und', or long rogue strings as candidate for defaulting
+    is_undetermined = not code or code == 'und' or len(code) not in [2, 3]
+
+    lookup_code = code
+    if is_undetermined and script and script.upper() in SCRIPT_DEFAULTS:
+        lookup_code = SCRIPT_DEFAULTS[script.upper()]
+    elif is_undetermined:
+        return ("Undetermined", "und")
 
     try:
         lang_obj = None
-        if len(code) == 2:
-            lang_obj = pycountry.languages.get(alpha_2=code.lower())
-        elif len(code) == 3:
-            lang_obj = pycountry.languages.get(alpha_3=code.lower())
+        if len(lookup_code) == 2:
+            lang_obj = pycountry.languages.get(alpha_2=lookup_code.lower())
+        elif len(lookup_code) == 3:
+            lang_obj = pycountry.languages.get(alpha_3=lookup_code.lower())
 
         if lang_obj:
             return (lang_obj.name, lang_obj.alpha_3)
     except:
         pass
+
     return ("Undetermined", "und")
 
 
