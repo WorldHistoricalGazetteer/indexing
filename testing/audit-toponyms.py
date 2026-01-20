@@ -286,6 +286,17 @@ def fetch_and_aggregate():
     print(f"Aggregating from ES and applying Script Defaults...")
     query = {
         "size": 0,
+        "query": {
+            "bool": {
+                "filter": [
+                    {
+                        "terms": {
+                            "namespaces": ["gn", "wd", "tgn"]
+                        }
+                    }
+                ]
+            }
+        },
         "aggs": {
             "pairs": {
                 "composite": {
