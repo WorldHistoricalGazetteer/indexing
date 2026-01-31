@@ -1,4 +1,6 @@
-grapheme,phoneme
+Orth,Phon
+ng,ŋ
+ny,ɲ
 a,a
 b,b
 c,tʃ
@@ -13,8 +15,6 @@ k,k
 l,l
 m,m
 n,n
-ng,ŋ
-ny,ɲ
 o,ɔ
 p,p
 q,ʔ

@@ -1,4 +1,4 @@
-grapheme,phoneme
+Orth,Phon
 а,a
 ӑ,ə
 б,b
@@ -29,9 +29,7 @@ grapheme,phoneme
 ч,tʃ
 ш,ʃ
 щ,ɕ
-ъ,
-ы,ɯ
-ь,
-э,ɛ
-ю,ju
 я,ja
+
+ъ,∅
+ь,∅

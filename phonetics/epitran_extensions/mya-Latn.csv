@@ -1,4 +1,7 @@
-Grapheme,IPA
+Orth,Phon
+ny,ɲ
+ng,ŋ
+th,θ
 a,a
 b,b
 c,tʃ
@@ -13,14 +16,11 @@ k,k
 l,l
 m,m
 n,n
-ny,ɲ
-ng,ŋ
 o,o
 p,p
 r,r
 s,s
 t,t
-th,θ
 u,u
 w,w
 y,j

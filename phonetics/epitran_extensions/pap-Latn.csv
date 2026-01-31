@@ -1,8 +1,9 @@
-grapheme,phoneme
+Orth,Phon
+ch,tʃ
+sj,ʃ
 a,a
 á,a
 b,b
-ch,tʃ
 d,d
 e,e
 é,e
@@ -22,7 +23,6 @@ o,o
 p,p
 r,r
 s,s
-sj,ʃ
 t,t
 u,u
 ú,u

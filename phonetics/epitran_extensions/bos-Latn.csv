@@ -1,11 +1,13 @@
-grapheme,phoneme
+Orth,Phon
+dž,dʒ
+lj,ʎ
+nj,ɲ
 a,a
 b,b
 c,ts
 č,tʃ
 ć,tɕ
 d,d
-dž,dʒ
 đ,dʑ
 e,e
 f,f
@@ -15,10 +17,8 @@ i,i
 j,j
 k,k
 l,l
-lj,ʎ
 m,m
 n,n
-nj,ɲ
 o,o
 p,p
 r,r

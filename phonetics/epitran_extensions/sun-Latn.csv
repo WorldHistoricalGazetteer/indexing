@@ -1,11 +1,13 @@
-grapheme,phoneme
+Orth,Phon
+eu,ɤ
+ng,ŋ
+ny,ɲ
 a,a
 b,b
 c,tʃ
 d,d
 e,ə
 é,e
-eu,ɤ
 f,f
 g,ɡ
 h,h
@@ -15,8 +17,6 @@ k,k
 l,l
 m,m
 n,n
-ng,ŋ
-ny,ɲ
 o,ɔ
 p,p
 q,ʔ

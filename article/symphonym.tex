@@ -184,6 +184,68 @@
 
 \textbf{Keywords:} toponym matching; phonetic embeddings; cross-script; teacher-student distillation; neural networks; digital humanities; geographic information retrieval; Symphonym
 
+\section*{Current Development Status}
+\label{sec:current-development}
+
+This document describes version 6 (v6) of Symphonym, which addresses critical coverage gaps discovered during v5 training. The following summarizes completed improvements and remaining tasks before v6 training can commence.
+
+\subsection*{Completed: Epitran Extension Program}
+
+\paragraph{Problem Identified.} During v5 training data generation (January 2026), analysis revealed that 8 scripts present in the WHG corpus had zero PanPhon embeddings despite having substantial toponym counts: Armenian (153k toponyms), Greek (218k), Gujarati (21k), Hebrew (152k), Hiragana (152k), Kannada (43k), Katakana (341k), and a heterogeneous ``OTHER'' category (343k). This resulted in approximately 1.3 million toponyms being excluded from the training process, creating systematic bias in the final model.
+
+\paragraph{Root Cause.} Epitran\footnote{\url{https://github.com/dmort27/epitran}} (the rule-based grapheme-to-phoneme converter used to generate IPA transcriptions for PanPhon feature extraction) lacked phonetic mapping tables for many language-script pairs represented in WHG. While Epitran officially supports 100+ languages, the specific combinations needed for historical toponymy (e.g., \texttt{ell-Grek} for Modern Greek, \texttt{hye-Armn} for Armenian) were not included.
+
+\paragraph{Solution Implemented.} Between mid-January and late January 2026, I extended Epitran by creating 100 new language-script mapping CSV files stored in \texttt{phonetics/epitran\_extensions/}. These mappings cover:
+
+\begin{itemize}
+    \item \textbf{Critical missing scripts:} Armenian (\texttt{hye-Armn}), Greek (\texttt{ell-Grek}), Gujarati (\texttt{guj-Gujr}), Georgian (\texttt{kat-Geor}), and numerous Indic and non-Latin scripts.
+
+    \item \textbf{High-frequency under-resourced language pairs:} Including Norwegian Bokmål (\texttt{nob-Latn}), Scottish Gaelic (\texttt{gla-Latn}), Basque (\texttt{eus-Latn}), Egyptian Arabic (\texttt{arz-Arab}), and 80+ others with toponym counts ranging from 10,000 to 450,000.
+
+    \item \textbf{Specialized historical and minority languages:} Such as Old Prussian (\texttt{prg-Latn}), Cajun French (\texttt{frc-Latn}), Romansh (\texttt{roh-Latn}), and various creoles.
+\end{itemize}
+
+The creation of these 100 custom Epitran extension files was assisted by large language models (Claude, Gemini, and ChatGPT), which generated and cross-checked IPA mappings based on linguistic descriptions and Unicode character tables. None of these outputs has been validated by human experts; they serve as provisional mappings to enable v6 training. Future work may involve expert review and refinement of these rules.
+
+The \texttt{TODO.txt} file tracks the status of 2,339 unique language-script pairs found in WHG, categorized as:
+\begin{itemize}
+    \item \texttt{EPITRAN}: Natively supported by upstream Epitran (34 pairs)
+    \item \texttt{EPITRAN-EXT}: Custom mappings created in this extension program (97 pairs)
+    \item \texttt{CHARSIU}: Chinese topolects (Gan, Wu, Yue) to be handled by CharsiuG2P fallback
+    \item \texttt{SYMPHONYM}: Low-frequency pairs ($<$10k toponyms) where the model will learn from related scripts
+    \item \texttt{UNHANDLED}: Pairs requiring language detection or further investigation
+    \item \texttt{PHONIKUD?}: Hebrew (145k toponyms)---unpointed Hebrew text lacks vowels, making deterministic IPA transcription impossible without a vocalization system like Nikud or a neural fallback
+\end{itemize}
+
+\paragraph{Note on Chinese Topolects and Hebrew.} Three Chinese varieties (Wu, Gan, Yue) with 49k, 37k, and 33k toponyms respectively cannot be reliably mapped to IPA using rule-based approaches due to insufficient linguistic resources. These will be handled via CharsiuG2P \citep{zhu2022charsiu-g2p}, a neural G2P model. Similarly, Hebrew toponyms present a unique challenge: unpointed Hebrew script (the standard in historical documents) omits vowels, making rule-based phonetic transcription unreliable. For v6, Hebrew text will be processed using Phonikud \citep{kolani2025phonikudhebrewgraphemetophonemeconversion}\footnote{\url{https://github.com/thewh1teagle/phonikud}}, which directly generates International Phonetic Alphabet (IPA) transcriptions from unpointed Hebrew text using a neural model. The resulting IPA strings are then passed to PanPhon for generation of 192-dimensional articulatory feature vectors. This two-stage pipeline (Phonikud $\rightarrow$ PanPhon) enables accurate phonetic embedding generation for the 145k Hebrew toponyms without requiring intermediate Epitran conversion.
+
+\subsection*{Remaining Work for v6}
+
+\paragraph{Vocabulary Recoding (Completed).} The character vocabulary has been regenerated for v6 to support native script processing. Previously (v4/v5), Chinese, Japanese, and Korean scripts were handled via AnyAscii romanization. With Epitran extensions now providing direct support (\texttt{cmn-Hans} for Mandarin, \texttt{jpn-Hira}/\texttt{jpn-Kana} for Japanese, \texttt{kor-Hang} for Korean Hangul), the vocabulary generation step in \texttt{phonetics/extraction/rebuild\_toponyms\_index.py} has been updated to:
+\begin{itemize}
+    \item Remove romanization logic for CJK, Hiragana, Katakana, and Hangul (previously defined in \texttt{ROMANIZE\_SCRIPTS} in \texttt{phonetics/utils/script\_detection.py})
+    \item Expand Unicode range coverage to include full character sets for newly-supported scripts: Armenian (U+0530--U+058F), Greek Extended (U+1F00--U+1FFF), Gujarati (U+0A80--U+0AFF), Kannada (U+0C80--U+0CFF)
+    \item For CJK scripts, include Han characters from the CJK Unified Ideographs block (U+4E00--U+9FFF), but \emph{only those actually observed} in the 67M toponym corpus. While this Unicode range contains approximately 20,900 characters, the WHG corpus uses fewer than 3,000 unique Han characters, as most toponyms utilize a small subset of common logographs. This selective inclusion avoids computational overhead from rare archaic characters while ensuring 100\% coverage of observed names.
+    \item Similarly for Korean, include only the observed Hangul syllables and Jamo components rather than all 11,172 possible syllable blocks (U+AC00--U+D7AF)
+    \item Regenerate \texttt{char\_vocab.json} to include native characters from Armenian, Greek, Gujarati, Korean, Japanese, and other extended scripts instead of their romanized forms
+    \item Update \texttt{EPITRAN\_SUPPORTED\_SCRIPTS} to accurately reflect the 97 new language-script mappings plus native CJK/Hangul/Kana support
+\end{itemize}
+
+The updated vocabulary size has increased from approximately 11,122 characters (v4/v5) to an estimated 13,500--15,000 characters. This modest increase---despite adding thousands of potential CJK characters---reflects two factors: (1) the shift from romanized to native script representation replaces rather than supplements existing characters, and (2) inclusion of only corpus-observed characters rather than full Unicode blocks. The vocabulary comprises every unique character actually appearing in the training data, ensuring zero out-of-vocabulary (OOV) errors while avoiding memory waste on unused symbols. Character embeddings remain efficient due to the BiLSTM's ability to learn compositional representations from the observed character set.
+
+\paragraph{Data Pipeline Verification.} The Elasticsearch \texttt{toponyms} schema has been updated to store Symphonym embeddings using byte quantization (\texttt{element\_type: byte}, int8) instead of float32. This 75\% memory reduction (from 512 bytes to 128 bytes per 128-dimensional embedding) is critical for WHG's production deployment, where the full toponyms index is held in RAM to ensure sub-second query latency for interactive reconciliation operations. The quantization preserves relative distances between embeddings---the essential property for cosine similarity-based KNN retrieval---with negligible impact on ranking quality. Before initiating v6 training, the following verification steps remain:
+\begin{enumerate}
+    \item Re-run \texttt{rebuild\_toponyms\_index.py} with updated Epitran extensions, Phonikud, and CharsiuG2P to generate PanPhon embeddings for previously-excluded toponyms
+    \item Verify via \texttt{testing/inspect\_pairs.py} that all 20 core scripts now have non-zero training pair counts
+    \item Re-run \texttt{generate\_training\_data.py} to create v6 training triplets incorporating the expanded coverage
+    \item Update training statistics in Section~\ref{sec:training-data} to reflect the increased script diversity and pair counts
+\end{enumerate}
+
+\paragraph{Expected Impact.} Full Epitran extension coverage is projected to increase the usable toponym count from 29M (v5) to approximately 31-32M, adding critical representation for Greek, Hebrew, Armenian, and Gujarati toponyms. This should eliminate the script-specific performance gaps observed in v5 MEHDIE testing (Section~\ref{sec:results}), where Greek and Hebrew pairs showed anomalously low similarity scores due to insufficient training data.
+
+\vspace{1em}
+\noindent\textbf{Note:} This section documents the development process and will be removed before final publication. The implementation details are recorded here to maintain an accurate technical audit trail during the iterative development phase.
+
 \begin{abstract}
 Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. The objective of this research is to present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via Epitran grapheme-to-phoneme (G2P) conversion and PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and the Getty Thesaurus of Geographic Names (TGN), with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. The system achieves 93\% accuracy on cross-script equivalents and 87.5\% Recall@1 on the MEHDIE (Multi-Entity Hebrew-to-Arabic Data Interchange Exchange) Hebrew-Arabic benchmark, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym effectively addresses the challenge of cross-script toponym matching by providing a phonetically grounded embedding space, demonstrating strong performance on key benchmarks. Its deployment in the World Historical Gazetteer (WHG) will enable phonetic search and reconciliation across 67M+ toponyms, offering a scalable solution for digital humanities research.
 \end{abstract}

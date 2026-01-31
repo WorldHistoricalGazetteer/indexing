@@ -1,4 +1,4 @@
-Grapheme,IPA
+Orth,Phon
 ក,k
 ខ,kʰ
 គ,g
@@ -51,6 +51,6 @@ Grapheme,IPA
 ំ,m
 ះ,h
 ៈ,ʔ
-់,
-៉,
-៊,
+់,∅
+៉,∅
+៊,∅

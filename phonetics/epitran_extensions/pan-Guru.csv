@@ -1,4 +1,5 @@
-Grapheme,IPA
+Orth,Phon
+ਸ਼,ʃ
 ਕ,k
 ਖ,kʰ
 ਗ,g
@@ -28,7 +29,6 @@ Grapheme,IPA
 ਰ,r
 ਲ,l
 ਵ,ʋ
-ਸ਼,ʃ
 ਸ,s
 ਹ,ɦ
 ਾ,aː
@@ -42,4 +42,4 @@ Grapheme,IPA
 ੌ,ɔ
 ਂ,̃
 ਃ,h
-੍,
+੍,∅

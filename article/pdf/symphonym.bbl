@@ -1,4 +1,4 @@
-\begin{thebibliography}{24}
+\begin{thebibliography}{26}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -64,6 +64,14 @@ Karl~E. Grossner and Ruth Mostern.
 \newblock In \emph{Proceedings of the 4th ACM SIGSPATIAL International Workshop
   on Geospatial Humanities (GeoHumanities)}, pages 40--43, 2021.
 \newblock \doi{10.1145/3486187.3490203}.
+
+\bibitem[Kolani et~al.(2025)Kolani, Melichov, Calev, and
+  Alper]{kolani2025phonikudhebrewgraphemetophonemeconversion}
+Yakov Kolani, Maxim Melichov, Cobi Calev, and Morris Alper.
+\newblock Phonikud: Hebrew grapheme-to-phoneme conversion for real-time
+  text-to-speech.
+\newblock 2025.
+\newblock URL \url{https://arxiv.org/abs/2506.12311}.
 
 \bibitem[Kondrak(2000)]{kondrak2000}
 Grzegorz Kondrak.
@@ -186,6 +194,13 @@ Florian Schroff, Dmitry Kalenichenko, and James Philbin.
 \newblock \emph{2015 IEEE Conference on Computer Vision and Pattern Recognition
   (CVPR)}, pages 815--823, 2015.
 \newblock \doi{10.1109/CVPR.2015.7298682}.
+
+\bibitem[Zhu et~al.(2022)Zhu, Zhang, and Jurgens]{zhu2022charsiu-g2p}
+Jian Zhu, Cong Zhang, and David Jurgens.
+\newblock Byt5 model for massively multilingual grapheme-to-phoneme conversion.
+\newblock 2022.
+\newblock \doi{10.48550/ARXIV.2204.03067}.
+\newblock URL \url{https://arxiv.org/abs/2204.03067}.
 
 \bibitem[Zouhar et~al.(2024)Zouhar, Chang, Cui, Carlson, Robinson, Sachan, and
   Mortensen]{zouhar2024pwesuite}

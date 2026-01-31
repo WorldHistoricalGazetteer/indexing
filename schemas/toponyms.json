@@ -86,7 +86,8 @@
         "type": "dense_vector",
         "dims": 128,
         "index": true,
-        "similarity": "cosine"
+        "similarity": "cosine",
+        "element_type": "byte"
       },
       "embedding_version": { "type": "integer" },
       "indexed_at": { "type": "date" }

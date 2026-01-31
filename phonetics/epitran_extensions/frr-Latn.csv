@@ -1,10 +1,12 @@
-Grapheme,IPA
+Orth,Phon
+dj,j
+ng,ŋ
+oo,oː
 a,a
 ä,ɛ
 å,ɔ
 b,b
 d,d
-dj,j
 e,e
 ē,eː
 f,f
@@ -17,11 +19,9 @@ k,k
 l,l
 m,m
 n,n
-ng,ŋ
 o,o
 ö,ø
 ȫ,øː
-oo,oː
 p,p
 r,r
 s,s
