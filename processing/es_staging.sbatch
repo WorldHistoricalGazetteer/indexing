@@ -5,8 +5,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
-#SBATCH --output=/ix1/whcdh/es/staging-logs/slurm-%j.out
-#SBATCH --error=/ix1/whcdh/es/staging-logs/slurm-%j.err
+#SBATCH --output=/ix1/ishi/es/staging-logs/slurm-%j.out
+#SBATCH --error=/ix1/ishi/es/staging-logs/slurm-%j.err
 
 # =============================================================================
 # STAGING ELASTICSEARCH INSTANCE
@@ -14,8 +14,8 @@
 # Runs a single staging ES instance on a Slurm compute node.
 # Only ONE staging instance should run at a time - all indexing jobs share it.
 #
-# Start with:  source /ix1/whcdh/elastic/scripts/es.sh -staging-start
-# Stop with:   source /ix1/whcdh/elastic/scripts/es.sh -staging-stop
+# Start with:  source /ix1/ishi/elastic/scripts/es.sh -staging-start
+# Stop with:   source /ix1/ishi/elastic/scripts/es.sh -staging-stop
 #
 # On startup:
 #   - Restores latest snapshots if any exist
@@ -29,7 +29,7 @@ set -e
 
 # --- Load environment configuration ---
 # Use absolute path since SCRIPT_DIR doesn't work reliably in Slurm
-ENV_FILE="/ix1/whcdh/elastic/.env"
+ENV_FILE="/ix1/ishi/elastic/.env"
 
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"

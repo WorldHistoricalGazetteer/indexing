@@ -60,12 +60,12 @@ class DataSource:
 DATA_SOURCES = [
     DataSource(
         name='GeoNames',
-        path='/ix1/whcdh/models/phonetic/data/training_data_gn.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_gn.h5',
         oversample=1,
     ),
     DataSource(
         name='Pleiades+IV',
-        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_pl,iv.h5',
         oversample=24,
     ),
 ]
@@ -75,12 +75,12 @@ DATA_SOURCES = [
 DATA_SOURCES_OPTIMIZED = [
     DataSource(
         name='GeoNames',
-        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_gn_optimized.h5',
         oversample=1,
     ),
     DataSource(
         name='Pleiades+IV',
-        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_pl,iv_optimized.h5',
         oversample=24,
     ),
 ]
@@ -89,12 +89,12 @@ DATA_SOURCES_OPTIMIZED = [
 DATA_SOURCES_PHASE2_OPTIMIZED = [
     DataSource(
         name='GeoNames',
-        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized_phase2.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_gn_optimized_phase2.h5',
         oversample=1,
     ),
     DataSource(
         name='Pleiades+IV',
-        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized_phase2.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_pl,iv_optimized_phase2.h5',
         oversample=24,
     ),
 ]
@@ -103,12 +103,12 @@ DATA_SOURCES_PHASE2_OPTIMIZED = [
 DATA_SOURCES_PHASE3_OPTIMIZED = [
     DataSource(
         name='GeoNames',
-        path='/ix1/whcdh/models/phonetic/data/training_data_gn_optimized_phase3.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_gn_optimized_phase3.h5',
         oversample=1,
     ),
     DataSource(
         name='Pleiades+IV',
-        path='/ix1/whcdh/models/phonetic/data/training_data_pl,iv_optimized_phase3.h5',
+        path='/ix1/ishi/models/phonetic/data/training_data_pl,iv_optimized_phase3.h5',
         oversample=24,
     ),
 ]

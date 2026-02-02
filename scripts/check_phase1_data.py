@@ -5,7 +5,7 @@ Diagnostic script to check Phase 1 training data structure.
 Run this on the cluster to verify the Parquet files have the expected columns.
 
 Usage:
-    python scripts/check_phase1_data.py /ix1/whcdh/models/phonetic/data/v4
+    python scripts/check_phase1_data.py /ix1/ishi/models/phonetic/data/v4
 """
 
 import sys

@@ -9,8 +9,8 @@ env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
 
 # Base paths
-IX1_BASE = os.getenv("IX1_BASE", "/ix1/whcdh")
-IX3_BASE = os.getenv("IX3_BASE", "/ix3/whcdh")
+IX1_BASE = os.getenv("IX1_BASE", "/ix1/ishi")
+IX3_BASE = os.getenv("IX3_BASE", "/vast/ishi")
 
 # Data
 DATA_DIR = os.getenv("DATA_DIR", f"{IX1_BASE}/data/authorities")

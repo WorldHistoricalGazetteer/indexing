@@ -278,7 +278,7 @@ def main():
     ap.add_argument("-n", "--samples", type=int, default=50)
     ap.add_argument("-k", "--neighbours", type=int, default=10)
     ap.add_argument("-o", "--output", default="noise-evaluation.tex")
-    ap.add_argument("--model-path", default="/ix1/whcdh/models/phonetic/checkpoints/final_model_b.pt")
+    ap.add_argument("--model-path", default="/ix1/ishi/models/phonetic/checkpoints/final_model_b.pt")
     ap.add_argument("--seed", type=int)
     args = ap.parse_args()
 

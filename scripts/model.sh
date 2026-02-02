@@ -30,7 +30,7 @@ set -e
 
 # --- Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IX1_BASE="/ix1/whcdh"
+IX1_BASE="/ix1/ishi"
 REPO_DIR="${IX1_BASE}/elastic"
 
 # Load environment if available
@@ -105,13 +105,13 @@ check_staging_es() {
 activate_conda() {
     cat <<'EOF'
 # --- HARDCODED CONDA SETUP ---
-CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 
 if [ -f "$CONDA_SETUP" ]; then
     source "$CONDA_SETUP"
 else
     echo "ERROR: Could not find conda setup at $CONDA_SETUP"
-    export PATH="/ihome/whcdh/stg135/miniconda3/bin:$PATH"
+    export PATH="/ihome/ishi/stg135/miniconda3/bin:$PATH"
 fi
 
 conda activate whg
@@ -468,7 +468,7 @@ if [ -n "\$SLURM_TMPDIR" ]; then
     mkdir -p "\$LOCAL_DATA_DIR"
 
     # Copy optimized HDF5 files based on phase
-    DATA_DIR="${DATA_DIR:-/ix1/whcdh/models/phonetic/data}"
+    DATA_DIR="${DATA_DIR:-/ix1/ishi/models/phonetic/data}"
 
     case ${PHASE} in
         1)

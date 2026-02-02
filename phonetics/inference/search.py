@@ -10,7 +10,7 @@ Usage:
     srun -p htc --pty bash
 
     Switch to the repository directory:
-    cd /ix1/whcdh/elastic
+    cd /ix1/ishi/elastic
 
     Then run:
 
@@ -216,8 +216,8 @@ def get_latest_version(base_path: str) -> str:
 
 def main():
     # Determine latest version for defaults
-    checkpoints_base = '/ix1/whcdh/models/phonetic/checkpoints'
-    data_base = '/ix1/whcdh/models/phonetic/data'
+    checkpoints_base = '/ix1/ishi/models/phonetic/checkpoints'
+    data_base = '/ix1/ishi/models/phonetic/data'
     latest_version = get_latest_version(checkpoints_base)
 
     parser = argparse.ArgumentParser(

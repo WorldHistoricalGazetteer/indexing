@@ -15,15 +15,15 @@ conda activate whg
 
 # 2. Set Working Directory
 # We must be in the 'elastic' folder for "python -m testing.evaluate_embeddings" to work
-cd /ix1/whcdh/elastic
+cd /ix1/ishi/elastic
 
 # 3. LOCATE STAGING ELASTICSEARCH
-ENV_FILE="/ix1/whcdh/elastic/.env"
+ENV_FILE="/ix1/ishi/elastic/.env"
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 fi
 
-INFO_FILE="${STAGING_INFO_FILE:-/ix1/whcdh/es/staging/es_info.sh}"
+INFO_FILE="${STAGING_INFO_FILE:-/ix1/ishi/es/staging/es_info.sh}"
 
 if [ -f "$INFO_FILE" ]; then
     source "$INFO_FILE"
@@ -41,7 +41,7 @@ echo "Working directory: $(pwd)"
 
 python -m testing.evaluate_embeddings \
     --es-host "$ES_URL" \
-    --model-path /ix1/whcdh/models/phonetic/checkpoints/final_model_b.pt \
+    --model-path /ix1/ishi/models/phonetic/checkpoints/final_model_b.pt \
     --samples 50 \
     --neighbours 15 \
     --output article/noise-evaluation.tex

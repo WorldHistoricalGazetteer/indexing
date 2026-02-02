@@ -4,7 +4,7 @@ Test script to inspect the pairs Parquet file for missing scripts, and verify ex
 Usage:
 
 srun -p htc --mem=64G --cpus-per-task=4 --pty bash
-cd /ix1/whcdh/elastic
+cd /ix1/ishi/elastic
 python -m testing.inspect_pairs
 
 """
@@ -16,8 +16,8 @@ from elasticsearch import Elasticsearch
 from processing.settings import ES_HOST
 
 # Paths
-VOCAB_PATH = '/ix1/whcdh/models/phonetic/data/v5/vocab/script_vocab.json'
-PARQUET_PATH = '/ix1/whcdh/models/phonetic/data/v5/pairs/positive_pairs.parquet'
+VOCAB_PATH = '/ix1/ishi/models/phonetic/data/v5/vocab/script_vocab.json'
+PARQUET_PATH = '/ix1/ishi/models/phonetic/data/v5/pairs/positive_pairs.parquet'
 
 # 1. Load the Master Script List from Vocab
 with open(VOCAB_PATH, 'r') as f:

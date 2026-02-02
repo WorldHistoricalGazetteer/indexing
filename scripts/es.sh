@@ -1,13 +1,13 @@
 #!/bin/bash
 # =============================================================================
-# /ix1/whcdh/elastic/scripts/es.sh
+# /ix1/ishi/elastic/scripts/es.sh
 # WHG Elasticsearch and Kibana management wrapper
 # =============================================================================
 
 set -e
 
 # --- Bootstrap: minimal hardcoded path for initial install ---
-IX1_BASE="/ix1/whcdh"
+IX1_BASE="/ix1/ishi"
 
 # --- Load Environment Variables (if available) ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -25,15 +25,15 @@ fi
 activate_environment() {
     cat <<'EOF'
 # --- ENV SETUP ---
-CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 if [ -f "$CONDA_SETUP" ]; then
     source "$CONDA_SETUP"
 else
-    export PATH="/ihome/whcdh/stg135/miniconda3/bin:$PATH"
+    export PATH="/ihome/ishi/stg135/miniconda3/bin:$PATH"
 fi
 
 conda activate whg
-export PYTHONPATH="/ix1/whcdh/elastic:${PYTHONPATH}"
+export PYTHONPATH="/ix1/ishi/elastic:${PYTHONPATH}"
 
 echo "Environment: $(conda info --envs | grep '*' | awk '{print $1}')"
 echo "Python: $(which python)"
@@ -200,7 +200,7 @@ health_production() {
 
     echo
     echo "--- Disk Usage ---"
-    echo "Production data (ix3):"
+    echo "Production data (vast):"
     du -sh "$PROD_DATA_DIR" 2>/dev/null || echo "  Directory not found"
     echo "Snapshots (ix1):"
     du -sh "$SNAPSHOT_DIR" 2>/dev/null || echo "  Directory not found"
@@ -632,7 +632,7 @@ echo "Arguments: $PYTHON_ARGS"
 echo
 
 # Activate conda environment
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "$REPO_DIR"
@@ -695,11 +695,11 @@ do_rebuild_toponyms() {
         return 1
     fi
 
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
     mkdir -p "$LOG_DIR"
 
     # Output directory for data
-    OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
 
     # Setup local scratch (CRC convention)
@@ -739,7 +739,7 @@ do_rebuild_toponyms() {
 set -e
 
 # Load Environment
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "$REPO_DIR"
@@ -853,10 +853,10 @@ do_generate_training_data() {
         return 1
     fi
 
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/logs}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
     mkdir -p "$LOG_DIR"
 
-    OUTPUT_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
 
     # DuckDB is now optional - we read training data from ES toponyms index
@@ -942,7 +942,7 @@ do_generate_training_data() {
 set -e
 
 # Load Environment
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "$REPO_DIR"
@@ -1045,13 +1045,13 @@ do_train_model() {
         fi
     fi
 
-    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
-    OUTPUT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/staging-logs}"
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     # Ensure REPO_DIR is set (from .env)
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/whcdh/elastic"
+        REPO_DIR="/ix1/ishi/elastic"
     fi
 
     # Create log and output directories BEFORE submitting jobs
@@ -1172,7 +1172,7 @@ fi
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -1252,7 +1252,7 @@ echo "Working directory: \$(pwd)"
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -1321,7 +1321,7 @@ echo "Working directory: \$(pwd)"
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -1415,13 +1415,13 @@ do_update_embeddings() {
 
     DATA_VERSION=${1:-5}
 
-    DATA_DIR="/ix1/whcdh/models/phonetic/data/v${DATA_VERSION}"
-    CHECKPOINT_DIR="/ix1/whcdh/models/phonetic/checkpoints/v${DATA_VERSION}"
-    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/whcdh/es/staging-logs}"
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     # Ensure REPO_DIR is set
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/whcdh/elastic"
+        REPO_DIR="/ix1/ishi/elastic"
     fi
 
     EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
@@ -1495,7 +1495,7 @@ echo
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -1548,7 +1548,7 @@ echo
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -1645,8 +1645,8 @@ do_rebuild_toponyms() {
     mkdir -p "$EMBEDDING_LOG_DIR"
 
     # Get ES connection info
-    if [ -f /ix1/whcdh/esinfo/es-staging.env ]; then
-        source /ix1/whcdh/esinfo/es-staging.env
+    if [ -f /ix1/ishi/esinfo/es-staging.env ]; then
+        source /ix1/ishi/esinfo/es-staging.env
         ES_HOST="${ES_STAGING_URL}"
     else
         echo "ERROR: ES staging environment not found. Is ES running?" >&2
@@ -1682,10 +1682,10 @@ echo "==========================================="
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
-cd /ix1/whcdh/elastic
+cd /ix1/ishi/elastic
 
 echo "Computing embeddings for training subset..."
 python -m phonetics.inference.update_es compute \\
@@ -1734,10 +1734,10 @@ echo "==========================================="
 
 set -e
 
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
-cd /ix1/whcdh/elastic
+cd /ix1/ishi/elastic
 
 echo "Rebuilding ES index from DuckDB + embeddings..."
 python -m phonetics.inference.update_es index \\
@@ -1811,7 +1811,7 @@ health_production() {
 
     echo
     echo "--- Disk Usage ---"
-    echo "Production data (ix3):"
+    echo "Production data (vast):"
     du -sh "$PROD_DATA_DIR" 2>/dev/null || echo "  Directory not found"
     echo "Snapshots (ix1):"
     du -sh "$SNAPSHOT_DIR" 2>/dev/null || echo "  Directory not found"
@@ -2243,7 +2243,7 @@ echo "Arguments: $PYTHON_ARGS"
 echo
 
 # Activate conda environment
-source "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+source "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 conda activate whg
 
 cd "$REPO_DIR"
@@ -2520,7 +2520,7 @@ case "$1" in
         echo "  3. Generate training:     source es.sh -generate-training-data 4"
         echo "  4. Train + Index:         source es.sh -train-and-update 4"
         echo
-        echo "Data directory: /ix1/whcdh/models/phonetic/data/vN/"
+        echo "Data directory: /ix1/ishi/models/phonetic/data/vN/"
         echo
         echo "NOTES:"
         echo "  - Staging: one instance at a time (port $STAGING_ES_PORT)"

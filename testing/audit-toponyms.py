@@ -4,7 +4,7 @@ Check number and validity of all language fields in `toponyms` index
 Usage:
 
 srun -p htc --mem=64G --cpus-per-task=4 --pty bash
-cd /ix1/whcdh/elastic
+cd /ix1/ishi/elastic
 python -m testing.audit-toponyms
 """
 import pycountry

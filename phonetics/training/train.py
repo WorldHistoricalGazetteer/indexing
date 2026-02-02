@@ -13,23 +13,23 @@ two-pass strategy (vocabulary from full corpus, training from gn/wd/tgn).
 Usage:
     # Phase 1: Train Teacher
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
+        --data-dir /ix1/ishi/models/phonetic/data/v3 \
+        --output-dir /ix1/ishi/models/phonetic/checkpoints/v3 \
         --phase 1 \
         --epochs 50
 
     # Phase 2: Align Student to Teacher
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
+        --data-dir /ix1/ishi/models/phonetic/data/v3 \
+        --output-dir /ix1/ishi/models/phonetic/checkpoints/v3 \
         --phase 2 \
         --teacher-checkpoint phase1_best.pt \
         --epochs 50
 
     # Phase 3: Fine-tune with hard negatives
     python -m phonetics.training.train \
-        --data-dir /ix1/whcdh/models/phonetic/data/v3 \
-        --output-dir /ix1/whcdh/models/phonetic/checkpoints/v3 \
+        --data-dir /ix1/ishi/models/phonetic/data/v3 \
+        --output-dir /ix1/ishi/models/phonetic/checkpoints/v3 \
         --phase 3 \
         --student-checkpoint phase2_best.pt \
         --epochs 30

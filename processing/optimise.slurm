@@ -13,7 +13,7 @@
 #SBATCH --partition=htc
 
 # 1. Load Environment
-source /ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh
+source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
 conda activate whg
 
 # 2. Navigate to Project Root

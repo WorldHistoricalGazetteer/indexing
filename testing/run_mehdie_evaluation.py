@@ -519,8 +519,8 @@ def print_f5_comparison(benchmark, all_results):
 
 def main():
     # Determine default paths based on latest version
-    checkpoints_base = '/ix1/whcdh/models/phonetic/checkpoints'
-    data_base = '/ix1/whcdh/models/phonetic/data'
+    checkpoints_base = '/ix1/ishi/models/phonetic/checkpoints'
+    data_base = '/ix1/ishi/models/phonetic/data'
 
     parser = argparse.ArgumentParser(
         description='Run MEHDIE benchmark evaluation',
