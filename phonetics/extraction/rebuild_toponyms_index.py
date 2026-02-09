@@ -2089,20 +2089,22 @@ def _update_language_phonetics(
                 ids, ipas, features, embeddings = result_columns
 
                 if ids:  # Check if any results in this batch
-                    # Build Arrow table column-wise (zero-copy from numpy)
-                    # Convert numpy array to flat list then to fixed-size list array
+                    # Convert embeddings to list of lists (DuckDB FLOAT[192] compatible format)
+                    # This is the cleanest way to ensure type compatibility
+                    embedding_lists = embeddings.tolist()
+
+                    # Build Arrow table column-wise
                     arrow_table = pa.table({
                         'toponym_id': pa.array(ids, type=pa.string()),
                         'ipa': pa.array(ipas, type=pa.string()),
                         'panphon_features': pa.array(features, type=pa.binary()),
-                        'panphon_embedding': pa.FixedSizeListArray.from_arrays(
-                            pa.array(embeddings.flatten(), type=pa.float32()),
-                            list_size=192
-                        )
+                        'panphon_embedding': pa.array(embedding_lists, type=pa.list_(pa.float32(), 192))
                     })
 
                     # Register Arrow table with DuckDB and perform update
                     conn.register('updates_temp', arrow_table)
+
+                    # Single UPDATE for all columns
                     conn.execute("""
                         UPDATE toponyms
                         SET ipa = updates_temp.ipa,
@@ -2111,6 +2113,7 @@ def _update_language_phonetics(
                         FROM updates_temp
                         WHERE toponyms.toponym_id = updates_temp.toponym_id
                     """)
+
                     conn.unregister('updates_temp')
 
                     total_updated += len(ids)
@@ -2119,8 +2122,8 @@ def _update_language_phonetics(
                     if batches_completed % 100 == 0:
                         logger.info(f"Total updated so far: {total_updated:,} records")
 
-                    # Drop reference immediately to free memory
-                    del arrow_table, ids, ipas, features, embeddings
+                    # Drop all references immediately to free memory
+                    del arrow_table, embedding_lists, ids, ipas, features, embeddings
 
             if pbar:
                 pbar.update(batch_size)
