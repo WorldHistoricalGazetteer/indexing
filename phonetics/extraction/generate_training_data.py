@@ -66,11 +66,27 @@ def main():
 
     # Connect to ES
     es = Elasticsearch(args.es_host)
+    
+    # Check if we really need ES
+    # Phase 1 only needs DuckDB (if provided) and local files
+    # Phase 2 needs ES to scan toponyms
+    # Phase 3 needs ES for KNN
+    # Positive pairs need ES
+    
+    # But for now, we just make the ping failure non-fatal if we might not need it
+    # Or better, we only ping if we are sure we need it.
+    # Actually, the generator __init__ takes 'es' as a required argument.
+    
     if not es.ping():
-        logger.error(f"Cannot connect to Elasticsearch at {args.es_host}")
-        sys.exit(1)
-
-    logger.info(f"Connected to Elasticsearch at {args.es_host}")
+        logger.warning(f"Cannot connect to Elasticsearch at {args.es_host}")
+        if args.resume:
+            logger.info("Resume mode: Checking if ES is actually needed...")
+            # We'll let the generator decide later or fail then.
+        else:
+            logger.error("Fatal: ES required for fresh generation.")
+            sys.exit(1)
+    else:
+        logger.info(f"Connected to Elasticsearch at {args.es_host}")
 
     if args.force:
         logger.info("Mode: FORCE (regenerating all data)")

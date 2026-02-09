@@ -680,19 +680,35 @@ do_rebuild_toponyms() {
     DATA_VERSION=${1:-4}
     shift 2>/dev/null || true  # Remove version from remaining args
 
-    # Check staging is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: No staging ES instance running"
-        echo "Start one first with: source $0 -staging-start"
-        return 1
-    fi
+    # Capture extra args (e.g., --limit 1000)
+    PYTHON_ARGS="$@"
 
-    source "$STAGING_INFO_FILE"
+    # Determine if we need ES based on args
+    NEEDS_ES=true
+    for arg in "$@"; do
+        if [[ "$arg" == "--update-langs" ]] || [[ "$arg" == "--skip-es-index" ]]; then
+            NEEDS_ES=false
+            break
+        fi
+    done
 
-    # Verify ES is responding
-    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-        return 1
+    ES_URL=""
+    if [ "$NEEDS_ES" = true ]; then
+        # Check staging is running
+        if [ ! -f "$STAGING_INFO_FILE" ]; then
+            echo "ERROR: No staging ES instance running"
+            echo "Start one first with: source $0 -staging-start"
+            return 1
+        fi
+
+        source "$STAGING_INFO_FILE"
+
+        # Verify ES is responding
+        if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+            echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+            return 1
+        fi
+        ES_URL="http://${ES_NODE}:${ES_PORT}"
     fi
 
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
@@ -705,15 +721,16 @@ do_rebuild_toponyms() {
     # Setup local scratch (CRC convention)
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
-    # Capture extra args (e.g., --limit 1000)
-    PYTHON_ARGS="$@"
-
     echo "=========================================="
     echo "v4 PIPELINE - PHASE 1: REBUILD TOPONYMS"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
-    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    if [ "$NEEDS_ES" = true ]; then
+        echo "  ES Host:      ${ES_URL}"
+    else
+        echo "  ES Host:      (not required for targeted update)"
+    fi
     echo "  Extra Args:   ${PYTHON_ARGS:-none}"
     echo
     echo "This job will:"
@@ -724,6 +741,15 @@ do_rebuild_toponyms() {
     echo "  5. Index ALL toponyms to ES (panphon_embedding where available)"
     echo "  6. Refresh index and create snapshot"
     echo
+
+# SBATCH script will be generated below
+    local SBATCH_ES_HOST_ARG=""
+    if [ "$NEEDS_ES" = true ]; then
+        SBATCH_ES_HOST_ARG="--es-host \"http://${ES_NODE}:${ES_PORT}\""
+    else
+        # Use a dummy host if not required, rebuild_toponyms_index.py will ignore it
+        SBATCH_ES_HOST_ARG="--es-host \"http://not-required:9200\""
+    fi
 
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
@@ -760,7 +786,7 @@ echo
 
 # Run the rebuild script
 python -m phonetics.extraction.rebuild_toponyms_index \
-    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    ${SBATCH_ES_HOST_ARG} \
     --db-path "${DB_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
