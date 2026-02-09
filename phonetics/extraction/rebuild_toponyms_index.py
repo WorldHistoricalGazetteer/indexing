@@ -1889,25 +1889,9 @@ def _ensure_columns_exist(conn):
 
     if 'panphon_embedding' not in existing_columns:
         logger.info("Adding 'panphon_embedding' column to toponyms table")
-        conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_embedding FLOAT[192]")
+        conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_embedding DOUBLE[192]")
     else:
-        # Check if existing column has correct type
-        col_info = conn.execute(
-            "SELECT column_name, data_type FROM information_schema.columns "
-            "WHERE table_name = 'toponyms' AND column_name = 'panphon_embedding'"
-        ).fetchone()
-
-        if col_info:
-            col_type = col_info[1]
-            # Check if it's not FLOAT[192]
-            if 'FLOAT[192]' not in col_type.upper() and 'FLOAT(192)' not in col_type.upper():
-                logger.warning(f"panphon_embedding column has incorrect type '{col_type}', recreating as FLOAT[192]")
-                conn.execute("ALTER TABLE toponyms DROP COLUMN panphon_embedding")
-                conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_embedding FLOAT[192]")
-            else:
-                logger.info("Column 'panphon_embedding' already exists with correct type, skipping")
-        else:
-            logger.info("Column 'panphon_embedding' already exists, skipping")
+        logger.info("Column 'panphon_embedding' already exists, skipping")
 
 
 def _update_language_phonetics(
@@ -2110,7 +2094,7 @@ def _update_language_phonetics(
                             toponym_id VARCHAR,
                             ipa VARCHAR,
                             panphon_features BLOB,
-                            panphon_embedding FLOAT[192]
+                            panphon_embedding DOUBLE[192]
                         )
                     """)
 
