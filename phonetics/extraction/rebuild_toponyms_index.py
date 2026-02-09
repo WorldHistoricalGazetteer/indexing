@@ -1729,20 +1729,29 @@ def bulk_index_from_file(
 def _ensure_columns_exist(conn):
     """Ensure all required columns exist in the toponyms table (for backward compatibility)."""
     # Get current columns
-    columns = [row[0] for row in conn.execute("PRAGMA table_info(toponyms)").fetchall()]
+    columns_result = conn.execute("PRAGMA table_info(toponyms)").fetchall()
+    existing_columns = {row[0].lower() for row in columns_result}
+
+    logger.info(f"Existing columns in toponyms table: {sorted(existing_columns)}")
 
     # Add missing columns
-    if 'ipa' not in columns:
+    if 'ipa' not in existing_columns:
         logger.info("Adding 'ipa' column to toponyms table")
         conn.execute("ALTER TABLE toponyms ADD COLUMN ipa VARCHAR")
+    else:
+        logger.info("Column 'ipa' already exists, skipping")
 
-    if 'panphon_features' not in columns:
+    if 'panphon_features' not in existing_columns:
         logger.info("Adding 'panphon_features' column to toponyms table")
         conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_features BLOB")
+    else:
+        logger.info("Column 'panphon_features' already exists, skipping")
 
-    if 'panphon_embedding' not in columns:
+    if 'panphon_embedding' not in existing_columns:
         logger.info("Adding 'panphon_embedding' column to toponyms table")
         conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_embedding FLOAT[]")
+    else:
+        logger.info("Column 'panphon_embedding' already exists, skipping")
 
 
 def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, batch_size: int = 2500):
