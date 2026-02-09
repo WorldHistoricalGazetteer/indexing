@@ -2112,7 +2112,7 @@ def _update_language_phonetics(
                         UPDATE toponyms
                         SET ipa = updates_temp.ipa,
                             panphon_features = updates_temp.panphon_features,
-                            panphon_embedding = updates_temp.panphon_embedding
+                            panphon_embedding = CAST(updates_temp.panphon_embedding AS FLOAT[192])
                         FROM updates_temp
                         WHERE toponyms.toponym_id = updates_temp.toponym_id
                     """)
