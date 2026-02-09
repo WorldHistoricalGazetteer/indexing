@@ -678,7 +678,7 @@ SBATCH_EOF
 }
 
 # ==============================================================================
-# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS (v4 Pipeline Phase 1)
+# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS (Phase 1)
 # ==============================================================================
 
 do_rebuild_toponyms() {
@@ -691,14 +691,21 @@ do_rebuild_toponyms() {
     # Capture extra args (e.g., --limit 1000)
     PYTHON_ARGS="$@"
 
-    # Determine if we need ES based on args
+    # Determine if we need ES and if we want GPU based on args
     NEEDS_ES=true
+    USE_GPU=false
+    REMAINING_ARGS=""
     for arg in "$@"; do
         if [[ "$arg" == "--update-langs" ]] || [[ "$arg" == "--skip-es-index" ]]; then
             NEEDS_ES=false
-            break
         fi
+        if [[ "$arg" == "--gpu" ]]; then
+            USE_GPU=true
+            continue # Don't pass --gpu to the python script
+        fi
+        REMAINING_ARGS="$REMAINING_ARGS $arg"
     done
+    PYTHON_ARGS="$REMAINING_ARGS"
 
     ES_URL=""
     if [ "$NEEDS_ES" = true ]; then
@@ -730,7 +737,7 @@ do_rebuild_toponyms() {
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
     echo "=========================================="
-    echo "v4 PIPELINE - PHASE 1: REBUILD TOPONYMS"
+    echo "PHASE 1: REBUILD TOPONYMS"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
@@ -759,16 +766,36 @@ do_rebuild_toponyms() {
         SBATCH_ES_HOST_ARG="--es-host \"http://not-required:9200\""
     fi
 
+    local SBATCH_PARTITION="#SBATCH --partition=htc"
+    local SBATCH_GRES=""
+    local SBATCH_CLUSTER=""
+    local SBATCH_MEM="#SBATCH --mem=300G"
+    local SBATCH_CPUS="#SBATCH --cpus-per-task=16"
+
+    if [ "$USE_GPU" = true ]; then
+        SBATCH_PARTITION="#SBATCH --partition=a100"
+        SBATCH_GRES="#SBATCH --gres=gpu:1"
+        SBATCH_CLUSTER="#SBATCH --cluster=gpu"
+        SBATCH_MEM="#SBATCH --mem=64G"
+        SBATCH_CPUS="#SBATCH --cpus-per-task=8"
+        echo "  Partition:    a100 (GPU)"
+    else
+        echo "  Partition:    htc (CPU)"
+    fi
+
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-rebuild-v${DATA_VERSION}
 #SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
 #SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
+${SBATCH_CLUSTER}
+${SBATCH_PARTITION}
+${SBATCH_GRES}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=300G
+${SBATCH_CPUS}
+${SBATCH_MEM}
 
 set -e
 
@@ -784,7 +811,7 @@ mkdir -p "\$SCRATCH_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "v4 PIPELINE - PHASE 1: REBUILD TOPONYMS"
+echo "PHASE 1: REBUILD TOPONYMS"
 echo "=========================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
@@ -828,7 +855,7 @@ EOF
 }
 
 # ==============================================================================
-# GENERATE TRAINING DATA (v4 Pipeline Phase 2)
+# GENERATE TRAINING DATA (Phase 2)
 # ==============================================================================
 
 do_generate_training_data() {
@@ -940,7 +967,7 @@ do_generate_training_data() {
 
     echo
     echo "=========================================="
-    echo "v4 PIPELINE - PHASE 2: GENERATE TRAINING DATA"
+    echo "PHASE 2: GENERATE TRAINING DATA"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
@@ -986,7 +1013,7 @@ SCRATCH_DIR="$SCRATCH_VAR"
 mkdir -p "\$SCRATCH_DIR"
 
 echo "=========================================="
-echo "v4 PIPELINE - PHASE 2: GENERATE TRAINING DATA"
+echo "PHASE 2: GENERATE TRAINING DATA"
 echo "=========================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
@@ -1034,7 +1061,7 @@ do_generate_pairs() {
 }
 
 # ==============================================================================
-# TRAIN MODEL (v4 Pipeline Phase 3)
+# TRAIN MODEL (Phase 3)
 # ==============================================================================
 
 do_train_model() {
@@ -1635,7 +1662,7 @@ EOF
 do_rebuild_toponyms_gpu() {
     # Usage: source es.sh -rebuild-toponyms-gpu [VERSION] [OPTIONS]
     #
-    # Phase 1 of v4 pipeline: Rebuild toponyms index from places (GPU version)
+    # Phase 1: Rebuild toponyms index from places (GPU version)
     #
     # Arguments:
     #   VERSION      Data version (default: 4)
@@ -2470,9 +2497,9 @@ case "$1" in
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
         echo
-        echo "v4 PIPELINE - REBUILD TOPONYMS INDEX (requires staging ES running):"
+        echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms VERSION [OPTIONS]"
-        echo "      Phase 1 of v4 pipeline:"
+        echo "      Phase 1:"
         echo "        1. Extracts toponyms from places (with attestations)"
         echo "        2. Filters pre-romanized forms (lang-script mismatches)"
         echo "        3. Generates vocabulary (full Unicode ranges)"
@@ -2489,9 +2516,9 @@ case "$1" in
         echo "    $0 -rebuild-toponyms 4 --limit 10000      # Test with subset"
         echo "    $0 -rebuild-toponyms 4 --resume           # Resume interrupted job"
         echo
-        echo "v4 PIPELINE - GENERATE TRAINING DATA (reads from ES toponyms index):"
+        echo "GENERATE TRAINING DATA (reads from ES toponyms index):"
         echo "  -generate-training-data VERSION [OPTIONS]"
-        echo "      Phase 2 of v4 pipeline - reads PanPhon embeddings from ES:"
+        echo "      Phase 2 of reads PanPhon embeddings from ES:"
         echo "        1. Generate positive pairs (HDBSCAN clustering on PanPhon cosine)"
         echo "        2. Balance samples by script+language pair"
         echo "        3. Generate Phase 1 triplets (script-aware random negatives)"

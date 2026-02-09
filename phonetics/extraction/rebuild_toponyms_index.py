@@ -1,7 +1,7 @@
 """
 Rebuild the ES toponyms index with vocabulary generation and PanPhon embeddings.
 
-v4 Pipeline - Phase 1: Extraction and ES Indexing
+Phase 1: Extraction and ES Indexing
 
 This script:
 1. Scans all places to extract toponyms with attestations (back-references to places)
@@ -239,10 +239,15 @@ class IPAConverter:
         if self._phonikud is None:
             try:
                 import phonikud
-                self._phonikud = phonikud.Phonikud()
+
+                class PhonikudWrapper:
+                    def transliterate(self, text):
+                        return phonikud.phonemize(text)
+
+                self._phonikud = PhonikudWrapper()
                 logger.info("Phonikud initialized for Hebrew G2P")
-            except ImportError:
-                logger.warning("Phonikud not available. Hebrew G2P disabled.")
+            except (ImportError, Exception) as e:
+                logger.warning(f"Phonikud not available or failed to initialize: {e}")
                 self._phonikud = False
         return self._phonikud
 
@@ -1233,7 +1238,9 @@ def export_training_parquet(
 
     # Progress tracking
     processed = 0
-    last_log = 0
+    pbar = None
+    if tqdm:
+        pbar = tqdm(total=total_count, desc="Exporting Parquet", mininterval=10.0)
 
     # Stream results using fetchmany() for memory efficiency
     fetch_batch_size = 10000
@@ -1294,9 +1301,13 @@ def export_training_parquet(
 
             # Progress logging
             processed += 1
-            if processed - last_log >= 100000:
+            if pbar:
+                pbar.update(1)
+            elif processed % 100000 == 0:
                 logger.info(f"Processed {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%)")
-                last_log = processed
+
+    if pbar:
+        pbar.close()
 
     # Flush remaining buffers
     for script in list(buffers.keys()):
@@ -1429,6 +1440,11 @@ def dump_to_jsonl(
 
     logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
 
+    # Progress bar setup
+    pbar = None
+    if tqdm:
+        pbar = tqdm(total=total_count, desc="Phonetic computation", mininterval=10.0)
+
     # Use multiprocessing.Pool with initializer for cached converters
     with open(output_path, 'w', encoding='utf-8') as f, \
          mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
@@ -1531,15 +1547,21 @@ def dump_to_jsonl(
             batches_processed += 1
 
             # Log progress every batch (processing batches are now larger)
-            pct = 100 * stats['total'] / total_count
-            logger.info(
-                f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
-                f"IPA: {stats['with_ipa']:,} - Batch {batches_processed}"
-            )
+            if pbar:
+                pbar.update(len(batch_docs))
+            else:
+                pct = 100 * stats['total'] / total_count
+                logger.info(
+                    f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
+                    f"IPA: {stats['with_ipa']:,} - Batch {batches_processed}"
+                )
 
         # Flush any remaining writes
         if pending_writes:
             flush_writes()
+
+        if pbar:
+            pbar.close()
 
     logger.info(f"Streaming complete. Total batches processed: {batches_processed}")
 
@@ -1566,7 +1588,13 @@ def dump_to_jsonl(
 
         # Process in batches to avoid memory issues
         update_batch_size = 100000
-        for i in range(0, len(all_db_updates), update_batch_size):
+        
+        # Wrap updates in tqdm if available
+        update_iterator = range(0, len(all_db_updates), update_batch_size)
+        if tqdm:
+            update_iterator = tqdm(update_iterator, desc="DuckDB updates", total=(len(all_db_updates) + update_batch_size - 1) // update_batch_size, mininterval=10.0)
+            
+        for i in update_iterator:
             batch = all_db_updates[i:i + update_batch_size]
             ipas, features, ids = zip(*batch)
             update_table = pa.table({
@@ -1583,7 +1611,7 @@ def dump_to_jsonl(
             """)
             conn.execute("DROP TABLE updates")
 
-            if (i + update_batch_size) % 500000 == 0:
+            if not tqdm and (i + update_batch_size) % 500000 == 0:
                 logger.info(f"  Updated {i + len(batch):,} / {len(all_db_updates):,} records")
 
         total_db_updates = len(all_db_updates)
@@ -1696,7 +1724,7 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
         batches = [rows[i * batch_size:(i + 1) * batch_size] for i in range(num_batches)]
 
         total_updated = 0
-        with tqdm(total=len(rows), desc="Updating phonetics") as pbar:
+        with tqdm(total=len(rows), desc="Updating phonetics", mininterval=10.0) as pbar:
             for result_batch in pool.imap_unordered(_compute_phonetics_for_batch, batches):
                 if result_batch:
                     # result_batch is list of (toponym_id, ipa, packed_features, embedding)
@@ -1737,7 +1765,7 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
 
 def main():
     parser = argparse.ArgumentParser(
-        description='v4 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
+        description='Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
     )
     parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--places-index', default='places')
@@ -1784,7 +1812,7 @@ def main():
 
     if not args.confirm:
         print("=" * 60)
-        print("v4 PIPELINE - PHASE 1: EXTRACTION & ES INDEXING")
+        print("PHASE 1: EXTRACTION & ES INDEXING")
         print("=" * 60)
         print()
         print("Run with --confirm to proceed.")
