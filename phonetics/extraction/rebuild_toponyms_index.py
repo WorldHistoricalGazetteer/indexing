@@ -1701,6 +1701,21 @@ def bulk_index_from_file(
 def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, batch_size: int = 2500):
     """
     Perform targeted update of IPA and PanPhon features for specific languages.
+
+    Efficiently handles multiple languages in a single pass:
+    - Worker processes load models on-demand (Epitran, CharsiuG2P, Phonikud)
+    - Once loaded, models stay in memory for the entire job
+    - For mixed language lists (e.g., 'he gan wuu yue ko'):
+      * Hebrew triggers Phonikud loading on first use
+      * Chinese topolects trigger Charsiu topolect model on first use
+      * Korean triggers Charsiu multilingual model on first use
+    - Models are automatically selected per-toponym based on lang+script
+
+    Args:
+        conn: DuckDB connection
+        lang_list: List of language codes to process (e.g., ['he', 'gan', 'wuu', 'yue', 'ko'])
+        num_workers: Number of parallel worker processes
+        batch_size: Records per batch for processing
     """
     logger.info(f"Targeted update for languages: {lang_list}")
 

@@ -850,8 +850,12 @@ EOF
 )
 
     echo "✓ Rebuild job submitted: $JOBID"
-    echo "  Monitor: squeue -j $JOBID"
-    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.out"
+    if [ "$USE_GPU" = true ]; then
+        echo "  Monitor: squeue -j $JOBID -M gpu"
+    else
+        echo "  Monitor: squeue -j $JOBID"
+    fi
+    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.*"
 }
 
 # ==============================================================================
