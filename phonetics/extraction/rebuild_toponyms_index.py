@@ -2088,6 +2088,11 @@ def main():
 
     args = parser.parse_args()
 
+    # Force HuggingFace to use local scratch for cache
+    if args.scratch_dir:
+        os.environ['HF_HOME'] = str(args.scratch_dir / 'hf_cache')
+        os.environ['TRANSFORMERS_CACHE'] = str(args.scratch_dir / 'hf_cache')
+
     # Determine number of workers
     if args.num_workers is None:
         args.num_workers = max(1, mp.cpu_count() - 2)
