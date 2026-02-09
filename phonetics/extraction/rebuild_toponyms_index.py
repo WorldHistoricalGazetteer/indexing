@@ -440,6 +440,55 @@ def _get_worker_converter() -> IPAConverter:
     return _WORKER_CONVERTER
 
 
+def _preload_models():
+    """
+    Pre-load all models in the main process before spawning workers.
+
+    This ensures models are cached and workers can load them from cache
+    rather than 46 workers simultaneously hitting the filesystem/network.
+
+    Call this BEFORE creating the multiprocessing pool.
+    """
+    logger.info("Pre-loading models in main process to avoid worker contention...")
+    preload_start = time.time()
+
+    # Create a temporary converter to trigger all lazy loading
+    converter = IPAConverter()
+
+    # Force CharsiuG2P to load (the heavy one)
+    logger.info("Pre-loading CharsiuG2P model (this may take 1-2 minutes)...")
+    if converter._check_charsiu():
+        logger.info("CharsiuG2P loaded successfully")
+    else:
+        logger.warning("CharsiuG2P failed to load - will skip Chinese/Korean/Japanese")
+
+    # Force Phonikud to load
+    logger.info("Pre-loading Phonikud model...")
+    if converter._check_phonikud():
+        logger.info("Phonikud loaded successfully")
+    else:
+        logger.warning("Phonikud failed to load - will skip Hebrew")
+
+    # Force PanPhon to load
+    logger.info("Pre-loading PanPhon...")
+    if converter._check_panphon():
+        logger.info("PanPhon loaded successfully")
+
+    # Force Epitran to load for a common language
+    logger.info("Pre-loading Epitran...")
+    if converter._check_epitran():
+        # Test with English to ensure it works
+        test_epi = converter.get_epitran('eng-Latn')
+        if test_epi:
+            logger.info("Epitran loaded successfully")
+
+    preload_elapsed = time.time() - preload_start
+    logger.info(f"Model pre-loading completed in {preload_elapsed:.2f}s")
+
+    # Return the converter so it stays in memory (helps with caching)
+    return converter
+
+
 def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
     """
     Worker function for parallel IPA/PanPhon computation.
@@ -452,9 +501,20 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
     Returns:
         List of (toponym_id, ipa, full_features_packed, embedding_192) tuples
     """
-    # ADD LOGGING TO SEE IF WORKERS ARE ACTUALLY RUNNING
+    # REDUCED LOGGING - only log first batch per worker to avoid log spam
     pid = os.getpid()
-    logger.info(f"Worker {pid} starting batch of {len(batch)} items")
+    global _worker_batch_count
+
+    # Initialize counter if this is first call in this worker
+    try:
+        _worker_batch_count += 1
+    except NameError:
+        _worker_batch_count = 1
+        logger.info(f"Worker {pid} started (will process batches of ~{len(batch)} items)")
+
+    # Log every 100th batch from each worker
+    if _worker_batch_count % 100 == 0:
+        logger.info(f"Worker {pid} has processed {_worker_batch_count} batches")
 
     converter = _get_worker_converter()
     results = []
@@ -476,7 +536,6 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
             packed = struct.pack(f'{len(full_features)}f', *full_features) if full_features else None
             results.append((toponym_id, ipa, packed, embedding))
 
-    logger.info(f"Worker {pid} completed batch: {len(results)} results from {len(batch)} items")
     return results
 
 
@@ -1776,8 +1835,15 @@ def _ensure_columns_exist(conn):
         logger.info("Column 'panphon_embedding' already exists, skipping")
 
 
-def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: List[str], num_workers: int,
-                               batch_size: int = 2500):
+def _update_language_phonetics(
+        conn,
+        lang_list: List[str],
+        training_namespaces: List[str],
+        num_workers: int,
+        batch_size: int = 2500,
+        persistent_db_path: Path = None,
+        scratch_db_path: Path = None
+):
     """
     Perform targeted update of IPA and PanPhon features for specific languages.
 
@@ -1790,6 +1856,8 @@ def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: 
         training_namespaces: List of namespace codes (e.g., ['gn', 'wd', 'tgn'])
         num_workers: Number of parallel worker processes
         batch_size: Records per batch for processing
+        persistent_db_path: Path to persistent database (for checkpointing)
+        scratch_db_path: Path to scratch database (for checkpointing)
     """
     process_all = '__ALL__' in lang_list
 
@@ -1804,17 +1872,70 @@ def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: 
     # Mark main process for logging
     os.environ['_REBUILD_MAIN_PROCESS'] = '1'
 
+    # PRE-LOAD MODELS BEFORE SPAWNING WORKERS - CRITICAL!
+    logger.info("=" * 60)
+    logger.info("PRE-LOADING MODELS (prevents worker filesystem contention)")
+    logger.info("=" * 60)
+    main_converter = _preload_models()
+    logger.info("Models cached and ready for workers")
+    logger.info("=" * 60)
+
     # Create indexes for efficient query (if they don't exist)
     logger.info("Ensuring indexes exist for efficient querying...")
     index_start = time.time()
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_namespace ON toponym_namespaces(namespace)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_toponym_id ON toponym_namespaces(toponym_id)')
-    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
-    if not process_all:
+
+    # Check if indexes already exist before creating
+    existing_indexes = set()
+    index_check = conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
+    existing_indexes = {row[0] for row in index_check}
+
+    indexes_created = False
+
+    if 'idx_tn_namespace' not in existing_indexes:
+        conn.execute('CREATE INDEX idx_tn_namespace ON toponym_namespaces(namespace)')
+        indexes_created = True
+        logger.info("Created index: idx_tn_namespace")
+
+    if 'idx_tn_toponym_id' not in existing_indexes:
+        conn.execute('CREATE INDEX idx_tn_toponym_id ON toponym_namespaces(toponym_id)')
+        indexes_created = True
+        logger.info("Created index: idx_tn_toponym_id")
+
+    if 'idx_toponyms_id' not in existing_indexes:
+        conn.execute('CREATE INDEX idx_toponyms_id ON toponyms(toponym_id)')
+        indexes_created = True
+        logger.info("Created index: idx_toponyms_id")
+
+    if not process_all and 'idx_toponyms_lang' not in existing_indexes:
         # Only needed for language-filtered queries
-        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+        conn.execute('CREATE INDEX idx_toponyms_lang ON toponyms(lang)')
+        indexes_created = True
+        logger.info("Created index: idx_toponyms_lang")
+
     index_elapsed = time.time() - index_start
     logger.info(f"Indexes ready in {index_elapsed:.2f}s")
+
+    # If we created new indexes, save them back to persistent storage now
+    # This way if the job fails later, we don't have to recreate indexes on restart
+    if indexes_created and persistent_db_path and scratch_db_path:
+        logger.info("=" * 60)
+        logger.info("NEW INDEXES CREATED - Checkpointing to persistent storage")
+        logger.info("=" * 60)
+
+        # Close connection temporarily for safe copy
+        conn.close()
+
+        import shutil
+        checkpoint_start = time.time()
+        logger.info(f"Copying indexed database: {scratch_db_path} -> {persistent_db_path}")
+        shutil.copy2(scratch_db_path, persistent_db_path)
+        checkpoint_elapsed = time.time() - checkpoint_start
+        logger.info(f"Checkpoint completed in {checkpoint_elapsed:.2f}s")
+
+        # Reconnect
+        conn = duckdb.connect(str(scratch_db_path))
+        logger.info("Database reconnected, continuing with query...")
+        logger.info("=" * 60)
 
     # Build query based on whether we're processing all or specific languages
     logger.info("Building query to fetch toponyms...")
@@ -1929,6 +2050,9 @@ def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: 
         pool.close()
         pool.join()
 
+    # Return connection in case it was reconnected during checkpointing
+    return conn
+
 
 # --- MAIN ---
 
@@ -2002,12 +2126,14 @@ def main():
             os.environ['_REBUILD_MAIN_PROCESS'] = '1'
 
             # Perform updates on scratch copy
-            _update_language_phonetics(
+            conn = _update_language_phonetics(
                 conn,
                 args.update_langs,
                 args.training_namespaces,
                 args.num_workers,
-                args.batch_size
+                args.batch_size,
+                persistent_db_path=args.db_path,
+                scratch_db_path=temp_db_path
             )
 
             conn.close()
