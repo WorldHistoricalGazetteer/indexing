@@ -1595,13 +1595,13 @@ EOF
 }
 
 # ==============================================================================
-# REBUILD TOPONYMS INDEX (v4 Pipeline Phase 1)
+# REBUILD TOPONYMS INDEX (Legacy / Alternative)
 # ==============================================================================
 
-do_rebuild_toponyms() {
-    # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS]
+do_rebuild_toponyms_gpu() {
+    # Usage: source es.sh -rebuild-toponyms-gpu [VERSION] [OPTIONS]
     #
-    # Phase 1 of v4 pipeline: Rebuild toponyms index from places
+    # Phase 1 of v4 pipeline: Rebuild toponyms index from places (GPU version)
     #
     # Arguments:
     #   VERSION      Data version (default: 4)
@@ -2312,6 +2312,10 @@ case "$1" in
         shift  # Remove -rebuild-toponyms from arguments
         do_rebuild_toponyms "$@"
         ;;
+    -rebuild-toponyms-gpu)
+        shift
+        do_rebuild_toponyms_gpu "$@"
+        ;;
 
     # --- Generate Training Data (v4) ---
     -generate-training-data)
@@ -2408,6 +2412,12 @@ case "$1" in
         echo "  -install            Install Elasticsearch and Kibana"
         echo "  -update             Pull latest code from git"
         echo
+        echo "PIPELINE:"
+        echo "  -rebuild-toponyms   [VER] Rebuild index from places (Phase 1)"
+        echo "  -rebuild-toponyms-gpu [VER] Rebuild index with GPU compute (Legacy)"
+        echo "  -generate-training-data [VER] Generate training sets (Phase 2)"
+        echo "  -train-model        [VER] Train Teacher/Student models (Phase 3)"
+        echo "  -update-embeddings  [VER] Compute new embeddings and index"
         echo "HEALTH CHECKS:"
         echo "  -health             Production cluster health and stats"
         echo "  -staging-health     Staging cluster health and stats"
