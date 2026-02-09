@@ -1840,7 +1840,7 @@ def _update_language_phonetics(
         lang_list: List[str],
         training_namespaces: List[str],
         num_workers: int,
-        batch_size: int = 2500,
+        batch_size: int = 25_000,
         persistent_db_path: Path = None,
         scratch_db_path: Path = None
 ):
@@ -2069,7 +2069,7 @@ def main():
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Output directory for vocab and stats (default: db-path parent)')
     parser.add_argument('--scratch-dir', type=Path, default=None)
-    parser.add_argument('--batch-size', type=int, default=2500)
+    parser.add_argument('--batch-size', type=int, default=25_000)
     parser.add_argument('--limit', type=int, default=None)
     parser.add_argument('--confirm', action='store_true')
     parser.add_argument('--resume', action='store_true', help="Resume from existing DuckDB database")
