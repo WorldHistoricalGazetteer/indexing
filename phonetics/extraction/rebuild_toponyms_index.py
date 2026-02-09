@@ -2089,22 +2089,35 @@ def _update_language_phonetics(
                 ids, ipas, features, embeddings = result_columns
 
                 if ids:  # Check if any results in this batch
-                    assert embeddings.dtype == np.float32
-                    assert embeddings.ndim == 2 and embeddings.shape[1] == 192
-                    embeddings = np.ascontiguousarray(embeddings)
+                    # Convert to DuckDB-friendly format
+                    embeddings_lists = embeddings.tolist()
 
-                    embeddings_as_lists = [emb.tolist() for emb in embeddings]
+                    # Create DataFrame for efficient transfer
+                    import pandas as pd
 
-                    arrow_table = pa.table({
-                        'toponym_id': pa.array(ids, type=pa.string()),
-                        'ipa': pa.array(ipas, type=pa.string()),
-                        'panphon_features': pa.array(features, type=pa.binary(), safe=True),
-                        'panphon_embedding': embeddings_as_lists  # Let Arrow infer as list<float>
+                    # DuckDB can handle DataFrames with list columns natively
+                    updates_df = pd.DataFrame({
+                        'toponym_id': ids,
+                        'ipa': ipas,
+                        'panphon_features': features,
+                        'panphon_embedding': embeddings_lists
                     })
 
-                    # Register Arrow table with DuckDB and perform update
-                    conn.register('updates_temp', arrow_table)
+                    # Drop and recreate temp table with explicit schema
+                    conn.execute("DROP TABLE IF EXISTS updates_temp")
+                    conn.execute("""
+                        CREATE TEMP TABLE updates_temp (
+                            toponym_id VARCHAR,
+                            ipa VARCHAR,
+                            panphon_features BLOB,
+                            panphon_embedding FLOAT[192]
+                        )
+                    """)
 
+                    # Insert from DataFrame - DuckDB will handle the type conversion
+                    conn.execute("INSERT INTO updates_temp SELECT * FROM updates_df")
+
+                    # Perform update
                     conn.execute("""
                         UPDATE toponyms
                         SET ipa = updates_temp.ipa,
@@ -2114,16 +2127,12 @@ def _update_language_phonetics(
                         WHERE toponyms.toponym_id = updates_temp.toponym_id
                     """)
 
-                    conn.unregister('updates_temp')
-
                     total_updated += len(ids)
 
-                    # Log every 100 batches with update count
                     if batches_completed % 100 == 0:
                         logger.info(f"Total updated so far: {total_updated:,} records")
 
-                    # Drop all references immediately to free memory
-                    del arrow_table, ids, ipas, features, embeddings
+                    del updates_df, embeddings_lists, ids, ipas, features, embeddings
 
             if pbar:
                 pbar.update(batch_size)
