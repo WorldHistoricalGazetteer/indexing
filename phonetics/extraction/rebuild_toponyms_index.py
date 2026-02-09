@@ -489,7 +489,7 @@ def _preload_models():
     return converter
 
 
-def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
+def _compute_phonetics_for_batch(batch: List[Tuple]) -> 'pa.Table':
     """
     Worker function for parallel IPA/PanPhon computation.
 
@@ -499,8 +499,11 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
         batch: List of (toponym_id, name, lang, script) tuples
 
     Returns:
-        List of (toponym_id, ipa, full_features_packed, embedding_192) tuples
+        PyArrow Table with columns: toponym_id, ipa, panphon_features, panphon_embedding
+        (Zero-copy transfer to parent process)
     """
+    import pyarrow as pa
+
     # REDUCED LOGGING - only log first batch per worker to avoid log spam
     pid = os.getpid()
     global _worker_batch_count
@@ -517,7 +520,12 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
         logger.info(f"Worker {pid} has processed {_worker_batch_count} batches")
 
     converter = _get_worker_converter()
-    results = []
+
+    # Columnar data (pre-allocate for efficiency)
+    toponym_ids = []
+    ipas = []
+    packed_features_list = []
+    embeddings = []
 
     for toponym_id, name, lang, script in batch:
         try:
@@ -534,9 +542,19 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
 
         if embedding:
             packed = struct.pack(f'{len(full_features)}f', *full_features) if full_features else None
-            results.append((toponym_id, ipa, packed, embedding))
+            toponym_ids.append(toponym_id)
+            ipas.append(ipa)
+            packed_features_list.append(packed)
+            embeddings.append(embedding)
 
-    return results
+    # Build Arrow table (zero-copy construction)
+    # Using list_(float32(), 192) ensures fixed-length list of floats
+    return pa.table({
+        'toponym_id': pa.array(toponym_ids, type=pa.string()),
+        'ipa': pa.array(ipas, type=pa.string()),
+        'panphon_features': pa.array(packed_features_list, type=pa.binary()),
+        'panphon_embedding': pa.array(embeddings, type=pa.list_(pa.float32(), 192))
+    })
 
 
 # Languages that are expected to use specific scripts
@@ -1537,8 +1555,8 @@ def dump_to_jsonl(
         GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
     ''')
 
-    # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
-    all_db_updates = []
+    # Accumulate Arrow tables from workers for zero-copy bulk DB update
+    all_arrow_tables = []
 
     logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
 
@@ -1608,9 +1626,9 @@ def dump_to_jsonl(
                 batch_docs.append(doc)
                 stats['total'] += 1
 
-            # Phase 2: Parallel phonetics computation using imap_unordered
-            # Split work into sub-batches for workers
-            phonetics_results = {}
+            # Phase 2: Parallel phonetics computation - collect Arrow tables
+            # Workers return Arrow tables (zero-copy transfer)
+            batch_arrow_tables = []
             if phonetics_work:
                 # Create sub-batches for parallel processing
                 sub_batch_size = max(100, len(phonetics_work) // num_workers)
@@ -1619,26 +1637,38 @@ def dump_to_jsonl(
                     for i in range(0, len(phonetics_work), sub_batch_size)
                 ]
 
-                # Process all sub-batches in parallel with imap_unordered
-                # This keeps workers saturated and returns results as they complete
-                for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
-                    for toponym_id, ipa, packed_features, embedding in batch_results:
-                        phonetics_results[toponym_id] = (ipa, packed_features, embedding)
+                # Workers return Arrow tables - no serialization overhead
+                for arrow_table in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
+                    batch_arrow_tables.append(arrow_table)
 
-            # Phase 3: Merge results and queue for writing
-            current_db_updates = []
+            # Phase 3: Merge Arrow tables and update docs
+            phonetics_results = {}
+            if batch_arrow_tables:
+                import pyarrow as pa
+                # Concatenate all Arrow tables from this fetch batch
+                combined_table = pa.concat_tables(batch_arrow_tables)
+                # Store for later bulk DB update (zero-copy)
+                all_arrow_tables.append(combined_table)
+
+                # Convert to dict only for doc merging (single copy operation)
+                table_dict = combined_table.to_pydict()
+                for i in range(len(table_dict['toponym_id'])):
+                    toponym_id = table_dict['toponym_id'][i]
+                    ipa = table_dict['ipa'][i]
+                    embedding = table_dict['panphon_embedding'][i]
+                    phonetics_results[toponym_id] = (ipa, embedding)
+
+            # Phase 4: Update docs with phonetics data
             for doc in batch_docs:
                 toponym_id = doc['toponym_id']
 
                 if toponym_id in phonetics_results:
-                    ipa, packed_features, embedding = phonetics_results[toponym_id]
+                    ipa, embedding = phonetics_results[toponym_id]
                     doc['ipa'] = ipa
                     doc['panphon_embedding'] = embedding
                     stats['with_ipa'] += 1
                     stats['with_panphon'] += 1
                     stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
-                    # Store both packed_features and embedding in DuckDB
-                    current_db_updates.append((ipa, packed_features, embedding, toponym_id))
 
                 pending_writes.append(doc)
 
@@ -1646,9 +1676,6 @@ def dump_to_jsonl(
                 if len(pending_writes) >= io_batch_size:
                     flush_writes()
 
-            # Accumulate DB updates
-            if current_db_updates:
-                all_db_updates.extend(current_db_updates)
 
             batches_processed += 1
 
@@ -1674,15 +1701,20 @@ def dump_to_jsonl(
     # Flush and sync to ensure all data is written
     logger.info("Flushing JSONL file to disk...")
 
-    # Now apply all accumulated DuckDB updates in batches
+    # Now apply all accumulated Arrow tables to DuckDB
     # (Doing this after the streaming loop avoids cursor invalidation)
     total_db_updates = 0
-    if all_db_updates:
-        logger.info(f"Applying {len(all_db_updates):,} IPA/PanPhon updates to DuckDB...")
+    if all_arrow_tables:
+        import pyarrow as pa
+
+        # Concatenate all Arrow tables (zero-copy operation)
+        logger.info(f"Concatenating {len(all_arrow_tables)} Arrow tables...")
+        final_arrow_table = pa.concat_tables(all_arrow_tables)
+        total_db_updates = len(final_arrow_table)
+
+        logger.info(f"Applying {total_db_updates:,} IPA/PanPhon updates to DuckDB via Arrow...")
 
         # OPTIMIZATION: Drop indexes before bulk updates, rebuild afterward
-        # This dramatically speeds up UPDATE operations on large tables
-        # by avoiding index rebalancing on every row update
         logger.info("Dropping indexes on toponyms table for faster bulk updates...")
         try:
             conn.execute("DROP INDEX IF EXISTS idx_toponyms_id")
@@ -1693,37 +1725,42 @@ def dump_to_jsonl(
             logger.warning(f"Could not drop indexes (may not exist): {e}")
 
         # Process in batches to avoid memory issues
+        # But use Arrow slicing instead of tuple unpacking
         update_batch_size = 100000
-        
-        # Wrap updates in tqdm if available
-        update_iterator = range(0, len(all_db_updates), update_batch_size)
+        num_batches = (total_db_updates + update_batch_size - 1) // update_batch_size
+
         if tqdm:
-            update_iterator = tqdm(update_iterator, desc="DuckDB updates", total=(len(all_db_updates) + update_batch_size - 1) // update_batch_size, mininterval=10.0)
-            
-        for i in update_iterator:
-            batch = all_db_updates[i:i + update_batch_size]
-            ipas, features, embeddings, ids = zip(*batch)
-            update_table = pa.table({
-                'ipa': ipas,
-                'panphon_features': features,
-                'panphon_embedding': embeddings,
-                'toponym_id': ids
-            })
-            conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
+            batch_iterator = tqdm(range(num_batches), desc="DuckDB Arrow updates", mininterval=10.0)
+        else:
+            batch_iterator = range(num_batches)
+
+        for batch_idx in batch_iterator:
+            start_idx = batch_idx * update_batch_size
+            end_idx = min(start_idx + update_batch_size, total_db_updates)
+
+            # Slice Arrow table (zero-copy operation)
+            batch_table = final_arrow_table.slice(start_idx, end_idx - start_idx)
+
+            # Register Arrow table with DuckDB (zero-copy)
+            conn.register('update_table', batch_table)
+
+            # Perform bulk update
             conn.execute("""
                 UPDATE toponyms 
                 SET ipa = u.ipa, 
                     panphon_features = u.panphon_features,
                     panphon_embedding = u.panphon_embedding
-                FROM updates u
+                FROM update_table u
                 WHERE toponyms.toponym_id = u.toponym_id
             """)
-            conn.execute("DROP TABLE updates")
 
-            if not tqdm and (i + update_batch_size) % 500000 == 0:
-                logger.info(f"  Updated {i + len(batch):,} / {len(all_db_updates):,} records")
+            # Unregister table
+            conn.unregister('update_table')
 
-        total_db_updates = len(all_db_updates)
+            if not tqdm and end_idx % 500000 == 0:
+                logger.info(f"  Updated {end_idx:,} / {total_db_updates:,} records")
+
+        total_db_updates = total_db_updates
         logger.info(f"DuckDB updates complete: {total_db_updates:,} records")
 
         # OPTIMIZATION: Rebuild indexes after bulk updates
