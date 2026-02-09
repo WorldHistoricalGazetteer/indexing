@@ -157,13 +157,15 @@ EPITRAN_LANG_MAP = {
 
 
 class IPAConverter:
-    """Lazy-loaded IPA converter using Epitran and PanPhon."""
+    """Lazy-loaded IPA converter using Epitran, PanPhon, Charsiu, and Phonikud."""
 
     def __init__(self):
         self._epitran_cache: Dict[str, object] = {}
         self._panphon_ft = None
         self._epitran_available = None
         self._panphon_available = None
+        self._charsiu_g2p = None
+        self._phonikud = None
 
     def _check_epitran(self) -> bool:
         if self._epitran_available is None:
@@ -186,6 +188,64 @@ class IPAConverter:
                 self._panphon_available = False
         return self._panphon_available
 
+    def _check_charsiu(self) -> bool:
+        if self._charsiu_g2p is None:
+            try:
+                # Based on CharsiuG2P typical usage
+                import torch
+
+                class CharsiuWrapper:
+                    def __init__(self):
+                        import transformers
+                        # Multilingual model for Korean and others
+                        self.multi_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
+                        self.multi_tokenizer = transformers.T5Tokenizer.from_pretrained("google/byt5-small")
+                        
+                        # Topolect-specific model for Chinese
+                        self.topo_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
+                        self.topo_tokenizer = transformers.T5Tokenizer.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
+                        
+                        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+                        self.multi_model.to(self.device)
+                        self.topo_model.to(self.device)
+
+                    def transliterate(self, text, lang):
+                        # Topolect should be one of: 'gan', 'wuu', 'yue'
+                        if lang in ('gan', 'wuu', 'yue'):
+                            input_text = f"{lang}: {text}"
+                            inputs = self.topo_tokenizer(input_text, return_tensors="pt").to(self.device)
+                            with torch.no_grad():
+                                outputs = self.topo_model.generate(**inputs)
+                            return self.topo_tokenizer.decode(outputs[0], skip_special_tokens=True)
+                        else:
+                            # Use multilingual model for Korean (ko) and potentially others
+                            # Mapping lang to what the model expects (e.g., 'kor' for Korean)
+                            lang_map = {'ko': 'kor', 'he': 'heb', 'el': 'ell', 'ja': 'jpn'}
+                            char_iso = lang_map.get(lang, lang)
+                            input_text = f"<{char_iso}>: {text}"
+                            inputs = self.multi_tokenizer(input_text, return_tensors="pt").to(self.device)
+                            with torch.no_grad():
+                                outputs = self.multi_model.generate(**inputs)
+                            return self.multi_tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+                self._charsiu_g2p = CharsiuWrapper()
+                logger.info("CharsiuG2P initialized for Chinese topolects and Korean")
+            except Exception as e:
+                logger.warning(f"Failed to initialize CharsiuG2P: {e}")
+                self._charsiu_g2p = False
+        return self._charsiu_g2p
+
+    def _check_phonikud(self) -> bool:
+        if self._phonikud is None:
+            try:
+                import phonikud
+                self._phonikud = phonikud.Phonikud()
+                logger.info("Phonikud initialized for Hebrew G2P")
+            except ImportError:
+                logger.warning("Phonikud not available. Hebrew G2P disabled.")
+                self._phonikud = False
+        return self._phonikud
+
     def get_epitran(self, lang_code: str) -> Optional[object]:
         if not self._check_epitran():
             return None
@@ -202,6 +262,31 @@ class IPAConverter:
         return EPITRAN_LANG_MAP.get((lang, script))
 
     def to_ipa(self, text: str, lang: str, script: Script) -> Optional[str]:
+        # Hebrew (Phonikud)
+        if lang == 'he' and script == Script.HEBREW:
+            if self._check_phonikud() and self._phonikud:
+                try:
+                    return self._phonikud.transliterate(text)
+                except Exception:
+                    pass
+
+        # Chinese Topolects (Charsiu)
+        if lang in ('gan', 'wuu', 'yue') and script == Script.CJK:
+            if self._check_charsiu() and self._charsiu_g2p:
+                try:
+                    return self._charsiu_g2p.transliterate(text, lang)
+                except Exception:
+                    pass
+
+        # Korean (Charsiu as preference for both Hangul and Hanja)
+        if lang == 'ko' and script in (Script.HANGUL, Script.CJK):
+            if self._check_charsiu() and self._charsiu_g2p:
+                try:
+                    return self._charsiu_g2p.transliterate(text, lang)
+                except Exception:
+                    pass
+
+        # Default to Epitran
         epitran_code = self.get_epitran_code(lang, script)
         if epitran_code is None:
             return None
@@ -1585,6 +1670,69 @@ def bulk_index_from_file(
     return indexed
 
 
+def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, batch_size: int = 2500):
+    """
+    Perform targeted update of IPA and PanPhon features for specific languages.
+    """
+    logger.info(f"Targeted update for languages: {lang_list}")
+
+    # Initialize workers with global converter
+    pool = mp.Pool(num_workers, initializer=_init_worker)
+
+    try:
+        # Fetch records needing update
+        langs_str = ",".join([f"'{l}'" for l in lang_list])
+        query = f"SELECT toponym_id, name, lang, script FROM toponyms WHERE lang IN ({langs_str})"
+        rows = conn.execute(query).fetchall()
+
+        if not rows:
+            logger.info("No records found for specified languages.")
+            return
+
+        logger.info(f"Processing {len(rows):,} records...")
+
+        # Process in batches
+        num_batches = (len(rows) + batch_size - 1) // batch_size
+        batches = [rows[i * batch_size:(i + 1) * batch_size] for i in range(num_batches)]
+
+        total_updated = 0
+        with tqdm(total=len(rows), desc="Updating phonetics") as pbar:
+            for result_batch in pool.imap_unordered(_compute_phonetics_for_batch, batches):
+                if result_batch:
+                    # result_batch is list of (toponym_id, ipa, packed_features, embedding)
+                    # Use a temp table for fast update
+                    data_to_update = []
+                    for tid, ipa, packed, emb in result_batch:
+                        data_to_update.append((tid, ipa, packed, emb))
+
+                    if data_to_update:
+                        # transposing to columns
+                        ids, ipas, packeds, embs = zip(*data_to_update)
+                        arrow_table = pa.table({
+                            'toponym_id': ids,
+                            'ipa': ipas,
+                            'panphon_features': packeds,
+                            'panphon_embedding': embs
+                        })
+                        conn.execute("CREATE OR REPLACE TEMPORARY TABLE updates_temp AS SELECT * FROM arrow_table")
+                        conn.execute("""
+                            UPDATE toponyms
+                            SET ipa = updates_temp.ipa,
+                                panphon_features = updates_temp.panphon_features,
+                                panphon_embedding = updates_temp.panphon_embedding
+                            FROM updates_temp
+                            WHERE toponyms.toponym_id = updates_temp.toponym_id
+                        """)
+                        total_updated += len(data_to_update)
+                pbar.update(batch_size)
+
+        logger.info(f"Successfully updated {total_updated:,} records.")
+
+    finally:
+        pool.close()
+        pool.join()
+
+
 # --- MAIN ---
 
 def main():
@@ -1606,6 +1754,8 @@ def main():
     parser.add_argument('--resume', action='store_true', help="Resume from existing DuckDB database")
     parser.add_argument('--skip-es-index', action='store_true',
                         help="Skip ES indexing (only extract to DuckDB and generate vocab)")
+    parser.add_argument('--update-langs', nargs='+', default=None,
+                        help="Update IPA/PanPhon for specific languages in existing DB and exit")
 
     # Parallelism options
     parser.add_argument('--num-workers', type=int, default=None,
@@ -1620,6 +1770,17 @@ def main():
     # Determine number of workers
     if args.num_workers is None:
         args.num_workers = max(1, mp.cpu_count() - 2)
+
+    if args.update_langs:
+        if not args.db_path.exists():
+            logger.error(f"Database not found at {args.db_path}. Cannot perform targeted update.")
+            sys.exit(1)
+        logger.info(f"Targeted update for: {args.update_langs}")
+        conn = duckdb.connect(str(args.db_path))
+        _update_language_phonetics(conn, args.update_langs, args.num_workers, args.batch_size)
+        conn.close()
+        logger.info("Update complete.")
+        sys.exit(0)
 
     if not args.confirm:
         print("=" * 60)
