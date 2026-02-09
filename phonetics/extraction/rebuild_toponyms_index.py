@@ -31,6 +31,7 @@ import hashlib
 import json
 import logging
 import multiprocessing as mp
+import os
 import shutil
 import struct
 import sys
@@ -203,6 +204,7 @@ class IPAConverter:
                 import torch
                 import transformers
                 import warnings
+                import os
 
                 # Suppress the tokenizer class warning as we're intentionally using ByT5Tokenizer
                 with warnings.catch_warnings():
@@ -246,16 +248,20 @@ class IPAConverter:
                         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
                 self._charsiu_g2p = CharsiuWrapper(model, tokenizer, device)
-                logger.info("CharsiuG2P initialized for Chinese topolects and Korean")
+                # Only log from main process (PID 1 or when not in worker pool)
+                if os.getenv('_REBUILD_MAIN_PROCESS') == '1':
+                    logger.info("CharsiuG2P initialized for Chinese topolects and Korean")
             except Exception as e:
                 logger.warning(f"Failed to initialize CharsiuG2P: {e}")
                 self._charsiu_g2p = False
+        # Return whether we have a valid instance (but don't log on subsequent calls)
         return self._charsiu_g2p is not False
 
     def _check_phonikud(self) -> bool:
         if self._phonikud is None:
             try:
                 import warnings
+                import os
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message=".*tokenizer class.*")
                     import phonikud as phonikud_module
@@ -268,10 +274,13 @@ class IPAConverter:
                         return self.phonikud.phonemize(text)
 
                 self._phonikud = PhonikudWrapper(phonikud_module)
-                logger.info("Phonikud initialized for Hebrew G2P")
+                # Only log from main process
+                if os.getenv('_REBUILD_MAIN_PROCESS') == '1':
+                    logger.info("Phonikud initialized for Hebrew G2P")
             except (ImportError, Exception) as e:
                 logger.warning(f"Phonikud not available or failed to initialize: {e}")
                 self._phonikud = False
+        # Return whether we have a valid instance (but don't log on subsequent calls)
         return self._phonikud is not False
 
     def get_epitran(self, lang_code: str) -> Optional[object]:
@@ -413,8 +422,13 @@ def _init_worker():
     """Initialize worker process with cached converter and suppressed warnings."""
     global _WORKER_CONVERTER
     import warnings
+    import os
     warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
     warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
+    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+    # Mark this as a worker process (not main) to suppress initialization logging
+    if '_REBUILD_MAIN_PROCESS' in os.environ:
+        del os.environ['_REBUILD_MAIN_PROCESS']
     _WORKER_CONVERTER = IPAConverter()
 
 
@@ -1469,6 +1483,9 @@ def dump_to_jsonl(
     if tqdm:
         pbar = tqdm(total=total_count, desc="Phonetic computation", mininterval=10.0)
 
+    # Mark main process for logging
+    os.environ['_REBUILD_MAIN_PROCESS'] = '1'
+
     # Use multiprocessing.Pool with initializer for cached converters
     with open(output_path, 'w', encoding='utf-8') as f, \
          mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
@@ -1758,6 +1775,9 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
     """
     Perform targeted update of IPA and PanPhon features for specific languages.
 
+    If lang_list contains '__ALL__', processes all toponyms in training namespaces.
+    Otherwise, filters by specific language codes.
+
     Efficiently handles multiple languages in a single pass:
     - Worker processes load models on-demand (Epitran, CharsiuG2P, Phonikud)
     - Once loaded, models stay in memory for the entire job
@@ -1773,19 +1793,44 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
         num_workers: Number of parallel worker processes
         batch_size: Records per batch for processing
     """
-    logger.info(f"Targeted update for languages: {lang_list}")
+    process_all = '__ALL__' in lang_list
+
+    if process_all:
+        logger.info("Updating phonetics for ALL toponyms in training namespaces (gn, wd, tgn)")
+    else:
+        logger.info(f"Targeted update for languages: {lang_list}")
 
     # Ensure all required columns exist (for backward compatibility)
     _ensure_columns_exist(conn)
 
-    # Initialize workers with global converter
+    # Mark main process for logging
+    os.environ['_REBUILD_MAIN_PROCESS'] = '1'
+
+    # Initialize workers
     pool = mp.Pool(num_workers, initializer=_init_worker)
 
     try:
-        # Fetch records needing update
-        langs_str = ",".join([f"'{l}'" for l in lang_list])
-        query = f"SELECT toponym_id, name, lang, script FROM toponyms WHERE lang IN ({langs_str})"
-        rows = conn.execute(query).fetchall()
+        # Build query based on whether we're processing all or specific languages
+        if process_all:
+            # Process ALL toponyms in training namespaces
+            query = '''
+                SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
+                FROM toponyms t
+                JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+                WHERE tn.namespace IN ('gn', 'wd', 'tgn')
+            '''
+            rows = conn.execute(query).fetchall()
+        else:
+            # Process only specific languages in training namespaces
+            langs_str = ",".join([f"'{l}'" for l in lang_list])
+            query = f'''
+                SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
+                FROM toponyms t
+                JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+                WHERE t.lang IN ({langs_str})
+                AND tn.namespace IN ('gn', 'wd', 'tgn')
+            '''
+            rows = conn.execute(query).fetchall()
 
         if not rows:
             logger.info("No records found for specified languages.")
@@ -1845,7 +1890,7 @@ def main():
     parser.add_argument('--places-index', default='places')
     parser.add_argument('--toponyms-index', default='toponyms')
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
-    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.duckdb',
+    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.db',
                         help='Path for DuckDB database file')
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Output directory for vocab and stats (default: db-path parent)')
@@ -1877,8 +1922,18 @@ def main():
         if not args.db_path.exists():
             logger.error(f"Database not found at {args.db_path}. Cannot perform targeted update.")
             sys.exit(1)
-        logger.info(f"Targeted update for: {args.update_langs}")
+
         conn = duckdb.connect(str(args.db_path))
+
+        # Handle "all" keyword to process all languages with epitran extensions
+        if 'all' in [l.lower() for l in args.update_langs]:
+            logger.info("Processing ALL toponyms in training namespaces (gn, wd, tgn)...")
+            # Set special flag to indicate "process all languages"
+            args.update_langs = ['__ALL__']
+
+        logger.info(f"Targeted update for: {args.update_langs}")
+        # Set environment variable to indicate this is the main process
+        os.environ['_REBUILD_MAIN_PROCESS'] = '1'
         _update_language_phonetics(conn, args.update_langs, args.num_workers, args.batch_size)
         conn.close()
         logger.info("Update complete.")
