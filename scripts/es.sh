@@ -731,7 +731,7 @@ do_rebuild_toponyms() {
 
     # Output directory for data
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
-    DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
+    DB_PATH="${OUTPUT_DIR}/toponyms.db"
 
     # Setup local scratch (CRC convention)
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
@@ -836,7 +836,7 @@ echo "=========================================="
 echo "Output directory: $OUTPUT_DIR"
 echo "  - vocab/           Character, language, script vocabularies"
 echo "  - coverage_stats.json  PanPhon coverage by script+language"
-echo "  - toponyms.duckdb  DuckDB checkpoint"
+echo "  - toponyms.db  DuckDB checkpoint"
 echo
 echo "ES index: toponyms"
 echo "  - Includes panphon_embedding for phonetic similarity queries"
@@ -925,7 +925,7 @@ do_generate_training_data() {
     mkdir -p "$LOG_DIR"
 
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
-    DB_PATH="${OUTPUT_DIR}/toponyms.duckdb"
+    DB_PATH="${OUTPUT_DIR}/toponyms.db"
 
     # DuckDB is now optional - we read training data from ES toponyms index
     # But still pass the path in case it exists for fallback/reference
@@ -1502,8 +1502,8 @@ do_update_embeddings() {
         return 1
     fi
 
-    if [ ! -f "${DATA_DIR}/toponyms.duckdb" ]; then
-        echo "ERROR: DuckDB database not found at ${DATA_DIR}/toponyms.duckdb"
+    if [ ! -f "${DATA_DIR}/toponyms.db" ]; then
+        echo "ERROR: DuckDB database not found at ${DATA_DIR}/toponyms.db"
         echo "Rebuild toponyms first: es -rebuild-toponyms ${DATA_VERSION}"
         return 1
     fi
@@ -1527,7 +1527,7 @@ do_update_embeddings() {
     echo "EMBEDDING PIPELINE (v${DATA_VERSION})"
     echo "=========================================="
     echo "  Checkpoint: ${CHECKPOINT_DIR}/phase3_best.pt"
-    echo "  DuckDB:     ${DATA_DIR}/toponyms.duckdb"
+    echo "  DuckDB:     ${DATA_DIR}/toponyms.db"
     echo "  Training:   ${DATA_DIR}/training"
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
@@ -1630,7 +1630,7 @@ fi
 
 echo "Rebuilding ES index from DuckDB + embeddings..."
 python -u -m phonetics.inference.update_es index \
-    --duckdb-file "${DATA_DIR}/toponyms.duckdb" \
+    --duckdb-file "${DATA_DIR}/toponyms.db" \
     --embeddings-file "${EMBEDDINGS_FILE}" \
     --schema-file "${REPO_DIR}/schemas/toponyms.json" \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
