@@ -201,23 +201,26 @@ class IPAConverter:
 
                 # Based on CharsiuG2P typical usage
                 import torch
+                import transformers
+                import warnings
+
+                # Suppress the tokenizer class warning as we're intentionally using ByT5Tokenizer
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=FutureWarning)
+
+                    # Single multilingual model handles all languages including Chinese topolects
+                    model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
+                    # Use ByT5Tokenizer instead of T5Tokenizer for byte-level models
+                    tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model.to(device)
 
                 class CharsiuWrapper:
-                    def __init__(self):
-                        import transformers
-                        import warnings
-
-                        # Suppress the tokenizer class warning as we're intentionally using ByT5Tokenizer
-                        with warnings.catch_warnings():
-                            warnings.filterwarnings("ignore", category=FutureWarning)
-
-                            # Single multilingual model handles all languages including Chinese topolects
-                            self.model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
-                            # Use ByT5Tokenizer instead of T5Tokenizer for byte-level models
-                            self.tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
-
-                        self.device = "cuda" if torch.cuda.is_available() else "cpu"
-                        self.model.to(self.device)
+                    def __init__(self, model, tokenizer, device):
+                        self.model = model
+                        self.tokenizer = tokenizer
+                        self.device = device
 
                     def transliterate(self, text, lang):
                         # Mapping languages to ISO codes expected by the model
@@ -242,12 +245,12 @@ class IPAConverter:
                             outputs = self.model.generate(**inputs)
                         return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
-                self._charsiu_g2p = CharsiuWrapper()
+                self._charsiu_g2p = CharsiuWrapper(model, tokenizer, device)
                 logger.info("CharsiuG2P initialized for Chinese topolects and Korean")
             except Exception as e:
                 logger.warning(f"Failed to initialize CharsiuG2P: {e}")
                 self._charsiu_g2p = False
-        return self._charsiu_g2p
+        return self._charsiu_g2p is not False
 
     def _check_phonikud(self) -> bool:
         if self._phonikud is None:
@@ -255,18 +258,21 @@ class IPAConverter:
                 import warnings
                 with warnings.catch_warnings():
                     warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-                    import phonikud
+                    import phonikud as phonikud_module
 
                 class PhonikudWrapper:
-                    def transliterate(self, text):
-                        return phonikud.phonemize(text)
+                    def __init__(self, phonikud_module):
+                        self.phonikud = phonikud_module
 
-                self._phonikud = PhonikudWrapper()
+                    def transliterate(self, text):
+                        return self.phonikud.phonemize(text)
+
+                self._phonikud = PhonikudWrapper(phonikud_module)
                 logger.info("Phonikud initialized for Hebrew G2P")
             except (ImportError, Exception) as e:
                 logger.warning(f"Phonikud not available or failed to initialize: {e}")
                 self._phonikud = False
-        return self._phonikud
+        return self._phonikud is not False
 
     def get_epitran(self, lang_code: str) -> Optional[object]:
         if not self._check_epitran():
