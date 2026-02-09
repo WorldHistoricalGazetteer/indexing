@@ -33,6 +33,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IX1_BASE="/ix1/ishi"
 REPO_DIR="${IX1_BASE}/elastic"
 
+# --- Conda Environment Setup ---
+# Admins are renaming 'whcdh' to 'ishi'. Fallback for transition period.
+CONDA_SETUP_PATH="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+if [ ! -f "$CONDA_SETUP_PATH" ]; then
+    CONDA_SETUP_PATH="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+fi
+CONDA_BIN_PATH="$(dirname "$CONDA_SETUP_PATH")/../bin"
+
 # Load environment if available
 ENV_FILE="${REPO_DIR}/.env"
 if [ -f "$ENV_FILE" ]; then
@@ -103,15 +111,15 @@ check_staging_es() {
 }
 
 activate_conda() {
-    cat <<'EOF'
-# --- HARDCODED CONDA SETUP ---
-CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+    cat <<EOF
+# --- TRANSITIONARY CONDA SETUP ---
+CONDA_SETUP="$CONDA_SETUP_PATH"
 
-if [ -f "$CONDA_SETUP" ]; then
-    source "$CONDA_SETUP"
+if [ -f "\$CONDA_SETUP" ]; then
+    source "\$CONDA_SETUP"
 else
-    echo "ERROR: Could not find conda setup at $CONDA_SETUP"
-    export PATH="/ihome/ishi/stg135/miniconda3/bin:$PATH"
+    echo "ERROR: Could not find conda setup at \$CONDA_SETUP"
+    export PATH="$CONDA_BIN_PATH:\$PATH"
 fi
 
 conda activate whg

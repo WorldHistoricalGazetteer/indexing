@@ -13,7 +13,11 @@
 #SBATCH --partition=htc
 
 # 1. Load Environment
-source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
+CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+if [ ! -f "$CONDA_SETUP" ]; then
+    CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+fi
+source "$CONDA_SETUP"
 conda activate whg
 
 # 2. Navigate to Project Root

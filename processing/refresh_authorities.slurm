@@ -7,7 +7,11 @@
 #SBATCH --cpus-per-task=4
 
 # Activate conda environment
-source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
+CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+if [ ! -f "$CONDA_SETUP" ]; then
+    CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+fi
+source "$CONDA_SETUP"
 conda activate whg
 
 # Run the update script, forcing refresh of all authorities
