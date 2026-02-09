@@ -820,7 +820,7 @@ echo "Output:  $OUTPUT_DIR"
 echo
 
 # Run the rebuild script
-python -m phonetics.extraction.rebuild_toponyms_index \
+python -u -m phonetics.extraction.rebuild_toponyms_index \
     ${SBATCH_ES_HOST_ARG} \
     --db-path "${DB_PATH}" \
     --output-dir "${OUTPUT_DIR}" \

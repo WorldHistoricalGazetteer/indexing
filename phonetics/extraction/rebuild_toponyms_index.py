@@ -19,7 +19,7 @@ Vocabulary output enables subsequent training without re-scanning the corpus.
 Reliability: Uses JSONL buffer on scratch disk to decouple DuckDB from HTTP.
 Supports resuming from an existing DuckDB database.
 """
-
+import time
 # Suppress warnings early - before any imports that might trigger them
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
@@ -452,6 +452,10 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
     Returns:
         List of (toponym_id, ipa, full_features_packed, embedding_192) tuples
     """
+    # ADD LOGGING TO SEE IF WORKERS ARE ACTUALLY RUNNING
+    pid = os.getpid()
+    logger.info(f"Worker {pid} starting batch of {len(batch)} items")
+
     converter = _get_worker_converter()
     results = []
 
@@ -472,6 +476,7 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
             packed = struct.pack(f'{len(full_features)}f', *full_features) if full_features else None
             results.append((toponym_id, ipa, packed, embedding))
 
+    logger.info(f"Worker {pid} completed batch: {len(results)} results from {len(batch)} items")
     return results
 
 
@@ -1771,32 +1776,25 @@ def _ensure_columns_exist(conn):
         logger.info("Column 'panphon_embedding' already exists, skipping")
 
 
-def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, batch_size: int = 2500):
+def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: List[str], num_workers: int,
+                               batch_size: int = 2500):
     """
     Perform targeted update of IPA and PanPhon features for specific languages.
 
     If lang_list contains '__ALL__', processes all toponyms in training namespaces.
     Otherwise, filters by specific language codes.
 
-    Efficiently handles multiple languages in a single pass:
-    - Worker processes load models on-demand (Epitran, CharsiuG2P, Phonikud)
-    - Once loaded, models stay in memory for the entire job
-    - For mixed language lists (e.g., 'he gan wuu yue ko'):
-      * Hebrew triggers Phonikud loading on first use
-      * Chinese topolects trigger Charsiu topolect model on first use
-      * Korean triggers Charsiu multilingual model on first use
-    - Models are automatically selected per-toponym based on lang+script
-
     Args:
         conn: DuckDB connection
-        lang_list: List of language codes to process (e.g., ['he', 'gan', 'wuu', 'yue', 'ko'])
+        lang_list: List of language codes to process (or ['__ALL__'] for all)
+        training_namespaces: List of namespace codes (e.g., ['gn', 'wd', 'tgn'])
         num_workers: Number of parallel worker processes
         batch_size: Records per batch for processing
     """
     process_all = '__ALL__' in lang_list
 
     if process_all:
-        logger.info("Updating phonetics for ALL toponyms in training namespaces (gn, wd, tgn)")
+        logger.info(f"Updating phonetics for ALL toponyms in training namespaces ({', '.join(training_namespaces)})")
     else:
         logger.info(f"Targeted update for languages: {lang_list}")
 
@@ -1806,72 +1804,112 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
     # Mark main process for logging
     os.environ['_REBUILD_MAIN_PROCESS'] = '1'
 
-    # Initialize workers
+    # Build query based on whether we're processing all or specific languages
+    logger.info("Building query to fetch toponyms...")
+    query_start = time.time()
+
+    # Build namespace IN clause
+    ns_placeholders = ','.join([f"'{ns}'" for ns in training_namespaces])
+
+    if process_all:
+        # Process ALL toponyms in training namespaces
+        query = f'''
+            SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
+            FROM toponyms t
+            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+            WHERE tn.namespace IN ({ns_placeholders})
+        '''
+        rows = conn.execute(query).fetchall()
+    else:
+        # Process only specific languages in training namespaces
+        langs_str = ",".join([f"'{l}'" for l in lang_list])
+        query = f'''
+            SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
+            FROM toponyms t
+            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+            WHERE t.lang IN ({langs_str})
+            AND tn.namespace IN ({ns_placeholders})
+        '''
+        rows = conn.execute(query).fetchall()
+
+    query_elapsed = time.time() - query_start
+    logger.info(f"Query completed in {query_elapsed:.2f}s, fetched {len(rows):,} rows")
+
+    if not rows:
+        logger.info("No records found for specified criteria.")
+        return
+
+    logger.info(f"Processing {len(rows):,} records...")
+
+    # Process in batches
+    logger.info(f"Creating batches (batch_size={batch_size})...")
+    num_batches = (len(rows) + batch_size - 1) // batch_size
+    batches = [rows[i * batch_size:(i + 1) * batch_size] for i in range(num_batches)]
+    logger.info(f"Created {num_batches:,} batches")
+
+    # Initialize workers with global converter
+    logger.info(f"Initializing worker pool with {num_workers} processes...")
+    pool_start = time.time()
     pool = mp.Pool(num_workers, initializer=_init_worker)
+    pool_elapsed = time.time() - pool_start
+    logger.info(f"Worker pool initialized in {pool_elapsed:.2f}s")
 
     try:
-        # Build query based on whether we're processing all or specific languages
-        if process_all:
-            # Process ALL toponyms in training namespaces
-            query = '''
-                SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
-                FROM toponyms t
-                JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-                WHERE tn.namespace IN ('gn', 'wd', 'tgn')
-            '''
-            rows = conn.execute(query).fetchall()
-        else:
-            # Process only specific languages in training namespaces
-            langs_str = ",".join([f"'{l}'" for l in lang_list])
-            query = f'''
-                SELECT DISTINCT t.toponym_id, t.name, t.lang, t.script 
-                FROM toponyms t
-                JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-                WHERE t.lang IN ({langs_str})
-                AND tn.namespace IN ('gn', 'wd', 'tgn')
-            '''
-            rows = conn.execute(query).fetchall()
-
-        if not rows:
-            logger.info("No records found for specified languages.")
-            return
-
-        logger.info(f"Processing {len(rows):,} records...")
-
-        # Process in batches
-        num_batches = (len(rows) + batch_size - 1) // batch_size
-        batches = [rows[i * batch_size:(i + 1) * batch_size] for i in range(num_batches)]
-
         total_updated = 0
-        with tqdm(total=len(rows), desc="Updating phonetics", mininterval=10.0) as pbar:
-            for result_batch in pool.imap_unordered(_compute_phonetics_for_batch, batches):
-                if result_batch:
-                    # result_batch is list of (toponym_id, ipa, packed_features, embedding)
-                    # Use a temp table for fast update
-                    data_to_update = []
-                    for tid, ipa, packed, emb in result_batch:
-                        data_to_update.append((tid, ipa, packed, emb))
+        batches_completed = 0
 
-                    if data_to_update:
-                        # transposing to columns
-                        ids, ipas, packeds, embs = zip(*data_to_update)
-                        arrow_table = pa.table({
-                            'toponym_id': ids,
-                            'ipa': ipas,
-                            'panphon_features': packeds,
-                            'panphon_embedding': embs
-                        })
-                        conn.execute("CREATE OR REPLACE TEMPORARY TABLE updates_temp AS SELECT * FROM arrow_table")
-                        conn.execute("""
-                            UPDATE toponyms
-                            SET ipa = updates_temp.ipa,
-                                panphon_features = updates_temp.panphon_features,
-                                panphon_embedding = updates_temp.panphon_embedding
-                            FROM updates_temp
-                            WHERE toponyms.toponym_id = updates_temp.toponym_id
-                        """)
-                        total_updated += len(data_to_update)
+        logger.info("Starting batch processing with imap_unordered...")
+
+        # Use tqdm if available
+        if tqdm:
+            pbar = tqdm(total=len(rows), desc="Updating phonetics", mininterval=5.0)
+        else:
+            pbar = None
+
+        # Process batches with explicit chunksize and logging
+        for result_batch in pool.imap_unordered(_compute_phonetics_for_batch, batches, chunksize=1):
+            batches_completed += 1
+
+            # Log every 10 batches regardless of tqdm
+            if batches_completed % 10 == 0:
+                logger.info(
+                    f"Completed {batches_completed}/{num_batches} batches ({100 * batches_completed / num_batches:.1f}%)")
+
+            if result_batch:
+                # result_batch is list of (toponym_id, ipa, packed_features, embedding)
+                # Use a temp table for fast update
+                data_to_update = []
+                for tid, ipa, packed, emb in result_batch:
+                    data_to_update.append((tid, ipa, packed, emb))
+
+                if data_to_update:
+                    # Transposing to columns
+                    ids, ipas, packeds, embs = zip(*data_to_update)
+                    arrow_table = pa.table({
+                        'toponym_id': ids,
+                        'ipa': ipas,
+                        'panphon_features': packeds,
+                        'panphon_embedding': embs
+                    })
+                    conn.execute("CREATE OR REPLACE TEMPORARY TABLE updates_temp AS SELECT * FROM arrow_table")
+                    conn.execute("""
+                                 UPDATE toponyms
+                                 SET ipa               = updates_temp.ipa,
+                                     panphon_features  = updates_temp.panphon_features,
+                                     panphon_embedding = updates_temp.panphon_embedding FROM updates_temp
+                                 WHERE toponyms.toponym_id = updates_temp.toponym_id
+                                 """)
+                    total_updated += len(data_to_update)
+
+                    # Log every 100 batches with update count
+                    if batches_completed % 100 == 0:
+                        logger.info(f"Total updated so far: {total_updated:,} records")
+
+            if pbar:
                 pbar.update(batch_size)
+
+        if pbar:
+            pbar.close()
 
         logger.info(f"Successfully updated {total_updated:,} records.")
 
@@ -1925,16 +1963,16 @@ def main():
 
         conn = duckdb.connect(str(args.db_path))
 
-        # Handle "all" keyword to process all languages with epitran extensions
+        # Handle "all" keyword - process all toponyms in training namespaces
         if 'all' in [l.lower() for l in args.update_langs]:
-            logger.info("Processing ALL toponyms in training namespaces (gn, wd, tgn)...")
+            logger.info(f"Processing ALL toponyms in training namespaces ({', '.join(args.training_namespaces)})...")
             # Set special flag to indicate "process all languages"
             args.update_langs = ['__ALL__']
 
         logger.info(f"Targeted update for: {args.update_langs}")
         # Set environment variable to indicate this is the main process
         os.environ['_REBUILD_MAIN_PROCESS'] = '1'
-        _update_language_phonetics(conn, args.update_langs, args.num_workers, args.batch_size)
+        _update_language_phonetics(conn, args.update_langs, args.training_namespaces, args.num_workers, args.batch_size)
         conn.close()
         logger.info("Update complete.")
         sys.exit(0)
