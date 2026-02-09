@@ -2089,20 +2089,17 @@ def _update_language_phonetics(
                 ids, ipas, features, embeddings = result_columns
 
                 if ids:  # Check if any results in this batch
-                    # Build Arrow table column-wise
-                    # Use FixedSizeListArray for FLOAT[192] compatibility with DuckDB
                     assert embeddings.dtype == np.float32
                     assert embeddings.ndim == 2 and embeddings.shape[1] == 192
                     embeddings = np.ascontiguousarray(embeddings)
+
+                    embeddings_as_lists = [emb.tolist() for emb in embeddings]
 
                     arrow_table = pa.table({
                         'toponym_id': pa.array(ids, type=pa.string()),
                         'ipa': pa.array(ipas, type=pa.string()),
                         'panphon_features': pa.array(features, type=pa.binary(), safe=True),
-                        'panphon_embedding': pa.FixedSizeListArray.from_arrays(
-                            pa.array(embeddings.reshape(-1), type=pa.float32()),
-                            list_size=192
-                        )
+                        'panphon_embedding': embeddings_as_lists  # Let Arrow infer as list<float>
                     })
 
                     # Register Arrow table with DuckDB and perform update
@@ -2112,7 +2109,7 @@ def _update_language_phonetics(
                         UPDATE toponyms
                         SET ipa = updates_temp.ipa,
                             panphon_features = updates_temp.panphon_features,
-                            panphon_embedding = CAST(updates_temp.panphon_embedding AS FLOAT[192])
+                            panphon_embedding = updates_temp.panphon_embedding
                         FROM updates_temp
                         WHERE toponyms.toponym_id = updates_temp.toponym_id
                     """)
