@@ -849,13 +849,16 @@ echo "Job Finished: \$(date)"
 EOF
 )
 
-    echo "✓ Rebuild job submitted: $JOBID"
+    # Strip cluster suffix from JOBID if present
+    CLEAN_JOBID="${JOBID%;*}"
+
+    echo "✓ Rebuild job submitted: $CLEAN_JOBID"
     if [ "$USE_GPU" = true ]; then
-        echo "  Monitor: squeue -j $JOBID -M gpu"
+        echo "  Monitor: squeue -j $CLEAN_JOBID -M gpu"
     else
-        echo "  Monitor: squeue -j $JOBID"
+        echo "  Monitor: squeue -j $CLEAN_JOBID"
     fi
-    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${JOBID}.*"
+    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${CLEAN_JOBID}.*"
 }
 
 # ==============================================================================

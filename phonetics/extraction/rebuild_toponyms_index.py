@@ -191,20 +191,35 @@ class IPAConverter:
     def _check_charsiu(self) -> bool:
         if self._charsiu_g2p is None:
             try:
+                # Check for protobuf first
+                try:
+                    import google.protobuf
+                except ImportError:
+                    logger.warning("CharsiuG2P requires protobuf library. Install with: pip install protobuf")
+                    self._charsiu_g2p = False
+                    return False
+
                 # Based on CharsiuG2P typical usage
                 import torch
 
                 class CharsiuWrapper:
                     def __init__(self):
                         import transformers
-                        # Multilingual model for Korean and others
-                        self.multi_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
-                        self.multi_tokenizer = transformers.T5Tokenizer.from_pretrained("google/byt5-small")
-                        
-                        # Topolect-specific model for Chinese
-                        self.topo_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
-                        self.topo_tokenizer = transformers.T5Tokenizer.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
-                        
+                        import warnings
+
+                        # Suppress the tokenizer class warning as we're intentionally using ByT5Tokenizer
+                        with warnings.catch_warnings():
+                            warnings.filterwarnings("ignore", category=FutureWarning)
+
+                            # Multilingual model for Korean and others
+                            self.multi_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
+                            # Use ByT5Tokenizer instead of T5Tokenizer for byte-level models
+                            self.multi_tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+
+                            # Topolect-specific model for Chinese
+                            self.topo_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
+                            self.topo_tokenizer = transformers.T5Tokenizer.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
+
                         self.device = "cuda" if torch.cuda.is_available() else "cpu"
                         self.multi_model.to(self.device)
                         self.topo_model.to(self.device)
