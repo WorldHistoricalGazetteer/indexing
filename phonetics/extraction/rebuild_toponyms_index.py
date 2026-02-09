@@ -211,37 +211,36 @@ class IPAConverter:
                         with warnings.catch_warnings():
                             warnings.filterwarnings("ignore", category=FutureWarning)
 
-                            # Multilingual model for Korean and others
-                            self.multi_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
+                            # Single multilingual model handles all languages including Chinese topolects
+                            self.model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/g2p_multilingual_byT5_small_100")
                             # Use ByT5Tokenizer instead of T5Tokenizer for byte-level models
-                            self.multi_tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
-
-                            # Topolect-specific model for Chinese
-                            self.topo_model = transformers.T5ForConditionalGeneration.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
-                            self.topo_tokenizer = transformers.T5Tokenizer.from_pretrained("charsiu/charsiu-g2p-chinese-topolects")
+                            self.tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
 
                         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-                        self.multi_model.to(self.device)
-                        self.topo_model.to(self.device)
+                        self.model.to(self.device)
 
                     def transliterate(self, text, lang):
-                        # Topolect should be one of: 'gan', 'wuu', 'yue'
-                        if lang in ('gan', 'wuu', 'yue'):
-                            input_text = f"{lang}: {text}"
-                            inputs = self.topo_tokenizer(input_text, return_tensors="pt").to(self.device)
-                            with torch.no_grad():
-                                outputs = self.topo_model.generate(**inputs)
-                            return self.topo_tokenizer.decode(outputs[0], skip_special_tokens=True)
-                        else:
-                            # Use multilingual model for Korean (ko) and potentially others
-                            # Mapping lang to what the model expects (e.g., 'kor' for Korean)
-                            lang_map = {'ko': 'kor', 'he': 'heb', 'el': 'ell', 'ja': 'jpn'}
-                            char_iso = lang_map.get(lang, lang)
-                            input_text = f"<{char_iso}>: {text}"
-                            inputs = self.multi_tokenizer(input_text, return_tensors="pt").to(self.device)
-                            with torch.no_grad():
-                                outputs = self.multi_model.generate(**inputs)
-                            return self.multi_tokenizer.decode(outputs[0], skip_special_tokens=True)
+                        # Mapping languages to ISO codes expected by the model
+                        # Chinese topolects and other languages
+                        # Note: gan and wuu use Mandarin (cmn) as a proxy because:
+                        # 1. They share the same character set
+                        # 2. Symphonym learns similarity patterns, not precise phonetics
+                        # 3. Even approximate phonetics provide useful training signal
+                        # This is acceptable for similarity-based matching but should be
+                        # documented as a limitation for these minority topolects.
+                        lang_map = {
+                            'ko': 'kor',      # Korean
+                            'ja': 'jpn',      # Japanese
+                            'gan': 'cmn',     # Gan (use Mandarin as proxy)
+                            'wuu': 'cmn',     # Wu (use Mandarin as proxy)
+                            'yue': 'yue'      # Cantonese
+                        }
+                        char_iso = lang_map.get(lang, lang)
+                        input_text = f"<{char_iso}>: {text}"
+                        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
+                        with torch.no_grad():
+                            outputs = self.model.generate(**inputs)
+                        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
 
                 self._charsiu_g2p = CharsiuWrapper()
                 logger.info("CharsiuG2P initialized for Chinese topolects and Korean")
@@ -253,7 +252,10 @@ class IPAConverter:
     def _check_phonikud(self) -> bool:
         if self._phonikud is None:
             try:
-                import phonikud
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+                    import phonikud
 
                 class PhonikudWrapper:
                     def transliterate(self, text):
@@ -572,7 +574,8 @@ def create_db(db_path: str):
             lang_variant VARCHAR,
             script VARCHAR,
             ipa VARCHAR,
-            panphon_features BLOB
+            panphon_features BLOB,
+            panphon_embedding FLOAT[]
         )
     ''')
 
@@ -1547,7 +1550,8 @@ def dump_to_jsonl(
                     stats['with_ipa'] += 1
                     stats['with_panphon'] += 1
                     stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
-                    current_db_updates.append((ipa, packed_features, toponym_id))
+                    # Store both packed_features and embedding in DuckDB
+                    current_db_updates.append((ipa, packed_features, embedding, toponym_id))
 
                 pending_writes.append(doc)
 
@@ -1611,16 +1615,19 @@ def dump_to_jsonl(
             
         for i in update_iterator:
             batch = all_db_updates[i:i + update_batch_size]
-            ipas, features, ids = zip(*batch)
+            ipas, features, embeddings, ids = zip(*batch)
             update_table = pa.table({
                 'ipa': ipas,
                 'panphon_features': features,
+                'panphon_embedding': embeddings,
                 'toponym_id': ids
             })
             conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
             conn.execute("""
                 UPDATE toponyms 
-                SET ipa = u.ipa, panphon_features = u.panphon_features
+                SET ipa = u.ipa, 
+                    panphon_features = u.panphon_features,
+                    panphon_embedding = u.panphon_embedding
                 FROM updates u
                 WHERE toponyms.toponym_id = u.toponym_id
             """)
@@ -1713,6 +1720,25 @@ def bulk_index_from_file(
     return indexed
 
 
+def _ensure_columns_exist(conn):
+    """Ensure all required columns exist in the toponyms table (for backward compatibility)."""
+    # Get current columns
+    columns = [row[0] for row in conn.execute("PRAGMA table_info(toponyms)").fetchall()]
+
+    # Add missing columns
+    if 'ipa' not in columns:
+        logger.info("Adding 'ipa' column to toponyms table")
+        conn.execute("ALTER TABLE toponyms ADD COLUMN ipa VARCHAR")
+
+    if 'panphon_features' not in columns:
+        logger.info("Adding 'panphon_features' column to toponyms table")
+        conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_features BLOB")
+
+    if 'panphon_embedding' not in columns:
+        logger.info("Adding 'panphon_embedding' column to toponyms table")
+        conn.execute("ALTER TABLE toponyms ADD COLUMN panphon_embedding FLOAT[]")
+
+
 def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, batch_size: int = 2500):
     """
     Perform targeted update of IPA and PanPhon features for specific languages.
@@ -1733,6 +1759,9 @@ def _update_language_phonetics(conn, lang_list: List[str], num_workers: int, bat
         batch_size: Records per batch for processing
     """
     logger.info(f"Targeted update for languages: {lang_list}")
+
+    # Ensure all required columns exist (for backward compatibility)
+    _ensure_columns_exist(conn)
 
     # Initialize workers with global converter
     pool = mp.Pool(num_workers, initializer=_init_worker)
