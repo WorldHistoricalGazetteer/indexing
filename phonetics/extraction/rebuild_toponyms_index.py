@@ -1804,6 +1804,18 @@ def _update_language_phonetics(conn, lang_list: List[str], training_namespaces: 
     # Mark main process for logging
     os.environ['_REBUILD_MAIN_PROCESS'] = '1'
 
+    # Create indexes for efficient query (if they don't exist)
+    logger.info("Ensuring indexes exist for efficient querying...")
+    index_start = time.time()
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_namespace ON toponym_namespaces(namespace)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_tn_toponym_id ON toponym_namespaces(toponym_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
+    if not process_all:
+        # Only needed for language-filtered queries
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+    index_elapsed = time.time() - index_start
+    logger.info(f"Indexes ready in {index_elapsed:.2f}s")
+
     # Build query based on whether we're processing all or specific languages
     logger.info("Building query to fetch toponyms...")
     query_start = time.time()
@@ -1961,8 +1973,6 @@ def main():
             logger.error(f"Database not found at {args.db_path}. Cannot perform targeted update.")
             sys.exit(1)
 
-        conn = duckdb.connect(str(args.db_path))
-
         # Handle "all" keyword - process all toponyms in training namespaces
         if 'all' in [l.lower() for l in args.update_langs]:
             logger.info(f"Processing ALL toponyms in training namespaces ({', '.join(args.training_namespaces)})...")
@@ -1970,10 +1980,45 @@ def main():
             args.update_langs = ['__ALL__']
 
         logger.info(f"Targeted update for: {args.update_langs}")
-        # Set environment variable to indicate this is the main process
-        os.environ['_REBUILD_MAIN_PROCESS'] = '1'
-        _update_language_phonetics(conn, args.update_langs, args.training_namespaces, args.num_workers, args.batch_size)
-        conn.close()
+
+        # Use scratch disk for database operations (critical for performance!)
+        import tempfile
+        import shutil
+
+        with tempfile.TemporaryDirectory(dir=args.scratch_dir) as temp_dir:
+            temp_dir_path = Path(temp_dir)
+            temp_db_path = temp_dir_path / "toponyms_working.duckdb"
+
+            logger.info(f"Copying database to scratch: {args.db_path} -> {temp_db_path}")
+            copy_start = time.time()
+            shutil.copy2(args.db_path, temp_db_path)
+            copy_elapsed = time.time() - copy_start
+            logger.info(f"Database copied to scratch in {copy_elapsed:.2f}s")
+
+            # Connect to scratch copy
+            conn = duckdb.connect(str(temp_db_path))
+
+            # Set environment variable to indicate this is the main process
+            os.environ['_REBUILD_MAIN_PROCESS'] = '1'
+
+            # Perform updates on scratch copy
+            _update_language_phonetics(
+                conn,
+                args.update_langs,
+                args.training_namespaces,
+                args.num_workers,
+                args.batch_size
+            )
+
+            conn.close()
+
+            # Copy updated database back to persistent storage
+            logger.info(f"Copying updated database back: {temp_db_path} -> {args.db_path}")
+            copy_start = time.time()
+            shutil.copy2(temp_db_path, args.db_path)
+            copy_elapsed = time.time() - copy_start
+            logger.info(f"Database copied back in {copy_elapsed:.2f}s")
+
         logger.info("Update complete.")
         sys.exit(0)
 
