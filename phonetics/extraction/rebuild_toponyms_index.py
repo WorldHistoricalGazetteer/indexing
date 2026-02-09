@@ -1728,9 +1728,9 @@ def bulk_index_from_file(
 
 def _ensure_columns_exist(conn):
     """Ensure all required columns exist in the toponyms table (for backward compatibility)."""
-    # Get current columns
+    # Get current columns - DuckDB PRAGMA returns (cid, name, type, notnull, dflt_value, pk)
     columns_result = conn.execute("PRAGMA table_info(toponyms)").fetchall()
-    existing_columns = {row[0].lower() for row in columns_result}
+    existing_columns = {row[1].lower() for row in columns_result}  # row[1] is the column name
 
     logger.info(f"Existing columns in toponyms table: {sorted(existing_columns)}")
 
