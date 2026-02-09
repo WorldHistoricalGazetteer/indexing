@@ -42,6 +42,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator, Dict, List, Optional, Tuple, Set
 
+import numpy as np
+
 from processing.utilities import create_checkpoint_snapshot
 
 import duckdb
@@ -489,20 +491,24 @@ def _preload_models():
     return converter
 
 
-def _compute_phonetics_for_batch(batch: List[Tuple]) -> 'pa.Table':
+def _compute_phonetics_for_batch(batch: List[Tuple]) -> Tuple:
     """
     Worker function for parallel IPA/PanPhon computation.
 
-    Uses global cached converter to avoid re-initialization overhead.
+    Optimized for minimal serialization overhead - returns columnar data only.
+    No per-row Python objects, no dicts, no Arrow in workers.
 
     Args:
         batch: List of (toponym_id, name, lang, script) tuples
 
     Returns:
-        PyArrow Table with columns: toponym_id, ipa, panphon_features, panphon_embedding
-        (Zero-copy transfer to parent process)
+        Tuple of columnar arrays: (ids, ipas, features, embeddings)
+        - ids: list[str]
+        - ipas: list[str]
+        - features: list[bytes]
+        - embeddings: np.ndarray (N, 192) dtype=float32
     """
-    import pyarrow as pa
+    import numpy as np
 
     # REDUCED LOGGING - only log first batch per worker to avoid log spam
     pid = os.getpid()
@@ -513,7 +519,6 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> 'pa.Table':
         _worker_batch_count += 1
     except NameError:
         _worker_batch_count = 1
-        logger.info(f"Worker {pid} started (will process batches of ~{len(batch)} items)")
 
     # Log every 100th batch from each worker
     if _worker_batch_count % 100 == 0:
@@ -521,40 +526,57 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> 'pa.Table':
 
     converter = _get_worker_converter()
 
-    # Columnar data (pre-allocate for efficiency)
-    toponym_ids = []
-    ipas = []
-    packed_features_list = []
-    embeddings = []
+    # Pre-allocate result containers (fixed size, contiguous memory)
+    n = len(batch)
 
-    for toponym_id, name, lang, script in batch:
+    ids = [None] * n
+    ipas = [None] * n
+    features = [None] * n
+    embeddings = np.zeros((n, 192), dtype=np.float32)
+
+    valid_idx = 0  # Track number of successful conversions
+
+    # Tight loop - no exception propagation, no nested structures
+    for i, (toponym_id, name, lang, script) in enumerate(batch):
+        # Convert script
         try:
             script_enum = Script(script)
         except ValueError:
             script_enum = Script.OTHER
 
+        # Compute IPA
         ipa = converter.to_ipa(name, lang, script_enum)
         if not ipa:
             continue
 
+        # Compute features and embedding
         full_features = converter.to_features(ipa)
         embedding = converter.to_embedding(ipa)
 
-        if embedding:
-            packed = struct.pack(f'{len(full_features)}f', *full_features) if full_features else None
-            toponym_ids.append(toponym_id)
-            ipas.append(ipa)
-            packed_features_list.append(packed)
-            embeddings.append(embedding)
+        if not embedding:
+            continue
 
-    # Build Arrow table (zero-copy construction)
-    # Using list_(float32(), 192) ensures fixed-length list of floats
-    return pa.table({
-        'toponym_id': pa.array(toponym_ids, type=pa.string()),
-        'ipa': pa.array(ipas, type=pa.string()),
-        'panphon_features': pa.array(packed_features_list, type=pa.binary()),
-        'panphon_embedding': pa.array(embeddings, type=pa.list_(pa.float32(), 192))
-    })
+        # Pack features to bytes (compact representation)
+        if full_features:
+            packed = struct.pack(f'{len(full_features)}f', *full_features)
+        else:
+            packed = None
+
+        # Store in pre-allocated arrays
+        ids[valid_idx] = toponym_id
+        ipas[valid_idx] = ipa
+        features[valid_idx] = packed
+        embeddings[valid_idx] = embedding  # NumPy assignment (fast)
+        valid_idx += 1
+
+    # Trim to actual valid count (remove unused slots)
+    ids = ids[:valid_idx]
+    ipas = ipas[:valid_idx]
+    features = features[:valid_idx]
+    embeddings = embeddings[:valid_idx]  # NumPy slice (view, not copy)
+
+    # Return columnar data only - no Python objects crossing boundaries
+    return ids, ipas, features, embeddings
 
 
 # Languages that are expected to use specific scripts
@@ -2037,7 +2059,7 @@ def _update_language_phonetics(
             pbar = None
 
         # Process batches with explicit chunksize and logging
-        for result_batch in pool.imap_unordered(_compute_phonetics_for_batch, batches, chunksize=1):
+        for result_columns in pool.imap_unordered(_compute_phonetics_for_batch, batches, chunksize=1):
             batches_completed += 1
 
             # Log every 10 batches regardless of tqdm
@@ -2045,35 +2067,44 @@ def _update_language_phonetics(
                 logger.info(
                     f"Completed {batches_completed}/{num_batches} batches ({100 * batches_completed / num_batches:.1f}%)")
 
-            if result_batch:
-                # result_batch is list of (toponym_id, ipa, packed_features, embedding)
-                # Use a temp table for fast update
-                data_to_update = []
-                for tid, ipa, packed, emb in result_batch:
-                    data_to_update.append((tid, ipa, packed, emb))
+            # result_columns is: (ids, ipas, features, embeddings)
+            # where embeddings is numpy array (N, 192)
+            if result_columns:
+                ids, ipas, features, embeddings = result_columns
 
-                if data_to_update:
-                    # Transposing to columns
-                    ids, ipas, packeds, embs = zip(*data_to_update)
+                if ids:  # Check if any results in this batch
+                    # Build Arrow table column-wise (zero-copy from numpy)
+                    # Convert numpy array to flat list then to fixed-size list array
                     arrow_table = pa.table({
-                        'toponym_id': ids,
-                        'ipa': ipas,
-                        'panphon_features': packeds,
-                        'panphon_embedding': embs
+                        'toponym_id': pa.array(ids, type=pa.string()),
+                        'ipa': pa.array(ipas, type=pa.string()),
+                        'panphon_features': pa.array(features, type=pa.binary()),
+                        'panphon_embedding': pa.FixedSizeListArray.from_arrays(
+                            pa.array(embeddings.flatten(), type=pa.float32()),
+                            list_size=192
+                        )
                     })
-                    conn.execute("CREATE OR REPLACE TEMPORARY TABLE updates_temp AS SELECT * FROM arrow_table")
+
+                    # Register Arrow table with DuckDB and perform update
+                    conn.register('updates_temp', arrow_table)
                     conn.execute("""
-                                 UPDATE toponyms
-                                 SET ipa               = updates_temp.ipa,
-                                     panphon_features  = updates_temp.panphon_features,
-                                     panphon_embedding = updates_temp.panphon_embedding FROM updates_temp
-                                 WHERE toponyms.toponym_id = updates_temp.toponym_id
-                                 """)
-                    total_updated += len(data_to_update)
+                        UPDATE toponyms
+                        SET ipa = updates_temp.ipa,
+                            panphon_features = updates_temp.panphon_features,
+                            panphon_embedding = updates_temp.panphon_embedding
+                        FROM updates_temp
+                        WHERE toponyms.toponym_id = updates_temp.toponym_id
+                    """)
+                    conn.unregister('updates_temp')
+
+                    total_updated += len(ids)
 
                     # Log every 100 batches with update count
                     if batches_completed % 100 == 0:
                         logger.info(f"Total updated so far: {total_updated:,} records")
+
+                    # Drop reference immediately to free memory
+                    del arrow_table, ids, ipas, features, embeddings
 
             if pbar:
                 pbar.update(batch_size)
