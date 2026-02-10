@@ -609,11 +609,6 @@ do_ingest() {
 #SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
 
-# NOTE: --exclusive ensures dedicated disk I/O.
-# NOTE: 16 CPUS: 1 for Osmium main loop, 8-10 for ES parallel_bulk threads, rest for GC/OS overhead.
-# NOTE: --mem=120G leaves room for OS overhead on 128G nodes.
-# NOTE: --signal gives the Python script 2 minutes to save state before timeout.
-
 set -e
 
 echo "=========================================="
@@ -678,53 +673,36 @@ SBATCH_EOF
 }
 
 # ==============================================================================
-# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS (Phase 1)
+# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS
 # ==============================================================================
 
 do_rebuild_toponyms() {
     # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS...]
     # Options are passed through to rebuild_toponyms_index.py
 
-    DATA_VERSION=${1:-4}
+    DATA_VERSION=${1:-6}
     shift 2>/dev/null || true  # Remove version from remaining args
 
-    # Capture extra args (e.g., --limit 1000)
+    # Capture extra args (e.g., --limit 1000, --resume, --skip-es-index)
     PYTHON_ARGS="$@"
 
-    # Determine if we need ES and if we want GPU based on args
-    NEEDS_ES=true
-    USE_GPU=false
-    REMAINING_ARGS=""
-    for arg in "$@"; do
-        if [[ "$arg" == "--update-langs" ]] || [[ "$arg" == "--skip-es-index" ]]; then
-            NEEDS_ES=false
-        fi
-        if [[ "$arg" == "--gpu" ]]; then
-            USE_GPU=true
-            continue # Don't pass --gpu to the python script
-        fi
-        REMAINING_ARGS="$REMAINING_ARGS $arg"
-    done
-    PYTHON_ARGS="$REMAINING_ARGS"
-
-    ES_URL=""
-    if [ "$NEEDS_ES" = true ]; then
-        # Check staging is running
-        if [ ! -f "$STAGING_INFO_FILE" ]; then
-            echo "ERROR: No staging ES instance running"
-            echo "Start one first with: source $0 -staging-start"
-            return 1
-        fi
-
-        source "$STAGING_INFO_FILE"
-
-        # Verify ES is responding
-        if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-            echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-            return 1
-        fi
-        ES_URL="http://${ES_NODE}:${ES_PORT}"
+    # Check staging is running (always required — rebuild reads from places
+    # index and writes to toponyms index)
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
     fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    ES_URL="http://${ES_NODE}:${ES_PORT}"
 
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
     mkdir -p "$LOG_DIR"
@@ -737,51 +715,23 @@ do_rebuild_toponyms() {
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
 
     echo "=========================================="
-    echo "PHASE 1: REBUILD TOPONYMS"
+    echo "REBUILD TOPONYMS INDEX"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
-    if [ "$NEEDS_ES" = true ]; then
-        echo "  ES Host:      ${ES_URL}"
-    else
-        echo "  ES Host:      (not required for targeted update)"
-    fi
+    echo "  ES Host:      ${ES_URL}"
     echo "  Extra Args:   ${PYTHON_ARGS:-none}"
     echo
     echo "This job will:"
     echo "  1. Extract ALL toponyms from places index (with attestations)"
     echo "  2. Filter pre-romanized forms (lang-script mismatches)"
-    echo "  3. Generate vocabulary (expanded Unicode ranges)"
+    echo "  3. Generate vocabulary (full Unicode ranges, native script)"
     echo "  4. Compute IPA + PanPhon embeddings for training namespace toponyms"
+    echo "     IPA backends: Epitran, Phonikud (Hebrew), CharsiuG2P (zh/ko/yue/gan/wuu)"
     echo "  5. Index ALL toponyms to ES (panphon_embedding where available)"
-    echo "  6. Refresh index and create snapshot"
+    echo "  6. Generate name_romanized for cross-script text search"
+    echo "  7. Refresh index and create snapshot"
     echo
-
-# SBATCH script will be generated below
-    local SBATCH_ES_HOST_ARG=""
-    if [ "$NEEDS_ES" = true ]; then
-        SBATCH_ES_HOST_ARG="--es-host \"http://${ES_NODE}:${ES_PORT}\""
-    else
-        # Use a dummy host if not required, rebuild_toponyms_index.py will ignore it
-        SBATCH_ES_HOST_ARG="--es-host \"http://not-required:9200\""
-    fi
-
-    local SBATCH_PARTITION="#SBATCH --partition=htc"
-    local SBATCH_GRES=""
-    local SBATCH_CLUSTER=""
-    local SBATCH_MEM="#SBATCH --mem=300G"
-    local SBATCH_CPUS="#SBATCH --cpus-per-task=16"
-
-    if [ "$USE_GPU" = true ]; then
-        SBATCH_PARTITION="#SBATCH --partition=a100"
-        SBATCH_GRES="#SBATCH --gres=gpu:1"
-        SBATCH_CLUSTER="#SBATCH --cluster=gpu"
-        SBATCH_MEM="#SBATCH --mem=64G"
-        SBATCH_CPUS="#SBATCH --cpus-per-task=8"
-        echo "  Partition:    a100 (GPU)"
-    else
-        echo "  Partition:    htc (CPU)"
-    fi
 
     JOBID=$(sbatch --parsable <<EOF
 #!/bin/bash
@@ -789,13 +739,11 @@ do_rebuild_toponyms() {
 #SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
 #SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
-${SBATCH_CLUSTER}
-${SBATCH_PARTITION}
-${SBATCH_GRES}
+#SBATCH --partition=htc
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-${SBATCH_CPUS}
-${SBATCH_MEM}
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
 
 set -e
 
@@ -811,7 +759,7 @@ mkdir -p "\$SCRATCH_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 echo "=========================================="
-echo "PHASE 1: REBUILD TOPONYMS"
+echo "REBUILD TOPONYMS INDEX"
 echo "=========================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
@@ -821,7 +769,7 @@ echo
 
 # Run the rebuild script
 python -u -m phonetics.extraction.rebuild_toponyms_index \
-    ${SBATCH_ES_HOST_ARG} \
+    --es-host "${ES_URL}" \
     --db-path "${DB_PATH}" \
     --output-dir "${OUTPUT_DIR}" \
     --scratch-dir "\$SCRATCH_DIR" \
@@ -840,6 +788,7 @@ echo "  - toponyms.db  DuckDB checkpoint"
 echo
 echo "ES index: toponyms"
 echo "  - Includes panphon_embedding for phonetic similarity queries"
+echo "  - Includes name_romanized for cross-script text search"
 echo
 echo "Next steps:"
 echo "  1. Review coverage_stats.json"
@@ -853,11 +802,7 @@ EOF
     CLEAN_JOBID="${JOBID%;*}"
 
     echo "✓ Rebuild job submitted: $CLEAN_JOBID"
-    if [ "$USE_GPU" = true ]; then
-        echo "  Monitor: squeue -j $CLEAN_JOBID -M gpu"
-    else
-        echo "  Monitor: squeue -j $CLEAN_JOBID"
-    fi
+    echo "  Monitor: squeue -j $CLEAN_JOBID"
     echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${CLEAN_JOBID}.*"
 }
 
@@ -867,21 +812,8 @@ EOF
 
 do_generate_training_data() {
     # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume]
-    # Generates training data for all three phases from the toponyms index
-    #
-    # Options:
-    #   --force   Force regeneration of all phases, ignoring checkpoints
-    #   --resume  Resume from checkpoints (default behavior)
-    #
-    # Checkpoints are saved after each phase:
-    #   - pairs/positive_pairs.parquet       (Step 1: Positive pairs)
-    #   - triplets/phase1/{train,val}.parquet (Step 2: Phase 1 triplets)
-    #   - training/phase2/{train,val}.parquet (Step 3: Phase 2 samples)
-    #   - triplets/phase3/{train,val}.parquet (Step 4: Phase 3 triplets)
-    #
-    # If a job fails, re-running will automatically resume from the last checkpoint.
 
-    DATA_VERSION=${1:-4}
+    DATA_VERSION=${1:-6}
     shift 2>/dev/null || true
 
     # Parse flags
@@ -895,7 +827,6 @@ do_generate_training_data() {
                 shift
                 ;;
             --resume)
-                # Default behavior, but allow explicit flag for clarity
                 echo "  Mode: RESUME (will skip completed phases)"
                 shift
                 ;;
@@ -927,8 +858,7 @@ do_generate_training_data() {
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     DB_PATH="${IX1_BASE}/data/toponyms.db"
 
-    # DuckDB is now optional - we read training data from ES toponyms index
-    # But still pass the path in case it exists for fallback/reference
+    # DuckDB is optional - we read training data from ES toponyms index
     DB_ARG=""
     if [ -f "$DB_PATH" ]; then
         DB_ARG="--db-path \"${DB_PATH}\""
@@ -974,7 +904,7 @@ do_generate_training_data() {
 
     echo
     echo "=========================================="
-    echo "PHASE 2: GENERATE TRAINING DATA"
+    echo "GENERATE TRAINING DATA"
     echo "=========================================="
     echo "  Data Version: v${DATA_VERSION}"
     echo "  Output Dir:   ${OUTPUT_DIR}"
@@ -984,16 +914,6 @@ do_generate_training_data() {
     else
         echo "  Mode:         RESUME (skip completed phases)"
     fi
-    echo
-    echo "This job will:"
-    echo "  1. Generate positive pairs from co-located toponyms (HDBSCAN clustering)"
-    echo "  2. Balance samples by script+language pair"
-    echo "  3. Generate Phase 1 triplets (Teacher training)"
-    echo "  4. Generate Phase 2 samples (Student alignment)"
-    echo "  5. Generate Phase 3 triplets (hard negatives from ES)"
-    echo "  6. Export all to Parquet"
-    echo
-    echo "Checkpoints are saved after each step. Re-run to resume from failure."
     echo
 
     JOBID=$(sbatch --parsable <<EOF
@@ -1020,7 +940,7 @@ SCRATCH_DIR="$SCRATCH_VAR"
 mkdir -p "\$SCRATCH_DIR"
 
 echo "=========================================="
-echo "PHASE 2: GENERATE TRAINING DATA"
+echo "GENERATE TRAINING DATA"
 echo "=========================================="
 echo "Job Started: \$(date)"
 echo "Node: \$(hostname)"
@@ -1061,38 +981,14 @@ EOF
     echo "  Logs: tail -f ${LOG_DIR}/traindata_v${DATA_VERSION}_${JOBID}.out"
 }
 
-# Alias for backward compatibility
-do_generate_pairs() {
-    echo "Note: -generate-pairs is deprecated for v4. Use -generate-training-data instead."
-    do_generate_training_data "$@"
-}
-
 # ==============================================================================
 # TRAIN MODEL (Phase 3)
 # ==============================================================================
 
 do_train_model() {
     # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume-from CHECKPOINT]
-    #
-    # Trains the phonetic embedding model in three phases:
-    #   Phase 1: Train Teacher (PhoneticEncoder) on triplets with phonetic features
-    #   Phase 2: Align Student (UniversalEncoder) to Teacher outputs
-    #   Phase 3: Fine-tune Student with hard negatives
-    #
-    # Arguments:
-    #   VERSION      Data version (default: 4)
-    #   START_PHASE  First phase to run (default: 1)
-    #   END_PHASE    Last phase to run (default: same as START_PHASE if only 2 args, else 3)
-    #   --resume-from Path to checkpoint file (optional, for resuming interrupted training)
-    #
-    # Examples:
-    #   source es.sh -train-model 4        # Train all 3 phases
-    #   source es.sh -train-model 4 1      # Train phase 1 only
-    #   source es.sh -train-model 4 2 3    # Train phases 2 and 3 only
-    #   source es.sh -train-model 4 3      # Train phase 3 only
-    #   source es.sh -train-model 5 3 --resume-from /path/to/checkpoint.pt  # Resume Phase 3
 
-    DATA_VERSION=${1:-4}
+    DATA_VERSION=${1:-6}
     START_PHASE=${2:-1}
 
     # Parse optional --resume-from flag
@@ -1104,8 +1000,6 @@ do_train_model() {
         END_PHASE=$3
         RESUME_FROM="$5"
     else
-        # If only 2 args provided, END_PHASE = START_PHASE (single phase mode)
-        # If 3 args provided, use the third arg
         if [ -n "$2" ] && [ -z "$3" ]; then
             END_PHASE=$START_PHASE
         else
@@ -1117,13 +1011,10 @@ do_train_model() {
     OUTPUT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
-    # Ensure REPO_DIR is set (from .env)
     if [ -z "$REPO_DIR" ]; then
         REPO_DIR="/ix1/ishi/elastic"
     fi
 
-    # Create log and output directories BEFORE submitting jobs
-    # (Slurm needs the log directory to exist when the job starts)
     TRAIN_LOG_DIR="${LOG_DIR}/training_v${DATA_VERSION}"
     mkdir -p "$TRAIN_LOG_DIR" "$OUTPUT_DIR"
 
@@ -1139,7 +1030,7 @@ do_train_model() {
         return 1
     fi
 
-    # Pre-flight check: show directory structure
+    # Pre-flight check
     echo ""
     echo "Pre-flight directory check:"
     echo "  ${DATA_DIR}/triplets/phase1:"
@@ -1187,7 +1078,6 @@ do_train_model() {
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
-# Immediately log job start (before any potential failures)
 echo "===========================================" >&2
 echo "Phase 1 Training Job Started" >&2
 echo "Job ID: \$SLURM_JOB_ID" >&2
@@ -1195,15 +1085,9 @@ echo "Node: \$(hostname)" >&2
 echo "Time: \$(date)" >&2
 echo "===========================================" >&2
 
-# Print diagnostics first (before set -e)
 echo "Job started on \$(hostname) at \$(date)"
 echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
-echo "Working directory: \$(pwd)"
-echo "Data directory: ${DATA_DIR}"
-echo "Output directory: ${OUTPUT_DIR}"
-echo "Repo directory: ${REPO_DIR}"
 
-# Check paths exist
 if [ ! -d "${DATA_DIR}" ]; then
     echo "ERROR: Data directory not found: ${DATA_DIR}" >&2
     exit 1
@@ -1214,27 +1098,13 @@ if [ ! -d "${REPO_DIR}" ]; then
     exit 1
 fi
 
-# Verify Phase 1 training data exists
-if [ ! -d "${DATA_DIR}/triplets/phase1" ]; then
-    echo "ERROR: Phase 1 triplets not found at ${DATA_DIR}/triplets/phase1" >&2
-    echo "Contents of ${DATA_DIR}:" >&2
-    ls -la "${DATA_DIR}" >&2
-    echo "Contents of ${DATA_DIR}/triplets (if exists):" >&2
-    ls -la "${DATA_DIR}/triplets" 2>/dev/null || echo "  triplets directory missing" >&2
-    exit 1
-fi
-
 if [ ! -f "${DATA_DIR}/triplets/phase1/train.parquet" ]; then
     echo "ERROR: Phase 1 train.parquet not found" >&2
-    echo "Contents of ${DATA_DIR}/triplets/phase1:" >&2
-    ls -la "${DATA_DIR}/triplets/phase1" 2>/dev/null || echo "  directory empty or missing" >&2
     exit 1
 fi
 
 if [ ! -d "${DATA_DIR}/training" ]; then
     echo "ERROR: Training data directory not found at ${DATA_DIR}/training" >&2
-    echo "This contains toponym features required for Phase 1 training." >&2
-    echo "Run -generate-training-data first to create it." >&2
     exit 1
 fi
 
@@ -1250,24 +1120,10 @@ mkdir -p "\$SCRATCH_ROOT/triplets/phase1"
 mkdir -p "\$SCRATCH_ROOT/vocab"
 mkdir -p "\$SCRATCH_ROOT/training"
 
-echo "Environment: whg"
-echo "Python: \$(which python)"
-echo "------------------------------------------------"
-
-# Stage data to scratch
-# Phase 1 needs: triplets/phase1/ (triplet IDs), vocab/ (vocabularies),
-# and training/ (toponym features for lookup via Phase1Dataset)
-echo "Staging data from ${DATA_DIR} to \$SCRATCH_ROOT..."
-echo "Source contents:"
-ls -la "${DATA_DIR}/triplets/phase1/" || echo "Cannot list source directory"
-echo "Rsyncing triplets..."
-rsync -av "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/" || { echo "rsync triplets failed"; exit 1; }
-echo "Rsyncing vocab..."
-rsync -av "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/" || { echo "rsync vocab failed"; exit 1; }
-echo "Rsyncing training..."
-rsync -av "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/" || { echo "rsync training failed"; exit 1; }
-echo "Staging complete. Scratch contents:"
-ls -laR "\$SCRATCH_ROOT" | head -50
+echo "Staging data to \$SCRATCH_ROOT..."
+rsync -av "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/"
+rsync -av "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+rsync -av "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
 
 echo "Starting Phase 1 (Teacher)..."
 python -u -m phonetics.training.train \
@@ -1278,10 +1134,8 @@ python -u -m phonetics.training.train \
     --resume-from "${RESUME_FROM}"}
 EOF
 )
-            # Extract just the job ID (parsable output may include ";cluster")
             PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
             echo "✓ Phase 1 submitted: $PHASE1_JOB"
-            # Dependencies work within the same cluster
             PHASE1_DEP="--dependency=afterok:${PHASE1_JOB}"
         fi
     else
@@ -1291,10 +1145,8 @@ EOF
     # Phase 2: Align Student to Teacher
     PHASE2_DEP=""
     if [ "$START_PHASE" -le 2 ] && [ "$END_PHASE" -ge 2 ]; then
-        # Phase 2 requires Phase 1 checkpoint
         if [ ! -f "${OUTPUT_DIR}/phase1_best.pt" ] && [ -z "$PHASE1_JOB" ]; then
             echo "ERROR: Phase 1 checkpoint not found and no Phase 1 job submitted"
-            echo "Either run Phase 1 first or provide checkpoint at ${OUTPUT_DIR}/phase1_best.pt"
             return 1
         fi
         if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
@@ -1313,10 +1165,7 @@ EOF
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
-# Print diagnostics first (before set -e)
 echo "Job started on \$(hostname) at \$(date)"
-echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
-echo "Working directory: \$(pwd)"
 
 set -e
 
@@ -1329,12 +1178,6 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT/training"
 mkdir -p "\$SCRATCH_ROOT/vocab"
 
-echo "Environment: whg"
-echo "Python: \$(which python)"
-echo "------------------------------------------------"
-
-# Stage data to scratch (training/ contains Hive-partitioned data: split=train/, split=val/, split=test/)
-echo "Staging data to \$SCRATCH_ROOT..."
 rsync -a "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
 rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 
@@ -1348,10 +1191,8 @@ python -u -m phonetics.training.train \
     --resume-from "${RESUME_FROM}"}
 EOF
 )
-            # Extract just the job ID (parsable output may include ";cluster")
             PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
             echo "✓ Phase 2 submitted: $PHASE2_JOB"
-            # Dependencies work within the same cluster
             PHASE2_DEP="--dependency=afterok:${PHASE2_JOB}"
         fi
     else
@@ -1360,10 +1201,8 @@ EOF
 
     # Phase 3: Fine-tune with hard negatives
     if [ "$START_PHASE" -le 3 ] && [ "$END_PHASE" -ge 3 ]; then
-        # Phase 3 requires Phase 2 checkpoint
         if [ ! -f "${OUTPUT_DIR}/phase2_best.pt" ] && [ -z "$PHASE2_JOB" ]; then
             echo "ERROR: Phase 2 checkpoint not found and no Phase 2 job submitted"
-            echo "Either run Phase 2 first or provide checkpoint at ${OUTPUT_DIR}/phase2_best.pt"
             return 1
         fi
         if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
@@ -1382,10 +1221,7 @@ EOF
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=300G
 
-# Print diagnostics first (before set -e)
 echo "Job started on \$(hostname) at \$(date)"
-echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
-echo "Working directory: \$(pwd)"
 
 set -e
 
@@ -1398,12 +1234,6 @@ SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
 mkdir -p "\$SCRATCH_ROOT/triplets/phase3"
 mkdir -p "\$SCRATCH_ROOT/vocab"
 
-echo "Environment: whg"
-echo "Python: \$(which python)"
-echo "------------------------------------------------"
-
-# Stage data to scratch
-echo "Staging data to \$SCRATCH_ROOT..."
 rsync -a "${DATA_DIR}/triplets/phase3/" "\$SCRATCH_ROOT/triplets/phase3/"
 rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
 
@@ -1417,7 +1247,6 @@ python -u -m phonetics.training.train \
     --resume-from "${RESUME_FROM}"}
 EOF
 )
-            # Extract just the job ID (parsable output may include ";cluster")
             PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
             echo "✓ Phase 3 submitted: $PHASE3_JOB"
         fi
@@ -1435,17 +1264,7 @@ EOF
 # ==============================================================================
 
 do_train_and_update() {
-    # Usage: source es.sh -train-and-update [VERSION]
-    #
-    # Runs the complete pipeline:
-    #   1. Train model (all 3 phases)
-    #   2. Generate embeddings for all toponyms
-    #   3. Update ES index with new embeddings
-    #
-    # Arguments:
-    #   VERSION      Data version (default: 4)
-
-    DATA_VERSION=${1:-4}
+    DATA_VERSION=${1:-6}
 
     echo "=========================================="
     echo "FULL PIPELINE: TRAIN AND UPDATE (v${DATA_VERSION})"
@@ -1457,7 +1276,6 @@ do_train_and_update() {
     echo "  3. Update ES toponyms index"
     echo
 
-    # First, train the model
     do_train_model "$DATA_VERSION"
 
     echo
@@ -1471,23 +1289,12 @@ do_train_and_update() {
 # ==============================================================================
 
 do_update_embeddings() {
-    # Usage: source es.sh -update-embeddings [VERSION]
-    #
-    # Generates embeddings for all toponyms and rebuilds ES index.
-    # This should be run AFTER Phase 3 training completes.
-    #
-    # Steps:
-    #   1. Compute embeddings for training subset (GPU)
-    #   2. Rebuild ES index from DuckDB + embeddings (CPU)
-    #
-
-    DATA_VERSION=${1:-5}
+    DATA_VERSION=${1:-6}
 
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
-    # Ensure REPO_DIR is set
     if [ -z "$REPO_DIR" ]; then
         REPO_DIR="/ix1/ishi/elastic"
     fi
@@ -1503,7 +1310,7 @@ do_update_embeddings() {
     fi
 
     if [ ! -f "${IX1_BASE}/data/toponyms.db" ]; then
-        echo "ERROR: DuckDB database not found at $${IX1_BASE}/data/toponyms.db"
+        echo "ERROR: DuckDB database not found at ${IX1_BASE}/data/toponyms.db"
         echo "Rebuild toponyms first: es -rebuild-toponyms ${DATA_VERSION}"
         return 1
     fi
@@ -1535,10 +1342,7 @@ do_update_embeddings() {
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
 
-    # ==============================================================================
-    # STEP 1: COMPUTE EMBEDDINGS (GPU)
-    # ==============================================================================
-
+    # Step 1: Compute embeddings (GPU)
     echo "Step 1: Submitting compute job (GPU)..."
 
     COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
@@ -1587,13 +1391,9 @@ EOF
     COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
     echo "✓ Compute job submitted: ${COMPUTE_JOB}"
     echo "  Monitor: squeue -j ${COMPUTE_JOB} -M gpu"
-    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/compute_${COMPUTE_JOB}.err"
     echo
 
-    # ==============================================================================
-    # STEP 2: INDEX TO ELASTICSEARCH (CPU, depends on compute)
-    # ==============================================================================
-
+    # Step 2: Index to Elasticsearch (CPU, depends on compute)
     echo "Step 2: Submitting index job (CPU, will wait for compute)..."
 
     INDEX_JOB=$(sbatch --parsable --dependency=afterok:${COMPUTE_JOB} <<EOF
@@ -1621,10 +1421,8 @@ conda activate whg
 
 cd "${REPO_DIR}"
 
-# Verify embeddings file exists
 if [ ! -f "${EMBEDDINGS_FILE}" ]; then
     echo "ERROR: Embeddings file not found: ${EMBEDDINGS_FILE}"
-    echo "Compute job may have failed."
     exit 1
 fi
 
@@ -1647,8 +1445,6 @@ EOF
 
     INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
     echo "✓ Index job submitted: ${INDEX_JOB}"
-    echo "  Monitor: squeue -j ${INDEX_JOB}"
-    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_${INDEX_JOB}.err"
     echo
 
     echo "=========================================="
@@ -1657,697 +1453,8 @@ EOF
     echo "Compute job: ${COMPUTE_JOB} (GPU)"
     echo "Index job:   ${INDEX_JOB} (CPU, waiting for compute)"
     echo
-    echo "Monitor overall progress:"
-    echo "  squeue -u \$USER"
-    echo "  tail -f ${EMBEDDINGS_LOG_DIR}/*.err"
+    echo "Monitor: squeue -u \$USER"
 }
-
-# ==============================================================================
-# REBUILD TOPONYMS INDEX (Legacy / Alternative)
-# ==============================================================================
-
-do_rebuild_toponyms_gpu() {
-    # Usage: source es.sh -rebuild-toponyms-gpu [VERSION] [OPTIONS]
-    #
-    # Phase 1: Rebuild toponyms index from places (GPU version)
-    #
-    # Arguments:
-    #   VERSION      Data version (default: 4)
-    echo "=========================================="
-    echo
-    echo "  Checkpoint: $CHECKPOINT"
-    echo "  DuckDB:     $DUCKDB_FILE"
-    echo "  Output:     $EMBEDDINGS_FILE"
-    echo "  Schema:     $SCHEMA_FILE"
-    echo
-
-    # Validate required files
-    if [ ! -f "$CHECKPOINT" ]; then
-        echo "ERROR: Phase 3 checkpoint not found at $CHECKPOINT" >&2
-        echo "Train the model first with: es -train-model $DATA_VERSION" >&2
-        return 1
-    fi
-
-    if [ ! -d "$VOCAB_DIR" ]; then
-        echo "ERROR: Vocabulary directory not found at $VOCAB_DIR" >&2
-        return 1
-    fi
-
-    if [ ! -d "$TRAINING_DIR" ]; then
-        echo "ERROR: Training data directory not found at $TRAINING_DIR" >&2
-        echo "This should have been created during rebuild_toponyms_index." >&2
-        return 1
-    fi
-
-    if [ ! -f "$DUCKDB_FILE" ]; then
-        echo "ERROR: DuckDB database not found at $DUCKDB_FILE" >&2
-        echo "Run -rebuild-toponyms first to create the database." >&2
-        return 1
-    fi
-
-    if [ ! -f "$SCHEMA_FILE" ]; then
-        echo "ERROR: Schema file not found at $SCHEMA_FILE" >&2
-        return 1
-    fi
-
-    mkdir -p "$EMBEDDING_LOG_DIR"
-
-    # Get ES connection info
-    if [ -f /ix1/ishi/esinfo/es-staging.env ]; then
-        source /ix1/ishi/esinfo/es-staging.env
-        ES_HOST="${ES_STAGING_URL}"
-    else
-        echo "ERROR: ES staging environment not found. Is ES running?" >&2
-        echo "Start ES with: es -staging-start" >&2
-        return 1
-    fi
-
-    echo "=========================================="
-    echo "STEP 1: COMPUTE EMBEDDINGS (GPU)"
-    echo "=========================================="
-    echo
-
-    # Submit compute job to GPU partition
-    COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-emb-compute-v${DATA_VERSION}
-#SBATCH --output=${EMBEDDING_LOG_DIR}/compute_%j.out
-#SBATCH --error=${EMBEDDING_LOG_DIR}/compute_%j.err
-#SBATCH --time=4:00:00
-#SBATCH --partition=a100
-#SBATCH --gres=gpu:1
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-
-echo "==========================================="
-echo "Embedding Compute Job Started"
-echo "Job ID: \$SLURM_JOB_ID"
-echo "Node: \$(hostname)"
-echo "Time: \$(date)"
-echo "==========================================="
-
-set -e
-
-source "$CONDA_SETUP_PATH"
-conda activate whg
-
-cd /ix1/ishi/elastic
-
-echo "Computing embeddings for training subset..."
-python -m phonetics.inference.update_es compute \\
-    --input-file "${TRAINING_DIR}" \\
-    --output-file "${EMBEDDINGS_FILE}" \\
-    --checkpoint "${CHECKPOINT}" \\
-    --vocab-dir "${VOCAB_DIR}" \\
-    --embedding-version ${DATA_VERSION} \\
-    --batch-size 4000 \\
-    --device cuda
-
-echo "Compute complete: ${EMBEDDINGS_FILE}"
-EOF
-)
-
-    COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
-    echo "✓ Compute job submitted: $COMPUTE_JOB (gpu)"
-    echo "  Monitor: squeue -M gpu -j $COMPUTE_JOB"
-    echo "  Logs: tail -f ${EMBEDDING_LOG_DIR}/compute_${COMPUTE_JOB}.{out,err}"
-    echo
-
-    echo "=========================================="
-    echo "STEP 2: INDEX TO ELASTICSEARCH (CPU)"
-    echo "=========================================="
-    echo
-
-    # Submit index job to HTC partition (CPU-only, depends on compute job)
-    INDEX_JOB=$(sbatch --parsable -M htc --dependency=afterok:${COMPUTE_JOB} <<EOF
-#!/bin/bash
-#SBATCH --job-name=whg-emb-index-v${DATA_VERSION}
-#SBATCH --output=${EMBEDDING_LOG_DIR}/index_%j.out
-#SBATCH --error=${EMBEDDING_LOG_DIR}/index_%j.err
-#SBATCH --time=6:00:00
-#SBATCH --partition=htc
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=128G
-
-echo "==========================================="
-echo "Embedding Index Job Started"
-echo "Job ID: \$SLURM_JOB_ID"
-echo "Node: \$(hostname)"
-echo "Time: \$(date)"
-echo "==========================================="
-
-set -e
-
-source "$CONDA_SETUP_PATH"
-conda activate whg
-
-cd /ix1/ishi/elastic
-
-echo "Rebuilding ES index from DuckDB + embeddings..."
-python -m phonetics.inference.update_es index \\
-    --duckdb-file "${DUCKDB_FILE}" \\
-    --embeddings-file "${EMBEDDINGS_FILE}" \\
-    --schema-file "${SCHEMA_FILE}" \\
-    --es-host "${ES_HOST}" \\
-    --index toponyms \\
-    --embedding-version ${DATA_VERSION} \\
-    --batch-size 2000
-
-echo "Index rebuild complete!"
-EOF
-)
-
-    INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
-    echo "✓ Index job submitted: $INDEX_JOB (htc)"
-    echo "  Monitor: squeue -M htc -j $INDEX_JOB"
-    echo "  Logs: tail -f ${EMBEDDING_LOG_DIR}/index_${INDEX_JOB}.{out,err}"
-    echo
-
-    echo "=========================================="
-    echo "PIPELINE SUBMITTED"
-    echo "=========================================="
-    echo
-    echo "Jobs queued:"
-    echo "  1. Compute (GPU): $COMPUTE_JOB"
-    echo "  2. Index (CPU):   $INDEX_JOB (after compute)"
-    echo
-    echo "Monitor all jobs:"
-    echo "  squeue -M gpu,htc -u \$USER"
-    echo
-    echo "View logs:"
-    echo "  tail -f ${EMBEDDING_LOG_DIR}/*.{out,err}"
-}
-
-# =============================================================================
-# HEALTH CHECKS
-# =============================================================================
-
-health_production() {
-    echo "=========================================="
-    echo "PRODUCTION HEALTH CHECK"
-    echo "=========================================="
-    echo
-
-    # Check if ES is running
-    if [ -f "$PROD_ES_PID" ] && kill -0 $(cat "$PROD_ES_PID") 2>/dev/null; then
-        echo "Elasticsearch: RUNNING (PID: $(cat $PROD_ES_PID))"
-    else
-        echo "Elasticsearch: STOPPED"
-        return 1
-    fi
-
-    # Check if Kibana is running
-    if [ -f "$KIBANA_PID" ] && kill -0 $(cat "$KIBANA_PID") 2>/dev/null; then
-        echo "Kibana: RUNNING (PID: $(cat $KIBANA_PID))"
-    else
-        echo "Kibana: STOPPED"
-    fi
-
-    echo
-
-    # Cluster health
-    echo "--- Cluster Health ---"
-    curl -s "$PROD_ES_URL/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
-
-    echo
-    echo "--- Index Summary ---"
-    curl -s "$PROD_ES_URL/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
-
-    echo
-    echo "--- Disk Usage ---"
-    echo "Production data (vast):"
-    du -sh "$PROD_DATA_DIR" 2>/dev/null || echo "  Directory not found"
-    echo "Snapshots (ix1):"
-    du -sh "$SNAPSHOT_DIR" 2>/dev/null || echo "  Directory not found"
-
-    echo
-    echo "--- Memory ---"
-    free -h | head -2
-}
-
-health_staging() {
-    echo "=========================================="
-    echo "STAGING HEALTH CHECK"
-    echo "=========================================="
-    echo
-
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "Staging instance: NOT RUNNING"
-        echo
-        echo "Start with: source es.sh -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    echo "Staging instance: RUNNING"
-    echo "  Node: $ES_NODE"
-    echo "  Port: $ES_PORT"
-    echo "  Job:  $SLURM_JOB_ID"
-    echo
-
-    # Check job status
-    echo "--- Slurm Job Status ---"
-    squeue -j "$SLURM_JOB_ID" 2>/dev/null || echo "Job not found in queue"
-
-    echo
-    echo "--- Cluster Health ---"
-    curl -s "http://${ES_NODE}:${ES_PORT}/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
-
-    echo
-    echo "--- Index Summary ---"
-    curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
-
-    echo
-    echo "--- Snapshots ---"
-    SNAP_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/_snapshot/$STAGING_REPO_NAME/_all" 2>/dev/null | python3 -c "import sys,json; print(len(json.load(sys.stdin).get('snapshots',[])))" 2>/dev/null || echo "?")
-    echo "Snapshots in staging repo: $SNAP_COUNT"
-}
-
-# =============================================================================
-# PRODUCTION ELASTICSEARCH (VM)
-# =============================================================================
-
-start_prod_es() {
-    if [ -f "$PROD_ES_PID" ] && kill -0 $(cat "$PROD_ES_PID") 2>/dev/null; then
-        echo "Production Elasticsearch already running (PID: $(cat $PROD_ES_PID))"
-        return 0
-    fi
-
-    echo "Starting production Elasticsearch..."
-
-    # Ensure directories exist
-    mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR"
-
-    # JVM heap: 15g of 32g RAM (leaves ~15g for filesystem cache)
-    export ES_JAVA_OPTS="-Xms15g -Xmx15g"
-
-    nohup "$ES_HOME/bin/elasticsearch" \
-        -E cluster.name="$PROD_CLUSTER_NAME" \
-        -E node.name="$PROD_NODE_NAME" \
-        -E path.data="$PROD_DATA_DIR" \
-        -E path.logs="$PROD_LOG_DIR" \
-        -E path.repo="$SNAPSHOT_DIR" \
-        -E discovery.type=single-node \
-        -E xpack.security.enabled=false \
-        -E network.host="$PROD_ES_HOST" \
-        -E http.port="$PROD_ES_PORT" \
-        > "$PROD_LOG_DIR/nohup.out" 2>&1 &
-
-    echo $! > "$PROD_ES_PID"
-    echo "Elasticsearch started (PID: $(cat $PROD_ES_PID))"
-
-    # Wait for startup
-    echo -n "Waiting for Elasticsearch..."
-    for i in {1..30}; do
-        if curl -s "$PROD_ES_URL/_cluster/health" > /dev/null 2>&1; then
-            echo " ready!"
-            return 0
-        fi
-        echo -n "."
-        sleep 2
-    done
-    echo " timeout (may still be starting)"
-}
-
-stop_prod_es() {
-    if [ -f "$PROD_ES_PID" ]; then
-        local pid=$(cat "$PROD_ES_PID")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Stopping Elasticsearch (PID: $pid)..."
-            kill "$pid"
-            sleep 5
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "Force killing..."
-                kill -9 "$pid" 2>/dev/null
-            fi
-        fi
-        rm -f "$PROD_ES_PID"
-        echo "Elasticsearch stopped."
-    else
-        echo "Elasticsearch is not running (no PID file)."
-    fi
-}
-
-# =============================================================================
-# KIBANA (VM)
-# =============================================================================
-
-start_kibana() {
-    if [ -f "$KIBANA_PID" ] && kill -0 $(cat "$KIBANA_PID") 2>/dev/null; then
-        echo "Kibana already running (PID: $(cat $KIBANA_PID))"
-        return 0
-    fi
-
-    echo "Waiting for Elasticsearch to be ready..."
-    for i in {1..30}; do
-        if curl -s "$PROD_ES_URL" > /dev/null 2>&1; then
-            break
-        fi
-        sleep 2
-    done
-
-    if ! curl -s "$PROD_ES_URL" > /dev/null 2>&1; then
-        echo "ERROR: Elasticsearch not available at $PROD_ES_URL"
-        return 1
-    fi
-
-    echo "Starting Kibana (this may take 2-5 minutes to initialize)..."
-
-    mkdir -p "${IX1_BASE}/kibana/data" "${IX1_BASE}/kibana/logs"
-
-    nohup "$KIBANA_HOME/bin/kibana" \
-        --path.data="${IX1_BASE}/kibana/data" \
-        > "${IX1_BASE}/kibana/logs/nohup.out" 2>&1 &
-
-    echo $! > "$KIBANA_PID"
-    echo "Kibana started (PID: $(cat $KIBANA_PID))"
-    echo "Access at: http://${PROD_ES_HOST}:5601 (wait a few minutes)"
-}
-
-stop_kibana() {
-    if [ -f "$KIBANA_PID" ]; then
-        local pid=$(cat "$KIBANA_PID")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Stopping Kibana (PID: $pid)..."
-            kill "$pid"
-            sleep 3
-            if kill -0 "$pid" 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null
-            fi
-        fi
-        rm -f "$KIBANA_PID"
-        echo "Kibana stopped."
-    else
-        echo "Kibana is not running (no PID file)."
-    fi
-}
-
-# =============================================================================
-# STAGING ELASTICSEARCH (Slurm)
-# =============================================================================
-
-staging_start() {
-    # Parse arguments
-    local PLACES_ONLY=false
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --places-only)
-                PLACES_ONLY=true
-                shift
-                ;;
-            *)
-                shift
-                ;;
-        esac
-    done
-
-    # Check if staging already running
-    if [ -f "$STAGING_INFO_FILE" ]; then
-        source "$STAGING_INFO_FILE"
-        echo "Staging instance may already be running:"
-        echo "  Job ID: $SLURM_JOB_ID"
-        echo "  Node:   $ES_NODE"
-        echo "  Port:   $ES_PORT"
-        echo
-
-        # Verify job is actually running
-        if squeue -j "$SLURM_JOB_ID" &>/dev/null 2>&1; then
-            echo "Job is active. Use -staging-stop first if you want to restart."
-            export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
-            return 0
-        else
-            echo "Stale info file found. Cleaning up..."
-            rm -f "$STAGING_INFO_FILE"
-        fi
-    fi
-
-    STAGING_SCRIPT="${SCRIPT_DIR}/../processing/es_staging.sbatch"
-
-    if [ ! -f "$STAGING_SCRIPT" ]; then
-        echo "ERROR: Staging script not found: $STAGING_SCRIPT"
-        return 1
-    fi
-
-    echo "Launching staging Elasticsearch on Slurm..."
-    if $PLACES_ONLY; then
-        echo "  Mode: places-only (toponyms will be rebuilt separately)"
-    fi
-
-    # Ensure log directory exists
-    mkdir -p "$STAGING_SLURM_LOGS"
-
-    # Pass places-only flag via sbatch --export
-    if $PLACES_ONLY; then
-        JOBID=$(sbatch --parsable --export=ALL,RESTORE_PLACES_ONLY=1 "$STAGING_SCRIPT")
-    else
-        JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
-    fi
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit Slurm job"
-        return 1
-    fi
-
-    echo "Submitted job: $JOBID"
-    squeue -j "$JOBID"
-
-    echo -n "Waiting for ES to be ready..."
-    for i in {1..120}; do
-        if [ -f "$STAGING_INFO_FILE" ]; then
-            source "$STAGING_INFO_FILE"
-            # Verify ES is responding
-            if curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-                echo " ready!"
-                break
-            fi
-        fi
-
-        # Check if job failed
-        if ! squeue -j "$JOBID" &>/dev/null 2>&1; then
-            echo
-            echo "ERROR: Job $JOBID is no longer running"
-            echo "Check logs: ${STAGING_SLURM_LOGS}/slurm-${JOBID}.out"
-            return 1
-        fi
-
-        echo -n "."
-        sleep 5
-    done
-
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo
-        echo "ERROR: Staging ES did not start within timeout"
-        echo "Check logs: ${STAGING_SLURM_LOGS}/slurm-${JOBID}.out"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-    export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
-
-    echo
-    echo "=========================================="
-    echo "STAGING ES READY"
-    echo "=========================================="
-    echo "  URL:  http://${ES_NODE}:${ES_PORT}"
-    echo "  Node: $ES_NODE"
-    echo "  Port: $ES_PORT"
-    echo "  Data: $ES_DATA"
-    echo "  Job:  $SLURM_JOB_ID"
-    echo
-    echo "Environment variables exported to current shell."
-    echo "For other shells: source $STAGING_INFO_FILE"
-}
-
-staging_stop() {
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "No staging instance found (no info file at $STAGING_INFO_FILE)"
-        return 0
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    echo "=========================================="
-    echo "STOPPING STAGING ES"
-    echo "=========================================="
-    echo
-    echo "WARNING: Any unsaved work will be lost!"
-    echo "Make sure you have created snapshots of your data."
-    echo
-    read -p "Continue? (y/n): " confirm
-    if [ "$confirm" != "y" ]; then
-        echo "Cancelled."
-        return 0
-    fi
-
-    echo "Stopping job $SLURM_JOB_ID..."
-    scancel "$SLURM_JOB_ID" 2>/dev/null || true
-
-    # Wait for cleanup
-    sleep 5
-    rm -f "$STAGING_INFO_FILE"
-
-    unset ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
-
-    echo "Staging instance stopped."
-}
-
-staging_status() {
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "No staging instance running."
-        echo "Start one with: source $0 -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    echo "Staging Elasticsearch Status"
-    echo "=========================================="
-    echo "  Node: $ES_NODE"
-    echo "  Port: $ES_PORT"
-    echo "  Data: $ES_DATA"
-    echo "  Job:  $SLURM_JOB_ID"
-    echo
-    echo "Job status:"
-    squeue -j "$SLURM_JOB_ID" 2>/dev/null || echo "  Job not found in queue"
-    echo
-    echo "Index counts:"
-    curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices?v" 2>/dev/null || echo "  Could not connect"
-}
-
-staging_logs() {
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "No staging instance found."
-        echo "Recent log files:"
-        ls -lt "${STAGING_SLURM_LOGS}/"*.out 2>/dev/null | head -5
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    LOG_OUT="${STAGING_SLURM_LOGS}/slurm-${SLURM_JOB_ID}.out"
-    LOG_ERR="${STAGING_SLURM_LOGS}/slurm-${SLURM_JOB_ID}.err"
-
-    echo "=== STDOUT (${LOG_OUT}) ==="
-    tail -50 "$LOG_OUT" 2>/dev/null || echo "No stdout log found"
-    echo
-    echo "=== STDERR (${LOG_ERR}) ==="
-    tail -50 "$LOG_ERR" 2>/dev/null || echo "No stderr log found"
-}
-
-# =============================================================================
-# INGESTION (Slurm batch job)
-# =============================================================================
-
-do_ingest() {
-    # Check staging is running
-    if [ ! -f "$STAGING_INFO_FILE" ]; then
-        echo "ERROR: No staging ES instance running"
-        echo "Start one first with: source $0 -staging-start"
-        return 1
-    fi
-
-    source "$STAGING_INFO_FILE"
-
-    # Verify ES is responding
-    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
-        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
-        return 1
-    fi
-
-    echo "Staging ES is running at http://${ES_NODE}:${ES_PORT}"
-
-    # Build the Python command with all passed arguments
-    PYTHON_ARGS="$@"
-
-    # Create a temporary sbatch script
-    INGEST_SCRIPT=$(mktemp /tmp/es-ingest-XXXXXX.sbatch)
-
-    cat > "$INGEST_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=es-ingest
-#SBATCH --time=48:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=16
-#SBATCH --mem=120G
-#SBATCH --exclusive
-#SBATCH --signal=B:SIGTERM@60
-#SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
-#SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
-
-# NOTE: --exclusive ensures dedicated disk I/O.
-# NOTE: 16 CPUS: 1 for Osmium main loop, 8-10 for ES parallel_bulk threads, rest for GC/OS overhead.
-# NOTE: --mem=120G leaves room for OS overhead on 128G nodes.
-# NOTE: --signal gives the Python script 2 minutes to save state before timeout.
-
-set -e
-
-echo "=========================================="
-echo "AUTHORITY INGESTION JOB"
-echo "=========================================="
-echo "Started: \$(date)"
-echo
-
-# Load environment
-source "$ENV_FILE"
-
-# Load staging ES connection info
-if [ ! -f "$STAGING_INFO_FILE" ]; then
-    echo "ERROR: Staging ES no longer running"
-    exit 1
-fi
-source "$STAGING_INFO_FILE"
-
-# Set ES_HOST for Python scripts
-export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
-
-echo "ES_HOST: \$ES_HOST"
-echo "Arguments: $PYTHON_ARGS"
-echo
-
-# Activate conda environment
-source "$CONDA_SETUP_PATH"
-conda activate whg
-
-cd "$REPO_DIR"
-
-# Run ingestion
-python -m processing.ingest_all_authorities $PYTHON_ARGS
-
-echo
-echo "=========================================="
-echo "INGESTION COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-SBATCH_EOF
-
-    echo
-    echo "Submitting ingestion job..."
-    echo "Arguments passed to ingest_all_authorities.py: $PYTHON_ARGS"
-    echo
-
-    JOBID=$(sbatch --parsable "$INGEST_SCRIPT")
-    rm "$INGEST_SCRIPT"
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit Slurm job"
-        return 1
-    fi
-
-    echo "Submitted job: $JOBID"
-    echo
-    echo "Monitor with:"
-    echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/ingest-${JOBID}.out"
-    echo
-    echo "Note: The staging ES instance must remain running for the duration."
-}
-
 
 # =============================================================================
 # MAIN
@@ -2372,34 +1479,25 @@ case "$1" in
 
     # --- Ingestion ---
     -ingest)
-        shift  # Remove -ingest from arguments
+        shift
         do_ingest "$@"
         ;;
+
     # --- Rebuild Toponyms Index ---
     -rebuild-toponyms)
-        shift  # Remove -rebuild-toponyms from arguments
+        shift
         do_rebuild_toponyms "$@"
         ;;
-    -rebuild-toponyms-gpu)
-        shift
-        do_rebuild_toponyms_gpu "$@"
-        ;;
 
-    # --- Generate Training Data (v4) ---
+    # --- Generate Training Data ---
     -generate-training-data)
         shift
         do_generate_training_data "$@"
         ;;
 
-    # --- Generate Training Pairs/Triplets (legacy, redirects to above) ---
-    -generate-pairs)
-        shift
-        do_generate_pairs "$@"
-        ;;
-
     # --- Training Pipeline ---
     -train-model)
-        shift  # Remove -train-model from arguments
+        shift
         do_train_model "$@"
         ;;
 
@@ -2411,7 +1509,7 @@ case "$1" in
 
     # --- Inference / Embedding Pipeline ---
     -update-embeddings)
-        shift  # Remove -update-embeddings from arguments
+        shift
         do_update_embeddings "$@"
         ;;
 
@@ -2456,7 +1554,7 @@ case "$1" in
 
     # --- Staging (Slurm) ---
     -staging-start)
-        shift  # Remove -staging-start from arguments
+        shift
         staging_start "$@"
         ;;
     -staging-stop)
@@ -2480,12 +1578,12 @@ case "$1" in
         echo "  -install            Install Elasticsearch and Kibana"
         echo "  -update             Pull latest code from git"
         echo
-        echo "PIPELINE:"
-        echo "  -rebuild-toponyms   [VER] Rebuild index from places (Phase 1)"
-        echo "  -rebuild-toponyms-gpu [VER] Rebuild index with GPU compute (Legacy)"
-        echo "  -generate-training-data [VER] Generate training sets (Phase 2)"
-        echo "  -train-model        [VER] Train Teacher/Student models (Phase 3)"
+        echo "PIPELINE (Symphonym v6):"
+        echo "  -rebuild-toponyms   [VER] Rebuild index from places"
+        echo "  -generate-training-data [VER] Generate training sets"
+        echo "  -train-model        [VER] Train Teacher/Student models"
         echo "  -update-embeddings  [VER] Compute new embeddings and index"
+        echo
         echo "HEALTH CHECKS:"
         echo "  -health             Production cluster health and stats"
         echo "  -staging-health     Staging cluster health and stats"
@@ -2506,26 +1604,33 @@ case "$1" in
         echo
         echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms VERSION [OPTIONS]"
-        echo "      Phase 1:"
-        echo "        1. Extracts toponyms from places (with attestations)"
-        echo "        2. Filters pre-romanized forms (lang-script mismatches)"
-        echo "        3. Generates vocabulary (full Unicode ranges)"
-        echo "        4. Computes IPA + PanPhon embeddings for training namespaces"
-        echo "        5. Indexes ALL toponyms to ES (with panphon_embedding where available)"
-        echo "        6. Creates snapshot"
+        echo "      Extracts toponyms from places, computes IPA + PanPhon embeddings,"
+        echo "      and indexes to ES with panphon_embedding for phonetic similarity."
+        echo
+        echo "      IPA backends: Epitran (default), Phonikud (Hebrew),"
+        echo "                    CharsiuG2P (zh, ko, yue, gan, wuu)"
+        echo
+        echo "      Steps:"
+        echo "        1. Extract toponyms from places (with attestations)"
+        echo "        2. Filter pre-romanized forms (lang-script mismatches)"
+        echo "        3. Generate vocabulary (full Unicode ranges, native script)"
+        echo "        4. Compute IPA + PanPhon embeddings for training namespaces"
+        echo "        5. Index ALL toponyms to ES (panphon_embedding + name_romanized)"
+        echo "        6. Create snapshot"
         echo
         echo "  Options:"
         echo "    --resume                 Resume from existing DuckDB checkpoint"
+        echo "    --skip-es-index          Skip ES indexing (extraction + vocab only)"
         echo "    --limit N                Limit places processed (for testing)"
         echo
         echo "  Examples:"
-        echo "    $0 -rebuild-toponyms 4                    # Full rebuild v4"
-        echo "    $0 -rebuild-toponyms 4 --limit 10000      # Test with subset"
-        echo "    $0 -rebuild-toponyms 4 --resume           # Resume interrupted job"
+        echo "    $0 -rebuild-toponyms 6                    # Full rebuild v6"
+        echo "    $0 -rebuild-toponyms 6 --limit 10000      # Test with subset"
+        echo "    $0 -rebuild-toponyms 6 --resume           # Resume interrupted job"
         echo
         echo "GENERATE TRAINING DATA (reads from ES toponyms index):"
         echo "  -generate-training-data VERSION [OPTIONS]"
-        echo "      Phase 2 of reads PanPhon embeddings from ES:"
+        echo "      Reads PanPhon embeddings from ES to generate training data:"
         echo "        1. Generate positive pairs (HDBSCAN clustering on PanPhon cosine)"
         echo "        2. Balance samples by script+language pair"
         echo "        3. Generate Phase 1 triplets (script-aware random negatives)"
@@ -2537,17 +1642,9 @@ case "$1" in
         echo "    --force            Force regeneration, ignoring checkpoints"
         echo "    --resume           Resume from checkpoints (default)"
         echo
-        echo "  Checkpoints (auto-saved after each step):"
-        echo "    pairs/positive_pairs.parquet        (Step 1)"
-        echo "    triplets/phase1/{train,val}.parquet (Step 2)"
-        echo "    training/phase2/{train,val}.parquet (Step 3)"
-        echo "    triplets/phase3/{train,val}.parquet (Step 4)"
-        echo
         echo "  Examples:"
-        echo "    $0 -generate-training-data 4              # Generate (resume if interrupted)"
-        echo "    $0 -generate-training-data 4 --force      # Regenerate from scratch"
-        echo
-        echo "  Note: -generate-pairs is deprecated. Use -generate-training-data for v4."
+        echo "    $0 -generate-training-data 6              # Generate (resume if interrupted)"
+        echo "    $0 -generate-training-data 6 --force      # Regenerate from scratch"
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
@@ -2585,18 +1682,12 @@ case "$1" in
         echo "  source $0 -staging-status             Show status and index counts"
         echo "  source $0 -staging-logs               Show recent log output"
         echo
-        echo "v4 WORKFLOW (recommended):"
+        echo "WORKFLOW (recommended):"
         echo "  1. Start staging ES:      source es.sh -staging-start --places-only"
-        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 4"
-        echo "  3. Generate training:     source es.sh -generate-training-data 4"
-        echo "  4. Train model:           source es.sh -train-model 4"
-        echo "  5. Update embeddings:     source es.sh -update-embeddings 4"
-        echo
-        echo "v4 WORKFLOW (full pipeline - chains steps 4-5):"
-        echo "  1. Start staging ES:      source es.sh -staging-start --places-only"
-        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 4"
-        echo "  3. Generate training:     source es.sh -generate-training-data 4"
-        echo "  4. Train + Index:         source es.sh -train-and-update 4"
+        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 6"
+        echo "  3. Generate training:     source es.sh -generate-training-data 6"
+        echo "  4. Train model:           source es.sh -train-model 6"
+        echo "  5. Update embeddings:     source es.sh -update-embeddings 6"
         echo
         echo "Data directory: /ix1/ishi/models/phonetic/data/vN/"
         echo

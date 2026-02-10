@@ -1,11 +1,7 @@
 """
 Rebuild the ES toponyms index with vocabulary generation and PanPhon embeddings.
 
-v6 Pipeline - Phase 1: Extraction and ES Indexing
-
-Based on the proven v4/v5 architecture (66M+ toponyms processed successfully).
-Adds Phonikud (Hebrew) and CharsiuG2P (Chinese topolects, Korean) to IPAConverter
-while keeping the same pipeline, worker function, and output format.
+v4 Pipeline - Phase 1: Extraction and ES Indexing
 
 This script:
 1. Scans all places to extract toponyms with attestations (back-references to places)
@@ -22,12 +18,6 @@ Vocabulary output enables subsequent training without re-scanning the corpus.
 
 Reliability: Uses JSONL buffer on scratch disk to decouple DuckDB from HTTP.
 Supports resuming from an existing DuckDB database.
-
-IPA backends:
-- Epitran: Latin, Cyrillic, Greek, Arabic, Devanagari, Bengali, Tamil, Telugu,
-  Malayalam, Kannada, Gujarati, Thai, Georgian, Armenian, Japanese (kana)
-- Phonikud: Hebrew (he) — neural diacritization + phonemization (no Epitran support)
-- CharsiuG2P: Mandarin (zh), Korean (ko), Cantonese (yue), Gan (gan), Wu (wuu)
 """
 
 # Suppress warnings early - before any imports that might trigger them
@@ -35,19 +25,16 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
 warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
-warnings.filterwarnings("ignore", message=".*tokenizer class.*")
 
 import argparse
 import hashlib
 import json
 import logging
 import multiprocessing as mp
-import os
 import shutil
 import struct
 import sys
 import tempfile
-import time
 import unicodedata
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -76,13 +63,15 @@ try:
     from anyascii import anyascii
 except ImportError:
     anyascii = None
+    print("Warning: anyascii not installed. CJK romanization unavailable.")
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from phonetics.utils.script_detection import (
     Script, detect_script, get_primary_namespace,
-    SCRIPT_RANGES
+    SCRIPT_RANGES, should_romanize, should_decompose
 )
+from phonetics.utils.korean import decompose_text
 from processing.settings import ES_HOST, IX1_BASE, STAGING_REPO_NAME
 
 
@@ -98,7 +87,6 @@ def bulk_insert_duckdb(conn, table_name: str, columns: List[str], data: List[Tup
     col_data = dict(zip(columns, zip(*data)))
     arrow_table = pa.table(col_data)
     conn.execute(f"INSERT INTO {table_name} SELECT * FROM arrow_table")
-
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -148,7 +136,7 @@ EPITRAN_LANG_MAP = {
     ('ar', Script.ARABIC): 'ara-Arab',
     ('fa', Script.ARABIC): 'fas-Arab',
     ('ur', Script.ARABIC): 'urd-Arab',
-    # Note: Hebrew (he) is NOT supported by Epitran — handled by Phonikud
+    ('he', Script.HEBREW): 'heb-Hebr',
     ('hi', Script.DEVANAGARI): 'hin-Deva',
     ('mr', Script.DEVANAGARI): 'mar-Deva',
     ('ne', Script.DEVANAGARI): 'nep-Deva',
@@ -162,45 +150,20 @@ EPITRAN_LANG_MAP = {
     ('th', Script.THAI): 'tha-Thai',
     ('ka', Script.GEORGIAN): 'kat-Geor',
     ('hy', Script.ARMENIAN): 'hye-Armn',
-    # Note: Korean (ko) handled by CharsiuG2P, not Epitran
-    # Note: Mandarin Chinese (zh) handled by CharsiuG2P;
-    #   Epitran cmn-Hans requires CC-CEDict file and is not used here.
+    ('ko', Script.HANGUL): 'kor-Hang',
+    ('zh', Script.CJK): 'cmn-Hans',
     ('ja', Script.HIRAGANA): 'jpn-Hira',
-}
-
-# Languages routed to CharsiuG2P instead of Epitran
-CHARSIU_LANGUAGES = {'zh', 'ko', 'gan', 'wuu', 'yue'}
-
-# CharsiuG2P language code mapping
-CHARSIU_LANG_MAP = {
-    'zh': 'cmn',     # Mandarin Chinese
-    'ko': 'kor',     # Korean
-    'ja': 'jpn',     # Japanese (fallback if Epitran fails)
-    'gan': 'cmn',    # Gan Chinese (Mandarin proxy — same characters, approximate phonetics)
-    'wuu': 'cmn',    # Wu Chinese (Mandarin proxy)
-    'yue': 'yue',    # Cantonese
 }
 
 
 class IPAConverter:
-    """
-    Lazy-loaded IPA converter with three backends:
-    - Epitran: default for most languages (Latin, Cyrillic, Greek, Arabic, Indic, etc.)
-    - Phonikud: Hebrew (he) — neural diacritization then phonemization (no Epitran fallback)
-    - CharsiuG2P: Chinese (zh, gan, wuu, yue) and Korean (ko) — multilingual neural G2P
-
-    Each backend is lazy-loaded once per process and cached for the process lifetime.
-    """
+    """Lazy-loaded IPA converter using Epitran and PanPhon."""
 
     def __init__(self):
         self._epitran_cache: Dict[str, object] = {}
         self._panphon_ft = None
         self._epitran_available = None
         self._panphon_available = None
-        self._charsiu_g2p = None       # None = not yet checked, False = unavailable
-        self._phonikud = None          # None = not yet checked, False = unavailable
-
-    # --- Backend availability checks (lazy, one-shot) ---
 
     def _check_epitran(self) -> bool:
         if self._epitran_available is None:
@@ -223,67 +186,6 @@ class IPAConverter:
                 self._panphon_available = False
         return self._panphon_available
 
-    def _check_charsiu(self) -> bool:
-        """Lazy-load CharsiuG2P multilingual model. Returns True if available."""
-        if self._charsiu_g2p is None:
-            try:
-                import google.protobuf  # noqa: F401 — required dependency
-                import torch
-                import transformers
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=FutureWarning)
-                    model = transformers.T5ForConditionalGeneration.from_pretrained(
-                        "charsiu/g2p_multilingual_byT5_small_100"
-                    )
-                    tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
-
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                model.to(device)
-
-                class _CharsiuWrapper:
-                    def __init__(self, m, t, d):
-                        self.model, self.tokenizer, self.device = m, t, d
-
-                    def transliterate(self, text, lang):
-                        char_iso = CHARSIU_LANG_MAP.get(lang, lang)
-                        input_text = f"<{char_iso}>: {text}"
-                        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
-                        with torch.no_grad():
-                            outputs = self.model.generate(**inputs)
-                        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-                self._charsiu_g2p = _CharsiuWrapper(model, tokenizer, device)
-                logger.info("CharsiuG2P initialized (Mandarin, Korean, Cantonese, Gan, Wu)")
-            except Exception as e:
-                logger.warning(f"CharsiuG2P unavailable: {e}")
-                self._charsiu_g2p = False
-        return self._charsiu_g2p is not False
-
-    def _check_phonikud(self) -> bool:
-        """Lazy-load Phonikud for Hebrew. Returns True if available."""
-        if self._phonikud is None:
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-                    import phonikud as phonikud_module
-
-                class _PhonikudWrapper:
-                    def __init__(self, mod):
-                        self._mod = mod
-
-                    def transliterate(self, text):
-                        return self._mod.phonemize(text)
-
-                self._phonikud = _PhonikudWrapper(phonikud_module)
-                logger.info("Phonikud initialized (Hebrew G2P)")
-            except Exception as e:
-                logger.warning(f"Phonikud unavailable: {e}")
-                self._phonikud = False
-        return self._phonikud is not False
-
-    # --- Epitran helpers ---
-
     def get_epitran(self, lang_code: str) -> Optional[object]:
         if not self._check_epitran():
             return None
@@ -299,44 +201,7 @@ class IPAConverter:
     def get_epitran_code(self, lang: str, script: Script) -> Optional[str]:
         return EPITRAN_LANG_MAP.get((lang, script))
 
-    # --- Core conversion methods ---
-
     def to_ipa(self, text: str, lang: str, script: Script) -> Optional[str]:
-        """
-        Convert text to IPA, dispatching to the appropriate backend:
-        1. Hebrew → Phonikud (no Epitran fallback)
-        2. Chinese (all varieties) → CharsiuG2P
-        3. Korean → CharsiuG2P (no Epitran fallback)
-        4. Everything else → Epitran
-        """
-        # 1. Hebrew (Phonikud only — Epitran does not support Hebrew)
-        if lang == 'he' and script == Script.HEBREW:
-            if self._check_phonikud() and self._phonikud:
-                try:
-                    return self._phonikud.transliterate(text)
-                except Exception:
-                    pass
-            return None  # No Epitran fallback available
-
-        # 2. Chinese — all varieties via CharsiuG2P (no CC-CEDict dependency)
-        if lang in ('zh', 'gan', 'wuu', 'yue') and script == Script.CJK:
-            if self._check_charsiu() and self._charsiu_g2p:
-                try:
-                    return self._charsiu_g2p.transliterate(text, lang)
-                except Exception:
-                    pass
-            return None  # No Epitran fallback for these
-
-        # 3. Korean (CharsiuG2P preferred for both Hangul and Hanja)
-        if lang == 'ko' and script in (Script.HANGUL, Script.CJK):
-            if self._check_charsiu() and self._charsiu_g2p:
-                try:
-                    return self._charsiu_g2p.transliterate(text, lang)
-                except Exception:
-                    pass
-            return None  # No Epitran fallback
-
-        # 4. Default: Epitran
         epitran_code = self.get_epitran_code(lang, script)
         if epitran_code is None:
             return None
@@ -402,9 +267,12 @@ class IPAConverter:
 
             # Assign each segment to a bin based on position
             for seg_idx, seg in enumerate(segments):
+                # Compute which bin this segment falls into
+                # Position is normalized to [0, 1), then mapped to bin index
                 position = seg_idx / num_segments
                 bin_idx = min(int(position * num_bins), num_bins - 1)
 
+                # Add segment features to the bin
                 features = seg.numeric()
                 for i, val in enumerate(features):
                     bins[bin_idx][i] += val
@@ -424,8 +292,7 @@ class IPAConverter:
             return None
 
 
-# --- Worker pool machinery (identical to proven v4/v5) ---
-
+# Global worker context - cached per process to avoid re-initialization
 _WORKER_CONVERTER = None
 
 
@@ -435,8 +302,6 @@ def _init_worker():
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
     warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
-    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-    warnings.filterwarnings("ignore", category=FutureWarning)
     _WORKER_CONVERTER = IPAConverter()
 
 
@@ -453,7 +318,6 @@ def _compute_phonetics_for_batch(batch: List[Tuple]) -> List[Tuple]:
     Worker function for parallel IPA/PanPhon computation.
 
     Uses global cached converter to avoid re-initialization overhead.
-    Clean, minimal return type — proven stable at 66M+ scale.
 
     Args:
         batch: List of (toponym_id, name, lang, script) tuples
@@ -562,10 +426,13 @@ def is_script_mismatch(lang: Optional[str], script: Script) -> bool:
     lang_base = lang.lower().split('-')[0]  # Handle zh-Hans, etc.
 
     if lang_base not in LANG_EXPECTED_SCRIPTS:
+        # Unknown language - allow any script
         return False
 
     expected_scripts = LANG_EXPECTED_SCRIPTS[lang_base]
 
+    # If the detected script is Latin but the language expects non-Latin,
+    # this is likely a romanized form
     if script == Script.LATIN and Script.LATIN not in expected_scripts:
         return True
 
@@ -575,6 +442,13 @@ def is_script_mismatch(lang: Optional[str], script: Script) -> bool:
 def create_db(db_path: str):
     """
     Create DuckDB database with optimized columnar storage.
+
+    DuckDB advantages for this workload:
+    - Columnar storage: better for analytical queries
+    - Native Parquet export: direct export without serialization
+    - Parallel query execution: automatic multi-core utilization
+    - Better compression: ~30-50% smaller database files
+    - Vectorized operations: faster aggregations and JOINs
     """
     conn = duckdb.connect(db_path)
 
@@ -582,10 +456,13 @@ def create_db(db_path: str):
     conn.execute("SET threads TO 16")
     conn.execute("SET memory_limit = '32GB'")
 
+    # Note: No PRIMARY KEY during bulk loading for speed
+    # Deduplication happens after loading via SQL
     conn.execute('''
         CREATE TABLE IF NOT EXISTS toponyms (
             toponym_id VARCHAR,
             name VARCHAR NOT NULL,
+            name_romanized VARCHAR,
             lang VARCHAR,
             lang_variant VARCHAR,
             script VARCHAR,
@@ -637,15 +514,23 @@ def create_db(db_path: str):
 
 
 def optimize_db_after_load(conn, force: bool = False):
-    """Deduplicate and create indexes for DuckDB after bulk loading."""
+    """Deduplicate and create indexes for DuckDB after bulk loading.
 
+    Args:
+        conn: DuckDB connection
+        force: If True, always run deduplication. If False, skip if no duplicates exist.
+    """
+
+    # Check if deduplication is needed
     before_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
     distinct_count = conn.execute("SELECT COUNT(DISTINCT toponym_id) FROM toponyms").fetchone()[0]
 
     if before_count == distinct_count and not force:
         logger.info(f"Deduplication already done ({before_count:,} unique toponyms), skipping...")
     else:
+        # Deduplicate toponyms table (keep first occurrence)
         logger.info("Deduplicating toponyms table...")
+
         conn.execute('''
             CREATE TABLE toponyms_deduped AS
             SELECT DISTINCT ON (toponym_id) *
@@ -670,6 +555,7 @@ def optimize_db_after_load(conn, force: bool = False):
         conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
+        # Composite index for efficient window functions
         conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
         logger.info("DuckDB indexes created.")
     else:
@@ -683,21 +569,56 @@ def scan_places(es: Elasticsearch, index: str, batch_size: int = 2000) -> Iterat
         yield doc['_id'], doc['_source']
 
 
-def romanize_for_search(name: str, script: str) -> Optional[str]:
-    """
-    Generate a romanized form for ES text search (e.g. query "beijing" matches 北京).
+def preprocess_for_vocab(name: str, script: Script) -> str:
+    """Preprocess name for vocabulary extraction (romanize CJK, decompose Hangul)."""
+    if should_romanize(script):
+        if anyascii is None:
+            return name.lower()  # Fallback if anyascii not available
+        return anyascii(name).lower()
+    if should_decompose(script):
+        return decompose_text(name)
+    return name.lower()
 
-    This is an ES indexing concern only — not used by the training pipeline.
-    Returns None for Latin-script names (already searchable) or if anyascii
-    is unavailable.
+
+def generate_name_romanized(name: str, script: Script) -> Optional[str]:
     """
-    if anyascii is None:
+    Generate searchable romanized/decomposed form if different from original.
+
+    Returns None if the name is already in a searchable form (Latin script).
+
+    This enables cross-script search without embeddings:
+    - Query "beijing" matches name_romanized for "北京"
+    - Query "moskva" matches name_romanized for "Москва"
+    """
+    if script == Script.LATIN:
+        # Already searchable, no need for duplicate
         return None
-    if script == Script.LATIN.value:
+
+    if should_romanize(script):
+        # CJK/Japanese -> romanize
+        if anyascii is None:
+            return None
+        romanized = anyascii(name).lower().strip()
+        # Only store if meaningfully different
+        if romanized and romanized != name.lower():
+            return romanized
         return None
-    romanized = anyascii(name).lower().strip()
-    if romanized and romanized != name.lower():
-        return romanized
+
+    if should_decompose(script):
+        # Korean Hangul -> decompose to Jamo
+        # Note: Jamo isn't "searchable" in the traditional sense,
+        # but we store it for consistency with vocabulary
+        decomposed = decompose_text(name)
+        if decomposed != name:
+            return decomposed
+        return None
+
+    # For other scripts (Cyrillic, Arabic, Greek, etc.), romanize for search
+    if anyascii is not None:
+        romanized = anyascii(name).lower().strip()
+        if romanized and romanized != name.lower():
+            return romanized
+
     return None
 
 
@@ -724,9 +645,10 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     toponyms_extracted = 0
     toponyms_skipped = 0
 
-    char_counts: Dict[str, Counter] = defaultdict(Counter)
+    # Character collection for vocabulary
+    char_counts: Dict[str, Counter] = defaultdict(Counter)  # script -> char -> count
     script_counts: Counter = Counter()
-    mismatch_counts: Counter = Counter()
+    mismatch_counts: Counter = Counter()  # Track lang-script mismatches
 
     iterator = scan_places(es, places_index, batch_size)
     if tqdm:
@@ -741,15 +663,13 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
         namespace = place.get('namespace', 'other')
         toponyms_list = place.get('toponyms', [])
 
-        if not toponyms_list:
-            continue
+        if not toponyms_list: continue
 
         for top in toponyms_list:
             top_id = top.get('toponym_id')
             label = top.get('label')
 
-            if not top_id:
-                continue
+            if not top_id: continue
 
             if '@' in top_id:
                 at_pos = top_id.rfind('@')
@@ -767,24 +687,22 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
                 lang = None
                 lang_variant = None
 
-            if not name and label:
-                name = label
-            if name:
-                name = name.strip()
-            if not name:
-                continue
+            if not name and label: name = label
+            if name: name = name.strip()
+            if not name: continue
 
-            if len(name) > MAX_NAME_LEN:
-                continue
-            if len(name.encode('utf-8')) > MAX_ID_BYTES:
-                continue
+            # Basic filters
+            if len(name) > MAX_NAME_LEN: continue
+            if len(name.encode('utf-8')) > MAX_ID_BYTES: continue
 
             if lang and lang.lower() in ('und', 'zxx', 'mis', 'null', 'none'):
                 lang = None
 
+            # Detect script
             script, _ = detect_script(name)
             script_value = script.value
 
+            # Check for lang-script mismatch (pre-romanized forms)
             if is_script_mismatch(lang, script):
                 mismatch_counts[f"{lang}:{script_value}"] += 1
                 skipped_batch.append((top_id, 'lang_script_mismatch', lang, script_value))
@@ -793,14 +711,19 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
 
             canonical_id = f"{name}@{lang}" if lang else f"{name}@"
 
+            # Generate searchable form (romanized/decomposed)
+            name_romanized = generate_name_romanized(name, script)
+
+            # Track script statistics
             script_counts[script_value] += 1
 
-            # Collect characters for vocabulary (native script, lowercased)
-            for char in name.lower():
-                if char.strip():
+            # Collect characters for vocabulary (preprocessed)
+            processed_name = preprocess_for_vocab(name, script)
+            for char in processed_name:
+                if char.strip():  # Skip whitespace
                     char_counts[script_value][char] += 1
 
-            toponym_batch.append((canonical_id, name, lang, lang_variant, script_value, None, None))
+            toponym_batch.append((canonical_id, name, name_romanized, lang, lang_variant, script_value, None, None))
             namespace_batch.append((canonical_id, namespace))
             attestation_batch.append((canonical_id, place_id))
             toponyms_extracted += 1
@@ -808,8 +731,9 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
         places_processed += 1
 
         if len(toponym_batch) >= batch_size * 5:
+            # Use fast bulk insert with PyArrow
             bulk_insert_duckdb(conn, 'toponyms',
-                ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+                ['toponym_id', 'name', 'name_romanized', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
                 toponym_batch)
             bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
             bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
@@ -820,13 +744,12 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
             attestation_batch = []
             skipped_batch = []
 
-        if limit and places_processed >= limit:
-            break
+        if limit and places_processed >= limit: break
 
     # Final batch
     if toponym_batch:
         bulk_insert_duckdb(conn, 'toponyms',
-            ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+            ['toponym_id', 'name', 'name_romanized', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
             toponym_batch)
         bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
         bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
@@ -843,6 +766,7 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     if char_batch:
         bulk_insert_duckdb(conn, 'observed_chars', ['char', 'script', 'count'], char_batch)
 
+    # Save script statistics
     for script_val, count in script_counts.items():
         conn.execute(
             'INSERT OR REPLACE INTO script_stats VALUES (?, ?)',
@@ -878,19 +802,19 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     Generate expanded character vocabulary from observed characters.
 
     Strategy:
-    1. Start with all observed characters (native scripts)
-    2. Expand to full Unicode blocks for ALL observed scripts (including CJK, Hangul)
-    3. Add full ASCII printable range
-    4. Catch any remaining observed characters
-
-    The character encoder sees native script — no romanization or decomposition.
-    Cross-script matching is handled by Symphonym's phonetic embeddings, not
-    by reducing everything to ASCII.
+    1. Start with all observed characters
+    2. Expand to full Unicode blocks for all observed scripts
+    3. Add full ASCII printable range (for AnyAscii output)
+    4. Add Korean Jamo (for Hangul decomposition)
 
     Returns statistics dict.
     """
+    from phonetics.utils.korean import ALL_JAMO
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Load observed characters and scripts
+    # With composite key (char, script), a char can appear in multiple scripts
     observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
     for row in conn.execute('SELECT char, script, count FROM observed_chars').fetchall():
         char, script, count = row
@@ -900,32 +824,65 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
 
     logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
 
+    # Build expanded vocabulary
+    # Special tokens
     vocab = {
         '<PAD>': 0,
         '<UNK>': 1,
         '<SPACE>': 2,
     }
-    next_id = 10  # Reserve 3-9
+    next_id = 3
 
+    # Reserved range (3-9)
+    next_id = 10
+
+    # Track which scripts we include
     included_scripts = set()
     script_char_counts = defaultdict(int)
 
-    # 1. ASCII printable range (32-126)
+    # 1. Add full ASCII printable range (32-126) for AnyAscii output
     logger.info("Adding ASCII printable range...")
     for cp in range(32, 127):
         char = chr(cp)
-        if char not in vocab and char != ' ':
+        if char not in vocab and char != ' ':  # Space handled specially
             vocab[char] = next_id
             next_id += 1
             script_char_counts['ASCII'] += 1
 
-    # 2. Full Unicode ranges for ALL observed scripts
+    # 2. Add all Korean Jamo for Hangul decomposition
+    logger.info("Adding Korean Jamo...")
+    for jamo in ALL_JAMO:
+        if jamo and jamo not in vocab:
+            vocab[jamo] = next_id
+            next_id += 1
+            script_char_counts['JAMO'] += 1
+
+    # 3. For each observed script (except romanized ones), add full Unicode range
+    # NOTE: This "backfills" characters not seen in training data. These characters
+    # will have random (untrained) embeddings at inference time - functionally similar
+    # to <UNK> but with consistent IDs across model versions. This provides:
+    # - Stable vocab size for model comparisons
+    # - No runtime errors on rare characters
+    # - Foundation for future fine-tuning on expanded data
+    # Cost: ~2,700 extra embedding rows (~345K params, 1.3MB) - negligible.
     logger.info("Expanding to full Unicode ranges for observed scripts...")
+
     for script_name in observed_scripts:
         try:
             script = Script(script_name)
         except ValueError:
             logger.warning(f"Unknown script in data: {script_name}")
+            continue
+
+        # Skip scripts that are romanized (CJK, Hiragana, Katakana)
+        # Their characters become ASCII via AnyAscii
+        if should_romanize(script):
+            logger.info(f"  {script_name}: romanized (using ASCII)")
+            continue
+
+        # Skip Hangul syllables (decomposed to Jamo)
+        if should_decompose(script):
+            logger.info(f"  {script_name}: decomposed (using Jamo)")
             continue
 
         if script not in SCRIPT_RANGES:
@@ -935,12 +892,14 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
         included_scripts.add(script_name)
         count_before = len(vocab)
 
+        # Add all codepoints in the script's Unicode blocks
         for start, end in SCRIPT_RANGES[script]:
             for cp in range(start, end + 1):
                 try:
                     char = chr(cp)
+                    # Skip control characters, surrogates, etc.
                     cat = unicodedata.category(char)
-                    if cat.startswith('C'):
+                    if cat.startswith('C'):  # Control characters
                         continue
                     if char not in vocab:
                         vocab[char] = next_id
@@ -952,17 +911,18 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
         script_char_counts[script_name] = count_added
         logger.info(f"  {script_name}: {count_added:,} characters")
 
-    # 3. Remaining observed characters not yet in vocab (edge cases)
-    for char, char_script_counts in observed_chars.items():
+    # 4. Add any observed characters not yet in vocab (edge cases)
+    for char, script_counts in observed_chars.items():
         if char not in vocab and char.strip():
             vocab[char] = next_id
             next_id += 1
-            best_script = max(char_script_counts, key=lambda x: x[1])[0] if char_script_counts else 'OTHER'
+            # Use the script with highest count for categorization
+            best_script = max(script_counts, key=lambda x: x[1])[0] if script_counts else 'OTHER'
             script_char_counts[best_script] += 1
 
     # Save vocabulary
     vocab_data = {
-        'version': 4,  # v4: native script (no romanization/decomposition)
+        'version': 3,
         'char_to_id': vocab,
         'observed_scripts': list(observed_scripts),
         'included_scripts': list(included_scripts),
@@ -979,7 +939,7 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Vocabulary saved: {vocab_path}")
     logger.info(f"Total vocabulary size: {len(vocab):,}")
 
-    # Language vocabulary
+    # Also save language vocabulary from observed languages
     languages = sorted(row[0] for row in conn.execute(
         "SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ''"
     ).fetchall())
@@ -988,17 +948,27 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     for i, lang in enumerate(languages, start=1):
         lang_vocab[lang] = i
 
+    lang_data = {
+        'version': 1,
+        'lang_to_id': lang_vocab,
+    }
+
     lang_path = output_dir / 'lang_vocab.json'
     with open(lang_path, 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, ensure_ascii=False, indent=2)
+        json.dump(lang_data, f, ensure_ascii=False, indent=2)
 
     logger.info(f"Language vocabulary saved: {lang_path} ({len(lang_vocab):,} languages)")
 
-    # Script vocabulary
+    # Save script vocabulary (static from enum)
     script_vocab = {s.value: i for i, s in enumerate(Script)}
+    script_data = {
+        'version': 1,
+        'script_to_id': script_vocab,
+    }
+
     script_path = output_dir / 'script_vocab.json'
     with open(script_path, 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)
+        json.dump(script_data, f, indent=2)
 
     logger.info(f"Script vocabulary saved: {script_path}")
 
@@ -1032,16 +1002,17 @@ def assign_split(
 TRAINING_SCHEMA = pa.schema([
     ('toponym_id', pa.string()),
     ('name', pa.string()),
+    ('name_romanized', pa.string()),  # Romanized/decomposed form
     ('script', pa.string()),
     ('lang', pa.string()),
     ('char_ids', pa.list_(pa.int16())),
     ('char_length', pa.int16()),
     ('ipa', pa.string()),
-    ('features', pa.list_(pa.float32())),
-    ('feature_length', pa.int16()),
+    ('features', pa.list_(pa.float32())),  # Full PanPhon features (variable length)
+    ('feature_length', pa.int16()),  # Number of segments (features.length / 24)
     ('namespaces', pa.list_(pa.string())),
-    ('attestations', pa.list_(pa.string())),
-    ('split', pa.string()),
+    ('attestations', pa.list_(pa.string())),  # Back-references to places
+    ('split', pa.string()),  # train/val/test
 ])
 
 
@@ -1056,7 +1027,26 @@ def export_training_parquet(
 ) -> Dict:
     """
     Export training data to partitioned Parquet files.
+
+    This creates training-ready data with:
+    - Pre-encoded char_ids (using the vocabulary)
+    - IPA transcription and PanPhon features (read from DuckDB, pre-computed during Phase 1)
+    - Train/val/test splits
+    - Attestations for pair generation
+
+    Args:
+        conn: DuckDB connection
+        vocab: Character vocabulary (char -> id mapping)
+        output_dir: Output directory for Parquet files
+        namespaces: Namespaces to include (e.g., ['gn', 'wd', 'tgn'])
+        train_ratio: Proportion for training split
+        val_ratio: Proportion for validation split
+        batch_size: Records per Parquet file
+
+    Returns:
+        Statistics dictionary
     """
+
     logger.info("=" * 60)
     logger.info("Exporting training data to Parquet")
     logger.info("=" * 60)
@@ -1065,11 +1055,14 @@ def export_training_parquet(
     parquet_dir = output_dir / 'training'
     parquet_dir.mkdir(parents=True, exist_ok=True)
 
+    # Query toponyms with their namespaces, attestations, and pre-computed IPA/PanPhon
+    # Filter to only include toponyms from specified namespaces
     ns_placeholders = ','.join('?' * len(namespaces))
 
     query = f'''
         SELECT t.toponym_id,
                t.name,
+               t.name_romanized,
                t.script,
                t.lang,
                t.ipa,
@@ -1080,15 +1073,16 @@ def export_training_parquet(
         JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
         LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
         WHERE EXISTS (
-            SELECT 1 FROM toponym_namespaces tn2
-            WHERE tn2.toponym_id = t.toponym_id
+            SELECT 1 FROM toponym_namespaces tn2 
+            WHERE tn2.toponym_id = t.toponym_id 
             AND tn2.namespace IN ({ns_placeholders})
         )
-        GROUP BY t.toponym_id, t.name, t.script, t.lang, t.ipa, t.panphon_features
+        GROUP BY t.toponym_id, t.name, t.name_romanized, t.script, t.lang, t.ipa, t.panphon_features
     '''
 
     result = conn.execute(query, namespaces)
 
+    # Get total count for progress bar
     count_cursor = conn.execute(f'''
         SELECT COUNT(DISTINCT t.toponym_id)
         FROM toponyms t
@@ -1107,28 +1101,34 @@ def export_training_parquet(
         'by_namespace': Counter(),
     }
 
-    buffers: Dict[str, List[Dict]] = defaultdict(list)
+    # Buffer for batched writing
+    buffers: Dict[str, List[Dict]] = defaultdict(list)  # script -> records
     part_counts: Dict[str, int] = defaultdict(int)
 
-    def encode_chars(name: str) -> List[int]:
-        """Encode characters using vocabulary (native script, lowercased)."""
+    def encode_chars(name_romanized: Optional[str], name: str, script: str) -> List[int]:
+        """Encode characters using vocabulary."""
+        # Use name_romanized if available (already preprocessed), else use name
+        text = name_romanized if name_romanized else name.lower()
         ids = []
-        for char in name.lower():
+        for char in text:
             if char == ' ':
-                ids.append(2)
+                ids.append(2)  # SPACE_ID
             elif char in vocab:
                 ids.append(vocab[char])
             else:
-                ids.append(1)
+                ids.append(1)  # UNK_ID
         return ids
 
     def unpack_features(packed: bytes) -> Optional[List[float]]:
+        """Unpack PanPhon features from DuckDB BLOB."""
         if not packed:
             return None
+        import struct
         num_floats = len(packed) // 4
         return list(struct.unpack(f'{num_floats}f', packed))
 
     def flush_buffer(script: str):
+        """Write buffer to Parquet file."""
         records = buffers[script]
         if not records:
             return
@@ -1146,9 +1146,11 @@ def export_training_parquet(
         logger.debug(f"Wrote {len(records)} records to {output_path}")
         buffers[script] = []
 
+    # Progress tracking
     processed = 0
     last_log = 0
 
+    # Stream results using fetchmany() for memory efficiency
     fetch_batch_size = 10000
     while True:
         rows = result.fetchmany(fetch_batch_size)
@@ -1156,13 +1158,15 @@ def export_training_parquet(
             break
 
         for row in rows:
-            toponym_id, name, script, lang, ipa, panphon_packed, namespaces_str, attestations_str = row
+            toponym_id, name, name_romanized, script, lang, ipa, panphon_packed, namespaces_str, attestations_str = row
 
             namespaces_list = namespaces_str.split(',') if namespaces_str else []
             attestations_list = attestations_str.split(',') if attestations_str else []
 
-            char_ids = encode_chars(name)
+            # Encode characters
+            char_ids = encode_chars(name_romanized, name, script)
 
+            # Unpack pre-computed PanPhon features from DuckDB
             features = unpack_features(panphon_packed)
             feature_length = len(features) // 24 if features else 0
 
@@ -1171,12 +1175,14 @@ def export_training_parquet(
             if features:
                 stats['with_features'] += 1
 
+            # Assign split
             split_hash = compute_split_hash(toponym_id)
             split = assign_split(split_hash, train_ratio, val_ratio)
 
             record = {
                 'toponym_id': toponym_id,
                 'name': name,
+                'name_romanized': name_romanized,
                 'script': script,
                 'lang': lang or '',
                 'char_ids': char_ids,
@@ -1197,14 +1203,17 @@ def export_training_parquet(
                 if ns in namespaces:
                     stats['by_namespace'][ns] += 1
 
+            # Flush if buffer is full
             if len(buffers[script]) >= batch_size:
                 flush_buffer(script)
 
+            # Progress logging
             processed += 1
             if processed - last_log >= 100000:
                 logger.info(f"Processed {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%)")
                 last_log = processed
 
+    # Flush remaining buffers
     for script in list(buffers.keys()):
         flush_buffer(script)
 
@@ -1216,7 +1225,7 @@ def export_training_parquet(
     logger.info(f"By split: {dict(stats['by_split'])}")
     logger.info(f"By namespace: {dict(stats['by_namespace'])}")
 
-    # Save split IDs
+    # Save split IDs for reference
     splits_dir = output_dir / 'splits'
     splits_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1236,6 +1245,7 @@ def export_training_parquet(
             f.write('\n'.join(split_ids))
         logger.info(f"Saved {len(split_ids):,} {split_name} IDs")
 
+    # Save export stats
     stats_path = output_dir / 'export_stats.json'
     with open(stats_path, 'w') as f:
         json.dump({
@@ -1266,9 +1276,16 @@ def dump_to_jsonl(
     Uses streaming batch architecture for O(1) memory usage regardless of corpus size.
 
     For toponyms in training_namespaces, computes (in parallel):
-    - IPA transcription via Epitran / Phonikud / CharsiuG2P
+    - IPA transcription via Epitran
     - PanPhon embedding (192-dim position-pooled articulatory features) for ES
     - Full PanPhon feature sequence stored in DuckDB for training data assembly
+
+    Args:
+        conn: DuckDB connection
+        output_path: Path for JSONL output
+        training_namespaces: Namespaces for which to compute PanPhon (default: ['gn', 'wd', 'tgn'])
+        num_workers: Number of parallel workers (default: CPU count - 2)
+        batch_size: Number of documents to process per batch (default: 10000)
 
     Returns:
         Tuple of (total_count, stats_dict)
@@ -1281,9 +1298,10 @@ def dump_to_jsonl(
 
     training_ns_set = set(training_namespaces)
 
-    processing_batch_size = 50000
-    io_batch_size = 5000
-    chunksize = max(100, processing_batch_size // num_workers // 4)
+    # Increased batch sizes for better throughput at scale
+    processing_batch_size = 50000  # Documents per phonetics batch (was 10000)
+    io_batch_size = 5000  # Documents per JSONL write (reduce filesystem overhead)
+    chunksize = max(100, processing_batch_size // num_workers // 4)  # For imap_unordered
 
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
@@ -1291,11 +1309,13 @@ def dump_to_jsonl(
     logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
     logger.info(f"Worker chunksize: {chunksize}")
 
+    # Get total count for progress reporting
     total_count = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
     logger.info(f"Total toponyms to process: {total_count:,}")
 
     stats = {
         'total': 0,
+        'with_romanized': 0,
         'in_training_ns': 0,
         'with_ipa': 0,
         'with_panphon': 0,
@@ -1303,9 +1323,11 @@ def dump_to_jsonl(
         'by_script_lang_ipa': Counter(),
     }
 
+    # Stream from DuckDB using fetchmany() for memory efficiency
     result = conn.execute('''
         SELECT t.toponym_id,
                t.name,
+               t.name_romanized,
                t.lang,
                t.lang_variant,
                t.script,
@@ -1314,7 +1336,7 @@ def dump_to_jsonl(
         FROM toponyms t
         JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
         LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-        GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+        GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
     ''')
 
     # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
@@ -1322,14 +1344,16 @@ def dump_to_jsonl(
 
     logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
 
+    # Use multiprocessing.Pool with initializer for cached converters
     with open(output_path, 'w', encoding='utf-8') as f, \
          mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
 
         fetch_batch_size = processing_batch_size
         batches_processed = 0
-        pending_writes = []
+        pending_writes = []  # Buffer for JSONL writes
 
         def flush_writes():
+            """Write pending documents to JSONL file."""
             nonlocal pending_writes
             for doc in pending_writes:
                 f.write(json.dumps(doc) + '\n')
@@ -1342,10 +1366,10 @@ def dump_to_jsonl(
 
             # Phase 1: Build documents and identify those needing phonetics
             batch_docs = []
-            phonetics_work = []
+            phonetics_work = []  # List of (toponym_id, name, lang, script) for workers
 
             for row in rows:
-                toponym_id, name, lang, lang_variant, script, namespaces_str, attestations_str = row
+                toponym_id, name, name_romanized, lang, lang_variant, script, namespaces_str, attestations_str = row
                 namespaces = namespaces_str.split(',') if namespaces_str else []
                 attestations = attestations_str.split(',') if attestations_str else []
                 primary_ns = get_primary_namespace(namespaces)
@@ -1364,10 +1388,9 @@ def dump_to_jsonl(
                     'indexed_at': datetime.now(timezone.utc).isoformat(),
                 }
 
-                # Romanized form for ES text search (not stored in DuckDB)
-                name_romanized = romanize_for_search(name, script)
                 if name_romanized:
                     doc['name_romanized'] = name_romanized
+                    stats['with_romanized'] += 1
 
                 stats['by_script'][script] += 1
 
@@ -1380,14 +1403,18 @@ def dump_to_jsonl(
                 stats['total'] += 1
 
             # Phase 2: Parallel phonetics computation using imap_unordered
+            # Split work into sub-batches for workers
             phonetics_results = {}
             if phonetics_work:
+                # Create sub-batches for parallel processing
                 sub_batch_size = max(100, len(phonetics_work) // num_workers)
                 sub_batches = [
                     phonetics_work[i:i + sub_batch_size]
                     for i in range(0, len(phonetics_work), sub_batch_size)
                 ]
 
+                # Process all sub-batches in parallel with imap_unordered
+                # This keeps workers saturated and returns results as they complete
                 for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
                     for toponym_id, ipa, packed_features, embedding in batch_results:
                         phonetics_results[toponym_id] = (ipa, packed_features, embedding)
@@ -1408,33 +1435,41 @@ def dump_to_jsonl(
 
                 pending_writes.append(doc)
 
+                # Flush writes in batches to reduce filesystem overhead
                 if len(pending_writes) >= io_batch_size:
                     flush_writes()
 
+            # Accumulate DB updates
             if current_db_updates:
                 all_db_updates.extend(current_db_updates)
 
             batches_processed += 1
 
+            # Log progress every batch (processing batches are now larger)
             pct = 100 * stats['total'] / total_count
             logger.info(
                 f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
                 f"IPA: {stats['with_ipa']:,} - Batch {batches_processed}"
             )
 
-        # Flush remaining writes
+        # Flush any remaining writes
         if pending_writes:
             flush_writes()
 
     logger.info(f"Streaming complete. Total batches processed: {batches_processed}")
 
-    # Apply accumulated DuckDB updates in batches
-    # (After streaming loop to avoid cursor invalidation)
+    # Flush and sync to ensure all data is written
+    logger.info("Flushing JSONL file to disk...")
+
+    # Now apply all accumulated DuckDB updates in batches
+    # (Doing this after the streaming loop avoids cursor invalidation)
     total_db_updates = 0
     if all_db_updates:
         logger.info(f"Applying {len(all_db_updates):,} IPA/PanPhon updates to DuckDB...")
 
-        # Drop indexes for faster bulk updates
+        # OPTIMIZATION: Drop indexes before bulk updates, rebuild afterward
+        # This dramatically speeds up UPDATE operations on large tables
+        # by avoiding index rebalancing on every row update
         logger.info("Dropping indexes on toponyms table for faster bulk updates...")
         try:
             conn.execute("DROP INDEX IF EXISTS idx_toponyms_id")
@@ -1444,6 +1479,7 @@ def dump_to_jsonl(
         except Exception as e:
             logger.warning(f"Could not drop indexes (may not exist): {e}")
 
+        # Process in batches to avoid memory issues
         update_batch_size = 100000
         for i in range(0, len(all_db_updates), update_batch_size):
             batch = all_db_updates[i:i + update_batch_size]
@@ -1455,7 +1491,7 @@ def dump_to_jsonl(
             })
             conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
             conn.execute("""
-                UPDATE toponyms
+                UPDATE toponyms 
                 SET ipa = u.ipa, panphon_features = u.panphon_features
                 FROM updates u
                 WHERE toponyms.toponym_id = u.toponym_id
@@ -1468,7 +1504,7 @@ def dump_to_jsonl(
         total_db_updates = len(all_db_updates)
         logger.info(f"DuckDB updates complete: {total_db_updates:,} records")
 
-        # Rebuild indexes
+        # OPTIMIZATION: Rebuild indexes after bulk updates
         logger.info("Rebuilding indexes on toponyms table...")
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_id ON toponyms(toponym_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
@@ -1479,10 +1515,12 @@ def dump_to_jsonl(
 
     # Log final statistics
     logger.info(f"Buffering complete. Total documents: {stats['total']:,}")
+    logger.info(f"Documents with name_romanized: {stats['with_romanized']:,} ({100*stats['with_romanized']/stats['total']:.1f}%)")
     logger.info(f"Documents in training namespaces: {stats['in_training_ns']:,}")
     logger.info(f"  With IPA: {stats['with_ipa']:,} ({100*stats['with_ipa']/max(1,stats['in_training_ns']):.1f}%)")
     logger.info(f"  With PanPhon embedding: {stats['with_panphon']:,} ({100*stats['with_panphon']/max(1,stats['in_training_ns']):.1f}%)")
 
+    # Log top script+lang combinations with successful IPA
     logger.info("Top script+lang pairs with IPA transcription:")
     for key, count in stats['by_script_lang_ipa'].most_common(20):
         logger.info(f"  {key}: {count:,}")
@@ -1506,7 +1544,8 @@ def bulk_index_from_file(
         batch_size: int = 2500
 ) -> int:
     """
-    Stream from JSONL to Elasticsearch. Purely I/O bound and stable.
+    Step 2: Stream from JSONL to Elasticsearch.
+    This is purely I/O bound and stable.
     """
     logger.info(f"Bulk indexing {total_docs:,} documents from file...")
 
@@ -1521,14 +1560,15 @@ def bulk_index_from_file(
     indexed = 0
     errors = 0
 
+    # Conservative Settings for Reliability
     iterator = helpers.parallel_bulk(
         es,
         generate_actions(),
-        thread_count=4,
-        queue_size=8,
+        thread_count=4,  # Reduced threads
+        queue_size=8,  # Reduced memory pressure
         chunk_size=batch_size,
         raise_on_error=False,
-        request_timeout=120
+        request_timeout=120  # 2 minute timeout per batch
     )
 
     if tqdm:
@@ -1549,7 +1589,7 @@ def bulk_index_from_file(
 
 def main():
     parser = argparse.ArgumentParser(
-        description='v6 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
+        description='v4 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
     )
     parser.add_argument('--es-host', default=ES_HOST)
     parser.add_argument('--places-index', default='places')
@@ -1577,18 +1617,13 @@ def main():
 
     args = parser.parse_args()
 
-    # Force HuggingFace to use local scratch for cache
-    if args.scratch_dir:
-        os.environ['HF_HOME'] = str(args.scratch_dir / 'hf_cache')
-        os.environ['TRANSFORMERS_CACHE'] = str(args.scratch_dir / 'hf_cache')
-
     # Determine number of workers
     if args.num_workers is None:
         args.num_workers = max(1, mp.cpu_count() - 2)
 
     if not args.confirm:
         print("=" * 60)
-        print("v6 PIPELINE - PHASE 1: EXTRACTION & ES INDEXING")
+        print("v4 PIPELINE - PHASE 1: EXTRACTION & ES INDEXING")
         print("=" * 60)
         print()
         print("Run with --confirm to proceed.")
@@ -1598,7 +1633,6 @@ def main():
         print("  2. Filter out pre-romanized forms (lang-script mismatches)")
         print("  3. Generate expanded character vocabulary")
         print(f"  4. Compute IPA and PanPhon embeddings ({args.num_workers} parallel workers)")
-        print("     IPA backends: Epitran (default), Phonikud (Hebrew), CharsiuG2P (zh/ko/yue/gan/wuu)")
         print("  5. Rebuild the ES toponyms index with panphon_embedding field")
         print("  6. Refresh index and create snapshot")
         print()
@@ -1667,7 +1701,6 @@ def main():
             logger.info(f"Vocabulary stats: {json.dumps(vocab_stats, indent=2)}")
 
             # STEP 3: BUFFER TO JSONL WITH PANPHON (DuckDB -> scratch)
-            # Always regenerate — ensures consistent phonetics across all languages
             logger.info("=" * 60)
             logger.info("STEP 3: BUFFERING WITH PANPHON (DuckDB -> JSONL)")
             logger.info("=" * 60)
@@ -1698,7 +1731,6 @@ def main():
                     'training_namespaces': args.training_namespaces,
                     'num_workers': args.num_workers,
                     'db_engine': 'DuckDB',
-                    'ipa_backends': ['epitran', 'phonikud', 'charsiu_g2p'],
                 }, f, indent=2)
             logger.info(f"Coverage stats saved to: {coverage_stats_path}")
 
@@ -1710,7 +1742,7 @@ def main():
                 logger.info("STEP 4: INDEXING (JSONL -> ES)")
                 logger.info("=" * 60)
 
-                # Verify JSONL file
+                # Verify JSONL file has expected content
                 logger.info("Verifying JSONL file...")
                 jsonl_line_count = sum(1 for _ in open(jsonl_path, 'r', encoding='utf-8'))
                 logger.info(f"JSONL file contains {jsonl_line_count:,} lines")
@@ -1732,6 +1764,7 @@ def main():
                 with open(args.schema_path, 'r') as f:
                     schema = json.load(f)
 
+                # Ensure refresh_interval is disabled for bulk indexing speed
                 if 'settings' not in schema:
                     schema['settings'] = {}
                 schema['settings']['refresh_interval'] = "-1"
@@ -1750,6 +1783,7 @@ def main():
                 logger.info("STEP 5: FINALIZE (refresh + snapshot)")
                 logger.info("=" * 60)
 
+                # Re-enable refresh
                 logger.info("Re-enabling refresh interval...")
                 es.indices.put_settings(
                     index=args.toponyms_index,
@@ -1759,11 +1793,13 @@ def main():
                 logger.info("Refreshing index...")
                 es.indices.refresh(index=args.toponyms_index)
 
+                # Get final count
                 final_count = es.count(index=args.toponyms_index)['count']
                 logger.info(f"Final document count: {final_count:,}")
 
+                # Create snapshot
                 logger.info("Creating snapshot...")
-                snapshot_name = "toponyms_v6"
+                snapshot_name = f"toponyms_v4"
                 create_checkpoint_snapshot(
                     es,
                     snapshot_name=snapshot_name,
@@ -1797,3 +1833,25 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
