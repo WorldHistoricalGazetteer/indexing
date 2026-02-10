@@ -182,6 +182,95 @@ CHARSIU_LANG_MAP = {
 }
 
 
+# ============================================================================
+# GLOBAL MODEL CACHING (one instance per worker process)
+# ============================================================================
+
+_GLOBAL_CHARSIU = None
+_GLOBAL_PHONIKUD = None
+_WORKER_MODEL_TYPE = 'epitran'  # Tracks which models this worker should load
+
+
+def get_global_charsiu():
+    """
+    Load CharsiuG2P once per worker process.
+    Returns None immediately if this worker is specialized for a different model.
+    """
+    global _GLOBAL_CHARSIU, _WORKER_MODEL_TYPE
+
+    # Skip loading if this worker is specialized for a different model
+    if _WORKER_MODEL_TYPE not in ('charsiu', 'epitran'):
+        return None
+
+    if _GLOBAL_CHARSIU is None:
+        try:
+            import google.protobuf  # noqa: F401
+            import torch
+            import transformers
+
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=FutureWarning)
+                warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+                model = transformers.T5ForConditionalGeneration.from_pretrained(
+                    "charsiu/g2p_multilingual_byT5_small_100"
+                )
+                tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model.to(device)
+
+            class _CharsiuWrapper:
+                def __init__(self, m, t, d):
+                    self.model, self.tokenizer, self.device = m, t, d
+
+                def transliterate(self, text, lang):
+                    char_iso = CHARSIU_LANG_MAP.get(lang, lang)
+                    input_text = f"<{char_iso}>: {text}"
+                    inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
+                    with torch.no_grad():
+                        outputs = self.model.generate(**inputs)
+                    return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            _GLOBAL_CHARSIU = _CharsiuWrapper(model, tokenizer, device)
+            logger.info("CharsiuG2P initialized (Mandarin, Korean, Cantonese, Gan, Wu)")
+        except Exception as e:
+            logger.warning(f"CharsiuG2P unavailable: {e}")
+            _GLOBAL_CHARSIU = False
+    return _GLOBAL_CHARSIU if _GLOBAL_CHARSIU is not False else None
+
+
+def get_global_phonikud():
+    """
+    Load Phonikud once per worker process.
+    Returns None immediately if this worker is specialized for a different model.
+    """
+    global _GLOBAL_PHONIKUD, _WORKER_MODEL_TYPE
+
+    # Skip loading if this worker is specialized for a different model
+    if _WORKER_MODEL_TYPE not in ('phonikud', 'epitran'):
+        return None
+
+    if _GLOBAL_PHONIKUD is None:
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+                import phonikud as phonikud_module
+
+            class _PhonikudWrapper:
+                def __init__(self, mod):
+                    self._mod = mod
+
+                def transliterate(self, text):
+                    return self._mod.phonemize(text)
+
+            _GLOBAL_PHONIKUD = _PhonikudWrapper(phonikud_module)
+            logger.info("Phonikud initialized (Hebrew G2P)")
+        except Exception as e:
+            logger.warning(f"Phonikud unavailable: {e}")
+            _GLOBAL_PHONIKUD = False
+    return _GLOBAL_PHONIKUD if _GLOBAL_PHONIKUD is not False else None
+
+
 class IPAConverter:
     """
     Lazy-loaded IPA converter with three backends:
@@ -190,15 +279,26 @@ class IPAConverter:
     - CharsiuG2P: Chinese (zh, gan, wuu, yue) and Korean (ko) — multilingual neural G2P
 
     Each backend is lazy-loaded once per process and cached for the process lifetime.
+
+    Supports specialized mode where only required models are loaded (memory optimization).
     """
 
-    def __init__(self):
+    def __init__(self, model_type='epitran'):
+        """
+        Initialize converter with optional model specialization.
+
+        Args:
+            model_type: One of 'charsiu', 'phonikud', or 'epitran'
+                       Controls which models are actually loaded:
+                       - 'charsiu': Only CharsiuG2P + PanPhon (saves ~120GB with 62 workers)
+                       - 'phonikud': Only Phonikud + PanPhon
+                       - 'epitran': Only Epitran + PanPhon (default)
+        """
+        self._model_type = model_type
         self._epitran_cache: Dict[str, object] = {}
         self._panphon_ft = None
-        self._epitran_available = None
+        self._epitran_available = None if model_type == 'epitran' else False
         self._panphon_available = None
-        self._charsiu_g2p = None       # None = not yet checked, False = unavailable
-        self._phonikud = None          # None = not yet checked, False = unavailable
 
     # --- Backend availability checks (lazy, one-shot) ---
 
@@ -222,65 +322,6 @@ class IPAConverter:
                 logger.warning("PanPhon not available. Feature extraction disabled.")
                 self._panphon_available = False
         return self._panphon_available
-
-    def _check_charsiu(self) -> bool:
-        """Lazy-load CharsiuG2P multilingual model. Returns True if available."""
-        if self._charsiu_g2p is None:
-            try:
-                import google.protobuf  # noqa: F401 — required dependency
-                import torch
-                import transformers
-
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", category=FutureWarning)
-                    model = transformers.T5ForConditionalGeneration.from_pretrained(
-                        "charsiu/g2p_multilingual_byT5_small_100"
-                    )
-                    tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
-
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                model.to(device)
-
-                class _CharsiuWrapper:
-                    def __init__(self, m, t, d):
-                        self.model, self.tokenizer, self.device = m, t, d
-
-                    def transliterate(self, text, lang):
-                        char_iso = CHARSIU_LANG_MAP.get(lang, lang)
-                        input_text = f"<{char_iso}>: {text}"
-                        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
-                        with torch.no_grad():
-                            outputs = self.model.generate(**inputs)
-                        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-                self._charsiu_g2p = _CharsiuWrapper(model, tokenizer, device)
-                logger.info("CharsiuG2P initialized (Mandarin, Korean, Cantonese, Gan, Wu)")
-            except Exception as e:
-                logger.warning(f"CharsiuG2P unavailable: {e}")
-                self._charsiu_g2p = False
-        return self._charsiu_g2p is not False
-
-    def _check_phonikud(self) -> bool:
-        """Lazy-load Phonikud for Hebrew. Returns True if available."""
-        if self._phonikud is None:
-            try:
-                with warnings.catch_warnings():
-                    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-                    import phonikud as phonikud_module
-
-                class _PhonikudWrapper:
-                    def __init__(self, mod):
-                        self._mod = mod
-
-                    def transliterate(self, text):
-                        return self._mod.phonemize(text)
-
-                self._phonikud = _PhonikudWrapper(phonikud_module)
-                logger.info("Phonikud initialized (Hebrew G2P)")
-            except Exception as e:
-                logger.warning(f"Phonikud unavailable: {e}")
-                self._phonikud = False
-        return self._phonikud is not False
 
     # --- Epitran helpers ---
 
@@ -311,27 +352,30 @@ class IPAConverter:
         """
         # 1. Hebrew (Phonikud only — Epitran does not support Hebrew)
         if lang == 'he' and script == Script.HEBREW:
-            if self._check_phonikud() and self._phonikud:
+            phonikud = get_global_phonikud()
+            if phonikud:
                 try:
-                    return self._phonikud.transliterate(text)
+                    return phonikud.transliterate(text)
                 except Exception:
                     pass
             return None  # No Epitran fallback available
 
         # 2. Chinese — all varieties via CharsiuG2P (no CC-CEDict dependency)
         if lang in ('zh', 'gan', 'wuu', 'yue') and script == Script.CJK:
-            if self._check_charsiu() and self._charsiu_g2p:
+            charsiu = get_global_charsiu()
+            if charsiu:
                 try:
-                    return self._charsiu_g2p.transliterate(text, lang)
+                    return charsiu.transliterate(text, lang)
                 except Exception:
                     pass
             return None  # No Epitran fallback for these
 
         # 3. Korean (CharsiuG2P preferred for both Hangul and Hanja)
         if lang == 'ko' and script in (Script.HANGUL, Script.CJK):
-            if self._check_charsiu() and self._charsiu_g2p:
+            charsiu = get_global_charsiu()
+            if charsiu:
                 try:
-                    return self._charsiu_g2p.transliterate(text, lang)
+                    return charsiu.transliterate(text, lang)
                 except Exception:
                     pass
             return None  # No Epitran fallback
@@ -429,15 +473,26 @@ class IPAConverter:
 _WORKER_CONVERTER = None
 
 
-def _init_worker():
-    """Initialize worker process with cached converter and suppressed warnings."""
-    global _WORKER_CONVERTER
+def _init_worker(model_type='epitran'):
+    """
+    Initialize worker process with specialized model loading.
+
+    Args:
+        model_type: One of 'charsiu', 'phonikud', or 'epitran'
+                   Determines which models to load (memory optimization)
+    """
+    global _WORKER_CONVERTER, _WORKER_MODEL_TYPE
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
     warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
     warnings.filterwarnings("ignore", message=".*tokenizer class.*")
     warnings.filterwarnings("ignore", category=FutureWarning)
-    _WORKER_CONVERTER = IPAConverter()
+
+    # Track which models this worker should load
+    _WORKER_MODEL_TYPE = model_type
+
+    # Create specialized converter that only loads required models
+    _WORKER_CONVERTER = IPAConverter(model_type=model_type)
 
 
 def _get_worker_converter() -> IPAConverter:
@@ -873,6 +928,40 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     return places_processed, toponyms_extracted, toponyms_skipped
 
 
+def rebuild_vocab_stats_from_toponyms(conn, batch_size: int = 50000):
+    """Rebuild observed character/script stats directly from toponyms when tables are empty."""
+    logger.warning("observed_chars/script_stats empty; rebuilding from toponyms table (one-time scan)...")
+    char_counts: Dict[str, Counter] = defaultdict(Counter)
+    script_counts: Counter = Counter()
+
+    cursor = conn.execute("SELECT name, script FROM toponyms")
+    while True:
+        rows = cursor.fetchmany(batch_size)
+        if not rows:
+            break
+        for name, script in rows:
+            if not name or not script:
+                continue
+            script_counts[script] += 1
+            for ch in name.lower():
+                if ch.strip():
+                    char_counts[ch][script] += 1
+
+    # Persist rebuilt stats so subsequent runs can skip this pass
+    conn.execute("DELETE FROM observed_chars")
+    conn.execute("DELETE FROM script_stats")
+
+    char_batch = [(ch, script, cnt) for ch, scripts in char_counts.items() for script, cnt in scripts.items()]
+    if char_batch:
+        bulk_insert_duckdb(conn, 'observed_chars', ['char', 'script', 'count'], char_batch)
+    for script, cnt in script_counts.items():
+        conn.execute('INSERT OR REPLACE INTO script_stats VALUES (?, ?)', (script, cnt))
+    conn.commit()
+
+    logger.info(f"Rebuilt vocab stats from toponyms: {len(char_counts):,} chars across {len(script_counts)} scripts")
+    return {ch: list(scripts.items()) for ch, scripts in char_counts.items()}, set(script_counts.keys())
+
+
 def generate_vocabulary(conn, output_dir: Path) -> Dict:
     """
     Generate expanded character vocabulary from observed characters.
@@ -897,6 +986,12 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
         observed_chars[char].append((script, count))
 
     observed_scripts = {row[0] for row in conn.execute('SELECT script, count FROM script_stats').fetchall()}
+
+    if not observed_chars or not observed_scripts:
+        logger.warning("observed_chars/script_stats empty; rebuilding from toponyms table (one-time scan)...")
+        observed_chars, observed_scripts = rebuild_vocab_stats_from_toponyms(conn)
+        if not observed_chars or not observed_scripts:
+            raise RuntimeError("Vocabulary rebuild failed: no observed characters/scripts found in toponyms table")
 
     logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
 
@@ -1283,11 +1378,21 @@ def dump_to_jsonl(
 
     processing_batch_size = 50000
     io_batch_size = 5000
+
+    # Specialized worker pool configuration to minimize memory overhead
+    # Each pool loads only its required models
+    charsiu_workers = min(5, max(1, num_workers // 12))    # ~8% for CJK/Korean
+    phonikud_workers = min(2, max(1, num_workers // 30))   # ~3% for Hebrew
+    epitran_workers = num_workers - charsiu_workers - phonikud_workers
+
     chunksize = max(100, processing_batch_size // num_workers // 4)
 
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
-    logger.info(f"Using {num_workers} parallel workers for IPA/PanPhon computation")
+    logger.info(f"Specialized worker pool allocation:")
+    logger.info(f"  Charsiu (gan/wuu/yue/ko): {charsiu_workers} workers")
+    logger.info(f"  Phonikud (Hebrew): {phonikud_workers} workers")
+    logger.info(f"  Epitran (all others): {epitran_workers} workers")
     logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
     logger.info(f"Worker chunksize: {chunksize}")
 
@@ -1322,8 +1427,11 @@ def dump_to_jsonl(
 
     logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
 
+    # Create specialized worker pools - each loads only required models
     with open(output_path, 'w', encoding='utf-8') as f, \
-         mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
+         mp.Pool(processes=charsiu_workers, initializer=_init_worker, initargs=('charsiu',)) as charsiu_pool, \
+         mp.Pool(processes=phonikud_workers, initializer=_init_worker, initargs=('phonikud',)) as phonikud_pool, \
+         mp.Pool(processes=epitran_workers, initializer=_init_worker, initargs=('epitran',)) as epitran_pool:
 
         fetch_batch_size = processing_batch_size
         batches_processed = 0
@@ -1342,7 +1450,9 @@ def dump_to_jsonl(
 
             # Phase 1: Build documents and identify those needing phonetics
             batch_docs = []
-            phonetics_work = []
+            charsiu_work = []   # CJK topolects and Korean
+            phonikud_work = []  # Hebrew
+            epitran_work = []   # Everything else
 
             for row in rows:
                 toponym_id, name, lang, lang_variant, script, namespaces_str, attestations_str = row
@@ -1374,23 +1484,37 @@ def dump_to_jsonl(
                 is_in_training_ns = bool(training_ns_set & set(namespaces))
                 if is_in_training_ns:
                     stats['in_training_ns'] += 1
-                    phonetics_work.append((toponym_id, name, lang, script))
+                    # Route to appropriate worker pool based on language
+                    work_item = (toponym_id, name, lang, script)
+                    if lang in ('gan', 'wuu', 'yue', 'ko'):
+                        charsiu_work.append(work_item)
+                    elif lang == 'he':
+                        phonikud_work.append(work_item)
+                    else:
+                        epitran_work.append(work_item)
 
                 batch_docs.append(doc)
                 stats['total'] += 1
 
-            # Phase 2: Parallel phonetics computation using imap_unordered
+            # Phase 2: Parallel phonetics computation using specialized pools
             phonetics_results = {}
-            if phonetics_work:
-                sub_batch_size = max(100, len(phonetics_work) // num_workers)
-                sub_batches = [
-                    phonetics_work[i:i + sub_batch_size]
-                    for i in range(0, len(phonetics_work), sub_batch_size)
-                ]
 
-                for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
-                    for toponym_id, ipa, packed_features, embedding in batch_results:
-                        phonetics_results[toponym_id] = (ipa, packed_features, embedding)
+            # Process each pool's work separately
+            for work_queue, pool, pool_name in [
+                (charsiu_work, charsiu_pool, 'Charsiu'),
+                (phonikud_work, phonikud_pool, 'Phonikud'),
+                (epitran_work, epitran_pool, 'Epitran')
+            ]:
+                if work_queue:
+                    sub_batch_size = max(100, len(work_queue) // (pool._processes if hasattr(pool, '_processes') else 1))
+                    sub_batches = [
+                        work_queue[i:i + sub_batch_size]
+                        for i in range(0, len(work_queue), sub_batch_size)
+                    ]
+
+                    for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
+                        for toponym_id, ipa, packed_features, embedding in batch_results:
+                            phonetics_results[toponym_id] = (ipa, packed_features, embedding)
 
             # Phase 3: Merge results and queue for writing
             current_db_updates = []
@@ -1555,7 +1679,7 @@ def main():
     parser.add_argument('--places-index', default='places')
     parser.add_argument('--toponyms-index', default='toponyms')
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
-    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.duckdb',
+    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.db',
                         help='Path for DuckDB database file')
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Output directory for vocab and stats (default: db-path parent)')
