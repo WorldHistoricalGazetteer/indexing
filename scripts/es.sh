@@ -710,6 +710,7 @@ do_rebuild_toponyms() {
     # Output directory for data
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     DB_PATH="${IX1_BASE}/data/toponyms.db"
+    NEURAL_PHONETICS="${OUTPUT_DIR}/neural_phonetics.parquet"
 
     # Setup local scratch (CRC convention)
     SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
@@ -721,13 +722,26 @@ do_rebuild_toponyms() {
     echo "  Output Dir:   ${OUTPUT_DIR}"
     echo "  ES Host:      ${ES_URL}"
     echo "  Extra Args:   ${PYTHON_ARGS:-none}"
+
+    # Check for precomputed neural phonetics
+    PRECOMPUTED_ARG=""
+    if [ -f "$NEURAL_PHONETICS" ]; then
+        echo "  Neural G2P:   ${NEURAL_PHONETICS} (found)"
+        PRECOMPUTED_ARG="--precomputed-phonetics \"${NEURAL_PHONETICS}\""
+    else
+        echo "  Neural G2P:   not found (zh/ko/gan/wuu/yue/he will be skipped)"
+        echo "                Run: es -precompute-phonetics ${DATA_VERSION}"
+    fi
     echo
     echo "This job will:"
     echo "  1. Extract ALL toponyms from places index (with attestations)"
     echo "  2. Filter pre-romanized forms (lang-script mismatches)"
     echo "  3. Generate vocabulary (full Unicode ranges, native script)"
     echo "  4. Compute IPA + PanPhon embeddings for training namespace toponyms"
-    echo "     IPA backends: Epitran, Phonikud (Hebrew), CharsiuG2P (zh/ko/yue/gan/wuu)"
+    echo "     Epitran: CPU parallel (Latin, Cyrillic, Greek, Arabic, Indic, etc.)"
+    if [ -f "$NEURAL_PHONETICS" ]; then
+        echo "     Neural: merged from precomputed (CharsiuG2P + Phonikud)"
+    fi
     echo "  5. Index ALL toponyms to ES (panphon_embedding where available)"
     echo "  6. Generate name_romanized for cross-script text search"
     echo "  7. Refresh index and create snapshot"
@@ -775,6 +789,7 @@ python -u -m phonetics.extraction.rebuild_toponyms_index \
     --scratch-dir "\$SCRATCH_DIR" \
     --training-namespaces gn wd tgn \
     --confirm \
+    ${PRECOMPUTED_ARG} \
     $PYTHON_ARGS
 
 echo
@@ -804,6 +819,117 @@ EOF
     echo "✓ Rebuild job submitted: $CLEAN_JOBID"
     echo "  Monitor: squeue -j $CLEAN_JOBID"
     echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+}
+
+# ==============================================================================
+# PRECOMPUTE NEURAL PHONETICS (GPU)
+# ==============================================================================
+
+do_precompute_phonetics() {
+    # Usage: source es.sh -precompute-phonetics [VERSION]
+    #
+    # Runs CharsiuG2P (zh/ko/gan/wuu/yue) and Phonikud (he) on GPU.
+    # Output: neural_phonetics.parquet in the data version directory.
+    #
+    # Must run AFTER -rebuild-toponyms (needs DuckDB with extracted toponyms).
+    # Must run BEFORE the next -rebuild-toponyms --resume (which merges results).
+
+    DATA_VERSION=${1:-6}
+
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    OUTPUT_FILE="${OUTPUT_DIR}/neural_phonetics.parquet"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
+
+    # Verify DuckDB exists
+    if [ ! -f "$DB_PATH" ]; then
+        echo "ERROR: DuckDB not found at $DB_PATH"
+        echo "Run -rebuild-toponyms first to extract toponyms."
+        return 1
+    fi
+
+    echo "=========================================="
+    echo "PRECOMPUTE NEURAL PHONETICS (GPU)"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  DuckDB:       ${DB_PATH}"
+    echo "  Output:       ${OUTPUT_FILE}"
+    echo
+    echo "This job will:"
+    echo "  1. Query DuckDB for neural-language toponyms (zh/ko/gan/wuu/yue/he)"
+    echo "  2. Run CharsiuG2P (batched) on GPU for CJK/Korean"
+    echo "  3. Run Phonikud on GPU for Hebrew"
+    echo "  4. Compute PanPhon features and 192-dim embeddings"
+    echo "  5. Save results to Parquet"
+    echo
+    echo "After completion, re-run:"
+    echo "  es -rebuild-toponyms ${DATA_VERSION} --resume"
+    echo "to merge neural phonetics into the JSONL and ES index."
+    echo
+
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    JOBID=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-neural-g2p-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/neural_g2p_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/neural_g2p_v${DATA_VERSION}_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+echo "=========================================="
+echo "PRECOMPUTE NEURAL PHONETICS (GPU)"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+
+python -u -m phonetics.extraction.precompute_neural_phonetics \
+    --db-path "${DB_PATH}" \
+    --output "${OUTPUT_FILE}" \
+    --training-namespaces gn wd tgn \
+    --batch-size 64 \
+    --device cuda \
+    --scratch-dir "\$SCRATCH_DIR"
+
+echo
+echo "=========================================="
+echo "JOB COMPLETE"
+echo "=========================================="
+echo "Output: ${OUTPUT_FILE}"
+echo
+echo "Next: es -rebuild-toponyms ${DATA_VERSION} --resume"
+echo "  (will merge neural phonetics into JSONL and ES index)"
+echo
+echo "Finished: \$(date)"
+EOF
+)
+
+    CLEAN_JOBID=$(echo "$JOBID" | cut -d';' -f1)
+    echo "✓ Neural G2P job submitted: $CLEAN_JOBID"
+    echo "  Monitor: squeue -j $CLEAN_JOBID -M gpu"
+    echo "  Logs: tail -f ${LOG_DIR}/neural_g2p_v${DATA_VERSION}_${CLEAN_JOBID}.*"
 }
 
 # ==============================================================================
@@ -1489,6 +1615,12 @@ case "$1" in
         do_rebuild_toponyms "$@"
         ;;
 
+    # --- Precompute Neural Phonetics (GPU) ---
+    -precompute-phonetics)
+        shift
+        do_precompute_phonetics "$@"
+        ;;
+
     # --- Generate Training Data ---
     -generate-training-data)
         shift
@@ -1579,7 +1711,8 @@ case "$1" in
         echo "  -update             Pull latest code from git"
         echo
         echo "PIPELINE (Symphonym v6):"
-        echo "  -rebuild-toponyms   [VER] Rebuild index from places"
+        echo "  -rebuild-toponyms   [VER] Extract toponyms + Epitran IPA + index"
+        echo "  -precompute-phonetics [VER] Neural G2P on GPU (CharsiuG2P + Phonikud)"
         echo "  -generate-training-data [VER] Generate training sets"
         echo "  -train-model        [VER] Train Teacher/Student models"
         echo "  -update-embeddings  [VER] Compute new embeddings and index"
@@ -1607,14 +1740,16 @@ case "$1" in
         echo "      Extracts toponyms from places, computes IPA + PanPhon embeddings,"
         echo "      and indexes to ES with panphon_embedding for phonetic similarity."
         echo
-        echo "      IPA backends: Epitran (default), Phonikud (Hebrew),"
-        echo "                    CharsiuG2P (zh, ko, yue, gan, wuu)"
+        echo "      IPA backends:"
+        echo "        Epitran (CPU parallel): Latin, Cyrillic, Greek, Arabic, Indic, etc."
+        echo "        Precomputed (GPU): CharsiuG2P (zh/ko/yue/gan/wuu), Phonikud (he)"
+        echo "        → Run -precompute-phonetics first, then -rebuild-toponyms --resume"
         echo
         echo "      Steps:"
         echo "        1. Extract toponyms from places (with attestations)"
         echo "        2. Filter pre-romanized forms (lang-script mismatches)"
         echo "        3. Generate vocabulary (full Unicode ranges, native script)"
-        echo "        4. Compute IPA + PanPhon embeddings for training namespaces"
+        echo "        4. Compute IPA + PanPhon (Epitran + precomputed neural)"
         echo "        5. Index ALL toponyms to ES (panphon_embedding + name_romanized)"
         echo "        6. Create snapshot"
         echo
@@ -1626,7 +1761,13 @@ case "$1" in
         echo "  Examples:"
         echo "    $0 -rebuild-toponyms 6                    # Full rebuild v6"
         echo "    $0 -rebuild-toponyms 6 --limit 10000      # Test with subset"
-        echo "    $0 -rebuild-toponyms 6 --resume           # Resume interrupted job"
+        echo "    $0 -rebuild-toponyms 6 --resume           # Resume with precomputed neural"
+        echo
+        echo "PRECOMPUTE NEURAL PHONETICS (GPU):"
+        echo "  -precompute-phonetics VERSION"
+        echo "      Runs CharsiuG2P and Phonikud on GPU for neural-language toponyms."
+        echo "      Requires DuckDB from a prior -rebuild-toponyms run."
+        echo "      Output: neural_phonetics.parquet (merged on next --resume run)"
         echo
         echo "GENERATE TRAINING DATA (reads from ES toponyms index):"
         echo "  -generate-training-data VERSION [OPTIONS]"
@@ -1683,11 +1824,13 @@ case "$1" in
         echo "  source $0 -staging-logs               Show recent log output"
         echo
         echo "WORKFLOW (recommended):"
-        echo "  1. Start staging ES:      source es.sh -staging-start --places-only"
-        echo "  2. Rebuild toponyms:      source es.sh -rebuild-toponyms 6"
-        echo "  3. Generate training:     source es.sh -generate-training-data 6"
-        echo "  4. Train model:           source es.sh -train-model 6"
-        echo "  5. Update embeddings:     source es.sh -update-embeddings 6"
+        echo "  1. Start staging ES:         source es.sh -staging-start --places-only"
+        echo "  2. Extract + Epitran:        es -rebuild-toponyms 6"
+        echo "  3. Neural G2P (GPU):         es -precompute-phonetics 6"
+        echo "  4. Merge + index (resume):   es -rebuild-toponyms 6 --resume"
+        echo "  5. Generate training:        es -generate-training-data 6"
+        echo "  6. Train model:              es -train-model 6"
+        echo "  7. Update embeddings:        es -update-embeddings 6"
         echo
         echo "Data directory: /ix1/ishi/models/phonetic/data/vN/"
         echo

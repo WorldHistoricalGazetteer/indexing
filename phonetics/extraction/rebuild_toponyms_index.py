@@ -32,7 +32,6 @@ IPA backends:
 
 # Suppress warnings early - before any imports that might trigger them
 import warnings
-
 warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
 warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
@@ -174,101 +173,13 @@ CHARSIU_LANGUAGES = {'zh', 'ko', 'gan', 'wuu', 'yue'}
 
 # CharsiuG2P language code mapping
 CHARSIU_LANG_MAP = {
-    'zh': 'cmn',  # Mandarin Chinese
-    'ko': 'kor',  # Korean
-    'ja': 'jpn',  # Japanese (fallback if Epitran fails)
-    'gan': 'cmn',  # Gan Chinese (Mandarin proxy — same characters, approximate phonetics)
-    'wuu': 'cmn',  # Wu Chinese (Mandarin proxy)
-    'yue': 'yue',  # Cantonese
+    'zh': 'cmn',     # Mandarin Chinese
+    'ko': 'kor',     # Korean
+    'ja': 'jpn',     # Japanese (fallback if Epitran fails)
+    'gan': 'cmn',    # Gan Chinese (Mandarin proxy — same characters, approximate phonetics)
+    'wuu': 'cmn',    # Wu Chinese (Mandarin proxy)
+    'yue': 'yue',    # Cantonese
 }
-
-# ============================================================================
-# GLOBAL MODEL CACHING (one instance per worker process)
-# ============================================================================
-
-_GLOBAL_CHARSIU = None
-_GLOBAL_PHONIKUD = None
-_WORKER_MODEL_TYPE = 'epitran'  # Tracks which models this worker should load
-
-
-def get_global_charsiu():
-    """
-    Load CharsiuG2P once per worker process.
-    Returns None immediately if this worker is specialized for a different model.
-    """
-    global _GLOBAL_CHARSIU, _WORKER_MODEL_TYPE
-
-    # Skip loading if this worker is specialized for a different model
-    if _WORKER_MODEL_TYPE not in ('charsiu', 'epitran'):
-        return None
-
-    if _GLOBAL_CHARSIU is None:
-        try:
-            import google.protobuf  # noqa: F401
-            import torch
-            import transformers
-
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", category=FutureWarning)
-                warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-                model = transformers.T5ForConditionalGeneration.from_pretrained(
-                    "charsiu/g2p_multilingual_byT5_small_100"
-                )
-                tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
-
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            model.to(device)
-
-            class _CharsiuWrapper:
-                def __init__(self, m, t, d):
-                    self.model, self.tokenizer, self.device = m, t, d
-
-                def transliterate(self, text, lang):
-                    char_iso = CHARSIU_LANG_MAP.get(lang, lang)
-                    input_text = f"<{char_iso}>: {text}"
-                    inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
-                    with torch.no_grad():
-                        outputs = self.model.generate(**inputs)
-                    return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-
-            _GLOBAL_CHARSIU = _CharsiuWrapper(model, tokenizer, device)
-            logger.info("CharsiuG2P initialized (Mandarin, Korean, Cantonese, Gan, Wu)")
-        except Exception as e:
-            logger.warning(f"CharsiuG2P unavailable: {e}")
-            _GLOBAL_CHARSIU = False
-    return _GLOBAL_CHARSIU if _GLOBAL_CHARSIU is not False else None
-
-
-def get_global_phonikud():
-    """
-    Load Phonikud once per worker process.
-    Returns None immediately if this worker is specialized for a different model.
-    """
-    global _GLOBAL_PHONIKUD, _WORKER_MODEL_TYPE
-
-    # Skip loading if this worker is specialized for a different model
-    if _WORKER_MODEL_TYPE not in ('phonikud', 'epitran'):
-        return None
-
-    if _GLOBAL_PHONIKUD is None:
-        try:
-            with warnings.catch_warnings():
-                warnings.filterwarnings("ignore", message=".*tokenizer class.*")
-                import phonikud as phonikud_module
-
-            class _PhonikudWrapper:
-                def __init__(self, mod):
-                    self._mod = mod
-
-                def transliterate(self, text):
-                    return self._mod.phonemize(text)
-
-            _GLOBAL_PHONIKUD = _PhonikudWrapper(phonikud_module)
-            logger.info("Phonikud initialized (Hebrew G2P)")
-        except Exception as e:
-            logger.warning(f"Phonikud unavailable: {e}")
-            _GLOBAL_PHONIKUD = False
-    return _GLOBAL_PHONIKUD if _GLOBAL_PHONIKUD is not False else None
 
 
 class IPAConverter:
@@ -279,26 +190,15 @@ class IPAConverter:
     - CharsiuG2P: Chinese (zh, gan, wuu, yue) and Korean (ko) — multilingual neural G2P
 
     Each backend is lazy-loaded once per process and cached for the process lifetime.
-
-    Supports specialized mode where only required models are loaded (memory optimization).
     """
 
-    def __init__(self, model_type='epitran'):
-        """
-        Initialize converter with optional model specialization.
-
-        Args:
-            model_type: One of 'charsiu', 'phonikud', or 'epitran'
-                       Controls which models are actually loaded:
-                       - 'charsiu': Only CharsiuG2P + PanPhon (saves ~120GB with 62 workers)
-                       - 'phonikud': Only Phonikud + PanPhon
-                       - 'epitran': Only Epitran + PanPhon (default)
-        """
-        self._model_type = model_type
+    def __init__(self):
         self._epitran_cache: Dict[str, object] = {}
         self._panphon_ft = None
-        self._epitran_available = None if model_type == 'epitran' else False
+        self._epitran_available = None
         self._panphon_available = None
+        self._charsiu_g2p = None       # None = not yet checked, False = unavailable
+        self._phonikud = None          # None = not yet checked, False = unavailable
 
     # --- Backend availability checks (lazy, one-shot) ---
 
@@ -322,6 +222,65 @@ class IPAConverter:
                 logger.warning("PanPhon not available. Feature extraction disabled.")
                 self._panphon_available = False
         return self._panphon_available
+
+    def _check_charsiu(self) -> bool:
+        """Lazy-load CharsiuG2P multilingual model. Returns True if available."""
+        if self._charsiu_g2p is None:
+            try:
+                import google.protobuf  # noqa: F401 — required dependency
+                import torch
+                import transformers
+
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", category=FutureWarning)
+                    model = transformers.T5ForConditionalGeneration.from_pretrained(
+                        "charsiu/g2p_multilingual_byT5_small_100"
+                    )
+                    tokenizer = transformers.ByT5Tokenizer.from_pretrained("google/byt5-small")
+
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                model.to(device)
+
+                class _CharsiuWrapper:
+                    def __init__(self, m, t, d):
+                        self.model, self.tokenizer, self.device = m, t, d
+
+                    def transliterate(self, text, lang):
+                        char_iso = CHARSIU_LANG_MAP.get(lang, lang)
+                        input_text = f"<{char_iso}>: {text}"
+                        inputs = self.tokenizer(input_text, return_tensors="pt").to(self.device)
+                        with torch.no_grad():
+                            outputs = self.model.generate(**inputs)
+                        return self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+                self._charsiu_g2p = _CharsiuWrapper(model, tokenizer, device)
+                logger.info("CharsiuG2P initialized (Mandarin, Korean, Cantonese, Gan, Wu)")
+            except Exception as e:
+                logger.warning(f"CharsiuG2P unavailable: {e}")
+                self._charsiu_g2p = False
+        return self._charsiu_g2p is not False
+
+    def _check_phonikud(self) -> bool:
+        """Lazy-load Phonikud for Hebrew. Returns True if available."""
+        if self._phonikud is None:
+            try:
+                with warnings.catch_warnings():
+                    warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+                    import phonikud as phonikud_module
+
+                class _PhonikudWrapper:
+                    def __init__(self, mod):
+                        self._mod = mod
+
+                    def transliterate(self, text):
+                        return self._mod.phonemize(text)
+
+                self._phonikud = _PhonikudWrapper(phonikud_module)
+                logger.info("Phonikud initialized (Hebrew G2P)")
+            except Exception as e:
+                logger.warning(f"Phonikud unavailable: {e}")
+                self._phonikud = False
+        return self._phonikud is not False
 
     # --- Epitran helpers ---
 
@@ -352,30 +311,27 @@ class IPAConverter:
         """
         # 1. Hebrew (Phonikud only — Epitran does not support Hebrew)
         if lang == 'he' and script == Script.HEBREW:
-            phonikud = get_global_phonikud()
-            if phonikud:
+            if self._check_phonikud() and self._phonikud:
                 try:
-                    return phonikud.transliterate(text)
+                    return self._phonikud.transliterate(text)
                 except Exception:
                     pass
             return None  # No Epitran fallback available
 
         # 2. Chinese — all varieties via CharsiuG2P (no CC-CEDict dependency)
         if lang in ('zh', 'gan', 'wuu', 'yue') and script == Script.CJK:
-            charsiu = get_global_charsiu()
-            if charsiu:
+            if self._check_charsiu() and self._charsiu_g2p:
                 try:
-                    return charsiu.transliterate(text, lang)
+                    return self._charsiu_g2p.transliterate(text, lang)
                 except Exception:
                     pass
             return None  # No Epitran fallback for these
 
         # 3. Korean (CharsiuG2P preferred for both Hangul and Hanja)
         if lang == 'ko' and script in (Script.HANGUL, Script.CJK):
-            charsiu = get_global_charsiu()
-            if charsiu:
+            if self._check_charsiu() and self._charsiu_g2p:
                 try:
-                    return charsiu.transliterate(text, lang)
+                    return self._charsiu_g2p.transliterate(text, lang)
                 except Exception:
                     pass
             return None  # No Epitran fallback
@@ -473,26 +429,15 @@ class IPAConverter:
 _WORKER_CONVERTER = None
 
 
-def _init_worker(model_type='epitran'):
-    """
-    Initialize worker process with specialized model loading.
-
-    Args:
-        model_type: One of 'charsiu', 'phonikud', or 'epitran'
-                   Determines which models to load (memory optimization)
-    """
-    global _WORKER_CONVERTER, _WORKER_MODEL_TYPE
+def _init_worker():
+    """Initialize worker process with cached converter and suppressed warnings."""
+    global _WORKER_CONVERTER
     import warnings
     warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
     warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
     warnings.filterwarnings("ignore", message=".*tokenizer class.*")
     warnings.filterwarnings("ignore", category=FutureWarning)
-
-    # Track which models this worker should load
-    _WORKER_MODEL_TYPE = model_type
-
-    # Create specialized converter that only loads required models
-    _WORKER_CONVERTER = IPAConverter(model_type=model_type)
+    _WORKER_CONVERTER = IPAConverter()
 
 
 def _get_worker_converter() -> IPAConverter:
@@ -638,102 +583,55 @@ def create_db(db_path: str):
     conn.execute("SET memory_limit = '32GB'")
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS toponyms
-                 (
-                     toponym_id
-                     VARCHAR,
-                     name
-                     VARCHAR
-                     NOT
-                     NULL,
-                     lang
-                     VARCHAR,
-                     lang_variant
-                     VARCHAR,
-                     script
-                     VARCHAR,
-                     ipa
-                     VARCHAR,
-                     panphon_features
-                     BLOB
-                 )
-                 ''')
+        CREATE TABLE IF NOT EXISTS toponyms (
+            toponym_id VARCHAR,
+            name VARCHAR NOT NULL,
+            lang VARCHAR,
+            lang_variant VARCHAR,
+            script VARCHAR,
+            ipa VARCHAR,
+            panphon_features BLOB
+        )
+    ''')
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS toponym_namespaces
-                 (
-                     toponym_id
-                     VARCHAR
-                     NOT
-                     NULL,
-                     namespace
-                     VARCHAR
-                     NOT
-                     NULL
-                 )
-                 ''')
+        CREATE TABLE IF NOT EXISTS toponym_namespaces (
+            toponym_id VARCHAR NOT NULL,
+            namespace VARCHAR NOT NULL
+        )
+    ''')
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS toponym_attestations
-                 (
-                     toponym_id
-                     VARCHAR
-                     NOT
-                     NULL,
-                     place_id
-                     VARCHAR
-                     NOT
-                     NULL
-                 )
-                 ''')
+        CREATE TABLE IF NOT EXISTS toponym_attestations (
+            toponym_id VARCHAR NOT NULL,
+            place_id VARCHAR NOT NULL
+        )
+    ''')
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS observed_chars
-                 (
-                     char
-                     VARCHAR,
-                     script
-                     VARCHAR,
-                     count
-                     INTEGER
-                     DEFAULT
-                     1,
-                     PRIMARY
-                     KEY
-                 (
-                     char,
-                     script
-                 )
-                     )
-                 ''')
+        CREATE TABLE IF NOT EXISTS observed_chars (
+            char VARCHAR,
+            script VARCHAR,
+            count INTEGER DEFAULT 1,
+            PRIMARY KEY (char, script)
+        )
+    ''')
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS script_stats
-                 (
-                     script
-                     VARCHAR
-                     PRIMARY
-                     KEY,
-                     count
-                     INTEGER
-                     DEFAULT
-                     0
-                 )
-                 ''')
+        CREATE TABLE IF NOT EXISTS script_stats (
+            script VARCHAR PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        )
+    ''')
 
     conn.execute('''
-                 CREATE TABLE IF NOT EXISTS skipped_toponyms
-                 (
-                     toponym_id
-                     VARCHAR,
-                     reason
-                     VARCHAR,
-                     lang
-                     VARCHAR,
-                     script
-                     VARCHAR
-                 )
-                 ''')
+        CREATE TABLE IF NOT EXISTS skipped_toponyms (
+            toponym_id VARCHAR,
+            reason VARCHAR,
+            lang VARCHAR,
+            script VARCHAR
+        )
+    ''')
 
     return conn
 
@@ -749,19 +647,15 @@ def optimize_db_after_load(conn, force: bool = False):
     else:
         logger.info("Deduplicating toponyms table...")
         conn.execute('''
-                     CREATE TABLE toponyms_deduped AS
-                     SELECT DISTINCT ON
-                     (
-                         toponym_id
-                     ) *
-                         FROM toponyms
-                     ''')
+            CREATE TABLE toponyms_deduped AS
+            SELECT DISTINCT ON (toponym_id) *
+            FROM toponyms
+        ''')
         conn.execute('DROP TABLE toponyms')
         conn.execute('ALTER TABLE toponyms_deduped RENAME TO toponyms')
 
         after_count = conn.execute("SELECT COUNT(*) FROM toponyms").fetchone()[0]
-        logger.info(
-            f"Deduplication: {before_count:,} -> {after_count:,} ({before_count - after_count:,} duplicates removed)")
+        logger.info(f"Deduplication: {before_count:,} -> {after_count:,} ({before_count - after_count:,} duplicates removed)")
 
     # Check if indexes exist before creating
     existing_indexes = set(row[0] for row in conn.execute(
@@ -776,8 +670,7 @@ def optimize_db_after_load(conn, force: bool = False):
         conn.execute('CREATE INDEX IF NOT EXISTS idx_ta_place ON toponym_attestations(place_id)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_script ON toponyms(script)')
         conn.execute('CREATE INDEX IF NOT EXISTS idx_toponyms_lang ON toponyms(lang)')
-        conn.execute(
-            'CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
+        conn.execute('CREATE INDEX IF NOT EXISTS idx_attestations_place_toponym ON toponym_attestations(place_id, toponym_id)')
         logger.info("DuckDB indexes created.")
     else:
         logger.info("DuckDB indexes already exist, skipping...")
@@ -916,8 +809,8 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
 
         if len(toponym_batch) >= batch_size * 5:
             bulk_insert_duckdb(conn, 'toponyms',
-                               ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
-                               toponym_batch)
+                ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+                toponym_batch)
             bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
             bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
             if skipped_batch:
@@ -933,8 +826,8 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     # Final batch
     if toponym_batch:
         bulk_insert_duckdb(conn, 'toponyms',
-                           ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
-                           toponym_batch)
+            ['toponym_id', 'name', 'lang', 'lang_variant', 'script', 'ipa', 'panphon_features'],
+            toponym_batch)
         bulk_insert_duckdb(conn, 'toponym_namespaces', ['toponym_id', 'namespace'], namespace_batch)
         bulk_insert_duckdb(conn, 'toponym_attestations', ['toponym_id', 'place_id'], attestation_batch)
     if skipped_batch:
@@ -980,151 +873,54 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     return places_processed, toponyms_extracted, toponyms_skipped
 
 
-def rebuild_vocab_stats_from_toponyms(conn):
-    """
-    Rebuild observed character/script stats directly from toponyms
-    using DuckDB-native aggregation.
-
-    Returns:
-        observed_chars: Dict[str, List[Tuple[str, int]]]
-        observed_scripts: Set[str]
-    """
-
-    logger.info("Rebuilding vocab stats from toponyms using DuckDB aggregation")
-
-    # Clear existing stats
-    conn.execute("DELETE FROM observed_chars")
-    conn.execute("DELETE FROM script_stats")
-
-    # 1. Script counts (cheap)
-    conn.execute("""
-                 INSERT INTO script_stats (script, count)
-                 SELECT script,
-                        COUNT(*) AS count
-                 FROM toponyms
-                 WHERE script IS NOT NULL
-                   AND script != ''
-                 GROUP BY script
-                 """)
-
-    # 2. Character counts (expensive, but SQL-fast)
-    #
-    # Notes:
-    # - string_split(lower(name), '') explodes Unicode codepoints
-    # - filter whitespace explicitly
-    # - grouping happens inside DuckDB, not Python
-    #
-    conn.execute("""
-                 INSERT INTO observed_chars (char, script, count)
-                 SELECT ch AS char,
-            script,
-            COUNT(*) AS count
-                 FROM (
-                     SELECT
-                     UNNEST(string_split(lower (name), '')) AS ch, script
-                     FROM toponyms
-                     WHERE name IS NOT NULL
-                     AND name != ''
-                     AND script IS NOT NULL
-                     AND script != ''
-                     ) t
-                 WHERE ch IS NOT NULL
-                   AND ch != ''
-                   AND ch != ' '
-                 GROUP BY ch, script
-                 """)
-
-    conn.commit()
-
-    # 3. Load results back into Python (small)
-    observed_chars = defaultdict(list)
-    for ch, script, count in conn.execute(
-            "SELECT char, script, count FROM observed_chars"
-    ).fetchall():
-        observed_chars[ch].append((script, count))
-
-    observed_scripts = {
-        row[0]
-        for row in conn.execute("SELECT script FROM script_stats").fetchall()
-    }
-
-    logger.info(
-        f"Rebuilt vocab stats: "
-        f"{len(observed_chars):,} unique chars, "
-        f"{len(observed_scripts)} scripts"
-    )
-
-    return dict(observed_chars), observed_scripts
-
-
 def generate_vocabulary(conn, output_dir: Path) -> Dict:
     """
     Generate expanded character vocabulary from observed characters.
-    """
 
+    Strategy:
+    1. Start with all observed characters (native scripts)
+    2. Expand to full Unicode blocks for ALL observed scripts (including CJK, Hangul)
+    3. Add full ASCII printable range
+    4. Catch any remaining observed characters
+
+    The character encoder sees native script — no romanization or decomposition.
+    Cross-script matching is handled by Symphonym's phonetic embeddings, not
+    by reducing everything to ASCII.
+
+    Returns statistics dict.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Fast emptiness check (O(1))
-    has_chars = conn.execute(
-        "SELECT 1 FROM observed_chars LIMIT 1"
-    ).fetchone() is not None
+    observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+    for row in conn.execute('SELECT char, script, count FROM observed_chars').fetchall():
+        char, script, count = row
+        observed_chars[char].append((script, count))
 
-    has_scripts = conn.execute(
-        "SELECT 1 FROM script_stats LIMIT 1"
-    ).fetchone() is not None
+    observed_scripts = {row[0] for row in conn.execute('SELECT script, count FROM script_stats').fetchall()}
 
-    if not has_chars or not has_scripts:
-        logger.warning(
-            "observed_chars/script_stats empty; rebuilding from toponyms table"
-        )
-        observed_chars, observed_scripts = rebuild_vocab_stats_from_toponyms(conn)
-        if not observed_chars or not observed_scripts:
-            raise RuntimeError(
-                "Vocabulary rebuild failed: no observed characters/scripts found"
-            )
-    else:
-        # Load aggregated stats (small tables)
-        observed_chars = defaultdict(list)
-        for ch, script, count in conn.execute(
-                "SELECT char, script, count FROM observed_chars"
-        ).fetchall():
-            observed_chars[ch].append((script, count))
-
-        observed_scripts = {
-            row[0]
-            for row in conn.execute("SELECT script FROM script_stats").fetchall()
-        }
-
-    logger.info(
-        f"Observed {len(observed_chars):,} unique characters "
-        f"across {len(observed_scripts)} scripts"
-    )
-
-    # -----------------------------
-    # Vocabulary construction
-    # -----------------------------
+    logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
 
     vocab = {
         '<PAD>': 0,
         '<UNK>': 1,
         '<SPACE>': 2,
     }
-    next_id = 10  # reserve 3–9
+    next_id = 10  # Reserve 3-9
 
     included_scripts = set()
     script_char_counts = defaultdict(int)
 
-    # 1. ASCII printable range
-    logger.info("Adding ASCII printable range")
+    # 1. ASCII printable range (32-126)
+    logger.info("Adding ASCII printable range...")
     for cp in range(32, 127):
         char = chr(cp)
-        if char != ' ' and char not in vocab:
+        if char not in vocab and char != ' ':
             vocab[char] = next_id
             next_id += 1
             script_char_counts['ASCII'] += 1
 
-    # 2. Unicode ranges per observed script
-    logger.info("Expanding Unicode ranges for observed scripts")
+    # 2. Full Unicode ranges for ALL observed scripts
+    logger.info("Expanding to full Unicode ranges for observed scripts...")
     for script_name in observed_scripts:
         try:
             script = Script(script_name)
@@ -1132,19 +928,19 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
             logger.warning(f"Unknown script in data: {script_name}")
             continue
 
-        ranges = SCRIPT_RANGES.get(script)
-        if not ranges:
+        if script not in SCRIPT_RANGES:
             logger.warning(f"No Unicode ranges defined for {script_name}")
             continue
 
         included_scripts.add(script_name)
         count_before = len(vocab)
 
-        for start, end in ranges:
+        for start, end in SCRIPT_RANGES[script]:
             for cp in range(start, end + 1):
                 try:
                     char = chr(cp)
-                    if unicodedata.category(char).startswith('C'):
+                    cat = unicodedata.category(char)
+                    if cat.startswith('C'):
                         continue
                     if char not in vocab:
                         vocab[char] = next_id
@@ -1152,27 +948,21 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
                 except (ValueError, OverflowError):
                     continue
 
-        added = len(vocab) - count_before
-        script_char_counts[script_name] = added
-        logger.info(f"  {script_name}: {added:,} characters")
+        count_added = len(vocab) - count_before
+        script_char_counts[script_name] = count_added
+        logger.info(f"  {script_name}: {count_added:,} characters")
 
-    # 3. Remaining observed edge characters
+    # 3. Remaining observed characters not yet in vocab (edge cases)
     for char, char_script_counts in observed_chars.items():
         if char not in vocab and char.strip():
             vocab[char] = next_id
             next_id += 1
-            best_script = (
-                max(char_script_counts, key=lambda x: x[1])[0]
-                if char_script_counts else 'OTHER'
-            )
+            best_script = max(char_script_counts, key=lambda x: x[1])[0] if char_script_counts else 'OTHER'
             script_char_counts[best_script] += 1
 
-    # -----------------------------
-    # Persist vocabularies
-    # -----------------------------
-
+    # Save vocabulary
     vocab_data = {
-        'version': 4,
+        'version': 4,  # v4: native script (no romanization/decomposition)
         'char_to_id': vocab,
         'observed_scripts': list(observed_scripts),
         'included_scripts': list(included_scripts),
@@ -1190,24 +980,27 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Total vocabulary size: {len(vocab):,}")
 
     # Language vocabulary
-    languages = [
-        row[0]
-        for row in conn.execute(
-            "SELECT DISTINCT lang FROM toponyms "
-            "WHERE lang IS NOT NULL AND lang != ''"
-        ).fetchall()
-    ]
+    languages = sorted(row[0] for row in conn.execute(
+        "SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ''"
+    ).fetchall())
 
     lang_vocab = {'<UNK>': 0}
-    for i, lang in enumerate(sorted(languages), start=1):
+    for i, lang in enumerate(languages, start=1):
         lang_vocab[lang] = i
 
-    with open(output_dir / 'lang_vocab.json', 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, indent=2)
+    lang_path = output_dir / 'lang_vocab.json'
+    with open(lang_path, 'w', encoding='utf-8') as f:
+        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, ensure_ascii=False, indent=2)
 
+    logger.info(f"Language vocabulary saved: {lang_path} ({len(lang_vocab):,} languages)")
+
+    # Script vocabulary
     script_vocab = {s.value: i for i, s in enumerate(Script)}
-    with open(output_dir / 'script_vocab.json', 'w') as f:
+    script_path = output_dir / 'script_vocab.json'
+    with open(script_path, 'w', encoding='utf-8') as f:
         json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)
+
+    logger.info(f"Script vocabulary saved: {script_path}")
 
     return vocab_data['stats'], vocab
 
@@ -1253,13 +1046,13 @@ TRAINING_SCHEMA = pa.schema([
 
 
 def export_training_parquet(
-        conn,
-        vocab: Dict[str, int],
-        output_dir: Path,
-        namespaces: List[str],
-        train_ratio: float = 0.8,
-        val_ratio: float = 0.1,
-        batch_size: int = 100000,
+    conn,
+    vocab: Dict[str, int],
+    output_dir: Path,
+    namespaces: List[str],
+    train_ratio: float = 0.8,
+    val_ratio: float = 0.1,
+    batch_size: int = 100000,
 ) -> Dict:
     """
     Export training data to partitioned Parquet files.
@@ -1409,7 +1202,7 @@ def export_training_parquet(
 
             processed += 1
             if processed - last_log >= 100000:
-                logger.info(f"Processed {processed:,} / {total_count:,} ({100 * processed / total_count:.1f}%)")
+                logger.info(f"Processed {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%)")
                 last_log = processed
 
     for script in list(buffers.keys()):
@@ -1417,9 +1210,8 @@ def export_training_parquet(
 
     # Log statistics
     logger.info(f"Exported {stats['total_exported']:,} toponyms to Parquet")
-    logger.info(f"With IPA: {stats['with_ipa']:,} ({100 * stats['with_ipa'] / stats['total_exported']:.1f}%)")
-    logger.info(
-        f"With features: {stats['with_features']:,} ({100 * stats['with_features'] / stats['total_exported']:.1f}%)")
+    logger.info(f"With IPA: {stats['with_ipa']:,} ({100*stats['with_ipa']/stats['total_exported']:.1f}%)")
+    logger.info(f"With features: {stats['with_features']:,} ({100*stats['with_features']/stats['total_exported']:.1f}%)")
     logger.info(f"By script: {dict(stats['by_script'].most_common(10))}")
     logger.info(f"By split: {dict(stats['by_split'])}")
     logger.info(f"By namespace: {dict(stats['by_namespace'])}")
@@ -1461,22 +1253,60 @@ def export_training_parquet(
     return stats
 
 
+def load_precomputed_phonetics(parquet_path: Path) -> Dict[str, Tuple[str, bytes, List[float]]]:
+    """
+    Load precomputed neural G2P results from Parquet.
+
+    Returns:
+        Dict mapping toponym_id -> (ipa, packed_features, embedding_192)
+    """
+    logger.info(f"Loading precomputed phonetics from {parquet_path}")
+    table = pq.read_table(parquet_path)
+    lookup = {}
+
+    for i in range(len(table)):
+        tid = table.column('toponym_id')[i].as_py()
+        ipa = table.column('ipa')[i].as_py()
+        features = table.column('panphon_features')[i].as_py()
+        embedding = table.column('panphon_embedding')[i].as_py()
+
+        if tid and ipa and embedding:
+            lookup[tid] = (ipa, features, embedding)
+
+    logger.info(f"Loaded {len(lookup):,} precomputed phonetic entries")
+    return lookup
+
+
+# Neural G2P languages — these are skipped from the Epitran worker pool
+# and looked up from precomputed Parquet instead
+NEURAL_LANGS = {'zh', 'ko', 'gan', 'wuu', 'yue', 'he'}
+
+
 def dump_to_jsonl(
-        conn,
-        output_path: Path,
-        training_namespaces: List[str] = None,
-        num_workers: int = None,
-        batch_size: int = 10000,
+    conn,
+    output_path: Path,
+    training_namespaces: List[str] = None,
+    num_workers: int = None,
+    batch_size: int = 10000,
+    precomputed_phonetics: Dict[str, Tuple] = None,
 ) -> Tuple[int, Dict]:
     """
     Dump aggregated documents to a flat JSONL file on Scratch.
 
     Uses streaming batch architecture for O(1) memory usage regardless of corpus size.
 
-    For toponyms in training_namespaces, computes (in parallel):
-    - IPA transcription via Epitran / Phonikud / CharsiuG2P
-    - PanPhon embedding (192-dim position-pooled articulatory features) for ES
-    - Full PanPhon feature sequence stored in DuckDB for training data assembly
+    For toponyms in training_namespaces, computes IPA/PanPhon via:
+    - Precomputed lookup (for neural backends: CharsiuG2P, Phonikud)
+    - Epitran worker pool (for everything else, CPU-parallel)
+
+    Args:
+        conn: DuckDB connection
+        output_path: JSONL output file path
+        training_namespaces: Namespaces requiring phonetic processing
+        num_workers: Number of parallel Epitran workers
+        batch_size: I/O batch size for JSONL writes
+        precomputed_phonetics: Dict of toponym_id -> (ipa, features, embedding)
+            from precompute_neural_phonetics.py
 
     Returns:
         Tuple of (total_count, stats_dict)
@@ -1487,25 +1317,19 @@ def dump_to_jsonl(
     if num_workers is None:
         num_workers = max(1, mp.cpu_count() - 2)
 
+    if precomputed_phonetics is None:
+        precomputed_phonetics = {}
+
     training_ns_set = set(training_namespaces)
 
     processing_batch_size = 50000
     io_batch_size = 5000
-
-    # Specialized worker pool configuration to minimize memory overhead
-    # Each pool loads only its required models
-    charsiu_workers = min(5, max(1, num_workers // 12))  # ~8% for CJK/Korean
-    phonikud_workers = min(2, max(1, num_workers // 30))  # ~3% for Hebrew
-    epitran_workers = num_workers - charsiu_workers - phonikud_workers
-
     chunksize = max(100, processing_batch_size // num_workers // 4)
 
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
-    logger.info(f"Specialized worker pool allocation:")
-    logger.info(f"  Charsiu (gan/wuu/yue/ko): {charsiu_workers} workers")
-    logger.info(f"  Phonikud (Hebrew): {phonikud_workers} workers")
-    logger.info(f"  Epitran (all others): {epitran_workers} workers")
+    logger.info(f"Epitran workers: {num_workers}")
+    logger.info(f"Precomputed neural phonetics: {len(precomputed_phonetics):,} entries")
     logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
     logger.info(f"Worker chunksize: {chunksize}")
 
@@ -1517,45 +1341,42 @@ def dump_to_jsonl(
         'in_training_ns': 0,
         'with_ipa': 0,
         'with_panphon': 0,
+        'precomputed_hits': 0,
+        'epitran_computed': 0,
+        'neural_skipped': 0,
         'by_script': Counter(),
         'by_script_lang_ipa': Counter(),
     }
 
     result = conn.execute('''
-                          SELECT t.toponym_id,
-                                 t.name,
-                                 t.lang,
-                                 t.lang_variant,
-                                 t.script,
-                                 GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
-                                 GROUP_CONCAT(DISTINCT ta.place_id)  as attestations
-                          FROM toponyms t
-                                   JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
-                                   LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-                          GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
-                          ''')
+        SELECT t.toponym_id,
+               t.name,
+               t.lang,
+               t.lang_variant,
+               t.script,
+               GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
+               GROUP_CONCAT(DISTINCT ta.place_id) as attestations
+        FROM toponyms t
+        JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+        LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+        GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+    ''')
 
     # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
     all_db_updates = []
 
-    logger.info("Starting streaming from DuckDB with Producer-Consumer pipeline...")
+    logger.info("Starting streaming from DuckDB...")
 
-    # Create specialized worker pools - each loads only required models
+    # Single Epitran-only pool — neural languages handled via precomputed lookup
     with open(output_path, 'w', encoding='utf-8') as f, \
-            mp.Pool(processes=charsiu_workers, initializer=_init_worker, initargs=('charsiu',)) as charsiu_pool, \
-            mp.Pool(processes=phonikud_workers, initializer=_init_worker, initargs=('phonikud',)) as phonikud_pool, \
-            mp.Pool(processes=epitran_workers, initializer=_init_worker, initargs=('epitran',)) as epitran_pool:
+         mp.Pool(processes=num_workers, initializer=_init_worker) as pool:
 
         fetch_batch_size = processing_batch_size
         batches_processed = 0
-
-        # Buffer for output writing
         pending_writes = []
 
         def flush_writes():
             nonlocal pending_writes
-            if not pending_writes:
-                return
             for doc in pending_writes:
                 f.write(json.dumps(doc) + '\n')
             pending_writes = []
@@ -1565,13 +1386,9 @@ def dump_to_jsonl(
             if not rows:
                 break
 
-            # Phase 1: Build documents and identify those needing phonetics
-            # We map IDs to the document object so we can update them when phonetics return
-            batch_docs_map = {}
-
-            charsiu_work = []  # CJK topolects and Korean
-            phonikud_work = []  # Hebrew
-            epitran_work = []  # Everything else
+            # Phase 1: Build documents, separate precomputed vs Epitran work
+            batch_docs = []
+            epitran_work = []  # Only non-neural languages
 
             for row in rows:
                 toponym_id, name, lang, lang_variant, script, namespaces_str, attestations_str = row
@@ -1593,7 +1410,7 @@ def dump_to_jsonl(
                     'indexed_at': datetime.now(timezone.utc).isoformat(),
                 }
 
-                # Romanized form for ES text search (not stored in DuckDB)
+                # Romanized form for ES text search
                 name_romanized = romanize_for_search(name, script)
                 if name_romanized:
                     doc['name_romanized'] = name_romanized
@@ -1602,84 +1419,65 @@ def dump_to_jsonl(
                 stats['total'] += 1
 
                 is_in_training_ns = bool(training_ns_set & set(namespaces))
-
-                # If needs phonetics, queue it. If not, write immediately.
                 if is_in_training_ns:
                     stats['in_training_ns'] += 1
 
-                    # Store doc in map to wait for phonetics
-                    batch_docs_map[toponym_id] = doc
+                    # Check precomputed lookup first (neural languages)
+                    if toponym_id in precomputed_phonetics:
+                        ipa, packed_features, embedding = precomputed_phonetics[toponym_id]
+                        doc['ipa'] = ipa
+                        doc['panphon_embedding'] = embedding
+                        stats['with_ipa'] += 1
+                        stats['with_panphon'] += 1
+                        stats['precomputed_hits'] += 1
+                        stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
+                        all_db_updates.append((ipa, packed_features, toponym_id))
 
-                    # Route to appropriate worker pool based on language
-                    work_item = (toponym_id, name, lang, script)
-                    if lang in ('zh', 'gan', 'wuu', 'yue', 'ko'):
-                        charsiu_work.append(work_item)
-                    elif lang == 'he':
-                        phonikud_work.append(work_item)
+                    elif lang in NEURAL_LANGS:
+                        # Neural language but no precomputed result — skip
+                        # (means precompute wasn't run, or this toponym failed)
+                        stats['neural_skipped'] += 1
+
                     else:
-                        epitran_work.append(work_item)
-                else:
-                    # No phonetics needed, ready to write
-                    pending_writes.append(doc)
+                        # Epitran-eligible — queue for worker pool
+                        epitran_work.append((toponym_id, name, lang, script))
 
-            # Flush any "immediate ready" docs before processing heavy pools
-            if len(pending_writes) >= io_batch_size:
-                flush_writes()
+                batch_docs.append(doc)
 
-            # Phase 2: Parallel phonetics computation with interleaved writing
-            # Dispatch work to each pool, and process results *as they arrive*
-
-            logger.info(
-                f"Dispatching phonetics batch {batches_processed + 1}: "
-                f"Charsiu={len(charsiu_work)}, Phonikud={len(phonikud_work)}, Epitran={len(epitran_work)}"
-            )
-
-            current_db_updates = []
-
-            for work_queue, pool, pool_name in [
-                (charsiu_work, charsiu_pool, 'Charsiu'),
-                (phonikud_work, phonikud_pool, 'Phonikud'),
-                (epitran_work, epitran_pool, 'Epitran')
-            ]:
-                if not work_queue:
-                    continue
-
-                # Batch into chunks for workers
-                sub_batch_size = max(100, len(work_queue) // (pool._processes if hasattr(pool, '_processes') else 1))
+            # Phase 2: Parallel Epitran computation
+            phonetics_results = {}
+            if epitran_work:
+                sub_batch_size = max(100, len(epitran_work) // num_workers)
                 sub_batches = [
-                    work_queue[i:i + sub_batch_size]
-                    for i in range(0, len(work_queue), sub_batch_size)
+                    epitran_work[i:i + sub_batch_size]
+                    for i in range(0, len(epitran_work), sub_batch_size)
                 ]
 
-                # Stream results back
-                for batch_results in pool.imap_unordered(_compute_phonetics_for_batch, sub_batches, chunksize=1):
+                for batch_results in pool.imap_unordered(
+                    _compute_phonetics_for_batch, sub_batches, chunksize=1
+                ):
                     for toponym_id, ipa, packed_features, embedding in batch_results:
-                        if toponym_id in batch_docs_map:
-                            doc = batch_docs_map.pop(toponym_id)  # Remove from wait map
+                        phonetics_results[toponym_id] = (ipa, packed_features, embedding)
 
-                            doc['ipa'] = ipa
-                            doc['panphon_embedding'] = embedding
+            # Phase 3: Merge Epitran results and queue for writing
+            current_db_updates = []
+            for doc in batch_docs:
+                toponym_id = doc['toponym_id']
 
-                            stats['with_ipa'] += 1
-                            stats['with_panphon'] += 1
-                            stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
+                if toponym_id in phonetics_results:
+                    ipa, packed_features, embedding = phonetics_results[toponym_id]
+                    doc['ipa'] = ipa
+                    doc['panphon_embedding'] = embedding
+                    stats['with_ipa'] += 1
+                    stats['with_panphon'] += 1
+                    stats['epitran_computed'] += 1
+                    stats['by_script_lang_ipa'][f"{doc['script']}:{doc['lang']}"] += 1
+                    current_db_updates.append((ipa, packed_features, toponym_id))
 
-                            current_db_updates.append((ipa, packed_features, toponym_id))
-                            pending_writes.append(doc)
-
-                    # Interleaved flush - write as soon as we have enough data
-                    if len(pending_writes) >= io_batch_size:
-                        flush_writes()
-                        logger.info(f"  Streaming progress: {stats['with_ipa']:,} phonetics computed...")
-
-            # Write any remaining docs from this batch (e.g. ones that failed phonetics or leftovers)
-            # Docs remaining in batch_docs_map failed phonetics (or returned empty).
-            # We still need to write them (without phonetic fields).
-            for doc in batch_docs_map.values():
                 pending_writes.append(doc)
 
-            # Final flush for this DuckDB batch
-            flush_writes()
+                if len(pending_writes) >= io_batch_size:
+                    flush_writes()
 
             if current_db_updates:
                 all_db_updates.extend(current_db_updates)
@@ -1688,19 +1486,24 @@ def dump_to_jsonl(
 
             pct = 100 * stats['total'] / total_count
             logger.info(
-                f"Batch {batches_processed} complete. "
-                f"Total processed: {stats['total']:,} ({pct:.1f}%)"
+                f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
+                f"IPA: {stats['with_ipa']:,} "
+                f"(precomputed: {stats['precomputed_hits']:,}, "
+                f"epitran: {stats['epitran_computed']:,}) - "
+                f"Batch {batches_processed}"
             )
+
+        # Flush remaining writes
+        if pending_writes:
+            flush_writes()
 
     logger.info(f"Streaming complete. Total batches processed: {batches_processed}")
 
     # Apply accumulated DuckDB updates in batches
-    # (After streaming loop to avoid cursor invalidation)
     total_db_updates = 0
     if all_db_updates:
         logger.info(f"Applying {len(all_db_updates):,} IPA/PanPhon updates to DuckDB...")
 
-        # Drop indexes for faster bulk updates
         logger.info("Dropping indexes on toponyms table for faster bulk updates...")
         try:
             conn.execute("DROP INDEX IF EXISTS idx_toponyms_id")
@@ -1721,11 +1524,11 @@ def dump_to_jsonl(
             })
             conn.execute("CREATE TEMP TABLE updates AS SELECT * FROM update_table")
             conn.execute("""
-                         UPDATE toponyms
-                         SET ipa              = u.ipa,
-                             panphon_features = u.panphon_features FROM updates u
-                         WHERE toponyms.toponym_id = u.toponym_id
-                         """)
+                UPDATE toponyms
+                SET ipa = u.ipa, panphon_features = u.panphon_features
+                FROM updates u
+                WHERE toponyms.toponym_id = u.toponym_id
+            """)
             conn.execute("DROP TABLE updates")
 
             if (i + update_batch_size) % 500000 == 0:
@@ -1746,9 +1549,12 @@ def dump_to_jsonl(
     # Log final statistics
     logger.info(f"Buffering complete. Total documents: {stats['total']:,}")
     logger.info(f"Documents in training namespaces: {stats['in_training_ns']:,}")
-    logger.info(f"  With IPA: {stats['with_ipa']:,} ({100 * stats['with_ipa'] / max(1, stats['in_training_ns']):.1f}%)")
-    logger.info(
-        f"  With PanPhon embedding: {stats['with_panphon']:,} ({100 * stats['with_panphon'] / max(1, stats['in_training_ns']):.1f}%)")
+    logger.info(f"  With IPA: {stats['with_ipa']:,} ({100*stats['with_ipa']/max(1,stats['in_training_ns']):.1f}%)")
+    logger.info(f"  With PanPhon embedding: {stats['with_panphon']:,} ({100*stats['with_panphon']/max(1,stats['in_training_ns']):.1f}%)")
+    logger.info(f"  From precomputed (neural): {stats['precomputed_hits']:,}")
+    logger.info(f"  From Epitran (CPU pool): {stats['epitran_computed']:,}")
+    if stats['neural_skipped']:
+        logger.warning(f"  Neural languages skipped (no precomputed data): {stats['neural_skipped']:,}")
 
     logger.info("Top script+lang pairs with IPA transcription:")
     for key, count in stats['by_script_lang_ipa'].most_common(20):
@@ -1822,7 +1628,7 @@ def main():
     parser.add_argument('--places-index', default='places')
     parser.add_argument('--toponyms-index', default='toponyms')
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
-    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.db',
+    parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.duckdb',
                         help='Path for DuckDB database file')
     parser.add_argument('--output-dir', type=Path, default=None,
                         help='Output directory for vocab and stats (default: db-path parent)')
@@ -1833,6 +1639,11 @@ def main():
     parser.add_argument('--resume', action='store_true', help="Resume from existing DuckDB database")
     parser.add_argument('--skip-es-index', action='store_true',
                         help="Skip ES indexing (only extract to DuckDB and generate vocab)")
+    parser.add_argument('--precomputed-phonetics', type=Path, default=None,
+                        help='Parquet file with precomputed neural G2P results '
+                             '(from precompute_neural_phonetics.py). '
+                             'Charsiu/Phonikud items are merged from this file; '
+                             'Epitran runs in parallel on CPU for the rest.')
 
     # Parallelism options
     parser.add_argument('--num-workers', type=int, default=None,
@@ -1938,11 +1749,27 @@ def main():
             logger.info("=" * 60)
             logger.info("STEP 3: BUFFERING WITH PANPHON (DuckDB -> JSONL)")
             logger.info("=" * 60)
+
+            # Load precomputed neural phonetics if provided
+            precomputed = None
+            if args.precomputed_phonetics:
+                if args.precomputed_phonetics.exists():
+                    precomputed = load_precomputed_phonetics(args.precomputed_phonetics)
+                else:
+                    logger.warning(
+                        f"Precomputed phonetics file not found: {args.precomputed_phonetics}"
+                    )
+                    logger.warning(
+                        "Neural languages (zh/ko/gan/wuu/yue/he) will be skipped. "
+                        "Run precompute_neural_phonetics.py first for these."
+                    )
+
             total_docs, buffer_stats = dump_to_jsonl(
                 conn,
                 jsonl_path,
                 training_namespaces=args.training_namespaces,
                 num_workers=args.num_workers,
+                precomputed_phonetics=precomputed,
             )
             conn.close()
 
