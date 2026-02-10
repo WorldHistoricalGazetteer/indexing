@@ -928,94 +928,154 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     return places_processed, toponyms_extracted, toponyms_skipped
 
 
-def rebuild_vocab_stats_from_toponyms(conn, batch_size: int = 50000):
-    """Rebuild observed character/script stats directly from toponyms when tables are empty."""
-    logger.warning("observed_chars/script_stats empty; rebuilding from toponyms table (one-time scan)...")
-    char_counts: Dict[str, Counter] = defaultdict(Counter)
-    script_counts: Counter = Counter()
+def rebuild_vocab_stats_from_toponyms(conn):
+    """
+    Rebuild observed character/script stats directly from toponyms
+    using DuckDB-native aggregation.
 
-    cursor = conn.execute("SELECT name, script FROM toponyms")
-    while True:
-        rows = cursor.fetchmany(batch_size)
-        if not rows:
-            break
-        for name, script in rows:
-            if not name or not script:
-                continue
-            script_counts[script] += 1
-            for ch in name.lower():
-                if ch.strip():
-                    char_counts[ch][script] += 1
+    Returns:
+        observed_chars: Dict[str, List[Tuple[str, int]]]
+        observed_scripts: Set[str]
+    """
 
-    # Persist rebuilt stats so subsequent runs can skip this pass
+    logger.info("Rebuilding vocab stats from toponyms using DuckDB aggregation")
+
+    # Clear existing stats
     conn.execute("DELETE FROM observed_chars")
     conn.execute("DELETE FROM script_stats")
 
-    char_batch = [(ch, script, cnt) for ch, scripts in char_counts.items() for script, cnt in scripts.items()]
-    if char_batch:
-        bulk_insert_duckdb(conn, 'observed_chars', ['char', 'script', 'count'], char_batch)
-    for script, cnt in script_counts.items():
-        conn.execute('INSERT OR REPLACE INTO script_stats VALUES (?, ?)', (script, cnt))
+    # 1. Script counts (cheap)
+    conn.execute("""
+        INSERT INTO script_stats (script, count)
+        SELECT
+            script,
+            COUNT(*) AS count
+        FROM toponyms
+        WHERE script IS NOT NULL
+          AND script != ''
+        GROUP BY script
+    """)
+
+    # 2. Character counts (expensive, but SQL-fast)
+    #
+    # Notes:
+    # - string_split(lower(name), '') explodes Unicode codepoints
+    # - filter whitespace explicitly
+    # - grouping happens inside DuckDB, not Python
+    #
+    conn.execute("""
+        INSERT INTO observed_chars (char, script, count)
+        SELECT
+            ch AS char,
+            script,
+            COUNT(*) AS count
+        FROM (
+            SELECT
+                UNNEST(string_split(lower(name), '')) AS ch,
+                script
+            FROM toponyms
+            WHERE name IS NOT NULL
+              AND name != ''
+              AND script IS NOT NULL
+              AND script != ''
+        ) t
+        WHERE ch IS NOT NULL
+          AND ch != ''
+          AND ch != ' '
+        GROUP BY ch, script
+    """)
+
     conn.commit()
 
-    logger.info(f"Rebuilt vocab stats from toponyms: {len(char_counts):,} chars across {len(script_counts)} scripts")
-    return {ch: list(scripts.items()) for ch, scripts in char_counts.items()}, set(script_counts.keys())
+    # 3. Load results back into Python (small)
+    observed_chars = defaultdict(list)
+    for ch, script, count in conn.execute(
+        "SELECT char, script, count FROM observed_chars"
+    ).fetchall():
+        observed_chars[ch].append((script, count))
+
+    observed_scripts = {
+        row[0]
+        for row in conn.execute("SELECT script FROM script_stats").fetchall()
+    }
+
+    logger.info(
+        f"Rebuilt vocab stats: "
+        f"{len(observed_chars):,} unique chars, "
+        f"{len(observed_scripts)} scripts"
+    )
+
+    return dict(observed_chars), observed_scripts
 
 
 def generate_vocabulary(conn, output_dir: Path) -> Dict:
     """
     Generate expanded character vocabulary from observed characters.
-
-    Strategy:
-    1. Start with all observed characters (native scripts)
-    2. Expand to full Unicode blocks for ALL observed scripts (including CJK, Hangul)
-    3. Add full ASCII printable range
-    4. Catch any remaining observed characters
-
-    The character encoder sees native script — no romanization or decomposition.
-    Cross-script matching is handled by Symphonym's phonetic embeddings, not
-    by reducing everything to ASCII.
-
-    Returns statistics dict.
     """
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
-    for row in conn.execute('SELECT char, script, count FROM observed_chars').fetchall():
-        char, script, count = row
-        observed_chars[char].append((script, count))
+    # Fast emptiness check (O(1))
+    has_chars = conn.execute(
+        "SELECT 1 FROM observed_chars LIMIT 1"
+    ).fetchone() is not None
 
-    observed_scripts = {row[0] for row in conn.execute('SELECT script, count FROM script_stats').fetchall()}
+    has_scripts = conn.execute(
+        "SELECT 1 FROM script_stats LIMIT 1"
+    ).fetchone() is not None
 
-    if not observed_chars or not observed_scripts:
-        logger.warning("observed_chars/script_stats empty; rebuilding from toponyms table (one-time scan)...")
+    if not has_chars or not has_scripts:
+        logger.warning(
+            "observed_chars/script_stats empty; rebuilding from toponyms table"
+        )
         observed_chars, observed_scripts = rebuild_vocab_stats_from_toponyms(conn)
         if not observed_chars or not observed_scripts:
-            raise RuntimeError("Vocabulary rebuild failed: no observed characters/scripts found in toponyms table")
+            raise RuntimeError(
+                "Vocabulary rebuild failed: no observed characters/scripts found"
+            )
+    else:
+        # Load aggregated stats (small tables)
+        observed_chars = defaultdict(list)
+        for ch, script, count in conn.execute(
+            "SELECT char, script, count FROM observed_chars"
+        ).fetchall():
+            observed_chars[ch].append((script, count))
 
-    logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
+        observed_scripts = {
+            row[0]
+            for row in conn.execute("SELECT script FROM script_stats").fetchall()
+        }
+
+    logger.info(
+        f"Observed {len(observed_chars):,} unique characters "
+        f"across {len(observed_scripts)} scripts"
+    )
+
+    # -----------------------------
+    # Vocabulary construction
+    # -----------------------------
 
     vocab = {
         '<PAD>': 0,
         '<UNK>': 1,
         '<SPACE>': 2,
     }
-    next_id = 10  # Reserve 3-9
+    next_id = 10  # reserve 3–9
 
     included_scripts = set()
     script_char_counts = defaultdict(int)
 
-    # 1. ASCII printable range (32-126)
-    logger.info("Adding ASCII printable range...")
+    # 1. ASCII printable range
+    logger.info("Adding ASCII printable range")
     for cp in range(32, 127):
         char = chr(cp)
-        if char not in vocab and char != ' ':
+        if char != ' ' and char not in vocab:
             vocab[char] = next_id
             next_id += 1
             script_char_counts['ASCII'] += 1
 
-    # 2. Full Unicode ranges for ALL observed scripts
-    logger.info("Expanding to full Unicode ranges for observed scripts...")
+    # 2. Unicode ranges per observed script
+    logger.info("Expanding Unicode ranges for observed scripts")
     for script_name in observed_scripts:
         try:
             script = Script(script_name)
@@ -1023,19 +1083,19 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
             logger.warning(f"Unknown script in data: {script_name}")
             continue
 
-        if script not in SCRIPT_RANGES:
+        ranges = SCRIPT_RANGES.get(script)
+        if not ranges:
             logger.warning(f"No Unicode ranges defined for {script_name}")
             continue
 
         included_scripts.add(script_name)
         count_before = len(vocab)
 
-        for start, end in SCRIPT_RANGES[script]:
+        for start, end in ranges:
             for cp in range(start, end + 1):
                 try:
                     char = chr(cp)
-                    cat = unicodedata.category(char)
-                    if cat.startswith('C'):
+                    if unicodedata.category(char).startswith('C'):
                         continue
                     if char not in vocab:
                         vocab[char] = next_id
@@ -1043,21 +1103,27 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
                 except (ValueError, OverflowError):
                     continue
 
-        count_added = len(vocab) - count_before
-        script_char_counts[script_name] = count_added
-        logger.info(f"  {script_name}: {count_added:,} characters")
+        added = len(vocab) - count_before
+        script_char_counts[script_name] = added
+        logger.info(f"  {script_name}: {added:,} characters")
 
-    # 3. Remaining observed characters not yet in vocab (edge cases)
+    # 3. Remaining observed edge characters
     for char, char_script_counts in observed_chars.items():
         if char not in vocab and char.strip():
             vocab[char] = next_id
             next_id += 1
-            best_script = max(char_script_counts, key=lambda x: x[1])[0] if char_script_counts else 'OTHER'
+            best_script = (
+                max(char_script_counts, key=lambda x: x[1])[0]
+                if char_script_counts else 'OTHER'
+            )
             script_char_counts[best_script] += 1
 
-    # Save vocabulary
+    # -----------------------------
+    # Persist vocabularies
+    # -----------------------------
+
     vocab_data = {
-        'version': 4,  # v4: native script (no romanization/decomposition)
+        'version': 4,
         'char_to_id': vocab,
         'observed_scripts': list(observed_scripts),
         'included_scripts': list(included_scripts),
@@ -1075,27 +1141,24 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Total vocabulary size: {len(vocab):,}")
 
     # Language vocabulary
-    languages = sorted(row[0] for row in conn.execute(
-        "SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ''"
-    ).fetchall())
+    languages = [
+        row[0]
+        for row in conn.execute(
+            "SELECT DISTINCT lang FROM toponyms "
+            "WHERE lang IS NOT NULL AND lang != ''"
+        ).fetchall()
+    ]
 
     lang_vocab = {'<UNK>': 0}
-    for i, lang in enumerate(languages, start=1):
+    for i, lang in enumerate(sorted(languages), start=1):
         lang_vocab[lang] = i
 
-    lang_path = output_dir / 'lang_vocab.json'
-    with open(lang_path, 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, ensure_ascii=False, indent=2)
+    with open(output_dir / 'lang_vocab.json', 'w', encoding='utf-8') as f:
+        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, indent=2)
 
-    logger.info(f"Language vocabulary saved: {lang_path} ({len(lang_vocab):,} languages)")
-
-    # Script vocabulary
     script_vocab = {s.value: i for i, s in enumerate(Script)}
-    script_path = output_dir / 'script_vocab.json'
-    with open(script_path, 'w', encoding='utf-8') as f:
+    with open(output_dir / 'script_vocab.json', 'w') as f:
         json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)
-
-    logger.info(f"Script vocabulary saved: {script_path}")
 
     return vocab_data['stats'], vocab
 
@@ -1486,7 +1549,7 @@ def dump_to_jsonl(
                     stats['in_training_ns'] += 1
                     # Route to appropriate worker pool based on language
                     work_item = (toponym_id, name, lang, script)
-                    if lang in ('gan', 'wuu', 'yue', 'ko'):
+                    if lang in ('zh', 'gan', 'wuu', 'yue', 'ko'):
                         charsiu_work.append(work_item)
                     elif lang == 'he':
                         phonikud_work.append(work_item)
