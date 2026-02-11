@@ -1,16 +1,6 @@
 #!/usr/bin/env python3
 """
 Training Data Generator - Main class for generating Symphonym training data.
-
-OPTIMISATIONS over v5:
-- _LocalManifest: Single ES scan materialised to Parquet, reused across phases.
-  Eliminates duplicate full-index scans for positive pairs and negative candidates.
-- _IntegerAdjacency: Integer-encoded edge set (~60% memory reduction vs string tuples).
-  Replaces Set[Tuple[str, str]] adjacency used in Phase 1 and Phase 3.
-- Manifest-derived negative sampling: Phase 1 builds ids_by_script from cached
-  manifest instead of a second full ES scan.
-
-PUBLIC API: Unchanged from v5.
 """
 
 import gc
@@ -43,158 +33,6 @@ from phonetics.extraction.es_knn_helper import ESKNNHelper
 from phonetics.extraction.streaming_writer import TripletStreamingWriter, MultiSplitStreamingWriter
 
 
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-class _LocalManifest:
-    """
-    Single ES scan materialised to local Parquet, reused across phases.
-
-    Contains: toponym_id, script, lang, attestations for all toponyms
-    with panphon_embedding in training namespaces.
-
-    Eliminates:
-    - Full scan in generate_positive_pairs() (attestations + script + lang)
-    - Full scan in generate_phase1_triplets_streaming() (negative candidate loading)
-
-    The manifest is built once (lazily) and cached to scratch_dir. Subsequent
-    calls within the same job or resumed jobs reuse the cached file.
-    """
-
-    def __init__(self, es, index: str, namespaces: List[str], path: Path):
-        self.es = es
-        self.index = index
-        self.namespaces = namespaces
-        self.path = path
-        self._loaded = False
-
-        # Lazily populated on ensure()
-        self.ids: List[str] = []
-        self.scripts: List[str] = []
-        self.langs: List[str] = []
-        self.attestations: List[List[str]] = []
-
-        # Derived indexes, built on ensure()
-        self.ids_by_script: Dict[str, List[str]] = {}
-        self.all_ids: List[str] = []
-
-    def ensure(self):
-        """Load manifest from cache or build from ES scan."""
-        if self._loaded:
-            return
-
-        if self.path.exists():
-            logger.info(f"Loading cached manifest from {self.path}")
-        else:
-            self._build()
-
-        table = pq.read_table(self.path)
-        self.ids = table['toponym_id'].to_pylist()
-        self.scripts = table['script'].to_pylist()
-        self.langs = table['lang'].to_pylist()
-        self.attestations = table['attestations'].to_pylist()
-
-        # Build derived indexes for negative sampling
-        self.all_ids = self.ids
-        ids_by_script: Dict[str, List[str]] = defaultdict(list)
-        for tid, script in zip(self.ids, self.scripts):
-            if script:
-                ids_by_script[script].append(tid)
-        self.ids_by_script = dict(ids_by_script)
-
-        logger.info(
-            f"Manifest loaded: {len(self.ids):,} toponyms, "
-            f"{len(self.ids_by_script)} scripts"
-        )
-        self._loaded = True
-
-    def _build(self):
-        """Single ES scan to build the manifest."""
-        logger.info("Building local toponym manifest (single ES scan)...")
-
-        ns_filter = [{"term": {"namespaces": ns}} for ns in self.namespaces]
-        query = {
-            "query": {
-                "bool": {
-                    "must": [{"exists": {"field": "panphon_embedding"}}],
-                    "should": ns_filter,
-                    "minimum_should_match": 1,
-                }
-            },
-            "_source": ["script", "lang", "attestations"],
-        }
-
-        rows = []
-        for hit in tqdm(
-            scan(self.es, index=self.index, query=query, scroll='5m', size=5000),
-            desc="Scanning ES for manifest"
-        ):
-            src = hit['_source']
-            rows.append({
-                'toponym_id': hit['_id'],
-                'script': src.get('script', 'UNKNOWN'),
-                'lang': src.get('lang', ''),
-                'attestations': src.get('attestations', []),
-            })
-
-        table = pa.Table.from_pylist(rows)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        pq.write_table(table, self.path, compression='zstd', row_group_size=128_000)
-        logger.info(f"Manifest written: {len(rows):,} rows -> {self.path}")
-
-
-class _IntegerAdjacency:
-    """
-    Memory-efficient adjacency set using integer-encoded edges.
-
-    Replaces Set[Tuple[str, str]] which stores two ~30-byte Python string
-    objects per edge. This stores a single 64-bit integer per edge.
-
-    For 10M edges: ~300MB (string tuples) -> ~80MB (int set).
-
-    The encoding is opaque — callers use add(a, b) and __contains__((a, b)).
-    """
-
-    __slots__ = ('_id_to_int', '_edges')
-
-    def __init__(self):
-        self._id_to_int: Dict[str, int] = {}
-        self._edges: set = set()
-
-    def _enc(self, tid: str) -> int:
-        idx = self._id_to_int.get(tid)
-        if idx is None:
-            idx = len(self._id_to_int)
-            self._id_to_int[tid] = idx
-        return idx
-
-    def add(self, a: str, b: str):
-        ia = self._enc(a)
-        ib = self._enc(b)
-        if ia > ib:
-            ia, ib = ib, ia
-        self._edges.add((ia << 32) | ib)
-
-    def __contains__(self, pair) -> bool:
-        """Support `(a, b) in adjacency` syntax for drop-in compatibility."""
-        a, b = pair
-        ia = self._id_to_int.get(a)
-        ib = self._id_to_int.get(b)
-        if ia is None or ib is None:
-            return False
-        if ia > ib:
-            ia, ib = ib, ia
-        return ((ia << 32) | ib) in self._edges
-
-    def __len__(self) -> int:
-        return len(self._edges)
-
-
-# ---------------------------------------------------------------------------
-# Generator
-# ---------------------------------------------------------------------------
-
 class TrainingDataGenerator:
     """Generates training data for all phases from ES."""
 
@@ -218,14 +56,6 @@ class TrainingDataGenerator:
 
         # DuckDB connection is optional
         self.conn = None
-
-        # Local manifest — single ES scan reused across phases
-        self._manifest = _LocalManifest(
-            es,
-            index="toponyms",
-            namespaces=training_namespaces,
-            path=scratch_dir / "toponym_manifest.parquet",
-        )
 
         self.stats = {
             'phase1': {'pairs': 0, 'triplets': 0, 'by_bin': {}},
@@ -306,21 +136,28 @@ class TrainingDataGenerator:
 
             # Second pass: batch fetch text metadata from ES
             logger.info("  Pass 2: Fetching text metadata from ES...")
-            raw_metadata = self._batch_mget(
-                list(all_ids),
-                source_fields=['name', 'script', 'lang'],
-                desc="Fetching text metadata",
-            )
-            text_metadata = {}
-            for tid, source in raw_metadata.items():
-                text_metadata[tid] = {
-                    'name': source.get('name', ''),
-                    'script': source.get('script', 'UNKNOWN'),
-                    'lang': source.get('lang', ''),
-                }
+            text_metadata = {}  # id -> {name, script, lang}
+            id_list = list(all_ids)
+            batch_size = 5000
+
+            for i in range(0, len(id_list), batch_size):
+                batch = id_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['name', 'script', 'lang'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        source = doc['_source']
+                        text_metadata[doc['_id']] = {
+                            'name': source.get('name', ''),
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                        }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"    Fetched {min(i + batch_size, len(id_list)):,} / {len(id_list):,}...")
 
             logger.info(f"  Fetched metadata for {len(text_metadata):,} toponyms")
-            del all_ids  # Free memory
+            del all_ids, id_list  # Free memory
 
             # Third pass: stream through data, add text fields, write to new file
             logger.info("  Pass 3: Writing augmented file...")
@@ -394,58 +231,6 @@ class TrainingDataGenerator:
 
         logger.info(f"Loaded {len(df):,} pairs across {len(pairs_by_bin)} bins")
         return pairs_by_bin
-
-    def _build_adjacency(self, pairs_by_bin: Dict[str, List[Tuple]]) -> _IntegerAdjacency:
-        """Build integer-encoded adjacency from pairs. Reusable across phases."""
-        adjacency = _IntegerAdjacency()
-        for pairs in pairs_by_bin.values():
-            for id_a, id_b, _ in pairs:
-                adjacency.add(id_a, id_b)
-        return adjacency
-
-    def _batch_mget(
-        self,
-        ids: List[str],
-        source_fields: List[str],
-        batch_size: int = 5000,
-        desc: str = "Fetching",
-    ) -> Dict[str, dict]:
-        """
-        Batch mget with progress logging and failure tracking.
-
-        Returns dict mapping toponym_id -> _source dict for found documents.
-        Periodically checks ES failure threshold to abort early on flaky connections.
-        """
-        results = {}
-        mget_failures = 0
-
-        for i in range(0, len(ids), batch_size):
-            batch = ids[i:i + batch_size]
-            try:
-                docs = self.es.mget(index="toponyms", body={"ids": batch},
-                                    _source=source_fields)
-                for doc in docs.get('docs', []):
-                    if doc.get('found') and '_source' in doc:
-                        results[doc['_id']] = doc['_source']
-            except Exception as e:
-                mget_failures += 1
-                logger.warning(f"mget batch failed ({len(batch)} ids): {e}")
-
-            if (i + batch_size) % 50000 < batch_size:
-                logger.info(f"  {desc}: {min(i + batch_size, len(ids)):,} / {len(ids):,}...")
-                if mget_failures > 0:
-                    failure_pct = mget_failures / ((i // batch_size) + 1)
-                    logger.warning(f"  mget failure rate: {failure_pct:.1%} ({mget_failures} batches)")
-                    if failure_pct > 0.1:
-                        raise RuntimeError(
-                            f"mget failure rate ({failure_pct:.1%}) too high — "
-                            f"aborting to prevent silent data loss"
-                        )
-
-        if mget_failures > 0:
-            logger.warning(f"Total mget failures: {mget_failures} batches out of {(len(ids) + batch_size - 1) // batch_size}")
-
-        return results
 
     def generate_all(self):
         """Generate training data for all phases."""
@@ -543,12 +328,7 @@ class TrainingDataGenerator:
         return self.stats
 
     def generate_positive_pairs(self) -> Dict[str, List[Tuple]]:
-        """
-        Generate positive pairs from co-located toponyms.
-
-        Uses _LocalManifest to avoid a full ES scan — attestations, script, and
-        lang are read from the cached Parquet manifest instead.
-        """
+        """Generate positive pairs from co-located toponyms."""
         pairs_by_bin: Dict[str, List[Tuple]] = defaultdict(list)
 
         cluster_stats = {
@@ -560,22 +340,34 @@ class TrainingDataGenerator:
             'cluster_sizes': Counter(),
         }
 
-        # Use manifest instead of ES scan
-        logger.info("Loading toponym manifest for pair generation...")
-        self._manifest.ensure()
+        logger.info("Querying ES for toponyms with PanPhon embeddings...")
 
-        logger.info("Grouping toponyms by place...")
+        ns_filter = [{"term": {"namespaces": ns}} for ns in self.training_namespaces]
+
+        query = {
+            "query": {
+                "bool": {
+                    "must": [{"exists": {"field": "panphon_embedding"}}],
+                    "should": ns_filter,
+                    "minimum_should_match": 1
+                }
+            },
+            "_source": ["attestations", "script", "lang"]
+        }
+
         places: Dict[str, List[Tuple[str, str, str]]] = defaultdict(list)
         total_attestations = 0
 
-        for tid, script, lang, atts in zip(
-            self._manifest.ids,
-            self._manifest.scripts,
-            self._manifest.langs,
-            self._manifest.attestations,
-        ):
-            for place_id in atts:
-                places[place_id].append((tid, script, lang))
+        for hit in tqdm(scan(self.es, index="toponyms", query=query, scroll='5m', size=5000),
+                        desc="Scanning ES for toponyms"):
+            toponym_id = hit['_id']
+            source = hit['_source']
+            script = source.get('script', 'UNKNOWN')
+            lang = source.get('lang', '')
+            attestations = source.get('attestations', [])
+
+            for place_id in attestations:
+                places[place_id].append((toponym_id, script, lang))
                 total_attestations += 1
 
         logger.info(f"Found {total_attestations:,} toponym attestations")
@@ -810,8 +602,7 @@ class TrainingDataGenerator:
         # Use streaming writer
         writer = MultiSplitStreamingWriter(training_dir, batch_size=PARQUET_BATCH_SIZE)
 
-        # Stream from ES — Phase 2 needs name, ipa, panphon_embedding which
-        # the manifest doesn't store, so this scan is unavoidable
+        # Stream from ES
         logger.info("Pass 2: Streaming and writing...")
 
         es_query = {
@@ -905,16 +696,20 @@ class TrainingDataGenerator:
         """
         Generate Phase 1 triplets with STREAMING writes to avoid OOM.
 
-        Uses _IntegerAdjacency for memory-efficient edge storage and
-        _LocalManifest for negative candidate sampling (no second ES scan).
+        This is the key memory optimization: instead of building 27M+ triplets
+        in memory, we stream them to disk in batches.
         """
         logger.info("=" * 60)
         logger.info("PHASE 1: Streaming triplet generation (memory-efficient)")
         logger.info("=" * 60)
 
-        # Build integer-encoded adjacency (reused if Phase 3 runs after)
+        # Build adjacency set
         logger.info("Building adjacency set...")
-        adjacency = self._build_adjacency(pairs_by_bin)
+        adjacency: Set[Tuple[str, str]] = set()
+        for pairs in pairs_by_bin.values():
+            for id_a, id_b, _ in pairs:
+                adjacency.add((id_a, id_b))
+                adjacency.add((id_b, id_a))
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
         # Collect all unique toponym IDs we need features for
@@ -930,34 +725,55 @@ class TrainingDataGenerator:
         logger.info(f"Loading toponym data for {len(all_anchor_ids):,} toponyms...")
         toponym_data_map = {}
         attestation_map = {}  # toponym_id -> Set[attestation_id]
+        anchor_list = list(all_anchor_ids)
+        batch_size = 5000
 
-        raw_data = self._batch_mget(
-            list(all_anchor_ids),
-            source_fields=['script', 'lang', 'panphon_embedding', 'attestations'],
-            desc="Loading toponym data",
-        )
+        for i in range(0, len(anchor_list), batch_size):
+            batch = anchor_list[i:i + batch_size]
+            docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                _source=['script', 'lang', 'panphon_embedding', 'attestations'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    toponym_id = doc['_id']
+                    source = doc['_source']
+                    embedding = source.get('panphon_embedding')
 
-        for toponym_id, source in raw_data.items():
-            embedding = source.get('panphon_embedding')
-            if embedding and len(embedding) > 0:
-                toponym_data_map[toponym_id] = {
-                    'script': source.get('script', 'UNKNOWN'),
-                    'lang': source.get('lang', ''),
-                    'features': np.array(embedding, dtype=np.float32),
-                    'feature_length': len(embedding) // 24,
-                }
-                attestation_map[toponym_id] = set(source.get('attestations', []))
+                    if embedding and len(embedding) > 0:
+                        # Store as numpy float32 to save memory
+                        toponym_data_map[toponym_id] = {
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                            'features': np.array(embedding, dtype=np.float32),
+                            'feature_length': len(embedding) // 24,
+                        }
+                        # Store attestations as a set for O(1) intersection checks
+                        attestation_map[toponym_id] = set(source.get('attestations', []))
 
-        del raw_data
+            if (i + batch_size) % 50000 < batch_size:
+                logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
+
         logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
 
-        # Load negative candidates from manifest (no second ES scan)
-        logger.info("Loading negative candidates from manifest...")
-        self._manifest.ensure()
-        all_ids = self._manifest.all_ids
-        ids_by_script = self._manifest.ids_by_script
+        # Load negative candidates grouped by script (attestations fetched lazily during validation)
+        logger.info("Loading negative candidates by script...")
+        all_ids = []
+        ids_by_script: Dict[str, List[str]] = defaultdict(list)
 
-        logger.info(f"Negative candidate pool: {len(all_ids):,} IDs, {len(ids_by_script)} scripts")
+        neg_query = {
+            "query": {"exists": {"field": "panphon_embedding"}},
+            "_source": ["script"]
+        }
+
+        for hit in tqdm(scan(self.es, index="toponyms", query=neg_query, scroll='5m', size=10000),
+                        desc="Loading negatives"):
+            toponym_id = hit['_id']
+            source = hit['_source']
+            script = source.get('script', 'UNKNOWN')
+            all_ids.append(toponym_id)
+            if script:
+                ids_by_script[script].append(toponym_id)
+
+        logger.info(f"Loaded {len(all_ids):,} negative candidates")
 
         # Apply bin balancing
         logger.info("Applying bin-balancing...")
@@ -1029,16 +845,20 @@ class TrainingDataGenerator:
 
         # Pass 1b: Batch fetch attestations for all candidates
         logger.info("Pass 1b: Fetching attestations for candidates...")
-        raw_attestations = self._batch_mget(
-            list(all_candidates),
-            source_fields=['attestations'],
-            desc="Fetching candidate attestations",
-        )
-        candidate_attestations_map = {
-            tid: set(source.get('attestations', []))
-            for tid, source in raw_attestations.items()
-        }
-        del raw_attestations
+        candidate_attestations_map = {}
+        candidate_list = list(all_candidates)
+        batch_size = 5000
+
+        for i in range(0, len(candidate_list), batch_size):
+            batch = candidate_list[i:i + batch_size]
+            docs = self.es.mget(index="toponyms", body={"ids": batch}, _source=['attestations'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    candidate_attestations_map[doc['_id']] = set(doc['_source'].get('attestations', []))
+
+            if (i + batch_size) % 100000 < batch_size:
+                logger.info(f"  Fetched {min(i + batch_size, len(candidate_list)):,} / {len(candidate_list):,}...")
+
         logger.info(f"Fetched attestations for {len(candidate_attestations_map):,} candidates")
 
         # Pass 1c: Validate candidates and select final negatives
@@ -1079,19 +899,25 @@ class TrainingDataGenerator:
         negative_features = {}  # negative_id -> {features, feature_length}
         if negatives_to_fetch:
             logger.info("Pass 2: Batch fetching negative features...")
-            raw_neg = self._batch_mget(
-                list(negatives_to_fetch),
-                source_fields=['panphon_embedding'],
-                desc="Fetching negative features",
-            )
-            for tid, source in raw_neg.items():
-                emb = source.get('panphon_embedding')
-                if emb and len(emb) > 0:
-                    negative_features[tid] = {
-                        'features': np.array(emb, dtype=np.float32),
-                        'feature_length': len(emb) // 24,
-                    }
-            del raw_neg
+            neg_list = list(negatives_to_fetch)
+            batch_size = 5000
+
+            for i in range(0, len(neg_list), batch_size):
+                batch = neg_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['panphon_embedding'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        emb = doc['_source'].get('panphon_embedding')
+                        if emb and len(emb) > 0:
+                            negative_features[doc['_id']] = {
+                                'features': np.array(emb, dtype=np.float32),
+                                'feature_length': len(emb) // 24,
+                            }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"  Fetched {min(i + batch_size, len(neg_list)):,} / {len(neg_list):,}...")
+
             logger.info(f"Fetched features for {len(negative_features):,} negatives")
 
         # Pass 3: Stream triplets to Parquet
@@ -1148,18 +974,18 @@ class TrainingDataGenerator:
     def generate_phase3_triplets_streaming(self, pairs_by_bin: Dict[str, List[Tuple]]):
         """
         Generate Phase 3 triplets with hard negatives using streaming writes.
-
-        Uses _IntegerAdjacency for memory-efficient edge storage.
-        Reuses toponym_data_map embeddings for KNN queries instead of
-        fetching them separately via batch_get_embeddings.
         """
         logger.info("=" * 60)
         logger.info("PHASE 3: Streaming hard negative triplet generation")
         logger.info("=" * 60)
 
-        # Build integer-encoded adjacency
+        # Build adjacency set
         logger.info("Building adjacency set...")
-        adjacency = self._build_adjacency(pairs_by_bin)
+        adjacency: Set[Tuple[str, str]] = set()
+        for pairs in pairs_by_bin.values():
+            for id_a, id_b, _ in pairs:
+                adjacency.add((id_a, id_b))
+                adjacency.add((id_b, id_a))
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
         # Apply bin balancing
@@ -1186,26 +1012,33 @@ class TrainingDataGenerator:
         logger.info("Loading anchor info, features, and attestations...")
         toponym_data_map = {}  # toponym_id -> {script, lang, name, features, feature_length}
         attestation_map = {}  # toponym_id -> Set[attestation_id]
+        anchor_list = list(unique_anchors)
+        batch_size = 5000
 
-        raw_data = self._batch_mget(
-            list(unique_anchors),
-            source_fields=['name', 'script', 'lang', 'panphon_embedding', 'attestations'],
-            desc="Loading anchor data",
-        )
+        for i in range(0, len(anchor_list), batch_size):
+            batch = anchor_list[i:i + batch_size]
+            docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                _source=['name', 'script', 'lang', 'panphon_embedding', 'attestations'])
+            for doc in docs.get('docs', []):
+                if doc.get('found') and '_source' in doc:
+                    toponym_id = doc['_id']
+                    source = doc['_source']
+                    embedding = source.get('panphon_embedding')
 
-        for toponym_id, source in raw_data.items():
-            embedding = source.get('panphon_embedding')
-            if embedding and len(embedding) > 0:
-                toponym_data_map[toponym_id] = {
-                    'name': source.get('name', ''),
-                    'script': source.get('script', 'UNKNOWN'),
-                    'lang': source.get('lang', ''),
-                    'features': np.array(embedding, dtype=np.float32),
-                    'feature_length': len(embedding) // 24,
-                }
-                attestation_map[toponym_id] = set(source.get('attestations', []))
+                    if embedding and len(embedding) > 0:
+                        toponym_data_map[toponym_id] = {
+                            'name': source.get('name', ''),
+                            'script': source.get('script', 'UNKNOWN'),
+                            'lang': source.get('lang', ''),
+                            'features': np.array(embedding, dtype=np.float32),
+                            'feature_length': len(embedding) // 24,
+                        }
+                        # Store attestations as a set for O(1) intersection checks
+                        attestation_map[toponym_id] = set(source.get('attestations', []))
 
-        del raw_data
+            if (i + batch_size) % 50000 < batch_size:
+                logger.info(f"  Loaded {min(i + batch_size, len(anchor_list)):,} / {len(anchor_list):,}...")
+
         logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
 
         # Build pairs to process
@@ -1220,14 +1053,19 @@ class TrainingDataGenerator:
 
         logger.info(f"Processing {len(all_pairs_to_process):,} pairs...")
 
-        # Extract embeddings for KNN from already-loaded toponym_data_map
-        # This avoids a redundant batch_get_embeddings fetch from ES
-        logger.info("Extracting embeddings for KNN from loaded data...")
+        # Pre-fetch embeddings for KNN queries (these are used for the KNN search)
+        all_anchors = list(set(p[0] for p in all_pairs_to_process))
+        logger.info(f"Pre-fetching embeddings for {len(all_anchors):,} anchors...")
+
         anchor_embeddings = {}
-        for tid, data in toponym_data_map.items():
-            # Convert numpy float32 back to list for KNN helper compatibility
-            anchor_embeddings[tid] = data['features'].tolist()
-        logger.info(f"Prepared {len(anchor_embeddings):,} embeddings for KNN")
+        for i in range(0, len(all_anchors), 5000):
+            batch = all_anchors[i:i + 5000]
+            batch_embs = self.knn.batch_get_embeddings(batch)
+            anchor_embeddings.update(batch_embs)
+            if (i + 5000) % 50000 < 5000:
+                logger.info(f"  Fetched {min(i + 5000, len(all_anchors)):,} / {len(all_anchors):,}")
+
+        logger.info(f"Fetched {len(anchor_embeddings):,} embeddings")
 
         # Set up streaming writer
         triplets_dir = self.output_dir / 'triplets' / 'phase3'
@@ -1304,22 +1142,29 @@ class TrainingDataGenerator:
         negative_features = {}
         if negatives_to_fetch:
             logger.info("Pass 2: Batch fetching negative features...")
-            raw_neg = self._batch_mget(
-                list(negatives_to_fetch),
-                source_fields=['name', 'script', 'lang', 'panphon_embedding'],
-                desc="Fetching negative features",
-            )
-            for tid, source in raw_neg.items():
-                emb = source.get('panphon_embedding')
-                if emb and len(emb) > 0:
-                    negative_features[tid] = {
-                        'name': source.get('name', ''),
-                        'script': source.get('script', 'UNKNOWN'),
-                        'lang': source.get('lang', ''),
-                        'features': np.array(emb, dtype=np.float32),
-                        'feature_length': len(emb) // 24,
-                    }
-            del raw_neg
+            neg_list = list(negatives_to_fetch)
+            batch_size = 5000
+
+            for i in range(0, len(neg_list), batch_size):
+                batch = neg_list[i:i + batch_size]
+                docs = self.es.mget(index="toponyms", body={"ids": batch},
+                                    _source=['name', 'script', 'lang', 'panphon_embedding'])
+                for doc in docs.get('docs', []):
+                    if doc.get('found') and '_source' in doc:
+                        source = doc['_source']
+                        emb = source.get('panphon_embedding')
+                        if emb and len(emb) > 0:
+                            negative_features[doc['_id']] = {
+                                'name': source.get('name', ''),
+                                'script': source.get('script', 'UNKNOWN'),
+                                'lang': source.get('lang', ''),
+                                'features': np.array(emb, dtype=np.float32),
+                                'feature_length': len(emb) // 24,
+                            }
+
+                if (i + batch_size) % 50000 < batch_size:
+                    logger.info(f"  Fetched {min(i + batch_size, len(neg_list)):,} / {len(neg_list):,}...")
+
             logger.info(f"Fetched features for {len(negative_features):,} negatives")
 
         # Pass 3: Stream triplets to Parquet
@@ -1389,7 +1234,6 @@ class TrainingDataGenerator:
 
         # Free memory
         del toponym_data_map
-        del anchor_embeddings
         del negative_features
         del triplet_specs
         gc.collect()
