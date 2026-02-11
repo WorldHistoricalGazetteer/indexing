@@ -281,8 +281,8 @@ def main():
                         help='Output Parquet file path')
     parser.add_argument('--training-namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
                         help='Namespaces to process')
-    parser.add_argument('--batch-size', type=int, default=64,
-                        help='Batch size for GPU inference (default: 64)')
+    parser.add_argument('--batch-size', type=int, default=128,
+                        help='Batch size for GPU inference (default: 128)')
     parser.add_argument('--device', default='cuda',
                         help='Device for neural models (cuda/cpu)')
     parser.add_argument('--scratch-dir', type=Path, default=None,

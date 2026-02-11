@@ -49,24 +49,28 @@ from phonetics.extraction.streaming_writer import TripletStreamingWriter, MultiS
 
 class _LocalManifest:
     """
-    Single ES scan materialised to local Parquet, reused across phases.
+    Single scan materialised to local Parquet, reused across phases.
 
     Contains: toponym_id, script, lang, attestations for all toponyms
-    with panphon_embedding in training namespaces.
+    with IPA/PanPhon in training namespaces.
+
+    Build sources (in priority order):
+    1. Cached Parquet on disk (instant reload)
+    2. DuckDB (seconds — local columnar scan)
+    3. ES scan (minutes — fallback if no DuckDB available)
 
     Eliminates:
     - Full scan in generate_positive_pairs() (attestations + script + lang)
     - Full scan in generate_phase1_triplets_streaming() (negative candidate loading)
-
-    The manifest is built once (lazily) and cached to scratch_dir. Subsequent
-    calls within the same job or resumed jobs reuse the cached file.
     """
 
-    def __init__(self, es, index: str, namespaces: List[str], path: Path):
+    def __init__(self, es, index: str, namespaces: List[str], path: Path,
+                 db_path: Optional[str] = None):
         self.es = es
         self.index = index
         self.namespaces = namespaces
         self.path = path
+        self.db_path = db_path
         self._loaded = False
 
         # Lazily populated on ensure()
@@ -80,14 +84,18 @@ class _LocalManifest:
         self.all_ids: List[str] = []
 
     def ensure(self):
-        """Load manifest from cache or build from ES scan."""
+        """Load manifest from cache, or build from DuckDB/ES."""
         if self._loaded:
             return
 
         if self.path.exists():
             logger.info(f"Loading cached manifest from {self.path}")
+        elif self.db_path and Path(self.db_path).exists():
+            self._build_from_duckdb()
         else:
-            self._build()
+            if self.db_path:
+                logger.info(f"DuckDB not found at {self.db_path}, falling back to ES scan")
+            self._build_from_es()
 
         table = pq.read_table(self.path)
         self.ids = table['toponym_id'].to_pylist()
@@ -109,9 +117,38 @@ class _LocalManifest:
         )
         self._loaded = True
 
-    def _build(self):
-        """Single ES scan to build the manifest."""
-        logger.info("Building local toponym manifest (single ES scan)...")
+    def _build_from_duckdb(self):
+        """Build manifest from DuckDB (seconds, no network)."""
+        import duckdb
+
+        logger.info(f"Building manifest from DuckDB: {self.db_path}")
+
+        conn = duckdb.connect(self.db_path, read_only=True)
+
+        ns_sql = ','.join(f"'{ns}'" for ns in self.namespaces)
+
+        result = conn.execute(f'''
+            SELECT t.toponym_id,
+                   t.script,
+                   t.lang,
+                   LIST(DISTINCT ta.place_id) as attestations
+            FROM toponyms t
+            JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+            LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+            WHERE t.ipa IS NOT NULL
+              AND tn.namespace IN ({ns_sql})
+            GROUP BY t.toponym_id, t.script, t.lang
+        ''').arrow()
+
+        conn.close()
+
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        pq.write_table(result, self.path, compression='zstd', row_group_size=128_000)
+        logger.info(f"Manifest written from DuckDB: {len(result):,} rows -> {self.path}")
+
+    def _build_from_es(self):
+        """Build manifest from ES scan (fallback)."""
+        logger.info("Building local toponym manifest (ES scan fallback)...")
 
         ns_filter = [{"term": {"namespaces": ns}} for ns in self.namespaces]
         query = {
@@ -141,7 +178,7 @@ class _LocalManifest:
         table = pa.Table.from_pylist(rows)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         pq.write_table(table, self.path, compression='zstd', row_group_size=128_000)
-        logger.info(f"Manifest written: {len(rows):,} rows -> {self.path}")
+        logger.info(f"Manifest written from ES: {len(rows):,} rows -> {self.path}")
 
 
 class _IntegerAdjacency:
@@ -219,12 +256,14 @@ class TrainingDataGenerator:
         # DuckDB connection is optional
         self.conn = None
 
-        # Local manifest — single ES scan reused across phases
+        # Local manifest — single scan reused across phases
+        # Prefers DuckDB (seconds) over ES scan (minutes) when db_path is available
         self._manifest = _LocalManifest(
             es,
             index="toponyms",
             namespaces=training_namespaces,
             path=scratch_dir / "toponym_manifest.parquet",
+            db_path=db_path,
         )
 
         self.stats = {
