@@ -873,154 +873,54 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     return places_processed, toponyms_extracted, toponyms_skipped
 
 
-def rebuild_vocab_stats_from_toponyms(conn):
-    """
-    Rebuild observed character/script stats directly from toponyms
-    using DuckDB-native aggregation.
-
-    Returns:
-        observed_chars: Dict[str, List[Tuple[str, int]]]
-        observed_scripts: Set[str]
-    """
-
-    logger.info("Rebuilding vocab stats from toponyms using DuckDB aggregation")
-
-    # Clear existing stats
-    conn.execute("DELETE FROM observed_chars")
-    conn.execute("DELETE FROM script_stats")
-
-    # 1. Script counts (cheap)
-    conn.execute("""
-        INSERT INTO script_stats (script, count)
-        SELECT
-            script,
-            COUNT(*) AS count
-        FROM toponyms
-        WHERE script IS NOT NULL
-          AND script != ''
-        GROUP BY script
-    """)
-
-    # 2. Character counts (expensive, but SQL-fast)
-    #
-    # Notes:
-    # - string_split(lower(name), '') explodes Unicode codepoints
-    # - filter whitespace explicitly
-    # - grouping happens inside DuckDB, not Python
-    #
-    conn.execute("""
-        INSERT INTO observed_chars (char, script, count)
-        SELECT
-            ch AS char,
-            script,
-            COUNT(*) AS count
-        FROM (
-            SELECT
-                UNNEST(string_split(lower(name), '')) AS ch,
-                script
-            FROM toponyms
-            WHERE name IS NOT NULL
-              AND name != ''
-              AND script IS NOT NULL
-              AND script != ''
-        ) t
-        WHERE ch IS NOT NULL
-          AND ch != ''
-          AND ch != ' '
-        GROUP BY ch, script
-    """)
-
-    conn.commit()
-
-    # 3. Load results back into Python (small)
-    observed_chars = defaultdict(list)
-    for ch, script, count in conn.execute(
-        "SELECT char, script, count FROM observed_chars"
-    ).fetchall():
-        observed_chars[ch].append((script, count))
-
-    observed_scripts = {
-        row[0]
-        for row in conn.execute("SELECT script FROM script_stats").fetchall()
-    }
-
-    logger.info(
-        f"Rebuilt vocab stats: "
-        f"{len(observed_chars):,} unique chars, "
-        f"{len(observed_scripts)} scripts"
-    )
-
-    return dict(observed_chars), observed_scripts
-
-
 def generate_vocabulary(conn, output_dir: Path) -> Dict:
     """
     Generate expanded character vocabulary from observed characters.
-    """
 
+    Strategy:
+    1. Start with all observed characters (native scripts)
+    2. Expand to full Unicode blocks for ALL observed scripts (including CJK, Hangul)
+    3. Add full ASCII printable range
+    4. Catch any remaining observed characters
+
+    The character encoder sees native script — no romanization or decomposition.
+    Cross-script matching is handled by Symphonym's phonetic embeddings, not
+    by reducing everything to ASCII.
+
+    Returns statistics dict.
+    """
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Fast emptiness check (O(1))
-    has_chars = conn.execute(
-        "SELECT 1 FROM observed_chars LIMIT 1"
-    ).fetchone() is not None
+    observed_chars: Dict[str, List[Tuple[str, int]]] = defaultdict(list)
+    for row in conn.execute('SELECT char, script, count FROM observed_chars').fetchall():
+        char, script, count = row
+        observed_chars[char].append((script, count))
 
-    has_scripts = conn.execute(
-        "SELECT 1 FROM script_stats LIMIT 1"
-    ).fetchone() is not None
+    observed_scripts = {row[0] for row in conn.execute('SELECT script, count FROM script_stats').fetchall()}
 
-    if not has_chars or not has_scripts:
-        logger.warning(
-            "observed_chars/script_stats empty; rebuilding from toponyms table"
-        )
-        observed_chars, observed_scripts = rebuild_vocab_stats_from_toponyms(conn)
-        if not observed_chars or not observed_scripts:
-            raise RuntimeError(
-                "Vocabulary rebuild failed: no observed characters/scripts found"
-            )
-    else:
-        # Load aggregated stats (small tables)
-        observed_chars = defaultdict(list)
-        for ch, script, count in conn.execute(
-            "SELECT char, script, count FROM observed_chars"
-        ).fetchall():
-            observed_chars[ch].append((script, count))
-
-        observed_scripts = {
-            row[0]
-            for row in conn.execute("SELECT script FROM script_stats").fetchall()
-        }
-
-    logger.info(
-        f"Observed {len(observed_chars):,} unique characters "
-        f"across {len(observed_scripts)} scripts"
-    )
-
-    # -----------------------------
-    # Vocabulary construction
-    # -----------------------------
+    logger.info(f"Observed {len(observed_chars):,} unique characters across {len(observed_scripts)} scripts")
 
     vocab = {
         '<PAD>': 0,
         '<UNK>': 1,
         '<SPACE>': 2,
     }
-    next_id = 10  # reserve 3–9
+    next_id = 10  # Reserve 3-9
 
     included_scripts = set()
     script_char_counts = defaultdict(int)
 
-    # 1. ASCII printable range
-    logger.info("Adding ASCII printable range")
+    # 1. ASCII printable range (32-126)
+    logger.info("Adding ASCII printable range...")
     for cp in range(32, 127):
         char = chr(cp)
-        if char != ' ' and char not in vocab:
+        if char not in vocab and char != ' ':
             vocab[char] = next_id
             next_id += 1
             script_char_counts['ASCII'] += 1
 
-    # 2. Unicode ranges per observed script
-    logger.info("Expanding Unicode ranges for observed scripts")
+    # 2. Full Unicode ranges for ALL observed scripts
+    logger.info("Expanding to full Unicode ranges for observed scripts...")
     for script_name in observed_scripts:
         try:
             script = Script(script_name)
@@ -1028,19 +928,19 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
             logger.warning(f"Unknown script in data: {script_name}")
             continue
 
-        ranges = SCRIPT_RANGES.get(script)
-        if not ranges:
+        if script not in SCRIPT_RANGES:
             logger.warning(f"No Unicode ranges defined for {script_name}")
             continue
 
         included_scripts.add(script_name)
         count_before = len(vocab)
 
-        for start, end in ranges:
+        for start, end in SCRIPT_RANGES[script]:
             for cp in range(start, end + 1):
                 try:
                     char = chr(cp)
-                    if unicodedata.category(char).startswith('C'):
+                    cat = unicodedata.category(char)
+                    if cat.startswith('C'):
                         continue
                     if char not in vocab:
                         vocab[char] = next_id
@@ -1048,27 +948,21 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
                 except (ValueError, OverflowError):
                     continue
 
-        added = len(vocab) - count_before
-        script_char_counts[script_name] = added
-        logger.info(f"  {script_name}: {added:,} characters")
+        count_added = len(vocab) - count_before
+        script_char_counts[script_name] = count_added
+        logger.info(f"  {script_name}: {count_added:,} characters")
 
-    # 3. Remaining observed edge characters
+    # 3. Remaining observed characters not yet in vocab (edge cases)
     for char, char_script_counts in observed_chars.items():
         if char not in vocab and char.strip():
             vocab[char] = next_id
             next_id += 1
-            best_script = (
-                max(char_script_counts, key=lambda x: x[1])[0]
-                if char_script_counts else 'OTHER'
-            )
+            best_script = max(char_script_counts, key=lambda x: x[1])[0] if char_script_counts else 'OTHER'
             script_char_counts[best_script] += 1
 
-    # -----------------------------
-    # Persist vocabularies
-    # -----------------------------
-
+    # Save vocabulary
     vocab_data = {
-        'version': 4,
+        'version': 4,  # v4: native script (no romanization/decomposition)
         'char_to_id': vocab,
         'observed_scripts': list(observed_scripts),
         'included_scripts': list(included_scripts),
@@ -1086,24 +980,27 @@ def generate_vocabulary(conn, output_dir: Path) -> Dict:
     logger.info(f"Total vocabulary size: {len(vocab):,}")
 
     # Language vocabulary
-    languages = [
-        row[0]
-        for row in conn.execute(
-            "SELECT DISTINCT lang FROM toponyms "
-            "WHERE lang IS NOT NULL AND lang != ''"
-        ).fetchall()
-    ]
+    languages = sorted(row[0] for row in conn.execute(
+        "SELECT DISTINCT lang FROM toponyms WHERE lang IS NOT NULL AND lang != ''"
+    ).fetchall())
 
     lang_vocab = {'<UNK>': 0}
-    for i, lang in enumerate(sorted(languages), start=1):
+    for i, lang in enumerate(languages, start=1):
         lang_vocab[lang] = i
 
-    with open(output_dir / 'lang_vocab.json', 'w', encoding='utf-8') as f:
-        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, indent=2)
+    lang_path = output_dir / 'lang_vocab.json'
+    with open(lang_path, 'w', encoding='utf-8') as f:
+        json.dump({'version': 1, 'lang_to_id': lang_vocab}, f, ensure_ascii=False, indent=2)
 
+    logger.info(f"Language vocabulary saved: {lang_path} ({len(lang_vocab):,} languages)")
+
+    # Script vocabulary
     script_vocab = {s.value: i for i, s in enumerate(Script)}
-    with open(output_dir / 'script_vocab.json', 'w') as f:
+    script_path = output_dir / 'script_vocab.json'
+    with open(script_path, 'w', encoding='utf-8') as f:
         json.dump({'version': 1, 'script_to_id': script_vocab}, f, indent=2)
+
+    logger.info(f"Script vocabulary saved: {script_path}")
 
     return vocab_data['stats'], vocab
 
@@ -1385,6 +1282,52 @@ def load_precomputed_phonetics(parquet_path: Path) -> Dict[str, Tuple[str, bytes
 NEURAL_LANGS = {'zh', 'ko', 'gan', 'wuu', 'yue', 'he'}
 
 
+def _embedding_from_packed_features(packed: bytes) -> Optional[List[float]]:
+    """
+    Derive the 192-dim positional embedding from packed PanPhon features.
+
+    This reconstructs the same embedding that to_embedding() produces,
+    but from the stored features blob rather than re-running PanPhon.
+
+    The packed blob contains N×24 floats (24 features per IPA segment).
+    The embedding is 8-bin positional pooling: each segment is assigned
+    to a bin based on its position, and features are averaged within bins.
+    """
+    if not packed:
+        return None
+
+    num_floats = len(packed) // 4
+    features_per_segment = 24
+
+    if num_floats < features_per_segment or num_floats % features_per_segment != 0:
+        return None
+
+    all_features = struct.unpack(f'{num_floats}f', packed)
+    num_segments = num_floats // features_per_segment
+
+    num_bins = 8
+    bins = [[0.0] * features_per_segment for _ in range(num_bins)]
+    bin_counts = [0] * num_bins
+
+    for seg_idx in range(num_segments):
+        position = seg_idx / num_segments
+        bin_idx = min(int(position * num_bins), num_bins - 1)
+        offset = seg_idx * features_per_segment
+
+        for i in range(features_per_segment):
+            bins[bin_idx][i] += all_features[offset + i]
+        bin_counts[bin_idx] += 1
+
+    embedding = []
+    for bin_idx in range(num_bins):
+        if bin_counts[bin_idx] > 0:
+            embedding.extend(v / bin_counts[bin_idx] for v in bins[bin_idx])
+        else:
+            embedding.extend([0.0] * features_per_segment)
+
+    return embedding
+
+
 def dump_to_jsonl(
     conn,
     output_path: Path,
@@ -1446,6 +1389,7 @@ def dump_to_jsonl(
         'with_panphon': 0,
         'precomputed_hits': 0,
         'epitran_computed': 0,
+        'db_cached': 0,
         'neural_skipped': 0,
         'by_script': Counter(),
         'by_script_lang_ipa': Counter(),
@@ -1457,12 +1401,14 @@ def dump_to_jsonl(
                t.lang,
                t.lang_variant,
                t.script,
+               t.ipa,
+               t.panphon_features,
                GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
                GROUP_CONCAT(DISTINCT ta.place_id) as attestations
         FROM toponyms t
         JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
         LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-        GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
+        GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script, t.ipa, t.panphon_features
     ''')
 
     # Accumulate IPA/PanPhon updates during streaming, apply after cursor is done
@@ -1491,10 +1437,11 @@ def dump_to_jsonl(
 
             # Phase 1: Build documents, separate precomputed vs Epitran work
             batch_docs = []
-            epitran_work = []  # Only non-neural languages
+            epitran_work = []  # Only non-neural languages without existing IPA
 
             for row in rows:
-                toponym_id, name, lang, lang_variant, script, namespaces_str, attestations_str = row
+                toponym_id, name, lang, lang_variant, script, \
+                    existing_ipa, existing_features, namespaces_str, attestations_str = row
                 namespaces = namespaces_str.split(',') if namespaces_str else []
                 attestations = attestations_str.split(',') if attestations_str else []
                 primary_ns = get_primary_namespace(namespaces)
@@ -1525,8 +1472,22 @@ def dump_to_jsonl(
                 if is_in_training_ns:
                     stats['in_training_ns'] += 1
 
-                    # Check precomputed lookup first (neural languages)
-                    if toponym_id in precomputed_phonetics:
+                    # Priority 1: Use existing IPA + features from DuckDB
+                    if existing_ipa and existing_features:
+                        embedding = _embedding_from_packed_features(existing_features)
+                        if embedding:
+                            doc['ipa'] = existing_ipa
+                            doc['panphon_embedding'] = embedding
+                            stats['with_ipa'] += 1
+                            stats['with_panphon'] += 1
+                            stats['db_cached'] += 1
+                            stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
+                        else:
+                            # Features exist but embedding derivation failed — fall through
+                            pass
+
+                    # Priority 2: Check precomputed lookup (neural languages)
+                    if 'panphon_embedding' not in doc and toponym_id in precomputed_phonetics:
                         ipa, packed_features, embedding = precomputed_phonetics[toponym_id]
                         doc['ipa'] = ipa
                         doc['panphon_embedding'] = embedding
@@ -1536,13 +1497,12 @@ def dump_to_jsonl(
                         stats['by_script_lang_ipa'][f"{script}:{lang}"] += 1
                         all_db_updates.append((ipa, packed_features, toponym_id))
 
-                    elif lang in NEURAL_LANGS:
-                        # Neural language but no precomputed result — skip
-                        # (means precompute wasn't run, or this toponym failed)
+                    # Priority 3: Neural language without precomputed or cached — skip
+                    elif 'panphon_embedding' not in doc and lang in NEURAL_LANGS:
                         stats['neural_skipped'] += 1
 
-                    else:
-                        # Epitran-eligible — queue for worker pool
+                    # Priority 4: Epitran-eligible — queue for worker pool
+                    elif 'panphon_embedding' not in doc:
                         epitran_work.append((toponym_id, name, lang, script))
 
                 batch_docs.append(doc)
@@ -1591,7 +1551,8 @@ def dump_to_jsonl(
             logger.info(
                 f"Progress: {stats['total']:,} / {total_count:,} ({pct:.1f}%) - "
                 f"IPA: {stats['with_ipa']:,} "
-                f"(precomputed: {stats['precomputed_hits']:,}, "
+                f"(cached: {stats['db_cached']:,}, "
+                f"precomputed: {stats['precomputed_hits']:,}, "
                 f"epitran: {stats['epitran_computed']:,}) - "
                 f"Batch {batches_processed}"
             )
@@ -1654,6 +1615,7 @@ def dump_to_jsonl(
     logger.info(f"Documents in training namespaces: {stats['in_training_ns']:,}")
     logger.info(f"  With IPA: {stats['with_ipa']:,} ({100*stats['with_ipa']/max(1,stats['in_training_ns']):.1f}%)")
     logger.info(f"  With PanPhon embedding: {stats['with_panphon']:,} ({100*stats['with_panphon']/max(1,stats['in_training_ns']):.1f}%)")
+    logger.info(f"  From DuckDB cache: {stats['db_cached']:,}")
     logger.info(f"  From precomputed (neural): {stats['precomputed_hits']:,}")
     logger.info(f"  From Epitran (CPU pool): {stats['epitran_computed']:,}")
     if stats['neural_skipped']:
@@ -1890,6 +1852,9 @@ def main():
                     'with_ipa': buffer_stats['with_ipa'],
                     'with_panphon_embedding': buffer_stats['with_panphon'],
                     'panphon_coverage_pct': 100 * buffer_stats['with_panphon'] / max(1, buffer_stats['in_training_ns']),
+                    'from_db_cache': buffer_stats['db_cached'],
+                    'from_precomputed': buffer_stats['precomputed_hits'],
+                    'from_epitran': buffer_stats['epitran_computed'],
                     'by_script': dict(buffer_stats['by_script']),
                     'by_script_lang_ipa': dict(buffer_stats['by_script_lang_ipa'].most_common(100)),
                     'training_namespaces': args.training_namespaces,
