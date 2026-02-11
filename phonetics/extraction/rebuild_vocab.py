@@ -72,6 +72,22 @@ def rebuild_vocab_stats_from_toponyms(conn):
 def generate_vocabulary(conn, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # Ensure stats tables exist (may not if DB was built by an older script)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS observed_chars (
+            char VARCHAR,
+            script VARCHAR,
+            count INTEGER DEFAULT 1,
+            PRIMARY KEY (char, script)
+        )
+    ''')
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS script_stats (
+            script VARCHAR PRIMARY KEY,
+            count INTEGER DEFAULT 0
+        )
+    ''')
+
     has_chars = conn.execute("SELECT 1 FROM observed_chars LIMIT 1").fetchone() is not None
     has_scripts = conn.execute("SELECT 1 FROM script_stats LIMIT 1").fetchone() is not None
 
