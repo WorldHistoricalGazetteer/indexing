@@ -127,6 +127,20 @@ class _LocalManifest:
 
         ns_sql = ','.join(f"'{ns}'" for ns in self.namespaces)
 
+        # Check if toponym_attestations table exists and has data
+        try:
+            att_count = conn.execute("SELECT COUNT(*) FROM toponym_attestations").fetchone()[0]
+            if att_count == 0:
+                logger.warning("toponym_attestations table is empty, falling back to ES")
+                conn.close()
+                self._build_from_es()
+                return
+        except Exception as e:
+            logger.warning(f"Could not query toponym_attestations: {e}, falling back to ES")
+            conn.close()
+            self._build_from_es()
+            return
+
         result = conn.execute(f'''
             SELECT t.toponym_id,
                    t.script,
@@ -141,6 +155,11 @@ class _LocalManifest:
         ''').arrow()
 
         conn.close()
+
+        if len(result) == 0:
+            logger.warning("DuckDB query returned no results, falling back to ES")
+            self._build_from_es()
+            return
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
         pq.write_table(result, self.path, compression='zstd', row_group_size=128_000)
