@@ -135,6 +135,7 @@ class _LocalManifest:
                 conn.close()
                 self._build_from_es()
                 return
+            logger.info(f"Found {att_count:,} attestation records in DuckDB")
         except Exception as e:
             logger.warning(f"Could not query toponym_attestations: {e}, falling back to ES")
             conn.close()
@@ -182,17 +183,24 @@ class _LocalManifest:
         }
 
         rows = []
+        empty_attestations_count = 0
         for hit in tqdm(
             scan(self.es, index=self.index, query=query, scroll='5m', size=5000),
             desc="Scanning ES for manifest"
         ):
             src = hit['_source']
+            attestations = src.get('attestations', [])
+            if not attestations:
+                empty_attestations_count += 1
             rows.append({
                 'toponym_id': hit['_id'],
                 'script': src.get('script', 'UNKNOWN'),
                 'lang': src.get('lang', ''),
-                'attestations': src.get('attestations', []),
+                'attestations': attestations,
             })
+
+        logger.info(f"Scanned {len(rows):,} toponyms from ES")
+        logger.info(f"Toponyms with empty attestations: {empty_attestations_count:,} ({empty_attestations_count/len(rows)*100:.1f}%)")
 
         table = pa.Table.from_pylist(rows)
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -292,24 +300,54 @@ class TrainingDataGenerator:
         }
 
     def _check_phase_complete(self, phase: str) -> bool:
-        """Check if a phase's output files already exist."""
+        """Check if a phase's output files already exist and are readable."""
         if self.force_regenerate:
             return False
 
-        if phase == 'pairs':
-            return (self.output_dir / 'pairs' / 'positive_pairs.parquet').exists()
-        elif phase == 'phase1':
-            train = self.output_dir / 'triplets' / 'phase1' / 'train.parquet'
-            val = self.output_dir / 'triplets' / 'phase1' / 'val.parquet'
-            return train.exists() and val.exists()
-        elif phase == 'phase2':
-            train = self.output_dir / 'training' / 'split=train' / 'data.parquet'
-            val = self.output_dir / 'training' / 'split=val' / 'data.parquet'
-            return train.exists() and val.exists()
-        elif phase == 'phase3':
-            train = self.output_dir / 'triplets' / 'phase3' / 'train.parquet'
-            val = self.output_dir / 'triplets' / 'phase3' / 'val.parquet'
-            return train.exists() and val.exists()
+        try:
+            if phase == 'pairs':
+                pairs_file = self.output_dir / 'pairs' / 'positive_pairs.parquet'
+                if not pairs_file.exists():
+                    return False
+                # Validate it's readable
+                pq.read_schema(pairs_file)
+                return True
+
+            elif phase == 'phase1':
+                train = self.output_dir / 'triplets' / 'phase1' / 'train.parquet'
+                val = self.output_dir / 'triplets' / 'phase1' / 'val.parquet'
+                if not (train.exists() and val.exists()):
+                    return False
+                # Validate both files are readable
+                pq.read_schema(train)
+                pq.read_schema(val)
+                return True
+
+            elif phase == 'phase2':
+                train = self.output_dir / 'training' / 'split=train' / 'data.parquet'
+                val = self.output_dir / 'training' / 'split=val' / 'data.parquet'
+                if not (train.exists() and val.exists()):
+                    return False
+                # Validate both files are readable
+                pq.read_schema(train)
+                pq.read_schema(val)
+                return True
+
+            elif phase == 'phase3':
+                train = self.output_dir / 'triplets' / 'phase3' / 'train.parquet'
+                val = self.output_dir / 'triplets' / 'phase3' / 'val.parquet'
+                if not (train.exists() and val.exists()):
+                    return False
+                # Validate both files are readable
+                pq.read_schema(train)
+                pq.read_schema(val)
+                return True
+
+        except Exception as e:
+            logger.warning(f"Checkpoint validation failed for {phase}: {e}")
+            logger.warning(f"Will regenerate {phase}")
+            return False
+
         return False
 
     def _check_phase3_has_text_fields(self) -> bool:
@@ -638,6 +676,14 @@ class TrainingDataGenerator:
 
         logger.info(f"Found {total_attestations:,} toponym attestations")
         logger.info(f"Grouped into {len(places):,} places")
+
+        # Diagnostic: Check if attestations are mostly empty
+        if total_attestations == 0 and len(self._manifest.ids) > 0:
+            logger.error(f"CRITICAL: All {len(self._manifest.ids):,} toponyms have empty attestations!")
+            logger.error("This means the 'attestations' field in ES is not populated.")
+            logger.error("You must run the rebuild_toponyms_index script without --resume to populate attestations.")
+            logger.error("Or delete the DuckDB file to force a full rebuild from the places index.")
+            raise ValueError("Cannot generate training data without attestations (place back-references)")
 
         # Filter and cap
         places_with_multiple = {}
