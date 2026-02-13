@@ -257,9 +257,10 @@ def train_phase1(
     best_loss = float('inf')
     if resume_from:
         meta = load_checkpoint(resume_from, teacher, optimizer, device)
-        start_epoch = meta['epoch'] + 1
+        completed_epoch = meta['epoch']
+        start_epoch = completed_epoch + 1
         best_loss = meta['best_loss']
-        logger.info(f"Resumed from epoch {start_epoch}")
+        logger.info(f"⏸ Phase 1 resuming from epoch {start_epoch}/{epochs} (checkpoint was at epoch {completed_epoch})")
 
     # Create data loaders
     train_loader = create_phase1_dataloader(
@@ -350,7 +351,7 @@ def train_phase1(
                 best_loss = val_loss
                 save_checkpoint(
                     output_dir / 'phase1_best.pt',
-                    teacher, optimizer, epoch, 0, best_loss, config
+                    teacher, optimizer, epoch + 1, 0, best_loss, config
                 )
                 logger.info(f"  Saved best model (val_loss={val_loss:.4f})")
 
@@ -358,7 +359,7 @@ def train_phase1(
         if (epoch + 1) % config['save_interval'] == 0:
             save_checkpoint(
                 output_dir / f'phase1_epoch{epoch + 1}.pt',
-                teacher, optimizer, epoch, 0, best_loss, config
+                teacher, optimizer, epoch + 1, 0, best_loss, config
             )
 
     logger.info(f"Phase 1 complete. Best val_loss: {best_loss:.4f}")
@@ -472,9 +473,10 @@ def train_phase2(
     best_loss = float('inf')
     if resume_from:
         meta = load_checkpoint(resume_from, student, optimizer, device)
-        start_epoch = meta['epoch'] + 1
+        completed_epoch = meta['epoch']
+        start_epoch = completed_epoch + 1
         best_loss = meta['best_loss']
-        logger.info(f"Resumed from epoch {start_epoch}")
+        logger.info(f"⏸ Phase 2 resuming from epoch {start_epoch}/{epochs} (checkpoint was at epoch {completed_epoch})")
 
     # Create data loaders with optimizations for GPU utilization
     # Phase 2 benefits from higher num_workers due to larger dataset
@@ -590,7 +592,7 @@ def train_phase2(
                 best_loss = val_loss
                 save_checkpoint(
                     output_dir / 'phase2_best.pt',
-                    student, optimizer, epoch, 0, best_loss, config
+                    student, optimizer, epoch + 1, 0, best_loss, config
                 )
                 logger.info(f"  Saved best model")
 
@@ -598,7 +600,7 @@ def train_phase2(
         if (epoch + 1) % config['save_interval'] == 0:
             save_checkpoint(
                 output_dir / f'phase2_epoch{epoch + 1}.pt',
-                student, optimizer, epoch, 0, best_loss, config
+                student, optimizer, epoch + 1, 0, best_loss, config
             )
 
     logger.info(f"Phase 2 complete. Best val_loss: {best_loss:.4f}")
@@ -706,8 +708,10 @@ def train_phase3(
     best_loss = float('inf')
     if resume_from:
         meta = load_checkpoint(resume_from, student, optimizer, device)
-        start_epoch = meta['epoch'] + 1
+        completed_epoch = meta['epoch']
+        start_epoch = completed_epoch + 1
         best_loss = meta['best_loss']
+        logger.info(f"⏸ Phase 3 resuming from epoch {start_epoch}/{epochs} (checkpoint was at epoch {completed_epoch})")
 
     # Create data loaders - Phase 3 uses triplet data
     train_loader = create_phase3_dataloader(
@@ -810,7 +814,7 @@ def train_phase3(
                 best_loss = val_loss
                 save_checkpoint(
                     output_dir / 'phase3_best.pt',
-                    student, optimizer, epoch, 0, best_loss, config
+                    student, optimizer, epoch + 1, 0, best_loss, config
                 )
                 logger.info(f"  Saved best model")
 
@@ -818,13 +822,13 @@ def train_phase3(
         if (epoch + 1) % config['save_interval'] == 0:
             save_checkpoint(
                 output_dir / f'phase3_epoch{epoch + 1}.pt',
-                student, optimizer, epoch, 0, best_loss, config
+                student, optimizer, epoch + 1, 0, best_loss, config
             )
 
     # Save final model
     save_checkpoint(
         output_dir / 'final_model.pt',
-        student, optimizer, epochs - 1, 0, best_loss, config
+        student, optimizer, epochs, 0, best_loss, config
     )
 
     logger.info(f"Phase 3 complete. Best val_loss: {best_loss:.4f}")

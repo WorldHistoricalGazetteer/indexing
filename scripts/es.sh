@@ -1262,7 +1262,8 @@ do_train_model() {
                 PHASE1_COMPLETE=true
                 echo "✓ Phase 1 training complete ($COMPLETED_EPOCHS/50 epochs), skipping"
             elif [ -n "${RESUME_FROM}" ]; then
-                echo "⏸ Phase 1 resuming from epoch $COMPLETED_EPOCHS/50"
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 1 resuming from epoch $NEXT_EPOCH/50"
             fi
         fi
 
@@ -1367,9 +1368,20 @@ EOF
             fi
         fi
 
-        if [ -f "${OUTPUT_DIR}/phase2_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
-            echo "✓ Phase 2 checkpoint exists, skipping"
-        else
+        # Check if Phase 2 training is actually complete
+        PHASE2_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase2_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase2_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 50 ]; then
+                PHASE2_COMPLETE=true
+                echo "✓ Phase 2 training complete ($COMPLETED_EPOCHS/50 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 2 resuming from epoch $NEXT_EPOCH/50"
+            fi
+        fi
+
+        if [ "$PHASE2_COMPLETE" = false ]; then
             PHASE2_JOB=$(sbatch --parsable -M gpu $PHASE1_DEP <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
@@ -1411,7 +1423,7 @@ EOF
             PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
             echo "✓ Phase 2 submitted: $PHASE2_JOB"
             PHASE2_DEP="--dependency=afterok:${PHASE2_JOB}"
-        fi
+        fi  # Close PHASE2_COMPLETE check
     else
         echo "✓ Phase 2 skipped"
     fi
@@ -1439,9 +1451,20 @@ EOF
             fi
         fi
 
-        if [ -f "${OUTPUT_DIR}/phase3_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
-            echo "✓ Phase 3 checkpoint exists, skipping"
-        else
+        # Check if Phase 3 training is actually complete
+        PHASE3_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase3_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase3_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 30 ]; then
+                PHASE3_COMPLETE=true
+                echo "✓ Phase 3 training complete ($COMPLETED_EPOCHS/30 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 3 resuming from epoch $NEXT_EPOCH/30"
+            fi
+        fi
+
+        if [ "$PHASE3_COMPLETE" = false ]; then
             PHASE3_JOB=$(sbatch --parsable -M gpu $PHASE2_DEP <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
@@ -1482,7 +1505,7 @@ EOF
 )
             PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
             echo "✓ Phase 3 submitted: $PHASE3_JOB"
-        fi
+        fi  # Close PHASE3_COMPLETE check
     else
         echo "✓ Phase 3 skipped"
     fi
