@@ -1240,7 +1240,7 @@ do_train_model() {
     if [ "$START_PHASE" -le 1 ] && [ "$END_PHASE" -ge 1 ]; then
         # Auto-detect latest checkpoint if AUTO_RESUME is enabled or if RESUME_FROM is already set
         if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
-            LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+            LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch*.pt" 2>/dev/null | sort -V | tail -n1)
             if [ -n "$LATEST_P1" ]; then
                 RESUME_FROM="$LATEST_P1"
                 echo "📍 Auto-detected Phase 1 checkpoint: $(basename $RESUME_FROM)"
