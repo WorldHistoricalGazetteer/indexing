@@ -1247,9 +1247,19 @@ do_train_model() {
             fi
         fi
 
-        if [ -f "${OUTPUT_DIR}/phase1_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
-            echo "✓ Phase 1 checkpoint exists, skipping"
-        else
+        # Check if Phase 1 training is actually complete
+        PHASE1_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase1_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase1_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 50 ]; then
+                PHASE1_COMPLETE=true
+                echo "✓ Phase 1 training complete ($COMPLETED_EPOCHS/50 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                echo "⏸ Phase 1 resuming from epoch $COMPLETED_EPOCHS/50"
+            fi
+        fi
+
+        if [ "$PHASE1_COMPLETE" = false ]; then
             PHASE1_JOB=$(sbatch --parsable -M gpu <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
@@ -1321,7 +1331,7 @@ EOF
             PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
             echo "✓ Phase 1 submitted: $PHASE1_JOB"
             PHASE1_DEP="--dependency=afterok:${PHASE1_JOB}"
-        fi
+        fi  # Close PHASE1_COMPLETE check
     else
         echo "✓ Phase 1 skipped"
     fi
