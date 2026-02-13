@@ -487,6 +487,11 @@ staging_start() {
     echo "  Port: $ES_PORT"
     echo "  Data: $ES_DATA"
     echo "  Job:  $SLURM_JOB_ID"
+    echo "  ES available at http://${ES_NODE}:${ES_PORT}"
+    echo "  Query Cluster Health:"
+    echo "    curl -s http://${ES_NODE}:${ES_PORT}/_cluster/health?pretty"
+    echo "  Check Indices:"
+    echo "    curl -s http://${ES_NODE}:${ES_PORT}/_cat/indices?v"
     echo
     echo "Environment variables exported to current shell."
     echo "For other shells: source $STAGING_INFO_FILE"

@@ -34,7 +34,7 @@ MAX_TOPONYMS_PER_PLACE = 50  # Cap to prevent combinatorial explosion
 KNN_CANDIDATES = 100
 ES_BATCH_SIZE = 500
 ES_PARALLEL_WORKERS = 8
-MSEARCH_BATCH_SIZE = 100
+MSEARCH_BATCH_SIZE = 500
 
 # ============================================================================
 # ES RESILIENCE PARAMETERS

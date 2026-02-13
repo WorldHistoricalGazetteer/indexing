@@ -1322,6 +1322,15 @@ class TrainingDataGenerator:
         adjacency = self._build_adjacency(pairs_by_bin)
         logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
+        # Build per-anchor adjacency lookup for O(1) checks
+        logger.info("Building per-anchor adjacency lookup...")
+        adj_by_anchor = defaultdict(set)
+        for pairs in pairs_by_bin.values():
+            for a, b, _ in pairs:
+                adj_by_anchor[a].add(b)
+                adj_by_anchor[b].add(a)
+        logger.info(f"Built adjacency lookup for {len(adj_by_anchor):,} anchors")
+
         # Apply bin balancing
         logger.info("Applying bin-balancing...")
         balanced_pairs, balance_stats = apply_bin_balancing(
@@ -1363,10 +1372,18 @@ class TrainingDataGenerator:
                     'features': np.array(embedding, dtype=np.float32),
                     'feature_length': len(embedding) // 24,
                 }
-                attestation_map[toponym_id] = set(source.get('attestations', []))
+                # Convert to frozenset once for faster disjoint checks
+                attestation_map[toponym_id] = frozenset(source.get('attestations', []))
 
         del raw_data
         logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
+
+        # Precompute deterministic seed per anchor (avoids repeated CRC32 in hot loop)
+        logger.info("Precomputing anchor seeds...")
+        anchor_seed_map = {
+            tid: (RANDOM_SEED + (zlib.crc32(tid.encode('utf-8')) & 0xffffffff))
+            for tid in unique_anchors
+        }
 
         # Build pairs to process
         all_pairs_to_process = []
@@ -1428,7 +1445,7 @@ class TrainingDataGenerator:
         # Pass 2: Batch fetch features for negatives not in toponym_data_map
         # Pass 3: Build and stream triplets
 
-        logger.info("Pass 1: Mining hard negatives...")
+        logger.info("Pass 1: Mining hard negatives (optimized)...")
         triplet_specs = []  # (anchor_id, positive_id, negative_id, bin_key)
         negatives_to_fetch = set()
         batches_processed = 0
@@ -1438,28 +1455,67 @@ class TrainingDataGenerator:
         logger.info(f"Processing batches {skip_batches} to {len(batches)} ({len(batches_to_process)} remaining)")
 
         for batch in tqdm(batches_to_process, desc="Hard negative mining", initial=skip_batches, total=len(batches)):
-            hard_negs = self.knn.find_hard_negatives_batch(
+            # Get candidate lists with attestations from ES (return_lists=True returns raw hits)
+            candidate_responses = self.knn.find_hard_negatives_batch_with_attestations(
                 anchors=batch,
-                adjacency=adjacency,
-                attestation_map=attestation_map,
                 k=20,
             )
 
-            for item, hard_neg in zip(batch, hard_negs):
-                if hard_neg:
-                    anchor_id = item['anchor_id']
-                    positive_id = item['positive_id']
+            # High-performance local filtering with reservoir sampling
+            for item, hits in zip(batch, candidate_responses):
+                if not hits:
+                    continue
 
+                anchor_id = item['anchor_id']
+                positive_id = item['positive_id']
+
+                # Fast lookups (no dict construction)
+                anchor_att = attestation_map.get(anchor_id)
+                adj_set = adj_by_anchor.get(anchor_id, set())
+
+                # Deterministic RNG per anchor (seed precomputed)
+                seed = anchor_seed_map.get(anchor_id, RANDOM_SEED) + item['sample_idx']
+                rng = random.Random(seed)
+
+                # Reservoir sampling: select one negative uniformly without building list
+                selected = None
+                seen_valid = 0
+
+                # Iterate ES hits (each hit has _id and _source with attestations)
+                for hit in hits:
+                    candidate_id = hit['_id']
+
+                    # Skip self
+                    if candidate_id == anchor_id:
+                        continue
+
+                    # O(1) adjacency check using set membership
+                    if candidate_id in adj_set:
+                        continue
+
+                    # Fast attestation disjoint check (no set construction in loop)
+                    # Convert candidate attestations to frozenset once per candidate
+                    candidate_att = frozenset(hit.get('_source', {}).get('attestations', []))
+                    if anchor_att and not anchor_att.isdisjoint(candidate_att):
+                        continue
+
+                    # Reservoir sampling: uniform selection without list allocation
+                    seen_valid += 1
+                    if rng.randrange(seen_valid) == 0:
+                        selected = candidate_id
+
+                if selected:
                     # Verify anchor and positive have data
                     if anchor_id in toponym_data_map and positive_id in toponym_data_map:
-                        triplet_specs.append((anchor_id, positive_id, hard_neg, item['bin']))
+                        triplet_specs.append((anchor_id, positive_id, selected, item['bin']))
 
                         # Track negatives needing feature fetch
-                        if hard_neg not in toponym_data_map:
-                            negatives_to_fetch.add(hard_neg)
+                        if selected not in toponym_data_map:
+                            negatives_to_fetch.add(selected)
 
             batches_processed += 1
-            if batches_processed % 100 == 0:
+            # Check ES health less frequently (every 200 batches instead of 100)
+            if batches_processed % 200 == 0:
                 self.knn.check_failure_threshold()
 
         logger.info(f"Found {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")

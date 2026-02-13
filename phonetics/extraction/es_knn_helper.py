@@ -186,28 +186,31 @@ class ESKNNHelper:
     def find_hard_negatives_batch(
             self,
             anchors: List[Dict],
-            adjacency: Set[Tuple[str, str]],
-            attestation_map: Dict[str, Set[str]],
+            adjacency: Set[Tuple[str, str]] = None,
+            attestation_map: Dict[str, Set[str]] = None,
             k: int = 20,
             stochastic: bool = True,
-    ) -> List[Optional[str]]:
+            return_lists: bool = True,
+    ) -> List[Optional[str]] | List[List[str]]:
         """
         Find hard negatives for multiple anchors using ES _msearch.
 
         A valid negative must:
         1. Not be the anchor itself
-        2. Not be in the adjacency set (not a known positive pair)
-        3. Share NO attestations with the anchor (disjoint place sets)
+        2. Not be in the adjacency set (not a known positive pair) - OPTIONAL
+        3. Share NO attestations with the anchor (disjoint place sets) - OPTIONAL
 
         Args:
             anchors: List of anchor dicts with 'anchor_id', 'embedding', 'script', etc.
-            adjacency: Set of (toponym_id, toponym_id) positive pairs
-            attestation_map: Dict mapping toponym_id -> Set of attestation strings
+            adjacency: OPTIONAL Set of (toponym_id, toponym_id) positive pairs (for backward compat)
+            attestation_map: OPTIONAL Dict mapping toponym_id -> Set of attestation strings
             k: Number of candidates to retrieve from KNN
-            stochastic: If True, randomly select from valid candidates
+            stochastic: If True, randomly select from valid candidates (only if return_lists=False)
+            return_lists: If True, return list of candidate lists; if False, return single selected negatives
 
         Returns:
-            List of negative toponym_ids (or None if no valid negative found)
+            If return_lists=True: List of candidate ID lists (generator handles filtering/selection)
+            If return_lists=False: List of negative toponym_ids (or None if no valid negative found)
         """
         if not anchors:
             return []
@@ -237,43 +240,113 @@ class ESKNNHelper:
         self._record_request(responses is not None)
 
         if responses is None:
-            return [None] * len(anchors)
+            return [None] * len(anchors) if not return_lists else [[] for _ in anchors]
 
         results = []
         for i, response in enumerate(responses):
             anchor_id = anchors[i]['anchor_id']
-            anchor_attestations = attestation_map.get(anchor_id, set())
-            hard_neg = None
 
             if 'hits' in response and 'hits' in response['hits']:
-                valid_candidates = []
-                for hit in response['hits']['hits']:
-                    candidate_id = hit['_id']
+                # Extract candidate IDs from ES hits
+                candidates = [hit['_id'] for hit in response['hits']['hits']]
 
-                    # Skip if same as anchor
-                    if candidate_id == anchor_id:
-                        continue
+                if return_lists:
+                    # Return raw candidate list for generator to filter
+                    results.append(candidates)
+                else:
+                    # Legacy behavior: filter and select here
+                    anchor_attestations = attestation_map.get(anchor_id, set()) if attestation_map else set()
+                    valid_candidates = []
 
-                    # Skip if in adjacency (known positive pair)
-                    if (anchor_id, candidate_id) in adjacency:
-                        continue
+                    for hit in response['hits']['hits']:
+                        candidate_id = hit['_id']
 
-                    # Skip if shares any attestations with anchor
-                    candidate_attestations = set(hit.get('_source', {}).get('attestations', []))
-                    if not anchor_attestations.isdisjoint(candidate_attestations):
-                        continue
+                        # Skip if same as anchor
+                        if candidate_id == anchor_id:
+                            continue
 
-                    valid_candidates.append(candidate_id)
+                        # Skip if in adjacency (known positive pair)
+                        if adjacency and (anchor_id, candidate_id) in adjacency:
+                            continue
 
-                if valid_candidates:
-                    if stochastic and len(valid_candidates) > 1:
-                        sample_idx = anchors[i].get('sample_idx', 0)
-                        seed = RANDOM_SEED + (zlib.crc32(anchor_id.encode('utf-8')) & 0xffffffff) + sample_idx
-                        rng = random.Random(seed)
-                        hard_neg = rng.choice(valid_candidates)
-                    else:
-                        hard_neg = valid_candidates[0]
+                        # Skip if shares any attestations with anchor
+                        if attestation_map:
+                            candidate_attestations = set(hit.get('_source', {}).get('attestations', []))
+                            if not anchor_attestations.isdisjoint(candidate_attestations):
+                                continue
 
-            results.append(hard_neg)
+                        valid_candidates.append(candidate_id)
+
+                    hard_neg = None
+                    if valid_candidates:
+                        if stochastic and len(valid_candidates) > 1:
+                            sample_idx = anchors[i].get('sample_idx', 0)
+                            seed = RANDOM_SEED + (zlib.crc32(anchor_id.encode('utf-8')) & 0xffffffff) + sample_idx
+                            rng = random.Random(seed)
+                            hard_neg = rng.choice(valid_candidates)
+                        else:
+                            hard_neg = valid_candidates[0]
+
+                    results.append(hard_neg)
+            else:
+                results.append([] if return_lists else None)
+
+        return results
+
+    def find_hard_negatives_batch_with_attestations(
+            self,
+            anchors: List[Dict],
+            k: int = 20,
+    ) -> List[List[Dict]]:
+        """
+        Find hard negative candidates for multiple anchors, returning raw hits with attestations.
+
+        This high-performance variant returns the raw ES hit list (with _id and attestations)
+        so the caller can do filtering with O(1) lookups and reservoir sampling.
+
+        Args:
+            anchors: List of anchor dicts with 'anchor_id', 'embedding', 'script', etc.
+            k: Number of candidates to retrieve from KNN
+
+        Returns:
+            List of hit lists, where each hit is: {'_id': str, '_source': {'attestations': [...]}}
+        """
+        if not anchors:
+            return []
+
+        # Request more candidates since some will be filtered out
+        fetch_k = min(k * 3, 100)
+
+        bodies = []
+        for a in anchors:
+            bodies.append({"index": self.index})
+            bodies.append({
+                "size": fetch_k,
+                "knn": {
+                    "field": "panphon_embedding",
+                    "query_vector": a['embedding'],
+                    "k": fetch_k,
+                    "num_candidates": KNN_CANDIDATES,
+                    "filter": {"term": {"script": a['script']}}
+                },
+                "_source": ["attestations"]
+            })
+
+        def _msearch():
+            return self.es.msearch(body=bodies)['responses']
+
+        responses = es_retry_with_backoff(_msearch)
+        self._record_request(responses is not None)
+
+        if responses is None:
+            return [[] for _ in anchors]
+
+        results = []
+        for response in responses:
+            if 'hits' in response and 'hits' in response['hits']:
+                # Return raw hits with _id and _source
+                results.append(response['hits']['hits'])
+            else:
+                results.append([])
 
         return results
