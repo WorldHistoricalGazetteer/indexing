@@ -1238,12 +1238,19 @@ do_train_model() {
     # Phase 1: Train Teacher
     PHASE1_DEP=""
     if [ "$START_PHASE" -le 1 ] && [ "$END_PHASE" -ge 1 ]; then
-        # Auto-detect latest checkpoint if AUTO_RESUME is enabled or if RESUME_FROM is already set
+        # Auto-detect best checkpoint if AUTO_RESUME is enabled or if RESUME_FROM is already set
         if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
-            LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch*.pt" 2>/dev/null | sort -V | tail -n1)
-            if [ -n "$LATEST_P1" ]; then
-                RESUME_FROM="$LATEST_P1"
-                echo "📍 Auto-detected Phase 1 checkpoint: $(basename $RESUME_FROM)"
+            # Prefer phase1_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase1_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase1_best.pt"
+                echo "📍 Auto-detected Phase 1 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P1" ]; then
+                    RESUME_FROM="$LATEST_P1"
+                    echo "📍 Auto-detected Phase 1 checkpoint: $(basename $RESUME_FROM)"
+                fi
             fi
         fi
 
@@ -1344,12 +1351,19 @@ EOF
             return 1
         fi
 
-        # Auto-detect latest Phase 2 checkpoint if AUTO_RESUME is enabled
+        # Auto-detect best Phase 2 checkpoint if AUTO_RESUME is enabled
         if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
-            LATEST_P2=$(find "${OUTPUT_DIR}" -name "phase2_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
-            if [ -n "$LATEST_P2" ]; then
-                RESUME_FROM="$LATEST_P2"
-                echo "📍 Auto-detected Phase 2 checkpoint: $(basename $RESUME_FROM)"
+            # Prefer phase2_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase2_best.pt"
+                echo "📍 Auto-detected Phase 2 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P2=$(find "${OUTPUT_DIR}" -name "phase2_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P2" ]; then
+                    RESUME_FROM="$LATEST_P2"
+                    echo "📍 Auto-detected Phase 2 checkpoint: $(basename $RESUME_FROM)"
+                fi
             fi
         fi
 
@@ -1409,12 +1423,19 @@ EOF
             return 1
         fi
 
-        # Auto-detect latest Phase 3 checkpoint if AUTO_RESUME is enabled
+        # Auto-detect best Phase 3 checkpoint if AUTO_RESUME is enabled
         if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
-            LATEST_P3=$(find "${OUTPUT_DIR}" -name "phase3_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
-            if [ -n "$LATEST_P3" ]; then
-                RESUME_FROM="$LATEST_P3"
-                echo "📍 Auto-detected Phase 3 checkpoint: $(basename $RESUME_FROM)"
+            # Prefer phase3_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase3_best.pt"
+                echo "📍 Auto-detected Phase 3 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P3=$(find "${OUTPUT_DIR}" -name "phase3_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P3" ]; then
+                    RESUME_FROM="$LATEST_P3"
+                    echo "📍 Auto-detected Phase 3 checkpoint: $(basename $RESUME_FROM)"
+                fi
             fi
         fi
 
