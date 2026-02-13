@@ -1136,7 +1136,7 @@ EOF
 # ==============================================================================
 
 do_train_model() {
-    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume-from CHECKPOINT] [--partition PARTITION]
+    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume] [--resume-from CHECKPOINT] [--partition PARTITION]
 
     DATA_VERSION=${1:-6}
     START_PHASE=${2:-1}
@@ -1144,10 +1144,15 @@ do_train_model() {
 
     # Parse optional flags
     RESUME_FROM=""
+    AUTO_RESUME=false
     shift 2  # Remove VERSION and START_PHASE
 
     while [ $# -gt 0 ]; do
         case "$1" in
+            --resume)
+                AUTO_RESUME=true
+                shift
+                ;;
             --resume-from)
                 RESUME_FROM="$2"
                 shift 2
@@ -1189,6 +1194,11 @@ do_train_model() {
     echo "  Log dir: ${TRAIN_LOG_DIR}"
     echo "  Repo dir: ${REPO_DIR}"
 
+    # If --resume flag is set and no explicit --resume-from, enable auto-detection
+    if [ "$AUTO_RESUME" = true ] && [ -z "$RESUME_FROM" ]; then
+        echo "  Auto-resume: ENABLED (will detect latest checkpoint)"
+    fi
+
     # Verify training data exists
     if [ ! -d "${DATA_DIR}/triplets" ] && [ ! -d "${DATA_DIR}/training" ]; then
         echo "ERROR: Training data not found at ${DATA_DIR}"
@@ -1228,7 +1238,16 @@ do_train_model() {
     # Phase 1: Train Teacher
     PHASE1_DEP=""
     if [ "$START_PHASE" -le 1 ] && [ "$END_PHASE" -ge 1 ]; then
-        if [ -f "${OUTPUT_DIR}/phase1_best.pt" ]; then
+        # Auto-detect latest checkpoint if AUTO_RESUME is enabled or if RESUME_FROM is already set
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+            if [ -n "$LATEST_P1" ]; then
+                RESUME_FROM="$LATEST_P1"
+                echo "📍 Auto-detected Phase 1 checkpoint: $(basename $RESUME_FROM)"
+            fi
+        fi
+
+        if [ -f "${OUTPUT_DIR}/phase1_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
             echo "✓ Phase 1 checkpoint exists, skipping"
         else
             PHASE1_JOB=$(sbatch --parsable -M gpu <<EOF
@@ -1314,7 +1333,17 @@ EOF
             echo "ERROR: Phase 1 checkpoint not found and no Phase 1 job submitted"
             return 1
         fi
-        if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
+
+        # Auto-detect latest Phase 2 checkpoint if AUTO_RESUME is enabled
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            LATEST_P2=$(find "${OUTPUT_DIR}" -name "phase2_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+            if [ -n "$LATEST_P2" ]; then
+                RESUME_FROM="$LATEST_P2"
+                echo "📍 Auto-detected Phase 2 checkpoint: $(basename $RESUME_FROM)"
+            fi
+        fi
+
+        if [ -f "${OUTPUT_DIR}/phase2_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
             echo "✓ Phase 2 checkpoint exists, skipping"
         else
             PHASE2_JOB=$(sbatch --parsable -M gpu $PHASE1_DEP <<EOF
@@ -1369,7 +1398,17 @@ EOF
             echo "ERROR: Phase 2 checkpoint not found and no Phase 2 job submitted"
             return 1
         fi
-        if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
+
+        # Auto-detect latest Phase 3 checkpoint if AUTO_RESUME is enabled
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            LATEST_P3=$(find "${OUTPUT_DIR}" -name "phase3_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+            if [ -n "$LATEST_P3" ]; then
+                RESUME_FROM="$LATEST_P3"
+                echo "📍 Auto-detected Phase 3 checkpoint: $(basename $RESUME_FROM)"
+            fi
+        fi
+
+        if [ -f "${OUTPUT_DIR}/phase3_best.pt" ] && [ -z "${RESUME_FROM}" ]; then
             echo "✓ Phase 3 checkpoint exists, skipping"
         else
             PHASE3_JOB=$(sbatch --parsable -M gpu $PHASE2_DEP <<EOF
@@ -1829,9 +1868,21 @@ case "$1" in
         echo "    $0 -generate-training-data 6 --resume-from-pass2  # Resume from Pass 2 after ES restart"
         echo
         echo "MODEL TRAINING PIPELINE:"
-        echo "  -train-model VERSION [PHASE]   Submit training job for model version"
-        echo "                                 PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
-        echo "                                 Omit PHASE to run all three sequentially"
+        echo "  -train-model VERSION [START_PHASE [END_PHASE]] [OPTIONS]"
+        echo "      Submit training job for model version"
+        echo "      PHASE: 1 (Teacher), 2 (Student), 3 (Fine-tune)"
+        echo "      Omit PHASE to run all three sequentially"
+        echo
+        echo "  Options:"
+        echo "    --resume             Auto-detect and resume from latest epoch checkpoint"
+        echo "    --resume-from PATH   Resume from specific checkpoint file"
+        echo "    --partition NAME     Use specific GPU partition (a100 or l40s, default: a100)"
+        echo
+        echo "  Examples:"
+        echo "    $0 -train-model 6                       # Train all phases from scratch"
+        echo "    $0 -train-model 6 1 --resume            # Resume Phase 1 from latest checkpoint"
+        echo "    $0 -train-model 6 1 3 --partition l40s  # Train P1-P3 on L40S GPU"
+        echo "    $0 -train-model 6 --resume-from /path/to/phase1_epoch_10.pt"
         echo
         echo "FULL PIPELINE (train + embeddings + index):"
         echo "  -train-and-update VERSION"
