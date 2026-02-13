@@ -965,6 +965,7 @@ do_generate_training_data() {
                 ;;
             --skip-to-phase3)
                 SKIP_PHASE3_FLAG="--skip-to-phase3"
+                # es -generate-training-data 6 --skip-to-phase3
                 echo "  Mode: SKIP TO PHASE 3 (assumes Phase 1 & 2 complete)"
                 shift
                 ;;
@@ -1295,8 +1296,7 @@ python -u -m phonetics.training.train \
     --phase 1 \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
-    --epochs 50${RESUME_FROM:+ \\
-    --resume-from "${RESUME_FROM}"}
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
             PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
@@ -1352,8 +1352,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
-    --epochs 50${RESUME_FROM:+ \\
-    --resume-from "${RESUME_FROM}"}
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
             PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
@@ -1408,8 +1407,7 @@ python -u -m phonetics.training.train \
     --data-dir "\$SCRATCH_ROOT" \
     --output-dir "${OUTPUT_DIR}" \
     --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
-    --epochs 30${RESUME_FROM:+ \\
-    --resume-from "${RESUME_FROM}"}
+    --epochs 30\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
 EOF
 )
             PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
