@@ -57,6 +57,8 @@ def main():
                         help='Resume from checkpoints (default behavior)')
     parser.add_argument('--skip-to-phase3', action='store_true',
                         help='Skip directly to Phase 3 (assumes Phase 1 & 2 complete)')
+    parser.add_argument('--resume-from-pass2', action='store_true',
+                        help='Resume Phase 3 from Pass 2 (skips ES mining, loads checkpoint)')
 
     args = parser.parse_args()
 
@@ -81,7 +83,7 @@ def main():
     
     if not es.ping():
         logger.warning(f"Cannot connect to Elasticsearch at {args.es_host}")
-        if args.resume:
+        if args.resume or args.resume_from_pass2:
             logger.info("Resume mode: Checking if ES is actually needed...")
             # We'll let the generator decide later or fail then.
         else:
@@ -92,6 +94,8 @@ def main():
 
     if args.force:
         logger.info("Mode: FORCE (regenerating all data)")
+    elif args.resume_from_pass2:
+        logger.info("Mode: RESUME FROM PASS 2 (skipping ES mining in Phase 3)")
     else:
         logger.info("Mode: RESUME (skipping existing checkpoints)")
 
@@ -104,6 +108,7 @@ def main():
         training_namespaces=args.training_namespaces,
         force_regenerate=args.force,
         skip_to_phase3=args.skip_to_phase3,
+        resume_from_pass2=args.resume_from_pass2,
     )
 
     stats = generator.generate_all()

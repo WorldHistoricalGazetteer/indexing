@@ -942,7 +942,7 @@ EOF
 # ==============================================================================
 
 do_generate_training_data() {
-    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume|--skip-to-phase3]
+    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume|--skip-to-phase3|--resume-from-pass2]
 
     DATA_VERSION=${1:-6}
     shift 2>/dev/null || true
@@ -950,6 +950,7 @@ do_generate_training_data() {
     # Parse flags
     FORCE_FLAG=""
     SKIP_PHASE3_FLAG=""
+    RESUME_PASS2_FLAG=""
     PYTHON_ARGS=""
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -965,6 +966,11 @@ do_generate_training_data() {
             --skip-to-phase3)
                 SKIP_PHASE3_FLAG="--skip-to-phase3"
                 echo "  Mode: SKIP TO PHASE 3 (assumes Phase 1 & 2 complete)"
+                shift
+                ;;
+            --resume-from-pass2)
+                RESUME_PASS2_FLAG="--resume-from-pass2"
+                echo "  Mode: RESUME FROM PASS 2 (Phase 3 only, skips ES mining)"
                 shift
                 ;;
             *)
@@ -1050,6 +1056,8 @@ do_generate_training_data() {
         echo "  Mode:         FORCE (regenerate all)"
     elif [ -n "$SKIP_PHASE3_FLAG" ]; then
         echo "  Mode:         SKIP TO PHASE 3"
+    elif [ -n "$RESUME_PASS2_FLAG" ]; then
+        echo "  Mode:         RESUME FROM PASS 2 (Phase 3 only, skips ES mining)"
     else
         echo "  Mode:         RESUME (skip completed phases)"
     fi
@@ -1096,6 +1104,7 @@ python -m phonetics.extraction.generate_training_data \
     --training-namespaces gn wd tgn \
     $FORCE_FLAG \
     $SKIP_PHASE3_FLAG \
+    $RESUME_PASS2_FLAG \
     $PYTHON_ARGS
 
 echo
@@ -1813,11 +1822,13 @@ case "$1" in
         echo "    --force            Force regeneration, ignoring checkpoints"
         echo "    --resume           Resume from checkpoints (default)"
         echo "    --skip-to-phase3   Skip directly to Phase 3 (assumes Phase 1 & 2 complete)"
+        echo "    --resume-from-pass2 Resume Phase 3 from Pass 2 (skips ES mining, loads checkpoint)"
         echo
         echo "  Examples:"
         echo "    $0 -generate-training-data 6              # Generate (resume if interrupted)"
         echo "    $0 -generate-training-data 6 --force      # Regenerate from scratch"
         echo "    $0 -generate-training-data 6 --skip-to-phase3  # Jump to Phase 3 only"
+        echo "    $0 -generate-training-data 6 --resume-from-pass2  # Resume from Pass 2 after ES restart"
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"

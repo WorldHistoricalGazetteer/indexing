@@ -58,9 +58,12 @@ RANDOM_SEED = 42
 # ============================================================================
 # BIN-BALANCING PARAMETERS
 # ============================================================================
-TARGET_SAMPLES_PER_BIN = 50000
-MIN_BIN_SIZE = 1000
-MAX_OVERSAMPLE_FACTOR = 5
+# Reduced from 50k to 25k to cut dataset size in half while maintaining diversity
+TARGET_SAMPLES_PER_BIN = 25000
+# Reduced minimum to keep more bins (better script coverage)
+MIN_BIN_SIZE = 500
+# Reduced oversample factor to limit repetition
+MAX_OVERSAMPLE_FACTOR = 3
 VAL_RATIO = 0.1
 TEST_RATIO = 0.1
 

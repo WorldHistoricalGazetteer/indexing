@@ -15,6 +15,7 @@ PUBLIC API: Unchanged from v5.
 
 import gc
 import json
+import pickle
 import random
 import zlib
 from collections import Counter, defaultdict
@@ -25,6 +26,7 @@ from typing import Dict, List, Optional, Set, Tuple
 import numpy as np
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyarrow import parquet as writer
 from elasticsearch.helpers import scan
 
 try:
@@ -271,6 +273,7 @@ class TrainingDataGenerator:
             training_namespaces: List[str],
             force_regenerate: bool = False,
             skip_to_phase3: bool = False,
+            resume_from_pass2: bool = False,
     ):
         self.es = es
         self.db_path = db_path
@@ -279,6 +282,7 @@ class TrainingDataGenerator:
         self.training_namespaces = training_namespaces
         self.force_regenerate = force_regenerate
         self.skip_to_phase3 = skip_to_phase3
+        self.resume_from_pass2 = resume_from_pass2
 
         self.knn = ESKNNHelper(es, index="toponyms")
 
@@ -1085,8 +1089,11 @@ class TrainingDataGenerator:
 
         logger.info(f"Negative candidate pool: {len(all_ids):,} IDs, {len(ids_by_script)} scripts")
 
-        # Apply bin balancing
+        # Apply bin balancing (reduced targets to optimize for quality over quantity)
         logger.info("Applying bin-balancing...")
+        logger.info(f"  Target: {TARGET_SAMPLES_PER_BIN:,} per bin (reduced from 50k)")
+        logger.info(f"  Min bin: {MIN_BIN_SIZE:,} (reduced from 1k)")
+        logger.info(f"  Max oversample: {MAX_OVERSAMPLE_FACTOR}x (reduced from 5x)")
         balanced_pairs, balance_stats = apply_bin_balancing(
             pairs_by_bin,
             target_per_bin=TARGET_SAMPLES_PER_BIN,
@@ -1295,230 +1302,327 @@ class TrainingDataGenerator:
         logger.info("PHASE 3: Streaming hard negative triplet generation")
         logger.info("=" * 60)
 
-        # Check for partial checkpoint
-        partial_dir = self.output_dir / 'triplets' / 'phase3_partial'
-        skip_batches = 0
+        # Initialize variables that might be used later (to avoid UnboundLocalError)
         existing_triplets = 0
+        partial_dir = self.output_dir / 'triplets' / 'phase3_partial'
+        balance_stats = {}
 
-        if partial_dir.exists():
-            # Count existing triplets
-            for split_file in partial_dir.glob('split=*/*.parquet'):
-                try:
-                    existing_triplets += pq.read_table(split_file).num_rows
-                except:
-                    pass
+        # Check for Pass 1 completion checkpoint
+        checkpoint_dir = self.output_dir / 'triplets' / 'phase3_checkpoint'
+        triplet_specs_file = checkpoint_dir / 'triplet_specs.pkl'
+        negatives_file = checkpoint_dir / 'negatives_to_fetch.pkl'
 
-            if existing_triplets > 0:
-                logger.info(f"Found partial checkpoint: {existing_triplets:,} existing triplets")
-                logger.info(f"Resuming from batch ~{existing_triplets // MSEARCH_BATCH_SIZE}")
-                skip_batches = existing_triplets // MSEARCH_BATCH_SIZE
-            else:
-                logger.info("phase3_partial/ exists but is empty, starting fresh")
+        resume_from_pass2 = (
+            checkpoint_dir.exists()
+            and triplet_specs_file.exists()
+            and negatives_file.exists()
+        )
+
+        if resume_from_pass2:
+            logger.info("=" * 60)
+            logger.info("✓ RESUMING FROM PASS 2 (Pass 1 checkpoint found)")
+            logger.info("=" * 60)
+            logger.info("Loading triplet_specs and negatives_to_fetch from checkpoint...")
+
+            with open(triplet_specs_file, 'rb') as f:
+                triplet_specs = pickle.load(f)
+            with open(negatives_file, 'rb') as f:
+                negatives_to_fetch = pickle.load(f)
+
+            logger.info(f"Loaded {len(triplet_specs):,} triplet specs, {len(negatives_to_fetch):,} negatives")
+
+            # We still need toponym_data_map for writing triplets, but we can skip:
+            # - Adjacency building
+            # - Bin balancing
+            # - ES KNN mining (Pass 1)
+
+            # Extract unique anchors and positives from triplet_specs
+            unique_toponyms = set()
+            for anchor, positive, negative, _ in triplet_specs:
+                unique_toponyms.add(anchor)
+                unique_toponyms.add(positive)
+
+            logger.info(f"Loading data for {len(unique_toponyms):,} toponyms (anchors + positives)...")
+            toponym_data_map = {}
+
+            raw_data = self._batch_mget(
+                list(unique_toponyms),
+                source_fields=['name', 'script', 'lang', 'panphon_embedding'],
+                desc="Loading anchor/positive data",
+            )
+
+            for toponym_id, source in raw_data.items():
+                embedding = source.get('panphon_embedding')
+                if embedding and len(embedding) > 0:
+                    toponym_data_map[toponym_id] = {
+                        'name': source.get('name', ''),
+                        'script': source.get('script', 'UNKNOWN'),
+                        'lang': source.get('lang', ''),
+                        'features': np.array(embedding, dtype=np.float32),
+                        'feature_length': len(embedding) // 24,
+                    }
+
+            del raw_data
+            logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
+
+            # Initialize for final checks (we skip Pass 1 entirely)
+            failed_lookups = 0
+
+            # Jump directly to Pass 2
+
         else:
-            logger.info("No partial checkpoint found, starting fresh")
+            # Normal flow: Run Pass 1
+            logger.info("Starting Pass 1: Hard negative mining via ES")
 
-        # Build integer-encoded adjacency
-        logger.info("Building adjacency set...")
-        adjacency = self._build_adjacency(pairs_by_bin)
-        logger.info(f"Adjacency set has {len(adjacency):,} edges")
+            # Initialize variables used later
+            failed_lookups = 0
 
-        # Build per-anchor adjacency lookup for O(1) checks
-        logger.info("Building per-anchor adjacency lookup...")
-        adj_by_anchor = defaultdict(set)
-        for pairs in pairs_by_bin.values():
-            for a, b, _ in pairs:
-                adj_by_anchor[a].add(b)
-                adj_by_anchor[b].add(a)
-        logger.info(f"Built adjacency lookup for {len(adj_by_anchor):,} anchors")
+            # Check for partial checkpoint (mid-Pass 1 interruption)
+            skip_batches = 0
+            # Note: existing_triplets and partial_dir initialized at function start
 
-        # Apply bin balancing
-        logger.info("Applying bin-balancing...")
-        balanced_pairs, balance_stats = apply_bin_balancing(
-            pairs_by_bin,
-            target_per_bin=TARGET_SAMPLES_PER_BIN,
-            min_bin_size=MIN_BIN_SIZE,
-            max_oversample=MAX_OVERSAMPLE_FACTOR,
-        )
-        logger.info(f"Balanced pairs: {len(balanced_pairs):,}")
+            if partial_dir.exists():
+                # Count existing triplets
+                for split_file in partial_dir.glob('split=*/*.parquet'):
+                    try:
+                        existing_triplets += pq.read_table(split_file).num_rows
+                    except:
+                        pass
 
-        # Collect unique anchors
-        unique_anchors = set()
-        for pair in balanced_pairs:
-            anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
-            unique_anchors.add(anchor)
-            unique_anchors.add(positive)
-        logger.info(f"Unique toponyms: {len(unique_anchors):,}")
+                if existing_triplets > 0:
+                    logger.info(f"Found partial checkpoint: {existing_triplets:,} existing triplets")
+                    logger.info(f"Resuming from batch ~{existing_triplets // MSEARCH_BATCH_SIZE}")
+                    skip_batches = existing_triplets // MSEARCH_BATCH_SIZE
+                else:
+                    logger.info("phase3_partial/ exists but is empty, starting fresh")
+            else:
+                logger.info("No partial checkpoint found, starting fresh")
 
-        # Load anchor info AND features (for self-contained triplets)
-        # Include 'name' for Student training (Phase 3 trains Student on hard negatives)
-        # Include 'attestations' for negative validation
-        logger.info("Loading anchor info, features, and attestations...")
-        toponym_data_map = {}  # toponym_id -> {script, lang, name, features, feature_length}
-        attestation_map = {}  # toponym_id -> Set[attestation_id]
+            # Build integer-encoded adjacency
+            logger.info("Building adjacency set...")
+            adjacency = self._build_adjacency(pairs_by_bin)
+            logger.info(f"Adjacency set has {len(adjacency):,} edges")
 
-        raw_data = self._batch_mget(
-            list(unique_anchors),
-            source_fields=['name', 'script', 'lang', 'panphon_embedding', 'attestations'],
-            desc="Loading anchor data",
-        )
+            # Build per-anchor adjacency lookup for O(1) checks
+            logger.info("Building per-anchor adjacency lookup...")
+            adj_by_anchor = defaultdict(set)
+            for pairs in pairs_by_bin.values():
+                for a, b, _ in pairs:
+                    adj_by_anchor[a].add(b)
+                    adj_by_anchor[b].add(a)
+            logger.info(f"Built adjacency lookup for {len(adj_by_anchor):,} anchors")
 
-        for toponym_id, source in raw_data.items():
-            embedding = source.get('panphon_embedding')
-            if embedding and len(embedding) > 0:
-                toponym_data_map[toponym_id] = {
-                    'name': source.get('name', ''),
-                    'script': source.get('script', 'UNKNOWN'),
-                    'lang': source.get('lang', ''),
-                    'features': np.array(embedding, dtype=np.float32),
-                    'feature_length': len(embedding) // 24,
-                }
-                # Convert to frozenset once for faster disjoint checks
-                attestation_map[toponym_id] = frozenset(source.get('attestations', []))
+            # Apply bin balancing (reduced targets to optimize for quality over quantity)
+            logger.info("Applying bin-balancing...")
+            logger.info(f"  Target: {TARGET_SAMPLES_PER_BIN:,} per bin (reduced from 50k)")
+            logger.info(f"  Min bin: {MIN_BIN_SIZE:,} (reduced from 1k)")
+            logger.info(f"  Max oversample: {MAX_OVERSAMPLE_FACTOR}x (reduced from 5x)")
+            balanced_pairs, balance_stats = apply_bin_balancing(
+                pairs_by_bin,
+                target_per_bin=TARGET_SAMPLES_PER_BIN,
+                min_bin_size=MIN_BIN_SIZE,
+                max_oversample=MAX_OVERSAMPLE_FACTOR,
+            )
+            logger.info(f"Balanced pairs: {len(balanced_pairs):,}")
 
-        del raw_data
-        logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
+            # Cap Phase 3 total pairs to reduce ES load and training time
+            PHASE3_MAX_TOTAL = 10_000_000  # 10M triplets total
+            if len(balanced_pairs) > PHASE3_MAX_TOTAL:
+                logger.info(f"Capping Phase 3 pairs from {len(balanced_pairs):,} to {PHASE3_MAX_TOTAL:,}")
+                # Take a stratified sample to preserve bin distribution
+                random.seed(RANDOM_SEED)
+                random.shuffle(balanced_pairs)
+                balanced_pairs = balanced_pairs[:PHASE3_MAX_TOTAL]
+                logger.info(f"Capped pairs: {len(balanced_pairs):,}")
 
-        # Precompute deterministic seed per anchor (avoids repeated CRC32 in hot loop)
-        logger.info("Precomputing anchor seeds...")
-        anchor_seed_map = {
-            tid: (RANDOM_SEED + (zlib.crc32(tid.encode('utf-8')) & 0xffffffff))
-            for tid in unique_anchors
-        }
+            # Collect unique anchors
+            unique_anchors = set()
+            for pair in balanced_pairs:
+                anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
+                unique_anchors.add(anchor)
+                unique_anchors.add(positive)
+            logger.info(f"Unique toponyms: {len(unique_anchors):,}")
 
-        # Build pairs to process
-        all_pairs_to_process = []
-        for pair in balanced_pairs:
-            anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
-            if anchor in toponym_data_map and positive in toponym_data_map:
-                script = toponym_data_map[anchor]['script']
-                lang = toponym_data_map[anchor]['lang']
-                bin_key = get_script_lang_key(script, lang)
-                all_pairs_to_process.append((anchor, positive, bin_key))
+            # Load anchor info AND features (for self-contained triplets)
+            # Include 'name' for Student training (Phase 3 trains Student on hard negatives)
+            # Include 'attestations' for negative validation
+            logger.info("Loading anchor info, features, and attestations...")
+            toponym_data_map = {}  # toponym_id -> {script, lang, name, features, feature_length}
+            attestation_map = {}  # toponym_id -> Set[attestation_id]
 
-        logger.info(f"Processing {len(all_pairs_to_process):,} pairs...")
+            raw_data = self._batch_mget(
+                list(unique_anchors),
+                source_fields=['name', 'script', 'lang', 'panphon_embedding', 'attestations'],
+                desc="Loading anchor data",
+            )
 
-        # Extract embeddings for KNN from already-loaded toponym_data_map
-        # This avoids a redundant batch_get_embeddings fetch from ES
-        logger.info("Extracting embeddings for KNN from loaded data...")
-        anchor_embeddings = {}
-        for tid, data in toponym_data_map.items():
-            # Convert numpy float32 back to list for KNN helper compatibility
-            anchor_embeddings[tid] = data['features'].tolist()
-        logger.info(f"Prepared {len(anchor_embeddings):,} embeddings for KNN")
+            for toponym_id, source in raw_data.items():
+                embedding = source.get('panphon_embedding')
+                if embedding and len(embedding) > 0:
+                    toponym_data_map[toponym_id] = {
+                        'name': source.get('name', ''),
+                        'script': source.get('script', 'UNKNOWN'),
+                        'lang': source.get('lang', ''),
+                        'features': np.array(embedding, dtype=np.float32),
+                        'feature_length': len(embedding) // 24,
+                    }
+                    # Convert to frozenset once for faster disjoint checks
+                    attestation_map[toponym_id] = frozenset(source.get('attestations', []))
 
-        # Set up streaming writer
+            del raw_data
+            logger.info(f"Loaded data for {len(toponym_data_map):,} toponyms")
+
+            # Precompute deterministic seed per anchor (avoids repeated CRC32 in hot loop)
+            logger.info("Precomputing anchor seeds...")
+            anchor_seed_map = {
+                tid: (RANDOM_SEED + (zlib.crc32(tid.encode('utf-8')) & 0xffffffff))
+                for tid in unique_anchors
+            }
+
+            # Build pairs to process
+            all_pairs_to_process = []
+            for pair in balanced_pairs:
+                anchor, positive, _ = pair if isinstance(pair, tuple) else (pair[0], pair[1], 0)
+                if anchor in toponym_data_map and positive in toponym_data_map:
+                    script = toponym_data_map[anchor]['script']
+                    lang = toponym_data_map[anchor]['lang']
+                    bin_key = get_script_lang_key(script, lang)
+                    all_pairs_to_process.append((anchor, positive, bin_key))
+
+            logger.info(f"Processing {len(all_pairs_to_process):,} pairs...")
+
+            # Extract embeddings for KNN from already-loaded toponym_data_map
+            # This avoids a redundant batch_get_embeddings fetch from ES
+            logger.info("Extracting embeddings for KNN from loaded data...")
+            anchor_embeddings = {}
+            for tid, data in toponym_data_map.items():
+                # Convert numpy float32 back to list for KNN helper compatibility
+                anchor_embeddings[tid] = data['features'].tolist()
+            logger.info(f"Prepared {len(anchor_embeddings):,} embeddings for KNN")
+
+            # Build batches for _msearch
+            batches = []
+            current_batch = []
+            failed_lookups = 0
+
+            for sample_idx, (anchor, positive, bin_key) in enumerate(all_pairs_to_process):
+                if anchor not in anchor_embeddings:
+                    failed_lookups += 1
+                    continue
+
+                anchor_data = toponym_data_map[anchor]
+                current_batch.append({
+                    'anchor_id': anchor,
+                    'positive_id': positive,
+                    'embedding': anchor_embeddings[anchor],
+                    'script': anchor_data['script'],
+                    'bin': bin_key,
+                    'sample_idx': sample_idx,
+                })
+
+                if len(current_batch) >= MSEARCH_BATCH_SIZE:
+                    batches.append(current_batch)
+                    current_batch = []
+
+            if current_batch:
+                batches.append(current_batch)
+
+            logger.info(f"Processing {len(batches):,} batches...")
+
+            # Pass 1: Mine hard negatives from ES
+            logger.info("Pass 1: Mining hard negatives (optimized)...")
+            triplet_specs = []  # (anchor_id, positive_id, negative_id, bin_key)
+            negatives_to_fetch = set()
+            batches_processed = 0
+
+            # Skip batches that were already processed in partial run
+            batches_to_process = batches[skip_batches:] if skip_batches > 0 else batches
+            logger.info(f"Processing batches {skip_batches} to {len(batches)} ({len(batches_to_process)} remaining)")
+
+            for batch in tqdm(batches_to_process, desc="Hard negative mining", initial=skip_batches, total=len(batches)):
+                # Get candidate lists with attestations from ES (return_lists=True returns raw hits)
+                candidate_responses = self.knn.find_hard_negatives_batch_with_attestations(
+                    anchors=batch,
+                    k=20,
+                )
+
+                # High-performance local filtering with reservoir sampling
+                for item, hits in zip(batch, candidate_responses):
+                    if not hits:
+                        continue
+
+                    anchor_id = item['anchor_id']
+                    positive_id = item['positive_id']
+
+                    # Fast lookups (no dict construction)
+                    anchor_att = attestation_map.get(anchor_id)
+                    adj_set = adj_by_anchor.get(anchor_id, set())
+
+                    # Deterministic RNG per anchor (seed precomputed)
+                    seed = anchor_seed_map.get(anchor_id, RANDOM_SEED) + item['sample_idx']
+                    rng = random.Random(seed)
+
+                    # Reservoir sampling: select one negative uniformly without building list
+                    selected = None
+                    seen_valid = 0
+
+                    # Iterate ES hits (each hit has _id and _source with attestations)
+                    for hit in hits:
+                        candidate_id = hit['_id']
+
+                        # Skip self
+                        if candidate_id == anchor_id:
+                            continue
+
+                        # O(1) adjacency check using set membership
+                        if candidate_id in adj_set:
+                            continue
+
+                        # Fast attestation disjoint check (no set construction in loop)
+                        # Convert candidate attestations to frozenset once per candidate
+                        candidate_att = frozenset(hit.get('_source', {}).get('attestations', []))
+                        if anchor_att and not anchor_att.isdisjoint(candidate_att):
+                            continue
+
+                        # Reservoir sampling: uniform selection without list allocation
+                        seen_valid += 1
+                        if rng.randrange(seen_valid) == 0:
+                            selected = candidate_id
+
+                    if selected:
+                        # Verify anchor and positive have data
+                        if anchor_id in toponym_data_map and positive_id in toponym_data_map:
+                            triplet_specs.append((anchor_id, positive_id, selected, item['bin']))
+
+                            # Track negatives needing feature fetch
+                            if selected not in toponym_data_map:
+                                negatives_to_fetch.add(selected)
+
+                batches_processed += 1
+                # Check ES health less frequently (every 200 batches instead of 100)
+                if batches_processed % 200 == 0:
+                    self.knn.check_failure_threshold()
+
+            logger.info(f"Found {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
+
+            # Save Pass 1 checkpoint (only in normal flow, not when resuming)
+            checkpoint_dir = self.output_dir / 'triplets' / 'phase3_checkpoint'
+            checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+            triplet_specs_file = checkpoint_dir / 'triplet_specs.pkl'
+            negatives_file = checkpoint_dir / 'negatives_to_fetch.pkl'
+
+            logger.info("Saving Pass 1 checkpoint...")
+            with open(triplet_specs_file, 'wb') as f:
+                pickle.dump(triplet_specs, f, protocol=pickle.HIGHEST_PROTOCOL)
+            with open(negatives_file, 'wb') as f:
+                pickle.dump(negatives_to_fetch, f, protocol=pickle.HIGHEST_PROTOCOL)
+            logger.info(f"✓ Checkpoint saved: {len(triplet_specs):,} triplet specs, {len(negatives_to_fetch):,} negatives")
+
+        # Set up streaming writer (both flows need this)
         triplets_dir = self.output_dir / 'triplets' / 'phase3'
         triplets_dir.mkdir(parents=True, exist_ok=True)
         writer = TripletStreamingWriter(triplets_dir, batch_size=PARQUET_BATCH_SIZE)
-
-        # Build batches for _msearch
-        batches = []
-        current_batch = []
-        failed_lookups = 0
-
-        for sample_idx, (anchor, positive, bin_key) in enumerate(all_pairs_to_process):
-            if anchor not in anchor_embeddings:
-                failed_lookups += 1
-                continue
-
-            anchor_data = toponym_data_map[anchor]
-            current_batch.append({
-                'anchor_id': anchor,
-                'positive_id': positive,
-                'embedding': anchor_embeddings[anchor],
-                'script': anchor_data['script'],
-                'bin': bin_key,
-                'sample_idx': sample_idx,
-            })
-
-            if len(current_batch) >= MSEARCH_BATCH_SIZE:
-                batches.append(current_batch)
-                current_batch = []
-
-        if current_batch:
-            batches.append(current_batch)
-
-        logger.info(f"Processing {len(batches)} batches...")
-
-        # TWO-PASS APPROACH:
-        # Pass 1: Run all _msearch queries to collect hard negatives
-        # Pass 2: Batch fetch features for negatives not in toponym_data_map
-        # Pass 3: Build and stream triplets
-
-        logger.info("Pass 1: Mining hard negatives (optimized)...")
-        triplet_specs = []  # (anchor_id, positive_id, negative_id, bin_key)
-        negatives_to_fetch = set()
-        batches_processed = 0
-
-        # Skip batches that were already processed in partial run
-        batches_to_process = batches[skip_batches:] if skip_batches > 0 else batches
-        logger.info(f"Processing batches {skip_batches} to {len(batches)} ({len(batches_to_process)} remaining)")
-
-        for batch in tqdm(batches_to_process, desc="Hard negative mining", initial=skip_batches, total=len(batches)):
-            # Get candidate lists with attestations from ES (return_lists=True returns raw hits)
-            candidate_responses = self.knn.find_hard_negatives_batch_with_attestations(
-                anchors=batch,
-                k=20,
-            )
-
-            # High-performance local filtering with reservoir sampling
-            for item, hits in zip(batch, candidate_responses):
-                if not hits:
-                    continue
-
-                anchor_id = item['anchor_id']
-                positive_id = item['positive_id']
-
-                # Fast lookups (no dict construction)
-                anchor_att = attestation_map.get(anchor_id)
-                adj_set = adj_by_anchor.get(anchor_id, set())
-
-                # Deterministic RNG per anchor (seed precomputed)
-                seed = anchor_seed_map.get(anchor_id, RANDOM_SEED) + item['sample_idx']
-                rng = random.Random(seed)
-
-                # Reservoir sampling: select one negative uniformly without building list
-                selected = None
-                seen_valid = 0
-
-                # Iterate ES hits (each hit has _id and _source with attestations)
-                for hit in hits:
-                    candidate_id = hit['_id']
-
-                    # Skip self
-                    if candidate_id == anchor_id:
-                        continue
-
-                    # O(1) adjacency check using set membership
-                    if candidate_id in adj_set:
-                        continue
-
-                    # Fast attestation disjoint check (no set construction in loop)
-                    # Convert candidate attestations to frozenset once per candidate
-                    candidate_att = frozenset(hit.get('_source', {}).get('attestations', []))
-                    if anchor_att and not anchor_att.isdisjoint(candidate_att):
-                        continue
-
-                    # Reservoir sampling: uniform selection without list allocation
-                    seen_valid += 1
-                    if rng.randrange(seen_valid) == 0:
-                        selected = candidate_id
-
-                if selected:
-                    # Verify anchor and positive have data
-                    if anchor_id in toponym_data_map and positive_id in toponym_data_map:
-                        triplet_specs.append((anchor_id, positive_id, selected, item['bin']))
-
-                        # Track negatives needing feature fetch
-                        if selected not in toponym_data_map:
-                            negatives_to_fetch.add(selected)
-
-            batches_processed += 1
-            # Check ES health less frequently (every 200 batches instead of 100)
-            if batches_processed % 200 == 0:
-                self.knn.check_failure_threshold()
-
-        logger.info(f"Found {len(triplet_specs):,} triplets, need features for {len(negatives_to_fetch):,} negatives")
 
         # Pass 2: Batch fetch negative features (and names for Student training)
         negative_features = {}
