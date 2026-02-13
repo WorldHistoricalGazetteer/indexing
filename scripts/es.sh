@@ -1125,6 +1125,7 @@ do_train_model() {
 
     DATA_VERSION=${1:-6}
     START_PHASE=${2:-1}
+    GPU_PARTITION="${GPU_PARTITION:-a100}"  # Default to a100, override with GPU_PARTITION=l40s
 
     # Parse optional --resume-from flag
     RESUME_FROM=""
@@ -1190,7 +1191,7 @@ do_train_model() {
 
     echo "=========================================="
     echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
-    echo "Config: 1x A100, 300GB RAM, 48H Limit"
+    echo "Config: 1x GPU (${GPU_PARTITION}), 300GB RAM, 48H Limit"
     echo "Phases: ${START_PHASE} to ${END_PHASE}"
     echo "=========================================="
 
@@ -1206,7 +1207,7 @@ do_train_model() {
 #SBATCH --output=${TRAIN_LOG_DIR}/phase1_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
 #SBATCH --time=18:00:00
-#SBATCH --partition=a100
+#SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1293,7 +1294,7 @@ EOF
 #SBATCH --output=${TRAIN_LOG_DIR}/phase2_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
 #SBATCH --time=16:00:00
-#SBATCH --partition=a100
+#SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1349,7 +1350,7 @@ EOF
 #SBATCH --output=${TRAIN_LOG_DIR}/phase3_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
 #SBATCH --time=24:00:00
-#SBATCH --partition=a100
+#SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1486,7 +1487,7 @@ do_update_embeddings() {
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
 #SBATCH --time=24:00:00
-#SBATCH --partition=a100
+#SBATCH --partition=${GPU_PARTITION:-a100}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
