@@ -1121,26 +1121,41 @@ EOF
 # ==============================================================================
 
 do_train_model() {
-    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume-from CHECKPOINT]
+    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume-from CHECKPOINT] [--partition PARTITION]
 
     DATA_VERSION=${1:-6}
     START_PHASE=${2:-1}
-    GPU_PARTITION="${GPU_PARTITION:-a100}"  # Default to a100, override with GPU_PARTITION=l40s
+    GPU_PARTITION="${GPU_PARTITION:-a100}"  # Default to a100, override with GPU_PARTITION=l40s or --partition flag
 
-    # Parse optional --resume-from flag
+    # Parse optional flags
     RESUME_FROM=""
-    if [ "$3" = "--resume-from" ]; then
-        RESUME_FROM="$4"
+    shift 2  # Remove VERSION and START_PHASE
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --resume-from)
+                RESUME_FROM="$2"
+                shift 2
+                ;;
+            --partition)
+                GPU_PARTITION="$2"
+                shift 2
+                ;;
+            *)
+                # Assume it's END_PHASE if numeric
+                if [[ "$1" =~ ^[0-9]+$ ]]; then
+                    END_PHASE="$1"
+                    shift
+                else
+                    shift
+                fi
+                ;;
+        esac
+    done
+
+    # Set END_PHASE default if not set
+    if [ -z "$END_PHASE" ]; then
         END_PHASE=$START_PHASE
-    elif [ "$4" = "--resume-from" ]; then
-        END_PHASE=$3
-        RESUME_FROM="$5"
-    else
-        if [ -n "$2" ] && [ -z "$3" ]; then
-            END_PHASE=$START_PHASE
-        else
-            END_PHASE=${3:-3}
-        fi
     fi
 
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
