@@ -55,6 +55,8 @@ def main():
                         help='Force regeneration, ignoring existing checkpoints')
     parser.add_argument('--resume', action='store_true',
                         help='Resume from checkpoints (default behavior)')
+    parser.add_argument('--skip-to-phase3', action='store_true',
+                        help='Skip directly to Phase 3 (assumes Phase 1 & 2 complete)')
 
     args = parser.parse_args()
 
@@ -101,6 +103,7 @@ def main():
         scratch_dir=scratch_dir,
         training_namespaces=args.training_namespaces,
         force_regenerate=args.force,
+        skip_to_phase3=args.skip_to_phase3,
     )
 
     stats = generator.generate_all()

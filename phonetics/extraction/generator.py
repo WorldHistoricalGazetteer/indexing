@@ -270,6 +270,7 @@ class TrainingDataGenerator:
             scratch_dir: Path,
             training_namespaces: List[str],
             force_regenerate: bool = False,
+            skip_to_phase3: bool = False,
     ):
         self.es = es
         self.db_path = db_path
@@ -277,6 +278,7 @@ class TrainingDataGenerator:
         self.scratch_dir = scratch_dir
         self.training_namespaces = training_namespaces
         self.force_regenerate = force_regenerate
+        self.skip_to_phase3 = skip_to_phase3
 
         self.knn = ESKNNHelper(es, index="toponyms")
 
@@ -549,8 +551,13 @@ class TrainingDataGenerator:
         logger.info("GENERATING TRAINING DATA FOR ALL PHASES")
         logger.info("=" * 60)
 
+        # If skip_to_phase3 is set, force skip Phase 1 and Phase 2
+        if self.skip_to_phase3:
+            logger.info("🔄 SKIP TO PHASE 3 mode enabled")
+            logger.info("  Phase 1 & 2 will be skipped")
+
         # Check what needs to be done
-        need_phase1 = not self._check_phase_complete('phase1')
+        need_phase1 = not self._check_phase_complete('phase1') and not self.skip_to_phase3
         need_phase3_generate = not self._check_phase_complete('phase3')
         need_phase3_augment = self._check_phase_complete('phase3') and not self._check_phase3_has_text_fields()
 
@@ -565,7 +572,16 @@ class TrainingDataGenerator:
                 logger.info("✓ Positive pairs checkpoint found, loading...")
                 pairs_by_bin = self._load_pairs_from_checkpoint()
             else:
-                pairs_by_bin = self.generate_positive_pairs()
+                if self.skip_to_phase3:
+                    logger.warning("⚠ Skip-to-phase3 set but no pairs checkpoint found!")
+                    logger.info("  Attempting to load from pairs/positive_pairs.parquet...")
+                    if (self.output_dir / 'pairs' / 'positive_pairs.parquet').exists():
+                        pairs_by_bin = self._load_pairs_from_checkpoint()
+                    else:
+                        logger.error("  FATAL: No pairs found, cannot skip to Phase 3")
+                        raise FileNotFoundError("pairs/positive_pairs.parquet required for --skip-to-phase3")
+                else:
+                    pairs_by_bin = self.generate_positive_pairs()
         else:
             logger.info("✓ Pairs not needed (Phase 1 & 3 complete), skipping...")
 
@@ -574,8 +590,11 @@ class TrainingDataGenerator:
         logger.info("STEP 2: GENERATE PHASE 2 SAMPLES")
         logger.info("=" * 60)
 
-        if self._check_phase_complete('phase2'):
-            logger.info("✓ Phase 2 checkpoint found, skipping...")
+        if self._check_phase_complete('phase2') or self.skip_to_phase3:
+            if self.skip_to_phase3:
+                logger.info("🔄 Skipping Phase 2 (skip-to-phase3 mode)")
+            else:
+                logger.info("✓ Phase 2 checkpoint found, skipping...")
             training_dir = self.output_dir / 'training'
             total_samples = 0
             for split in ['train', 'val', 'test']:
@@ -597,8 +616,11 @@ class TrainingDataGenerator:
         logger.info("STEP 3: GENERATE PHASE 1 TRIPLETS (streaming)")
         logger.info("=" * 60)
 
-        if self._check_phase_complete('phase1'):
-            logger.info("✓ Phase 1 checkpoint found, skipping...")
+        if self._check_phase_complete('phase1') or self.skip_to_phase3:
+            if self.skip_to_phase3:
+                logger.info("🔄 Skipping Phase 1 (skip-to-phase3 mode)")
+            else:
+                logger.info("✓ Phase 1 checkpoint found, skipping...")
             phase1_train = pq.read_table(self.output_dir / 'triplets' / 'phase1' / 'train.parquet')
             phase1_val = pq.read_table(self.output_dir / 'triplets' / 'phase1' / 'val.parquet')
             self.stats['phase1']['triplets'] = len(phase1_train) + len(phase1_val)
@@ -1256,10 +1278,44 @@ class TrainingDataGenerator:
         Uses _IntegerAdjacency for memory-efficient edge storage.
         Reuses toponym_data_map embeddings for KNN queries instead of
         fetching them separately via batch_get_embeddings.
+
+        Supports resumption from phase3_partial/ checkpoint if ES died mid-run:
+
+            1. Before ES dies (replace "7971159" with current Job ID):
+            rsync -av --progress /scratch/slurm-7971159/triplets/phase3/ /ix1/ishi/models/phonetic/data/v6/triplets/phase3_partial/
+
+            2. Restart ES:
+            es -staging-start
+
+            3. Resume Phase 3 only:
+            es -generate-training-data 6 --skip-to-phase3
+
         """
         logger.info("=" * 60)
         logger.info("PHASE 3: Streaming hard negative triplet generation")
         logger.info("=" * 60)
+
+        # Check for partial checkpoint
+        partial_dir = self.output_dir / 'triplets' / 'phase3_partial'
+        skip_batches = 0
+        existing_triplets = 0
+
+        if partial_dir.exists():
+            # Count existing triplets
+            for split_file in partial_dir.glob('split=*/*.parquet'):
+                try:
+                    existing_triplets += pq.read_table(split_file).num_rows
+                except:
+                    pass
+
+            if existing_triplets > 0:
+                logger.info(f"Found partial checkpoint: {existing_triplets:,} existing triplets")
+                logger.info(f"Resuming from batch ~{existing_triplets // MSEARCH_BATCH_SIZE}")
+                skip_batches = existing_triplets // MSEARCH_BATCH_SIZE
+            else:
+                logger.info("phase3_partial/ exists but is empty, starting fresh")
+        else:
+            logger.info("No partial checkpoint found, starting fresh")
 
         # Build integer-encoded adjacency
         logger.info("Building adjacency set...")
@@ -1377,7 +1433,11 @@ class TrainingDataGenerator:
         negatives_to_fetch = set()
         batches_processed = 0
 
-        for batch in tqdm(batches, desc="Hard negative mining"):
+        # Skip batches that were already processed in partial run
+        batches_to_process = batches[skip_batches:] if skip_batches > 0 else batches
+        logger.info(f"Processing batches {skip_batches} to {len(batches)} ({len(batches_to_process)} remaining)")
+
+        for batch in tqdm(batches_to_process, desc="Hard negative mining", initial=skip_batches, total=len(batches)):
             hard_negs = self.knn.find_hard_negatives_batch(
                 anchors=batch,
                 adjacency=adjacency,
@@ -1486,6 +1546,52 @@ class TrainingDataGenerator:
         train_count, val_count = writer.close()
 
         logger.info(f"Generated {triplet_count:,} Phase 3 triplets")
+
+        # If we had a partial checkpoint, merge the files
+        if existing_triplets > 0:
+            logger.info(f"Merging {existing_triplets:,} partial triplets with {triplet_count:,} new triplets")
+            triplets_dir = self.output_dir / 'triplets' / 'phase3'
+
+            # Read partial files
+            for split in ['train', 'val']:
+                partial_split_dir = partial_dir / f'split={split}'
+                final_split_dir = triplets_dir / f'split={split}'
+
+                if partial_split_dir.exists():
+                    partial_files = list(partial_split_dir.glob('*.parquet'))
+                    final_files = list(final_split_dir.glob('*.parquet'))
+
+                    if partial_files:
+                        # Read all partial parquet files
+                        partial_tables = [pq.read_table(f) for f in partial_files]
+                        # Read all new files
+                        final_tables = [pq.read_table(f) for f in final_files] if final_files else []
+
+                        # Concatenate
+                        all_tables = partial_tables + final_tables
+                        merged = pa.concat_tables(all_tables)
+
+                        # Write merged file
+                        final_split_dir.mkdir(parents=True, exist_ok=True)
+                        pq.write_table(
+                            merged,
+                            final_split_dir / 'data.parquet',
+                            compression='snappy'
+                        )
+
+                        # Update counts
+                        if split == 'train':
+                            train_count = merged.num_rows
+                        else:
+                            val_count = merged.num_rows
+
+                        logger.info(f"Merged {split}: {merged.num_rows:,} total triplets")
+
+            # Remove partial directory after successful merge
+            import shutil
+            shutil.rmtree(partial_dir)
+            logger.info("Removed partial checkpoint after successful merge")
+
         logger.info(f"Saved {train_count:,} train, {val_count:,} val triplets")
 
         self.stats['phase3']['triplets'] = triplet_count

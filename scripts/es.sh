@@ -937,13 +937,14 @@ EOF
 # ==============================================================================
 
 do_generate_training_data() {
-    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume]
+    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume|--skip-to-phase3]
 
     DATA_VERSION=${1:-6}
     shift 2>/dev/null || true
 
     # Parse flags
     FORCE_FLAG=""
+    SKIP_PHASE3_FLAG=""
     PYTHON_ARGS=""
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -954,6 +955,11 @@ do_generate_training_data() {
                 ;;
             --resume)
                 echo "  Mode: RESUME (will skip completed phases)"
+                shift
+                ;;
+            --skip-to-phase3)
+                SKIP_PHASE3_FLAG="--skip-to-phase3"
+                echo "  Mode: SKIP TO PHASE 3 (assumes Phase 1 & 2 complete)"
                 shift
                 ;;
             *)
@@ -1037,6 +1043,8 @@ do_generate_training_data() {
     echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
     if [ -n "$FORCE_FLAG" ]; then
         echo "  Mode:         FORCE (regenerate all)"
+    elif [ -n "$SKIP_PHASE3_FLAG" ]; then
+        echo "  Mode:         SKIP TO PHASE 3"
     else
         echo "  Mode:         RESUME (skip completed phases)"
     fi
@@ -1082,6 +1090,7 @@ python -m phonetics.extraction.generate_training_data \
     --scratch-dir "\$SCRATCH_DIR" \
     --training-namespaces gn wd tgn \
     $FORCE_FLAG \
+    $SKIP_PHASE3_FLAG \
     $PYTHON_ARGS
 
 echo
@@ -1782,10 +1791,12 @@ case "$1" in
         echo "  Options:"
         echo "    --force            Force regeneration, ignoring checkpoints"
         echo "    --resume           Resume from checkpoints (default)"
+        echo "    --skip-to-phase3   Skip directly to Phase 3 (assumes Phase 1 & 2 complete)"
         echo
         echo "  Examples:"
         echo "    $0 -generate-training-data 6              # Generate (resume if interrupted)"
         echo "    $0 -generate-training-data 6 --force      # Regenerate from scratch"
+        echo "    $0 -generate-training-data 6 --skip-to-phase3  # Jump to Phase 3 only"
         echo
         echo "MODEL TRAINING PIPELINE:"
         echo "  -train-model VERSION [PHASE]   Submit training job for model version"
