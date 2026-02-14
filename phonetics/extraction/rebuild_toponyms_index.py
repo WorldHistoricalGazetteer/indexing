@@ -32,10 +32,15 @@ IPA backends:
 
 # Suppress warnings early - before any imports that might trigger them
 import warnings
+import logging as _logging
+
 warnings.filterwarnings("ignore", category=UserWarning, module='epitran')
 warnings.filterwarnings("ignore", category=UserWarning, module='pkg_resources')
 warnings.filterwarnings("ignore", message="pkg_resources is deprecated")
 warnings.filterwarnings("ignore", message=".*tokenizer class.*")
+
+# Suppress Epitran's lex_lookup warning specifically
+_logging.getLogger('epitran').setLevel(_logging.ERROR)
 
 import argparse
 import hashlib
