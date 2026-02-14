@@ -41,6 +41,16 @@ echo "Cloning Flite repository..."
 git clone https://github.com/festvox/flite.git
 cd flite
 
+# Fix cp flags for BSD/Linux compatibility (MacOS and some Linux systems)
+echo ""
+echo "Patching Makefiles for cp compatibility..."
+if [ -f main/Makefile ]; then
+    # Change cp -pd to cp -pR for BSD compatibility
+    sed -i.bak 's/cp -pd/cp -pR/g' main/Makefile 2>/dev/null || \
+    sed -i '' 's/cp -pd/cp -pR/g' main/Makefile 2>/dev/null || \
+    echo "  (Makefile patch not needed or already applied)"
+fi
+
 # Configure
 echo ""
 echo "Configuring Flite..."
@@ -48,17 +58,24 @@ echo "Configuring Flite..."
 
 echo ""
 echo "Building Flite libraries (skipping broken main/)..."
-# Build only what we need, avoiding the broken main/ directory
-make -j$(nproc) -C src || true
-make -j$(nproc) -C lang || true
-make -j$(nproc) -C lib || true
+# Try full build first with the Makefile fix
+if make -j$(nproc) 2>&1 | tee build.log; then
+    echo "✓ Full build succeeded"
+    make install
+else
+    echo "⚠ Full build failed, trying partial build..."
+    # Build only what we need, avoiding the broken main/ directory
+    make -j$(nproc) -C src || true
+    make -j$(nproc) -C lang || true
+    make -j$(nproc) -C lib || true
 
-# Install libraries manually
-echo ""
-echo "Installing Flite libraries..."
-cp -r include/* "$HOME/.local/include/" 2>/dev/null || true
-find build -name "*.a" -exec cp {} "$HOME/.local/lib/" \; 2>/dev/null || true
-find build -name "*.so*" -exec cp {} "$HOME/.local/lib/" \; 2>/dev/null || true
+    # Install libraries manually
+    echo ""
+    echo "Installing Flite libraries..."
+    cp -r include/* "$HOME/.local/include/" 2>/dev/null || true
+    find build -name "*.a" -exec cp {} "$HOME/.local/lib/" \; 2>/dev/null || true
+    find build -name "*.so*" -exec cp {} "$HOME/.local/lib/" \; 2>/dev/null || true
+fi
 
 # Now build lex_lookup from testsuite
 echo ""
