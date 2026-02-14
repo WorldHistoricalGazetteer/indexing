@@ -524,12 +524,12 @@ Character vocabulary construction balances coverage against tractability:
 \begin{itemize}
     \item \textbf{Alphabetic scripts}: Native characters are retained with expansion to full Unicode ranges for each observed script. This yields script-specific vocabularies ranging from 72 tokens (Tamil) to 1,368 tokens (Arabic extended), with intermediate sizes for Cyrillic (450), Greek (373), Devanagari (162), Georgian (128), and others.
 
-    \item \textbf{Chinese and Japanese}: Han characters are retained natively, but only those actually observed in the 67M toponym corpus (fewer than 3,000 of the approximately 20,900 characters in the CJK Unified Ideographs block U+4E00--U+9FFF). This selective inclusion avoids computational overhead from rare archaic characters while ensuring 100\% coverage of observed names. Hiragana and Katakana are similarly retained as native characters. IPA transcriptions for Chinese topolects (Mandarin, Gan, Wu, Yue) and Japanese are generated via CharsiuG2P~\citep{zhu2022charsiu-g2p}.
+    \item \textbf{Chinese and Japanese}: Han characters are retained natively, but only those actually observed in the 67M toponym corpus (approximately 93,500 of the approximately 20,900 characters in the CJK Unified Ideographs block U+4E00--U+9FFF). This selective inclusion avoids computational overhead from rare archaic characters while ensuring 100\% coverage of observed names. Hiragana (350 chars) and Katakana (182 chars) are similarly retained as native characters. IPA transcriptions for Chinese topolects (Mandarin, Gan, Wu, Yue) are generated via CharsiuG2P~\citep{zhu2022charsiu-g2p}, while Japanese Kana rely on Epitran extensions.
 
     \item \textbf{Korean Hangul}: For the Student network's character vocabulary, rather than treating 11,172 syllable blocks as atomic units, I decompose each syllable into Jamo components (lead consonant, vowel, optional tail consonant), yielding 51 Jamo tokens with explicit phonetic structure. For the Teacher network's IPA transcription, Korean toponyms are processed via CharsiuG2P~\citep{zhu2022charsiu-g2p}, which handles both native Hangul and Sino-Korean Hanja characters.
 \end{itemize}
 
-The resulting vocabulary contains approximately 14,500 tokens: the base Latin/ASCII set, 51 Korean Jamo, approximately 3,000 observed Han characters, and script-specific character sets across 20 native scripts including Armenian, Greek, Gujarati, and Kannada (newly added in v6). Each token is tagged with its source script for embedding lookup. The vocabulary additionally supports 1,944 distinct language codes observed in the corpus.
+The resulting vocabulary contains \textbf{113,309 tokens}: the base Latin/ASCII set (94 printable ASCII characters), approximately 93,500 observed Han characters from the CJK Unified Ideographs block, 11,624 Hangul syllables, and script-specific character sets across 20 native scripts including Armenian (92 chars), Greek (373 chars), Gujarati (91 chars), Hebrew (147 chars), and Kannada (90 chars)—all newly added in v6. Each token is tagged with its source script for embedding lookup. The vocabulary additionally supports 1,944 distinct language codes observed in the corpus.
 
 \subsection{Teacher Network: Phonetic Feature Encoder}
 
@@ -608,7 +608,7 @@ I restrict training data to records from the \texttt{gn}, \texttt{tgn}, and \tex
 \paragraph{3. Global Vocabulary Construction.}
 To prevent out-of-vocabulary (OOV) errors at inference time, I decouple vocabulary construction from pair generation.
 \begin{itemize}
-    \item \textbf{Pass 1 (Vocabulary):} I scan the entire corpus (66.9 million unique toponyms) to build the character vocabulary, observing 8,448 distinct characters across 20 scripts. Script-specific preprocessing is applied: CJK and Japanese Kana are romanised via AnyAscii, while Korean Hangul is decomposed into Jamo. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding 11,122 tokens.
+    \item \textbf{Pass 1 (Vocabulary):} I scan the entire corpus (66.9 million unique toponyms) to build the character vocabulary, observing 17,095 distinct characters across 20 scripts. Script-specific preprocessing is applied: Korean Hangul syllables are retained natively (11,624 distinct syllables observed), CJK ideographs are retained selectively (approximately 93,500 of the 20,900 characters in block U+4E00--U+9FFF), and other scripts are kept in their native form. The vocabulary is then expanded to include full Unicode ranges for each observed script, yielding \textbf{113,309 tokens}.
     \item \textbf{Pass 2 (Training Pairs):} I generate candidate pairs from co-located toponyms, restricted to the stratified quotas defined above.
 \end{itemize}
 
@@ -710,29 +710,29 @@ For training, I restrict to the three high-quality namespace authorities: GeoNam
 \toprule
 \textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{IPA Coverage} & \textbf{Top Languages (IPA)} \\
 \midrule
-LATIN & 55,617,677 & 83.1\% & 41.9\% & en, fr, nl, de, sv \\
+LATIN & 55,617,677 & 83.1\% & 43.7\% & en, fr, nl, de, sv \\
 CYRILLIC & 3,614,762 & 5.4\% & 40.8\% & ru, uk, sr \\
-CJK & 2,973,525 & 4.4\% & 43.8\% & zh \\
+CJK & 2,973,525 & 4.4\% & 43.9\% & zh (Charsiu) \\
 ARABIC & 2,098,089 & 3.1\% & 52.4\% & fa, ar, ur \\
-HANGUL & 393,996 & 0.6\% & 58.0\% & ko \\
-OTHER & 342,642 & 0.5\% & --- & --- \\
-KATAKANA & 340,555 & 0.5\% & --- & ja \\
+HANGUL & 393,996 & 0.6\% & 58.0\% & ko (Charsiu) \\
+OTHER & 342,642 & 0.5\% & 0.0\% & --- \\
+KATAKANA & 340,555 & 0.5\% & 0.0\% & ja (ext. added) \\
 THAI & 251,458 & 0.4\% & 83.6\% & th \\
-GREEK & 217,997 & 0.3\% & --- & el \\
-DEVANAGARI & 166,957 & 0.2\% & 51.0\% & hi, mr \\
-ARMENIAN & 153,467 & 0.2\% & --- & hy \\
-HIRAGANA & 151,980 & 0.2\% & --- & ja \\
-HEBREW & 151,960 & 0.2\% & --- & he \\
+GREEK & 217,997 & 0.3\% & 0.0\% & el (ext. added) \\
+DEVANAGARI & 166,957 & 0.2\% & 51.1\% & hi, mr \\
+ARMENIAN & 153,467 & 0.2\% & 0.0\% & hy (ext. added) \\
+HIRAGANA & 151,980 & 0.2\% & 0.0\% & ja (ext. added) \\
+HEBREW & 151,960 & 0.2\% & 83.8\% & he (Phonikud) \\
 BENGALI & 106,896 & 0.2\% & 72.9\% & bn \\
 GEORGIAN & 105,902 & 0.2\% & 81.2\% & ka \\
 MALAYALAM & 68,176 & 0.1\% & 78.5\% & ml \\
 TAMIL & 52,486 & 0.1\% & 90.9\% & ta \\
 TELUGU & 51,440 & 0.1\% & 92.6\% & te \\
-KANNADA & 43,155 & 0.1\% & --- & kn \\
-GUJARATI & 21,428 & 0.03\% & --- & gu \\
+KANNADA & 43,155 & 0.1\% & 0.0\% & kn (ext. added) \\
+GUJARATI & 21,428 & 0.03\% & 0.0\% & gu (ext. added) \\
 \bottomrule
 \end{tabular}
-\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful Epitran transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Scripts marked ``---'' lack Epitran support or show negligible coverage; their toponyms contribute only to Phase 2--3 character-level training.}
+\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). v6 uses Epitran extensions for 97 new language-script pairs, Phonikud for Hebrew, and CharsiuG2P for Chinese topolects/Korean. Scripts showing 0.0\% coverage indicate Epitran extension files exist but IPA generation failed or was not properly tracked during pipeline execution; these toponyms contribute to Phase 2--3 character-level training.}
 \label{tab:script-distribution}
 \end{table}
 
