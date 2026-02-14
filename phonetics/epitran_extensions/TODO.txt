@@ -6,34 +6,34 @@
 |  eng  |   LATIN    |  9,266,188 | English                                                    |   eng-Latn  |      EPITRAN       |
 |  ceb  |   LATIN    |  2,457,998 | Cebuano                                                    |   ceb-Latn  |      EPITRAN       |
 |  fra  |   LATIN    |  2,408,402 | French                                                     |   fra-Latn  |      EPITRAN       |
-|  zho  |    CJK     |  2,371,511 | ZHO (script default)                                       |   cmn-Hans  | EPITRAN (Inferred) |
+|  zho  |    CJK     |  2,371,511 | ZHO (script default)                                       |     None    |      CHARSIU       |
 |  nld  |   LATIN    |  2,294,033 | Dutch                                                      |   nld-Latn  |      EPITRAN       |
 |  deu  |   LATIN    |  2,152,348 | German                                                     |   deu-Latn  |      EPITRAN       |
 |  swe  |   LATIN    |  1,719,638 | Swedish                                                    |   swe-Latn  |      EPITRAN       |
 |  spa  |   LATIN    |  1,535,156 | Spanish                                                    |   spa-Latn  |      EPITRAN       |
-|  rus  |  CYRILLIC  |  1,478,285 | RUS (script default)                                       |   rus-Cyrl  | EPITRAN (Inferred) |
+|  rus  |  CYRILLIC  |  1,478,285 | RUS (script default)                                       |   rus-Cyrl  |      EPITRAN       |
 |  ind  |   LATIN    |    932,052 | Indonesian                                                 |   ind-Latn  |      EPITRAN       |
 |  tur  |   LATIN    |    846,809 | Turkish                                                    |   tur-Latn  |      EPITRAN       |
 |  ita  |   LATIN    |    828,486 | Italian                                                    |   ita-Latn  |      EPITRAN       |
-|  ara  |   ARABIC   |    794,813 | ARA (script default)                                       |   ara-Arab  | EPITRAN (Inferred) |
+|  ara  |   ARABIC   |    794,813 | ARA (script default)                                       |   ara-Arab  |      EPITRAN       |
 |  por  |   LATIN    |    713,498 | Portuguese                                                 |   por-Latn  |      EPITRAN       |
-|  gle  |   LATIN    |    674,413 | Irish                                                      |   gle-Latn  |      EPITRAN       |
+|  gle  |   LATIN    |    674,413 | Irish                                                      |   gle-Latn  |    EPITRAN-EXT     |
 |  pol  |   LATIN    |    672,311 | Polish                                                     |   pol-Latn  |      EPITRAN       |
 |  cat  |   LATIN    |    635,350 | Catalan                                                    |   cat-Latn  |      EPITRAN       |
 |  ces  |   LATIN    |    599,216 | Czech                                                      |   ces-Latn  |      EPITRAN       |
 |  fas  |   ARABIC   |    585,171 | Persian                                                    |   fas-Arab  |      EPITRAN       |
 |  fin  |   LATIN    |    537,845 | Finnish                                                    |   fin-Latn  |      EPITRAN       |
 |  ukr  |  CYRILLIC  |    489,211 | Ukrainian                                                  |   ukr-Cyrl  |      EPITRAN       |
-|  jpn  |    CJK     |    453,331 | Japanese                                                   |   jpn-Hira  |      EPITRAN       |
+|  jpn  |    CJK     |    453,331 | Japanese                                                   |   jpn-Hira  |      CHARSIU       |
 |  nob  |   LATIN    |    443,090 | Norwegian Bokmål                                           |   nob-Latn  |    EPITRAN-EXT     |
 |  nor  |   LATIN    |    431,297 | Norwegian                                                  |   nor-Latn  |    EPITRAN-EXT     |
-|  kor  |   HANGUL   |    393,647 | KOR (script default)                                       |   kor-Hang  | EPITRAN (Inferred) |
+|  kor  |   HANGUL   |    393,647 | KOR (script default)                                       |     None    |      CHARSIU       |
 |  ron  |   LATIN    |    377,356 | Romanian                                                   |   ron-Latn  |      EPITRAN       |
 |  eus  |   LATIN    |    352,276 | Basque                                                     |   eus-Latn  |    EPITRAN-EXT     |
-|  jpn  |  KATAKANA  |    340,251 | JPN (script default)                                       |   jpn-Kana  | EPITRAN (Inferred) |
-|  nno  |   LATIN    |    314,327 | Norwegian Nynorsk                                          |   nno-Latn  |      EPITRAN       |
+|  jpn  |  KATAKANA  |    340,251 | JPN (script default)                                       |     None    |      CHARSIU       |
+|  nno  |   LATIN    |    314,327 | Norwegian Nynorsk                                          |   nno-Latn  |    EPITRAN-EXT     |
 |  ast  |   LATIN    |    307,449 | Asturian                                                   |   ast-Latn  |    EPITRAN-EXT     |
-|  dan  |   LATIN    |    300,846 | Danish                                                     |   dan-Latn  |      EPITRAN       |
+|  dan  |   LATIN    |    300,846 | Danish                                                     |   dan-Latn  |    EPITRAN-EXT     |
 |  nan  |   LATIN    |    294,525 | Min Nan Chinese                                            |   nan-Latn  |      EPITRAN       |
 |  che  |  CYRILLIC  |    290,609 | Chechen                                                    |   che-Cyrl  |    EPITRAN-EXT     |
 |  msa  |   LATIN    |    289,955 | Malay (macrolanguage)                                      |   msa-Latn  |      EPITRAN       |
@@ -41,18 +41,18 @@
 |  vie  |   LATIN    |    270,058 | Vietnamese                                                 |   vie-Latn  |      EPITRAN       |
 |  srp  |  CYRILLIC  |    267,204 | Serbian                                                    |   srp-Cyrl  |      EPITRAN       |
 |  arz  |   ARABIC   |    266,519 | Egyptian Arabic                                            |   arz-Arab  |    EPITRAN-EXT     |
-|  slv  |   LATIN    |    254,968 | Slovenian                                                  |   slv-Latn  |      EPITRAN       |
+|  slv  |   LATIN    |    254,968 | Slovenian                                                  |   slv-Latn  |    EPITRAN-EXT     |
 |  hun  |   LATIN    |    254,418 | Hungarian                                                  |   hun-Latn  |      EPITRAN       |
 |  tat  |  CYRILLIC  |    251,436 | Tatar                                                      |   tat-Cyrl  |    EPITRAN-EXT     |
-|  tha  |    THAI    |    251,297 | Thai                                                       |   tha-Thai  | EPITRAN (Inferred) |
+|  tha  |    THAI    |    251,297 | Thai                                                       |   tha-Thai  |      EPITRAN       |
 |  bul  |  CYRILLIC  |    237,444 | Bulgarian                                                  |   bul-Cyrl  |    EPITRAN-EXT     |
 |  hbs  |   LATIN    |    234,328 | Serbo-Croatian                                             |   hbs-Latn  |    EPITRAN-EXT     |
-|  cym  |   LATIN    |    231,326 | Welsh                                                      |   cym-Latn  |      EPITRAN       |
+|  cym  |   LATIN    |    231,326 | Welsh                                                      |   cym-Latn  |    EPITRAN-EXT     |
 |  oci  |   LATIN    |    220,347 | Occitan (post 1500)                                        |   oci-Latn  |    EPITRAN-EXT     |
 |  slk  |   LATIN    |    220,187 | Slovak                                                     |   slk-Latn  |    EPITRAN-EXT     |
 |  ell  |   GREEK    |    212,365 | ELL (script default)                                       |   ell-Grek  |    EPITRAN-EXT     |
 |  srp  |   LATIN    |    195,550 | Serbian                                                    |   srp-Latn  |      EPITRAN       |
-|  mul  |   LATIN    |    192,247 | Multiple languages                                         |   mul-Latn  |    EPITRAN-EXT     |
+|  mul  |   LATIN    |    192,247 | Multiple languages                                         |   mul-Latn  |    SYMPHONYM     |
 |  glg  |   LATIN    |    190,436 | Galician                                                   |   glg-Latn  |      EPITRAN       |
 |  bel  |  CYRILLIC  |    179,569 | Belarusian                                                 |   bel-Cyrl  |    EPITRAN-EXT     |
 |  vec  |   LATIN    |    178,052 | Venetian                                                   |   vec-Latn  |    EPITRAN-EXT     |
@@ -61,11 +61,11 @@
 |  est  |   LATIN    |    162,697 | Estonian                                                   |   est-Latn  |      EPITRAN       |
 |  war  |   LATIN    |    157,687 | Waray (Philippines)                                        |   war-Latn  |    EPITRAN-EXT     |
 |  lit  |   LATIN    |    156,859 | Lithuanian                                                 |   lit-Latn  |      EPITRAN       |
-|  jpn  |  HIRAGANA  |    151,876 | JPN (script default)                                       |   jpn-Hira  | EPITRAN (Inferred) |
+|  jpn  |  HIRAGANA  |    151,876 | JPN (script default)                                       |     None    |      CHARSIU       |
 |  hye  |  ARMENIAN  |    149,004 | Armenian                                                   |   hye-Armn  |    EPITRAN-EXT     |
 |  hrv  |   LATIN    |    148,461 | Croatian                                                   |   hrv-Latn  |      EPITRAN       |
 |  bre  |   LATIN    |    146,276 | Breton                                                     |   bre-Latn  |    EPITRAN-EXT     |
-|  heb  |   HEBREW   |    144,877 | HEB (script default)                                       |     None    |     PHONIKUD?      |
+|  heb  |   HEBREW   |    144,877 | HEB (script default)                                       |     None    |     PHONIKUD      |
 |  und  |   OTHER    |    140,801 | Undetermined                                               |     None    |  NEEDS_DETECTION   |
 |  lav  |   LATIN    |    133,419 | Latvian                                                    |   lav-Latn  |      EPITRAN       |
 |  vol  |   LATIN    |    127,000 | Volapük                                                    |   vol-Latn  |    EPITRAN-EXT     |
@@ -78,7 +78,7 @@
 |  min  |   LATIN    |    112,276 | Minangkabau                                                |   min-Latn  |    EPITRAN-EXT     |
 |  kaz  |  CYRILLIC  |    107,889 | Kazakh                                                     |   kaz-Cyrl  |      EPITRAN       |
 |  nds  |   LATIN    |    107,787 | Low German                                                 |   nds-Latn  |    EPITRAN-EXT     |
-|  afr  |   LATIN    |    105,820 | Afrikaans                                                  |   afr-Latn  |      EPITRAN       |
+|  afr  |   LATIN    |    105,820 | Afrikaans                                                  |   afr-Latn  |    EPITRAN-EXT     |
 |  bar  |   LATIN    |    105,174 | Bavarian                                                   |   bar-Latn  |    EPITRAN-EXT     |
 |  arg  |   LATIN    |    103,036 | Aragonese                                                  |   arg-Latn  |    EPITRAN-EXT     |
 |  ido  |   LATIN    |    102,245 | Ido                                                        |   ido-Latn  |    EPITRAN-EXT     |
@@ -94,9 +94,9 @@
 |  scn  |   LATIN    |     89,821 | Sicilian                                                   |   scn-Latn  |    EPITRAN-EXT     |
 |  tgl  |   LATIN    |     89,749 | Tagalog                                                    |   tgl-Latn  |      EPITRAN       |
 |  pms  |   LATIN    |     88,824 | Piemontese                                                 |   pms-Latn  |    EPITRAN-EXT     |
-|  hin  | DEVANAGARI |     88,207 | Hindi                                                      |   hin-Deva  | EPITRAN (Inferred) |
-|  ile  |   LATIN    |     87,062 | Interlingue                                                |   ile-Latn  |      EPITRAN       |
-|  ben  |  BENGALI   |     86,859 | Bengali                                                    |   ben-Beng  | EPITRAN (Inferred) |
+|  hin  | DEVANAGARI |     88,207 | Hindi                                                      |   hin-Deva  |      EPITRAN       |
+|  ile  |   LATIN    |     87,062 | Interlingue                                                |   ile-Latn  |    EPITRAN-EXT     |
+|  ben  |  BENGALI   |     86,859 | Bengali                                                    |   ben-Beng  |      EPITRAN       |
 |  wln  |   LATIN    |     86,751 | Walloon                                                    |   wln-Latn  |    EPITRAN-EXT     |
 |  vls  |   LATIN    |     85,718 | Vlaams                                                     |   vls-Latn  |    EPITRAN-EXT     |
 |  kon  |   LATIN    |     84,375 | Kongo                                                      |   kon-Latn  |    EPITRAN-EXT     |
@@ -111,24 +111,24 @@
 |  kur  |   LATIN    |     75,364 | Kurdish                                                    |   kur-Latn  |    EPITRAN-EXT     |
 |  pcd  |   LATIN    |     73,823 | Picard                                                     |   pcd-Latn  |    EPITRAN-EXT     |
 |  frp  |   LATIN    |     73,275 | Arpitan                                                    |   frp-Latn  |    EPITRAN-EXT     |
-|  mal  | MALAYALAM  |     68,150 | Malayalam                                                  |   mal-Mlym  | EPITRAN (Inferred) |
+|  mal  | MALAYALAM  |     68,150 | Malayalam                                                  |   mal-Mlym  |      EPITRAN       |
 |  mkd  |  CYRILLIC  |     64,869 | Macedonian                                                 |   mkd-Cyrl  |    EPITRAN-EXT     |
 |  mya  |   OTHER    |     62,722 | Burmese                                                    |   mya-Mymr  |    EPITRAN-EXT     |
 |  aze  |   LATIN    |     58,431 | Azerbaijani                                                |   aze-Latn  |      EPITRAN       |
 |  lmo  |   LATIN    |     57,985 | Lombard                                                    |   lmo-Latn  |    EPITRAN-EXT     |
 |  ace  |   LATIN    |     54,279 | Achinese                                                   |   ace-Latn  |    EPITRAN-EXT     |
 |  jav  |   LATIN    |     54,046 | Javanese                                                   |   jav-Latn  |      EPITRAN       |
-|  tam  |   TAMIL    |     52,434 | Tamil                                                      |   tam-Taml  | EPITRAN (Inferred) |
-|  tel  |   TELUGU   |     51,402 | Telugu                                                     |   tel-Telu  | EPITRAN (Inferred) |
+|  tam  |   TAMIL    |     52,434 | Tamil                                                      |   tam-Taml  |      EPITRAN       |
+|  tel  |   TELUGU   |     51,402 | Telugu                                                     |   tel-Telu  |      EPITRAN       |
 |  wuu  |    CJK     |     48,927 | Wu Chinese                                                 |     None    |      CHARSIU       |
 |  kaz  |   ARABIC   |     48,076 | Kazakh                                                     |   kaz-Arab  |    EPITRAN-EXT     |
 |  sme  |   LATIN    |     46,824 | Northern Sami                                              |   sme-Latn  |    EPITRAN-EXT     |
 |  pap  |   LATIN    |     46,355 | Papiamento                                                 |   pap-Latn  |    EPITRAN-EXT     |
-|  kab  |   LATIN    |     46,025 | Kabyle                                                     |   kab-Latn  |      EPITRAN       |
+|  kab  |   LATIN    |     46,025 | Kabyle                                                     |   kab-Latn  |    EPITRAN-EXT     |
 |  sun  |   LATIN    |     44,039 | Sundanese                                                  |   sun-Latn  |    EPITRAN-EXT     |
 |  fil  |   LATIN    |     43,663 | Filipino                                                   |   fil-Latn  |    EPITRAN-EXT     |
 |  fao  |   LATIN    |     42,926 | Faroese                                                    |   fao-Latn  |    EPITRAN-EXT     |
-|  kan  |  KANNADA   |     42,739 | KAN (script default)                                       |   kan-Knda  | EPITRAN (Inferred) |
+|  kan  |  KANNADA   |     42,739 | KAN (script default)                                       |   kan-Knda  | EPITRAN-EXT        |
 |  kal  |   LATIN    |     40,205 | Kalaallisut                                                |   kal-Latn  |    EPITRAN-EXT     |
 |  jam  |   LATIN    |     39,201 | Jamaican Creole English                                    |   jam-Latn  |      EPITRAN       |
 |  bam  |   LATIN    |     38,440 | Bambara                                                    |   bam-Latn  |    EPITRAN-EXT     |
@@ -168,7 +168,7 @@
 |  new  | DEVANAGARI |     17,362 | Newari                                                     |   new-Deva  |    EPITRAN-EXT     |
 |  ibo  |   LATIN    |     16,466 | Igbo                                                       |   ibo-Latn  |    EPITRAN-EXT     |
 |  mri  |   LATIN    |     16,398 | Maori                                                      |   mri-Latn  |      EPITRAN       |
-|  fry  |   LATIN    |     16,375 | Western Frisian                                            |   fry-Latn  |      EPITRAN       |
+|  fry  |   LATIN    |     16,375 | Western Frisian                                            |   fry-Latn  |    EPITRAN-EXT     |
 |  nep  | DEVANAGARI |     15,965 | Nepali (macrolanguage)                                     |   nep-Deva  |    EPITRAN-EXT     |
 |  yue  |   LATIN    |     15,778 | Yue Chinese                                                |   yue-Latn  |      EPITRAN       |
 |  pan  |   OTHER    |     15,032 | Panjabi                                                    |   pan-Guru  |    EPITRAN-EXT     |
@@ -210,7 +210,7 @@
 |  hak  |   LATIN    |      5,559 | Hakka Chinese                                              |   hak-Latn  |      EPITRAN       |
 |  mai  | DEVANAGARI |      5,317 | Maithili                                                   |     None    |     SYMPHONYM      |
 |  hbs  |  CYRILLIC  |      5,266 | Serbo-Croatian                                             |     None    |     SYMPHONYM      |
-|  bho  | DEVANAGARI |      5,143 | Bhojpuri                                                   |   bho-Deva  |      EPITRAN       |
+|  bho  | DEVANAGARI |      5,143 | Bhojpuri                                                   |   bho-Deva  |    EPITRAN-EXT     |
 |  mdf  |  CYRILLIC  |      5,083 | Moksha                                                     |     None    |     SYMPHONYM      |
 |  kaa  |   LATIN    |      5,051 | Kara-Kalpak                                                |     None    |     SYMPHONYM      |
 |  dsb  |   LATIN    |      5,030 | Lower Sorbian                                              |     None    |     SYMPHONYM      |
@@ -258,7 +258,7 @@
 |  xho  |   LATIN    |      3,057 | Xhosa                                                      |   xho-Latn  |      EPITRAN       |
 |  avk  |   LATIN    |      3,048 | Kotava                                                     |     None    |     SYMPHONYM      |
 |  tpi  |   LATIN    |      3,045 | Tok Pisin                                                  |   tpi-Latn  |      EPITRAN       |
-|  lug  |   LATIN    |      3,044 | Ganda                                                      |   lug-Latn  |      EPITRAN       |
+|  lug  |   LATIN    |      3,044 | Ganda                                                      |   lug-Latn  |    EPITRAN-EXT     |
 |  uig  |   LATIN    |      2,954 | Uighur                                                     |     None    |     SYMPHONYM      |
 |  mrj  |  CYRILLIC  |      2,897 | Western Mari                                               |     None    |     SYMPHONYM      |
 |  stq  |   LATIN    |      2,867 | Saterfriesisch                                             |     None    |     SYMPHONYM      |
@@ -333,7 +333,7 @@
 |  nqo  |   OTHER    |      1,182 | N'Ko                                                       |     None    |     UNHANDLED      |
 |  ipk  |   LATIN    |      1,179 | Inupiaq                                                    |     None    |     SYMPHONYM      |
 |  alt  |   LATIN    |      1,159 | Southern Altai                                             |     None    |     SYMPHONYM      |
-|  tok  |   LATIN    |      1,155 | Toki Pona                                                  |   tok-Latn  |      EPITRAN       |
+|  tok  |   LATIN    |      1,155 | Toki Pona                                                  |   tok-Latn  |    EPITRAN-EXT     |
 |  chy  |   LATIN    |      1,152 | Cheyenne                                                   |     None    |     SYMPHONYM      |
 |  atj  |   LATIN    |      1,119 | Atikamekw                                                  |     None    |     SYMPHONYM      |
 |  div  |   LATIN    |      1,112 | Dhivehi                                                    |     None    |     SYMPHONYM      |
