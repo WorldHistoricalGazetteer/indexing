@@ -83,22 +83,33 @@ if ! make lex_lookup 2>/dev/null; then
         -lflite_cmulex -lflite_usenglish -lflite -lm || {
         echo "✗ Failed to build lex_lookup"
         echo ""
-        echo "Trying alternative: installing from system package manager"
+        echo "Trying alternative: using pre-built Flite binary..."
         cd /
         rm -rf "$BUILD_DIR"
 
-        # Try system package manager
-        if command -v apt-get >/dev/null 2>&1; then
-            echo "Detected Debian/Ubuntu - trying apt-get..."
-            sudo apt-get update && sudo apt-get install -y flite
-        elif command -v yum >/dev/null 2>&1; then
-            echo "Detected RHEL/CentOS - trying yum..."
-            sudo yum install -y flite flite-devel
-        else
-            echo "✗ Could not install flite automatically"
-            echo "Please contact your system administrator to install flite"
-            exit 1
+        # Try downloading pre-built binary
+        echo "Checking for system flite installation..."
+        if command -v flite >/dev/null 2>&1; then
+            # Check if we can find lex_lookup in system paths
+            for bindir in /usr/bin /usr/local/bin /opt/*/bin; do
+                if [ -f "$bindir/lex_lookup" ]; then
+                    echo "✓ Found system lex_lookup at $bindir/lex_lookup"
+                    echo "Copying to ~/.local/bin..."
+                    cp "$bindir/lex_lookup" "$HOME/.local/bin/"
+                    chmod +x "$HOME/.local/bin/lex_lookup"
+                    exit 0
+                fi
+            done
         fi
+
+        echo "✗ Could not build or find lex_lookup"
+        echo ""
+        echo "Options:"
+        echo "1. Ask your system administrator to install 'flite' package"
+        echo "2. Try building on a different machine and copying the binary"
+        echo "3. For now, Epitran will work but English G2P will fall back to rule-based"
+        echo ""
+        echo "The rebuild will continue without English lex_lookup support."
         exit 0
     }
 fi
