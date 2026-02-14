@@ -1,11 +1,12 @@
 #!/bin/bash
 #
 # Wait for job 22327762 to complete, then run training data generation
+# Run this directly on login node - it only monitors and submits
 #
 
 JOB_ID="22327762"
-WAIT_MINUTES=80
-CHECK_INTERVAL=300  # 5 minutes in seconds
+WAIT_MINUTES=60
+CHECK_INTERVAL=60  # 5 minutes in seconds
 
 echo "=========================================="
 echo "Automated Training Data Generation"
@@ -13,6 +14,9 @@ echo "=========================================="
 echo "Job to monitor: $JOB_ID"
 echo "Initial wait: $WAIT_MINUTES minutes"
 echo "Check interval: $((CHECK_INTERVAL / 60)) minutes"
+echo ""
+echo "Running on: $(hostname)"
+echo "Started at: $(date '+%Y-%m-%d %H:%M:%S')"
 echo ""
 
 # Initial wait
