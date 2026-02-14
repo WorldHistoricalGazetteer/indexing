@@ -1,5 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=es-staging
+#SBATCH --partition=htc
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
