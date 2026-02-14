@@ -27,15 +27,14 @@ sleep $((WAIT_MINUTES * 60))
 while true; do
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking job status..."
 
-    # Check if job exists in queue (on htc cluster)
-    JOB_STATUS=$(squeue -j "$JOB_ID" -h -o "%T" 2>/dev/null)
-
-    if [ -z "$JOB_STATUS" ]; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✓ Job $JOB_ID has completed!"
-        break
-    else
+    # Check if job exists in queue (redirect errors to /dev/null and check exit code)
+    if squeue -j "$JOB_ID" -h -o "%T" &>/dev/null; then
+        JOB_STATUS=$(squeue -j "$JOB_ID" -h -o "%T" 2>/dev/null)
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] Job $JOB_ID status: $JOB_STATUS - waiting..."
         sleep $CHECK_INTERVAL
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✓ Job $JOB_ID has completed!"
+        break
     fi
 done
 
