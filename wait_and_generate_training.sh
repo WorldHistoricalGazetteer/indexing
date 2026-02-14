@@ -6,7 +6,7 @@
 
 JOB_ID="22327762"
 WAIT_MINUTES=60
-CHECK_INTERVAL=60  # 5 minutes in seconds
+CHECK_INTERVAL=60 # Check every 60 seconds
 
 echo "=========================================="
 echo "Automated Training Data Generation"
