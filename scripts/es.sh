@@ -1273,7 +1273,7 @@ do_train_model() {
 #SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase1_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
-#SBATCH --time=36:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -1387,7 +1387,7 @@ EOF
 #SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase2_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
-#SBATCH --time=16:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -1470,7 +1470,7 @@ EOF
 #SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
 #SBATCH --output=${TRAIN_LOG_DIR}/phase3_%j.out
 #SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -1606,7 +1606,7 @@ do_update_embeddings() {
 #SBATCH --job-name=whg-embed-compute-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION:-a100}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
@@ -1657,7 +1657,7 @@ EOF
 #SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
-#SBATCH --time=24:00:00
+#SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
