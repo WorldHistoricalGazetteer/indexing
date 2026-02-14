@@ -5,45 +5,45 @@ The style file: plainnat.bst
 Database file #1: references.bib
 Warning--empty journal in kolani2025phonikudhebrewgraphemetophonemeconversion
 Warning--empty journal in zhu2022charsiu-g2p
-You've used 26 entries,
+You've used 27 entries,
             2773 wiz_defined-function locations,
-            769 strings with 11180 characters,
-and the built_in function-call counts, 15248 in all, are:
-= -- 1407
-> -- 895
-< -- 23
-+ -- 301
-- -- 275
-* -- 1215
-:= -- 2235
-add.period$ -- 108
-call.type$ -- 26
-change.case$ -- 169
-chr.to.int$ -- 26
-cite$ -- 54
-duplicate$ -- 709
-empty$ -- 1183
-format.name$ -- 307
-if$ -- 3308
+            776 strings with 11304 characters,
+and the built_in function-call counts, 15653 in all, are:
+= -- 1448
+> -- 905
+< -- 24
++ -- 305
+- -- 278
+* -- 1246
+:= -- 2297
+add.period$ -- 112
+call.type$ -- 27
+change.case$ -- 173
+chr.to.int$ -- 27
+cite$ -- 56
+duplicate$ -- 729
+empty$ -- 1223
+format.name$ -- 311
+if$ -- 3393
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 25
-newline$ -- 165
-num.names$ -- 106
-pop$ -- 355
+missing$ -- 26
+newline$ -- 171
+num.names$ -- 110
+pop$ -- 361
 preamble$ -- 1
-purify$ -- 143
+purify$ -- 146
 quote$ -- 0
-skip$ -- 597
+skip$ -- 610
 stack$ -- 0
-substring$ -- 614
-swap$ -- 172
+substring$ -- 641
+swap$ -- 173
 text.length$ -- 15
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 286
+type$ -- 297
 warning$ -- 2
-while$ -- 126
+while$ -- 131
 width$ -- 0
-write$ -- 398
+write$ -- 413
 (There were 2 warnings)
