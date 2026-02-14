@@ -27,16 +27,16 @@ BUILD_DIR=$(mktemp -d)
 echo "Building in: $BUILD_DIR"
 cd "$BUILD_DIR"
 
-# Clone Flite repository and checkout stable release
+# Clone Flite repository
 echo ""
 echo "Cloning Flite repository..."
 git clone https://github.com/festvox/flite.git
 cd flite
 
-# Use the latest stable release (v2.2)
+# Use master branch (v2.2 release has missing generated files)
 echo ""
-echo "Checking out stable release v2.2..."
-git checkout v2.2
+echo "Using master branch (stable)..."
+git checkout master
 
 # Build and install
 echo ""
