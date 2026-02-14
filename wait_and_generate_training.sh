@@ -1,0 +1,54 @@
+#!/bin/bash
+#
+# Wait for job 22327762 to complete, then run training data generation
+#
+
+JOB_ID="22327762"
+WAIT_MINUTES=80
+CHECK_INTERVAL=300  # 5 minutes in seconds
+
+echo "=========================================="
+echo "Automated Training Data Generation"
+echo "=========================================="
+echo "Job to monitor: $JOB_ID"
+echo "Initial wait: $WAIT_MINUTES minutes"
+echo "Check interval: $((CHECK_INTERVAL / 60)) minutes"
+echo ""
+
+# Initial wait
+echo "Waiting $WAIT_MINUTES minutes before first check..."
+sleep $((WAIT_MINUTES * 60))
+
+# Poll until job completes
+while true; do
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Checking job status..."
+
+    # Check if job exists in queue (on htc cluster)
+    JOB_STATUS=$(squeue -j "$JOB_ID" -h -o "%T" 2>/dev/null)
+
+    if [ -z "$JOB_STATUS" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ✓ Job $JOB_ID has completed!"
+        break
+    else
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] Job $JOB_ID status: $JOB_STATUS - waiting..."
+        sleep $CHECK_INTERVAL
+    fi
+done
+
+echo ""
+echo "=========================================="
+echo "Job completed - starting training data generation"
+echo "=========================================="
+echo ""
+
+# Source the es.sh script and run the command
+cd /ix1/ishi/elastic
+source scripts/es.sh
+es -generate-training-data 6
+
+echo ""
+echo "=========================================="
+echo "Training data generation submitted"
+echo "=========================================="
+echo "Completed at: $(date '+%Y-%m-%d %H:%M:%S')"
+
