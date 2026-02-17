@@ -128,7 +128,7 @@ def run_compute(args):
     conn = duckdb.connect(str(duckdb_path), read_only=True)
 
     # Get total count (all toponyms, not just training subset)
-    total_rows = conn.execute('SELECT COUNT(*) FROM toponyms WHERE name IS NOT NULL AND TRIM(name) != ""').fetchone()[0]
+    total_rows = conn.execute("SELECT COUNT(*) FROM toponyms WHERE name IS NOT NULL AND TRIM(name) != ''").fetchone()[0]
     logger.info(f"Total toponyms to process: {total_rows:,}")
 
     # Use scratch for intermediate writes if in Slurm job
