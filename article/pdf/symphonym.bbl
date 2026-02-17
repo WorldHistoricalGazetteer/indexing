@@ -1,4 +1,4 @@
-\begin{thebibliography}{27}
+\begin{thebibliography}{26}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -71,14 +71,6 @@ Karl~E. Grossner and Ruth Mostern.
 \newblock In \emph{Proceedings of the 4th ACM SIGSPATIAL International Workshop
   on Geospatial Humanities (GeoHumanities)}, pages 40--43, 2021.
 \newblock \doi{10.1145/3486187.3490203}.
-
-\bibitem[Kolani et~al.(2025)Kolani, Melichov, Calev, and
-  Alper]{kolani2025phonikudhebrewgraphemetophonemeconversion}
-Yakov Kolani, Maxim Melichov, Cobi Calev, and Morris Alper.
-\newblock Phonikud: Hebrew grapheme-to-phoneme conversion for real-time
-  text-to-speech.
-\newblock 2025.
-\newblock URL \url{https://arxiv.org/abs/2506.12311}.
 
 \bibitem[Kondrak(2000)]{kondrak2000}
 Grzegorz Kondrak.

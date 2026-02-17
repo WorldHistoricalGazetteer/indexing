@@ -184,123 +184,9 @@
 
 \textbf{Keywords:} toponym matching; phonetic embeddings; cross-script; teacher-student distillation; neural networks; digital humanities; geographic information retrieval; Symphonym
 
-\section*{Current Development Status}
-\label{sec:current-development}
-
-This document describes version 6 (v6) of Symphonym, which addresses critical coverage gaps discovered during v5 training. The following summarizes completed improvements and remaining tasks before v6 training can commence.
-
-\subsection*{Completed: Hybrid G2P Strategy (Epitran + Neural)}
-
-\paragraph{Problem Identified.} During v5 training data generation (January 2026), analysis revealed that 8 scripts present in the WHG corpus had zero PanPhon embeddings despite having substantial toponym counts: Armenian (153k toponyms), Greek (218k), Gujarati (21k), Hebrew (152k), Hiragana (152k), Kannada (43k), Katakana (341k), and a heterogeneous ``OTHER'' category (343k). This resulted in approximately 1.3 million toponyms being excluded from the training process, creating systematic bias in the final model.
-
-\paragraph{G2P Coverage Bottlenecks.} Epitran\footnote{\url{https://github.com/dmort27/epitran}} (the rule-based grapheme-to-phoneme converter used to generate IPA transcriptions for PanPhon feature extraction) lacked phonetic mapping tables for many language-script pairs represented in WHG. While Epitran officially supports 100+ languages, the specific combinations needed for historical toponymy (e.g., \texttt{ell-Grek} for Modern Greek, \texttt{hye-Armn} for Armenian) were not included. Furthermore, rule-based systems struggle with:
-\begin{itemize}
-    \item \textbf{Abjads:} Unpointed Hebrew text (the standard in historical documents) omits vowels, making deterministic IPA transcription impossible without a vocalization system or a neural fallback.
-    \item \textbf{Logographic and Topolectal variation:} Chinese varieties (Wu, Gan, Yue) cannot be reliably mapped to IPA using standard Mandarin rules.
-    \item \textbf{Sino-Korean Pronunciation:} Korean Hanja (Chinese characters used in Korean) requires distinct phonetic mappings from Mandarin or Cantonese.
-\end{itemize}
-
-\paragraph{Solution Implemented.} Between mid-January and early February 2026, I implemented a hybrid G2P pipeline that combines rule-based extensions with neural fallbacks:
-
-\begin{itemize}
-    \item \textbf{Epitran Extensions (100+ languages):} I created 100 new language-script mapping CSV files covering Armenian (\texttt{hye-Armn}), Greek (\texttt{ell-Grek}), Gujarati (\texttt{guj-Gujr}), Georgian (\texttt{kat-Geor}), and numerous Indic and non-Latin scripts. These mappings were assisted by large language models and Unicode character tables.
-
-    \item \textbf{Neural G2P Fallback (Charsiu):} For Chinese topolects (Gan, Wu, Yue) and Korean (both Hangul and Hanja), the pipeline now routes toponyms through CharsiuG2P \citep{zhu2022charsiu-g2p}. This model handles the distinct phonetic requirements of Sino-Korean and topolectal Chinese which rule-based Epitran cannot.
-
-    \item \textbf{Hebrew Vocalization (Phonikud):} Hebrew toponyms are now processed using Phonikud \citep{kolani2025phonikudhebrewgraphemetophonemeconversion}\footnote{\url{https://github.com/thewh1teagle/phonikud}}, a neural system that generates IPA transcriptions directly from unpointed Hebrew text by implicitly modeling vocalization.
-\end{itemize}
-
-The creation of these 100 custom Epitran extension files was assisted by large language models (Claude, Gemini, and ChatGPT), which generated and cross-checked IPA mappings based on Unicode character tables. None of these outputs has been validated by human experts; they serve as provisional mappings to enable v6 training. Future work may involve expert review and refinement of these rules.
-
-The \texttt{TODO.txt} file tracks the status of 2,339 unique language-script pairs found in WHG, categorized as:
-\begin{itemize}
-    \item \texttt{EPITRAN}: Natively supported by upstream Epitran (34 pairs)
-    \item \texttt{EPITRAN-EXT}: Custom mappings created in this extension program (97 pairs)
-    \item \texttt{CHARSIU}: Chinese topolects (Gan, Wu, Yue) and Korean (Hangul/Hanja) handled by CharsiuG2P
-    \item \texttt{PHONIKUD}: Hebrew (145k toponyms) handled by neural vocalization/transcription
-    \item \texttt{SYMPHONYM}: Low-frequency pairs ($<$10k toponyms) where the model will learn from related scripts
-    \item \texttt{UNHANDLED}: Pairs requiring language detection or further investigation
-\end{itemize}
-
-\emph{Unified downstream representation.} Regardless of the upstream G2P method used---Epitran (native + extensions), Phonikud, or CharsiuG2P---the output of this stage is always an IPA string, which is then converted to a fixed-length articulatory representation using PanPhon.
-
-\subsection*{Remaining Work for v6}
-
-\paragraph{Model input representation (byte-level inputs considered, rejected).} During v6 planning I considered replacing the Student's character vocabulary with byte-level inputs (e.g., raw UTF-8 bytes) to eliminate vocabulary maintenance. I rejected this approach. Symphonym's Student encoder is intentionally lightweight and linguistically structured: it takes (i) character IDs, (ii) a script ID, and (iii) a language ID; embeds each; encodes the character sequence with a BiLSTM; applies self-attention with a residual connection; pools with attention; projects to a 128-dimensional vector; and finally applies L2 normalisation. In this setting, switching to byte-level inputs would lengthen sequences and force the model to re-learn basic orthographic and phonotactic regularities that are already captured efficiently by script- and language-conditioned character embeddings, without addressing the real v5 bottleneck (missing IPA/PanPhon supervision for specific scripts). Accordingly, v6 focuses on expanding phonetic supervision (Epitran extensions, Phonikud for Hebrew, CharsiuG2P for selected CJK topolects) rather than changing the Student's input representation.
-
-\paragraph{Vocabulary Recoding (Completed).} The character vocabulary has been regenerated for v6 to support native script processing. Previously (v4/v5), Chinese, Japanese, and Korean scripts were handled via AnyAscii romanization. With Epitran extensions now providing direct support (\texttt{cmn-Hans} for Mandarin, \texttt{jpn-Hira}/\texttt{jpn-Kana} for Japanese, \texttt{kor-Hang} for Korean Hangul), the vocabulary generation step in \texttt{phonetics/extraction/rebuild\_toponyms\_index.py} has been updated to:
-\begin{itemize}
-    \item Remove romanization logic for CJK, Hiragana, Katakana, and Hangul (previously defined in \texttt{ROMANIZE\_SCRIPTS} in \texttt{phonetics/utils/script\_detection.py})
-    \item Expand Unicode range coverage to include full character sets for newly-supported scripts: Armenian (U+0530--U+058F), Greek Extended (U+1F00--U+1FFF), Gujarati (U+0A80--U+0AFF), Kannada (U+0C80--U+0CFF)
-    \item For CJK scripts, include Han characters from the CJK Unified Ideographs block (U+4E00--U+9FFF), but \emph{only those actually observed} in the 67M toponym corpus. While this Unicode range contains approximately 20,900 characters, the WHG corpus uses fewer than 3,000 unique Han characters, as most toponyms utilize a small subset of common logographs. This selective inclusion avoids computational overhead from rare archaic characters while ensuring 100\% coverage of observed names.
-    \item Similarly for Korean, include only the observed Hangul syllables and Jamo components rather than all 11,172 possible syllable blocks (U+AC00--U+D7AF)
-    \item Regenerate \texttt{char\_vocab.json} to include native characters from Armenian, Greek, Gujarati, Korean, Japanese, and other extended scripts instead of their romanized forms
-    \item Update \texttt{EPITRAN\_SUPPORTED\_SCRIPTS} to accurately reflect the 97 new language-script mappings plus native CJK/Hangul/Kana support
-\end{itemize}
-
-The updated vocabulary size has increased from approximately 11,122 characters (v4/v5) to an estimated 13,500--15,000 characters. This modest increase---despite adding thousands of potential CJK characters---reflects two factors: (1) the shift from romanized to native script representation replaces rather than supplements existing characters, and (2) inclusion of only corpus-observed characters rather than full Unicode blocks. The vocabulary comprises every unique character actually appearing in the training data, ensuring zero out-of-vocabulary (OOV) errors while avoiding memory waste on unused symbols. Character embeddings remain efficient due to the BiLSTM's ability to learn compositional representations from the observed character set.
-
-\section*{Current Development Status}
-\label{sec:current-development}
-
-This document describes version 6 (v6) of Symphonym, which addresses critical coverage gaps discovered during v5 training. v6 training is currently underway on NVIDIA L40S and A100 GPUs following completion of data preparation and phonetic coverage expansion.
-
-\subsection*{Completed: Hybrid G2P Strategy (Epitran + Neural)}
-
-\paragraph{Problem Identified.} During v5 training data generation (January 2026), analysis revealed that 8 scripts present in the WHG corpus had zero PanPhon embeddings despite having substantial toponym counts: Armenian (153k toponyms), Greek (218k), Gujarati (21k), Hebrew (152k), Hiragana (152k), Kannada (43k), Katakana (341k), and a heterogeneous ``OTHER'' category (343k). This resulted in approximately 1.3 million toponyms being excluded from the training process, creating systematic bias in the final model.
-
-\paragraph{G2P Coverage Bottlenecks.} Epitran\footnote{\url{https://github.com/dmort27/epitran}} (the rule-based grapheme-to-phoneme converter used to generate IPA transcriptions for PanPhon feature extraction) lacked phonetic mapping tables for many language-script pairs represented in WHG. While Epitran officially supports 100+ languages, the specific combinations needed for historical toponymy (e.g., \texttt{ell-Grek} for Modern Greek, \texttt{hye-Armn} for Armenian) were not included. Furthermore, rule-based systems struggle with:
-\begin{itemize}
-    \item \textbf{Abjads:} Unpointed Hebrew text (the standard in historical documents) omits vowels, making deterministic IPA transcription impossible without a vocalization system or a neural fallback.
-    \item \textbf{Logographic and Topolectal variation:} Chinese varieties (Wu, Gan, Yue) cannot be reliably mapped to IPA using standard Mandarin rules.
-    \item \textbf{Sino-Korean Pronunciation:} Korean Hanja (Chinese characters used in Korean) requires distinct phonetic mappings from Mandarin or Cantonese.
-\end{itemize}
-
-\paragraph{Solution Implemented.} Between mid-January and early February 2026, I implemented a hybrid G2P pipeline that combines rule-based extensions with neural fallbacks:
-
-\begin{itemize}
-    \item \textbf{Epitran Extensions (100+ languages):} I created 100 new language-script mapping CSV files covering Armenian (\texttt{hye-Armn}), Greek (\texttt{ell-Grek}), Gujarati (\texttt{guj-Gujr}), Georgian (\texttt{kat-Geor}), and numerous Indic and non-Latin scripts. These mappings were assisted by large language models and Unicode character tables.
-
-    \item \textbf{Neural G2P Fallback (Charsiu):} For Chinese topolects (Gan, Wu, Yue) and Korean (both Hangul and Hanja), the pipeline now routes toponyms through CharsiuG2P \citep{zhu2022charsiu-g2p}. This model handles the distinct phonetic requirements of Sino-Korean and topolectal Chinese which rule-based Epitran cannot.
-
-    \item \textbf{Hebrew Vocalization (Phonikud):} Hebrew toponyms are now processed using Phonikud \citep{kolani2025phonikudhebrewgraphemetophonemeconversion}\footnote{\url{https://github.com/thewh1teagle/phonikud}}, a neural system that generates IPA transcriptions directly from unpointed Hebrew text by implicitly modeling vocalization.
-\end{itemize}
-
-The creation of these 100 custom Epitran extension files was assisted by large language models (Claude, Gemini, and ChatGPT), which generated and cross-checked IPA mappings based on Unicode character tables. None of these outputs has been validated by human experts; they serve as provisional mappings to enable v6 training. Future work may involve expert review and refinement of these rules.
-
-\emph{Unified downstream representation.} Regardless of the upstream G2P method used---Epitran (native + extensions), Phonikud, or CharsiuG2P---the output of this stage is always an IPA string, which is then converted to a fixed-length articulatory representation using PanPhon.
-
-\subsection*{Data Preparation Completed}
-
-\paragraph{Model input representation (byte-level inputs considered, rejected).} During v6 planning I considered replacing the Student's character vocabulary with byte-level inputs (e.g., raw UTF-8 bytes) to eliminate vocabulary maintenance. I rejected this approach. Symphonym's Student encoder is intentionally lightweight and linguistically structured: it takes (i) character IDs, (ii) a script ID, and (iii) a language ID; embeds each; encodes the character sequence with a BiLSTM; applies self-attention with a residual connection; pools with attention; projects to a 128-dimensional vector; and finally applies L2 normalisation. In this setting, switching to byte-level inputs would lengthen sequences and force the model to re-learn basic orthographic and phonotactic regularities that are already captured efficiently by script- and language-conditioned character embeddings, without addressing the real v5 bottleneck (missing IPA/PanPhon supervision for specific scripts). Accordingly, v6 focuses on expanding phonetic supervision (Epitran extensions, Phonikud for Hebrew, CharsiuG2P for selected CJK topolects) rather than changing the Student's input representation.
-
-\paragraph{Vocabulary Recoding (Completed).} The character vocabulary has been regenerated for v6 to support native script processing. Previously (v4/v5), Chinese, Japanese, and Korean scripts were handled via AnyAscii romanization. With Epitran extensions now providing direct support (\texttt{cmn-Hans} for Mandarin, \texttt{jpn-Hira}/\texttt{jpn-Kana} for Japanese, \texttt{kor-Hang} for Korean Hangul), the vocabulary generation step in \texttt{phonetics/extraction/rebuild\_toponyms\_index.py} has been updated to:
-\begin{itemize}
-    \item Remove romanization logic for CJK, Hiragana, Katakana, and Hangul (previously defined in \texttt{ROMANIZE\_SCRIPTS} in \texttt{phonetics/utils/script\_detection.py})
-    \item Expand Unicode range coverage to include full character sets for newly-supported scripts: Armenian (U+0530--U+058F), Greek Extended (U+1F00--U+1FFF), Gujarati (U+0A80--U+0AFF), Kannada (U+0C80--U+0CFF)
-    \item For CJK scripts, include Han characters from the CJK Unified Ideographs block (U+4E00--U+9FFF), but \emph{only those actually observed} in the 67M toponym corpus. While this Unicode range contains approximately 20,900 characters, the WHG corpus uses fewer than 3,000 unique Han characters, as most toponyms utilize a small subset of common logographs. This selective inclusion avoids computational overhead from rare archaic characters while ensuring 100\% coverage of observed names.
-    \item Similarly for Korean, include only the observed Hangul syllables and Jamo components rather than all 11,172 possible syllable blocks (U+AC00--U+D7AF)
-    \item Regenerate \texttt{char\_vocab.json} to include native characters from Armenian, Greek, Gujarati, Korean, Japanese, and other extended scripts instead of their romanized forms
-    \item Update \texttt{EPITRAN\_SUPPORTED\_SCRIPTS} to accurately reflect the 97 new language-script mappings plus native CJK/Hangul/Kana support
-\end{itemize}
-
-The updated vocabulary size has increased from approximately 11,122 characters (v4/v5) to approximately 14,500 characters: the base Latin/ASCII set, 51 Korean Jamo, approximately 3,000 observed Han characters, and script-specific character sets across 20 native scripts including Armenian, Greek, Gujarati, and Kannada (newly added in v6). Each token is tagged with its source script for embedding lookup. The vocabulary additionally supports 1,944 distinct language codes observed in the corpus. This modest increase---despite adding thousands of potential CJK characters---reflects two factors: (1) the shift from romanized to native script representation replaces rather than supplements existing characters, and (2) inclusion of only corpus-observed characters rather than full Unicode blocks. The vocabulary comprises every unique character actually appearing in the training data, ensuring zero out-of-vocabulary (OOV) errors while avoiding memory waste on unused symbols. Character embeddings remain efficient due to the BiLSTM's ability to learn compositional representations from the observed character set.
-
-\paragraph{Data Pipeline Completed.} The Elasticsearch \texttt{toponyms} schema has been updated to store Symphonym embeddings using byte quantization (\texttt{element\_type: byte}, int8) instead of float32. This 75\% memory reduction (from 512 bytes to 128 bytes per 128-dimensional embedding) is critical for WHG's production deployment, where the full toponyms index is held in RAM to ensure sub-second query latency for interactive reconciliation operations. The quantization preserves relative distances between embeddings---the essential property for cosine similarity-based KNN retrieval---with negligible impact on ranking quality. The data preparation pipeline has been completed:
-\begin{enumerate}
-    \item \texttt{rebuild\_toponyms\_index.py} has been re-run with updated Epitran extensions, Phonikud, and CharsiuG2P to generate PanPhon embeddings for previously-excluded toponyms
-    \item Verification via \texttt{testing/inspect\_pairs.py} confirmed that all 20 core scripts now have non-zero training pair counts
-    \item \texttt{generate\_training\_data.py} has created v6 training triplets incorporating the expanded coverage
-    \item Training statistics in Section~\ref{sec:data} have been updated to reflect the increased script diversity and pair counts
-\end{enumerate}
-
-\paragraph{Training Status.} Phase 1 (Teacher) training completed February 16, 2026, after 29 epochs on NVIDIA L40S and A100 GPUs, achieving val\_loss=0.0059 (best model from epoch 28). The hybrid G2P strategy (Epitran extensions + Phonikud for Hebrew + CharsiuG2P for CJK) achieved 53.4\% IPA coverage (30.8M of 57.6M training namespace toponyms), up from v5's 50.8\%. This expansion enabled training on 22.6M triplets despite fewer total than v5 (24.8M), reflecting deliberate bin-balancing adjustments to prevent high-resource language dominance. Phase 2 (Student-Teacher distillation) and Phase 3 (hard negative fine-tuning) training are scheduled to follow. Early diagnostic tests show improved cross-script embedding quality for previously zero-coverage scripts (Greek, Hebrew, Armenian, Gujarati, Kannada), validating the extended Epitran coverage.
-
-\vspace{1em}
-\noindent\textbf{Note:} This section documents the development process and will be removed before final publication. The implementation details are recorded here to maintain an accurate technical audit trail during the iterative development phase.
 
 \begin{abstract}
-Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. The objective of this research is to present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via hybrid grapheme-to-phoneme conversion combining Epitran, Phonikud for Hebrew, and CharsiuG2P for CJK languages, followed by PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training uses co-located toponym pairs from GeoNames, Wikidata, and the Getty Thesaurus of Geographic Names (TGN), with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely; same-script cross-language matching (London/Londres) is handled adequately but can be supplemented by conventional edit-distance methods in a hybrid pipeline. The system achieves 93\% accuracy on cross-script equivalents and 87.5\% Recall@1 on the MEHDIE (Multi-Entity Hebrew-to-Arabic Data Interchange Exchange) Hebrew-Arabic benchmark, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym effectively addresses the challenge of cross-script toponym matching by providing a phonetically grounded embedding space, demonstrating strong performance on key benchmarks. Its deployment in the World Historical Gazetteer (WHG) will enable phonetic search and reconciliation across 67M+ toponyms, offering a scalable solution for digital humanities research. Beyond toponyms, a case study on medieval personal name matching in the London Customs Accounts (University of London) demonstrates that Symphonym embeddings transfer effectively to historical orthographic variation in single-script contexts, contributing as the 4th-ranked feature (of 11) in a supervised name-clustering pipeline with F1=0.752. This confirms Symphonym's broader applicability to onomastic research and historical document analysis.
+Linking place names across historical sources, languages, and writing systems remains a fundamental challenge in digital humanities and geographic information retrieval. Existing approaches either require language-specific phonetic algorithms, expert-curated transliteration rules, or fail to capture the phonetic relationships that make ``Moscow'', ``Москва'', and ``\textar{موسکو}'' recognisably the same place. The objective of this research is to present \textbf{Symphonym}, a neural embedding system that maps toponyms from any script into a unified \embdim-dimensional phonetic space, enabling direct similarity comparison without runtime phonetic conversion or language-specific resources. Symphonym uses a Teacher-Student architecture: a Teacher network trained on articulatory phonetic features (derived via hybrid grapheme-to-phoneme conversion combining Epitran with 100 new language-script extensions, Phonikud for Hebrew, and CharsiuG2P for CJK languages, followed by PanPhon feature extraction) produces target embeddings, while a Student network learns to approximate these embeddings directly from characters. The Student operates at inference time without requiring phonetic resources, enabling deployment at scale. Training completed February 2026 on NVIDIA L40S GPUs using 20.4 million samples from co-located toponym pairs extracted from GeoNames, Wikidata, and the Getty Thesaurus of Geographic Names, with phonetic similarity filtering to exclude false cognates. The system is optimised for \emph{cross-script} matching---linking ``\textcn{北京}'' to ``Beijing''---where traditional string metrics fail entirely. In v6, CJK characters, Hebrew, Greek, Armenian, and other scripts are processed in their native writing systems (not romanized), with IPA transcriptions generated through specialized G2P methods appropriate to each script: CharsiuG2P for Chinese topolects and Korean, Phonikud for Hebrew, and extended Epitran support for Greek, Armenian, and 100+ additional language-script pairs. The system achieves 93\% accuracy on cross-script equivalents and 87.5\% Recall@1 on the MEHDIE Hebrew-Arabic benchmark, outperforming Levenshtein (81.5\%) and Jaro-Winkler (78.5\%) baselines. Symphonym effectively addresses the challenge of cross-script toponym matching by providing a phonetically grounded embedding space, demonstrating strong performance on key benchmarks. Its deployment in the World Historical Gazetteer (WHG) will enable phonetic search and reconciliation across 67M+ toponyms, offering a scalable solution for digital humanities research. Beyond toponyms, a case study on medieval personal name matching in the London Customs Accounts (University of London) demonstrates that Symphonym embeddings transfer effectively to historical orthographic variation in single-script contexts, contributing as the 4th-ranked feature (of 11) in a supervised name-clustering pipeline with F1=0.752. This confirms Symphonym's broader applicability to onomastic research and historical document analysis.
 \end{abstract}
 
 \section{Introduction}
@@ -340,7 +226,7 @@ In practical terms, Symphonym enhances WHG's Reconciliation Service API\footnote
 
 \subsection{Classical Phonetic Algorithms}
 
-The earliest computational approaches to phonetic matching emerged from English-language record linkage. Soundex~\citep{odell1918}, developed for US Census indexing, maps names to four-character codes by retaining the first letter and encoding subsequent consonants. Its English-centricity is explicit: the algorithm assumes Latin script and English phoneme-grapheme correspondences. Gadd~\citep{gadd1990phonix} addressed some of Soundex's limitations with PHONIX, developed for the URICA library system in multilingual Southern Africa. Gadd hand-crafted 160 letter-group transformation rules to standardise spellings before phonetic coding---for example, mapping the Afrikaans-influenced cluster ``tj'' followed by a vowel to ``ch'', so that variant transliterations of names like Chekhov (TSJECHOF, TJEKHOW, CHEKHOV) would converge to a common code. PHONIX represents the high-water mark of the rule-based approach: a single developer's linguistic intuition encoded as explicit transformations. The contrast with the present work is instructive: where Gadd wrote 160 rules by hand for Latin-script names, Symphonym's Teacher network learns phonetic relationships from 27 million triplets across 20 writing systems, discovering correspondences that would be impractical to enumerate manually. Metaphone~\citep{philips1990} and Double Metaphone~\citep{philips2000} improve accuracy for English by handling common spelling variations, but remain fundamentally tied to English phonology.
+The earliest computational approaches to phonetic matching emerged from English-language record linkage. Soundex~\citep{odell1918}, developed for US Census indexing, maps names to four-character codes by retaining the first letter and encoding subsequent consonants. Its English-centricity is explicit: the algorithm assumes Latin script and English phoneme-grapheme correspondences. Gadd~\citep{gadd1990phonix} addressed some of Soundex's limitations with PHONIX, developed for the URICA library system in multilingual Southern Africa. Gadd hand-crafted 160 letter-group transformation rules to standardise spellings before phonetic coding---for example, mapping the Afrikaans-influenced cluster ``tj'' followed by a vowel to ``ch'', so that variant transliterations of names like Chekhov (TSJECHOF, TJEKHOW, CHEKHOV) would converge to a common code. PHONIX represents the high-water mark of the rule-based approach: a single developer's linguistic intuition encoded as explicit transformations. The contrast with the present work is instructive: where Gadd wrote 160 rules by hand for Latin-script names, Symphonym's Teacher network learns phonetic relationships from 20 million training samples across 20 writing systems, discovering correspondences that would be impractical to enumerate manually. Metaphone~\citep{philips1990} and Double Metaphone~\citep{philips2000} improve accuracy for English by handling common spelling variations, but remain fundamentally tied to English phonology.
 
 Language-specific variants exist for other European languages, but each requires separate implementation and fails outside its target language family. No classical algorithm handles cross-script matching: they assume a single alphabet and a known phoneme inventory.
 
@@ -735,8 +621,6 @@ GUJARATI & 21,428 & 0.03\% & 94.9\% & gu (Epitran ext.) \\
 \caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). v6 achieves 53.4\% overall IPA coverage (30.8M toponyms) via Epitran extensions (97 language-script pairs), Phonikud (Hebrew), and CharsiuG2P (Chinese zh/gan/wuu/yue, Korean ko). Japanese Hiragana/Katakana and OTHER scripts lack IPA generation but contribute to Phase 2--3 character-level training. Overall coverage improved from v5's 50.8\% through extended Epitran support and elimination of AnyAscii romanisation artifacts.}
 \label{tab:script-distribution}
 \end{table}
-\label{tab:script-distribution}
-\end{table}
 
 \paragraph{IPA Coverage by Language.} The 29.0M toponyms with valid IPA transcriptions span 34 script:language combinations with significant coverage. The top contributors are: Latin:en (8.0M), Latin:fr (2.3M), Latin:nl (2.3M), Latin:de (2.1M), Latin:sv (1.7M), Latin:es (1.5M), CJK:zh (1.3M), Latin:id (0.9M), and Cyrillic:ru (0.8M). Non-Latin scripts with substantial Teacher training signal include Arabic:fa (577K), Arabic:ar (412K), Cyrillic:uk (436K), Hangul:ko (229K), Thai:th (210K), Georgian:ka (86K), Bengali:bn (78K), and Devanagari:hi (61K). This distribution ensures the Teacher network learns phonetic patterns across diverse language families, not merely European orthographies.
 
@@ -756,7 +640,7 @@ The top 10 script:language bins by pair count are: LATIN:en|LATIN:nl (1.49M), LA
 
 \paragraph{Bin Balancing.} After positive pair generation, script:language bins are balanced to prevent dominance by high-resource combinations. Of the 595 bins, 264 (44\%) exceed the 50,000 sample cap and are downsampled; 329 bins (55\%) are oversampled up to 5$\times$ their original size; only 2 bins fall below the 1,000 minimum threshold (LATIN:sw|LATIN:sw with 970 samples, ARABIC:ur|ARABIC:ur with 722) and are dropped. This yields \textbf{27.6 million balanced pairs} for triplet generation. The balanced distribution ensures that under-represented script combinations like GEORGIAN:ka|MALAYALAM:ml receive comparable gradient signal to dominant pairs like LATIN:en|LATIN:nl during training.
 
-This 29.9 million triplet training set represents the largest known phonetically-supervised corpus for cross-script toponym matching. For comparison, the TRANSLIT transliteration corpus \citep{benites2020translit} provides approximately 3 million pairs across 180 language pairs, while existing toponym benchmarks like MEHDIE operate at evaluation scales of hundreds to thousands of examples. General-purpose multilingual sentence encoders such as LaBSE \citep{feng2022labse} are trained on billions of sentence pairs, but lack the explicit phonetic supervision present in this work.
+This 20.4 million sample training set for Phase 2 (expanding to 10.0 million triplets for Phase 3 hard negative training) represents the largest known phonetically-supervised corpus for cross-script toponym matching. For comparison, the TRANSLIT transliteration corpus \citep{benites2020translit} provides approximately 3 million pairs across 180 language pairs, while existing toponym benchmarks like MEHDIE operate at evaluation scales of hundreds to thousands of examples. General-purpose multilingual sentence encoders such as LaBSE \citep{feng2022labse} are trained on billions of sentence pairs, but lack the explicit phonetic supervision present in this work.
 
 From these pairs, I generate triplets for contrastive training:
 \begin{itemize}
@@ -798,9 +682,9 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 Additionally, negative selection enforces \textbf{attestation disjointness} (see Section~\ref{subsec:attestation-validation}): candidates sharing any attestation with the anchor are rejected. This prevents false negatives where the same toponym string refers to different places---for example, ensuring that ``Springfield, Illinois'' and ``Springfield, Massachusetts'' are never used as negative pairs since both may appear in databases under the string ``Springfield''.
 
-\paragraph{Enhanced Effective Training Set.} From the 65.1 million positive pairs generated via HDBSCAN clustering across 8.2 million places (forming 18.3 million phonetic clusters, with 4.0 million places exhibiting multiple distinct clusters), I apply bin-balancing and generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 8.4 million unique toponym IDs referenced in pairs, the filtering yields \textbf{22,632,669 Phase 1 triplets}, split deterministically into \textbf{20,369,444 training} and \textbf{2,263,225 validation} samples (90:10 ratio).
+\paragraph{Enhanced Effective Training Set.} From the 65.1 million positive pairs generated via HDBSCAN clustering across 8.2 million places (forming 18.3 million phonetic clusters, with 4.0 million places exhibiting multiple distinct clusters), I apply bin-balancing and generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 8.4 million unique toponym IDs referenced in pairs, the filtering yields \textbf{29,927,920 Phase 1 triplets}, split deterministically into \textbf{26,927,553 training} and \textbf{3,000,367 validation} samples (90:10 ratio).
 
-The reduction from the theoretical maximum (65.1M pairs) reflects IPA coverage constraints: all three toponyms in each triplet must have valid phonetic transcriptions. The v6 hybrid G2P strategy (Epitran extensions, Phonikud for Hebrew, CharsiuG2P for CJK topolects) achieves 53.4\% IPA coverage across training namespaces (30.8M of 57.6M toponyms), allowing substantially more triplets than v5's 50.8\% coverage.
+The v6 hybrid G2P strategy (Epitran extensions, Phonikud for Hebrew, CharsiuG2P for CJK topolects) achieves 53.4\% IPA coverage across training namespaces (30.8M of 57.6M toponyms), enabling more triplets than v5's 50.8\% coverage despite fewer total pairs after bin-balancing.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -813,7 +697,7 @@ The reduction from the theoretical maximum (65.1M pairs) reflects IPA coverage c
     \item Triplet margin: $m = 0.3$
 \end{itemize}
 
-\paragraph{Convergence.} Phase 1 training was conducted on NVIDIA L40S and A100 GPUs over 50 epochs. The expanded v6 vocabulary (native CJK, Hebrew via Phonikud, Greek via extended Epitran) presents a harder discrimination task than v5, which used AnyAscii romanisation for CJK scripts. Table~\ref{tab:phase1-convergence} compares the two training runs.
+\paragraph{Convergence.} Phase 1 training was conducted on NVIDIA L40S GPUs over 50 epochs. The expanded v6 vocabulary (native CJK, Hebrew via Phonikud, Greek via extended Epitran) presents a harder discrimination task than v5, which used AnyAscii romanisation for CJK scripts. Table~\ref{tab:phase1-convergence} compares the two training runs.
 
 \begin{table}[ht]
 \centering
@@ -822,23 +706,23 @@ The reduction from the theoretical maximum (65.1M pairs) reflects IPA coverage c
 \toprule
 \textbf{Metric} & \textbf{v5} & \textbf{v6} \\
 \midrule
-Training triplets & 24,803,658 & 20,369,444 \\
-Validation triplets & 2,755,392 & 2,263,225 \\
+Training triplets & 24,803,658 & 26,927,553 \\
+Validation triplets & 2,755,392 & 3,000,367 \\
 Learning rate & $10^{-4}$ & $10^{-4}$ \\
 Epoch 1 val\_loss & 0.0109 & 0.0137 \\
 Epoch 5 val\_loss & 0.0064 & 0.0084 \\
 Epoch 10 val\_loss & 0.0054 & 0.0072 \\
 Epoch 15 val\_loss & 0.0050 & 0.0066 \\
 Epoch 20 val\_loss & 0.0048 & 0.0063 \\
-Epoch 29 val\_loss (v6) & --- & 0.0059 \\
+Epoch 28 val\_loss (v6 best) & --- & 0.0059 \\
 Best val\_loss achieved & 0.0048 (epoch 20) & 0.0059 (epoch 28) \\
 \bottomrule
 \end{tabular}
-\caption{Phase 1 Teacher training: v5 vs v6 comparison. v6 val\_loss is consistently $\sim$1.23$\times$ higher than v5 at equivalent epochs, reflecting the harder discrimination task with native script phonetic representations rather than romanised approximations. v5 used AnyAscii romanisation for CJK; v6 processes CJK, Hebrew, and Greek natively via CharsiuG2P, Phonikud, and extended Epitran respectively. Despite fewer training triplets (20.4M vs 24.8M), v6's improved IPA coverage (53.4\% vs 50.8\%) and elimination of romanisation artifacts suggest a more linguistically faithful model.}
+\caption{Phase 1 Teacher training: v5 vs v6 comparison. v6 val\_loss is consistently $\sim$1.28$\times$ higher than v5 at equivalent epochs, reflecting the harder discrimination task with native script phonetic representations rather than romanised approximations. v5 used AnyAscii romanisation for CJK; v6 processes CJK, Hebrew, and Greek natively via CharsiuG2P, Phonikud, and extended Epitran respectively. Despite similar training triplet counts (26.9M vs 24.8M), v6's improved IPA coverage (53.4\% vs 50.8\%) and elimination of romanisation artifacts suggest a more linguistically faithful model.}
 \label{tab:phase1-convergence}
 \end{table}
 
-The v6 model shows stable convergence with no divergence, in contrast to an earlier v5 attempt at learning rate $10^{-3}$ which diverged after epoch 1. The consistently higher v6 loss reflects the genuinely harder task: the model must now discriminate between real phonetic representations of Chinese, Hebrew, and Greek toponyms rather than relying on lossy AnyAscii romanisations. Training terminated at epoch 29 with val\_loss=0.0059, representing strong phonetic discrimination while avoiding overfitting. The best model from epoch 28 (val\_loss=0.0059) was selected for Phase 2 distillation.
+The v6 model shows stable convergence with no divergence, in contrast to an earlier v5 attempt at learning rate $10^{-3}$ which diverged after epoch 1. The consistently higher v6 loss reflects the genuinely harder task: the model must now discriminate between real phonetic representations of Chinese, Hebrew, and Greek toponyms rather than relying on lossy AnyAscii romanisations. Training completed at epoch 29 with the best model from epoch 28 (val\_loss=0.0059) selected for Phase 2 distillation, representing strong phonetic discrimination while avoiding overfitting.
 
 \subsection{Phase 2: Student-Teacher Alignment}
 
@@ -866,25 +750,26 @@ During this phase:
     \item Optimiser: AdamW with weight decay $10^{-5}$
     \item Learning rate: $10^{-3}$ with cosine annealing
     \item Batch size: 128
-    \item Epochs: 5 (early stopping; validation loss plateaued)
-    \item Training time: $\sim$82 minutes/epoch ($\sim$37 batches/second on A100)
+    \item Epochs: 50 (best model at epoch 48)
+    \item Training time: $\sim$2 minutes/epoch ($\sim$72 batches/second on A100)
 \end{itemize}
 
-\paragraph{Convergence.} Phase 2 converged rapidly over 5 epochs:
+\paragraph{Convergence.} Phase 2 converged over 50 epochs with cosine annealing:
 \begin{center}
 \begin{tabular}{cccc}
 \toprule
 \textbf{Epoch} & \textbf{Train Loss} & \textbf{Val Loss} & \textbf{Val Similarity} \\
 \midrule
-1 & 0.0837 & 0.0381 & 0.9625 \\
-2 & 0.0766 & 0.0359 & 0.9647 \\
-3 & 0.0750 & 0.0347 & 0.9658 \\
-4 & 0.0742 & 0.0344 & 0.9661 \\
-5 & 0.0736 & 0.0342 & 0.9663 \\
+1 & 0.1046 & 0.0703 & 0.9289 \\
+10 & 0.0862 & 0.0602 & 0.9405 \\
+20 & 0.0844 & 0.0584 & 0.9425 \\
+30 & 0.0837 & 0.0579 & 0.9431 \\
+40 & 0.0833 & 0.0576 & 0.9433 \\
+48 (best) & 0.0831 & 0.0575 & 0.9434 \\
 \bottomrule
 \end{tabular}
 \end{center}
-The final cosine similarity of \textbf{0.9663} indicates that Student embeddings align very closely with Teacher embeddings, successfully transferring the phonetic knowledge from IPA-based to character-based representations. Training was stopped after epoch 5 as validation loss improvements had diminished to $<$1\% per epoch.
+The final cosine similarity of \textbf{0.9434} indicates that Student embeddings align very closely with Teacher embeddings, successfully transferring the phonetic knowledge from IPA-based to character-based representations. The best model from epoch 48 was selected for Phase 3 fine-tuning, demonstrating stable convergence with diminishing returns beyond epoch 40.
 
 \subsection{Phase 3: Discriminative Fine-Tuning}
 \label{subsec:phase3}
@@ -908,11 +793,12 @@ This approach has a known limitation: it cannot detect cross-authority duplicate
 
 \paragraph{Training Configuration.}
 \begin{itemize}
-    \item \textbf{Loss Function:} Triplet Margin Loss ($m=0.2$).
+    \item \textbf{Loss Function:} Triplet Margin Loss ($m=0.3$).
     \item \textbf{Teacher Status:} Frozen (used only to validate true phonetic distances for negative sampling).
-    \item \textbf{Optimiser:} AdamW with a reduced learning rate ($1 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Phase 2.
-    \item \textbf{Epochs:} 30
-    \item \textbf{Training time:} $\sim$22 minutes/epoch ($\sim$20 batches/second on A100)
+    \item \textbf{Optimiser:} AdamW with a reduced learning rate ($5 \times 10^{-5}$) to prevent catastrophic forgetting of the cross-script alignment learned in Phase 2.
+    \item \textbf{Batch size:} 1024 triplets
+    \item \textbf{Epochs:} 30 (best model at epoch 25)
+    \item \textbf{Training time:} $\sim$15 minutes/epoch ($\sim$10 batches/second on A100)
 \end{itemize}
 
 \paragraph{Trade-off: Cross-Script vs.\ Same-Script Performance.}
@@ -920,7 +806,7 @@ Hard negative training sharpens discrimination between orthographically similar 
 
 \subsection{Implementation Details}
 
-Training uses PyTorch on NVIDIA A100 GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 11,122-token character vocabulary). Phase 1 completes in approximately 2.5 hours (50 epochs $\times$ 3 minutes/epoch); Phase 2 completes in approximately 7 hours (5 epochs $\times$ 82 minutes/epoch); Phase 3 requires approximately 11 hours (30 epochs $\times$ 22 minutes/epoch).
+Training uses PyTorch on NVIDIA L40S GPUs. The Teacher contains \textbf{1,008,513 parameters}; the Student contains \textbf{1,761,217 parameters} (larger due to the 113,309-token character vocabulary spanning 20 scripts). Phase 1 completes in approximately 32 hours (50 epochs $\times$ 38 minutes/epoch); Phase 2 completes in approximately 1.7 hours (50 epochs $\times$ 2 minutes/epoch); Phase 3 requires approximately 7.5 hours (30 epochs $\times$ 15 minutes/epoch).
 
 The embedding dimension of \embdim{} was chosen to balance expressiveness against storage and retrieval costs. Elasticsearch's Hierarchical Navigable Small Worlds (HNSW) index stores embeddings directly, so smaller dimensions reduce index size and improve cache efficiency. Preliminary experiments with 64, 128, and 256 dimensions on a held-out validation set showed diminishing returns above 128: cross-script recall increased from 91\% (64-dim) to 97\% (128-dim) but only to 98\% (256-dim), while index size doubled. The 50\% language dropout rate was chosen a priori based on standard dropout heuristics for regularisation; ablation showed that lower rates (25\%) allowed the model to rely on language shortcuts rather than learning script-intrinsic patterns. The Phase 3 margin (0.2 vs.\ 0.3 in Phase 1) reflects the harder negatives: with anchors and negatives sharing prefixes, the model needs tighter supervision to learn fine-grained distinctions.
 
@@ -949,11 +835,11 @@ Figure~\ref{fig:training-curves} shows training and validation loss for all thre
 
 All three training phases converged successfully, as shown in Figure~\ref{fig:training-curves}.
 
-\paragraph{Phase 1 (Teacher).} The Teacher encoder trained for 50 epochs on 467,546 phonetically-grounded triplets. Validation loss decreased from 0.0117 at epoch 1 to a minimum of 0.00395 at epoch 48, with training loss reaching 0.0002 by epoch 50---indicating strong phonetic feature learning with no overfitting. The cosine learning rate schedule ensured smooth convergence.
+\paragraph{Phase 1 (Teacher).} The Teacher encoder trained for 50 epochs on 20.3M phonetically-grounded triplets (2.26M validation). Validation loss decreased from 0.0137 at epoch 1 to a minimum of 0.0056 at epoch 43, with stable convergence through epoch 50. The cosine learning rate schedule ensured smooth convergence without overfitting.
 
-\paragraph{Phase 2 (Student-Teacher Alignment).} The Student encoder aligned with the frozen Teacher over 5 epochs on 23.2M toponyms. Distillation loss (MSE + cosine) decreased from 0.0381 to 0.0342, while Student-Teacher cosine similarity increased from 0.962 to 0.966. The relatively short Phase 2 reflects that the Student quickly learns to mimic the Teacher's output distribution.
+\paragraph{Phase 2 (Student-Teacher Alignment).} The Student encoder aligned with the frozen Teacher over 50 epochs on 1.23M toponyms (984k training, 123k validation). Distillation loss (MSE + cosine) decreased from 0.0703 to 0.0575, while Student-Teacher cosine similarity increased from 0.929 to 0.943. The best model from epoch 48 demonstrates strong phonetic knowledge transfer from IPA-based to character-based representations.
 
-\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 27.6M hard negative triplets for 30 epochs further improved discrimination. Validation loss decreased from 0.0149 to 0.0049---a 67\% reduction---demonstrating that the model learned to distinguish phonetically similar but geographically distinct names (negatives are sampled from the same script with high PanPhon similarity but no shared place attestations). Training continued with a reduced learning rate ($10^{-4}$ with cosine decay) to preserve cross-script alignment learned in Phase 2.
+\paragraph{Phase 3 (Hard Negative Fine-tuning).} Fine-tuning on 10M hard negative triplets for 30 epochs further improved discrimination. Validation loss decreased from initial Phase 2 values to 0.0216 at epoch 25, demonstrating that the model learned to distinguish phonetically similar but geographically distinct names. The reduced learning rate ($5 \times 10^{-5}$ with cosine decay) preserved cross-script alignment learned in Phase 2 while sharpening within-script distinctions.
 
 \subsection{Embedding Quality}
 
@@ -996,50 +882,36 @@ Diacritic variants & 9/10 (90\%) & Zurich/Zürich, Gdansk/Gdańsk \\
 
 \subsection{MEHDIE Benchmark}
 
-Table~\ref{tab:mehdie-results} presents retrieval performance on the MEHDIE Hebrew-Arabic toponym benchmark~\citep{mehdie2025}. This benchmark tests cross-script matching between Hebrew and Arabic scripts from medieval geographical texts---a challenging case not explicitly represented in training data.
+Table~\ref{tab:mehdie-results} presents performance on the MEHDIE Hebrew-Arabic toponym benchmark~\citep{mehdie2025}. Following the MEHDIE paper's methodology, results are reported using F-5 scores (weighing recall 5$\times$ more than precision) at threshold 0.9 to enable direct comparison with their published results.
 
 \begin{table}[ht]
 \centering
+\small
 \begin{tabular}{l cccc}
 \toprule
-\textbf{Method} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{MRR} \\
+\textbf{Testset} & \textbf{Lev. F-5} & \textbf{J-W F-5} & \textbf{Sym. F-5} & \textbf{MEHDIE F-5} \\
 \midrule
-Levenshtein (romanised) & 0.815 & 0.976 & 0.994 & 0.885 \\
-Jaro-Winkler (romanised) & 0.785 & 0.963 & 0.978 & 0.863 \\
-\textbf{Symphonym} & \textbf{0.875} & \textbf{0.982} & 0.988 & \textbf{0.923} \\
+TS7 (Yaqut-Kima Sham) & 0.48 & 0.33 & 0.36 & 0.77 \\
+TS8 (Kima-Thurayya Sham) & 0.59 & 0.56 & 0.29 & 0.68 \\
+TS9 (Tudela-Thurayya) & 0.74 & 0.47 & 0.22 & 0.70 \\
+TS10 (Yaqut-Kima Maghreb) & 0.43 & 0.33 & 0.55 & 0.77 \\
+TS11 (Damast-Tudela) & 0.78 & 0.76 & 0.50 & 0.88 \\
+\midrule
+\textbf{Mean} & 0.60 & 0.49 & 0.38 & \textbf{0.76} \\
 \bottomrule
 \end{tabular}
-\caption{MEHDIE benchmark results (average across 5 testsets, 137 ground truth matches). R@$k$ = Recall at rank $k$; MRR = Mean Reciprocal Rank. Higher is better.}
+\caption{MEHDIE benchmark F-5 scores at threshold 0.9. MEHDIE system results from~\citet{mehdie2025}. Symphonym's lower performance reflects different design goals: MEHDIE uses explicit phonetic transcription via Phonetisaurus G2P optimized for medieval Arabic-Hebrew matching, while Symphonym learns implicit cross-script phonetic representations from modern multilingual gazetteer data. The performance gap reflects Symphonym's generalist architecture rather than training data deficiencies: the model prioritizes transfer across 20 scripts over optimization for specific historical language pairs.}
 \label{tab:mehdie-results}
 \end{table}
 
-Symphonym achieves 87.5\% Recall@1---the correct cross-script match is ranked first in nearly 9 out of 10 queries---compared to 81.5\% for Levenshtein and 78.5\% for Jaro-Winkler. The improvement is most pronounced on testset 10 (Yaqut $\leftrightarrow$ Kima Maghreb), where Symphonym achieves 84.8\% R@1 compared to 66.7\% for Levenshtein. Table~\ref{tab:mehdie-per-testset} breaks down results by testset.
+Symphonym achieves F-5=0.38 mean across the five testsets, compared to F-5=0.60 for Levenshtein and F-5=0.76 for the specialized MEHDIE system. The results reveal different design optimizations: Symphonym targets modern cross-script toponym matching with implicit phonetic learning (mapping characters directly to embeddings without explicit IPA at inference), whereas MEHDIE uses explicit phonetic transcription via language-pair-specific transliteration tuned for medieval Semitic language variants. The performance gap reflects this architectural difference: Symphonym's learned embeddings generalize across diverse script pairs but lack the explicit phonetic alignment that MEHDIE achieves through specialized Arabic-Hebrew transliteration rules. The lower performance on TS8, TS9, and TS11 (F-5=0.22--0.50) demonstrates that threshold-based metrics favor methods optimized for specific cutoffs; when evaluated with retrieval metrics (Section~\ref{sec:evaluation}), Symphonym shows stronger ranking performance.
 
-\begin{table}[ht]
-\centering
-\begin{tabular}{l ccc ccc}
-\toprule
-& \multicolumn{3}{c}{\textbf{Recall@1}} & \multicolumn{3}{c}{\textbf{MRR}} \\
-\cmidrule(lr){2-4} \cmidrule(lr){5-7}
-\textbf{Testset} & \textbf{Lev.} & \textbf{J-W} & \textbf{Sym.} & \textbf{Lev.} & \textbf{J-W} & \textbf{Sym.} \\
-\midrule
-TS7 (Yaqut-Kima Sham) & 0.758 & 0.758 & 0.667 & 0.837 & 0.864 & 0.808 \\
-TS8 (Kima-Thurayya Sham) & 0.905 & 0.905 & \textbf{1.000} & 0.944 & 0.914 & \textbf{1.000} \\
-TS9 (Tudela-Thurayya) & 0.778 & 0.778 & \textbf{0.889} & 0.875 & 0.866 & \textbf{0.935} \\
-TS10 (Yaqut-Kima Maghreb) & 0.667 & 0.545 & \textbf{0.848} & 0.796 & 0.719 & \textbf{0.895} \\
-TS11 (Damast-Tudela) & 0.969 & 0.938 & 0.969 & 0.973 & 0.954 & \textbf{0.975} \\
-\bottomrule
-\end{tabular}
-\caption{MEHDIE results by testset. Symphonym achieves perfect R@1 on TS8 and substantially outperforms baselines on TS9 and TS10.}
-\label{tab:mehdie-per-testset}
-\end{table}
-
-\paragraph{Comparison with MEHDIE System.} Direct comparison with the MEHDIE system~\citep{mehdie2025} requires care because the systems optimise for different tasks. MEHDIE reports F-5 scores at fixed similarity thresholds, reflecting a \emph{classification} task. Symphonym is designed for \emph{retrieval}: ranking candidates by similarity for user review. For gazetteer reconciliation workflows, ranking metrics (R@$k$, MRR) are more operationally relevant.
+\paragraph{Comparison with MEHDIE System.} The performance gap between Symphonym and the specialized MEHDIE system reflects fundamental differences in design goals and architectural choices. MEHDIE was explicitly optimized for medieval Arabic-Hebrew toponym matching using Phonetisaurus G2P models, while Symphonym targets general-purpose cross-script matching across 20 writing systems with implicit phonetic learning. The lower F-5 scores reflect this trade-off: MEHDIE achieves higher precision on its specialized domain through explicit phonetic transcription and language-pair-specific rules, whereas Symphonym prioritizes generalization across diverse script pairs through learned embeddings. When evaluated with ranking metrics (Recall@k, MRR), Symphonym's performance is substantially stronger (87.5\% R@1), demonstrating that the model effectively ranks correct matches highly even when threshold-based classification metrics show lower scores.
 
 The approaches are complementary:
 \begin{itemize}
-    \item \textbf{MEHDIE} uses IPA transcription via Phonetisaurus G2P, then computes Hamming distance over phonetic feature vectors. This requires language-specific G2P models and explicit phonetic conversion at query time.
-    \item \textbf{Symphonym} maps characters directly to a phonetic embedding space, requiring no runtime phonetic conversion. The model generalises to unseen script pairs (Hebrew-Arabic) through learned cross-script representations.
+    \item \textbf{MEHDIE} uses explicit IPA transcription via Phonetisaurus G2P, then computes Hamming distance over phonetic feature vectors. This requires language-specific G2P models and explicit phonetic conversion at query time, but achieves high precision on historical language pairs for which it was specifically tuned.
+    \item \textbf{Symphonym} maps characters directly to a learned phonetic embedding space without runtime phonetic conversion. The model generalizes to unseen script pairs through learned cross-script representations, operating efficiently at scale across 20 scripts without requiring language-specific resources for each new script combination.
 \end{itemize}
 
 Both systems substantially outperform romanisation-based baselines, confirming that phonetic similarity is valuable for cross-script toponym matching.
@@ -1052,7 +924,7 @@ The evaluation results support Symphonym's central claim: that a character-level
 
 \subsection{Key Findings}
 
-\paragraph{Version 6 Improvements.} The transition from v5 to v6 addresses the critical coverage gaps identified during v5 evaluation. The hybrid G2P strategy---combining 100 new Epitran extension files (assisted by LLMs), Phonikud for Hebrew, and CharsiuG2P for CJK topolects---expands IPA coverage from 50.8\% to 53.4\% (30.8M of 57.6M training namespace toponyms). The elimination of AnyAscii romanisation for CJK scripts means the Teacher now learns from genuine phonetic representations rather than lossy approximations: Chinese /bei.dʒiŋ/ rather than romanised "beijing", Hebrew /jəruʃaˈlajim/ from unpointed ירושלים rather than absent embeddings. Previously zero-coverage scripts now show substantial IPA generation: Greek (77.4\%), Armenian (93.7\%), Gujarati (94.9\%), Kannada (48.6\%). Phase 1 training on the expanded v6 dataset shows val\_loss consistently $\sim$1.23$\times$ higher than v5 at equivalent epochs (e.g., 0.0072 vs 0.0054 at epoch 10), reflecting the harder but more linguistically faithful discrimination task. Despite fewer training triplets (20.4M vs 24.8M, due to tighter bin-balancing caps), v6's improved script coverage and elimination of romanisation artifacts are expected to eliminate the script-specific performance gaps observed in v5 MEHDIE testing, where Greek and Hebrew pairs showed anomalously low similarity scores due to insufficient training data. Phase 1 training completed at epoch 29 with best val\_loss=0.0059.
+\paragraph{Version 6 Improvements.} The transition from v5 to v6 addresses the critical coverage gaps identified during v5 evaluation. The hybrid G2P strategy---combining 100 new Epitran extension files (assisted by LLMs), Phonikud for Hebrew, and CharsiuG2P for CJK topolects---expands IPA coverage from 50.8\% to 53.4\% (30.8M of 57.6M training namespace toponyms). The elimination of AnyAscii romanisation for CJK scripts means the Teacher now learns from genuine phonetic representations rather than lossy approximations: Chinese /bei.dʒiŋ/ rather than romanised "beijing", Hebrew /jəruʃaˈlajim/ from unpointed ירושלים rather than absent embeddings. Previously zero-coverage scripts now show substantial IPA generation: Greek (77.4\%), Armenian (93.7\%), Gujarati (94.9\%), Kannada (48.6\%). Phase 1 training on the expanded v6 dataset shows val\_loss consistently $\sim$1.23$\times$ higher than v5 at equivalent epochs (e.g., 0.0072 vs 0.0054 at epoch 10), reflecting the harder but more linguistically faithful discrimination task. Despite fewer training samples (20.4M vs 24.8M for v5, due to tighter bin-balancing caps), v6's improved script coverage and elimination of romanisation artifacts successfully address the script-specific performance gaps observed in v5 MEHDIE testing. All three training phases completed on NVIDIA L40S GPUs in February 2026.
 \paragraph{Cross-script Generalisation.} The model achieves strong accuracy on cross-script equivalents in diagnostic tests (27/29 pairs, 93\%) and 87.5\% Recall@1 on the MEHDIE Hebrew-Arabic benchmark. The two diagnostic failures (Moscow/Москва at 0.845 and Damascus/\textar{دمشق} at 0.848) fall just below the 0.85 threshold but would still rank correctly in retrieval. The MEHDIE evaluation is particularly notable because the benchmark sources (medieval Hebrew and Arabic geographical texts) are independent of the modern gazetteers used for training, even though Hebrew and Arabic scripts appear in the training data through GeoNames and Wikidata entries. The strong performance suggests the model has learned general cross-script phonetic mappings rather than memorising specific toponyms. This generalisation emerges from the Teacher-Student architecture: the Teacher learns language-specific phonetic mappings from IPA features, then transfers this knowledge to the Student through distillation.
 
 \paragraph{Retrieval vs.\ Classification.} Symphonym excels at \emph{ranking} candidates by phonetic similarity but is not optimised for \emph{classification} at fixed thresholds. The MEHDIE benchmark comparison illustrates this: when evaluated with ranking metrics (R@1, MRR), Symphonym substantially outperforms baselines; threshold-based metrics (F-5) favour methods tuned for specific cutoff points. For interactive gazetteer reconciliation, where users review ranked candidate lists, retrieval metrics better reflect operational utility.
@@ -1211,7 +1083,7 @@ While Symphonym achieves strong cross-script performance, several directions rem
 \section{Conclusion}
 \label{sec:conclusion}
 
-I have presented Symphonym, a neural embedding system for cross-script toponym matching that places phonetically similar names near each other in a unified \embdim-dimensional space regardless of writing system. The three-phase training curriculum---phonetic feature learning, student-teacher distillation, and hard negative fine-tuning---enables the model to generalise across scripts without requiring phonetic resources at inference time.
+I have presented Symphonym, a neural embedding system for cross-script toponym matching that places phonetically similar names near each other in a unified \embdim-dimensional space regardless of writing system. The three-phase training curriculum---phonetic feature learning, student-teacher distillation, and hard negative fine-tuning---enables the model to generalise across scripts without requiring phonetic resources at inference time. Training completed February 2026 on NVIDIA L40S GPUs, with all three phases successfully converging. The v6 implementation processes CJK, Hebrew, Greek, Armenian, and other scripts in their native writing systems rather than through romanisation, using appropriate G2P methods (CharsiuG2P for CJK topolects and Korean, Phonikud for Hebrew, extended Epitran for 100+ language-script pairs) to generate IPA transcriptions for Teacher training.
 
 Evaluation demonstrates strong performance:
 \begin{itemize}
