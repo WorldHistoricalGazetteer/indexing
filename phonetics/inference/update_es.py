@@ -257,7 +257,7 @@ def run_index(args):
     Changed in v6: The embeddings file now contains ALL toponyms (not just training subset).
     Embeddings are stored as int8 bytes in ES for efficiency.
 
-    Uses simple in-memory dictionary for embedding lookups (typically ~8-10GB for 67M toponyms).
+    Uses DuckDB for memory-efficient embedding lookups via temporary table in /scratch.
 
     Workflow:
     1. rebuild_toponyms_index.py -> DuckDB (all toponyms)
@@ -268,6 +268,8 @@ def run_index(args):
     import duckdb
     from datetime import datetime, timezone
     import json
+    import os
+    import tempfile
 
     duckdb_path = Path(args.duckdb_file)
     embeddings_path = Path(args.embeddings_file)
@@ -286,29 +288,29 @@ def run_index(args):
     logger.info(f"Connecting to {args.es_host}...")
     es = Elasticsearch(args.es_host, request_timeout=120, max_retries=3)
 
-    # Load embeddings into memory as simple dict
-    logger.info(f"Loading embeddings from {embeddings_path}...")
+    # Create temporary DuckDB database for embedding lookups
+    logger.info(f"Building temporary embeddings index from {embeddings_path}...")
     parquet_file = pq.ParquetFile(embeddings_path)
     total_embeddings = parquet_file.metadata.num_rows
     logger.info(f"Embeddings file contains {total_embeddings:,} rows")
 
-    # Load all embeddings into dict: {toponym_id: int8_list}
-    embeddings_dict = {}
-    batch_count = 0
+    # Use /scratch if in Slurm job, otherwise use temp directory
+    slurm_job_id = os.environ.get('SLURM_JOB_ID')
+    if slurm_job_id:
+        scratch_dir = Path(f"/scratch/slurm-{slurm_job_id}")
+        scratch_dir.mkdir(parents=True, exist_ok=True)
+        temp_dir = tempfile.mkdtemp(dir=scratch_dir)
+    else:
+        temp_dir = tempfile.mkdtemp()
 
-    for batch in parquet_file.iter_batches(batch_size=100000):
-        doc_ids = batch.column('doc_id').to_pylist()
-        embs = batch.column('embedding').to_pylist()
+    temp_db_path = Path(temp_dir) / 'embeddings_lookup.duckdb'
+    logger.info(f"Creating temporary embeddings database at {temp_db_path}...")
 
-        for doc_id, emb in zip(doc_ids, embs):
-            # Store as-is (int8 list from Parquet)
-            embeddings_dict[doc_id] = emb
-
-        batch_count += len(doc_ids)
-        if batch_count % 500000 == 0:
-            logger.info(f"  Loaded {batch_count:,} embeddings into memory...")
-
-    logger.info(f"✓ Loaded {len(embeddings_dict):,} embeddings into memory")
+    # Create temporary DuckDB and import embeddings Parquet
+    emb_conn = duckdb.connect(str(temp_db_path))
+    emb_conn.execute(f"CREATE TABLE embeddings AS SELECT * FROM read_parquet('{embeddings_path}')")
+    emb_conn.execute("CREATE INDEX idx_doc_id ON embeddings(doc_id)")
+    logger.info(f"✓ Temporary embeddings database ready with {total_embeddings:,} rows")
 
     # Load schema and create index
     logger.info(f"Creating index '{args.index}' from schema...")
@@ -336,7 +338,7 @@ def run_index(args):
     indexed_at = datetime.now(timezone.utc).isoformat()
 
     def generate_actions():
-        """Generator that yields ES bulk actions, looking up embeddings from in-memory dict."""
+        """Generator that yields ES bulk actions, querying embeddings from temporary DuckDB."""
         with_embedding = 0
         without_embedding = 0
 
@@ -356,6 +358,9 @@ def run_index(args):
             GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
         ''')
 
+        # Prepare embedding lookup query
+        emb_query = emb_conn.prepare("SELECT embedding FROM embeddings WHERE doc_id = ?")
+
         # Stream from DuckDB
         batch_size = 1000
         while True:
@@ -368,8 +373,10 @@ def run_index(args):
                 namespaces = row[6].split(',') if row[6] else []
                 attestations = row[7].split(',') if row[7] else []
 
-                # Simple dict lookup
-                embedding = embeddings_dict.get(toponym_id)
+                # Query embedding from temporary DuckDB
+                emb_result = emb_query.execute([toponym_id]).fetchone()
+                embedding = emb_result[0] if emb_result else None
+
                 if embedding:
                     with_embedding += 1
                 else:
@@ -436,6 +443,14 @@ def run_index(args):
     es.indices.refresh(index=args.index)
 
     logger.info(f"Indexing complete. Success: {success_count:,}, Errors: {error_count:,}")
+
+    # Cleanup temporary DuckDB
+    emb_conn.close()
+    conn.close()
+
+    import shutil
+    logger.info(f"Cleaning up temporary database at {temp_dir}...")
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
     # Create snapshot
     logger.info("Creating snapshot...")
