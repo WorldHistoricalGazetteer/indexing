@@ -243,8 +243,14 @@ def cosine_similarity(vec1: list, vec2: list) -> float:
     return float(dot / (norm1 * norm2))
 
 
-def knn_search(es: Elasticsearch, embedding: list, k: int = 10, index: str = 'toponyms') -> list:
-    """Perform KNN search with an embedding vector."""
+def knn_search(es: Elasticsearch, embedding: list, k: int = 100, index: str = 'toponyms') -> list:
+    """Perform KNN search with an embedding vector and aggregate by name.
+
+    Returns list of dicts with:
+        - name: the toponym string
+        - variants: list of (lang, script) tuples for this name
+        - max_score: highest score for any variant of this name
+    """
     result = es.search(
         index=index,
         body={
@@ -259,7 +265,31 @@ def knn_search(es: Elasticsearch, embedding: list, k: int = 10, index: str = 'to
         }
     )
 
-    return result['hits']['hits']
+    # Aggregate results by name
+    by_name = defaultdict(lambda: {'variants': [], 'max_score': 0})
+
+    for hit in result['hits']['hits']:
+        name = hit['_source']['name']
+        lang = hit['_source'].get('lang')
+        script = hit['_source'].get('script')
+        score = hit['_score']
+
+        by_name[name]['variants'].append((lang, script))
+        by_name[name]['max_score'] = max(by_name[name]['max_score'], score)
+
+    # Convert to sorted list
+    aggregated = []
+    for name, data in by_name.items():
+        aggregated.append({
+            'name': name,
+            'variants': data['variants'],
+            'max_score': data['max_score']
+        })
+
+    # Sort by max score descending
+    aggregated.sort(key=lambda x: x['max_score'], reverse=True)
+
+    return aggregated
 
 
 # =============================================================================
@@ -333,7 +363,11 @@ def test_cross_script_pairs(es: Elasticsearch, pairs: list, index: str = 'topony
 
 
 def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
-    """Test KNN retrieval accuracy with known queries."""
+    """Test KNN retrieval accuracy with known queries.
+
+    For each query toponym, retrieve top-k similar toponyms aggregated by name.
+    Check if expected cross-script variants appear in the results.
+    """
     test_cases = [
         ("London", "en", ["Лондон", "Londres", "Londyn"], "Should retrieve cross-script variants"),
         ("Paris", "fr", ["Париж", "Parigi", "París"], "Should retrieve cross-script variants"),
@@ -352,19 +386,31 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             results.append({
                 'query': f"{query_name} ({query_lang})",
                 'expected': expected_names,
-                'retrieved': [],
+                'found': [],
+                'retrieved_top10': [],
                 'status': 'MISSING_QUERY',
                 'description': description
             })
             continue
 
-        # Perform KNN search
-        knn_results = knn_search(es, query_doc['embedding'], k=20, index=index)
+        # Perform KNN search with larger k to get more candidates
+        knn_results = knn_search(es, query_doc['embedding'], k=100, index=index)
 
-        retrieved_names = [hit['_source']['name'] for hit in knn_results]
+        # Extract just the names from aggregated results
+        retrieved_names = [item['name'] for item in knn_results[:20]]
 
         # Check how many expected variants are in top-20
         found = [name for name in expected_names if name in retrieved_names]
+
+        # For reporting, show top 10 with their variants
+        top10_display = []
+        for item in knn_results[:10]:
+            # Format: "Name (lang:script, lang:script, ...)"
+            variant_strs = [f"{lang}:{script}" for lang, script in item['variants'][:3]]  # Show first 3 variants
+            if len(item['variants']) > 3:
+                variant_strs.append(f"+{len(item['variants'])-3} more")
+            display = f"{item['name']} ({', '.join(variant_strs)})"
+            top10_display.append(display)
 
         status = 'PASS' if len(found) >= len(expected_names) * 0.5 else 'FAIL'
 
@@ -372,7 +418,8 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             'query': f"{query_name} ({query_lang})",
             'expected': expected_names,
             'found': found,
-            'retrieved_top10': retrieved_names[:10],
+            'retrieved_top10': top10_display,
+            'retrieved_count': len(knn_results),
             'status': status,
             'description': description
         })
