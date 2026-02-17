@@ -357,24 +357,33 @@ def run_index(args):
             GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
         ''')
 
-        # Prepare embedding lookup query
-        emb_query = emb_conn.prepare("SELECT embedding FROM embeddings WHERE doc_id = ?")
-
-        # Stream from DuckDB
+        # Stream from DuckDB in batches
         batch_size = 1000
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
                 break
 
+            # Get all toponym_ids for this batch
+            batch_ids = [row[0] for row in rows]
+
+            # Batch lookup embeddings from temporary DuckDB
+            placeholders = ','.join(['?' for _ in batch_ids])
+            emb_results = emb_conn.execute(
+                f"SELECT doc_id, embedding FROM embeddings WHERE doc_id IN ({placeholders})",
+                batch_ids
+            ).fetchall()
+
+            # Create lookup dict for this batch
+            emb_lookup = {row[0]: row[1] for row in emb_results}
+
             for row in rows:
                 toponym_id = row[0]
                 namespaces = row[5].split(',') if row[5] else []
                 attestations = row[6].split(',') if row[6] else []
 
-                # Query embedding from temporary DuckDB
-                emb_result = emb_query.execute([toponym_id]).fetchone()
-                embedding = emb_result[0] if emb_result else None
+                # Lookup embedding from batch results
+                embedding = emb_lookup.get(toponym_id)
 
                 if embedding:
                     with_embedding += 1
