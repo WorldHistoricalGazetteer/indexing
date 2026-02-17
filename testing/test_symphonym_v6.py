@@ -363,74 +363,186 @@ def test_cross_script_pairs(es: Elasticsearch, pairs: list, index: str = 'topony
 
 
 def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
-    """Test KNN retrieval accuracy with known queries.
+    """Test KNN retrieval with similarity threshold analysis.
 
-    For each query toponym, retrieve top-k similar toponyms aggregated by name.
-    Check if expected cross-script variants appear in the results.
+    Instead of checking top-K ranking, verify that:
+    1. Expected cross-script variants appear above similarity thresholds
+    2. Higher-scoring results are legitimate near-synonyms
+    3. Anomalous results are flagged as potential data quality issues
     """
     test_cases = [
-        ("London", "en", ["Лондон", "Londres", "Londyn"], "Should retrieve cross-script variants"),
-        ("Paris", "fr", ["Париж", "Parigi", "París"], "Should retrieve cross-script variants"),
-        ("Moscow", "en", ["Москва", "Moscou", "Mosca"], "Should retrieve cross-script variants"),
+        {
+            "query": "London",
+            "lang": "en",
+            "expected_variants": [
+                {"name": "Лондон", "min_similarity": 0.75, "type": "Cyrillic"},
+                {"name": "Londres", "min_similarity": 0.70, "type": "Romance"},
+                {"name": "Londyn", "min_similarity": 0.70, "type": "Polish"}
+            ],
+            "description": "Latin-Cyrillic and cross-language variants"
+        },
+        {
+            "query": "Paris",
+            "lang": "fr",
+            "expected_variants": [
+                {"name": "Париж", "min_similarity": 0.70, "type": "Cyrillic"},
+                {"name": "Parigi", "min_similarity": 0.70, "type": "Italian"},
+                {"name": "París", "min_similarity": 0.85, "type": "Spanish"}
+            ],
+            "description": "Latin-Cyrillic and cross-language variants"
+        },
+        {
+            "query": "Moscow",
+            "lang": "en",
+            "expected_variants": [
+                {"name": "Москва", "min_similarity": 0.75, "type": "Cyrillic"},
+                {"name": "Moscou", "min_similarity": 0.80, "type": "French/Portuguese"},
+                {"name": "Mosca", "min_similarity": 0.75, "type": "Italian/Spanish"}
+            ],
+            "description": "Latin-Cyrillic and cross-language variants"
+        }
     ]
 
     results = []
 
-    logger.info(f"Testing KNN retrieval on {len(test_cases)} cases...")
+    logger.info(f"Testing KNN retrieval with threshold analysis on {len(test_cases)} cases...")
 
-    for query_name, query_lang, expected_names, description in tqdm(test_cases, desc="KNN retrieval"):
+    for case in tqdm(test_cases, desc="KNN retrieval"):
         # Find query toponym
-        query_doc = find_toponym(es, query_name, query_lang, index)
+        query_doc = find_toponym(es, case["query"], case["lang"], index)
 
         if not query_doc:
             results.append({
-                'query': f"{query_name} ({query_lang})",
-                'expected': expected_names,
-                'found': [],
-                'retrieved_top10': [],
+                'query': f"{case['query']} ({case['lang']})",
                 'status': 'MISSING_QUERY',
-                'description': description
+                'variants_found': [],
+                'high_scoring_results': [],
+                'data_quality_issues': [],
+                'description': case["description"]
             })
             continue
 
-        # Perform KNN search with larger k to get more candidates
-        knn_results = knn_search(es, query_doc['embedding'], k=100, index=index)
+        # Perform KNN search with large k to get comprehensive results
+        knn_results = knn_search(es, query_doc['embedding'], k=200, index=index)
 
-        # Extract just the names from aggregated results
-        retrieved_names = [item['name'] for item in knn_results[:20]]
+        # Build name -> similarity map for easier lookup
+        name_to_info = {item['name']: item for item in knn_results}
 
-        # Check how many expected variants are in top-20
-        found = [name for name in expected_names if name in retrieved_names]
+        # Check for expected variants with thresholds
+        variants_found = []
+        for variant in case["expected_variants"]:
+            if variant["name"] in name_to_info:
+                info = name_to_info[variant["name"]]
+                # Convert ES score to cosine similarity (approximate)
+                # ES returns higher scores for more similar items, normalize to 0-1 range
+                similarity = info['max_score'] / (knn_results[0]['max_score'] if knn_results else 1.0)
 
-        # For reporting, show top 10 with their variants
-        top10_display = []
-        for item in knn_results[:10]:
-            # Format: "Name (lang:script, lang:script, ...)"
-            variant_strs = [f"{lang}:{script}" for lang, script in item['variants'][:3]]  # Show first 3 variants
+                variants_found.append({
+                    "name": variant["name"],
+                    "type": variant["type"],
+                    "similarity": round(similarity, 4),
+                    "threshold": variant["min_similarity"],
+                    "status": "PASS" if similarity >= variant["min_similarity"] else "BELOW_THRESHOLD",
+                    "langs": [f"{lang}:{script}" for lang, script in info['variants'][:5]]
+                })
+            else:
+                variants_found.append({
+                    "name": variant["name"],
+                    "type": variant["type"],
+                    "similarity": None,
+                    "threshold": variant["min_similarity"],
+                    "status": "NOT_FOUND",
+                    "langs": []
+                })
+
+        # Analyze high-scoring results (excluding exact query match)
+        query_lower = case["query"].lower()
+        high_scoring = [item for item in knn_results[:20] if item['name'].lower() != query_lower]
+
+        high_scoring_results = []
+        data_quality_issues = []
+
+        for item in high_scoring[:15]:
+            similarity = item['max_score'] / (knn_results[0]['max_score'] if knn_results else 1.0)
+
+            variant_strs = [f"{lang}:{script}" for lang, script in item['variants'][:3]]
             if len(item['variants']) > 3:
                 variant_strs.append(f"+{len(item['variants'])-3} more")
-            display = f"{item['name']} ({', '.join(variant_strs)})"
-            top10_display.append(display)
 
-        status = 'PASS' if len(found) >= len(expected_names) * 0.5 else 'FAIL'
+            result_entry = {
+                "name": item['name'],
+                "similarity": round(similarity, 4),
+                "variants": variant_strs,
+                "is_expected": item['name'] in [v["name"] for v in case["expected_variants"]]
+            }
+            high_scoring_results.append(result_entry)
+
+            # Flag potential data quality issues
+            name_len = len(item['name'])
+            has_latin = any(c.isascii() and c.isalpha() for c in item['name'])
+
+            # Issue 1: Suspiciously long names (>50 chars) with high similarity
+            if similarity > 0.6 and name_len > 50:
+                data_quality_issues.append({
+                    "name": item['name'],
+                    "similarity": round(similarity, 4),
+                    "issue_type": "suspiciously_long",
+                    "details": f"Name length: {name_len} characters",
+                    "langs": variant_strs[:2]
+                })
+
+            # Issue 2: Non-Latin names tagged as both en and nl (unlikely combination)
+            langs_in_variants = [lang for lang, _ in item['variants']]
+            if not has_latin and "en" in langs_in_variants and "nl" in langs_in_variants:
+                data_quality_issues.append({
+                    "name": item['name'],
+                    "similarity": round(similarity, 4),
+                    "issue_type": "implausible_lang_tags",
+                    "details": "Non-Latin name tagged as both en and nl",
+                    "langs": variant_strs[:2]
+                })
+
+            # Issue 3: Names containing obvious data errors (e.g., "School", "Station" in unexpected languages)
+            problematic_words = ["School", "Station", "Hospital", "University", "College", "F P ", "Pry "]
+            if any(word in item['name'] for word in problematic_words):
+                if similarity > 0.5 and not item["is_expected"]:
+                    data_quality_issues.append({
+                        "name": item['name'],
+                        "similarity": round(similarity, 4),
+                        "issue_type": "institutional_name_anomaly",
+                        "details": "Contains institution keywords (likely OSM data quality issue)",
+                        "langs": variant_strs[:2]
+                    })
+
+        # Determine overall status
+        passed_variants = sum(1 for v in variants_found if v["status"] == "PASS")
+        total_expected = len(case["expected_variants"])
+
+        if passed_variants == total_expected:
+            status = "PASS"
+        elif passed_variants > 0:
+            status = "PARTIAL"
+        else:
+            status = "FAIL"
 
         results.append({
-            'query': f"{query_name} ({query_lang})",
-            'expected': expected_names,
-            'found': found,
-            'retrieved_top10': top10_display,
-            'retrieved_count': len(knn_results),
+            'query': f"{case['query']} ({case['lang']})",
             'status': status,
-            'description': description
+            'variants_found': variants_found,
+            'high_scoring_results': high_scoring_results[:10],
+            'data_quality_issues': data_quality_issues,
+            'description': case["description"]
         })
 
-    passed = sum(1 for r in results if r['status'] == 'PASS')
+    passed = sum(1 for r in results if r["status"] == "PASS")
+    partial = sum(1 for r in results if r["status"] == "PARTIAL")
 
     return {
         'results': results,
         'summary': {
             'total': len(results),
             'passed': passed,
+            'partial': partial,
             'pass_rate': (passed / len(results) * 100) if results else 0
         }
     }
