@@ -505,7 +505,8 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             # Issue 3: Names containing obvious data errors (e.g., "School", "Station" in unexpected languages)
             problematic_words = ["School", "Station", "Hospital", "University", "College", "F P ", "Pry "]
             if any(word in item['name'] for word in problematic_words):
-                if similarity > 0.5 and not result_entry["is_expected"]:
+                is_expected = item['name'] in [v["name"] for v in case["expected_variants"]]
+                if similarity > 0.5 and not is_expected:
                     data_quality_issues.append({
                         "name": item['name'],
                         "similarity": round(similarity, 4),
