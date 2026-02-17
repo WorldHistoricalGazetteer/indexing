@@ -27,14 +27,16 @@ conda activate whg
 cd /ix1/ishi/elastic
 
 # Run evaluation with CPU
-# Note: Uses ranking-based metrics (Recall@K, MRR) by default
-# Baselines (Levenshtein, Jaro-Winkler) are SKIPPED by default
-# Add --use-thresholds for F-5 comparison with MEHDIE paper
-# Add --include-baselines to also run Levenshtein and Jaro-Winkler tests
+# Full comparison with MEHDIE paper:
+# - Includes Levenshtein and Jaro-Winkler baselines
+# - Uses threshold-based metrics (Precision, Recall, F-5) for direct comparison
+# - Also includes ranking-based metrics (Recall@K, MRR)
 python -m testing.run_mehdie_evaluation \
     --testsets testing/mehdie-testsets \
     --version v6 \
     --device cpu \
+    --include-baselines \
+    --use-thresholds \
     --output /ix1/ishi/es/staging-logs/mehdie_results_v6_${SLURM_JOB_ID}.json
 
 echo ""
