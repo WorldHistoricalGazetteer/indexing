@@ -12,7 +12,8 @@ Tests the staging ES index with v6 embeddings across multiple dimensions:
 Outputs a JSON report and formatted summary for inclusion in the paper.
 
 Usage:
-    python testing/test_symphonym_v6.py --es-host http://htc-n25:9201
+    python testing/test_symphonym_v6.py
+    sbatch -p smp -c 2 -t 1:00:00 --wrap="python testing/test_symphonym_v6.py"
 """
 
 import argparse
@@ -30,13 +31,43 @@ from tqdm import tqdm
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from processing.settings import ES_HOST
-
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# ELASTICSEARCH HOST DETECTION
+# =============================================================================
+
+def get_es_host():
+    """Read ES host from staging environment file."""
+    staging_info_file = "/ix1/ishi/esinfo/es-staging.env"
+
+    if not Path(staging_info_file).exists():
+        raise EnvironmentError(
+            f"Staging ES info file not found: {staging_info_file}\n"
+            "Make sure staging ES is running: es -staging-start"
+        )
+
+    node = None
+    port = None
+
+    with open(staging_info_file) as f:
+        for line in f:
+            if line.startswith("ES_NODE="):
+                node = line.strip().split("=", 1)[1]
+            elif line.startswith("ES_PORT="):
+                port = line.strip().split("=", 1)[1]
+
+    if not node or not port:
+        raise EnvironmentError(
+            f"Could not parse ES_NODE or ES_PORT from {staging_info_file}"
+        )
+
+    return f"http://{node}:{port}"
 
 
 # =============================================================================
@@ -520,14 +551,25 @@ def run_all_tests(es_host: str, index: str = 'toponyms', output_file: str = None
 
 def main():
     parser = argparse.ArgumentParser(description="Symphonym v6 comprehensive test suite")
-    parser.add_argument('--es-host', default=ES_HOST, help='Elasticsearch host')
+    parser.add_argument('--es-host', default=None,
+                        help='Elasticsearch host (defaults to staging ES from /ix1/ishi/esinfo/es-staging.env)')
     parser.add_argument('--index', default='toponyms', help='Index name')
     parser.add_argument('--output', default='testing/symphonym_v6_test_report.json',
                         help='Output JSON report file')
 
     args = parser.parse_args()
 
-    run_all_tests(args.es_host, args.index, args.output)
+    # Determine ES host
+    if args.es_host:
+        es_host = args.es_host
+    else:
+        try:
+            es_host = get_es_host()
+        except EnvironmentError as e:
+            logger.error(str(e))
+            sys.exit(1)
+
+    run_all_tests(es_host, args.index, args.output)
 
 
 if __name__ == '__main__':
