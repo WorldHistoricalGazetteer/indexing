@@ -346,7 +346,6 @@ def run_index(args):
         cursor = conn.execute('''
             SELECT t.toponym_id,
                    t.name,
-                   t.name_romanized,
                    t.lang,
                    t.lang_variant,
                    t.script,
@@ -355,7 +354,7 @@ def run_index(args):
             FROM toponyms t
             JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
             LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
-            GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
+            GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script
         ''')
 
         # Prepare embedding lookup query
@@ -370,8 +369,8 @@ def run_index(args):
 
             for row in rows:
                 toponym_id = row[0]
-                namespaces = row[6].split(',') if row[6] else []
-                attestations = row[7].split(',') if row[7] else []
+                namespaces = row[5].split(',') if row[5] else []
+                attestations = row[6].split(',') if row[6] else []
 
                 # Query embedding from temporary DuckDB
                 emb_result = emb_query.execute([toponym_id]).fetchone()
@@ -384,18 +383,15 @@ def run_index(args):
 
                 doc = {
                     'name': row[1],
-                    'lang': row[3] or None,
-                    'lang_variant': row[4] or None,
-                    'script': row[5],
+                    'lang': row[2] or None,
+                    'lang_variant': row[3] or None,
+                    'script': row[4],
                     'namespaces': namespaces,
                     'primary_namespace': namespaces[0] if namespaces else None,
                     'attestations': attestations,
                     'indexed_at': indexed_at,
                 }
 
-                # Add name_romanized if present
-                if row[2]:
-                    doc['name_romanized'] = row[2]
 
                 # Add embedding if available (as int8 list)
                 if embedding:
