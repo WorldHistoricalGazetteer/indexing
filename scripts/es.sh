@@ -1548,6 +1548,9 @@ do_train_and_update() {
 do_update_embeddings() {
     DATA_VERSION=${1:-6}
 
+    # Default to l40s for embedding computation unless explicitly overridden
+    GPU_PARTITION="${GPU_PARTITION:-l40s}"
+
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
@@ -1588,6 +1591,7 @@ do_update_embeddings() {
     echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
+    echo "  GPU Part:   ${GPU_PARTITION}"
     echo
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
@@ -1602,7 +1606,7 @@ do_update_embeddings() {
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
 #SBATCH --time=48:00:00
-#SBATCH --partition=${GPU_PARTITION:-l48s}
+#SBATCH --partition=${GPU_PARTITION}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
