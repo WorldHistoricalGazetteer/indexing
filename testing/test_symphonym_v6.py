@@ -1,0 +1,535 @@
+#!/usr/bin/env python3
+"""
+Comprehensive Symphonym v6 Test Suite
+
+Tests the staging ES index with v6 embeddings across multiple dimensions:
+- Script coverage and distribution
+- Cross-script similarity performance
+- Embedding quality metrics
+- KNN retrieval accuracy
+- Known toponym pair validation
+
+Outputs a JSON report and formatted summary for inclusion in the paper.
+
+Usage:
+    python testing/test_symphonym_v6.py --es-host http://htc-n25:9201
+"""
+
+import argparse
+import json
+import logging
+import sys
+from collections import defaultdict
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+from elasticsearch import Elasticsearch
+from tqdm import tqdm
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from processing.settings import ES_HOST
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+
+# =============================================================================
+# TEST DATA: Known Cross-Script Pairs
+# =============================================================================
+
+# Format: (name1, lang1, name2, lang2, expected_similarity, description)
+CROSS_SCRIPT_PAIRS = [
+    # Latin-Cyrillic (should be HIGH similarity)
+    ("London", "en", "Лондон", "ru", 0.85, "Latin-Cyrillic transliteration"),
+    ("Moscow", "en", "Москва", "ru", 0.85, "Latin-Cyrillic transliteration"),
+    ("Paris", "en", "Париж", "ru", 0.85, "Latin-Cyrillic transliteration"),
+    ("Berlin", "en", "Берлин", "ru", 0.85, "Latin-Cyrillic transliteration"),
+    ("Warsaw", "en", "Варшава", "ru", 0.85, "Latin-Cyrillic transliteration"),
+
+    # Latin-Greek (should be HIGH similarity)
+    ("Athens", "en", "Αθήνα", "el", 0.75, "Latin-Greek transliteration"),
+    ("Thessaloniki", "en", "Θεσσαλονίκη", "el", 0.75, "Latin-Greek transliteration"),
+
+    # Latin-Arabic (should be HIGH similarity)
+    ("Damascus", "en", "دمشق", "ar", 0.75, "Latin-Arabic transliteration"),
+    ("Beirut", "en", "بيروت", "ar", 0.75, "Latin-Arabic transliteration"),
+    ("Baghdad", "en", "بغداد", "ar", 0.75, "Latin-Arabic transliteration"),
+
+    # Latin-Hebrew (should be HIGH similarity with Phonikud)
+    ("Jerusalem", "en", "ירושלים", "he", 0.70, "Latin-Hebrew transliteration"),
+    ("Tel Aviv", "en", "תל אביב", "he", 0.70, "Latin-Hebrew transliteration"),
+
+    # Latin-CJK (should be HIGH similarity with CharsiuG2P)
+    ("Beijing", "en", "北京", "zh", 0.80, "Latin-CJK Pinyin"),
+    ("Shanghai", "en", "上海", "zh", 0.80, "Latin-CJK Pinyin"),
+    ("Tokyo", "en", "東京", "ja", 0.80, "Latin-CJK romanization"),
+    ("Seoul", "en", "서울", "ko", 0.80, "Latin-Hangul romanization"),
+
+    # Cross-language Latin (phonetically similar, should be MODERATE-HIGH)
+    ("London", "en", "Londyn", "pl", 0.75, "Cross-language phonetic similarity"),
+    ("Rome", "en", "Roma", "it", 0.70, "Cross-language phonetic similarity"),
+    ("Munich", "en", "München", "de", 0.70, "Cross-language with umlaut"),
+
+    # Unrelated pairs (should be LOW similarity)
+    ("London", "en", "Tokyo", "en", 0.30, "Unrelated toponyms"),
+    ("Paris", "en", "Beijing", "en", 0.30, "Unrelated toponyms"),
+    ("Berlin", "en", "Cairo", "en", 0.30, "Unrelated toponyms"),
+]
+
+# Diacritic variants (should be VERY HIGH similarity)
+DIACRITIC_PAIRS = [
+    ("Zurich", "de", "Zürich", "de", 0.90, "Umlaut variant"),
+    ("Krakow", "pl", "Kraków", "pl", 0.90, "Polish diacritic"),
+    ("Sao Paulo", "pt", "São Paulo", "pt", 0.90, "Portuguese tilde"),
+    ("Bogota", "es", "Bogotá", "es", 0.90, "Spanish accent"),
+]
+
+
+# =============================================================================
+# ELASTICSEARCH QUERY HELPERS
+# =============================================================================
+
+def get_index_stats(es: Elasticsearch, index: str = 'toponyms') -> dict:
+    """Get basic index statistics."""
+    stats = es.count(index=index)
+    total_docs = stats['count']
+
+    # Count documents with embeddings
+    with_embedding = es.count(
+        index=index,
+        body={'query': {'exists': {'field': 'embedding'}}}
+    )['count']
+
+    return {
+        'total_toponyms': total_docs,
+        'with_embedding': with_embedding,
+        'embedding_coverage_pct': (with_embedding / total_docs * 100) if total_docs > 0 else 0
+    }
+
+
+def get_script_distribution(es: Elasticsearch, index: str = 'toponyms') -> dict:
+    """Get distribution of toponyms by script."""
+    aggs = es.search(
+        index=index,
+        size=0,
+        body={
+            'aggs': {
+                'by_script': {
+                    'terms': {'field': 'script', 'size': 30}
+                }
+            }
+        }
+    )
+
+    distribution = {}
+    for bucket in aggs['aggregations']['by_script']['buckets']:
+        distribution[bucket['key']] = bucket['doc_count']
+
+    return distribution
+
+
+def get_embedding_coverage_by_script(es: Elasticsearch, index: str = 'toponyms') -> dict:
+    """Get embedding coverage percentage by script."""
+    # Get all scripts
+    scripts = get_script_distribution(es, index)
+
+    coverage = {}
+    for script in scripts.keys():
+        total = es.count(
+            index=index,
+            body={'query': {'term': {'script': script}}}
+        )['count']
+
+        with_emb = es.count(
+            index=index,
+            body={
+                'query': {
+                    'bool': {
+                        'must': [
+                            {'term': {'script': script}},
+                            {'exists': {'field': 'embedding'}}
+                        ]
+                    }
+                }
+            }
+        )['count']
+
+        coverage[script] = {
+            'total': total,
+            'with_embedding': with_emb,
+            'coverage_pct': (with_emb / total * 100) if total > 0 else 0
+        }
+
+    return coverage
+
+
+def find_toponym(es: Elasticsearch, name: str, lang: str = None, index: str = 'toponyms') -> dict:
+    """Find a toponym by name and optional language."""
+    query = {
+        'bool': {
+            'must': [
+                {'term': {'name.keyword': name}}
+            ]
+        }
+    }
+
+    if lang:
+        query['bool']['must'].append({'term': {'lang': lang}})
+
+    # Also require embedding
+    query['bool']['must'].append({'exists': {'field': 'embedding'}})
+
+    result = es.search(
+        index=index,
+        body={'query': query, 'size': 1}
+    )
+
+    if result['hits']['total']['value'] > 0:
+        return result['hits']['hits'][0]['_source']
+    return None
+
+
+def cosine_similarity(vec1: list, vec2: list) -> float:
+    """Compute cosine similarity between two int8 embedding vectors."""
+    # Convert int8 to float and dequantize
+    v1 = np.array(vec1, dtype=np.float32) / 127.0
+    v2 = np.array(vec2, dtype=np.float32) / 127.0
+
+    # Cosine similarity
+    dot = np.dot(v1, v2)
+    norm1 = np.linalg.norm(v1)
+    norm2 = np.linalg.norm(v2)
+
+    if norm1 == 0 or norm2 == 0:
+        return 0.0
+
+    return float(dot / (norm1 * norm2))
+
+
+def knn_search(es: Elasticsearch, embedding: list, k: int = 10, index: str = 'toponyms') -> list:
+    """Perform KNN search with an embedding vector."""
+    result = es.search(
+        index=index,
+        body={
+            'knn': {
+                'field': 'embedding',
+                'query_vector': embedding,
+                'k': k,
+                'num_candidates': k * 10
+            },
+            '_source': ['name', 'lang', 'script'],
+            'size': k
+        }
+    )
+
+    return result['hits']['hits']
+
+
+# =============================================================================
+# TEST FUNCTIONS
+# =============================================================================
+
+def test_cross_script_pairs(es: Elasticsearch, pairs: list, index: str = 'toponyms') -> dict:
+    """Test known cross-script pairs for similarity."""
+    results = []
+
+    logger.info(f"Testing {len(pairs)} cross-script pairs...")
+
+    for name1, lang1, name2, lang2, expected, description in tqdm(pairs, desc="Cross-script pairs"):
+        # Find both toponyms
+        doc1 = find_toponym(es, name1, lang1, index)
+        doc2 = find_toponym(es, name2, lang2, index)
+
+        if not doc1:
+            results.append({
+                'name1': name1, 'lang1': lang1,
+                'name2': name2, 'lang2': lang2,
+                'expected': expected,
+                'actual': None,
+                'status': 'MISSING_1',
+                'description': description
+            })
+            continue
+
+        if not doc2:
+            results.append({
+                'name1': name1, 'lang1': lang1,
+                'name2': name2, 'lang2': lang2,
+                'expected': expected,
+                'actual': None,
+                'status': 'MISSING_2',
+                'description': description
+            })
+            continue
+
+        # Compute similarity
+        similarity = cosine_similarity(doc1['embedding'], doc2['embedding'])
+
+        # Determine pass/fail
+        status = 'PASS' if similarity >= expected else 'FAIL'
+
+        results.append({
+            'name1': name1, 'lang1': lang1,
+            'name2': name2, 'lang2': lang2,
+            'expected': expected,
+            'actual': round(similarity, 4),
+            'status': status,
+            'description': description
+        })
+
+    # Summary stats
+    total = len(results)
+    passed = sum(1 for r in results if r['status'] == 'PASS')
+    failed = sum(1 for r in results if r['status'] == 'FAIL')
+    missing = sum(1 for r in results if r['status'].startswith('MISSING'))
+
+    return {
+        'results': results,
+        'summary': {
+            'total': total,
+            'passed': passed,
+            'failed': failed,
+            'missing': missing,
+            'pass_rate': (passed / (total - missing) * 100) if (total - missing) > 0 else 0
+        }
+    }
+
+
+def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
+    """Test KNN retrieval accuracy with known queries."""
+    test_cases = [
+        ("London", "en", ["Лондон", "Londres", "Londyn"], "Should retrieve cross-script variants"),
+        ("Paris", "fr", ["Париж", "Parigi", "París"], "Should retrieve cross-script variants"),
+        ("Moscow", "en", ["Москва", "Moscou", "Mosca"], "Should retrieve cross-script variants"),
+    ]
+
+    results = []
+
+    logger.info(f"Testing KNN retrieval on {len(test_cases)} cases...")
+
+    for query_name, query_lang, expected_names, description in tqdm(test_cases, desc="KNN retrieval"):
+        # Find query toponym
+        query_doc = find_toponym(es, query_name, query_lang, index)
+
+        if not query_doc:
+            results.append({
+                'query': f"{query_name} ({query_lang})",
+                'expected': expected_names,
+                'retrieved': [],
+                'status': 'MISSING_QUERY',
+                'description': description
+            })
+            continue
+
+        # Perform KNN search
+        knn_results = knn_search(es, query_doc['embedding'], k=20, index=index)
+
+        retrieved_names = [hit['_source']['name'] for hit in knn_results]
+
+        # Check how many expected variants are in top-20
+        found = [name for name in expected_names if name in retrieved_names]
+
+        status = 'PASS' if len(found) >= len(expected_names) * 0.5 else 'FAIL'
+
+        results.append({
+            'query': f"{query_name} ({query_lang})",
+            'expected': expected_names,
+            'found': found,
+            'retrieved_top10': retrieved_names[:10],
+            'status': status,
+            'description': description
+        })
+
+    passed = sum(1 for r in results if r['status'] == 'PASS')
+
+    return {
+        'results': results,
+        'summary': {
+            'total': len(results),
+            'passed': passed,
+            'pass_rate': (passed / len(results) * 100) if results else 0
+        }
+    }
+
+
+def test_embedding_statistics(es: Elasticsearch, index: str = 'toponyms', sample_size: int = 10000) -> dict:
+    """Compute embedding quality statistics on a sample."""
+    logger.info(f"Sampling {sample_size} embeddings for statistics...")
+
+    # Random sample with embeddings
+    result = es.search(
+        index=index,
+        body={
+            'query': {
+                'function_score': {
+                    'query': {'exists': {'field': 'embedding'}},
+                    'random_score': {}
+                }
+            },
+            '_source': ['embedding'],
+            'size': sample_size
+        }
+    )
+
+    embeddings = []
+    for hit in result['hits']['hits']:
+        emb = np.array(hit['_source']['embedding'], dtype=np.float32) / 127.0
+        embeddings.append(emb)
+
+    embeddings = np.array(embeddings)
+
+    # Compute statistics
+    norms = np.linalg.norm(embeddings, axis=1)
+
+    # Pairwise similarities (sample for efficiency)
+    n_pairs = min(1000, len(embeddings))
+    sample_indices = np.random.choice(len(embeddings), n_pairs, replace=False)
+    sample_embs = embeddings[sample_indices]
+
+    similarities = []
+    for i in range(len(sample_embs)):
+        for j in range(i + 1, len(sample_embs)):
+            sim = np.dot(sample_embs[i], sample_embs[j]) / (
+                np.linalg.norm(sample_embs[i]) * np.linalg.norm(sample_embs[j])
+            )
+            similarities.append(sim)
+
+    similarities = np.array(similarities)
+
+    return {
+        'sample_size': len(embeddings),
+        'embedding_dim': embeddings.shape[1],
+        'norm_stats': {
+            'mean': float(norms.mean()),
+            'std': float(norms.std()),
+            'min': float(norms.min()),
+            'max': float(norms.max())
+        },
+        'pairwise_similarity_stats': {
+            'mean': float(similarities.mean()),
+            'std': float(similarities.std()),
+            'min': float(similarities.min()),
+            'max': float(similarities.max()),
+            'median': float(np.median(similarities))
+        }
+    }
+
+
+# =============================================================================
+# MAIN TEST RUNNER
+# =============================================================================
+
+def run_all_tests(es_host: str, index: str = 'toponyms', output_file: str = None):
+    """Run all tests and generate report."""
+    logger.info("="*70)
+    logger.info("SYMPHONYM v6 TEST SUITE")
+    logger.info("="*70)
+    logger.info(f"ES Host: {es_host}")
+    logger.info(f"Index: {index}")
+    logger.info("")
+
+    es = Elasticsearch(es_host, request_timeout=60)
+
+    # Check connection
+    if not es.ping():
+        logger.error(f"Cannot connect to Elasticsearch at {es_host}")
+        sys.exit(1)
+
+    report = {
+        'timestamp': datetime.utcnow().isoformat(),
+        'es_host': es_host,
+        'index': index,
+        'tests': {}
+    }
+
+    # Test 1: Index Statistics
+    logger.info("Test 1: Index Statistics")
+    stats = get_index_stats(es, index)
+    report['tests']['index_stats'] = stats
+    logger.info(f"  Total toponyms: {stats['total_toponyms']:,}")
+    logger.info(f"  With embeddings: {stats['with_embedding']:,} ({stats['embedding_coverage_pct']:.1f}%)")
+    logger.info("")
+
+    # Test 2: Script Distribution
+    logger.info("Test 2: Script Distribution")
+    script_dist = get_script_distribution(es, index)
+    report['tests']['script_distribution'] = script_dist
+    for script, count in sorted(script_dist.items(), key=lambda x: -x[1])[:10]:
+        logger.info(f"  {script:15s}: {count:,}")
+    logger.info("")
+
+    # Test 3: Embedding Coverage by Script
+    logger.info("Test 3: Embedding Coverage by Script")
+    coverage = get_embedding_coverage_by_script(es, index)
+    report['tests']['embedding_coverage_by_script'] = coverage
+    for script, data in sorted(coverage.items(), key=lambda x: -x[1]['coverage_pct']):
+        logger.info(f"  {script:15s}: {data['coverage_pct']:5.1f}% ({data['with_embedding']:,} / {data['total']:,})")
+    logger.info("")
+
+    # Test 4: Cross-Script Pair Similarity
+    logger.info("Test 4: Cross-Script Pair Similarity")
+    pair_results = test_cross_script_pairs(es, CROSS_SCRIPT_PAIRS, index)
+    report['tests']['cross_script_pairs'] = pair_results
+    logger.info(f"  Pass rate: {pair_results['summary']['pass_rate']:.1f}% ({pair_results['summary']['passed']}/{pair_results['summary']['total'] - pair_results['summary']['missing']})")
+    logger.info(f"  Failed: {pair_results['summary']['failed']}, Missing: {pair_results['summary']['missing']}")
+    logger.info("")
+
+    # Test 5: Diacritic Variants
+    logger.info("Test 5: Diacritic Variant Similarity")
+    diacritic_results = test_cross_script_pairs(es, DIACRITIC_PAIRS, index)
+    report['tests']['diacritic_variants'] = diacritic_results
+    logger.info(f"  Pass rate: {diacritic_results['summary']['pass_rate']:.1f}% ({diacritic_results['summary']['passed']}/{diacritic_results['summary']['total'] - diacritic_results['summary']['missing']})")
+    logger.info("")
+
+    # Test 6: KNN Retrieval
+    logger.info("Test 6: KNN Retrieval Accuracy")
+    knn_results = test_knn_retrieval(es, index)
+    report['tests']['knn_retrieval'] = knn_results
+    logger.info(f"  Pass rate: {knn_results['summary']['pass_rate']:.1f}% ({knn_results['summary']['passed']}/{knn_results['summary']['total']})")
+    logger.info("")
+
+    # Test 7: Embedding Statistics
+    logger.info("Test 7: Embedding Quality Statistics")
+    emb_stats = test_embedding_statistics(es, index)
+    report['tests']['embedding_statistics'] = emb_stats
+    logger.info(f"  Sample size: {emb_stats['sample_size']:,}")
+    logger.info(f"  Norm: {emb_stats['norm_stats']['mean']:.4f} ± {emb_stats['norm_stats']['std']:.4f}")
+    logger.info(f"  Pairwise similarity: {emb_stats['pairwise_similarity_stats']['mean']:.4f} ± {emb_stats['pairwise_similarity_stats']['std']:.4f}")
+    logger.info("")
+
+    # Save report
+    if output_file:
+        output_path = Path(output_file)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(output_path, 'w') as f:
+            json.dump(report, f, indent=2)
+        logger.info(f"Report saved to: {output_path}")
+
+    logger.info("="*70)
+    logger.info("TEST SUITE COMPLETE")
+    logger.info("="*70)
+
+    return report
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Symphonym v6 comprehensive test suite")
+    parser.add_argument('--es-host', default=ES_HOST, help='Elasticsearch host')
+    parser.add_argument('--index', default='toponyms', help='Index name')
+    parser.add_argument('--output', default='testing/symphonym_v6_test_report.json',
+                        help='Output JSON report file')
+
+    args = parser.parse_args()
+
+    run_all_tests(args.es_host, args.index, args.output)
+
+
+if __name__ == '__main__':
+    main()
+
