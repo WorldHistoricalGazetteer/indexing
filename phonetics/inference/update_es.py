@@ -257,8 +257,7 @@ def run_index(args):
     Changed in v6: The embeddings file now contains ALL toponyms (not just training subset).
     Embeddings are stored as int8 bytes in ES for efficiency.
 
-    Memory-efficient: Streams embeddings from Parquet WITHOUT loading all into RAM.
-    Builds temporary on-disk index for fast embedding lookup.
+    Uses simple in-memory dictionary for embedding lookups (typically ~8-10GB for 67M toponyms).
 
     Workflow:
     1. rebuild_toponyms_index.py -> DuckDB (all toponyms)
@@ -287,45 +286,29 @@ def run_index(args):
     logger.info(f"Connecting to {args.es_host}...")
     es = Elasticsearch(args.es_host, request_timeout=120, max_retries=3)
 
-    # Build temporary DuckDB index of embeddings for fast lookup
-    # This avoids loading all embeddings into RAM
-    logger.info(f"Building temporary embeddings index from {embeddings_path}...")
+    # Load embeddings into memory as simple dict
+    logger.info(f"Loading embeddings from {embeddings_path}...")
     parquet_file = pq.ParquetFile(embeddings_path)
     total_embeddings = parquet_file.metadata.num_rows
     logger.info(f"Embeddings file contains {total_embeddings:,} rows")
 
-    # Create temporary DuckDB for embeddings lookup
-    import tempfile
-    import os
-    temp_dir = tempfile.mkdtemp()
-    temp_db_path = os.path.join(temp_dir, 'embeddings_lookup.duckdb')
-    logger.info(f"Creating temporary embeddings database at {temp_db_path}...")
-
-    emb_conn = duckdb.connect(temp_db_path)
-    emb_conn.execute('''
-        CREATE TABLE embeddings (
-            toponym_id VARCHAR PRIMARY KEY,
-            embedding BLOB
-        )
-    ''')
-
-    # Load embeddings into temp DB in batches
+    # Load all embeddings into dict: {toponym_id: int8_list}
+    embeddings_dict = {}
     batch_count = 0
+
     for batch in parquet_file.iter_batches(batch_size=100000):
         doc_ids = batch.column('doc_id').to_pylist()
         embs = batch.column('embedding').to_pylist()
 
-        # Convert int8 (-128 to 127) to unsigned bytes (0-255) for storage
-        # by adding 128 to shift the range
-        rows = [(doc_id, bytes((x + 128) % 256 for x in emb)) for doc_id, emb in zip(doc_ids, embs)]
-        emb_conn.executemany('INSERT INTO embeddings VALUES (?, ?)', rows)
+        for doc_id, emb in zip(doc_ids, embs):
+            # Store as-is (int8 list from Parquet)
+            embeddings_dict[doc_id] = emb
 
         batch_count += len(doc_ids)
         if batch_count % 500000 == 0:
-            logger.info(f"  Loaded {batch_count:,} embeddings into temp DB...")
+            logger.info(f"  Loaded {batch_count:,} embeddings into memory...")
 
-    logger.info(f"Temporary embeddings database ready with {batch_count:,} entries")
-    emb_conn.execute('CREATE INDEX idx_toponym_id ON embeddings(toponym_id)')
+    logger.info(f"✓ Loaded {len(embeddings_dict):,} embeddings into memory")
 
     # Load schema and create index
     logger.info(f"Creating index '{args.index}' from schema...")
@@ -353,9 +336,7 @@ def run_index(args):
     indexed_at = datetime.now(timezone.utc).isoformat()
 
     def generate_actions():
-        """Generator that yields ES bulk actions, looking up embeddings from temp DB."""
-        nonlocal emb_conn
-
+        """Generator that yields ES bulk actions, looking up embeddings from in-memory dict."""
         with_embedding = 0
         without_embedding = 0
 
@@ -375,33 +356,20 @@ def run_index(args):
             GROUP BY t.toponym_id, t.name, t.name_romanized, t.lang, t.lang_variant, t.script
         ''')
 
-        # Process in batches for efficient embedding lookup
+        # Stream from DuckDB
         batch_size = 1000
         while True:
             rows = cursor.fetchmany(batch_size)
             if not rows:
                 break
 
-            # Batch lookup embeddings
-            toponym_ids = [row[0] for row in rows]
-            emb_results = emb_conn.execute(
-                f"SELECT toponym_id, embedding FROM embeddings WHERE toponym_id IN ({','.join(['?']*len(toponym_ids))})",
-                toponym_ids
-            ).fetchall()
-
-            # Build lookup dict for this batch
-            # Convert bytes back to int8 list by subtracting 128
-            embedding_lookup = {
-                tid: [(b - 128) for b in emb]
-                for tid, emb in emb_results
-            }
-
             for row in rows:
                 toponym_id = row[0]
                 namespaces = row[6].split(',') if row[6] else []
                 attestations = row[7].split(',') if row[7] else []
 
-                embedding = embedding_lookup.get(toponym_id)
+                # Simple dict lookup
+                embedding = embeddings_dict.get(toponym_id)
                 if embedding:
                     with_embedding += 1
                 else:
@@ -422,9 +390,9 @@ def run_index(args):
                 if row[2]:
                     doc['name_romanized'] = row[2]
 
-                # Add embedding if available (as int8 bytes)
+                # Add embedding if available (as int8 list)
                 if embedding:
-                    doc['embedding'] = embedding  # Already int8 list
+                    doc['embedding'] = embedding
                     doc['embedding_version'] = args.embedding_version
 
                 # Remove None values
@@ -461,11 +429,6 @@ def run_index(args):
         if (success_count + error_count) % 100000 == 0:
             logger.info(f"Indexed {success_count:,} docs...")
 
-    # Cleanup temp DB
-    emb_conn.close()
-    import shutil
-    shutil.rmtree(temp_dir)
-    logger.info(f"Cleaned up temporary embeddings database")
 
     # Enable refresh
     logger.info("Enabling refresh...")
