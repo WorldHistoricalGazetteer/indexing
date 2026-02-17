@@ -1643,12 +1643,59 @@ EOF
     COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
     echo "✓ Compute job submitted: ${COMPUTE_JOB}"
     echo "  Monitor: squeue -j ${COMPUTE_JOB} -M gpu"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/compute_*.out"
     echo
 
-    # Step 2: Index to Elasticsearch (CPU, depends on compute)
-    echo "Step 2: Submitting index job (CPU, will wait for compute)..."
+    echo "=========================================="
+    echo "NEXT STEP (Manual)"
+    echo "=========================================="
+    echo "After compute job completes, run:"
+    echo "  es -update-embeddings-index ${DATA_VERSION}"
+    echo
+    echo "This will index the embeddings to Elasticsearch."
+}
 
-    INDEX_JOB=$(sbatch --parsable --dependency=afterok:${COMPUTE_JOB} <<EOF
+do_update_embeddings_index() {
+    DATA_VERSION=${1:-6}
+
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
+    mkdir -p "$EMBEDDINGS_LOG_DIR"
+
+    EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
+
+    # Verify embeddings file exists
+    if [ ! -f "${EMBEDDINGS_FILE}" ]; then
+        echo "ERROR: Embeddings file not found at ${EMBEDDINGS_FILE}"
+        echo "Run compute step first: es -update-embeddings ${DATA_VERSION}"
+        return 1
+    fi
+
+    # Check if staging ES is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    echo "=========================================="
+    echo "INDEX EMBEDDINGS (v${DATA_VERSION})"
+    echo "=========================================="
+    echo "  Embeddings: ${EMBEDDINGS_FILE}"
+    echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
+    echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
+    echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
+    echo
+
+    INDEX_JOB=$(sbatch --parsable <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
@@ -1674,11 +1721,6 @@ conda activate whg
 
 cd "${REPO_DIR}"
 
-if [ ! -f "${EMBEDDINGS_FILE}" ]; then
-    echo "ERROR: Embeddings file not found: ${EMBEDDINGS_FILE}"
-    exit 1
-fi
-
 echo "Rebuilding ES index from DuckDB + embeddings..."
 python -u -m phonetics.inference.update_es index \
     --duckdb-file "${IX1_BASE}/data/toponyms.db" \
@@ -1698,15 +1740,8 @@ EOF
 
     INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
     echo "✓ Index job submitted: ${INDEX_JOB}"
-    echo
-
-    echo "=========================================="
-    echo "PIPELINE SUBMITTED"
-    echo "=========================================="
-    echo "Compute job: ${COMPUTE_JOB} (GPU)"
-    echo "Index job:   ${INDEX_JOB} (CPU, waiting for compute)"
-    echo
-    echo "Monitor: squeue -u \$USER"
+    echo "  Monitor: squeue -j ${INDEX_JOB}"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_*.out"
 }
 
 # =============================================================================
@@ -1770,6 +1805,12 @@ case "$1" in
     -update-embeddings)
         shift
         do_update_embeddings "$@"
+        ;;
+
+    # --- Index Embeddings (after compute step) ---
+    -update-embeddings-index)
+        shift
+        do_update_embeddings_index "$@"
         ;;
 
     # --- Production (VM) ---
@@ -1942,11 +1983,17 @@ case "$1" in
         echo
         echo "EMBEDDING / INDEX PIPELINE (run AFTER training completes):"
         echo "  -update-embeddings VERSION"
-        echo "      Compute embeddings and rebuild ES toponyms index from DuckDB"
-        echo "      Steps:"
-        echo "        1. Compute embeddings (GPU, requires phase3_best.pt)"
-        echo "        2. Rebuild ES index from DuckDB + embeddings (CPU)"
+        echo "      Compute embeddings for ALL toponyms from DuckDB (GPU)"
+        echo "      Note: Does NOT index - run -update-embeddings-index after compute finishes"
+        echo
+        echo "  -update-embeddings-index VERSION"
+        echo "      Index embeddings to ES (CPU, run after compute completes)"
+        echo "      Rebuilds full ES toponyms index from DuckDB + embeddings"
         echo "      Creates snapshot 'toponyms_vN' when complete"
+        echo
+        echo "  Workflow:"
+        echo "    1. es -update-embeddings 6        # Compute embeddings (GPU, ~2-4 hours)"
+        echo "    2. es -update-embeddings-index 6  # Index to ES (CPU, ~1-2 hours)"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
@@ -1973,7 +2020,8 @@ case "$1" in
         echo "  4. Merge + index (resume):   es -rebuild-toponyms 6 --resume"
         echo "  5. Generate training:        es -generate-training-data 6"
         echo "  6. Train model:              es -train-model 6"
-        echo "  7. Update embeddings:        es -update-embeddings 6"
+        echo "  7a. Compute embeddings:      es -update-embeddings 6"
+        echo "  7b. Index embeddings:        es -update-embeddings-index 6"
         echo
         echo "Data directory: /ix1/ishi/models/phonetic/data/vN/"
         echo
