@@ -315,8 +315,9 @@ def run_index(args):
         doc_ids = batch.column('doc_id').to_pylist()
         embs = batch.column('embedding').to_pylist()
 
-        # Convert to binary blobs for efficient storage
-        rows = [(doc_id, bytes(emb)) for doc_id, emb in zip(doc_ids, embs)]
+        # Convert int8 (-128 to 127) to unsigned bytes (0-255) for storage
+        # by adding 128 to shift the range
+        rows = [(doc_id, bytes((x + 128) % 256 for x in emb)) for doc_id, emb in zip(doc_ids, embs)]
         emb_conn.executemany('INSERT INTO embeddings VALUES (?, ?)', rows)
 
         batch_count += len(doc_ids)
@@ -389,7 +390,11 @@ def run_index(args):
             ).fetchall()
 
             # Build lookup dict for this batch
-            embedding_lookup = {tid: list(emb) for tid, emb in emb_results}
+            # Convert bytes back to int8 list by subtracting 128
+            embedding_lookup = {
+                tid: [(b - 128) for b in emb]
+                for tid, emb in emb_results
+            }
 
             for row in rows:
                 toponym_id = row[0]
