@@ -33,9 +33,9 @@ cd /ix1/ishi/elastic
 # Add --include-baselines to also run Levenshtein and Jaro-Winkler tests
 python -m testing.run_mehdie_evaluation \
     --testsets testing/mehdie-testsets \
-    --version v5 \
+    --version v6 \
     --device cpu \
-    --output /ix1/ishi/es/staging-logs/mehdie_results_${SLURM_JOB_ID}.json
+    --output /ix1/ishi/es/staging-logs/mehdie_results_v6_${SLURM_JOB_ID}.json
 
 echo ""
 echo "Job Completed: $(date)"

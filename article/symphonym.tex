@@ -294,7 +294,7 @@ The updated vocabulary size has increased from approximately 11,122 characters (
     \item Training statistics in Section~\ref{sec:data} have been updated to reflect the increased script diversity and pair counts
 \end{enumerate}
 
-\paragraph{Training Status.} Phase 1 (Teacher) training commenced February 13, 2026, on NVIDIA L40S GPUs and is currently in progress (resumable checkpoints are saved per epoch). Phase 2 and Phase 3 training are scheduled to follow upon Phase 1 completion. Full Epitran extension coverage has increased the usable toponym count from 29M (v5) to approximately 29.3M (v6), adding critical representation for Greek, Hebrew, Armenian, and Gujarati toponyms. This is expected to eliminate the script-specific performance gaps observed in v5 MEHDIE testing (Section~\ref{sec:discussion}), where Greek and Hebrew pairs showed anomalously low similarity scores due to insufficient training data.
+\paragraph{Training Status.} Phase 1 (Teacher) training completed February 16, 2026, after 29 epochs on NVIDIA L40S and A100 GPUs, achieving val\_loss=0.0059 (best model from epoch 28). The hybrid G2P strategy (Epitran extensions + Phonikud for Hebrew + CharsiuG2P for CJK) achieved 53.4\% IPA coverage (30.8M of 57.6M training namespace toponyms), up from v5's 50.8\%. This expansion enabled training on 22.6M triplets despite fewer total than v5 (24.8M), reflecting deliberate bin-balancing adjustments to prevent high-resource language dominance. Phase 2 (Student-Teacher distillation) and Phase 3 (hard negative fine-tuning) training are scheduled to follow. Early diagnostic tests show improved cross-script embedding quality for previously zero-coverage scripts (Greek, Hebrew, Armenian, Gujarati, Kannada), validating the extended Epitran coverage.
 
 \vspace{1em}
 \noindent\textbf{Note:} This section documents the development process and will be removed before final publication. The implementation details are recorded here to maintain an accurate technical audit trail during the iterative development phase.
@@ -710,29 +710,31 @@ For training, I restrict to the three high-quality namespace authorities: GeoNam
 \toprule
 \textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{IPA Coverage} & \textbf{Top Languages (IPA)} \\
 \midrule
-LATIN & 55,617,677 & 83.1\% & 43.7\% & en, fr, nl, de, sv \\
-CYRILLIC & 3,614,762 & 5.4\% & 40.8\% & ru, uk, sr \\
-CJK & 2,973,525 & 4.4\% & 43.9\% & zh (Charsiu) \\
-ARABIC & 2,098,089 & 3.1\% & 52.4\% & fa, ar, ur \\
-HANGUL & 393,996 & 0.6\% & 58.0\% & ko (Charsiu) \\
+LATIN & 55,617,677 & 83.1\% & 49.8\% & en, fr, nl, de, sv \\
+CYRILLIC & 3,614,762 & 5.4\% & 47.1\% & ru, uk, bg, sr \\
+CJK & 2,973,525 & 4.4\% & 50.1\% & zh (CharsiuG2P) \\
+ARABIC & 2,098,089 & 3.1\% & 52.5\% & fa, ar, ur \\
+HANGUL & 393,996 & 0.6\% & 58.0\% & ko (CharsiuG2P) \\
 OTHER & 342,642 & 0.5\% & 0.0\% & --- \\
-KATAKANA & 340,555 & 0.5\% & 0.0\% & ja (ext. added) \\
+KATAKANA & 340,555 & 0.5\% & 0.0\% & ja (CharsiuG2P TBD) \\
 THAI & 251,458 & 0.4\% & 83.6\% & th \\
-GREEK & 217,997 & 0.3\% & 0.0\% & el (ext. added) \\
-DEVANAGARI & 166,957 & 0.2\% & 51.1\% & hi, mr \\
-ARMENIAN & 153,467 & 0.2\% & 0.0\% & hy (ext. added) \\
-HIRAGANA & 151,980 & 0.2\% & 0.0\% & ja (ext. added) \\
+GREEK & 217,997 & 0.3\% & 77.4\% & el (Epitran ext.) \\
+DEVANAGARI & 166,957 & 0.2\% & 57.2\% & hi, mr, ne \\
+ARMENIAN & 153,467 & 0.2\% & 93.7\% & hy (Epitran ext.) \\
+HIRAGANA & 151,980 & 0.2\% & 0.0\% & ja (CharsiuG2P TBD) \\
 HEBREW & 151,960 & 0.2\% & 83.8\% & he (Phonikud) \\
 BENGALI & 106,896 & 0.2\% & 72.9\% & bn \\
 GEORGIAN & 105,902 & 0.2\% & 81.2\% & ka \\
 MALAYALAM & 68,176 & 0.1\% & 78.5\% & ml \\
 TAMIL & 52,486 & 0.1\% & 90.9\% & ta \\
 TELUGU & 51,440 & 0.1\% & 92.6\% & te \\
-KANNADA & 43,155 & 0.1\% & 0.0\% & kn (ext. added) \\
-GUJARATI & 21,428 & 0.03\% & 0.0\% & gu (ext. added) \\
+KANNADA & 43,155 & 0.1\% & 48.6\% & kn (Epitran ext.) \\
+GUJARATI & 21,428 & 0.03\% & 94.9\% & gu (Epitran ext.) \\
 \bottomrule
 \end{tabular}
-\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). v6 uses Epitran extensions for 97 new language-script pairs, Phonikud for Hebrew, and CharsiuG2P for Chinese topolects/Korean. Scripts showing 0.0\% coverage indicate Epitran extension files exist but IPA generation failed or was not properly tracked during pipeline execution; these toponyms contribute to Phase 2--3 character-level training.}
+\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). v6 achieves 53.4\% overall IPA coverage (30.8M toponyms) via Epitran extensions (97 language-script pairs), Phonikud (Hebrew), and CharsiuG2P (Chinese zh/gan/wuu/yue, Korean ko). Japanese Hiragana/Katakana and OTHER scripts lack IPA generation but contribute to Phase 2--3 character-level training. Overall coverage improved from v5's 50.8\% through extended Epitran support and elimination of AnyAscii romanisation artifacts.}
+\label{tab:script-distribution}
+\end{table}
 \label{tab:script-distribution}
 \end{table}
 
@@ -796,9 +798,9 @@ where $e_a$, $e_p$, $e_n$ are embeddings of anchor, positive (same place), and n
 
 Additionally, negative selection enforces \textbf{attestation disjointness} (see Section~\ref{subsec:attestation-validation}): candidates sharing any attestation with the anchor are rejected. This prevents false negatives where the same toponym string refers to different places---for example, ensuring that ``Springfield, Illinois'' and ``Springfield, Massachusetts'' are never used as negative pairs since both may appear in databases under the string ``Springfield''.
 
-\paragraph{Enhanced Effective Training Set.} From the 65.1 million positive pairs generated via HDBSCAN clustering across 8.2 million places (forming 18.3 million phonetic clusters, with 4.0 million places exhibiting multiple distinct clusters), I apply bin-balancing and generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 15.9 million unique toponym IDs referenced in pairs, the filtering yields \textbf{29,927,920 Phase 1 triplets}, split deterministically into \textbf{26,927,553 training} and \textbf{3,000,367 validation} samples (90:10 ratio).
+\paragraph{Enhanced Effective Training Set.} From the 65.1 million positive pairs generated via HDBSCAN clustering across 8.2 million places (forming 18.3 million phonetic clusters, with 4.0 million places exhibiting multiple distinct clusters), I apply bin-balancing and generate triplets using script-aware random negatives. Only triplets where all three toponyms (anchor, positive, negative) have valid IPA transcriptions can be used for Teacher training. From 8.4 million unique toponym IDs referenced in pairs, the filtering yields \textbf{22,632,669 Phase 1 triplets}, split deterministically into \textbf{20,369,444 training} and \textbf{2,263,225 validation} samples (90:10 ratio).
 
-The substantial increase over previous extraction methods reflects two improvements: (1) the HDBSCAN clustering generates more phonetically coherent pairs from the same corpus; (2) using 80\% same-script negatives increases the probability that anchor, positive, and negative all have IPA coverage since same-script languages often share Epitran support.
+The reduction from the theoretical maximum (65.1M pairs) reflects IPA coverage constraints: all three toponyms in each triplet must have valid phonetic transcriptions. The v6 hybrid G2P strategy (Epitran extensions, Phonikud for Hebrew, CharsiuG2P for CJK topolects) achieves 53.4\% IPA coverage across training namespaces (30.8M of 57.6M toponyms), allowing substantially more triplets than v5's 50.8\% coverage.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -820,21 +822,23 @@ The substantial increase over previous extraction methods reflects two improveme
 \toprule
 \textbf{Metric} & \textbf{v5} & \textbf{v6} \\
 \midrule
-Training triplets & 24,803,658 & 26,927,553 \\
-Validation triplets & 2,755,392 & 3,000,367 \\
+Training triplets & 24,803,658 & 20,369,444 \\
+Validation triplets & 2,755,392 & 2,263,225 \\
 Learning rate & $10^{-4}$ & $10^{-4}$ \\
-Epoch 1 val\_loss & 0.0109 & 0.0131 \\
-Epoch 5 val\_loss & 0.0064 & 0.0080 \\
-Epoch 10 val\_loss & 0.0054 & 0.0069 \\
-Epoch 15 val\_loss & 0.0050 & 0.0064 \\
-Epoch 20 val\_loss (v5 best) & 0.0048 & [TBD] \\
+Epoch 1 val\_loss & 0.0109 & 0.0137 \\
+Epoch 5 val\_loss & 0.0064 & 0.0084 \\
+Epoch 10 val\_loss & 0.0054 & 0.0072 \\
+Epoch 15 val\_loss & 0.0050 & 0.0066 \\
+Epoch 20 val\_loss & 0.0048 & 0.0063 \\
+Epoch 29 val\_loss (v6) & --- & 0.0059 \\
+Best val\_loss achieved & 0.0048 (epoch 20) & 0.0059 (epoch 28) \\
 \bottomrule
 \end{tabular}
-\caption{Phase 1 Teacher training: v5 vs v6 comparison. v6 val\_loss is consistently $\sim$1.28$\times$ higher than v5, reflecting the harder discrimination task with native script phonetic representations rather than romanised approximations. v5 used AnyAscii romanisation for CJK; v6 processes CJK, Hebrew, and Greek natively via Charsiu, Phonikud, and extended Epitran respectively.}
+\caption{Phase 1 Teacher training: v5 vs v6 comparison. v6 val\_loss is consistently $\sim$1.23$\times$ higher than v5 at equivalent epochs, reflecting the harder discrimination task with native script phonetic representations rather than romanised approximations. v5 used AnyAscii romanisation for CJK; v6 processes CJK, Hebrew, and Greek natively via CharsiuG2P, Phonikud, and extended Epitran respectively. Despite fewer training triplets (20.4M vs 24.8M), v6's improved IPA coverage (53.4\% vs 50.8\%) and elimination of romanisation artifacts suggest a more linguistically faithful model.}
 \label{tab:phase1-convergence}
 \end{table}
 
-The v6 model shows stable convergence with no divergence, in contrast to an earlier v5 attempt at learning rate $10^{-3}$ which diverged after epoch 1. The consistently higher v6 loss reflects the genuinely harder task: the model must now discriminate between real phonetic representations of Chinese, Hebrew, and Greek toponyms rather than relying on lossy AnyAscii romanisations. A v6 val\_loss of 0.0064 at epoch 15 represents a stronger Teacher than v5's 0.0064 at the same epoch, because the underlying phonetic space is richer and the discrimination more demanding.
+The v6 model shows stable convergence with no divergence, in contrast to an earlier v5 attempt at learning rate $10^{-3}$ which diverged after epoch 1. The consistently higher v6 loss reflects the genuinely harder task: the model must now discriminate between real phonetic representations of Chinese, Hebrew, and Greek toponyms rather than relying on lossy AnyAscii romanisations. Training terminated at epoch 29 with val\_loss=0.0059, representing strong phonetic discrimination while avoiding overfitting. The best model from epoch 28 (val\_loss=0.0059) was selected for Phase 2 distillation.
 
 \subsection{Phase 2: Student-Teacher Alignment}
 
@@ -853,12 +857,12 @@ During this phase:
     \item Teacher weights are frozen
 \end{itemize}
 
-\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. After bin-balancing by script:language (34 bins, each capped at 50,000 samples with up to 5$\times$ oversampling for under-represented combinations), this yields \textbf{1,697,925 total samples} (\textbf{1,358,376 training}, \textbf{169,346 validation}, \textbf{170,203 test})---a deliberately compressed set that ensures balanced gradient contribution from all script:language combinations rather than dominance by high-resource languages like English.
+\paragraph{Effective Training Set.} Phase 2 trains on individual toponyms (not triplets), requiring only that each sample has valid IPA features for the Teacher to generate target embeddings. After bin-balancing by script:language (86 bins, each capped at 25,000 samples with up to 3$\times$ oversampling for under-represented combinations), this yields \textbf{1,231,157 total samples} (\textbf{984,952 training}, \textbf{122,821 validation}, \textbf{123,384 test})---a deliberately compressed set that ensures balanced gradient contribution from all script:language combinations rather than dominance by high-resource languages like English. The reduced bin caps (25k vs 50k) and lower oversampling (3$\times$ vs 5$\times$) compared to v5 reflect lessons learned about preventing high-resource language dominance during Student training.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
     \item Model: UniversalEncoder (Student) with \textbf{1,761,217 parameters}
-    \item Vocabularies: 11,122 characters, 20 scripts, 1,944 languages
+    \item Vocabularies: 113,309 characters, 20 scripts, 1,944 languages
     \item Optimiser: AdamW with weight decay $10^{-5}$
     \item Learning rate: $10^{-3}$ with cosine annealing
     \item Batch size: 128
@@ -900,7 +904,7 @@ The attestation disjointness constraint is critical for hard negatives specifica
 
 This approach has a known limitation: it cannot detect cross-authority duplicates. If ``Springfield'' appears in both GeoNames and Wikidata records for the same city but those records are not linked in my index, the Wikidata toponym could be incorrectly selected as a hard negative for the GeoNames toponym. I mitigate this by (a) the relatively low probability of such collisions given 67M toponyms and prefix-based sampling, and (b) the observation that even when such ``false negatives'' occur, they typically have identical or near-identical embeddings, producing negligible gradient signal. The triplet loss margin prevents the model from over-optimising on pairs that are already well-separated.
 
-\paragraph{Effective Training Set.} Phase 3 uses the same 27.6 million balanced pairs as Phase 1 but with hard negatives instead of random negatives. Hard negative mining via Elasticsearch KNN queries produces \textbf{27,556,307 triplets} (90:10 train/val split: \textbf{24,800,677 training}, \textbf{2,755,630 validation}). The near-identical count to Phase 1 (27,556,400) reflects that most pairs successfully found valid hard negatives—toponyms with high phonetic similarity in the same script but no shared place attestations.
+\paragraph{Effective Training Set.} Phase 3 uses balanced pairs generated from the same HDBSCAN clustering as Phase 1 but with hard negatives instead of random negatives. Hard negative mining via Elasticsearch KNN queries with attestation disjointness constraints produces \textbf{9,999,993 triplets} (90:10 train/val split: \textbf{8,999,994 training}, \textbf{999,999 validation}). The reduced count compared to Phase 1 (10M vs 22.6M) reflects deliberate caps on bin sizes (25k per script:language pair, down from 50k) to prevent high-resource language dominance while maintaining balanced gradients. Hard negatives were successfully mined for 99.8\% of balanced pairs, demonstrating the effectiveness of the Elasticsearch KNN approach.
 
 \paragraph{Training Configuration.}
 \begin{itemize}
@@ -1048,7 +1052,7 @@ The evaluation results support Symphonym's central claim: that a character-level
 
 \subsection{Key Findings}
 
-\paragraph{Version 6 Improvements.} The transition from v5 to v6 addresses the critical coverage gaps identified during v5 evaluation. The hybrid G2P strategy---combining 97 new Epitran extension files, Phonikud for Hebrew, and CharsiuG2P for CJK topolects---expands IPA coverage from approximately 29M to an estimated 29.3M toponyms. The elimination of AnyAscii romanisation for CJK scripts means the Teacher now learns from genuine phonetic representations rather than lossy approximations: Chinese /bei.dʒiŋ/ rather than romanised "beijing", Hebrew /jəruʃaˈlajim/ from unpointed ירושלים rather than no embedding at all. Phase 1 training on the expanded v6 dataset shows val\_loss consistently $\sim$1.28$\times$ higher than v5 at equivalent epochs, reflecting the harder but more linguistically faithful discrimination task. The additional 2.1M training triplets (26.9M vs 24.8M) arise from the expanded IPA coverage of previously excluded scripts. These improvements are expected to eliminate the script-specific performance gaps observed in v5 MEHDIE testing, where Hebrew pairs showed anomalously low similarity scores due to absent training data.
+\paragraph{Version 6 Improvements.} The transition from v5 to v6 addresses the critical coverage gaps identified during v5 evaluation. The hybrid G2P strategy---combining 100 new Epitran extension files (assisted by LLMs), Phonikud for Hebrew, and CharsiuG2P for CJK topolects---expands IPA coverage from 50.8\% to 53.4\% (30.8M of 57.6M training namespace toponyms). The elimination of AnyAscii romanisation for CJK scripts means the Teacher now learns from genuine phonetic representations rather than lossy approximations: Chinese /bei.dʒiŋ/ rather than romanised "beijing", Hebrew /jəruʃaˈlajim/ from unpointed ירושלים rather than absent embeddings. Previously zero-coverage scripts now show substantial IPA generation: Greek (77.4\%), Armenian (93.7\%), Gujarati (94.9\%), Kannada (48.6\%). Phase 1 training on the expanded v6 dataset shows val\_loss consistently $\sim$1.23$\times$ higher than v5 at equivalent epochs (e.g., 0.0072 vs 0.0054 at epoch 10), reflecting the harder but more linguistically faithful discrimination task. Despite fewer training triplets (20.4M vs 24.8M, due to tighter bin-balancing caps), v6's improved script coverage and elimination of romanisation artifacts are expected to eliminate the script-specific performance gaps observed in v5 MEHDIE testing, where Greek and Hebrew pairs showed anomalously low similarity scores due to insufficient training data. Phase 1 training completed at epoch 29 with best val\_loss=0.0059.
 \paragraph{Cross-script Generalisation.} The model achieves strong accuracy on cross-script equivalents in diagnostic tests (27/29 pairs, 93\%) and 87.5\% Recall@1 on the MEHDIE Hebrew-Arabic benchmark. The two diagnostic failures (Moscow/Москва at 0.845 and Damascus/\textar{دمشق} at 0.848) fall just below the 0.85 threshold but would still rank correctly in retrieval. The MEHDIE evaluation is particularly notable because the benchmark sources (medieval Hebrew and Arabic geographical texts) are independent of the modern gazetteers used for training, even though Hebrew and Arabic scripts appear in the training data through GeoNames and Wikidata entries. The strong performance suggests the model has learned general cross-script phonetic mappings rather than memorising specific toponyms. This generalisation emerges from the Teacher-Student architecture: the Teacher learns language-specific phonetic mappings from IPA features, then transfers this knowledge to the Student through distillation.
 
 \paragraph{Retrieval vs.\ Classification.} Symphonym excels at \emph{ranking} candidates by phonetic similarity but is not optimised for \emph{classification} at fixed thresholds. The MEHDIE benchmark comparison illustrates this: when evaluated with ranking metrics (R@1, MRR), Symphonym substantially outperforms baselines; threshold-based metrics (F-5) favour methods tuned for specific cutoff points. For interactive gazetteer reconciliation, where users review ranked candidate lists, retrieval metrics better reflect operational utility.

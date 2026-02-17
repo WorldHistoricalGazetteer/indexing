@@ -46,7 +46,6 @@ echo ""
 
 # Source the es.sh script and run the command
 cd /ix1/ishi/elastic
-source scripts/es.sh
 es -generate-training-data 6
 
 echo ""
