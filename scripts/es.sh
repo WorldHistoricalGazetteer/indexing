@@ -758,7 +758,7 @@ do_rebuild_toponyms() {
 #SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
 #SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
-#SBATCH --partition=htc
+#SBATCH --partition=smp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -1070,6 +1070,7 @@ do_generate_training_data() {
 #SBATCH --output=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.out
 #SBATCH --error=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
+#SBATCH --partition=smp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
@@ -1571,12 +1572,6 @@ do_update_embeddings() {
         return 1
     fi
 
-    if [ ! -d "${DATA_DIR}/training" ]; then
-        echo "ERROR: Training data not found at ${DATA_DIR}/training"
-        echo "Generate training data first: es -generate-training-data ${DATA_VERSION}"
-        return 1
-    fi
-
     # Check if staging ES is running (needed for index step)
     if [ ! -f "$STAGING_INFO_FILE" ]; then
         echo "ERROR: No staging ES instance running"
@@ -1591,15 +1586,15 @@ do_update_embeddings() {
     echo "=========================================="
     echo "  Checkpoint: ${CHECKPOINT_DIR}/phase3_best.pt"
     echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
-    echo "  Training:   ${DATA_DIR}/training"
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
     echo
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
 
-    # Step 1: Compute embeddings (GPU)
+    # Step 1: Compute embeddings (GPU) - now processes ALL toponyms from DuckDB
     echo "Step 1: Submitting compute job (GPU)..."
+    echo "  Note: Computing embeddings for ALL toponyms in database (not just training subset)"
 
     COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
 #!/bin/bash
@@ -1607,7 +1602,7 @@ do_update_embeddings() {
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
 #SBATCH --time=48:00:00
-#SBATCH --partition=${GPU_PARTITION:-a100}
+#SBATCH --partition=${GPU_PARTITION:-l48s}
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1628,9 +1623,9 @@ conda activate whg
 
 cd "${REPO_DIR}"
 
-echo "Computing embeddings from training data..."
+echo "Computing embeddings from DuckDB (ALL toponyms)..."
 python -u -m phonetics.inference.update_es compute \
-    --input-file "${DATA_DIR}/training" \
+    --input-file "${IX1_BASE}/data/toponyms.db" \
     --output-file "${EMBEDDINGS_FILE}" \
     --checkpoint "${CHECKPOINT_DIR}/phase3_best.pt" \
     --vocab-dir "${DATA_DIR}/vocab" \
@@ -1640,6 +1635,7 @@ python -u -m phonetics.inference.update_es compute \
 
 echo
 echo "Embeddings saved to: ${EMBEDDINGS_FILE}"
+echo "Note: Embeddings quantized to int8 for efficient storage"
 echo "Finished: \$(date)"
 EOF
 )
@@ -1658,6 +1654,7 @@ EOF
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
 #SBATCH --time=48:00:00
+#SBATCH --partition=smp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
