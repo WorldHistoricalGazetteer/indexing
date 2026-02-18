@@ -269,7 +269,7 @@ def knn_search(es: Elasticsearch, embedding: list, k: int = 100, index: str = 't
     Returns list of dicts with:
         - name: the toponym string
         - variants: list of (lang, script) tuples for this name
-        - max_score: highest score for any variant of this name
+        - max_similarity: highest cosine similarity for any variant of this name
     """
     result = es.search(
         index=index,
@@ -280,22 +280,28 @@ def knn_search(es: Elasticsearch, embedding: list, k: int = 100, index: str = 't
                 'k': k,
                 'num_candidates': k * 10
             },
-            '_source': ['name', 'lang', 'script'],
+            '_source': ['name', 'lang', 'script', 'embedding'],
             'size': k
         }
     )
 
-    # Aggregate results by name
-    by_name = defaultdict(lambda: {'variants': [], 'max_score': 0})
+    # Aggregate results by name and compute actual cosine similarity
+    by_name = defaultdict(lambda: {'variants': [], 'max_similarity': 0})
 
     for hit in result['hits']['hits']:
         name = hit['_source']['name']
         lang = hit['_source'].get('lang')
         script = hit['_source'].get('script')
-        score = hit['_score']
+        hit_embedding = hit['_source'].get('embedding')
+
+        # Compute actual cosine similarity
+        if hit_embedding:
+            similarity = cosine_similarity(embedding, hit_embedding)
+        else:
+            similarity = 0.0
 
         by_name[name]['variants'].append((lang, script))
-        by_name[name]['max_score'] = max(by_name[name]['max_score'], score)
+        by_name[name]['max_similarity'] = max(by_name[name]['max_similarity'], similarity)
 
     # Convert to sorted list
     aggregated = []
@@ -303,11 +309,11 @@ def knn_search(es: Elasticsearch, embedding: list, k: int = 100, index: str = 't
         aggregated.append({
             'name': name,
             'variants': data['variants'],
-            'max_score': data['max_score']
+            'max_similarity': data['max_similarity']
         })
 
-    # Sort by max score descending
-    aggregated.sort(key=lambda x: x['max_score'], reverse=True)
+    # Sort by max similarity descending
+    aggregated.sort(key=lambda x: x['max_similarity'], reverse=True)
 
     return aggregated
 
@@ -456,9 +462,8 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
         for variant in case["expected_variants"]:
             if variant["name"] in name_to_info:
                 info = name_to_info[variant["name"]]
-                # Convert ES score to cosine similarity (approximate)
-                # ES returns higher scores for more similar items, normalize to 0-1 range
-                similarity = info['max_score'] / (knn_results[0]['max_score'] if knn_results else 1.0)
+                # Use actual cosine similarity computed in knn_search
+                similarity = info['max_similarity']
 
                 variants_found.append({
                     "name": variant["name"],
@@ -486,7 +491,8 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
         data_quality_issues = []
 
         for item in high_scoring[:15]:
-            similarity = item['max_score'] / (knn_results[0]['max_score'] if knn_results else 1.0)
+            # Use actual cosine similarity
+            similarity = item['max_similarity']
 
             variant_strs = [f"{lang}:{script}" for lang, script in item['variants'][:3]]
             if len(item['variants']) > 3:
