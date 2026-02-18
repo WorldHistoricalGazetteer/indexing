@@ -76,41 +76,61 @@ def get_es_host():
 
 # Format: (name1, lang1, name2, lang2, expected_similarity, description)
 CROSS_SCRIPT_PAIRS = [
-    # Latin-Cyrillic (should be HIGH similarity)
-    ("London", "en", "Лондон", "ru", 0.85, "Latin-Cyrillic transliteration"),
-    ("Moscow", "en", "Москва", "ru", 0.85, "Latin-Cyrillic transliteration"),
-    ("Paris", "en", "Париж", "ru", 0.85, "Latin-Cyrillic transliteration"),
-    ("Berlin", "en", "Берлин", "ru", 0.85, "Latin-Cyrillic transliteration"),
-    ("Warsaw", "en", "Варшава", "ru", 0.85, "Latin-Cyrillic transliteration"),
+    # === NON-LATIN TO NON-LATIN PAIRS (most critical for demonstrating cross-script capability) ===
 
-    # Latin-Greek (should be HIGH similarity)
-    ("Athens", "en", "Αθήνα", "el", 0.75, "Latin-Greek transliteration"),
-    ("Thessaloniki", "en", "Θεσσαλονίκη", "el", 0.75, "Latin-Greek transliteration"),
+    # Cyrillic-Arabic
+    ("Москва", "ru", "موسكو", "ar", 0.75, "Cyrillic-Arabic: Moscow"),
+    ("Киев", "uk", "كييف", "ar", 0.70, "Cyrillic-Arabic: Kyiv"),
 
-    # Latin-Arabic (should be HIGH similarity)
-    ("Damascus", "en", "دمشق", "ar", 0.75, "Latin-Arabic transliteration"),
-    ("Beirut", "en", "بيروت", "ar", 0.75, "Latin-Arabic transliteration"),
-    ("Baghdad", "en", "بغداد", "ar", 0.75, "Latin-Arabic transliteration"),
+    # Cyrillic-Greek
+    ("Афины", "ru", "Αθήνα", "el", 0.70, "Cyrillic-Greek: Athens"),
 
-    # Latin-Hebrew (should be HIGH similarity with Phonikud)
-    ("Jerusalem", "en", "ירושלים", "he", 0.70, "Latin-Hebrew transliteration"),
-    ("Tel Aviv", "en", "תל אביב", "he", 0.70, "Latin-Hebrew transliteration"),
+    # Cyrillic-Hebrew
+    ("Иерусалим", "ru", "ירושלים", "he", 0.65, "Cyrillic-Hebrew: Jerusalem"),
 
-    # Latin-CJK (should be HIGH similarity with CharsiuG2P)
-    ("Beijing", "en", "北京", "zh", 0.80, "Latin-CJK Pinyin"),
-    ("Shanghai", "en", "上海", "zh", 0.80, "Latin-CJK Pinyin"),
-    ("Tokyo", "en", "東京", "ja", 0.80, "Latin-CJK romanization"),
-    ("Seoul", "en", "서울", "ko", 0.80, "Latin-Hangul romanization"),
+    # Greek-Arabic
+    ("Αθήνα", "el", "أثينا", "ar", 0.70, "Greek-Arabic: Athens"),
 
-    # Cross-language Latin (phonetically similar, should be MODERATE-HIGH)
-    ("London", "en", "Londyn", "pl", 0.75, "Cross-language phonetic similarity"),
-    ("Rome", "en", "Roma", "it", 0.70, "Cross-language phonetic similarity"),
-    ("Munich", "en", "München", "de", 0.70, "Cross-language with umlaut"),
+    # Arabic-Hebrew (both abjads, challenging)
+    ("القدس", "ar", "ירושלים", "he", 0.60, "Arabic-Hebrew: Jerusalem"),
 
-    # Unrelated pairs (should be LOW similarity)
-    ("London", "en", "Tokyo", "en", 0.30, "Unrelated toponyms"),
-    ("Paris", "en", "Beijing", "en", 0.30, "Unrelated toponyms"),
-    ("Berlin", "en", "Cairo", "en", 0.30, "Unrelated toponyms"),
+    # CJK-Cyrillic
+    ("北京", "zh", "Пекин", "ru", 0.75, "CJK-Cyrillic: Beijing"),
+    ("东京", "zh", "Токио", "ru", 0.70, "CJK-Cyrillic: Tokyo"),
+
+    # CJK-Arabic
+    ("上海", "zh", "شانغهاي", "ar", 0.70, "CJK-Arabic: Shanghai"),
+
+    # Hangul-Cyrillic
+    ("서울", "ko", "Сеул", "ru", 0.75, "Hangul-Cyrillic: Seoul"),
+
+    # === LATIN-INVOLVED PAIRS (for comparison, but not primary showcase) ===
+
+    # Latin-Cyrillic
+    ("London", "en", "Лондон", "ru", 0.85, "Latin-Cyrillic: London"),
+    ("Moscow", "en", "Москва", "ru", 0.85, "Latin-Cyrillic: Moscow"),
+
+    # Latin-Greek
+    ("Athens", "en", "Αθήνα", "el", 0.75, "Latin-Greek: Athens"),
+
+    # Latin-Arabic
+    ("Damascus", "en", "دمشق", "ar", 0.75, "Latin-Arabic: Damascus"),
+    ("Cairo", "en", "القاهرة", "ar", 0.70, "Latin-Arabic: Cairo"),
+
+    # Latin-Hebrew
+    ("Jerusalem", "en", "ירושלים", "he", 0.70, "Latin-Hebrew: Jerusalem"),
+
+    # Latin-CJK
+    ("Beijing", "en", "北京", "zh", 0.80, "Latin-CJK: Beijing"),
+    ("Tokyo", "en", "東京", "ja", 0.80, "Latin-CJK: Tokyo"),
+
+    # Latin-Hangul
+    ("Seoul", "en", "서울", "ko", 0.80, "Latin-Hangul: Seoul"),
+
+    # === NEGATIVE EXAMPLES (unrelated toponyms across scripts) ===
+    ("Лондон", "ru", "東京", "ja", 0.30, "Unrelated: London vs Tokyo (Cyrillic-CJK)"),
+    ("Αθήνα", "el", "القاهرة", "ar", 0.30, "Unrelated: Athens vs Cairo (Greek-Arabic)"),
+    ("北京", "zh", "תל אביב", "he", 0.30, "Unrelated: Beijing vs Tel Aviv (CJK-Hebrew)"),
 ]
 
 # Diacritic variants (should be VERY HIGH similarity)
@@ -372,34 +392,34 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
     """
     test_cases = [
         {
-            "query": "London",
+            "query": "Beijing",
             "lang": "en",
             "expected_variants": [
-                {"name": "Лондон", "min_similarity": 0.75, "type": "Cyrillic"},
-                {"name": "Londres", "min_similarity": 0.70, "type": "Romance"},
-                {"name": "Londyn", "min_similarity": 0.70, "type": "Polish"}
+                {"name": "北京", "min_similarity": 0.80, "type": "CJK"},
+                {"name": "Пекин", "min_similarity": 0.70, "type": "Cyrillic"},
+                {"name": "بكين", "min_similarity": 0.65, "type": "Arabic"}
             ],
-            "description": "Latin-Cyrillic and cross-language variants"
+            "description": "Multi-script international city name"
         },
         {
-            "query": "Paris",
-            "lang": "fr",
-            "expected_variants": [
-                {"name": "Париж", "min_similarity": 0.70, "type": "Cyrillic"},
-                {"name": "Parigi", "min_similarity": 0.70, "type": "Italian"},
-                {"name": "París", "min_similarity": 0.85, "type": "Spanish"}
-            ],
-            "description": "Latin-Cyrillic and cross-language variants"
-        },
-        {
-            "query": "Moscow",
+            "query": "Athens",
             "lang": "en",
             "expected_variants": [
-                {"name": "Москва", "min_similarity": 0.75, "type": "Cyrillic"},
-                {"name": "Moscou", "min_similarity": 0.80, "type": "French/Portuguese"},
-                {"name": "Mosca", "min_similarity": 0.75, "type": "Italian/Spanish"}
+                {"name": "Αθήνα", "min_similarity": 0.75, "type": "Greek"},
+                {"name": "Афины", "min_similarity": 0.70, "type": "Cyrillic"},
+                {"name": "أثينا", "min_similarity": 0.65, "type": "Arabic"}
             ],
-            "description": "Latin-Cyrillic and cross-language variants"
+            "description": "Ancient city with multiple script variants"
+        },
+        {
+            "query": "Jerusalem",
+            "lang": "en",
+            "expected_variants": [
+                {"name": "ירושלים", "min_similarity": 0.70, "type": "Hebrew"},
+                {"name": "القدس", "min_similarity": 0.65, "type": "Arabic"},
+                {"name": "Ιερουσαλήμ", "min_similarity": 0.65, "type": "Greek"}
+            ],
+            "description": "Multi-cultural city with diverse name variants"
         }
     ]
 
@@ -429,6 +449,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
         name_to_info = {item['name']: item for item in knn_results}
 
         # Check for expected variants with thresholds
+        # Build set of expected names for fast lookup
+        expected_names = {v["name"] for v in case["expected_variants"]}
+
         variants_found = []
         for variant in case["expected_variants"]:
             if variant["name"] in name_to_info:
@@ -473,7 +496,7 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
                 "name": item['name'],
                 "similarity": round(similarity, 4),
                 "variants": variant_strs,
-                "is_expected": item['name'] in [v["name"] for v in case["expected_variants"]]
+                "is_expected": item['name'] in expected_names
             }
             high_scoring_results.append(result_entry)
 
@@ -505,7 +528,7 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             # Issue 3: Names containing obvious data errors (e.g., "School", "Station" in unexpected languages)
             problematic_words = ["School", "Station", "Hospital", "University", "College", "F P ", "Pry "]
             if any(word in item['name'] for word in problematic_words):
-                is_expected = item['name'] in [v["name"] for v in case["expected_variants"]]
+                is_expected = item['name'] in expected_names
                 if similarity > 0.5 and not is_expected:
                     data_quality_issues.append({
                         "name": item['name'],
