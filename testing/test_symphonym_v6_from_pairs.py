@@ -12,12 +12,15 @@ This ensures we test real pairs that:
 
 Usage:
     python testing/test_symphonym_v6_from_pairs.py
-    sbatch -p smp -c 2 -t 1:00:00 --wrap="python testing/test_symphonym_v6_from_pairs.py"
+    sbatch -p smp -c 4 --mem=8G -t 2:00:00 --wrap="python testing/test_symphonym_v6_from_pairs.py"
+
+    cat testing/symphonym_v6_pairs_test_report.json
 """
 
 import argparse
 import json
 import logging
+import random
 import sys
 from collections import defaultdict
 from datetime import datetime
@@ -36,6 +39,9 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Suppress verbose elasticsearch logging
+logging.getLogger('elasticsearch').setLevel(logging.WARNING)
 
 
 # =============================================================================
@@ -74,57 +80,103 @@ def get_es_host():
 # SAMPLE TRAINING PAIRS
 # =============================================================================
 
-def sample_cross_script_pairs(pairs_file: str, n_samples: int = 50) -> list:
+def sample_cross_script_pairs(pairs_file: str, n_samples: int = None, cache_file: str = None) -> list:
     """Sample cross-script pairs from the training data.
 
     Returns list of (name1, lang1, script1, name2, lang2, script2) tuples
     where script1 != script2
+
+    Uses streaming to avoid loading entire 1.9GB file into memory.
+    Can cache results to avoid re-parsing on subsequent runs.
+
+    Samples up to 10 examples from EVERY cross-script bin found.
     """
-    logger.info(f"Reading pairs from {pairs_file}...")
+    # Check cache first
+    if cache_file and Path(cache_file).exists():
+        logger.info(f"Loading cached pairs from {cache_file}")
+        with open(cache_file) as f:
+            return json.load(f)
 
-    table = pq.read_table(pairs_file)
-    df = table.to_pandas()
+    logger.info(f"Streaming pairs from {pairs_file}...")
 
-    logger.info(f"Total pairs: {len(df):,}")
+    # Stream through file in batches to collect bin statistics
+    parquet_file = pq.ParquetFile(pairs_file)
 
-    # Parse bin into script pairs
-    df['script1'] = df['bin'].str.split('|').str[0].str.split(':').str[1]
-    df['script2'] = df['bin'].str.split('|').str[1].str.split(':').str[1]
+    bin_to_samples = defaultdict(list)
+    total_pairs = 0
+    cross_script_pairs = 0
 
-    # Filter for cross-script pairs
-    cross_script = df[df['script1'] != df['script2']].copy()
-    logger.info(f"Cross-script pairs: {len(cross_script):,}")
+    logger.info("Collecting up to 10 samples from each cross-script bin...")
 
-    # Get language info
-    cross_script['lang1'] = cross_script['bin'].str.split('|').str[0].str.split(':').str[0]
-    cross_script['lang2'] = cross_script['bin'].str.split('|').str[1].str.split(':').str[0]
+    for batch_idx, batch in enumerate(parquet_file.iter_batches(batch_size=100000)):
+        df = batch.to_pandas()
+        total_pairs += len(df)
 
-    # Sample diverse bins
-    bin_counts = cross_script['bin'].value_counts()
-    logger.info(f"Total bins: {len(bin_counts)}")
+        # Parse anchor and positive (format: name@lang)
+        df['name1'] = df['anchor'].str.split('@').str[0]
+        df['lang1'] = df['anchor'].str.split('@').str[1]
+        df['name2'] = df['positive'].str.split('@').str[0]
+        df['lang2'] = df['positive'].str.split('@').str[1]
 
-    # Sample from top bins (most common pairs) and also some rare ones
-    top_bins = bin_counts.head(30).index.tolist()
-    rare_bins = bin_counts.tail(20).index.tolist()
-    sample_bins = top_bins + rare_bins
+        # Parse bin into script and lang components
+        # Format: "SCRIPT1:lang1|SCRIPT2:lang2"
+        # e.g. "LATIN:en|CYRILLIC:ru"
+        bin_parts = df['bin'].str.split('|')
 
+        # Parse left side: SCRIPT1:lang1
+        left_part = bin_parts.str[0]
+        df['script1'] = left_part.str.split(':').str[0]
+        df['bin_lang1'] = left_part.str.split(':').str[1]
+
+        # Parse right side: SCRIPT2:lang2
+        right_part = bin_parts.str[1]
+        df['script2'] = right_part.str.split(':').str[0]
+        df['bin_lang2'] = right_part.str.split(':').str[1]
+
+        # Filter for cross-script pairs
+        cross_script = df[df['script1'] != df['script2']].copy()
+        cross_script_pairs += len(cross_script)
+
+        if len(cross_script) == 0:
+            continue
+
+        # Keep up to 10 examples from each bin for diversity
+        for bin_name in cross_script['bin'].unique():
+            if len(bin_to_samples[bin_name]) < 10:
+                rows = cross_script[cross_script['bin'] == bin_name]
+                for _, row in rows.iterrows():
+                    if len(bin_to_samples[bin_name]) >= 10:
+                        break
+                    bin_to_samples[bin_name].append({
+                        'name1': row['name1'],
+                        'lang1': row['lang1'],
+                        'script1': row['script1'],
+                        'name2': row['name2'],
+                        'lang2': row['lang2'],
+                        'script2': row['script2'],
+                        'bin': row['bin']
+                    })
+
+        if batch_idx % 100 == 0 and batch_idx > 0:
+            logger.info(f"  Processed {total_pairs:,} pairs, found {len(bin_to_samples)} unique cross-script bins")
+
+    logger.info(f"Total pairs: {total_pairs:,}")
+    logger.info(f"Cross-script pairs: {cross_script_pairs:,}")
+    logger.info(f"Unique cross-script bins: {len(bin_to_samples)}")
+
+    # Collect ALL samples from ALL bins (up to 10 per bin)
     sampled = []
-    for bin_name in sample_bins[:n_samples]:
-        bin_pairs = cross_script[cross_script['bin'] == bin_name]
-        if len(bin_pairs) > 0:
-            # Take first pair from each bin
-            row = bin_pairs.iloc[0]
-            sampled.append({
-                'name1': row['name1'],
-                'lang1': row['lang1'],
-                'script1': row['script1'],
-                'name2': row['name2'],
-                'lang2': row['lang2'],
-                'script2': row['script2'],
-                'bin': row['bin']
-            })
+    for bin_name in sorted(bin_to_samples.keys()):
+        sampled.extend(bin_to_samples[bin_name])
 
-    logger.info(f"Sampled {len(sampled)} cross-script pairs")
+    logger.info(f"Sampled {len(sampled)} cross-script pairs from {len(bin_to_samples)} bins")
+
+    # Save to cache if specified
+    if cache_file:
+        logger.info(f"Saving sampled pairs to cache: {cache_file}")
+        with open(cache_file, 'w') as f:
+            json.dump(sampled, f, indent=2, ensure_ascii=False)
+
     return sampled
 
 
@@ -133,24 +185,32 @@ def sample_cross_script_pairs(pairs_file: str, n_samples: int = 50) -> list:
 # =============================================================================
 
 def find_toponym(es: Elasticsearch, name: str, lang: str = None, script: str = None, index: str = 'toponyms') -> dict:
-    """Find a toponym by name, language, and script."""
+    """Find a toponym by name, language, and script.
+
+    Uses a match query with filters to handle exact and fuzzy matches.
+    """
     query = {
         'bool': {
             'must': [
-                {'term': {'name.keyword': name}},
+                {'match': {'name': {'query': name, 'operator': 'and'}}},
                 {'exists': {'field': 'embedding'}}
             ]
         }
     }
 
-    if lang:
-        query['bool']['must'].append({'term': {'lang': lang}})
-    if script:
-        query['bool']['must'].append({'term': {'script': script}})
+    # Add filters if provided (as should clauses to increase recall)
+    if lang or script:
+        query['bool']['should'] = []
+        if lang:
+            query['bool']['should'].append({'term': {'lang': lang}})
+        if script:
+            query['bool']['should'].append({'term': {'script': script}})
+        query['bool']['minimum_should_match'] = 1
 
     result = es.search(
         index=index,
-        body={'query': query, 'size': 1}
+        body={'query': query, 'size': 1},
+        _source=['name', 'lang', 'script', 'embedding']
     )
 
     if result['hits']['total']['value'] > 0:
@@ -308,8 +368,8 @@ def main():
     parser.add_argument('--pairs-file',
                         default='/ix1/ishi/models/phonetic/data/v6/pairs/positive_pairs.parquet',
                         help='Path to positive pairs parquet file')
-    parser.add_argument('--n-samples', type=int, default=50,
-                        help='Number of cross-script pairs to sample')
+    parser.add_argument('--cache-file', default='testing/sampled_pairs_cache.json',
+                        help='Cache file for sampled pairs (speeds up re-runs)')
     parser.add_argument('--output', default='testing/symphonym_v6_pairs_test_report.json',
                         help='Output JSON report file')
 
@@ -331,10 +391,11 @@ def main():
     logger.info(f"ES Host: {es_host}")
     logger.info(f"Index: {args.index}")
     logger.info(f"Pairs file: {args.pairs_file}")
+    logger.info("Sampling: Up to 10 pairs from ALL cross-script bins")
     logger.info("")
 
-    # Sample pairs
-    pairs = sample_cross_script_pairs(args.pairs_file, args.n_samples)
+    # Sample pairs (with caching)
+    pairs = sample_cross_script_pairs(args.pairs_file, None, args.cache_file)
 
     # Connect to ES
     es = Elasticsearch(es_host, request_timeout=60)
@@ -354,7 +415,7 @@ def main():
         'es_host': es_host,
         'index': args.index,
         'pairs_file': args.pairs_file,
-        'n_samples': args.n_samples,
+        'sampling_strategy': 'up to 10 pairs from ALL cross-script bins',
         'index_stats': stats,
         'cross_script_pairs_test': results
     }

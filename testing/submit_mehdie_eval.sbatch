@@ -29,15 +29,35 @@ cd /ix1/ishi/elastic
 # Run evaluation with CPU
 # Full comparison with MEHDIE paper:
 # - Includes Levenshtein and Jaro-Winkler baselines
-# - Uses threshold-based metrics (Precision, Recall, F-5) for direct comparison
-# - Also includes ranking-based metrics (Recall@K, MRR)
+# - Uses ranking-based metrics (Recall@K, MRR) for embedding-based systems
+
+echo "========================================"
+echo "PART 1: RANKING-BASED EVALUATION"
+echo "========================================"
+echo "Running ranking evaluation (Recall@1, Recall@5, Recall@10, Recall@20, MRR)..."
+echo ""
+
+python -m testing.run_mehdie_evaluation \
+    --testsets testing/mehdie-testsets \
+    --version v6 \
+    --device cpu \
+    --include-baselines \
+    --output /ix1/ishi/es/staging-logs/mehdie_results_v6_ranking_${SLURM_JOB_ID}.json
+
+echo ""
+echo "========================================"
+echo "PART 2: THRESHOLD-BASED EVALUATION"
+echo "========================================"
+echo "Running threshold evaluation (F-5, Precision, Recall for comparison with paper)..."
+echo ""
+
 python -m testing.run_mehdie_evaluation \
     --testsets testing/mehdie-testsets \
     --version v6 \
     --device cpu \
     --include-baselines \
     --use-thresholds \
-    --output /ix1/ishi/es/staging-logs/mehdie_results_v6_${SLURM_JOB_ID}.json
+    --output /ix1/ishi/es/staging-logs/mehdie_results_v6_thresholds_${SLURM_JOB_ID}.json
 
 echo ""
 echo "Job Completed: $(date)"
