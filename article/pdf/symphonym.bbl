@@ -1,4 +1,4 @@
-\begin{thebibliography}{26}
+\begin{thebibliography}{23}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -56,6 +56,7 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 Fangxiaoyu Feng, Yinfei Yang, Daniel Cer, Naveen Arivazhagan, and Wei Wang.
 \newblock Language-agnostic bert sentence embedding.
 \newblock \emph{arXiv preprint arXiv:2007.01852}, 2022.
+\newblock \doi{10.48550/arXiv.2007.01852}.
 \newblock URL \url{https://arxiv.org/abs/2007.01852}.
 
 \bibitem[Gadd(1990)]{gadd1990phonix}
@@ -72,12 +73,14 @@ Karl~E. Grossner and Ruth Mostern.
   on Geospatial Humanities (GeoHumanities)}, pages 40--43, 2021.
 \newblock \doi{10.1145/3486187.3490203}.
 
-\bibitem[Kondrak(2000)]{kondrak2000}
-Grzegorz Kondrak.
-\newblock A new algorithm for the alignment of phonetic sequences.
-\newblock In \emph{Proceedings of the 1st North American Chapter of the
-  Association for Computational Linguistics Conference}, NAACL 2000, page
-  288–295, USA, 2000. Association for Computational Linguistics.
+\bibitem[Kolani et~al.(2025)Kolani, Melichov, Calev, and
+  Alper]{kolani2025phonikudhebrewgraphemetophonemeconversion}
+Yakov Kolani, Maxim Melichov, Cobi Calev, and Morris Alper.
+\newblock Phonikud: Hebrew grapheme-to-phoneme conversion for real-time
+  text-to-speech.
+\newblock 2025.
+\newblock \doi{10.48550/arXiv.2506.12311}.
+\newblock URL \url{https://arxiv.org/abs/2506.12311}.
 
 \bibitem[Lin et~al.(2017)Lin, Feng, Santos, Yu, Xiang, Zhou, and
   Bengio]{lin2017structured}
@@ -86,6 +89,7 @@ Zhouhan Lin, Minwei Feng, Cicero~Nogueira Santos, Mo~Yu, Bing Xiang, Bowen
 \newblock A structured self-attentive sentence embedding.
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations (ICLR)}, 2017.
+\newblock \doi{10.48550/arXiv.1703.03130}.
 \newblock URL \url{https://arxiv.org/abs/1703.03130}.
 
 \bibitem[Mortensen et~al.(2016)Mortensen, Littell, Bharadwaj, Goyal, Dyer, and
@@ -112,31 +116,10 @@ Jonas Mueller and Aditya Thyagarajan.
   Intelligence}, pages 2786--2792, 2016.
 \newblock URL \url{https://dl.acm.org/doi/10.5555/3016100.3016291}.
 
-\bibitem[Neculoiu et~al.(2016)Neculoiu, Versteegh, and Rotaru]{neculoiu2016}
-Paul Neculoiu, Maarten Versteegh, and Mihai Rotaru.
-\newblock Learning text similarity with siamese recurrent networks.
-\newblock In \emph{Proceedings of the 1st Workshop on Representation Learning
-  for NLP}, pages 148--157, 2016.
-\newblock URL \url{https://aclanthology.org/W16-1617/}.
-
-\bibitem[Novak et~al.(2016)Novak, Minematsu, and Hirose]{novak2016}
-Josef~R. Novak, Nobuaki Minematsu, and Keikichi Hirose.
-\newblock Phonetisaurus: Exploring grapheme-to-phoneme conversion with joint
-  n-gram models in the {WFST} framework.
-\newblock \emph{Natural Language Engineering}, 22\penalty0 (6):\penalty0
-  907--938, 2016.
-\newblock \doi{10.1017/S1351324915000315}.
-
 \bibitem[Philips(1990)]{philips1990}
 Lawrence Philips.
 \newblock Hanging on the metaphone.
 \newblock \emph{Computer Language}, 7\penalty0 (12):\penalty0 39--43, 1990.
-
-\bibitem[Philips(2000)]{philips2000}
-Lawrence Philips.
-\newblock The double metaphone search algorithm.
-\newblock \emph{C/C++ Users Journal}, 18\penalty0 (6):\penalty0 38--43, 2000.
-\newblock \doi{10.5555/349124.349132}.
 
 \bibitem[Qiu et~al.(2024)Qiu, Li, Hu, Tian, Ma, and Zhu]{qiu2024geobert}
 Qinjun Qiu, Haiyan Li, Xinxin Hu, Miao Tian, Kai Ma, and Yunqiang Zhu.
@@ -208,6 +191,7 @@ Vil{\'e}m Zouhar, Kalvin Chang, Chenxuan Cui, Nathaniel Carlson, Nathaniel~R.
 \newblock {PWESUITE}: Phonetic word embeddings and tasks they facilitate.
 \newblock In \emph{Proceedings of the 2024 Conference on Language Resources and
   Evaluation (LREC)}, 2024.
-\newblock arXiv:2304.02541.
+\newblock \doi{10.48550/arXiv.2304.02541}.
+\newblock URL \url{https://arxiv.org/abs/2304.02541}.
 
 \end{thebibliography}
