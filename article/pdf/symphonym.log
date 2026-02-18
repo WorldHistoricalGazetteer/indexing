@@ -1,4 +1,4 @@
-This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  18 FEB 2026 10:01
+This is XeTeX, Version 3.141592653-2.6-0.999993 (TeX Live 2022/dev/Debian) (preloaded format=xelatex 2026.1.6)  18 FEB 2026 10:09
 entering extended mode
  restricted \write18 enabled.
  file:line:error style messages enabled.
@@ -1513,24 +1513,6 @@ Overfull \hbox (67.02003pt too wide) in paragraph at lines 184--184
  [][][][] 
  []
 
-
-Overfull \hbox (2.12889pt too wide) in paragraph at lines 186--187
-[]\TU/LinLibertine(0)/m/n/10 graphic information retrieval. Existing approaches
- require language-specific[]
- []
-
-
-Overfull \hbox (1.99669pt too wide) in paragraph at lines 186--187
-[]\TU/LinLibertine(0)/m/n/10 dian 0.945), with best performance on Arabic-Cyril
-lic (94–100%) and Cyrillic-[]
- []
-
-
-Overfull \hbox (2.17003pt too wide) in paragraph at lines 186--187
-[]\TU/LinLibertine(0)/m/n/10 trained on modern place names transfer effectively
- to historical orthographic[]
- []
-
 [1
 
 ]
@@ -2186,6 +2168,6 @@ Here is how much of TeX's memory you used:
  56555 multiletter control sequences out of 15000+600000
  480479 words of font info for 140 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 84i,14n,131p,2052b,981s stack positions out of 5000i,500n,10000p,200000b,80000s
+ 84i,14n,131p,1987b,981s stack positions out of 5000i,500n,10000p,200000b,80000s
 
-Output written on pdf/symphonym.xdv (49 pages, 1252464 bytes).
+Output written on pdf/symphonym.xdv (49 pages, 1249032 bytes).
