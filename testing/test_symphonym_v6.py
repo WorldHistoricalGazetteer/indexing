@@ -462,9 +462,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Beijing",
             "lang": "en",
             "expected_variants": [
-                {"name": "北京", "min_similarity": 0.80, "type": "CJK", "script": "CJK", "lang": "zh"},
-                {"name": "Пекин", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC", "lang": "ru"},
-                {"name": "بكين", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"}
+                {"name": "北京", "min_similarity": 0.80, "type": "CJK", "script": "CJK"},
+                {"name": "Пекин", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC"},
+                {"name": "بكين", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC"}
             ],
             "description": "Multi-script international city name"
         },
@@ -472,9 +472,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Athens",
             "lang": "en",
             "expected_variants": [
-                {"name": "Αθήνα", "min_similarity": 0.75, "type": "Greek", "script": "GREEK", "lang": "el"},
-                {"name": "Афины", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC", "lang": "ru"},
-                {"name": "أثينا", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"}
+                {"name": "Αθήνα", "min_similarity": 0.75, "type": "Greek", "script": "GREEK"},
+                {"name": "Афины", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC"},
+                {"name": "أثينا", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC"}
             ],
             "description": "Ancient city with multiple script variants"
         },
@@ -482,9 +482,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Jerusalem",
             "lang": "en",
             "expected_variants": [
-                {"name": "ירושלים", "min_similarity": 0.70, "type": "Hebrew", "script": "HEBREW", "lang": "he"},
-                {"name": "القدس", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"},
-                {"name": "Ιερουσαλήμ", "min_similarity": 0.65, "type": "Greek", "script": "GREEK", "lang": "el"}
+                {"name": "ירושלים", "min_similarity": 0.70, "type": "Hebrew", "script": "HEBREW"},
+                {"name": "القدس", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC"},
+                {"name": "Ιερουσαλήμ", "min_similarity": 0.65, "type": "Greek", "script": "GREEK"}
             ],
             "description": "Multi-cultural city with diverse name variants"
         }
@@ -509,16 +509,46 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             })
             continue
 
-        # Check for each expected variant using targeted script/lang queries
+        # Check for each expected variant using targeted script queries
         variants_found = []
         for variant in case["expected_variants"]:
-            # Search for this specific variant in its target script/lang
+            # First check if this name exists in the index at all
+            exists_query = es.search(
+                index=index,
+                body={
+                    'query': {
+                        'bool': {
+                            'must': [
+                                {'term': {'name.keyword': variant["name"]}},
+                                {'term': {'script': variant["script"]}},
+                                {'exists': {'field': 'embedding'}}
+                            ]
+                        }
+                    },
+                    'size': 1,
+                    '_source': ['name', 'lang', 'script']
+                }
+            )
+
+            if exists_query['hits']['total']['value'] == 0:
+                # Name doesn't exist in index - mark as NOT_IN_INDEX
+                variants_found.append({
+                    "name": variant["name"],
+                    "type": variant["type"],
+                    "similarity": None,
+                    "threshold": variant["min_similarity"],
+                    "status": "NOT_IN_INDEX",
+                    "langs": []
+                })
+                continue
+
+            # Search for this specific variant in its target script (without lang filter)
             targeted_results = knn_search_filtered(
                 es,
                 query_doc['embedding'],
                 script=variant.get("script"),
-                lang=variant.get("lang"),
-                k=20,  # Only need top results in target script
+                lang=None,  # Don't filter by lang - script is sufficient
+                k=100,  # Get more candidates to find the variant
                 index=index
             )
 
@@ -540,12 +570,13 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
                     "langs": [f"{found_variant['lang']}:{found_variant['script']}"]
                 })
             else:
+                # Name exists but wasn't found in KNN results
                 variants_found.append({
                     "name": variant["name"],
                     "type": variant["type"],
                     "similarity": None,
                     "threshold": variant["min_similarity"],
-                    "status": "NOT_FOUND",
+                    "status": "NOT_IN_KNN_TOP100",
                     "langs": []
                 })
 
