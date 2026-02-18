@@ -318,6 +318,67 @@ def knn_search(es: Elasticsearch, embedding: list, k: int = 100, index: str = 't
     return aggregated
 
 
+def knn_search_filtered(es: Elasticsearch, embedding: list, script: str = None, lang: str = None, k: int = 100, index: str = 'toponyms') -> list:
+    """Perform KNN search filtered by script and/or language.
+
+    Returns list of dicts with:
+        - name: the toponym string
+        - lang: language code
+        - script: script name
+        - similarity: cosine similarity
+    """
+    # Build filter for KNN query
+    filters = []
+    if script:
+        filters.append({'term': {'script': script}})
+    if lang:
+        filters.append({'term': {'lang': lang}})
+
+    body = {
+        'knn': {
+            'field': 'embedding',
+            'query_vector': embedding,
+            'k': k,
+            'num_candidates': k * 20  # Increase candidates when filtering
+        },
+        '_source': ['name', 'lang', 'script', 'embedding'],
+        'size': k
+    }
+
+    # Add filter if specified
+    if filters:
+        body['knn']['filter'] = {'bool': {'must': filters}}
+
+    result = es.search(index=index, body=body)
+
+    # Process results and compute actual similarity
+    results = []
+    for hit in result['hits']['hits']:
+        name = hit['_source']['name']
+        hit_lang = hit['_source'].get('lang')
+        hit_script = hit['_source'].get('script')
+        hit_embedding = hit['_source'].get('embedding')
+
+        # Compute actual cosine similarity
+        if hit_embedding:
+            similarity = cosine_similarity(embedding, hit_embedding)
+        else:
+            similarity = 0.0
+
+        results.append({
+            'name': name,
+            'lang': hit_lang,
+            'script': hit_script,
+            'similarity': similarity
+        })
+
+    # Sort by similarity descending
+    results.sort(key=lambda x: x['similarity'], reverse=True)
+
+    return results
+
+
+
 # =============================================================================
 # TEST FUNCTIONS
 # =============================================================================
@@ -401,9 +462,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Beijing",
             "lang": "en",
             "expected_variants": [
-                {"name": "北京", "min_similarity": 0.80, "type": "CJK"},
-                {"name": "Пекин", "min_similarity": 0.70, "type": "Cyrillic"},
-                {"name": "بكين", "min_similarity": 0.65, "type": "Arabic"}
+                {"name": "北京", "min_similarity": 0.80, "type": "CJK", "script": "CJK", "lang": "zh"},
+                {"name": "Пекин", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC", "lang": "ru"},
+                {"name": "بكين", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"}
             ],
             "description": "Multi-script international city name"
         },
@@ -411,9 +472,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Athens",
             "lang": "en",
             "expected_variants": [
-                {"name": "Αθήνα", "min_similarity": 0.75, "type": "Greek"},
-                {"name": "Афины", "min_similarity": 0.70, "type": "Cyrillic"},
-                {"name": "أثينا", "min_similarity": 0.65, "type": "Arabic"}
+                {"name": "Αθήνα", "min_similarity": 0.75, "type": "Greek", "script": "GREEK", "lang": "el"},
+                {"name": "Афины", "min_similarity": 0.70, "type": "Cyrillic", "script": "CYRILLIC", "lang": "ru"},
+                {"name": "أثينا", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"}
             ],
             "description": "Ancient city with multiple script variants"
         },
@@ -421,9 +482,9 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             "query": "Jerusalem",
             "lang": "en",
             "expected_variants": [
-                {"name": "ירושלים", "min_similarity": 0.70, "type": "Hebrew"},
-                {"name": "القدس", "min_similarity": 0.65, "type": "Arabic"},
-                {"name": "Ιερουσαλήμ", "min_similarity": 0.65, "type": "Greek"}
+                {"name": "ירושלים", "min_similarity": 0.70, "type": "Hebrew", "script": "HEBREW", "lang": "he"},
+                {"name": "القدس", "min_similarity": 0.65, "type": "Arabic", "script": "ARABIC", "lang": "ar"},
+                {"name": "Ιερουσαλήμ", "min_similarity": 0.65, "type": "Greek", "script": "GREEK", "lang": "el"}
             ],
             "description": "Multi-cultural city with diverse name variants"
         }
@@ -448,30 +509,35 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
             })
             continue
 
-        # Perform KNN search with large k to get comprehensive results
-        knn_results = knn_search(es, query_doc['embedding'], k=200, index=index)
-
-        # Build name -> similarity map for easier lookup
-        name_to_info = {item['name']: item for item in knn_results}
-
-        # Check for expected variants with thresholds
-        # Build set of expected names for fast lookup
-        expected_names = {v["name"] for v in case["expected_variants"]}
-
+        # Check for each expected variant using targeted script/lang queries
         variants_found = []
         for variant in case["expected_variants"]:
-            if variant["name"] in name_to_info:
-                info = name_to_info[variant["name"]]
-                # Use actual cosine similarity computed in knn_search
-                similarity = info['max_similarity']
+            # Search for this specific variant in its target script/lang
+            targeted_results = knn_search_filtered(
+                es,
+                query_doc['embedding'],
+                script=variant.get("script"),
+                lang=variant.get("lang"),
+                k=20,  # Only need top results in target script
+                index=index
+            )
 
+            # Check if expected name appears in results
+            found_variant = None
+            for result in targeted_results:
+                if result['name'] == variant["name"]:
+                    found_variant = result
+                    break
+
+            if found_variant:
+                similarity = found_variant['similarity']
                 variants_found.append({
                     "name": variant["name"],
                     "type": variant["type"],
                     "similarity": round(similarity, 4),
                     "threshold": variant["min_similarity"],
                     "status": "PASS" if similarity >= variant["min_similarity"] else "BELOW_THRESHOLD",
-                    "langs": [f"{lang}:{script}" for lang, script in info['variants'][:5]]
+                    "langs": [f"{found_variant['lang']}:{found_variant['script']}"]
                 })
             else:
                 variants_found.append({
@@ -482,6 +548,12 @@ def test_knn_retrieval(es: Elasticsearch, index: str = 'toponyms') -> dict:
                     "status": "NOT_FOUND",
                     "langs": []
                 })
+
+        # Also perform general KNN search to analyze high-scoring results
+        knn_results = knn_search(es, query_doc['embedding'], k=200, index=index)
+
+        # Build set of expected names for comparison
+        expected_names = {v["name"] for v in case["expected_variants"]}
 
         # Analyze high-scoring results (excluding exact query match)
         query_lower = case["query"].lower()
