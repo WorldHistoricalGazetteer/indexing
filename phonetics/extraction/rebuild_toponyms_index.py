@@ -1405,7 +1405,17 @@ def dump_to_jsonl(
     logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
     logger.info(f"Worker chunksize: {chunksize}")
 
-    total_count = conn.execute('SELECT COUNT(*) FROM toponyms').fetchone()[0]
+    # Build SQL query with optional language filter
+    where_clauses = []
+    if languages:
+        lang_placeholders = ','.join([f"'{lang}'" for lang in languages])
+        where_clauses.append(f"t.lang IN ({lang_placeholders})")
+
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    # Get total count with same filter
+    count_query = f'SELECT COUNT(DISTINCT t.toponym_id) FROM toponyms t {where_clause}'
+    total_count = conn.execute(count_query).fetchone()[0]
     logger.info(f"Total toponyms to process: {total_count:,}")
 
     stats = {
@@ -1420,14 +1430,6 @@ def dump_to_jsonl(
         'by_script': Counter(),
         'by_script_lang_ipa': Counter(),
     }
-
-    # Build SQL query with optional language filter
-    where_clauses = []
-    if languages:
-        lang_placeholders = ','.join([f"'{lang}'" for lang in languages])
-        where_clauses.append(f"t.lang IN ({lang_placeholders})")
-
-    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
 
     result = conn.execute(f'''
         SELECT t.toponym_id,
