@@ -325,6 +325,8 @@ class UniversalEncoder(nn.Module):
             num_attention_heads: int = 2,
             dropout: float = 0.2,
             lang_dropout: float = 0.5,
+            num_length_buckets: int = 16,
+            length_embed_dim: int = 8,
     ):
         super().__init__()
 
@@ -336,8 +338,12 @@ class UniversalEncoder(nn.Module):
         self.script_embed = nn.Embedding(num_scripts, script_embed_dim)
         self.lang_embed = nn.Embedding(num_langs, lang_embed_dim, padding_idx=0)  # 0 = <UNK>
 
+        # Length bucket embedding: 16 buckets, bucket 0=(1-2), 1=(3-4), ..., 15=(31+)
+        self.num_length_buckets = num_length_buckets
+        self.length_embed = nn.Embedding(num_length_buckets, length_embed_dim)
+
         # Combined input dimension
-        input_dim = char_embed_dim + script_embed_dim + lang_embed_dim
+        input_dim = char_embed_dim + script_embed_dim + lang_embed_dim + length_embed_dim
 
         # Input projection to hidden_dim
         self.input_proj = nn.Linear(input_dim, hidden_dim)
@@ -374,6 +380,15 @@ class UniversalEncoder(nn.Module):
             nn.Linear(hidden_dim, embed_dim),
             nn.LayerNorm(embed_dim),
         )
+
+    def _length_bucket(self, lengths: torch.Tensor) -> torch.Tensor:
+        """Map raw sequence lengths to bucket indices.
+
+        Buckets: 0=(1-2), 1=(3-4), ..., 14=(29-30), 15=(31+)
+        Using floor((length - 1) / 2), clamped to [0, num_buckets - 1].
+        """
+        buckets = (lengths.to(torch.long) - 1) // 2
+        return buckets.clamp(0, self.num_length_buckets - 1)
 
     def forward(
             self,
@@ -414,8 +429,13 @@ class UniversalEncoder(nn.Module):
         l_emb = self.lang_embed(lang_ids)
         l_emb = l_emb.unsqueeze(1).expand(-1, max_len, -1)
 
+        # Length bucket embeddings broadcast to sequence [B, L, length_dim]
+        length_buckets = self._length_bucket(lengths.to(device))
+        lb_emb = self.length_embed(length_buckets)            # [B, length_dim]
+        lb_emb = lb_emb.unsqueeze(1).expand(-1, max_len, -1)  # [B, L, length_dim]
+
         # Concatenate all embeddings
-        combined = torch.cat([c_emb, s_emb, l_emb], dim=-1)  # [B, L, input_dim]
+        combined = torch.cat([c_emb, s_emb, l_emb, lb_emb], dim=-1)  # [B, L, input_dim]
 
         # Project to hidden dim
         x = self.input_proj(combined)  # [B, L, hidden]
@@ -702,6 +722,8 @@ def create_student(
         num_layers: int = 2,
         dropout: float = 0.2,
         lang_dropout: float = 0.5,
+        num_length_buckets: int = 16,
+        length_embed_dim: int = 8,
 ) -> UniversalEncoder:
     """Create a Student model with default configuration."""
     return UniversalEncoder(
@@ -716,6 +738,8 @@ def create_student(
         num_layers=num_layers,
         dropout=dropout,
         lang_dropout=lang_dropout,
+        num_length_buckets=num_length_buckets,
+        length_embed_dim=length_embed_dim,
     )
 
 

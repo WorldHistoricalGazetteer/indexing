@@ -138,6 +138,8 @@ class ToponymEncoder:
             num_layers=config.get('num_layers', 2),
             dropout=config.get('dropout', 0.2),
             lang_dropout=0.0,  # No dropout at inference
+            num_length_buckets=config.get('num_length_buckets', 16),
+            length_embed_dim=config.get('length_embed_dim', 8),
         )
 
         # Load weights

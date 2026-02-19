@@ -441,6 +441,10 @@ class IPAConverter:
                     bin_avg = [0.0] * features_per_bin
                 embedding.extend(bin_avg)
 
+            # ES cosine similarity rejects zero-magnitude vectors
+            if not any(embedding):
+                return None
+
             return embedding
         except Exception:
             return None
@@ -1347,6 +1351,10 @@ def _embedding_from_packed_features(packed: bytes) -> Optional[List[float]]:
         else:
             embedding.extend([0.0] * features_per_segment)
 
+    # ES cosine similarity rejects zero-magnitude vectors
+    if not any(embedding):
+        return None
+
     return embedding
 
 
@@ -1687,6 +1695,11 @@ def bulk_index_from_file(
 
     def generate_actions():
         for doc in yield_from_jsonl(jsonl_path):
+            # Guard: ES cosine similarity rejects zero-magnitude vectors.
+            # Strip any all-zero panphon_embedding that slipped through
+            # (can happen when all IPA segments have zero articulatory features).
+            if 'panphon_embedding' in doc and not any(doc['panphon_embedding']):
+                del doc['panphon_embedding']
             yield {
                 '_index': index,
                 '_id': doc['toponym_id'],
