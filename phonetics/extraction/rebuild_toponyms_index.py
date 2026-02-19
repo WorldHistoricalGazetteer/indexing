@@ -171,6 +171,7 @@ EPITRAN_LANG_MAP = {
     # Note: Mandarin Chinese (zh) handled by CharsiuG2P;
     #   Epitran cmn-Hans requires CC-CEDict file and is not used here.
     ('ja', Script.HIRAGANA): 'jpn-Hira',
+    ('ja', Script.KATAKANA): 'jpn-Kana',
 }
 
 # Languages routed to CharsiuG2P instead of Epitran
@@ -309,11 +310,26 @@ class IPAConverter:
     def to_ipa(self, text: str, lang: str, script: Script) -> Optional[str]:
         """
         Convert text to IPA, dispatching to the appropriate backend:
+        0. Japanese Kana → Epitran (script-first routing to prevent CharsiuG2P override)
         1. Hebrew → Phonikud (no Epitran fallback)
         2. Chinese (all varieties) → CharsiuG2P
         3. Korean → CharsiuG2P (no Epitran fallback)
         4. Everything else → Epitran
         """
+        # 0. Japanese Kana — explicit Epitran routing by script (v6 bugfix)
+        # This prevents Hiragana/Katakana from being routed to CharsiuG2P
+        # CharsiuG2P only processes Kanji (CJK), so kana scripts must use Epitran
+        if lang == 'ja' and script in (Script.HIRAGANA, Script.KATAKANA):
+            epitran_code = self.get_epitran_code(lang, script)
+            if epitran_code:
+                epi = self.get_epitran(epitran_code)
+                if epi:
+                    try:
+                        return epi.transliterate(text)
+                    except Exception:
+                        pass
+            return None  # No fallback for kana
+
         # 1. Hebrew (Phonikud only — Epitran does not support Hebrew)
         if lang == 'he' and script == Script.HEBREW:
             if self._check_phonikud() and self._phonikud:
@@ -1337,6 +1353,7 @@ def dump_to_jsonl(
     conn,
     output_path: Path,
     training_namespaces: List[str] = None,
+    languages: List[str] = None,
     num_workers: int = None,
     batch_size: int = 10000,
     precomputed_phonetics: Dict[str, Tuple] = None,
@@ -1354,6 +1371,7 @@ def dump_to_jsonl(
         conn: DuckDB connection
         output_path: JSONL output file path
         training_namespaces: Namespaces requiring phonetic processing
+        languages: Optional list of language codes to filter (e.g., ['ja'] for Japanese only)
         num_workers: Number of parallel Epitran workers
         batch_size: I/O batch size for JSONL writes
         precomputed_phonetics: Dict of toponym_id -> (ipa, features, embedding)
@@ -1379,6 +1397,8 @@ def dump_to_jsonl(
 
     logger.info(f"Buffering documents to disk: {output_path}")
     logger.info(f"Computing PanPhon embeddings for namespaces: {training_namespaces}")
+    if languages:
+        logger.info(f"Language filter: {languages}")
     logger.info(f"Epitran workers: {num_workers}")
     logger.info(f"Precomputed neural phonetics: {len(precomputed_phonetics):,} entries")
     logger.info(f"Processing batch size: {processing_batch_size:,}, I/O batch size: {io_batch_size:,}")
@@ -1400,7 +1420,15 @@ def dump_to_jsonl(
         'by_script_lang_ipa': Counter(),
     }
 
-    result = conn.execute('''
+    # Build SQL query with optional language filter
+    where_clauses = []
+    if languages:
+        lang_placeholders = ','.join([f"'{lang}'" for lang in languages])
+        where_clauses.append(f"t.lang IN ({lang_placeholders})")
+
+    where_clause = f"WHERE {' AND '.join(where_clauses)}" if where_clauses else ""
+
+    result = conn.execute(f'''
         SELECT t.toponym_id,
                t.name,
                t.lang,
@@ -1413,6 +1441,7 @@ def dump_to_jsonl(
         FROM toponyms t
         JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
         LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+        {where_clause}
         GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script, t.ipa, t.panphon_features
     ''')
 
@@ -1723,6 +1752,11 @@ def main():
     parser.add_argument('--training-namespaces', nargs='+', default=['gn', 'wd', 'tgn'],
                         help='Namespaces for which to compute PanPhon embeddings (default: gn wd tgn)')
 
+    # Language filtering for targeted rebuilds
+    parser.add_argument('--languages', nargs='+', default=None,
+                        help='Only process toponyms with these language codes (default: all). '
+                             'Useful for targeted fixes, e.g., --languages ja to rebuild only Japanese.')
+
     args = parser.parse_args()
 
     # Force HuggingFace to use local scratch for cache
@@ -1838,6 +1872,7 @@ def main():
                 conn,
                 jsonl_path,
                 training_namespaces=args.training_namespaces,
+                languages=args.languages,
                 num_workers=args.num_workers,
                 precomputed_phonetics=precomputed,
             )

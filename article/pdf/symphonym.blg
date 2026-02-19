@@ -3,48 +3,47 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: symphonym.aux
 The style file: plainnat.bst
 Database file #1: references.bib
-Warning--I didn't find a database entry for "mortensen2018epitran"
 Warning--empty journal in kolani2025phonikudhebrewgraphemetophonemeconversion
 Warning--empty journal in zhu2022charsiu-g2p
-You've used 23 entries,
+You've used 21 entries,
             2773 wiz_defined-function locations,
-            753 strings with 10638 characters,
-and the built_in function-call counts, 13626 in all, are:
-= -- 1251
-> -- 825
+            739 strings with 10068 characters,
+and the built_in function-call counts, 12414 in all, are:
+= -- 1153
+> -- 711
 < -- 20
-+ -- 277
-- -- 254
-* -- 1107
-:= -- 2018
-add.period$ -- 100
-call.type$ -- 23
-change.case$ -- 153
-chr.to.int$ -- 23
-cite$ -- 48
-duplicate$ -- 613
-empty$ -- 1042
-format.name$ -- 283
-if$ -- 2937
++ -- 239
+- -- 218
+* -- 994
+:= -- 1818
+add.period$ -- 90
+call.type$ -- 21
+change.case$ -- 135
+chr.to.int$ -- 21
+cite$ -- 44
+duplicate$ -- 569
+empty$ -- 970
+format.name$ -- 245
+if$ -- 2693
 int.to.chr$ -- 1
 int.to.str$ -- 1
-missing$ -- 22
-newline$ -- 152
-num.names$ -- 94
-pop$ -- 318
+missing$ -- 20
+newline$ -- 138
+num.names$ -- 86
+pop$ -- 282
 preamble$ -- 1
-purify$ -- 130
+purify$ -- 114
 quote$ -- 0
-skip$ -- 515
+skip$ -- 479
 stack$ -- 0
-substring$ -- 539
-swap$ -- 140
+substring$ -- 535
+swap$ -- 137
 text.length$ -- 13
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 253
+type$ -- 231
 warning$ -- 2
-while$ -- 111
+while$ -- 105
 width$ -- 0
-write$ -- 360
-(There were 3 warnings)
+write$ -- 328
+(There were 2 warnings)

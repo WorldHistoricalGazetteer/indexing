@@ -1,4 +1,4 @@
-\begin{thebibliography}{23}
+\begin{thebibliography}{21}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -51,14 +51,6 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations}, 2018.
 
-\bibitem[Feng et~al.(2022)Feng, Yang, Cer, Arivazhagan, and
-  Wang]{feng2022labse}
-Fangxiaoyu Feng, Yinfei Yang, Daniel Cer, Naveen Arivazhagan, and Wei Wang.
-\newblock Language-agnostic bert sentence embedding.
-\newblock \emph{arXiv preprint arXiv:2007.01852}, 2022.
-\newblock \doi{10.48550/arXiv.2007.01852}.
-\newblock URL \url{https://arxiv.org/abs/2007.01852}.
-
 \bibitem[Gadd(1990)]{gadd1990phonix}
 T.~N. Gadd.
 \newblock {PHONIX}: The algorithm.
@@ -81,16 +73,6 @@ Yakov Kolani, Maxim Melichov, Cobi Calev, and Morris Alper.
 \newblock 2025.
 \newblock \doi{10.48550/arXiv.2506.12311}.
 \newblock URL \url{https://arxiv.org/abs/2506.12311}.
-
-\bibitem[Lin et~al.(2017)Lin, Feng, Santos, Yu, Xiang, Zhou, and
-  Bengio]{lin2017structured}
-Zhouhan Lin, Minwei Feng, Cicero~Nogueira Santos, Mo~Yu, Bing Xiang, Bowen
-  Zhou, and Yoshua Bengio.
-\newblock A structured self-attentive sentence embedding.
-\newblock In \emph{Proceedings of the International Conference on Learning
-  Representations (ICLR)}, 2017.
-\newblock \doi{10.48550/arXiv.1703.03130}.
-\newblock URL \url{https://arxiv.org/abs/1703.03130}.
 
 \bibitem[Mortensen et~al.(2016)Mortensen, Littell, Bharadwaj, Goyal, Dyer, and
   Levin]{mortensen2016}
