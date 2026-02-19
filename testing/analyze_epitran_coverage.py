@@ -61,7 +61,7 @@ EPITRAN_LANG_MAP = {
     'ru': 'rus-Cyrl', 'sr': 'srp-Cyrl', 'uk': 'ukr-Cyrl', 'hi': 'hin-Deva',
     'mr': 'mar-Deva', 'ne': 'nep-Deva', 'sa': 'san-Deva', 'ka': 'kat-Geor',
     'el': 'ell-Grek', 'gu': 'guj-Gujr', 'ko': 'kor-Hang', 'he': 'heb-Hebr',
-    'ja': 'jpn-Hira', 'kn': 'kan-Knda', 'cs': 'ces-Latn', 'da': 'dan-Latn',
+    'ja': 'jpn-Hrgn', 'kn': 'kan-Knda', 'cs': 'ces-Latn', 'da': 'dan-Latn',
     'de': 'deu-Latn', 'en': 'eng-Latn', 'es': 'spa-Latn', 'fi': 'fin-Latn',
     'fr': 'fra-Latn', 'hu': 'hun-Latn', 'id': 'ind-Latn', 'it': 'ita-Latn',
     'la': 'lat-Latn', 'ms': 'msa-Latn', 'nl': 'nld-Latn', 'no': 'nor-Latn',

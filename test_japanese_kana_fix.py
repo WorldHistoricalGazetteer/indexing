@@ -32,8 +32,9 @@ def test_epitran_mappings():
     print(f"Hiragana mapping: {hiragana_key} -> {hiragana_code}")
     print(f"Katakana mapping: {katakana_key} -> {katakana_code}")
 
-    assert hiragana_code == 'jpn-Hira', f"Expected 'jpn-Hira', got {hiragana_code}"
-    assert katakana_code == 'jpn-Kana', f"Expected 'jpn-Kana', got {katakana_code}"
+    # Epitran uses jpn-Hrgn (not jpn-Hira) and jpn-Ktkn (not jpn-Kana)
+    assert hiragana_code == 'jpn-Hrgn', f"Expected 'jpn-Hrgn', got {hiragana_code}"
+    assert katakana_code == 'jpn-Ktkn', f"Expected 'jpn-Ktkn', got {katakana_code}"
 
     print("✓ Both mappings exist and are correct!")
     print()

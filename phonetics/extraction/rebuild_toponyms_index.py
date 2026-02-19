@@ -170,8 +170,9 @@ EPITRAN_LANG_MAP = {
     # Note: Korean (ko) handled by CharsiuG2P, not Epitran
     # Note: Mandarin Chinese (zh) handled by CharsiuG2P;
     #   Epitran cmn-Hans requires CC-CEDict file and is not used here.
-    ('ja', Script.HIRAGANA): 'jpn-Hira',
-    ('ja', Script.KATAKANA): 'jpn-Kana',
+    # Japanese kana: Epitran uses jpn-Hrgn (Hiragana) and jpn-Ktkn (Katakana) (documentation incorrectly gives '-Hira' and '-Kana')
+    ('ja', Script.HIRAGANA): 'jpn-Hrgn',
+    ('ja', Script.KATAKANA): 'jpn-Ktkn',
 }
 
 # Languages routed to CharsiuG2P instead of Epitran

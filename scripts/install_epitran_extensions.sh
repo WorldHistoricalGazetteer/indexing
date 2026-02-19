@@ -50,7 +50,7 @@ import epitran
 import os
 
 extensions_dir = os.path.join(os.path.dirname(epitran.__file__), 'data', 'map')
-test_files = ['ell-Grek.csv', 'hye-Armn.csv', 'kan-Knda.csv', 'guj-Gujr.csv', 'jpn-Hira.csv', 'jpn-Kana.csv']
+test_files = ['ell-Grek.csv', 'hye-Armn.csv', 'kan-Knda.csv', 'guj-Gujr.csv', 'jpn-Hrgn.csv', 'jpn-Ktkn.csv']
 
 print("Checking key extension files:")
 all_found = True
