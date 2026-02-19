@@ -1720,6 +1720,177 @@ def bulk_index_from_file(
     return indexed
 
 
+def partial_update_es_from_db(
+    conn,
+    es: Elasticsearch,
+    index: str,
+    languages: List[str],
+    batch_size: int = 2500
+) -> Tuple[int, int]:
+    """
+    Update Elasticsearch documents for specific languages without rebuilding entire index.
+
+    This is much faster than full rebuild when you only need to update a subset of documents.
+    Uses ES bulk update API to update existing documents in-place.
+
+    Args:
+        conn: DuckDB connection
+        es: Elasticsearch client
+        index: ES index name
+        languages: List of language codes to update (e.g., ['ja'])
+        batch_size: Bulk update batch size
+
+    Returns:
+        Tuple of (updated_count, not_found_count)
+    """
+    logger.info("=" * 60)
+    logger.info(f"PARTIAL ES UPDATE: {', '.join(languages)}")
+    logger.info("=" * 60)
+
+    # Build WHERE clause for language filter
+    lang_placeholders = ','.join([f"'{lang}'" for lang in languages])
+
+    # Count total documents to update
+    count_query = f"""
+        SELECT COUNT(DISTINCT t.toponym_id)
+        FROM toponyms t
+        WHERE t.lang IN ({lang_placeholders})
+    """
+    total_count = conn.execute(count_query).fetchone()[0]
+    logger.info(f"Updating {total_count:,} documents for languages: {languages}")
+
+    # Query documents with updated IPA/PanPhon data
+    query = f"""
+        SELECT t.toponym_id,
+               t.name,
+               t.lang,
+               t.lang_variant,
+               t.script,
+               t.ipa,
+               t.panphon_features,
+               GROUP_CONCAT(DISTINCT tn.namespace) as namespaces,
+               GROUP_CONCAT(DISTINCT ta.place_id) as attestations
+        FROM toponyms t
+        JOIN toponym_namespaces tn ON t.toponym_id = tn.toponym_id
+        LEFT JOIN toponym_attestations ta ON t.toponym_id = ta.toponym_id
+        WHERE t.lang IN ({lang_placeholders})
+        GROUP BY t.toponym_id, t.name, t.lang, t.lang_variant, t.script, t.ipa, t.panphon_features
+    """
+
+    result = conn.execute(query)
+
+    updated = 0
+    not_found = 0
+    errors = 0
+    batch = []
+
+    logger.info("Starting bulk updates...")
+
+    fetch_batch_size = 10000
+    processed = 0
+
+    while True:
+        rows = result.fetchmany(fetch_batch_size)
+        if not rows:
+            break
+
+        for row in rows:
+            toponym_id, name, lang, lang_variant, script, ipa, panphon_features, namespaces_str, attestations_str = row
+
+            namespaces = namespaces_str.split(',') if namespaces_str else []
+            attestations = attestations_str.split(',') if attestations_str else []
+            primary_ns = get_primary_namespace(namespaces)
+
+            # Build update document (only fields that might have changed)
+            update_doc = {
+                'lang': lang,
+                'lang_variant': lang_variant,
+                'script': script,
+                'namespaces': namespaces,
+                'primary_namespace': primary_ns,
+                'attestations': attestations,
+            }
+
+            # Add IPA and PanPhon embedding if available
+            if ipa and panphon_features:
+                embedding = _embedding_from_packed_features(panphon_features)
+                if embedding:
+                    update_doc['ipa'] = ipa
+                    update_doc['panphon_embedding'] = embedding
+
+            # Add romanized name for search
+            name_romanized = romanize_for_search(name, script)
+            if name_romanized:
+                update_doc['name_romanized'] = name_romanized
+
+            # Add to batch
+            batch.append({
+                '_op_type': 'update',
+                '_index': index,
+                '_id': toponym_id,
+                'doc': update_doc,
+                'doc_as_upsert': False  # Don't create if doesn't exist
+            })
+
+            # Execute batch when full
+            if len(batch) >= batch_size:
+                success, failed = helpers.bulk(
+                    es,
+                    batch,
+                    raise_on_error=False,
+                    request_timeout=120
+                )
+                updated += success
+
+                # Count not_found errors
+                for item in failed:
+                    if 'update' in item and item['update'].get('status') == 404:
+                        not_found += 1
+                    else:
+                        errors += 1
+                        if errors <= 5:
+                            logger.error(f"Update error: {item}")
+
+                processed += len(batch)
+                logger.info(f"Progress: {processed:,} / {total_count:,} ({100*processed/total_count:.1f}%) - Updated: {updated:,}, Not found: {not_found:,}")
+                batch = []
+
+    # Final batch
+    if batch:
+        success, failed = helpers.bulk(
+            es,
+            batch,
+            raise_on_error=False,
+            request_timeout=120
+        )
+        updated += success
+
+        for item in failed:
+            if 'update' in item and item['update'].get('status') == 404:
+                not_found += 1
+            else:
+                errors += 1
+                if errors <= 5:
+                    logger.error(f"Update error: {item}")
+
+        processed += len(batch)
+        logger.info(f"Progress: {processed:,} / {total_count:,} (100.0%) - Updated: {updated:,}, Not found: {not_found:,}")
+
+    logger.info("=" * 60)
+    logger.info(f"PARTIAL UPDATE COMPLETE")
+    logger.info("=" * 60)
+    logger.info(f"Total processed: {processed:,}")
+    logger.info(f"Successfully updated: {updated:,}")
+    logger.info(f"Not found in ES: {not_found:,}")
+    logger.info(f"Errors: {errors:,}")
+
+    # Refresh index
+    logger.info("Refreshing index...")
+    es.indices.refresh(index=index)
+
+    return updated, not_found
+
+
 # --- MAIN ---
 
 def main():
@@ -1760,6 +1931,11 @@ def main():
                         help='Only process toponyms with these language codes (default: all). '
                              'Useful for targeted fixes, e.g., --languages ja to rebuild only Japanese.')
 
+    # Partial ES update (only with --languages and --resume)
+    parser.add_argument('--partial-update', action='store_true',
+                        help='Perform partial ES update for --languages only (requires --resume and --languages). '
+                             'Updates existing ES documents without full index rebuild. Much faster than full rebuild.')
+
     args = parser.parse_args()
 
     # Force HuggingFace to use local scratch for cache
@@ -1770,6 +1946,18 @@ def main():
     # Determine number of workers
     if args.num_workers is None:
         args.num_workers = max(1, mp.cpu_count() - 2)
+
+    # Validate partial update requirements
+    if args.partial_update:
+        if not args.resume:
+            logger.error("--partial-update requires --resume (must have existing DuckDB with updated data)")
+            sys.exit(1)
+        if not args.languages:
+            logger.error("--partial-update requires --languages (specify which languages to update)")
+            sys.exit(1)
+        if not args.skip_es_index:
+            logger.info("--partial-update implies --skip-es-index for DuckDB processing")
+            args.skip_es_index = True
 
     if not args.confirm:
         print("=" * 60)
@@ -1907,7 +2095,38 @@ def main():
                 }, f, indent=2)
             logger.info(f"Coverage stats saved to: {coverage_stats_path}")
 
-            if args.skip_es_index:
+            # Handle partial update (if requested)
+            if args.partial_update:
+                logger.info("=" * 60)
+                logger.info("STEP 4: PARTIAL ES UPDATE")
+                logger.info("=" * 60)
+
+                # Reopen DB for partial update
+                conn = duckdb.connect(str(final_db_path), read_only=True)
+
+                updated, not_found = partial_update_es_from_db(
+                    conn,
+                    es,
+                    args.toponyms_index,
+                    args.languages,
+                    args.batch_size
+                )
+
+                conn.close()
+
+                logger.info("=" * 60)
+                logger.info("PARTIAL UPDATE COMPLETE")
+                logger.info("=" * 60)
+                logger.info(f"Updated: {updated:,} documents")
+                logger.info(f"Not found: {not_found:,} documents")
+
+                if not_found > 0:
+                    logger.warning(
+                        f"{not_found:,} documents were in DuckDB but not found in ES index. "
+                        f"They may have been filtered during initial indexing or the index may be out of sync."
+                    )
+
+            elif args.skip_es_index:
                 logger.info("Skipping ES indexing (--skip-es-index)")
             else:
                 # STEP 4: INDEXING (JSONL -> ES)
@@ -2002,3 +2221,7 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+
+
+

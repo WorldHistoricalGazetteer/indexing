@@ -405,7 +405,7 @@ staging_start() {
         echo
 
         # Verify job is actually running
-        if squeue -j "$SLURM_JOB_ID" &>/dev/null 2>&1; then
+        if squeue -j "$SLURM_JOB_ID" &>/dev/null; then
             echo "Job is active. Use -staging-stop first if you want to restart."
             export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
             return 0
@@ -824,6 +824,150 @@ EOF
     echo "✓ Rebuild job submitted: $CLEAN_JOBID"
     echo "  Monitor: squeue -j $CLEAN_JOBID"
     echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+}
+
+# ==============================================================================
+# PARTIAL ES UPDATE (SPECIFIC LANGUAGES)
+# ==============================================================================
+
+do_partial_update_es() {
+    # Usage: source es.sh -partial-update-es [VERSION] [--languages LANG1 LANG2 ...]
+    #
+    # Updates Elasticsearch documents for specific languages without full index rebuild.
+    # Much faster than full rebuild when you only need to update a subset of documents.
+
+    DATA_VERSION=${1:-7}
+    shift 2>/dev/null || true
+
+    # Parse --languages flag
+    LANGUAGES=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --languages)
+                shift
+                # Collect all following args until next flag or end
+                while [[ $# -gt 0 ]] && [[ ! "$1" =~ ^-- ]]; do
+                    LANGUAGES="$LANGUAGES $1"
+                    shift
+                done
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$LANGUAGES" ]; then
+        echo "ERROR: --languages required"
+        echo "Usage: es -partial-update-es VERSION --languages LANG1 [LANG2 ...]"
+        echo "Example: es -partial-update-es 7 --languages ja"
+        return 1
+    fi
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    ES_URL="http://${ES_NODE}:${ES_PORT}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+
+    # Verify DuckDB exists
+    if [ ! -f "$DB_PATH" ]; then
+        echo "ERROR: DuckDB not found at $DB_PATH"
+        echo "The database must contain updated IPA data for the specified languages."
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    echo "=========================================="
+    echo "PARTIAL ES UPDATE"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  DuckDB:       ${DB_PATH}"
+    echo "  ES Host:      ${ES_URL}"
+    echo "  Languages:    ${LANGUAGES}"
+    echo
+    echo "This job will:"
+    echo "  1. Query DuckDB for toponyms in specified languages"
+    echo "  2. Bulk update ES documents with new IPA/PanPhon data"
+    echo "  3. Refresh index"
+    echo
+    echo "Note: This does NOT rebuild the index - just updates existing documents."
+    echo
+
+    # Convert space-separated to comma-separated for Python
+    LANG_ARGS=$(echo "$LANGUAGES" | tr ' ' '\n' | paste -sd ',' -)
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-partial-update-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/partial_update_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/partial_update_v${DATA_VERSION}_%j.err
+#SBATCH --time=6:00:00
+#SBATCH --partition=smp
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+
+# Load Environment
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "$REPO_DIR"
+
+echo "=========================================="
+echo "PARTIAL ES UPDATE"
+echo "=========================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Languages: ${LANGUAGES}"
+echo
+
+# Run the partial update
+python -u -m phonetics.extraction.rebuild_toponyms_index \
+    --es-host "${ES_URL}" \
+    --db-path "${DB_PATH}" \
+    --toponyms-index toponyms \
+    --languages ${LANG_ARGS} \
+    --partial-update \
+    --resume \
+    --confirm
+
+echo
+echo "=========================================="
+echo "PARTIAL UPDATE COMPLETE"
+echo "=========================================="
+echo "Check the output above for:"
+echo "  - Updated: number of successfully updated documents"
+echo "  - Not found: documents in DuckDB but not in ES"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    CLEAN_JOBID="${JOBID%;*}"
+
+    echo "✓ Partial update job submitted: $CLEAN_JOBID"
+    echo "  Monitor: squeue -j $CLEAN_JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/partial_update_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+    echo
+    echo "This typically completes in 10-30 minutes for a single language."
 }
 
 # ==============================================================================
@@ -1781,6 +1925,12 @@ case "$1" in
         do_rebuild_toponyms "$@"
         ;;
 
+    # --- Partial ES Update (Specific Languages) ---
+    -partial-update-es)
+        shift
+        do_partial_update_es "$@"
+        ;;
+
     # --- Precompute Neural Phonetics (GPU) ---
     -precompute-phonetics)
         shift
@@ -1884,6 +2034,7 @@ case "$1" in
         echo
         echo "PIPELINE (Symphonym v6):"
         echo "  -rebuild-toponyms   [VER] Extract toponyms + Epitran IPA + index"
+        echo "  -partial-update-es   [VER] Update specific languages in ES (no full rebuild)"
         echo "  -precompute-phonetics [VER] Neural G2P on GPU (CharsiuG2P + Phonikud)"
         echo "  -generate-training-data [VER] Generate training sets"
         echo "  -train-model        [VER] Train Teacher/Student models"
@@ -2036,3 +2187,4 @@ case "$1" in
         echo "  - Snapshots: $SNAPSHOT_DIR"
         ;;
 esac
+
