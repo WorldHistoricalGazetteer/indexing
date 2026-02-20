@@ -1082,6 +1082,162 @@ EOF
 }
 
 # ==============================================================================
+# FORCE MERGE (purge deleted docs, reduce segment count)
+# ==============================================================================
+
+do_forcemerge() {
+    # Usage: es -forcemerge [INDEX] [--max-segments N] [--iterative] [--step-factor N]
+    #
+    # Force-merges index segments to purge deleted documents and reduce
+    # segment count. Run only when the index is no longer being written to.
+    #
+    # The --iterative mode (default for large indices) halves the segment count
+    # on each pass until the target is reached. This is faster than jumping
+    # straight to 1 segment because each pass does much less work, and by the
+    # final pass the data is already well-consolidated.
+    #
+    # Example progression with ~200 segments and step-factor 2:
+    #   Pass 1: 200 -> 100 segments  (fast: many tiny merges in parallel)
+    #   Pass 2: 100 -> 50  segments  (fast)
+    #   Pass 3:  50 -> 25  segments
+    #   Pass 4:  25 -> 12  segments
+    #   Pass 5:  12 ->  6  segments
+    #   Pass 6:   6 ->  3  segments
+    #   Pass 7:   3 ->  1  segment   (slowest pass, but now manageable)
+    #
+    # WARNING: CPU/IO intensive. Do not run during active ingestion.
+
+    INDEX="${1:-places}"
+    shift 2>/dev/null || true
+
+    MAX_SEGMENTS=1
+    ITERATIVE=true
+    STEP_FACTOR=2   # halve segment count each pass
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --max-segments)
+                MAX_SEGMENTS="$2"
+                shift 2
+                ;;
+            --no-iterative)
+                ITERATIVE=false
+                shift
+                ;;
+            --step-factor)
+                STEP_FACTOR="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        return 1
+    fi
+    source "$STAGING_INFO_FILE"
+
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    # ---- helper: run one forcemerge pass and wait for completion ----
+    _run_merge_pass() {
+        local target_segs="$1"
+        echo -n "  Merging to ${target_segs} segment(s) per shard..."
+        curl -s -X POST \
+            "http://${ES_NODE}:${ES_PORT}/${INDEX}/_forcemerge?max_num_segments=${target_segs}&wait_for_completion=false" \
+            -o /dev/null
+        # Poll until the forcemerge task disappears from _tasks
+        while true; do
+            local count
+            count=$(curl -s "http://${ES_NODE}:${ES_PORT}/_tasks?actions=indices:admin/forcemerge&detailed=false" \
+                | python3 -c \
+                    "import sys,json; t=json.load(sys.stdin).get('nodes',{}); print(sum(len(v.get('tasks',{})) for v in t.values()))" \
+                    2>/dev/null || echo "0")
+            if [ "$count" -eq 0 ]; then
+                echo " done."
+                break
+            fi
+            echo -n "."
+            sleep 10
+        done
+    }
+
+    # ---- helper: get current segment count across all shards ----
+    _get_segments() {
+        curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=segments.count" \
+            | tr -d ' \n'
+    }
+
+    # ---- helper: print current index stats ----
+    _print_stats() {
+        curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?v&h=index,docs.count,docs.deleted,store.size,segments.count" \
+            2>/dev/null
+    }
+
+    # ---- main ----
+    echo "=========================================="
+    echo "FORCE MERGE: ${INDEX}"
+    echo "=========================================="
+    echo
+    echo "Before:"
+    _print_stats
+    echo
+
+    DELETED=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=docs.deleted" | tr -d ' \n')
+    if [ "${DELETED:-0}" -eq 0 ] 2>/dev/null; then
+        echo "No deleted documents - nothing to do."
+        return 0
+    fi
+
+    CURRENT_SEGS=$(_get_segments)
+    echo "Current segments: ${CURRENT_SEGS}  ->  target: ${MAX_SEGMENTS}"
+    echo "Deleted docs to purge: ${DELETED}"
+    echo
+
+    if [ "$ITERATIVE" = "true" ] && [ "$CURRENT_SEGS" -gt $(( MAX_SEGMENTS * STEP_FACTOR )) ] 2>/dev/null; then
+        echo "Iterative mode: halving segment count (step factor ${STEP_FACTOR}) until target reached."
+        echo
+
+        PASS=1
+        NEXT=$(( (CURRENT_SEGS + STEP_FACTOR - 1) / STEP_FACTOR ))  # ceiling division
+        while [ "$NEXT" -gt "$MAX_SEGMENTS" ]; do
+            echo "Pass ${PASS}: ${CURRENT_SEGS} -> ${NEXT} segments"
+            _run_merge_pass "$NEXT"
+            _print_stats
+            echo
+            CURRENT_SEGS=$(_get_segments)
+            NEXT=$(( (CURRENT_SEGS + STEP_FACTOR - 1) / STEP_FACTOR ))
+            # Safety: if segment count isn't decreasing, stop
+            if [ "$NEXT" -ge "$CURRENT_SEGS" ]; then
+                echo "  Segment count not decreasing further - proceeding to final pass."
+                break
+            fi
+            PASS=$(( PASS + 1 ))
+        done
+
+        echo "Final pass: ${CURRENT_SEGS} -> ${MAX_SEGMENTS} segment(s)"
+    fi
+
+    # Final (or only) pass to reach the actual target
+    _run_merge_pass "$MAX_SEGMENTS"
+
+    # Refresh stats
+    curl -s -X POST "http://${ES_NODE}:${ES_PORT}/${INDEX}/_refresh" -o /dev/null
+
+    echo
+    echo "After:"
+    _print_stats
+    echo
+    echo "Done. Consider retaking the snapshot to capture the merged state."
+}
+
+# ==============================================================================
 # GENERATE TRAINING DATA (Phase 2)
 # ==============================================================================
 
@@ -1950,6 +2106,12 @@ case "$1" in
         do_ingest "$@"
         ;;
 
+    # --- Force Merge (purge deleted docs) ---
+    -forcemerge)
+        shift
+        do_forcemerge "$@"
+        ;;
+
     # --- Rebuild Toponyms Index ---
     -rebuild-toponyms)
         shift
@@ -2074,6 +2236,12 @@ case "$1" in
         echo "HEALTH CHECKS:"
         echo "  -health             Production cluster health and stats"
         echo "  -staging-health     Staging cluster health and stats"
+        echo "  -forcemerge [INDEX] Purge deleted docs, merge segments (default index: places)"
+        echo "              --max-segments N   Target segments per shard (default: 1)"
+        echo "              --step-factor N    Divisor per iterative pass (default: 2 = halve)"
+        echo "              --no-iterative     Skip iterative mode, merge direct to target"
+        echo "              Iterative mode is on by default: halves segment count each pass"
+        echo "              until target is reached (much faster for large indices)."
         echo
         echo "INGESTION (requires staging ES running):"
         echo "  -ingest [OPTIONS]   Submit authority ingestion job to Slurm"
