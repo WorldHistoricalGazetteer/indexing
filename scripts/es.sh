@@ -1086,38 +1086,31 @@ EOF
 # ==============================================================================
 
 do_forcemerge() {
-    # Usage: es -forcemerge [INDEX] [--max-segments N] [--iterative] [--step-factor N]
+    # Usage: es -forcemerge [INDEX] [--max-segments N] [--no-iterative] [--step-factor N]
     #
     # Force-merges index segments to purge deleted documents and reduce
     # segment count. Run only when the index is no longer being written to.
     #
-    # The --iterative mode (default for large indices) halves the segment count
-    # on each pass until the target is reached. This is faster than jumping
-    # straight to 1 segment because each pass does much less work, and by the
-    # final pass the data is already well-consolidated.
+    # IMPORTANT: max_num_segments is a per-shard limit, but _cat/indices reports
+    # the total across all shards. This function converts correctly.
     #
-    # Example progression with ~200 segments and step-factor 2:
-    #   Pass 1: 200 -> 100 segments  (fast: many tiny merges in parallel)
-    #   Pass 2: 100 -> 50  segments  (fast)
-    #   Pass 3:  50 -> 25  segments
-    #   Pass 4:  25 -> 12  segments
-    #   Pass 5:  12 ->  6  segments
-    #   Pass 6:   6 ->  3  segments
-    #   Pass 7:   3 ->  1  segment   (slowest pass, but now manageable)
+    # Iterative mode (default) halves the per-shard segment count each pass,
+    # which is faster than jumping straight to 1 because each pass rewrites
+    # less data. Progress is printed after each pass.
     #
     # WARNING: CPU/IO intensive. Do not run during active ingestion.
 
     INDEX="${1:-places}"
     shift 2>/dev/null || true
 
-    MAX_SEGMENTS=1
+    MAX_SEGMENTS_PER_SHARD=1
     ITERATIVE=true
-    STEP_FACTOR=2   # halve segment count each pass
+    STEP_FACTOR=2
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --max-segments)
-                MAX_SEGMENTS="$2"
+                MAX_SEGMENTS_PER_SHARD="$2"
                 shift 2
                 ;;
             --no-iterative)
@@ -1145,33 +1138,23 @@ do_forcemerge() {
         return 1
     fi
 
-    # ---- helper: run one forcemerge pass and wait for completion ----
+    # ---- helper: run one forcemerge pass (per-shard target) and wait ----
     _run_merge_pass() {
-        local target_segs="$1"
-        echo -n "  Merging to ${target_segs} segment(s) per shard..."
+        local target_per_shard="$1"
+        echo -n "  Merging to ${target_per_shard} segment(s) per shard..."
         curl -s -X POST \
-            "http://${ES_NODE}:${ES_PORT}/${INDEX}/_forcemerge?max_num_segments=${target_segs}&wait_for_completion=false" \
+            "http://${ES_NODE}:${ES_PORT}/${INDEX}/_forcemerge?max_num_segments=${target_per_shard}&wait_for_completion=false" \
             -o /dev/null
-        # Poll until the forcemerge task disappears from _tasks
         while true; do
             local count
             count=$(curl -s "http://${ES_NODE}:${ES_PORT}/_tasks?actions=indices:admin/forcemerge&detailed=false" \
                 | python3 -c \
                     "import sys,json; t=json.load(sys.stdin).get('nodes',{}); print(sum(len(v.get('tasks',{})) for v in t.values()))" \
                     2>/dev/null || echo "0")
-            if [ "$count" -eq 0 ]; then
-                echo " done."
-                break
-            fi
+            [ "$count" -eq 0 ] && echo " done." && break
             echo -n "."
             sleep 10
         done
-    }
-
-    # ---- helper: get current segment count across all shards ----
-    _get_segments() {
-        curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=segments.count" \
-            | tr -d ' \n'
     }
 
     # ---- helper: print current index stats ----
@@ -1180,7 +1163,14 @@ do_forcemerge() {
             2>/dev/null
     }
 
-    # ---- main ----
+    # ---- get shard count ----
+    SHARD_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/shards/${INDEX}?h=shard&s=shard" \
+        | grep -c . 2>/dev/null || echo "1")
+    # Only primary shards matter for segment maths
+    PRIMARY_SHARDS=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/shards/${INDEX}?h=prirep" \
+        | grep -c "^p" 2>/dev/null || echo "$SHARD_COUNT")
+    [ "$PRIMARY_SHARDS" -eq 0 ] && PRIMARY_SHARDS=1
+
     echo "=========================================="
     echo "FORCE MERGE: ${INDEX}"
     echo "=========================================="
@@ -1195,39 +1185,56 @@ do_forcemerge() {
         return 0
     fi
 
-    CURRENT_SEGS=$(_get_segments)
-    echo "Current segments: ${CURRENT_SEGS}  ->  target: ${MAX_SEGMENTS}"
-    echo "Deleted docs to purge: ${DELETED}"
+    TOTAL_SEGS=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=segments.count" | tr -d ' \n')
+    # Per-shard segment count (ceiling division)
+    CURRENT_PER_SHARD=$(( (TOTAL_SEGS + PRIMARY_SHARDS - 1) / PRIMARY_SHARDS ))
+
+    echo "Primary shards:    ${PRIMARY_SHARDS}"
+    echo "Total segments:    ${TOTAL_SEGS}  (${CURRENT_PER_SHARD} per shard)"
+    echo "Target:            ${MAX_SEGMENTS_PER_SHARD} per shard"
+    echo "Deleted docs:      ${DELETED}"
     echo
 
-    if [ "$ITERATIVE" = "true" ] && [ "$CURRENT_SEGS" -gt $(( MAX_SEGMENTS * STEP_FACTOR )) ] 2>/dev/null; then
-        echo "Iterative mode: halving segment count (step factor ${STEP_FACTOR}) until target reached."
+    if [ "$CURRENT_PER_SHARD" -le "$MAX_SEGMENTS_PER_SHARD" ] 2>/dev/null; then
+        echo "Already at or below target (${CURRENT_PER_SHARD} per shard). Running final merge to purge deleted docs."
+        _run_merge_pass "$MAX_SEGMENTS_PER_SHARD"
+    elif [ "$ITERATIVE" = "true" ]; then
+        echo "Iterative mode: step factor ${STEP_FACTOR}, per-shard: ${CURRENT_PER_SHARD} -> ${MAX_SEGMENTS_PER_SHARD}"
         echo
 
         PASS=1
-        NEXT=$(( (CURRENT_SEGS + STEP_FACTOR - 1) / STEP_FACTOR ))  # ceiling division
-        while [ "$NEXT" -gt "$MAX_SEGMENTS" ]; do
-            echo "Pass ${PASS}: ${CURRENT_SEGS} -> ${NEXT} segments"
+        PREV_PER_SHARD=0
+        while [ "$CURRENT_PER_SHARD" -gt "$MAX_SEGMENTS_PER_SHARD" ]; do
+            NEXT=$(( (CURRENT_PER_SHARD + STEP_FACTOR - 1) / STEP_FACTOR ))
+            [ "$NEXT" -lt "$MAX_SEGMENTS_PER_SHARD" ] && NEXT=$MAX_SEGMENTS_PER_SHARD
+
+            echo "Pass ${PASS}: ${CURRENT_PER_SHARD} -> ${NEXT} per shard  (total: ~$(( NEXT * PRIMARY_SHARDS )))"
             _run_merge_pass "$NEXT"
             _print_stats
             echo
-            CURRENT_SEGS=$(_get_segments)
-            NEXT=$(( (CURRENT_SEGS + STEP_FACTOR - 1) / STEP_FACTOR ))
-            # Safety: if segment count isn't decreasing, stop
-            if [ "$NEXT" -ge "$CURRENT_SEGS" ]; then
-                echo "  Segment count not decreasing further - proceeding to final pass."
+
+            TOTAL_SEGS=$(curl -s "http://${ES_NODE}:${ES_PORT}/_cat/indices/${INDEX}?h=segments.count" | tr -d ' \n')
+            CURRENT_PER_SHARD=$(( (TOTAL_SEGS + PRIMARY_SHARDS - 1) / PRIMARY_SHARDS ))
+
+            # Guard: stop if not making progress
+            if [ "$CURRENT_PER_SHARD" -ge "${PREV_PER_SHARD:-999}" ] && [ "$PASS" -gt 1 ]; then
+                echo "  Segment count not decreasing further - jumping to final pass."
                 break
             fi
+            PREV_PER_SHARD=$CURRENT_PER_SHARD
             PASS=$(( PASS + 1 ))
         done
 
-        echo "Final pass: ${CURRENT_SEGS} -> ${MAX_SEGMENTS} segment(s)"
+        # Final pass to reach exact target (also purges any remaining deleted docs)
+        if [ "$CURRENT_PER_SHARD" -gt "$MAX_SEGMENTS_PER_SHARD" ]; then
+            echo "Final pass: ${CURRENT_PER_SHARD} -> ${MAX_SEGMENTS_PER_SHARD} per shard"
+            _run_merge_pass "$MAX_SEGMENTS_PER_SHARD"
+        fi
+    else
+        echo "Direct merge: ${CURRENT_PER_SHARD} -> ${MAX_SEGMENTS_PER_SHARD} per shard"
+        _run_merge_pass "$MAX_SEGMENTS_PER_SHARD"
     fi
 
-    # Final (or only) pass to reach the actual target
-    _run_merge_pass "$MAX_SEGMENTS"
-
-    # Refresh stats
     curl -s -X POST "http://${ES_NODE}:${ES_PORT}/${INDEX}/_refresh" -o /dev/null
 
     echo
