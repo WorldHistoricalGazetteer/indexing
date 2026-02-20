@@ -1281,16 +1281,37 @@ EOF
 # ==============================================================================
 
 do_train_model() {
-    # Usage: source es.sh -train-model [VERSION] [START_PHASE] [END_PHASE] [--resume] [--resume-from CHECKPOINT] [--partition PARTITION]
+    # Usage: es -train-model VERSION [START_PHASE [END_PHASE]] [--resume] [--resume-from CHECKPOINT] [--partition PARTITION]
+    # Positional args (VERSION, START_PHASE, END_PHASE) must come before any flags.
+    # Examples:
+    #   es -train-model 7                          # all phases (1-3), a100
+    #   es -train-model 7 --partition l40s         # all phases (1-3), l40s
+    #   es -train-model 7 1 --partition l40s       # phase 1 only, l40s
+    #   es -train-model 7 1 3 --partition l40s     # phases 1-3, l40s
+    #   es -train-model 7 2 --resume               # phase 2 only, auto-resume
+    #   es -train-model 7 2 3 --resume             # phases 2-3, auto-resume
 
-    DATA_VERSION=${1:-6}
-    START_PHASE=${2:-1}
-    GPU_PARTITION="${GPU_PARTITION:-a100}"  # Default to a100, override with GPU_PARTITION=l40s or --partition flag
+    # Parse positional args first (stop at first flag)
+    DATA_VERSION="${1:-6}"
+    shift || true
 
-    # Parse optional flags
+    START_PHASE=1
+    END_PHASE=""
+    START_PHASE_EXPLICIT=false
+    if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+        START_PHASE="$1"
+        START_PHASE_EXPLICIT=true
+        shift
+        if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+            END_PHASE="$1"
+            shift
+        fi
+    fi
+
+    # Now parse flags
+    GPU_PARTITION="${GPU_PARTITION:-a100}"
     RESUME_FROM=""
     AUTO_RESUME=false
-    shift 2  # Remove VERSION and START_PHASE
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -1307,20 +1328,22 @@ do_train_model() {
                 shift 2
                 ;;
             *)
-                # Assume it's END_PHASE if numeric
-                if [[ "$1" =~ ^[0-9]+$ ]]; then
-                    END_PHASE="$1"
-                    shift
-                else
-                    shift
-                fi
+                echo "WARNING: Unknown argument ignored: $1"
+                shift
                 ;;
         esac
     done
 
-    # Set END_PHASE default if not set
+    # END_PHASE default:
+    #   es -train-model 7            -> phases 1-3 (run everything)
+    #   es -train-model 7 2          -> phase 2 only
+    #   es -train-model 7 1 3        -> phases 1-3 (explicit)
     if [ -z "$END_PHASE" ]; then
-        END_PHASE=$START_PHASE
+        if [ "$START_PHASE_EXPLICIT" = "true" ]; then
+            END_PHASE=$START_PHASE   # single phase specified
+        else
+            END_PHASE=3              # no phase specified: run all
+        fi
     fi
 
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
