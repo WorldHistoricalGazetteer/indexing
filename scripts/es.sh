@@ -270,7 +270,13 @@ start_prod_es() {
     echo "Starting production Elasticsearch..."
 
     # Ensure directories exist
-    mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR"
+    mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR" "$ES_HOME/config/jvm.options.d"
+
+    # ES 9.0 entitlement agent fails to attach on this kernel with:
+    #   AttachNotSupportedException: Unable to open socket file /proc/<pid>/root/tmp/
+    # Disable it via a jvm.options.d drop-in (ES_JAVA_OPTS is ignored for this
+    # flag because the bundled launcher sets -Des.entitlements.enabled=true first).
+    echo "-Des.entitlements.enabled=false" > "$ES_HOME/config/jvm.options.d/disable-entitlements.options"
 
     # JVM heap: 15g of 32g RAM (leaves ~15g for filesystem cache)
     export ES_JAVA_OPTS="-Xms15g -Xmx15g"
@@ -290,17 +296,17 @@ start_prod_es() {
     echo $! > "$PROD_ES_PID"
     echo "Elasticsearch started (PID: $(cat $PROD_ES_PID))"
 
-    # Wait for startup
+    # Wait for startup (large heap needs up to 3 minutes to initialise)
     echo -n "Waiting for Elasticsearch..."
-    for i in {1..30}; do
+    for i in {1..60}; do
         if curl -s "$PROD_ES_URL/_cluster/health" > /dev/null 2>&1; then
             echo " ready!"
             return 0
         fi
         echo -n "."
-        sleep 2
+        sleep 3
     done
-    echo " timeout (may still be starting)"
+    echo " timeout (may still be starting - check: curl $PROD_ES_URL/_cluster/health)"
 }
 
 stop_prod_es() {
