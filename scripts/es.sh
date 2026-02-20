@@ -1344,10 +1344,18 @@ do_train_model() {
         echo "  Auto-resume: ENABLED (will detect latest checkpoint)"
     fi
 
-    # Verify training data exists
-    if [ ! -d "${DATA_DIR}/triplets" ] && [ ! -d "${DATA_DIR}/training" ]; then
+    # Verify training data exists - check for actual content, not just parent dirs
+    # Note: use if-then rather than [ ] && to avoid set -e aborting on false tests
+    HAS_PHASE1="no"
+    HAS_TRAINING="no"
+    if [ -f "${DATA_DIR}/triplets/phase1/train.parquet" ]; then HAS_PHASE1="yes"; fi
+    if [ -d "${DATA_DIR}/training/split=train" ]; then HAS_TRAINING="yes"; fi
+    if [ -d "${DATA_DIR}/training/phase2" ]; then HAS_TRAINING="yes"; fi
+    if [ "$HAS_PHASE1" = "no" ] && [ "$HAS_TRAINING" = "no" ]; then
         echo "ERROR: Training data not found at ${DATA_DIR}"
-        echo "Run -generate-training-data ${DATA_VERSION} first"
+        echo "  Expected: ${DATA_DIR}/triplets/phase1/train.parquet"
+        echo "  Or:       ${DATA_DIR}/training/split=train/"
+        echo "  Run: es -generate-training-data ${DATA_VERSION} first"
         return 1
     fi
 
