@@ -172,6 +172,99 @@ do_update() {
 }
 
 # =============================================================================
+# SECURITY SETUP (one-time, run after certbot)
+# =============================================================================
+
+do_setup_security() {
+    # Usage: es -setup-security
+    #
+    # One-time setup after certbot has issued certificates.
+    # Sets passwords for built-in ES users and saves the kibana_system
+    # password so start_kibana can use it.
+    #
+    # Requires ES to be running WITHOUT security (es -start before certbot).
+    # After this completes, restart ES to pick up security=true.
+
+    echo "=========================================="
+    echo "SECURITY SETUP"
+    echo "=========================================="
+    echo
+
+    # Check ES is running
+    if ! curl -s "${PROD_ES_URL}/_cluster/health" > /dev/null 2>&1; then
+        echo "ERROR: ES not running at ${PROD_ES_URL}"
+        echo "Start it first: es -start"
+        return 1
+    fi
+
+    # Check certs exist
+    if [ ! -f "${SSL_CERT:-}" ] || [ ! -f "${SSL_KEY:-}" ]; then
+        echo "ERROR: TLS certificates not found."
+        echo "  Expected: ${SSL_CERT}"
+        echo "  Run certbot first:"
+        echo "    certbot certonly --dns-digitalocean \\"
+        echo "      --dns-digitalocean-credentials ~/.do-credentials.ini \\"
+        echo "      -d kibana.whgazetteer.org \\"
+        echo "      -d index.whgazetteer.org"
+        return 1
+    fi
+    echo "✓ TLS certificates found: ${SSL_CERT}"
+    echo
+
+    CONFIG_DIR="${IX1_BASE}/es/config"
+    mkdir -p "$CONFIG_DIR"
+    KIBANA_PASS_FILE="${CONFIG_DIR}/kibana_system.password"
+    ELASTIC_PASS_FILE="${CONFIG_DIR}/elastic.password"
+
+    # Generate a strong random password for each user
+    ELASTIC_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
+    KIBANA_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
+
+    echo "Setting 'elastic' superuser password..."
+    RESULT=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        "${PROD_ES_URL}/_security/user/elastic/_password" \
+        -H 'Content-Type: application/json' \
+        -d "{\"password\": \"${ELASTIC_PASSWORD}\"}")
+    if [ "$RESULT" != "200" ]; then
+        echo "ERROR: Failed to set elastic password (HTTP ${RESULT})"
+        echo "Is xpack.security already enabled? If so, provide existing credentials."
+        return 1
+    fi
+    echo "$ELASTIC_PASSWORD" > "$ELASTIC_PASS_FILE"
+    chmod 600 "$ELASTIC_PASS_FILE"
+    echo "✓ elastic password saved to ${ELASTIC_PASS_FILE}"
+    echo
+
+    echo "Setting 'kibana_system' password..."
+    curl -s -o /dev/null -X POST \
+        "${PROD_ES_URL}/_security/user/kibana_system/_password" \
+        -u "elastic:${ELASTIC_PASSWORD}" \
+        -H 'Content-Type: application/json' \
+        -d "{\"password\": \"${KIBANA_PASSWORD}\"}"
+    echo "$KIBANA_PASSWORD" > "$KIBANA_PASS_FILE"
+    chmod 600 "$KIBANA_PASS_FILE"
+    echo "✓ kibana_system password saved to ${KIBANA_PASS_FILE}"
+    echo
+
+    echo "=========================================="
+    echo "SETUP COMPLETE"
+    echo "=========================================="
+    echo
+    echo "elastic (superuser) password: ${ELASTIC_PASSWORD}"
+    echo "  Saved to: ${ELASTIC_PASS_FILE}"
+    echo
+    echo "kibana_system password: (saved to ${KIBANA_PASS_FILE})"
+    echo
+    echo "Next steps:"
+    echo "  1. Restart ES to enable security:  es -restart"
+    echo "  2. Log in to Kibana at:            https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}:5601"
+    echo "     Username: elastic"
+    echo "     Password: ${ELASTIC_PASSWORD}"
+    echo
+    echo "  Store the elastic password somewhere safe - it cannot be recovered."
+}
+
+# =============================================================================
 # HEALTH CHECKS
 # =============================================================================
 
@@ -270,16 +363,28 @@ start_prod_es() {
     echo "Starting production Elasticsearch..."
 
     # Ensure directories exist
-    mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR" "$ES_HOME/config/jvm.options.d"
+    mkdir -p "$PROD_DATA_DIR" "$PROD_LOG_DIR"
 
-    # ES 9.0 entitlement agent fails to attach on this kernel with:
-    #   AttachNotSupportedException: Unable to open socket file /proc/<pid>/root/tmp/
-    # Disable it via a jvm.options.d drop-in (ES_JAVA_OPTS is ignored for this
-    # flag because the bundled launcher sets -Des.entitlements.enabled=true first).
-    echo "-Des.entitlements.enabled=false" > "$ES_HOME/config/jvm.options.d/disable-entitlements.options"
+    # ES 9.0 jvm.options has a relative 'logs/gc.log' path which fails unless
+    # the working directory has a writable logs/ subdir. Patch it in place.
+    if [ -f "$ES_HOME/config/jvm.options" ]; then
+        sed -i "s|file=logs/gc\.log|file=${PROD_LOG_DIR}/gc.log|g" \
+            "$ES_HOME/config/jvm.options"
+    fi
+
+    # Enable security (required for Kibana auth) only when TLS certs exist.
+    # Before certbot has run, keep security off so es -setup-security can reach ES.
+    SECURITY_FLAG="false"
+    if [ -f "${SSL_CERT:-}" ] && [ -f "${SSL_KEY:-}" ]; then
+        SECURITY_FLAG="true"
+        echo "  TLS certs found - starting with xpack.security enabled"
+    else
+        echo "  No TLS certs - starting WITHOUT security (run es -setup-security after certbot)"
+    fi
 
     # JVM heap: 15g of 32g RAM (leaves ~15g for filesystem cache)
     export ES_JAVA_OPTS="-Xms15g -Xmx15g"
+    export ES_TMPDIR="/tmp"
 
     nohup "$ES_HOME/bin/elasticsearch" \
         -E cluster.name="$PROD_CLUSTER_NAME" \
@@ -288,7 +393,7 @@ start_prod_es() {
         -E path.logs="$PROD_LOG_DIR" \
         -E path.repo="$SNAPSHOT_DIR" \
         -E discovery.type=single-node \
-        -E xpack.security.enabled=false \
+        -E xpack.security.enabled="${SECURITY_FLAG}" \
         -E network.host="$PROD_ES_HOST" \
         -E http.port="$PROD_ES_PORT" \
         > "$PROD_LOG_DIR/nohup.out" 2>&1 &
@@ -355,13 +460,43 @@ start_kibana() {
 
     mkdir -p "${IX1_BASE}/kibana/data" "${IX1_BASE}/kibana/logs"
 
+    # Build Kibana args - add SSL and auth when certs are available
+    KIBANA_EXTRA_ARGS=""
+    if [ -f "${SSL_CERT:-}" ] && [ -f "${SSL_KEY:-}" ]; then
+        echo "  TLS certs found - Kibana will serve HTTPS on port 5601"
+
+        # Read kibana_system password (set by es -setup-security)
+        KIBANA_PASS_FILE="${IX1_BASE}/es/config/kibana_system.password"
+        if [ ! -f "$KIBANA_PASS_FILE" ]; then
+            echo "ERROR: Kibana password not set. Run: es -setup-security"
+            return 1
+        fi
+        KIBANA_PASSWORD=$(cat "$KIBANA_PASS_FILE")
+
+        KIBANA_EXTRA_ARGS="
+            --server.ssl.enabled=true
+            --server.ssl.certificate=${SSL_CERT}
+            --server.ssl.key=${SSL_KEY}
+            --server.publicBaseUrl=https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}
+            --elasticsearch.username=kibana_system
+            --elasticsearch.password=${KIBANA_PASSWORD}"
+    else
+        echo "  No TLS certs - Kibana will serve HTTP (no authentication)"
+        echo "  Run certbot then es -setup-security to enable HTTPS + login"
+    fi
+
     nohup "$KIBANA_HOME/bin/kibana" \
         --path.data="${IX1_BASE}/kibana/data" \
+        ${KIBANA_EXTRA_ARGS} \
         > "${IX1_BASE}/kibana/logs/nohup.out" 2>&1 &
 
     echo $! > "$KIBANA_PID"
     echo "Kibana started (PID: $(cat $KIBANA_PID))"
-    echo "Access at: http://${PROD_ES_HOST}:5601 (wait a few minutes)"
+    if [ -f "${SSL_CERT:-}" ]; then
+        echo "Access at: https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}:5601"
+    else
+        echo "Access at: http://${PROD_ES_HOST}:5601 (wait a few minutes)"
+    fi
 }
 
 stop_kibana() {
@@ -2097,6 +2232,11 @@ EOF
 # =============================================================================
 
 case "$1" in
+    # --- Security Setup (one-time) ---
+    -setup-security)
+        do_setup_security
+        ;;
+
     # --- Installation and Update ---
     -install)
         do_install
@@ -2237,6 +2377,8 @@ case "$1" in
         echo "SETUP:"
         echo "  -install            Install Elasticsearch and Kibana"
         echo "  -update             Pull latest code from git"
+        echo "  -setup-security     One-time: set ES passwords + enable Kibana HTTPS auth"
+        echo "                      Run after certbot has issued TLS certificates"
         echo
         echo "PIPELINE (Symphonym v6):"
         echo "  -rebuild-toponyms   [VER] Extract toponyms + Epitran IPA + index"

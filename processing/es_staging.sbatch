@@ -57,6 +57,15 @@ mkdir -p "$STAGING_SNAPSHOT_DIR"
 cp -r "$ES_HOME/config/"* "$STAGING_CONFIG_DIR/"
 export ES_PATH_CONF="$STAGING_CONFIG_DIR"
 
+# ES 9.0 jvm.options contains a relative 'logs/gc.log' path which fails when
+# the working directory doesn't have a writable logs/ subdir.
+# Patch the copy to use our absolute staging log dir.
+if [ -f "$STAGING_CONFIG_DIR/jvm.options" ]; then
+    sed -i "s|file=logs/gc\.log|file=${STAGING_LOG_DIR}/gc.log|g" \
+        "$STAGING_CONFIG_DIR/jvm.options"
+    echo "Patched jvm.options: gc.log -> ${STAGING_LOG_DIR}/gc.log"
+fi
+
 # --- Write connection info for other jobs/scripts ---
 cat > "$STAGING_INFO_FILE" <<EOF
 ES_NODE=$SLURMD_NODENAME
@@ -128,6 +137,7 @@ trap cleanup EXIT
 
 # --- JVM settings for bulk indexing ---
 export ES_JAVA_OPTS="-Xms31g -Xmx31g"
+export ES_TMPDIR="/tmp"
 
 # --- Start Elasticsearch ---
 echo "Starting Elasticsearch..."
