@@ -2026,9 +2026,27 @@ do_train_and_update() {
 
 do_update_embeddings() {
     DATA_VERSION=${1:-6}
+    shift || true
 
     # Default to l40s for embedding computation unless explicitly overridden
     GPU_PARTITION="${GPU_PARTITION:-l40s}"
+    AFTER_JOB=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --after)
+                AFTER_JOB="$2"
+                shift 2
+                ;;
+            --partition)
+                GPU_PARTITION="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
 
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
@@ -2071,15 +2089,25 @@ do_update_embeddings() {
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
     echo "  GPU Part:   ${GPU_PARTITION}"
+    if [ -n "$AFTER_JOB" ]; then
+        echo "  Depends on: ${AFTER_JOB} (afterok)"
+    fi
     echo
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
 
-    # Step 1: Compute embeddings (GPU) - now processes ALL toponyms from DuckDB
-    echo "Step 1: Submitting compute job (GPU)..."
-    echo "  Note: Computing embeddings for ALL toponyms in database (not just training subset)"
+    # Dependency flag for sbatch
+    DEP_FLAG=""
+    if [ -n "$AFTER_JOB" ]; then
+        DEP_FLAG="--dependency=afterok:${AFTER_JOB}"
+    fi
 
-    COMPUTE_JOB=$(sbatch --parsable -M gpu <<EOF
+    # Step 1: Compute embeddings (GPU)
+    echo "Step 1: Submitting compute job (GPU)..."
+    echo "  Note: compute job will submit the SMP index job itself on completion"
+    echo "  (cross-cluster Slurm dependencies are not supported on Pitt CRC)"
+
+    COMPUTE_JOB=$(sbatch --parsable -M gpu ${DEP_FLAG} <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-embed-compute-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
@@ -2101,7 +2129,7 @@ echo
 
 set -e
 
-source "$CONDA_SETUP_PATH"
+source "${CONDA_SETUP_PATH}"
 conda activate whg
 
 cd "${REPO_DIR}"
@@ -2118,8 +2146,47 @@ python -u -m phonetics.inference.update_es compute \
 
 echo
 echo "Embeddings saved to: ${EMBEDDINGS_FILE}"
-echo "Note: Embeddings quantized to int8 for efficient storage"
 echo "Finished: \$(date)"
+echo
+
+# Cross-cluster handoff: submit the SMP index job from inside the GPU job.
+# Slurm --dependency cannot span clusters on Pitt CRC, so we submit here
+# after confirming the compute step succeeded (set -e ensures we only reach
+# this point if python exited 0).
+echo "Submitting SMP index job..."
+INDEX_JOB=\$(sbatch --parsable <<INNER
+#!/bin/bash
+#SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=smp
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+
+set -e
+source "${CONDA_SETUP_PATH}"
+conda activate whg
+cd "${REPO_DIR}"
+
+source "${STAGING_INFO_FILE}"
+
+echo "Indexing embeddings to ES at http://\\\${ES_NODE}:\\\${ES_PORT}..."
+python -u -m phonetics.inference.update_es index \
+    --input-file "${EMBEDDINGS_FILE}" \
+    --db-path "${IX1_BASE}/data/toponyms.db" \
+    --es-host "http://\\\${ES_NODE}:\\\${ES_PORT}" \
+    --index toponyms \
+    --embedding-version ${DATA_VERSION}
+
+echo "Indexing complete: \\\$(date)"
+INNER
+)
+echo "✓ Index job submitted to SMP: \${INDEX_JOB}"
+echo "  Monitor: squeue -j \${INDEX_JOB}"
+echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_*.out"
 EOF
 )
 
@@ -2127,19 +2194,12 @@ EOF
     echo "✓ Compute job submitted: ${COMPUTE_JOB}"
     echo "  Monitor: squeue -j ${COMPUTE_JOB} -M gpu"
     echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/compute_*.out"
-    echo
-
-    echo "=========================================="
-    echo "NEXT STEP (Manual)"
-    echo "=========================================="
-    echo "After compute job completes, run:"
-    echo "  es -update-embeddings-index ${DATA_VERSION}"
-    echo
-    echo "This will index the embeddings to Elasticsearch."
+    echo "  (Index job will be submitted automatically on completion)"
 }
 
 do_update_embeddings_index() {
     DATA_VERSION=${1:-6}
+    shift || true
 
     DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
@@ -2153,8 +2213,9 @@ do_update_embeddings_index() {
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
 
-    # Verify embeddings file exists
-    if [ ! -f "${EMBEDDINGS_FILE}" ]; then
+    # Only check file existence when not depending on a prior job
+    # (when --after is set the file doesn't exist yet at submission time)
+    if [ -z "$AFTER_JOB" ] && [ ! -f "${EMBEDDINGS_FILE}" ]; then
         echo "ERROR: Embeddings file not found at ${EMBEDDINGS_FILE}"
         echo "Run compute step first: es -update-embeddings ${DATA_VERSION}"
         return 1
