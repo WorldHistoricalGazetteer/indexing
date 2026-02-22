@@ -2154,7 +2154,7 @@ echo
 # after confirming the compute step succeeded (set -e ensures we only reach
 # this point if python exited 0).
 echo "Submitting SMP index job..."
-INDEX_JOB=\$(sbatch --parsable <<INNER
+INDEX_JOB=\$(sbatch --parsable -M smp <<INNER
 #!/bin/bash
 #SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
