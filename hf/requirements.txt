@@ -1,0 +1,15 @@
+# Symphonym v7 — Runtime Requirements
+# For inference (Student model only — no G2P required):
+torch>=2.0.0
+numpy>=1.24.0
+anyascii>=0.3.2
+safetensors>=0.4.0
+
+# For full pipeline (G2P transcription, training, re-indexing):
+epitran>=1.4.5
+panphon>=0.20.0
+charsiu-g2p>=0.1.0
+
+# Optional: for converting .pt checkpoints to safetensors format
+# safetensors>=0.4.0  (already listed above)
+

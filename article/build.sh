@@ -50,3 +50,19 @@ echo "5. Creating ZIP..."
 echo "------------------------------------------------------"
 echo "✅ SUCCESS: arxiv_submission.zip created."
 echo "------------------------------------------------------"
+
+echo ""
+echo "6. Word count (texcount)..."
+if [ -f ../texcount.pl ]; then
+    # Abstract word count
+    ABSTRACT=$(sed -n '/\\begin{abstract}/,/\\end{abstract}/p' symphonym.tex \
+        | perl ../texcount.pl -brief - 2>/dev/null)
+    ABSTRACT_WORDS=$(echo "$ABSTRACT" | grep -oP '^\d+')
+    echo "   Abstract: ${ABSTRACT_WORDS:-?} words"
+    echo ""
+
+    # Full document summary
+    perl ../texcount.pl -v0 -sum symphonym.tex 2>/dev/null | head -7
+else
+    echo "   texcount.pl not found in project root — skipping."
+fi

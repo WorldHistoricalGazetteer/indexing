@@ -1,4 +1,4 @@
-\begin{thebibliography}{21}
+\begin{thebibliography}{24}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -50,6 +50,24 @@ Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
 \newblock Word translation without parallel data.
 \newblock In \emph{Proceedings of the International Conference on Learning
   Representations}, 2018.
+
+\bibitem[Gadd(2026{\natexlab{a}})]{symphonym2026}
+Stephen Gadd.
+\newblock Symphonym: Universal phonetic embeddings for cross-script name
+  matching, 2026{\natexlab{a}}.
+\newblock URL \url{https://arxiv.org/abs/2601.06932}.
+
+\bibitem[Gadd(2026{\natexlab{b}})]{symphonym2026hf}
+Stephen Gadd.
+\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
+  toponym matching, 2026{\natexlab{b}}.
+\newblock URL \url{https://huggingface.co/docuracy/symphonym-v7}.
+
+\bibitem[Gadd(2026{\natexlab{c}})]{symphonym2026zenodo}
+Stephen Gadd.
+\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
+  toponym matching, 2026{\natexlab{c}}.
+\newblock URL \url{https://doi.org/10.5281/zenodo.18682017}.
 
 \bibitem[Gadd(1990)]{gadd1990phonix}
 T.~N. Gadd.

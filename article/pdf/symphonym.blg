@@ -3,47 +3,49 @@ Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
 The top-level auxiliary file: symphonym.aux
 The style file: plainnat.bst
 Database file #1: references.bib
+Warning--entry type for "symphonym2026zenodo" isn't style-file defined
+--line 365 of file references.bib
 Warning--empty journal in kolani2025phonikudhebrewgraphemetophonemeconversion
 Warning--empty journal in zhu2022charsiu-g2p
-You've used 21 entries,
+You've used 24 entries,
             2773 wiz_defined-function locations,
-            739 strings with 10068 characters,
-and the built_in function-call counts, 12414 in all, are:
-= -- 1153
-> -- 711
-< -- 20
-+ -- 239
-- -- 218
-* -- 994
-:= -- 1818
-add.period$ -- 90
-call.type$ -- 21
-change.case$ -- 135
-chr.to.int$ -- 21
-cite$ -- 44
-duplicate$ -- 569
-empty$ -- 970
-format.name$ -- 245
-if$ -- 2693
-int.to.chr$ -- 1
+            753 strings with 10464 characters,
+and the built_in function-call counts, 13311 in all, are:
+= -- 1231
+> -- 741
+< -- 23
++ -- 253
+- -- 227
+* -- 1045
+:= -- 1952
+add.period$ -- 99
+call.type$ -- 24
+change.case$ -- 147
+chr.to.int$ -- 22
+cite$ -- 50
+duplicate$ -- 614
+empty$ -- 1066
+format.name$ -- 257
+if$ -- 2885
+int.to.chr$ -- 3
 int.to.str$ -- 1
 missing$ -- 20
-newline$ -- 138
-num.names$ -- 86
-pop$ -- 282
+newline$ -- 153
+num.names$ -- 98
+pop$ -- 318
 preamble$ -- 1
-purify$ -- 114
+purify$ -- 123
 quote$ -- 0
-skip$ -- 479
+skip$ -- 517
 stack$ -- 0
-substring$ -- 535
-swap$ -- 137
+substring$ -- 541
+swap$ -- 143
 text.length$ -- 13
 text.prefix$ -- 0
 top$ -- 0
-type$ -- 231
+type$ -- 264
 warning$ -- 2
-while$ -- 105
+while$ -- 114
 width$ -- 0
-write$ -- 328
-(There were 2 warnings)
+write$ -- 364
+(There were 3 warnings)
