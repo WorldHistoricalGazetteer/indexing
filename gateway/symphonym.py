@@ -201,7 +201,7 @@ def build_knn_query(
 
     return {
         "knn": knn,
-        "_source": ["name", "lang", "script", "namespaces", "attestations", "ipa"],
+        "_source": ["name", "lang", "script", "namespaces", "attestations"],
         "size": k,
     }
 

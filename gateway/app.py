@@ -104,14 +104,13 @@ async def health():
 # ---- Custom API Endpoints ----
 
 class PhoneticMatch(BaseModel):
-    """A single phonetic similarity match."""
+    """A unique orthography with all its language attestations."""
     name: str
-    lang: str | None = None
-    script: str | None = None
-    score: float
+    score: float = Field(description="Best KNN similarity score across all language variants")
+    langs: list[str] = Field(default=[], description="Languages this orthography appears in")
+    scripts: list[str] = Field(default=[], description="Scripts detected for this orthography")
     namespaces: list[str] = []
     attestations: list[str] = []
-    ipa: str | None = None
 
 
 class PhoneticSearchResponse(BaseModel):
@@ -173,12 +172,15 @@ async def phonetic_search(
     if filter_clauses:
         es_filter = {"bool": {"must": filter_clauses}} if len(filter_clauses) > 1 else filter_clauses[0]
 
+    # Over-fetch from ES so we get enough unique orthographies after aggregation
+    es_k = min(k * 10, 1000)
+
     # Generate embedding and build KNN query
     query_body = symphonym.build_knn_query(
         name=q,
         lang=lang,
-        k=k,
-        num_candidates=num_candidates,
+        k=es_k,
+        num_candidates=max(num_candidates, es_k),
         extra_filter=es_filter,
     )
     query_embedding = query_body["knn"]["query_vector"]
@@ -200,19 +202,43 @@ async def phonetic_search(
         r.raise_for_status()
         es_result = r.json()
 
-    # Parse hits
+    # Aggregate hits by orthography (name string)
     hits = es_result.get("hits", {}).get("hits", [])
-    matches = []
+    grouped: dict[str, dict] = {}
     for hit in hits:
         src = hit.get("_source", {})
+        name = src.get("name", "")
+        score = hit.get("_score", 0.0)
+
+        if name not in grouped:
+            grouped[name] = {
+                "score": score,
+                "langs": set(),
+                "scripts": set(),
+                "namespaces": set(),
+                "attestations": set(),
+            }
+        entry = grouped[name]
+        entry["score"] = max(entry["score"], score)
+        if src.get("lang"):
+            entry["langs"].add(src["lang"])
+        if src.get("script"):
+            entry["scripts"].add(src["script"])
+        entry["namespaces"].update(src.get("namespaces", []))
+        entry["attestations"].update(src.get("attestations", []))
+
+    # Sort by best score, take top k
+    sorted_names = sorted(grouped.items(), key=lambda x: x[1]["score"], reverse=True)[:k]
+
+    matches = []
+    for name, entry in sorted_names:
         matches.append(PhoneticMatch(
-            name=src.get("name", ""),
-            lang=src.get("lang"),
-            script=src.get("script"),
-            score=hit.get("_score", 0.0),
-            namespaces=src.get("namespaces", []),
-            attestations=src.get("attestations", []),
-            ipa=src.get("ipa"),
+            name=name,
+            score=entry["score"],
+            langs=sorted(entry["langs"]),
+            scripts=sorted(entry["scripts"]),
+            namespaces=sorted(entry["namespaces"]),
+            attestations=sorted(entry["attestations"]),
         ))
 
     return PhoneticSearchResponse(
