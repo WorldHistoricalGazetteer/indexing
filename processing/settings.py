@@ -20,18 +20,18 @@ STAGING_INFO_FILE = os.getenv("STAGING_INFO_FILE", f"{IX1_BASE}/esinfo/es-stagin
 
 
 def get_es_host():
-    # Check for running staging instance
+    """Return staging ES URL if a staging instance is running, else None."""
     if os.path.exists(STAGING_INFO_FILE):
+        node = port = None
         with open(STAGING_INFO_FILE) as f:
             for line in f:
                 if line.startswith("ES_NODE="):
                     node = line.strip().split("=", 1)[1]
                 if line.startswith("ES_PORT="):
                     port = line.strip().split("=", 1)[1]
-        return f"http://{node}:{port}"
-
-    # Raise error if not found
-    raise EnvironmentError(f"Staging ES info file not found: {STAGING_INFO_FILE}")
+        if node and port:
+            return f"http://{node}:{port}"
+    return None
 
 
 ES_HOST = get_es_host()
