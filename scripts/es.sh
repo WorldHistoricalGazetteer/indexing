@@ -302,6 +302,13 @@ health_production() {
         echo "Kibana: STOPPED"
     fi
 
+    # Check if Gateway is running
+    if [ -f "$GATEWAY_PID" ] && kill -0 $(cat "$GATEWAY_PID") 2>/dev/null; then
+        echo "Gateway: RUNNING (PID: $(cat $GATEWAY_PID)) on port ${GATEWAY_PORT:-9200}"
+    else
+        echo "Gateway: STOPPED"
+    fi
+
     echo
 
     # Cluster health
@@ -543,6 +550,60 @@ stop_kibana() {
         echo "Kibana stopped."
     else
         echo "Kibana is not running (no PID file)."
+    fi
+}
+
+# =============================================================================
+# API GATEWAY (VM)
+# =============================================================================
+
+GATEWAY_PID="${IX1_BASE}/gateway/gateway.pid"
+GATEWAY_LOG_DIR="${IX1_BASE}/gateway/logs"
+
+start_gateway() {
+    if [ -f "$GATEWAY_PID" ] && kill -0 $(cat "$GATEWAY_PID") 2>/dev/null; then
+        echo "Gateway already running (PID: $(cat $GATEWAY_PID))"
+        return 0
+    fi
+
+    echo "Starting API Gateway on ${GATEWAY_HOST:-0.0.0.0}:${GATEWAY_PORT:-9200}..."
+    mkdir -p "$GATEWAY_LOG_DIR" "$(dirname $GATEWAY_PID)"
+
+    cd "$REPO_DIR"
+    nohup python -m gateway \
+        > "$GATEWAY_LOG_DIR/nohup.out" 2>&1 &
+
+    echo $! > "$GATEWAY_PID"
+    echo "Gateway started (PID: $(cat $GATEWAY_PID))"
+
+    # Wait for gateway
+    echo -n "Waiting for gateway..."
+    for i in {1..15}; do
+        if curl -s "http://localhost:${GATEWAY_PORT:-9200}/api/health" > /dev/null 2>&1; then
+            echo " ready!"
+            return 0
+        fi
+        echo -n "."
+        sleep 2
+    done
+    echo " timeout (check $GATEWAY_LOG_DIR/nohup.out)"
+}
+
+stop_gateway() {
+    if [ -f "$GATEWAY_PID" ]; then
+        local pid=$(cat "$GATEWAY_PID")
+        if kill -0 "$pid" 2>/dev/null; then
+            echo "Stopping Gateway (PID: $pid)..."
+            kill "$pid"
+            sleep 3
+            if kill -0 "$pid" 2>/dev/null; then
+                kill -9 "$pid" 2>/dev/null
+            fi
+        fi
+        rm -f "$GATEWAY_PID"
+        echo "Gateway stopped."
+    else
+        echo "Gateway is not running (no PID file)."
     fi
 }
 
@@ -2407,17 +2468,21 @@ case "$1" in
     -start)
         start_prod_es
         start_kibana
+        start_gateway
         ;;
     -stop)
+        stop_gateway
         stop_kibana
         stop_prod_es
         ;;
     -restart)
+        stop_gateway
         stop_kibana
         stop_prod_es
         sleep 2
         start_prod_es
         start_kibana
+        start_gateway
         ;;
     es-start)
         start_prod_es
@@ -2440,6 +2505,17 @@ case "$1" in
         stop_kibana
         sleep 2
         start_kibana
+        ;;
+    gateway-start)
+        start_gateway
+        ;;
+    gateway-stop)
+        stop_gateway
+        ;;
+    gateway-restart)
+        stop_gateway
+        sleep 2
+        start_gateway
         ;;
 
     # --- Staging (Slurm) ---
