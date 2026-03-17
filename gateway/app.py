@@ -16,15 +16,18 @@ Usage:
 """
 
 import logging
+from typing import List, Optional
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, WebSocket
+from fastapi import FastAPI, Query, Request, WebSocket
+from pydantic import BaseModel, Field
 from starlette.responses import JSONResponse
 
 from .config import (
     ES_BACKEND,
     KIBANA_BACKEND,
     KIBANA_HOST_KEYWORD,
+    TOPONYMS_INDEX,
     get_elastic_password,
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
@@ -48,6 +51,13 @@ def _get_backend(host: str) -> str:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info(f"Gateway starting — ES: {ES_BACKEND}, Kibana: {KIBANA_BACKEND}")
+    # Pre-warm the Symphonym model (lazy import — won't crash if unavailable)
+    try:
+        from . import symphonym
+        symphonym.get_model()
+        logger.info("Symphonym model ready")
+    except Exception as e:
+        logger.warning(f"Symphonym model not available: {e} — /api/search/phonetic will fail")
     yield
     await close_http_client()
     logger.info("Gateway shut down")
@@ -91,12 +101,175 @@ async def health():
     }
 
 
-# ---- Custom API Endpoints (add chained queries here) ----
+# ---- Custom API Endpoints ----
 
-# @app.get("/api/search/phonetic")
-# async def phonetic_search(q: str, ...):
-#     """Example: chain a text query with a KNN phonetic embedding query."""
-#     pass
+class PhoneticMatch(BaseModel):
+    """A single phonetic similarity match."""
+    name: str
+    lang: str | None = None
+    script: str | None = None
+    score: float
+    namespaces: list[str] = []
+    attestations: list[str] = []
+    ipa: str | None = None
+
+
+class PhoneticSearchResponse(BaseModel):
+    """Response from /api/search/phonetic."""
+    query: str
+    lang: str
+    embedding: list[int] = Field(
+        description="Int8 quantised query embedding (128-d)"
+    )
+    total: int
+    matches: list[PhoneticMatch]
+
+
+class EmbedRequest(BaseModel):
+    """Request body for batch embedding."""
+    items: list[tuple[str, str]] = Field(
+        description="List of (name, lang) pairs to embed"
+    )
+
+
+class EmbedResponse(BaseModel):
+    """Response from /api/embed."""
+    count: int
+    embeddings: list[list[int]] = Field(
+        description="Int8 quantised embeddings (N × 128)"
+    )
+
+
+@app.get("/api/search/phonetic", response_model=PhoneticSearchResponse)
+async def phonetic_search(
+    q: str = Query(..., description="Query toponym (any script)"),
+    lang: str = Query("und", description="ISO 639-1 language code"),
+    k: int = Query(10, ge=1, le=100, description="Number of results"),
+    num_candidates: int = Query(100, ge=10, le=1000, description="KNN candidate pool per shard"),
+    namespace: Optional[str] = Query(None, description="Filter by namespace (e.g. gn, wd, tgn)"),
+    script: Optional[str] = Query(None, description="Filter by script (e.g. LATIN, CYRILLIC)"),
+):
+    """
+    Phonetic similarity search using Symphonym embeddings.
+
+    Generates a Symphonym embedding for the query toponym, then performs
+    an ES KNN search against the `embedding` field in the toponyms index
+    to find phonetically similar place names across scripts and languages.
+
+    Examples:
+      /api/search/phonetic?q=London&lang=en
+      /api/search/phonetic?q=Лондон&lang=ru&k=20
+      /api/search/phonetic?q=القدس&lang=ar&namespace=wd
+    """
+    from . import symphonym
+
+    # Build optional ES filter
+    es_filter = None
+    filter_clauses = []
+    if namespace:
+        filter_clauses.append({"term": {"namespaces": namespace}})
+    if script:
+        filter_clauses.append({"term": {"script": script}})
+    if filter_clauses:
+        es_filter = {"bool": {"must": filter_clauses}} if len(filter_clauses) > 1 else filter_clauses[0]
+
+    # Generate embedding and build KNN query
+    query_body = symphonym.build_knn_query(
+        name=q,
+        lang=lang,
+        k=k,
+        num_candidates=num_candidates,
+        extra_filter=es_filter,
+    )
+    query_embedding = query_body["knn"]["query_vector"]
+
+    # Execute against ES
+    import httpx
+    auth = None
+    password = get_elastic_password()
+    if password:
+        auth = ("elastic", password)
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        r = await client.post(
+            f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+            json=query_body,
+            auth=auth,
+            headers={"Content-Type": "application/json"},
+        )
+        r.raise_for_status()
+        es_result = r.json()
+
+    # Parse hits
+    hits = es_result.get("hits", {}).get("hits", [])
+    matches = []
+    for hit in hits:
+        src = hit.get("_source", {})
+        matches.append(PhoneticMatch(
+            name=src.get("name", ""),
+            lang=src.get("lang"),
+            script=src.get("script"),
+            score=hit.get("_score", 0.0),
+            namespaces=src.get("namespaces", []),
+            attestations=src.get("attestations", []),
+            ipa=src.get("ipa"),
+        ))
+
+    return PhoneticSearchResponse(
+        query=q,
+        lang=lang,
+        embedding=query_embedding,
+        total=len(matches),
+        matches=matches,
+    )
+
+
+@app.post("/api/embed", response_model=EmbedResponse)
+async def embed_toponyms(body: EmbedRequest):
+    """
+    Generate Symphonym embeddings for a batch of toponyms.
+
+    Accepts a list of (name, lang) pairs and returns int8 quantised
+    128-dimensional embeddings suitable for ES indexing or client-side
+    similarity computation.
+
+    Request body:
+      {"items": [["London", "en"], ["Лондон", "ru"], ["伦敦", "zh"]]}
+    """
+    from . import symphonym
+
+    embeddings_float = symphonym.embed_batch(body.items)
+    embeddings_byte = [
+        symphonym.quantize_to_byte(embeddings_float[i])
+        for i in range(len(embeddings_float))
+    ]
+
+    return EmbedResponse(
+        count=len(embeddings_byte),
+        embeddings=embeddings_byte,
+    )
+
+
+@app.get("/api/embed")
+async def embed_single(
+    q: str = Query(..., description="Toponym string"),
+    lang: str = Query("und", description="ISO 639-1 language code"),
+):
+    """
+    Generate a Symphonym embedding for a single toponym.
+
+    Returns the int8 quantised 128-d embedding.
+
+    Example: /api/embed?q=London&lang=en
+    """
+    from . import symphonym
+
+    emb = symphonym.embed(q, lang=lang)
+    return {
+        "name": q,
+        "lang": lang,
+        "embedding": symphonym.quantize_to_byte(emb),
+    }
 
 
 # ---- WebSocket Proxy (Kibana) ----

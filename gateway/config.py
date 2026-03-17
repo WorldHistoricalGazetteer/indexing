@@ -23,9 +23,17 @@ GATEWAY_PORT = int(os.getenv("GATEWAY_PORT", "9200"))
 # Host-based routing keywords
 KIBANA_HOST_KEYWORD = "kibana"
 
-# ES credentials (for gateway health checks)
+# ES credentials (for gateway health checks and KNN queries)
 IX1_BASE = os.getenv("IX1_BASE", "/ix1/ishi")
 ELASTIC_PASS_FILE = f"{IX1_BASE}/es/config/elastic.password"
+
+# ES index names (may be dated aliases like toponyms_20260317)
+TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms_*")
+PLACES_INDEX = os.getenv("PLACES_INDEX", "places_*")
+
+# Symphonym model
+SYMPHONYM_MODEL_DIR = os.getenv("SYMPHONYM_MODEL_DIR", "")  # empty = auto-detect
+SYMPHONYM_DATA_VERSION = os.getenv("SYMPHONYM_DATA_VERSION", "7")
 
 
 def get_elastic_password() -> str | None:
