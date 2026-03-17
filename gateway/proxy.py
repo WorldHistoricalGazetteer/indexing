@@ -44,6 +44,8 @@ HOP_BY_HOP = frozenset({
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
     "te", "trailers", "transfer-encoding", "upgrade",
     "host",  # We set this explicitly for the backend
+    "content-length",  # Let Starlette recompute from actual body
+    "content-encoding",  # Backend may gzip; we forward raw bytes
 })
 
 

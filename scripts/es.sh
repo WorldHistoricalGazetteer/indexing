@@ -509,7 +509,8 @@ start_kibana() {
     # Build Kibana args
     # TLS is terminated by the DO reverse proxy — Kibana serves plain HTTP.
     # Auth to ES is needed when xpack.security is enabled.
-    KIBANA_EXTRA_ARGS="--server.publicBaseUrl=https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}"
+    KIBANA_EXTRA_ARGS="--server.publicBaseUrl=https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}
+        --elasticsearch.hosts=${PROD_ES_URL}"
 
     KIBANA_PASS_FILE="${IX1_BASE}/es/config/kibana_system.password"
     ELASTIC_PASS_FILE="${IX1_BASE}/es/config/elastic.password"
