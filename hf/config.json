@@ -4,7 +4,7 @@
   "version": "v7",
 
   "vocab_size": 113280,
-  "num_scripts": 25,
+  "num_scripts": 20,
   "num_langs": 1944,
   "num_length_buckets": 16,
 

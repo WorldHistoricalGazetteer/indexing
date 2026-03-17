@@ -65,20 +65,20 @@ class SelfAttention(nn.Module):
 
 
 class AttentionPooling(nn.Module):
-    def __init__(self, hidden_dim: int, dropout: float = 0.2):
+    def __init__(self, hidden_dim: int, dropout: float = 0.1):
         super().__init__()
-        self.proj = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+        self.attention = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.Tanh(),
-            nn.Linear(hidden_dim, 1),
+            nn.Dropout(dropout),
+            nn.Linear(hidden_dim // 2, 1),
         )
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x, mask=None):
-        scores = self.proj(x).squeeze(-1)
+        scores = self.attention(x).squeeze(-1)
         if mask is not None:
             scores = scores.masked_fill(~mask, float("-inf"))
-        w = self.dropout(F.softmax(scores, dim=-1))
+        w = F.softmax(scores, dim=-1)
         return torch.bmm(w.unsqueeze(1), x).squeeze(1), w
 
 
@@ -88,7 +88,7 @@ class UniversalEncoder(nn.Module):
     def __init__(
         self,
         vocab_size: int        = 113280,
-        num_scripts: int       = 25,
+        num_scripts: int       = 20,
         num_langs: int         = 1944,
         char_embed_dim: int    = 64,
         script_embed_dim: int  = 16,
