@@ -429,21 +429,46 @@ start_prod_es() {
 }
 
 stop_prod_es() {
+    local stopped=false
+
+    # Kill by PID file (the nohup parent)
     if [ -f "$PROD_ES_PID" ]; then
         local pid=$(cat "$PROD_ES_PID")
         if kill -0 "$pid" 2>/dev/null; then
             echo "Stopping Elasticsearch (PID: $pid)..."
-            kill "$pid"
-            sleep 5
-            if kill -0 "$pid" 2>/dev/null; then
-                echo "Force killing..."
-                kill -9 "$pid" 2>/dev/null
-            fi
+            kill "$pid" 2>/dev/null
         fi
         rm -f "$PROD_ES_PID"
+        stopped=true
+    fi
+
+    # Also kill any Java ES processes (the actual JVM child)
+    local es_pids=$(pgrep -f 'org.elasticsearch.bootstrap.Elasticsearch' 2>/dev/null)
+    if [ -n "$es_pids" ]; then
+        echo "Stopping Elasticsearch JVM process(es): $es_pids"
+        kill $es_pids 2>/dev/null
+        stopped=true
+    fi
+
+    if $stopped; then
+        # Wait for graceful shutdown
+        echo -n "Waiting for shutdown..."
+        for i in {1..15}; do
+            if ! pgrep -f 'org.elasticsearch.bootstrap.Elasticsearch' > /dev/null 2>&1; then
+                echo " done."
+                echo "Elasticsearch stopped."
+                return 0
+            fi
+            echo -n "."
+            sleep 2
+        done
+        # Force kill if still running
+        echo " force killing."
+        pkill -9 -f 'org.elasticsearch.bootstrap.Elasticsearch' 2>/dev/null
+        sleep 2
         echo "Elasticsearch stopped."
     else
-        echo "Elasticsearch is not running (no PID file)."
+        echo "Elasticsearch is not running (no PID file, no process found)."
     fi
 }
 
