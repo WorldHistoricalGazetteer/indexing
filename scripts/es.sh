@@ -49,6 +49,16 @@ echo "------------------------------------------------"
 EOF
 }
 
+# Helper: curl with elastic credentials when security is enabled
+es_curl() {
+    local ELASTIC_PASS_FILE="${IX1_BASE}/es/config/elastic.password"
+    if [ -f "$ELASTIC_PASS_FILE" ] && [ -f "${SSL_CERT:-}" ]; then
+        curl -s -u "elastic:$(cat "$ELASTIC_PASS_FILE")" "$@"
+    else
+        curl -s "$@"
+    fi
+}
+
 # =============================================================================
 # INSTALLATION AND UPDATE
 # =============================================================================
@@ -293,11 +303,11 @@ health_production() {
 
     # Cluster health
     echo "--- Cluster Health ---"
-    curl -s "$PROD_ES_URL/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
+    es_curl "$PROD_ES_URL/_cluster/health?pretty" 2>/dev/null || echo "Could not connect to ES"
 
     echo
     echo "--- Index Summary ---"
-    curl -s "$PROD_ES_URL/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
+    es_curl "$PROD_ES_URL/_cat/indices?v&h=index,health,status,docs.count,store.size" 2>/dev/null || echo "Could not connect to ES"
 
     echo
     echo "--- Disk Usage ---"
@@ -394,6 +404,7 @@ start_prod_es() {
         -E path.repo="$SNAPSHOT_DIR" \
         -E discovery.type=single-node \
         -E xpack.security.enabled="${SECURITY_FLAG}" \
+        -E xpack.security.transport.ssl.enabled=false \
         -E network.host="$PROD_ES_BIND_HOST" \
         -E http.port="$PROD_ES_PORT" \
         > "$PROD_LOG_DIR/nohup.out" 2>&1 &
@@ -404,7 +415,7 @@ start_prod_es() {
     # Wait for startup (large heap needs up to 3 minutes to initialise)
     echo -n "Waiting for Elasticsearch..."
     for i in {1..60}; do
-        if curl -s "$PROD_ES_URL/_cluster/health" > /dev/null 2>&1; then
+        if es_curl "$PROD_ES_URL/_cluster/health" > /dev/null 2>&1; then
             echo " ready!"
             return 0
         fi
@@ -445,13 +456,13 @@ start_kibana() {
 
     echo "Waiting for Elasticsearch to be ready..."
     for i in {1..30}; do
-        if curl -s "$PROD_ES_URL" > /dev/null 2>&1; then
+        if es_curl "$PROD_ES_URL" > /dev/null 2>&1; then
             break
         fi
         sleep 2
     done
 
-    if ! curl -s "$PROD_ES_URL" > /dev/null 2>&1; then
+    if ! es_curl "$PROD_ES_URL" > /dev/null 2>&1; then
         echo "ERROR: Elasticsearch not available at $PROD_ES_URL"
         return 1
     fi
@@ -486,6 +497,7 @@ start_kibana() {
     fi
 
     nohup "$KIBANA_HOME/bin/kibana" \
+        --server.host="0.0.0.0" \
         --path.data="${IX1_BASE}/kibana/data" \
         ${KIBANA_EXTRA_ARGS} \
         > "${IX1_BASE}/kibana/logs/nohup.out" 2>&1 &
