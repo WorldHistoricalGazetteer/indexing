@@ -52,7 +52,7 @@ EOF
 # Helper: curl with elastic credentials when security is enabled
 es_curl() {
     local ELASTIC_PASS_FILE="${IX1_BASE}/es/config/elastic.password"
-    if [ -f "$ELASTIC_PASS_FILE" ] && [ -f "${SSL_CERT:-}" ]; then
+    if [ -f "$ELASTIC_PASS_FILE" ]; then
         curl -s -u "elastic:$(cat "$ELASTIC_PASS_FILE")" "$@"
     else
         curl -s "$@"
@@ -499,29 +499,22 @@ start_kibana() {
 
     mkdir -p "${IX1_BASE}/kibana/data" "${IX1_BASE}/kibana/logs"
 
-    # Build Kibana args - add SSL and auth when certs are available
-    KIBANA_EXTRA_ARGS=""
-    if [ -f "${SSL_CERT:-}" ] && [ -f "${SSL_KEY:-}" ]; then
-        echo "  TLS certs found - Kibana will serve HTTPS on port 5601"
+    # Build Kibana args
+    # TLS is terminated by the DO reverse proxy — Kibana serves plain HTTP.
+    # Auth to ES is needed when xpack.security is enabled.
+    KIBANA_EXTRA_ARGS="--server.publicBaseUrl=https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}"
 
-        # Read kibana_system password (set by es -setup-security)
-        KIBANA_PASS_FILE="${IX1_BASE}/es/config/kibana_system.password"
-        if [ ! -f "$KIBANA_PASS_FILE" ]; then
-            echo "ERROR: Kibana password not set. Run: es -setup-security"
-            return 1
-        fi
+    KIBANA_PASS_FILE="${IX1_BASE}/es/config/kibana_system.password"
+    ELASTIC_PASS_FILE="${IX1_BASE}/es/config/elastic.password"
+    if [ -f "$KIBANA_PASS_FILE" ] && [ -f "$ELASTIC_PASS_FILE" ]; then
+        echo "  ES security credentials found - Kibana will authenticate to ES"
         KIBANA_PASSWORD=$(cat "$KIBANA_PASS_FILE")
-
-        KIBANA_EXTRA_ARGS="
-            --server.ssl.enabled=true
-            --server.ssl.certificate=${SSL_CERT}
-            --server.ssl.key=${SSL_KEY}
-            --server.publicBaseUrl=https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}
+        KIBANA_EXTRA_ARGS="$KIBANA_EXTRA_ARGS
             --elasticsearch.username=kibana_system
             --elasticsearch.password=${KIBANA_PASSWORD}"
     else
-        echo "  No TLS certs - Kibana will serve HTTP (no authentication)"
-        echo "  Run certbot then es -setup-security to enable HTTPS + login"
+        echo "  No ES security credentials - Kibana connects without auth"
+        echo "  Run es -setup-security to enable authentication"
     fi
 
     nohup "$KIBANA_HOME/bin/kibana" \
@@ -532,11 +525,7 @@ start_kibana() {
 
     echo $! > "$KIBANA_PID"
     echo "Kibana started (PID: $(cat $KIBANA_PID))"
-    if [ -f "${SSL_CERT:-}" ]; then
-        echo "Access at: https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}:5601"
-    else
-        echo "Access at: http://${PROD_ES_HOST}:5601 (wait a few minutes)"
-    fi
+    echo "Access at: https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org} (via reverse proxy)"
 }
 
 stop_kibana() {
