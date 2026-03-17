@@ -394,7 +394,7 @@ start_prod_es() {
         -E path.repo="$SNAPSHOT_DIR" \
         -E discovery.type=single-node \
         -E xpack.security.enabled="${SECURITY_FLAG}" \
-        -E network.host="$PROD_ES_HOST" \
+        -E network.host="$PROD_ES_BIND_HOST" \
         -E http.port="$PROD_ES_PORT" \
         > "$PROD_LOG_DIR/nohup.out" 2>&1 &
 
