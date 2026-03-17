@@ -189,33 +189,20 @@ do_setup_security() {
     # Usage: es -setup-security
     #
     # One-time setup after certbot has issued certificates.
-    # Sets passwords for built-in ES users and saves the kibana_system
-    # password so start_kibana can use it.
-    #
-    # Requires ES to be running WITHOUT security (es -start before certbot).
-    # After this completes, restart ES to pick up security=true.
+    # Restarts ES with security enabled, then uses the
+    # elasticsearch-reset-password tool to set passwords for
+    # built-in users (no existing credentials required).
 
     echo "=========================================="
     echo "SECURITY SETUP"
     echo "=========================================="
     echo
 
-    # Check ES is running
-    if ! curl -s "${PROD_ES_URL}/_cluster/health" > /dev/null 2>&1; then
-        echo "ERROR: ES not running at ${PROD_ES_URL}"
-        echo "Start it first: es -start"
-        return 1
-    fi
-
     # Check certs exist
     if [ ! -f "${SSL_CERT:-}" ] || [ ! -f "${SSL_KEY:-}" ]; then
         echo "ERROR: TLS certificates not found."
         echo "  Expected: ${SSL_CERT}"
-        echo "  Run certbot first:"
-        echo "    certbot certonly --dns-digitalocean \\"
-        echo "      --dns-digitalocean-credentials ~/.do-credentials.ini \\"
-        echo "      -d kibana.whgazetteer.org \\"
-        echo "      -d index.whgazetteer.org"
+        echo "  Run certbot first."
         return 1
     fi
     echo "✓ TLS certificates found: ${SSL_CERT}"
@@ -226,18 +213,32 @@ do_setup_security() {
     KIBANA_PASS_FILE="${CONFIG_DIR}/kibana_system.password"
     ELASTIC_PASS_FILE="${CONFIG_DIR}/elastic.password"
 
-    # Generate a strong random password for each user
-    ELASTIC_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
-    KIBANA_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=')
+    # Step 1: Restart ES with security enabled (certs trigger this automatically)
+    echo "Restarting Elasticsearch with security enabled..."
+    stop_prod_es
+    sleep 3
+    start_prod_es
+    echo
 
-    echo "Setting 'elastic' superuser password..."
-    RESULT=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
-        "${PROD_ES_URL}/_security/user/elastic/_password" \
-        -H 'Content-Type: application/json' \
-        -d "{\"password\": \"${ELASTIC_PASSWORD}\"}")
-    if [ "$RESULT" != "200" ]; then
-        echo "ERROR: Failed to set elastic password (HTTP ${RESULT})"
-        echo "Is xpack.security already enabled? If so, provide existing credentials."
+    # Verify ES is responding (may need auth now)
+    if ! curl -s -o /dev/null -w '' "${PROD_ES_URL}/_cluster/health" 2>/dev/null && \
+       ! curl -s -o /dev/null -w '' -u "elastic:changeme" "${PROD_ES_URL}/_cluster/health" 2>/dev/null; then
+        # Even a 401 means ES is up — check for that
+        HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${PROD_ES_URL}/_cluster/health" 2>/dev/null)
+        if [ "$HTTP_CODE" != "401" ] && [ "$HTTP_CODE" != "200" ]; then
+            echo "ERROR: ES not responding at ${PROD_ES_URL} (HTTP ${HTTP_CODE})"
+            return 1
+        fi
+    fi
+    echo "✓ Elasticsearch is running with security enabled"
+    echo
+
+    # Step 2: Reset elastic password using the CLI tool (uses local keystore, no auth needed)
+    echo "Resetting 'elastic' superuser password..."
+    ELASTIC_PASSWORD=$("$ES_HOME/bin/elasticsearch-reset-password" -u elastic -b -s 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to reset elastic password:"
+        echo "$ELASTIC_PASSWORD"
         return 1
     fi
     echo "$ELASTIC_PASSWORD" > "$ELASTIC_PASS_FILE"
@@ -245,12 +246,14 @@ do_setup_security() {
     echo "✓ elastic password saved to ${ELASTIC_PASS_FILE}"
     echo
 
-    echo "Setting 'kibana_system' password..."
-    curl -s -o /dev/null -X POST \
-        "${PROD_ES_URL}/_security/user/kibana_system/_password" \
-        -u "elastic:${ELASTIC_PASSWORD}" \
-        -H 'Content-Type: application/json' \
-        -d "{\"password\": \"${KIBANA_PASSWORD}\"}"
+    # Step 3: Reset kibana_system password
+    echo "Resetting 'kibana_system' password..."
+    KIBANA_PASSWORD=$("$ES_HOME/bin/elasticsearch-reset-password" -u kibana_system -b -s 2>&1)
+    if [ $? -ne 0 ]; then
+        echo "ERROR: Failed to reset kibana_system password:"
+        echo "$KIBANA_PASSWORD"
+        return 1
+    fi
     echo "$KIBANA_PASSWORD" > "$KIBANA_PASS_FILE"
     chmod 600 "$KIBANA_PASS_FILE"
     echo "✓ kibana_system password saved to ${KIBANA_PASS_FILE}"
@@ -266,12 +269,12 @@ do_setup_security() {
     echo "kibana_system password: (saved to ${KIBANA_PASS_FILE})"
     echo
     echo "Next steps:"
-    echo "  1. Restart ES to enable security:  es -restart"
+    echo "  1. Start Kibana:  es -kibana-start"
     echo "  2. Log in to Kibana at:            https://${KIBANA_PUBLIC_HOST:-kibana.whgazetteer.org}:5601"
     echo "     Username: elastic"
     echo "     Password: ${ELASTIC_PASSWORD}"
     echo
-    echo "  Store the elastic password somewhere safe - it cannot be recovered."
+    echo "  Store the elastic password somewhere safe."
 }
 
 # =============================================================================
