@@ -46,6 +46,7 @@ import sys
 import time
 from pathlib import Path
 
+import httpx
 from elasticsearch import Elasticsearch
 
 # ---------------------------------------------------------------------------
@@ -87,32 +88,75 @@ def parse_args():
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# DO ES client (httpx-based, avoids v9 client header incompatibility)
 # ---------------------------------------------------------------------------
 
-def connect(url, user="elastic", password=None, compat_headers=False):
-    """Create an ES client. Disables SSL verification for self-signed certs."""
-    auth = (user, password) if password else None
-    kwargs = dict(basic_auth=auth, request_timeout=300)
-    if url.startswith("https"):
-        kwargs["verify_certs"] = False
-        kwargs["ssl_show_warn"] = False
-    if compat_headers:
-        # Force v8-compatible media-type headers so a v9 client can talk to ES 8.x
-        kwargs["headers"] = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-    return Elasticsearch(url, **kwargs)
+class DoEsClient:
+    """Lightweight ES client using httpx — sends plain JSON headers compatible with ES 8.x."""
+
+    def __init__(self, base_url, user, password):
+        self.base_url = base_url.rstrip("/")
+        self.auth = (user, password) if user and password else None
+        self.client = httpx.Client(verify=False, timeout=300, auth=self.auth)
+
+    def _get(self, path, params=None):
+        r = self.client.get(f"{self.base_url}{path}", params=params)
+        r.raise_for_status()
+        return r.json()
+
+    def _text(self, path, params=None):
+        r = self.client.get(f"{self.base_url}{path}", params=params)
+        r.raise_for_status()
+        return r.text
+
+    def info(self):
+        return self._get("/")
+
+    def get_index_info(self):
+        rows = self._get("/_cat/indices", params={"format": "json", "h": "index,docs.count,store.size,pri.store.size"})
+        result = {}
+        for row in rows:
+            name = row["index"]
+            if name.startswith("."):
+                continue
+            result[name] = {
+                "docs": int(row.get("docs.count") or 0),
+                "size": row.get("pri.store.size", "?"),
+            }
+        return result
+
+    def get_mapping(self, index):
+        return self._get(f"/{index}/_mapping")[index]["mappings"]
+
+    def get_settings(self, index):
+        raw = self._get(f"/{index}/_settings")[index]["settings"]["index"]
+        keep = ["number_of_shards", "number_of_replicas", "codec",
+                "sort.field", "sort.order", "max_result_window", "analysis"]
+        return {k: raw[k] for k in keep if k in raw}
+
+    def count(self, index):
+        return self._get(f"/{index}/_count")["count"]
+
+    def close(self):
+        self.client.close()
 
 
-def get_index_info(es):
-    """Return dict of {index_name: {docs, size_bytes, size_human}}."""
+# ---------------------------------------------------------------------------
+# Pitt ES client (standard elasticsearch-py v9)
+# ---------------------------------------------------------------------------
+
+def connect_pitt(url, password):
+    """Create an ES 9.x client for Pitt."""
+    return Elasticsearch(url, basic_auth=("elastic", password), request_timeout=300)
+
+
+def get_pitt_index_info(es):
+    """Return dict of {index_name: {docs, size}}."""
     cat = es.cat.indices(format="json", h="index,docs.count,store.size,pri.store.size")
     result = {}
     for row in cat:
         name = row["index"]
-        if name.startswith("."):  # skip system indexes
+        if name.startswith("."):
             continue
         result[name] = {
             "docs": int(row.get("docs.count") or 0),
@@ -120,6 +164,10 @@ def get_index_info(es):
         }
     return result
 
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
 def format_table(indexes: dict) -> str:
     """Format index info as a readable table."""
@@ -129,27 +177,6 @@ def format_table(indexes: dict) -> str:
         info = indexes[name]
         lines.append(f"  {name:<40} {info['docs']:>12,}  {info['size']:>10}")
     return "\n".join(lines)
-
-
-def get_index_mapping(es, index):
-    """Get the full mapping for an index."""
-    return es.indices.get_mapping(index=index)[index]["mappings"]
-
-
-def get_index_settings(es, index):
-    """Get the user-defined settings for an index (strip ES-managed ones)."""
-    raw = es.indices.get_settings(index=index)[index]["settings"]["index"]
-    # Keep only the settings we care about for creating a new index
-    keep = [
-        "number_of_shards", "number_of_replicas", "codec",
-        "sort.field", "sort.order", "max_result_window",
-        "analysis",
-    ]
-    cleaned = {}
-    for k in keep:
-        if k in raw:
-            cleaned[k] = raw[k]
-    return cleaned
 
 
 def wait_for_task(es, task_id, index_name, poll_interval=10):
@@ -167,7 +194,6 @@ def wait_for_task(es, task_id, index_name, poll_interval=10):
             if task.get("error"):
                 print(f"  ERROR: {json.dumps(task['error'], indent=2)}")
                 return False
-            # Check for failures in response
             resp = task.get("response", {})
             failures = resp.get("failures", [])
             if failures:
@@ -179,7 +205,7 @@ def wait_for_task(es, task_id, index_name, poll_interval=10):
 
 
 # ---------------------------------------------------------------------------
-# Main
+# Clone logic
 # ---------------------------------------------------------------------------
 
 def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices="auto"):
@@ -190,8 +216,8 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
 
     # 1. Get mapping and settings from DO
     print(f"  Fetching mapping from DO...")
-    mapping = get_index_mapping(do_es, index_name)
-    settings = get_index_settings(do_es, index_name)
+    mapping = do_es.get_mapping(index_name)
+    settings = do_es.get_settings(index_name)
 
     # Use relaxed settings during bulk indexing
     settings["refresh_interval"] = "-1"
@@ -201,7 +227,6 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
     if pitt_es.indices.exists(index=index_name):
         print(f"  Deleting existing index on Pitt...")
         pitt_es.indices.delete(index=index_name, timeout="60s")
-        # Wait for deletion
         for _ in range(30):
             if not pitt_es.indices.exists(index=index_name):
                 break
@@ -211,17 +236,12 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
     print(f"  Creating index on Pitt...")
     pitt_es.indices.create(
         index=index_name,
-        body={
-            "settings": settings,
-            "mappings": mapping,
-        },
+        body={"settings": settings, "mappings": mapping},
     )
 
     # 4. Reindex from remote
     print(f"  Starting reindex from DO...")
-    remote = {
-        "host": do_url,
-    }
+    remote = {"host": do_url}
     if do_user:
         remote["username"] = do_user
     if do_password:
@@ -229,13 +249,8 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
 
     result = pitt_es.reindex(
         body={
-            "source": {
-                "remote": remote,
-                "index": index_name,
-            },
-            "dest": {
-                "index": index_name,
-            },
+            "source": {"remote": remote, "index": index_name},
+            "dest": {"index": index_name},
         },
         slices=slices,
         wait_for_completion=False,
@@ -251,22 +266,21 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
     # 6. Refresh and verify
     if success:
         pitt_es.indices.refresh(index=index_name)
-        # Restore normal settings
         pitt_es.indices.put_settings(
             index=index_name,
-            body={
-                "index": {
-                    "refresh_interval": "1s",
-                },
-            },
+            body={"index": {"refresh_interval": "1s"}},
         )
-        do_count = do_es.count(index=index_name)["count"]
+        do_count = do_es.count(index_name)
         pitt_count = pitt_es.count(index=index_name)["count"]
         match = "✓" if do_count == pitt_count else "✗ MISMATCH"
         print(f"  Doc counts — DO: {do_count:,}  Pitt: {pitt_count:,}  {match}")
 
     return success
 
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
     args = parse_args()
@@ -279,9 +293,9 @@ def main():
         print("ERROR: Pitt ES password not found. Set PITT_ES_PASSWORD or check password file.")
         sys.exit(1)
 
-    # Connect to DO
+    # Connect to DO (httpx-based client — no v9 header issues)
     print("Connecting to DO ES:", args.do_url)
-    do_es = connect(args.do_url, args.do_user, args.do_password, compat_headers=True)
+    do_es = DoEsClient(args.do_url, args.do_user, args.do_password)
     try:
         do_info = do_es.info()
         print(f"  Version: {do_info['version']['number']}, cluster: {do_info['cluster_name']}")
@@ -295,7 +309,7 @@ def main():
     pitt_indexes = {}
     if args.pitt_password:
         print("\nConnecting to Pitt ES:", args.pitt_url)
-        pitt_es = connect(args.pitt_url, "elastic", args.pitt_password)
+        pitt_es = connect_pitt(args.pitt_url, args.pitt_password)
         try:
             pitt_info = pitt_es.info()
             print(f"  Version: {pitt_info['version']['number']}, cluster: {pitt_info['cluster_name']}")
@@ -309,9 +323,9 @@ def main():
         print("\n(Skipping Pitt ES connection — dry-run mode)")
 
     # Discover indexes
-    do_indexes = get_index_info(do_es)
+    do_indexes = do_es.get_index_info()
     if pitt_es:
-        pitt_indexes = get_index_info(pitt_es)
+        pitt_indexes = get_pitt_index_info(pitt_es)
 
     print(f"\n--- DO indexes ({len(do_indexes)}) ---")
     print(format_table(do_indexes))
@@ -360,6 +374,7 @@ def main():
 
     if args.dry_run:
         print("\n(dry run — no changes made)")
+        do_es.close()
         sys.exit(0)
 
     if not args.yes:
@@ -386,6 +401,7 @@ def main():
             results[name] = f"ERROR: {e}"
 
     elapsed = time.time() - t0
+    do_es.close()
 
     # Summary
     print(f"\n{'='*60}")
