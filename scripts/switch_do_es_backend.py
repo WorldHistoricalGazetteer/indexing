@@ -867,6 +867,169 @@ def do_switch_to_local(args):
 
 
 # ---------------------------------------------------------------------------
+# DO bare-metal ES service management
+# ---------------------------------------------------------------------------
+
+def do_stop_do_es(args):
+    """Stop the bare-metal ES service on DO and disable auto-start."""
+    print("=" * 60)
+    print("STOP DO ELASTICSEARCH SERVICE")
+    print("=" * 60)
+
+    # Check current state
+    print("\n1. Checking current state...")
+    result = ssh_run(
+        "sudo systemctl is-active elasticsearch 2>/dev/null",
+        check=False,
+    )
+    is_active = result.stdout.strip() == "active"
+    result = ssh_run(
+        "sudo systemctl is-enabled elasticsearch 2>/dev/null",
+        check=False,
+    )
+    is_enabled = result.stdout.strip() == "enabled"
+
+    if not is_active:
+        print("  ℹ  ES service is already stopped.")
+        if is_enabled:
+            print("  ⚠  But it is still enabled (will start on reboot).")
+            if args.dry_run:
+                print("\n(dry run — no changes made)")
+                return
+            if not args.yes:
+                reply = input("  Disable auto-start? [y/N] ").strip().lower()
+                if reply != "y":
+                    return
+            ssh_run("sudo systemctl disable elasticsearch")
+            print("  ✓ Auto-start disabled")
+        else:
+            print("  Nothing to do.")
+        return
+
+    # Show what ES is using
+    result = ssh_run(
+        "ps -o rss= -p $(cat /var/run/elasticsearch/elasticsearch.pid 2>/dev/null) 2>/dev/null "
+        "|| echo unknown",
+        check=False,
+    )
+    rss = result.stdout.strip()
+    if rss and rss != "unknown":
+        rss_mb = int(rss) // 1024
+        print(f"  ES is running (RSS: ~{rss_mb} MB)")
+    else:
+        print("  ES is running")
+    print(f"  Enabled on boot: {is_enabled}")
+
+    print(f"\n2. Plan:")
+    print(f"  • Stop elasticsearch.service")
+    print(f"  • Disable auto-start on reboot")
+    print(f"  • Data at /var/lib/elasticsearch stays intact")
+    print(f"  • To restart later: es -do-start-es")
+
+    if args.dry_run:
+        print("\n(dry run — no changes made)")
+        return
+
+    if not args.yes:
+        reply = input("\nStop DO ES? [y/N] ").strip().lower()
+        if reply != "y":
+            print("Aborted.")
+            return
+
+    # Stop and disable
+    print("\n3. Stopping ES...")
+    ssh_run("sudo systemctl stop elasticsearch", timeout=120)
+    print("  ✓ Service stopped")
+
+    ssh_run("sudo systemctl disable elasticsearch", timeout=15)
+    print("  ✓ Auto-start disabled")
+
+    # Verify
+    result = ssh_run(
+        "sudo systemctl is-active elasticsearch 2>/dev/null",
+        check=False,
+    )
+    if result.stdout.strip() != "active":
+        print("  ✓ Confirmed: ES is not running")
+    else:
+        print("  ⚠  ES may still be shutting down")
+
+    print("\n" + "=" * 60)
+    print("DO ES STOPPED")
+    print("=" * 60)
+    print("\n  To restart:  es -do-start-es")
+    print("  Data is preserved at /var/lib/elasticsearch")
+
+
+def do_start_do_es(args):
+    """Start the bare-metal ES service on DO and re-enable auto-start."""
+    print("=" * 60)
+    print("START DO ELASTICSEARCH SERVICE")
+    print("=" * 60)
+
+    # Check current state
+    print("\n1. Checking current state...")
+    result = ssh_run(
+        "sudo systemctl is-active elasticsearch 2>/dev/null",
+        check=False,
+    )
+    is_active = result.stdout.strip() == "active"
+
+    if is_active:
+        print("  ℹ  ES is already running.")
+        try:
+            settings_text = ssh_read_file(DO_SETTINGS_PATH)
+        except Exception:
+            settings_text = None
+        check_do_local_es(settings_text)
+        return
+
+    print("  ES is stopped.")
+
+    if args.dry_run:
+        print("\n  Would run: sudo systemctl enable elasticsearch")
+        print("  Would run: sudo systemctl start elasticsearch")
+        print("\n(dry run — no changes made)")
+        return
+
+    if not args.yes:
+        reply = input("\nStart DO ES? [y/N] ").strip().lower()
+        if reply != "y":
+            print("Aborted.")
+            return
+
+    # Enable and start
+    print("\n2. Starting ES...")
+    ssh_run("sudo systemctl enable elasticsearch", timeout=15)
+    print("  ✓ Auto-start enabled")
+
+    ssh_run("sudo systemctl start elasticsearch", timeout=120)
+    print("  ✓ Service started")
+
+    # Wait for ES to become ready
+    print("  Waiting for ES to be ready...", end="", flush=True)
+    for i in range(30):
+        time.sleep(2)
+        result = ssh_run(
+            "curl -sk -o /dev/null -w '%{http_code}' "
+            "'https://144.126.204.70:9200/_cluster/health' "
+            "--connect-timeout 3 --max-time 5",
+            timeout=15, check=False,
+        )
+        code = result.stdout.strip().strip("'")
+        if code in ("200", "401"):
+            print(f" ready! (HTTP {code})")
+            break
+        print(".", end="", flush=True)
+    else:
+        print(" timeout (ES may still be starting)")
+
+    print("\n" + "=" * 60)
+    print("DO ES STARTED")
+    print("=" * 60)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -881,7 +1044,8 @@ def parse_args():
               %(prog)s --switch-to local             # switch back to local ES
               %(prog)s --revert                      # alias for --switch-to local
               %(prog)s --switch-to pitt --dry-run    # show plan without changes
-              %(prog)s --switch-to pitt --no-restart # change settings only
+              %(prog)s --stop-do-es                  # stop DO bare-metal ES
+              %(prog)s --start-do-es                 # start DO bare-metal ES
         """),
     )
 
@@ -897,6 +1061,14 @@ def parse_args():
     action.add_argument(
         "--revert", action="store_true",
         help="Revert to local ES (alias for --switch-to local)",
+    )
+    action.add_argument(
+        "--stop-do-es", action="store_true",
+        help="Stop the bare-metal ES service on DO (data preserved)",
+    )
+    action.add_argument(
+        "--start-do-es", action="store_true",
+        help="Start the bare-metal ES service on DO",
     )
 
     p.add_argument(
@@ -941,6 +1113,10 @@ def main():
         do_switch_to_local(args)
     elif args.switch_to == "pitt":
         do_switch_to_pitt(args)
+    elif args.stop_do_es:
+        do_stop_do_es(args)
+    elif args.start_do_es:
+        do_start_do_es(args)
 
 
 if __name__ == "__main__":

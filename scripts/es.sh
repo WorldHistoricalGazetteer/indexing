@@ -2556,6 +2556,16 @@ case "$1" in
         cd "$REPO_DIR"
         python3 scripts/switch_do_es_backend.py --revert "$@"
         ;;
+    -do-stop-es)
+        shift
+        cd "$REPO_DIR"
+        python3 scripts/switch_do_es_backend.py --stop-do-es "$@"
+        ;;
+    -do-start-es)
+        shift
+        cd "$REPO_DIR"
+        python3 scripts/switch_do_es_backend.py --start-do-es "$@"
+        ;;
     -do-clone)
         shift
         cd "$REPO_DIR"
@@ -2704,6 +2714,8 @@ case "$1" in
         echo "  -do-switch pitt     Switch DO → Pitt ES (interactive)"
         echo "  -do-switch local    Switch DO → local ES (revert)"
         echo "  -do-revert          Alias for -do-switch local"
+        echo "  -do-stop-es         Stop bare-metal ES on DO (data preserved)"
+        echo "  -do-start-es        Start bare-metal ES on DO"
         echo "  -do-clone [OPTS]    Clone DO indexes to Pitt (see clone_do_indexes.py)"
         echo
         echo "  Examples:"
