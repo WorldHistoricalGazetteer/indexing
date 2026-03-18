@@ -252,7 +252,6 @@ def clone_index(do_es, pitt_es, index_name, do_url, do_user, do_password, slices
             "source": {"remote": remote, "index": index_name},
             "dest": {"index": index_name},
         },
-        slices=slices,
         wait_for_completion=False,
         timeout="24h",
     )
