@@ -260,19 +260,20 @@ def check_do_to_pitt(pitt_password):
 
 
 def check_do_local_es():
-    """From DO, verify that local ES is reachable."""
-    print("  Checking DO local ES (localhost:9200)...")
-    cmd = (
-        "curl -s -o /dev/null -w '%{http_code}' "
-        "'http://localhost:9200/_cluster/health' "
-        "--connect-timeout 5 --max-time 10"
-    )
-    result = ssh_run(cmd, timeout=20, check=False)
-    code = result.stdout.strip().strip("'")
-    if code in ("200", "401"):
-        print(f"    ✓ Local ES reachable (HTTP {code})")
-        return True
-    print(f"    ✗ Local ES unreachable (HTTP {code})")
+    """From DO, verify that local ES is reachable (localhost or configured ES_HOST)."""
+    print("  Checking DO local ES...")
+    for host in ["localhost:9200", "144.126.204.70:9200"]:
+        cmd = (
+            f"curl -s -o /dev/null -w '%{{http_code}}' "
+            f"'http://{host}/_cluster/health' "
+            "--connect-timeout 5 --max-time 10"
+        )
+        result = ssh_run(cmd, timeout=20, check=False)
+        code = result.stdout.strip().strip("'")
+        if code in ("200", "401"):
+            print(f"    ✓ Local ES reachable at {host} (HTTP {code})")
+            return True
+    print(f"    ✗ Local ES unreachable")
     return False
 
 
@@ -338,7 +339,13 @@ BLOCK_END   = "# --- End ES Backend Switch ---"
 
 
 def build_pitt_block(pitt_password, original_password):
-    """Python block to inject into local_settings.py for Pitt ES."""
+    """Python block to inject into local_settings.py for Pitt ES.
+
+    Overrides ES_HOST, ES_PORT, ELASTIC_PASSWORD and reconstructs
+    ES_CONN as an ``Elasticsearch(...)`` client pointing at the Pitt
+    gateway — matching the constructor style used in the original
+    local_settings.py.
+    """
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return textwrap.dedent(f"""\
         {BLOCK_START}
@@ -348,7 +355,14 @@ def build_pitt_block(pitt_password, original_password):
         #         or: es -do-revert
         _DO_ELASTIC_PASSWORD = '{original_password}'  # original DO password (for revert)
         ELASTIC_PASSWORD = '{pitt_password}'
-        ES_CONN = 'http://{PITT_ES_HOST}:{PITT_ES_PORT}'
+        ES_HOST = '{PITT_ES_HOST}'
+        ES_PORT = {PITT_ES_PORT}
+        from elasticsearch import Elasticsearch as _Es
+        ES_CONN = _Es(
+            [f'http://{{ES_HOST}}:{{ES_PORT}}'],
+            basic_auth=('elastic', ELASTIC_PASSWORD),
+            request_timeout=30,
+        )
         {BLOCK_END}
     """)
 
@@ -373,21 +387,56 @@ def remove_managed_block(text):
     return pat.sub("", text)
 
 
+# Names whose top-level assignments we comment out
+_COMMENT_VARS = {"ELASTIC_PASSWORD", "ES_CONN", "ES_HOST", "ES_PORT", "ELASTICSEARCH_URL"}
+
+
 def comment_out_originals(text):
-    """Comment out bare ES setting assignments, returns (new_text, [commented])."""
+    """Comment out ES setting assignments, including multi-line ones.
+
+    Handles single-line assignments like ``ES_HOST = '...'`` as well as
+    multi-line constructors like::
+
+        ES_CONN = Elasticsearch(
+            ...
+        )
+
+    Returns (new_text, [first_line_of_each_commented_block]).
+    """
     commented = []
     out = []
-    for line in text.split("\n"):
-        stripped = line.strip()
-        if re.match(
-            r"^(ELASTIC_PASSWORD|ES_CONN|ES_HOST|ELASTICSEARCH_URL)\s*=",
-            stripped,
-        ):
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        stripped = lines[i].strip()
+        # Check if this line starts a relevant assignment
+        m = re.match(r"^(\w+)\s*=", stripped)
+        if m and m.group(1) in _COMMENT_VARS:
             commented.append(stripped)
-            out.append(f"# [es-switch-commented] {line}")
+            # Determine whether this is a multi-line statement by checking
+            # if parens/brackets are balanced on this line.
+            depth = _paren_depth(lines[i])
+            out.append(f"# [es-switch-commented] {lines[i]}")
+            # Keep commenting continuation lines until parens are balanced
+            while depth > 0 and i + 1 < len(lines):
+                i += 1
+                depth += _paren_depth(lines[i])
+                out.append(f"# [es-switch-commented] {lines[i]}")
         else:
-            out.append(line)
+            out.append(lines[i])
+        i += 1
     return "\n".join(out), commented
+
+
+def _paren_depth(line):
+    """Net bracket/paren depth change for *line* (ignoring strings)."""
+    depth = 0
+    for ch in line:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+    return depth
 
 
 def uncomment_originals(text):
