@@ -259,21 +259,51 @@ def check_do_to_pitt(pitt_password):
     return False
 
 
-def check_do_local_es():
-    """From DO, verify that local ES is reachable (localhost or configured ES_HOST)."""
-    print("  Checking DO local ES...")
-    for host in ["localhost:9200", "144.126.204.70:9200"]:
-        cmd = (
-            f"curl -s -o /dev/null -w '%{{http_code}}' "
-            f"'http://{host}/_cluster/health' "
-            "--connect-timeout 5 --max-time 10"
-        )
-        result = ssh_run(cmd, timeout=20, check=False)
-        code = result.stdout.strip().strip("'")
-        if code in ("200", "401"):
-            print(f"    ✓ Local ES reachable at {host} (HTTP {code})")
-            return True
-    print(f"    ✗ Local ES unreachable")
+def check_do_local_es(settings_text=None):
+    """From DO, verify that the bare-metal ES on DO is reachable.
+
+    ES runs directly on the DO host (not in Docker).  The Docker
+    containers reach it via ``ES_HOST`` (the host's external IP).
+    We try the configured ES_HOST first, then localhost as a fallback,
+    with and without basic-auth.
+    """
+    print("  Checking DO local ES (bare-metal)...")
+
+    # Discover ES_HOST and password from settings if available
+    es_host = "144.126.204.70"  # known default
+    es_port = "9200"
+    do_password = None
+    if settings_text:
+        m = re.search(r"^ES_HOST\s*=\s*['\"](.+?)['\"]", settings_text, re.MULTILINE)
+        if m:
+            es_host = m.group(1)
+        m = re.search(r"^ES_PORT\s*=\s*['\"]?(\d+)", settings_text, re.MULTILINE)
+        if m:
+            es_port = m.group(1)
+        do_password = extract_password(settings_text)
+
+    # Build list of (host:port, auth_flag) attempts
+    targets = [f"{es_host}:{es_port}"]
+    if es_host != "localhost":
+        targets.append(f"localhost:{es_port}")
+
+    for host in targets:
+        for auth in ([f"-u 'elastic:{do_password}'"] if do_password else []) + [""]:
+            cmd = (
+                f"curl -s -o /dev/null -w '%{{http_code}}' {auth} "
+                f"'http://{host}/_cluster/health' "
+                "--connect-timeout 5 --max-time 10"
+            )
+            result = ssh_run(cmd, timeout=20, check=False)
+            code = result.stdout.strip().strip("'")
+            if code == "200":
+                print(f"    ✓ Local ES reachable at {host} (HTTP 200)")
+                return True
+            if code == "401":
+                # ES is there but needs auth — still counts as reachable
+                print(f"    ✓ Local ES reachable at {host} (HTTP 401, auth required)")
+                return True
+    print("    ✗ Local ES unreachable")
     return False
 
 
@@ -500,6 +530,7 @@ def do_check(args):
 
     # Read settings files
     print("\n--- Settings discovery ---")
+    ls_text = None
     files_to_check = {
         "local_settings.py": DO_SETTINGS_PATH,
         "env_template.py":   DO_ENV_TEMPLATE,
@@ -508,19 +539,18 @@ def do_check(args):
     for label, path in files_to_check.items():
         try:
             text = ssh_read_file(path)
+            if label == "local_settings.py":
+                ls_text = text
             print_discovered(label, text)
         except Exception:
             print(f"  {label}: (not found or unreadable)")
 
     # Check for managed block in local_settings.py
-    try:
-        ls_text = ssh_read_file(DO_SETTINGS_PATH)
+    if ls_text is not None:
         if BLOCK_START in ls_text:
             print("\n  ℹ  Managed block present (settings were modified by this script)")
         else:
             print("\n  ℹ  No managed block in local_settings.py")
-    except Exception:
-        pass
 
     # Switch state
     print("\n--- Switch state ---")
@@ -534,7 +564,7 @@ def do_check(args):
 
     # Connectivity
     print("\n--- Connectivity ---")
-    check_do_local_es()
+    check_do_local_es(ls_text)
 
     pitt_pw = get_pitt_password()
     if pitt_pw:
@@ -596,7 +626,7 @@ def do_switch_to_pitt(args):
     # 2. Pre-flight checks
     print("\n2. Pre-flight checks...")
     pitt_ok = check_do_to_pitt(pitt_password)
-    local_ok = check_do_local_es()
+    local_ok = check_do_local_es(settings_text)
 
     if not pitt_ok:
         print("\n  ✗ Pitt ES is not reachable from DO. Cannot proceed.")
@@ -796,7 +826,11 @@ def do_switch_to_local(args):
 
     # 5. Post-revert checks
     print("\n5. Post-revert verification...")
-    check_do_local_es()
+    try:
+        restored_text = ssh_read_file(DO_SETTINGS_PATH)
+    except Exception:
+        restored_text = None
+    check_do_local_es(restored_text)
     check_do_django_health()
 
     print("\n" + "=" * 60)
