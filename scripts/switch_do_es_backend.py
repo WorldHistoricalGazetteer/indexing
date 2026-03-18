@@ -395,10 +395,13 @@ BLOCK_END   = "# --- End ES Backend Switch ---"
 def build_pitt_block(pitt_password, original_password):
     """Python block to inject into local_settings.py for Pitt ES.
 
-    Overrides ES_HOST, ES_PORT, ELASTIC_PASSWORD and reconstructs
-    ES_CONN as an ``Elasticsearch(...)`` client pointing at the Pitt
-    gateway — matching the constructor style used in the original
-    local_settings.py.
+    Overrides ES_HOST, ES_PORT, ES_SCHEME, ELASTIC_PASSWORD and
+    reconstructs ES_CONN using the same ``Elasticsearch(...)`` constructor
+    style as the original local_settings.py (``elasticsearch8`` package,
+    ``http_auth=``, host-dict format).
+
+    The Pitt gateway is plain HTTP (no TLS), so we set ES_SCHEME='http'
+    and omit ``ssl_context``.
     """
     ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     return textwrap.dedent(f"""\
@@ -411,11 +414,10 @@ def build_pitt_block(pitt_password, original_password):
         ELASTIC_PASSWORD = '{pitt_password}'
         ES_HOST = '{PITT_ES_HOST}'
         ES_PORT = {PITT_ES_PORT}
-        from elasticsearch import Elasticsearch as _Es
-        ES_CONN = _Es(
-            [f'http://{{ES_HOST}}:{{ES_PORT}}'],
-            basic_auth=('elastic', ELASTIC_PASSWORD),
-            request_timeout=30,
+        ES_SCHEME = 'http'
+        ES_CONN = Elasticsearch(
+            hosts=[{{'host': ES_HOST, 'port': ES_PORT, 'scheme': ES_SCHEME}}],
+            http_auth=('elastic', ELASTIC_PASSWORD),
         )
         {BLOCK_END}
     """)
@@ -442,7 +444,7 @@ def remove_managed_block(text):
 
 
 # Names whose top-level assignments we comment out
-_COMMENT_VARS = {"ELASTIC_PASSWORD", "ES_CONN", "ES_HOST", "ES_PORT", "ELASTICSEARCH_URL"}
+_COMMENT_VARS = {"ELASTIC_PASSWORD", "ES_CONN", "ES_HOST", "ES_PORT", "ES_SCHEME", "ELASTICSEARCH_URL"}
 
 
 def comment_out_originals(text):
