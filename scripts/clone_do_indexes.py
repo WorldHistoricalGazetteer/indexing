@@ -90,13 +90,19 @@ def parse_args():
 # Helpers
 # ---------------------------------------------------------------------------
 
-def connect(url, user="elastic", password=None):
+def connect(url, user="elastic", password=None, compat_headers=False):
     """Create an ES client. Disables SSL verification for self-signed certs."""
     auth = (user, password) if password else None
     kwargs = dict(basic_auth=auth, request_timeout=300)
     if url.startswith("https"):
         kwargs["verify_certs"] = False
         kwargs["ssl_show_warn"] = False
+    if compat_headers:
+        # Force v8-compatible media-type headers so a v9 client can talk to ES 8.x
+        kwargs["headers"] = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
     return Elasticsearch(url, **kwargs)
 
 
@@ -269,13 +275,13 @@ def main():
         print("ERROR: DO ES password required. Set DO_ES_PASSWORD or use --do-password.")
         sys.exit(1)
 
-    if not args.pitt_password:
+    if not args.dry_run and not args.pitt_password:
         print("ERROR: Pitt ES password not found. Set PITT_ES_PASSWORD or check password file.")
         sys.exit(1)
 
-    # Connect
+    # Connect to DO
     print("Connecting to DO ES:", args.do_url)
-    do_es = connect(args.do_url, args.do_user, args.do_password)
+    do_es = connect(args.do_url, args.do_user, args.do_password, compat_headers=True)
     try:
         do_info = do_es.info()
         print(f"  Version: {do_info['version']['number']}, cluster: {do_info['cluster_name']}")
@@ -284,24 +290,35 @@ def main():
         print("  Is the SSH tunnel running?  ssh -L 19200:localhost:9200 whg -N &")
         sys.exit(1)
 
-    print("\nConnecting to Pitt ES:", args.pitt_url)
-    pitt_es = connect(args.pitt_url, "elastic", args.pitt_password)
-    try:
-        pitt_info = pitt_es.info()
-        print(f"  Version: {pitt_info['version']['number']}, cluster: {pitt_info['cluster_name']}")
-    except Exception as e:
-        print(f"  ERROR connecting to Pitt ES: {e}")
-        sys.exit(1)
+    # Connect to Pitt (skip if dry-run and no password)
+    pitt_es = None
+    pitt_indexes = {}
+    if args.pitt_password:
+        print("\nConnecting to Pitt ES:", args.pitt_url)
+        pitt_es = connect(args.pitt_url, "elastic", args.pitt_password)
+        try:
+            pitt_info = pitt_es.info()
+            print(f"  Version: {pitt_info['version']['number']}, cluster: {pitt_info['cluster_name']}")
+        except Exception as e:
+            if not args.dry_run:
+                print(f"  ERROR connecting to Pitt ES: {e}")
+                sys.exit(1)
+            print(f"  (Pitt ES not reachable — dry-run continues without Pitt inventory)")
+            pitt_es = None
+    elif args.dry_run:
+        print("\n(Skipping Pitt ES connection — dry-run mode)")
 
     # Discover indexes
     do_indexes = get_index_info(do_es)
-    pitt_indexes = get_index_info(pitt_es)
+    if pitt_es:
+        pitt_indexes = get_index_info(pitt_es)
 
     print(f"\n--- DO indexes ({len(do_indexes)}) ---")
     print(format_table(do_indexes))
 
-    print(f"\n--- Pitt indexes ({len(pitt_indexes)}) ---")
-    print(format_table(pitt_indexes))
+    if pitt_indexes:
+        print(f"\n--- Pitt indexes ({len(pitt_indexes)}) ---")
+        print(format_table(pitt_indexes))
 
     # Determine which indexes to clone
     if args.indexes:
