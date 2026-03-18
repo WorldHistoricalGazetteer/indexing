@@ -235,6 +235,16 @@ def print_discovered(label, text):
     return found
 
 
+def _mask_passwords(text):
+    """Redact password values in a string for safe display."""
+    # Matches: PASSWORD = 'xxx' or PASSWORD = "xxx" or PASSWORD = xxx
+    return re.sub(
+        r"""((?:PASSWORD|_PASSWORD)\s*=\s*)(['"]?)(.{3})([^'"\s]+)(\2)""",
+        r"\1\2\3***\5",
+        text,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Connectivity checks
 # ---------------------------------------------------------------------------
@@ -664,11 +674,13 @@ def do_switch_to_pitt(args):
         new_text, commented = apply_pitt_backend(
             settings_text, pitt_password, original_password
         )
-        print(f"\n  (dry run — would comment out: {commented})")
+        # Mask passwords in the summary
+        masked = [_mask_passwords(c) for c in commented]
+        print(f"\n  (dry run — would comment out: {masked})")
         print(f"\n  Managed block that would be added:")
         block = build_pitt_block(pitt_password, original_password)
         for line in block.split("\n"):
-            print(f"    {line}")
+            print(f"    {_mask_passwords(line)}")
         print(f"\n  Restart command that would run:")
         print(f"    {RESTART_WEB_CMD}")
         print("\n(dry run — no changes made)")
