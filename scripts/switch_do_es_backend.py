@@ -264,8 +264,8 @@ def check_do_local_es(settings_text=None):
 
     ES runs directly on the DO host (not in Docker).  The Docker
     containers reach it via ``ES_HOST`` (the host's external IP).
-    We try the configured ES_HOST first, then localhost as a fallback,
-    with and without basic-auth.
+    ES 8.x with security enabled defaults to HTTPS, so we try both
+    schemes.  ``-k`` is used to accept self-signed certificates.
     """
     print("  Checking DO local ES (bare-metal)...")
 
@@ -282,28 +282,42 @@ def check_do_local_es(settings_text=None):
             es_port = m.group(1)
         do_password = extract_password(settings_text)
 
-    # Build list of (host:port, auth_flag) attempts
-    targets = [f"{es_host}:{es_port}"]
-    if es_host != "localhost":
-        targets.append(f"localhost:{es_port}")
+    # Build list of (scheme, host:port) attempts — try HTTPS first
+    # (ES 8.x with security enabled defaults to HTTPS)
+    targets = []
+    for scheme in ["https", "http"]:
+        targets.append((scheme, f"{es_host}:{es_port}"))
+        if es_host != "localhost":
+            targets.append((scheme, f"localhost:{es_port}"))
 
-    for host in targets:
-        for auth in ([f"-u 'elastic:{do_password}'"] if do_password else []) + [""]:
+    auth_flags = []
+    if do_password:
+        auth_flags.append(f"-u 'elastic:{do_password}'")
+    auth_flags.append("")  # also try without auth
+
+    attempts = []  # collect (label, http_code) for diagnostics
+    for scheme, host in targets:
+        for auth in auth_flags:
+            label = f"{scheme}://{host}" + (" +auth" if auth else "")
             cmd = (
-                f"curl -s -o /dev/null -w '%{{http_code}}' {auth} "
-                f"'http://{host}/_cluster/health' "
-                "--connect-timeout 5 --max-time 10"
+                f"curl -sk -o /dev/null -w '%{{http_code}}' {auth} "
+                f"'{scheme}://{host}/_cluster/health' "
+                "--connect-timeout 3 --max-time 8"
             )
             result = ssh_run(cmd, timeout=20, check=False)
             code = result.stdout.strip().strip("'")
+            attempts.append((label, code))
             if code == "200":
-                print(f"    ✓ Local ES reachable at {host} (HTTP 200)")
+                print(f"    ✓ Local ES reachable at {scheme}://{host} (HTTP 200)")
                 return True
             if code == "401":
-                # ES is there but needs auth — still counts as reachable
-                print(f"    ✓ Local ES reachable at {host} (HTTP 401, auth required)")
+                print(f"    ✓ Local ES reachable at {scheme}://{host} (HTTP 401, needs auth)")
                 return True
-    print("    ✗ Local ES unreachable")
+
+    # All probes failed — print diagnostics
+    print("    ✗ Local ES unreachable. Probe results:")
+    for label, code in attempts:
+        print(f"        {label} → HTTP {code}")
     return False
 
 
