@@ -34,14 +34,21 @@ Usage:
 Environment variables (or pass as CLI args):
   DO_ES_URL          DO ES URL as seen from Pitt (default: https://localhost:19200)
   DO_ES_USER         DO ES username (default: elastic)
-  DO_ES_PASSWORD     DO ES password (required)
+  DO_ES_PASSWORD     DO ES password (auto-read from DO server via SSH if unset)
   PITT_ES_URL        Pitt ES URL (default: http://localhost:9201)
   PITT_ES_PASSWORD   Pitt ES password (reads from /ix1/ishi/es/config/elastic.password if unset)
+
+Password auto-detection:
+  - DO_ES_PASSWORD: if not set, the script SSHes to the DO server (alias "whg")
+    and parses ELASTIC_PASSWORD from whg/local_settings.py.
+  - PITT_ES_PASSWORD: if not set, reads /ix1/ishi/es/config/elastic.password.
 """
 
 import argparse
 import json
 import os
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -52,6 +59,32 @@ from elasticsearch import Elasticsearch
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
+# Path to Django local_settings.py on the DO server (contains ELASTIC_PASSWORD)
+DO_SETTINGS_PATH = "/home/whgadmin/sites/whgazetteer-org/whg/local_settings.py"
+# SSH alias for the DO server (must be configured in ~/.ssh/config)
+DO_SSH_HOST = "whg"
+
+
+def get_do_password():
+    """Read DO ES password from env or by SSHing to the DO server and parsing local_settings.py."""
+    pw = os.getenv("DO_ES_PASSWORD")
+    if pw:
+        return pw
+    # Try to extract ELASTIC_PASSWORD from the DO Django settings via SSH
+    try:
+        result = subprocess.run(
+            ["ssh", DO_SSH_HOST, f"cat {DO_SETTINGS_PATH}"],
+            capture_output=True, text=True, timeout=10,
+        )
+        if result.returncode == 0:
+            match = re.search(r"^ELASTIC_PASSWORD\s*=\s*['\"](.+?)['\"]", result.stdout, re.MULTILINE)
+            if match:
+                return match.group(1)
+    except Exception:
+        pass
+    return None
+
 
 def get_pitt_password():
     """Read Pitt ES password from file or env."""
@@ -70,8 +103,8 @@ def parse_args():
     p.add_argument("--do-url", default=os.getenv("DO_ES_URL", "https://localhost:19200"),
                     help="DO ES URL as seen from Pitt (default: https://localhost:19200)")
     p.add_argument("--do-user", default=os.getenv("DO_ES_USER", "elastic"))
-    p.add_argument("--do-password", default=os.getenv("DO_ES_PASSWORD"),
-                    help="DO ES password (or set DO_ES_PASSWORD env var)")
+    p.add_argument("--do-password", default=get_do_password(),
+                    help="DO ES password (auto-read from DO server, or set DO_ES_PASSWORD env var)")
     p.add_argument("--pitt-url", default=os.getenv("PITT_ES_URL", "http://localhost:9201"))
     p.add_argument("--pitt-password", default=get_pitt_password())
     p.add_argument("--indexes", nargs="+", default=None,

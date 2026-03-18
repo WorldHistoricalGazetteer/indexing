@@ -2534,6 +2534,34 @@ case "$1" in
         staging_logs
         ;;
 
+    # --- DO Backend Switching ---
+    -do-check)
+        echo "Checking DO ES backend status..."
+        cd "$REPO_DIR"
+        python3 scripts/switch_do_es_backend.py --check
+        ;;
+    -do-switch)
+        shift
+        target="${1:-}"
+        shift 2>/dev/null || true
+        if [ -z "$target" ]; then
+            echo "Usage: $0 -do-switch <pitt|local> [--dry-run] [--yes]"
+            exit 1
+        fi
+        cd "$REPO_DIR"
+        python3 scripts/switch_do_es_backend.py --switch-to "$target" "$@"
+        ;;
+    -do-revert)
+        shift
+        cd "$REPO_DIR"
+        python3 scripts/switch_do_es_backend.py --revert "$@"
+        ;;
+    -do-clone)
+        shift
+        cd "$REPO_DIR"
+        python3 scripts/clone_do_indexes.py "$@"
+        ;;
+
     # --- Help ---
     *)
         echo "WHG Elasticsearch Management"
@@ -2670,6 +2698,20 @@ case "$1" in
         echo "  Workflow:"
         echo "    1. es -update-embeddings 6        # Compute embeddings (GPU, ~2-4 hours)"
         echo "    2. es -update-embeddings-index 6  # Index to ES (CPU, ~1-2 hours)"
+        echo
+        echo "DO MIGRATION (switch DO Django app between local ES and Pitt ES):"
+        echo "  -do-check           Show current DO ES backend and connectivity"
+        echo "  -do-switch pitt     Switch DO → Pitt ES (interactive)"
+        echo "  -do-switch local    Switch DO → local ES (revert)"
+        echo "  -do-revert          Alias for -do-switch local"
+        echo "  -do-clone [OPTS]    Clone DO indexes to Pitt (see clone_do_indexes.py)"
+        echo
+        echo "  Examples:"
+        echo "    $0 -do-check                     # Check current state"
+        echo "    $0 -do-switch pitt --dry-run      # Preview switch to Pitt"
+        echo "    $0 -do-switch pitt --yes           # Switch to Pitt (no confirm)"
+        echo "    $0 -do-revert --yes                # Revert to local ES"
+        echo "    $0 -do-clone --skip-existing       # Clone new indexes to Pitt"
         echo
         echo "PRODUCTION (run on VM):"
         echo "  -start              Start Elasticsearch + Kibana"
