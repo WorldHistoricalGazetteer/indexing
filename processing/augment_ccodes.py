@@ -30,7 +30,6 @@ import urllib.request
 import zipfile
 from collections import namedtuple
 from pathlib import Path
-from typing import Optional
 from elasticsearch import Elasticsearch, helpers
 from shapely.geometry import Point
 from shapely.prepared import prep
@@ -256,6 +255,15 @@ def augment_ccodes(
         "updated": 0,
         "bulk_errors": 0,
     }
+    # Refresh so that updates from prior runs are visible
+    # (the places index has refresh_interval=-1 for bulk ingest performance)
+    log.info("Refreshing %s index ...", PLACES_INDEX)
+    try:
+        es.indices.refresh(index=PLACES_INDEX)
+        log.info("Refresh complete")
+    except Exception as e:
+        log.warning("Refresh failed (non-fatal): %s", e)
+
     total = _count_target_docs(es, namespace, recompute_all)
     if limit:
         total = min(total, limit)

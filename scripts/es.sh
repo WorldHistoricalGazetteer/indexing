@@ -2436,8 +2436,16 @@ do_augment_ccodes() {
 
     cat > "$WRAPPER" <<WRAPPER_EOF
 #!/bin/bash
-source "$CONDA_SETUP_PATH"
-conda activate whg
+# Activate conda — try known paths, fall back to conda already in PATH
+for _cs in "$CONDA_SETUP_PATH" \
+           "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh" \
+           "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" \
+           "\$HOME/miniconda3/etc/profile.d/conda.sh" \
+           "\$HOME/anaconda3/etc/profile.d/conda.sh"; do
+    [ -f "\$_cs" ] && source "\$_cs" && break
+done
+
+conda activate whg 2>/dev/null || true
 export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
 cd "$REPO_DIR"
 
