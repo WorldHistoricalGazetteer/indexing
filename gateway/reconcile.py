@@ -5,26 +5,29 @@ Reconciliation search endpoint for the WHG API gateway.
 Accepts a normalised reconciliation query and orchestrates a **three-step**
 search across the ``places`` and ``toponyms`` ES indexes:
 
-  1. **Discovery** — Text + optional Symphonym phonetic KNN search on the
-     ``toponyms`` index.  Each toponym document carries an ``attestations``
-     list of place_ids, so we accumulate a *scored* set of unique candidate
-     place_ids (best toponym-match score per place).
+  1. **Discovery** — Search the ``toponyms`` index for candidate place_ids.
 
-  2. **Filtering** — Fetch the candidate places from the ``places`` index
-     using a ``terms`` filter on ``place_id`` (keyword → inverted-index
-     lookup, extremely fast), layering on optional spatial / temporal /
-     country-code filters.  This yields the *surviving* set of place_ids.
+     - ``fuzzy`` / ``phonetic`` modes use **Symphonym KNN only**.  The
+       phonetic embedding space inherently ranks exact-string matches
+       highest (cosine ≈ 1.0), so a separate BM25 text search is
+       redundant and creates score-scale mismatches.
+     - ``exact`` / ``starts`` / ``in`` modes use **BM25 text search only**
+       — these are structural queries where phonetic proximity doesn't
+       apply.
 
-  3. **Enrichment** — Query the ``toponyms`` index again, this time with a
-     ``terms`` filter on ``attestations`` for the surviving place_ids.
-     This retrieves the **full name inventory** (label + lang) for each
-     place, regardless of which toponym happened to trigger the KNN match.
+     Each toponym document carries an ``attestations`` list of place_ids,
+     so we accumulate a scored set of unique candidate place_ids (best
+     toponym-match score per place).
 
-The three-step split avoids the isographic-flooding problem inherent in
-a single KNN pass: common toponym strings (e.g. "London") that appear in
-many (name, lang) combinations consume KNN result slots, but the place_id
-deduplication in step 1 still yields a diverse place set, and step 3
-recovers all name forms for the surviving places.
+  2. **Filtering** — Fetch candidate places from the ``places`` index via
+     a ``terms`` filter on ``place_id`` (inverted-index lookup, very
+     fast even for thousands of IDs), with optional spatial / temporal /
+     country-code / namespace filters.
+
+  3. **Enrichment** — Query the ``toponyms`` index again with a ``terms``
+     filter on ``attestations`` for the surviving place_ids.  This
+     retrieves the **full name inventory** (label + lang) for each place,
+     regardless of which toponym triggered the original match.
 
 Returns a flat list of candidate hits suitable for the WHG Django app
 to merge with legacy results.
@@ -372,24 +375,21 @@ async def reconcile_search(req: ReconcileRequest):
 
     Three-step strategy:
 
-      **Step 1 — Discovery.**  Text (and optionally phonetic KNN) search
-      on the ``toponyms`` index.  Each hit carries an ``attestations``
-      list — the ``place_id`` values of every place that uses that name
-      form.  We accumulate a *scored* set of candidate place_ids, keeping
-      the best toponym-match score per place.  Isographic duplicates
-      (same spelling, different language) may consume KNN slots, but the
-      place_id dedup ensures the *place* set stays diverse.
+      **Step 1 — Discovery.**  For ``fuzzy``/``phonetic`` modes, Symphonym
+      KNN search on the ``toponyms`` index (phonetic embedding space
+      naturally ranks exact matches highest, so a separate text search is
+      unnecessary).  For ``exact``/``starts``/``in`` modes, BM25 text
+      search instead.  Each hit carries ``attestations`` — the place_ids
+      of every place that uses that name form.  We accumulate a scored
+      set of candidate place_ids, keeping the best score per place.
 
       **Step 2 — Filtering.**  Fetch the candidate places from the
-      ``places`` index using a ``terms`` filter on ``place_id``
-      (keyword → inverted-index lookup, extremely fast).  Optional
-      spatial / temporal / country-code filters are applied here.
+      ``places`` index using a ``terms`` filter on ``place_id``.  Optional
+      spatial / temporal / country-code / namespace filters are applied.
 
       **Step 3 — Enrichment.**  Query the ``toponyms`` index again with a
       ``terms`` filter on ``attestations`` for the surviving place_ids.
-      This retrieves the **full name inventory** for each place —
-      regardless of which toponym triggered the original KNN match —
-      giving diverse, multilingual name forms in the response.
+      This retrieves the **full name inventory** for each place.
 
     The candidates are ranked by the toponym-match score carried forward
     from step 1.
@@ -409,65 +409,38 @@ async def reconcile_search(req: ReconcileRequest):
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
 
-    # KNN cosine scores (0–1) live on a completely different scale to
-    # BM25 text scores (~100+).  We rescale KNN scores so that a perfect
-    # phonetic match peaks at KNN_SCORE_CEILING × max_text_score.
-    # This places phonetic-only results visibly below exact text matches
-    # but well above zero.
-    KNN_SCORE_CEILING = 0.8
-
     async with httpx.AsyncClient(timeout=30) as client:
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
         # ------------------------------------------------------------------
 
-        # 1a. Text search
-        text_body = _build_toponym_query(req.query, req.mode, size=200)
-        text_resp = await client.post(
-            f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-            json=text_body,
-            auth=auth,
-            headers=headers,
-        )
-        text_resp.raise_for_status()
-        text_hits = text_resp.json().get("hits", {}).get("hits", [])
-        _collect_place_ids(text_hits, place_scores, exclude_prefixes)
-
-        max_text_score = max(place_scores.values()) if place_scores else 1.0
-
-        # 1b. Phonetic KNN (fuzzy / phonetic modes only)
         if req.mode in ("fuzzy", "phonetic"):
+            # KNN only — Symphonym embedding space inherently ranks exact
+            # matches highest (cosine ≈ 1.0), making a separate BM25 text
+            # search redundant.  Scores are on a clean 0–1 cosine scale.
             knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
             if knn_body:
-                try:
-                    knn_resp = await client.post(
-                        f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                        json=knn_body,
-                        auth=auth,
-                        headers=headers,
-                    )
-                    knn_resp.raise_for_status()
-                    knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-
-                    # Collect KNN scores into a separate dict so we can
-                    # rescale before merging with text scores.
-                    knn_scores: dict[str, float] = {}
-                    _collect_place_ids(knn_hits, knn_scores, exclude_prefixes)
-
-                    max_knn = max(knn_scores.values()) if knn_scores else 1.0
-                    knn_scale = (
-                        (max_text_score * KNN_SCORE_CEILING) / max_knn
-                        if max_knn > 0 and max_text_score > 0
-                        else 1.0
-                    )
-
-                    for pid, score in knn_scores.items():
-                        scaled = score * knn_scale
-                        if scaled > place_scores.get(pid, 0.0):
-                            place_scores[pid] = scaled
-
-                except Exception as e:
-                    logger.warning(f"Phonetic KNN search failed (non-fatal): {e}")
+                knn_resp = await client.post(
+                    f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                    json=knn_body,
+                    auth=auth,
+                    headers=headers,
+                )
+                knn_resp.raise_for_status()
+                knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
+                _collect_place_ids(knn_hits, place_scores, exclude_prefixes)
+        else:
+            # exact / starts / in — structural text queries only
+            text_body = _build_toponym_query(req.query, req.mode, size=200)
+            text_resp = await client.post(
+                f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                json=text_body,
+                auth=auth,
+                headers=headers,
+            )
+            text_resp.raise_for_status()
+            text_hits = text_resp.json().get("hits", {}).get("hits", [])
+            _collect_place_ids(text_hits, place_scores, exclude_prefixes)
 
         if not place_scores:
             return ReconcileResponse()
@@ -476,12 +449,11 @@ async def reconcile_search(req: ReconcileRequest):
         # Step 2: Filtering — fetch places by ID + spatial/temporal/ccode
         # ------------------------------------------------------------------
 
-        # Sort candidate place_ids by score descending, keep top N for
-        # the terms filter (ES terms queries are efficient but we still
-        # want to cap the clause count at something reasonable).
-        ranked_ids = sorted(place_scores, key=place_scores.get, reverse=True)
-        # Over-fetch slightly so filters can trim without losing results
-        fetch_ids = ranked_ids[:req.size * 4]
+        # Send ALL discovered place_ids — the terms filter is an
+        # inverted-index lookup that handles thousands of IDs with
+        # negligible cost.  Over-fetch (size * 4) so that re-ranking
+        # in Step 4 can surface the best candidates after filters trim.
+        fetch_ids = list(place_scores.keys())
 
         places_body = _build_places_filter(
             place_ids=fetch_ids,
@@ -489,7 +461,7 @@ async def reconcile_search(req: ReconcileRequest):
             bounds=req.bounds,
             start_year=req.start_year,
             end_year=req.end_year,
-            size=req.size,
+            size=req.size * 4,
             exclude_namespaces=req.exclude_namespaces or None,
         )
         places_resp = await client.post(
