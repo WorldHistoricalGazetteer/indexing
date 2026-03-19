@@ -412,6 +412,8 @@ def main():
                         help="Use already-cached Natural Earth data")
     parser.add_argument("--es-host", type=str, default=None,
                         help="Override ES host (default: from settings)")
+    parser.add_argument("--es-pass-file", type=str, default=None,
+                        help="Path to file containing the elastic password")
     args = parser.parse_args()
 
     host = args.es_host or ES_HOST
@@ -419,7 +421,12 @@ def main():
         log.error("No ES host configured. Set ES_HOST or pass --es-host.")
         sys.exit(1)
 
-    es = Elasticsearch(host, request_timeout=300)
+    es_kwargs: dict = {"request_timeout": 300}
+    if args.es_pass_file:
+        password = Path(args.es_pass_file).read_text().strip()
+        es_kwargs["basic_auth"] = ("elastic", password)
+
+    es = Elasticsearch(host, **es_kwargs)
     log.info("Connected to %s", host)
 
     # 1. Load full-resolution country geometries from Natural Earth
