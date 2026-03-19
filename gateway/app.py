@@ -31,6 +31,7 @@ from .config import (
     get_elastic_password,
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
+from .reconcile import router as reconcile_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -70,6 +71,9 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+# Mount reconciliation search router (must be before catch-all proxy routes)
+app.include_router(reconcile_router)
 
 
 # ---- Health Endpoint ----
