@@ -65,6 +65,12 @@ class ReconcileRequest(BaseModel):
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
     size: int = Field(50, ge=1, le=500, description="Max results to return")
+    exclude_namespaces: list[str] = Field(
+        default=["gb"],
+        description="Namespace prefixes to exclude from results (e.g. ['gb'] "
+                    "to suppress noisy Ordnance Survey records). "
+                    "Pass [] to include all namespaces.",
+    )
 
 
 class CandidateName(BaseModel):
@@ -186,19 +192,30 @@ def _build_phonetic_knn(
         return None
 
 
-def _collect_place_ids(hits: list[dict], place_scores: dict[str, float]) -> None:
+def _collect_place_ids(
+    hits: list[dict],
+    place_scores: dict[str, float],
+    exclude_prefixes: tuple[str, ...] = (),
+) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
     ``attestations`` field.  Each toponym hit may reference many places;
     we keep the highest score seen for each place_id.
+
+    Args:
+        exclude_prefixes: Tuple of ``"ns:"`` prefixes.  Attestations
+            whose place_id starts with any of these are silently skipped.
     """
     for hit in hits:
         score = hit.get("_score", 0.0)
         for pid in hit.get("_source", {}).get("attestations", []):
-            if pid:
-                prev = place_scores.get(pid, 0.0)
-                if score > prev:
-                    place_scores[pid] = score
+            if not pid:
+                continue
+            if exclude_prefixes and pid.startswith(exclude_prefixes):
+                continue
+            prev = place_scores.get(pid, 0.0)
+            if score > prev:
+                place_scores[pid] = score
 
 
 def _build_places_filter(
@@ -208,6 +225,7 @@ def _build_places_filter(
     start_year: int | None,
     end_year: int | None,
     size: int = 50,
+    exclude_namespaces: list[str] | None = None,
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
@@ -220,6 +238,10 @@ def _build_places_filter(
     filter_clauses: list[dict] = [
         {"terms": {"place_id": place_ids}},
     ]
+    must_not_clauses: list[dict] = []
+
+    if exclude_namespaces:
+        must_not_clauses.append({"terms": {"namespace": exclude_namespaces}})
 
     if ccodes:
         filter_clauses.append({"terms": {"ccodes": ccodes}})
@@ -261,9 +283,13 @@ def _build_places_filter(
             }
         })
 
+    bool_query = {"filter": filter_clauses}
+    if must_not_clauses:
+        bool_query["must_not"] = must_not_clauses
+
     return {
         "size": size,
-        "query": {"bool": {"filter": filter_clauses}},
+        "query": {"bool": bool_query},
         "_source": [
             "place_id", "namespace", "title", "ccodes",
             "geometries.repr_point",
@@ -377,6 +403,9 @@ async def reconcile_search(req: ReconcileRequest):
     auth = _es_auth()
     headers = {"Content-Type": "application/json"}
 
+    # Build exclusion prefixes from requested namespaces (e.g. ["gb"] → ("gb:",))
+    exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
+
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
 
@@ -402,7 +431,7 @@ async def reconcile_search(req: ReconcileRequest):
         )
         text_resp.raise_for_status()
         text_hits = text_resp.json().get("hits", {}).get("hits", [])
-        _collect_place_ids(text_hits, place_scores)
+        _collect_place_ids(text_hits, place_scores, exclude_prefixes)
 
         max_text_score = max(place_scores.values()) if place_scores else 1.0
 
@@ -423,7 +452,7 @@ async def reconcile_search(req: ReconcileRequest):
                     # Collect KNN scores into a separate dict so we can
                     # rescale before merging with text scores.
                     knn_scores: dict[str, float] = {}
-                    _collect_place_ids(knn_hits, knn_scores)
+                    _collect_place_ids(knn_hits, knn_scores, exclude_prefixes)
 
                     max_knn = max(knn_scores.values()) if knn_scores else 1.0
                     knn_scale = (
@@ -461,6 +490,7 @@ async def reconcile_search(req: ReconcileRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             size=req.size,
+            exclude_namespaces=req.exclude_namespaces or None,
         )
         places_resp = await client.post(
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
