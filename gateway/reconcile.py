@@ -380,6 +380,13 @@ async def reconcile_search(req: ReconcileRequest):
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
 
+    # KNN cosine scores (0–1) live on a completely different scale to
+    # BM25 text scores (~100+).  We rescale KNN scores so that a perfect
+    # phonetic match peaks at KNN_SCORE_CEILING × max_text_score.
+    # This places phonetic-only results visibly below exact text matches
+    # but well above zero.
+    KNN_SCORE_CEILING = 0.8
+
     async with httpx.AsyncClient(timeout=30) as client:
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -397,6 +404,8 @@ async def reconcile_search(req: ReconcileRequest):
         text_hits = text_resp.json().get("hits", {}).get("hits", [])
         _collect_place_ids(text_hits, place_scores)
 
+        max_text_score = max(place_scores.values()) if place_scores else 1.0
+
         # 1b. Phonetic KNN (fuzzy / phonetic modes only)
         if req.mode in ("fuzzy", "phonetic"):
             knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
@@ -410,7 +419,24 @@ async def reconcile_search(req: ReconcileRequest):
                     )
                     knn_resp.raise_for_status()
                     knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                    _collect_place_ids(knn_hits, place_scores)
+
+                    # Collect KNN scores into a separate dict so we can
+                    # rescale before merging with text scores.
+                    knn_scores: dict[str, float] = {}
+                    _collect_place_ids(knn_hits, knn_scores)
+
+                    max_knn = max(knn_scores.values()) if knn_scores else 1.0
+                    knn_scale = (
+                        (max_text_score * KNN_SCORE_CEILING) / max_knn
+                        if max_knn > 0 and max_text_score > 0
+                        else 1.0
+                    )
+
+                    for pid, score in knn_scores.items():
+                        scaled = score * knn_scale
+                        if scaled > place_scores.get(pid, 0.0):
+                            place_scores[pid] = scaled
+
                 except Exception as e:
                     logger.warning(f"Phonetic KNN search failed (non-fatal): {e}")
 
