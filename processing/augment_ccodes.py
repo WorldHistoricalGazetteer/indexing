@@ -335,6 +335,11 @@ def augment_ccodes(
         new_codes = match_countries(place_geom, tree, countries)
         if not new_codes:
             stats["no_match"] += 1
+            if stats["no_match"] <= 20:
+                centroid = place_geom.centroid
+                pbar.write("  No-match sample: %s (%.4f, %.4f) [%s]"
+                           % (place_id, centroid.x, centroid.y,
+                              place_geom.geom_type))
             pbar.set_postfix(upd=stats["updated"], nogeom=stats["no_geom"],
                              nomatch=stats["no_match"], err=stats["bulk_errors"],
                              refresh=False)
