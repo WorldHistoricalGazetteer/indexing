@@ -2760,10 +2760,29 @@ do_cluster() {
         _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "$CONCRETE_INDICES" curl
         _wait_for_restore "$STAGING_URL" curl
 
-        # Wait for cluster health to reach yellow (all primaries assigned)
+        # Staging is single-node so replica shards can never be assigned.
+        # Set replicas to 0 on the restored indices to avoid a permanently
+        # yellow cluster that never reaches green.
+        echo "  Setting number_of_replicas=0 on restored indices ..."
+        for idx in $(echo "$CONCRETE_INDICES" | tr ',' ' '); do
+            curl -s -X PUT "${STAGING_URL}/${idx}/_settings" \
+                -H 'Content-Type: application/json' \
+                -d '{"index":{"number_of_replicas":0}}' >/dev/null 2>&1 || true
+        done
+
+        # Wait for cluster health to reach green (all shards assigned).
+        # With replicas=0 this means only primaries need to finish initialising.
         echo -n "  Waiting for index shards to initialise ..."
-        curl -sf "${STAGING_URL}/_cluster/health?wait_for_status=yellow&timeout=300s" \
-            >/dev/null 2>&1 || true
+        for _i in $(seq 1 360); do  # up to 60 minutes
+            local HEALTH
+            HEALTH=$(curl -sf "${STAGING_URL}/_cluster/health" 2>/dev/null \
+                | python3 -c "import sys,json; print(json.load(sys.stdin).get('status','red'))" 2>/dev/null || echo "red")
+            if [ "$HEALTH" = "green" ]; then
+                break
+            fi
+            echo -n "."
+            sleep 10
+        done
         echo " done"
 
         # Re-create aliases on staging so the clustering code can find
@@ -2827,18 +2846,21 @@ if ! curl -sf --connect-timeout 10 "${STAGING_URL}/_cluster/health" >/dev/null 2
     exit 1
 fi
 echo "  ES is responding. Waiting for indices to be ready ..."
-# Wait up to 5 minutes for cluster health yellow (all primary shards assigned)
-curl -sf "${STAGING_URL}/_cluster/health?wait_for_status=yellow&timeout=300s" >/dev/null 2>&1 || true
-# Verify the places index is actually queryable
-for ATTEMPT in \$(seq 1 30); do
+# Poll until the places alias/index is queryable (up to 60 minutes).
+# The login-node Step 5 already set replicas=0 and created aliases,
+# but shards may still be initialising from the snapshot restore.
+for ATTEMPT in \$(seq 1 360); do
     if curl -sf "${STAGING_URL}/places/_count" >/dev/null 2>&1; then
         echo "  ✓ Staging ES indices are ready"
         break
     fi
-    if [ "\$ATTEMPT" -eq 30 ]; then
-        echo "ERROR: places index not ready after 5 minutes" >&2
+    if [ "\$ATTEMPT" -eq 360 ]; then
+        echo "ERROR: places index not ready after 60 minutes." >&2
+        echo "  Cluster health:" >&2
+        curl -sf "${STAGING_URL}/_cluster/health?pretty" >&2 || true
         exit 1
     fi
+    [ \$((\$ATTEMPT % 6)) -eq 0 ] && echo "    ... still waiting (\$((ATTEMPT/6)) min)"
     sleep 10
 done
 

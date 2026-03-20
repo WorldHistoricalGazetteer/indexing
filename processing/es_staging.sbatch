@@ -288,6 +288,15 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
         sleep 10
     done
 
+    # Staging is single-node so replica shards can never be assigned.
+    # Set replicas to 0 to reach green health and avoid wasted resources.
+    echo "Setting number_of_replicas=0 on restored indices ..."
+    for IDX in $(echo "$RESTORE_INDICES" | tr ',' ' '); do
+        curl -s -X PUT "$ES_URL/${IDX}/_settings" \
+            -H 'Content-Type: application/json' \
+            -d '{"index":{"number_of_replicas":0}}' >/dev/null 2>&1 || true
+    done
+
     # --- Ensure aliases exist for versioned indices ---
     # Snapshots restore aliases alongside indices, but verify they're present
     # and create them if not (e.g. snapshot predates alias creation).
