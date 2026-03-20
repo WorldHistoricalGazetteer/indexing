@@ -2503,7 +2503,8 @@ _ensure_exchange_repo() {
     return 1
 }
 
-# Take a snapshot of specific indices. Blocks until complete.
+# Take a snapshot of specific indices. Starts async, then polls until done.
+# (Avoids gateway read-timeout on long-running snapshots.)
 _take_snapshot() {
     local es_url="$1"
     local snap_name="$2"
@@ -2512,21 +2513,48 @@ _take_snapshot() {
 
     echo "  Snapshotting ${indices} → ${CLUSTER_EXCHANGE_REPO}/${snap_name} ..."
     echo "  (this may take several minutes for large indices)"
+
+    # Start snapshot asynchronously (no wait_for_completion)
     local resp
     resp=$($curl_cmd -s -X PUT \
-        "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}?wait_for_completion=true" \
+        "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}" \
         -H 'Content-Type: application/json' -d "{
       \"indices\": \"${indices}\",
       \"ignore_unavailable\": true,
       \"include_global_state\": false
     }" 2>&1)
-    if echo "$resp" | grep -q '"SUCCESS"' 2>/dev/null; then
-        echo "  ✓ Snapshot complete"
-        return 0
+    if ! echo "$resp" | grep -q '"accepted"' 2>/dev/null; then
+        echo "  ERROR: Snapshot request rejected:" >&2
+        echo "  $resp" | head -20 >&2
+        return 1
     fi
-    echo "  ERROR: Snapshot failed:" >&2
-    echo "  $resp" | head -20 >&2
-    return 1
+
+    # Poll until snapshot completes
+    echo -n "  Waiting ..."
+    while true; do
+        sleep 10
+        local state
+        state=$($curl_cmd -s \
+            "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}" 2>/dev/null \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['snapshots'][0]['state'])" 2>/dev/null || echo "UNKNOWN")
+        case "$state" in
+            SUCCESS)
+                echo " done"
+                echo "  ✓ Snapshot complete"
+                return 0
+                ;;
+            FAILED|PARTIAL|MISSING|UNKNOWN)
+                echo " $state"
+                echo "  ERROR: Snapshot ended in state: $state" >&2
+                $curl_cmd -s "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}" 2>/dev/null \
+                    | python3 -m json.tool 2>/dev/null | head -30 >&2
+                return 1
+                ;;
+            *)  # IN_PROGRESS, STARTED, etc.
+                echo -n "."
+                ;;
+        esac
+    done
 }
 
 # Restore a snapshot. Does NOT block; caller should poll _wait_for_restore.
