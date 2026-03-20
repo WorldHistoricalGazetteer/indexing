@@ -2607,7 +2607,9 @@ do_cluster() {
 
     # ---- Slurm mode: snapshot prod → staging, run on Slurm ----
     if $USE_SLURM; then
-        local PROD_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+        # From a CRC login node, production ES is reachable via the gateway
+        # (localhost:9201 is only valid on the VM itself).
+        local PROD_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
         local SNAP_NAME="cluster_input_${TIMESTAMP}"
 
         echo "=========================================="
@@ -2837,7 +2839,11 @@ do_cluster_finalize() {
         return 1
     fi
 
+    # Detect production ES URL: localhost if on the VM, gateway otherwise
     local PROD_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+    if ! es_curl --connect-timeout 3 "${PROD_URL}/_cluster/health" &>/dev/null; then
+        PROD_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
+    fi
     local SNAP_NAME="cluster_output_${TIMESTAMP}"
 
     echo "=========================================="
