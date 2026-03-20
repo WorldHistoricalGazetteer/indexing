@@ -211,20 +211,59 @@ def match_countries(place_geom, tree, countries):
 # ---------------------------------------------------------------------------
 # 4. Bulk update with throttling
 # ---------------------------------------------------------------------------
-def flush_bulk(es, actions, stats):
-    """Send a bulk request, absorb partial failures, update *stats*."""
+def flush_bulk(es, actions, stats, max_retries=2):
+    """Send a bulk request with retries, log error details, update *stats*."""
     if not actions:
         return
-    try:
-        success, failed = helpers.bulk(
-            es.options(request_timeout=120), actions,
-            raise_on_error=False, stats_only=True,
-        )
-        stats["updated"] += success
-        stats["bulk_errors"] += failed
-    except Exception as e:
-        log.error("Bulk request failed: %s", e)
-        stats["bulk_errors"] += len(actions)
+    for attempt in range(1 + max_retries):
+        try:
+            success, errors = helpers.bulk(
+                es.options(request_timeout=120), actions,
+                raise_on_error=False, stats_only=False,
+            )
+            stats["updated"] += success
+            if errors:
+                # Log a sample of the actual error details (first occurrence of each type)
+                error_types_seen = set()
+                for err in errors:
+                    err_info = err.get("update", err.get("index", {}))
+                    err_type = err_info.get("error", {}).get("type", "unknown")
+                    if err_type not in error_types_seen:
+                        error_types_seen.add(err_type)
+                        log.warning("Bulk error sample [%s]: %s",
+                                    err_type, err_info.get("error", {}))
+                    stats["error_types"][err_type] = (
+                        stats["error_types"].get(err_type, 0) + 1
+                    )
+                # Retry only retryable errors (e.g. 429 Too Many Requests)
+                retryable = [
+                    err for err in errors
+                    if (err.get("update", err.get("index", {}))
+                        .get("status") == 429)
+                ]
+                if retryable and attempt < max_retries:
+                    # Rebuild actions for only the retryable docs
+                    retry_ids = {
+                        err.get("update", err.get("index", {})).get("_id")
+                        for err in retryable
+                    }
+                    actions = [a for a in actions if a["_id"] in retry_ids]
+                    log.info("Retrying %d retryable errors (attempt %d/%d)",
+                             len(actions), attempt + 2, 1 + max_retries)
+                    time.sleep(2 ** attempt)  # exponential back-off
+                    continue
+                stats["bulk_errors"] += len(errors)
+            return
+        except Exception as e:
+            if attempt < max_retries:
+                log.warning("Bulk request failed (attempt %d/%d): %s",
+                            attempt + 1, 1 + max_retries, e)
+                time.sleep(2 ** attempt)
+            else:
+                log.error("Bulk request failed after %d attempts: %s",
+                           1 + max_retries, e)
+                stats["bulk_errors"] += len(actions)
+            return
 # ---------------------------------------------------------------------------
 # 5. Main orchestration
 # ---------------------------------------------------------------------------
@@ -254,6 +293,7 @@ def augment_ccodes(
         "already_ok": 0,
         "updated": 0,
         "bulk_errors": 0,
+        "error_types": {},
     }
     # Refresh so that updates from prior runs are visible
     # (the places index has refresh_interval=-1 for bulk ingest performance)
@@ -340,6 +380,11 @@ def augment_ccodes(
     log.info("  No match:     %s", "{:,}".format(stats["no_match"]))
     log.info("  Already OK:   %s", "{:,}".format(stats["already_ok"]))
     log.info("  Bulk errors:  %s", "{:,}".format(stats["bulk_errors"]))
+    if stats["error_types"]:
+        log.info("  Error breakdown:")
+        for etype, count in sorted(stats["error_types"].items(),
+                                    key=lambda x: -x[1]):
+            log.info("    %-40s %s", etype, "{:,}".format(count))
     log.info("=" * 60)
     return stats
 # ---------------------------------------------------------------------------
