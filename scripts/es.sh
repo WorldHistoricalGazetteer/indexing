@@ -2712,8 +2712,14 @@ do_cluster() {
         # 5. Delete any pre-existing copies on staging, then restore
         echo "Step 5: Restoring input indices into staging ES ..."
         for idx in places toponyms; do
-            curl -sf -X DELETE "${STAGING_URL}/${idx}" >/dev/null 2>&1 || true
+            curl -s -X DELETE "${STAGING_URL}/${idx}" >/dev/null 2>&1 || true
         done
+        # Force staging ES to rediscover snapshots: DELETE the repo
+        # registration then re-register.  A simple PUT re-registration
+        # is not sufficient — ES may serve its cached repo metadata
+        # without re-reading the shared filesystem.
+        curl -s -X DELETE "${STAGING_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}" >/dev/null 2>&1 || true
+        _ensure_exchange_repo "$STAGING_URL" curl
         _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "places,toponyms" curl
         _wait_for_restore "$STAGING_URL" curl
         echo "  Index status on staging:"
@@ -2914,6 +2920,8 @@ do_cluster_finalize() {
 
     # 2. Register exchange repo (idempotent) and verify snapshot exists
     echo "Step 2: Verifying output snapshot exists ..."
+    # Force production ES to rediscover snapshots created by staging
+    es_curl -s -X DELETE "${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}" >/dev/null 2>&1 || true
     _ensure_exchange_repo "$PROD_URL" es_curl
 
     local SNAP_STATE
