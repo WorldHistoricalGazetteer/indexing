@@ -2479,6 +2479,82 @@ WRAPPER_EOF
     tail -f "$LOG_FILE" --pid="$PID"
 }
 
+# =============================================================================
+# CLUSTER EXCHANGE HELPERS (snapshot handoff between prod ↔ staging)
+# =============================================================================
+
+# Register the cluster_exchange snapshot repo on a given ES instance.
+_ensure_exchange_repo() {
+    local es_url="$1"          # e.g. http://localhost:9201
+    local curl_cmd="${2:-curl}" # "es_curl" for production, "curl" for staging
+
+    mkdir -p "${CLUSTER_EXCHANGE_DIR}"
+    $curl_cmd -sf -X PUT "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}" \
+        -H 'Content-Type: application/json' -d "{
+      \"type\": \"fs\",
+      \"settings\": { \"location\": \"${CLUSTER_EXCHANGE_DIR}\" }
+    }" >/dev/null
+}
+
+# Take a snapshot of specific indices. Blocks until complete.
+_take_snapshot() {
+    local es_url="$1"
+    local snap_name="$2"
+    local indices="$3"         # comma-separated
+    local curl_cmd="${4:-curl}"
+
+    echo "  Snapshotting ${indices} → ${CLUSTER_EXCHANGE_REPO}/${snap_name} ..."
+    $curl_cmd -sf -X PUT \
+        "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}?wait_for_completion=true" \
+        -H 'Content-Type: application/json' -d "{
+      \"indices\": \"${indices}\",
+      \"ignore_unavailable\": true,
+      \"include_global_state\": false
+    }" >/dev/null
+    echo "  ✓ Snapshot complete"
+}
+
+# Restore a snapshot. Does NOT block; caller should poll _wait_for_restore.
+_restore_snapshot() {
+    local es_url="$1"
+    local snap_name="$2"
+    local indices="$3"         # comma-separated (empty = all in snapshot)
+    local curl_cmd="${4:-curl}"
+    local extra_body="${5:-}"   # extra JSON fields (rename_pattern etc.)
+
+    local body="{
+      \"ignore_unavailable\": true,
+      \"include_global_state\": false"
+    [ -n "$indices" ] && body+=", \"indices\": \"${indices}\""
+    [ -n "$extra_body" ] && body+=", ${extra_body}"
+    body+="}"
+
+    echo "  Restoring ${CLUSTER_EXCHANGE_REPO}/${snap_name} ..."
+    $curl_cmd -sf -X POST \
+        "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}/_restore" \
+        -H 'Content-Type: application/json' -d "$body" >/dev/null
+}
+
+# Block until all shard recovery on an ES instance finishes.
+_wait_for_restore() {
+    local es_url="$1"
+    local curl_cmd="${2:-curl}"
+
+    echo -n "  Waiting for restore to complete"
+    while true; do
+        local recovering
+        recovering=$($curl_cmd -sf "${es_url}/_cat/recovery?active_only=true" 2>/dev/null | wc -l)
+        [ "$recovering" -eq 0 ] && break
+        echo -n "."
+        sleep 5
+    done
+    echo " done"
+}
+
+# =============================================================================
+# PLACE CLUSTERING
+# =============================================================================
+
 do_cluster() {
     # Usage: es -cluster [OPTIONS]
     #
@@ -2488,20 +2564,20 @@ do_cluster() {
     #
     # Two execution modes:
     #   (a) Default (on Pitt VM): runs under nohup against localhost ES.
-    #   (b) --slurm (from CRC login node): submits a Slurm job that
-    #       reaches production ES via the gateway at the public hostname.
-    #       Use this for large runs that need more memory/CPU.
+    #   (b) --slurm (from CRC login node): snapshots production indices
+    #       into the staging ES on Slurm, runs clustering there, then
+    #       use  es -cluster-finalize  to push results back to production.
     #
     # Options are passed through to clustering.runner (see --help).
     # ES host and password are injected automatically.
     #
     # Examples:
     #   es -cluster --full                  # nohup on VM
-    #   es -cluster --full --slurm          # submit to Slurm
+    #   es -cluster --full --slurm          # snapshot → staging → Slurm job
     #   es -cluster --incremental           # nohup on VM
     #   es -cluster --full --dry-run        # nohup, no indexing
     #   es -cluster --stats                 # quick query (no nohup)
-    #   es -cluster --full --slurm --mem 300G --time 24:00:00  # custom Slurm resources
+    #   es -cluster --full --slurm --mem 300G --time 24:00:00
 
     # --- Parse our flags (--slurm, --mem, --time); rest goes to Python ---
     local USE_SLURM=false
@@ -2528,34 +2604,76 @@ do_cluster() {
     # Build the full python command as a flat string — avoids heredoc
     # quoting pitfalls with arrays and line-continuations.
     local PYTHON_CMD="python -u -m clustering.runner"
-    [ -f "$PASS_FILE" ] && PYTHON_CMD+=" --es-pass-file ${PASS_FILE}"
 
-    # ---- Slurm mode ----
+    # ---- Slurm mode: snapshot prod → staging, run on Slurm ----
     if $USE_SLURM; then
-        # From a CRC login node, reach production ES via the gateway
-        local ES_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
-        local ES_HOSTNAME="gazetteer.crcd.pitt.edu"
-        local LOG_FILE="${LOG_DIR}/cluster_slurm_${TIMESTAMP}.log"
-
-        PYTHON_CMD+=" --es-host ${ES_URL} ${PYTHON_ARGS[*]}"
+        local PROD_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+        local SNAP_NAME="cluster_input_${TIMESTAMP}"
 
         echo "=========================================="
-        echo "PLACE CLUSTERING (Slurm)"
+        echo "PLACE CLUSTERING (Slurm via staging ES)"
         echo "=========================================="
-        echo "ES:       ${ES_URL} (via gateway)"
         echo "Args:     ${PYTHON_ARGS[*]}"
         echo "Mem:      ${SLURM_MEM}"
         echo "Time:     ${SLURM_TIME}"
-        echo "Command:  ${PYTHON_CMD}"
         echo
 
-        # Pre-flight: verify gateway is reachable from the login node
-        if ! curl -sf --connect-timeout 10 "${ES_URL}/api/health" >/dev/null 2>&1; then
-            echo "WARNING: Cannot reach gateway at ${ES_URL} from login node."
-            echo "  Is the gateway running?  (SSH to the VM and run: es -gateway-start)"
-            echo "  Submitting anyway — compute nodes may have different routing."
-            echo
+        # 1. Verify production ES is reachable (from login node / VM)
+        echo "Step 1: Checking production ES at ${PROD_URL} ..."
+        if ! es_curl --connect-timeout 10 "${PROD_URL}/_cluster/health" &>/dev/null; then
+            echo "ERROR: Cannot reach production ES at ${PROD_URL}"
+            return 1
         fi
+        echo "  ✓ Production ES reachable"
+        echo
+
+        # 2. Ensure staging ES is running
+        echo "Step 2: Checking staging ES ..."
+        if [ ! -f "$STAGING_INFO_FILE" ]; then
+            echo "  No staging ES running. Start it first:"
+            echo "    es -staging-start"
+            return 1
+        fi
+        source "$STAGING_INFO_FILE"
+        local STAGING_URL="http://${ES_NODE}:${ES_PORT}"
+        if ! curl -sf --connect-timeout 10 "${STAGING_URL}/_cluster/health" &>/dev/null; then
+            echo "  ERROR: Staging ES at ${STAGING_URL} is not responding."
+            echo "  Job may have expired. Try:  es -staging-start"
+            return 1
+        fi
+        echo "  ✓ Staging ES reachable at ${STAGING_URL}"
+        echo
+
+        # 3. Register exchange repo on both instances
+        echo "Step 3: Registering snapshot exchange repo ..."
+        _ensure_exchange_repo "$PROD_URL" es_curl
+        echo "  ✓ Production"
+        _ensure_exchange_repo "$STAGING_URL" curl
+        echo "  ✓ Staging"
+        echo
+
+        # 4. Snapshot production input indices
+        echo "Step 4: Snapshotting production indices ..."
+        _take_snapshot "$PROD_URL" "$SNAP_NAME" "places,toponyms" es_curl
+        echo
+
+        # 5. Delete any pre-existing copies on staging, then restore
+        echo "Step 5: Restoring input indices into staging ES ..."
+        for idx in places toponyms; do
+            curl -sf -X DELETE "${STAGING_URL}/${idx}" >/dev/null 2>&1 || true
+        done
+        _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "places,toponyms" curl
+        _wait_for_restore "$STAGING_URL" curl
+        echo "  Index status on staging:"
+        curl -sf "${STAGING_URL}/_cat/indices/places,toponyms?v&h=index,docs.count,store.size" 2>/dev/null || true
+        echo
+
+        # 6. Build python command (no auth — staging has xpack.security off)
+        PYTHON_CMD+=" --es-host ${STAGING_URL} ${PYTHON_ARGS[*]}"
+        local OUTPUT_SNAP="cluster_output_${TIMESTAMP}"
+
+        echo "Step 6: Submitting clustering Slurm job ..."
+        echo "  Command: ${PYTHON_CMD}"
 
         local SLURM_SCRIPT
         SLURM_SCRIPT=$(mktemp /tmp/cluster-XXXXXX.sbatch)
@@ -2576,25 +2694,19 @@ do_cluster() {
 set -e
 
 echo "=========================================="
-echo "PLACE CLUSTERING (Slurm)"
+echo "PLACE CLUSTERING (Slurm → staging ES)"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "Node:    \$(hostname)"
-echo "ES:      ${ES_URL}"
+echo "ES:      ${STAGING_URL} (staging)"
 echo
 
-# Pre-flight: verify the gateway is reachable before doing anything slow
-echo "Checking gateway connectivity..."
-if ! curl -sf --connect-timeout 10 "${ES_URL}/api/health" >/dev/null 2>&1; then
-    echo "ERROR: Cannot reach ES gateway at ${ES_URL}" >&2
-    echo "  - Is the gateway running on the VM?  (es -gateway-start)" >&2
-    echo "  - DNS: \$(getent hosts ${ES_HOSTNAME} 2>/dev/null || echo 'UNRESOLVABLE')" >&2
-    echo "  - Curl diagnostic:" >&2
-    curl -v --connect-timeout 10 "${ES_URL}/api/health" 2>&1 | head -20 >&2
+# Verify staging ES is still alive
+if ! curl -sf --connect-timeout 10 "${STAGING_URL}/_cluster/health" >/dev/null 2>&1; then
+    echo "ERROR: Staging ES at ${STAGING_URL} is not responding." >&2
+    echo "  The staging Slurm job may have expired." >&2
     exit 1
 fi
-echo "Gateway OK"
-echo
 
 # Load environment
 source "${CONDA_SETUP_PATH}"
@@ -2605,22 +2717,37 @@ cd "${REPO_DIR}"
 ${PYTHON_CMD}
 
 echo
+echo "Clustering finished. Snapshotting output indices ..."
+curl -sf -X PUT "${STAGING_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${OUTPUT_SNAP}?wait_for_completion=true" \
+    -H 'Content-Type: application/json' -d '{
+  "indices": "clusters,cluster_state",
+  "ignore_unavailable": true,
+  "include_global_state": false
+}'
+echo
 echo "=========================================="
 echo "CLUSTERING COMPLETE"
 echo "=========================================="
+echo "Output snapshot: ${CLUSTER_EXCHANGE_REPO}/${OUTPUT_SNAP}"
 echo "Finished: \$(date)"
+echo
+echo "Next step — push results to production:"
+echo "  es -cluster-finalize ${TIMESTAMP}"
 SBATCH_EOF
 
         JOBID=$(sbatch --parsable "$SLURM_SCRIPT")
         rm -f "$SLURM_SCRIPT"
-
         CLEAN_JOBID="${JOBID%;*}"
 
+        echo
         echo "✓ Clustering job submitted: ${CLEAN_JOBID}"
         echo
         echo "Monitor with:"
         echo "  squeue -j ${CLEAN_JOBID}"
         echo "  tail -f ${LOG_DIR}/cluster_${CLEAN_JOBID}.out"
+        echo
+        echo "After the job completes, push results to production with:"
+        echo "  es -cluster-finalize ${TIMESTAMP}"
         echo
         return 0
     fi
@@ -2629,6 +2756,7 @@ SBATCH_EOF
     local ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
     local LOG_FILE="${LOG_DIR}/cluster_${TIMESTAMP}.log"
 
+    [ -f "$PASS_FILE" ] && PYTHON_CMD+=" --es-pass-file ${PASS_FILE}"
     PYTHON_CMD+=" --es-host ${ES_URL} ${PYTHON_ARGS[*]}"
 
     # Verify ES is responding
@@ -2690,6 +2818,146 @@ WRAPPER_EOF
     tail -f "$LOG_FILE" --pid="$PID"
 }
 
+do_cluster_finalize() {
+    # Usage: es -cluster-finalize TIMESTAMP
+    #
+    # After a Slurm clustering job completes, this restores the output
+    # snapshot (clusters, cluster_state) into production ES and performs
+    # an atomic alias swap so production queries see the new data with
+    # zero downtime.
+    #
+    # The TIMESTAMP is printed by  es -cluster --full --slurm  on submission.
+
+    local TIMESTAMP="$1"
+    if [ -z "$TIMESTAMP" ]; then
+        echo "Usage: es -cluster-finalize TIMESTAMP"
+        echo
+        echo "TIMESTAMP was printed when you ran:  es -cluster --full --slurm"
+        echo "It identifies the snapshot pair (cluster_input_TS / cluster_output_TS)."
+        return 1
+    fi
+
+    local PROD_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+    local SNAP_NAME="cluster_output_${TIMESTAMP}"
+
+    echo "=========================================="
+    echo "CLUSTER FINALIZE"
+    echo "=========================================="
+    echo "Production ES: ${PROD_URL}"
+    echo "Snapshot:      ${CLUSTER_EXCHANGE_REPO}/${SNAP_NAME}"
+    echo
+
+    # 1. Verify production ES
+    echo "Step 1: Checking production ES ..."
+    if ! es_curl --connect-timeout 10 "${PROD_URL}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot reach production ES at ${PROD_URL}"
+        return 1
+    fi
+    echo "  ✓ Production ES reachable"
+    echo
+
+    # 2. Register exchange repo (idempotent) and verify snapshot exists
+    echo "Step 2: Verifying output snapshot exists ..."
+    _ensure_exchange_repo "$PROD_URL" es_curl
+
+    local SNAP_STATE
+    SNAP_STATE=$(es_curl -sf "${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${SNAP_NAME}" \
+        | python3 -c "import sys,json; print(json.load(sys.stdin)['snapshots'][0]['state'])" 2>/dev/null || echo "MISSING")
+    if [ "$SNAP_STATE" != "SUCCESS" ]; then
+        echo "  ERROR: Snapshot ${SNAP_NAME} not found or not successful (state: ${SNAP_STATE})"
+        echo "  Has the Slurm clustering job finished?"
+        return 1
+    fi
+    echo "  ✓ Snapshot exists and is SUCCESS"
+    echo
+
+    # 3. Restore into dated indices (e.g. clusters_20260320, cluster_state_20260320)
+    local DATE_SUFFIX
+    DATE_SUFFIX=$(echo "$TIMESTAMP" | cut -c1-8)  # YYYYMMDD
+    local NEW_CLUSTERS="clusters_${DATE_SUFFIX}"
+    local NEW_STATE="cluster_state_${DATE_SUFFIX}"
+
+    echo "Step 3: Restoring into dated indices ..."
+    echo "  clusters      → ${NEW_CLUSTERS}"
+    echo "  cluster_state → ${NEW_STATE}"
+
+    # Delete targets if they already exist (e.g. re-running finalize)
+    for idx in "$NEW_CLUSTERS" "$NEW_STATE"; do
+        es_curl -sf -X DELETE "${PROD_URL}/${idx}" >/dev/null 2>&1 || true
+    done
+
+    local RENAME_BODY="\"rename_pattern\": \"(.+)\", \"rename_replacement\": \"\$1_${DATE_SUFFIX}\""
+    _restore_snapshot "$PROD_URL" "$SNAP_NAME" "clusters,cluster_state" es_curl "$RENAME_BODY"
+    _wait_for_restore "$PROD_URL" es_curl
+
+    echo "  Index status:"
+    es_curl -sf "${PROD_URL}/_cat/indices/${NEW_CLUSTERS},${NEW_STATE}?v&h=index,docs.count,store.size" 2>/dev/null || true
+    echo
+
+    # 4. Atomic alias swap
+    echo "Step 4: Swapping aliases ..."
+
+    # Build the alias actions:
+    #   - Remove any existing alias pointing for 'clusters' / 'cluster_state'
+    #   - Add alias for the new dated indices
+    #   - Also handle the case where a concrete (non-aliased) index exists
+    local ACTIONS='{"actions":['
+
+    for pair in "clusters:${NEW_CLUSTERS}" "cluster_state:${NEW_STATE}"; do
+        local ALIAS="${pair%%:*}"
+        local TARGET="${pair##*:}"
+
+        # Check if the alias currently exists
+        local CURRENT_INDEX
+        CURRENT_INDEX=$(es_curl -sf "${PROD_URL}/_alias/${ALIAS}" \
+            | python3 -c "import sys,json; print(','.join(json.load(sys.stdin).keys()))" 2>/dev/null || echo "")
+
+        if [ -n "$CURRENT_INDEX" ] && [ "$CURRENT_INDEX" != "$TARGET" ]; then
+            # Alias exists, pointing elsewhere → remove old, add new
+            ACTIONS+='{"remove":{"index":"'"${CURRENT_INDEX}"'","alias":"'"${ALIAS}"'"}},'
+            ACTIONS+='{"add":{"index":"'"${TARGET}"'","alias":"'"${ALIAS}"'"}},'
+            echo "  ${ALIAS}: ${CURRENT_INDEX} → ${TARGET}"
+        elif [ -z "$CURRENT_INDEX" ]; then
+            # No alias. Check if a concrete index with that name exists.
+            if es_curl -sf -o /dev/null "${PROD_URL}/${ALIAS}"; then
+                echo "  ${ALIAS}: concrete index exists — deleting to make room for alias"
+                es_curl -sf -X DELETE "${PROD_URL}/${ALIAS}" >/dev/null
+            fi
+            ACTIONS+='{"add":{"index":"'"${TARGET}"'","alias":"'"${ALIAS}"'"}},'
+            echo "  ${ALIAS}: (new) → ${TARGET}"
+        else
+            echo "  ${ALIAS}: already points to ${TARGET} (no change)"
+        fi
+    done
+
+    # Strip trailing comma, close
+    ACTIONS="${ACTIONS%,}]}"
+
+    if echo "$ACTIONS" | grep -q '"add"'; then
+        es_curl -sf -X POST "${PROD_URL}/_aliases" \
+            -H 'Content-Type: application/json' -d "$ACTIONS" >/dev/null
+        echo "  ✓ Aliases swapped atomically"
+    else
+        echo "  (no alias changes needed)"
+    fi
+    echo
+
+    # 5. Summary
+    echo "=========================================="
+    echo "FINALIZE COMPLETE"
+    echo "=========================================="
+    echo
+    echo "Production aliases:"
+    es_curl -sf "${PROD_URL}/_cat/aliases/clusters,cluster_state?v" 2>/dev/null || true
+    echo
+    echo "You may now clean up old dated indices if desired:"
+    es_curl -sf "${PROD_URL}/_cat/indices/clusters_*,cluster_state_*?v&h=index,docs.count,store.size" 2>/dev/null || true
+    echo
+    echo "To clean up exchange snapshots:"
+    echo "  es_curl -X DELETE '${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_input_${TIMESTAMP}'"
+    echo "  es_curl -X DELETE '${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_output_${TIMESTAMP}'"
+}
+
 case "$1" in
     # --- Security Setup (one-time) ---
     -setup-security)
@@ -2728,6 +2996,11 @@ case "$1" in
     -cluster)
         shift
         do_cluster "$@"
+        ;;
+
+    -cluster-finalize)
+        shift
+        do_cluster_finalize "$@"
         ;;
 
     # --- Force Merge (purge deleted docs) ---
@@ -2966,8 +3239,9 @@ case "$1" in
         echo
         echo "  Execution modes:"
         echo "    Default (on Pitt VM): runs under nohup against localhost ES."
-        echo "    --slurm (from CRC login node): submits Slurm job reaching"
-        echo "            production ES via the gateway. Use for large runs."
+        echo "    --slurm (from CRC login node): snapshots production indices"
+        echo "            into staging ES, submits Slurm job, then use"
+        echo "            -cluster-finalize to push results back to production."
         echo
         echo "  Options (passed to clustering.runner):"
         echo "    --full               Full initial run (all phases)"
@@ -2979,17 +3253,22 @@ case "$1" in
         echo "    -v, --verbose        Verbose (DEBUG-level) logging"
         echo
         echo "  Slurm options:"
-        echo "    --slurm              Submit as Slurm job (from CRC login node)"
+        echo "    --slurm              Submit as Slurm job (requires staging ES running)"
         echo "    --mem SIZE           Slurm memory (default: 500G)"
         echo "    --time HH:MM:SS     Slurm wall time (default: 3-00:00:00)"
         echo
         echo "  Examples:"
         echo "    $0 -cluster --full                    # nohup on VM"
-        echo "    $0 -cluster --full --slurm            # submit to Slurm"
+        echo "    $0 -cluster --full --slurm            # snapshot → staging → Slurm"
         echo "    $0 -cluster --full --slurm --mem 750G # Slurm with 750G RAM"
         echo "    $0 -cluster --incremental              # nohup, since last run"
         echo "    $0 -cluster --full --dry-run           # test run"
         echo "    $0 -cluster --stats                    # show statistics"
+        echo
+        echo "  -cluster-finalize TIMESTAMP"
+        echo "      After a Slurm clustering job completes, restore output indices"
+        echo "      to production ES with zero-downtime alias swap."
+        echo "      TIMESTAMP is printed by -cluster --slurm on submission."
         echo
         echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms VERSION [OPTIONS]"

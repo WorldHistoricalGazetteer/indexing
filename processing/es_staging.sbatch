@@ -194,6 +194,20 @@ curl -s -X PUT "$ES_URL/_snapshot/$STAGING_REPO_NAME" \
 }" | python3 -m json.tool
 echo
 
+# Register cluster exchange repo (for snapshot handoff with production)
+if [ -n "$CLUSTER_EXCHANGE_DIR" ]; then
+    mkdir -p "$CLUSTER_EXCHANGE_DIR"
+    echo "Registering snapshot repository '$CLUSTER_EXCHANGE_REPO'..."
+    curl -s -X PUT "$ES_URL/_snapshot/$CLUSTER_EXCHANGE_REPO" \
+        -H 'Content-Type: application/json' -d "{
+      \"type\": \"fs\",
+      \"settings\": {
+        \"location\": \"$CLUSTER_EXCHANGE_DIR\"
+      }
+    }" | python3 -m json.tool
+    echo
+fi
+
 # --- Find latest snapshot containing required indices ---
 echo "Checking for existing snapshots..."
 
