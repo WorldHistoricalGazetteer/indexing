@@ -2489,11 +2489,18 @@ _ensure_exchange_repo() {
     local curl_cmd="${2:-curl}" # "es_curl" for production, "curl" for staging
 
     mkdir -p "${CLUSTER_EXCHANGE_DIR}"
-    $curl_cmd -sf -X PUT "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}" \
+    local resp
+    resp=$($curl_cmd -s -X PUT "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}" \
         -H 'Content-Type: application/json' -d "{
       \"type\": \"fs\",
       \"settings\": { \"location\": \"${CLUSTER_EXCHANGE_DIR}\" }
-    }" >/dev/null
+    }" 2>&1)
+    if echo "$resp" | grep -q '"acknowledged"' 2>/dev/null; then
+        return 0
+    fi
+    echo "  ERROR registering exchange repo on ${es_url}:" >&2
+    echo "  $resp" >&2
+    return 1
 }
 
 # Take a snapshot of specific indices. Blocks until complete.
@@ -2504,14 +2511,22 @@ _take_snapshot() {
     local curl_cmd="${4:-curl}"
 
     echo "  Snapshotting ${indices} → ${CLUSTER_EXCHANGE_REPO}/${snap_name} ..."
-    $curl_cmd -sf -X PUT \
+    echo "  (this may take several minutes for large indices)"
+    local resp
+    resp=$($curl_cmd -s -X PUT \
         "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}?wait_for_completion=true" \
         -H 'Content-Type: application/json' -d "{
       \"indices\": \"${indices}\",
       \"ignore_unavailable\": true,
       \"include_global_state\": false
-    }" >/dev/null
-    echo "  ✓ Snapshot complete"
+    }" 2>&1)
+    if echo "$resp" | grep -q '"SUCCESS"' 2>/dev/null; then
+        echo "  ✓ Snapshot complete"
+        return 0
+    fi
+    echo "  ERROR: Snapshot failed:" >&2
+    echo "  $resp" | head -20 >&2
+    return 1
 }
 
 # Restore a snapshot. Does NOT block; caller should poll _wait_for_restore.
@@ -2530,9 +2545,16 @@ _restore_snapshot() {
     body+="}"
 
     echo "  Restoring ${CLUSTER_EXCHANGE_REPO}/${snap_name} ..."
-    $curl_cmd -sf -X POST \
+    local resp
+    resp=$($curl_cmd -s -X POST \
         "${es_url}/_snapshot/${CLUSTER_EXCHANGE_REPO}/${snap_name}/_restore" \
-        -H 'Content-Type: application/json' -d "$body" >/dev/null
+        -H 'Content-Type: application/json' -d "$body" 2>&1)
+    if echo "$resp" | grep -q '"accepted"' 2>/dev/null; then
+        return 0
+    fi
+    echo "  ERROR: Restore failed:" >&2
+    echo "  $resp" | head -20 >&2
+    return 1
 }
 
 # Block until all shard recovery on an ES instance finishes.
@@ -2543,7 +2565,7 @@ _wait_for_restore() {
     echo -n "  Waiting for restore to complete"
     while true; do
         local recovering
-        recovering=$($curl_cmd -sf "${es_url}/_cat/recovery?active_only=true" 2>/dev/null | wc -l)
+        recovering=$($curl_cmd -s "${es_url}/_cat/recovery?active_only=true" 2>/dev/null | wc -l)
         [ "$recovering" -eq 0 ] && break
         echo -n "."
         sleep 5
