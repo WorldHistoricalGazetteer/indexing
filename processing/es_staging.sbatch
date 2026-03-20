@@ -211,36 +211,58 @@ fi
 # --- Find latest snapshot containing required indices ---
 echo "Checking for existing snapshots..."
 
-# Determine which indices to restore
+# NOTE: 'places' and 'toponyms' are aliases pointing to versioned concrete
+# indices (e.g. places_20250320, toponyms_20250320).  Snapshots store concrete
+# index names, so we must match by prefix rather than exact name.
+
+# Determine which index prefixes to look for and restore
 if [ "${RESTORE_PLACES_ONLY:-0}" = "1" ]; then
     echo "Mode: places-only (toponyms will be rebuilt separately)"
-    REQUIRED_INDEX="places"
-    RESTORE_INDICES="places"
+    REQUIRED_PREFIX="places"
+    RESTORE_PREFIXES="places"
 else
-    REQUIRED_INDEX="places"  # At minimum need places
-    RESTORE_INDICES="places,toponyms"
+    REQUIRED_PREFIX="places"  # At minimum need places
+    RESTORE_PREFIXES="places toponyms"
 fi
 
-LATEST_SNAPSHOT=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all" | python3 -c "
+# Find the latest successful snapshot whose indices include a places* entry,
+# and output its name plus the full list of concrete indices it contains.
+SNAPSHOT_INFO=$(curl -s "$ES_URL/_snapshot/$STAGING_REPO_NAME/_all" | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
     snapshots = data.get('snapshots', [])
-    # Find snapshots that contain the required index
+    prefix = '${REQUIRED_PREFIX}'
     valid = [s for s in snapshots
              if s['state'] == 'SUCCESS'
-             and '$REQUIRED_INDEX' in s['indices']]
+             and any(idx == prefix or idx.startswith(prefix + '_')
+                     for idx in s['indices'])]
     if valid:
         latest = max(valid, key=lambda x: x['start_time'])
+        # Line 1: snapshot name  Line 2: comma-separated concrete indices
         print(latest['snapshot'])
+        print(','.join(latest['indices']))
 except:
     pass
 " 2>/dev/null || true)
 
+LATEST_SNAPSHOT=$(echo "$SNAPSHOT_INFO" | head -1)
+ALL_SNAPSHOT_INDICES=$(echo "$SNAPSHOT_INFO" | sed -n '2p')
+
 if [ -n "$LATEST_SNAPSHOT" ]; then
+    # Filter snapshot indices to those matching our desired prefixes
+    RESTORE_INDICES=""
+    for PREFIX in $RESTORE_PREFIXES; do
+        for IDX in $(echo "$ALL_SNAPSHOT_INDICES" | tr ',' ' '); do
+            if [ "$IDX" = "$PREFIX" ] || echo "$IDX" | grep -qE "^${PREFIX}_"; then
+                RESTORE_INDICES="${RESTORE_INDICES:+$RESTORE_INDICES,}$IDX"
+            fi
+        done
+    done
+
     # --- Restore from snapshot ---
     echo "Restoring indices from snapshot: $LATEST_SNAPSHOT"
-    echo "  Indices: $RESTORE_INDICES"
+    echo "  Concrete indices: $RESTORE_INDICES"
     # Start restore WITHOUT wait_for_completion so ES remains responsive
     curl -s -X POST "$ES_URL/_snapshot/$STAGING_REPO_NAME/$LATEST_SNAPSHOT/_restore" \
         -H 'Content-Type: application/json' -d "{
@@ -265,6 +287,34 @@ if [ -n "$LATEST_SNAPSHOT" ]; then
         echo "$PROGRESS" | tail -1 | awk '{print " - " $NF}'
         sleep 10
     done
+
+    # --- Ensure aliases exist for versioned indices ---
+    # Snapshots restore aliases alongside indices, but verify they're present
+    # and create them if not (e.g. snapshot predates alias creation).
+    echo "Verifying aliases..."
+    for BASE_NAME in places toponyms; do
+        # Skip if this base wasn't part of the restore
+        echo "$RESTORE_INDICES" | tr ',' '\n' | grep -qE "^${BASE_NAME}(_|$)" || continue
+
+        CONCRETE=$(echo "$RESTORE_INDICES" | tr ',' '\n' | grep -E "^${BASE_NAME}(_|$)" | head -1)
+
+        if [ "$CONCRETE" = "$BASE_NAME" ]; then
+            echo "  $BASE_NAME is a concrete index (no alias needed)"
+        else
+            # Check whether the alias already exists (may have been restored with the snapshot)
+            ALIAS_EXISTS=$(curl -s -o /dev/null -w "%{http_code}" "$ES_URL/_alias/$BASE_NAME")
+            if [ "$ALIAS_EXISTS" = "200" ]; then
+                echo "  $BASE_NAME alias already exists (restored with snapshot)"
+            else
+                echo "  Creating alias: $BASE_NAME -> $CONCRETE"
+                curl -s -X POST "$ES_URL/_aliases" \
+                    -H 'Content-Type: application/json' -d "{
+                  \"actions\": [{\"add\": {\"index\": \"$CONCRETE\", \"alias\": \"$BASE_NAME\"}}]
+                }" | python3 -m json.tool
+            fi
+        fi
+    done
+    echo
 else
     # --- Create empty indices ---
     echo "No complete snapshots found - creating empty indices..."
