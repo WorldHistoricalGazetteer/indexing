@@ -2503,6 +2503,26 @@ _ensure_exchange_repo() {
     return 1
 }
 
+# Resolve alias names to their concrete backing indices.
+# Outputs a comma-separated list of concrete index names.
+# Any name that is already a concrete index is passed through unchanged.
+_resolve_aliases() {
+    local es_url="$1"
+    local aliases="$2"          # comma-separated alias (or index) names
+    local curl_cmd="${3:-curl}"
+
+    $curl_cmd -s "${es_url}/_alias/${aliases}" 2>/dev/null \
+        | python3 -c "
+import sys, json
+try:
+    data = json.load(sys.stdin)
+    print(','.join(sorted(data.keys())))
+except:
+    # If _alias endpoint fails, fall back to the original names
+    print('${aliases}')
+"
+}
+
 # Take a snapshot of specific indices. Starts async, then polls until done.
 # (Avoids gateway read-timeout on long-running snapshots.)
 _take_snapshot() {
@@ -2704,14 +2724,31 @@ do_cluster() {
         echo "  ✓ Staging"
         echo
 
-        # 4. Snapshot production input indices
+        # 4. Resolve aliases and snapshot production input indices
         echo "Step 4: Snapshotting production indices ..."
-        _take_snapshot "$PROD_URL" "$SNAP_NAME" "places,toponyms" es_curl
+        # 'places' and 'toponyms' are aliases pointing to versioned concrete
+        # indices (e.g. places_20250320).  The snapshot API requires concrete
+        # index names — alias names are silently ignored.
+        local CONCRETE_INDICES
+        CONCRETE_INDICES=$(_resolve_aliases "$PROD_URL" "places,toponyms" es_curl)
+        echo "  Resolved aliases → concrete indices: ${CONCRETE_INDICES}"
+        if [ -z "$CONCRETE_INDICES" ] || [ "$CONCRETE_INDICES" = "places,toponyms" ]; then
+            # Fallback: if _alias returned the same names, try a wildcard approach
+            CONCRETE_INDICES=$(es_curl -s "${PROD_URL}/_cat/indices/places*,toponyms*?h=index" 2>/dev/null \
+                | tr '\n' ',' | sed 's/,$//')
+            echo "  (wildcard fallback: ${CONCRETE_INDICES})"
+        fi
+        if [ -z "$CONCRETE_INDICES" ]; then
+            echo "  ERROR: Could not resolve any concrete indices for places,toponyms" >&2
+            return 1
+        fi
+        _take_snapshot "$PROD_URL" "$SNAP_NAME" "$CONCRETE_INDICES" es_curl
         echo
 
         # 5. Delete any pre-existing copies on staging, then restore
         echo "Step 5: Restoring input indices into staging ES ..."
-        for idx in places toponyms; do
+        # Delete both aliases and concrete indices that might exist
+        for idx in places toponyms $(echo "$CONCRETE_INDICES" | tr ',' ' '); do
             curl -s -X DELETE "${STAGING_URL}/${idx}" >/dev/null 2>&1 || true
         done
         # Force staging ES to rediscover snapshots: DELETE the repo
@@ -2720,10 +2757,27 @@ do_cluster() {
         # without re-reading the shared filesystem.
         curl -s -X DELETE "${STAGING_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}" >/dev/null 2>&1 || true
         _ensure_exchange_repo "$STAGING_URL" curl
-        _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "places,toponyms" curl
+        _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "$CONCRETE_INDICES" curl
         _wait_for_restore "$STAGING_URL" curl
+
+        # Re-create aliases on staging so the clustering code can find
+        # the indices by their canonical names (places, toponyms)
+        echo "  Creating aliases on staging ..."
+        for ALIAS_NAME in places toponyms; do
+            # Find the concrete index matching this alias prefix
+            local CONCRETE
+            CONCRETE=$(echo "$CONCRETE_INDICES" | tr ',' '\n' \
+                | grep -E "^${ALIAS_NAME}(_|$)" | head -1)
+            if [ -n "$CONCRETE" ] && [ "$CONCRETE" != "$ALIAS_NAME" ]; then
+                curl -s -X POST "${STAGING_URL}/_aliases" \
+                    -H 'Content-Type: application/json' -d "{
+                  \"actions\": [{\"add\": {\"index\": \"${CONCRETE}\", \"alias\": \"${ALIAS_NAME}\"}}]
+                }" >/dev/null 2>&1
+                echo "    ${ALIAS_NAME} → ${CONCRETE}"
+            fi
+        done
         echo "  Index status on staging:"
-        curl -sf "${STAGING_URL}/_cat/indices/places,toponyms?v&h=index,docs.count,store.size" 2>/dev/null || true
+        curl -sf "${STAGING_URL}/_cat/indices?v&h=index,docs.count,store.size" 2>/dev/null || true
         echo
 
         # 6. Build python command (no auth — staging has xpack.security off)
