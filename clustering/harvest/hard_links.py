@@ -83,7 +83,7 @@ async def harvest_authority_hard_links(
         total=total,
         desc="Phase 1A: authority hard links",
         unit="place",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     async for doc in scroll_index(

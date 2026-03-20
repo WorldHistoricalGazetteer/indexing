@@ -115,7 +115,7 @@ async def harvest_phonetic_links(
         total=total_places,
         desc="Phase 3: finding un-clustered places",
         unit="place",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     from ..es_client import scroll_index, count_query
@@ -186,7 +186,7 @@ async def harvest_phonetic_links(
         total=len(batch_pids),
         desc="Phase 3: KNN queries",
         unit="place",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     for batch_start in range(0, len(batch_pids), cfg.batch_size):

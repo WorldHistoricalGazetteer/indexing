@@ -126,7 +126,7 @@ async def harvest_contributor_links(
         total=len(rows),
         desc="Phase 1B: contributor links",
         unit="row",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     for row in rows:

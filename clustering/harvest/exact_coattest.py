@@ -165,7 +165,7 @@ async def harvest_exact_coattestations(
         total=total,
         desc="Phase 2: toponym co-attestation",
         unit="toponym",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     async for doc in scroll_index(
@@ -253,7 +253,7 @@ async def harvest_exact_coattestations(
         total=len(pair_signals),
         desc="Phase 2: filtering pairs",
         unit="pair",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     for doc_id, sig in pair_signals.items():

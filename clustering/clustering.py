@@ -120,7 +120,7 @@ def compute_clusters(
         total=len(multi_components),
         desc="Phase 4: spatial coherence",
         unit="component",
-        miniinterval=2.0,
+        mininterval=2.0,
     )
 
     for comp_id, members in multi_components.items():
