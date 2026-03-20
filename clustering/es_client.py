@@ -8,6 +8,7 @@ utilities.  Uses the official ``elasticsearch[async]`` client.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncIterator
@@ -83,33 +84,50 @@ async def bulk_index(
     index: str,
     actions: list[dict],
     chunk_size: int = 5000,
+    throttle_seconds: float = 0.0,
 ) -> tuple[int, int]:
     """
     Bulk-index a list of action dicts into ``index``.
 
     Each action dict must have ``_id`` and ``_source`` keys.
+    If *throttle_seconds* > 0, sleeps between chunks to reduce
+    ES merge pressure.
     Returns (success_count, error_count).
     """
-    def gen():
-        for a in actions:
-            yield {
-                "_op_type": "index",
-                "_index": index,
-                "_id": a["_id"],
-                "_source": a["_source"],
-            }
+    total_success = 0
+    total_errors = 0
 
-    success, errors = await async_bulk(
-        client,
-        gen(),
-        chunk_size=chunk_size,
-        raise_on_error=False,
-        stats_only=True,
-    )
-    if errors:
-        logger.warning("Bulk indexing: %d succeeded, %d errors", success, errors)
+    for start in range(0, len(actions), chunk_size):
+        chunk = actions[start : start + chunk_size]
+
+        def gen():
+            for a in chunk:
+                yield {
+                    "_op_type": "index",
+                    "_index": index,
+                    "_id": a["_id"],
+                    "_source": a["_source"],
+                }
+
+        success, errors = await async_bulk(
+            client,
+            gen(),
+            chunk_size=chunk_size,
+            raise_on_error=False,
+            stats_only=True,
+        )
+        total_success += success
+        total_errors += errors
+
+        if throttle_seconds > 0 and start + chunk_size < len(actions):
+            await asyncio.sleep(throttle_seconds)
+
+    if total_errors:
+        logger.warning(
+            "Bulk indexing: %d succeeded, %d errors", total_success, total_errors
+        )
     else:
-        logger.info("Bulk indexing: %d succeeded", success)
-    return success, errors
+        logger.info("Bulk indexing: %d succeeded", total_success)
+    return total_success, total_errors
 
 

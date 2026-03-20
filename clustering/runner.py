@@ -4,6 +4,7 @@ CLI entry point for the clustering pipeline.
 
 Usage:
     python -m clustering.runner --full             # Full initial run
+    python -m clustering.runner --full --resume    # Resume after crash
     python -m clustering.runner --incremental      # Since last run
     python -m clustering.runner --full --dry-run   # Compute but don't index
     python -m clustering.runner --stats            # Report index state
@@ -25,7 +26,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from .config import ClusterConfig
-from .es_client import es_client, scroll_index
+from .es_client import es_client, count_query, scroll_index
 from .indexer import (
     ensure_clusters_index,
     index_membership_docs,
@@ -113,11 +114,14 @@ async def _fetch_place_coords(
     client, cfg: ClusterConfig, place_ids: set[str]
 ) -> dict[str, tuple[float, float] | None]:
     """Fetch repr_point coordinates for a set of place_ids."""
+    import asyncio
+
     coords: dict[str, tuple[float, float] | None] = {}
     pids = list(place_ids)
+    chunk_size = cfg.terms_query_max
 
-    for i in range(0, len(pids), 10_000):
-        chunk = pids[i : i + 10_000]
+    for i in range(0, len(pids), chunk_size):
+        chunk = pids[i : i + chunk_size]
         try:
             resp = await client.search(
                 index=cfg.places_index,
@@ -143,6 +147,10 @@ async def _fetch_place_coords(
         except Exception as e:
             logger.warning("Coord fetch failed for chunk: %s", e)
 
+        # Brief pause between chunks to avoid saturating ES
+        if i + chunk_size < len(pids):
+            await asyncio.sleep(0.1)
+
     # Fill missing with None
     for pid in place_ids:
         if pid not in coords:
@@ -151,8 +159,15 @@ async def _fetch_place_coords(
     return coords
 
 
-async def run_full(cfg: ClusterConfig, dry_run: bool = False) -> RunStatistics:
-    """Execute a full clustering run (all phases)."""
+async def run_full(
+    cfg: ClusterConfig, dry_run: bool = False, resume: bool = False,
+) -> RunStatistics:
+    """Execute a full clustering run (all phases).
+
+    If *resume* is True, load the checkpoint from the state index and
+    skip phases that already completed.  Each phase indexes its pairwise
+    docs immediately so that progress survives a crash.
+    """
     stats = RunStatistics()
     t0 = time.monotonic()
 
@@ -160,88 +175,194 @@ async def run_full(cfg: ClusterConfig, dry_run: bool = False) -> RunStatistics:
         if not dry_run:
             await ensure_clusters_index(client, cfg)
 
-        # Phase 1A: Authority hard links
-        print(flush=True)
-        print("=" * 60, flush=True)
-        print("  Phase 1A: Authority hard links", flush=True)
-        print("=" * 60, flush=True)
-        from .harvest.hard_links import harvest_authority_hard_links
+        # --- Resume checkpoint -------------------------------------------
+        done: set[str] = set()
+        if resume:
+            prev = await load_state(client, cfg)
+            done = set(prev.phases_completed)
+            if done:
+                print(flush=True)
+                print(f"  Resuming — phases already complete: "
+                      f"{', '.join(sorted(done))}", flush=True)
+            else:
+                print("  No checkpoint found — starting from scratch",
+                      flush=True)
 
-        phase1a_docs = await harvest_authority_hard_links(client, cfg)
-        stats.phase_1a_pairs = len(phase1a_docs)
-        print(f"  → {stats.phase_1a_pairs:,} pairs", flush=True)
+        async def _checkpoint(phase: str) -> None:
+            """Persist which phases are done so far."""
+            done.add(phase)
+            if not dry_run:
+                cp = ClusterState(
+                    last_run_mode="full (in progress)",
+                    algorithm_version=cfg.algorithm_version,
+                    run_statistics=stats,
+                    phases_completed=sorted(done),
+                )
+                await save_state(client, cfg, cp)
 
-        # Phase 1B: Contributor reconciliation links (via SSH tunnel to PG)
-        phase1b_docs = []
-        try:
+        # ---- Phase 1A ---------------------------------------------------
+        if "1a" in done:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 1A: Authority hard links  [CACHED]", flush=True)
+            print("=" * 60, flush=True)
+        else:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 1A: Authority hard links", flush=True)
+            print("=" * 60, flush=True)
+            from .harvest.hard_links import harvest_authority_hard_links
+
+            phase1a_docs = await harvest_authority_hard_links(client, cfg)
+            stats.phase_1a_pairs = len(phase1a_docs)
+            print(f"  → {stats.phase_1a_pairs:,} pairs", flush=True)
+
+            if not dry_run and phase1a_docs:
+                pw_ok, pw_err = await index_pairwise_docs(
+                    client, cfg, phase1a_docs
+                )
+                print(f"  Indexed: {pw_ok:,} ok, {pw_err:,} errors",
+                      flush=True)
+            await _checkpoint("1a")
+
+        # ---- Phase 1B ---------------------------------------------------
+        if "1b" in done:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 1B: Contributor reconciliation links  [CACHED]",
+                  flush=True)
+            print("=" * 60, flush=True)
+        else:
             print(flush=True)
             print("=" * 60, flush=True)
             print("  Phase 1B: Contributor reconciliation links", flush=True)
             print("=" * 60, flush=True)
-            from .pg_client import pg_connection
-            from .harvest.contributor_links import harvest_contributor_links
 
-            async with pg_connection() as conn:
-                phase1b_docs = await harvest_contributor_links(conn, cfg)
-            stats.phase_1b_pairs = len(phase1b_docs)
-            print(f"  → {stats.phase_1b_pairs:,} pairs", flush=True)
-        except Exception as e:
-            logger.warning("Phase 1B failed (PG connection issue): %s", e)
-            print(f"  ⚠ Phase 1B skipped (PG connection issue): {e}", flush=True)
+            whg_count = await count_query(
+                client, cfg.places_index, {"term": {"namespace": "whg"}}
+            )
+            if whg_count == 0:
+                print("  ⏭ Skipped — no whg: places indexed yet "
+                      "(contributor links have no ES targets)", flush=True)
+            else:
+                print(f"  Found {whg_count:,} whg: places in ES", flush=True)
+                try:
+                    from .pg_client import pg_connection
+                    from .harvest.contributor_links import (
+                        harvest_contributor_links,
+                    )
 
-        # Deduplicate Phase 1A + 1B
-        all_hard_links = _deduplicate_hard_links(phase1a_docs, phase1b_docs)
+                    async with pg_connection() as conn:
+                        phase1b_docs = await harvest_contributor_links(
+                            conn, cfg
+                        )
+                    stats.phase_1b_pairs = len(phase1b_docs)
+                    print(f"  → {stats.phase_1b_pairs:,} pairs", flush=True)
 
-        # Phase 2: Exact toponym co-attestation
-        print(flush=True)
-        print("=" * 60, flush=True)
-        print("  Phase 2: Exact toponym co-attestation", flush=True)
-        print("=" * 60, flush=True)
-        from .harvest.exact_coattest import harvest_exact_coattestations
+                    if not dry_run and phase1b_docs:
+                        pw_ok, pw_err = await index_pairwise_docs(
+                            client, cfg, phase1b_docs
+                        )
+                        print(f"  Indexed: {pw_ok:,} ok, {pw_err:,} errors",
+                              flush=True)
+                except Exception as e:
+                    logger.warning("Phase 1B failed (PG connection): %s", e)
+                    print(f"  ⚠ Phase 1B skipped: {e}", flush=True)
+            await _checkpoint("1b")
 
-        phase2_docs = await harvest_exact_coattestations(client, cfg)
-        stats.phase_2_pairs = len(phase2_docs)
-        print(f"  → {stats.phase_2_pairs:,} pairs", flush=True)
+        # ---- Phase 2 ----------------------------------------------------
+        if "2" in done:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 2: Exact toponym co-attestation  [CACHED]",
+                  flush=True)
+            print("=" * 60, flush=True)
+        else:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 2: Exact toponym co-attestation", flush=True)
+            print("=" * 60, flush=True)
+            from .harvest.exact_coattest import harvest_exact_coattestations
 
-        # Collect already-clustered place_ids (from phases 1+2)
-        clustered_pids: set[str] = set()
-        for doc in all_hard_links:
-            clustered_pids.add(doc.place_id_a)
-            clustered_pids.add(doc.place_id_b)
-        for doc in phase2_docs:
-            clustered_pids.add(doc.place_id_a)
-            clustered_pids.add(doc.place_id_b)
+            phase2_docs = await harvest_exact_coattestations(client, cfg)
+            stats.phase_2_pairs = len(phase2_docs)
+            print(f"  → {stats.phase_2_pairs:,} pairs", flush=True)
 
-        # Phase 3: Phonetic similarity (only un-clustered places)
-        print(flush=True)
-        print("=" * 60, flush=True)
-        print("  Phase 3: Phonetic similarity", flush=True)
-        print("=" * 60, flush=True)
-        from .harvest.phonetic import harvest_phonetic_links
+            if not dry_run and phase2_docs:
+                # Score before indexing so resumed Phase 4 has correct scores
+                phase2_docs = score_pairwise_docs(phase2_docs, cfg.scoring)
+                pw_ok, pw_err = await index_pairwise_docs(
+                    client, cfg, phase2_docs
+                )
+                print(f"  Indexed: {pw_ok:,} ok, {pw_err:,} errors",
+                      flush=True)
+            await _checkpoint("2")
 
-        phase3_docs = await harvest_phonetic_links(
-            client, cfg, clustered_pids
-        )
-        stats.phase_3_pairs = len(phase3_docs)
-        print(f"  → {stats.phase_3_pairs:,} pairs", flush=True)
+        # ---- Phase 3 ----------------------------------------------------
+        if "3" in done:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 3: Phonetic similarity  [CACHED]", flush=True)
+            print("=" * 60, flush=True)
+        else:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Phase 3: Phonetic similarity", flush=True)
+            print("=" * 60, flush=True)
 
-        # Phase 4: Scoring + Clustering
+            # Determine already-linked place_ids from the index so far
+            # (much cheaper than re-harvesting Phases 1+2 in memory)
+            clustered_pids: set[str] = set()
+            if not dry_run:
+                print("  Loading existing pairwise docs to build "
+                      "clustered set...", flush=True)
+                existing_pw = await _load_all_pairwise_docs(client, cfg)
+                for d in existing_pw:
+                    clustered_pids.add(d.place_id_a)
+                    clustered_pids.add(d.place_id_b)
+                print(f"  {len(clustered_pids):,} place_ids already linked",
+                      flush=True)
+                del existing_pw  # free memory
+
+            from .harvest.phonetic import harvest_phonetic_links
+
+            phase3_docs = await harvest_phonetic_links(
+                client, cfg, clustered_pids
+            )
+            stats.phase_3_pairs = len(phase3_docs)
+            print(f"  → {stats.phase_3_pairs:,} pairs", flush=True)
+
+            if not dry_run and phase3_docs:
+                phase3_docs = score_pairwise_docs(phase3_docs, cfg.scoring)
+                pw_ok, pw_err = await index_pairwise_docs(
+                    client, cfg, phase3_docs
+                )
+                print(f"  Indexed: {pw_ok:,} ok, {pw_err:,} errors",
+                      flush=True)
+            await _checkpoint("3")
+
+        # ---- Phase 4: Scoring + Clustering (always runs) ----------------
         print(flush=True)
         print("=" * 60, flush=True)
         print("  Phase 4: Composite scoring and clustering", flush=True)
         print("=" * 60, flush=True)
-        all_pairwise = all_hard_links + phase2_docs + phase3_docs
 
-        # Score algorithmic soft links
+        # Load ALL pairwise docs from the index (includes any resumed data)
+        all_pairwise = await _load_all_pairwise_docs(client, cfg)
+        print(f"  Loaded {len(all_pairwise):,} pairwise docs from index",
+              flush=True)
+
+        # Re-score algorithmic soft links (idempotent)
         all_pairwise = score_pairwise_docs(all_pairwise, cfg.scoring)
 
-        # Fetch coordinates for clustering
+        # Fetch coordinates for spatial coherence checking
         all_pids: set[str] = set()
         for d in all_pairwise:
             all_pids.add(d.place_id_a)
             all_pids.add(d.place_id_b)
 
-        print(f"  Fetching coordinates for {len(all_pids):,} places...", flush=True)
+        print(f"  Fetching coordinates for {len(all_pids):,} places...",
+              flush=True)
         place_coords = await _fetch_place_coords(client, cfg, all_pids)
 
         # Compute clusters
@@ -250,7 +371,9 @@ async def run_full(cfg: ClusterConfig, dry_run: bool = False) -> RunStatistics:
         membership_docs = compute_clusters(
             all_pairwise, place_coords, cfg.scoring, cfg.algorithm_version
         )
-        stats.clusters_formed = len(set(m.cluster_id for m in membership_docs))
+        stats.clusters_formed = len(
+            set(m.cluster_id for m in membership_docs)
+        )
         print(f"  → {stats.clusters_formed:,} clusters, "
               f"{len(membership_docs):,} membership docs", flush=True)
 
@@ -258,14 +381,16 @@ async def run_full(cfg: ClusterConfig, dry_run: bool = False) -> RunStatistics:
         if not dry_run:
             print(flush=True)
             print("=" * 60, flush=True)
-            print("  Indexing results", flush=True)
+            print("  Indexing membership docs", flush=True)
             print("=" * 60, flush=True)
-            pw_ok, pw_err = await index_pairwise_docs(client, cfg, all_pairwise)
-            mb_ok, mb_err = await index_membership_docs(client, cfg, membership_docs)
-            print(f"  Pairwise: {pw_ok:,} indexed, {pw_err:,} errors", flush=True)
-            print(f"  Membership: {mb_ok:,} indexed, {mb_err:,} errors", flush=True)
+            # Pairwise docs are already indexed per-phase; just do memberships
+            mb_ok, mb_err = await index_membership_docs(
+                client, cfg, membership_docs
+            )
+            print(f"  Membership: {mb_ok:,} indexed, {mb_err:,} errors",
+                  flush=True)
 
-            # Save state
+            # Final state — clear checkpoint (run is complete)
             hwm = await _get_current_hwm(client, cfg)
             stats.duration_seconds = time.monotonic() - t0
             state = ClusterState(
@@ -273,6 +398,7 @@ async def run_full(cfg: ClusterConfig, dry_run: bool = False) -> RunStatistics:
                 algorithm_version=cfg.algorithm_version,
                 high_water_marks=hwm,
                 run_statistics=stats,
+                phases_completed=[],  # clear — run is done
             )
             await save_state(client, cfg, state)
         else:
@@ -322,17 +448,23 @@ async def run_incremental(cfg: ClusterConfig) -> RunStatistics:
 
         # Phase 1B: incremental (since last contributor timestamp)
         phase1b_docs = []
-        try:
-            from .pg_client import pg_connection
-            from .harvest.contributor_links import harvest_contributor_links
+        whg_count = await count_query(
+            client, cfg.places_index, {"term": {"namespace": "whg"}}
+        )
+        if whg_count == 0:
+            logger.info("Phase 1B skipped — no whg: places indexed yet")
+        else:
+            try:
+                from .pg_client import pg_connection
+                from .harvest.contributor_links import harvest_contributor_links
 
-            async with pg_connection() as conn:
-                phase1b_docs = await harvest_contributor_links(
-                    conn, cfg, since=hwm.contributor_links_modified_at
-                )
-            stats.phase_1b_pairs = len(phase1b_docs)
-        except Exception as e:
-            logger.warning("Phase 1B skipped: %s", e)
+                async with pg_connection() as conn:
+                    phase1b_docs = await harvest_contributor_links(
+                        conn, cfg, since=hwm.contributor_links_modified_at
+                    )
+                stats.phase_1b_pairs = len(phase1b_docs)
+            except Exception as e:
+                logger.warning("Phase 1B skipped: %s", e)
 
         new_hard_links = _deduplicate_hard_links(phase1a_docs, phase1b_docs)
 
@@ -417,6 +549,9 @@ async def show_stats(cfg: ClusterConfig) -> None:
         print(f"Last run: {state.last_run_timestamp}")
         print(f"Mode: {state.last_run_mode}")
         print(f"Algorithm: {state.algorithm_version}")
+        if state.phases_completed:
+            print(f"Checkpoint: phases {', '.join(state.phases_completed)} "
+                  f"complete (use --full --resume to continue)")
         print(f"HWM places: {state.high_water_marks.places_indexed_at}")
         print(f"HWM toponyms: {state.high_water_marks.toponyms_indexed_at}")
         print(f"HWM contributor: {state.high_water_marks.contributor_links_modified_at}")
@@ -495,6 +630,8 @@ def main():
     group.add_argument("--stats", action="store_true", help="Show statistics")
 
     parser.add_argument("--dry-run", action="store_true", help="Don't index results")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume a crashed --full run from the last checkpoint")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
 
     # ES connection overrides (used by es.sh wrapper)
@@ -502,6 +639,8 @@ def main():
                         help="Elasticsearch URL (e.g. http://localhost:9201)")
     parser.add_argument("--es-pass-file", type=str, default=None,
                         help="Path to file containing the elastic password")
+    parser.add_argument("--max-phase3-places", type=int, default=None,
+                        help="Cap on un-clustered places in Phase 3 (0=unlimited, default)")
 
     args = parser.parse_args()
     _setup_logging(args.verbose)
@@ -517,11 +656,13 @@ def main():
         except FileNotFoundError:
             logger.error("Password file not found: %s", args.es_pass_file)
             sys.exit(1)
+    if args.max_phase3_places is not None:
+        cfg.scoring.max_phase3_places = args.max_phase3_places
 
     if args.stats:
         asyncio.run(show_stats(cfg))
     elif args.full:
-        asyncio.run(run_full(cfg, dry_run=args.dry_run))
+        asyncio.run(run_full(cfg, dry_run=args.dry_run, resume=args.resume))
     elif args.incremental:
         asyncio.run(run_incremental(cfg))
 

@@ -55,7 +55,10 @@ async def index_pairwise_docs(
         })
 
     logger.info("Indexing %d pairwise docs", len(actions))
-    return await bulk_index(client, cfg.clusters_index, actions, cfg.bulk_chunk)
+    return await bulk_index(
+        client, cfg.clusters_index, actions, cfg.bulk_chunk,
+        throttle_seconds=cfg.bulk_throttle_seconds,
+    )
 
 
 async def index_membership_docs(
@@ -76,7 +79,10 @@ async def index_membership_docs(
         })
 
     logger.info("Indexing %d membership docs", len(actions))
-    return await bulk_index(client, cfg.clusters_index, actions, cfg.bulk_chunk)
+    return await bulk_index(
+        client, cfg.clusters_index, actions, cfg.bulk_chunk,
+        throttle_seconds=cfg.bulk_throttle_seconds,
+    )
 
 
 async def delete_stale_memberships(

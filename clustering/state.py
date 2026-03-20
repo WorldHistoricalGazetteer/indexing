@@ -51,6 +51,9 @@ class ClusterState(BaseModel):
     algorithm_version: str = ""
     high_water_marks: HighWaterMarks = Field(default_factory=HighWaterMarks)
     run_statistics: RunStatistics = Field(default_factory=RunStatistics)
+    # Checkpoint for resume: tracks which phases completed during an
+    # in-progress run.  Cleared on successful completion.
+    phases_completed: list[str] = Field(default_factory=list)
 
 
 async def load_state(

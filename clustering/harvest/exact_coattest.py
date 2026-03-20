@@ -50,58 +50,66 @@ async def _fetch_place_data(
     client: AsyncElasticsearch,
     place_ids: list[str],
     index: str,
+    chunk_size: int = 2000,
 ) -> dict[str, dict]:
     """
-    Multi-get place documents from the places index.
+    Multi-get place documents from the places index in manageable chunks.
 
     Returns a dict keyed by place_id with:
     - repr_point: (lat, lon) or None
     - ccodes: set of country codes
     - types: set of type identifiers
     """
+    import asyncio
+
     if not place_ids:
         return {}
 
-    # Use a terms query to fetch in bulk
-    body = {
-        "size": len(place_ids),
-        "query": {"terms": {"place_id": place_ids}},
-        "_source": ["place_id", "geometries.repr_point", "ccodes", "types.identifier"],
-    }
-    resp = await client.search(index=index, body=body)
-
     result = {}
-    for hit in resp["hits"]["hits"]:
-        src = hit["_source"]
-        pid = src.get("place_id", "")
 
-        # Extract repr_point from first geometry
-        repr_point = None
-        for geom in src.get("geometries", []):
-            rp = geom.get("repr_point")
-            if rp:
-                # ES geo_point: can be {"lat": ..., "lon": ...} or [lon, lat] or "lat,lon"
-                if isinstance(rp, dict):
-                    repr_point = (rp.get("lat", 0), rp.get("lon", 0))
-                elif isinstance(rp, (list, tuple)) and len(rp) >= 2:
-                    repr_point = (rp[1], rp[0])  # [lon, lat] → (lat, lon)
-                elif isinstance(rp, str) and "," in rp:
-                    parts = rp.split(",")
-                    repr_point = (float(parts[0]), float(parts[1]))
-                break
+    for start in range(0, len(place_ids), chunk_size):
+        chunk = place_ids[start : start + chunk_size]
 
-        ccodes = set(src.get("ccodes", []))
-        types_ = set()
-        for t in src.get("types", []):
-            tid = t.get("identifier", "")
-            if tid:
-                types_.add(tid)
-
-        result[pid] = {
-            "repr_point": repr_point,
-            "ccodes": ccodes,
-            "types": types_,
+        body = {
+            "size": len(chunk),
+            "query": {"terms": {"place_id": chunk}},
+            "_source": ["place_id", "geometries.repr_point", "ccodes", "types.identifier"],
         }
+        resp = await client.search(index=index, body=body)
+
+        for hit in resp["hits"]["hits"]:
+            src = hit["_source"]
+            pid = src.get("place_id", "")
+
+            # Extract repr_point from first geometry
+            repr_point = None
+            for geom in src.get("geometries", []):
+                rp = geom.get("repr_point")
+                if rp:
+                    if isinstance(rp, dict):
+                        repr_point = (rp.get("lat", 0), rp.get("lon", 0))
+                    elif isinstance(rp, (list, tuple)) and len(rp) >= 2:
+                        repr_point = (rp[1], rp[0])
+                    elif isinstance(rp, str) and "," in rp:
+                        parts = rp.split(",")
+                        repr_point = (float(parts[0]), float(parts[1]))
+                    break
+
+            ccodes = set(src.get("ccodes", []))
+            types_ = set()
+            for t in src.get("types", []):
+                tid = t.get("identifier", "")
+                if tid:
+                    types_.add(tid)
+
+            result[pid] = {
+                "repr_point": repr_point,
+                "ccodes": ccodes,
+                "types": types_,
+            }
+
+        if start + chunk_size < len(place_ids):
+            await asyncio.sleep(0.1)
 
     return result
 
@@ -211,25 +219,20 @@ async def harvest_exact_coattestations(
         if toponyms_processed % 10_000 == 0:
             pbar.set_postfix(pairs=len(pair_signals), overflow=toponyms_skipped_overflow)
 
-        # Periodically flush place lookups (every 100K unique place IDs)
+        # Periodically flush place lookups
         if len(batch_place_ids) - len(place_cache) > 10_000:
             new_ids = [pid for pid in batch_place_ids if pid not in place_cache]
             if new_ids:
-                # Fetch in chunks of 10K
-                for i in range(0, len(new_ids), 10_000):
-                    chunk = new_ids[i : i + 10_000]
-                    fetched = await _fetch_place_data(client, chunk, cfg.places_index)
-                    place_cache.update(fetched)
+                fetched = await _fetch_place_data(client, new_ids, cfg.places_index)
+                place_cache.update(fetched)
 
     pbar.close()
 
     # Final flush of place lookups
     remaining = [pid for pid in batch_place_ids if pid not in place_cache]
     if remaining:
-        for i in range(0, len(remaining), 10_000):
-            chunk = remaining[i : i + 10_000]
-            fetched = await _fetch_place_data(client, chunk, cfg.places_index)
-            place_cache.update(fetched)
+        fetched = await _fetch_place_data(client, remaining, cfg.places_index)
+        place_cache.update(fetched)
 
     logger.info(
         "Phase 2 toponyms done: %d processed, %d overflow-skipped, "

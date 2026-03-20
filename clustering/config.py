@@ -50,7 +50,7 @@ ALGORITHM_VERSION = "cluster_v1.0"
 # ---------------------------------------------------------------------------
 BATCH_SIZE = int(os.getenv("CLUSTER_BATCH_SIZE", "1000"))
 ES_BULK_CHUNK = int(os.getenv("CLUSTER_ES_BULK_CHUNK", "5000"))
-SCROLL_SIZE = int(os.getenv("CLUSTER_SCROLL_SIZE", "5000"))
+SCROLL_SIZE = int(os.getenv("CLUSTER_SCROLL_SIZE", "2000"))
 
 # ---------------------------------------------------------------------------
 # Known ES namespaces (targets must be in this set for a link to be useful)
@@ -99,7 +99,10 @@ class ScoringConfig:
     max_cluster_diameter_km: float = 100.0
 
     # Concurrent KNN queries for Phase 3
-    knn_concurrency: int = 50
+    knn_concurrency: int = 10
+
+    # Phase 3 place limit (0 = unlimited)
+    max_phase3_places: int = 0
 
 
 @dataclass
@@ -117,4 +120,11 @@ class ClusterConfig:
     bulk_chunk: int = ES_BULK_CHUNK
     scroll_size: int = SCROLL_SIZE
     scoring: ScoringConfig = field(default_factory=ScoringConfig)
+
+    # Throttling: seconds to sleep between bulk index flushes (0 = none)
+    bulk_throttle_seconds: float = float(
+        os.getenv("CLUSTER_BULK_THROTTLE", "0.5")
+    )
+    # Max place IDs per terms query (ES has a 65536 terms limit by default)
+    terms_query_max: int = int(os.getenv("CLUSTER_TERMS_MAX", "2000"))
 

@@ -2486,27 +2486,121 @@ do_cluster() {
     # authority records via hard links, toponym co-attestation, and
     # Symphonym phonetic similarity.
     #
-    # The process runs under nohup so it survives SSH disconnection.
-    # Output is logged to a timestamped file; tail -f is started for
-    # immediate feedback (Ctrl-C the tail without killing the job).
+    # Two execution modes:
+    #   (a) Default (on Pitt VM): runs under nohup against localhost ES.
+    #   (b) --slurm (from CRC login node): submits a Slurm job that
+    #       reaches production ES via the gateway at the public hostname.
+    #       Use this for large runs that need more memory/CPU.
     #
     # Options are passed through to clustering.runner (see --help).
     # ES host and password are injected automatically.
     #
     # Examples:
-    #   es -cluster --full                 # Full initial run
-    #   es -cluster --incremental          # Since last run
-    #   es -cluster --full --dry-run       # Compute but don't index
-    #   es -cluster --stats                # Show statistics
+    #   es -cluster --full                  # nohup on VM
+    #   es -cluster --full --slurm          # submit to Slurm
+    #   es -cluster --incremental           # nohup on VM
+    #   es -cluster --full --dry-run        # nohup, no indexing
+    #   es -cluster --stats                 # quick query (no nohup)
+    #   es -cluster --full --slurm --mem 300G --time 24:00:00  # custom Slurm resources
 
-    local ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+    # --- Parse our flags (--slurm, --mem, --time); rest goes to Python ---
+    local USE_SLURM=false
+    local SLURM_MEM="500G"
+    local SLURM_TIME="3-00:00:00"
+    local PYTHON_ARGS=()
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --slurm)    USE_SLURM=true; shift ;;
+            --mem)      SLURM_MEM="$2"; shift 2 ;;
+            --time)     SLURM_TIME="$2"; shift 2 ;;
+            *)          PYTHON_ARGS+=("$1"); shift ;;
+        esac
+    done
+
     local PASS_FILE="${IX1_BASE}/es/config/elastic.password"
     local LOG_DIR="${IX1_BASE}/es/logs"
     local TIMESTAMP
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-    local LOG_FILE="${LOG_DIR}/cluster_${TIMESTAMP}.log"
 
     mkdir -p "$LOG_DIR"
+
+    # Build auth args
+    local AUTH_ARGS=""
+    if [ -f "$PASS_FILE" ]; then
+        AUTH_ARGS="--es-pass-file ${PASS_FILE}"
+    fi
+
+    # ---- Slurm mode ----
+    if $USE_SLURM; then
+        # From a CRC login node, reach production ES via the gateway
+        local ES_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
+        local LOG_FILE="${LOG_DIR}/cluster_slurm_${TIMESTAMP}.log"
+
+        echo "=========================================="
+        echo "PLACE CLUSTERING (Slurm)"
+        echo "=========================================="
+        echo "ES:       ${ES_URL} (via gateway)"
+        echo "Args:     ${PYTHON_ARGS[*]}"
+        echo "Mem:      ${SLURM_MEM}"
+        echo "Time:     ${SLURM_TIME}"
+        echo
+
+        JOBID=$(sbatch --parsable <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=whg-cluster
+#SBATCH --output=${LOG_DIR}/cluster_%j.out
+#SBATCH --error=${LOG_DIR}/cluster_%j.err
+#SBATCH --time=${SLURM_TIME}
+#SBATCH --partition=htc
+#SBATCH --qos=normal
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=${SLURM_MEM}
+
+set -e
+
+echo "=========================================="
+echo "PLACE CLUSTERING (Slurm)"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node:    \$(hostname)"
+echo "ES:      ${ES_URL}"
+echo
+
+# Load environment
+source "$CONDA_SETUP_PATH"
+conda activate whg
+export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
+cd "$REPO_DIR"
+
+python -u -m clustering.runner \\
+    --es-host "${ES_URL}" \\
+    ${AUTH_ARGS} \\
+    ${PYTHON_ARGS[@]}
+
+echo
+echo "=========================================="
+echo "CLUSTERING COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+SBATCH_EOF
+)
+        CLEAN_JOBID="${JOBID%;*}"
+
+        echo "✓ Clustering job submitted: ${CLEAN_JOBID}"
+        echo
+        echo "Monitor with:"
+        echo "  squeue -j ${CLEAN_JOBID}"
+        echo "  tail -f ${LOG_DIR}/cluster_${CLEAN_JOBID}.out"
+        echo
+        return 0
+    fi
+
+    # ---- nohup mode (on VM) ----
+    local ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+    local LOG_FILE="${LOG_DIR}/cluster_${TIMESTAMP}.log"
 
     # Verify ES is responding
     if ! es_curl --connect-timeout 5 "${ES_URL}/_cluster/health" &>/dev/null; then
@@ -2515,18 +2609,12 @@ do_cluster() {
     fi
 
     echo "=========================================="
-    echo "PLACE CLUSTERING"
+    echo "PLACE CLUSTERING (nohup)"
     echo "=========================================="
     echo "ES:   ${ES_URL}"
-    echo "Args: $*"
+    echo "Args: ${PYTHON_ARGS[*]}"
     echo "Log:  ${LOG_FILE}"
     echo
-
-    # Build auth args
-    local AUTH_ARGS=""
-    if [ -f "$PASS_FILE" ]; then
-        AUTH_ARGS="--es-pass-file ${PASS_FILE}"
-    fi
 
     # Write a small wrapper script so nohup runs in the right env
     local WRAPPER
@@ -2550,7 +2638,7 @@ cd "$REPO_DIR"
 python -u -m clustering.runner \\
     --es-host "${ES_URL}" \\
     ${AUTH_ARGS} \\
-    $@
+    ${PYTHON_ARGS[@]}
 WRAPPER_EOF
 
     chmod +x "$WRAPPER"
@@ -2850,20 +2938,33 @@ case "$1" in
         echo "      Pre-compute equivalence clusters across authority records."
         echo "      Hard links (authority sameAs, contributor reconciliation),"
         echo "      toponym co-attestation, and Symphonym phonetic similarity."
-        echo "      Runs under nohup — safe to disconnect."
+        echo
+        echo "  Execution modes:"
+        echo "    Default (on Pitt VM): runs under nohup against localhost ES."
+        echo "    --slurm (from CRC login node): submits Slurm job reaching"
+        echo "            production ES via the gateway. Use for large runs."
         echo
         echo "  Options (passed to clustering.runner):"
         echo "    --full               Full initial run (all phases)"
         echo "    --incremental        Incremental run (since last run)"
+        echo "    --resume             Resume a crashed --full run from checkpoint"
         echo "    --stats              Show current state and statistics"
         echo "    --dry-run            Compute but don't index results"
+        echo "    --max-phase3-places N  Cap un-clustered places in Phase 3 (0=unlimited)"
         echo "    -v, --verbose        Verbose (DEBUG-level) logging"
         echo
+        echo "  Slurm options:"
+        echo "    --slurm              Submit as Slurm job (from CRC login node)"
+        echo "    --mem SIZE           Slurm memory (default: 500G)"
+        echo "    --time HH:MM:SS     Slurm wall time (default: 3-00:00:00)"
+        echo
         echo "  Examples:"
-        echo "    $0 -cluster --full                    # Full initial run"
-        echo "    $0 -cluster --incremental              # Since last run"
-        echo "    $0 -cluster --full --dry-run           # Test run"
-        echo "    $0 -cluster --stats                    # Show statistics"
+        echo "    $0 -cluster --full                    # nohup on VM"
+        echo "    $0 -cluster --full --slurm            # submit to Slurm"
+        echo "    $0 -cluster --full --slurm --mem 750G # Slurm with 750G RAM"
+        echo "    $0 -cluster --incremental              # nohup, since last run"
+        echo "    $0 -cluster --full --dry-run           # test run"
+        echo "    $0 -cluster --stats                    # show statistics"
         echo
         echo "REBUILD TOPONYMS INDEX (requires staging ES running):"
         echo "  -rebuild-toponyms VERSION [OPTIONS]"

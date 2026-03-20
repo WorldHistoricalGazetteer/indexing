@@ -160,9 +160,12 @@ async def harvest_phonetic_links(
         if processed % 50_000 == 0:
             pbar.set_postfix(unclustered=len(unclustered_places))
 
-        # Limit for initial implementation — remove for production
-        if processed >= 5_000_000:
-            logger.warning("Phase 3: capping at 5M un-clustered places for initial run")
+        # Configurable cap on un-clustered places (0 = unlimited)
+        if scoring.max_phase3_places > 0 and len(unclustered_places) >= scoring.max_phase3_places:
+            logger.warning(
+                "Phase 3: capping at %d un-clustered places (--max-phase3-places)",
+                scoring.max_phase3_places,
+            )
             break
 
     pbar.close()
@@ -190,8 +193,10 @@ async def harvest_phonetic_links(
         batch = batch_pids[batch_start : batch_start + cfg.batch_size]
 
         # Fetch toponym embeddings for this batch
+        # Each place may have multiple toponyms; cap results to avoid
+        # overwhelming ES with huge response payloads.
         toponym_body = {
-            "size": 10000,
+            "size": min(len(batch) * 5, 5000),
             "query": {"terms": {"attestations": batch}},
             "_source": ["attestations", "embedding"],
         }
@@ -293,8 +298,9 @@ async def harvest_phonetic_links(
     # Fetch target place data
     target_cache: dict[str, dict] = {}
     target_list = list(all_target_pids)
-    for i in range(0, len(target_list), 10_000):
-        chunk = target_list[i : i + 10_000]
+    chunk_size = 2000
+    for i in range(0, len(target_list), chunk_size):
+        chunk = target_list[i : i + chunk_size]
         body = {
             "size": len(chunk),
             "query": {"terms": {"place_id": chunk}},
@@ -327,6 +333,9 @@ async def harvest_phonetic_links(
                 }
         except Exception as e:
             logger.warning("Place data fetch failed: %s", e)
+
+        if i + chunk_size < len(target_list):
+            await asyncio.sleep(0.1)
 
     # Merge with unclustered_places for a unified cache
     all_place_data = {**{k: v for k, v in unclustered_places.items()}, **target_cache}
