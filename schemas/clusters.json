@@ -1,0 +1,75 @@
+{
+  "settings": {
+    "number_of_shards": 2,
+    "number_of_replicas": 0,
+    "refresh_interval": "30s",
+    "index": {
+      "codec": "best_compression"
+    }
+  },
+  "mappings": {
+    "properties": {
+      "doc_type": {
+        "type": "keyword",
+        "doc_values": true
+      },
+
+      "place_id_a": {
+        "type": "keyword"
+      },
+      "place_id_b": {
+        "type": "keyword"
+      },
+      "namespace_a": {
+        "type": "keyword"
+      },
+      "namespace_b": {
+        "type": "keyword"
+      },
+      "score": {
+        "type": "float"
+      },
+      "link_class": {
+        "type": "keyword",
+        "doc_values": true
+      },
+      "link_method": {
+        "type": "keyword",
+        "doc_values": true
+      },
+      "signals": {
+        "type": "object",
+        "enabled": true,
+        "properties": {
+          "toponym_exact_count": { "type": "integer" },
+          "toponym_symphonym_max": { "type": "float" },
+          "spatial_distance_km": { "type": "float" },
+          "type_match": { "type": "boolean" },
+          "ccode_overlap_count": { "type": "integer" },
+          "shared_link_ids": { "type": "keyword" }
+        }
+      },
+
+      "place_id": {
+        "type": "keyword"
+      },
+      "namespace": {
+        "type": "keyword"
+      },
+      "cluster_id": {
+        "type": "keyword"
+      },
+      "cluster_size": {
+        "type": "integer"
+      },
+
+      "algorithm_version": {
+        "type": "keyword"
+      },
+      "created_at": {
+        "type": "date"
+      }
+    }
+  }
+}
+

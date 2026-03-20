@@ -74,6 +74,12 @@ class ReconcileRequest(BaseModel):
                     "to suppress noisy Ordnance Survey records). "
                     "Pass [] to include all namespaces.",
     )
+    group_by_cluster: bool = Field(
+        default=False,
+        description="When True, group results by pre-computed cluster. "
+                    "The 'clusters' field in the response will be populated "
+                    "with grouped results alongside the flat 'hits' list.",
+    )
 
 
 class CandidateName(BaseModel):
@@ -95,8 +101,17 @@ class CandidateHit(BaseModel):
     geometries: list[CandidateGeometry] = []
 
 
+class ClusterGroup(BaseModel):
+    """A group of candidate hits that belong to the same pre-computed cluster."""
+    cluster_id: str
+    cluster_size: int
+    representative: CandidateHit  # highest-scoring member
+    members: list[CandidateHit] = []  # remaining members
+
+
 class ReconcileResponse(BaseModel):
-    hits: list[CandidateHit] = []
+    hits: list[CandidateHit] = []  # flat list (always populated)
+    clusters: list[ClusterGroup] = []  # grouped view (populated when group_by_cluster=True)
     max_score: float = 0
     total: int = 0
 
@@ -536,9 +551,230 @@ async def reconcile_search(req: ReconcileRequest):
     candidates.sort(key=lambda c: c.score, reverse=True)
     candidates = candidates[:req.size]
 
+    # ------------------------------------------------------------------
+    # Step 5 (optional): Cluster grouping
+    # ------------------------------------------------------------------
+
+    cluster_groups: list[ClusterGroup] = []
+    if req.group_by_cluster and candidates:
+        cluster_groups = await _group_by_cluster(
+            [c.place_id for c in candidates],
+            {c.place_id: c for c in candidates},
+            auth,
+            headers,
+        )
+
     return ReconcileResponse(
         hits=candidates,
+        clusters=cluster_groups,
         max_score=candidates[0].score if candidates else 0,
         total=places_result.get("hits", {}).get("total", {}).get("value", len(candidates)),
     )
+
+
+# ---------------------------------------------------------------------------
+# Cluster grouping helper
+# ---------------------------------------------------------------------------
+
+CLUSTERS_INDEX = "clusters"
+
+async def _group_by_cluster(
+    place_ids: list[str],
+    candidates_map: dict[str, CandidateHit],
+    auth,
+    headers: dict,
+) -> list[ClusterGroup]:
+    """
+    Look up cluster membership for surviving place_ids and group hits.
+
+    Returns a list of ClusterGroup, sorted by representative score descending.
+    Unclustered places are returned as singleton groups.
+    """
+    import httpx
+    from collections import defaultdict
+
+    cluster_body = {
+        "size": len(place_ids),
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"doc_type": "membership"}},
+                    {"terms": {"place_id": place_ids}},
+                ]
+            }
+        },
+        "_source": ["place_id", "cluster_id", "cluster_size"],
+    }
+
+    pid_to_cluster: dict[str, tuple[str, int]] = {}  # pid → (cluster_id, cluster_size)
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
+                json=cluster_body,
+                auth=auth,
+                headers=headers,
+            )
+            if resp.status_code == 200:
+                for hit in resp.json().get("hits", {}).get("hits", []):
+                    src = hit["_source"]
+                    pid_to_cluster[src["place_id"]] = (
+                        src["cluster_id"],
+                        src.get("cluster_size", 1),
+                    )
+    except Exception as e:
+        logger.warning("Cluster lookup failed (non-fatal): %s", e)
+        return []
+
+    # Group candidates by cluster_id
+    cluster_members: dict[str, list[CandidateHit]] = defaultdict(list)
+    cluster_sizes: dict[str, int] = {}
+    unclustered: list[CandidateHit] = []
+
+    for pid in place_ids:
+        candidate = candidates_map.get(pid)
+        if not candidate:
+            continue
+        if pid in pid_to_cluster:
+            cid, csize = pid_to_cluster[pid]
+            cluster_members[cid].append(candidate)
+            cluster_sizes[cid] = csize
+        else:
+            unclustered.append(candidate)
+
+    groups: list[ClusterGroup] = []
+
+    for cid, members in cluster_members.items():
+        members.sort(key=lambda c: c.score, reverse=True)
+        groups.append(ClusterGroup(
+            cluster_id=cid,
+            cluster_size=cluster_sizes.get(cid, len(members)),
+            representative=members[0],
+            members=members[1:],
+        ))
+
+    # Add unclustered places as singleton groups
+    for candidate in unclustered:
+        groups.append(ClusterGroup(
+            cluster_id=f"singleton_{candidate.place_id}",
+            cluster_size=1,
+            representative=candidate,
+            members=[],
+        ))
+
+    # Sort groups by representative score descending
+    groups.sort(key=lambda g: g.representative.score, reverse=True)
+    return groups
+
+
+# ---------------------------------------------------------------------------
+# Standalone Cluster API Endpoints (§7.3)
+# ---------------------------------------------------------------------------
+
+@router.get("/cluster/place/{place_id:path}")
+async def get_cluster_for_place(place_id: str):
+    """
+    Return the full cluster for a given place_id.
+
+    If the place is not in any cluster, returns an empty cluster with
+    just that place.
+    """
+    import httpx
+
+    auth = _es_auth()
+    headers = {"Content-Type": "application/json"}
+
+    # Look up the place's cluster membership
+    body = {
+        "size": 1,
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"doc_type": "membership"}},
+                    {"term": {"place_id": place_id}},
+                ]
+            }
+        },
+        "_source": ["cluster_id", "cluster_size"],
+    }
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        resp = await client.post(
+            f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
+            json=body, auth=auth, headers=headers,
+        )
+        if resp.status_code != 200:
+            return {"place_id": place_id, "cluster_id": None, "members": []}
+
+        hits = resp.json().get("hits", {}).get("hits", [])
+        if not hits:
+            return {"place_id": place_id, "cluster_id": None, "members": []}
+
+        cluster_id = hits[0]["_source"]["cluster_id"]
+        cluster_size = hits[0]["_source"].get("cluster_size", 0)
+
+        # Fetch all members of this cluster
+        return await _fetch_cluster_members(
+            client, cluster_id, cluster_size, auth, headers
+        )
+
+
+@router.get("/cluster/id/{cluster_id}")
+async def get_cluster_by_id(cluster_id: str):
+    """Return all members of a cluster by cluster_id."""
+    import httpx
+
+    auth = _es_auth()
+    headers = {"Content-Type": "application/json"}
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        return await _fetch_cluster_members(
+            client, cluster_id, 0, auth, headers
+        )
+
+
+async def _fetch_cluster_members(
+    client,
+    cluster_id: str,
+    cluster_size: int,
+    auth,
+    headers: dict,
+) -> dict:
+    """Fetch all membership docs for a cluster and return structured response."""
+    body = {
+        "size": max(cluster_size, 100),
+        "query": {
+            "bool": {
+                "filter": [
+                    {"term": {"doc_type": "membership"}},
+                    {"term": {"cluster_id": cluster_id}},
+                ]
+            }
+        },
+        "_source": ["place_id", "namespace", "cluster_size"],
+    }
+
+    resp = await client.post(
+        f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
+        json=body, auth=auth, headers=headers,
+    )
+    if resp.status_code != 200:
+        return {"cluster_id": cluster_id, "members": []}
+
+    hits = resp.json().get("hits", {}).get("hits", [])
+    members = [
+        {
+            "place_id": h["_source"]["place_id"],
+            "namespace": h["_source"].get("namespace", ""),
+        }
+        for h in hits
+    ]
+
+    return {
+        "cluster_id": cluster_id,
+        "cluster_size": len(members),
+        "members": members,
+    }
+
 

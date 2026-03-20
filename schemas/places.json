@@ -193,6 +193,9 @@
             "type": "keyword"
           }
         }
+      },
+      "indexed_at": {
+        "type": "date"
       }
     }
   }
