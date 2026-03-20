@@ -105,10 +105,14 @@ def load_country_geometries(download=True):
             sys.exit(1)
     features = _read_shapefile(zip_path)
     countries = []
+    skipped = []
     for feat in features:
         props = feat["properties"]
-        iso_a2 = props.get("ISO_A2") or props.get("ISO_A2_EH") or ""
+        iso_a2 = props.get("ISO_A2", "")
         if not iso_a2 or iso_a2 == "-99":
+            iso_a2 = props.get("ISO_A2_EH", "")
+        if not iso_a2 or iso_a2 == "-99":
+            skipped.append(props.get("NAME", "?"))
             continue
         geom = geojson_to_shapely(feat["geometry"])
         if geom is None or geom.is_empty:
@@ -119,6 +123,9 @@ def load_country_geometries(download=True):
             geom=geom,
         ))
     log.info("Loaded %d country geometries with valid ISO_A2 codes", len(countries))
+    if skipped:
+        log.info("Skipped %d features with no usable ISO_A2: %s",
+                 len(skipped), ", ".join(skipped))
     return countries
 def build_spatial_index(countries):
     """
