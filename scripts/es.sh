@@ -2760,6 +2760,12 @@ do_cluster() {
         _restore_snapshot "$STAGING_URL" "$SNAP_NAME" "$CONCRETE_INDICES" curl
         _wait_for_restore "$STAGING_URL" curl
 
+        # Wait for cluster health to reach yellow (all primaries assigned)
+        echo -n "  Waiting for index shards to initialise ..."
+        curl -sf "${STAGING_URL}/_cluster/health?wait_for_status=yellow&timeout=300s" \
+            >/dev/null 2>&1 || true
+        echo " done"
+
         # Re-create aliases on staging so the clustering code can find
         # the indices by their canonical names (places, toponyms)
         echo "  Creating aliases on staging ..."
@@ -2813,12 +2819,28 @@ echo "Node:    \$(hostname)"
 echo "ES:      ${STAGING_URL} (staging)"
 echo
 
-# Verify staging ES is still alive
+# Verify staging ES is still alive and indices are ready
+echo "Checking staging ES readiness ..."
 if ! curl -sf --connect-timeout 10 "${STAGING_URL}/_cluster/health" >/dev/null 2>&1; then
     echo "ERROR: Staging ES at ${STAGING_URL} is not responding." >&2
     echo "  The staging Slurm job may have expired." >&2
     exit 1
 fi
+echo "  ES is responding. Waiting for indices to be ready ..."
+# Wait up to 5 minutes for cluster health yellow (all primary shards assigned)
+curl -sf "${STAGING_URL}/_cluster/health?wait_for_status=yellow&timeout=300s" >/dev/null 2>&1 || true
+# Verify the places index is actually queryable
+for ATTEMPT in \$(seq 1 30); do
+    if curl -sf "${STAGING_URL}/places/_count" >/dev/null 2>&1; then
+        echo "  ✓ Staging ES indices are ready"
+        break
+    fi
+    if [ "\$ATTEMPT" -eq 30 ]; then
+        echo "ERROR: places index not ready after 5 minutes" >&2
+        exit 1
+    fi
+    sleep 10
+done
 
 # Load environment
 source "${CONDA_SETUP_PATH}"
