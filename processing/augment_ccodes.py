@@ -202,11 +202,14 @@ def _extract_shapely_geom(hit_source):
             except (KeyError, TypeError, ValueError):
                 pass
     return None
-def match_countries(place_geom, tree, countries):
+def match_countries(place_geom, tree, countries, snap_degrees=0.1):
     """
     Return sorted list of ISO_A2 codes whose geometries intersect *place_geom*.
     Phase 1: STRtree.query returns candidate indices via R-tree envelope overlap.
     Phase 2: prepared geometry ``intersects`` for exact test.
+    Phase 3 (fallback): if no direct intersection, find the nearest country
+             within *snap_degrees* (~11 km at the equator).  This catches
+             coastal points that fall just outside Natural Earth polygon edges.
     """
     candidate_indices = tree.query(place_geom)
     codes = set()
@@ -214,7 +217,16 @@ def match_countries(place_geom, tree, countries):
         country = countries[idx]
         if country.prepared.intersects(place_geom):
             codes.add(country.iso_a2)
-    return sorted(codes)
+    if codes:
+        return sorted(codes)
+    # Fallback: nearest country within snap distance
+    if snap_degrees > 0:
+        nearest_idx = tree.nearest(place_geom)
+        if nearest_idx is not None:
+            nearest = countries[nearest_idx]
+            if nearest.geom.distance(place_geom) <= snap_degrees:
+                return [nearest.iso_a2]
+    return []
 # ---------------------------------------------------------------------------
 # 4. Bulk update with throttling
 # ---------------------------------------------------------------------------
@@ -292,6 +304,7 @@ def augment_ccodes(
     throttle=0.5,
     limit=None,
     dry_run=False,
+    snap_degrees=0.1,
 ):
     stats = {
         "scanned": 0,
@@ -339,7 +352,7 @@ def augment_ccodes(
                              refresh=False)
             continue
         # Match
-        new_codes = match_countries(place_geom, tree, countries)
+        new_codes = match_countries(place_geom, tree, countries, snap_degrees)
         if not new_codes:
             stats["no_match"] += 1
             if stats["no_match"] <= 20:
@@ -422,6 +435,9 @@ def main():
                         help="Create a checkpoint snapshot after completion")
     parser.add_argument("--no-download", action="store_true",
                         help="Use already-cached Natural Earth data")
+    parser.add_argument("--snap-degrees", type=float, default=0.1,
+                        help="Max distance (degrees) for nearest-country fallback "
+                             "on coastal points (~0.1° ≈ 11 km; 0 to disable)")
     parser.add_argument("--es-host", type=str, default=None,
                         help="Override ES host (default: from settings)")
     parser.add_argument("--es-pass-file", type=str, default=None,
@@ -454,6 +470,7 @@ def main():
         throttle=args.throttle,
         limit=args.limit,
         dry_run=args.dry_run,
+        snap_degrees=args.snap_degrees,
     )
     # 3. Optional snapshot
     if args.snapshot and not args.dry_run and stats["updated"] > 0:
