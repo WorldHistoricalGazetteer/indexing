@@ -2534,6 +2534,7 @@ do_cluster() {
     if $USE_SLURM; then
         # From a CRC login node, reach production ES via the gateway
         local ES_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
+        local ES_HOSTNAME="gazetteer.crcd.pitt.edu"
         local LOG_FILE="${LOG_DIR}/cluster_slurm_${TIMESTAMP}.log"
 
         PYTHON_CMD+=" --es-host ${ES_URL} ${PYTHON_ARGS[*]}"
@@ -2547,6 +2548,14 @@ do_cluster() {
         echo "Time:     ${SLURM_TIME}"
         echo "Command:  ${PYTHON_CMD}"
         echo
+
+        # Pre-flight: verify gateway is reachable from the login node
+        if ! curl -sf --connect-timeout 10 "${ES_URL}/api/health" >/dev/null 2>&1; then
+            echo "WARNING: Cannot reach gateway at ${ES_URL} from login node."
+            echo "  Is the gateway running?  (SSH to the VM and run: es -gateway-start)"
+            echo "  Submitting anyway — compute nodes may have different routing."
+            echo
+        fi
 
         local SLURM_SCRIPT
         SLURM_SCRIPT=$(mktemp /tmp/cluster-XXXXXX.sbatch)
@@ -2572,6 +2581,19 @@ echo "=========================================="
 echo "Started: \$(date)"
 echo "Node:    \$(hostname)"
 echo "ES:      ${ES_URL}"
+echo
+
+# Pre-flight: verify the gateway is reachable before doing anything slow
+echo "Checking gateway connectivity..."
+if ! curl -sf --connect-timeout 10 "${ES_URL}/api/health" >/dev/null 2>&1; then
+    echo "ERROR: Cannot reach ES gateway at ${ES_URL}" >&2
+    echo "  - Is the gateway running on the VM?  (es -gateway-start)" >&2
+    echo "  - DNS: \$(getent hosts ${ES_HOSTNAME} 2>/dev/null || echo 'UNRESOLVABLE')" >&2
+    echo "  - Curl diagnostic:" >&2
+    curl -v --connect-timeout 10 "${ES_URL}/api/health" 2>&1 | head -20 >&2
+    exit 1
+fi
+echo "Gateway OK"
 echo
 
 # Load environment
