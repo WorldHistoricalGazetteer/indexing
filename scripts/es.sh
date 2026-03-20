@@ -2525,17 +2525,18 @@ do_cluster() {
 
     mkdir -p "$LOG_DIR"
 
-    # Build auth args
-    local AUTH_ARGS=""
-    if [ -f "$PASS_FILE" ]; then
-        AUTH_ARGS="--es-pass-file ${PASS_FILE}"
-    fi
+    # Build the full python command as a flat string — avoids heredoc
+    # quoting pitfalls with arrays and line-continuations.
+    local PYTHON_CMD="python -u -m clustering.runner"
+    [ -f "$PASS_FILE" ] && PYTHON_CMD+=" --es-pass-file ${PASS_FILE}"
 
     # ---- Slurm mode ----
     if $USE_SLURM; then
         # From a CRC login node, reach production ES via the gateway
         local ES_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
         local LOG_FILE="${LOG_DIR}/cluster_slurm_${TIMESTAMP}.log"
+
+        PYTHON_CMD+=" --es-host ${ES_URL} ${PYTHON_ARGS[*]}"
 
         echo "=========================================="
         echo "PLACE CLUSTERING (Slurm)"
@@ -2544,9 +2545,13 @@ do_cluster() {
         echo "Args:     ${PYTHON_ARGS[*]}"
         echo "Mem:      ${SLURM_MEM}"
         echo "Time:     ${SLURM_TIME}"
+        echo "Command:  ${PYTHON_CMD}"
         echo
 
-        JOBID=$(sbatch --parsable <<SBATCH_EOF
+        local SLURM_SCRIPT
+        SLURM_SCRIPT=$(mktemp /tmp/cluster-XXXXXX.sbatch)
+
+        cat > "$SLURM_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=whg-cluster
 #SBATCH --output=${LOG_DIR}/cluster_%j.out
@@ -2570,15 +2575,12 @@ echo "ES:      ${ES_URL}"
 echo
 
 # Load environment
-source "$CONDA_SETUP_PATH"
+source "${CONDA_SETUP_PATH}"
 conda activate whg
 export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
-cd "$REPO_DIR"
+cd "${REPO_DIR}"
 
-python -u -m clustering.runner \\
-    --es-host "${ES_URL}" \\
-    ${AUTH_ARGS} \\
-    ${PYTHON_ARGS[@]}
+${PYTHON_CMD}
 
 echo
 echo "=========================================="
@@ -2586,7 +2588,10 @@ echo "CLUSTERING COMPLETE"
 echo "=========================================="
 echo "Finished: \$(date)"
 SBATCH_EOF
-)
+
+        JOBID=$(sbatch --parsable "$SLURM_SCRIPT")
+        rm -f "$SLURM_SCRIPT"
+
         CLEAN_JOBID="${JOBID%;*}"
 
         echo "✓ Clustering job submitted: ${CLEAN_JOBID}"
@@ -2602,6 +2607,8 @@ SBATCH_EOF
     local ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
     local LOG_FILE="${LOG_DIR}/cluster_${TIMESTAMP}.log"
 
+    PYTHON_CMD+=" --es-host ${ES_URL} ${PYTHON_ARGS[*]}"
+
     # Verify ES is responding
     if ! es_curl --connect-timeout 5 "${ES_URL}/_cluster/health" &>/dev/null; then
         echo "ERROR: Cannot connect to production ES at ${ES_URL}"
@@ -2611,9 +2618,10 @@ SBATCH_EOF
     echo "=========================================="
     echo "PLACE CLUSTERING (nohup)"
     echo "=========================================="
-    echo "ES:   ${ES_URL}"
-    echo "Args: ${PYTHON_ARGS[*]}"
-    echo "Log:  ${LOG_FILE}"
+    echo "ES:      ${ES_URL}"
+    echo "Args:    ${PYTHON_ARGS[*]}"
+    echo "Command: ${PYTHON_CMD}"
+    echo "Log:     ${LOG_FILE}"
     echo
 
     # Write a small wrapper script so nohup runs in the right env
@@ -2623,22 +2631,17 @@ SBATCH_EOF
     cat > "$WRAPPER" <<WRAPPER_EOF
 #!/bin/bash
 # Activate conda — try known paths, fall back to conda already in PATH
-for _cs in "$CONDA_SETUP_PATH" \
-           "/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh" \
-           "/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh" \
-           "\$HOME/miniconda3/etc/profile.d/conda.sh" \
+for _cs in "${CONDA_SETUP_PATH}" \\
+           "\$HOME/miniconda3/etc/profile.d/conda.sh" \\
            "\$HOME/anaconda3/etc/profile.d/conda.sh"; do
     [ -f "\$_cs" ] && source "\$_cs" && break
 done
 
 conda activate whg 2>/dev/null || true
 export PYTHONPATH="${REPO_DIR}:\${PYTHONPATH}"
-cd "$REPO_DIR"
+cd "${REPO_DIR}"
 
-python -u -m clustering.runner \\
-    --es-host "${ES_URL}" \\
-    ${AUTH_ARGS} \\
-    ${PYTHON_ARGS[@]}
+${PYTHON_CMD}
 WRAPPER_EOF
 
     chmod +x "$WRAPPER"
