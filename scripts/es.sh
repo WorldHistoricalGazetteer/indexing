@@ -2716,6 +2716,20 @@ do_cluster() {
         echo "  ✓ Staging ES reachable at ${STAGING_URL}"
         echo
 
+        # Check whether we can skip snapshot/restore (--resume with data already on staging)
+        local SKIP_SNAPSHOT=false
+        if printf '%s\n' "${PYTHON_ARGS[@]}" | grep -qx -- '--resume'; then
+            if curl -sf "${STAGING_URL}/places/_count" >/dev/null 2>&1; then
+                SKIP_SNAPSHOT=true
+                echo "  --resume: places index already on staging, skipping snapshot/restore"
+                echo "  Index status on staging:"
+                curl -sf "${STAGING_URL}/_cat/indices?v&h=index,docs.count,store.size" 2>/dev/null || true
+                echo
+            fi
+        fi
+
+        if ! $SKIP_SNAPSHOT; then
+
         # 3. Register exchange repo on both instances
         echo "Step 3: Registering snapshot exchange repo ..."
         _ensure_exchange_repo "$PROD_URL" es_curl
@@ -2804,6 +2818,8 @@ do_cluster() {
         echo "  Index status on staging:"
         curl -sf "${STAGING_URL}/_cat/indices?v&h=index,docs.count,store.size" 2>/dev/null || true
         echo
+
+        fi  # end SKIP_SNAPSHOT
 
         # 6. Build python command (no auth — staging has xpack.security off)
         PYTHON_CMD+=" --es-host ${STAGING_URL} ${PYTHON_ARGS[*]}"
