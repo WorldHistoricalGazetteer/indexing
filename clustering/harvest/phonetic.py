@@ -23,6 +23,7 @@ from elasticsearch import AsyncElasticsearch
 from tqdm import tqdm
 
 from ..config import ClusterConfig, KNOWN_ES_NAMESPACES
+from ..es_client import scroll_index, count_query
 from ..schemas import PairwiseDoc, Signals
 
 logger = logging.getLogger("clustering.harvest.phonetic")
@@ -118,7 +119,6 @@ async def harvest_phonetic_links(
         mininterval=2.0,
     )
 
-    from ..es_client import scroll_index, count_query
 
     async for doc in scroll_index(
         client,

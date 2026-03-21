@@ -47,6 +47,7 @@ def _setup_logging(verbose: bool = False) -> None:
     logging.basicConfig(level=level, format=fmt, stream=sys.stderr)
     # Silence noisy libraries
     logging.getLogger("elasticsearch").setLevel(logging.WARNING)
+    logging.getLogger("elastic_transport").setLevel(logging.WARNING)
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("asyncio").setLevel(logging.WARNING)
 
