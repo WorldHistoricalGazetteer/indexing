@@ -6,8 +6,21 @@ For places not yet linked by Phases 1–2, use Elasticsearch KNN on the
 ``embedding`` field (128-dim byte vectors, cosine similarity) to find
 cross-namespace phonetic near-matches.
 
-Only processes un-clustered places.  Uses tighter similarity (0.85+) and
-spatial (25km) thresholds than gateway reconciliation.
+**Strategy (toponym-side scan):**
+
+Instead of scrolling 47M places and issuing one KNN query per place, we
+scroll the *toponyms* index for docs that:
+  (a) have an ``embedding``,
+  (b) attest to ≥1 unclustered place, and
+  (c) attest in ≥2 namespaces (only multi-namespace toponyms can
+      produce cross-namespace pairs).
+
+For each qualifying toponym we fire a KNN query against the rest of the
+toponyms index.  Queries are batched via ES ``_msearch`` (50–100 per
+HTTP request) for dramatically better throughput than individual requests.
+
+Pairs are filtered by ccode overlap and spatial distance, then emitted
+in streaming batches to keep memory bounded.
 """
 
 from __future__ import annotations
@@ -15,7 +28,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections import defaultdict
 from datetime import datetime
 from typing import Optional
 
@@ -27,6 +39,9 @@ from ..es_client import scroll_index, count_query
 from ..schemas import PairwiseDoc, Signals
 
 logger = logging.getLogger("clustering.harvest.phonetic")
+
+# How many KNN queries to pack into a single _msearch call
+MSEARCH_BATCH_SIZE = 50
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -43,35 +58,100 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
-async def _knn_query_for_embedding(
+# ── place-data cache ────────────────────────────────────────────────────────
+
+async def _fetch_place_data_batch(
+    client: AsyncElasticsearch,
+    pids: list[str],
+    places_index: str,
+) -> dict[str, dict]:
+    """Fetch ccodes, repr_point, types for a batch of place_ids."""
+    if not pids:
+        return {}
+    body = {
+        "size": len(pids),
+        "query": {"terms": {"place_id": pids}},
+        "_source": ["place_id", "namespace", "ccodes",
+                     "geometries.repr_point", "types.identifier"],
+    }
+    cache: dict[str, dict] = {}
+    try:
+        resp = await client.search(index=places_index, body=body)
+        for hit in resp["hits"]["hits"]:
+            src = hit["_source"]
+            pid = src.get("place_id", "")
+            repr_point = None
+            for geom in src.get("geometries", []):
+                rp = geom.get("repr_point")
+                if rp:
+                    if isinstance(rp, dict):
+                        repr_point = (rp.get("lat", 0), rp.get("lon", 0))
+                    elif isinstance(rp, (list, tuple)) and len(rp) >= 2:
+                        repr_point = (rp[1], rp[0])  # GeoJSON [lon, lat]
+                    break
+            ccodes = set(src.get("ccodes", []))
+            types_ = set()
+            for t in src.get("types", []):
+                tid = t.get("identifier", "")
+                if tid:
+                    types_.add(tid)
+            cache[pid] = {
+                "namespace": src.get("namespace", ""),
+                "ccodes": ccodes,
+                "repr_point": repr_point,
+                "types": types_,
+            }
+    except Exception as e:
+        logger.warning("Place data fetch failed: %s", e)
+    return cache
+
+
+# ── msearch KNN helper ──────────────────────────────────────────────────────
+
+async def _msearch_knn(
     client: AsyncElasticsearch,
     index: str,
-    embedding: list[int],
+    queries: list[tuple[str, list[int]]],  # [(toponym_id, embedding), ...]
     k: int,
     similarity: float,
-    source_attestations: list[str],
-) -> list[dict]:
+) -> list[tuple[str, list[dict]]]:
     """
-    Run a single KNN query for one embedding and return neighbour hits.
+    Fire multiple KNN queries via a single _msearch call.
+    Returns [(toponym_id, [hit, ...]), ...].
     """
-    body = {
-        "knn": {
-            "field": "embedding",
-            "query_vector": embedding,
-            "k": k,
-            "num_candidates": k * 5,
-            "similarity": similarity,
-        },
-        "_source": ["name", "attestations", "namespaces"],
-        "size": k,
-    }
-    try:
-        resp = await client.search(index=index, body=body)
-        return resp.get("hits", {}).get("hits", [])
-    except Exception as e:
-        logger.warning("KNN query failed: %s", e)
+    if not queries:
         return []
 
+    body_lines: list[dict] = []
+    for _tid, emb in queries:
+        body_lines.append({"index": index})
+        body_lines.append({
+            "size": k,
+            "knn": {
+                "field": "embedding",
+                "query_vector": emb,
+                "k": k,
+                "num_candidates": k * 5,
+                "similarity": similarity,
+            },
+            "_source": ["attestations", "namespaces"],
+        })
+
+    try:
+        resp = await client.msearch(body=body_lines)
+    except Exception as e:
+        logger.warning("_msearch KNN failed: %s", e)
+        return [(tid, []) for tid, _ in queries]
+
+    results = []
+    for i, sub_resp in enumerate(resp.get("responses", [])):
+        tid = queries[i][0]
+        hits = sub_resp.get("hits", {}).get("hits", [])
+        results.append((tid, hits))
+    return results
+
+
+# ── main entry point ────────────────────────────────────────────────────────
 
 async def harvest_phonetic_links(
     client: AsyncElasticsearch,
@@ -82,275 +162,214 @@ async def harvest_phonetic_links(
     """
     For un-clustered places, find phonetic near-matches via KNN search.
 
-    Args:
-        client: Async ES client.
-        cfg: Cluster configuration.
-        clustered_place_ids: Set of place_ids already linked by Phases 1–2.
-        since: If provided, only process places added after this timestamp.
-
-    Returns:
-        List of PairwiseDoc instances (after spatial/ccode filtering).
+    Uses a toponym-side approach:
+      1. Scroll toponyms that have embeddings
+      2. Skip those whose attestations are all already-clustered
+      3. Batch KNN via _msearch (50 per call)
+      4. Build cross-namespace pairs and filter by ccode/spatial distance
     """
     scoring = cfg.scoring
 
-    # Step 1: Find un-clustered places that need KNN queries.
-    # Get their toponym embeddings from the toponyms index.
-    # Strategy: scroll places not in clustered set, then look up their toponyms.
-
-    # Build the query for places
-    must_clauses: list[dict] = []
+    # ── Step 1: Count qualifying toponyms ────────────────────────────────
+    # Only toponyms with embeddings can participate.
+    toponym_query: dict = {
+        "bool": {
+            "filter": [
+                {"exists": {"field": "embedding"}},
+            ]
+        }
+    }
     if since is not None:
-        must_clauses.append({"range": {"indexed_at": {"gt": since.isoformat()}}})
+        toponym_query["bool"]["filter"].append(
+            {"range": {"indexed_at": {"gt": since.isoformat()}}}
+        )
 
-    place_query = {"bool": {"filter": must_clauses}} if must_clauses else {"match_all": {}}
+    total_toponyms = await count_query(client, cfg.toponyms_index, toponym_query)
+    logger.info(
+        "Phase 3: %d toponyms with embeddings to scan", total_toponyms
+    )
 
-    # Collect un-clustered place_ids with their metadata
-    unclustered_places: dict[str, dict] = {}  # pid → {ccodes, repr_point, types}
+    # ── Step 2: Scroll toponyms, batch KNN queries ───────────────────────
+    pairs: dict[str, dict] = {}  # doc_id → {pid_a, pid_b, max_sim}
+    place_cache: dict[str, dict] = {}  # pid → {namespace, ccodes, repr_point, types}
+
+    # Accumulate a batch of (toponym_id, embedding, unclustered_attestations)
+    knn_batch: list[tuple[str, list[int], list[str]]] = []
+
+    skipped_all_clustered = 0
+    skipped_single_ns = 0
     processed = 0
+    knn_issued = 0
 
-    # Get total for progress bar
-    total_places = await count_query(client, cfg.places_index, place_query)
-    logger.info("Phase 3: scanning %d places to find un-clustered", total_places)
-
-    pbar = tqdm(
-        total=total_places,
-        desc="Phase 3: finding un-clustered places",
-        unit="place",
+    bar = tqdm(
+        total=total_toponyms,
+        desc="Phase 3: scanning toponyms",
+        unit="toponym",
         mininterval=2.0,
     )
 
+    async def _flush_knn_batch():
+        """Fire the accumulated KNN batch and process results."""
+        nonlocal knn_issued
+        if not knn_batch:
+            return
 
-    async for doc in scroll_index(
-        client,
-        index=cfg.places_index,
-        query=place_query,
-        source_fields=["place_id", "namespace", "ccodes", "geometries.repr_point", "types.identifier"],
-        scroll_size=cfg.scroll_size,
-    ):
-        pid = doc.get("place_id", "")
-        if pid in clustered_place_ids:
-            continue
+        # Build the queries list for _msearch_knn
+        queries = [(tid, emb) for tid, emb, _atts in knn_batch]
 
-        # Extract repr_point
-        repr_point = None
-        for geom in doc.get("geometries", []):
-            rp = geom.get("repr_point")
-            if rp:
-                if isinstance(rp, dict):
-                    repr_point = (rp.get("lat", 0), rp.get("lon", 0))
-                elif isinstance(rp, (list, tuple)) and len(rp) >= 2:
-                    repr_point = (rp[1], rp[0])
-                break
+        results = await _msearch_knn(
+            client, cfg.toponyms_index, queries,
+            scoring.knn_k, scoring.knn_min_similarity,
+        )
+        knn_issued += len(queries)
 
-        ccodes = set(doc.get("ccodes", []))
-        types_ = set()
-        for t in doc.get("types", []):
-            tid = t.get("identifier", "")
-            if tid:
-                types_.add(tid)
+        # Collect place_ids we need metadata for
+        pids_needed: set[str] = set()
 
-        unclustered_places[pid] = {
-            "namespace": doc.get("namespace", ""),
-            "ccodes": ccodes,
-            "repr_point": repr_point,
-            "types": types_,
-        }
-        processed += 1
-        pbar.update(1)
-        if processed % 50_000 == 0:
-            pbar.set_postfix(unclustered=len(unclustered_places))
-
-        # Configurable cap on un-clustered places (0 = unlimited)
-        if scoring.max_phase3_places > 0 and len(unclustered_places) >= scoring.max_phase3_places:
-            logger.warning(
-                "Phase 3: capping at %d un-clustered places (--max-phase3-places)",
-                scoring.max_phase3_places,
-            )
-            break
-
-    pbar.close()
-    logger.info("Phase 3: %d un-clustered places to process", len(unclustered_places))
-
-    if not unclustered_places:
-        return []
-
-    # Step 2: For each un-clustered place, find its toponym embeddings
-    # Then run KNN queries
-    pairs: dict[str, dict] = {}  # doc_id → {pid_a, pid_b, max_sim, ...}
-
-    # Process in batches
-    batch_pids = list(unclustered_places.keys())
-    sem = asyncio.Semaphore(scoring.knn_concurrency)
-
-    knn_bar = tqdm(
-        total=len(batch_pids),
-        desc="Phase 3: KNN queries",
-        unit="place",
-        mininterval=2.0,
-    )
-
-    for batch_start in range(0, len(batch_pids), cfg.batch_size):
-        batch = batch_pids[batch_start : batch_start + cfg.batch_size]
-
-        # Fetch toponym embeddings for this batch
-        # Each place may have multiple toponyms; cap results to avoid
-        # overwhelming ES with huge response payloads.
-        toponym_body = {
-            "size": min(len(batch) * 5, 5000),
-            "query": {"terms": {"attestations": batch}},
-            "_source": ["attestations", "embedding"],
-        }
-        try:
-            toponym_resp = await client.search(
-                index=cfg.toponyms_index, body=toponym_body
-            )
-        except Exception as e:
-            logger.warning("Toponym fetch failed for batch: %s", e)
-            continue
-
-        # Group embeddings by place_id
-        pid_embeddings: dict[str, list[list[int]]] = defaultdict(list)
-        for hit in toponym_resp["hits"]["hits"]:
-            src = hit["_source"]
-            embedding = src.get("embedding")
-            if not embedding:
-                continue
-            for att in src.get("attestations", []):
-                if att in unclustered_places:
-                    pid_embeddings[att].append(embedding)
-
-        # Run KNN queries concurrently (with semaphore)
-        async def _process_embedding(pid: str, emb: list[int]):
-            async with sem:
-                hits = await _knn_query_for_embedding(
-                    client,
-                    cfg.toponyms_index,
-                    emb,
-                    scoring.knn_k,
-                    scoring.knn_min_similarity,
-                    [],
-                )
-                return pid, hits
-
-        tasks = []
-        for pid, embeddings in pid_embeddings.items():
-            for emb in embeddings[:3]:  # limit to 3 embeddings per place
-                tasks.append(_process_embedding(pid, emb))
-
-        if not tasks:
-            continue
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        for result in results:
-            if isinstance(result, Exception):
-                logger.warning("KNN task failed: %s", result)
-                continue
-
-            source_pid, hits = result
-            source_data = unclustered_places.get(source_pid)
-            if not source_data:
-                continue
-            source_ns = source_data["namespace"]
+        for (source_tid, source_emb, source_atts), (_, hits) in zip(knn_batch, results):
+            # source_atts: unclustered place_ids attested by this toponym
+            source_pids = set(source_atts)
 
             for hit in hits:
-                hsrc = hit["_source"]
+                hsrc = hit.get("_source", {})
+                target_atts = hsrc.get("attestations", [])
                 sim_score = hit.get("_score", 0)
 
-                for att in hsrc.get("attestations", []):
-                    if ":" not in att:
-                        continue
-                    target_ns = att.split(":")[0]
-                    if target_ns == source_ns:
-                        continue
-                    if target_ns not in KNOWN_ES_NAMESPACES:
+                # Build cross-namespace pairs
+                for s_pid in source_pids:
+                    s_ns = s_pid.split(":")[0] if ":" in s_pid else ""
+                    if s_ns not in KNOWN_ES_NAMESPACES:
                         continue
 
-                    ca, cb = PairwiseDoc.canonical_pair(source_pid, att)
-                    doc_id = PairwiseDoc.make_id(ca, cb)
+                    for t_pid in target_atts:
+                        if t_pid == s_pid:
+                            continue
+                        t_ns = t_pid.split(":")[0] if ":" in t_pid else ""
+                        if t_ns == s_ns:
+                            continue
+                        if t_ns not in KNOWN_ES_NAMESPACES:
+                            continue
 
-                    if doc_id not in pairs:
-                        pairs[doc_id] = {
-                            "pid_a": ca,
-                            "pid_b": cb,
-                            "max_sim": sim_score,
-                        }
-                    else:
-                        if sim_score > pairs[doc_id]["max_sim"]:
-                            pairs[doc_id]["max_sim"] = sim_score
+                        ca, cb = PairwiseDoc.canonical_pair(s_pid, t_pid)
+                        doc_id = PairwiseDoc.make_id(ca, cb)
 
-        if batch_start % (cfg.batch_size * 10) == 0:
-            knn_bar.set_postfix(pairs=len(pairs))
+                        if doc_id not in pairs:
+                            pairs[doc_id] = {
+                                "pid_a": ca,
+                                "pid_b": cb,
+                                "max_sim": sim_score,
+                            }
+                            pids_needed.add(ca)
+                            pids_needed.add(cb)
+                        else:
+                            if sim_score > pairs[doc_id]["max_sim"]:
+                                pairs[doc_id]["max_sim"] = sim_score
 
-        knn_bar.update(len(batch))
+        # Pre-fetch any place data we don't already have
+        missing = [p for p in pids_needed if p not in place_cache]
+        if missing:
+            for i in range(0, len(missing), 2000):
+                chunk = missing[i:i + 2000]
+                fetched = await _fetch_place_data_batch(
+                    client, chunk, cfg.places_index
+                )
+                place_cache.update(fetched)
 
-    knn_bar.close()
-    logger.info("Phase 3 KNN done: %d raw candidate pairs", len(pairs))
+        knn_batch.clear()
 
-    # Step 3: Filter by ccode overlap and spatial distance
-    # Need to fetch place data for target place_ids not yet known
-    all_target_pids = set()
+    # ── Scroll ───────────────────────────────────────────────────────────
+    async for doc in scroll_index(
+        client,
+        index=cfg.toponyms_index,
+        query=toponym_query,
+        source_fields=["attestations", "namespaces", "embedding"],
+        scroll_size=cfg.scroll_size,
+    ):
+        processed += 1
+        bar.update(1)
+
+        embedding = doc.get("embedding")
+        if not embedding:
+            continue
+
+        attestations = doc.get("attestations", [])
+        namespaces = doc.get("namespaces", [])
+
+        # Skip single-namespace toponyms (can never produce cross-ns pairs)
+        if len(set(namespaces)) < 2:
+            # Even if namespaces field is incomplete, check attestations
+            ns_from_atts = set()
+            for att in attestations:
+                if ":" in att:
+                    ns_from_atts.add(att.split(":")[0])
+            if len(ns_from_atts) < 2:
+                skipped_single_ns += 1
+                continue
+
+        # Skip if ALL attested places are already clustered
+        unclustered_atts = [a for a in attestations if a not in clustered_place_ids]
+        if not unclustered_atts:
+            skipped_all_clustered += 1
+            continue
+
+        toponym_id = doc.get("_id", "")
+        knn_batch.append((toponym_id, embedding, unclustered_atts))
+
+        # Flush when we have enough for an _msearch batch
+        if len(knn_batch) >= MSEARCH_BATCH_SIZE:
+            await _flush_knn_batch()
+            if processed % 100_000 == 0:
+                bar.set_postfix(
+                    pairs=len(pairs),
+                    knn=knn_issued,
+                    skip_clust=skipped_all_clustered,
+                    skip_ns=skipped_single_ns,
+                )
+
+    # Flush remaining
+    await _flush_knn_batch()
+    bar.close()
+
+    logger.info(
+        "Phase 3 toponym scan done: %d toponyms processed, "
+        "%d KNN queries issued, %d raw candidate pairs, "
+        "%d skipped (all clustered), %d skipped (single namespace)",
+        processed, knn_issued, len(pairs),
+        skipped_all_clustered, skipped_single_ns,
+    )
+
+    if not pairs:
+        return []
+
+    # ── Step 3: Filter by ccode overlap and spatial distance ─────────────
+    # Ensure we have place data for all referenced pids
+    all_pids = set()
     for sig in pairs.values():
-        for pid in (sig["pid_a"], sig["pid_b"]):
-            if pid not in unclustered_places:
-                all_target_pids.add(pid)
-
-    # Fetch target place data
-    target_cache: dict[str, dict] = {}
-    target_list = list(all_target_pids)
-    chunk_size = 2000
-    for i in range(0, len(target_list), chunk_size):
-        chunk = target_list[i : i + chunk_size]
-        body = {
-            "size": len(chunk),
-            "query": {"terms": {"place_id": chunk}},
-            "_source": ["place_id", "ccodes", "geometries.repr_point", "types.identifier"],
-        }
-        try:
-            resp = await client.search(index=cfg.places_index, body=body)
-            for hit in resp["hits"]["hits"]:
-                src = hit["_source"]
-                pid = src.get("place_id", "")
-                repr_point = None
-                for geom in src.get("geometries", []):
-                    rp = geom.get("repr_point")
-                    if rp:
-                        if isinstance(rp, dict):
-                            repr_point = (rp.get("lat", 0), rp.get("lon", 0))
-                        elif isinstance(rp, (list, tuple)) and len(rp) >= 2:
-                            repr_point = (rp[1], rp[0])
-                        break
-                ccodes = set(src.get("ccodes", []))
-                types_ = set()
-                for t in src.get("types", []):
-                    tid = t.get("identifier", "")
-                    if tid:
-                        types_.add(tid)
-                target_cache[pid] = {
-                    "ccodes": ccodes,
-                    "repr_point": repr_point,
-                    "types": types_,
-                }
-        except Exception as e:
-            logger.warning("Place data fetch failed: %s", e)
-
-        if i + chunk_size < len(target_list):
-            await asyncio.sleep(0.1)
-
-    # Merge with unclustered_places for a unified cache
-    all_place_data = {**{k: v for k, v in unclustered_places.items()}, **target_cache}
+        all_pids.add(sig["pid_a"])
+        all_pids.add(sig["pid_b"])
+    missing = [p for p in all_pids if p not in place_cache]
+    if missing:
+        logger.info("Fetching place data for %d remaining pids", len(missing))
+        for i in range(0, len(missing), 2000):
+            chunk = missing[i:i + 2000]
+            fetched = await _fetch_place_data_batch(
+                client, chunk, cfg.places_index
+            )
+            place_cache.update(fetched)
+            if i + 2000 < len(missing):
+                await asyncio.sleep(0.05)
 
     results: list[PairwiseDoc] = []
-    skipped = 0
+    skipped_filter = 0
 
     for doc_id, sig in pairs.items():
         pid_a = sig["pid_a"]
         pid_b = sig["pid_b"]
-        data_a = all_place_data.get(pid_a)
-        data_b = all_place_data.get(pid_b)
+        data_a = place_cache.get(pid_a)
+        data_b = place_cache.get(pid_b)
 
         if not data_a or not data_b:
-            skipped += 1
+            skipped_filter += 1
             continue
 
         # Ccode overlap
@@ -358,7 +377,7 @@ async def harvest_phonetic_links(
         ccodes_b = data_b.get("ccodes", set())
         overlap = ccodes_a & ccodes_b
         if not overlap and ccodes_a and ccodes_b:
-            skipped += 1
+            skipped_filter += 1
             continue
 
         # Spatial distance
@@ -367,7 +386,7 @@ async def harvest_phonetic_links(
         if rp_a and rp_b:
             distance_km = _haversine_km(rp_a[0], rp_a[1], rp_b[0], rp_b[1])
             if distance_km > scoring.threshold_phonetic_km:
-                skipped += 1
+                skipped_filter += 1
                 continue
         else:
             distance_km = 0.0
@@ -400,7 +419,7 @@ async def harvest_phonetic_links(
     logger.info(
         "Phase 3 filtering done: %d pairs survived, %d skipped",
         len(results),
-        skipped,
+        skipped_filter,
     )
     return results
 
