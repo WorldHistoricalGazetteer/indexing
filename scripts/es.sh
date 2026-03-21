@@ -2664,6 +2664,18 @@ do_cluster() {
         esac
     done
 
+    # --resume implies --full (it resumes a previous full run).
+    # Add --full automatically if no mode flag was given.
+    local HAS_MODE=false
+    for _a in "${PYTHON_ARGS[@]}"; do
+        case "$_a" in --full|--incremental|--stats) HAS_MODE=true ;; esac
+    done
+    if ! $HAS_MODE; then
+        # Default to --full; if --resume is present the user clearly
+        # wants to continue a full run.
+        PYTHON_ARGS=("--full" "${PYTHON_ARGS[@]}")
+    fi
+
     local PASS_FILE="${IX1_BASE}/es/config/elastic.password"
     local LOG_DIR="${IX1_BASE}/es/logs"
     local TIMESTAMP
