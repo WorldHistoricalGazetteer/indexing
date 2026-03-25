@@ -1,7 +1,7 @@
 # WHG Place Clustering — How It Works and How to Run It
 
-**Last updated:** March 2026  
-**Status:** Operational — first full run completed 21 March 2026  
+**Last updated:** 25 March 2026  
+**Status:** Operational — second full run (with HDBSCAN-based calibration) in progress  
 **Repository:** `WorldHistoricalGazetteer/indexing`
 
 > **V4 note (ArangoDB migration).** This guide describes the current Elasticsearch-based system. In the planned V4 architecture (§4.2), ArangoDB replaces Elasticsearch as the primary data store and pairwise links are stored as graph edges. Under V4:
@@ -39,7 +39,7 @@ Clustering runs as a sequential pipeline of four phases. Each phase discovers pa
 
 **How it works:** The system scrolls through every place in the `places` index and examines its `relations` field. Any relation of type `sameAs`, `closeMatch`, or `exactMatch` that points to a place in a *different* gazetteer is harvested as a hard link with maximum confidence (score 1.0).
 
-**What it produces:** Pairwise link documents — one for each pair of places asserted to be the same by an authority.
+**What it produces:** Pairwise link documents — one for each pair of places asserted to be the same by an authority. In the 25 March run, 6.6M places had identity relations; after filtering out same-namespace and unknown-namespace links, this yielded **5,604,928** unique cross-namespace pairs. Phase 1A took approximately 8 minutes.
 
 ### Phase 1B: Contributor Reconciliation Links
 
@@ -58,6 +58,8 @@ The system scrolls toponyms that span multiple gazetteer namespaces, generates c
 1. **Country-code overlap** — both places must share at least one country code (e.g., both tagged with "DE" for Germany). Pairs with no country overlap are discarded. This cheaply eliminates most false positives from common names.
 2. **Spatial distance** — the two places must be within **50 km** of each other (using the haversine formula on their representative points). This is not the main discriminatory filter — the name and country-code match have already done the heavy lifting. The 50 km is a sanity ceiling that accommodates known coordinate imprecision: modern gazetteers (GeoNames, OSM) agree within 1–5 km, but historical gazetteers (TGN, Pleiades) often have 10–30 km uncertainty, and administrative-centre coordinates can differ from geographic centroids by a similar margin. "Springfield, Illinois" and "Springfield, Massachusetts" are 1,400 km apart and are correctly rejected.
 3. **Overflow cap** — toponyms attested by more than **500** cross-namespace pairs are skipped entirely to avoid combinatorial explosion on ultra-common names like "Church" or "San José".
+
+**Scale:** In the 25 March run, Phase 2 scanned 7.3M multi-namespace toponyms (47K skipped by overflow cap), producing 43M raw candidate pairs. Filtering removed 10.4M for no country-code overlap and 20M for spatial distance > 50 km, leaving **12,564,241** surviving pairs. Scanning took approximately 2 hours; filtering and indexing took a further hour.
 
 ### Calibration Step (between Phase 2 and Phase 3)
 
@@ -81,7 +83,7 @@ The system:
 
 In densely settled areas (UK, Netherlands, Japan), phonetically similar but distinct place names can exist within a small radius. The calibration step (§8.1) tunes these thresholds empirically using authority hard links as ground truth, rather than relying solely on hand-picked defaults.
 
-**Scale:** In the initial run, this phase scanned all 67M toponyms, issued ~1.1M KNN queries, produced ~948M raw candidate pairs, and filtered them down to **7,564,424** surviving pairs. This took approximately 3 hours.
+**Scale:** In the 21 March run (before calibration), this phase scanned all 67M toponyms, issued ~1.1M KNN queries, produced ~948M raw candidate pairs, and filtered them down to ~7.6M surviving pairs in approximately 3 hours. The 25 March run uses a lower cosine threshold (0.79 vs 0.85), which admits more KNN hits, but a much tighter spatial limit (5 km vs 25 km), which rejects more of them. Results will be updated when the run completes.
 
 ### Phase 4: Composite Scoring and Clustering
 
@@ -111,25 +113,46 @@ Hard links from Phase 1 always have score 1.0 and are not re-scored.
 
 All results go into a dedicated Elasticsearch index called `clusters`, containing two types of document:
 
-- **Pairwise link documents** (~24M in the initial run) — one per pair, recording which places are linked, the score, the evidence breakdown, and the provenance (which phase discovered it).
-- **Membership documents** (~19M in the initial run) — one per place that belongs to a cluster, recording the cluster ID and cluster size.
+- **Pairwise link documents** — one per pair, recording which places are linked, the score, the evidence breakdown, and the provenance (which phase discovered it). Phases 1A and 2 alone produce ~18M pairs; the total depends on Phase 3 results.
+- **Membership documents** — one per place that belongs to a cluster, recording the cluster ID and cluster size.
 
 A separate single-document index, `cluster_state`, stores the high-water marks and statistics from the last run, enabling incremental updates.
 
-### Initial Run Results (21 March 2026)
+### Run Results (25 March 2026 — in progress)
+
+This is the first run using HDBSCAN-based calibration (§8.1). Phase 3 is still running; results will be updated when complete.
 
 | Metric | Value |
 |--------|-------|
-| Phase 1A pairs (authority hard links) | 16,845,137 |
+| Phase 1A pairs (authority hard links) | 5,604,928 |
 | Phase 1B pairs (contributor links) | 0 (skipped — no WHG places indexed) |
-| Phase 2 pairs (exact co-attestation) | included in total |
-| Phase 3 pairs (phonetic similarity) | 7,564,424 |
-| Total pairwise docs | 24,409,561 |
-| Pairs above threshold (score ≥ 0.40) | 16,044,807 |
-| **Clusters formed** | **7,039,086** |
-| Membership docs | 19,262,725 |
-| Places in clusters | 19,271,590 |
-| **Total runtime** | **5 hours 40 minutes** |
+| Phase 2 pairs (exact co-attestation) | 12,564,241 |
+| Phase 3 pairs (phonetic similarity) | *(in progress)* |
+| Total pairwise docs | *(in progress)* |
+| **Clusters formed** | *(in progress)* |
+| **Total runtime so far** | **~3 hours through calibration** |
+
+**Calibration results (first empirical run):**
+
+| Parameter | Default | Calibrated |
+|-----------|---------|------------|
+| `knn_min_similarity` | 0.85 | **0.79** |
+| `threshold_phonetic_km` | 25.0 km | **5.0 km** |
+| `cluster_score_threshold` | 0.40 | **0.38** |
+| `weight_toponym_exact` | 0.30 | **0.00** |
+| `weight_symphonym` | 0.25 | **0.38** |
+| `weight_spatial` | 0.25 | **0.42** |
+| `weight_type_match` | 0.10 | **0.02** |
+| `weight_ccode_overlap` | 0.10 | **0.18** |
+
+Several results are notable:
+
+- **Spatial distance limit dropped from 25 km to 5 km.** The 95th percentile of positive-pair distances in the authority hard links is only 5 km. The original 25 km default was far too generous — most genuine same-place pairs from different gazetteers have representative points within a few kilometres of each other.
+- **Exact toponym count weight went to zero.** The logistic regression found that sharing an exact name spelling adds no discriminative power on top of the other signals. This is unsurprising: exact name matches already produce cosine similarity ≈ 1.0 in embedding space, so the phonetic similarity signal already captures this information.
+- **Phonetic similarity (38%) and spatial proximity (42%) dominate**, together accounting for 80% of the composite score. Country-code overlap (18%) provides the remaining useful signal. Place-type match (2%) is nearly inert — place-type vocabularies are too inconsistent across gazetteers to be reliable.
+- **Cosine threshold relaxed from 0.85 to 0.79.** The HDBSCAN phonetic-group matching exposes endonymic variation at lower cosine similarities that the default missed.
+
+Calibration ran in approximately 5 minutes (20,000 positive + 20,000 negative pairs; 19,557 and 17,963 with valid signals respectively).
 
 ---
 
