@@ -19,7 +19,9 @@ import random
 from dataclasses import asdict
 
 import numpy as np
+import hdbscan
 from elasticsearch import AsyncElasticsearch
+from sklearn.metrics.pairwise import cosine_distances
 from tqdm import tqdm
 
 from .config import ClusterConfig, ScoringConfig, KNOWN_ES_NAMESPACES
@@ -192,6 +194,96 @@ async def _fetch_embeddings_batch(
     return result
 
 
+# ── Phonetic cluster detection ───────────────────────────────────────────────
+
+# HDBSCAN parameters — mirrors phonetics/extraction/es_knn_helper.py which
+# was validated during Symphonym training.
+_HDBSCAN_MIN_CLUSTER = 2
+_HDBSCAN_MIN_SAMPLES = 2
+_HDBSCAN_EPSILON = 0.2          # cosine distance; merges groups ≥ 0.8 sim
+_PAIR_SIMILARITY_THRESHOLD = 0.5  # fallback for the n=2 edge case
+_GROUP_MATCH_THRESHOLD = 0.65   # centroid similarity to consider two groups
+                                # as the same phonetic form across places
+
+
+def _cluster_place_embeddings(
+    embeddings: list[list[int]],
+) -> list[list[int]]:
+    """
+    Cluster a single place's toponym embeddings into phonetic groups
+    using HDBSCAN on cosine distances — the same method used during
+    Symphonym training data curation (see ESKNNHelper.find_similar_in_place).
+
+    Returns a list of groups, where each group is a list of indices
+    into *embeddings*.
+    """
+    n = len(embeddings)
+    if n == 0:
+        return []
+    if n == 1:
+        return [[0]]
+
+    vectors = np.array(embeddings, dtype=np.float32)
+
+    # Edge case: exactly 2 embeddings — HDBSCAN needs ≥ 3 points
+    if n == 2:
+        sim = _cosine_sim_byte(embeddings[0], embeddings[1])
+        if sim >= _PAIR_SIMILARITY_THRESHOLD:
+            return [[0, 1]]
+        return [[0], [1]]
+
+    # Main case: ≥ 3 embeddings
+    try:
+        dist_matrix = cosine_distances(vectors)
+        clusterer = hdbscan.HDBSCAN(
+            min_cluster_size=_HDBSCAN_MIN_CLUSTER,
+            min_samples=_HDBSCAN_MIN_SAMPLES,
+            metric="precomputed",
+            cluster_selection_epsilon=_HDBSCAN_EPSILON,
+            allow_single_cluster=True,
+        )
+        labels = clusterer.fit_predict(dist_matrix)
+    except Exception:
+        # If HDBSCAN fails, fall back to a single group
+        return [list(range(n))]
+
+    groups: dict[int, list[int]] = {}
+    for idx, label in enumerate(labels):
+        if label < 0:
+            # noise → singleton group
+            groups.setdefault(-(idx + 1), []).append(idx)
+        else:
+            groups.setdefault(label, []).append(idx)
+
+    return list(groups.values())
+
+
+def _group_centroid(
+    embeddings: list[list[int]], indices: list[int],
+) -> np.ndarray:
+    """Mean-pool the embeddings at *indices* to get a group centroid."""
+    vecs = np.array([embeddings[i] for i in indices], dtype=np.float32)
+    centroid = vecs.mean(axis=0)
+    norm = np.linalg.norm(centroid)
+    if norm > 0:
+        centroid /= norm
+    return centroid
+
+
+def _best_cross_sim(
+    emb_a: list[list[int]], idx_a: list[int],
+    emb_b: list[list[int]], idx_b: list[int],
+) -> float:
+    """Best pairwise cosine across two embedding sub-lists."""
+    best = 0.0
+    for ia in idx_a:
+        for ib in idx_b:
+            sim = _cosine_sim_byte(emb_a[ia], emb_b[ib])
+            if sim > best:
+                best = sim
+    return best
+
+
 # ── Signal computation ──────────────────────────────────────────────────────
 
 def _compute_signals_for_pair(
@@ -199,51 +291,118 @@ def _compute_signals_for_pair(
     emb_b: list[list[int]],
     data_a: dict | None,
     data_b: dict | None,
-) -> dict | None:
+) -> list[dict] | None:
     """
-    Compute the 5 evidence signals for a single pair.
+    Compute evidence signals for a single place pair.
 
-    Returns None if insufficient data (no embeddings on either side,
-    or missing place data).
+    Instead of a single "best cosine across all toponym cross-pairs",
+    we cluster each place's toponym embeddings into phonetic groups
+    using HDBSCAN (the same technique used during Symphonym training),
+    then match groups across the two places by centroid similarity.
+
+    This fixes two problems with the naïve best-cosine approach:
+
+    * **Exonyms are excluded.** "Germany" and "Deutschland" end up in
+      different phonetic groups whose centroids don't match — so the
+      (low) cross-cosine between them never enters the calibration
+      distribution.
+    * **Endonymic variation is captured.** Within a matched group
+      (e.g. the Latin-derived cluster containing "Colonia / Cologne /
+      Kolonia"), the best cross-pair cosine may be well below the
+      global best yet is still a genuine positive signal.  Emitting
+      one observation *per matched group* lets the calibration see
+      the full range of endonymic similarities.
+
+    Returns a **list** of signal dicts — one per matched phonetic
+    group — or None if there is insufficient data.
     """
     if not emb_a or not emb_b:
         return None
     if not data_a or not data_b:
         return None
 
-    # Best cosine similarity across toponym pairs
-    best_sim = 0.0
-    for ea in emb_a:
-        for eb in emb_b:
-            sim = _cosine_sim_byte(ea, eb)
-            if sim > best_sim:
-                best_sim = sim
-
-    # Spatial distance
+    # Spatial / ccode / type signals (same for every group observation)
     rp_a = data_a.get("repr_point")
     rp_b = data_b.get("repr_point")
-    if rp_a and rp_b:
-        distance_km = _haversine_km(rp_a[0], rp_a[1], rp_b[0], rp_b[1])
-    else:
-        distance_km = 0.0
+    distance_km = (
+        _haversine_km(rp_a[0], rp_a[1], rp_b[0], rp_b[1])
+        if rp_a and rp_b else 0.0
+    )
 
-    # Ccode overlap
     ccodes_a = data_a.get("ccodes", set())
     ccodes_b = data_b.get("ccodes", set())
     ccode_overlap = len(ccodes_a & ccodes_b) if ccodes_a and ccodes_b else 0
 
-    # Type match
     types_a = data_a.get("types", set())
     types_b = data_b.get("types", set())
     type_match = bool(types_a & types_b) if types_a and types_b else False
 
-    return {
-        "cosine_sim": best_sim,
-        "distance_km": distance_km,
-        "ccode_overlap": ccode_overlap,
-        "type_match": type_match,
-        "toponym_exact_count": 0,  # filled separately for positives
-    }
+    # --- Cluster each place's toponyms into phonetic groups ---------------
+    groups_a = _cluster_place_embeddings(emb_a)
+    groups_b = _cluster_place_embeddings(emb_b)
+
+    # Compute centroids for every group
+    centroids_a = [_group_centroid(emb_a, g) for g in groups_a]
+    centroids_b = [_group_centroid(emb_b, g) for g in groups_b]
+
+    # --- Match groups by centroid cosine similarity -----------------------
+    # Greedy 1-to-1 matching: pick the highest centroid-similarity
+    # (A-group, B-group) pair, lock both out, repeat.
+    used_a: set[int] = set()
+    used_b: set[int] = set()
+    matched_cosines: list[float] = []
+
+    # Pre-compute centroid similarities
+    pairs_by_sim: list[tuple[float, int, int]] = []
+    for ia, ca in enumerate(centroids_a):
+        for ib, cb in enumerate(centroids_b):
+            sim = float(np.dot(ca, cb))  # both unit-normalised
+            if sim >= _GROUP_MATCH_THRESHOLD:
+                pairs_by_sim.append((sim, ia, ib))
+
+    # Sort descending so greedy picks the best matches first
+    pairs_by_sim.sort(reverse=True)
+
+    for _csim, ia, ib in pairs_by_sim:
+        if ia in used_a or ib in used_b:
+            continue
+        used_a.add(ia)
+        used_b.add(ib)
+        # Best pairwise cosine within the matched group pair
+        best_sim = _best_cross_sim(emb_a, groups_a[ia], emb_b, groups_b[ib])
+        matched_cosines.append(best_sim)
+
+    if not matched_cosines:
+        # No phonetic groups matched — the pair may consist entirely
+        # of exonyms.  Emit a single observation using the global best
+        # (which will be low) so the calibration still sees that these
+        # "hard" positives exist, but they won't dominate the
+        # distribution the way they did before.
+        best_sim = 0.0
+        for ea in emb_a:
+            for eb in emb_b:
+                sim = _cosine_sim_byte(ea, eb)
+                if sim > best_sim:
+                    best_sim = sim
+        return [{
+            "cosine_sim": best_sim,
+            "distance_km": distance_km,
+            "ccode_overlap": ccode_overlap,
+            "type_match": type_match,
+            "toponym_exact_count": 0,
+        }]
+
+    # Emit one observation per matched phonetic group
+    return [
+        {
+            "cosine_sim": cs,
+            "distance_km": distance_km,
+            "ccode_overlap": ccode_overlap,
+            "type_match": type_match,
+            "toponym_exact_count": 0,
+        }
+        for cs in matched_cosines
+    ]
 
 
 # ── Pair loading ─────────────────────────────────────────────────────────────
@@ -378,17 +537,19 @@ async def _compute_signals_batch(
     )
 
     # Compute signals for each pair
+    # _compute_signals_for_pair returns a *list* of signal dicts (one per
+    # matched phonetic group) so we flatten them into a single list.
     signals = []
     bar = tqdm(pairs, desc=desc, unit="pair", mininterval=2.0)
     for pid_a, pid_b in bar:
-        sig = _compute_signals_for_pair(
+        sigs = _compute_signals_for_pair(
             embeddings.get(pid_a, []),
             embeddings.get(pid_b, []),
             place_data.get(pid_a),
             place_data.get(pid_b),
         )
-        if sig is not None:
-            signals.append(sig)
+        if sigs is not None:
+            signals.extend(sigs)
     bar.close()
     return signals
 
