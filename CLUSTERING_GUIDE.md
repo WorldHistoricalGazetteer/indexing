@@ -4,6 +4,15 @@
 **Status:** Operational — first full run completed 21 March 2026  
 **Repository:** `WorldHistoricalGazetteer/indexing`
 
+> **V4 note (ArangoDB migration).** This guide describes the current Elasticsearch-based system. In the planned V4 architecture (§4.2), ArangoDB replaces Elasticsearch as the primary data store and pairwise links are stored as graph edges. Under V4:
+>
+> - **Phases 1–3** (discovering pairwise links) and **calibration** (§8) carry over largely unchanged — the link-discovery logic is independent of the storage backend.
+> - **Phase 4** (batch cluster computation) and the **`clusters` index** become redundant. Cluster membership is resolved on-the-fly by graph traversal at query time, which also enables per-query confidence thresholds (e.g. "show me the cluster at ≥ 0.6" vs "≥ 0.8").
+> - **Staging/snapshot infrastructure** (§4.1) and the **operational commands** in §6 are specific to the CRC Slurm + ES environment and will not apply to V4.
+> - **Membership documents** (§3) are eliminated entirely; the `cluster_state` index is replaced by ArangoDB metadata.
+>
+> Sections marked with these concerns will note their V4 status where relevant.
+
 ---
 
 ## 1. What Is Clustering?
@@ -30,7 +39,7 @@ Clustering runs as a sequential pipeline of four phases. Each phase discovers pa
 
 **How it works:** The system scrolls through every place in the `places` index and examines its `relations` field. Any relation of type `sameAs`, `closeMatch`, or `exactMatch` that points to a place in a *different* gazetteer is harvested as a hard link with maximum confidence (score 1.0).
 
-**What it produces:** Pairwise link documents — one for each pair of places asserted to be the same by an authority. In the initial run this phase was cached from a prior partial run.
+**What it produces:** Pairwise link documents — one for each pair of places asserted to be the same by an authority.
 
 ### Phase 1B: Contributor Reconciliation Links
 
@@ -50,6 +59,10 @@ The system scrolls toponyms that span multiple gazetteer namespaces, generates c
 2. **Spatial distance** — the two places must be within **50 km** of each other (using the haversine formula on their representative points). This is not the main discriminatory filter — the name and country-code match have already done the heavy lifting. The 50 km is a sanity ceiling that accommodates known coordinate imprecision: modern gazetteers (GeoNames, OSM) agree within 1–5 km, but historical gazetteers (TGN, Pleiades) often have 10–30 km uncertainty, and administrative-centre coordinates can differ from geographic centroids by a similar margin. "Springfield, Illinois" and "Springfield, Massachusetts" are 1,400 km apart and are correctly rejected.
 3. **Overflow cap** — toponyms attested by more than **500** cross-namespace pairs are skipped entirely to avoid combinatorial explosion on ultra-common names like "Church" or "San José".
 
+### Calibration Step (between Phase 2 and Phase 3)
+
+Before Phase 3 runs, the pipeline automatically calibrates its thresholds and scoring weights using the authority hard links from Phase 1A as ground truth. This adjusts the Phase 3 cosine similarity and spatial distance thresholds, the Phase 4 composite score weights, and the cluster score threshold to fit the empirical distribution of positive and negative pairs. The calibration process is described in detail in §8.1. It can be skipped with `--no-calibrate`, in which case the hand-picked defaults in `ScoringConfig` are used.
+
 ### Phase 3: Phonetic Similarity (Symphonym)
 
 **What it does:** Finds places with *similar-sounding* names, even across different scripts and transliteration conventions, using the Symphonym phonetic embedding model.
@@ -61,12 +74,12 @@ The system:
 1. Scrolls all 67M toponyms that have embeddings.
 2. Skips toponyms whose attesting places are already linked by Phases 1–2 (no point re-discovering known pairs).
 3. Skips single-namespace toponyms (they can never produce cross-namespace pairs).
-4. For qualifying toponyms, fires **KNN (k-nearest-neighbours) queries** in batches of 50 via Elasticsearch's `_msearch` API, asking: "what are the 20 closest embeddings to this one, with at least 85% cosine similarity?"
+4. For qualifying toponyms, fires **KNN (k-nearest-neighbours) queries** in batches of 50 via Elasticsearch's `_msearch` API, asking: "what are the k closest embeddings to this one, above a minimum cosine similarity?" (By default k=20 and minimum similarity=0.85, but these are adjusted by automatic calibration — see §8.1.)
 5. For each KNN hit, forms cross-namespace pairs and filters them by:
    - **Country-code overlap** (same rule as Phase 2)
-   - **Spatial distance ≤ 25 km** (half of Phase 2's 50 km, because phonetic similarity is weaker evidence than exact name match — two names that merely *sound* similar require tighter geographic corroboration)
+   - **Spatial distance** within a calibrated limit (default 25 km — tighter than Phase 2's 50 km, because phonetic similarity is weaker evidence than exact name match, so tighter geographic corroboration is required)
 
-> **Note:** The Phase 3 thresholds (85% cosine similarity, 25 km spatial distance) are conservative starting points and represent the least well-calibrated part of the system. In densely settled areas, phonetically similar but distinct place names can exist within 25 km. These thresholds can be empirically calibrated using the authority hard links as ground truth — see §8.
+In densely settled areas (UK, Netherlands, Japan), phonetically similar but distinct place names can exist within a small radius. The calibration step (§8.1) tunes these thresholds empirically using authority hard links as ground truth, rather than relying solely on hand-picked defaults.
 
 **Scale:** In the initial run, this phase scanned all 67M toponyms, issued ~1.1M KNN queries, produced ~948M raw candidate pairs, and filtered them down to **7,564,424** surviving pairs. This took approximately 3 hours.
 
@@ -74,9 +87,9 @@ The system:
 
 **What it does:** Takes all the pairwise links from Phases 1–3, scores each pair, and assembles them into clusters.
 
-**Scoring:** Each algorithmic pair (from Phases 2 and 3) receives a composite score between 0.0 and 1.0, computed as a weighted sum of five evidence signals:
+**Scoring:** Each algorithmic pair (from Phases 2 and 3) receives a composite score between 0.0 and 1.0, computed as a weighted sum of five evidence signals. The default weights (which may be adjusted by calibration — see §8.1) are:
 
-| Signal | Weight | How it's measured |
+| Signal | Default weight | How it's measured |
 |--------|--------|-------------------|
 | Exact toponym co-attestation count | **30%** | Number of shared exact name spellings (log-scaled, capped at 5) |
 | Phonetic embedding similarity | **25%** | Best cosine similarity from Symphonym KNN |
@@ -107,9 +120,9 @@ A separate single-document index, `cluster_state`, stores the high-water marks a
 
 | Metric | Value |
 |--------|-------|
-| Phase 1A pairs (authority hard links) | Cached from prior run |
+| Phase 1A pairs (authority hard links) | 16,845,137 |
 | Phase 1B pairs (contributor links) | 0 (skipped — no WHG places indexed) |
-| Phase 2 pairs (exact co-attestation) | Cached from prior run |
+| Phase 2 pairs (exact co-attestation) | included in total |
 | Phase 3 pairs (phonetic similarity) | 7,564,424 |
 | Total pairwise docs | 24,409,561 |
 | Pairs above threshold (score ≥ 0.40) | 16,044,807 |
@@ -222,7 +235,7 @@ All thresholds are defined in `clustering/config.py` in the `ScoringConfig` data
 | KNN concurrency | **10** | `knn_concurrency` | Number of concurrent KNN query batches. Higher values speed up processing but increase ES load. |
 | _msearch batch size | **50** | `MSEARCH_BATCH_SIZE` (in phonetic.py) | How many KNN queries to pack into a single `_msearch` HTTP request. |
 
-**Why 85% cosine / 25 km?** These are the starting defaults but are now **automatically calibrated** before each Phase 3 run. The calibration step (see §2.5) uses authority hard links as ground truth to fit optimal thresholds. If calibration is skipped (`--no-calibrate`), these defaults apply. In densely settled areas (UK, Netherlands, Japan), many phonetically similar but distinct place names exist within 25 km.
+**Why 85% cosine / 25 km?** These are the starting defaults but are **automatically calibrated** before each Phase 3 run. The calibration step (§8.1) uses authority hard links as ground truth to fit optimal thresholds. If calibration is skipped (`--no-calibrate`), these defaults apply. In densely settled areas (UK, Netherlands, Japan), many phonetically similar but distinct place names exist within 25 km.
 
 ### 5.3 Phase 4: Scoring and Clustering
 
@@ -310,7 +323,7 @@ tail -f /ix1/ishi/es/logs/cluster_JOBID.err    # stderr (tqdm progress bars, war
 
 2. **No negative evidence.** The system does not currently record "these two places are definitely NOT the same." Rejected reconciliation matches in the WHG database could serve as negative evidence in future.
 
-3. **Phase 3 thresholds are automatically calibrated.** The phonetic similarity cosine threshold (default 0.85) and spatial distance limit (default 25 km) are now fitted from authority hard links before each Phase 3 run (`clustering/calibration.py`). Composite score weights and the cluster score threshold are also calibrated. Use `--no-calibrate` to skip and use the manual defaults. Calibration quality depends on the coverage and geographic distribution of authority hard links; volunteer pair review (§8.2) provides additional validation.
+3. **Phase 3 thresholds are automatically calibrated.** The phonetic similarity cosine threshold (default 0.85) and spatial distance limit (default 25 km) are fitted from authority hard links before each Phase 3 run (`clustering/calibration.py`). Composite score weights and the cluster score threshold are also calibrated. Use `--no-calibrate` to skip calibration and use the manual defaults. Calibration quality depends on the coverage and geographic distribution of authority hard links; volunteer pair review (§8.2) provides additional validation.
 
 4. **Cluster IDs are not stable across runs.** When a new place bridges two existing clusters, the merged cluster gets a new ID. No external system should depend on cluster ID stability.
 
@@ -339,11 +352,11 @@ Phase 1A harvests millions of authority hard-linked pairs — pairs that gazette
    - For each matched group pair, compute the **best cross-pair cosine similarity** between the two places' embeddings within that group. Emit one calibration observation per matched group.
    - Compute the spatial distance, ccode overlap, and type match (shared across all observations for the pair).
 
-   This approach fixes two problems with the naïve "best cosine across all toponym cross-pairs":
-   - **Exonyms are excluded.** "Germany" and "Deutschland" end up in different phonetic groups whose centroids don't match, so their low cross-cosine doesn't pollute the positive distribution and pull the threshold down.
-   - **Endonymic variation is captured.** Lower cosine similarities from secondary phonetic groups (e.g., the Latin-derived cluster for Köln, which may score lower than the Germanic cluster) enter the calibration as genuine positive observations, preventing the threshold from being set unrealistically high.
+   The phonetic-group approach is important because many places have names in multiple, phonetically unrelated languages — **exonyms** such as "Germany" vs "Deutschland", or "Japan" vs "日本". A naïve comparison of all toponym cross-pairs would include these exonymic mismatches (which have low cosine similarity despite being the same place), polluting the positive distribution and pulling the fitted threshold down. By clustering each place's toponyms into phonetic groups first, exonymic pairs are naturally separated into different groups whose centroids do not match across the two places, so they never enter the calibration distribution.
 
-   If no phonetic groups match across the two places (pure exonym pair), a single observation using the global best cosine is emitted so these hard positives remain visible without dominating the distribution.
+   At the same time, the per-group approach captures **endonymic variation**: if two places share a Latin-derived phonetic group (e.g. "Colonia" / "Kolonia") alongside a higher-scoring Germanic group ("Köln" / "Keulen"), the Latin group's lower cosine similarity is emitted as a separate genuine positive observation rather than being hidden behind the Germanic group's higher score. This gives the calibration a realistic picture of the full range of within-group similarities.
+
+   If no phonetic groups match across the two places (a pure exonym pair), a single observation using the global best cosine is emitted so these hard positives remain visible without dominating the distribution.
 
 2. **Sample negatives.** Draw a comparable number of random cross-namespace pairs that have no authority hard link between them. Compute the same signals (with the same HDBSCAN group-matching). These are overwhelmingly true negatives (randomly paired places from different gazetteers are almost never the same place).
 
@@ -380,9 +393,6 @@ When a WHG user performs dataset reconciliation and encounters clustered results
 ### 8.4 Iterative Refinement
 
 Calibration is iterative: after each round (automated or volunteer-based), the new "most uncertain" pairs can be identified and targeted for the next round of review, converging on near-optimal parameters over a few cycles.
-
-
-
 
 
 
