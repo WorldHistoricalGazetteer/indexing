@@ -853,9 +853,22 @@ The runner should be schedulable via cron or systemd timer on the indexing VM.
 
 ### 9.1 Scale
 
-Approximate corpus size (verify with §8.2.6):
-- `places` index: likely 15–25M documents.
-- `toponyms` index: likely 60–80M documents.
+Actual corpus size (as of March 2026):
+- `places` index: **~47M distinct place records** (~413M Lucene documents including nested objects — ES `_cat/indices` reports the Lucene count, which inflates the figure ~9× because each nested `toponyms`, `geometries`, `types`, `relations` etc. entry is stored as a separate internal document).
+- `toponyms` index: **~67M documents**.
+
+Source breakdown (approximate):
+
+| Authority | Namespace | Approximate places |
+|-----------|-----------|-------------------|
+| OSM | `osm` | >14.8M |
+| GeoNames | `gn` | 12M |
+| Wikidata | `wd` | 8M |
+| TGN | `tgn` | 3M |
+| GB1900 | `gb` | ~2.6M |
+| Pleiades | `pl` | 37K |
+| IndexVillaris | `iv` | 24K |
+| Others (NativeLand, DPlace, UN) | `nl`, `dp`, `un` | <10K |
 
 ### 9.2 Phase Costs
 
@@ -908,8 +921,79 @@ This migration is a one-time batch operation. The pairwise docs contain all the 
 
 ## 12. Open Questions
 
-1. **Weight tuning** — The composite score weights in §5.2 are initial suggestions. Should there be a ground-truth evaluation set for systematic tuning?
-2. **Cluster stability** — When a new place is added and bridges two existing clusters, should the merged cluster get a new `cluster_id` or inherit one? New IDs are simpler and safer; no external system should depend on cluster ID stability.
+1. **Weight tuning** — The composite score weights in §5.2 are initial suggestions. Automated calibration against authority hard links (§13.2) will determine empirically optimal values, validated by volunteer pair review (§13.3).
+2. **Cluster stability** — When a new place is added and bridges two existing clusters, should the merged cluster get a new `cluster_id` or inherit one? **Resolved:** New IDs are generated; no external system should depend on cluster ID stability.
 3. **Negative evidence** — Should the system record "these two places are definitely NOT the same" (e.g. after a user rejects a match)? This would be a `notSameAs` link class. Useful for preventing re-suggestion, but adds complexity. Note that rejected reconciliation matches in the WHG PostgreSQL database could serve as an initial source of negative evidence. See also §6.2 on cluster invalidation when contributor decisions are revoked.
-4. **Threshold sensitivity** — The `THRESHOLD_EXACT_KM` (50km) and `THRESHOLD_PHONETIC_KM` (25km) values are conservative starting points. Some places (e.g. cities with imprecise historical coordinates) may need larger thresholds. Should thresholds be type-dependent (e.g. larger for regions, smaller for buildings)?
-5. **`indexed_at` on the `places` index** — The `places` schema currently lacks an `indexed_at` field (unlike `toponyms` which has one). Adding it is recommended (§6.2) and requires updating `schemas/places.json` and the ingestion pipeline. Until it is backfilled across the full corpus, the first incremental run must fall back to set-difference logic. Is there appetite to run a one-off script to populate `indexed_at` retroactively on all existing place documents (e.g. using the document's `_seq_no` ordering or the ingestion log)?
+4. **Threshold sensitivity** — The `THRESHOLD_EXACT_KM` (50km) and `THRESHOLD_PHONETIC_KM` (25km) values are starting points with justification (see §13.1), but the phonetic thresholds in particular would benefit from empirical calibration against authority hard links (§13.2), validated by volunteer review (§13.3).
+5. **`indexed_at` on the `places` index** — The `places` schema now includes an `indexed_at` field. Until it is backfilled across the full corpus, the first incremental run must fall back to set-difference logic. Is there appetite to run a one-off script to populate `indexed_at` retroactively on all existing place documents?
+
+---
+
+## 13. Threshold Justification and Calibration
+
+### 13.1 Justification for Current Thresholds
+
+**Phase 2: 50 km for exact name matches.** This is not a discriminatory threshold — the real filtering has already happened by requiring exact name spelling AND country-code overlap. The 50 km limit is a sanity ceiling that accommodates known coordinate imprecision across gazetteers:
+
+- Modern gazetteers (GeoNames, OSM) typically agree within 1–5 km for populated places.
+- Historical gazetteers (TGN, Pleiades) frequently have coordinate uncertainty of 10–30 km, particularly for ancient sites located by region rather than precise position.
+- Administrative-centre coordinates vs. feature centroids: a GeoNames point for a large municipality is the city centre, while a Wikidata or TGN point may be the geographic centroid of the administrative boundary; for large areas these can differ by 10–30 km.
+
+At 50 km, the only pairs rejected are same-name places in different parts of the same country (e.g. the ~45 "Springfield"s in the US, which are all >50 km apart from each other). Lowering to 30 km would lose valid pairs involving imprecise historical coordinates; raising to 100 km would begin admitting within-country homonyms.
+
+**Phase 3: 25 km / 85% cosine for phonetic matches.** These are deliberately conservative starting points and represent the weakest part of the system. Phonetic similarity is inherently noisier than exact name identity:
+
+- The 85% cosine threshold is well above the gateway reconciliation threshold (0.7), reflecting the need for higher confidence in pre-computed clusters that users cannot individually verify at query time.
+- The 25 km spatial limit is half the Phase 2 threshold, compensating for the weaker name evidence. In densely settled areas (UK, Netherlands, Japan), many phonetically similar but distinct place names exist within 25 km.
+- Pairs must additionally pass country-code overlap, and the composite scoring threshold of 0.40 provides a further layer of defence.
+
+These thresholds are candidates for empirical calibration — see §13.2.
+
+**Phase 4: 0.40 composite score threshold.** This is the most impactful single parameter. It determines which pairs become cluster edges. At 0.40, a pair needs substantial evidence across multiple signals — e.g. a phonetic match (25% × 0.85 ≈ 0.21) plus spatial proximity (25% × 0.5 at 10 km ≈ 0.13) plus country overlap (10% × 0.5 ≈ 0.05) totals ~0.39, just below threshold. This means phonetically similar pairs need at least some additional corroborating evidence to be clustered.
+
+**Phase 4: 100 km max cluster diameter.** Clusters spanning more than 100 km are split by DBSCAN. This is generous enough to accommodate coordinate scatter within a single real-world place across gazetteers, but tight enough to break apart spurious chains of similar names linking genuinely different places. The DBSCAN sub-clustering radius (50 km, i.e. half the diameter) means that after splitting, each sub-cluster is internally coherent at the same scale as the Phase 2 distance threshold.
+
+### 13.2 Automated Calibration from Authority Hard Links
+
+Phase 1A harvests millions of authority hard-linked pairs — pairs that gazetteers themselves assert are the same place (e.g. Pleiades → GeoNames, TGN → Wikidata). These are a large, high-confidence labeled dataset that can be used to calibrate the phonetic thresholds without any human effort.
+
+**Method:**
+
+1. **Compute signals for known positives.** For each authority hard-linked pair (A, B):
+   - Look up all toponyms attesting A and all toponyms attesting B in the `toponyms` index.
+   - For each cross-pair of toponyms that both have embeddings, compute their cosine similarity.
+   - Record the **best cosine similarity** for the pair.
+   - Compute the spatial distance between the two places' representative points.
+   - Record ccode overlap and type match.
+
+   This produces a distribution of signal values for pairs that are *known to be the same place*.
+
+2. **Sample negatives.** Draw a comparable number of random cross-namespace pairs that have no authority hard link between them. Compute the same signals. These are overwhelmingly true negatives (randomly paired places from different gazetteers are almost never the same place).
+
+3. **Fit thresholds.** With both distributions in hand:
+   - Plot the cosine similarity distributions for positives vs. negatives and find the threshold that maximises separation (e.g. the point that maximises the Youden index, or that achieves a target precision).
+   - Do the same for spatial distance.
+   - Fit logistic regression on all five signal components to find empirically optimal composite score weights.
+   - Sweep the composite score threshold to find the point that maximises F1 (or precision at a target recall).
+
+4. **Re-cluster and compare.** Run with the new parameters and compare cluster counts, precision (spot-checked), and recall against authority hard links.
+
+**Limitations:** Authority hard links are biased toward well-documented places with good coordinates and toward European/Mediterranean gazetteers (Pleiades, TGN). They may underrepresent the kinds of difficult pairs the system encounters in practice — phonetically similar names in densely settled regions with imprecise historical coordinates. Volunteer review (§13.3) compensates for this bias.
+
+### 13.3 Volunteer Pair Review for Validation
+
+A simple review module — not a gamified platform, but a low-friction tool that contributors can use as and when they wish — provides validation of the automated calibration and collects judgments on pairs in the ambiguous zone that hard links don't cover.
+
+**How it works:**
+
+1. **Sampling:** The system draws pairs from the `clusters` index, stratified by composite score — concentrating on the uncertain zone (scores 0.30–0.50) where threshold changes have the most impact, but also including clear positives (>0.70) and clear negatives (<0.20) to anchor responses.
+
+2. **Presentation:** Each pair is shown as two place cards side by side on a map: names, coordinates, country, source gazetteer, type, and distance. The volunteer clicks **Same place**, **Different places**, or **Unsure**.
+
+3. **Redundancy:** Each pair is shown to **2–3 independent volunteers** to mitigate individual bias. A pair's label is determined by majority agreement; pairs with no majority go back into the review pool or are flagged for expert adjudication.
+
+4. **Integration with reconciliation:** When a WHG user performs dataset reconciliation and encounters clustered results, the interface offers an optional "Do you agree these are the same place?" prompt for displayed cluster members. This produces labeled data as a by-product of an activity the user is already performing.
+
+5. **Gold standard pairs:** Phase 1A authority hard links serve as a built-in gold set of positive examples. A volunteer whose judgments consistently contradict the gold set has their trust weight reduced.
+
+Calibration is iterative: after each round (automated or volunteer-based), the new "most uncertain" pairs can be identified and targeted for the next round of review, converging on near-optimal parameters over a few cycles.

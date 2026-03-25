@@ -162,6 +162,7 @@ async def _fetch_place_coords(
 
 async def run_full(
     cfg: ClusterConfig, dry_run: bool = False, resume: bool = False,
+    calibrate: bool = True,
 ) -> RunStatistics:
     """Execute a full clustering run (all phases).
 
@@ -299,6 +300,21 @@ async def run_full(
                       flush=True)
             await _checkpoint("2")
 
+        # ---- Calibration (between Phase 2 and Phase 3) ------------------
+        if calibrate and "calibrate" not in done:
+            from .calibration import calibrate_thresholds
+
+            cal_ok = await calibrate_thresholds(client, cfg)
+            if cal_ok:
+                print("  Calibrated thresholds applied to Phase 3+4",
+                      flush=True)
+            await _checkpoint("calibrate")
+        elif "calibrate" in done:
+            print(flush=True)
+            print("=" * 60, flush=True)
+            print("  Calibration  [CACHED]", flush=True)
+            print("=" * 60, flush=True)
+
         # ---- Phase 3 ----------------------------------------------------
         if "3" in done:
             print(flush=True)
@@ -421,7 +437,9 @@ async def run_full(
     return stats
 
 
-async def run_incremental(cfg: ClusterConfig) -> RunStatistics:
+async def run_incremental(
+    cfg: ClusterConfig, calibrate: bool = True,
+) -> RunStatistics:
     """Execute an incremental clustering run (since last run)."""
     stats = RunStatistics()
     t0 = time.monotonic()
@@ -483,6 +501,12 @@ async def run_incremental(cfg: ClusterConfig) -> RunStatistics:
             new_pairwise = new_hard_links + phase2_docs
             new_pairwise = score_pairwise_docs(new_pairwise, cfg.scoring)
             await index_pairwise_docs(client, cfg, new_pairwise)
+
+        # Calibration (between Phase 2 and Phase 3)
+        if calibrate:
+            from .calibration import calibrate_thresholds
+
+            await calibrate_thresholds(client, cfg)
 
         # Phase 3: only for NEW places not yet clustered
         new_pids: set[str] = set()
@@ -633,6 +657,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Don't index results")
     parser.add_argument("--resume", action="store_true",
                         help="Resume a crashed --full run from the last checkpoint")
+    parser.add_argument("--no-calibrate", action="store_true",
+                        help="Skip automated threshold calibration (use defaults)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
 
     # ES connection overrides (used by es.sh wrapper)
@@ -663,9 +689,12 @@ def main():
     if args.stats:
         asyncio.run(show_stats(cfg))
     elif args.full:
-        asyncio.run(run_full(cfg, dry_run=args.dry_run, resume=args.resume))
+        asyncio.run(run_full(
+            cfg, dry_run=args.dry_run, resume=args.resume,
+            calibrate=not args.no_calibrate,
+        ))
     elif args.incremental:
-        asyncio.run(run_incremental(cfg))
+        asyncio.run(run_incremental(cfg, calibrate=not args.no_calibrate))
 
 
 if __name__ == "__main__":

@@ -104,6 +104,10 @@ class ScoringConfig:
     # Phase 3 place limit (0 = unlimited)
     max_phase3_places: int = 0
 
+    # Calibration parameters
+    calibration_sample_size: int = 20_000  # max positive pairs to sample
+    calibration_neg_ratio: float = 1.0  # ratio of negatives to positives
+
 
 @dataclass
 class ClusterConfig:
