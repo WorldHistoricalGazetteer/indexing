@@ -2711,18 +2711,31 @@ do_cluster() {
         echo "  ✓ Production ES reachable"
         echo
 
-        # 2. Ensure staging ES is running
+        # 2. Ensure staging ES is running (auto-start if needed)
         echo "Step 2: Checking staging ES ..."
+        local NEED_STAGING=false
         if [ ! -f "$STAGING_INFO_FILE" ]; then
-            echo "  No staging ES running. Start it first:"
-            echo "    es -staging-start"
-            return 1
+            NEED_STAGING=true
+        else
+            source "$STAGING_INFO_FILE"
+            if ! curl -sf --connect-timeout 10 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+                echo "  Staging ES at http://${ES_NODE}:${ES_PORT} is not responding (job may have expired)."
+                NEED_STAGING=true
+            fi
         fi
-        source "$STAGING_INFO_FILE"
+        if $NEED_STAGING; then
+            echo "  No running staging ES found — starting one automatically ..."
+            staging_start
+            if [ ! -f "$STAGING_INFO_FILE" ]; then
+                echo "  ERROR: Failed to auto-start staging ES."
+                echo "  Try manually:  es -staging-start"
+                return 1
+            fi
+            source "$STAGING_INFO_FILE"
+        fi
         local STAGING_URL="http://${ES_NODE}:${ES_PORT}"
         if ! curl -sf --connect-timeout 10 "${STAGING_URL}/_cluster/health" &>/dev/null; then
-            echo "  ERROR: Staging ES at ${STAGING_URL} is not responding."
-            echo "  Job may have expired. Try:  es -staging-start"
+            echo "  ERROR: Staging ES at ${STAGING_URL} is still not responding after auto-start."
             return 1
         fi
         echo "  ✓ Staging ES reachable at ${STAGING_URL}"
