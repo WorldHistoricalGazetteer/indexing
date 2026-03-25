@@ -334,14 +334,18 @@ Phase 1A harvests millions of authority hard-linked pairs — pairs that gazette
 
 1. **Compute signals for known positives.** For each authority hard-linked pair (A, B):
    - Look up all toponyms attesting A and all toponyms attesting B in the `toponyms` index.
-   - For each cross-pair of toponyms that both have embeddings, compute their cosine similarity.
-   - Record the **best cosine similarity** for the pair.
-   - Compute the spatial distance between the two places' representative points.
-   - Record ccode overlap and type match.
+   - **Cluster each place's toponym embeddings into phonetic groups** using HDBSCAN on cosine distances (the same density-based clustering used during Symphonym training data curation, with `min_cluster_size=2`, `cluster_selection_epsilon=0.2`). For example, Köln's toponyms split into a Germanic group (Köln, Keulen, Cologne) and a Latin group (Colonia, Kolonia, Colònia).
+   - **Match phonetic groups across the two places** by centroid cosine similarity (greedy 1-to-1, threshold ≥ 0.65). Only groups representing the same phonetic form are compared.
+   - For each matched group pair, compute the **best cross-pair cosine similarity** between the two places' embeddings within that group. Emit one calibration observation per matched group.
+   - Compute the spatial distance, ccode overlap, and type match (shared across all observations for the pair).
 
-   This produces a distribution of signal values for pairs that are *known to be the same place*.
+   This approach fixes two problems with the naïve "best cosine across all toponym cross-pairs":
+   - **Exonyms are excluded.** "Germany" and "Deutschland" end up in different phonetic groups whose centroids don't match, so their low cross-cosine doesn't pollute the positive distribution and pull the threshold down.
+   - **Endonymic variation is captured.** Lower cosine similarities from secondary phonetic groups (e.g., the Latin-derived cluster for Köln, which may score lower than the Germanic cluster) enter the calibration as genuine positive observations, preventing the threshold from being set unrealistically high.
 
-2. **Sample negatives.** Draw a comparable number of random cross-namespace pairs that have no authority hard link between them. Compute the same signals. These are overwhelmingly true negatives (randomly paired places from different gazetteers are almost never the same place).
+   If no phonetic groups match across the two places (pure exonym pair), a single observation using the global best cosine is emitted so these hard positives remain visible without dominating the distribution.
+
+2. **Sample negatives.** Draw a comparable number of random cross-namespace pairs that have no authority hard link between them. Compute the same signals (with the same HDBSCAN group-matching). These are overwhelmingly true negatives (randomly paired places from different gazetteers are almost never the same place).
 
 3. **Fit thresholds.** With both distributions in hand:
    - **Cosine threshold:** ROC analysis on cosine similarity, selecting the Youden-optimal point (clamped to 0.5–0.95).
@@ -353,7 +357,7 @@ Phase 1A harvests millions of authority hard-linked pairs — pairs that gazette
 
 **Configuration:** The sample size (default 20,000) and negative-to-positive ratio (default 1.0) can be set in `ScoringConfig.calibration_sample_size` and `ScoringConfig.calibration_neg_ratio`. Calibration requires at least 500 authority hard-link pairs with valid embeddings; if fewer are available it is skipped with a warning.
 
-**Limitations:** Authority hard links are biased toward well-documented places with good coordinates and toward European/Mediterranean gazetteers (Pleiades, TGN). They may underrepresent the kinds of difficult pairs the system encounters in practice — phonetically similar names in densely settled regions with imprecise historical coordinates. Volunteer review (§8.2) compensates for this bias.
+**Limitations:** Authority hard links are biased toward well-documented places with good coordinates and toward European/Mediterranean gazetteers (Pleiades, TGN). They may underrepresent the kinds of difficult pairs the system encounters in practice — phonetically similar names in densely settled regions with imprecise historical coordinates. The HDBSCAN phonetic-group matching mitigates the exonym/endonym problem (see Method above), but calibration quality still depends on the coverage and geographic distribution of authority hard links. Volunteer review (§8.2) compensates for remaining bias.
 
 ### 8.2 Volunteer Pair Review
 
