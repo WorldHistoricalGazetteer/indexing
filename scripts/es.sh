@@ -3156,9 +3156,13 @@ do_cluster_finalize() {
     echo "You may now clean up old dated indices if desired:"
     es_curl -sf "${PROD_URL}/_cat/indices/clusters_*,cluster_state_*?v&h=index,docs.count,store.size" 2>/dev/null || true
     echo
-    echo "To clean up exchange snapshots:"
-    echo "  es_curl -X DELETE '${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_input_${TIMESTAMP}'"
-    echo "  es_curl -X DELETE '${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_output_${TIMESTAMP}'"
+    echo "Cleaning up exchange snapshots ..."
+    es_curl -sf -X DELETE "${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_input_${TIMESTAMP}" >/dev/null 2>&1 \
+        && echo "  ✓ Deleted cluster_input_${TIMESTAMP}" \
+        || echo "  ⚠ cluster_input_${TIMESTAMP} not found (may already be cleaned)"
+    es_curl -sf -X DELETE "${PROD_URL}/_snapshot/${CLUSTER_EXCHANGE_REPO}/cluster_output_${TIMESTAMP}" >/dev/null 2>&1 \
+        && echo "  ✓ Deleted cluster_output_${TIMESTAMP}" \
+        || echo "  ⚠ cluster_output_${TIMESTAMP} not found (may already be cleaned)"
 }
 
 case "$1" in

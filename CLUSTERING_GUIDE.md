@@ -1,7 +1,7 @@
 # WHG Place Clustering — How It Works and How to Run It
 
-**Last updated:** 25 March 2026  
-**Status:** Operational — second full run (with HDBSCAN-based calibration) in progress  
+**Last updated:** 26 March 2026  
+**Status:** Operational — second full run (with HDBSCAN-based calibration) complete  
 **Repository:** `WorldHistoricalGazetteer/indexing`
 
 > **V4 note (ArangoDB migration).** This guide describes the current Elasticsearch-based system. In the planned V4 architecture (§4.2), ArangoDB replaces Elasticsearch as the primary data store and pairwise links are stored as graph edges. Under V4:
@@ -83,7 +83,7 @@ The system:
 
 In densely settled areas (UK, Netherlands, Japan), phonetically similar but distinct place names can exist within a small radius. The calibration step (§8.1) tunes these thresholds empirically using authority hard links as ground truth, rather than relying solely on hand-picked defaults.
 
-**Scale:** In the 21 March run (before calibration), this phase scanned all 67M toponyms, issued ~1.1M KNN queries, produced ~948M raw candidate pairs, and filtered them down to ~7.6M surviving pairs in approximately 3 hours. The 25 March run uses a lower cosine threshold (0.79 vs 0.85), which admits more KNN hits, but a much tighter spatial limit (5 km vs 25 km), which rejects more of them. Results will be updated when the run completes.
+**Scale:** In the 21 March run (before calibration), this phase scanned all 67M toponyms, issued ~1.1M KNN queries, produced ~948M raw candidate pairs, and filtered them down to ~7.6M surviving pairs in approximately 3 hours. The 25 March calibrated run used a lower cosine threshold (0.79 vs 0.85), which admits more KNN hits, but a much tighter spatial limit (5 km vs 25 km), which rejects more of them. It issued a similar number of KNN queries (~1.1M) and produced a similar volume of raw candidates (~948M), but the tight 5 km spatial filter cut the surviving pairs to **3,564,082** — less than half the pre-calibration count. Phase 3 took approximately 2.5 hours.
 
 ### Phase 4: Composite Scoring and Clustering
 
@@ -118,19 +118,23 @@ All results go into a dedicated Elasticsearch index called `clusters`, containin
 
 A separate single-document index, `cluster_state`, stores the high-water marks and statistics from the last run, enabling incremental updates.
 
-### Run Results (25 March 2026 — in progress)
+### Run Results (25 March 2026)
 
-This is the first run using HDBSCAN-based calibration (§8.1). Phase 3 is still running; results will be updated when complete.
+This is the first run using HDBSCAN-based calibration (§8.1).
 
 | Metric | Value |
 |--------|-------|
 | Phase 1A pairs (authority hard links) | 5,604,928 |
 | Phase 1B pairs (contributor links) | 0 (skipped — no WHG places indexed) |
 | Phase 2 pairs (exact co-attestation) | 12,564,241 |
-| Phase 3 pairs (phonetic similarity) | *(in progress)* |
-| Total pairwise docs | *(in progress)* |
-| **Clusters formed** | *(in progress)* |
-| **Total runtime so far** | **~3 hours through calibration** |
+| Phase 3 pairs (phonetic similarity) | 3,564,082 |
+| **Total pairwise docs** | **20,347,077** |
+| Pairs above score threshold (0.38) | 16,809,486 |
+| Graph nodes / edges | 20,580,538 / 16,809,486 |
+| Connected components | 7,309,234 |
+| **Clusters formed** (after spatial coherence) | **7,309,689** |
+| Membership docs indexed | 20,571,872 |
+| **Total runtime** | **7 h 9 min** |
 
 **Calibration results (first empirical run):**
 
@@ -203,7 +207,7 @@ es -cluster-finalize TIMESTAMP
 | CPUs | 16 |
 | Partition | htc (high-throughput computing) |
 
-In practice, the full run completed in under 6 hours, well within the 3-day limit.
+In practice, the full run completed in about 7 hours, well within the 3-day limit.
 
 **Incremental runs:** After the initial full run, subsequent runs can use `--incremental` mode, which only processes documents added or modified since the last run. This should complete in minutes for typical daily updates. Phase 4 (cluster recomputation) always runs in full because it is an in-memory graph operation that completes in seconds.
 
