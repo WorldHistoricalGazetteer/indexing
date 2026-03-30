@@ -138,6 +138,15 @@ def collect_place_ids(
 # Step 2 helpers — Place filtering
 # ---------------------------------------------------------------------------
 
+
+def _has_geometries(bounds: dict) -> bool:
+    """Return True only if the GeoJSON geometry contains actual geometry data."""
+    if not bounds:
+        return False
+    geom_type = bounds.get("type", "")
+    if geom_type == "GeometryCollection":
+        return bool(bounds.get("geometries"))
+    return bool(geom_type)
 def build_places_filter(
     place_ids: list[str],
     ccodes: list[str] | None,
@@ -165,7 +174,7 @@ def build_places_filter(
     if ccodes:
         filter_clauses.append({"terms": {"ccodes": ccodes}})
 
-    if bounds:
+    if bounds and _has_geometries(bounds):
         filter_clauses.append({
             "nested": {
                 "path": "geometries",
