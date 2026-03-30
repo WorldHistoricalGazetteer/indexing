@@ -32,6 +32,7 @@ from .config import (
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
 from .reconcile import router as reconcile_router
+from .search import router as search_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +75,8 @@ app = FastAPI(
 
 # Mount reconciliation search router (must be before catch-all proxy routes)
 app.include_router(reconcile_router)
+# Mount search + suggest router
+app.include_router(search_router)
 
 
 # ---- Health Endpoint ----

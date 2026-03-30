@@ -43,9 +43,18 @@ from pydantic import BaseModel, Field
 
 from .config import (
     ES_BACKEND,
+    CLUSTERS_INDEX,
     PLACES_INDEX,
     TOPONYMS_INDEX,
-    get_elastic_password,
+)
+from .es_helpers import (
+    es_auth as _es_auth,
+    ES_HEADERS,
+    build_toponym_query as _build_toponym_query,
+    build_phonetic_knn as _build_phonetic_knn,
+    collect_place_ids as _collect_place_ids,
+    build_places_filter as _build_places_filter,
+    build_toponym_lookup as _build_toponym_lookup,
 )
 
 logger = logging.getLogger("gateway.reconcile")
@@ -117,219 +126,9 @@ class ReconcileResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Internal helpers
+# Internal helpers (reconcile-specific)
 # ---------------------------------------------------------------------------
 
-def _es_auth():
-    password = get_elastic_password()
-    if password:
-        return ("elastic", password)
-    return None
-
-
-def _build_toponym_query(query: str, mode: str, size: int = 200) -> dict:
-    """
-    Build an ES query for the toponyms index based on mode.
-
-    Returns an ES search body dict.  The ``_source`` always includes
-    ``attestations`` so the caller can collect place_ids directly.
-    """
-    if mode == "exact":
-        text_query = {"term": {"name.keyword": query}}
-    elif mode == "starts":
-        text_query = {
-            "bool": {
-                "should": [
-                    {"prefix": {"name.keyword": {"value": query.lower()}}},
-                    {"match": {"name.prefix": {"query": query}}},
-                ]
-            }
-        }
-    elif mode == "in":
-        text_query = {"wildcard": {"name.raw": {"value": f"*{query.lower()}*"}}}
-    else:
-        # "fuzzy" (default) — best-fields multi-match with fuzziness
-        text_query = {
-            "bool": {
-                "should": [
-                    {
-                        "multi_match": {
-                            "query": query,
-                            "fields": ["name^3", "name_romanized^2", "name.prefix"],
-                            "type": "best_fields",
-                            "fuzziness": "AUTO",
-                            "prefix_length": 2,
-                        }
-                    },
-                    # Exact keyword boost
-                    {"term": {"name.raw": {"value": query.lower(), "boost": 5}}},
-                ]
-            }
-        }
-
-    return {
-        "size": size,
-        "query": text_query,
-        "_source": ["name", "lang", "attestations"],
-    }
-
-
-def _build_phonetic_knn(
-    query: str,
-    lang: str = "und",
-    k: int = 200,
-    similarity: float = 0.7,
-) -> dict | None:
-    """
-    Build a KNN query body using Symphonym.
-
-    Overrides ``_source`` to include ``attestations`` so the caller can
-    collect place_ids.  Returns None if Symphonym is unavailable.
-
-    Args:
-        k: Number of nearest neighbours to fetch.  Set higher than the
-            final desired count to compensate for isographic duplicates
-            (same spelling in many languages) that consume KNN slots.
-        similarity: Minimum cosine similarity threshold (ES scale:
-            ``(1 + cos) / 2``, so 0.7 ≈ raw cosine ≥ 0.4).  Prevents
-            genuinely dissimilar embeddings from filling result slots.
-    """
-    try:
-        from . import symphonym
-        body = symphonym.build_knn_query(
-            name=query, lang=lang, k=k,
-            num_candidates=max(k * 2, 400),
-        )
-        # Minimum similarity floor — reject low-quality KNN matches
-        body["knn"]["similarity"] = similarity
-        # Override _source to include attestations
-        body["_source"] = ["name", "lang", "attestations"]
-        return body
-    except Exception as e:
-        logger.warning(f"Symphonym unavailable for phonetic KNN: {e}")
-        return None
-
-
-def _collect_place_ids(
-    hits: list[dict],
-    place_scores: dict[str, float],
-    exclude_prefixes: tuple[str, ...] = (),
-) -> None:
-    """
-    Walk toponym hits and accumulate ``{place_id: best_score}`` from the
-    ``attestations`` field.  Each toponym hit may reference many places;
-    we keep the highest score seen for each place_id.
-
-    Args:
-        exclude_prefixes: Tuple of ``"ns:"`` prefixes.  Attestations
-            whose place_id starts with any of these are silently skipped.
-    """
-    for hit in hits:
-        score = hit.get("_score", 0.0)
-        for pid in hit.get("_source", {}).get("attestations", []):
-            if not pid:
-                continue
-            if exclude_prefixes and pid.startswith(exclude_prefixes):
-                continue
-            prev = place_scores.get(pid, 0.0)
-            if score > prev:
-                place_scores[pid] = score
-
-
-def _build_places_filter(
-    place_ids: list[str],
-    ccodes: list[str] | None,
-    bounds: dict | None,
-    start_year: int | None,
-    end_year: int | None,
-    size: int = 50,
-    exclude_namespaces: list[str] | None = None,
-) -> dict:
-    """
-    Build an ES query that fetches places by ID with optional filters.
-
-    The primary clause is a ``terms`` filter on ``place_id`` (keyword),
-    which is a direct inverted-index lookup — the fastest possible query
-    in Elasticsearch.  Optional spatial / temporal / country-code filters
-    are layered on top.
-    """
-    filter_clauses: list[dict] = [
-        {"terms": {"place_id": place_ids}},
-    ]
-    must_not_clauses: list[dict] = []
-
-    if exclude_namespaces:
-        must_not_clauses.append({"terms": {"namespace": exclude_namespaces}})
-
-    if ccodes:
-        filter_clauses.append({"terms": {"ccodes": ccodes}})
-
-    if bounds:
-        filter_clauses.append({
-            "nested": {
-                "path": "geometries",
-                "query": {
-                    "geo_shape": {
-                        "geometries.geom": {
-                            "shape": bounds,
-                            "relation": "intersects",
-                        }
-                    }
-                },
-            }
-        })
-
-    if start_year is not None or end_year is not None:
-        temporal_conditions = []
-        if start_year is not None:
-            temporal_conditions.append(
-                {"range": {"toponyms.timespans.end.in": {"gte": start_year}}}
-            )
-        if end_year is not None:
-            temporal_conditions.append(
-                {"range": {"toponyms.timespans.start.in": {"lte": end_year}}}
-            )
-        filter_clauses.append({
-            "nested": {
-                "path": "toponyms",
-                "query": {
-                    "nested": {
-                        "path": "toponyms.timespans",
-                        "query": {"bool": {"must": temporal_conditions}},
-                    }
-                },
-            }
-        })
-
-    bool_query = {"filter": filter_clauses}
-    if must_not_clauses:
-        bool_query["must_not"] = must_not_clauses
-
-    return {
-        "size": size,
-        "query": {"bool": bool_query},
-        "_source": [
-            "place_id", "namespace", "title", "ccodes",
-            "geometries.repr_point",
-        ],
-    }
-
-
-def _build_toponym_lookup(place_ids: list[str], size: int = 2000) -> dict:
-    """
-    Build an ES query to fetch all toponyms attested by the given place_ids.
-
-    Used in **Step 3** (enrichment) to retrieve the full name inventory
-    for every surviving place.  The ``terms`` filter on ``attestations``
-    is an inverted-index lookup — very fast regardless of list length.
-    """
-    return {
-        "size": size,
-        "query": {
-            "terms": {"attestations": place_ids},
-        },
-        "_source": ["name", "lang", "attestations"],
-    }
 
 
 def _format_candidate(
@@ -416,7 +215,6 @@ async def reconcile_search(req: ReconcileRequest):
         return ReconcileResponse()
 
     auth = _es_auth()
-    headers = {"Content-Type": "application/json"}
 
     # Build exclusion prefixes from requested namespaces (e.g. ["gb"] → ("gb:",))
     exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
@@ -430,28 +228,24 @@ async def reconcile_search(req: ReconcileRequest):
         # ------------------------------------------------------------------
 
         if req.mode in ("fuzzy", "phonetic"):
-            # KNN only — Symphonym embedding space inherently ranks exact
-            # matches highest (cosine ≈ 1.0), making a separate BM25 text
-            # search redundant.  Scores are on a clean 0–1 cosine scale.
             knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
             if knn_body:
                 knn_resp = await client.post(
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                     json=knn_body,
                     auth=auth,
-                    headers=headers,
+                    headers=ES_HEADERS,
                 )
                 knn_resp.raise_for_status()
                 knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
                 _collect_place_ids(knn_hits, place_scores, exclude_prefixes)
         else:
-            # exact / starts / in — structural text queries only
             text_body = _build_toponym_query(req.query, req.mode, size=200)
             text_resp = await client.post(
                 f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                 json=text_body,
                 auth=auth,
-                headers=headers,
+                headers=ES_HEADERS,
             )
             text_resp.raise_for_status()
             text_hits = text_resp.json().get("hits", {}).get("hits", [])
@@ -483,7 +277,7 @@ async def reconcile_search(req: ReconcileRequest):
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
             json=places_body,
             auth=auth,
-            headers=headers,
+            headers=ES_HEADERS,
         )
         places_resp.raise_for_status()
         places_result = places_resp.json()
@@ -511,7 +305,7 @@ async def reconcile_search(req: ReconcileRequest):
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                     json=topo_body,
                     auth=auth,
-                    headers=headers,
+                    headers=ES_HEADERS,
                 )
                 topo_resp.raise_for_status()
                 topo_hits = topo_resp.json().get("hits", {}).get("hits", [])
@@ -561,7 +355,6 @@ async def reconcile_search(req: ReconcileRequest):
             [c.place_id for c in candidates],
             {c.place_id: c for c in candidates},
             auth,
-            headers,
         )
 
     return ReconcileResponse(
@@ -576,13 +369,10 @@ async def reconcile_search(req: ReconcileRequest):
 # Cluster grouping helper
 # ---------------------------------------------------------------------------
 
-CLUSTERS_INDEX = "clusters"
-
 async def _group_by_cluster(
     place_ids: list[str],
     candidates_map: dict[str, CandidateHit],
     auth,
-    headers: dict,
 ) -> list[ClusterGroup]:
     """
     Look up cluster membership for surviving place_ids and group hits.
@@ -614,7 +404,7 @@ async def _group_by_cluster(
                 f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
                 json=cluster_body,
                 auth=auth,
-                headers=headers,
+                headers=ES_HEADERS,
             )
             if resp.status_code == 200:
                 for hit in resp.json().get("hits", {}).get("hits", []):
@@ -683,7 +473,6 @@ async def get_cluster_for_place(place_id: str):
     import httpx
 
     auth = _es_auth()
-    headers = {"Content-Type": "application/json"}
 
     # Look up the place's cluster membership
     body = {
@@ -702,7 +491,7 @@ async def get_cluster_for_place(place_id: str):
     async with httpx.AsyncClient(timeout=10) as client:
         resp = await client.post(
             f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
-            json=body, auth=auth, headers=headers,
+            json=body, auth=auth, headers=ES_HEADERS,
         )
         if resp.status_code != 200:
             return {"place_id": place_id, "cluster_id": None, "members": []}
@@ -716,7 +505,7 @@ async def get_cluster_for_place(place_id: str):
 
         # Fetch all members of this cluster
         return await _fetch_cluster_members(
-            client, cluster_id, cluster_size, auth, headers
+            client, cluster_id, cluster_size, auth
         )
 
 
@@ -726,11 +515,10 @@ async def get_cluster_by_id(cluster_id: str):
     import httpx
 
     auth = _es_auth()
-    headers = {"Content-Type": "application/json"}
 
     async with httpx.AsyncClient(timeout=10) as client:
         return await _fetch_cluster_members(
-            client, cluster_id, 0, auth, headers
+            client, cluster_id, 0, auth
         )
 
 
@@ -739,7 +527,6 @@ async def _fetch_cluster_members(
     cluster_id: str,
     cluster_size: int,
     auth,
-    headers: dict,
 ) -> dict:
     """Fetch all membership docs for a cluster and return structured response."""
     body = {
@@ -757,7 +544,7 @@ async def _fetch_cluster_members(
 
     resp = await client.post(
         f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
-        json=body, auth=auth, headers=headers,
+        json=body, auth=auth, headers=ES_HEADERS,
     )
     if resp.status_code != 200:
         return {"cluster_id": cluster_id, "members": []}
