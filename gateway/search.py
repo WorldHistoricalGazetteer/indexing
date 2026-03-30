@@ -63,6 +63,13 @@ class SearchRequest(BaseModel):
         default=["gb"],
         description="Namespace prefixes to exclude (e.g. ['gb'] to suppress noisy OS records).",
     )
+    geom: str = Field(
+        "full",
+        description=(
+            "Geometry detail level: 'full' returns complete GeoJSON geometries "
+            "plus repr_point; 'repr_point' returns centroids only (lighter)."
+        ),
+    )
 
 
 class SearchHit(BaseModel):
@@ -72,7 +79,8 @@ class SearchHit(BaseModel):
     names: list[dict] = []        # [{"label": ..., "lang": ...}, ...]
     ccodes: list[str] = []
     types: list[dict] = []        # [{"identifier": ..., "label": ..., "sourceLabel": ...}, ...]
-    repr_point: Optional[list[float]] = None  # [lon, lat]
+    repr_point: Optional[list[float]] = None  # [lon, lat] — always populated when any geometry exists
+    geometries: Optional[list[dict]] = None   # Full GeoJSON geoms; only present when geom="full"
     score: float = 0
     namespace: str = ""
     cluster_id: Optional[str] = None
@@ -219,6 +227,7 @@ async def search(req: SearchRequest):
             size=req.size * 4,  # over-fetch for re-ranking
             exclude_namespaces=req.exclude_namespaces or None,
             extra_source=["types"],  # needed for type facets + hit data
+            geom=req.geom,
         )
 
         # Add aggregations for faceted UI
@@ -349,6 +358,24 @@ async def search(req: SearchRequest):
                     repr_point = rp
                 break
 
+        # Full geometries — only populated when geom="full"
+        full_geoms: list[dict] = []
+        if req.geom == "full":
+            for g in src.get("geometries", []):
+                geom_obj = g.get("geom")
+                if isinstance(geom_obj, dict) and geom_obj.get("type") and geom_obj.get("coordinates"):
+                    full_geoms.append({
+                        "type": geom_obj["type"],
+                        "coordinates": geom_obj["coordinates"],
+                    })
+            # When no explicit geom field was stored, fall back to repr_point
+            # so the caller always gets *something* in geometries.
+            if not full_geoms and repr_point:
+                full_geoms.append({
+                    "type": "Point",
+                    "coordinates": repr_point,
+                })
+
         # Types from places index
         types = []
         for t in src.get("types", []):
@@ -368,6 +395,7 @@ async def search(req: SearchRequest):
             ccodes=src.get("ccodes", []),
             types=types,
             repr_point=repr_point,
+            geometries=full_geoms if full_geoms else None,
             score=normalised,
             namespace=src.get("namespace", ""),
             cluster_id=cluster_id,

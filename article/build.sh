@@ -35,7 +35,6 @@ cp pdf/symphonym.bbl $SUBMIT/
 # Using 2>/dev/null to ignore errors if specific extensions don't exist
 cp *.cls *.sty *.bst $SUBMIT/ 2>/dev/null || :
 cp -r fonts $SUBMIT/ 2>/dev/null || :
-cp -r figures $SUBMIT/ 2>/dev/null || :
 cp *.png *.jpg *.jpeg *.pdf $SUBMIT/ 2>/dev/null || :
 
 # Remove the compiled main PDF from the ZIP (arXiv compiles its own)

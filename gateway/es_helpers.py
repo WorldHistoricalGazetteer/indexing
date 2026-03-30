@@ -156,12 +156,16 @@ def build_places_filter(
     size: int = 50,
     exclude_namespaces: list[str] | None = None,
     extra_source: list[str] | None = None,
+    geom: str = "full",
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
 
     Args:
         extra_source: Additional ``_source`` fields beyond the default set.
+        geom: ``"full"`` (default) returns ``geometries.geom`` and
+            ``geometries.repr_point``; ``"repr_point"`` returns only the
+            centroid, keeping responses lightweight for list/suggest views.
     """
     filter_clauses: list[dict] = [
         {"terms": {"place_id": place_ids}},
@@ -215,9 +219,14 @@ def build_places_filter(
     if must_not_clauses:
         bool_query["must_not"] = must_not_clauses
 
+    geom_fields = (
+        ["geometries.geom", "geometries.repr_point"]
+        if geom == "full"
+        else ["geometries.repr_point"]
+    )
     source_fields = [
         "place_id", "namespace", "title", "ccodes",
-        "geometries.repr_point",
+        *geom_fields,
     ]
     if extra_source:
         source_fields.extend(extra_source)
