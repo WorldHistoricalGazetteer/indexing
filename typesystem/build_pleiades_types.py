@@ -12,20 +12,38 @@ Usage:
 """
 
 import json
+import time
 from pathlib import Path
+from urllib.error import HTTPError, URLError
 from urllib.request import urlopen, Request
 
 PLEIADES_VOCAB_URL = "https://pleiades.stoa.org/vocabularies/place-types/json"
 OUTPUT_FILE = Path(__file__).parent / "data" / "pleiades.json"
 
+MAX_RETRIES = 4
+RETRY_BACKOFF = [10, 30, 60, 120]  # seconds
+
 
 def fetch_pleiades_vocabulary():
-    """Download Pleiades place-types vocabulary."""
-    print(f"Downloading {PLEIADES_VOCAB_URL} ...")
+    """Download Pleiades place-types vocabulary (with retries)."""
     req = Request(PLEIADES_VOCAB_URL, headers={"User-Agent": "WHG-indexing/1.0"})
-    with urlopen(req, timeout=30) as resp:
-        data = json.loads(resp.read().decode("utf-8"))
-    return data
+
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            print(f"Downloading {PLEIADES_VOCAB_URL} ...")
+            with urlopen(req, timeout=60) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+            return data
+        except (HTTPError, URLError, TimeoutError) as e:
+            if attempt < MAX_RETRIES:
+                wait = RETRY_BACKOFF[attempt]
+                print(f"  Attempt {attempt + 1} failed: {e}")
+                print(f"  Retrying in {wait}s ...")
+                time.sleep(wait)
+            else:
+                raise RuntimeError(
+                    f"Failed to fetch Pleiades vocabulary after {MAX_RETRIES + 1} attempts: {e}"
+                ) from e
 
 
 def parse_vocabulary(raw_data):
