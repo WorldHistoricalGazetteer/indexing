@@ -267,24 +267,46 @@ def _es_search_single(es, query_text, limit=MAX_CANDIDATES):
 
 def _es_description_search(es, description, limit=MAX_CANDIDATES):
     """
-    Use More Like This to find AAT concepts whose term/note text
-    overlaps with an entry's description. This catches semantic matches
-    like "body of water" → "bodies of water" that keyword search misses.
+    Find AAT concepts whose term or note text overlaps with an entry's
+    description. Uses direct match queries instead of MLT for better
+    control over scoring.
+
+    The ES folding_analyzer does NOT stem, so "body" ≠ "bodies".
+    We compensate by:
+      1. Searching description against term.folded (short names → 2 token
+         overlap is significant, e.g. "of" + "water" matches "bodies of water")
+      2. Searching description against note (scope notes share vocabulary
+         with OSM/GN descriptions)
     """
     if not description or len(description) < 10:
         return []
+
+    desc_text = description[:300]
 
     resp = es.search(
         index=ES_TYPES_INDEX,
         size=limit,
         query={
-            "more_like_this": {
-                "fields": ["term", "note"],
-                "like": description[:500],
-                "min_term_freq": 1,
-                "min_doc_freq": 1,
-                "max_query_terms": 25,
-                "minimum_should_match": "30%",
+            "bool": {
+                "should": [
+                    # Term name overlap (high boost — short names, few tokens)
+                    {"match": {
+                        "term.folded": {
+                            "query": desc_text,
+                            "minimum_should_match": "2",
+                            "boost": 8,
+                        }
+                    }},
+                    # Scope note overlap (medium boost — longer text, richer vocab)
+                    {"match": {
+                        "note": {
+                            "query": desc_text,
+                            "minimum_should_match": "3",
+                            "boost": 3,
+                        }
+                    }},
+                ],
+                "minimum_should_match": 1,
             }
         },
         source=["aat_id", "term", "note"],
