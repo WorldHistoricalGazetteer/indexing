@@ -265,6 +265,47 @@ def _es_search_single(es, query_text, limit=MAX_CANDIDATES):
     return results[:limit]
 
 
+def _es_description_search(es, description, limit=MAX_CANDIDATES):
+    """
+    Use More Like This to find AAT concepts whose term/note text
+    overlaps with an entry's description. This catches semantic matches
+    like "body of water" → "bodies of water" that keyword search misses.
+    """
+    if not description or len(description) < 10:
+        return []
+
+    resp = es.search(
+        index=ES_TYPES_INDEX,
+        size=limit,
+        query={
+            "more_like_this": {
+                "fields": ["term", "note"],
+                "like": description[:500],
+                "min_term_freq": 1,
+                "min_doc_freq": 1,
+                "max_query_terms": 25,
+                "minimum_should_match": "30%",
+            }
+        },
+        source=["aat_id", "term", "note"],
+    )
+
+    results = []
+    seen = set()
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        aid = src["aat_id"]
+        if aid not in seen:
+            seen.add(aid)
+            results.append({
+                "aat_id": aid,
+                "term": src.get("term", ""),
+                "note": src.get("note", ""),
+                "score": hit["_score"],
+            })
+    return results[:limit]
+
+
 def build_search_terms(global_key, namespace, entry, label):
     """
     Build an ordered list of search terms to try for candidate lookup.
@@ -288,26 +329,33 @@ def build_search_terms(global_key, namespace, entry, label):
         if label:
             terms.append(label)
 
-    desc = entry.get("description", "")
-    if desc and len(desc) < 120:
-        terms.append(desc)
-
     return terms
 
 
 def search_candidates(es, global_key, namespace, entry, label):
     """
     Search the ES types index for AAT candidates matching an entry.
-    Tries multiple search terms and merges deduplicated results.
+    Tries multiple search terms, then uses description MLT for semantic overlap.
     """
     terms = build_search_terms(global_key, namespace, entry, label)
     seen = set()
     results = []
 
+    # Phase 1: keyword/text search on label, tag key, etc.
     for term in terms:
         if len(results) >= MAX_CANDIDATES:
             break
         for r in _es_search_single(es, term, MAX_CANDIDATES):
+            if r["aat_id"] not in seen:
+                seen.add(r["aat_id"])
+                results.append(r)
+                if len(results) >= MAX_CANDIDATES:
+                    break
+
+    # Phase 2: description → AAT note/term cross-match via MLT
+    desc = entry.get("description", "")
+    if desc and len(results) < MAX_CANDIDATES:
+        for r in _es_description_search(es, desc, MAX_CANDIDATES):
             if r["aat_id"] not in seen:
                 seen.add(r["aat_id"])
                 results.append(r)
