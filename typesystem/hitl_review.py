@@ -7,8 +7,9 @@ Presents unmapped types in descending order of count (highest impact first).
 For each item, queries the local ES types index for candidate AAT matches
 using relaxed multi-field search, and offers the reviewer a choice:
 
-  [1-5]  — Accept a candidate by number
-  aat:ID — Type an AAT numeric ID directly (e.g. 300008347)
+  a–o    — Accept a candidate by letter (single keystroke)
+  aat:ID — Type an AAT numeric ID directly (e.g. aat:300008347)
+  /term  — Search AAT for a custom term
   Enter  — Skip (come back to it later)
   x      — Mark as explicitly excluded (no valid AAT concept)
   q      — Quit and save progress
@@ -25,6 +26,7 @@ Usage:
 
 import json
 import os
+import string
 import sys
 import tempfile
 import textwrap
@@ -34,6 +36,10 @@ DATA_DIR = Path(__file__).parent / "data"
 PROGRESS_FILE = DATA_DIR / "hitl_progress.json"
 
 ES_TYPES_INDEX = "types"
+MAX_CANDIDATES = 15  # a–o
+
+# Letters used for candidate selection (a through o)
+CANDIDATE_LETTERS = string.ascii_lowercase[:MAX_CANDIDATES]  # 'abcdefghijklmno'
 
 # ── Namespace → (filename, namespace key) ────────────────────────────────────
 NAMESPACES = [
@@ -43,6 +49,10 @@ NAMESPACES = [
     ("wikidata.json", "wikidata"),
     ("pleiades.json", "pleiades"),
 ]
+
+# ── Generic / uninformative tag values (OSM/OHM) ────────────────────────────
+GENERIC_VALUES = {"yes", "no", "true", "false", "unknown", "other", "none",
+                  "fixme", "user_defined", "undefined", "unclassified"}
 
 
 # ============================================================================
@@ -154,12 +164,10 @@ def collect_unmapped(all_data, min_count=0, namespace_filter=None):
             if "aat_mapping" in entry:
                 continue
 
-            # Determine count
             count = entry.get("count", 0)
             if count < min_count:
                 continue
 
-            # Determine display label
             if namespace == "wikidata":
                 label = entry.get("label", "")
             elif namespace == "pleiades":
@@ -172,112 +180,85 @@ def collect_unmapped(all_data, min_count=0, namespace_filter=None):
             global_key = f"{namespace}:{key_path}"
             items.append((global_key, namespace, filename, entry, label, count))
 
-    # Sort by count descending
     items.sort(key=lambda x: x[5], reverse=True)
     return items
 
 
-# ── Generic / uninformative tag values (OSM/OHM) ────────────────────────────
-GENERIC_VALUES = {"yes", "no", "true", "false", "unknown", "other", "none",
-                  "fixme", "user_defined", "undefined", "unclassified"}
-
-
 # ============================================================================
-# ES candidate search (relaxed matching)
+# ES candidate search — single combined bool query
 # ============================================================================
 
-def _es_search_single(es, query_text, limit, seen):
-    """Run the multi-phase search for a single query string. Returns new results."""
+def _inflect(word):
+    """Generate simple singular/plural variants of a word."""
+    variants = set()
+    if word.endswith("ies"):
+        variants.add(word[:-3] + "y")
+    elif word.endswith("s"):
+        variants.add(word[:-1])
+    else:
+        variants.add(word + "s")
+    if word.endswith("y") and not word.endswith("ey"):
+        variants.add(word[:-1] + "ies")
+    variants.discard(word)
+    return variants
+
+
+def _es_search_single(es, query_text, limit=MAX_CANDIDATES):
+    """
+    Search the types index using a single combined bool/should query.
+    All phases are scored together so ES can rank properly.
+    """
     if not query_text or len(query_text) < 2:
         return []
 
     clean = query_text.replace("_", " ")
+    variants = _inflect(clean)
+    all_forms = [clean] + sorted(variants)
+
+    # Build a single bool/should query with boosted clauses
+    should = []
+
+    for form in all_forms:
+        # Exact keyword match (highest boost)
+        should.append({"term": {"term.keyword": {"value": form, "boost": 20}}})
+        # Phrase prefix on folded field
+        should.append({"match_phrase_prefix": {
+            "term.folded": {"query": form, "boost": 10}}})
+        # Folded match, all tokens required
+        should.append({"match": {
+            "term.folded": {"query": form, "operator": "and", "boost": 5}}})
+
+    # Relaxed multi-field (any token, catches partial/description matches)
+    should.append({
+        "multi_match": {
+            "query": clean,
+            "fields": ["term.folded^3", "note"],
+            "type": "most_fields",
+            "operator": "or",
+            "boost": 1,
+        }
+    })
+
+    resp = es.search(
+        index=ES_TYPES_INDEX,
+        size=limit,
+        query={"bool": {"should": should, "minimum_should_match": 1}},
+        source=["aat_id", "term", "note"],
+    )
+
     results = []
-
-    def _collect(resp, match_type):
-        for hit in resp["hits"]["hits"]:
-            src = hit["_source"]
-            aid = src["aat_id"]
-            if aid not in seen:
-                seen.add(aid)
-                results.append({
-                    "aat_id": aid,
-                    "term": src.get("term", ""),
-                    "note": src.get("note", ""),
-                    "score": hit["_score"],
-                    "match_type": match_type,
-                })
-
-    # Phase 1: exact keyword match
-    resp = es.search(
-        index=ES_TYPES_INDEX, size=limit,
-        query={"term": {"term.keyword": clean}},
-        source=["aat_id", "term", "note"],
-    )
-    _collect(resp, "exact")
-    if len(results) >= limit:
-        return results[:limit]
-
-    # Phase 1b: try simple plural/singular variants on keyword
-    variants = set()
-    if clean.endswith("s"):
-        variants.add(clean[:-1])          # buildings → building
-    else:
-        variants.add(clean + "s")          # building → buildings
-    if clean.endswith("ies"):
-        variants.add(clean[:-3] + "y")     # cities → city
-    elif clean.endswith("y"):
-        variants.add(clean[:-1] + "ies")   # city → cities
-    for v in variants:
-        if len(results) >= limit:
-            break
-        resp = es.search(
-            index=ES_TYPES_INDEX, size=limit,
-            query={"term": {"term.keyword": v}},
-            source=["aat_id", "term", "note"],
-        )
-        _collect(resp, "exact")
-    if len(results) >= limit:
-        return results[:limit]
-
-    # Phase 2: match_phrase_prefix — prefers terms starting with query
-    # Try original + all variants
-    for phrase in [clean] + sorted(variants):
-        if len(results) >= limit:
-            break
-        resp = es.search(
-            index=ES_TYPES_INDEX, size=limit,
-            query={"match_phrase_prefix": {"term.folded": {"query": phrase}}},
-            source=["aat_id", "term", "note"],
-        )
-        _collect(resp, "prefix")
-    if len(results) >= limit:
-        return results[:limit]
-
-    # Phase 3: folded match (all tokens required)
-    resp = es.search(
-        index=ES_TYPES_INDEX, size=limit,
-        query={"match": {"term.folded": {"query": clean, "operator": "and"}}},
-        source=["aat_id", "term", "note"],
-    )
-    _collect(resp, "folded")
-    if len(results) >= limit:
-        return results[:limit]
-
-    # Phase 4: relaxed multi-field (any token, term boosted over note)
-    resp = es.search(
-        index=ES_TYPES_INDEX, size=limit * 2,
-        query={
-            "multi_match": {
-                "query": clean,
-                "fields": ["term.folded^3", "note"],
-                "type": "most_fields",
-                "operator": "or",
-            }
-        },
-        source=["aat_id", "term", "note"],
-    )
-    _collect(resp, "relaxed")
+    seen = set()
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        aid = src["aat_id"]
+        if aid not in seen:
+            seen.add(aid)
+            results.append({
+                "aat_id": aid,
+                "term": src.get("term", ""),
+                "note": src.get("note", ""),
+                "score": hit["_score"],
+            })
 
     return results[:limit]
 
@@ -293,10 +274,9 @@ def build_search_terms(global_key, namespace, entry, label):
 
     if namespace in ("osm", "ohm"):
         value = entry.get("value", "")
-        # Extract tag key from global_key  (e.g. "osm:building=yes" → "building")
         tag_key = ""
         if ":" in global_key and "=" in global_key:
-            tag_key = global_key.split(":", 1)[1].split("=", 0 + 1)[0]
+            tag_key = global_key.split(":", 1)[1].split("=", 1)[0]
 
         if value.lower() not in GENERIC_VALUES:
             terms.append(value)
@@ -306,7 +286,6 @@ def build_search_terms(global_key, namespace, entry, label):
         if label:
             terms.append(label)
 
-    # Always try the description as a last resort
     desc = entry.get("description", "")
     if desc and len(desc) < 120:
         terms.append(desc)
@@ -314,30 +293,33 @@ def build_search_terms(global_key, namespace, entry, label):
     return terms
 
 
-def search_candidates(es, global_key, namespace, entry, label, limit=10):
+def search_candidates(es, global_key, namespace, entry, label):
     """
     Search the ES types index for AAT candidates matching an entry.
-
-    Tries multiple search terms in priority order (label, tag key,
-    description) and merges deduplicated results.
+    Tries multiple search terms and merges deduplicated results.
     """
     terms = build_search_terms(global_key, namespace, entry, label)
     seen = set()
     results = []
 
     for term in terms:
-        if len(results) >= limit:
+        if len(results) >= MAX_CANDIDATES:
             break
-        new = _es_search_single(es, term, limit - len(results), seen)
-        results.extend(new)
+        for r in _es_search_single(es, term, MAX_CANDIDATES):
+            if r["aat_id"] not in seen:
+                seen.add(r["aat_id"])
+                results.append(r)
+                if len(results) >= MAX_CANDIDATES:
+                    break
 
-    return results[:limit]
+    return results[:MAX_CANDIDATES]
 
 
 def fetch_aat_by_id(es, aat_id):
     """Fetch a single AAT concept by numeric ID. Returns dict or None."""
     try:
-        resp = es.get(index=ES_TYPES_INDEX, id=f"aat:{aat_id}", source=["aat_id", "term", "note"])
+        resp = es.get(index=ES_TYPES_INDEX, id=f"aat:{aat_id}",
+                      source=["aat_id", "term", "note"])
         if resp.get("found"):
             return resp["_source"]
     except Exception:
@@ -362,58 +344,95 @@ def truncate(text, width=80):
     if not text:
         return ""
     text = text.replace("\n", " ").strip()
-    if len(text) <= width:
-        return text
-    return text[:width - 1] + "…"
+    return text if len(text) <= width else text[:width - 1] + "…"
 
 
-def display_item(idx, total, global_key, namespace, label, count, description=None):
+def display_item(idx, total, global_key, namespace, label, count,
+                 description=None):
     """Display the current item being reviewed."""
     print()
     print(f"{BOLD}{'─' * 78}{RESET}")
     print(f"{BOLD}[{idx}/{total}]{RESET}  {CYAN}{global_key}{RESET}")
-    print(f"  Label: {BOLD}{label}{RESET}   Count: {YELLOW}{count:,}{RESET}   Namespace: {namespace}")
+    print(f"  Label: {BOLD}{label}{RESET}   Count: {YELLOW}{count:,}{RESET}"
+          f"   Namespace: {namespace}")
     if description:
-        wrapped = textwrap.fill(description, width=74, initial_indent="  ", subsequent_indent="  ")
+        wrapped = textwrap.fill(description, width=74,
+                                initial_indent="  ", subsequent_indent="  ")
         print(f"{DIM}{wrapped}{RESET}")
 
 
 def display_candidates(candidates):
-    """Display numbered candidate list."""
+    """Display lettered candidate list (a–o)."""
     if not candidates:
         print(f"  {DIM}(no candidates found){RESET}")
         return
 
     print()
-    for i, c in enumerate(candidates, 1):
-        match_tag = f"[{c['match_type']}]"
-        note_snip = truncate(c.get("note", ""), 60)
+    for i, c in enumerate(candidates):
+        letter = CANDIDATE_LETTERS[i]
+        note_snip = truncate(c.get("note", ""), 55)
         note_display = f"  {DIM}{note_snip}{RESET}" if note_snip else ""
-        print(f"  {GREEN}{i}{RESET}) aat:{c['aat_id']}  {BOLD}{c['term']}{RESET}  "
-              f"{DIM}{match_tag}{RESET}{note_display}")
+        print(f"  {GREEN}{letter}{RESET}) aat:{c['aat_id']}  "
+              f"{BOLD}{c['term']}{RESET}{note_display}")
 
 
 def display_prompt():
     """Show the action prompt."""
     print()
-    print(f"  {DIM}[1-10] accept  |  aat:ID  |  /term search  |  Enter skip  |  x exclude  |  q quit{RESET}")
+    print(f"  {DIM}[a-o] accept  |  aat:ID  |  /term search  "
+          f"|  Enter skip  |  x exclude  |  q quit{RESET}")
 
 
 # ============================================================================
 # Main interactive loop
 # ============================================================================
 
+def _accept_candidate(entry, candidate, global_key, reviewed):
+    """Apply a candidate mapping to an entry."""
+    entry["aat_mapping"] = {
+        "aat_id": candidate["aat_id"],
+        "aat_term": candidate["term"],
+        "confidence": "reviewed",
+        "source": "hitl_review",
+    }
+    reviewed.add(global_key)
+
+
+def _accept_aat_id(es, entry, aat_id, global_key, reviewed):
+    """Look up an AAT ID, confirm, and apply. Returns True if accepted."""
+    concept = fetch_aat_by_id(es, aat_id)
+    if not concept:
+        print(f"  {RED}aat:{aat_id} not found in types index{RESET}")
+        return False
+    term = concept.get("term", f"aat:{aat_id}")
+    note = truncate(concept.get("note", ""), 60)
+    print(f"  Found: {BOLD}{term}{RESET}")
+    if note:
+        print(f"  {DIM}{note}{RESET}")
+    confirm = input(f"  Accept? [Y/n] ").strip().lower()
+    if confirm in ("", "y", "yes"):
+        entry["aat_mapping"] = {
+            "aat_id": aat_id,
+            "aat_term": term,
+            "confidence": "reviewed",
+            "source": "hitl_review",
+        }
+        reviewed.add(global_key)
+        print(f"  {GREEN}✓ Mapped → aat:{aat_id} ({term}){RESET}")
+        return True
+    return False
+
+
 def run_review(es, min_count=0, namespace_filter=None):
     """Main HITL review loop."""
     reviewed, excluded = load_progress()
     print(f"Progress loaded: {len(reviewed)} reviewed, {len(excluded)} excluded")
 
-    # Load all data files once — entry references stay valid for mutation
     all_data = load_all_data(namespace_filter=namespace_filter)
-    items = collect_unmapped(all_data, min_count=min_count, namespace_filter=namespace_filter)
+    items = collect_unmapped(all_data, min_count=min_count,
+                             namespace_filter=namespace_filter)
     print(f"Found {len(items)} unmapped items (min_count={min_count})")
 
-    # Filter out already-reviewed items
     pending = [(gk, ns, fn, entry, label, count)
                for gk, ns, fn, entry, label, count in items
                if gk not in reviewed and gk not in excluded]
@@ -429,20 +448,19 @@ def run_review(es, min_count=0, namespace_filter=None):
     session_skipped = 0
 
     try:
-        for idx, (global_key, namespace, filename, entry, label, count) in enumerate(pending, 1):
+        for idx, (global_key, namespace, filename, entry, label, count) \
+                in enumerate(pending, 1):
 
-            # Get description for context
             description = entry.get("description", entry.get("name", ""))
+            display_item(idx, total, global_key, namespace, label, count,
+                         description)
 
-            # Display item
-            display_item(idx, total, global_key, namespace, label, count, description)
-
-            # Search for candidates
-            candidates = search_candidates(es, global_key, namespace, entry, label)
+            candidates = search_candidates(es, global_key, namespace,
+                                           entry, label)
             display_candidates(candidates)
             display_prompt()
 
-            # Get user input — loop to allow /search refinement
+            # Input loop — allows /search refinement before deciding
             while True:
                 try:
                     choice = input(f"  {BOLD}>{RESET} ").strip()
@@ -452,24 +470,24 @@ def run_review(es, min_count=0, namespace_filter=None):
                     break
 
                 if choice.startswith("/"):
-                    # Manual search: re-query with user-provided term
                     search_term = choice[1:].strip()
                     if search_term:
-                        candidates = _es_search_single(es, search_term, 10, set())
+                        candidates = _es_search_single(es, search_term)
                         display_candidates(candidates)
                         display_prompt()
-                        continue
                     else:
-                        print(f"  {DIM}Usage: /buildings  or  /fortifications{RESET}")
-                        continue
-                break  # any non-/ input exits the search loop
+                        print(f"  {DIM}Usage: /buildings  or  "
+                              f"/fortifications{RESET}")
+                    continue
+                break
+
+            # ── Process the choice ──────────────────────────────────
 
             if choice.lower() == "q":
                 print("\nQuitting — saving progress ...")
                 break
 
             elif choice.lower() == "x":
-                # Explicitly exclude — no valid AAT concept
                 excluded.add(global_key)
                 entry["aat_mapping"] = {
                     "aat_id": None,
@@ -481,93 +499,58 @@ def run_review(es, min_count=0, namespace_filter=None):
                 print(f"  {RED}✗ Excluded{RESET}")
 
             elif choice == "":
-                # Skip
                 session_skipped += 1
-                continue  # Don't mark as reviewed — can come back
+                continue  # don't mark as reviewed — revisit later
 
-            elif choice.isdigit() and 1 <= int(choice) <= len(candidates):
-                # Accept a candidate
-                c = candidates[int(choice) - 1]
-                entry["aat_mapping"] = {
-                    "aat_id": c["aat_id"],
-                    "aat_term": c["term"],
-                    "confidence": "reviewed",
-                    "source": "hitl_review",
-                }
-                reviewed.add(global_key)
-                session_accepted += 1
-                print(f"  {GREEN}✓ Mapped → aat:{c['aat_id']} ({c['term']}){RESET}")
+            elif (len(choice) == 1
+                  and choice.lower() in CANDIDATE_LETTERS):
+                ci = CANDIDATE_LETTERS.index(choice.lower())
+                if ci < len(candidates):
+                    c = candidates[ci]
+                    _accept_candidate(entry, c, global_key, reviewed)
+                    session_accepted += 1
+                    print(f"  {GREEN}✓ Mapped → aat:{c['aat_id']} "
+                          f"({c['term']}){RESET}")
+                else:
+                    print(f"  {DIM}(no candidate {choice}){RESET}")
+                    session_skipped += 1
 
-            elif choice.startswith("aat:") or (choice.isdigit() and len(choice) > 5):
-                # Direct AAT ID entry
+            elif choice.startswith("aat:"):
                 try:
-                    aat_id = int(choice.replace("aat:", "").strip())
+                    aat_id = int(choice[4:].strip())
                 except ValueError:
                     print(f"  {RED}Invalid AAT ID{RESET}")
                     session_skipped += 1
                     continue
-
-                # Look up the concept
-                concept = fetch_aat_by_id(es, aat_id)
-                if concept:
-                    term = concept.get("term", f"aat:{aat_id}")
-                    print(f"  Found: {BOLD}{term}{RESET}")
-                    confirm = input(f"  Accept? [Y/n] ").strip().lower()
-                    if confirm in ("", "y", "yes"):
-                        entry["aat_mapping"] = {
-                            "aat_id": aat_id,
-                            "aat_term": term,
-                            "confidence": "reviewed",
-                            "source": "hitl_review",
-                        }
-                        reviewed.add(global_key)
-                        session_accepted += 1
-                        print(f"  {GREEN}✓ Mapped → aat:{aat_id} ({term}){RESET}")
-                    else:
-                        session_skipped += 1
+                if _accept_aat_id(es, entry, aat_id, global_key, reviewed):
+                    session_accepted += 1
                 else:
-                    print(f"  {RED}aat:{aat_id} not found in types index{RESET}")
                     session_skipped += 1
 
             else:
-                # Try parsing as a bare large number (AAT ID)
+                # Try parsing as a bare AAT numeric ID
                 try:
                     aat_id = int(choice)
                     if aat_id > 100000:
-                        concept = fetch_aat_by_id(es, aat_id)
-                        if concept:
-                            term = concept.get("term", f"aat:{aat_id}")
-                            print(f"  Found: {BOLD}{term}{RESET}")
-                            confirm = input(f"  Accept? [Y/n] ").strip().lower()
-                            if confirm in ("", "y", "yes"):
-                                entry["aat_mapping"] = {
-                                    "aat_id": aat_id,
-                                    "aat_term": term,
-                                    "confidence": "reviewed",
-                                    "source": "hitl_review",
-                                }
-                                reviewed.add(global_key)
-                                session_accepted += 1
-                                print(f"  {GREEN}✓ Mapped → aat:{aat_id} ({term}){RESET}")
-                            else:
-                                session_skipped += 1
+                        if _accept_aat_id(es, entry, aat_id, global_key,
+                                          reviewed):
+                            session_accepted += 1
                         else:
-                            print(f"  {RED}aat:{aat_id} not found{RESET}")
                             session_skipped += 1
                     else:
-                        print(f"  {DIM}(unrecognised input — skipping){RESET}")
+                        print(f"  {DIM}(unrecognised input){RESET}")
                         session_skipped += 1
                 except ValueError:
-                    print(f"  {DIM}(unrecognised input — skipping){RESET}")
+                    print(f"  {DIM}(unrecognised input){RESET}")
                     session_skipped += 1
 
-            # Auto-save every 25 accepted/excluded items
-            if (session_accepted + session_excluded) > 0 and (session_accepted + session_excluded) % 25 == 0:
+            # Auto-save every 25 decisions
+            decisions = session_accepted + session_excluded
+            if decisions > 0 and decisions % 25 == 0:
                 _save_all(all_data, reviewed, excluded)
                 print(f"  {DIM}(auto-saved){RESET}")
 
     finally:
-        # Always save on exit
         _save_all(all_data, reviewed, excluded)
         print()
         print(f"{'─' * 78}")
@@ -575,7 +558,8 @@ def run_review(es, min_count=0, namespace_filter=None):
         print(f"  Accepted:  {GREEN}{session_accepted}{RESET}")
         print(f"  Excluded:  {RED}{session_excluded}{RESET}")
         print(f"  Skipped:   {DIM}{session_skipped}{RESET}")
-        print(f"  Total reviewed: {len(reviewed)}  |  Total excluded: {len(excluded)}")
+        print(f"  Total reviewed: {len(reviewed)}  |  "
+              f"Total excluded: {len(excluded)}")
         print(f"{'─' * 78}")
 
 
@@ -625,7 +609,8 @@ def show_stats(min_count=0):
                 count = entry.get("count", 0)
                 unmapped += 1
                 gk = f"{namespace}:{key_path}"
-                if gk not in reviewed and gk not in excluded and count >= min_count:
+                if (gk not in reviewed and gk not in excluded
+                        and count >= min_count):
                     pending += 1
                     unmapped_counts.append(count)
 
@@ -641,15 +626,16 @@ def show_stats(min_count=0):
               f"Unmapped: {unmapped}  Pending: {pending}")
         if unmapped_counts:
             unmapped_counts.sort(reverse=True)
-            print(f"  Pending count range: {unmapped_counts[0]:,} – {unmapped_counts[-1]:,}")
-            # Show count brackets
+            print(f"  Pending count range: {unmapped_counts[0]:,} – "
+                  f"{unmapped_counts[-1]:,}")
             brackets = [
                 ("≥1000", sum(1 for c in unmapped_counts if c >= 1000)),
                 ("≥100", sum(1 for c in unmapped_counts if c >= 100)),
                 ("≥50", sum(1 for c in unmapped_counts if c >= 50)),
                 ("≥10", sum(1 for c in unmapped_counts if c >= 10)),
             ]
-            bracket_str = "  |  ".join(f"{label}: {n}" for label, n in brackets)
+            bracket_str = "  |  ".join(f"{lbl}: {n}"
+                                       for lbl, n in brackets)
             print(f"  Brackets: {bracket_str}")
         print()
 
@@ -697,17 +683,18 @@ def main():
         return
 
     if not args.es_host:
-        parser.error("--es-host is required for review mode (use --stats for offline stats)")
+        parser.error("--es-host is required for review mode "
+                     "(use --stats for offline stats)")
 
     from typesystem.es_client import create_client
     es = create_client(args.es_host)
 
-    # Verify ES connection and types index
     try:
         info = es.info()
         print(f"Connected to ES {info['version']['number']}")
     except Exception as e:
-        print(f"ERROR: Cannot connect to ES at {args.es_host}: {e}", file=sys.stderr)
+        print(f"ERROR: Cannot connect to ES at {args.es_host}: {e}",
+              file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -722,17 +709,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
 
