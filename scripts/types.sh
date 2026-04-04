@@ -66,6 +66,7 @@ SLURM_MEM="16G"
 # Defaults
 # ---------------------------------------------------------------------------
 ES_HOST=""
+ES_HOST_EXPLICIT=false   # true only when user passes --es-host
 DO_BUILD=false
 DO_MAP=false
 DO_SYNC=false
@@ -126,7 +127,7 @@ while [[ $# -gt 0 ]]; do
         --map)         DO_MAP=true ;;
         --sync)        DO_SYNC=true ;;
         --merge)       DO_MERGE=true ;;
-        --es-host)     ES_HOST="$2"; shift ;;
+        --es-host)     ES_HOST="$2"; ES_HOST_EXPLICIT=true; shift ;;
         --force)       FORCE_AAT=true ;;
         --dry-run)     DRY_RUN=true ;;
         --wait)        WAIT=true ;;
@@ -335,13 +336,16 @@ if $DO_BUILD; then
         PYTHON="python"
     fi
 
-    # Detect ES host: use explicit --es-host, else try localhost:9201 (VM),
-    # else try staging
-    BUILD_ES_HOST="${ES_HOST:-}"
-    if [ -z "$BUILD_ES_HOST" ]; then
-        if curl -s -o /dev/null --connect-timeout 3 "$VM_ES_HOST" 2>/dev/null; then
-            BUILD_ES_HOST="$VM_ES_HOST"
-        fi
+    # Detect ES host for builds:
+    #   1. If user passed --es-host explicitly, honour it
+    #   2. Try localhost:9201 (production on the VM — the right answer here)
+    #   3. Fall back to auto-detected staging ES
+    if $ES_HOST_EXPLICIT && [ -n "$ES_HOST" ]; then
+        BUILD_ES_HOST="$ES_HOST"
+    elif curl -s -o /dev/null --connect-timeout 3 "$VM_ES_HOST" 2>/dev/null; then
+        BUILD_ES_HOST="$VM_ES_HOST"
+    else
+        BUILD_ES_HOST="${ES_HOST:-}"
     fi
 
     echo "  Python: $PYTHON"
