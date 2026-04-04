@@ -22,7 +22,9 @@ Usage:
 """
 
 import json
+import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 from urllib.request import urlopen, Request
@@ -45,10 +47,16 @@ def load_data_file(name):
 
 
 def save_data_file(name, data):
-    """Write a types/data/*.json file."""
+    """Write a types/data/*.json file (atomic: write to temp, then rename)."""
     path = DATA_DIR / name
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
+    fd, tmp_path = tempfile.mkstemp(dir=DATA_DIR, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, path)
+    except BaseException:
+        os.unlink(tmp_path)
+        raise
     print(f"  Saved {path}")
 
 
@@ -187,7 +195,27 @@ def sparql_exact_match(label):
     return None
 
 
-# ============================================================================
+def sparql_label_by_id(aat_id):
+    """
+    Fetch the preferred English label for an AAT concept by numeric ID.
+    Returns the label string, or None.
+    """
+    query = f"""
+    PREFIX gvp: <http://vocab.getty.edu/ontology#>
+    PREFIX aat: <http://vocab.getty.edu/aat/>
+
+    SELECT ?term WHERE {{
+      aat:{aat_id} gvp:prefLabelGVP/gvp:term ?term .
+    }}
+    LIMIT 1
+    """
+    try:
+        result = sparql_query(query)
+        for binding in result.get("results", {}).get("bindings", []):
+            return binding.get("term", {}).get("value", "")
+    except Exception as e:
+        print(f"    AAT label fetch failed for aat:{aat_id}: {e}")
+    return None# ============================================================================
 # Wikidata → AAT bridge
 # ============================================================================
 
@@ -670,10 +698,12 @@ def cmd_wikidata():
     aat_labels = {}
     if matched_aat_ids:
         print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts ...")
-        for aat_id in matched_aat_ids:
-            result = sparql_exact_match(str(aat_id))
-            if result:
-                aat_labels[aat_id] = result[1]
+        for i, aat_id in enumerate(matched_aat_ids):
+            label = sparql_label_by_id(aat_id)
+            if label:
+                aat_labels[aat_id] = label
+            if (i + 1) % 50 == 0:
+                print(f"    ... {i + 1}/{len(matched_aat_ids)} labels fetched")
             time.sleep(0.3)
 
     # Apply mappings
