@@ -177,26 +177,21 @@ def collect_unmapped(all_data, min_count=0, namespace_filter=None):
     return items
 
 
+# ── Generic / uninformative tag values (OSM/OHM) ────────────────────────────
+GENERIC_VALUES = {"yes", "no", "true", "false", "unknown", "other", "none",
+                  "fixme", "user_defined", "undefined", "unclassified"}
+
+
 # ============================================================================
 # ES candidate search (relaxed matching)
 # ============================================================================
 
-def search_candidates(es, label, limit=5):
-    """
-    Search the ES types index for AAT candidates matching a label.
-
-    Three-phase relaxed search:
-      1. Exact match on term.keyword
-      2. Folded match on term.folded (all tokens required)
-      3. Relaxed match on term.folded + note (any token, boosted)
-
-    Returns list of dicts: {aat_id, term, note, score, match_type}
-    """
-    if not label or len(label) < 2:
+def _es_search_single(es, query_text, limit, seen):
+    """Run the 3-phase search for a single query string. Returns new results."""
+    if not query_text or len(query_text) < 2:
         return []
 
-    clean = label.replace("_", " ")
-    seen = set()
+    clean = query_text.replace("_", " ")
     results = []
 
     # Phase 1: exact keyword match
@@ -275,6 +270,58 @@ def search_candidates(es, label, limit=5):
     return results[:limit]
 
 
+def build_search_terms(global_key, namespace, entry, label):
+    """
+    Build an ordered list of search terms to try for candidate lookup.
+
+    For OSM/OHM entries with generic values like 'yes', falls back to the
+    tag key (e.g. 'building') and the description.
+    """
+    terms = []
+
+    if namespace in ("osm", "ohm"):
+        value = entry.get("value", "")
+        # Extract tag key from global_key  (e.g. "osm:building=yes" → "building")
+        tag_key = ""
+        if ":" in global_key and "=" in global_key:
+            tag_key = global_key.split(":", 1)[1].split("=", 0 + 1)[0]
+
+        if value.lower() not in GENERIC_VALUES:
+            terms.append(value)
+        if tag_key:
+            terms.append(tag_key)
+    else:
+        if label:
+            terms.append(label)
+
+    # Always try the description as a last resort
+    desc = entry.get("description", "")
+    if desc and len(desc) < 120:
+        terms.append(desc)
+
+    return terms
+
+
+def search_candidates(es, global_key, namespace, entry, label, limit=5):
+    """
+    Search the ES types index for AAT candidates matching an entry.
+
+    Tries multiple search terms in priority order (label, tag key,
+    description) and merges deduplicated results.
+    """
+    terms = build_search_terms(global_key, namespace, entry, label)
+    seen = set()
+    results = []
+
+    for term in terms:
+        if len(results) >= limit:
+            break
+        new = _es_search_single(es, term, limit - len(results), seen)
+        results.extend(new)
+
+    return results[:limit]
+
+
 def fetch_aat_by_id(es, aat_id):
     """Fetch a single AAT concept by numeric ID. Returns dict or None."""
     try:
@@ -337,7 +384,7 @@ def display_candidates(candidates):
 def display_prompt():
     """Show the action prompt."""
     print()
-    print(f"  {DIM}[1-5] accept  |  aat:ID type ID  |  Enter skip  |  x exclude  |  q quit{RESET}")
+    print(f"  {DIM}[1-5] accept  |  aat:ID  |  /term search  |  Enter skip  |  x exclude  |  q quit{RESET}")
 
 
 # ============================================================================
@@ -379,16 +426,31 @@ def run_review(es, min_count=0, namespace_filter=None):
             display_item(idx, total, global_key, namespace, label, count, description)
 
             # Search for candidates
-            candidates = search_candidates(es, label)
+            candidates = search_candidates(es, global_key, namespace, entry, label)
             display_candidates(candidates)
             display_prompt()
 
-            # Get user input
-            try:
-                choice = input(f"  {BOLD}>{RESET} ").strip()
-            except (EOFError, KeyboardInterrupt):
-                print("\n\nInterrupted — saving progress ...")
-                break
+            # Get user input — loop to allow /search refinement
+            while True:
+                try:
+                    choice = input(f"  {BOLD}>{RESET} ").strip()
+                except (EOFError, KeyboardInterrupt):
+                    print("\n\nInterrupted — saving progress ...")
+                    choice = "q"
+                    break
+
+                if choice.startswith("/"):
+                    # Manual search: re-query with user-provided term
+                    search_term = choice[1:].strip()
+                    if search_term:
+                        candidates = _es_search_single(es, search_term, 5, set())
+                        display_candidates(candidates)
+                        display_prompt()
+                        continue
+                    else:
+                        print(f"  {DIM}Usage: /buildings  or  /fortifications{RESET}")
+                        continue
+                break  # any non-/ input exits the search loop
 
             if choice.lower() == "q":
                 print("\nQuitting — saving progress ...")
@@ -648,6 +710,9 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
 
 
 
