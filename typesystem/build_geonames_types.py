@@ -81,26 +81,25 @@ def add_es_counts(classes, es_host):
 
     # Nested aggregation on types.identifier where types.label matches a
     # GeoNames feature class letter
-    body = {
-        "size": 0,
-        "query": {"term": {"namespace": "gn"}},
-        "aggs": {
-            "types_nested": {
-                "nested": {"path": "types"},
-                "aggs": {
-                    "by_source_label": {
-                        "terms": {
-                            "field": "types.sourceLabel",
-                            "size": 10000,
-                        }
-                    }
-                },
-            }
-        },
-    }
-
     try:
-        resp = es.search(index="places_*", body=body)
+        resp = es.search(
+            index="places_*",
+            size=0,
+            query={"term": {"namespace": "gn"}},
+            aggs={
+                "types_nested": {
+                    "nested": {"path": "types"},
+                    "aggs": {
+                        "by_source_label": {
+                            "terms": {
+                                "field": "types.sourceLabel",
+                                "size": 10000,
+                            }
+                        }
+                    },
+                }
+            },
+        )
         buckets = resp["aggregations"]["types_nested"]["by_source_label"]["buckets"]
         counts = {}
         for b in buckets:

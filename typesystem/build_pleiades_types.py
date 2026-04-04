@@ -130,30 +130,29 @@ def add_es_counts(entries, es_host):
     es = Elasticsearch(es_host, request_timeout=120)
     print(f"Querying ES at {es_host} for Pleiades type counts ...")
 
-    body = {
-        "size": 0,
-        "aggs": {
-            "types_nested": {
-                "nested": {"path": "types"},
-                "aggs": {
-                    "pl_only": {
-                        "filter": {"term": {"types.label": "pleiades"}},
-                        "aggs": {
-                            "by_identifier": {
-                                "terms": {
-                                    "field": "types.identifier",
-                                    "size": 5000,
-                                }
-                            }
-                        },
-                    }
-                },
-            }
-        },
-    }
-
     try:
-        resp = es.search(index="places_*", body=body)
+        resp = es.search(
+            index="places_*",
+            size=0,
+            aggs={
+                "types_nested": {
+                    "nested": {"path": "types"},
+                    "aggs": {
+                        "pl_only": {
+                            "filter": {"term": {"types.label": "pleiades"}},
+                            "aggs": {
+                                "by_identifier": {
+                                    "terms": {
+                                        "field": "types.identifier",
+                                        "size": 5000,
+                                    }
+                                }
+                            },
+                        }
+                    },
+                }
+            },
+        )
         buckets = resp["aggregations"]["types_nested"]["pl_only"]["by_identifier"]["buckets"]
         counts = {b["key"]: b["doc_count"] for b in buckets}
 

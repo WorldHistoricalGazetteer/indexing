@@ -33,9 +33,10 @@ def query_es_types(es_host, min_count=1):
     es = Elasticsearch(es_host, request_timeout=180)
     print(f"Querying ES at {es_host} for Wikidata P31 type distribution ...")
 
-    body = {
-        "size": 0,
-        "aggs": {
+    resp = es.search(
+        index="places_*",
+        size=0,
+        aggs={
             "types_nested": {
                 "nested": {"path": "types"},
                 "aggs": {
@@ -54,9 +55,7 @@ def query_es_types(es_host, min_count=1):
                 },
             }
         },
-    }
-
-    resp = es.search(index="places_*", body=body)
+    )
     buckets = resp["aggregations"]["types_nested"]["wd_only"]["by_identifier"]["buckets"]
 
     results = [(b["key"], b["doc_count"]) for b in buckets]

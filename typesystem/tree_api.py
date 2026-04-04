@@ -78,8 +78,19 @@ def _clean_label(term, parent_label=None):
 
 
 async def _es_search(es, body, size=1000):
-    """Run an ES search against the types index."""
-    resp = await es.search(index=TYPES_INDEX, body=body, size=size)
+    """Run an ES search against the types index.
+
+    Accepts a dict with query/sort/size/_source keys and translates
+    to elasticsearch-py 9.x keyword arguments (body= is no longer supported).
+    """
+    kwargs = {}
+    for key in ("query", "sort", "aggs"):
+        if key in body:
+            kwargs[key] = body[key]
+    if "_source" in body:
+        kwargs["source"] = body["_source"]
+    kwargs["size"] = body.get("size", size)
+    resp = await es.search(index=TYPES_INDEX, **kwargs)
     return [hit["_source"] for hit in resp["hits"]["hits"]]
 
 
@@ -117,8 +128,12 @@ async def _has_children(es, node_path, node_depth):
         },
         "size": 0,
     }
-    resp = await es.search(index=TYPES_INDEX, body=body)
-    if resp["hits"]["total"]["value"] > 0:
+        resp = await es.search(
+            index=TYPES_INDEX,
+            query=body["query"],
+            size=0,
+        )
+        if resp["hits"]["total"]["value"] > 0:
         return True
 
     # Check skip-node children
@@ -151,7 +166,11 @@ async def _has_children(es, node_path, node_depth):
             },
             "size": 0,
         }
-        resp = await es.search(index=TYPES_INDEX, body=check_body)
+        resp = await es.search(
+            index=TYPES_INDEX,
+            query=check_body["query"],
+            size=0,
+        )
         if resp["hits"]["total"]["value"] > 0:
             return True
 
@@ -329,7 +348,12 @@ def create_router(es_client):
             "_source": ["aat_id"],
             "size": 10000,
         }
-        resp = await es_client.search(index=TYPES_INDEX, body=desc_body, size=10000)
+        resp = await es_client.search(
+            index=TYPES_INDEX,
+            query=desc_body["query"],
+            source=["aat_id"],
+            size=10000,
+        )
         ids = [hit["_source"]["aat_id"] for hit in resp["hits"]["hits"]]
 
         if include_self:
@@ -358,7 +382,12 @@ def create_router(es_client):
                 "_source": ["aat_id"],
                 "size": 10000,
             }
-            resp = await es_client.search(index=TYPES_INDEX, body=body, size=10000)
+            resp = await es_client.search(
+                index=TYPES_INDEX,
+                query=body["query"],
+                source=["aat_id"],
+                size=10000,
+            )
             identifiers = [
                 f"aat:{hit['_source']['aat_id']}"
                 for hit in resp["hits"]["hits"]
@@ -438,7 +467,12 @@ if __name__ == "__main__":
                         "_source": ["aat_id", "term"],
                         "size": 100,
                     }
-                    resp = await es.search(index=TYPES_INDEX, body=desc_body, size=100)
+                    resp = await es.search(
+                        index=TYPES_INDEX,
+                        query=desc_body["query"],
+                        source=["aat_id", "term"],
+                        size=100,
+                    )
                     for hit in resp["hits"]["hits"]:
                         doc = hit["_source"]
                         print(f"  aat:{doc['aat_id']}  {doc['term']}")

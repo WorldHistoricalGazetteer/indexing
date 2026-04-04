@@ -680,7 +680,7 @@ def index_to_es(place_types, es_host, index_name=ES_TYPES_INDEX):
     new_index = f"{index_name}_{timestamp}"
 
     print(f"Creating index {new_index} ...")
-    es.indices.create(index=new_index, body=schema)
+    es.indices.create(index=new_index, **schema)
 
     # Prepare docs
     now = datetime.now(tz=__import__('datetime').timezone.utc).isoformat()
@@ -735,7 +735,7 @@ def index_to_es(place_types, es_host, index_name=ES_TYPES_INDEX):
 
     alias_actions.append({"add": {"index": new_index, "alias": index_name}})
 
-    es.indices.update_aliases(body={"actions": alias_actions})
+    es.indices.update_aliases(actions=alias_actions)
     print(f"  -> Alias '{index_name}' now points to {new_index}")
 
     # Clean up old indices
