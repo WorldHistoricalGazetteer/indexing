@@ -220,7 +220,9 @@ def _es_search_single(es, query_text, limit=MAX_CANDIDATES):
 
     for form in all_forms:
         # Exact keyword match (highest boost)
-        should.append({"term": {"term.keyword": {"value": form, "boost": 20}}})
+        should.append({"term": {"term.keyword": {"value": form, "boost": 30}}})
+        # Keyword prefix — matches "buildings (structures)" for query "buildings"
+        should.append({"wildcard": {"term.keyword": {"value": f"{form}*", "boost": 20}}})
         # Phrase prefix on folded field
         should.append({"match_phrase_prefix": {
             "term.folded": {"query": form, "boost": 10}}})
@@ -709,4 +711,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
