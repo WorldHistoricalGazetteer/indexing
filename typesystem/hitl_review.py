@@ -187,63 +187,82 @@ GENERIC_VALUES = {"yes", "no", "true", "false", "unknown", "other", "none",
 # ============================================================================
 
 def _es_search_single(es, query_text, limit, seen):
-    """Run the 3-phase search for a single query string. Returns new results."""
+    """Run the multi-phase search for a single query string. Returns new results."""
     if not query_text or len(query_text) < 2:
         return []
 
     clean = query_text.replace("_", " ")
     results = []
 
+    def _collect(resp, match_type):
+        for hit in resp["hits"]["hits"]:
+            src = hit["_source"]
+            aid = src["aat_id"]
+            if aid not in seen:
+                seen.add(aid)
+                results.append({
+                    "aat_id": aid,
+                    "term": src.get("term", ""),
+                    "note": src.get("note", ""),
+                    "score": hit["_score"],
+                    "match_type": match_type,
+                })
+
     # Phase 1: exact keyword match
     resp = es.search(
-        index=ES_TYPES_INDEX,
-        size=limit,
+        index=ES_TYPES_INDEX, size=limit,
         query={"term": {"term.keyword": clean}},
         source=["aat_id", "term", "note"],
     )
-    for hit in resp["hits"]["hits"]:
-        src = hit["_source"]
-        aid = src["aat_id"]
-        if aid not in seen:
-            seen.add(aid)
-            results.append({
-                "aat_id": aid,
-                "term": src.get("term", ""),
-                "note": src.get("note", ""),
-                "score": hit["_score"],
-                "match_type": "exact",
-            })
-
+    _collect(resp, "exact")
     if len(results) >= limit:
         return results[:limit]
 
-    # Phase 2: folded match (all tokens required)
+    # Phase 1b: try simple plural/singular variants on keyword
+    variants = set()
+    if clean.endswith("s"):
+        variants.add(clean[:-1])          # buildings → building
+    else:
+        variants.add(clean + "s")          # building → buildings
+    if clean.endswith("ies"):
+        variants.add(clean[:-3] + "y")     # cities → city
+    elif clean.endswith("y"):
+        variants.add(clean[:-1] + "ies")   # city → cities
+    for v in variants:
+        if len(results) >= limit:
+            break
+        resp = es.search(
+            index=ES_TYPES_INDEX, size=limit,
+            query={"term": {"term.keyword": v}},
+            source=["aat_id", "term", "note"],
+        )
+        _collect(resp, "exact")
+    if len(results) >= limit:
+        return results[:limit]
+
+    # Phase 2: match_phrase_prefix — strongly prefers terms starting with query
     resp = es.search(
-        index=ES_TYPES_INDEX,
-        size=limit,
+        index=ES_TYPES_INDEX, size=limit,
+        query={"match_phrase_prefix": {"term.folded": {"query": clean}}},
+        source=["aat_id", "term", "note"],
+    )
+    _collect(resp, "prefix")
+    if len(results) >= limit:
+        return results[:limit]
+
+    # Phase 3: folded match (all tokens required)
+    resp = es.search(
+        index=ES_TYPES_INDEX, size=limit,
         query={"match": {"term.folded": {"query": clean, "operator": "and"}}},
         source=["aat_id", "term", "note"],
     )
-    for hit in resp["hits"]["hits"]:
-        src = hit["_source"]
-        aid = src["aat_id"]
-        if aid not in seen:
-            seen.add(aid)
-            results.append({
-                "aat_id": aid,
-                "term": src.get("term", ""),
-                "note": src.get("note", ""),
-                "score": hit["_score"],
-                "match_type": "folded",
-            })
-
+    _collect(resp, "folded")
     if len(results) >= limit:
         return results[:limit]
 
-    # Phase 3: relaxed multi-field (any token, term boosted over note)
+    # Phase 4: relaxed multi-field (any token, term boosted over note)
     resp = es.search(
-        index=ES_TYPES_INDEX,
-        size=limit * 2,
+        index=ES_TYPES_INDEX, size=limit * 2,
         query={
             "multi_match": {
                 "query": clean,
@@ -254,18 +273,7 @@ def _es_search_single(es, query_text, limit, seen):
         },
         source=["aat_id", "term", "note"],
     )
-    for hit in resp["hits"]["hits"]:
-        src = hit["_source"]
-        aid = src["aat_id"]
-        if aid not in seen:
-            seen.add(aid)
-            results.append({
-                "aat_id": aid,
-                "term": src.get("term", ""),
-                "note": src.get("note", ""),
-                "score": hit["_score"],
-                "match_type": "relaxed",
-            })
+    _collect(resp, "relaxed")
 
     return results[:limit]
 
@@ -710,6 +718,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
