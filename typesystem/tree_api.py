@@ -128,12 +128,12 @@ async def _has_children(es, node_path, node_depth):
         },
         "size": 0,
     }
-        resp = await es.search(
-            index=TYPES_INDEX,
-            query=body["query"],
-            size=0,
-        )
-        if resp["hits"]["total"]["value"] > 0:
+    resp = await es.search(
+        index=TYPES_INDEX,
+        query=body["query"],
+        size=0,
+    )
+    if resp["hits"]["total"]["value"] > 0:
         return True
 
     # Check skip-node children
