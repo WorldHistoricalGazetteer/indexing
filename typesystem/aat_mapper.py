@@ -577,6 +577,7 @@ def cmd_sparql():
         ("ohm.json", "ohm"),
         ("geonames.json", "geonames"),
         ("pleiades.json", "pleiades"),
+        ("wikidata.json", "wikidata"),
     ]:
         try:
             data = load_data_file(filename)
@@ -584,6 +585,7 @@ def cmd_sparql():
             continue
 
         file_matched = 0
+        file_attempted = 0
         for source_label, entry in iter_values(data, namespace):
             # Skip already mapped
             if "aat_mapping" in entry:
@@ -606,6 +608,7 @@ def cmd_sparql():
             # Clean up underscores and try exact match first
             clean_label = label.replace("_", " ")
             attempted += 1
+            file_attempted += 1
 
             result = sparql_exact_match(clean_label)
             if result:
@@ -628,9 +631,15 @@ def cmd_sparql():
             if attempted % 50 == 0:
                 print(f"    ... {attempted} attempted, {matched} matched")
 
+            # Periodic save every 500 entries (protects long Wikidata runs)
+            if file_attempted % 500 == 0 and file_matched > 0:
+                save_data_file(filename, data)
+                print(f"    (checkpoint: {file_matched} matches saved)")
+
         if file_matched:
             save_data_file(filename, data)
-            print(f"  {filename}: {file_matched} new SPARQL matches")
+        print(f"  {filename}: {file_matched} new SPARQL matches "
+              f"({file_attempted} attempted)")
 
     print(f"\nSPARQL matching: {matched}/{attempted} entries matched")
 
