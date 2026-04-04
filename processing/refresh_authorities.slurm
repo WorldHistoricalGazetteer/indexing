@@ -1,4 +1,4 @@
-#!/bin/bash
+ #!/bin/bash
 #SBATCH --job-name=refresh_authorities
 #SBATCH --output=/ix1/ishi/logs/refresh_authorities_%j.log
 #SBATCH --error=/ix1/ishi/logs/refresh_authorities_%j.err
@@ -19,3 +19,10 @@ conda activate whg
 
 # OR, run the update script without forcing refresh (keeps any files less than 1 year old)
 python -m processing.fetch_authorities
+
+# OR, refresh only OSM (84GB planet PBF — allow 12h wall time)
+# python -m processing.fetch_authorities -n osm --age 0
+
+# OR, refresh a specific set of authorities
+# python -m processing.fetch_authorities -n osm,gn,wd --age 0
+

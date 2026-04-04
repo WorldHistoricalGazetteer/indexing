@@ -615,10 +615,15 @@ stop_gateway() {
 staging_start() {
     # Parse arguments
     local PLACES_ONLY=false
+    local NO_SNAPSHOT=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --places-only)
                 PLACES_ONLY=true
+                shift
+                ;;
+            --no-snapshot)
+                NO_SNAPSHOT=true
                 shift
                 ;;
             *)
@@ -658,16 +663,23 @@ staging_start() {
     if $PLACES_ONLY; then
         echo "  Mode: places-only (toponyms will be rebuilt separately)"
     fi
+    if $NO_SNAPSHOT; then
+        echo "  Mode: no-snapshot (empty indices will be created)"
+    fi
 
     # Ensure log directory exists
     mkdir -p "$STAGING_SLURM_LOGS"
 
-    # Pass places-only flag via sbatch --export
+    # Pass flags via sbatch --export
+    local EXPORT_VARS="ALL"
     if $PLACES_ONLY; then
-        JOBID=$(sbatch --parsable --export=ALL,RESTORE_PLACES_ONLY=1 "$STAGING_SCRIPT")
-    else
-        JOBID=$(sbatch --parsable "$STAGING_SCRIPT")
+        EXPORT_VARS="${EXPORT_VARS},RESTORE_PLACES_ONLY=1"
     fi
+    if $NO_SNAPSHOT; then
+        EXPORT_VARS="${EXPORT_VARS},SKIP_SNAPSHOT_RESTORE=1"
+    fi
+
+    JOBID=$(sbatch --parsable --export="$EXPORT_VARS" "$STAGING_SCRIPT")
 
     if [ -z "$JOBID" ]; then
         echo "ERROR: Failed to submit Slurm job"
@@ -3599,6 +3611,7 @@ case "$1" in
         echo "STAGING (run on CRC login node, use 'source'):"
         echo "  source $0 -staging-start              Launch staging ES on Slurm"
         echo "  source $0 -staging-start --places-only  Launch with only places index"
+        echo "  source $0 -staging-start --no-snapshot  Launch with empty indices (no snapshot restore)"
         echo "  source $0 -staging-stop               Stop staging ES"
         echo "  source $0 -staging-status             Show status and index counts"
         echo "  source $0 -staging-logs               Show recent log output"

@@ -74,6 +74,13 @@
       "primary_namespace": { "type": "keyword" },
       "attestations": { "type": "keyword" },
 
+      "ipa": { "type": "keyword", "index": false },
+      "panphon_embedding": {
+        "type": "dense_vector",
+        "dims": 192,
+        "index": true,
+        "similarity": "cosine"
+      },
 
       "embedding": {
         "type": "dense_vector",
@@ -87,3 +94,4 @@
     }
   }
 }
+

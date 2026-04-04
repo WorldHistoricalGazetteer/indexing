@@ -1,0 +1,91 @@
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0,
+    "refresh_interval": "1s",
+    "index": {
+      "codec": "best_compression"
+    },
+    "analysis": {
+      "analyzer": {
+        "folding_analyzer": {
+          "tokenizer": "standard",
+          "filter": ["lowercase", "asciifolding"]
+        }
+      }
+    }
+  },
+  "mappings": {
+    "properties": {
+      "aat_id": {
+        "type": "integer"
+      },
+      "parent_id": {
+        "type": "integer"
+      },
+      "term": {
+        "type": "text",
+        "fields": {
+          "keyword": {
+            "type": "keyword",
+            "ignore_above": 256
+          },
+          "folded": {
+            "type": "text",
+            "analyzer": "folding_analyzer"
+          }
+        }
+      },
+      "term_full": {
+        "type": "keyword"
+      },
+      "note": {
+        "type": "text"
+      },
+      "labels": {
+        "type": "object",
+        "enabled": false
+      },
+      "notes": {
+        "type": "object",
+        "enabled": false
+      },
+      "path": {
+        "type": "keyword"
+      },
+      "ancestors": {
+        "type": "integer"
+      },
+      "depth": {
+        "type": "integer"
+      },
+      "fclasses": {
+        "type": "keyword"
+      },
+      "is_place_type": {
+        "type": "boolean"
+      },
+      "gn_fcodes": {
+        "type": "keyword"
+      },
+      "wd_qids": {
+        "type": "keyword"
+      },
+      "osm_tags": {
+        "type": "keyword"
+      },
+      "ohm_tags": {
+        "type": "keyword"
+      },
+      "pleiades_types": {
+        "type": "keyword"
+      },
+      "indexed_at": {
+        "type": "date"
+      }
+    }
+  }
+}
+
+
+

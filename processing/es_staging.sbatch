@@ -209,6 +209,23 @@ if [ -n "$CLUSTER_EXCHANGE_DIR" ]; then
 fi
 
 # --- Find latest snapshot containing required indices ---
+# Skip snapshot restore entirely if SKIP_SNAPSHOT_RESTORE is set
+if [ "${SKIP_SNAPSHOT_RESTORE:-0}" = "1" ]; then
+    echo "SKIP_SNAPSHOT_RESTORE=1: Skipping snapshot restore, creating empty indices..."
+    cd "$REPO_DIR"
+
+    # Activate conda environment if available
+    if [ -f "$IX1_BASE/miniconda/etc/profile.d/conda.sh" ]; then
+        source "$IX1_BASE/miniconda/etc/profile.d/conda.sh"
+        conda activate whg 2>/dev/null || true
+    fi
+
+    # Set ES_HOST for the Python script
+    export ES_HOST="$ES_URL"
+
+    python -m processing.create_indices
+    echo
+else
 echo "Checking for existing snapshots..."
 
 # NOTE: 'places' and 'toponyms' are aliases pointing to versioned concrete
@@ -341,6 +358,8 @@ else
     python -m processing.create_indices
     echo
 fi
+
+fi  # end SKIP_SNAPSHOT_RESTORE
 
 # --- Show index status ---
 echo
