@@ -17,16 +17,24 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen, Request
 
-PLEIADES_VOCAB_URL = "https://pleiades.stoa.org/vocabularies/place-types/json"
+PLEIADES_VOCAB_URL = "https://pleiades.stoa.org/vocabularies/place-types"
 OUTPUT_FILE = Path(__file__).parent / "data" / "pleiades.json"
 
 MAX_RETRIES = 4
 RETRY_BACKOFF = [10, 30, 60, 120]  # seconds
 
+# Pleiades (Plone) is wary of bot traffic — provide descriptive headers
+# so the server knows who we are and that we want JSON (content negotiation).
+REQUEST_HEADERS = {
+    "User-Agent": "WHG-indexing/1.0 (World Historical Gazetteer; +https://whgazetteer.org)",
+    "Accept": "application/json",
+    "From": "whg@pitt.edu",
+}
+
 
 def fetch_pleiades_vocabulary():
     """Download Pleiades place-types vocabulary (with retries)."""
-    req = Request(PLEIADES_VOCAB_URL, headers={"User-Agent": "WHG-indexing/1.0"})
+    req = Request(PLEIADES_VOCAB_URL, headers=REQUEST_HEADERS)
 
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -50,16 +58,17 @@ def parse_vocabulary(raw_data):
     """
     Parse the Pleiades vocabulary JSON into structured entries.
 
-    The Pleiades vocab JSON is a list of dicts, each with:
-      - id, title, description, same_as (list of URIs), deprecated
+    The Pleiades vocab JSON (via Accept: application/json content
+    negotiation) is a list of dicts, each with:
+      - id, title, description, same_as (string URI or None), hidden (bool)
     """
     entries = []
 
-    # The response may be a list or have a different structure
+    # The response is a list when fetched via content negotiation
     items = raw_data if isinstance(raw_data, list) else raw_data.get("items", raw_data)
 
     if isinstance(items, dict):
-        # Some vocab endpoints return {id: {...}, id: {...}}
+        # Fallback: some vocab endpoints return {id: {...}, id: {...}}
         items = list(items.values())
 
     for item in items:
@@ -69,15 +78,21 @@ def parse_vocabulary(raw_data):
         identifier = item.get("id", item.get("identifier", ""))
         title = item.get("title", item.get("label", identifier))
         description = item.get("description", "")
-        same_as = item.get("same_as", item.get("sameAs", []))
-        deprecated = item.get("deprecated", False)
+        # same_as is a single URI string (or None) in the Pleiades response
+        same_as_raw = item.get("same_as", item.get("sameAs"))
+        # Pleiades uses "hidden" for deprecated terms
+        deprecated = item.get("hidden", item.get("deprecated", False))
 
         if not identifier:
             continue
 
-        # Ensure same_as is a list
-        if isinstance(same_as, str):
-            same_as = [same_as]
+        # Normalise same_as to a list
+        if same_as_raw is None:
+            same_as = []
+        elif isinstance(same_as_raw, str):
+            same_as = [same_as_raw] if same_as_raw else []
+        else:
+            same_as = list(same_as_raw)
 
         # Extract AAT ID from same_as URIs
         aat_id = None
