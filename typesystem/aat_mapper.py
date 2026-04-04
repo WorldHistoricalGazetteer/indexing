@@ -215,7 +215,74 @@ def sparql_label_by_id(aat_id):
             return binding.get("term", {}).get("value", "")
     except Exception as e:
         print(f"    AAT label fetch failed for aat:{aat_id}: {e}")
-    return None# ============================================================================
+    return None
+
+
+# ============================================================================
+# ES types-index lookups (replaces SPARQL for label resolution)
+# ============================================================================
+
+ES_TYPES_INDEX = "types"
+
+
+def es_labels_by_ids(es, aat_ids):
+    """
+    Batch-fetch preferred labels for a collection of AAT IDs from the local
+    ES types index.  Returns dict: aat_id (int) → label (str).
+    """
+    if not aat_ids:
+        return {}
+    docs = [{"_index": ES_TYPES_INDEX, "_id": f"aat:{aid}"} for aid in aat_ids]
+    resp = es.mget(docs=docs, source_includes=["term"])
+    labels = {}
+    for doc in resp.get("docs", []):
+        if doc.get("found"):
+            aid = doc["_source"].get("aat_id") or int(doc["_id"].split(":")[1])
+            labels[aid] = doc["_source"].get("term", "")
+    return labels
+
+
+def es_label_search(es, label, limit=5):
+    """
+    Search the local ES types index for AAT concepts matching a label string.
+
+    Two-phase:
+      1. Exact match on term.keyword (case-sensitive but fast)
+      2. Folded match on term.folded (lowercase + asciifolding)
+
+    Returns list of (aat_id, term, confidence) tuples.
+    """
+    results = []
+
+    # Phase 1: exact keyword match
+    resp = es.search(
+        index=ES_TYPES_INDEX,
+        size=limit,
+        query={"term": {"term.keyword": label}},
+        source=["aat_id", "term"],
+    )
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        results.append((src["aat_id"], src["term"], "es_exact"))
+
+    if results:
+        return results
+
+    # Phase 2: folded text match (case-insensitive, asciifolding)
+    resp = es.search(
+        index=ES_TYPES_INDEX,
+        size=limit,
+        query={"match": {"term.folded": {"query": label, "operator": "and"}}},
+        source=["aat_id", "term"],
+    )
+    for hit in resp["hits"]["hits"]:
+        src = hit["_source"]
+        results.append((src["aat_id"], src["term"], "es_fuzzy"))
+
+    return results
+
+
+# ============================================================================
 # Wikidata → AAT bridge
 # ============================================================================
 
@@ -594,9 +661,10 @@ def cmd_static():
     print(f"\nTotal static mappings applied: {total}")
 
 
-def cmd_sparql():
-    """Query AAT SPARQL for label-based matches on unmapped entries."""
-    print("AAT SPARQL label matching ...")
+def cmd_sparql(es=None):
+    """Match unmapped entries against AAT labels (via local ES or remote SPARQL)."""
+    mode = "ES types index" if es else "AAT SPARQL"
+    print(f"AAT label matching via {mode} ...")
     matched = 0
     attempted = 0
 
@@ -633,46 +701,54 @@ def cmd_sparql():
             if not label or len(label) < 3:
                 continue
 
-            # Clean up underscores and try exact match first
+            # Clean up underscores
             clean_label = label.replace("_", " ")
             attempted += 1
             file_attempted += 1
 
-            result = sparql_exact_match(clean_label)
-            if result:
-                aat_id, aat_term = result
-                set_aat_mapping(entry, aat_id, aat_term, "sparql_exact", "aat_sparql")
-                file_matched += 1
-                matched += 1
-            else:
-                # Try fuzzy search
-                results = sparql_label_search(clean_label, limit=3)
+            if es is not None:
+                # --- ES lookup (fast, local) ---
+                results = es_label_search(es, clean_label)
                 if results:
-                    aat_id, aat_term = results[0]
-                    set_aat_mapping(entry, aat_id, aat_term, "sparql_fuzzy", "aat_sparql")
+                    aat_id, aat_term, confidence = results[0]
+                    set_aat_mapping(entry, aat_id, aat_term, confidence, "aat_es")
                     file_matched += 1
                     matched += 1
+            else:
+                # --- SPARQL fallback (slow, remote) ---
+                result = sparql_exact_match(clean_label)
+                if result:
+                    aat_id, aat_term = result
+                    set_aat_mapping(entry, aat_id, aat_term, "sparql_exact", "aat_sparql")
+                    file_matched += 1
+                    matched += 1
+                else:
+                    results = sparql_label_search(clean_label, limit=3)
+                    if results:
+                        aat_id, aat_term = results[0]
+                        set_aat_mapping(entry, aat_id, aat_term, "sparql_fuzzy", "aat_sparql")
+                        file_matched += 1
+                        matched += 1
+                # Rate-limit SPARQL requests
+                time.sleep(0.5)
 
-            # Rate-limit SPARQL requests
-            time.sleep(0.5)
-
-            if attempted % 50 == 0:
+            if attempted % 500 == 0:
                 print(f"    ... {attempted} attempted, {matched} matched")
 
-            # Periodic save every 500 entries (protects long Wikidata runs)
+            # Periodic save every 500 entries (protects long runs)
             if file_attempted % 500 == 0 and file_matched > 0:
                 save_data_file(filename, data)
                 print(f"    (checkpoint: {file_matched} matches saved)")
 
         if file_matched:
             save_data_file(filename, data)
-        print(f"  {filename}: {file_matched} new SPARQL matches "
+        print(f"  {filename}: {file_matched} new matches "
               f"({file_attempted} attempted)")
 
-    print(f"\nSPARQL matching: {matched}/{attempted} entries matched")
+    print(f"\nLabel matching: {matched}/{attempted} entries matched")
 
 
-def cmd_wikidata():
+def cmd_wikidata(es=None):
     """Bridge Wikidata Q-items → AAT via P1014 property."""
     try:
         data = load_data_file("wikidata.json")
@@ -693,18 +769,23 @@ def cmd_wikidata():
     qids = [q for q, _ in unmapped]
     aat_map = fetch_wikidata_aat_mappings(qids)
 
-    # Now fetch AAT labels for matched IDs
+    # Fetch AAT labels for matched IDs
     matched_aat_ids = set(aat_map.values())
     aat_labels = {}
     if matched_aat_ids:
-        print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts ...")
-        for i, aat_id in enumerate(matched_aat_ids):
-            label = sparql_label_by_id(aat_id)
-            if label:
-                aat_labels[aat_id] = label
-            if (i + 1) % 50 == 0:
-                print(f"    ... {i + 1}/{len(matched_aat_ids)} labels fetched")
-            time.sleep(0.3)
+        if es is not None:
+            print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts from ES ...")
+            aat_labels = es_labels_by_ids(es, list(matched_aat_ids))
+            print(f"    -> {len(aat_labels)} labels found")
+        else:
+            print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts via SPARQL ...")
+            for i, aat_id in enumerate(matched_aat_ids):
+                label = sparql_label_by_id(aat_id)
+                if label:
+                    aat_labels[aat_id] = label
+                if (i + 1) % 50 == 0:
+                    print(f"    ... {i + 1}/{len(matched_aat_ids)} labels fetched")
+                time.sleep(0.3)
 
     # Apply mappings
     applied = 0
@@ -844,19 +925,35 @@ def main():
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("static", help="Apply curated static mappings")
-    subparsers.add_parser("sparql", help="Query AAT SPARQL for label matches")
-    subparsers.add_parser("wikidata", help="Bridge Wikidata → AAT via P1014")
+
+    sp_sparql = subparsers.add_parser("sparql",
+        help="Match unmapped entries against AAT labels (ES or SPARQL)")
+    sp_sparql.add_argument("--es-host",
+        help="ES host with types index (omit to fall back to AAT SPARQL)")
+
+    sp_wd = subparsers.add_parser("wikidata",
+        help="Bridge Wikidata → AAT via P1014")
+    sp_wd.add_argument("--es-host",
+        help="ES host with types index for label lookups (omit for SPARQL)")
+
     subparsers.add_parser("validate", help="Validate existing AAT IDs")
     subparsers.add_parser("report", help="Report mapping coverage")
 
     args = parser.parse_args()
 
+    # Create ES client for subcommands that support it
+    es = None
+    if getattr(args, "es_host", None):
+        from typesystem.es_client import create_client
+        es = create_client(args.es_host)
+        print(f"Using ES types index at {args.es_host}")
+
     if args.command == "static":
         cmd_static()
     elif args.command == "sparql":
-        cmd_sparql()
+        cmd_sparql(es=es)
     elif args.command == "wikidata":
-        cmd_wikidata()
+        cmd_wikidata(es=es)
     elif args.command == "validate":
         cmd_validate()
     elif args.command == "report":

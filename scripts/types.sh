@@ -101,7 +101,11 @@ ES host auto-detection:
   If --es-host is not given, --build-vocabs tries localhost:9201 (works
   on the VM). Run 'ssh pitt' first, then run this script for full builds.
   Other steps use the staging ES from \$STAGING_INFO_FILE.
-  --sync and --merge always require ES.
+  --sync, --map, and --merge always require ES.
+
+Pipeline order: build → sync → map → merge
+  sync populates the ES types index (AAT hierarchy), then map uses it
+  for fast local AAT label lookups instead of remote SPARQL calls.
 
 Slurm QOS tiers (htc partition):
   htc-htc-s   max  1 day      htc-htc-n   max  3 days
@@ -168,10 +172,10 @@ if [ -z "$ES_HOST" ]; then
     fi
 fi
 
-# Validate ES_HOST where strictly needed (sync and merge always need it;
+# Validate ES_HOST where strictly needed (sync, map, and merge all need it;
 # build-vocabs uses it for doc counts but GeoNames/Pleiades work without)
-if ($DO_SYNC || $DO_MERGE) && [ -z "$ES_HOST" ]; then
-    echo "Error: --es-host is required for --sync and --merge."
+if ($DO_SYNC || $DO_MERGE || $DO_MAP) && [ -z "$ES_HOST" ]; then
+    echo "Error: --es-host is required for --sync, --map, and --merge."
     echo "       Start a staging ES first, or pass --es-host explicitly."
     echo "       (Staging info file: $STAGING_INFO_FILE)"
     exit 1
@@ -278,11 +282,11 @@ squeue_wait() {
 # ---------------------------------------------------------------------------
 if $DO_STATUS; then
     echo "=== WHG Types Pipeline — Job Status ==="
-    squeue -u "$(whoami)" -n "types_build_vocabs,types_map_static,types_map_wikidata,types_map_sparql,types_sync_aat,types_merge" \
+    squeue -u "$(whoami)" -n "types_build_vocabs,types_sync_aat,types_map_static,types_map_wikidata,types_map_labels,types_merge" \
         -o "%.10i %.20j %.8T %.10M %.6D %R" 2>/dev/null || echo "(no running jobs)"
     echo ""
     echo "Recent completed jobs:"
-    sacct -u "$(whoami)" --name="types_build_vocabs,types_map_static,types_map_wikidata,types_map_sparql,types_sync_aat,types_merge" \
+    sacct -u "$(whoami)" --name="types_build_vocabs,types_sync_aat,types_map_static,types_map_wikidata,types_map_labels,types_merge" \
         --format="JobID,JobName%25,State,Elapsed,ExitCode" --starttime="$(date -d '7 days ago' +%Y-%m-%d)" 2>/dev/null \
         | head -20 || echo "(no recent jobs)"
     exit 0
@@ -382,43 +386,9 @@ if $DO_BUILD; then
 fi
 
 # ---------------------------------------------------------------------------
-# Step 2: Apply AAT mappings (static → wikidata → sparql)
+# Step 2: Sync AAT hierarchy → ES types index
 # ---------------------------------------------------------------------------
-if $DO_MAP; then
-    # 2a: Static mappings (fast, no API calls)
-    BODY_STATIC=$(cat <<'SCRIPT'
-set -e
-echo "=== Step 2a: Static AAT mappings ==="
-python -m typesystem.aat_mapper static
-echo "=== Static mappings complete ==="
-SCRIPT
-)
-    LAST_JOB_ID=$(submit_job "types_map_static" "$SLURM_QOS_SHORT" "00:30:00" "$BODY_STATIC" "$LAST_JOB_ID" | tail -1)
-
-    # 2b: Wikidata → AAT bridge (SPARQL, moderate)
-    BODY_WD=$(cat <<'SCRIPT'
-set -e
-echo "=== Step 2b: Wikidata → AAT bridge ==="
-python -m typesystem.aat_mapper wikidata
-echo "=== Wikidata bridge complete ==="
-SCRIPT
-)
-    LAST_JOB_ID=$(submit_job "types_map_wikidata" "$SLURM_QOS_SHORT" "02:00:00" "$BODY_WD" "$LAST_JOB_ID" | tail -1)
-
-    # 2c: SPARQL label matching (slow, many API calls)
-    BODY_SPARQL=$(cat <<'SCRIPT'
-set -e
-echo "=== Step 2c: AAT SPARQL label matching ==="
-python -m typesystem.aat_mapper sparql
-echo "=== SPARQL matching complete ==="
-SCRIPT
-)
-    LAST_JOB_ID=$(submit_job "types_map_sparql" "$SLURM_QOS_NORMAL" "12:00:00" "$BODY_SPARQL" "$LAST_JOB_ID" | tail -1)
-fi
-
-# ---------------------------------------------------------------------------
-# Step 3: Sync AAT hierarchy → ES types index
-# ---------------------------------------------------------------------------
+# Must run before --map so the mapper can look up AAT labels locally.
 if $DO_SYNC; then
     FORCE_FLAG=""
     if $FORCE_AAT; then
@@ -431,12 +401,49 @@ if $DO_SYNC; then
 
     BODY=$(cat <<SCRIPT
 set -e
-echo "=== Step 3: Sync AAT hierarchy → ES ==="
+echo "=== Step 2: Sync AAT hierarchy → ES ==="
 python -m typesystem.sync_aat_types --es-host $ES_HOST $FORCE_FLAG $DRY_FLAG
 echo "=== AAT sync complete ==="
 SCRIPT
 )
     LAST_JOB_ID=$(submit_job "types_sync_aat" "$SLURM_QOS_NORMAL" "06:00:00" "$BODY" "$LAST_JOB_ID" | tail -1)
+fi
+
+# ---------------------------------------------------------------------------
+# Step 3: Apply AAT mappings (static → wikidata → label matching)
+# ---------------------------------------------------------------------------
+# The wikidata and sparql (now label-match) subcommands use the local ES
+# types index for fast AAT label lookups instead of remote SPARQL calls.
+if $DO_MAP; then
+    # 3a: Static mappings (fast, no API or ES calls)
+    BODY_STATIC=$(cat <<'SCRIPT'
+set -e
+echo "=== Step 3a: Static AAT mappings ==="
+python -m typesystem.aat_mapper static
+echo "=== Static mappings complete ==="
+SCRIPT
+)
+    LAST_JOB_ID=$(submit_job "types_map_static" "$SLURM_QOS_SHORT" "00:30:00" "$BODY_STATIC" "$LAST_JOB_ID" | tail -1)
+
+    # 3b: Wikidata → AAT bridge (Wikidata SPARQL for P1014, ES for labels)
+    BODY_WD=$(cat <<SCRIPT
+set -e
+echo "=== Step 3b: Wikidata → AAT bridge ==="
+python -m typesystem.aat_mapper wikidata --es-host $ES_HOST
+echo "=== Wikidata bridge complete ==="
+SCRIPT
+)
+    LAST_JOB_ID=$(submit_job "types_map_wikidata" "$SLURM_QOS_SHORT" "02:00:00" "$BODY_WD" "$LAST_JOB_ID" | tail -1)
+
+    # 3c: Label matching against local ES types index (fast)
+    BODY_MATCH=$(cat <<SCRIPT
+set -e
+echo "=== Step 3c: AAT label matching (ES) ==="
+python -m typesystem.aat_mapper sparql --es-host $ES_HOST
+echo "=== Label matching complete ==="
+SCRIPT
+)
+    LAST_JOB_ID=$(submit_job "types_map_labels" "$SLURM_QOS_SHORT" "02:00:00" "$BODY_MATCH" "$LAST_JOB_ID" | tail -1)
 fi
 
 # ---------------------------------------------------------------------------
