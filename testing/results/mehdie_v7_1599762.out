@@ -1,0 +1,122 @@
+================================================================================
+MEHDIE BENCHMARK EVALUATION
+================================================================================
+Testsets directory: testing/mehdie-testsets
+Model checkpoint: /ix1/ishi/models/phonetic/checkpoints/v7/phase3_best.pt
+Evaluation mode: Ranking-based (Recall@K, MRR)
+Baselines: Skipped
+Device: cuda
+
+Loaded testset7-YaqutSham_KimaSham: 687 × 1899 places, 33 ground truth matches
+Loaded testset8-KimaShamThurayyaSham: 1899 × 291 places, 21 ground truth matches
+Loaded testset9-TudelaThurayya: 306 × 2241 places, 18 ground truth matches
+Loaded testset10-YaqutAndalusMagrebKima-KimaMagrebAndalusMapped: 484 × 559 places, 33 ground truth matches
+Loaded testset11-DamastTudela: 447 × 306 places, 32 ground truth matches
+
+Loading Symphonym model from /ix1/ishi/models/phonetic/checkpoints/v7/phase3_best.pt...
+Model loaded (embed_dim=128)
+  Pre-computing embeddings for all benchmark names...
+  Found 23,696 unique names to encode...
+Encoding:   0%|          | 0/93 [00:00<?, ?it/s]Encoding:   1%|          | 1/93 [00:00<01:28,  1.05it/s]Encoding:  20%|██        | 19/93 [00:01<00:03, 24.16it/s]Encoding:  41%|████      | 38/93 [00:01<00:01, 49.81it/s]Encoding:  62%|██████▏   | 58/93 [00:01<00:00, 76.70it/s]Encoding:  82%|████████▏ | 76/93 [00:01<00:00, 95.22it/s]Encoding: 100%|██████████| 93/93 [00:01<00:00, 63.38it/s]
+  Cached 23,696 embeddings
+
+================================================================================
+RUNNING EVALUATION
+================================================================================
+
+============================================================
+Evaluating method: Symphonym
+============================================================
+
+Evaluating testset7-YaqutSham_KimaSham (ranking mode)...
+  Computing rankings (fast matrix mode)...
+  Queries: 33, Corpus: 1899
+  Recall@1:  0.697
+  Recall@5:  0.970
+  Recall@10: 1.000
+  Recall@20: 1.000
+  MRR:       0.829
+  Mean Rank: 1.6
+
+Evaluating testset8-KimaShamThurayyaSham (ranking mode)...
+  Computing rankings (fast matrix mode)...
+  Queries: 21, Corpus: 291
+  Recall@1:  0.952
+  Recall@5:  1.000
+  Recall@10: 1.000
+  Recall@20: 1.000
+  MRR:       0.968
+  Mean Rank: 1.1
+
+Evaluating testset9-TudelaThurayya (ranking mode)...
+  Computing rankings (fast matrix mode)...
+  Queries: 18, Corpus: 2241
+  Recall@1:  0.944
+  Recall@5:  1.000
+  Recall@10: 1.000
+  Recall@20: 1.000
+  MRR:       0.972
+  Mean Rank: 1.1
+
+Evaluating testset10-YaqutAndalusMagrebKima-KimaMagrebAndalusMapped (ranking mode)...
+  Computing rankings (fast matrix mode)...
+  Queries: 33, Corpus: 559
+  Recall@1:  0.727
+  Recall@5:  0.879
+  Recall@10: 0.879
+  Recall@20: 0.909
+  MRR:       0.808
+  Mean Rank: 6.2
+
+Evaluating testset11-DamastTudela (ranking mode)...
+  Computing rankings (fast matrix mode)...
+  Queries: 32, Corpus: 306
+  Recall@1:  0.938
+  Recall@5:  1.000
+  Recall@10: 1.000
+  Recall@20: 1.000
+  MRR:       0.964
+  Mean Rank: 1.1
+
+====================================================================================================
+RANKING-BASED EVALUATION (Recall@K, MRR)
+====================================================================================================
+
+Note: These metrics measure retrieval quality - can we find the correct
+match among all candidates? Higher is better.
+
+
+TS7:
+  Method               R@1      R@5     R@10     R@20      MRR   MeanRank
+  ----------------------------------------------------------------------
+  Symphonym          0.697    0.970    1.000    1.000    0.829        1.6
+
+TS8:
+  Method               R@1      R@5     R@10     R@20      MRR   MeanRank
+  ----------------------------------------------------------------------
+  Symphonym          0.952    1.000    1.000    1.000    0.968        1.1
+
+TS9:
+  Method               R@1      R@5     R@10     R@20      MRR   MeanRank
+  ----------------------------------------------------------------------
+  Symphonym          0.944    1.000    1.000    1.000    0.972        1.1
+
+TS10:
+  Method               R@1      R@5     R@10     R@20      MRR   MeanRank
+  ----------------------------------------------------------------------
+  Symphonym          0.727    0.879    0.879    0.909    0.808        6.2
+
+TS11:
+  Method               R@1      R@5     R@10     R@20      MRR   MeanRank
+  ----------------------------------------------------------------------
+  Symphonym          0.938    1.000    1.000    1.000    0.964        1.1
+
+====================================================================================================
+SUMMARY (Average across testsets)
+====================================================================================================
+
+Method               R@1      R@5     R@10      MRR
+--------------------------------------------------
+Symphonym          0.852    0.970    0.976    0.908
+
+Results saved to: testing/mehdie_v7_results.json

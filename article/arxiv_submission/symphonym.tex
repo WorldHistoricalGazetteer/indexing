@@ -1,0 +1,532 @@
+% !TEX program = xelatex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage{fontspec}
+\usepackage{polyglossia}
+\setdefaultlanguage{english}
+
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{xcolor}
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
+\usepackage{cleveref}
+\usepackage[round]{natbib}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning,fit,backgrounds}
+\usepackage{subcaption}
+\usepackage{listings}
+\usepackage[normalem]{ulem}
+\usepackage{siunitx}
+\sisetup{group-separator={,}, group-minimum-digits=4}
+
+\usepackage{bidi}
+
+% --- Script Support ---
+
+\setmainfont[
+    Path=fonts/,
+    UprightFont=LinLibertine_R,
+    BoldFont=LinLibertine_RB,
+    ItalicFont=LinLibertine_RI,
+    BoldItalicFont=LinLibertine_RBI,
+    Extension=.otf
+]{LinLibertine}
+
+\newfontfamily\arabicfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Arabic,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{Amiri-Regular}
+
+\newfontfamily\bengalifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Bengali,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifBengali-Regular}
+
+\newfontfamily\chinesefont[
+    Path=fonts/,
+    Extension=.ttc,
+    FontIndex=0,
+    Scale=1.0
+]{NotoSerifCJK-Regular}
+
+\newfontfamily\cyrillicfont[
+    Path=fonts/,
+    Extension=.otf,
+    Scale=1.0
+]{LinLibertine_R}
+
+\newfontfamily\georgianfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Georgian,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifGeorgian-Regular}
+
+\newfontfamily\greekfont[
+    Path=fonts/,
+    Extension=.otf,
+    Scale=1.0
+]{LinLibertine_R}
+
+\newfontfamily\hebrewfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Hebrew,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifHebrew-Regular}
+
+\newfontfamily\devanagarifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Devanagari,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifDevanagari-Regular}
+
+\newfontfamily\koreanfont[
+    Path=fonts/,
+    Extension=.ttc,
+    FontIndex=1,
+    Scale=1.0
+]{NotoSerifCJK-Regular}
+
+\newfontfamily\malayalamfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Malayalam,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifMalayalam-Regular}
+
+\newfontfamily\tamilfont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Tamil,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifTamil-Regular}
+
+\newfontfamily\telugufont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Telugu,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifTelugu-Regular}
+
+\newfontfamily\thaifont[
+    Path=fonts/,
+    Extension=.ttf,
+    Script=Thai,
+    Scale=1.0,
+    Renderer=Harfbuzz
+]{NotoSerifThai-Regular}
+
+\newcommand{\textar}[1]{{\arabicfont\RL{#1}}}
+\newcommand{\textbn}[1]{{\bengalifont #1}}
+\newcommand{\textcn}[1]{{\chinesefont #1}}
+\newcommand{\textjp}[1]{{\chinesefont #1}}
+\newcommand{\textru}[1]{{\cyrillicfont #1}}
+\newcommand{\textka}[1]{{\georgianfont #1}}
+\newcommand{\textgeorgian}[1]{{\georgianfont #1}}
+\newcommand{\textel}[1]{{\greekfont #1}}
+\newcommand{\texthe}[1]{{\hebrewfont\RL{#1}}}
+\newcommand{\texthebrew}[1]{{\hebrewfont\RL{#1}}}
+\newcommand{\texthi}[1]{{\devanagarifont #1}}
+\newcommand{\textdevanagari}[1]{{\devanagarifont #1}}
+\newcommand{\textko}[1]{{\koreanfont #1}}
+\newcommand{\textml}[1]{{\malayalamfont #1}}
+\newcommand{\textta}[1]{{\tamilfont #1}}
+\newcommand{\textte}[1]{{\telugufont #1}}
+\newcommand{\textth}[1]{{\thaifont #1}}
+
+\newcommand{\vecb}[1]{\mathbf{#1}}
+\newcommand{\embdim}{128}
+
+\title{Symphonym: Universal Phonetic Embeddings for Cross-Script Toponym Matching in Geospatial Data Integration}
+
+\author{Stephen Gadd\\
+\small School of Advanced Study, University of London, UK\\
+\small Institute for Spatial History Innovation, University of Pittsburgh, USA\\
+\small ORCiD: 0000-0003-3060-0181\\
+\small \texttt{stephen.gadd@sas.ac.uk}\\
+\small \texttt{stephen.gadd@pitt.edu}}
+
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+Matching place names across writing systems is a persistent obstacle to the integration of multilingual geographic sources, whether modern gazetteers, medieval itineraries, or colonial-era surveys. Existing approaches depend on language-specific phonetic algorithms or romanisation steps that discard phonetic information, and none generalises across script boundaries. This paper presents Symphonym, a neural embedding system which maps toponyms from twenty writing systems into a unified 128-dimensional phonetic space, enabling direct cross-script similarity comparison without language identification or phonetic resources at inference time. A Teacher-Student knowledge distillation architecture first learns from articulatory phonetic features derived from IPA transcriptions, then transfers this knowledge to a character-level Student model. Trained on 32.7 million triplet samples drawn from 67 million toponyms spanning GeoNames, Wikidata, and the Getty Thesaurus of Geographic Names, the Student achieves the highest Recall@1 (85.2\%) and Mean Reciprocal Rank (90.8\%) on the MEHDIE cross-script benchmark (medieval Hebrew and Arabic toponym matches curated by domain experts and entirely independent of the training data), demonstrating cross-temporal generalisation from modern training material to pre-modern sources. An ablation using raw articulatory features alone yields only 45.0\% MRR, confirming the contribution of the neural training curriculum. The approach naturally handles pre-standardisation orthographic variation characteristic of historical documents, and transfers effectively to personal names in archival sources, suggesting broad applicability to name resolution tasks in digital humanities and linked open data contexts.
+\end{abstract}
+
+\textbf{Keywords:} toponym matching; phonetic embeddings; cross-script retrieval; knowledge distillation; digital humanities; multilingual gazetteers
+
+\noindent\textbf{Subject Classifications:} Computational linguistics; Cultural heritage; Digital humanities; Named entity linking; Multilingual information retrieval
+
+
+\section{Introduction}
+\label{sec:introduction}
+
+Place names are the connective tissue of geographic knowledge. A medieval Arabic itinerary, a colonial-era survey, a modern gazetteer, and a crowdsourced mapping platform may all refer to the same settlement, but the names they record (rendered in different scripts, shaped by different phonological conventions, and subject to centuries of orthographic drift) share no characters on the page. The same city appears as ``London'', ``Лондон'', ``\textar{لندن}'', and ``\textcn{伦敦}''; a twelfth-century Hebrew geographical compendium records place names that a modern Arabic gazetteer renders quite differently. Linking such references is prerequisite to the construction of integrated geospatial knowledge bases~\citep{hill2006georeferencing} and to the kind of cross-cultural, cross-temporal scholarship that digital humanities aspires to facilitate, yet no existing computational method bridges script boundaries at scale.
+
+The fundamental difficulty is phonetic rather than orthographic. A speaker recognises ``København'' and ``Copenhagen'' as the same city because the sounds are similar, not because the spellings correspond; yet computational approaches to toponym matching have relied largely on string-based metrics (edit distance, Jaro-Winkler) or phonetic algorithms designed for individual languages (Soundex for English, Cologne phonetic for German). These fail at script boundaries: no edit distance metric can relate ``\textcn{東京}'' to ``Tokyo''. The problem is not merely theoretical. GeoNames alone contains 67 million toponyms in twenty scripts; Wikidata and the Getty Thesaurus of Geographic Names (TGN) add further millions; and the historical sources on which much humanities scholarship depends (travelogues, charter rolls, cadastral surveys) introduce yet more variation in scripts and orthographic conventions for which no systematic computational bridge exists.
+
+The phonetic encoding of names has a long computational history. Soundex~\citep{odell1918}, Metaphone~\citep{philips1990}, and PHONIX~\citep{gadd1990phonix} encode hand-crafted rules for specific Latin-script languages; combining multiple string metrics improves within-script matching~\citep{recchia2013,santos2018}, but no such ensemble generalises across script boundaries. The cross-lingual embedding literature~\citep{conneau2018,artetxe2018} targets word \emph{meaning} rather than phonetic form, a critical distinction since ``Germany'' and ``Deutschland'' are referentially equivalent but phonetically unrelated, and a phonetic system should not conflate them. Neural methods have recently been applied to geographic entity matching~\citep{qiu2024geobert,rama2016,mehdie2025}, but existing systems either operate within single scripts, require language identification at inference time, or address specific language pairs. \citet{mehdie2025} have curated a valuable benchmark of medieval Hebrew-Arabic toponym matches and built a specialist matching system for that pair, but their primary contribution is the benchmark itself (a carefully verified set of ground-truth matches) rather than a general-purpose cross-script capability. No existing system places ``Νέο Μεξικό'' (Greek), ``\textbn{নিউ মেক্সিকো}'' (Bengali), ``\textar{نيومكسيكو}'' (Arabic), and ``Нью-Мексико'' (Cyrillic) near each other in embedding space using only raw character input.
+
+This article addresses the absence of a reusable, language-agnostic mechanism for computing phonetic similarity across writing systems, a gap that impedes not only the federation of modern multilingual gazetteers but also, and perhaps more consequentially, the integration of historical geographic sources with contemporary databases. A researcher querying a consolidated gazetteer for ``Baghdad'' in Latin script cannot retrieve the Arabic \textar{بغداد}, the Cyrillic Багдад, or the Georgian \textgeorgian{ბაღდადი}, all phonetically near-identical renderings of the same name, but invisible to any string-matching algorithm because they share no characters. Historical sources compound the difficulty: medieval travelogues and archival catalogues contain place names in scripts and orthographic conventions that differ from modern standard forms, and the pre-standardisation spelling variation characteristic of such sources (``Deryke/Derico/Diryk'', ``Shotynbaker/Shuttynbaker/Shotyngbaker'') presents challenges of the same fundamental kind. URI-based linkage in linked open data presupposes that matching records have been identified, which is precisely the step that fails when names appear in different scripts or in unfamiliar historical orthographies.
+
+\emph{Symphonym} is designed to address this gap. It maps toponyms from any of twenty writing systems into a unified 128-dimensional phonetic embedding space in which proximity reflects phonetic similarity. The key methodological contribution is a Teacher-Student knowledge distillation architecture~\citep{hinton2015distilling} that grounds the embedding space in universal articulatory phonetics: a Teacher network learns from IPA transcriptions represented as articulatory feature vectors~\citep{mortensen2016}, then transfers this phonetic knowledge to a character-level Student model that requires no phonetic resources, no language identification, and no grapheme-to-phoneme conversion at inference time. The training corpus comprises 32.7 million triplet samples drawn from 67 million toponyms across GeoNames, Wikidata, and TGN, with phonetic similarity filtering (via density-based clustering on articulatory features) to prevent false equivalences between unrelated exonyms. A three-phase curriculum progresses from phonetic feature learning through knowledge distillation to hard negative discrimination.
+
+The system is evaluated on the MEHDIE Hebrew-Arabic historical toponym benchmark~\citep{mehdie2025}, where it achieves the highest Recall@1 (85.2\%) and MRR (90.8\%) of any tested method. This result is of particular interest because the benchmark sources (medieval Hebrew and Arabic geographical texts) are entirely independent of the modern gazetteers used for training, thus demonstrating cross-temporal generalisation. Evaluation of 11,723 cross-script pairs spanning more than 170 script combinations yields 90.7\% accuracy at the 0.75 similarity threshold. Beyond cross-script matching, the approach naturally handles pre-standardisation orthographic variation and transfers effectively to personal names in archival sources, suggesting broad applicability to name resolution tasks in digital humanities and linked open data contexts where name forms vary across collections, scripts, and historical periods.
+
+\paragraph{Scope.} Symphonym addresses only the \emph{name-matching} component of toponym resolution: the model operates purely on phonetic similarity between strings, with no access to geographic coordinates or spatial context. Within a layered retrieval architecture, phonetic similarity functions as a probabilistic prior rather than a final decision mechanism; candidate sets retrieved via approximate nearest-neighbour search are subsequently filtered by geographic proximity, entity type, and temporal constraints. In practice, the system is deployed within the World Historical Gazetteer (WHG), where it enables researchers to search for a toponym by entering an approximate phonetic rendering in their own language and script (a Greek scholar typing ``Ιεροσόλυμα'' will retrieve results for Jerusalem across Arabic, Hebrew, Latin, and Cyrillic attestations), and enables cultural heritage professionals using the WHG Reconciliation API to identify places mentioned in archival descriptions where names appear in unfamiliar scripts or non-standard orthographies.
+
+
+\section{Materials and Methods}
+\label{sec:methods}
+
+\subsection{Architecture Overview}
+
+The system employs a Teacher-Student knowledge distillation architecture~\citep{hinton2015distilling} (Figure~\ref{fig:architecture}) in which a Teacher network, trained on articulatory phonetic features, produces target embeddings that a Student network learns to approximate from character sequences alone. At inference time only the Student is required, enabling deployment without phonetic resources. Three principles guide the design: the model handles twenty writing systems but produces embeddings in a unified space where script boundaries are transparent (through deterministic script detection combined with learned script embeddings); embedding similarity reflects phonetic rather than orthographic or semantic similarity (via the Teacher's articulatory feature space); and the deployed model requires no runtime phonetic conversion, language identification, or external resources.
+
+\begin{figure}[ht]
+\centering
+\begin{tikzpicture}[
+    node distance=0.8cm and 1.2cm,
+    box/.style={rectangle, draw, rounded corners, minimum width=2.2cm, minimum height=0.7cm, align=center, font=\small},
+    widebox/.style={rectangle, draw, rounded corners, minimum width=3.2cm, minimum height=0.7cm, align=center, font=\small},
+    input/.style={box, fill=blue!15},
+    process/.style={box, fill=green!15},
+    encoder/.style={widebox, fill=orange!20, minimum height=1.2cm},
+    output/.style={box, fill=purple!15},
+    loss/.style={box, fill=red!15, dashed},
+    arrow/.style={->, >=stealth, thick},
+    dashedarrow/.style={->, >=stealth, thick, dashed},
+    label/.style={font=\footnotesize\bfseries},
+]
+
+% === TEACHER SIDE (left) ===
+\node[input] (toponym1) {Toponym};
+\node[process, below=of toponym1] (epitran) {G2P\\{\footnotesize (Epitran | Phonikud | CharsiuG2P)}};
+\node[process, below=of epitran] (panphon) {PanPhon\\Features};
+\node[encoder, below=of panphon] (teacher) {Teacher\\Encoder\\{\footnotesize BiLSTM + Attn}};
+\node[output, below=of teacher] (temb) {$e_T \in \mathbb{R}^{128}$};
+
+\draw[arrow] (toponym1) -- (epitran);
+\draw[arrow] (epitran) -- (panphon);
+\draw[arrow] (panphon) -- (teacher);
+\draw[arrow] (teacher) -- (temb);
+
+% === STUDENT SIDE (right) ===
+\node[input, right=3.5cm of toponym1] (toponym2) {Toponym};
+\node[process, below=of toponym2] (chars) {Characters\\+ Script};
+\node[process, below=of chars] (lang) {Language\\(optional)};
+\node[encoder, below=of lang] (student) {Student\\Encoder\\{\footnotesize BiLSTM + Attn}};
+\node[output, below=of student] (semb) {$e_S \in \mathbb{R}^{128}$};
+
+\draw[arrow] (toponym2) -- (chars);
+\draw[arrow] (chars) -- (lang);
+\draw[arrow] (lang) -- (student);
+\draw[arrow] (student) -- (semb);
+
+% === TRAINING PHASES (center) ===
+\node[loss, below right=0.3cm and -0.5cm of temb] (phase1) {Phase 1:\\Triplet Loss};
+\node[loss, right=0.8cm of phase1] (phase2) {Phase 2:\\Distillation};
+\node[loss, right=0.8cm of phase2] (phase3) {Phase 3:\\Hard Neg.};
+
+\draw[dashedarrow] (temb) -- (phase1);
+\draw[dashedarrow] (temb) -- (phase2);
+\draw[dashedarrow] (semb) -- (phase2);
+\draw[dashedarrow] (semb) -- (phase3);
+
+% === LABELS ===
+\node[label, above=0.1cm of toponym1] {Training Path};
+\node[label, above=0.1cm of toponym2] {Inference Path};
+
+% === INFERENCE ANNOTATION ===
+\node[font=\scriptsize, text=gray, right=0.2cm of student] (inf) {Deployed};
+\draw[->, gray, thick] (inf) -- (student);
+
+% === BACKGROUND BOXES ===
+\begin{scope}[on background layer]
+    \node[fit=(toponym1)(epitran)(panphon)(teacher)(temb),
+          fill=blue!5, rounded corners, inner sep=0.3cm] {};
+    \node[fit=(toponym2)(chars)(lang)(student)(semb),
+          fill=green!5, rounded corners, inner sep=0.3cm] {};
+\end{scope}
+
+\end{tikzpicture}
+\caption{Teacher-Student architecture. \textbf{Left}: The Teacher converts toponyms to IPA, extracts articulatory features, and encodes to 128-d embeddings (training only). \textbf{Right}: The Student processes raw characters with script/language metadata (deployed at inference). \textbf{Bottom}: Three training phases progressively transfer phonetic knowledge.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Teacher Network}
+\label{subsec:teacher}
+
+The Teacher encodes toponyms via IPA transcriptions and articulatory features (Figure~\ref{fig:architecture}, left). PanPhon~\citep{mortensen2016} represents each IPA segment as a 24-dimensional ternary feature vector encoding universal articulatory properties (place, manner, voicing), independent of language identity. The phoneme /b/ thus receives identical features whether appearing in English ``Berlin'', Russian ``Берлин'', or Arabic ``\textar{برلين}'', all of which encode a voiced bilabial stop. This grounding in universal articulatory features enables generalisation: the Teacher learns relationships between articulatory configurations rather than between specific languages, and this knowledge transfers to any script representing the same sounds. The architecture comprises feature projection, bidirectional LSTM, multi-head self-attention, learned attention pooling, and output projection to \embdim{} dimensions with L2 normalisation.
+
+\subsection{Student Network}
+\label{subsec:student}
+
+The Student processes raw character sequences with script and language metadata (Figure~\ref{fig:architecture}, right). Script is detected deterministically from Unicode code points, mapping characters to one of twenty script categories. The vocabulary contains \textbf{113,280 tokens} observed across 66.9 million toponyms: each character maps to a 64-dimensional embedding; script and language contribute 16-dimensional embeddings each; and a \textbf{length bucket embedding} (one of sixteen buckets encoding sequence length) provides an 8-dimensional conditioning signal broadcast across all positions, yielding a 104-dimensional input per character.
+
+\paragraph{Length-Aware Representation.} Toponym lengths vary dramatically (from two-character abbreviations to long institutional names), and naive similarity comparison across length disparities produces spurious matches. The Teacher's PanPhon192 representation (eight positional bins $\times$ 24 articulatory features) inherently produces sharper phonetic profiles for short names and more averaged profiles for long ones, since the same fixed bin count must accommodate variable-length sequences. The Student's length bucket embedding addresses this directly: by conditioning every character representation on a discretised length signal, the model learns to calibrate similarity scores relative to string length, penalising matches between strings of very different lengths. During training, known languages are randomly replaced with \texttt{<UNK>} (at 50\% probability), forcing the model to learn script-intrinsic patterns. The architecture mirrors the Teacher: BiLSTM, self-attention, attention pooling, and output projection with L2 normalisation. Character-level noise augmentation (insertions, deletions, substitutions, and transpositions at 30\% probability) trains robustness to OCR errors and historical spelling variation.
+
+\subsection{Training Curriculum}
+\label{subsec:training}
+
+Symphonym employs a three-phase curriculum.
+
+\paragraph{Phase 1: Teacher Training.} The Teacher learns to produce embeddings in which phonetically similar toponyms cluster together, using triplet margin loss:
+\begin{equation}
+\mathcal{L}_{\text{triplet}} = \max\!\big(0,\; \|e_T^a - e_T^p\|_2 - \|e_T^a - e_T^n\|_2 + m\big)
+\label{eq:phase1-loss}
+\end{equation}
+where $a$, $p$, $n$ are anchor, positive, and negative, $m = 0.3$, and $\|\cdot\|_2$ is Euclidean distance. Script-aware negative sampling draws 80\% of negatives from the same writing system as the anchor, forcing fine-grained phonetic discrimination within scripts. Training uses AdamW ($\text{lr} = 10^{-4}$, weight decay $10^{-5}$) with cosine annealing over 50 epochs (33.5h on NVIDIA L40S GPU, final val\_loss 0.0056).
+
+\paragraph{Phase 2: Student-Teacher Alignment.} The Student learns to approximate frozen Teacher embeddings, minimising a combined distillation loss:
+\begin{equation}
+\mathcal{L}_{\text{distill}} = \alpha \cdot \text{MSE}(e_S, e_T) + \beta \cdot \big(1 - \cos(e_S, e_T)\big)
+\label{eq:phase2-loss}
+\end{equation}
+where $e_S$ and $e_T$ are Student and (detached) Teacher embeddings, and $\alpha = \beta = 1.0$. Language dropout and noise augmentation force script-intrinsic learning and input robustness. Training uses AdamW ($\text{lr} = 10^{-4}$) over 50 epochs (1.5h, final val\_loss 0.0591), at which point Student-Teacher cosine similarity reached 0.942.
+
+\paragraph{Phase 3: Discriminative Fine-Tuning.} Hard negatives (phonetically similar names from different places) are introduced to sharpen discrimination. The loss takes the same triplet form as Phase~1 but is applied to Student embeddings:
+\begin{equation}
+\mathcal{L}_{\text{hard}} = \max\!\big(0,\; \|e_S^a - e_S^p\|_2 - \|e_S^a - e_S^n\|_2 + m\big)
+\label{eq:phase3-loss}
+\end{equation}
+with $m = 0.3$ and no distillation component retained. Hard negatives are constructed with high orthographic similarity to anchors (same script, same two-character prefix) but no shared place attestations. Training uses AdamW ($\text{lr} = 5 \times 10^{-5}$, batch size 1024) over 30 epochs (7.5h, final val\_loss 0.0212). The trade-off is deliberate: hard negatives from the same script teach finer within-script discrimination at modest cost to cross-script performance, and same-script variants can in any case be handled by traditional edit-distance methods.
+
+Embedding inference for 67M toponyms required 2.5 hours. Final embeddings are quantised to \texttt{int8} and bulk-indexed to Elasticsearch. Total pipeline execution spans approximately four days of wall-clock time.
+
+
+\subsection{Training Data}
+\label{subsec:data}
+
+\subsubsection{Data Selection and Curation}
+\label{subsec:selection}
+
+Training data are extracted from three major gazetteer authorities (GeoNames, Wikidata, and the Getty TGN) via an existing consolidated index of 47.1 million place records. From these, 112.0 million toponym records spanning 1,944 languages and twenty script categories are extracted. After filtering 1.77 million pre-romanised forms and deduplication, \textbf{66.9 million unique toponyms} remain, of which 57.6 million fall within the three training namespaces.
+
+Four curation criteria address data quality. Stratified sampling by script and language pair (capped at 50,000 per bin, with oversampling up to $5\times$ for small bins) prevents domination by high-resource languages. A global vocabulary construction pass scans the entire 66.9M corpus, yielding 113,280 tokens across twenty scripts. Cross-script pairs emerge naturally from density-based clustering (HDBSCAN~\citep{mcinnes2017hdbscan} with $\epsilon = 0.2$) on articulatory feature embeddings, generating positive pairs only from phonetically coherent groups within each place record. Place-local deduplication allows cross-place duplicates while preventing identical pairs within a single place's cluster.
+
+The clustering approach correctly separates phonetically distinct name families within a given place. A Cologne record, for example, yields two clusters: Germanic (Köln, Keulen) and Romance (Cologne, Colonia). Pairs are generated within clusters (Köln--Keulen, Cologne--Colonia) but not across them (Köln--Cologne), thus preventing the model from learning that phonetically unrelated exonyms should be treated as equivalent. A \textbf{London} place record with 21 multilingual toponyms yields a single dominant cluster of 17 members spanning Arabic, CJK, Cyrillic, and Latin scripts (intra-cluster similarity 0.91): London (de, vi, pl, hu, cs, es, it, tr, nl, sv, en), \textar{لندن} (fa, ar, ur), Лондон (ru, uk), and \textcn{伦敦} (zh) cluster together, while French/Portuguese London (fr, pt), Bengali \textbn{লন্ডন}, and Serbian Ландон are correctly isolated as phonetically distinct variants. Similar multi-cluster patterns emerge for Moscow (two major clusters), Beijing (three, for ``Beijing'', ``Peking'', and ``Pechino''), and Paris (three clusters across seven scripts). For places with only two toponyms, a cosine similarity threshold of 0.5 on PanPhon192 embeddings serves as fallback.
+
+Homonym disambiguation is ensured by requiring that a candidate negative share \emph{no place attestations} with the anchor, preventing names like ``Springfield'' from being used as negatives for other Springfields that may refer to the same location.
+
+\subsubsection{IPA Transcription and Feature Extraction}
+\label{subsec:g2p}
+
+IPA transcriptions are generated via three complementary backends: Epitran~\citep{mortensen2018} (extended with 102 new language-script mappings), Phonikud for Hebrew, and CharsiuG2P~\citep{zhu2022charsiu-g2p} for Chinese topolects and Korean. Japanese Hiragana and Katakana are routed to Epitran by script detection prior to language-based routing.
+
+\paragraph{Epitran Extensions.} Epitran ships with approximately 150 grapheme-to-phoneme map files covering perhaps 80--90 distinct language-script pairs, but the corpus contains toponyms in over 1,900 language codes. Accordingly, 102 additional extension files were developed covering languages present in the corpus but lacking native Epitran support, spanning fourteen scripts across diverse language families including Austronesian (Acehnese, Balinese, Sundanese), Celtic (Breton, Welsh, Irish), and Turkic (Bashkir, Chuvash, Crimean Tatar). For each target language-script pair, grapheme-to-phoneme rules were drafted by prompting multiple commercial large language models in rotation, cross-checking outputs for consistency and iterating until convergence. This process is best understood as knowledge distillation under noise: the Teacher-Student architecture is specifically designed to learn from imperfect training signals, since the Student smooths over the Teacher's artefacts through the distillation and hard-negative phases. Individual grapheme-to-phoneme errors in extension files therefore propagate as stochastic noise rather than systematic bias in the final embeddings. Languages with extension-based G2P exhibit comparable intra-cluster cosine similarity distributions to those with native Epitran support during the HDBSCAN clustering stage (Section~\ref{subsec:selection}), providing indirect evidence that rule quality is sufficient for downstream training. Intrinsic evaluation of G2P accuracy for each extension would require native-speaker phonological judgements across all 102 languages, which was beyond scope; the extensions are instead validated extrinsically through downstream performance. Scripts relying heavily on extended Epitran achieve strong cross-script pass rates on systematically sampled pairs: Greek (93\% of tested pairs above 0.75 similarity), Armenian (94\%), and Gujarati (94\%), notwithstanding these scripts' representation of less than 1\% of training data (Table~\ref{tab:script-distribution}). It should be acknowledged, however, that individual G2P errors are tolerated rather than corrected by the architecture, and performance on languages where the extensions are least accurate may be correspondingly weaker. The extension files are released with the model to enable reproduction and community improvement.
+
+PanPhon~\citep{mortensen2016} converts IPA segments into 24-dimensional articulatory feature vectors. To obtain fixed-length representations, eight-bin positional pooling divides each sequence into eight bins and averages features within each, yielding $8 \times 24 = 192$ dimensions (PanPhon192). This preserves positional information while mapping variable-length sequences to fixed representations. Overall IPA coverage is 54.0\% (31.1M of 57.6M training-namespace toponyms); names without G2P are excluded from Teacher training but are processed by the Student, which generalises from related scripts.
+
+\subsubsection{Dataset Statistics}
+
+The script distribution across all 66.9M toponyms and IPA coverage within the 57.6M training-namespace toponyms are shown in Table~\ref{tab:script-distribution}. From 8.2 million places with at least two toponyms, HDBSCAN clustering generates 65.1 million positive pairs across 595 script:language bins. After bin-balancing, 27.6 million pairs yield approximately 20.4 million Phase~1 training triplets and 8 million Phase~3 hard-negative triplets.
+
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Embedding Quality}
+
+Table~\ref{tab:embedding-quality} summarises embedding quality across diagnostic categories. The production index achieves 100\% embedding coverage over all 66.9M toponyms. Representative cross-script similarities include London/Лондон (0.991), Athens/Αθήνα (0.980), Beijing/\textcn{北京} (0.955), Baghdad/\textar{بغداد} (0.969), and Jerusalem/\texthebrew{ירושלים} (0.892). Notably, cross-language same-script pairs with genuinely different pronunciations receive appropriately low scores: London/Londres yields only 0.474, reflecting the substantial phonetic distance between English /ˈlʌndən/ and French /lɔ̃dʁ/. All four diacritic variant tests pass with similarities $\geq$0.95.
+
+\subsection{MEHDIE Benchmark}
+
+Symphonym is evaluated on the MEHDIE Hebrew-Arabic historical toponym benchmark~\citep{mehdie2025} using ranking metrics that reflect its design as a candidate generator (Table~\ref{tab:mehdie-ranking}). Four methods are compared: PanPhon192 (raw articulatory features with no neural training), AnyAscii-augmented Levenshtein and Jaro-Winkler string baselines, and Symphonym. PanPhon192 serves as an ablation: it uses the same G2P pipeline and positional pooling that produce the Teacher's input features, but with raw cosine similarity only, thus isolating the contribution of the training curriculum.
+
+PanPhon192 achieves only 41.1\% R@1 and 45.0\% MRR, roughly half the trained system's performance. The string baselines substantially outperform PanPhon192 (Levenshtein: 81.5\% R@1, 88.5\% MRR), demonstrating that generic romanisation with edit distance is a considerably stronger cross-script heuristic than raw phonetic features without learned alignment. Symphonym achieves the highest mean Recall@1 (85.2\%) and MRR (90.8\%), winning R@1 on three of five testsets with particularly large margins on TS9 (94.4\% vs Levenshtein 77.8\%) and TS10 (72.7\% vs 66.7\%). At Recall@10, Symphonym achieves 97.6\%.
+
+Among the individual testsets, TS8 and TS9 yield near-perfect performance (R@1: 95.2--94.4\%, R@10: 100\%), while TS10 (Yaqut-Kima Maghreb) proves most challenging for all methods. Symphonym's 72.7\% R@1 nevertheless leads Levenshtein (66.7\%) and Jaro-Winkler (54.5\%), and the difficulty seems attributable to the Maghreb toponyms' more phonetically divergent historical variants, reflecting genuine pronunciation evolution.
+
+\paragraph{Comparison with MEHDIE System.} Direct comparison with the MEHDIE matching system~\citep{mehdie2025} is not straightforward: their evaluation uses threshold-based F-5 metrics (recall weighted $5\times$ over precision), which are incommensurable with ranking metrics. Their pipeline (a specialist Hebrew$\leftrightarrow$Arabic transliteration library with Phonetisaurus G2P and PanPhon Hamming distance) is carefully engineered for the phonetic kinship between these two Semitic languages. Symphonym addresses a different scope: general-purpose embedding across twenty scripts without language-pair-specific resources.
+
+\subsection{Production Deployment}
+
+The model was deployed to a staging Elasticsearch instance containing all 66,924,548 toponyms. To evaluate cross-script matching capability comprehensively, 11,723 genuine cross-script toponym pairs were sampled from the training data by systematically drawing up to ten samples from each of more than 170 cross-script script-pair bins (LATIN-CYRILLIC, ARABIC-BENGALI, CJK-HANGUL, and so forth). These pairs derive from the same gazetteer sources used for training; this evaluation therefore tests whether trained embeddings produce correct similarity rankings when retrieved over the full 67M-toponym index, not whether the model generalises to unseen sources; the MEHDIE benchmark (Section~\ref{sec:results}, Table~\ref{tab:mehdie-ranking}) serves that purpose on historical material entirely absent from training.
+
+The 0.75 cosine similarity threshold is designed as a high-recall pruning threshold, admitting the vast majority of true cross-script equivalents into downstream processing while excluding only pairs with genuinely low phonetic correspondence. Testing yields a 90.7\% pass rate (10,635 of 11,723 pairs exceed the threshold), with no missing documents from the full 66.9M index. The similarity distribution is strongly right-skewed: the majority of cross-script pairs achieve $\geq$0.90 similarity, with the densest concentration between 0.92 and 0.99. Pairs falling below 0.75 are concentrated in script combinations involving CJK-Hiragana (reflecting Mandarin vs Japanese phonetic mismatch) and the ``OTHER'' category (unsupported scripts). The CJK-Hiragana result (mean 0.437) reflects genuine phonological divergence rather than embedding instability: CharsiuG2P produces Mandarin phonetic readings for CJK characters, while Epitran produces Japanese readings (\emph{on'yomi} or \emph{kun'yomi}), and these are often phonetically unrelated for the same character. Even in lower-performing script-pair bins, the majority of sub-threshold pairs cluster near the 0.75 boundary, suggesting that downstream geographic filtering would resolve most ambiguous cases in a production pipeline.
+
+Best-performing script-pair combinations include Hiragana-Katakana (mean 0.981), Devanagari-Kannada (0.976), Devanagari-Telugu (0.976), Cyrillic-Latin (0.923, $n$=1,334), and Arabic-Latin (0.898, $n$=800). More challenging combinations include CJK-Latin (0.808, $n$=1,073) and the CJK-Hiragana case discussed above (0.437, $n$=65). Analysis of 10,000 randomly sampled embeddings confirms desirable geometric properties for large-scale retrieval: mean L2 norm is 1.000 $\pm$ 0.002, confirming that embeddings lie on the unit hypersphere as intended, and mean pairwise cosine similarity is 0.059, indicating that the space is neither collapsed (which would produce uniformly high similarity, degrading retrieval precision) nor excessively sparse.
+
+\paragraph{KNN Retrieval.} Unlike pairwise similarity tests, $k$-nearest-neighbour retrieval evaluates whether the embedding space naturally clusters variants together in open-ended searches across the full 67M corpus. Testing on representative queries shows robust cross-script retrieval: a ``London'' query retrieves Лондон (Cyrillic, 0.997), \textar{لندون} (Arabic, 0.991), and \textgeorgian{ლონდონი} (Georgian, 0.989), while correctly excluding phonetically distinct Romance variants (Londres, Londra). This exclusion reflects correct phonetic behaviour: English /ˈlʌndən/ differs substantially from French /lɔ̃dʁ/ (nasal vowel, uvular fricative), and such phonetically divergent variants are linked through the complementary places index rather than through phonetic similarity (see Discussion).
+
+Two practical challenges merit note. First, high-multiplicity clusters: ``London'' appears in 69 language variants with near-identical embeddings, dominating top-$k$ results, and post-processing strategies (script diversity re-ranking, candidate expansion with geographic filtering) are necessary. Second, length sensitivity: OpenStreetMap-derived institutional names (``Kachua-mokampukur F P School'', for example) can produce spurious high-similarity matches against short toponyms owing to the PanPhon192 binning; the Student encoder's length bucket embedding mitigates this in practice, but the phenomenon illustrates the importance of length-aware post-filtering.
+
+\paragraph{Scalability.} Symphonym embeddings integrate with Elasticsearch's HNSW approximate nearest-neighbour indexing~\citep{malkov2020hnsw}. Query latency averages 15--50ms over 67M toponyms, and the Student model's inference cost is minimal: encoding a toponym requires a single forward pass through an 8.3M-parameter network (under 1ms on CPU).
+
+\section{Discussion}
+\label{sec:discussion}
+
+The evaluation results confirm that a character-level neural encoder can learn phonetically meaningful representations across writing systems without requiring phonetic transcription at inference time. The implications for digital humanities and computational linguistics are considered in turn.
+
+\paragraph{Cross-temporal Generalisation.} Perhaps the most significant finding is the system's cross-temporal transfer. The MEHDIE benchmark sources (medieval Hebrew and Arabic geographical texts) are entirely independent of the modern gazetteers used for training, and the system's strong performance on this material (85.2\% R@1, 90.8\% MRR) suggests that it has learned general phonetic mappings rather than memorised specific toponyms. This generalisation emerges from the Teacher-Student architecture: the Teacher learns language-specific phonetic mappings from IPA features, then transfers this knowledge through distillation, so that the Student inherits a phonetic competence grounded in articulatory universals rather than in the orthographic conventions of any particular period. A model trained on modern authority data thus generalises to historical sources without specialist tuning, a property of evident value for the integration of archival geographic material with contemporary databases.
+
+The cross-temporal capability extends beyond cross-script matching to pre-standardisation orthographic variation of the kind routinely encountered in historical sources. Colonial-era survey records, historical mapping projects, and archival catalogues exhibit inconsistent spellings that phonetically grounded embeddings cluster near their modern canonical forms without language-specific normalisation rules. A case study on medieval London merchant names demonstrates successful clustering of phonetically similar spelling variants (multiple permutations of ``Deryke/Derico/Diryk Shotynbaker/Shuttynbaker/Shotyngbaker'', for example) without retraining, suggesting applicability beyond toponyms to any name resolution task where forms vary across archival sources. In historical geographic contexts, such resolution enables the linking of individuals to places across disparate records, mapping trade networks, property transfers, or migration patterns where the same person appears under orthographically variable name forms in different sources.
+
+\paragraph{Value of Neural Training.} The PanPhon192 ablation (Table~\ref{tab:mehdie-ranking}) confirms that Symphonym's performance derives from the three-phase training curriculum rather than from the articulatory features alone. PanPhon192's mean MRR of 45.0\% is less than half Symphonym's 90.8\%, and substantially below even the string baselines (Levenshtein 88.5\%). The gap is largest on TS7 and TS10 (MRR 19.2\% and 16.6\%), where raw articulatory features evidently cannot bridge the phonetic distance between medieval Arabic and Hebrew variants without learned alignment. Even on TS9, where PanPhon192 performs best (82.0\% MRR), Symphonym still improves by fifteen percentage points (97.2\%). Articulatory features thus provide a necessary phonetic grounding (without them, the model would have no cross-script signal to learn from), but they are radically insufficient on their own. The neural architecture learns a non-linear alignment between articulatory feature spaces across languages that simple distance metrics on raw features cannot capture.
+
+\paragraph{Same-script Performance.} Same-script cross-language pairs achieve an 86\% pass rate, reflecting correct phonetic discrimination: exonyms with genuinely different pronunciations receive appropriately low scores. This behaviour is desirable, for a phonetic index \emph{should not} link ``Germany'' to ``Deutschland'' or ``\textcn{東京}'' to ``\textjp{とうきょう}'', these pairs being phonetically unrelated notwithstanding their referential equivalence. In the production system, such links are provided by a separate \emph{places} index that groups all toponyms attested for the same geographic entity regardless of phonetic similarity. Symphonym thus handles cross-script matching where names \emph{sound alike} (Baghdad/\textar{بغداد}/Багдад), while the places index handles cases where names \emph{refer to the same place} but sound different (Germany/Deutschland). Traditional string methods (Levenshtein, Jaro-Winkler) provide a third complementary channel for same-script refinement.
+
+\paragraph{Deployment Considerations.} Approximate nearest-neighbour retrieval over the HNSW index reduces 67 million candidates to a small set of phonetically plausible matches in under 50ms, after which spatial and temporal disambiguation can be applied. Unlike rule-based phonetic algorithms (Soundex, Metaphone), which require exact code matches and operate within single scripts, embedding similarity enables fuzzy matching with graceful degradation across all scripts simultaneously. The Student encoder requires only raw character input, which simplifies deployment and eliminates failure modes associated with unknown languages or unsupported scripts. The approach generalises beyond toponyms to other named entity classes (hydronyms, ethnonyms, institutional names) and to linked open data reconciliation tasks where URI-based linkage is unavailable because matching records have not yet been identified.
+
+\subsection{Limitations}
+\label{subsec:limitations}
+
+\paragraph{Training Data Coverage.} Despite stratified sampling, training sources retain geographic biases. GeoNames over-represents populated places with official names; Wikidata skews toward places of encyclopaedic interest; TGN emphasises art-historically significant locations. Performance on under-represented scripts and on mundane places lacking multilingual attestations may accordingly be weaker.
+
+\paragraph{Tonal Languages.} The architecture does not explicitly model tone, which is phonemically contrastive in Chinese, Vietnamese, and Thai. PanPhon encodes segmental articulatory properties but not suprasegmental features. In practice, tonal minimal pairs are rare in geographic naming, and Chinese place names have sufficiently distinct segmental content that Symphonym captures them effectively (0.97--0.99 similarity with romanised forms).
+
+\paragraph{Confusable Pairs.} Phonetically similar strings necessarily receive high similarity regardless of semantic relationship (Austria/Australia: 0.883, China/Ghana: 0.932). Disambiguation in such cases requires geographic or contextual evidence beyond phonetic similarity.
+
+\subsection*{Acknowledgments}
+
+This research used the HTC and H2P clusters at the University of Pittsburgh Center for Research Computing and Data (RRID:SCR\_022735), supported by NIH award S10OD028483 and NSF award OAC-2117681 respectively.
+
+The following uses of generative AI tools are disclosed. Claude Sonnet 4.6 (Anthropic), GPT-5 (OpenAI), and Gemini 1.5 Pro (Google) were used to draft grapheme-to-phoneme extension files for the Epitran library (Section~2.5.2), with outputs cross-checked for consistency and validated extrinsically through downstream performance. Claude and GitHub Copilot (Microsoft) were used for coding assistance during system development, and Claude for structural feedback and language editing during manuscript preparation. All content was reviewed, validated, and revised by the author, who takes full responsibility for the accuracy and integrity of the work.
+
+\subsection*{Declaration of Interest Statement}
+
+No relevant financial or non-financial interests to disclose.
+
+\subsection*{Data Availability Statement}
+
+All trained models, vocabularies, extension files, and evaluation results are openly available at \url{https://doi.org/10.5281/zenodo.18682017} \citep{symphonym2026zenodo}. Training code and inference utilities are available at \url{https://huggingface.co/docuracy/symphonym-v7} \citep{symphonym2026hf} and \url{https://github.com/WorldHistoricalGazetteer/whgazetteer}. Training data are derived from publicly available sources: GeoNames (\url{https://www.geonames.org/}), Wikidata (\url{https://www.wikidata.org/}), and Getty TGN (\url{https://www.getty.edu/research/tools/vocabularies/tgn/}). The MEHDIE benchmark is available via \citet{mehdie2025}.
+
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+
+%% ============================================================
+%% TABLES — each on a separate page, after references
+%% ============================================================
+
+\clearpage
+
+\begin{table}[p]
+\centering
+\small
+\begin{tabular}{lrrrl}
+\toprule
+\textbf{Script} & \textbf{Count} & \textbf{\%} & \textbf{IPA Coverage} & \textbf{Top Languages (IPA)} \\
+\midrule
+LATIN & 55,617,677 & 83.1\% & 49.8\% & en, fr, nl, de, sv \\
+CYRILLIC & 3,614,762 & 5.4\% & 47.1\% & ru, uk, bg, sr \\
+CJK & 2,973,525 & 4.4\% & 50.1\% & zh (CharsiuG2P) \\
+ARABIC & 2,098,089 & 3.1\% & 52.5\% & fa, ar, ur \\
+HANGUL & 393,996 & 0.6\% & 58.0\% & ko (CharsiuG2P) \\
+OTHER & 342,642 & 0.5\% & 0.0\% & --- \\
+KATAKANA & 340,555 & 0.5\% & 91.2\% & ja (\texttt{jpn-Kana}) \\
+THAI & 251,458 & 0.4\% & 83.6\% & th \\
+GREEK & 217,997 & 0.3\% & 77.4\% & el (Epitran ext.) \\
+DEVANAGARI & 166,957 & 0.2\% & 57.2\% & hi, mr, ne \\
+ARMENIAN & 153,467 & 0.2\% & 93.7\% & hy (Epitran ext.) \\
+HIRAGANA & 151,980 & 0.2\% & 31.3\% & ja (\texttt{jpn-Hira}) \\
+HEBREW & 151,960 & 0.2\% & 83.8\% & he (Phonikud) \\
+BENGALI & 106,896 & 0.2\% & 72.9\% & bn \\
+GEORGIAN & 105,902 & 0.2\% & 81.2\% & ka \\
+MALAYALAM & 68,176 & 0.1\% & 78.5\% & ml \\
+TAMIL & 52,486 & 0.1\% & 90.9\% & ta \\
+TELUGU & 51,440 & 0.1\% & 92.6\% & te \\
+KANNADA & 43,155 & 0.1\% & 48.6\% & kn (Epitran ext.) \\
+GUJARATI & 21,428 & 0.03\% & 94.9\% & gu (Epitran ext.) \\
+\bottomrule
+\end{tabular}
+\caption{Script distribution across all 66.9M unique toponyms. IPA coverage percentages reflect successful transcription within the 57.6M training namespace toponyms (gn/wd/tgn). Overall IPA coverage is 54.0\% (31.1M toponyms).}
+\label{tab:script-distribution}
+\end{table}
+
+\clearpage
+
+\begin{table}[p]
+\centering
+\small
+\begin{tabular}{p{3.2cm} c p{5.8cm}}
+\toprule
+\textbf{Test Category} & \textbf{Pass Rate} & \textbf{Description} \\
+\midrule
+Cross-script equivalents & 18/22 (81.8\%) & Latin $\leftrightarrow$ Cyrillic, Greek, Arabic, CJK, Hebrew, Hangul \\
+Diacritic variants & 4/4 (100\%) & Zurich/Zürich, Krakow/Kraków, São Paulo/Sao Paulo \\
+Unrelated pairs & 3/3 (100\%) & Correctly separated (low similarity) \\
+\midrule
+\textbf{Total} & \textbf{25/29 (86.2\%)} & \\
+\bottomrule
+\end{tabular}
+\caption{Production embedding quality diagnostics. Cross-script matching is the primary design goal. Tested on 66.9M toponyms with 100\% embedding coverage across 20 scripts.}
+\label{tab:embedding-quality}
+\end{table}
+
+\clearpage
+
+\begin{table}[p]
+\centering
+\small
+\begin{tabular}{llrrrr}
+\toprule
+\textbf{Method} & \textbf{Testset} & \textbf{R@1} & \textbf{R@5} & \textbf{R@10} & \textbf{MRR} \\
+\midrule
+\multirow{6}{*}{\textbf{PanPhon192}}
+& TS7 (Yaqut-Kima Sham) & 15.2 & 21.2 & 27.3 & 19.2 \\
+& TS8 (Kima-Thurayya Sham) & 28.6 & 28.6 & 42.9 & 32.3 \\
+& TS9 (Tudela-Thurayya) & 77.8 & 88.9 & 88.9 & 82.0 \\
+& TS10 (Yaqut-Kima Maghreb) & 12.1 & 21.2 & 21.2 & 16.6 \\
+& TS11 (Damast-Tudela) & 71.9 & 81.2 & 81.2 & 75.1 \\
+\cmidrule{2-6}
+& \textbf{Mean} & \textbf{41.1} & \textbf{48.2} & \textbf{52.3} & \textbf{45.0} \\
+\midrule
+\multirow{6}{*}{\textbf{Levenshtein}}
+& TS7 (Yaqut-Kima Sham) & 75.8 & 93.9 & 100.0 & 83.7 \\
+& TS8 (Kima-Thurayya Sham) & 90.5 & 100.0 & 100.0 & 94.4 \\
+& TS9 (Tudela-Thurayya) & 77.8 & 100.0 & 100.0 & 87.5 \\
+& TS10 (Yaqut-Kima Maghreb) & 66.7 & 97.0 & 97.0 & 79.6 \\
+& TS11 (Damast-Tudela) & 96.9 & 96.9 & 100.0 & 97.3 \\
+\cmidrule{2-6}
+& \textbf{Mean} & \textbf{81.5} & \textbf{97.5} & \textbf{99.4} & \textbf{88.5} \\
+\midrule
+\multirow{6}{*}{\textbf{Jaro-Winkler}}
+& TS7 (Yaqut-Kima Sham) & 75.8 & 100.0 & 100.0 & 86.4 \\
+& TS8 (Kima-Thurayya Sham) & 90.5 & 90.5 & 95.2 & 91.4 \\
+& TS9 (Tudela-Thurayya) & 77.8 & 100.0 & 100.0 & 86.6 \\
+& TS10 (Yaqut-Kima Maghreb) & 54.5 & 93.9 & 97.0 & 71.9 \\
+& TS11 (Damast-Tudela) & 93.8 & 96.9 & 96.9 & 95.4 \\
+\cmidrule{2-6}
+& \textbf{Mean} & \textbf{78.5} & \textbf{96.2} & \textbf{97.8} & \textbf{86.3} \\
+\midrule
+\multirow{6}{*}{\textbf{Symphonym}}
+& TS7 (Yaqut-Kima Sham) & 69.7 & 97.0 & 100.0 & 82.9 \\
+& TS8 (Kima-Thurayya Sham) & 95.2 & 100.0 & 100.0 & 96.8 \\
+& TS9 (Tudela-Thurayya) & 94.4 & 100.0 & 100.0 & 97.2 \\
+& TS10 (Yaqut-Kima Maghreb) & 72.7 & 87.9 & 87.9 & 80.8 \\
+& TS11 (Damast-Tudela) & 93.8 & 100.0 & 100.0 & 96.4 \\
+\cmidrule{2-6}
+& \textbf{Mean} & \textbf{85.2} & \textbf{97.0} & \textbf{97.6} & \textbf{90.8} \\
+\bottomrule
+\end{tabular}
+\caption{MEHDIE benchmark ranking metrics (all values in \%). PanPhon192 is the raw 192-dimensional articulatory feature representation used as \emph{input} to the Teacher (phonetic features before any neural training). String baselines are augmented with AnyAscii romanisation. Symphonym achieves the highest mean R@1 (85.2\%) and MRR (90.8\%), doubling PanPhon192's MRR (45.0\%) and outperforming both string baselines.}
+\label{tab:mehdie-ranking}
+\end{table}
+
+
+\end{document}

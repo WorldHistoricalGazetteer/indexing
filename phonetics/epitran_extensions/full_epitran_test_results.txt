@@ -1,0 +1,259 @@
+================================================================================
+COMPLETE EPITRAN SUPPORT TEST
+================================================================================
+Testing 206 language-script pairs from TODO.txt
+(Excluding CHARSIU and PHONIKUD items)
+================================================================================
+
+/home/stephen/.local/lib/python3.10/site-packages/epitran
+
+================================================================================
+NATIVELY SUPPORTED BY EPITRAN (no extension needed)
+================================================================================
+  ✓ aar    | LATIN        | aar-Latn        | test
+  ✓ ara    | ARABIC       | ara-Arab        | test
+  ✓ ava    | CYRILLIC     | ava-Cyrl        | test
+  ✓ aze    | LATIN        | aze-Latn        | test
+  ✓ aze    | CYRILLIC     | aze-Cyrl        | test
+  ✓ ben    | BENGALI      | ben-Beng        | test
+  ✓ cat    | LATIN        | cat-Latn        | tɛst
+  ✓ ceb    | LATIN        | ceb-Latn        | test
+  ✓ ces    | LATIN        | ces-Latn        | test
+  ✓ cjy    | LATIN        | cjy-Latn        | tʰxɤstʰx
+  ✓ ckb    | ARABIC       | ckb-Arab        | test
+  ✓ cmn    | LATIN        | cmn-Latn        | tʰɤstʰ
+  ✓ csb    | LATIN        | csb-Latn        | tɛst
+  ✓ deu    | LATIN        | deu-Latn        | tɛst
+  ✓ eng    | LATIN        | eng-Latn        | tɛst
+  ✓ epo    | LATIN        | epo-Latn        | test
+  ✓ est    | LATIN        | est-Latn        | tːestː
+  ✓ fas    | ARABIC       | fas-Arab        | test
+  ✓ fin    | LATIN        | fin-Latn        | test
+  ✓ fra    | LATIN        | fra-Latn        | tɛs
+  ✓ ful    | LATIN        | ful-Latn        | test
+  ✓ gan    | LATIN        | gan-Latn        | tʰestʰ
+  ✓ glg    | LATIN        | glg-Latn        | test
+  ✓ got    | LATIN        | got-Latn        | test
+  ✓ hak    | LATIN        | hak-Latn        | test˨
+  ✓ hau    | LATIN        | hau-Latn        | test
+  ✓ hin    | DEVANAGARI   | hin-Deva        | test
+  ✓ hmn    | LATIN        | hmn-Latn        | te˨t
+  ✓ hrv    | LATIN        | hrv-Latn        | test
+  ✓ hun    | LATIN        | hun-Latn        | tɛʃt
+  ✓ ilo    | LATIN        | ilo-Latn        | test
+  ✓ ind    | LATIN        | ind-Latn        | təst
+  ✓ ita    | LATIN        | ita-Latn        | test
+  ✓ jam    | LATIN        | jam-Latn        | test
+  ✓ jav    | LATIN        | jav-Latn        | test
+  ✓ kaz    | CYRILLIC     | kaz-Cyrl        | test
+  ✓ kbd    | CYRILLIC     | kbd-Cyrl        | test
+  ✓ kin    | LATIN        | kin-Latn        | test
+  ✓ kir    | CYRILLIC     | kir-Cyrl        | test
+  ✓ kir    | ARABIC       | kir-Arab        | test
+  ✓ kmr    | LATIN        | kmr-Latn        | tɛst
+  ✓ lav    | LATIN        | lav-Latn        | tɛst
+  ✓ lez    | CYRILLIC     | lez-Cyrl        | test
+  ✓ lij    | LATIN        | lij-Latn        | test
+  ✓ lit    | LATIN        | lit-Latn        | tʲɛst
+  ✓ mal    | MALAYALAM    | mal-Mlym        | test
+  ✓ mar    | DEVANAGARI   | mar-Deva        | test
+  ✓ mlt    | LATIN        | mlt-Latn        | tɛst
+  ✓ mri    | LATIN        | mri-Latn        | test
+  ✓ msa    | LATIN        | msa-Latn        | test
+  ✓ nan    | LATIN        | nan-Latn        | test˧
+  ✓ nld    | LATIN        | nld-Latn        | tɛst
+  ✓ nya    | LATIN        | nya-Latn        | test
+  ✓ orm    | LATIN        | orm-Latn        | test
+  ✓ pol    | LATIN        | pol-Latn        | tɛst
+  ✓ por    | LATIN        | por-Latn        | tɛʃt
+  ✓ ron    | LATIN        | ron-Latn        | test
+  ✓ run    | LATIN        | run-Latn        | test
+  ✓ rus    | CYRILLIC     | rus-Cyrl        | test
+  ✓ sag    | LATIN        | sag-Latn        | test
+  ✓ sna    | LATIN        | sna-Latn        | test
+  ✓ som    | LATIN        | som-Latn        | test
+  ✓ spa    | LATIN        | spa-Latn        | test
+  ✓ sqi    | LATIN        | sqi-Latn        | tɛst
+  ✓ srp    | CYRILLIC     | srp-Cyrl        | test
+  ✓ srp    | LATIN        | srp-Latn        | test
+  ✓ swa    | LATIN        | swa-Latn        | test
+  ✓ swe    | LATIN        | swe-Latn        | tɛst
+  ✓ tam    | TAMIL        | tam-Taml        | test
+  ✓ tel    | TELUGU       | tel-Telu        | test
+  ✓ tgk    | CYRILLIC     | tgk-Cyrl        | test
+  ✓ tgl    | LATIN        | tgl-Latn        | test
+  ✓ tha    | THAI         | tha-Thai        | tett
+  ✓ tpi    | LATIN        | tpi-Latn        | test
+  ✓ tuk    | LATIN        | tuk-Latn        | test
+  ✓ tuk    | CYRILLIC     | tuk-Cyrl        | test
+  ✓ tur    | LATIN        | tur-Latn        | test
+  ✓ uig    | ARABIC       | uig-Arab        | test
+  ✓ ukr    | CYRILLIC     | ukr-Cyrl        | test
+  ✓ urd    | ARABIC       | urd-Arab        | test
+  ✓ uzb    | LATIN        | uzb-Latn        | t̪est̪
+  ✓ uzb    | CYRILLIC     | uzb-Cyrl        | test
+  ✓ vie    | LATIN        | vie-Latn        | tɛst
+  ✓ wuu    | LATIN        | wuu-Latn        | te̞st
+  ✓ xho    | LATIN        | xho-Latn        | tɛst
+  ✓ yor    | LATIN        | yor-Latn        | test
+  ✓ yue    | LATIN        | yue-Latn        | tʰɛstʰ
+  ✓ zha    | LATIN        | zha-Latn        | teθt
+  ✓ zul    | LATIN        | zul-Latn        | test
+
+Total: 89
+
+================================================================================
+SUPPORTED VIA EXTENSION CSV
+================================================================================
+  ✓ ace    | LATIN        | ace-Latn        | təst
+  ✓ afr    | LATIN        | afr-Latn        | tɛstɛː
+  ✓ arg    | LATIN        | arg-Latn        | test
+  ✓ arz    | ARABIC       | arz-Arab        | test
+  ✓ ast    | LATIN        | ast-Latn        | test
+  ✓ azb    | ARABIC       | azb-Arab        | test
+  ✓ bak    | CYRILLIC     | bak-Cyrl        | test
+  ✓ bam    | LATIN        | bam-Latn        | tɛst
+  ✓ ban    | LATIN        | ban-Latn        | təst
+  ✓ bar    | LATIN        | bar-Latn        | teʃt
+  ✓ bel    | CYRILLIC     | bel-Cyrl        | test
+  ✓ bho    | DEVANAGARI   | bho-Deva        | test
+  ✓ bjn    | LATIN        | bjn-Latn        | təst
+  ✓ bod    | OTHER        | bod-Tibt        | test
+  ✓ bos    | LATIN        | bos-Latn        | test
+  ✓ bpy    | BENGALI      | bpy-Beng        | test
+  ✓ bre    | LATIN        | bre-Latn        | test
+  ✓ bug    | LATIN        | bug-Latn        | təst
+  ✓ bul    | CYRILLIC     | bul-Cyrl        | test
+  ✓ che    | CYRILLIC     | che-Cyrl        | test
+  ✓ chv    | CYRILLIC     | chv-Cyrl        | test
+  ✓ cos    | LATIN        | cos-Latn        | test
+  ✓ crh    | LATIN        | crh-Latn        | test
+  ✓ cym    | LATIN        | cym-Latn        | tɛst
+  ✓ dan    | LATIN        | dan-Latn        | test
+  ✓ diq    | LATIN        | diq-Latn        | test
+  ✓ ell    | GREEK        | ell-Grek        | test
+  ✓ eus    | LATIN        | eus-Latn        | test
+  ✓ fao    | LATIN        | fao-Latn        | tʰestʰ
+  ✓ fij    | LATIN        | fij-Latn        | test
+  ✓ fil    | LATIN        | fil-Latn        | tɛst
+  ✓ frc    | LATIN        | frc-Latn        | təst
+  ✓ frp    | LATIN        | frp-Latn        | təst
+  ✓ frr    | LATIN        | frr-Latn        | test
+  ✓ fry    | LATIN        | fry-Latn        | tɛst
+  ✓ fur    | LATIN        | fur-Latn        | test
+  ✓ gla    | LATIN        | gla-Latn        | tʰɛstʰ
+  ✓ gle    | LATIN        | gle-Latn        | t̪ɛst̪
+  ✓ glk    | ARABIC       | glk-Arab        | test
+  ✓ gor    | LATIN        | gor-Latn        | test
+  ✓ gsw    | LATIN        | gsw-Latn        | test
+  ✓ guj    | GUJARATI     | guj-Gujr        | test
+  ✓ hat    | LATIN        | hat-Latn        | test
+  ✓ hbs    | LATIN        | hbs-Latn        | test
+  ✓ hsb    | LATIN        | hsb-Latn        | tɛst
+  ✓ hye    | ARMENIAN     | hye-Armn        | test
+  ✓ ibo    | LATIN        | ibo-Latn        | test
+  ✓ ido    | LATIN        | ido-Latn        | test
+  ✓ ile    | LATIN        | ile-Latn        | test
+  ✓ ina    | LATIN        | ina-Latn        | test
+  ✓ isl    | LATIN        | isl-Latn        | tʰɛstʰ
+  ✓ kab    | LATIN        | kab-Latn        | təst
+  ✓ kal    | LATIN        | kal-Latn        | tɛst
+  ✓ kan    | KANNADA      | kan-Knda        | test
+  ✓ kat    | GEORGIAN     | kat-Geor        | test
+  ✓ kaz    | ARABIC       | kaz-Arab        | test
+  ✓ khm    | LATIN        | khm-Latn        | test
+  ✓ khm    | OTHER        | khm-Khmr        | test
+  ✓ kon    | LATIN        | kon-Latn        | test
+  ✓ kor    | CJK          | kor-Hani        | test
+  ✓ kur    | LATIN        | kur-Latn        | tɛst
+  ✓ kur    | ARABIC       | kur-Arab        | test
+  ✓ lao    | LATIN        | lao-Latn        | test
+  ✓ lat    | LATIN        | lat-Latn        | tɛst
+  ✓ lim    | LATIN        | lim-Latn        | tɛst
+  ✓ lld    | LATIN        | lld-Latn        | test
+  ✓ lmo    | LATIN        | lmo-Latn        | test
+  ✓ ltz    | LATIN        | ltz-Latn        | teʃt
+  ✓ lug    | LATIN        | lug-Latn        | test
+  ✓ min    | LATIN        | min-Latn        | təst
+  ✓ mkd    | CYRILLIC     | mkd-Cyrl        | test
+  ✓ mlg    | LATIN        | mlg-Latn        | test
+  ✓ mya    | OTHER        | mya-Mymr        | test
+  ✓ mya    | LATIN        | mya-Latn        | test
+  ✓ mzn    | ARABIC       | mzn-Arab        | test
+  ✓ nap    | LATIN        | nap-Latn        | təst
+  ✓ nds    | LATIN        | nds-Latn        | test
+  ✓ nep    | DEVANAGARI   | nep-Deva        | test
+  ✓ new    | DEVANAGARI   | new-Deva        | test
+  ✓ nno    | LATIN        | nno-Latn        | teːst
+  ✓ nob    | LATIN        | nob-Latn        | teːst
+  ✓ nor    | LATIN        | nor-Latn        | teːst
+  ✓ nrm    | LATIN        | nrm-Latn        | təst
+  ✓ oci    | LATIN        | oci-Latn        | test
+  ✓ oss    | CYRILLIC     | oss-Cyrl        | test
+  ✓ pan    | OTHER        | pan-Guru        | test
+  ✓ pap    | LATIN        | pap-Latn        | test
+  ✓ pcd    | LATIN        | pcd-Latn        | təst
+  ✓ pms    | LATIN        | pms-Latn        | test
+  ✓ pnb    | ARABIC       | pnb-Arab        | test
+  ✓ prg    | LATIN        | prg-Latn        | test
+  ✓ que    | LATIN        | que-Latn        | test
+  ✓ rgn    | LATIN        | rgn-Latn        | test
+  ✓ roh    | LATIN        | roh-Latn        | test
+  ✓ sat    | OTHER        | sat-Olck        | test
+  ✓ scn    | LATIN        | scn-Latn        | test
+  ✓ sco    | LATIN        | sco-Latn        | tɛst
+  ✓ sgs    | LATIN        | sgs-Latn        | tɛst
+  ✓ sin    | OTHER        | sin-Sinh        | test
+  ✓ slk    | LATIN        | slk-Latn        | cest
+  ✓ slv    | LATIN        | slv-Latn        | tɛst
+  ✓ sme    | LATIN        | sme-Latn        | tʰɤstʰ
+  ✓ srd    | LATIN        | srd-Latn        | test
+  ✓ sun    | LATIN        | sun-Latn        | təst
+  ✓ szl    | LATIN        | szl-Latn        | tɛst
+  ✓ tat    | CYRILLIC     | tat-Cyrl        | test
+  ✓ tok    | LATIN        | tok-Latn        | test
+  ✓ vec    | LATIN        | vec-Latn        | test
+  ✓ vls    | LATIN        | vls-Latn        | tɛst
+  ✓ vmf    | LATIN        | vmf-Latn        | test
+  ✓ vol    | LATIN        | vol-Latn        | test
+  ✓ war    | LATIN        | war-Latn        | test
+  ✓ wln    | LATIN        | wln-Latn        | təst
+  ✓ wol    | LATIN        | wol-Latn        | test
+
+Total: 114
+
+================================================================================
+MISSING (needs extension CSV)
+================================================================================
+  ✗ ISO-3  | Script       | Epitran Key    
+      Error: [Errno 2] No such file or directory: '/home/stephen/.local/lib/python3.10/site-packages/epitran/data/map/Epitran Key.csv'
+  ✗ jpn    | CJK          | jpn-Hira       
+      Error: [Errno 2] No such file or directory: '/home/stephen/.local/lib/python3.10/site-packages/epitran/data/rules/ja.txt'
+  ✗ mul    | LATIN        | mul-Latn       
+      Error: [Errno 2] No such file or directory: '/home/stephen/.local/lib/python3.10/site-packages/epitran/data/map/mul-Latn.csv'
+
+Total: 3
+
+================================================================================
+ERRORS (other issues)
+================================================================================
+  (none)
+
+Total: 0
+
+================================================================================
+SUMMARY
+================================================================================
+  Native support:      89
+  Extension support:  114
+  Missing:              3
+  Errors:               0
+  Total tested:       206
+================================================================================
+
+================================================================================
+DISCREPANCIES (marked as EPITRAN but not working)
+================================================================================
+  ⚠ jpn    | CJK          | jpn-Hira        | Status: EPITRAN
+  ⚠ mul    | LATIN        | mul-Latn        | Status: EPITRAN-EXT
+================================================================================

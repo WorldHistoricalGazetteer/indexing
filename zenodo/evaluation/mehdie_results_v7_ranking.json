@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-02-22T04:35:55.948320",
+  "testsets_dir": "testing/mehdie-testsets",
+  "checkpoint_path": "/ix1/ishi/models/phonetic/checkpoints/v7/phase3_best.pt",
+  "evaluation_mode": "ranking",
+  "results": {
+    "Symphonym": {
+      "testset7-YaqutSham_KimaSham": {
+        "recall_at_1": 0.696969696969697,
+        "recall_at_5": 0.9696969696969697,
+        "recall_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "mrr": 0.8291245791245792,
+        "mean_rank": 1.5757575757575757,
+        "num_queries": 33,
+        "corpus_size": 1899
+      },
+      "testset8-KimaShamThurayyaSham": {
+        "recall_at_1": 0.9523809523809523,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "mrr": 0.9682539682539681,
+        "mean_rank": 1.0952380952380953,
+        "num_queries": 21,
+        "corpus_size": 291
+      },
+      "testset9-TudelaThurayya": {
+        "recall_at_1": 0.9444444444444444,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "mrr": 0.9722222222222222,
+        "mean_rank": 1.0555555555555556,
+        "num_queries": 18,
+        "corpus_size": 2241
+      },
+      "testset10-YaqutAndalusMagrebKima-KimaMagrebAndalusMapped": {
+        "recall_at_1": 0.7272727272727273,
+        "recall_at_5": 0.8787878787878788,
+        "recall_at_10": 0.8787878787878788,
+        "recall_at_20": 0.9090909090909091,
+        "mrr": 0.808078840546373,
+        "mean_rank": 6.242424242424242,
+        "num_queries": 33,
+        "corpus_size": 559
+      },
+      "testset11-DamastTudela": {
+        "recall_at_1": 0.9375,
+        "recall_at_5": 1.0,
+        "recall_at_10": 1.0,
+        "recall_at_20": 1.0,
+        "mrr": 0.9635416666666666,
+        "mean_rank": 1.09375,
+        "num_queries": 32,
+        "corpus_size": 306
+      }
+    }
+  },
+  "primary_metric": "Recall@K, MRR"
+}

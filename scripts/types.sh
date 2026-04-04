@@ -30,6 +30,14 @@ REPO_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="${IX1_BASE}/logs"
 SLURM_ACCOUNT="${SLURM_ACCOUNT:-ishi}"
 
+# --- Load .env (provides STAGING_INFO_FILE, etc.) ---
+ENV_FILE="${REPO_DIR}/.env"
+if [ -f "$ENV_FILE" ]; then
+    source "$ENV_FILE"
+fi
+
+STAGING_INFO_FILE="${STAGING_INFO_FILE:-${IX1_BASE}/esinfo/es-staging.env}"
+
 # Conda
 CONDA_SETUP_PATH="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
 if [ ! -f "$CONDA_SETUP_PATH" ]; then
@@ -81,21 +89,28 @@ Options:
   --map                 Apply AAT mappings (static + wikidata + sparql)
   --sync                Sync AAT hierarchy → ES types index
   --merge               Merge cross-vocabulary fields into ES
-  --es-host URL         Elasticsearch host URL (required for --sync, --merge, --build-vocabs)
+  --es-host URL         Elasticsearch host URL (auto-detected from staging if not given)
   --force               Force re-download of AAT dump
   --dry-run             Dry-run for sync (report only, no indexing)
   --wait                Wait for each Slurm job to complete before starting next
   --status              Show status of running types jobs
   --help                Show this help
 
+ES host auto-detection:
+  If --es-host is not given, the script reads the staging info file
+  ($STAGING_INFO_FILE) written by 'es.sh -staging-start'.
+  --build-vocabs works without ES (skips Wikidata; no doc counts).
+  --sync and --merge always require ES.
+
 Slurm QOS tiers (htc partition):
   htc-htc-s   max  1 day      htc-htc-n   max  3 days
   htc-htc-l   max  6 days     htc-htc-ll  max 21 days
 
 Examples:
-  $(basename "$0") --all --es-host http://localhost:9200
-  $(basename "$0") --build-vocabs --es-host http://localhost:9200
-  $(basename "$0") --sync --es-host http://localhost:9200 --force
+  $(basename "$0") --all                                  # auto-detect staging ES
+  $(basename "$0") --all --es-host http://localhost:9200   # explicit host
+  $(basename "$0") --build-vocabs                          # no ES needed
+  $(basename "$0") --sync --force                          # re-download AAT dump
   $(basename "$0") --status
 EOF
     exit 0
@@ -134,9 +149,25 @@ if ! $DO_BUILD && ! $DO_MAP && ! $DO_SYNC && ! $DO_MERGE && ! $DO_STATUS; then
     exit 1
 fi
 
-# Validate ES_HOST where needed
-if ($DO_BUILD || $DO_SYNC || $DO_MERGE) && [ -z "$ES_HOST" ]; then
-    echo "Error: --es-host is required for --build-vocabs, --sync, and --merge"
+# ---------------------------------------------------------------------------
+# Auto-detect ES host from staging info file if not provided
+# ---------------------------------------------------------------------------
+if [ -z "$ES_HOST" ]; then
+    if [ -f "$STAGING_INFO_FILE" ]; then
+        source "$STAGING_INFO_FILE"
+        ES_HOST="${ES_URL:-}"
+        if [ -n "$ES_HOST" ]; then
+            echo "Auto-detected staging ES: $ES_HOST"
+        fi
+    fi
+fi
+
+# Validate ES_HOST where strictly needed (sync and merge always need it;
+# build-vocabs uses it for doc counts but GeoNames/Pleiades work without)
+if ($DO_SYNC || $DO_MERGE) && [ -z "$ES_HOST" ]; then
+    echo "Error: --es-host is required for --sync and --merge."
+    echo "       Start a staging ES first, or pass --es-host explicitly."
+    echo "       (Staging info file: $STAGING_INFO_FILE)"
     exit 1
 fi
 
@@ -275,27 +306,49 @@ LAST_JOB_ID=""
 # Step 1: Build vocabulary files
 # ---------------------------------------------------------------------------
 if $DO_BUILD; then
-    BODY=$(cat <<'SCRIPT'
+    # Build ES_HOST flags — GeoNames and Pleiades work without ES (no counts)
+    ES_FLAG=""
+    if [ -n "$ES_HOST" ]; then
+        ES_FLAG="--es-host $ES_HOST"
+    fi
+
+    BODY=$(cat <<SCRIPT
 set -e
 echo "=== Step 1: Build vocabulary files ==="
 
 echo ""
 echo "--- GeoNames types ---"
-python -m typesystem.build_geonames_types --es-host ES_HOST_PLACEHOLDER
-
-echo ""
-echo "--- Wikidata types ---"
-python -m typesystem.build_wikidata_types --es-host ES_HOST_PLACEHOLDER
+python -m typesystem.build_geonames_types $ES_FLAG
 
 echo ""
 echo "--- Pleiades types ---"
-python -m typesystem.build_pleiades_types --es-host ES_HOST_PLACEHOLDER
-
-echo ""
-echo "=== Vocabulary builds complete ==="
+python -m typesystem.build_pleiades_types $ES_FLAG
 SCRIPT
 )
-    BODY="${BODY//ES_HOST_PLACEHOLDER/$ES_HOST}"
+
+    # Wikidata builder requires ES (aggregation on places index)
+    if [ -n "$ES_HOST" ]; then
+        BODY+=$(cat <<SCRIPT
+
+echo ""
+echo "--- Wikidata types ---"
+python -m typesystem.build_wikidata_types --es-host $ES_HOST
+SCRIPT
+)
+    else
+        BODY+=$(cat <<'SCRIPT'
+
+echo ""
+echo "--- Wikidata types: SKIPPED (no ES host available) ---"
+echo "  Run with --es-host to include Wikidata type aggregation."
+SCRIPT
+)
+    fi
+
+    BODY+='
+echo ""
+echo "=== Vocabulary builds complete ==="
+'
 
     LAST_JOB_ID=$(submit_job "types_build_vocabs" "$SLURM_QOS_SHORT" "04:00:00" "$BODY" "$LAST_JOB_ID" | tail -1)
 fi

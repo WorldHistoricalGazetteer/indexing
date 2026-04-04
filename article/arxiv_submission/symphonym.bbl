@@ -1,0 +1,152 @@
+\begin{thebibliography}{19}
+\providecommand{\natexlab}[1]{#1}
+\providecommand{\url}[1]{\texttt{#1}}
+\expandafter\ifx\csname urlstyle\endcsname\relax
+  \providecommand{\doi}[1]{doi: #1}\else
+  \providecommand{\doi}{doi: \begingroup \urlstyle{rm}\Url}\fi
+
+\bibitem[Artetxe et~al.(2018)Artetxe, Labaka, and Agirre]{artetxe2018}
+Mikel Artetxe, Gorka Labaka, and Eneko Agirre.
+\newblock A robust self-learning method for fully unsupervised cross-lingual
+  mappings of word embeddings.
+\newblock In Iryna Gurevych and Yusuke Miyao, editors, \emph{Proceedings of the
+  56th Annual Meeting of the Association for Computational Linguistics (Volume
+  1: Long Papers)}, pages 789--798, Melbourne, Australia, July 2018.
+  Association for Computational Linguistics.
+\newblock \doi{10.18653/v1/P18-1073}.
+\newblock URL \url{https://aclanthology.org/P18-1073/}.
+
+\bibitem[Conneau et~al.(2018)Conneau, Lample, Ranzato, Denoyer, and
+  Jégou]{conneau2018}
+Alexis Conneau, Guillaume Lample, Marc'Aurelio Ranzato, Ludovic Denoyer, and
+  Hervé Jégou.
+\newblock Word translation without parallel data.
+\newblock In \emph{Proceedings of the International Conference on Learning
+  Representations}, 2018.
+
+\bibitem[Gadd(2026{\natexlab{a}})]{symphonym2026hf}
+Stephen Gadd.
+\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
+  toponym matching, 2026{\natexlab{a}}.
+\newblock URL \url{https://huggingface.co/docuracy/symphonym-v7}.
+
+\bibitem[Gadd(2026{\natexlab{b}})]{symphonym2026zenodo}
+Stephen Gadd.
+\newblock Symphonym v7 --- universal phonetic embeddings for cross-script
+  toponym matching, 2026{\natexlab{b}}.
+\newblock URL \url{https://doi.org/10.5281/zenodo.18682017}.
+
+\bibitem[Gadd(1990)]{gadd1990phonix}
+T.~N. Gadd.
+\newblock {PHONIX}: The algorithm.
+\newblock \emph{Program: Automated Library and Information Systems},
+  24\penalty0 (4):\penalty0 363--366, 1990.
+\newblock \doi{10.1108/eb047069}.
+
+\bibitem[Hill(2006)]{hill2006georeferencing}
+Linda~L. Hill.
+\newblock Georeferencing: The geographic associations of information.
+\newblock \emph{Digital Libraries and Electronic Publishing}, 2006.
+\newblock \doi{10.7551/mitpress/3260.001.0001}.
+
+\bibitem[Hinton et~al.(2015)Hinton, Vinyals, and Dean]{hinton2015distilling}
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean.
+\newblock Distilling the knowledge in a neural network.
+\newblock \emph{arXiv preprint arXiv:1503.02531}, 2015.
+\newblock \doi{10.48550/arXiv.1503.02531}.
+\newblock URL \url{https://arxiv.org/abs/1503.02531}.
+
+\bibitem[Malkov and Yashunin(2020)]{malkov2020hnsw}
+Yu.~A. Malkov and D.~A. Yashunin.
+\newblock Efficient and robust approximate nearest neighbor search using
+  hierarchical navigable small world graphs.
+\newblock \emph{IEEE Transactions on Pattern Analysis and Machine
+  Intelligence}, 42\penalty0 (4):\penalty0 824--836, 2020.
+\newblock \doi{10.1109/TPAMI.2018.2889473}.
+
+\bibitem[McInnes et~al.(2017)McInnes, Healy, and Astels]{mcinnes2017hdbscan}
+Leland McInnes, John Healy, and Steve Astels.
+\newblock hdbscan: Hierarchical density based clustering.
+\newblock \emph{Journal of Open Source Software}, 2\penalty0 (11):\penalty0
+  205, 2017.
+\newblock \doi{10.21105/joss.00205}.
+
+\bibitem[Mortensen et~al.(2016)Mortensen, Littell, Bharadwaj, Goyal, Dyer, and
+  Levin]{mortensen2016}
+David~R. Mortensen, Patrick Littell, Akash Bharadwaj, Kartik Goyal, Chris Dyer,
+  and Lori Levin.
+\newblock Panphon: A resource for mapping {IPA} segments to articulatory
+  feature vectors.
+\newblock In \emph{Proceedings of the 26th International Conference on
+  Computational Linguistics (COLING)}, pages 3475--3484, 2016.
+\newblock URL \url{https://aclanthology.org/C16-1328/}.
+
+\bibitem[Mortensen et~al.(2018)Mortensen, Dalmia, and Littell]{mortensen2018}
+David~R. Mortensen, Siddharth Dalmia, and Patrick Littell.
+\newblock Epitran: Precision {G2P} for many languages.
+\newblock In \emph{Proceedings of the Eleventh International Conference on
+  Language Resources and Evaluation (LREC)}, pages 2634--2639, 2018.
+\newblock URL \url{https://aclanthology.org/L18-1140/}.
+
+\bibitem[Philips(1990)]{philips1990}
+Lawrence Philips.
+\newblock Hanging on the metaphone.
+\newblock \emph{Computer Language}, 7\penalty0 (12):\penalty0 39--43, 1990.
+
+\bibitem[Qiu et~al.(2024)Qiu, Li, Hu, Tian, Ma, and Zhu]{qiu2024geobert}
+Qinjun Qiu, Haiyan Li, Xinxin Hu, Miao Tian, Kai Ma, and Yunqiang Zhu.
+\newblock A deep neural network model for chinese toponym matching with
+  geographic pre-training model.
+\newblock \emph{International Journal of Digital Earth}, 17\penalty0
+  (1):\penalty0 2353111, 2024.
+\newblock \doi{10.1080/17538947.2024.2353111}.
+\newblock Proposal of the GeoBERT model.
+
+\bibitem[Rama(2016)]{rama2016}
+Taraka Rama.
+\newblock Siamese convolutional networks for cognate identification.
+\newblock In \emph{Proceedings of COLING 2016, the 26th International
+  Conference on Computational Linguistics: Technical Papers}, pages 1018--1027,
+  2016.
+\newblock URL \url{https://aclanthology.org/C16-1097/}.
+
+\bibitem[Recchia and Louwerse(2013)]{recchia2013}
+Gabriel Recchia and Max Louwerse.
+\newblock A comparison of string similarity measures for toponym matching.
+\newblock In \emph{Vagueness in Communication}, pages 54--67. Springer, 2013.
+\newblock \doi{10.1007/978-3-642-18446-8_4}.
+
+\bibitem[Russell(1918)]{odell1918}
+Robert~C. Russell.
+\newblock Index.
+\newblock U.S. Patent 1,261,167, 1918.
+\newblock URL \url{https://patents.google.com/patent/US1261167A/}.
+\newblock Patented Apr. 2, 1918.
+
+\bibitem[Sagi et~al.(2025)Sagi, Zaga, Rusinek, Fekete, Bjerva, and
+  Hose]{mehdie2025}
+Tomer Sagi, Moran Zaga, Sinai Rusinek, Marcell~Richard Fekete, Johannes Bjerva,
+  and Katja Hose.
+\newblock Utilizing phonetic similarity for cross-source and cross-language
+  toponym matching: a benchmark and prototype.
+\newblock \emph{Language Resources and Evaluation}, 59\penalty0 (3):\penalty0
+  2427--2451, 2025.
+\newblock \doi{10.1007/s10579-025-09812-9}.
+
+\bibitem[Santos et~al.(2018)Santos, Murrieta-Flores, Calafiore, and
+  Martins]{santos2018}
+Rodrigo Santos, Patricia Murrieta-Flores, Pablo Calafiore, and Bruno Martins.
+\newblock Learning to combine multiple string similarity metrics for effective
+  toponym matching.
+\newblock \emph{International Journal of Digital Earth}, 11\penalty0
+  (9):\penalty0 949--965, 2018.
+\newblock \doi{10.1080/17538947.2017.1371253}.
+
+\bibitem[Zhu et~al.(2022)Zhu, Zhang, and Jurgens]{zhu2022charsiu-g2p}
+Jian Zhu, Cong Zhang, and David Jurgens.
+\newblock Byt5 model for massively multilingual grapheme-to-phoneme conversion.
+\newblock 2022.
+\newblock \doi{10.48550/ARXIV.2204.03067}.
+\newblock URL \url{https://arxiv.org/abs/2204.03067}.
+
+\end{thebibliography}
