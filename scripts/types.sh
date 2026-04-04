@@ -97,9 +97,9 @@ Options:
   --help                Show this help
 
 ES host auto-detection:
-  If --es-host is not given, --build-vocabs runs on the VM via 'ssh pitt'
-  using production ES at localhost:9201. Other steps use the staging ES
-  from \$STAGING_INFO_FILE (written by 'es.sh -staging-start').
+  If --es-host is not given, --build-vocabs tries localhost:9201 (works
+  on the VM). Run 'ssh pitt' first, then run this script for full builds.
+  Other steps use the staging ES from \$STAGING_INFO_FILE.
   --sync and --merge always require ES.
 
 Slurm QOS tiers (htc partition):
@@ -310,49 +310,71 @@ LAST_JOB_ID=""
 # ---------------------------------------------------------------------------
 # VM Python environment
 # ---------------------------------------------------------------------------
-# The Pitt VM has its own conda (under the 'gazetteer' user) with access
-# to the same /ix1/ishi shared storage. Production ES is at localhost:9201.
+# The Pitt VM has conda under the 'gazetteer' user at this path.
+# On CRC nodes, conda is at /ihome/ishi/stg135/miniconda3/envs/whg/bin/python.
+# We detect which is available at runtime.
 VM_PYTHON="/home/gazetteer/miniconda/envs/whg/bin/python"
 VM_ES_HOST="http://localhost:9201"
 
 # ---------------------------------------------------------------------------
 # Step 1: Build vocabulary files
 # ---------------------------------------------------------------------------
-# Runs on the VM (ssh pitt) because:
-#   - Production ES is at localhost:9201 on the VM
-#   - Compute nodes cannot reach the production ES gateway (firewall)
-#   - Login nodes should not run multi-minute workloads
+# Runs directly (not via Slurm) because it needs production ES.
+# Run this step from the Pitt VM (ssh pitt) where localhost:9201 is available
+# and the gazetteer conda env provides the right Python.
 if $DO_BUILD; then
     echo ""
-    echo "=== Step 1: Build vocabulary files (on VM) ==="
+    echo "=== Step 1: Build vocabulary files ==="
 
-    # Use explicitly provided ES host, or default to VM's local production ES
-    BUILD_ES_HOST="${ES_HOST:-$VM_ES_HOST}"
+    # Detect Python: try VM conda, then CRC conda, then system python
+    if [ -x "$VM_PYTHON" ]; then
+        PYTHON="$VM_PYTHON"
+    elif [ -x "/ihome/ishi/stg135/miniconda3/envs/whg/bin/python" ]; then
+        PYTHON="/ihome/ishi/stg135/miniconda3/envs/whg/bin/python"
+    else
+        PYTHON="python"
+    fi
 
-    ssh pitt bash -s <<REMOTE_SCRIPT
-set -e
-cd "$REPO_DIR"
-export PYTHONPATH="$REPO_DIR"
+    # Detect ES host: use explicit --es-host, else try localhost:9201 (VM),
+    # else try staging
+    BUILD_ES_HOST="${ES_HOST:-}"
+    if [ -z "$BUILD_ES_HOST" ]; then
+        if curl -s -o /dev/null --connect-timeout 3 "$VM_ES_HOST" 2>/dev/null; then
+            BUILD_ES_HOST="$VM_ES_HOST"
+        fi
+    fi
 
-PYTHON="$VM_PYTHON"
-ES_FLAG="--es-host $BUILD_ES_HOST"
+    echo "  Python: $PYTHON"
+    echo "  ES:     ${BUILD_ES_HOST:-(none — Wikidata will be skipped)}"
 
-echo ""
-echo "--- GeoNames types ---"
-\$PYTHON -m typesystem.build_geonames_types \$ES_FLAG
+    export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
+    cd "$REPO_DIR"
 
-echo ""
-echo "--- Pleiades types ---"
-\$PYTHON -m typesystem.build_pleiades_types \$ES_FLAG
+    ES_FLAG=""
+    if [ -n "$BUILD_ES_HOST" ]; then
+        ES_FLAG="--es-host $BUILD_ES_HOST"
+    fi
 
-echo ""
-echo "--- Wikidata types ---"
-\$PYTHON -m typesystem.build_wikidata_types \$ES_FLAG
+    echo ""
+    echo "--- GeoNames types ---"
+    $PYTHON -m typesystem.build_geonames_types $ES_FLAG
 
-echo ""
-echo "=== Vocabulary builds complete ==="
-REMOTE_SCRIPT
+    echo ""
+    echo "--- Pleiades types ---"
+    $PYTHON -m typesystem.build_pleiades_types $ES_FLAG
 
+    if [ -n "$BUILD_ES_HOST" ]; then
+        echo ""
+        echo "--- Wikidata types ---"
+        $PYTHON -m typesystem.build_wikidata_types --es-host $BUILD_ES_HOST
+    else
+        echo ""
+        echo "--- Wikidata types: SKIPPED (no ES reachable) ---"
+        echo "  Run this step from the VM: ssh pitt, then bash scripts/types.sh --build-vocabs"
+    fi
+
+    echo ""
+    echo "=== Vocabulary builds complete ==="
 fi
 
 # ---------------------------------------------------------------------------
