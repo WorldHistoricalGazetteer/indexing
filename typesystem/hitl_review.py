@@ -335,32 +335,40 @@ def build_search_terms(global_key, namespace, entry, label):
 def search_candidates(es, global_key, namespace, entry, label):
     """
     Search the ES types index for AAT candidates matching an entry.
-    Tries multiple search terms, then uses description MLT for semantic overlap.
+
+    Combines keyword/text results with description-based MLT results,
+    reserving slots for each so neither dominates.
     """
     terms = build_search_terms(global_key, namespace, entry, label)
-    seen = set()
-    results = []
+    desc = entry.get("description", "")
 
     # Phase 1: keyword/text search on label, tag key, etc.
+    keyword_limit = MAX_CANDIDATES if not desc else MAX_CANDIDATES - 5
+    seen = set()
+    keyword_results = []
     for term in terms:
-        if len(results) >= MAX_CANDIDATES:
+        if len(keyword_results) >= keyword_limit:
             break
-        for r in _es_search_single(es, term, MAX_CANDIDATES):
+        for r in _es_search_single(es, term, keyword_limit):
             if r["aat_id"] not in seen:
                 seen.add(r["aat_id"])
-                results.append(r)
-                if len(results) >= MAX_CANDIDATES:
+                keyword_results.append(r)
+                if len(keyword_results) >= keyword_limit:
                     break
 
     # Phase 2: description → AAT note/term cross-match via MLT
-    desc = entry.get("description", "")
-    if desc and len(results) < MAX_CANDIDATES:
+    mlt_results = []
+    if desc:
         for r in _es_description_search(es, desc, MAX_CANDIDATES):
             if r["aat_id"] not in seen:
                 seen.add(r["aat_id"])
-                results.append(r)
-                if len(results) >= MAX_CANDIDATES:
-                    break
+                mlt_results.append(r)
+
+    # Merge: keyword results first, then MLT results, up to MAX
+    results = keyword_results[:MAX_CANDIDATES]
+    remaining = MAX_CANDIDATES - len(results)
+    if remaining > 0:
+        results.extend(mlt_results[:remaining])
 
     return results[:MAX_CANDIDATES]
 
