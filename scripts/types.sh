@@ -316,52 +316,50 @@ LAST_JOB_ID=""
 # ---------------------------------------------------------------------------
 # Step 1: Build vocabulary files
 # ---------------------------------------------------------------------------
+# Runs directly on the login node (not Slurm) because:
+#   - It's lightweight: just HTTP downloads + a few API calls
+#   - Production ES (gateway) is reachable from login nodes but NOT from
+#     compute nodes (firewall restriction)
 if $DO_BUILD; then
-    # Build ES_HOST flags — GeoNames and Pleiades work without ES (no counts)
+    echo ""
+    echo "=== Step 1: Build vocabulary files ==="
+
+    # Activate conda if not already active
+    if ! command -v python &>/dev/null || [[ "$(python -c 'import sys; print(sys.prefix)')" != *"$CONDA_ENV"* ]]; then
+        if [ -f "$CONDA_SETUP_PATH" ]; then
+            source "$CONDA_SETUP_PATH"
+        fi
+        conda activate "$CONDA_ENV" 2>/dev/null || true
+    fi
+
+    export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
+    cd "$REPO_DIR"
+
     ES_FLAG=""
     if [ -n "$ES_HOST" ]; then
         ES_FLAG="--es-host $ES_HOST"
     fi
 
-    BODY=$(cat <<SCRIPT
-set -e
-echo "=== Step 1: Build vocabulary files ==="
+    echo ""
+    echo "--- GeoNames types ---"
+    python -m typesystem.build_geonames_types $ES_FLAG
 
-echo ""
-echo "--- GeoNames types ---"
-python -m typesystem.build_geonames_types $ES_FLAG
+    echo ""
+    echo "--- Pleiades types ---"
+    python -m typesystem.build_pleiades_types $ES_FLAG
 
-echo ""
-echo "--- Pleiades types ---"
-python -m typesystem.build_pleiades_types $ES_FLAG
-SCRIPT
-)
-
-    # Wikidata builder requires ES (aggregation on places index)
     if [ -n "$ES_HOST" ]; then
-        BODY+=$(cat <<SCRIPT
-
-echo ""
-echo "--- Wikidata types ---"
-python -m typesystem.build_wikidata_types --es-host $ES_HOST
-SCRIPT
-)
+        echo ""
+        echo "--- Wikidata types ---"
+        python -m typesystem.build_wikidata_types --es-host $ES_HOST
     else
-        BODY+=$(cat <<'SCRIPT'
-
-echo ""
-echo "--- Wikidata types: SKIPPED (no ES host available) ---"
-echo "  Run with --es-host to include Wikidata type aggregation."
-SCRIPT
-)
+        echo ""
+        echo "--- Wikidata types: SKIPPED (no ES host available) ---"
+        echo "  Run with --es-host to include Wikidata type aggregation."
     fi
 
-    BODY+='
-echo ""
-echo "=== Vocabulary builds complete ==="
-'
-
-    LAST_JOB_ID=$(submit_job "types_build_vocabs" "$SLURM_QOS_SHORT" "04:00:00" "$BODY" "$LAST_JOB_ID" | tail -1)
+    echo ""
+    echo "=== Vocabulary builds complete ==="
 fi
 
 # ---------------------------------------------------------------------------
