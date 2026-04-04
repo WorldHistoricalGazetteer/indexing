@@ -74,7 +74,7 @@ def fetch_wikidata_labels(qids):
     print(f"Fetching labels for {len(qids)} Q-items in {len(batches)} batches ...")
 
     for i, batch in enumerate(batches):
-        if (i + 1) % 10 == 0:
+        if (i + 1) % 50 == 0:
             print(f"  ... batch {i + 1}/{len(batches)}")
 
         params = urlencode({
@@ -85,24 +85,35 @@ def fetch_wikidata_labels(qids):
             "format": "json",
         })
         url = f"https://www.wikidata.org/w/api.php?{params}"
-        req = Request(url, headers={"User-Agent": "WHG-indexing/1.0 (whgazetteer.org)"})
+        req = Request(url, headers={
+            "User-Agent": "WHG-indexing/1.0 (World Historical Gazetteer; +https://whgazetteer.org)",
+            "From": "whg@pitt.edu",
+        })
 
-        try:
-            with urlopen(req) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+        # Retry with backoff on 429 rate-limit responses
+        for attempt in range(4):
+            try:
+                with urlopen(req) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
 
-            for qid, entity in data.get("entities", {}).items():
-                label_obj = entity.get("labels", {}).get("en", {})
-                desc_obj = entity.get("descriptions", {}).get("en", {})
-                labels[qid] = {
-                    "label": label_obj.get("value", ""),
-                    "description": desc_obj.get("value", ""),
-                }
-        except Exception as e:
-            print(f"  Warning: batch {i + 1} failed: {e}")
+                for qid, entity in data.get("entities", {}).items():
+                    label_obj = entity.get("labels", {}).get("en", {})
+                    desc_obj = entity.get("descriptions", {}).get("en", {})
+                    labels[qid] = {
+                        "label": label_obj.get("value", ""),
+                        "description": desc_obj.get("value", ""),
+                    }
+                break  # success
+            except Exception as e:
+                if "429" in str(e) and attempt < 3:
+                    wait = (attempt + 1) * 5  # 5, 10, 15 seconds
+                    time.sleep(wait)
+                else:
+                    print(f"  Warning: batch {i + 1} failed: {e}")
+                    break
 
-        # Rate limiting — Wikidata API is generous but be polite
-        time.sleep(0.1)
+        # Polite rate limiting — 0.5s between requests
+        time.sleep(0.5)
 
     return labels
 

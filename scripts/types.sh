@@ -97,9 +97,9 @@ Options:
   --help                Show this help
 
 ES host auto-detection:
-  If --es-host is not given, the script reads the staging info file
-  ($STAGING_INFO_FILE) written by 'es.sh -staging-start'.
-  --build-vocabs works without ES (skips Wikidata; no doc counts).
+  If --es-host is not given, --build-vocabs runs on the VM via 'ssh pitt'
+  using production ES at localhost:9201. Other steps use the staging ES
+  from \$STAGING_INFO_FILE (written by 'es.sh -staging-start').
   --sync and --merge always require ES.
 
 Slurm QOS tiers (htc partition):
@@ -152,23 +152,17 @@ fi
 # ---------------------------------------------------------------------------
 # Auto-detect ES host if not provided
 # ---------------------------------------------------------------------------
-# Production ES (via gateway) is the correct target for type vocabulary builds
-# because it has the full places index needed for doc count aggregations.
-# Staging ES is typically empty or partial. We try production first, then
-# fall back to staging.
-PROD_GATEWAY_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
-
+# Compute nodes (where Slurm jobs run) can only reach staging ES, not the
+# production gateway (gazetteer.crcd.pitt.edu — firewalled from compute nodes).
+# For --build-vocabs with production data, either:
+#   1. Restore production snapshot to staging first, or
+#   2. Run the Wikidata builder directly on the VM (localhost:9201)
 if [ -z "$ES_HOST" ]; then
-    # Try production gateway first (needs the places index for aggregations)
-    if curl -s -o /dev/null -w '' --connect-timeout 5 "${PROD_GATEWAY_URL}" 2>/dev/null; then
-        ES_HOST="$PROD_GATEWAY_URL"
-        echo "Using production ES (gateway): $ES_HOST"
-    elif [ -f "$STAGING_INFO_FILE" ]; then
+    if [ -f "$STAGING_INFO_FILE" ]; then
         source "$STAGING_INFO_FILE"
         ES_HOST="${ES_URL:-}"
         if [ -n "$ES_HOST" ]; then
-            echo "Using staging ES: $ES_HOST"
-            echo "  Warning: staging may have no places data for doc counts."
+            echo "Auto-detected staging ES: $ES_HOST"
         fi
     fi
 fi
@@ -314,52 +308,51 @@ echo "=========================================="
 LAST_JOB_ID=""
 
 # ---------------------------------------------------------------------------
+# VM Python environment
+# ---------------------------------------------------------------------------
+# The Pitt VM has its own conda (under the 'gazetteer' user) with access
+# to the same /ix1/ishi shared storage. Production ES is at localhost:9201.
+VM_PYTHON="/home/gazetteer/miniconda/envs/whg/bin/python"
+VM_ES_HOST="http://localhost:9201"
+
+# ---------------------------------------------------------------------------
 # Step 1: Build vocabulary files
 # ---------------------------------------------------------------------------
-# Runs directly on the login node (not Slurm) because:
-#   - It's lightweight: just HTTP downloads + a few API calls
-#   - Production ES (gateway) is reachable from login nodes but NOT from
-#     compute nodes (firewall restriction)
+# Runs on the VM (ssh pitt) because:
+#   - Production ES is at localhost:9201 on the VM
+#   - Compute nodes cannot reach the production ES gateway (firewall)
+#   - Login nodes should not run multi-minute workloads
 if $DO_BUILD; then
     echo ""
-    echo "=== Step 1: Build vocabulary files ==="
+    echo "=== Step 1: Build vocabulary files (on VM) ==="
 
-    # Activate conda if not already active
-    if ! command -v python &>/dev/null || [[ "$(python -c 'import sys; print(sys.prefix)')" != *"$CONDA_ENV"* ]]; then
-        if [ -f "$CONDA_SETUP_PATH" ]; then
-            source "$CONDA_SETUP_PATH"
-        fi
-        conda activate "$CONDA_ENV" 2>/dev/null || true
-    fi
+    # Use explicitly provided ES host, or default to VM's local production ES
+    BUILD_ES_HOST="${ES_HOST:-$VM_ES_HOST}"
 
-    export PYTHONPATH="${REPO_DIR}:${PYTHONPATH:-}"
-    cd "$REPO_DIR"
+    ssh pitt bash -s <<REMOTE_SCRIPT
+set -e
+cd "$REPO_DIR"
+export PYTHONPATH="$REPO_DIR"
 
-    ES_FLAG=""
-    if [ -n "$ES_HOST" ]; then
-        ES_FLAG="--es-host $ES_HOST"
-    fi
+PYTHON="$VM_PYTHON"
+ES_FLAG="--es-host $BUILD_ES_HOST"
 
-    echo ""
-    echo "--- GeoNames types ---"
-    python -m typesystem.build_geonames_types $ES_FLAG
+echo ""
+echo "--- GeoNames types ---"
+\$PYTHON -m typesystem.build_geonames_types \$ES_FLAG
 
-    echo ""
-    echo "--- Pleiades types ---"
-    python -m typesystem.build_pleiades_types $ES_FLAG
+echo ""
+echo "--- Pleiades types ---"
+\$PYTHON -m typesystem.build_pleiades_types \$ES_FLAG
 
-    if [ -n "$ES_HOST" ]; then
-        echo ""
-        echo "--- Wikidata types ---"
-        python -m typesystem.build_wikidata_types --es-host $ES_HOST
-    else
-        echo ""
-        echo "--- Wikidata types: SKIPPED (no ES host available) ---"
-        echo "  Run with --es-host to include Wikidata type aggregation."
-    fi
+echo ""
+echo "--- Wikidata types ---"
+\$PYTHON -m typesystem.build_wikidata_types \$ES_FLAG
 
-    echo ""
-    echo "=== Vocabulary builds complete ==="
+echo ""
+echo "=== Vocabulary builds complete ==="
+REMOTE_SCRIPT
+
 fi
 
 # ---------------------------------------------------------------------------
