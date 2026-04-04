@@ -149,8 +149,8 @@ def main():
         description="Build Wikidata type vocabulary file"
     )
     parser.add_argument("--es-host", required=True, help="ES host URL")
-    parser.add_argument("--min-count", type=int, default=1,
-                        help="Minimum doc count to include a Q-item (default: 1)")
+    parser.add_argument("--min-count", type=int, default=10,
+                        help="Minimum doc count to include a Q-item (default: 10)")
     args = parser.parse_args()
 
     type_counts = query_es_types(args.es_host, args.min_count)
