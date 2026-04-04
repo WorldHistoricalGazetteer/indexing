@@ -240,13 +240,17 @@ def _es_search_single(es, query_text, limit, seen):
     if len(results) >= limit:
         return results[:limit]
 
-    # Phase 2: match_phrase_prefix — strongly prefers terms starting with query
-    resp = es.search(
-        index=ES_TYPES_INDEX, size=limit,
-        query={"match_phrase_prefix": {"term.folded": {"query": clean}}},
-        source=["aat_id", "term", "note"],
-    )
-    _collect(resp, "prefix")
+    # Phase 2: match_phrase_prefix — prefers terms starting with query
+    # Try original + all variants
+    for phrase in [clean] + sorted(variants):
+        if len(results) >= limit:
+            break
+        resp = es.search(
+            index=ES_TYPES_INDEX, size=limit,
+            query={"match_phrase_prefix": {"term.folded": {"query": phrase}}},
+            source=["aat_id", "term", "note"],
+        )
+        _collect(resp, "prefix")
     if len(results) >= limit:
         return results[:limit]
 
@@ -310,7 +314,7 @@ def build_search_terms(global_key, namespace, entry, label):
     return terms
 
 
-def search_candidates(es, global_key, namespace, entry, label, limit=5):
+def search_candidates(es, global_key, namespace, entry, label, limit=10):
     """
     Search the ES types index for AAT candidates matching an entry.
 
@@ -392,7 +396,7 @@ def display_candidates(candidates):
 def display_prompt():
     """Show the action prompt."""
     print()
-    print(f"  {DIM}[1-5] accept  |  aat:ID  |  /term search  |  Enter skip  |  x exclude  |  q quit{RESET}")
+    print(f"  {DIM}[1-10] accept  |  aat:ID  |  /term search  |  Enter skip  |  x exclude  |  q quit{RESET}")
 
 
 # ============================================================================
@@ -451,7 +455,7 @@ def run_review(es, min_count=0, namespace_filter=None):
                     # Manual search: re-query with user-provided term
                     search_term = choice[1:].strip()
                     if search_term:
-                        candidates = _es_search_single(es, search_term, 5, set())
+                        candidates = _es_search_single(es, search_term, 10, set())
                         display_candidates(candidates)
                         display_prompt()
                         continue
@@ -718,6 +722,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+
 
 
 
