@@ -74,9 +74,9 @@ def fetch_feature_codes():
 
 def add_es_counts(classes, es_host):
     """Query ES to get doc counts per (feature_class, feature_code) pair."""
-    from elasticsearch import Elasticsearch
+    from typesystem.es_client import create_client
 
-    es = Elasticsearch(es_host, request_timeout=120)
+    es = create_client(es_host)
     print(f"Querying ES at {es_host} for GeoNames type counts ...")
 
     # Nested aggregation on types.identifier where types.label matches a

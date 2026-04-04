@@ -125,9 +125,9 @@ def parse_vocabulary(raw_data):
 
 def add_es_counts(entries, es_host):
     """Query ES to get doc counts per Pleiades type identifier."""
-    from elasticsearch import Elasticsearch
+    from typesystem.es_client import create_client
 
-    es = Elasticsearch(es_host, request_timeout=120)
+    es = create_client(es_host)
     print(f"Querying ES at {es_host} for Pleiades type counts ...")
 
     try:

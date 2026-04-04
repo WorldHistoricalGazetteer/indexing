@@ -124,9 +124,10 @@ def collect_mappings():
 
 def update_es(reverse_mappings, es_host):
     """Update ES types index with cross-vocabulary fields."""
-    from elasticsearch import Elasticsearch, helpers
+    from elasticsearch import helpers
+    from typesystem.es_client import create_client
 
-    es = Elasticsearch(es_host, request_timeout=120)
+    es = create_client(es_host)
 
     print(f"\nUpdating {len(reverse_mappings)} AAT concepts in ES ...")
 

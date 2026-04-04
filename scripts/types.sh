@@ -150,14 +150,25 @@ if ! $DO_BUILD && ! $DO_MAP && ! $DO_SYNC && ! $DO_MERGE && ! $DO_STATUS; then
 fi
 
 # ---------------------------------------------------------------------------
-# Auto-detect ES host from staging info file if not provided
+# Auto-detect ES host if not provided
 # ---------------------------------------------------------------------------
+# Production ES (via gateway) is the correct target for type vocabulary builds
+# because it has the full places index needed for doc count aggregations.
+# Staging ES is typically empty or partial. We try production first, then
+# fall back to staging.
+PROD_GATEWAY_URL="http://gazetteer.crcd.pitt.edu:${GATEWAY_PORT:-9200}"
+
 if [ -z "$ES_HOST" ]; then
-    if [ -f "$STAGING_INFO_FILE" ]; then
+    # Try production gateway first (needs the places index for aggregations)
+    if curl -s -o /dev/null -w '' --connect-timeout 5 "${PROD_GATEWAY_URL}" 2>/dev/null; then
+        ES_HOST="$PROD_GATEWAY_URL"
+        echo "Using production ES (gateway): $ES_HOST"
+    elif [ -f "$STAGING_INFO_FILE" ]; then
         source "$STAGING_INFO_FILE"
         ES_HOST="${ES_URL:-}"
         if [ -n "$ES_HOST" ]; then
-            echo "Auto-detected staging ES: $ES_HOST"
+            echo "Using staging ES: $ES_HOST"
+            echo "  Warning: staging may have no places data for doc counts."
         fi
     fi
 fi

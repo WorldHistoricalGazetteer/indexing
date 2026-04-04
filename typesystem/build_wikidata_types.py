@@ -28,9 +28,9 @@ def query_es_types(es_host, min_count=1):
     Query ES for all distinct types.identifier values where types.label = 'wikidata'.
     Returns list of (qid, count) tuples sorted by count descending.
     """
-    from elasticsearch import Elasticsearch
+    from typesystem.es_client import create_client
 
-    es = Elasticsearch(es_host, request_timeout=180)
+    es = create_client(es_host, request_timeout=180)
     print(f"Querying ES at {es_host} for Wikidata P31 type distribution ...")
 
     resp = es.search(

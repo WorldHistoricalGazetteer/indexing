@@ -666,9 +666,10 @@ def backfill_labels_from_api(gaps):
 
 def index_to_es(place_types, es_host, index_name=ES_TYPES_INDEX):
     """Bulk index place types to Elasticsearch."""
-    from elasticsearch import Elasticsearch, helpers
+    from elasticsearch import helpers
+    from typesystem.es_client import create_client
 
-    es = Elasticsearch(es_host, request_timeout=120)
+    es = create_client(es_host)
 
     # Load schema
     schema_path = Path(__file__).parent.parent / "schemas" / "types.json"
