@@ -380,7 +380,7 @@ echo "No automatic snapshots are created on shutdown."
 echo
 echo "To create a snapshot:"
 echo "  curl -X PUT \"$ES_URL/_snapshot/$STAGING_REPO_NAME/checkpoint_\$(date +%Y%m%d_%H%M%S)?wait_for_completion=true\" \\"
-echo "    -H 'Content-Type: application/json' -d '{\"indices\": \"places,toponyms\"}'"
+echo "    -H 'Content-Type: application/json' -d '{\"indices\": \"places,toponyms,boundaries\"}'"
 echo
 echo "Keeping ES running until job ends or is cancelled..."
 

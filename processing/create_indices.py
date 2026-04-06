@@ -119,6 +119,7 @@ if __name__ == "__main__":
     print("\n--- Deleting Existing Indices ---")
     delete_index_if_exists("places")
     delete_index_if_exists("toponyms")
+    delete_index_if_exists("boundaries")
 
     # Create ingest pipelines first (before indices that reference them)
     print("\n--- Creating Ingest Pipelines ---")
@@ -129,6 +130,7 @@ if __name__ == "__main__":
     print("\n--- Creating Indices ---")
     create_index("places", "schemas/places.json", pipeline="extract_namespace")
     create_index("toponyms", "schemas/toponyms.json", pipeline="extract_language")
+    create_index("boundaries", "schemas/boundaries.json")
 
     # Create both snapshot repositories
     print("\n--- Registering Snapshot Repositories ---")

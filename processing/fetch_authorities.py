@@ -1,6 +1,8 @@
 # processing/fetch_authorities.py
 
 import os
+import shutil
+import subprocess
 import sys
 import time
 import httpx
@@ -94,6 +96,72 @@ def _target_filename(file_cfg: dict, namespace: str) -> Path:
     return Path(f"{DATA_DIR}/authorities/{namespace}/{basename}")
 
 
+def _download_with_curl(url: str, dest: Path, max_retries: int = 5):
+    """
+    Download a file using curl with resume, retry, and stall detection.
+
+    Preferred for large files (PBF planet dumps, Wikidata, etc.) where
+    httpx streaming can stall silently on slow or interrupted connections.
+    """
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    log_message(f"Starting download (curl): {url}")
+    log_message(f"Destination: {dest}")
+
+    temp = dest.with_suffix(dest.suffix + ".part")
+
+    for attempt in range(1, max_retries + 1):
+        cmd = [
+            "curl",
+            "--location",               # Follow redirects
+            "--continue-at", "-",       # Resume from where we left off
+            "--retry", "3",             # Retry transient failures
+            "--retry-delay", "10",      # Wait between retries
+            "--speed-limit", "100000",  # Abort if < 100KB/s ...
+            "--speed-time", "60",       # ... for 60 seconds (stall detection)
+            "--connect-timeout", "30",  # Connection timeout
+            "--progress-bar",           # Show progress bar
+            "--output", str(temp),
+            url,
+        ]
+
+        log_message(f"Attempt {attempt}/{max_retries}")
+
+        try:
+            result = subprocess.run(
+                cmd,
+                stdout=sys.stdout,
+                stderr=sys.stderr,
+            )
+
+            if result.returncode == 0:
+                # Verify the file has content
+                if temp.exists() and temp.stat().st_size > 0:
+                    temp.replace(dest)
+                    size = dest.stat().st_size
+                    log_message(f"✓ Download complete: {dest.name} ({format_size(size)})")
+                    return
+                else:
+                    log_message(f"Download produced empty file", "WARN")
+            else:
+                log_message(
+                    f"curl exited with code {result.returncode}"
+                    f"{' (will resume)' if attempt < max_retries else ''}",
+                    "WARN"
+                )
+
+        except KeyboardInterrupt:
+            log_message("Download interrupted by user", "WARN")
+            raise
+
+        if attempt < max_retries:
+            wait = 10 * attempt
+            log_message(f"Waiting {wait}s before retry...")
+            time.sleep(wait)
+
+    raise RuntimeError(f"Download failed after {max_retries} attempts: {url}")
+
+
 def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
     """Download file with resume capability and progress reporting."""
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -135,11 +203,13 @@ def _download_with_resume(url: str, dest: Path, chunk_size: int = 1024 * 1024):
 
     try:
         # Now stream the resolved URL
+        # Use explicit timeout: 30s connect, 120s read (detects stalls)
+        timeout = httpx.Timeout(connect=30.0, read=120.0, write=30.0, pool=30.0)
         start_time = time.time()
         last_report_time = start_time
         downloaded = resume_pos
 
-        with httpx.stream("GET", final_url, headers=headers, timeout=60.0, follow_redirects=True) as resp:
+        with httpx.stream("GET", final_url, headers=headers, timeout=timeout, follow_redirects=True) as resp:
             if resp.status_code not in (200, 206):
                 raise RuntimeError(
                     f"Download failed: {final_url} (HTTP {resp.status_code})"
@@ -250,8 +320,18 @@ def update_authority_files(
 
             url = file_cfg["url"]
 
+            # Use curl for large binary files (PBF, huge gz dumps) — httpx
+            # streaming can stall silently on multi-GB downloads.
+            use_curl = (
+                target.suffix in ('.pbf',)
+                or (target.suffix == '.gz' and 'latest-all' in target.name)
+            ) and shutil.which("curl")
+
             try:
-                _download_with_resume(url, target)
+                if use_curl:
+                    _download_with_curl(url, target)
+                else:
+                    _download_with_resume(url, target)
                 downloaded += 1
 
                 # Verify file was created and has content

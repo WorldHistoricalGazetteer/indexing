@@ -922,6 +922,172 @@ SBATCH_EOF
 }
 
 # ==============================================================================
+# BOUNDARY INDEX INGESTION (Slurm)
+# ==============================================================================
+
+do_ingest_boundaries() {
+    # Usage: es -ingest-boundaries [OPTIONS]
+    #   --source osm|ohm|both   Which PBF source(s) to process (default: both)
+    #   --replace                Delete existing boundaries before re-ingesting
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start --no-snapshot"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    echo "Staging ES is running at http://${ES_NODE}:${ES_PORT}"
+
+    # Parse arguments
+    local SOURCE="both"
+    local REPLACE=false
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --source)
+                SOURCE="$2"
+                shift 2
+                ;;
+            --replace)
+                REPLACE=true
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Create a temporary sbatch script
+    BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundaries-XXXXXX.sbatch)
+
+    cat > "$BOUNDARY_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-boundaries
+#SBATCH --time=12:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --signal=B:SIGTERM@60
+#SBATCH --output=${STAGING_SLURM_LOGS}/boundaries-%j.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/boundaries-%j.err
+
+set -e
+
+echo "=========================================="
+echo "BOUNDARY INDEX INGESTION JOB"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Source: $SOURCE"
+echo
+
+# Load environment
+source "$ENV_FILE"
+
+# Load staging ES connection info
+if [ ! -f "$STAGING_INFO_FILE" ]; then
+    echo "ERROR: Staging ES no longer running"
+    exit 1
+fi
+source "$STAGING_INFO_FILE"
+
+# Set ES_HOST for Python scripts
+export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
+
+echo "ES_HOST: \$ES_HOST"
+echo
+
+# Activate conda environment
+$(activate_environment)
+
+cd "$REPO_DIR"
+
+# Check if boundaries index exists, create if not
+BOUNDARY_EXISTS=\$(curl -s -o /dev/null -w "%{http_code}" "\$ES_HOST/boundaries")
+if [ "\$BOUNDARY_EXISTS" != "200" ]; then
+    echo "Creating boundaries index..."
+    python -m processing.create_indices 2>/dev/null || {
+        # If create_indices fails (places/toponyms already exist), create just boundaries
+        python -c "
+from elasticsearch import Elasticsearch
+import json
+es = Elasticsearch('\$ES_HOST', request_timeout=180)
+if not es.indices.exists(index='boundaries'):
+    with open('schemas/boundaries.json') as f:
+        schema = json.load(f)
+    es.indices.create(index='boundaries', body=schema, timeout='60s')
+    print('boundaries index created')
+else:
+    print('boundaries index already exists')
+"
+    }
+fi
+
+# Delete existing boundaries if --replace was specified
+if [ "$REPLACE" = "true" ]; then
+    echo "Deleting existing boundaries..."
+    curl -s -X POST "\$ES_HOST/boundaries/_delete_by_query?conflicts=proceed&refresh=true" \\
+        -H 'Content-Type: application/json' \\
+        -d '{"query":{"match_all":{}}}' | python3 -m json.tool
+    echo
+fi
+
+# Run boundary extraction
+python -u -m authorities.osm-boundaries --source $SOURCE
+
+# Refresh index
+curl -s -X POST "\$ES_HOST/boundaries/_refresh" > /dev/null
+
+# Show final count
+echo
+echo "Boundary index stats:"
+curl -s "\$ES_HOST/_cat/indices/boundaries?v"
+echo
+echo "Counts by namespace:"
+curl -s "\$ES_HOST/boundaries/_search" \\
+    -H 'Content-Type: application/json' \\
+    -d '{"size":0,"aggs":{"by_ns":{"terms":{"field":"namespace"}},"by_level":{"terms":{"field":"admin_level","size":20}}}}' | python3 -m json.tool
+
+echo
+echo "=========================================="
+echo "BOUNDARY INGESTION COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+SBATCH_EOF
+
+    echo
+    echo "Submitting boundary ingestion job..."
+    echo "  Source: $SOURCE"
+    echo "  Replace existing: $REPLACE"
+    echo
+
+    JOBID=$(sbatch --parsable "$BOUNDARY_SCRIPT")
+    rm "$BOUNDARY_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit Slurm job"
+        return 1
+    fi
+
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/boundaries-${JOBID}.out"
+    echo
+    echo "Note: The staging ES instance must remain running for the duration."
+}
+
+# ==============================================================================
 # TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS
 # ==============================================================================
 
@@ -3205,6 +3371,12 @@ case "$1" in
         do_ingest "$@"
         ;;
 
+    # --- Boundary Index Ingestion ---
+    -ingest-boundaries)
+        shift
+        do_ingest_boundaries "$@"
+        ;;
+
     # --- Augment ccodes (spatial country code assignment) ---
     -augment-ccodes)
         shift
@@ -3427,6 +3599,15 @@ case "$1" in
         echo "    $0 -ingest -n gn,wd               # Ingest GeoNames and Wikidata only"
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
+        echo
+        echo "  -ingest-boundaries [OPTIONS]  Extract OSM/OHM admin boundaries into boundaries index"
+        echo "    --source osm|ohm|both     Which PBF to process (default: both)"
+        echo "    --replace                 Delete existing boundaries first"
+        echo
+        echo "  Examples:"
+        echo "    $0 -ingest-boundaries                   # Both OSM + OHM"
+        echo "    $0 -ingest-boundaries --source osm      # OSM only"
+        echo "    $0 -ingest-boundaries --replace         # Re-extract from scratch"
         echo
         echo "AUGMENT CCODES (runs against production ES):"
         echo "  -augment-ccodes [OPTIONS]"
