@@ -27,7 +27,6 @@ Usage:
     python -m authorities.osm-boundaries --no-tiles          # skip mbtiles
 """
 
-import json
 import os
 import re
 import sys
@@ -121,51 +120,6 @@ def build_timespans(tags):
             ts['end'] = {'in': end_year}
         return [ts]
     return []
-
-
-# ---------------- STATE MANAGEMENT ----------------
-class ProgressTracker:
-    def __init__(self, state_file):
-        self.state_file = state_file
-        self.count = 0
-        self.target = 0
-        self.start_time = time.time()
-        self.load_state()
-
-    def load_state(self):
-        if os.path.exists(self.state_file):
-            try:
-                with open(self.state_file, 'r') as f:
-                    data = json.load(f)
-                    self.target = data.get('count', 0)
-                    print(f"RESUMING from checkpoint: {self.target:,} relations")
-            except Exception as e:
-                print(f"Warning: failed to read state file: {e}")
-
-    def save_state(self):
-        temp_file = f"{self.state_file}.tmp"
-        with open(temp_file, 'w') as f:
-            json.dump({
-                'timestamp': datetime.now().isoformat(),
-                'count': self.count
-            }, f)
-        os.replace(temp_file, self.state_file)
-
-    def should_skip(self):
-        if self.count < self.target:
-            self.count += 1
-            if self.count % 100000 == 0:
-                print(f"\r  Skipping... {self.count:,}/{self.target:,}", end='', flush=True)
-            return True
-        return False
-
-    def increment(self):
-        self.count += 1
-        if self.count % CHECKPOINT_INTERVAL == 0:
-            self.save_state()
-            elapsed = time.time() - self.start_time
-            rate = self.count / elapsed if elapsed > 0 else 0
-            print(f"\rProcessed {self.count:,} relations ({rate:.0f}/s)", end='', flush=True)
 
 
 # ---------------- DOCUMENT BUILDER ----------------
@@ -305,17 +259,27 @@ def process_relation_tags(tags):
 
 
 # ---------------- HANDLER ----------------
-class BoundaryHandler(osmium.SimpleHandler):
+class BoundaryProcessor:
     """
-    Osmium handler that extracts only boundary=administrative relations.
+    Processes assembled Area objects to extract boundary=administrative
+    multipolygons.
 
-    Skips nodes and ways entirely for maximum speed — only relation()
-    is implemented.
+    Used with pyosmium's FileProcessor iterator:
+
+        fp = osmium.FileProcessor(pbf).with_locations(idx).with_areas()
+        for obj in fp:
+            if isinstance(obj, osmium.osm.Area) and not obj.from_way():
+                processor.process_area(obj)
+
+    FileProcessor.with_areas() triggers two-pass processing automatically:
+      Pass 1: scan relations to collect multipolygon member references
+      Pass 2: resolve node locations, assemble areas, yield to iterator
+
+    Note: WKBFactory.create_multipolygon() only accepts Area objects —
+    calling it with a raw Relation raises TypeError.
     """
 
-    def __init__(self, tracker, buffer_callback, namespace, geojsonl_fh=None):
-        super().__init__()
-        self.tracker = tracker
+    def __init__(self, buffer_callback, namespace, geojsonl_fh=None):
         self.buffer_callback = buffer_callback
         self.namespace = namespace
         self.geojsonl_fh = geojsonl_fh
@@ -323,43 +287,47 @@ class BoundaryHandler(osmium.SimpleHandler):
         self.extracted = 0
         self.skipped_invalid = 0
         self.skipped_empty = 0
+        self.geom_errors = 0
+        self.areas_seen = 0
+        self.start_time = time.time()
 
-    def relation(self, r):
-        if not r.tags:
-            return
+    def process_area(self, a):
+        """Process a single assembled Area object."""
+        self.areas_seen += 1
 
-        if self.tracker.should_skip():
-            return
-
-        tags = process_relation_tags(r.tags)
+        tags = process_relation_tags(a.tags)
         if not tags:
-            self.tracker.increment()
             return
 
         try:
-            wkb = self.wkbfab.create_multipolygon(r)
+            wkb = self.wkbfab.create_multipolygon(a)
             geom = wkblib.loads(wkb, hex=False)
 
             if not geom.is_valid:
                 geom = make_valid(geom)
                 if not geom.is_valid:
                     self.skipped_invalid += 1
-                    self.tracker.increment()
                     return
 
             if geom.is_empty:
                 self.skipped_empty += 1
-                self.tracker.increment()
                 return
 
             doc = create_boundary_doc(
-                r.id, tags, geom,
+                a.orig_id(), tags, geom,
                 namespace=self.namespace,
                 source=self.namespace,
             )
             if doc:
                 self.buffer_callback(doc)
                 self.extracted += 1
+
+                # Progress reporting
+                if self.extracted % 1000 == 0:
+                    elapsed = time.time() - self.start_time
+                    rate = self.extracted / elapsed if elapsed > 0 else 0
+                    print(f"\rExtracted {self.extracted:,} boundaries ({rate:.0f}/s)",
+                          end='', flush=True)
 
                 # Write GeoJSON Lines feature for tippecanoe
                 if self.geojsonl_fh is not None:
@@ -378,10 +346,10 @@ class BoundaryHandler(osmium.SimpleHandler):
                     self.geojsonl_fh.write(orjson.dumps(feature))
                     self.geojsonl_fh.write(b'\n')
 
-        except Exception:
-            pass  # Geometry construction failed (incomplete relation)
-
-        self.tracker.increment()
+        except Exception as e:
+            self.geom_errors += 1
+            if self.geom_errors <= 5:
+                print(f"\n  Geometry error (relation {a.orig_id()}): {e}")
 
 
 # ---------------- FILE STAGING ----------------
@@ -472,19 +440,25 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
     """
     Extract and index administrative boundaries from a single PBF file.
 
+    Uses pyosmium's area() callback which triggers automatic two-pass
+    processing: first pass collects relation members, second pass
+    assembles multipolygon geometries and delivers them to the handler.
+
     Args:
         pbf_file: Path to the OSM/OHM PBF file
         namespace: 'osm' or 'ohm'
-        state_file: Path to the progress state file
+        state_file: Path to the progress state file (unused, kept for API compat)
         geojsonl_fh: Open binary file handle for GeoJSON Lines output (or None)
     """
     es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
-    tracker = ProgressTracker(state_file)
 
     # Signal handling
+    processor = None
+
     def signal_handler(sig, frame):
-        print("\n!!! SIGNAL RECEIVED - SAVING STATE !!!")
-        tracker.save_state()
+        print("\n!!! SIGNAL RECEIVED !!!")
+        if processor:
+            print(f"  Extracted so far: {processor.extracted:,}")
         sys.exit(0)
 
     signal.signal(signal.SIGINT, signal_handler)
@@ -540,7 +514,7 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         print(f"Namespace: {namespace}")
         print()
 
-        handler = BoundaryHandler(tracker, add_to_buffer, namespace, geojsonl_fh=geojsonl_fh)
+        processor = BoundaryProcessor(add_to_buffer, namespace, geojsonl_fh=geojsonl_fh)
 
         # Choose location index strategy.
         # The full OSM planet has ~9 billion nodes; a dense in-memory index
@@ -557,17 +531,37 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
             idx_type = 'flex_mem'
             print("WARNING: No scratch dir — using in-memory node index (needs ~150 GB)")
 
-        handler.apply_file(str(active_pbf), locations=True, idx=idx_type)
+        # Two-pass processing via FileProcessor (pyosmium 4.x):
+        #   with_areas()  → pass 1 collects relation members, pass 2 assembles
+        #   with_locations() → resolves node coordinates for way geometries
+        # This reads the PBF twice but is the only correct way to get
+        # multipolygon geometry from relations.
+        print("Starting two-pass area assembly (this reads the PBF twice)...")
+        fp = (
+            osmium.FileProcessor(str(active_pbf))
+            .with_locations(idx_type)
+            .with_areas()
+        )
+
+        for obj in fp:
+            if isinstance(obj, osmium.osm.Area) and not obj.from_way():
+                processor.process_area(obj)
 
         flush_buffer()
-        tracker.save_state()
 
         print(f"\n\n{source_label} extraction complete:")
-        print(f"  Boundaries extracted: {handler.extracted:,}")
+        print(f"  Relation areas seen:  {processor.areas_seen:,}")
+        print(f"  Boundaries extracted: {processor.extracted:,}")
         print(f"  Documents indexed:    {indexed_count:,}")
         print(f"  Documents failed:     {failed_count:,}")
-        print(f"  Skipped (invalid):    {handler.skipped_invalid:,}")
-        print(f"  Skipped (empty):      {handler.skipped_empty:,}")
+        print(f"  Skipped (invalid):    {processor.skipped_invalid:,}")
+        print(f"  Skipped (empty):      {processor.skipped_empty:,}")
+        print(f"  Geometry errors:      {processor.geom_errors:,}")
+
+        if processor.areas_seen == 0:
+            print()
+            print("  WARNING: No areas were delivered by pyosmium.")
+            print("  Check that pyosmium >= 4.0 is installed (needs FileProcessor).")
 
         return indexed_count
 
@@ -575,7 +569,6 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         print(f"\nError: {e}")
         import traceback
         traceback.print_exc()
-        tracker.save_state()
         raise
     finally:
         # Don't remove staged PBF — the places script may need it too
