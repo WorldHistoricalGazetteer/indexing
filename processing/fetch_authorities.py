@@ -111,19 +111,28 @@ def _download_with_curl(url: str, dest: Path, max_retries: int = 5):
     temp = dest.with_suffix(dest.suffix + ".part")
 
     for attempt in range(1, max_retries + 1):
+        # Get current size of partial file for resume
+        resume_size = temp.stat().st_size if temp.exists() else 0
+        if resume_size > 0:
+            log_message(f"Resuming from: {format_size(resume_size)}")
+
         cmd = [
             "curl",
             "--location",               # Follow redirects
-            "--continue-at", "-",       # Resume from where we left off
-            "--retry", "3",             # Retry transient failures
-            "--retry-delay", "10",      # Wait between retries
-            "--speed-limit", "100000",  # Abort if < 100KB/s ...
-            "--speed-time", "60",       # ... for 60 seconds (stall detection)
+            "--continue-at", "-",       # Resume from partial file on disk
+            "--fail",                   # Fail on HTTP errors (4xx/5xx)
+            "--speed-limit", "500000",  # Abort if < 500KB/s ...
+            "--speed-time", "30",       # ... for 30 seconds (stall detection)
             "--connect-timeout", "30",  # Connection timeout
             "--progress-bar",           # Show progress bar
             "--output", str(temp),
             url,
         ]
+        # NOTE: We deliberately do NOT use curl's --retry flag here.
+        # curl's internal retry + --continue-at is broken: it throws away
+        # already-downloaded bytes and re-downloads from scratch via the
+        # redirect chain. Instead, our outer loop re-invokes curl which
+        # picks up the .part file size for proper resume.
 
         log_message(f"Attempt {attempt}/{max_retries}")
 
@@ -155,7 +164,11 @@ def _download_with_curl(url: str, dest: Path, max_retries: int = 5):
             raise
 
         if attempt < max_retries:
-            wait = 10 * attempt
+            # Check how much we got before the stall
+            current_size = temp.stat().st_size if temp.exists() else 0
+            if current_size > 0:
+                log_message(f"Have {format_size(current_size)} on disk, will resume")
+            wait = 5
             log_message(f"Waiting {wait}s before retry...")
             time.sleep(wait)
 
