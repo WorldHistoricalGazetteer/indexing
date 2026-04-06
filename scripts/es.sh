@@ -981,7 +981,7 @@ do_ingest_boundaries() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=96G
+#SBATCH --mem=128G
 #SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=${STAGING_SLURM_LOGS}/boundaries-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/boundaries-%j.err

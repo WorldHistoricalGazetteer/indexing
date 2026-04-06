@@ -541,7 +541,23 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         print()
 
         handler = BoundaryHandler(tracker, add_to_buffer, namespace, geojsonl_fh=geojsonl_fh)
-        handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
+
+        # Choose location index strategy.
+        # The full OSM planet has ~9 billion nodes; a dense in-memory index
+        # needs ~150 GB RAM (node_id × 16 bytes), which exceeds typical Slurm
+        # allocations.  Use a file-backed index on NVMe scratch instead —
+        # the OS pages data in/out as needed without counting against cgroup
+        # RSS limits.
+        scratch = os.environ.get('SLURM_SCRATCH') or os.environ.get('TMPDIR')
+        if scratch and os.path.isdir(scratch):
+            node_cache = os.path.join(scratch, f'node_locations_{namespace}.idx')
+            idx_type = f'dense_file_array,{node_cache}'
+            print(f"Using file-backed node location index: {node_cache}")
+        else:
+            idx_type = 'flex_mem'
+            print("WARNING: No scratch dir — using in-memory node index (needs ~150 GB)")
+
+        handler.apply_file(str(active_pbf), locations=True, idx=idx_type)
 
         flush_buffer()
         tracker.save_state()
