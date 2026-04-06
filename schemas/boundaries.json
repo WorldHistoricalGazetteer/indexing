@@ -81,8 +81,11 @@
       "geom": {
         "type": "geo_shape"
       },
-      "geom_display": {
+      "hull": {
         "type": "geo_shape"
+      },
+      "bounds": {
+        "type": "float"
       },
       "repr_point": {
         "type": "geo_point"

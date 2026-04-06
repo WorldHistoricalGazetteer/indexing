@@ -15,6 +15,10 @@ from processing.settings import DATA_DIR, AUTHORITIES
 ONE_YEAR = 365 * 24 * 3600
 NL_KEY_FILE = Path(f"{DATA_DIR}/authorities/nl/.nl_api_key")
 
+# OHM S3 bucket — no planet-latest symlink, daily dated dumps only
+OHM_S3_BUCKET = 'https://s3.amazonaws.com/planet.openhistoricalmap.org'
+OHM_PLANET_BASE = 'https://planet.openhistoricalmap.org'
+
 
 def log_message(message, level="INFO"):
     """Print timestamped log message."""
@@ -58,6 +62,73 @@ def format_size(bytes_size):
             return f"{bytes_size:.1f} {unit}"
         bytes_size /= 1024.0
     return f"{bytes_size:.1f} PB"
+
+
+def resolve_ohm_planet_url():
+    """
+    Discover the latest OHM planet PBF URL from the S3 bucket listing.
+
+    OHM doesn't maintain a planet-latest.osm.pbf symlink. Instead, daily
+    dumps are stored with dated filenames like:
+        planet/planet-260406_0302.osm.pbf
+
+    We list the bucket with a year-specific prefix (to avoid S3's 1000-key
+    pagination limit — there are 1500+ daily dumps going back to 2021) and
+    take the last (lexicographically latest) entry.
+    """
+    import xml.etree.ElementTree as ET
+
+    log_message("Resolving latest OHM planet PBF from S3 bucket...")
+
+    def _list_keys(prefix: str) -> list[str]:
+        """List .osm.pbf keys from S3 with the given prefix."""
+        list_url = (
+            f"{OHM_S3_BUCKET}?list-type=2"
+            f"&prefix={prefix}"
+            f"&max-keys=1000"
+        )
+        resp = httpx.get(list_url, timeout=30.0)
+        resp.raise_for_status()
+
+        root = ET.fromstring(resp.text)
+        ns = {'s3': 'http://s3.amazonaws.com/doc/2006-03-01/'}
+
+        keys = [
+            c.text for c in root.findall('.//s3:Contents/s3:Key', ns)
+            if c.text and c.text.endswith('.osm.pbf')
+        ]
+        # Fallback: some S3 responses omit the namespace
+        if not keys:
+            keys = [
+                el.text for el in root.iter()
+                if el.tag.endswith('Key') and el.text
+                and el.text.endswith('.osm.pbf')
+                and el.text.startswith('planet/planet-')
+            ]
+        return keys
+
+    try:
+        # Use 2-digit year prefix to stay well under the 1000-key page limit
+        # (≤366 files per year). Try current year first, then previous year.
+        now = datetime.now()
+        for year in [now.year, now.year - 1]:
+            yy = str(year % 100).zfill(2)
+            keys = _list_keys(f"planet/planet-{yy}")
+            if keys:
+                break
+
+        if not keys:
+            raise RuntimeError("No PBF files found in OHM S3 bucket")
+
+        latest_key = sorted(keys)[-1]
+        url = f"{OHM_PLANET_BASE}/{latest_key}"
+
+        log_message(f"Latest OHM planet: {latest_key}")
+        log_message(f"URL: {url}")
+        return url
+
+    except Exception as e:
+        raise RuntimeError(f"Failed to resolve OHM planet URL: {e}") from e
 
 
 def _needs_update(path: Path, age: int) -> bool:
@@ -332,6 +403,15 @@ def update_authority_files(
                 continue
 
             url = file_cfg["url"]
+
+            # Resolve dynamic URLs
+            if url == 'OHM_PLANET_LATEST':
+                try:
+                    url = resolve_ohm_planet_url()
+                except Exception as exc:
+                    errors += 1
+                    log_message(f"✗ Failed to resolve OHM planet URL: {exc}", "ERROR")
+                    continue
 
             # Use curl for large binary files (PBF, huge gz dumps) — httpx
             # streaming can stall silently on multi-GB downloads.

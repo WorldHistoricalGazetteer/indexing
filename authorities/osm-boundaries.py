@@ -12,13 +12,19 @@ OSM relations have permanent stable IDs.
 
 Geometry handling:
   - `geom`: full-fidelity polygon for accurate ES geo_shape intersects filtering
-  - `geom_display`: simplified polygon (~500m tolerance) for context map preview
+  - `hull`: convex hull for fast spatial pre-screening
+  - `bounds`: [west, south, east, north] envelope of the hull
+
+Also produces:
+  - GeoJSON Lines file for tippecanoe input
+  - .mbtiles vector tileset (if tippecanoe is available)
 
 Usage:
     python -m authorities.osm-boundaries                    # both OSM + OHM
     python -m authorities.osm-boundaries --source osm       # OSM only
     python -m authorities.osm-boundaries --source ohm       # OHM only
     python -m authorities.osm-boundaries --file /path/to.pbf --source osm
+    python -m authorities.osm-boundaries --no-tiles          # skip mbtiles
 """
 
 import json
@@ -27,18 +33,20 @@ import re
 import sys
 import gc
 import time
+import shutil
 import signal
 import subprocess
 from pathlib import Path
 from datetime import datetime
 
 import osmium
+import orjson
 import shapely.wkb as wkblib
 from shapely.geometry import mapping
 from shapely.validation import make_valid
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import compute_representative_point, simplify_geometry
+from processing.helpers import compute_representative_point
 from processing.settings import (
     ES_HOST, DATA_DIR,
     OSM_BOUNDARY_STATE_FILE, OHM_BOUNDARY_STATE_FILE,
@@ -54,8 +62,10 @@ QUEUE_SIZE = 8
 # Valid admin_level range (OSM wiki: 2 = country, 10 = neighbourhood)
 ADMIN_LEVELS = set(range(2, 11))  # 2..10
 
-# Display geometry simplification tolerance (in km)
-DISPLAY_SIMPLIFY_KM = 0.5  # ~500m, good for context map previews
+# Output directory for GeoJSON Lines and .mbtiles
+BOUNDARIES_OUTPUT_DIR = Path(DATA_DIR) / 'boundaries'
+GEOJSONL_FILE = BOUNDARIES_OUTPUT_DIR / 'boundaries.geojsonl'
+MBTILES_FILE = BOUNDARIES_OUTPUT_DIR / 'boundaries.mbtiles'
 
 
 # ---------------- DATE PARSING (OHM) ----------------
@@ -159,14 +169,14 @@ class ProgressTracker:
 
 
 # ---------------- DOCUMENT BUILDER ----------------
-def create_boundary_doc(relation_id, tags, full_geom, namespace, source):
+def create_boundary_doc(relation_id, tags, shapely_geom, namespace, source):
     """
     Build an ES document for the boundaries index.
 
     Args:
         relation_id: OSM/OHM relation ID (integer)
         tags: dict of extracted tags
-        full_geom: GeoJSON geometry dict (full fidelity)
+        shapely_geom: Shapely geometry object (validated, non-empty)
         namespace: 'osm' or 'ohm'
         source: 'osm' or 'ohm'
 
@@ -174,6 +184,8 @@ def create_boundary_doc(relation_id, tags, full_geom, namespace, source):
         dict suitable for ES indexing, or None on failure
     """
     boundary_id = f"{namespace}:r{relation_id}"
+
+    full_geom = mapping(shapely_geom)
 
     doc = {
         'boundary_id': boundary_id,
@@ -184,13 +196,22 @@ def create_boundary_doc(relation_id, tags, full_geom, namespace, source):
         'indexed_at': datetime.now().isoformat(),
     }
 
-    # Full geometry for spatial filtering
+    # Full geometry for accurate spatial filtering
     doc['geom'] = full_geom
 
-    # Simplified geometry for context map display
-    display_geom = simplify_geometry(full_geom, tolerance_km=DISPLAY_SIMPLIFY_KM)
-    if display_geom:
-        doc['geom_display'] = display_geom
+    # Convex hull for fast spatial pre-screening
+    hull = shapely_geom.convex_hull
+    if hull and not hull.is_empty:
+        doc['hull'] = mapping(hull)
+
+        # Bounds from the hull: [west, south, east, north]
+        hb = hull.bounds  # (minx, miny, maxx, maxy)
+        doc['bounds'] = [
+            round(hb[0], 6),  # west  (minlon)
+            round(hb[1], 6),  # south (minlat)
+            round(hb[2], 6),  # east  (maxlon)
+            round(hb[3], 6),  # north (maxlat)
+        ]
 
     # Representative point
     rep_point = compute_representative_point(full_geom)
@@ -292,11 +313,12 @@ class BoundaryHandler(osmium.SimpleHandler):
     is implemented.
     """
 
-    def __init__(self, tracker, buffer_callback, namespace):
+    def __init__(self, tracker, buffer_callback, namespace, geojsonl_fh=None):
         super().__init__()
         self.tracker = tracker
         self.buffer_callback = buffer_callback
         self.namespace = namespace
+        self.geojsonl_fh = geojsonl_fh
         self.wkbfab = osmium.geom.WKBFactory()
         self.extracted = 0
         self.skipped_invalid = 0
@@ -330,16 +352,31 @@ class BoundaryHandler(osmium.SimpleHandler):
                 self.tracker.increment()
                 return
 
-            full_geom = mapping(geom)
-
             doc = create_boundary_doc(
-                r.id, tags, full_geom,
+                r.id, tags, geom,
                 namespace=self.namespace,
                 source=self.namespace,
             )
             if doc:
                 self.buffer_callback(doc)
                 self.extracted += 1
+
+                # Write GeoJSON Lines feature for tippecanoe
+                if self.geojsonl_fh is not None:
+                    feature = {
+                        'type': 'Feature',
+                        'properties': {
+                            'id': doc['boundary_id'],
+                            'name': doc['name'],
+                            'admin_level': doc['admin_level'],
+                            'namespace': doc['namespace'],
+                        },
+                        'geometry': doc['geom'],
+                    }
+                    if 'ccodes' in doc:
+                        feature['properties']['ccodes'] = ','.join(doc['ccodes'])
+                    self.geojsonl_fh.write(orjson.dumps(feature))
+                    self.geojsonl_fh.write(b'\n')
 
         except Exception:
             pass  # Geometry construction failed (incomplete relation)
@@ -366,8 +403,72 @@ def stage_file_to_scratch(source_path):
     return target_path, True
 
 
+# ---------------- MBTILES GENERATION ----------------
+def generate_mbtiles(geojsonl_path, mbtiles_path):
+    """
+    Generate .mbtiles vector tileset from GeoJSON Lines file using tippecanoe.
+
+    tippecanoe is invoked with settings appropriate for admin boundaries:
+    - Full detail at all zoom levels (no feature dropping)
+    - Simplification appropriate for each zoom level
+    - Layer name: 'boundaries'
+    """
+    tippecanoe = shutil.which('tippecanoe')
+    if not tippecanoe:
+        print("\nWARNING: tippecanoe not found — skipping .mbtiles generation")
+        print("  Install with: conda install -c conda-forge tippecanoe")
+        return False
+
+    if not geojsonl_path.exists() or geojsonl_path.stat().st_size == 0:
+        print("\nWARNING: GeoJSON Lines file is empty — skipping .mbtiles generation")
+        return False
+
+    print(f"\n{'=' * 80}")
+    print("GENERATING .mbtiles VECTOR TILESET")
+    print(f"{'=' * 80}")
+    print(f"Input:  {geojsonl_path} ({geojsonl_path.stat().st_size / 1e9:.1f} GB)")
+    print(f"Output: {mbtiles_path}")
+
+    cmd = [
+        tippecanoe,
+        '--output', str(mbtiles_path),
+        '--force',                          # Overwrite existing
+        '--layer', 'boundaries',            # Layer name in the tileset
+        '--name', 'WHG Admin Boundaries',
+        '--description', 'OSM + OHM administrative boundaries for WHG spatial filtering',
+        '--minimum-zoom', '0',
+        '--maximum-zoom', '10',
+        '--no-tile-size-limit',             # Don't drop features to fit tile size
+        '--simplification', '10',           # Simplify at low zooms
+        '--detect-shared-borders',          # Clean up shared boundaries between regions
+        '--coalesce-densest-as-needed',     # Coalesce at low zooms rather than drop
+        '--extend-zooms-if-still-dropping', # Extend max zoom if features are still being dropped
+        '--read-parallel',                  # Parallel reading
+        str(geojsonl_path),
+    ]
+
+    start = time.time()
+    try:
+        result = subprocess.run(
+            cmd, stdout=sys.stdout, stderr=sys.stderr,
+        )
+        elapsed = time.time() - start
+
+        if result.returncode == 0 and mbtiles_path.exists():
+            size_mb = mbtiles_path.stat().st_size / 1e6
+            print(f"\n✓ .mbtiles generated: {mbtiles_path} ({size_mb:.1f} MB) in {elapsed:.0f}s")
+            return True
+        else:
+            print(f"\n✗ tippecanoe failed with exit code {result.returncode}")
+            return False
+
+    except Exception as e:
+        print(f"\n✗ tippecanoe error: {e}")
+        return False
+
+
 # ---------------- MAIN INGESTION ----------------
-def ingest_boundaries(pbf_file, namespace, state_file):
+def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
     """
     Extract and index administrative boundaries from a single PBF file.
 
@@ -375,6 +476,7 @@ def ingest_boundaries(pbf_file, namespace, state_file):
         pbf_file: Path to the OSM/OHM PBF file
         namespace: 'osm' or 'ohm'
         state_file: Path to the progress state file
+        geojsonl_fh: Open binary file handle for GeoJSON Lines output (or None)
     """
     es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
     tracker = ProgressTracker(state_file)
@@ -438,7 +540,7 @@ def ingest_boundaries(pbf_file, namespace, state_file):
         print(f"Namespace: {namespace}")
         print()
 
-        handler = BoundaryHandler(tracker, add_to_buffer, namespace)
+        handler = BoundaryHandler(tracker, add_to_buffer, namespace, geojsonl_fh=geojsonl_fh)
         handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
 
         flush_buffer()
@@ -475,33 +577,50 @@ if __name__ == "__main__":
         help='Which PBF source(s) to process (default: both)'
     )
     parser.add_argument('--file', help='Override PBF file path (use with --source osm or ohm)')
+    parser.add_argument('--no-tiles', action='store_true',
+                        help='Skip .mbtiles generation (even if tippecanoe is available)')
     args = parser.parse_args()
 
     sources = ['osm', 'ohm'] if args.source == 'both' else [args.source]
 
+    # Ensure output directory exists
+    BOUNDARIES_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
     total_indexed = 0
 
-    for source in sources:
-        if args.file:
-            pbf_path = Path(args.file)
-        elif source == 'osm':
-            pbf_path = Path(DATA_DIR) / 'authorities' / 'osm' / 'planet-latest.osm.pbf'
-        else:  # ohm
-            pbf_path = Path(DATA_DIR) / 'authorities' / 'ohm' / 'planet-latest.osm.pbf'
+    # Open GeoJSON Lines file for the full run (both sources append)
+    with open(GEOJSONL_FILE, 'wb') as geojsonl_fh:
+        for source in sources:
+            if args.file:
+                pbf_path = Path(args.file)
+            elif source == 'osm':
+                pbf_path = Path(DATA_DIR) / 'authorities' / 'osm' / 'planet-latest.osm.pbf'
+            else:  # ohm
+                pbf_path = Path(DATA_DIR) / 'authorities' / 'ohm' / 'planet-latest.osm.pbf'
 
-        if not pbf_path.exists():
-            print(f"WARNING: PBF file not found: {pbf_path}")
-            print(f"  Skipping {source.upper()} boundaries.")
-            continue
+            if not pbf_path.exists():
+                print(f"WARNING: PBF file not found: {pbf_path}")
+                print(f"  Skipping {source.upper()} boundaries.")
+                continue
 
-        state_file = OSM_BOUNDARY_STATE_FILE if source == 'osm' else OHM_BOUNDARY_STATE_FILE
-        count = ingest_boundaries(pbf_path, namespace=source, state_file=state_file)
-        total_indexed += count
+            state_file = OSM_BOUNDARY_STATE_FILE if source == 'osm' else OHM_BOUNDARY_STATE_FILE
+            count = ingest_boundaries(
+                pbf_path, namespace=source, state_file=state_file,
+                geojsonl_fh=geojsonl_fh,
+            )
+            total_indexed += count
 
     if total_indexed > 0:
         print(f"\n{'=' * 80}")
         print(f"TOTAL BOUNDARIES INDEXED: {total_indexed:,}")
         print(f"{'=' * 80}")
+
+        geojsonl_size = GEOJSONL_FILE.stat().st_size if GEOJSONL_FILE.exists() else 0
+        print(f"GeoJSON Lines: {GEOJSONL_FILE} ({geojsonl_size / 1e6:.1f} MB)")
+
+        # Generate .mbtiles
+        if not args.no_tiles:
+            generate_mbtiles(GEOJSONL_FILE, MBTILES_FILE)
 
         # Create checkpoint snapshot
         es = Elasticsearch(ES_HOST, request_timeout=180)

@@ -173,7 +173,11 @@ AUTHORITIES = [
         'citation': 'OpenHistoricalMap is open data, licensed under the Open Data Commons Open Database License (ODbL). https://www.openhistoricalmap.org/',
         'files': [
             {
-                'url': 'https://planet.openhistoricalmap.org/planet/planet-latest.osm.pbf',
+                # OHM has no planet-latest symlink; daily dumps use dated names
+                # e.g. planet/planet-260406_0302.osm.pbf
+                # The fetch script resolves the latest via S3 bucket listing
+                'url': 'OHM_PLANET_LATEST',
+                'name': 'planet-latest.osm.pbf',
                 'file_type': 'pbf',
             }
         ],

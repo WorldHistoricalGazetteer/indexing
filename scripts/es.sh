@@ -950,6 +950,7 @@ do_ingest_boundaries() {
     # Parse arguments
     local SOURCE="both"
     local REPLACE=false
+    local NO_TILES=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --source)
@@ -958,6 +959,10 @@ do_ingest_boundaries() {
                 ;;
             --replace)
                 REPLACE=true
+                shift
+                ;;
+            --no-tiles)
+                NO_TILES=true
                 shift
                 ;;
             *)
@@ -976,7 +981,7 @@ do_ingest_boundaries() {
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
+#SBATCH --mem=96G
 #SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=${STAGING_SLURM_LOGS}/boundaries-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/boundaries-%j.err
@@ -1042,7 +1047,11 @@ if [ "$REPLACE" = "true" ]; then
 fi
 
 # Run boundary extraction
-python -u -m authorities.osm-boundaries --source $SOURCE
+TILE_FLAG=""
+if [ "$NO_TILES" = "true" ]; then
+    TILE_FLAG="--no-tiles"
+fi
+python -u -m authorities.osm-boundaries --source $SOURCE \$TILE_FLAG
 
 # Refresh index
 curl -s -X POST "\$ES_HOST/boundaries/_refresh" > /dev/null
@@ -1068,6 +1077,7 @@ SBATCH_EOF
     echo "Submitting boundary ingestion job..."
     echo "  Source: $SOURCE"
     echo "  Replace existing: $REPLACE"
+    echo "  Generate tiles: $([ "$NO_TILES" = "true" ] && echo "no" || echo "yes")"
     echo
 
     JOBID=$(sbatch --parsable "$BOUNDARY_SCRIPT")
@@ -3603,6 +3613,7 @@ case "$1" in
         echo "  -ingest-boundaries [OPTIONS]  Extract OSM/OHM admin boundaries into boundaries index"
         echo "    --source osm|ohm|both     Which PBF to process (default: both)"
         echo "    --replace                 Delete existing boundaries first"
+        echo "    --no-tiles                Skip .mbtiles generation"
         echo
         echo "  Examples:"
         echo "    $0 -ingest-boundaries                   # Both OSM + OHM"
