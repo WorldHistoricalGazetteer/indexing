@@ -114,9 +114,9 @@ def parse_geonames_line(line):
         "geometries": geometries,
         "types": [
             {
-                "identifier": fields[7],
+                "identifier": fields[7] or fields[6],
                 "label": fields[6],
-                "sourceLabel": f"{fields[6]}.{fields[7]}"
+                "sourceLabel": f"{fields[6]}.{fields[7]}" if fields[7] else fields[6]
             }
         ]
     }
