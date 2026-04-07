@@ -1024,9 +1024,9 @@ cd "$REPO_DIR"
 # Verify osmium-tool is available (needed for fast PBF pre-filtering)
 if ! command -v osmium &>/dev/null; then
     echo "WARNING: osmium-tool not found in PATH"
-    echo "  Without it, boundary extraction processes the FULL ~80 GB planet PBF"
-    echo "  (9+ hours) instead of a pre-filtered ~2-3 GB extract (~30 min)."
-    echo "  Install with:  conda install -c conda-forge osmium-tool"
+    echo "  The Python script checks fallback locations (~/.local/bin, base conda)"
+    echo "  but for reliability, install in the whg env:"
+    echo "    conda install -c conda-forge osmium-tool"
     echo
 fi
 

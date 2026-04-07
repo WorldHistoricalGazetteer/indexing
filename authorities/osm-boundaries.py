@@ -502,6 +502,31 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
 
 
 # ---------------- PBF PRE-FILTERING ----------------
+def _find_osmium():
+    """Locate the ``osmium`` CLI binary.
+
+    Checks ``PATH`` first (via ``shutil.which``), then probes common fallback
+    locations in case conda environment activation has narrowed the PATH.
+    """
+    found = shutil.which('osmium')
+    if found:
+        return found
+
+    # Fallback: check common conda/local install locations
+    home = os.path.expanduser('~')
+    for candidate in [
+        os.path.join(home, '.local', 'bin', 'osmium'),
+        os.path.join(home, 'miniconda3', 'bin', 'osmium'),
+        os.path.join(home, 'anaconda3', 'bin', 'osmium'),
+        '/usr/local/bin/osmium',
+        '/usr/bin/osmium',
+    ]:
+        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+            return candidate
+
+    return None
+
+
 def prefilter_boundaries(input_pbf, output_pbf):
     """
     Pre-filter PBF to extract only boundary=administrative relations
@@ -513,11 +538,13 @@ def prefilter_boundaries(input_pbf, output_pbf):
     Returns:
         Path to filtered PBF (str), or None if filtering failed/unavailable.
     """
-    osmium_tool = shutil.which('osmium')
+    osmium_tool = _find_osmium()
     if not osmium_tool:
         print("  osmium-tool not found — will process full PBF (much slower)")
-        print("  Install with:  conda install -c conda-forge osmium-tool")
+        print("  Install with:  conda activate whg && conda install -c conda-forge osmium-tool")
         return None
+
+    print(f"  Using: {osmium_tool}")
 
     input_size_gb = os.path.getsize(str(input_pbf)) / 1e9
     print(f"Pre-filtering PBF for boundary=administrative relations...")
