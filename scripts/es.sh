@@ -1112,6 +1112,84 @@ SBATCH_EOF
     echo "Note: The staging ES instance must remain running for the duration."
 }
 
+
+# ==============================================================================
+# GENERATE BOUNDARY TILES (Slurm)
+# ==============================================================================
+
+do_generate_tiles() {
+    # Usage: es -generate-tiles
+    # Submits a short Slurm job to run tippecanoe on the existing GeoJSON Lines file.
+
+    local GEOJSONL="${DATA_DIR}/boundaries/boundaries.geojsonl"
+    if [ ! -f "$GEOJSONL" ]; then
+        echo "ERROR: GeoJSON Lines file not found: $GEOJSONL"
+        echo "  Run 'es -ingest-boundaries' first to generate it."
+        return 1
+    fi
+
+    local SIZE=$(du -h "$GEOJSONL" | cut -f1)
+    echo "GeoJSON Lines file: $GEOJSONL ($SIZE)"
+
+    TILES_SCRIPT=$(mktemp /tmp/es-tiles-XXXXXX.sbatch)
+
+    cat > "$TILES_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-tiles
+#SBATCH --partition=smp
+#SBATCH --time=2:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --output=${STAGING_SLURM_LOGS}/tiles-%j.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/tiles-%j.err
+
+set -e
+
+echo "=========================================="
+echo "BOUNDARY TILE GENERATION JOB"
+echo "=========================================="
+echo "Started: \$(date)"
+echo
+
+# Load environment
+source "$ENV_FILE"
+
+# Activate conda environment
+$(activate_environment)
+
+cd "$REPO_DIR"
+
+python -u -c "
+import importlib
+mod = importlib.import_module('authorities.osm-boundaries')
+mod.generate_mbtiles(mod.GEOJSONL_FILE, mod.MBTILES_FILE)
+"
+
+echo
+echo "=========================================="
+echo "TILE GENERATION COMPLETE"
+echo "=========================================="
+echo "Finished: \$(date)"
+SBATCH_EOF
+
+    echo "Submitting tile generation job..."
+    JOBID=$(sbatch --parsable "$TILES_SCRIPT")
+    rm "$TILES_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit Slurm job"
+        return 1
+    fi
+
+    echo "Submitted job: $JOBID"
+    echo
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID -M smp"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/tiles-${JOBID}.out"
+}
+
 # ==============================================================================
 # TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS
 # ==============================================================================
@@ -3400,6 +3478,10 @@ case "$1" in
     -ingest-boundaries)
         shift
         do_ingest_boundaries "$@"
+        ;;
+
+    -generate-tiles)
+        do_generate_tiles
         ;;
 
     # --- Augment ccodes (spatial country code assignment) ---

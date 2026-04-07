@@ -43,6 +43,7 @@ import re
 import sys
 import gc
 import time
+import shlex
 import shutil
 import signal
 import subprocess
@@ -477,7 +478,9 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
     try:
         if filter_cmd:
             # Pipe: filter script → tippecanoe
-            full_cmd = f"{filter_cmd} | {' '.join(cmd)}"
+            # Use shlex.join to properly quote args with spaces
+            # (e.g. --name 'WHG Admin Boundaries')
+            full_cmd = f"{filter_cmd} | {shlex.join(cmd)}"
             result = subprocess.run(
                 full_cmd, shell=True,
                 stdout=sys.stdout, stderr=sys.stderr,
