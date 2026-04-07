@@ -532,7 +532,7 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
             flush_buffer()
 
     # Stage PBF to local scratch if available
-        active_pbf, is_staged = stage_file_to_scratch(pbf_file, namespace=namespace)
+    active_pbf, is_staged = stage_file_to_scratch(pbf_file, namespace=namespace)
 
     try:
         source_label = 'OSM' if namespace == 'osm' else 'OHM'
