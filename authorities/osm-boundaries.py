@@ -449,7 +449,6 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
         '--description', 'OSM + OHM administrative boundaries for WHG spatial filtering',
         '--minimum-zoom', '0',
         '--maximum-zoom', '10',
-        '--use-attribute-for-id', 'id',     # Use boundary_id as feature ID
         '--simplification', '10',           # Simplify at low zooms
         '--detect-shared-borders',          # Clean up shared boundaries between regions
         '--coalesce-densest-as-needed',     # Coalesce at low zooms rather than drop
