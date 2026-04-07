@@ -951,9 +951,6 @@ do_ingest_boundaries() {
     local SOURCE="both"
     local REPLACE=false
     local NO_TILES=false
-    local REPAIR=false
-    local REPAIR_IDS=""
-    local DELETE_NS=""
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --source)
@@ -968,112 +965,12 @@ do_ingest_boundaries() {
                 NO_TILES=true
                 shift
                 ;;
-            --repair)
-                REPAIR=true
-                shift
-                ;;
-            --repair-ids)
-                REPAIR=true
-                shift
-                # Collect all following non-flag args as IDs
-                while [[ $# -gt 0 && ! "$1" =~ ^-- ]]; do
-                    REPAIR_IDS="$REPAIR_IDS $1"
-                    shift
-                done
-                ;;
-            --delete-namespace)
-                DELETE_NS="$2"
-                shift 2
-                ;;
             *)
                 shift
                 ;;
         esac
     done
 
-    # --- REPAIR MODE: lightweight job to re-index failed docs ---
-    if [ "$REPAIR" = "true" ]; then
-        BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundaries-repair-XXXXXX.sbatch)
-
-        # Build Python args
-        local PY_ARGS="--repair --source $SOURCE"
-        if [ -n "$REPAIR_IDS" ]; then
-            PY_ARGS="$PY_ARGS --repair-ids $REPAIR_IDS"
-        fi
-
-        cat > "$BOUNDARY_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=es-boundary-repair
-#SBATCH --time=00:30:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=8G
-#SBATCH --output=${STAGING_SLURM_LOGS}/boundary-repair-%j.out
-#SBATCH --error=${STAGING_SLURM_LOGS}/boundary-repair-%j.err
-
-set -e
-
-echo "=========================================="
-echo "BOUNDARY REPAIR JOB"
-echo "=========================================="
-echo "Started: \$(date)"
-echo
-
-source "$ENV_FILE"
-
-if [ ! -f "$STAGING_INFO_FILE" ]; then
-    echo "ERROR: Staging ES no longer running"
-    exit 1
-fi
-source "$STAGING_INFO_FILE"
-export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
-echo "ES_HOST: \$ES_HOST"
-echo
-
-$(activate_environment)
-
-cd "$REPO_DIR"
-
-python -u -m authorities.osm-boundaries $PY_ARGS
-
-echo
-echo "=========================================="
-echo "BOUNDARY REPAIR COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-SBATCH_EOF
-
-        echo
-        echo "Submitting boundary repair job..."
-        echo "  Source filter: $SOURCE"
-        echo "  Repair IDs: ${REPAIR_IDS:-auto-detect}"
-        echo
-
-        JOBID=$(sbatch --parsable "$BOUNDARY_SCRIPT")
-        rm "$BOUNDARY_SCRIPT"
-
-        if [ -z "$JOBID" ]; then
-            echo "ERROR: Failed to submit Slurm job"
-            return 1
-        fi
-
-        echo "Submitted job: $JOBID"
-        echo
-        echo "Monitor with:"
-        echo "  squeue -j $JOBID"
-        echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-repair-${JOBID}.out"
-        return 0
-    fi
-
-    # --- DELETE NAMESPACE: remove all docs for a namespace before re-ingestion ---
-    if [ -n "$DELETE_NS" ]; then
-        echo "Deleting all '$DELETE_NS' namespace docs from boundaries index..."
-        curl -s -X POST "http://${ES_NODE}:${ES_PORT}/boundaries/_delete_by_query?conflicts=proceed&refresh=true" \
-            -H 'Content-Type: application/json' \
-            -d "{\"query\":{\"term\":{\"namespace\":\"$DELETE_NS\"}}}" | python3 -m json.tool
-        echo
-    fi
 
     # Create a temporary sbatch script
     BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundaries-XXXXXX.sbatch)
@@ -3722,16 +3619,11 @@ case "$1" in
         echo "    --source osm|ohm|both     Which PBF to process (default: both)"
         echo "    --replace                 Delete existing boundaries first"
         echo "    --no-tiles                Skip .mbtiles generation"
-        echo "    --repair                  Re-index failed docs from GeoJSON Lines (Slurm)"
-        echo "    --repair-ids ID [ID...]   Repair specific boundary_ids only"
-        echo "    --delete-namespace NS     Delete all docs for namespace before ingestion"
         echo
         echo "  Examples:"
         echo "    $0 -ingest-boundaries                   # Both OSM + OHM"
         echo "    $0 -ingest-boundaries --source osm      # OSM only"
         echo "    $0 -ingest-boundaries --replace         # Re-extract from scratch"
-        echo "    $0 -ingest-boundaries --repair          # Fix failed docs from GeoJSON Lines"
-        echo "    $0 -ingest-boundaries --delete-namespace ohm --source ohm  # Re-run OHM only"
         echo
         echo "AUGMENT CCODES (runs against production ES):"
         echo "  -augment-ccodes [OPTIONS]"

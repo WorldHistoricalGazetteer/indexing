@@ -130,7 +130,19 @@ cleanup() {
     # Clean up ephemeral data
     echo "Cleaning up staging directory: $STAGING_ROOT"
     rm -rf "$STAGING_ROOT" 2>/dev/null || true
-    rm -f "$STAGING_INFO_FILE"
+
+    # Only remove the info file if it still belongs to THIS job.
+    # Another staging instance may have overwritten it with its own details;
+    # deleting it would orphan that instance from all downstream scripts.
+    if [ -f "$STAGING_INFO_FILE" ]; then
+        FILE_JOB_ID=$(grep '^SLURM_JOB_ID=' "$STAGING_INFO_FILE" 2>/dev/null | cut -d= -f2)
+        if [ "$FILE_JOB_ID" = "$SLURM_JOB_ID" ]; then
+            rm -f "$STAGING_INFO_FILE"
+            echo "Removed staging info file."
+        else
+            echo "Staging info file belongs to job $FILE_JOB_ID (not us: $SLURM_JOB_ID) — leaving it."
+        fi
+    fi
     echo "Cleanup complete."
 }
 trap cleanup EXIT
