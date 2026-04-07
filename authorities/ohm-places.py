@@ -335,13 +335,16 @@ class OHMHandler(osmium.SimpleHandler):
 
 
 # ---------------- STAGING & MAIN ----------------
-def stage_file_to_scratch(source_path):
+def stage_file_to_scratch(source_path, namespace='ohm'):
     scratch_dir = os.environ.get('SLURM_SCRATCH')
     if not scratch_dir or not os.path.exists(scratch_dir):
         print("Notice: No scratch dir found, using network storage.")
         return source_path, False
 
-    target_path = os.path.join(scratch_dir, os.path.basename(source_path))
+    basename = os.path.basename(source_path)
+    if namespace:
+        basename = f"{namespace}_{basename}"
+    target_path = os.path.join(scratch_dir, basename)
 
     # Check if already staged
     if os.path.exists(target_path):

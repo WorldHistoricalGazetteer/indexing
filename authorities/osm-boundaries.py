@@ -153,8 +153,19 @@ def create_boundary_doc(relation_id, tags, shapely_geom, namespace, source):
     # Full geometry for accurate spatial filtering
     doc['geom'] = full_geom
 
-    # Convex hull for fast spatial pre-screening
-    hull = shapely_geom.convex_hull
+    # Convex hull for fast spatial pre-screening.
+    # Shapely's convex_hull can occasionally produce polygons with
+    # float-precision self-intersections that ES's geo_shape tessellator
+    # rejects.  We unconditionally clean with simplify(0) + buffer(0)
+    # to snap near-coincident vertices; fall back to bounding-box envelope
+    # if the hull still looks problematic.
+    try:
+        hull = shapely_geom.convex_hull.simplify(0).buffer(0)
+        if hull.is_empty or not hull.is_valid:
+            hull = shapely_geom.envelope
+    except Exception:
+        hull = shapely_geom.envelope  # axis-aligned bounding box
+
     if hull and not hull.is_empty:
         doc['hull'] = mapping(hull)
 
@@ -331,18 +342,30 @@ class BoundaryProcessor:
 
                 # Write GeoJSON Lines feature for tippecanoe
                 if self.geojsonl_fh is not None:
-                    feature = {
-                        'type': 'Feature',
-                        'properties': {
-                            'id': doc['boundary_id'],
-                            'name': doc['name'],
-                            'admin_level': doc['admin_level'],
-                            'namespace': doc['namespace'],
-                        },
-                        'geometry': doc['geom'],
+                    props = {
+                        'id': doc['boundary_id'],
+                        'name': doc['name'],
+                        'admin_level': doc['admin_level'],
+                        'namespace': doc['namespace'],
+                        'source': doc.get('source', doc['namespace']),
                     }
                     if 'ccodes' in doc:
-                        feature['properties']['ccodes'] = ','.join(doc['ccodes'])
+                        props['ccodes'] = ','.join(doc['ccodes'])
+                    if 'name_local' in doc:
+                        props['name_local'] = doc['name_local']
+                    if 'population' in doc:
+                        props['population'] = doc['population']
+                    if 'wikidata_id' in doc:
+                        props['wikidata_id'] = doc['wikidata_id']
+                    if 'alt_names' in doc:
+                        props['alt_names'] = doc['alt_names']
+                    if 'timespans' in doc:
+                        props['timespans'] = doc['timespans']
+                    feature = {
+                        'type': 'Feature',
+                        'properties': props,
+                        'geometry': doc['geom'],
+                    }
                     self.geojsonl_fh.write(orjson.dumps(feature))
                     self.geojsonl_fh.write(b'\n')
 
@@ -353,14 +376,21 @@ class BoundaryProcessor:
 
 
 # ---------------- FILE STAGING ----------------
-def stage_file_to_scratch(source_path):
-    """Copy PBF to local scratch (NVMe) if running on Slurm."""
+def stage_file_to_scratch(source_path, namespace=''):
+    """Copy PBF to local scratch (NVMe) if running on Slurm.
+
+    The scratch filename is prefixed with the namespace so that OSM and OHM
+    PBF files (both called ``planet-latest.osm.pbf``) don't collide.
+    """
     scratch_dir = os.environ.get('SLURM_SCRATCH')
     if not scratch_dir or not os.path.exists(scratch_dir):
         print("Notice: No scratch dir found, using network storage.")
         return source_path, False
 
-    target_path = os.path.join(scratch_dir, os.path.basename(source_path))
+    basename = os.path.basename(source_path)
+    if namespace:
+        basename = f"{namespace}_{basename}"
+    target_path = os.path.join(scratch_dir, basename)
 
     if os.path.exists(target_path):
         print(f"Using existing staged file: {target_path}")
@@ -502,7 +532,7 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
             flush_buffer()
 
     # Stage PBF to local scratch if available
-    active_pbf, is_staged = stage_file_to_scratch(pbf_file)
+        active_pbf, is_staged = stage_file_to_scratch(pbf_file, namespace=namespace)
 
     try:
         source_label = 'OSM' if namespace == 'osm' else 'OHM'
@@ -575,6 +605,199 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         pass
 
 
+# ---------------- REPAIR FROM GEOJSON LINES ----------------
+def repair_from_geojsonl(
+    geojsonl_path=GEOJSONL_FILE,
+    namespace_filter=None,
+    repair_ids=None,
+):
+    """
+    Re-index boundary documents from an existing GeoJSON Lines file.
+
+    Reads the GeoJSON Lines file produced by a previous extraction run,
+    identifies documents that are in the file but missing from ES (or
+    match the explicit ``repair_ids`` list), and re-indexes them with the
+    current hull-cleaning logic.
+
+    This avoids re-reading the PBF files — useful for recovering from
+    bulk-index rejections (e.g. hull self-intersection errors).
+
+    Args:
+        geojsonl_path: Path to boundaries.geojsonl
+        namespace_filter: Only process features matching this namespace
+                          ('osm', 'ohm', or None for all)
+        repair_ids: Explicit list of boundary_ids to repair. If None,
+                    auto-detects docs present in the file but missing
+                    from ES.
+    """
+    from shapely.geometry import shape as shapely_shape
+
+    if not geojsonl_path.exists():
+        print(f"ERROR: GeoJSON Lines file not found: {geojsonl_path}")
+        sys.exit(1)
+
+    es = Elasticsearch(ES_HOST, request_timeout=180)
+
+    print(f"{'=' * 80}")
+    print("BOUNDARY REPAIR FROM GEOJSON LINES")
+    print(f"{'=' * 80}")
+    print(f"Source: {geojsonl_path}")
+    print(f"Namespace filter: {namespace_filter or 'all'}")
+    print(f"Repair IDs: {repair_ids or 'auto-detect'}")
+    print()
+
+    # Phase 1: Scan GeoJSON Lines for candidate features
+    print("Scanning GeoJSON Lines file...")
+    candidates = {}  # boundary_id → GeoJSON feature dict
+    line_count = 0
+
+    with open(geojsonl_path, 'rb') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            line_count += 1
+
+            try:
+                feature = orjson.loads(line)
+                props = feature.get('properties', {})
+                bid = props.get('id')
+                ns = props.get('namespace', '')
+
+                if not bid:
+                    continue
+                if namespace_filter and ns != namespace_filter:
+                    continue
+                if repair_ids and bid not in repair_ids:
+                    continue
+
+                candidates[bid] = feature
+            except Exception:
+                continue
+
+    print(f"  Scanned {line_count:,} lines, {len(candidates):,} candidates")
+
+    if not candidates:
+        print("  No candidates found — nothing to repair.")
+        return
+
+    # Phase 2: Check which candidates are missing from ES
+    if repair_ids:
+        missing_ids = set(repair_ids) & set(candidates.keys())
+    else:
+        # Query ES for existing docs
+        print("  Checking ES for existing documents...")
+        all_ids = list(candidates.keys())
+        existing_ids = set()
+
+        # Batch mget in chunks of 1000
+        for i in range(0, len(all_ids), 1000):
+            chunk = all_ids[i:i + 1000]
+            resp = es.mget(
+                index=BOUNDARIES_INDEX,
+                body={'ids': chunk},
+                _source=False,
+            )
+            for doc in resp.get('docs', []):
+                if doc.get('found'):
+                    existing_ids.add(doc['_id'])
+
+        missing_ids = set(all_ids) - existing_ids
+        print(f"  Found {len(existing_ids):,} existing, {len(missing_ids):,} missing")
+
+    if not missing_ids:
+        print("  All documents already in ES — nothing to repair.")
+        return
+
+    # Phase 3: Rebuild and index missing documents
+    print(f"\nRe-indexing {len(missing_ids):,} documents...")
+    indexed = 0
+    failed = 0
+
+    for bid in sorted(missing_ids):
+        feature = candidates.get(bid)
+        if not feature:
+            print(f"  SKIP {bid}: not found in GeoJSON Lines")
+            continue
+
+        try:
+            props = feature['properties']
+            geom = feature['geometry']
+
+            shapely_geom = shapely_shape(geom)
+            if not shapely_geom.is_valid:
+                shapely_geom = make_valid(shapely_geom)
+
+            # Build the document
+            namespace = props.get('namespace', bid.split(':')[0])
+            doc = {
+                'boundary_id': bid,
+                'namespace': namespace,
+                'name': props['name'],
+                'source': props.get('source', namespace),
+                'admin_level': props['admin_level'],
+                'geom': geom,
+                'indexed_at': datetime.now().isoformat(),
+            }
+
+            # Hull with the fixed logic (simplify + buffer + envelope fallback)
+            try:
+                hull = shapely_geom.convex_hull.simplify(0).buffer(0)
+                if hull.is_empty or not hull.is_valid:
+                    hull = shapely_geom.envelope
+            except Exception:
+                hull = shapely_geom.envelope
+
+            if hull and not hull.is_empty:
+                doc['hull'] = mapping(hull)
+                hb = hull.bounds
+                doc['bounds'] = [
+                    round(hb[0], 6), round(hb[1], 6),
+                    round(hb[2], 6), round(hb[3], 6),
+                ]
+
+            # Representative point
+            rep_point = compute_representative_point(geom)
+            if rep_point:
+                doc['repr_point'] = rep_point
+
+            # Restore optional fields from GeoJSON properties
+            if 'ccodes' in props:
+                ccodes_val = props['ccodes']
+                if isinstance(ccodes_val, str):
+                    doc['ccodes'] = [c.strip() for c in ccodes_val.split(',') if c.strip()]
+                elif isinstance(ccodes_val, list):
+                    doc['ccodes'] = ccodes_val
+            if 'name_local' in props:
+                doc['name_local'] = props['name_local']
+            if 'population' in props:
+                doc['population'] = props['population']
+            if 'wikidata_id' in props:
+                doc['wikidata_id'] = props['wikidata_id']
+            if 'alt_names' in props:
+                doc['alt_names'] = props['alt_names']
+            if 'timespans' in props:
+                doc['timespans'] = props['timespans']
+
+            # Index
+            es.index(
+                index=BOUNDARIES_INDEX,
+                id=bid,
+                document=doc,
+            )
+            indexed += 1
+            print(f"  ✓ {bid}: {props['name']}")
+
+        except Exception as e:
+            failed += 1
+            print(f"  ✗ {bid}: {e}")
+
+    # Refresh
+    es.indices.refresh(index=BOUNDARIES_INDEX)
+
+    print(f"\nRepair complete: {indexed} indexed, {failed} failed")
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -588,7 +811,19 @@ if __name__ == "__main__":
     parser.add_argument('--file', help='Override PBF file path (use with --source osm or ohm)')
     parser.add_argument('--no-tiles', action='store_true',
                         help='Skip .mbtiles generation (even if tippecanoe is available)')
+    parser.add_argument('--repair', action='store_true',
+                        help='Re-index failed docs from GeoJSON Lines file (no PBF re-read)')
+    parser.add_argument('--repair-ids', nargs='*', metavar='ID',
+                        help='Specific boundary_ids to repair (default: auto-detect missing)')
     args = parser.parse_args()
+
+    if args.repair:
+        repair_from_geojsonl(
+            geojsonl_path=GEOJSONL_FILE,
+            namespace_filter=None if args.source == 'both' else args.source,
+            repair_ids=args.repair_ids,
+        )
+        sys.exit(0)
 
     sources = ['osm', 'ohm'] if args.source == 'both' else [args.source]
 
