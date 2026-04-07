@@ -43,7 +43,6 @@ import re
 import sys
 import gc
 import time
-import shlex
 import shutil
 import signal
 import subprocess
@@ -441,21 +440,6 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
     print(f"Input:  {geojsonl_path} ({geojsonl_path.stat().st_size / 1e9:.1f} GB)")
     print(f"Output: {mbtiles_path}")
 
-    # Pipe GeoJSON Lines through a minzoom filter before tippecanoe.
-    # This injects tippecanoe:minzoom properties per-feature based on
-    # admin_level, so low-zoom tiles aren't overwhelmed by fine-grained
-    # boundaries.  The filter script reads from a file arg and writes to
-    # stdout; tippecanoe reads from stdin via '-'.
-    minzoom_script = Path(__file__).resolve().parent.parent / 'scripts' / 'add_tippecanoe_minzoom.py'
-    if minzoom_script.exists():
-        print(f"Applying zoom filter: {minzoom_script.name}")
-        filter_cmd = f"python {minzoom_script} {geojsonl_path}"
-        input_arg = '-'  # tippecanoe reads from stdin
-    else:
-        print("Note: minzoom filter script not found — using raw GeoJSON Lines")
-        filter_cmd = None
-        input_arg = str(geojsonl_path)
-
     cmd = [
         tippecanoe,
         '--output', str(mbtiles_path),
@@ -471,24 +455,14 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
         '--coalesce-densest-as-needed',     # Coalesce at low zooms rather than drop
         '--extend-zooms-if-still-dropping', # Extend max zoom if features are still being dropped
         '--read-parallel',                  # Parallel reading
-        input_arg,
+        str(geojsonl_path),                 # tippecanoe:minzoom already embedded in features
     ]
 
     start = time.time()
     try:
-        if filter_cmd:
-            # Pipe: filter script → tippecanoe
-            # Use shlex.join to properly quote args with spaces
-            # (e.g. --name 'WHG Admin Boundaries')
-            full_cmd = f"{filter_cmd} | {shlex.join(cmd)}"
-            result = subprocess.run(
-                full_cmd, shell=True,
-                stdout=sys.stdout, stderr=sys.stderr,
-            )
-        else:
-            result = subprocess.run(
-                cmd, stdout=sys.stdout, stderr=sys.stderr,
-            )
+        result = subprocess.run(
+            cmd, stdout=sys.stdout, stderr=sys.stderr,
+        )
         elapsed = time.time() - start
 
         if result.returncode == 0 and mbtiles_path.exists():
