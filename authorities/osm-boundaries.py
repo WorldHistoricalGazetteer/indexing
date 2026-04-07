@@ -503,28 +503,61 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
 
 # ---------------- PBF PRE-FILTERING ----------------
 def _find_osmium():
-    """Locate the ``osmium`` CLI binary.
+    """Locate a working ``osmium`` CLI binary.
 
-    Checks ``PATH`` first (via ``shutil.which``), then probes common fallback
-    locations in case conda environment activation has narrowed the PATH.
+    Checks ``PATH`` first, then probes common fallback locations.  Each
+    candidate is verified with ``osmium --version`` to catch missing shared
+    libraries (e.g. libboost linked against the wrong conda env).
+
+    Returns:
+        ``(osmium_path, env_dict)`` on success — *env_dict* includes any
+        ``LD_LIBRARY_PATH`` augmentation needed to load the binary's shared
+        libraries.  ``(None, None)`` if no working binary is found.
     """
-    found = shutil.which('osmium')
-    if found:
-        return found
-
-    # Fallback: check common conda/local install locations
     home = os.path.expanduser('~')
-    for candidate in [
+
+    candidates = list(filter(None, [
+        shutil.which('osmium'),
         os.path.join(home, '.local', 'bin', 'osmium'),
         os.path.join(home, 'miniconda3', 'bin', 'osmium'),
         os.path.join(home, 'anaconda3', 'bin', 'osmium'),
         '/usr/local/bin/osmium',
         '/usr/bin/osmium',
-    ]:
-        if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+    ]))
 
-    return None
+    # Build an augmented LD_LIBRARY_PATH that covers conda base and .local
+    # lib dirs — these are often missing from PATH after `conda activate whg`.
+    extra_lib_dirs = [
+        d for d in [
+            os.path.join(home, 'miniconda3', 'lib'),
+            os.path.join(home, 'anaconda3', 'lib'),
+            os.path.join(home, '.local', 'lib'),
+        ]
+        if os.path.isdir(d)
+    ]
+
+    env = os.environ.copy()
+    if extra_lib_dirs:
+        existing = env.get('LD_LIBRARY_PATH', '')
+        env['LD_LIBRARY_PATH'] = ':'.join(
+            extra_lib_dirs + ([existing] if existing else [])
+        )
+
+    for candidate in candidates:
+        if not os.path.isfile(candidate) or not os.access(candidate, os.X_OK):
+            continue
+        try:
+            result = subprocess.run(
+                [candidate, '--version'],
+                capture_output=True, timeout=10, env=env,
+            )
+            if result.returncode == 0:
+                ver = result.stdout.decode().strip().split('\n')[0]
+                return candidate, env
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+
+    return None, None
 
 
 def prefilter_boundaries(input_pbf, output_pbf):
@@ -538,10 +571,11 @@ def prefilter_boundaries(input_pbf, output_pbf):
     Returns:
         Path to filtered PBF (str), or None if filtering failed/unavailable.
     """
-    osmium_tool = _find_osmium()
+    osmium_tool, osmium_env = _find_osmium()
     if not osmium_tool:
-        print("  osmium-tool not found — will process full PBF (much slower)")
+        print("  osmium-tool not found or broken — will process full PBF (much slower)")
         print("  Install with:  conda activate whg && conda install -c conda-forge osmium-tool")
+        print("  (or into base: conda install -c conda-forge osmium-tool)")
         return None
 
     print(f"  Using: {osmium_tool}")
@@ -562,6 +596,7 @@ def prefilter_boundaries(input_pbf, output_pbf):
             ],
             stdout=sys.stdout,
             stderr=sys.stderr,
+            env=osmium_env,
             timeout=7200,  # 2-hour safety timeout
         )
     except subprocess.TimeoutExpired:
