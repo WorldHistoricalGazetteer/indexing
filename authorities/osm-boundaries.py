@@ -10,10 +10,21 @@ serves the RegionSelector widget in the WHG search UI for spatial filtering.
 Only relations are processed (nodes and ways are skipped entirely for speed).
 OSM relations have permanent stable IDs.
 
+Performance:
+  The full OSM planet PBF is ~80 GB.  pyosmium's ``with_areas()`` assembles
+  ALL areas (hundreds of millions of closed ways) even though we only want
+  ~400K relation-based admin boundaries.  To avoid 9+ hours of wasted work,
+  we pre-filter the PBF with ``osmium tags-filter r/boundary=administrative``
+  which extracts only matching relations and their dependencies (~2-3 GB).
+  The two-pass area assembly then completes in minutes.
+
+  **Requires** ``osmium-tool`` (``conda install -c conda-forge osmium-tool``).
+  Falls back to the full PBF if unavailable, but this is very slow.
+
 Geometry handling:
-  - `geom`: full-fidelity polygon for accurate ES geo_shape intersects filtering
-  - `hull`: convex hull for fast spatial pre-screening
-  - `bounds`: [west, south, east, north] envelope of the hull
+  - ``geom``: full-fidelity polygon for accurate ES geo_shape intersects filtering
+  - ``hull``: convex hull for fast spatial pre-screening
+  - ``bounds``: [west, south, east, north] envelope of the hull
 
 Also produces:
   - GeoJSON Lines file for tippecanoe input
@@ -35,6 +46,7 @@ import time
 import shutil
 import signal
 import subprocess
+import threading
 from pathlib import Path
 from datetime import datetime
 
@@ -60,6 +72,21 @@ QUEUE_SIZE = 8
 
 # Valid admin_level range (OSM wiki: 2 = country, 10 = neighbourhood)
 ADMIN_LEVELS = set(range(2, 11))  # 2..10
+
+# tippecanoe zoom control: admin_level → minimum zoom at which features appear.
+# Countries (level 2) are visible from z0; neighbourhoods (9-10) only at z9+.
+# This prevents low-zoom tiles from being overwhelmed by fine-grained boundaries.
+ADMIN_LEVEL_MINZOOM = {
+    2: 0,   # countries
+    3: 2,   # large sub-national (e.g. US states, UK nations)
+    4: 3,   # provinces, states
+    5: 4,   # counties, districts
+    6: 5,   # sub-counties
+    7: 6,   # municipalities
+    8: 7,   # city districts
+    9: 8,   # neighbourhoods, boroughs
+    10: 9,  # sub-neighbourhoods
+}
 
 # Output directory for GeoJSON Lines and .mbtiles
 BOUNDARIES_OUTPUT_DIR = Path(DATA_DIR) / 'boundaries'
@@ -349,6 +376,10 @@ class BoundaryProcessor:
                         'namespace': doc['namespace'],
                         'source': doc.get('source', doc['namespace']),
                     }
+                    # tippecanoe zoom control: only render at appropriate zoom levels
+                    minzoom = ADMIN_LEVEL_MINZOOM.get(doc['admin_level'], 0)
+                    if minzoom > 0:
+                        props['tippecanoe:minzoom'] = minzoom
                     if 'ccodes' in doc:
                         props['ccodes'] = ','.join(doc['ccodes'])
                     if 'name_local' in doc:
@@ -375,30 +406,12 @@ class BoundaryProcessor:
                 print(f"\n  Geometry error (relation {a.orig_id()}): {e}")
 
 
-# ---------------- FILE STAGING ----------------
-def stage_file_to_scratch(source_path, namespace=''):
-    """Copy PBF to local scratch (NVMe) if running on Slurm.
-
-    The scratch filename is prefixed with the namespace so that OSM and OHM
-    PBF files (both called ``planet-latest.osm.pbf``) don't collide.
-    """
-    scratch_dir = os.environ.get('SLURM_SCRATCH')
-    if not scratch_dir or not os.path.exists(scratch_dir):
-        print("Notice: No scratch dir found, using network storage.")
-        return source_path, False
-
-    basename = os.path.basename(source_path)
-    if namespace:
-        basename = f"{namespace}_{basename}"
-    target_path = os.path.join(scratch_dir, basename)
-
-    if os.path.exists(target_path):
-        print(f"Using existing staged file: {target_path}")
-        return target_path, True
-
-    print(f"Staging to local scratch: {target_path}")
-    subprocess.run(['rsync', '-ah', str(source_path), target_path], check=True)
-    return target_path, True
+# Note: the old stage_file_to_scratch() that rsynced the full ~80 GB PBF to
+# NVMe scratch has been removed.  With the pre-filter step, osmium tags-filter
+# reads the source PBF sequentially from network storage (fast on GPFS) and
+# writes the small filtered PBF (~2-3 GB) to scratch.  The two-pass area
+# assembly then runs against the filtered file on scratch.  This saves ~20-30
+# minutes of upfront rsync time.
 
 
 # ---------------- MBTILES GENERATION ----------------
@@ -427,29 +440,52 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
     print(f"Input:  {geojsonl_path} ({geojsonl_path.stat().st_size / 1e9:.1f} GB)")
     print(f"Output: {mbtiles_path}")
 
+    # Pipe GeoJSON Lines through a minzoom filter before tippecanoe.
+    # This injects tippecanoe:minzoom properties per-feature based on
+    # admin_level, so low-zoom tiles aren't overwhelmed by fine-grained
+    # boundaries.  The filter script reads from a file arg and writes to
+    # stdout; tippecanoe reads from stdin via '-'.
+    minzoom_script = Path(__file__).resolve().parent.parent / 'scripts' / 'add_tippecanoe_minzoom.py'
+    if minzoom_script.exists():
+        print(f"Applying zoom filter: {minzoom_script.name}")
+        filter_cmd = f"python {minzoom_script} {geojsonl_path}"
+        input_arg = '-'  # tippecanoe reads from stdin
+    else:
+        print("Note: minzoom filter script not found — using raw GeoJSON Lines")
+        filter_cmd = None
+        input_arg = str(geojsonl_path)
+
     cmd = [
         tippecanoe,
         '--output', str(mbtiles_path),
         '--force',                          # Overwrite existing
-        '--layer', 'boundaries',            # Layer name in the tileset
+        '--layer', 'boundaries',            # Single layer (filter by admin_level + namespace client-side)
         '--name', 'WHG Admin Boundaries',
         '--description', 'OSM + OHM administrative boundaries for WHG spatial filtering',
         '--minimum-zoom', '0',
         '--maximum-zoom', '10',
-        '--no-tile-size-limit',             # Don't drop features to fit tile size
+        '--use-attribute-for-id', 'id',     # Use boundary_id as feature ID
         '--simplification', '10',           # Simplify at low zooms
         '--detect-shared-borders',          # Clean up shared boundaries between regions
         '--coalesce-densest-as-needed',     # Coalesce at low zooms rather than drop
         '--extend-zooms-if-still-dropping', # Extend max zoom if features are still being dropped
         '--read-parallel',                  # Parallel reading
-        str(geojsonl_path),
+        input_arg,
     ]
 
     start = time.time()
     try:
-        result = subprocess.run(
-            cmd, stdout=sys.stdout, stderr=sys.stderr,
-        )
+        if filter_cmd:
+            # Pipe: filter script → tippecanoe
+            full_cmd = f"{filter_cmd} | {' '.join(cmd)}"
+            result = subprocess.run(
+                full_cmd, shell=True,
+                stdout=sys.stdout, stderr=sys.stderr,
+            )
+        else:
+            result = subprocess.run(
+                cmd, stdout=sys.stdout, stderr=sys.stderr,
+            )
         elapsed = time.time() - start
 
         if result.returncode == 0 and mbtiles_path.exists():
@@ -465,14 +501,117 @@ def generate_mbtiles(geojsonl_path, mbtiles_path):
         return False
 
 
+# ---------------- PBF PRE-FILTERING ----------------
+def prefilter_boundaries(input_pbf, output_pbf):
+    """
+    Pre-filter PBF to extract only boundary=administrative relations
+    and their referenced members (ways + nodes).
+
+    Uses ``osmium tags-filter`` to reduce an ~80 GB planet file to ~2-3 GB,
+    making two-pass area assembly 20-30× faster (minutes instead of hours).
+
+    Returns:
+        Path to filtered PBF (str), or None if filtering failed/unavailable.
+    """
+    osmium_tool = shutil.which('osmium')
+    if not osmium_tool:
+        print("  osmium-tool not found — will process full PBF (much slower)")
+        print("  Install with:  conda install -c conda-forge osmium-tool")
+        return None
+
+    input_size_gb = os.path.getsize(str(input_pbf)) / 1e9
+    print(f"Pre-filtering PBF for boundary=administrative relations...")
+    print(f"  Input:  {input_pbf} ({input_size_gb:.1f} GB)")
+    start = time.time()
+
+    try:
+        result = subprocess.run(
+            [
+                osmium_tool, 'tags-filter',
+                str(input_pbf),
+                'r/boundary=administrative',
+                '-o', str(output_pbf),
+                '--overwrite',
+            ],
+            stdout=sys.stdout,
+            stderr=sys.stderr,
+            timeout=7200,  # 2-hour safety timeout
+        )
+    except subprocess.TimeoutExpired:
+        print("  Pre-filter timed out after 2 hours")
+        return None
+    except FileNotFoundError:
+        print("  osmium command failed to execute")
+        return None
+
+    elapsed = time.time() - start
+
+    if result.returncode != 0:
+        print(f"  Pre-filter failed (exit code {result.returncode})")
+        return None
+
+    if not os.path.exists(str(output_pbf)):
+        print("  Pre-filter produced no output")
+        return None
+
+    output_size_gb = os.path.getsize(str(output_pbf)) / 1e9
+    ratio = input_size_gb / output_size_gb if output_size_gb > 0 else 0
+    print(f"  Filtered: {input_size_gb:.1f} GB → {output_size_gb:.1f} GB "
+          f"({ratio:.0f}× smaller, {elapsed:.0f}s)")
+    return str(output_pbf)
+
+
+# ---------------- PROGRESS REPORTER ----------------
+class _ProgressReporter:
+    """Background thread that periodically prints area-assembly progress."""
+
+    def __init__(self, processor, interval=30):
+        self.processor = processor
+        self.interval = interval
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def start(self):
+        self._thread.start()
+
+    def stop(self):
+        self._stop.set()
+        self._thread.join(timeout=5)
+
+    def _run(self):
+        while not self._stop.wait(self.interval):
+            p = self.processor
+            elapsed = time.time() - p.start_time
+            mins = elapsed / 60
+            print(
+                f"\r  [{mins:.0f}m] areas seen: {p.areas_seen:,}  "
+                f"boundaries: {p.extracted:,}  "
+                f"geom errors: {p.geom_errors:,}",
+                end='', flush=True,
+            )
+
+    def __enter__(self):
+        self.start()
+        return self
+
+    def __exit__(self, *exc):
+        self.stop()
+
+
 # ---------------- MAIN INGESTION ----------------
 def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
     """
     Extract and index administrative boundaries from a single PBF file.
 
-    Uses pyosmium's area() callback which triggers automatic two-pass
-    processing: first pass collects relation members, second pass
-    assembles multipolygon geometries and delivers them to the handler.
+    Pipeline:
+      1. Pre-filter the PBF with ``osmium tags-filter`` to keep only
+         boundary=administrative relations + their dependencies
+         (~80 GB → ~2-3 GB).  Falls back to the full PBF if osmium-tool
+         is not installed.
+      2. Two-pass area assembly via pyosmium FileProcessor.with_areas():
+         pass 1 collects relation member refs, pass 2 resolves node
+         locations and assembles multipolygon geometries.
+      3. Index assembled boundary documents into ES.
 
     Args:
         pbf_file: Path to the OSM/OHM PBF file
@@ -531,18 +670,42 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         if len(buffer_list) >= 500:  # Smaller batches — boundary docs are large
             flush_buffer()
 
-    # Stage PBF to local scratch if available
-    active_pbf, is_staged = stage_file_to_scratch(pbf_file, namespace=namespace)
+    # Track whether we created a filtered PBF that should be cleaned up
+    filtered_pbf_path = None
 
     try:
         source_label = 'OSM' if namespace == 'osm' else 'OHM'
         print(f"\n{'=' * 80}")
         print(f"{source_label} ADMINISTRATIVE BOUNDARY EXTRACTION")
         print(f"{'=' * 80}")
-        print(f"Source: {active_pbf}")
+        print(f"Source: {pbf_file}")
         print(f"Target index: {BOUNDARIES_INDEX}")
         print(f"Namespace: {namespace}")
         print()
+
+        # ------------------------------------------------------------------
+        # Pre-filter: extract only boundary=administrative relations and
+        # their dependencies.  osmium tags-filter reads the source PBF
+        # sequentially from network storage (fast on GPFS) and writes the
+        # small filtered PBF (~2-3 GB) to local scratch.  This avoids
+        # rsyncing the full ~80 GB PBF and shrinks the two-pass area
+        # assembly input from hours to minutes.
+        # ------------------------------------------------------------------
+        scratch = os.environ.get('SLURM_SCRATCH') or os.environ.get('TMPDIR')
+        processing_pbf = str(pbf_file)
+
+        filter_dir = scratch if (scratch and os.path.isdir(scratch)) \
+            else os.environ.get('TMPDIR', '/tmp')
+        filtered_path = os.path.join(
+            filter_dir, f'{namespace}_boundaries_filtered.osm.pbf',
+        )
+        result = prefilter_boundaries(pbf_file, filtered_path)
+        if result:
+            processing_pbf = result
+            filtered_pbf_path = result
+        else:
+            print("  Falling back to full PBF (expect long processing time)")
+            print()
 
         processor = BoundaryProcessor(add_to_buffer, namespace, geojsonl_fh=geojsonl_fh)
 
@@ -552,30 +715,35 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         # allocations.  Use a file-backed index on NVMe scratch instead —
         # the OS pages data in/out as needed without counting against cgroup
         # RSS limits.
-        scratch = os.environ.get('SLURM_SCRATCH') or os.environ.get('TMPDIR')
+        #
+        # When processing a pre-filtered PBF (~2-3 GB, ~100M nodes) the
+        # file-backed index is still preferred (fast, low RSS) but flex_mem
+        # also works since the node count is manageable.
         if scratch and os.path.isdir(scratch):
             node_cache = os.path.join(scratch, f'node_locations_{namespace}.idx')
             idx_type = f'dense_file_array,{node_cache}'
             print(f"Using file-backed node location index: {node_cache}")
         else:
             idx_type = 'flex_mem'
-            print("WARNING: No scratch dir — using in-memory node index (needs ~150 GB)")
+            print("Using in-memory node location index (flex_mem)")
 
         # Two-pass processing via FileProcessor (pyosmium 4.x):
         #   with_areas()  → pass 1 collects relation members, pass 2 assembles
         #   with_locations() → resolves node coordinates for way geometries
         # This reads the PBF twice but is the only correct way to get
         # multipolygon geometry from relations.
-        print("Starting two-pass area assembly (this reads the PBF twice)...")
+        pbf_size_gb = os.path.getsize(processing_pbf) / 1e9
+        print(f"Starting two-pass area assembly on {pbf_size_gb:.1f} GB PBF...")
         fp = (
-            osmium.FileProcessor(str(active_pbf))
+            osmium.FileProcessor(processing_pbf)
             .with_locations(idx_type)
             .with_areas()
         )
 
-        for obj in fp:
-            if isinstance(obj, osmium.osm.Area) and not obj.from_way():
-                processor.process_area(obj)
+        with _ProgressReporter(processor, interval=30):
+            for obj in fp:
+                if isinstance(obj, osmium.osm.Area) and not obj.from_way():
+                    processor.process_area(obj)
 
         flush_buffer()
 
@@ -601,8 +769,14 @@ def ingest_boundaries(pbf_file, namespace, state_file, geojsonl_fh=None):
         traceback.print_exc()
         raise
     finally:
-        # Don't remove staged PBF — the places script may need it too
-        pass
+        # Clean up the filtered PBF (~2-3 GB) — it's a derivative that's no
+        # longer needed once indexing is done.
+        if filtered_pbf_path and os.path.exists(filtered_pbf_path):
+            try:
+                os.remove(filtered_pbf_path)
+                print(f"  Cleaned up filtered PBF: {filtered_pbf_path}")
+            except OSError:
+                pass
 
 
 

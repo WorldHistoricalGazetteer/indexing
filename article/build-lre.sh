@@ -59,37 +59,34 @@ SUBMIT="${BASE}_submission"
 rm -rf "$SUBMIT" ${BASE}_submission.zip
 mkdir -p "$SUBMIT"
 
-# 00README.config: tell ArXiv/Springer-like systems to use xelatex
-# (this is the same format that works on ArXiv)
-cat > "$SUBMIT/00README.config" << EOF
-defaultopt: xelatex
-EOF
+# EM caches compilation state per filename — use a distinct name to force
+# a clean XeLaTeX build (per EM guide: "save your .tex file using a
+# different file name from the original").
+EM_BASE="${BASE}-r1"
 
-# latexmkrc: tell latexmk-based systems to use xelatex
-# (include both dotted and undotted variants)
-for RC in latexmkrc .latexmkrc; do
-cat > "$SUBMIT/$RC" << 'EOF'
-$pdf_mode = 5;
-$xelatex = 'xelatex -interaction=nonstopmode %O %S';
-$postscript_mode = $dvi_mode = 0;
-EOF
-done
+# Copy .tex with EM-compatible tweaks:
+#   1. XeLaTeX directive on line 1 (EM requires "%!TEX TS-program" variant)
+#   2. Rewrite Path=fonts/ → Path=./ since fonts are flattened into zip root
+sed -e '1s/^.*TEX.*program.*$/%!TEX TS-program = xelatex/' \
+    -e 's|Path=fonts/|Path=./|g' \
+    ${BASE}.tex > "$SUBMIT/${EM_BASE}.tex"
 
-# Makefile: fallback for systems that run make
-cat > "$SUBMIT/Makefile" << EOF
-all:
-	xelatex -interaction=nonstopmode ${BASE}.tex
-	bibtex ${BASE}
-	xelatex -interaction=nonstopmode ${BASE}.tex
-	xelatex -interaction=nonstopmode ${BASE}.tex
-EOF
-
-cp ${BASE}.tex "$SUBMIT/"
 cp references.bib "$SUBMIT/"
-cp pdf/${BASE}.bbl "$SUBMIT/" 2>/dev/null
-cp -r fonts "$SUBMIT/" 2>/dev/null || :
+# .bbl basename must match .tex basename for LaTeX to find it
+cp pdf/${BASE}.bbl "$SUBMIT/${EM_BASE}.bbl" 2>/dev/null
 
-(cd "$SUBMIT" && zip -qr ../${BASE}_submission.zip .)
+# Flatten fonts into submission root (EM cannot handle subdirectories)
+if [ -d fonts ]; then
+    cp fonts/*.{otf,ttf,ttc,OTF,TTF,TTC} "$SUBMIT/" 2>/dev/null || :
+    echo "   Flattened $(ls "$SUBMIT/"*.{otf,ttf,ttc,OTF,TTF,TTC} 2>/dev/null | wc -l) font files"
+fi
+
+# Build zip with EM-required file order: .tex first, then bib/bbl, then fonts
+(cd "$SUBMIT" && \
+    zip -q ../${BASE}_submission.zip ${EM_BASE}.tex && \
+    zip -q ../${BASE}_submission.zip ${EM_BASE}.bbl references.bib 2>/dev/null; \
+    zip -q ../${BASE}_submission.zip *.otf *.ttf *.ttc *.OTF *.TTF *.TTC 2>/dev/null; \
+    true)
 rm -rf "$SUBMIT"
 ZIP_SIZE=$(du -h ${BASE}_submission.zip | cut -f1)
 echo "   ✓ ${BASE}_submission.zip (${ZIP_SIZE})"

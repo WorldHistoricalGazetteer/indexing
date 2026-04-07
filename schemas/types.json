@@ -80,6 +80,10 @@
       "pleiades_types": {
         "type": "keyword"
       },
+      "mapping_conf": {
+        "type": "object",
+        "enabled": false
+      },
       "indexed_at": {
         "type": "date"
       }
