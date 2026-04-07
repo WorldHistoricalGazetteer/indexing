@@ -1137,7 +1137,7 @@ do_generate_tiles() {
 #!/bin/bash
 #SBATCH --job-name=es-tiles
 #SBATCH --partition=smp
-#SBATCH --time=2:00:00
+#SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
