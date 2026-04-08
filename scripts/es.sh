@@ -1135,7 +1135,7 @@ do_generate_tiles() {
     cat > "$TILES_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=es-tiles
-#SBATCH --partition=htc
+#SBATCH --partition=smp
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
