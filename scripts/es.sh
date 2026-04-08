@@ -979,6 +979,7 @@ do_ingest_boundaries() {
 #!/bin/bash
 #SBATCH --job-name=es-boundaries
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1137,6 +1138,8 @@ do_generate_tiles() {
 #!/bin/bash
 #SBATCH --job-name=es-tiles
 #SBATCH --partition=smp
+#SBATCH --account=ishi
+#SBATCH --account=ishi
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1272,6 +1275,7 @@ do_rebuild_toponyms() {
 #SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
@@ -1431,6 +1435,7 @@ do_partial_update_es() {
 #SBATCH --error=${LOG_DIR}/partial_update_v${DATA_VERSION}_%j.err
 #SBATCH --time=6:00:00
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -1544,6 +1549,7 @@ do_precompute_phonetics() {
 #SBATCH --error=${LOG_DIR}/neural_g2p_v${DATA_VERSION}_%j.err
 #SBATCH --time=12:00:00
 #SBATCH --partition=a100
+#SBATCH --account=ishi
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1891,6 +1897,7 @@ do_generate_training_data() {
 #SBATCH --error=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
@@ -2127,6 +2134,7 @@ do_train_model() {
 #SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
+#SBATCH --account=ishi
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -2241,6 +2249,7 @@ EOF
 #SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
+#SBATCH --account=ishi
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -2324,6 +2333,7 @@ EOF
 #SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
+#SBATCH --account=ishi
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -2486,6 +2496,7 @@ do_update_embeddings() {
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
+#SBATCH --account=ishi
 #SBATCH --gres=gpu:1
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -2533,6 +2544,7 @@ INDEX_JOB=\$(sbatch --parsable -M smp <<INNER
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -2618,6 +2630,7 @@ do_update_embeddings_index() {
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=smp
+#SBATCH --account=ishi
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
@@ -3144,6 +3157,7 @@ do_cluster() {
 #SBATCH --error=${LOG_DIR}/cluster_%j.err
 #SBATCH --time=${SLURM_TIME}
 #SBATCH --partition=htc
+#SBATCH --account=ishi
 #SBATCH --qos=normal
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
