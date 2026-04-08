@@ -1,7 +1,7 @@
 # CLAUDE.md — Agent Briefing for WHG Indexing Repository
 
 > **Repository:** `WorldHistoricalGazetteer/indexing`
-> **Last updated:** 4 April 2026
+> **Last updated:** 6 April 2026
 
 ---
 
@@ -447,6 +447,18 @@ sbatch processing/es_staging.sbatch
 
 ## Development Notes
 
+- **SSH access to production ES**: The production ES instance runs on the CRC
+  VM (`ssh pitt`). ES listens on `localhost:9200` (gateway) / `localhost:9201`
+  (direct) and requires HTTP Basic auth (`elastic` user). The password is
+  stored at `/ix1/ishi/es/config/elastic.password`. Example ad-hoc query:
+  ```bash
+  ssh pitt 'ES_PASS=$(cat /ix1/ishi/es/config/elastic.password); \
+    curl -s -u "elastic:${ES_PASS}" "http://localhost:9200/places_20260317/_search" \
+    -H "Content-Type: application/json" -d '"'"'{"size":1}'"'"''
+  ```
+  Note: the gateway on port 9200 also requires auth; port 9201 is the direct
+  ES backend. Index names are dated (e.g. `places_20260317`,
+  `toponyms_20260317`). Use `_cat/indices` to discover current names.
 - **Python 3.11+** required (uses `str | None` union syntax, match statements).
 - Key dependencies: `elasticsearch`, `httpx`, `fastapi`, `uvicorn`, `pydantic`,
   `osmium`, `ijson`, `orjson`, `shapely`, `torch` (for Symphonym).
