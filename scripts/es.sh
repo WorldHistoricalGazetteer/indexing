@@ -1135,6 +1135,7 @@ do_generate_tiles() {
     cat > "$TILES_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=es-tiles
+#SBATCH --partition=htc
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -1184,7 +1185,7 @@ SBATCH_EOF
     echo "Submitted job: $JOBID"
     echo
     echo "Monitor with:"
-    echo "  squeue -j $JOBID -M smp"
+    echo "  squeue -j $JOBID"
     echo "  tail -f ${STAGING_SLURM_LOGS}/tiles-${JOBID}.out"
 }
 
