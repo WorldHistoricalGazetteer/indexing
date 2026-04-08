@@ -70,13 +70,16 @@ CHECKPOINT_INTERVAL = 10000
 BULK_THREAD_COUNT = 4
 QUEUE_SIZE = 8
 
-# Valid admin_level range (OSM wiki: 2 = country, 10 = neighbourhood)
-ADMIN_LEVELS = set(range(2, 11))  # 2..10
+# Valid admin_level range (OSM wiki: 0 = supranational, 2 = country, 10 = neighbourhood)
+# Levels 0–1 are rare in OSM but common in OHM (historical empires, indigenous territories).
+ADMIN_LEVELS = set(range(0, 11))  # 0..10
 
 # tippecanoe zoom control: admin_level → minimum zoom at which features appear.
 # Countries (level 2) are visible from z0; neighbourhoods (9-10) only at z9+.
 # This prevents low-zoom tiles from being overwhelmed by fine-grained boundaries.
 ADMIN_LEVEL_MINZOOM = {
+    0: 0,   # supranational (e.g. UN, empires in OHM)
+    1: 0,   # macro-regions, historical empires, indigenous territories
     2: 0,   # countries
     3: 2,   # large sub-national (e.g. US states, UK nations)
     4: 3,   # provinces, states

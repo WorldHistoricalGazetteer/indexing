@@ -126,7 +126,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
 
     # Types
     types = []
-    for k in ['place', 'natural', 'water', 'waterway', 'historic', 'landuse']:
+    for k in ['place', 'natural', 'water', 'waterway', 'historic', 'landuse', 'boundary']:
         if k in tags:
             types.append({
                 'identifier': tags[k],
@@ -169,7 +169,7 @@ def process_tags(tags):
     # Check if we care about this feature
     if 'place' in tags:
         pass
-    elif any(k in tags for k in ['natural', 'water', 'waterway', 'historic', 'landuse']):
+    elif any(k in tags for k in ['natural', 'water', 'waterway', 'historic', 'landuse', 'boundary']):
         pass
     else:
         return None
