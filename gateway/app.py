@@ -31,6 +31,7 @@ from .config import (
     get_elastic_password,
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
+from .places import router as places_router
 from .reconcile import router as reconcile_router
 from .search import router as search_router
 
@@ -77,6 +78,8 @@ app = FastAPI(
 app.include_router(reconcile_router)
 # Mount search + suggest router
 app.include_router(search_router)
+# Mount places data endpoint
+app.include_router(places_router)
 
 
 # ---- Health Endpoint ----
