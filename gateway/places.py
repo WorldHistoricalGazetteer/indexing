@@ -36,6 +36,17 @@ logger = logging.getLogger("gateway.places")
 
 router = APIRouter(prefix="/api", tags=["Places"])
 
+# The Reconciliation API convention prefixes entity IDs with their type,
+# e.g. "place:gn:2650225".  The ES places index stores just the namespaced
+# ID "gn:2650225".  We strip the prefix transparently so callers can send
+# either form.
+_ENTITY_PREFIX = "place:"
+
+
+def _strip_prefix(raw_id: str) -> str:
+    """Strip the ``place:`` entity-type prefix if present."""
+    return raw_id[len(_ENTITY_PREFIX):] if raw_id.startswith(_ENTITY_PREFIX) else raw_id
+
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -269,11 +280,16 @@ async def fetch_places(req: PlacesRequest):
     auth = es_auth()
     requested_fields = set(req.fields) if req.fields else None
 
+    # Normalise IDs: strip "place:" prefix, track mapping back to caller IDs
+    # raw_to_es: caller ID → ES place_id   (e.g. "place:gn:123" → "gn:123")
+    raw_to_es = {rid: _strip_prefix(rid) for rid in req.ids}
+    es_ids = list(dict.fromkeys(raw_to_es.values()))  # unique, order-preserved
+
     async with httpx.AsyncClient(timeout=30) as client:
         # ------------------------------------------------------------------
         # Step 1: Fetch places from the places index
         # ------------------------------------------------------------------
-        places_body = _build_places_by_id(req.ids)
+        places_body = _build_places_by_id(es_ids)
         places_resp = await client.post(
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
             json=places_body,
@@ -294,7 +310,7 @@ async def fetch_places(req: PlacesRequest):
                 sources[pid] = src
 
         found_ids = set(sources.keys())
-        not_found = [pid for pid in req.ids if pid not in found_ids]
+        not_found = [rid for rid in req.ids if raw_to_es[rid] not in found_ids]
 
         # ------------------------------------------------------------------
         # Step 2: Enrich names from the toponyms index
@@ -330,15 +346,19 @@ async def fetch_places(req: PlacesRequest):
                 logger.warning("Toponym enrichment failed (non-fatal): %s", e)
 
     # ------------------------------------------------------------------
-    # Format response — preserve request order
+    # Format response — preserve request order, use caller's original IDs
     # ------------------------------------------------------------------
     places: list[PlaceDetail] = []
-    for pid in req.ids:
-        if pid in sources:
-            toponyms = place_toponyms.get(pid) or None
-            places.append(
-                _format_place_detail(sources[pid], toponyms, requested_fields)
-            )
+    for rid in req.ids:
+        es_id = raw_to_es[rid]
+        if es_id in sources:
+            toponyms = place_toponyms.get(es_id) or None
+            detail = _format_place_detail(sources[es_id], toponyms, requested_fields)
+            # If the caller sent a prefixed ID, echo it back so their
+            # lookup dict (keyed on the original ID) finds the entry.
+            if rid != es_id:
+                detail.place_id = rid
+            places.append(detail)
 
     return PlacesResponse(places=places, not_found=not_found)
 
