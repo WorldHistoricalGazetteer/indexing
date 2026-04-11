@@ -117,15 +117,24 @@ def collect_place_ids(
     hits: list[dict],
     place_scores: dict[str, float],
     exclude_prefixes: tuple[str, ...] = (),
+    include_prefixes: tuple[str, ...] = (),
 ) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
     ``attestations`` field.
+
+    Args:
+        include_prefixes: When non-empty, **only** place_ids starting with
+            one of these prefixes are kept (positive namespace filter).
+        exclude_prefixes: Place_ids starting with any of these are dropped
+            (negative namespace filter).  Applied after the inclusion check.
     """
     for hit in hits:
         score = hit.get("_score", 0.0)
         for pid in hit.get("_source", {}).get("attestations", []):
             if not pid:
+                continue
+            if include_prefixes and not pid.startswith(include_prefixes):
                 continue
             if exclude_prefixes and pid.startswith(exclude_prefixes):
                 continue
@@ -155,6 +164,9 @@ def build_places_filter(
     end_year: int | None,
     size: int = 50,
     exclude_namespaces: list[str] | None = None,
+    namespaces: list[str] | None = None,
+    fclasses: list[str] | None = None,
+    types: list[str] | None = None,
     extra_source: list[str] | None = None,
     geom: str = "full",
 ) -> dict:
@@ -162,6 +174,16 @@ def build_places_filter(
     Build an ES query that fetches places by ID with optional filters.
 
     Args:
+        exclude_namespaces: Namespaces to exclude (``must_not`` filter).
+        namespaces: When set, **only** these namespaces are returned
+            (positive ``filter`` clause).  Takes precedence over
+            ``exclude_namespaces`` for any overlap.
+        fclasses: GeoNames feature-class letters (e.g. ``["P", "A"]``).
+            Translates to a nested ``types.label`` terms filter — GeoNames
+            stores the feature class in the ``label`` field of its type entry.
+        types: AAT type identifiers (e.g. ``["aat:300008347"]``) or
+            source-vocabulary identifiers.  Translates to a nested
+            ``types.identifier`` terms filter.
         extra_source: Additional ``_source`` fields beyond the default set.
         geom: ``"full"`` (default) returns ``geometries.geom`` and
             ``geometries.repr_point``; ``"repr_point"`` returns only the
@@ -172,11 +194,31 @@ def build_places_filter(
     ]
     must_not_clauses: list[dict] = []
 
-    if exclude_namespaces:
+    if namespaces:
+        filter_clauses.append({"terms": {"namespace": namespaces}})
+    elif exclude_namespaces:
         must_not_clauses.append({"terms": {"namespace": exclude_namespaces}})
 
     if ccodes:
         filter_clauses.append({"terms": {"ccodes": ccodes}})
+
+    # Feature-class filter — nested on types.label (GeoNames stores fclass there)
+    if fclasses:
+        filter_clauses.append({
+            "nested": {
+                "path": "types",
+                "query": {"terms": {"types.label": fclasses}},
+            }
+        })
+
+    # Type identifier filter — nested on types.identifier
+    if types:
+        filter_clauses.append({
+            "nested": {
+                "path": "types",
+                "query": {"terms": {"types.identifier": types}},
+            }
+        })
 
     if bounds and _has_geometries(bounds):
         filter_clauses.append({

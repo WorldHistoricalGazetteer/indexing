@@ -54,6 +54,16 @@ class SearchRequest(BaseModel):
     query: str = Field(..., description="Search text")
     mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic")
     ccodes: Optional[list[str]] = Field(None, description="ISO-3166 country code filter")
+    fclasses: Optional[list[str]] = Field(
+        None,
+        description="GeoNames feature-class letters (e.g. ['P', 'A']). "
+                    "Filters on the nested types.label field.",
+    )
+    types: Optional[list[str]] = Field(
+        None,
+        description="AAT or source-vocabulary type identifiers "
+                    "(e.g. ['aat:300008347']). Filters on nested types.identifier.",
+    )
     bounds: Optional[dict] = Field(None, description="GeoJSON geometry for spatial filter (intersects)")
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
@@ -62,6 +72,11 @@ class SearchRequest(BaseModel):
     exclude_namespaces: list[str] = Field(
         default=["gb"],
         description="Namespace prefixes to exclude (e.g. ['gb'] to suppress noisy OS records).",
+    )
+    namespaces: Optional[list[str]] = Field(
+        None,
+        description="When set, only return results from these namespaces "
+                    "(e.g. ['gn', 'tgn']). Overrides exclude_namespaces.",
     )
     geom: str = Field(
         "full",
@@ -179,6 +194,7 @@ async def search(req: SearchRequest):
     auth = es_auth()
 
     exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
+    include_prefixes = tuple(f"{ns}:" for ns in req.namespaces) if req.namespaces else ()
 
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
@@ -198,7 +214,7 @@ async def search(req: SearchRequest):
                 )
                 knn_resp.raise_for_status()
                 knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                collect_place_ids(knn_hits, place_scores, exclude_prefixes)
+                collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
         else:
             text_body = build_toponym_query(req.query, req.mode, size=200)
             text_resp = await client.post(
@@ -207,7 +223,7 @@ async def search(req: SearchRequest):
             )
             text_resp.raise_for_status()
             text_hits = text_resp.json().get("hits", {}).get("hits", [])
-            collect_place_ids(text_hits, place_scores, exclude_prefixes)
+            collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
 
         if not place_scores:
             return SearchResponse()
@@ -226,6 +242,9 @@ async def search(req: SearchRequest):
             end_year=req.end_year,
             size=req.size * 4,  # over-fetch for re-ranking
             exclude_namespaces=req.exclude_namespaces or None,
+            namespaces=req.namespaces,
+            fclasses=req.fclasses,
+            types=req.types,
             extra_source=["types"],  # needed for type facets + hit data
             geom=req.geom,
         )

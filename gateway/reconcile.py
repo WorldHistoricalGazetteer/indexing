@@ -72,7 +72,16 @@ class ReconcileRequest(BaseModel):
     query: Optional[str] = Field(None, description="Query toponym string")
     mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic")
     ccodes: Optional[list[str]] = Field(None, description="ISO-3166 country code filter")
-    fclasses: Optional[list[str]] = Field(None, description="GeoNames feature-class codes (not supported on new indexes, ignored)")
+    fclasses: Optional[list[str]] = Field(
+        None,
+        description="GeoNames feature-class letters (e.g. ['P', 'A']). "
+                    "Filters on the nested types.label field.",
+    )
+    types: Optional[list[str]] = Field(
+        None,
+        description="AAT or source-vocabulary type identifiers "
+                    "(e.g. ['aat:300008347']). Filters on nested types.identifier.",
+    )
     bounds: Optional[dict] = Field(None, description="GeoJSON geometry for spatial filter (intersects)")
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
@@ -82,6 +91,11 @@ class ReconcileRequest(BaseModel):
         description="Namespace prefixes to exclude from results (e.g. ['gb'] "
                     "to suppress noisy Ordnance Survey records). "
                     "Pass [] to include all namespaces.",
+    )
+    namespaces: Optional[list[str]] = Field(
+        None,
+        description="When set, only return results from these namespaces "
+                    "(e.g. ['gn', 'tgn']). Overrides exclude_namespaces.",
     )
     group_by_cluster: bool = Field(
         default=False,
@@ -219,6 +233,9 @@ async def reconcile_search(req: ReconcileRequest):
     # Build exclusion prefixes from requested namespaces (e.g. ["gb"] → ("gb:",))
     exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
 
+    # Build inclusion prefixes when a positive namespace filter is given
+    include_prefixes = tuple(f"{ns}:" for ns in req.namespaces) if req.namespaces else ()
+
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
 
@@ -238,7 +255,7 @@ async def reconcile_search(req: ReconcileRequest):
                 )
                 knn_resp.raise_for_status()
                 knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                _collect_place_ids(knn_hits, place_scores, exclude_prefixes)
+                _collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
         else:
             text_body = _build_toponym_query(req.query, req.mode, size=200)
             text_resp = await client.post(
@@ -249,7 +266,7 @@ async def reconcile_search(req: ReconcileRequest):
             )
             text_resp.raise_for_status()
             text_hits = text_resp.json().get("hits", {}).get("hits", [])
-            _collect_place_ids(text_hits, place_scores, exclude_prefixes)
+            _collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
 
         if not place_scores:
             return ReconcileResponse()
@@ -272,6 +289,9 @@ async def reconcile_search(req: ReconcileRequest):
             end_year=req.end_year,
             size=req.size * 4,
             exclude_namespaces=req.exclude_namespaces or None,
+            namespaces=req.namespaces,
+            fclasses=req.fclasses,
+            types=req.types,
         )
         places_resp = await client.post(
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
