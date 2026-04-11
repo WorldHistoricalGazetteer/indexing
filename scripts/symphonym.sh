@@ -1,0 +1,1319 @@
+#!/bin/bash
+# =============================================================================
+# scripts/symphonym.sh
+# Symphonym training pipeline orchestration
+# =============================================================================
+# Sourced by es.sh — not intended for standalone execution.
+#
+# Functions:
+#   do_rebuild_toponyms       Extract toponyms + Epitran IPA + PanPhon → ES
+#   do_partial_update_es      Update specific languages in ES (no full rebuild)
+#   do_precompute_phonetics   Neural G2P on GPU (CharsiuG2P + Phonikud)
+#   do_generate_training_data Generate training sets from ES toponyms
+#   do_train_model            Train Teacher→Student→Fine-tune (GPU Slurm)
+#   do_train_and_update       Full pipeline: train + compute + index
+#   do_update_embeddings      Compute Symphonym embeddings (GPU)
+#   do_update_embeddings_index Index precomputed embeddings to ES (CPU Slurm)
+
+source "${BASH_SOURCE[0]%/*}/_common.sh"
+
+# ==============================================================================
+# TOPONYM INDEX REBUILD WITH PANPHON EMBEDDINGS
+# ==============================================================================
+
+do_rebuild_toponyms() {
+    # Usage: source es.sh -rebuild-toponyms [VERSION] [OPTIONS...]
+    # Options are passed through to rebuild_toponyms_index.py
+
+    DATA_VERSION=${1:-6}
+    shift 2>/dev/null || true  # Remove version from remaining args
+
+    # Capture extra args (e.g., --limit 1000, --resume, --skip-es-index)
+    PYTHON_ARGS="$@"
+
+    # Check staging is running (always required — rebuild reads from places
+    # index and writes to toponyms index)
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    ES_URL="http://${ES_NODE}:${ES_PORT}"
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    # Output directory for data
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    NEURAL_PHONETICS="${OUTPUT_DIR}/neural_phonetics.parquet"
+
+    # Setup local scratch (CRC convention)
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    echo "=========================================="
+    echo "REBUILD TOPONYMS INDEX"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  Output Dir:   ${OUTPUT_DIR}"
+    echo "  ES Host:      ${ES_URL}"
+    echo "  Extra Args:   ${PYTHON_ARGS:-none}"
+
+    # Check for precomputed neural phonetics
+    PRECOMPUTED_ARG=""
+    if [ -f "$NEURAL_PHONETICS" ]; then
+        echo "  Neural G2P:   ${NEURAL_PHONETICS} (found)"
+        PRECOMPUTED_ARG="--precomputed-phonetics \"${NEURAL_PHONETICS}\""
+    else
+        echo "  Neural G2P:   not found (zh/ko/gan/wuu/yue/he will be skipped)"
+        echo "                Run: es -precompute-phonetics ${DATA_VERSION}"
+    fi
+    echo
+    echo "This job will:"
+    echo "  1. Extract ALL toponyms from places index (with attestations)"
+    echo "  2. Filter pre-romanized forms (lang-script mismatches)"
+    echo "  3. Generate vocabulary (full Unicode ranges, native script)"
+    echo "  4. Compute IPA + PanPhon embeddings for training namespace toponyms"
+    echo "     Epitran: CPU parallel (Latin, Cyrillic, Greek, Arabic, Indic, etc.)"
+    if [ -f "$NEURAL_PHONETICS" ]; then
+        echo "     Neural: merged from precomputed (CharsiuG2P + Phonikud)"
+    fi
+    echo "  5. Index ALL toponyms to ES (panphon_embedding where available)"
+    echo "  6. Generate name_romanized for cross-script text search"
+    echo "  7. Refresh index and create snapshot"
+    echo
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-rebuild-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/rebuild_v${DATA_VERSION}_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+set -e
+
+# Load Environment
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "$REPO_DIR"
+
+# Setup scratch
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+mkdir -p "$OUTPUT_DIR"
+
+echo "=========================================="
+echo "REBUILD TOPONYMS INDEX"
+echo "=========================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Scratch: \$SCRATCH_DIR"
+echo "Output:  $OUTPUT_DIR"
+echo
+
+# Run the rebuild script
+python -u -m phonetics.extraction.rebuild_toponyms_index \
+    --es-host "${ES_URL}" \
+    --db-path "${DB_PATH}" \
+    --output-dir "${OUTPUT_DIR}" \
+    --scratch-dir "\$SCRATCH_DIR" \
+    --training-namespaces gn wd tgn \
+    --confirm \
+    ${PRECOMPUTED_ARG} \
+    $PYTHON_ARGS
+
+echo
+echo "=========================================="
+echo "JOB COMPLETE"
+echo "=========================================="
+echo "Output directory: $OUTPUT_DIR"
+echo "  - vocab/           Character, language, script vocabularies"
+echo "  - coverage_stats.json  PanPhon coverage by script+language"
+echo "  - toponyms.db  DuckDB checkpoint"
+echo
+echo "ES index: toponyms"
+echo "  - Includes panphon_embedding for phonetic similarity queries"
+echo "  - Includes name_romanized for cross-script text search"
+echo
+echo "Next steps:"
+echo "  1. Review coverage_stats.json"
+echo "  2. Generate training data: source es.sh -generate-training-data $DATA_VERSION"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    # Strip cluster suffix from JOBID if present
+    CLEAN_JOBID="${JOBID%;*}"
+
+    echo "✓ Rebuild job submitted: $CLEAN_JOBID"
+    echo "  Monitor: squeue -j $CLEAN_JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/rebuild_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+}
+
+# ==============================================================================
+# PARTIAL ES UPDATE (SPECIFIC LANGUAGES)
+# ==============================================================================
+
+do_partial_update_es() {
+    # Usage: source es.sh -partial-update-es [VERSION] [--languages LANG1 LANG2 ...]
+    #
+    # Updates Elasticsearch documents for specific languages without full index rebuild.
+    # Much faster than full rebuild when you only need to update a subset of documents.
+
+    DATA_VERSION=${1:-7}
+    shift 2>/dev/null || true
+
+    # Parse --languages flag
+    LANGUAGES=""
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --languages)
+                shift
+                # Collect all following args until next flag or end
+                while [[ $# -gt 0 ]] && [[ ! "$1" =~ ^-- ]]; do
+                    LANGUAGES="$LANGUAGES $1"
+                    shift
+                done
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$LANGUAGES" ]; then
+        echo "ERROR: --languages required"
+        echo "Usage: es -partial-update-es VERSION --languages LANG1 [LANG2 ...]"
+        echo "Example: es -partial-update-es 7 --languages ja"
+        return 1
+    fi
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    ES_URL="http://${ES_NODE}:${ES_PORT}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+
+    # Verify DuckDB exists
+    if [ ! -f "$DB_PATH" ]; then
+        echo "ERROR: DuckDB not found at $DB_PATH"
+        echo "The database must contain updated IPA data for the specified languages."
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    echo "=========================================="
+    echo "PARTIAL ES UPDATE"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  DuckDB:       ${DB_PATH}"
+    echo "  ES Host:      ${ES_URL}"
+    echo "  Languages:    ${LANGUAGES}"
+    echo
+    echo "This job will:"
+    echo "  1. Query DuckDB for toponyms in specified languages"
+    echo "  2. Bulk update ES documents with new IPA/PanPhon data"
+    echo "  3. Refresh index"
+    echo
+    echo "Note: This does NOT rebuild the index - just updates existing documents."
+    echo
+
+    # Convert space-separated to comma-separated for Python
+    LANG_ARGS=$(echo "$LANGUAGES" | tr ' ' '\n' | paste -sd ',' -)
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-partial-update-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/partial_update_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/partial_update_v${DATA_VERSION}_%j.err
+#SBATCH --time=6:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+set -e
+
+# Load Environment
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "$REPO_DIR"
+
+echo "=========================================="
+echo "PARTIAL ES UPDATE"
+echo "=========================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Languages: ${LANGUAGES}"
+echo
+
+# Run the partial update
+python -u -m phonetics.extraction.rebuild_toponyms_index \
+    --es-host "${ES_URL}" \
+    --db-path "${DB_PATH}" \
+    --toponyms-index toponyms \
+    --languages ${LANG_ARGS} \
+    --partial-update \
+    --resume \
+    --confirm
+
+echo
+echo "=========================================="
+echo "PARTIAL UPDATE COMPLETE"
+echo "=========================================="
+echo "Check the output above for:"
+echo "  - Updated: number of successfully updated documents"
+echo "  - Not found: documents in DuckDB but not in ES"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    CLEAN_JOBID="${JOBID%;*}"
+
+    echo "✓ Partial update job submitted: $CLEAN_JOBID"
+    echo "  Monitor: squeue -j $CLEAN_JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/partial_update_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+    echo
+    echo "This typically completes in 10-30 minutes for a single language."
+}
+
+# ==============================================================================
+# PRECOMPUTE NEURAL PHONETICS (GPU)
+# ==============================================================================
+
+do_precompute_phonetics() {
+    # Usage: source es.sh -precompute-phonetics [VERSION]
+    #
+    # Runs CharsiuG2P (zh/ko/gan/wuu/yue) and Phonikud (he) on GPU.
+    # Output: neural_phonetics.parquet in the data version directory.
+    #
+    # Must run AFTER -rebuild-toponyms (needs DuckDB with extracted toponyms).
+    # Must run BEFORE the next -rebuild-toponyms --resume (which merges results).
+
+    DATA_VERSION=${1:-6}
+
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    OUTPUT_FILE="${OUTPUT_DIR}/neural_phonetics.parquet"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
+
+    # Verify DuckDB exists
+    if [ ! -f "$DB_PATH" ]; then
+        echo "ERROR: DuckDB not found at $DB_PATH"
+        echo "Run -rebuild-toponyms first to extract toponyms."
+        return 1
+    fi
+
+    echo "=========================================="
+    echo "PRECOMPUTE NEURAL PHONETICS (GPU)"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  DuckDB:       ${DB_PATH}"
+    echo "  Output:       ${OUTPUT_FILE}"
+    echo
+    echo "This job will:"
+    echo "  1. Query DuckDB for neural-language toponyms (zh/ko/gan/wuu/yue/he)"
+    echo "  2. Run CharsiuG2P (batched) on GPU for CJK/Korean"
+    echo "  3. Run Phonikud on GPU for Hebrew"
+    echo "  4. Compute PanPhon features and 192-dim embeddings"
+    echo "  5. Save results to Parquet"
+    echo
+    echo "After completion, re-run:"
+    echo "  es -rebuild-toponyms ${DATA_VERSION} --resume"
+    echo "to merge neural phonetics into the JSONL and ES index."
+    echo
+
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    JOBID=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-neural-g2p-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/neural_g2p_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/neural_g2p_v${DATA_VERSION}_%j.err
+#SBATCH --time=12:00:00
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+
+echo "=========================================="
+echo "PRECOMPUTE NEURAL PHONETICS (GPU)"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+
+python -u -m phonetics.extraction.precompute_neural_phonetics \
+    --db-path "${DB_PATH}" \
+    --output "${OUTPUT_FILE}" \
+    --training-namespaces gn wd tgn \
+    --batch-size 64 \
+    --device cuda \
+    --scratch-dir "\$SCRATCH_DIR"
+
+echo
+echo "=========================================="
+echo "JOB COMPLETE"
+echo "=========================================="
+echo "Output: ${OUTPUT_FILE}"
+echo
+echo "Next: es -rebuild-toponyms ${DATA_VERSION} --resume"
+echo "  (will merge neural phonetics into JSONL and ES index)"
+echo
+echo "Finished: \$(date)"
+EOF
+)
+
+    CLEAN_JOBID=$(echo "$JOBID" | cut -d';' -f1)
+    echo "✓ Neural G2P job submitted: $CLEAN_JOBID"
+    echo "  Monitor: squeue -j $CLEAN_JOBID -M gpu"
+    echo "  Logs: tail -f ${LOG_DIR}/neural_g2p_v${DATA_VERSION}_${CLEAN_JOBID}.*"
+}
+# ==============================================================================
+# GENERATE TRAINING DATA (Phase 2)
+# ==============================================================================
+
+do_generate_training_data() {
+    # Usage: source es.sh -generate-training-data [VERSION] [--force|--resume|--skip-to-phase3|--resume-from-pass2]
+
+    DATA_VERSION=${1:-6}
+    shift 2>/dev/null || true
+
+    # Parse flags
+    FORCE_FLAG=""
+    SKIP_PHASE3_FLAG=""
+    RESUME_PASS2_FLAG=""
+    PYTHON_ARGS=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --force)
+                FORCE_FLAG="--force"
+                echo "  Mode: FORCE (will regenerate all phases)"
+                shift
+                ;;
+            --resume)
+                echo "  Mode: RESUME (will skip completed phases)"
+                shift
+                ;;
+            --skip-to-phase3)
+                SKIP_PHASE3_FLAG="--skip-to-phase3"
+                # es -generate-training-data 6 --skip-to-phase3
+                echo "  Mode: SKIP TO PHASE 3 (assumes Phase 1 & 2 complete)"
+                shift
+                ;;
+            --resume-from-pass2)
+                RESUME_PASS2_FLAG="--resume-from-pass2"
+                echo "  Mode: RESUME FROM PASS 2 (Phase 3 only, skips ES mining)"
+                shift
+                ;;
+            *)
+                PYTHON_ARGS="$PYTHON_ARGS $1"
+                shift
+                ;;
+        esac
+    done
+
+    # Check staging is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source $0 -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    # Verify ES is responding
+    if ! curl -s --connect-timeout 5 "http://${ES_NODE}:${ES_PORT}/_cluster/health" &>/dev/null; then
+        echo "ERROR: Cannot connect to staging ES at http://${ES_NODE}:${ES_PORT}"
+        return 1
+    fi
+
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
+    mkdir -p "$LOG_DIR"
+
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DB_PATH="${IX1_BASE}/data/toponyms.db"
+
+    # DuckDB is optional - we read training data from ES toponyms index
+    DB_ARG=""
+    if [ -f "$DB_PATH" ]; then
+        DB_ARG="--db-path \"${DB_PATH}\""
+        echo "  DuckDB found: ${DB_PATH} (optional, for fallback)"
+    else
+        echo "  DuckDB not found - will read from ES toponyms index"
+    fi
+
+    # Check ES toponyms index exists
+    TOPONYM_COUNT=$(curl -s "http://${ES_NODE}:${ES_PORT}/toponyms/_count" | jq -r '.count // 0')
+    if [ "$TOPONYM_COUNT" -eq 0 ]; then
+        echo "ERROR: No documents in ES toponyms index"
+        echo "Run -rebuild-toponyms first to populate the index."
+        return 1
+    fi
+    echo "  ES toponyms: ${TOPONYM_COUNT} documents"
+
+    # Show checkpoint status
+    echo
+    echo "Checkpoint status:"
+    if [ -f "${OUTPUT_DIR}/pairs/positive_pairs.parquet" ]; then
+        echo "  ✓ pairs/positive_pairs.parquet exists"
+    else
+        echo "  ○ pairs/positive_pairs.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/triplets/phase1/train.parquet" ] && [ -f "${OUTPUT_DIR}/triplets/phase1/val.parquet" ]; then
+        echo "  ✓ triplets/phase1/{train,val}.parquet exist"
+    else
+        echo "  ○ triplets/phase1/{train,val}.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/training/phase2/train.parquet" ] && [ -f "${OUTPUT_DIR}/training/phase2/val.parquet" ]; then
+        echo "  ✓ training/phase2/{train,val}.parquet exist"
+    else
+        echo "  ○ training/phase2/{train,val}.parquet (pending)"
+    fi
+    if [ -f "${OUTPUT_DIR}/triplets/phase3/train.parquet" ] && [ -f "${OUTPUT_DIR}/triplets/phase3/val.parquet" ]; then
+        echo "  ✓ triplets/phase3/{train,val}.parquet exist"
+    else
+        echo "  ○ triplets/phase3/{train,val}.parquet (pending)"
+    fi
+
+    SCRATCH_VAR="/scratch/slurm-\${SLURM_JOB_ID}"
+
+    echo
+    echo "=========================================="
+    echo "GENERATE TRAINING DATA"
+    echo "=========================================="
+    echo "  Data Version: v${DATA_VERSION}"
+    echo "  Output Dir:   ${OUTPUT_DIR}"
+    echo "  ES Host:      http://${ES_NODE}:${ES_PORT}"
+    if [ -n "$FORCE_FLAG" ]; then
+        echo "  Mode:         FORCE (regenerate all)"
+    elif [ -n "$SKIP_PHASE3_FLAG" ]; then
+        echo "  Mode:         SKIP TO PHASE 3"
+    elif [ -n "$RESUME_PASS2_FLAG" ]; then
+        echo "  Mode:         RESUME FROM PASS 2 (Phase 3 only, skips ES mining)"
+    else
+        echo "  Mode:         RESUME (skip completed phases)"
+    fi
+    echo
+
+    JOBID=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-traindata-v${DATA_VERSION}
+#SBATCH --output=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.out
+#SBATCH --error=${LOG_DIR}/traindata_v${DATA_VERSION}_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=300G
+
+set -e
+
+# Load Environment
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "$REPO_DIR"
+
+# Setup scratch
+SCRATCH_DIR="$SCRATCH_VAR"
+mkdir -p "\$SCRATCH_DIR"
+
+echo "=========================================="
+echo "GENERATE TRAINING DATA"
+echo "=========================================="
+echo "Job Started: \$(date)"
+echo "Node: \$(hostname)"
+echo "Scratch: \$SCRATCH_DIR"
+echo "Output:  $OUTPUT_DIR"
+echo
+
+# Run the training data generation script
+python -m phonetics.extraction.generate_training_data \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    ${DB_ARG} \
+    --output-dir "${OUTPUT_DIR}" \
+    --scratch-dir "\$SCRATCH_DIR" \
+    --training-namespaces gn wd tgn \
+    $FORCE_FLAG \
+    $SKIP_PHASE3_FLAG \
+    $RESUME_PASS2_FLAG \
+    $PYTHON_ARGS
+
+echo
+echo "=========================================="
+echo "JOB COMPLETE"
+echo "=========================================="
+echo "Output directory: $OUTPUT_DIR"
+echo "  - pairs/          Positive pairs Parquet"
+echo "  - triplets/       Phase 1 & 3 triplets"
+echo "  - training/       Phase 2 samples"
+echo "  - training_stats.json  Sample distribution"
+echo
+echo "Next steps:"
+echo "  1. Review training_stats.json for balance"
+echo "  2. Train model: source es.sh -train-model $DATA_VERSION"
+echo
+echo "Job Finished: \$(date)"
+EOF
+)
+
+    echo "✓ Training data job submitted: $JOBID"
+    echo "  Monitor: squeue -j $JOBID"
+    echo "  Logs: tail -f ${LOG_DIR}/traindata_v${DATA_VERSION}_${JOBID}.out"
+}
+
+# ==============================================================================
+# TRAIN MODEL (Phase 3)
+# ==============================================================================
+
+do_train_model() {
+    # Usage: es -train-model VERSION [START_PHASE [END_PHASE]] [--resume] [--resume-from CHECKPOINT] [--partition PARTITION]
+    # Positional args (VERSION, START_PHASE, END_PHASE) must come before any flags.
+    # Examples:
+    #   es -train-model 7                          # all phases (1-3), a100
+    #   es -train-model 7 --partition l40s         # all phases (1-3), l40s
+    #   es -train-model 7 1 --partition l40s       # phase 1 only, l40s
+    #   es -train-model 7 1 3 --partition l40s     # phases 1-3, l40s
+    #   es -train-model 7 2 --resume               # phase 2 only, auto-resume
+    #   es -train-model 7 2 3 --resume             # phases 2-3, auto-resume
+
+    # Parse positional args first (stop at first flag)
+    DATA_VERSION="${1:-6}"
+    shift || true
+
+    START_PHASE=1
+    END_PHASE=""
+    START_PHASE_EXPLICIT=false
+    if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+        START_PHASE="$1"
+        START_PHASE_EXPLICIT=true
+        shift
+        if [[ "${1:-}" =~ ^[0-9]+$ ]]; then
+            END_PHASE="$1"
+            shift
+        fi
+    fi
+
+    # Now parse flags
+    GPU_PARTITION="${GPU_PARTITION:-a100}"
+    RESUME_FROM=""
+    AUTO_RESUME=false
+
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --resume)
+                AUTO_RESUME=true
+                shift
+                ;;
+            --resume-from)
+                RESUME_FROM="$2"
+                shift 2
+                ;;
+            --partition)
+                GPU_PARTITION="$2"
+                shift 2
+                ;;
+            *)
+                echo "WARNING: Unknown argument ignored: $1"
+                shift
+                ;;
+        esac
+    done
+
+    # END_PHASE default:
+    #   es -train-model 7            -> phases 1-3 (run everything)
+    #   es -train-model 7 2          -> phase 2 only
+    #   es -train-model 7 1 3        -> phases 1-3 (explicit)
+    if [ -z "$END_PHASE" ]; then
+        if [ "$START_PHASE_EXPLICIT" = "true" ]; then
+            END_PHASE=$START_PHASE   # single phase specified
+        else
+            END_PHASE=3              # no phase specified: run all
+        fi
+    fi
+
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    OUTPUT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    TRAIN_LOG_DIR="${LOG_DIR}/training_v${DATA_VERSION}"
+    mkdir -p "$TRAIN_LOG_DIR" "$OUTPUT_DIR"
+
+    echo "  Data dir: ${DATA_DIR}"
+    echo "  Output dir: ${OUTPUT_DIR}"
+    echo "  Log dir: ${TRAIN_LOG_DIR}"
+    echo "  Repo dir: ${REPO_DIR}"
+
+    # If --resume flag is set and no explicit --resume-from, enable auto-detection
+    if [ "$AUTO_RESUME" = true ] && [ -z "$RESUME_FROM" ]; then
+        echo "  Auto-resume: ENABLED (will detect latest checkpoint)"
+    fi
+
+    # Verify training data exists - check for actual content, not just parent dirs
+    # Note: use if-then rather than [ ] && to avoid set -e aborting on false tests
+    HAS_PHASE1="no"
+    HAS_TRAINING="no"
+    if [ -f "${DATA_DIR}/triplets/phase1/train.parquet" ]; then HAS_PHASE1="yes"; fi
+    if [ -d "${DATA_DIR}/training/split=train" ]; then HAS_TRAINING="yes"; fi
+    if [ -d "${DATA_DIR}/training/phase2" ]; then HAS_TRAINING="yes"; fi
+    if [ "$HAS_PHASE1" = "no" ] && [ "$HAS_TRAINING" = "no" ]; then
+        echo "ERROR: Training data not found at ${DATA_DIR}"
+        echo "  Expected: ${DATA_DIR}/triplets/phase1/train.parquet"
+        echo "  Or:       ${DATA_DIR}/training/split=train/"
+        echo "  Run: es -generate-training-data ${DATA_VERSION} first"
+        return 1
+    fi
+
+    # Pre-flight check
+    echo ""
+    echo "Pre-flight directory check:"
+    echo "  ${DATA_DIR}/triplets/phase1:"
+    if [ -f "${DATA_DIR}/triplets/phase1/train.parquet" ] && [ -f "${DATA_DIR}/triplets/phase1/val.parquet" ]; then
+        ls -lh "${DATA_DIR}/triplets/phase1/"*.parquet 2>/dev/null
+    else
+        echo "    [not found - run: es -generate-training-data ${DATA_VERSION}]"
+    fi
+
+    echo "  ${DATA_DIR}/triplets/phase3:"
+    if [ -f "${DATA_DIR}/triplets/phase3/train.parquet" ] && [ -f "${DATA_DIR}/triplets/phase3/val.parquet" ]; then
+        ls -lh "${DATA_DIR}/triplets/phase3/"*.parquet 2>/dev/null
+    else
+        echo "    [not found - will be skipped if running phase 3]"
+    fi
+
+    echo "  ${DATA_DIR}/training:"
+    ls -la "${DATA_DIR}/training" 2>/dev/null | head -10 || echo "    [not found]"
+    echo "  ${DATA_DIR}/vocab:"
+    ls -la "${DATA_DIR}/vocab" 2>/dev/null || echo "    [not found]"
+    echo ""
+
+    echo "=========================================="
+    echo "SUBMITTING TRAINING PIPELINE (v${DATA_VERSION})"
+    echo "Config: 1x GPU (${GPU_PARTITION}), 300GB RAM, 48H Limit"
+    echo "Phases: ${START_PHASE} to ${END_PHASE}"
+    echo "=========================================="
+
+    # Phase 1: Train Teacher
+    PHASE1_DEP=""
+    if [ "$START_PHASE" -le 1 ] && [ "$END_PHASE" -ge 1 ]; then
+        # Auto-detect best checkpoint if AUTO_RESUME is enabled or if RESUME_FROM is already set
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            # Prefer phase1_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase1_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase1_best.pt"
+                echo "📍 Auto-detected Phase 1 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P1=$(find "${OUTPUT_DIR}" -name "phase1_epoch*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P1" ]; then
+                    RESUME_FROM="$LATEST_P1"
+                    echo "📍 Auto-detected Phase 1 checkpoint: $(basename $RESUME_FROM)"
+                fi
+            fi
+        fi
+
+        # Check if Phase 1 training is actually complete
+        PHASE1_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase1_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase1_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 50 ]; then
+                PHASE1_COMPLETE=true
+                echo "✓ Phase 1 training complete ($COMPLETED_EPOCHS/50 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 1 resuming from epoch $NEXT_EPOCH/50"
+            fi
+        fi
+
+        if [ "$PHASE1_COMPLETE" = false ]; then
+            PHASE1_JOB=$(sbatch --parsable -M gpu <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p1-v${DATA_VERSION}
+#SBATCH --output=${TRAIN_LOG_DIR}/phase1_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase1_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=${GPU_PARTITION}
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+echo "===========================================" >&2
+echo "Phase 1 Training Job Started" >&2
+echo "Job ID: \$SLURM_JOB_ID" >&2
+echo "Node: \$(hostname)" >&2
+echo "Time: \$(date)" >&2
+echo "===========================================" >&2
+
+echo "Job started on \$(hostname) at \$(date)"
+echo "SLURM_JOB_ID: \$SLURM_JOB_ID"
+
+if [ ! -d "${DATA_DIR}" ]; then
+    echo "ERROR: Data directory not found: ${DATA_DIR}" >&2
+    exit 1
+fi
+
+if [ ! -d "${REPO_DIR}" ]; then
+    echo "ERROR: Repo directory not found: ${REPO_DIR}" >&2
+    exit 1
+fi
+
+if [ ! -f "${DATA_DIR}/triplets/phase1/train.parquet" ]; then
+    echo "ERROR: Phase 1 train.parquet not found" >&2
+    exit 1
+fi
+
+if [ ! -d "${DATA_DIR}/training" ]; then
+    echo "ERROR: Training data directory not found at ${DATA_DIR}/training" >&2
+    exit 1
+fi
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT/triplets/phase1"
+mkdir -p "\$SCRATCH_ROOT/vocab"
+mkdir -p "\$SCRATCH_ROOT/training"
+
+echo "Staging data to \$SCRATCH_ROOT..."
+rsync -av "${DATA_DIR}/triplets/phase1/" "\$SCRATCH_ROOT/triplets/phase1/"
+rsync -av "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+rsync -av "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
+
+echo "Starting Phase 1 (Teacher)..."
+python -u -m phonetics.training.train \
+    --phase 1 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+EOF
+)
+            PHASE1_JOB=$(echo "$PHASE1_JOB" | cut -d';' -f1)
+            echo "✓ Phase 1 submitted: $PHASE1_JOB"
+            PHASE1_DEP="--dependency=afterok:${PHASE1_JOB}"
+        fi  # Close PHASE1_COMPLETE check
+    else
+        echo "✓ Phase 1 skipped"
+    fi
+
+    # Phase 2: Align Student to Teacher
+    PHASE2_DEP=""
+    if [ "$START_PHASE" -le 2 ] && [ "$END_PHASE" -ge 2 ]; then
+        if [ ! -f "${OUTPUT_DIR}/phase1_best.pt" ] && [ -z "$PHASE1_JOB" ]; then
+            echo "ERROR: Phase 1 checkpoint not found and no Phase 1 job submitted"
+            return 1
+        fi
+
+        # Auto-detect best Phase 2 checkpoint if AUTO_RESUME is enabled
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            # Prefer phase2_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase2_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase2_best.pt"
+                echo "📍 Auto-detected Phase 2 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P2=$(find "${OUTPUT_DIR}" -name "phase2_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P2" ]; then
+                    RESUME_FROM="$LATEST_P2"
+                    echo "📍 Auto-detected Phase 2 checkpoint: $(basename $RESUME_FROM)"
+                fi
+            fi
+        fi
+
+        # Check if Phase 2 training is actually complete
+        PHASE2_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase2_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase2_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 50 ]; then
+                PHASE2_COMPLETE=true
+                echo "✓ Phase 2 training complete ($COMPLETED_EPOCHS/50 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 2 resuming from epoch $NEXT_EPOCH/50"
+            fi
+        fi
+
+        if [ "$PHASE2_COMPLETE" = false ]; then
+            PHASE2_JOB=$(sbatch --parsable -M gpu $PHASE1_DEP <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p2-v${DATA_VERSION}
+#SBATCH --output=${TRAIN_LOG_DIR}/phase2_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase2_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=${GPU_PARTITION}
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+echo "Job started on \$(hostname) at \$(date)"
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT/training"
+mkdir -p "\$SCRATCH_ROOT/vocab"
+
+rsync -a "${DATA_DIR}/training/" "\$SCRATCH_ROOT/training/"
+rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+
+echo "Starting Phase 2 (Student Alignment)..."
+python -u -m phonetics.training.train \
+    --phase 2 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --teacher-checkpoint "${OUTPUT_DIR}/phase1_best.pt" \
+    --epochs 50\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+EOF
+)
+            PHASE2_JOB=$(echo "$PHASE2_JOB" | cut -d';' -f1)
+            echo "✓ Phase 2 submitted: $PHASE2_JOB"
+            PHASE2_DEP="--dependency=afterok:${PHASE2_JOB}"
+        fi  # Close PHASE2_COMPLETE check
+    else
+        echo "✓ Phase 2 skipped"
+    fi
+
+    # Phase 3: Fine-tune with hard negatives
+    if [ "$START_PHASE" -le 3 ] && [ "$END_PHASE" -ge 3 ]; then
+        if [ ! -f "${OUTPUT_DIR}/phase2_best.pt" ] && [ -z "$PHASE2_JOB" ]; then
+            echo "ERROR: Phase 2 checkpoint not found and no Phase 2 job submitted"
+            return 1
+        fi
+
+        # Auto-detect best Phase 3 checkpoint if AUTO_RESUME is enabled
+        if [ -z "${RESUME_FROM}" ] && [ "$AUTO_RESUME" = true ]; then
+            # Prefer phase3_best.pt if it exists
+            if [ -f "${OUTPUT_DIR}/phase3_best.pt" ]; then
+                RESUME_FROM="${OUTPUT_DIR}/phase3_best.pt"
+                echo "📍 Auto-detected Phase 3 best checkpoint: $(basename $RESUME_FROM)"
+            else
+                # Fallback to latest epoch checkpoint
+                LATEST_P3=$(find "${OUTPUT_DIR}" -name "phase3_epoch_*.pt" 2>/dev/null | sort -V | tail -n1)
+                if [ -n "$LATEST_P3" ]; then
+                    RESUME_FROM="$LATEST_P3"
+                    echo "📍 Auto-detected Phase 3 checkpoint: $(basename $RESUME_FROM)"
+                fi
+            fi
+        fi
+
+        # Check if Phase 3 training is actually complete
+        PHASE3_COMPLETE=false
+        if [ -f "${OUTPUT_DIR}/phase3_metrics.json" ]; then
+            COMPLETED_EPOCHS=$(python3 -c "import json; print(len(json.load(open('${OUTPUT_DIR}/phase3_metrics.json'))['epochs']))" 2>/dev/null || echo "0")
+            if [ "$COMPLETED_EPOCHS" -ge 30 ]; then
+                PHASE3_COMPLETE=true
+                echo "✓ Phase 3 training complete ($COMPLETED_EPOCHS/30 epochs), skipping"
+            elif [ -n "${RESUME_FROM}" ]; then
+                NEXT_EPOCH=$((COMPLETED_EPOCHS + 1))
+                echo "⏸ Phase 3 resuming from epoch $NEXT_EPOCH/30"
+            fi
+        fi
+
+        if [ "$PHASE3_COMPLETE" = false ]; then
+            PHASE3_JOB=$(sbatch --parsable -M gpu $PHASE2_DEP <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-train-p3-v${DATA_VERSION}
+#SBATCH --output=${TRAIN_LOG_DIR}/phase3_%j.out
+#SBATCH --error=${TRAIN_LOG_DIR}/phase3_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=${GPU_PARTITION}
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=300G
+
+echo "Job started on \$(hostname) at \$(date)"
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+SCRATCH_ROOT="/scratch/slurm-\${SLURM_JOB_ID}"
+mkdir -p "\$SCRATCH_ROOT/triplets/phase3"
+mkdir -p "\$SCRATCH_ROOT/vocab"
+
+rsync -a "${DATA_DIR}/triplets/phase3/" "\$SCRATCH_ROOT/triplets/phase3/"
+rsync -a "${DATA_DIR}/vocab/" "\$SCRATCH_ROOT/vocab/"
+
+echo "Starting Phase 3 (Fine Tuning)..."
+python -u -m phonetics.training.train \
+    --phase 3 \
+    --data-dir "\$SCRATCH_ROOT" \
+    --output-dir "${OUTPUT_DIR}" \
+    --student-checkpoint "${OUTPUT_DIR}/phase2_best.pt" \
+    --epochs 30\$([ -n "${RESUME_FROM}" ] && echo " --resume-from ${RESUME_FROM}" || echo "")
+EOF
+)
+            PHASE3_JOB=$(echo "$PHASE3_JOB" | cut -d';' -f1)
+            echo "✓ Phase 3 submitted: $PHASE3_JOB"
+        fi  # Close PHASE3_COMPLETE check
+    else
+        echo "✓ Phase 3 skipped"
+    fi
+
+    echo
+    echo "Pipeline queued. Monitor: squeue -u stg135"
+    echo "tail -f ${TRAIN_LOG_DIR}/*_.*"
+}
+
+# ==============================================================================
+# TRAIN AND UPDATE (Full Pipeline)
+# ==============================================================================
+
+do_train_and_update() {
+    DATA_VERSION=${1:-6}
+
+    echo "=========================================="
+    echo "FULL PIPELINE: TRAIN AND UPDATE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo
+    echo "This will:"
+    echo "  1. Train model phases 1-3"
+    echo "  2. Generate embeddings for all toponyms"
+    echo "  3. Update ES toponyms index"
+    echo
+
+    do_train_model "$DATA_VERSION"
+
+    echo
+    echo "Note: After training completes, run:"
+    echo "  source es.sh -update-embeddings $DATA_VERSION"
+    echo "to generate and index the embeddings."
+}
+
+# ==============================================================================
+# UPDATE EMBEDDINGS (Compute + Index)
+# ==============================================================================
+
+do_update_embeddings() {
+    DATA_VERSION=${1:-6}
+    shift || true
+
+    # Default to l40s for embedding computation unless explicitly overridden
+    GPU_PARTITION="${GPU_PARTITION:-l40s}"
+    AFTER_JOB=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --after)
+                AFTER_JOB="$2"
+                shift 2
+                ;;
+            --partition)
+                GPU_PARTITION="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
+    mkdir -p "$EMBEDDINGS_LOG_DIR"
+
+    # Verify required files exist
+    if [ ! -f "${CHECKPOINT_DIR}/phase3_best.pt" ]; then
+        echo "ERROR: Phase 3 checkpoint not found at ${CHECKPOINT_DIR}/phase3_best.pt"
+        echo "Train the model first: es -train-model ${DATA_VERSION}"
+        return 1
+    fi
+
+    if [ ! -f "${IX1_BASE}/data/toponyms.db" ]; then
+        echo "ERROR: DuckDB database not found at ${IX1_BASE}/data/toponyms.db"
+        echo "Rebuild toponyms first: es -rebuild-toponyms ${DATA_VERSION}"
+        return 1
+    fi
+
+    # Check if staging ES is running (needed for index step)
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    echo "=========================================="
+    echo "EMBEDDING PIPELINE (v${DATA_VERSION})"
+    echo "=========================================="
+    echo "  Checkpoint: ${CHECKPOINT_DIR}/phase3_best.pt"
+    echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
+    echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
+    echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
+    echo "  GPU Part:   ${GPU_PARTITION}"
+    if [ -n "$AFTER_JOB" ]; then
+        echo "  Depends on: ${AFTER_JOB} (afterok)"
+    fi
+    echo
+
+    EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
+
+    # Dependency flag for sbatch
+    DEP_FLAG=""
+    if [ -n "$AFTER_JOB" ]; then
+        DEP_FLAG="--dependency=afterok:${AFTER_JOB}"
+    fi
+
+    # Step 1: Compute embeddings (GPU)
+    echo "Step 1: Submitting compute job (GPU)..."
+    echo "  Note: compute job will submit the SMP index job itself on completion"
+    echo "  (cross-cluster Slurm dependencies are not supported on Pitt CRC)"
+
+    COMPUTE_JOB=$(sbatch --parsable -M gpu ${DEP_FLAG} <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-compute-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --partition=${GPU_PARTITION}
+#SBATCH --gres=gpu:1
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=100G
+
+echo "=========================================="
+echo "COMPUTE EMBEDDINGS (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "${CONDA_SETUP_PATH}"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+echo "Computing embeddings from DuckDB (ALL toponyms)..."
+python -u -m phonetics.inference.update_es compute \
+    --input-file "${IX1_BASE}/data/toponyms.db" \
+    --output-file "${EMBEDDINGS_FILE}" \
+    --checkpoint "${CHECKPOINT_DIR}/phase3_best.pt" \
+    --vocab-dir "${DATA_DIR}/vocab" \
+    --embedding-version ${DATA_VERSION} \
+    --batch-size 2000 \
+    --device cuda
+
+echo
+echo "Embeddings saved to: ${EMBEDDINGS_FILE}"
+echo "Finished: \$(date)"
+echo
+
+# Cross-cluster handoff: submit the SMP index job from inside the GPU job.
+# Slurm --dependency cannot span clusters on Pitt CRC, so we submit here
+# after confirming the compute step succeeded (set -e ensures we only reach
+# this point if python exited 0).
+echo "Submitting SMP index job..."
+INDEX_JOB=\$(sbatch --parsable -M smp <<INNER
+#!/bin/bash
+#SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=64G
+
+set -e
+source "${CONDA_SETUP_PATH}"
+conda activate whg
+cd "${REPO_DIR}"
+
+source "${STAGING_INFO_FILE}"
+
+echo "Indexing embeddings to ES at http://\\\${ES_NODE}:\\\${ES_PORT}..."
+python -u -m phonetics.inference.update_es index \
+    --input-file "${EMBEDDINGS_FILE}" \
+    --db-path "${IX1_BASE}/data/toponyms.db" \
+    --es-host "http://\\\${ES_NODE}:\\\${ES_PORT}" \
+    --index toponyms \
+    --embedding-version ${DATA_VERSION}
+
+echo "Indexing complete: \\\$(date)"
+INNER
+)
+echo "✓ Index job submitted to SMP: \${INDEX_JOB}"
+echo "  Monitor: squeue -j \${INDEX_JOB}"
+echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_*.out"
+EOF
+)
+
+    COMPUTE_JOB=$(echo "$COMPUTE_JOB" | cut -d';' -f1)
+    echo "✓ Compute job submitted: ${COMPUTE_JOB}"
+    echo "  Monitor: squeue -j ${COMPUTE_JOB} -M gpu"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/compute_*.out"
+    echo "  (Index job will be submitted automatically on completion)"
+}
+
+do_update_embeddings_index() {
+    DATA_VERSION=${1:-6}
+    shift || true
+
+    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
+
+    if [ -z "$REPO_DIR" ]; then
+        REPO_DIR="/ix1/ishi/elastic"
+    fi
+
+    EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
+    mkdir -p "$EMBEDDINGS_LOG_DIR"
+
+    EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
+
+    # Only check file existence when not depending on a prior job
+    # (when --after is set the file doesn't exist yet at submission time)
+    if [ -z "$AFTER_JOB" ] && [ ! -f "${EMBEDDINGS_FILE}" ]; then
+        echo "ERROR: Embeddings file not found at ${EMBEDDINGS_FILE}"
+        echo "Run compute step first: es -update-embeddings ${DATA_VERSION}"
+        return 1
+    fi
+
+    # Check if staging ES is running
+    if [ ! -f "$STAGING_INFO_FILE" ]; then
+        echo "ERROR: No staging ES instance running"
+        echo "Start one first with: source es.sh -staging-start"
+        return 1
+    fi
+
+    source "$STAGING_INFO_FILE"
+
+    echo "=========================================="
+    echo "INDEX EMBEDDINGS (v${DATA_VERSION})"
+    echo "=========================================="
+    echo "  Embeddings: ${EMBEDDINGS_FILE}"
+    echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
+    echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
+    echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
+    echo
+
+    INDEX_JOB=$(sbatch --parsable <<EOF
+#!/bin/bash
+#SBATCH --job-name=whg-embed-index-v${DATA_VERSION}
+#SBATCH --output=${EMBEDDINGS_LOG_DIR}/index_%j.out
+#SBATCH --error=${EMBEDDINGS_LOG_DIR}/index_%j.err
+#SBATCH --time=48:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=100G
+
+echo "=========================================="
+echo "INDEX EMBEDDINGS (v${DATA_VERSION})"
+echo "=========================================="
+echo "Started: \$(date)"
+echo "Node: \$(hostname)"
+echo
+
+set -e
+
+source "$CONDA_SETUP_PATH"
+conda activate whg
+
+cd "${REPO_DIR}"
+
+echo "Rebuilding ES index from DuckDB + embeddings..."
+python -u -m phonetics.inference.update_es index \
+    --duckdb-file "${IX1_BASE}/data/toponyms.db" \
+    --embeddings-file "${EMBEDDINGS_FILE}" \
+    --schema-file "${REPO_DIR}/schemas/toponyms.json" \
+    --es-host "http://${ES_NODE}:${ES_PORT}" \
+    --index toponyms \
+    --embedding-version ${DATA_VERSION} \
+    --batch-size 2000
+
+echo
+echo "Index rebuilt successfully."
+echo "Snapshot created: toponyms_v${DATA_VERSION}"
+echo "Finished: \$(date)"
+EOF
+)
+
+    INDEX_JOB=$(echo "$INDEX_JOB" | cut -d';' -f1)
+    echo "✓ Index job submitted: ${INDEX_JOB}"
+    echo "  Monitor: squeue -j ${INDEX_JOB}"
+    echo "  Logs: tail -f ${EMBEDDINGS_LOG_DIR}/index_*.out"
+}

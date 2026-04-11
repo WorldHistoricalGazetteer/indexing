@@ -57,6 +57,19 @@ Elasticsearch infrastructure. It is aliased as `es` in the user's shell
 staging environments, the full Symphonym training pipeline, clustering,
 and DigitalOcean migration.
 
+### Script modules
+
+`es.sh` is the single CLI entry point but sources domain-specific modules
+for maintainability:
+
+| File | Lines | Role |
+|------|-------|------|
+| `_common.sh` | ~70 | Shared bootstrap: paths, `.env`, conda, `activate_environment()`, `es_curl()` |
+| `es.sh` | ~1400 | Core ES/Kibana/Gateway management, staging, forcemerge, case dispatcher + help |
+| `symphonym.sh` | ~1300 | Symphonym training pipeline (toponym rebuild, training data, model training, embeddings) |
+| `cluster.sh` | ~700 | Place clustering (snapshot exchange, Slurm/nohup execution, finalize) |
+| `ingest.sh` | ~480 | Authority ingestion, boundary extraction, tile generation, ccode augmentation |
+
 ### Production services (run on CRC VM)
 
 | Command | Description |
