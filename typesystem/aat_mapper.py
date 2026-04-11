@@ -351,7 +351,7 @@ OSM_OHM_STATIC_MAPPINGS = {
     # ── place=* ──────────────────────────────────────────────────────────
     # Sorted by descending TagInfo count
     "place=hamlet": (300008584, "hamlets"),                         # 2,087K
-    "place=locality": (300008347, "inhabited places"),              # 1,944K
+    # "place=locality": (300008347, "inhabited places"),  ## NB: OSM defines this as "an unpopulated location for which there is no extant feature"            # 1,944K
     "place=village": (300008372, "villages"),                       # 1,741K
     "place=isolated_dwelling": (300005929, "dwellings"),            # 851K
     "place=islet": (300008680, "islands"),                          # 701K
