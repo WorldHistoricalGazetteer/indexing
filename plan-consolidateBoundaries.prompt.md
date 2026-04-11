@@ -26,7 +26,7 @@ This replaces the obsolete `typesystem/merge_mappings.py`, which batch-applied d
 
 ### 3. Create shared `enrich_geometry()` helper in `processing/helpers.py`
 
-Accepts a GeoJSON geometry dict and returns `{geom, repr_point, hull, bounds}`. Computes convex hull via Shapely and extracts the envelope as `[west, south, east, north]`. Replaces the current ad-hoc `compute_representative_point()` pattern. All authority scripts call this instead of building geometry entries manually.
+Accepts a GeoJSON geometry dict and returns `{geom, repr_point, hull, bounds}`. Computes convex hull via Shapely and extracts the envelope as `[west, south, east, north]`. Replaces the current ad-hoc `compute_representative_point()` pattern. All authority scripts call this instead of building geometry entries manually. Every geometry and derived geometry must be validated and if necessary made valid with buffer(0) and revalidated before attempting to index it.
 
 ### 4. Remove all geometry simplification from canonical authority scripts
 
@@ -42,7 +42,7 @@ Change namespace from `m49:` to `osm:` with synthetic deterministic IDs (e.g. `o
 
 ### 7. Add PeriodO authority script (`authorities/periodo-places.py`, namespace `po:`)
 
-Fetch the PeriodO JSON-LD dataset. Adapt correction/processing logic from `/home/stephen/Documents/GitHub/whg3/periods`. PeriodO periods have spatial coverage polygons and temporal extents — map to `geometries[]` with `timespans`. All PeriodO records are boundary-type: set `boundary: "period"`. Use `enrich_geometry()` and the AAT lookup helper. Add to `AUTHORITIES` in `processing/settings.py`.
+Fetch the PeriodO JSON-LD dataset. Adapt correction/processing logic from `temp/periods`. PeriodO periods have spatial coverage polygons and temporal extents — map to `geometries[]` with `timespans`. All PeriodO records are boundary-type: set `boundary: "period"`. Use `enrich_geometry()` and the AAT lookup helper. Add to `AUTHORITIES` in `processing/settings.py`.
 
 ### 8. Add Cliopatria authority script (`authorities/cliopatria-places.py`, namespace `clio:`)
 
