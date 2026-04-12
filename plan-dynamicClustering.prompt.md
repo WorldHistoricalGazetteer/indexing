@@ -144,7 +144,9 @@ Top-K neighbor lists are inherently asymmetric: A may include B in its top-K, bu
 
 **Required fix:** symmetrise edges during neighbor doc construction. For each pair (A, B), if A→B appears in A's top-K **or** B→A appears in B's top-K (or both), include the edge in **both** neighbor docs with `score = max(score_A→B, score_B→A)`. This ensures the graph is undirected and clustering is stable under threshold changes.
 
-**Degree truncation.** Symmetrisation can create degree imbalance — hub places (e.g. a major city referenced by many records) may accumulate far more than K neighbors, while peripheral records have few. To keep the client payload predictable, truncate per-node degree to `K_max_client` (e.g. 50) after symmetrisation, retaining the highest-scoring edges. Both sides of a surviving edge still include it (since both will independently retain their top edges by score), preserving effective symmetry. This bounds the worst-case payload: even with 500 results all connected to a single hub, the hub emits at most 50 edges rather than 500.
+**Degree truncation.** Symmetrisation can create degree imbalance — hub places (e.g. a major city referenced by many records) may accumulate far more than K neighbors, while peripheral records have few. To keep the client payload predictable, truncate per-node degree to `K_max_client` (e.g. 50) after symmetrisation, retaining the highest-scoring edges.
+
+**Note on stored asymmetry.** Truncation can make the stored neighbor docs asymmetric: if hub A has 200 edges and truncates to 50, it may drop its edge to B, while B (with only 5 edges) retains its edge to A. However, this does **not** affect query-time symmetry because the gateway's subgraph extraction step (§10b) collects edges from **all** fetched neighbor docs — if B's doc includes the B→A edge, it appears in the response regardless of whether A's doc was truncated. The only scenario where an edge is truly lost is when **both** endpoints independently truncate the edge to each other (both are high-degree hubs that rank the mutual edge below their respective top-50). This is rare in practice: if both places are hubs with 200+ edges, the edge between two hubs is typically high-scoring and survives truncation on both sides. The worst-case impact is a small number of lost edges between moderately-connected hubs — acceptable given the payoff in payload predictability.
 
 ### 2d. Optionally precompute baseline clusters
 
@@ -346,6 +348,8 @@ Default weights match the offline pipeline (`scoring.py`): w_n=0.30, w_sp=0.25, 
 
 **Null-facet handling.** When a signal component is `null` (e.g. `s.t = null` because one or both places lack timespans), the client **renormalises weights dynamically**: redistribute the null facet's weight proportionally among the non-null facets. For example, if `s.t = null` and the user's weights are `[0.30, 0.25, 0.10, 0.10, 0.25]`, the effective weights become `[0.30, 0.25, 0, 0.10, 0.25] / 0.90 = [0.333, 0.278, 0, 0.111, 0.278]`. This ensures records lacking temporal data are not penalised (treated as 0) or artificially boosted — they are simply scored on the available evidence. Both the server-side offline scoring (§9f) and the client-side reweighting must use the same renormalisation rule for consistency.
 
+**Known tradeoff: missing data scores higher than noisy data.** Redistribution means that two places with perfect name/spatial/link match but *no* temporal data will score higher than two places with perfect name/spatial/link but *slightly mismatched* temporal data (because the latter incurs a small temporal penalty while the former redistributes the temporal weight to the already-perfect facets). This is an inherent property of proportional redistribution — records are implicitly rewarded for missing a facet rather than having a weak value in it. We accept this tradeoff because: (1) the alternative (treating null as 0) is strictly worse in this domain — ~40% of place records lack temporal data, and penalising them would systematically under-cluster the majority of the corpus; (2) the temporal weight is only 0.10 by default, so the maximum scoring advantage from missing temporal data is `0.10 × (1 - S_t)` ≈ at most 0.10 — small relative to the other facets; (3) as temporal coverage improves through ongoing authority enrichment, the issue diminishes naturally.
+
 **Int8 cosine similarity.** Symphonym embeddings are unit vectors quantized to int8 range [-128, 127]. For pre-normalised int8 vectors, the dot product is proportional to cosine similarity (norms are approximately equal across vectors). The client computes `dot(a, b) / (norm(a) × norm(b))` using `Int8Array` arithmetic. Server-side and client-side similarity values are consistent because both use the same quantized vectors.
 
 This approach keeps all expensive similarity computation server-side (in the offline pipeline), while giving the client cheap, instant re-weighting with no server round-trip. The client never recomputes spatial distances, temporal overlaps, or AAT LCA depths — it only applies weight coefficients to precomputed normalised scores.
@@ -409,6 +413,8 @@ Properties:
 ### 6d. Baseline cluster bootstrapping
 
 Before applying the user threshold, initialize the Union-Find with baseline clusters (if present): for all results sharing a `baseline_cluster_id`, union them. This provides instant grouping for obvious matches (e.g. GeoNames + Wikidata for the same city) before the user even touches the slider.
+
+**θ = 1.0 bypass.** When the user sets θ = 1.0 ("no grouping — flat list"), baseline bootstrapping is **skipped entirely**. The Union-Find starts with every result in its own singleton component, and since no edge can have a reweighted score ≥ 1.0, no unions occur. This guarantees a truly flat result list identical to unclustered behaviour. At any θ < 1.0, baseline bootstrapping runs normally.
 
 **Safety:** baseline clusters are **link-dominated** (§2d): constructed using only authority link signals (`s.l`) and very high toponym signals (`s.n ≥ 0.95`), not the full composite score. This ensures they remain valid regardless of how the user tunes facet weights. Bootstrapping cannot merge two *different* baseline clusters — it only unions results within the same cluster ID. Subsequent edges from Phase 1 may *expand* a baseline cluster by merging additional results into it, but only if those edges pass the user's threshold θ. Two separate baseline clusters can only end up in the same component if a chain of θ-passing edges connects them — which is correct behaviour, not a conflict.
 
@@ -731,11 +737,15 @@ Total perceived latency: **~300 ms server + instant client interaction**.
 
 ## 12. Failure Modes and Mitigations
 
-### 12a. Too many results (> 2000)
+### 12a. No server-side pagination for clusterable results
 
-Client-side clustering degrades beyond ~2000 results due to edge volume. Mitigations:
-- Cap clustering to top N results (e.g. 500); remaining results are ungrouped.
-- Server-side fallback: apply default threshold and return pre-grouped results.
+Client-side clustering requires the full result set and its edge subgraph in a single payload — traditional server-side pagination (page 1 = results 1–20, page 2 = results 21–40) is fundamentally incompatible because co-referent places split across pages could never be clustered together.
+
+The existing gateway architecture already avoids this: `SearchRequest.size` (max 500) returns all results in one response with no `page`/`offset` parameter. The clustering design preserves this: the entire clustering window (up to 500 results + up to 4000 edges) is delivered in a single payload. Any "pagination" is purely **client-side display pagination** — the browser holds all results and edges in memory, clusters them, and uses virtual scrolling or page controls to render subsets of the already-clustered list.
+
+For queries producing more than 500 matches, the gateway returns the top 500 by discovery score. Matches beyond 500 are not clusterable but are summarised in the response metadata (total hit count, facet aggregations). If a user needs to explore beyond the clustering window, they should refine the query (add filters, narrow spatial bounds) rather than paginate. This is consistent with the existing search UX — the current gateway already caps at 500.
+
+If future requirements demand clustering over larger result sets, the server-side fallback path (§4e) can cluster on the gateway and return pre-grouped results for any number of hits, since it has access to the full graph. But the client-side interactive clustering path is bounded at ~500 results by design.
 
 ### 12b. Dense urban datasets (OSM-heavy)
 
