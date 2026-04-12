@@ -144,9 +144,13 @@ Top-K neighbor lists are inherently asymmetric: A may include B in its top-K, bu
 
 **Required fix:** symmetrise edges during neighbor doc construction. For each pair (A, B), if A→B appears in A's top-K **or** B→A appears in B's top-K (or both), include the edge in **both** neighbor docs with `score = max(score_A→B, score_B→A)`. This ensures the graph is undirected and clustering is stable under threshold changes.
 
+**Degree truncation.** Symmetrisation can create degree imbalance — hub places (e.g. a major city referenced by many records) may accumulate far more than K neighbors, while peripheral records have few. To keep the client payload predictable, truncate per-node degree to `K_max_client` (e.g. 50) after symmetrisation, retaining the highest-scoring edges. Both sides of a surviving edge still include it (since both will independently retain their top edges by score), preserving effective symmetry. This bounds the worst-case payload: even with 500 results all connected to a single hub, the hub emits at most 50 edges rather than 500.
+
 ### 2d. Optionally precompute baseline clusters
 
 Run connected components at a **high threshold** (e.g. 0.9) offline to identify near-certain identity groups. Store as a lightweight `baseline_cluster_id` on each neighbor doc. These provide instant grouping for obvious matches and a starting layer for client-side refinement (initial unions in the Union-Find).
+
+**Link-dominated construction.** Baseline clusters must be constructed using only **authority link signals** (`s.l`) and optionally very high toponym signals (`s.n ≥ 0.95`), not the full composite score with arbitrary weights. This is essential because the client can reweight facets arbitrarily — a user who sets `w_spatial` high and `w_name` low would find that baseline clusters (built with different weighting) contradict their semantic intent. By restricting baseline clusters to link-dominated evidence (the strongest and least subjective identity signal), they remain valid regardless of how the user tunes the emphasis sliders.
 
 ### 2e. Edge retention threshold
 
@@ -225,7 +229,10 @@ Adapt the existing 3-step architecture to include a new Step 3c:
 Extends `SearchResponse` with:
 
 - `edges: list[Edge]` — pairwise similarity edges between result place_ids, each with composite score and per-facet signal breakdown (§5b).
-- Each `SearchHit` gains: `h3` (string), `temporal_range` ([start, end] or null), `baseline_cluster_id` (str or null), `phon_emb` (base64-encoded 128-byte int8 Symphonym embedding for the best-matching toponym).
+- `query_emb: str` — base64-encoded Symphonym embedding of the query string (§5d).
+- `toponym_stoplist: list[str]` — high-frequency generic toponym tokens for synthetic edge filtering (§6i Rule A). Maintained server-side, included in every response.
+- `clustering_params: dict` — calibrated defaults for client-side clustering: `θ_bridge`, `θ_query`, `θ_synth`, `θ_synth_structural`, `τ_name`, `τ_link`, default facet weights `[w_n, w_sp, w_t, w_ty, w_l]`.
+- Each `SearchHit` gains: `h3` (string), `h3_cover` (string[]), `temporal_range` ([start, end] or null), `baseline_cluster_id` (str or null), `query_match` (object with `name`, `score`, and `phon_emb` — the discovery-time match signal for query-conditioned clustering, §5a).
 - Per-hit `aat_ids` and `aat_depths` are available for display (type-tree widget, tooltips) but are not used for client-side similarity — type similarity is precomputed in the edge signal breakdown.
 
 ### 4c. Suggest endpoint — no change
@@ -238,7 +245,9 @@ Same adaptation as search: add optional neighbor expansion and edge emission. Th
 
 ### 4e. Server-side fallback clustering
 
-For API consumers that cannot do client-side clustering (e.g. OpenRefine, programmatic access), the server applies a default threshold (e.g. θ = 0.85) to the local subgraph and returns pre-grouped results. This reuses the same Union-Find logic, implemented in Python on the gateway. The `SearchRequest` model gains an optional `cluster_threshold: float | None` parameter; when set, the server clusters and returns grouped results.
+For API consumers that cannot do client-side clustering (e.g. OpenRefine, programmatic access), the server applies a default threshold (e.g. θ = 0.85) to the local subgraph and returns pre-grouped results. This reuses Union-Find logic implemented in Python on the gateway. The `SearchRequest` model gains an optional `cluster_threshold: float | None` parameter; when set, the server clusters and returns grouped results.
+
+**Determinism requirement.** Server-side clustering must produce stable, reproducible results for the same query and threshold. To ensure this, the server-side path uses only **Rule 1** (standard edge thresholding) with **fixed calibrated weights** — no Rule 2 (query-bridge), no Phase 2 (synthetic edges). This eliminates the non-deterministic behaviours that are acceptable in interactive UI but unacceptable for programmatic reconciliation workflows. Edge iteration order does not affect the result because Union-Find is commutative.
 
 ---
 
@@ -256,11 +265,16 @@ For each hit, the server returns (in addition to existing fields):
   "namespace": "gn",
   "repr_point": [2.3522, 48.8566],
   "h3": "871ea6d75ffffff",
+  "h3_cover": ["871ea6d75ffffff", "851ea6d7fffffff"],
   "temporal_range": [-500, 2026],
   "aat_ids": [300008347],
   "aat_depths": [6],
   "baseline_cluster_id": "c_abc123",
-  "phon_emb": "<base64-encoded 128-byte int8 vector>",
+  "query_match": {
+    "name": "Paris",
+    "score": 0.93,
+    "phon_emb": "<base64-encoded 128-byte int8 vector>"
+  },
   "names": [...],
   "ccodes": ["FR"],
   "types": [...],
@@ -268,7 +282,7 @@ For each hit, the server returns (in addition to existing fields):
 }
 ```
 
-The `phon_emb` field carries the Symphonym embedding for the place's best-matching toponym (the one that triggered the discovery hit). This is the same 128-d int8 vector stored in the `toponyms` index. Base64 encoding keeps the payload compact (128 bytes → 172 characters). The client uses this for phonetic re-scoring (§6g).
+The `query_match` object carries the discovery-time match signal: which toponym triggered the hit and how well it matched. `query_match.name` is the matched toponym string, `query_match.score` is the normalised discovery score (0–1), and `query_match.phon_emb` is the Symphonym 128-d int8 embedding of that toponym (base64-encoded, 128 bytes → 172 characters). The client uses `query_match.score` for query-conditioned clustering (§6h) and `query_match.phon_emb` for phonetic re-scoring (§6g).
 
 ### 5b. Edges array
 
@@ -290,11 +304,20 @@ Each edge carries the composite `score` plus a signal breakdown `s` with per-fac
 
 ### 5c. Payload size budget
 
-- ~500 results × ~470 bytes ≈ 235 KB (hits including base64 phon_emb at ~172 bytes each)
+- ~500 results × ~500 bytes ≈ 250 KB (hits including query_match at ~200 bytes each)
 - ~2000 edges × ~120 bytes ≈ 240 KB (edges with signal breakdown)
-- Total: ~475 KB before gzip, ~100–150 KB compressed — within budget.
+- query_emb: 172 bytes (negligible)
+- Total: ~490 KB before gzip, ~110–160 KB compressed — within budget.
+
+**Hard cap:** `max_edges = 4000`. The gateway enforces this limit on the `edges` array, selecting edges by highest composite score globally. Without a cap, worst-case scenarios (dense urban + high K + symmetrisation: 500 × 50 / 2 = 12,500 edges ≈ 1.5–2 MB) degrade both transfer and client parsing time. The cap keeps payload under ~750 KB pre-compression in all cases.
 
 For result sets > 500, cap the edges to top-scoring pairs and/or restrict clustering to the top N results.
+
+### 5d. Response-level query embedding
+
+The response includes a top-level `query_emb` field: the Symphonym 128-d int8 embedding of the original query string (base64-encoded). For phonetic/fuzzy searches, this is the same embedding computed during discovery (zero additional cost). For exact/starts/in searches, the gateway generates it on demand via the Symphonym encoder (~5 ms).
+
+This eliminates the need for the client to make a separate `GET /api/embed` call for the initial query string. The client uses `query_emb` for phonetic re-scoring (§6g) — comparing the query embedding against each hit's `query_match.phon_emb` to display query-relevance indicators. For the "Compare name variant" feature (where the user types a different name), the client still calls `/api/embed` for the new variant.
 
 ---
 
@@ -321,6 +344,10 @@ with UI-controlled emphasis sliders (e.g. "prioritise spatial proximity" or "pri
 
 Default weights match the offline pipeline (`scoring.py`): w_n=0.30, w_sp=0.25, w_t=0.10, w_ty=0.10, w_l=0.25. The temporal and type facets are weighted lower because many records lack temporal data and type mappings are incomplete; links are weighted higher because authority assertions are the strongest identity signal.
 
+**Null-facet handling.** When a signal component is `null` (e.g. `s.t = null` because one or both places lack timespans), the client **renormalises weights dynamically**: redistribute the null facet's weight proportionally among the non-null facets. For example, if `s.t = null` and the user's weights are `[0.30, 0.25, 0.10, 0.10, 0.25]`, the effective weights become `[0.30, 0.25, 0, 0.10, 0.25] / 0.90 = [0.333, 0.278, 0, 0.111, 0.278]`. This ensures records lacking temporal data are not penalised (treated as 0) or artificially boosted — they are simply scored on the available evidence. Both the server-side offline scoring (§9f) and the client-side reweighting must use the same renormalisation rule for consistency.
+
+**Int8 cosine similarity.** Symphonym embeddings are unit vectors quantized to int8 range [-128, 127]. For pre-normalised int8 vectors, the dot product is proportional to cosine similarity (norms are approximately equal across vectors). The client computes `dot(a, b) / (norm(a) × norm(b))` using `Int8Array` arithmetic. Server-side and client-side similarity values are consistent because both use the same quantized vectors.
+
 This approach keeps all expensive similarity computation server-side (in the offline pipeline), while giving the client cheap, instant re-weighting with no server round-trip. The client never recomputes spatial distances, temporal overlaps, or AAT LCA depths — it only applies weight coefficients to precomputed normalised scores.
 
 ### 6b. Comparison pruning
@@ -334,20 +361,56 @@ Only compare pairs that have a precomputed edge. This avoids O(n²) explosion:
 ### 6c. Union-Find with threshold
 
 ```
-for each edge (a, b, signals) sorted by reweighted_S descending:
-    S = Σ w_i · signals[i]    // reweight with current UI sliders
+// Phase 1 — precomputed edges
+for each edge (a, b, signals):
+    S = reweight(signals, weights)    // with null-facet renormalisation (§6a)
+
+    // Rule 1 — standard: edge exceeds user threshold
     if S >= θ:
         union(a, b)
+
+    // Rule 2 — query bridge: relax threshold for query-relevant pairs (§6h)
+    elif S >= θ_bridge
+         AND min(query_score[a], query_score[b]) >= θ_query
+         AND (signals.n >= τ_name OR signals.l >= τ_link):   // name/link guard
+        union(a, b)
+
+// Phase 2a — synthetic phonetic edges for edgeless pairs (§6i)
+θ_synth_eff = max(θ_synth, θ)    // never below calibrated floor or user threshold
+for each spatial bucket (results sharing h3 centroid OR h3_cover intersection at r5):
+    for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
+        if NOT both_high_frequency(name[a], name[b]):  // stoplist guard (§6i)
+            if types_overlap(a, b):   // at least one shared type (§6i)
+                sim = cosine(phon_emb[a], phon_emb[b])
+                if sim >= θ_synth_eff:
+                    union(a, b)
+
+// Phase 2b — structural synthetic edges (§6i)
+for each spatial bucket (same as 2a):
+    for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
+        if (ccode_overlap(a, b) OR shared_namespace(a, b) OR shared_baseline(a, b)):
+            union at θ_synth_structural (≈ 0.7)
+
+// Phase 3 — post-processing: split oversized clusters (§6f)
+for each component C where |C| > N_max:
+    split C by tightening threshold within the component
 ```
 
 Properties:
-- As θ increases, clusters split (monotonic for fixed weights).
-- Pre-sorting edges by current weights allows progressive application — slider updates do not require recomputation from scratch (only re-sort + re-apply, still O(E log E)).
+- Edge iteration order does not affect the result — Union-Find is applied over all qualifying edges in a single pass (no sorting required). Complexity: O(E·α(n)) ≈ O(E).
+- Rule 2 has a **name/link guard** (`signals.n >= τ_name OR signals.l >= τ_link`, where `τ_name ≈ 0.5`, `τ_link ≈ 0.8`) that prevents the bridge from firing on weak edges between places matching generic query terms (e.g. "San", "New", "Central"). Without this guard, two places both matching a common query fragment would merge on a sub-threshold edge with no substantive name or link alignment.
+- Rule 2 and Phases 2a/2b can cause **non-monotonic behaviour**: lowering θ may merge clusters that were separate at higher θ due to the bridge and synthetic thresholds. In practice this is rare (bridge fires on <5% of edges, synthetic passes on edgeless pairs only). Tying `θ_synth_eff = max(θ_synth, θ)` limits the effect: at high θ, synthetic edges require even higher phonetic similarity, preserving monotonic feel in the common case.
 - Union-Find is near-linear and runs in <10 ms for 500 nodes.
+- The query-bridge rule (Rule 2) ensures query-relevant pairs cluster even when their precomputed toponym signal `s.n` is low — see §6h for the full rationale.
+- The phonetic synthetic-edge pass (Phase 2a) closes the "missing edge" gap for pairs that share spatial proximity, phonetic similarity, and type overlap but were never candidates in the offline pipeline — see §6i.
+- The structural synthetic-edge pass (Phase 2b) catches same-place records across authorities where phonetics fail (cross-lingual exonyms, sparse names) but structural signals confirm co-reference — see §6i.
+- Oversized clusters are split as a post-processing step (Phase 3), not blocked during union — see §6f.
 
 ### 6d. Baseline cluster bootstrapping
 
 Before applying the user threshold, initialize the Union-Find with baseline clusters (if present): for all results sharing a `baseline_cluster_id`, union them. This provides instant grouping for obvious matches (e.g. GeoNames + Wikidata for the same city) before the user even touches the slider.
+
+**Safety:** baseline clusters are **link-dominated** (§2d): constructed using only authority link signals (`s.l`) and very high toponym signals (`s.n ≥ 0.95`), not the full composite score. This ensures they remain valid regardless of how the user tunes facet weights. Bootstrapping cannot merge two *different* baseline clusters — it only unions results within the same cluster ID. Subsequent edges from Phase 1 may *expand* a baseline cluster by merging additional results into it, but only if those edges pass the user's threshold θ. Two separate baseline clusters can only end up in the same component if a chain of θ-passing edges connects them — which is correct behaviour, not a conflict.
 
 ### 6e. Cluster display
 
@@ -356,24 +419,116 @@ Each cluster gets:
 - **Aggregated metadata**: all names across members, all authorities, temporal span union, types union.
 - **Expandable**: user can expand a cluster to see individual member records.
 
-### 6f. Cluster-size damping
+### 6f. Cluster-size limiting (post-processing)
 
-Union-Find can collapse aggressively at low θ, producing "mega-clusters" in dense urban regions (e.g. every "Paris" record in one group). Safeguard: during the union pass, refuse to merge two components if the resulting cluster would exceed a configurable maximum size (e.g. N = 50) **unless** the edge score exceeds a high-confidence threshold (e.g. 0.9) or the edge originates from a hard link (authority sameAs). This prevents runaway merging while still allowing genuinely co-referent large clusters to form.
+Union-Find can produce "mega-clusters" at low θ in dense urban regions (e.g. every "Paris" record in one group). Rather than blocking merges during the union pass (which introduces order-dependent results and breaks transitivity), oversized clusters are **split as a post-processing step** after the Union-Find completes:
+
+1. For each connected component with more than `N_max` members (e.g. 50):
+2. Extract the subgraph of edges within the component.
+3. Tighten the threshold iteratively: raise θ within this component until it fragments into sub-clusters all ≤ N_max, or until θ reaches 0.95 (at which point accept the large cluster as genuinely co-referent).
+4. Hard-link edges (authority sameAs, `s.l ≈ 1.0`) are never cut during splitting — they act as unbreakable bonds within the component.
+
+This preserves transitivity: if A~B and B~C both pass the user's threshold, they are always in the same component. Splitting only tightens the threshold *within* oversized components, producing deterministic and order-independent results.
 
 ### 6g. Client-side phonetic re-scoring
 
-Each hit carries a `phon_emb` field: the Symphonym 128-d int8 embedding for the place's best-matching toponym. The client can use these to let the user type an alternative name variant and instantly see how phonetically close it is to every result — without a server round-trip.
+Each hit carries a `query_match.phon_emb` field: the Symphonym 128-d int8 embedding for the place's best-matching toponym. The response also includes `query_emb` — the embedding of the original query string (§5d). The client can use these to let the user type an alternative name variant and instantly see how phonetically close it is to every result — without a server round-trip.
 
 **Flow:**
 
 1. User types a variant in a "Compare name" input (e.g. "Parigi").
-2. The client calls `GET /api/embed?name=Parigi` on the gateway, which returns the Symphonym int8 embedding for the query string (fast — single model inference, ~5 ms).
-3. The client computes cosine similarity between the query embedding and each hit's `phon_emb` in JavaScript. Int8 dot product on 128 dimensions is trivially fast (~0.01 ms per pair).
+2. The client calls `GET /api/embed?name=Parigi` on the gateway, which returns the Symphonym int8 embedding for the new variant (fast — single model inference, ~5 ms). For the *initial* query, `query_emb` from the response is used directly (no extra call needed).
+3. The client computes cosine similarity between the variant embedding and each hit's `query_match.phon_emb` in JavaScript. Int8 dot product on 128 dimensions is trivially fast (~0.01 ms per pair).
 4. Results are re-ranked or highlighted by phonetic proximity to the user's variant.
 
 This enables cross-script and cross-transliteration name comparison directly in the browser — a researcher can type a name in Arabic script and see which Latin-script results are phonetically closest, or compare a medieval spelling variant against modern authority records.
 
-The `phon_emb` vectors also support a secondary use: when two results lack a precomputed edge (because neither appeared in the other's top-K neighbors), the client can compute an ad-hoc phonetic similarity between them using their embeddings. This fills gaps in the precomputed graph for long-tail cases.
+The `query_match.phon_emb` vectors also serve a structural role in clustering: they enable **synthetic phonetic edges** for result pairs that lack a precomputed edge — see §6i.
+
+### 6h. Query-conditioned clustering
+
+Precomputed edges encode **query-independent** similarity (`place ↔ place`). But effective search-result clustering requires **query-conditioned** grouping (`query → place → place`). Consider: a user searches for "Big Apple". One result (Wikidata's New York City) matches via that alias. Other NYC records from GeoNames, OSM, etc. may also appear in the result set — matched via "New York" through different discovery paths or neighbor expansion — but the precomputed edge toponym signal `s.n` between "Big Apple" and "New York" is low because the names are phonetically unrelated. Standard threshold clustering could fail to group these co-referent results.
+
+**Solution:** add a **query-bridge rule** to the Union-Find. The server returns a `query_match.score` per hit (the toponym-level discovery score, §5a) and a `query_emb` at the response level (§5d). The client uses these to relax the edge threshold for query-relevant pairs:
+
+```
+for each edge (a, b, signals):
+    S = Σ w_i · signals[i]
+
+    // Rule 1 — standard: edge exceeds user threshold
+    if S >= θ:
+        union(a, b)
+
+    // Rule 2 — query bridge: relax threshold when both endpoints
+    // strongly match the query and have substantive name or link signal
+    elif S >= θ_bridge
+         AND min(query_score[a], query_score[b]) >= θ_query
+         AND (signals.n >= τ_name OR signals.l >= τ_link):
+        union(a, b)
+```
+
+Where:
+- `θ` is the user's main similarity threshold (slider).
+- `θ_bridge = θ × 0.6` (or a configurable floor, e.g. 0.3) — minimum edge quality for bridging.
+- `θ_query` — minimum query-match score (e.g. 0.7).
+- `τ_name ≈ 0.5` — minimum toponym signal for name-based bridge qualification.
+- `τ_link ≈ 0.8` — minimum link signal for link-based bridge qualification.
+
+**Why the name/link guard:** without it, two places both matching a generic query term ("San", "New", "Central") could merge on a weak edge that happens to exceed `θ_bridge`. The guard ensures the bridge only fires when there is *some* substantive name alignment (`s.n >= τ_name`) *or* a strong authority signal (`s.l >= τ_link`). This prevents the query-bridge from becoming a semantic shortcut that merges unrelated places sharing a common name fragment.
+
+**Why `min()` not `max()`:** both endpoints must strongly match the query for the bridge to fire. Using `max()` would let a single strong match pull in weakly-related neighbors indiscriminately. Using `min()` ensures both places are relevant to what the user searched for.
+
+**Why a precomputed edge is required:** merging two places purely because both match the query (without any precomputed edge) is dangerous — "London" would merge London-UK with London-Ohio. The bridge rule only relaxes the *threshold* on existing edges; it does not create edges from nothing.
+
+**Relationship to alias-aware scoring (§9f).** The primary defence against the alias problem is built into the offline pipeline: the toponym facet signal `s.n` on each edge is computed as the maximum Symphonym cosine similarity across ALL cross-name pairs of the two places, not just the single toponym that triggered blocking. This means the "Big Apple" ↔ "New York" case produces a high `s.n` (via the shared "New York" alias) even though the names that matched the user's query are phonetically unrelated. The query-bridge rule here is a **safety net** for residual gaps — edge cases where the max-pairwise toponym score is still coincidentally low but both places are clearly query-relevant. With alias-aware scoring in the graph, the bridge rule fires rarely; without it, the bridge rule would be the primary mechanism, which is less robust.
+
+### 6i. Synthetic edges (edgeless pairs)
+
+The precomputed graph, however recall-heavy the offline pipeline, will inevitably miss some co-referent pairs — rare aliases, missing language variants, or simply places that fell outside the blocking thresholds. Two complementary synthetic passes close this gap at query time.
+
+#### Synthetic Rule A — Phonetic (§6c Phase 2a)
+
+The `query_match.phon_emb` vectors in the payload enable **phonetic synthetic edges** between result pairs that have no precomputed edge.
+
+After the main Union-Find pass (§6c Phase 1), the client runs Phase 2a over spatial buckets:
+
+1. Group results by spatial proximity: same `h3` centroid (r7 ≈ 1.2 km) **or** `h3_cover` intersection at coarse resolution (r5 ≈ 8 km). Centroid equality catches point-vs-point matches; cover intersection catches cases where the same place has different centroids across authorities (e.g. Paris polygon vs Paris point, linear features, boundary geometries). No extra storage is required — `h3_cover` already exists on each place doc.
+2. Within each bucket, for every pair (a, b) not already in the same component and with no precomputed edge:
+   - **Stoplist guard:** skip if both `query_match.name` values are in a **high-frequency toponym stoplist** (e.g. "Central", "Station", "Market", "Church", "School", "Main", "Park", "New", "San", "Saint"). Without this guard, high phonetic similarity + same H3 + same type (e.g. "building") produces catastrophic merging in OSM-heavy urban regions. The stoplist is maintained server-side and included in the response metadata; it should contain the ~50–100 most common generic place-name tokens across all authorities.
+   - **Type constraint:** at least one type must overlap (shared `aat_id`, or both lacking type data). This prevents merging "Central Station" with "Central Park" in the same H3 cell. If both places have typed records, require at least one shared AAT ancestor; if either is untyped, allow the comparison (untyped records are common and should not be excluded).
+   - Compute `cosine(phon_emb[a], phon_emb[b])`.
+3. If the similarity exceeds `θ_synth_eff = max(θ_synth, θ)`, union them.
+
+#### Synthetic Rule B — Structural (§6c Phase 2b)
+
+A second synthetic pass catches same-place records across authorities where phonetics fail entirely — cross-lingual exonyms with weak phonetic alignment, sparse single-attestation records, or type-misaligned authorities (settlement vs admin unit). This pass uses **shared structural identifiers** rather than phonetic similarity:
+
+Within the same spatial buckets (h3 centroid or cover intersection):
+
+```
+for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
+    if (ccode_overlap(a, b) OR shared_namespace(a, b) OR shared_baseline(a, b)):
+        union at θ_synth_structural (≈ 0.7)
+```
+
+Rationale:
+- **Country code overlap** catches same-place records from different authorities that share a country (cheap, high precision when combined with spatial proximity).
+- **Shared authority namespace** catches records that somehow bypassed blocking but originate from the same source (rare but diagnostic).
+- **Shared `baseline_cluster_id`** propagates high-confidence offline groupings to pairs that lost their connecting edges during result-set pruning.
+
+This is very cheap (set intersections, no embedding computation), high precision (spatial + structural confirmation), and catches the dominant failure mode — edge incompleteness for cross-lingual or sparse records that phonetics alone cannot bridge.
+
+#### Cost analysis
+
+**Phonetic pass:** H3 bucketing reduces comparisons from O(n²) to O(Σ |bucket|²). Typical result sets have most buckets containing 1–5 results; dense urban areas might have ~20. With 500 results across ~200 buckets, total comparisons are a few hundred — each a ~0.01 ms int8 dot product plus a cheap type-set intersection. Total cost: <1 ms.
+
+**Structural pass:** same bucket structure, but comparisons are set intersections (ccodes, namespace string equality, baseline_cluster_id equality) — even cheaper than the phonetic pass.
+
+#### Why spatial gating is essential
+
+Without spatial gating, high phonetic similarity would merge phonetically similar but geographically distant places (e.g. "Springfield" in Illinois vs "Springfield" in Massachusetts). The H3 requirement ensures synthetic edges only form between spatially co-located results.
+
+**Why centroid-only is insufficient:** large polygons can have different centroids across authorities (e.g. one authority centroids Paris at the city hall, another at the geographic center of the commune polygon). Using `h3_cover` intersection at r5 catches these cases without requiring exact centroid alignment.
 
 ---
 
@@ -467,15 +622,48 @@ The `apply_aat_mappings_to_index()` function (consolidateBoundaries plan, step 2
 ### 9e. `clustering/config.py`
 
 - Add `neighbor_top_k: int = 50` to `ScoringConfig`.
+- Add `k_max_client: int = 50` to `ScoringConfig` — per-node degree cap after symmetrisation (§2c′).
+- Add `max_edges: int = 4000` to `ScoringConfig` — hard cap on edges in the response payload (§5c).
 - Add `baseline_cluster_threshold: float = 0.9` to `ScoringConfig`.
 - Add `weight_temporal: float = 0.10` (temporal interval overlap, computed during edge scoring using flattened timespans from the `places` index).
+- Add `theta_synth_structural: float = 0.7` — threshold for structural synthetic edges (§6i Rule B).
+- Add `tau_name: float = 0.5` — minimum toponym signal for query-bridge name guard (§6h).
+- Add `tau_link: float = 0.8` — minimum link signal for query-bridge link guard (§6h).
+- Add `toponym_stoplist: list[str]` — high-frequency generic toponym tokens for synthetic edge guard (§6i Rule A). Derived empirically from the toponyms index.
 - Retain all existing thresholds — they still govern which pairs enter the graph.
 
 ### 9f. `clustering/scoring.py`
 
 - Extend `composite_score()` to compute and return **per-facet normalised signal components** alongside the composite score: `{n, sp, t, ty, l}`.
 - Add temporal similarity computation: interval overlap (Jaccard-like) between the flattened timespan unions of each place. Null when either place lacks timespans.
+
+  **Temporal similarity definition.** For each place, flatten all `timespans[].start.in` / `end.in` values into a union interval set (merge overlapping intervals). Then:
+
+  ```
+  S_t = overlap_duration / union_duration
+  ```
+
+  where `overlap_duration` is the total length of the intersection of the two union intervals, and `union_duration` is the total length of their union. Specific cases:
+  - If either place has no temporal data → `S_t = null` (handled by null-facet renormalisation).
+  - If both have open-ended ranges (no `end.in`) → treat as extending to the present year → `S_t` reflects overlap from start to now.
+  - If both are unbounded on both ends → `S_t = 1.0` (infinite overlap).
+  - Multiple intervals per place are merged before comparison (union of all intervals).
+
+- **Null-facet renormalisation**: when computing the composite score and a signal is null (e.g. temporal overlap when either place lacks timespans), redistribute that facet's weight proportionally among the non-null facets. This must match the client-side renormalisation rule (§6a) exactly, so the `score` field on each edge is consistent with what the client computes from the `s` breakdown under default weights.
+- **Score invariance guarantee.** The composite `score` on each edge MUST equal the weighted sum of signal components after null renormalisation under the default (calibrated) weights. Formally: `score == Σ (w_i / Σ_nonnull w_j) × s_i` for all non-null `s_i`. This invariant ensures that (a) the client can reconstruct the server's composite score exactly from the `s` breakdown under default weights, (b) server-side fallback clustering and client-side clustering produce identical results at the same threshold with default weights, and (c) debugging is tractable — any discrepancy between server and client scores indicates a bug, not a design ambiguity. Test this invariant as part of the offline pipeline validation (§9g).
 - These signal components are stored on each pairwise doc and propagated to neighbor docs for client-side facet-weight scaling.
+
+**Alias-aware toponym scoring.** The toponym facet signal `s.n` must capture the best name match across all aliases, not just the single toponym pair that generated the candidate during blocking (Phases 2–3). For each candidate pair (A, B), compute:
+
+```
+s.n = max { cosine(emb(t_a), emb(t_b))  ∀ t_a ∈ names(A), t_b ∈ names(B) }
+```
+
+where `emb()` is the Symphonym 128-d int8 embedding (already stored on the `toponyms` index). If A has 5 names and B has 3 names, this is 15 int8 dot products — trivially cheap offline (~0.2 µs per pair).
+
+This handles the "Big Apple" problem at its root: place A = {"Big Apple", "New York"} and place B = {"New York", "NYC"} produce `s.n ≈ 1.0` from the "New York"↔"New York" pair, regardless of which alias matched the user's query. Without this, `s.n` would reflect only the single toponym that triggered blocking — which might be the phonetically-unrelated alias, yielding a deceptively low signal.
+
+**Implementation:** during Phase 4 scoring, for each candidate pair, fetch the Symphonym embeddings for all attestation toponyms of both places (available from the `toponyms` index or cached in DuckDB during the pipeline run). Compute all pairwise cosine similarities and take the max. With ~5 names per place on average and ~20M candidate pairs, total cost is ~20M × 25 × 0.2 µs ≈ 100 seconds — negligible relative to the hours-long pipeline.
 
 ### 9g. Weight calibration (`clustering/calibration.py`)
 
@@ -485,8 +673,10 @@ The existing `calibration.py` tunes scoring thresholds using positive/negative p
 2. Fit a logistic regression (or similar lightweight model) to find the weight vector `[w_n, w_sp, w_t, w_ty, w_l]` that best separates positive pairs (true co-referents) from negatives.
 3. Output the calibrated weights to `clustering/config.py` as the default facet weights.
 4. These calibrated defaults become the initial weights both for the offline composite score and for the client-side default slider positions.
+5. Also derive the client-side clustering parameters `θ_bridge`, `θ_query`, `θ_synth`, `θ_synth_structural`, `τ_name`, and `τ_link` by evaluating precision/recall on the same pair sets under the query-bridge (§6h), phonetic synthetic-edge (§6i Rule A), and structural synthetic-edge (§6i Rule B) rules. Output these alongside the facet weights — the server includes them in the response so the client uses empirically grounded defaults rather than hard-coded constants.
+6. Validate the **score invariance** (§9f) on the calibration pair set: for every edge, verify that the stored composite `score` equals the weighted sum of signal components under default weights after null renormalisation. Flag any discrepancies as pipeline bugs.
 
-This is done during the pipeline build (Phase B), not deferred. The calibration data already exists (hard links provide ground truth); the only addition is fitting weights alongside thresholds. Running calibration before the first full graph build ensures that the similarity graph and the client-side defaults use empirically grounded weights from day one.
+This is done during the pipeline build (Phase B), not deferred. The calibration data already exists (hard links provide ground truth); the only addition is fitting weights and thresholds alongside the existing calibration. Running calibration before the first full graph build ensures that the similarity graph and the client-side defaults use empirically grounded parameters from day one.
 
 ---
 
@@ -566,6 +756,16 @@ After authority re-ingestion, the neighbor graph must be rebuilt. Mitigations:
 - The existing `es -cluster --full` workflow triggers a complete rebuild.
 - Incremental runs (`es -cluster --incremental`) update affected neighbors.
 
+### 12e. Sparse graph fragmentation
+
+If the offline pipeline prunes edges aggressively (high ε floor, low K), the result graph may be disconnected even for true co-referents. This is the **dominant recall failure mode** — clustering becomes recall-limited by graph construction, not by θ. Lowering θ cannot fix missing edges. Mitigations:
+- Recall-heavy Phases 2–3 (exact co-attestation + phonetic KNN) generate candidates generously; the ε floor (§2e) is set conservatively low (0.3).
+- Alias-aware toponym scoring (§9f) produces strong edges for places sharing any name variant.
+- Phonetic synthetic edges (§6i Rule A) catch local gaps where spatial proximity + phonetic similarity indicate co-reference.
+- **Structural synthetic edges (§6i Rule B) catch co-referent records where phonetics fail entirely** — cross-lingual exonyms, sparse-name records, temporal divergence, type-misaligned authorities. Country code overlap + spatial proximity is a cheap, high-precision signal that requires no embedding computation.
+- The query-bridge rule (§6h) catches residual cases where both places strongly match the query.
+- If edge density proves too low in practice, increase `neighbor_top_k` (§9e) or lower ε.
+
 ---
 
 ## 13. Relationship to Existing Architecture
@@ -609,32 +809,24 @@ This design is a **materialised, weighted place similarity graph with query-time
 ### Phase B — Offline pipeline adaptation and calibration
 
 1. Add `NeighborDoc` schema and `neighbors` doc type to `place_graph` index (renamed from `clusters`).
-2. Adapt Phase 4 to produce neighbor docs instead of membership docs.
-3. Run weight calibration (§9g) using hard-link ground truth to derive empirically grounded default facet weights.
-4. Run a full graph build pass with calibrated weights.
-5. Verify neighbor graph quality (spot-check known co-referent places).
+2. Implement alias-aware toponym scoring in `composite_score()`: max pairwise Symphonym cosine similarity across all names (§9f).
+3. Adapt Phase 4 to produce neighbor docs instead of membership docs.
+4. Run weight calibration (§9g) using hard-link ground truth to derive empirically grounded default facet weights.
+5. Run a full graph build pass with calibrated weights.
+6. Verify neighbor graph quality (spot-check known co-referent places, including alias-heavy cases like "Big Apple" / "New York").
 
 ### Phase C — Gateway integration
 
 1. Add `build_neighbor_lookup()` helper.
 2. Add neighbor expansion step (Step 3c) to the search endpoint.
-3. Extend `SearchResponse` with edges, per-hit clustering signals, and `phon_emb`.
-4. Add Symphonym embedding extraction in the enrichment step: for each hit, retrieve the best-matching toponym's int8 embedding and base64-encode it.
-5. Add server-side fallback clustering (optional `cluster_threshold` parameter).
+3. Extend `SearchResponse` with edges, per-hit clustering signals, `query_match`, and response-level `query_emb`.
+4. Add Symphonym embedding extraction in the enrichment step: for each hit, build the `query_match` object from the discovery-time toponym match (name, score, and base64-encoded int8 embedding). Compute `query_emb` from the original query string.
+5. Add server-side fallback clustering (optional `cluster_threshold` parameter), including the query-bridge rule (§6h).
 6. Verify response payloads are within size budget.
 
 ### Phase D — Client-side implementation
 
-1. Remove the "Group linked records" toggle from the Data Sources panel.
-2. Implement `clustering.js` module: Union-Find, edge reweighting, threshold application, `cosineSimilarity()`, `decodePhonEmb()`.
-3. Implement threshold slider (§17b) with debounced re-clustering.
-4. Implement facet emphasis controls (§17c), collapsed by default.
-5. Implement phonetic comparison input (§17d) with `/api/embed` integration.
-6. Bootstrap with baseline clusters (§6d).
-7. Add cluster expansion/collapse UI (§17e).
-8. Update result-facet filters to operate over clustered results (§17f).
-9. Replace feature-class checkboxes with type facets (§17g).
-10. Tune default weights and threshold using calibrated defaults from the server.
+> **See `plan-dynamicClusteringUI.prompt.md`** (§5, Phase D) — client-side clustering JS, UI changes, and Django thin-proxy changes are managed in the `whg3` project.
 
 ### Phase E — Cleanup and documentation
 
@@ -642,7 +834,7 @@ This design is a **materialised, weighted place similarity graph with query-time
 2. Remove `build_cluster_lookup()` from `gateway/es_helpers.py`.
 3. Remove `group_by_cluster` parameter from `ReconcileRequest` and all downstream code.
 4. Update `CLAUDE.md`, `CLUSTERS.md`, `developer/search-system-architecture.md`, `README.md` (§18c).
-5. Write OpenRefine migration guide: `group_by_cluster` → `cluster_threshold` (§18a).
+5. OpenRefine migration guide and API changelog — see `plan-dynamicClusteringDocumentation.prompt.md`.
 6. Publish API changelog (§18b).
 
 ---
@@ -650,7 +842,6 @@ This design is a **materialised, weighted place similarity graph with query-time
 ## 15. Dependencies
 
 - **h3-py** (`h3`): Python H3 library for cell computation at ingestion time. Already available via pip; add to project dependencies.
-- **h3-js**: Client-side H3 if needed for spatial blocking in-browser (optional — the server already provides H3 cell IDs).
 - **No new database software**: no PostGIS, no Redis, no FAISS. ES remains the search/index layer. The VAST filesystem provides the geometry store. The chunked WKB format (§16) requires only Shapely (already a project dependency) for serialization/deserialization — no GDAL or fiona.
 
 ---
@@ -740,106 +931,15 @@ Different authorities may assert different geometries for the same real-world pl
 
 1. **Formal graph schema.** Before v4 migration, define a formal node/edge model with scoring invariants (e.g. "edge weights are symmetric", "hard links are never dropped below threshold", "signal components sum to composite score under default weights"). This document would make the ES → graph DB migration mechanical.
 
+2. **Minimum spanning forest per component (optional improvement).** The current approach (thresholded connected components) has a known weakness: chaining (A~B, B~C ⇒ A~C even when A~C is weak). The post-processing split (§6f) partially mitigates this. A stronger alternative: after building each component, keep only the strongest edges forming a minimum spanning tree, then prune weak bridges. This removes spurious chaining without heavy computation. Not required for v1, but worth evaluating if chaining proves problematic in practice.
+
+3. **High-frequency toponym stoplist.** The synthetic phonetic edge pass (§6i Rule A) requires a stoplist of generic place-name tokens to prevent catastrophic merging. This list should be derived empirically from the `toponyms` index (e.g. top 100 tokens by attestation count across all authorities). Initial candidates: "Central", "Station", "Market", "Church", "School", "Main", "Park", "New", "San", "Saint", "North", "South", "East", "West", "Old", "National", "Grand", "Royal", "Great". The stoplist is maintained as a server-side configuration and included in the search response metadata so the client can apply it during synthetic edge construction.
+
 ---
 
-## 17. Front-End UI Changes (Django Search Page)
+## 17. Front-End UI Changes
 
-The search page (`/search/`, template `search/templates/search/search.html`, JS in `whg/webpack/js/search.js`) requires significant changes to support dynamic clustering.
-
-### 17a. Remove: "Group linked records" toggle
-
-The current "Group linked records" checkbox in the **Data Sources** panel is a binary switch that triggers server-side static clustering via `group_by_cluster: true` on the reconcile request. This toggle is removed entirely — it is replaced by the continuous similarity slider (§17b) which provides strictly more functionality.
-
-**Files affected:**
-- `search/templates/search/search.html` — remove the checkbox element and its label from the Data Sources panel.
-- `whg/webpack/js/search.js` — remove the `group_by_cluster` parameter from `gatherOptions()` and from the AJAX payload construction.
-- `api/crc_client.py` (Django thin proxy) — stop forwarding `group_by_cluster` to the gateway.
-
-### 17b. Add: Similarity threshold slider
-
-A continuous slider (θ ∈ [0,1]) in the results panel controls clustering sensitivity. Position it prominently above the result list, with a label such as "Group similar places" and a tooltip explaining the behaviour.
-
-| Slider position | Effect |
-|----------------|--------|
-| θ = 1.0 (rightmost) | No grouping — flat list identical to current behaviour |
-| θ = 0.8 (default) | Conservative grouping — high-confidence co-referents only |
-| θ = 0.5 | Moderate grouping — phonetically similar + spatially proximate |
-| θ = 0.0 (leftmost) | Aggressive grouping — all connected results merged (subject to cluster-size damping) |
-
-**Behaviour:**
-- Moving the slider triggers client-side re-clustering (§6c) with no server round-trip.
-- Debounce at ~100 ms to avoid flicker during drag.
-- The result list re-renders with clustered/unclustered grouping.
-- The map updates: clustered places share a marker group or are connected by visual links.
-- Persist the slider position in `sessionStorage` so it survives page navigation.
-
-### 17c. Add: Facet emphasis controls (optional, collapsible)
-
-Below the threshold slider, an expandable "Similarity tuning" section exposes per-facet weight sliders:
-
-| Slider | Default | Controls |
-|--------|---------|----------|
-| Name similarity | 0.30 | w_n — toponym match weight |
-| Spatial proximity | 0.25 | w_sp — geographic distance weight |
-| Temporal overlap | 0.10 | w_t — timespan overlap weight |
-| Type match | 0.10 | w_ty — AAT type similarity weight |
-| Authority links | 0.25 | w_l — shared cross-authority ID weight |
-
-Weights are normalised to sum to 1.0 in real time. Moving any slider re-triggers the Union-Find pass with the new weight vector. A "Reset to defaults" button restores the calibrated defaults from the server response.
-
-This section is collapsed by default for casual users and expanded for power users / researchers.
-
-### 17d. Add: Phonetic comparison input
-
-A small input field in the results panel labelled "Compare name variant" or similar. When the user types a name:
-
-1. Debounce at 300 ms.
-2. Call `GET /api/embed?name=<input>` to obtain the Symphonym embedding.
-3. Compute cosine similarity against each result's `phon_emb`.
-4. Display a phonetic proximity indicator (e.g. colour-coded badge or numeric score) next to each result.
-5. Optionally re-sort results by phonetic proximity to the typed variant.
-
-This is particularly valuable for researchers working with historical or non-Latin-script name variants.
-
-### 17e. Add: Cluster expansion/collapse UI
-
-When clustering is active (θ < 1.0), the result list displays **cluster cards** instead of individual place cards:
-
-- **Collapsed state** (default): shows the representative place (highest-scoring or preferred-authority member), a count badge ("3 sources"), and the aggregated name list.
-- **Expanded state**: clicking the cluster card expands it to show all member places as sub-cards, each with its own authority badge, names, and metadata.
-- **Map interaction**: clicking a cluster card zooms to the bounding box of all member geometries. Expanded members are shown as individual markers; collapsed clusters show a single marker at the representative's centroid.
-
-### 17f. Update: Result-facet filters (post-search)
-
-The existing client-side facet filters (§2.7 in search-system-architecture.md — Place Types checkboxes, Countries checkboxes) continue to work as before, but now operate on the **clustered** result set:
-
-- A cluster is visible if **any** of its members passes the facet filter.
-- The facet counts reflect unique clusters, not individual places (when clustering is active).
-- Toggling a facet filter does not re-trigger clustering — it only shows/hides clusters in the already-computed grouping.
-
-### 17g. Update: Feature-class checkboxes → Type facets
-
-The legacy feature-class checkboxes (`A`, `P`, `S`, etc.) in `#adv_checkboxes` are already marked for replacement (see search-system-architecture.md §2.2). This plan accelerates that: replace them with the server-side type aggregation facets returned in the search response. The type facets use AAT identifiers and hierarchical labels from the `types` index, not GeoNames feature classes.
-
-### 17h. Update: Data Sources panel
-
-The existing Data Sources panel lists the authority namespaces available for filtering (GeoNames, Wikidata, OSM, etc.). Changes:
-
-- **Remove** the "Group linked records" toggle (§17a).
-- **Retain** the namespace inclusion/exclusion checkboxes — these feed `namespaces` / `exclude_namespaces` on the search request and remain useful.
-- **Add** a small indicator per namespace showing the count of results from that source in the current (possibly clustered) result set.
-
-### 17i. JavaScript implementation
-
-The client-side clustering logic (Union-Find, edge reweighting, threshold application) should be implemented as a self-contained ES module (e.g. `whg/webpack/js/clustering.js`) with no external dependencies:
-
-- `class UnionFind` — standard disjoint-set with path compression and union by rank.
-- `function clusterResults(hits, edges, theta, weights)` — returns a `Map<clusterId, ClusterGroup>`.
-- `function reweightEdge(edge, weights)` — computes the weighted sum from signal components.
-- `function cosineSimilarity(a, b)` — int8 dot product for phonetic re-scoring.
-- `function decodePhonEmb(base64)` — decode base64-encoded int8 embedding to `Int8Array`.
-
-This module is imported by `search.js` and called on every slider change. It should be pure (no DOM manipulation) — it returns data structures that the rendering layer consumes.
+> **Moved to `plan-dynamicClusteringUI.prompt.md`** — the front-end UI, client-side clustering JS, and Django thin-proxy changes are managed in the `whg3` project. That document includes all necessary context (response payload format, client-side algorithm, UI specifications).
 
 ---
 
@@ -847,46 +947,7 @@ This module is imported by `search.js` and called on every slider change. It sho
 
 ### 18a. OpenRefine / Reconciliation API documentation
 
-The WHG reconciliation service is used by OpenRefine users who cannot perform client-side clustering. The `POST /api/reconcile` endpoint must document the new `cluster_threshold` parameter:
-
-**New parameter: `cluster_threshold`** (`float | null`, default `null`)
-
-When set to a value between 0.0 and 1.0, the server performs Union-Find clustering on the result subgraph and returns grouped results. When `null` (default), results are returned as a flat list (backward-compatible with existing OpenRefine workflows).
-
-Example request body:
-```json
-{
-  "query": "Paris",
-  "mode": "fuzzy",
-  "cluster_threshold": 0.85
-}
-```
-
-Example grouped response (additional to the flat `hits` list):
-```json
-{
-  "clusters": [
-    {
-      "cluster_id": "c_abc123",
-      "representative": { "place_id": "gn:2988507", "title": "Paris", ... },
-      "members": [
-        { "place_id": "gn:2988507", ... },
-        { "place_id": "wd:Q90", ... },
-        { "place_id": "osm:n12345", ... }
-      ],
-      "score": 0.95
-    },
-    ...
-  ],
-  "hits": [ ... ]
-}
-```
-
-The flat `hits` list is always present for backward compatibility. The `clusters` list is populated only when `cluster_threshold` is set.
-
-**Removed parameter: `group_by_cluster`** (`bool`)
-
-The previous boolean toggle is removed. Users should migrate to `cluster_threshold` which provides the same functionality (use `cluster_threshold: 0.85` as equivalent to the old `group_by_cluster: true`) with the additional ability to control sensitivity.
+> **Moved to `plan-dynamicClusteringUI.prompt.md`** (§4a) — the Django-side API code (`api/crc_client.py`, reconciliation endpoint) is managed in the `whg3` project. The OpenRefine integration guide is in `plan-dynamicClusteringDocumentation.prompt.md` (§1).
 
 ### 18b. API changelog
 
@@ -906,5 +967,6 @@ Document the following breaking changes in the gateway API changelog:
 | `developer/search-system-architecture.md` | Update §4 to describe the new Step 3c (neighbor expansion) and the clusterable response format. Update §2.7 to reflect facet filtering over clustered results. Remove references to `group_by_cluster`. |
 | `README.md` | Update the architecture diagram and index table. |
 | `gateway/reconcile.py` docstring | Update to describe `cluster_threshold` replacing `group_by_cluster`. |
-| OpenRefine integration guide (if separate) | Document `cluster_threshold` parameter with examples. Provide migration guidance from `group_by_cluster: true` to `cluster_threshold: 0.85`. |
+
+OpenRefine integration guide documentation is in `plan-dynamicClusteringDocumentation.prompt.md` (§1).
 
