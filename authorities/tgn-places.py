@@ -15,6 +15,7 @@ import time
 from pathlib import Path
 from collections import defaultdict
 from elasticsearch import Elasticsearch, helpers
+from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -232,11 +233,10 @@ def index_tgn(zip_path, places_index):
             "place_id": place_id,
             "title": title,
             "toponyms": toponyms,
-            "geometries": [{
-                "geom": {"type": "Point", "coordinates": [lon, lat]},
-                "repr_point": {"lon": lon, "lat": lat},
-                "timespans": [{"start": {"in": 2025}, "end": {"in": 2025}}]
-            }],
+            "geometries": [enrich_geometry(
+                {"type": "Point", "coordinates": [lon, lat]},
+                timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
+            )],
             "source": "tgn",
             "namespace": "tgn",
             "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]

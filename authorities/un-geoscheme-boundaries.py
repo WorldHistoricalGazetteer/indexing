@@ -4,47 +4,36 @@
 UN M49 Geoscheme Boundary Generator.
 
 Derives supra-national boundary polygons (continents and subregions) by
-unioning the admin_level=2 country boundaries already in the ``boundaries``
-ES index.  Also fetches Antarctica from the Overpass API (it's tagged
-``boundary=continent`` in OSM, not ``boundary=administrative``).
+unioning level-2 country boundaries from the ``places`` ES index (filtering
+on ``boundary`` field value "2").  Also fetches Antarctica from the Overpass
+API (it's tagged ``boundary=continent`` in OSM).
 
-Produces boundary docs at:
-  - admin_level=0: 7 continental macro-regions (Africa, Americas, Asia,
-    Europe, Oceania, Antarctica — the 6 UN continents plus Antarctica)
-  - admin_level=1: 22 geographical subregions + 2 intermediary regions
+Produces place docs at:
+  - boundary="0": 7 continental macro-regions (Africa, Americas, Asia,
+    Europe, Oceania, Antarctica)
+  - boundary="1": 22 geographical subregions + 2 intermediary regions
 
-The M49 country→region mapping is based on ISO 3166-1 alpha-2 codes,
-matching the ``ccodes`` field on existing level-2 boundary docs.
+Uses ``osm:`` namespace with synthetic deterministic IDs (e.g.
+``osm:m49_africa``, ``osm:m49_eastern_africa``).
 
 Usage:
-    # Derive from production ES:
     python -m authorities.un-geoscheme-boundaries --es-host URL
-
-    # Dry run — report what would be created:
     python -m authorities.un-geoscheme-boundaries --es-host URL --dry-run
-
-    # Write GeoJSON Lines file for mbtiles (append mode):
-    python -m authorities.un-geoscheme-boundaries --es-host URL --geojsonl FILE
 """
 
 import argparse
 from datetime import datetime
 
-import orjson
 import requests
 from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import compute_representative_point
-from processing.settings import BOUNDARIES_INDEX
+from processing.helpers import enrich_geometry
 
 # ---------------------------------------------------------------------------
 # UN M49 Geoscheme — country code → subregion → continent
-#
-# Source: https://unstats.un.org/unsd/methodology/m49/
-# Codes are ISO 3166-1 alpha-2.
 # ---------------------------------------------------------------------------
 
 M49_SUBREGIONS = {
@@ -182,7 +171,6 @@ M49_SUBREGIONS = {
     },
 }
 
-# Intermediary regions (unions of subregions — overlap with child subregions)
 M49_INTERMEDIARY = {
     'Sub-Saharan Africa': {
         'continent': 'Africa',
@@ -197,7 +185,6 @@ M49_INTERMEDIARY = {
     },
 }
 
-# Continental macro-regions (derived from subregions)
 M49_CONTINENTS = {
     'Africa':   {'wikidata': 'Q15',   'ccodes_label': 'AF'},
     'Americas': {'wikidata': 'Q828',  'ccodes_label': None},
@@ -206,7 +193,6 @@ M49_CONTINENTS = {
     'Oceania':  {'wikidata': 'Q538',  'ccodes_label': 'OC'},
 }
 
-# Antarctica — fetched separately from Overpass (boundary=continent)
 ANTARCTICA = {
     'name': 'Antarctica',
     'wikidata': 'Q51',
@@ -217,35 +203,29 @@ ANTARCTICA = {
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 OVERPASS_FALLBACK = 'https://overpass.kumi.systems/api/interpreter'
 
-ADMIN_LEVEL_MINZOOM = {
-    0: 0,   # continents — always visible
-    1: 2,   # subregions — from zoom 2
-}
-
 
 # ---------------------------------------------------------------------------
-# Fetch country geometries from ES
+# Fetch country geometries from the places index
 # ---------------------------------------------------------------------------
 
-def fetch_country_geometries(es, index=BOUNDARIES_INDEX):
+def fetch_country_geometries(es, places_index='places_*'):
     """
-    Fetch all admin_level=2 boundaries from ES, keyed by country code.
+    Fetch all boundary='2' places from the places index, keyed by country code.
 
     Returns:
         dict mapping ISO alpha-2 code → Shapely geometry
     """
-    print("Fetching admin_level=2 boundaries from ES ...")
+    print("Fetching boundary='2' places from ES ...")
     query = {
-        'query': {'term': {'admin_level': 2}},
-        '_source': ['ccodes', 'geom', 'boundary_id', 'name'],
+        'query': {'term': {'boundary': '2'}},
+        '_source': ['ccodes', 'geometries', 'place_id', 'title'],
         'size': 500,
     }
 
-    geometries = {}  # cc → list of Shapely geoms (some countries have multiple relations)
+    geometries = {}  # cc → list of Shapely geoms
     count = 0
 
-    # Use scroll for potentially large result sets
-    resp = es.search(index=index, body=query, scroll='5m')
+    resp = es.search(index=places_index, body=query, scroll='5m')
     scroll_id = resp['_scroll_id']
 
     while True:
@@ -255,8 +235,11 @@ def fetch_country_geometries(es, index=BOUNDARIES_INDEX):
         for hit in hits:
             src = hit['_source']
             ccodes = src.get('ccodes', [])
-            geom_data = src.get('geom')
-            if not geom_data or not ccodes:
+            geom_list = src.get('geometries', [])
+            if not geom_list or not ccodes:
+                continue
+            geom_data = geom_list[0].get('geom') if geom_list else None
+            if not geom_data:
                 continue
             try:
                 geom = shape(geom_data)
@@ -277,7 +260,6 @@ def fetch_country_geometries(es, index=BOUNDARIES_INDEX):
     except Exception:
         pass
 
-    # Union multiple relations per country
     result = {}
     for cc, geoms in geometries.items():
         if len(geoms) == 1:
@@ -285,8 +267,7 @@ def fetch_country_geometries(es, index=BOUNDARIES_INDEX):
         else:
             result[cc] = unary_union(geoms)
 
-    print("  %d country boundaries fetched (%d unique ccodes)" %
-          (count, len(result)))
+    print(f"  {count} country places fetched ({len(result)} unique ccodes)")
     return result
 
 
@@ -295,12 +276,8 @@ def fetch_country_geometries(es, index=BOUNDARIES_INDEX):
 # ---------------------------------------------------------------------------
 
 def fetch_antarctica():
-    """
-    Fetch Antarctica's polygon from the Overpass API.
-
-    Returns Shapely geometry, or None on failure.
-    """
-    rel_id = ANTARCTICA['osm_relation']  # 2186646
+    """Fetch Antarctica's polygon from the Overpass API."""
+    rel_id = ANTARCTICA['osm_relation']
     query = (
         '[out:json][timeout:120];'
         'relation(%d);'
@@ -318,14 +295,12 @@ def fetch_antarctica():
             )
             resp.raise_for_status()
 
-            # Cache raw response for debugging
             data = resp.json()
             elements = data.get('elements', [])
             if not elements:
                 print("    No elements returned")
                 continue
 
-            # Use osm2geojson to assemble the multipolygon
             import osm2geojson
             geojson = osm2geojson.json2geojson(data)
             features = geojson.get('features', [])
@@ -340,12 +315,11 @@ def fetch_antarctica():
                 print("    Empty geometry after validation")
                 continue
 
-            print("    ✓ Antarctica: %s (%.0f km² approx)" %
-                  (geom.geom_type, geom.area * 12321))  # rough deg²→km²
+            print(f"    ✓ Antarctica: {geom.geom_type}")
             return geom
 
         except Exception as e:
-            print("    ✗ Failed: %s" % e)
+            print(f"    ✗ Failed: {e}")
             continue
 
     print("    ✗ Could not fetch Antarctica from any Overpass endpoint")
@@ -353,84 +327,87 @@ def fetch_antarctica():
 
 
 # ---------------------------------------------------------------------------
-# Build boundary documents
+# Build place documents
 # ---------------------------------------------------------------------------
 
-def build_boundary_doc(name, admin_level, geom, namespace='m49',
-                       wikidata_id=None, ccodes=None):
-    """Build a boundary ES doc from a Shapely geometry."""
-    boundary_id = "%s:%s" % (namespace, name.lower().replace(' ', '_')
-                             .replace('-', '_'))
-    full_geom = mapping(geom)
+def _make_place_id(name):
+    """Generate a deterministic osm: namespace place_id for M49 regions."""
+    slug = name.lower().replace(' ', '_').replace('-', '_')
+    return f"osm:m49_{slug}"
+
+
+def build_geoscheme_place_doc(name, boundary_value, geom,
+                              wikidata_id=None, ccodes=None):
+    """Build a places-index doc from a Shapely geometry."""
+    place_id = _make_place_id(name)
+    geom_entry = enrich_geometry(mapping(geom))
+    if not geom_entry:
+        return None
 
     doc = {
-        'boundary_id': boundary_id,
-        'namespace': namespace,
-        'name': name,
-        'source': 'm49',
-        'admin_level': admin_level,
+        'place_id': place_id,
+        'namespace': 'osm',
+        'title': name,
+        'toponyms': [{'toponym_id': f"{name}@en"}],
+        'geometries': [geom_entry],
+        'types': [{
+            'identifier': 'synthetic_backfill',
+            'label': 'aat',
+            'sourceLabel': 'm49-derived',
+        }],
+        'boundary': boundary_value,
         'indexed_at': datetime.now().isoformat(),
-        'geom': full_geom,
     }
-
-    # Convex hull
-    try:
-        hull = geom.convex_hull.simplify(0).buffer(0)
-        if hull.is_empty or not hull.is_valid:
-            hull = geom.envelope
-    except Exception:
-        hull = geom.envelope
-
-    if hull and not hull.is_empty:
-        doc['hull'] = mapping(hull)
-        hb = hull.bounds
-        doc['bounds'] = [round(hb[0], 6), round(hb[1], 6),
-                         round(hb[2], 6), round(hb[3], 6)]
-
-    rep_point = compute_representative_point(full_geom)
-    if rep_point:
-        doc['repr_point'] = rep_point
-
-    if wikidata_id:
-        doc['wikidata_id'] = wikidata_id
 
     if ccodes:
         doc['ccodes'] = ccodes
 
+    if wikidata_id:
+        doc['relations'] = [{
+            'relation_type': 'sameAs',
+            'related_place_id': f"wd:{wikidata_id}",
+            'label': 'Wikidata',
+        }]
+
     return doc
 
 
-def geojsonl_feature(doc):
-    """Build a GeoJSON Feature dict for GeoJSON Lines output."""
-    props = {
-        'id': doc['boundary_id'],
-        'name': doc['name'],
-        'admin_level': doc['admin_level'],
-        'namespace': doc['namespace'],
-        'source': doc.get('source', doc['namespace']),
-    }
-    minzoom = ADMIN_LEVEL_MINZOOM.get(doc['admin_level'], 0)
-    if minzoom > 0:
-        props['tippecanoe:minzoom'] = minzoom
-    if 'ccodes' in doc:
-        props['ccodes'] = ','.join(doc['ccodes'])
-    if 'wikidata_id' in doc:
-        props['wikidata_id'] = doc['wikidata_id']
-    return {
-        'type': 'Feature',
-        'properties': props,
-        'geometry': doc['geom'],
-    }
+# ---------------------------------------------------------------------------
+# Verification
+# ---------------------------------------------------------------------------
+
+def _verify_country_coverage(country_geoms):
+    """Check that all M49 country codes are accounted for."""
+    all_needed = set()
+    for info in M49_SUBREGIONS.values():
+        all_needed.update(info['ccodes'])
+
+    found = set(country_geoms.keys())
+    missing = all_needed - found
+
+    if 'FR' in missing:
+        print("  NOTE: France (FR) not found — may use ISO3166-1=FR tag "
+              "instead of ISO3166-1:alpha2=FR")
+
+    if missing:
+        print(f"\n  WARNING: {len(missing)} M49 country codes not found:")
+        print(f"    {', '.join(sorted(missing))}")
+    else:
+        print(f"  ✓ All {len(all_needed)} M49 country codes found")
+
+    if 'AQ' not in found:
+        print("  NOTE: Antarctica (AQ) will be fetched from Overpass separately")
+
+    return missing
 
 
 # ---------------------------------------------------------------------------
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def generate_geoscheme(es_host, dry_run=False, geojsonl_path=None):
-    """
-    Generate UN M49 geoscheme boundaries from existing level-2 data in ES.
-    """
+def generate_geoscheme(es_host, dry_run=False, places_index='places_*',
+                       target_index='places'):
+    """Generate UN M49 geoscheme place docs from existing boundary='2' data."""
     print("=" * 70)
     print("UN M49 GEOSCHEME BOUNDARY GENERATION")
     print("=" * 70)
@@ -438,156 +415,101 @@ def generate_geoscheme(es_host, dry_run=False, geojsonl_path=None):
     es = Elasticsearch(es_host, request_timeout=120, max_retries=5,
                        retry_on_timeout=True)
 
-    # Step 1: Fetch country geometries
-    country_geoms = fetch_country_geometries(es)
+    country_geoms = fetch_country_geometries(es, places_index)
     if not country_geoms:
-        print("\nERROR: No level-2 boundaries found. Cannot derive geoscheme.")
+        print("\nERROR: No boundary='2' places found.")
         return []
 
+    _verify_country_coverage(country_geoms)
+
     all_docs = []
-    missing_codes = set()
 
-    # Step 2: Build subregion geometries (admin_level=1)
-    print("\nBuilding subregions (admin_level=1) ...")
+    # Subregions (boundary="1")
+    print("\nBuilding subregions (boundary='1') ...")
     for name, info in M49_SUBREGIONS.items():
-        geoms = []
-        found_codes = []
-        for cc in info['ccodes']:
-            if cc in country_geoms:
-                geoms.append(country_geoms[cc])
-                found_codes.append(cc)
-            else:
-                missing_codes.add(cc)
-
+        geoms = [country_geoms[cc] for cc in info['ccodes'] if cc in country_geoms]
+        found_codes = [cc for cc in info['ccodes'] if cc in country_geoms]
         if not geoms:
-            print("  ✗ %s: no country geometries found" % name)
+            print(f"  ✗ {name}: no country geometries found")
             continue
+        union = make_valid(unary_union(geoms))
+        doc = build_geoscheme_place_doc(
+            name, '1', union, info.get('wikidata'), found_codes)
+        if doc:
+            all_docs.append(doc)
+            print(f"  ✓ {name}: {len(found_codes)}/{len(info['ccodes'])} countries")
 
-        union = unary_union(geoms)
-        if not union.is_valid:
-            union = make_valid(union)
-
-        doc = build_boundary_doc(
-            name, admin_level=1, geom=union,
-            wikidata_id=info.get('wikidata'),
-            ccodes=found_codes,
-        )
-        all_docs.append(doc)
-        print("  ✓ %s: %d/%d countries" %
-              (name, len(found_codes), len(info['ccodes'])))
-
-    # Step 3: Build intermediary regions (admin_level=1)
-    print("\nBuilding intermediary regions (admin_level=1) ...")
+    # Intermediary regions (boundary="1")
+    print("\nBuilding intermediary regions (boundary='1') ...")
     for name, info in M49_INTERMEDIARY.items():
-        # Union the constituent subregions' country codes
         all_codes = []
         for sub_name in info['subregions']:
-            sub = M49_SUBREGIONS.get(sub_name, {})
-            all_codes.extend(sub.get('ccodes', []))
-
-        geoms = []
-        found_codes = []
-        for cc in all_codes:
-            if cc in country_geoms:
-                geoms.append(country_geoms[cc])
-                found_codes.append(cc)
-
+            all_codes.extend(M49_SUBREGIONS.get(sub_name, {}).get('ccodes', []))
+        geoms = [country_geoms[cc] for cc in all_codes if cc in country_geoms]
+        found_codes = sorted(set(cc for cc in all_codes if cc in country_geoms))
         if not geoms:
-            print("  ✗ %s: no geometries" % name)
+            print(f"  ✗ {name}: no geometries")
             continue
+        union = make_valid(unary_union(geoms))
+        doc = build_geoscheme_place_doc(
+            name, '1', union, info.get('wikidata'), found_codes)
+        if doc:
+            all_docs.append(doc)
+            print(f"  ✓ {name}: {len(found_codes)} countries")
 
-        union = unary_union(geoms)
-        if not union.is_valid:
-            union = make_valid(union)
-
-        doc = build_boundary_doc(
-            name, admin_level=1, geom=union,
-            wikidata_id=info.get('wikidata'),
-            ccodes=sorted(set(found_codes)),
-        )
-        all_docs.append(doc)
-        print("  ✓ %s: %d countries" % (name, len(set(found_codes))))
-
-    # Step 4: Build continent geometries (admin_level=0)
-    print("\nBuilding continents (admin_level=0) ...")
-
-    # Collect all ccodes per continent from subregions
+    # Continents (boundary="0")
+    print("\nBuilding continents (boundary='0') ...")
     continent_codes = {}
     for name, info in M49_SUBREGIONS.items():
-        cont = info['continent']
-        continent_codes.setdefault(cont, set()).update(info['ccodes'])
-
+        continent_codes.setdefault(info['continent'], set()).update(info['ccodes'])
     for name, info in M49_CONTINENTS.items():
         codes = continent_codes.get(name, set())
-        geoms = []
-        found_codes = []
-        for cc in codes:
-            if cc in country_geoms:
-                geoms.append(country_geoms[cc])
-                found_codes.append(cc)
-
+        geoms = [country_geoms[cc] for cc in codes if cc in country_geoms]
+        found_codes = sorted(cc for cc in codes if cc in country_geoms)
         if not geoms:
-            print("  ✗ %s: no geometries" % name)
+            print(f"  ✗ {name}: no geometries")
             continue
+        union = make_valid(unary_union(geoms))
+        doc = build_geoscheme_place_doc(
+            name, '0', union, info.get('wikidata'), found_codes)
+        if doc:
+            all_docs.append(doc)
+            print(f"  ✓ {name}: {len(found_codes)} countries")
 
-        union = unary_union(geoms)
-        if not union.is_valid:
-            union = make_valid(union)
-
-        doc = build_boundary_doc(
-            name, admin_level=0, geom=union,
-            wikidata_id=info.get('wikidata'),
-            ccodes=sorted(set(found_codes)),
-        )
-        all_docs.append(doc)
-        print("  ✓ %s: %d countries" % (name, len(set(found_codes))))
-
-    # Step 5: Antarctica (from Overpass)
+    # Antarctica
     print("\nFetching Antarctica ...")
     antarctica_geom = fetch_antarctica()
     if antarctica_geom:
-        doc = build_boundary_doc(
-            'Antarctica', admin_level=0, geom=antarctica_geom,
-            namespace='osm',
-            wikidata_id=ANTARCTICA['wikidata'],
-            ccodes=ANTARCTICA['ccodes'],
-        )
-        # Override boundary_id to use the OSM relation ID
-        doc['boundary_id'] = f"osm:r{ANTARCTICA['osm_relation']}"
-        all_docs.append(doc)
-        print("  ✓ Antarctica added")
+        doc = build_geoscheme_place_doc(
+            'Antarctica', '0', antarctica_geom,
+            ANTARCTICA['wikidata'], ANTARCTICA['ccodes'])
+        if doc:
+            doc['place_id'] = f"osm:r{ANTARCTICA['osm_relation']}"
+            all_docs.append(doc)
+            print("  ✓ Antarctica added")
     else:
         print("  ✗ Antarctica skipped (Overpass unavailable)")
 
-    # Report
-    if missing_codes:
-        print("\nWARNING: %d country codes not found in boundaries index:" %
-              len(missing_codes))
-        print("  %s" % ', '.join(sorted(missing_codes)))
-
+    # Summary
     print("\n--- Summary ---")
     level_counts = {}
     for d in all_docs:
-        lvl = d['admin_level']
+        lvl = d['boundary']
         level_counts[lvl] = level_counts.get(lvl, 0) + 1
     for lvl in sorted(level_counts):
-        print("  admin_level=%d: %d" % (lvl, level_counts[lvl]))
-    print("  Total: %d documents" % len(all_docs))
+        print(f"  boundary='{lvl}': {level_counts[lvl]}")
+    print(f"  Total: {len(all_docs)} documents")
 
     if dry_run:
         print("\nDRY RUN — skipping indexing.")
         for d in all_docs:
-            print("  %s: %s (level %d)" %
-                  (d['boundary_id'], d['name'], d['admin_level']))
+            print(f"  {d['place_id']}: {d['title']} (boundary={d['boundary']})")
     else:
-        # Index
-        print("\nIndexing %d docs into %s ..." % (len(all_docs), BOUNDARIES_INDEX))
+        print(f"\nIndexing {len(all_docs)} docs into '{target_index}' ...")
         actions = [
-            {'_index': BOUNDARIES_INDEX, '_id': doc['boundary_id'],
-             '_source': doc}
+            {'_index': target_index, '_id': doc['place_id'], '_source': doc}
             for doc in all_docs
         ]
-
         success = 0
         failed = 0
         for ok, info in helpers.parallel_bulk(
@@ -598,60 +520,35 @@ def generate_geoscheme(es_host, dry_run=False, geojsonl_path=None):
             else:
                 failed += 1
                 if failed <= 5:
-                    print("  Bulk error: %s" % str(info))
-
-        print("  ✓ Indexed: %d" % success)
+                    print(f"  Bulk error: {info}")
+        print(f"  ✓ Indexed: {success}")
         if failed:
-            print("  ✗ Failed: %d" % failed)
-
-    # Write GeoJSON Lines if requested
-    if geojsonl_path:
-        print("\nWriting GeoJSON Lines to %s ..." % geojsonl_path)
-        with open(geojsonl_path, 'ab') as f:
-            for doc in all_docs:
-                feature = geojsonl_feature(doc)
-                f.write(orjson.dumps(feature))
-                f.write(b'\n')
-        print("  ✓ %d features written" % len(all_docs))
+            print(f"  ✗ Failed: {failed}")
 
     return all_docs
 
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
-
 def main():
     parser = argparse.ArgumentParser(
         description="Generate UN M49 geoscheme boundaries from existing "
-                    "admin_level=2 data in ES",
+                    "boundary='2' places in ES",
     )
-    parser.add_argument(
-        '--es-host', required=True,
-        help='Elasticsearch URL (e.g. http://localhost:9201)',
-    )
-    parser.add_argument(
-        '--dry-run', action='store_true',
-        help='Report what would be generated without indexing',
-    )
-    parser.add_argument(
-        '--geojsonl',
-        help='Append GeoJSON Lines features to this file (for mbtiles)',
-    )
+    parser.add_argument('--es-host', required=True, help='Elasticsearch URL')
+    parser.add_argument('--dry-run', action='store_true')
+    parser.add_argument('--places-index', default='places_*',
+                        help='Source places index pattern')
+    parser.add_argument('--target-index', default='places',
+                        help='Target index for writing docs')
     args = parser.parse_args()
 
     generate_geoscheme(
         es_host=args.es_host,
         dry_run=args.dry_run,
-        geojsonl_path=args.geojsonl,
+        places_index=args.places_index,
+        target_index=args.target_index,
     )
 
 
 if __name__ == '__main__':
     main()
-
-
-
-
-
 

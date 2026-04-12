@@ -19,7 +19,7 @@ import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import compute_representative_point, simplify_geometry
+from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, OSM_STATE_FILE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -27,10 +27,6 @@ from processing.utilities import create_checkpoint_snapshot
 CHECKPOINT_INTERVAL = 50000
 BULK_THREAD_COUNT = 8
 QUEUE_SIZE = 12
-
-# Complexity Thresholds (Triage)
-COMPLEXITY_THRESHOLD_COORDS = 1000
-SIMPLIFY_TOLERANCE_DEG = 0.001  # Approx 100m
 
 
 # ---------------- STATE MANAGEMENT ----------------
@@ -111,18 +107,12 @@ def create_doc(osm_id, osm_type, tags, geometry):
 
     # Add geometry as geometries array
     if geometry:
-        try:
-            rep_point = compute_representative_point(geometry)
-            doc['geometries'] = [{
-                'geom': geometry,
-                'repr_point': rep_point,
-                'timespans': [{
-                    'start': {'in': 2025},
-                    'end': {'in': 2025}
-                }]
-            }]
-        except:
-            pass  # Geometry invalid
+        geom_entry = enrich_geometry(geometry, timespans=[{
+            'start': {'in': 2025},
+            'end': {'in': 2025}
+        }])
+        if geom_entry:
+            doc['geometries'] = [geom_entry]
 
     # Types
     types = []
@@ -217,9 +207,6 @@ class OSMHandler(osmium.SimpleHandler):
                 wkb = self.wkbfab.create_linestring(w)
                 geom = wkblib.loads(wkb, hex=False)
 
-                # INLINE TRIAGE: Check complexity
-                if len(geom.coords) > COMPLEXITY_THRESHOLD_COORDS:
-                    geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
 
                 geo = mapping(geom)
                 self.buffer_callback(create_doc(w.id, 'way', tags, geo))
@@ -239,7 +226,6 @@ class OSMHandler(osmium.SimpleHandler):
                 geom = wkblib.loads(wkb, hex=False)
 
                 if geom.is_valid:
-                    geom = geom.simplify(SIMPLIFY_TOLERANCE_DEG, preserve_topology=True)
                     geo = mapping(geom)
                     self.buffer_callback(create_doc(r.id, 'relation', tags, geo))
             except:

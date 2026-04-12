@@ -963,14 +963,21 @@ case "$1" in
         do_ingest "$@"
         ;;
 
-    # --- Boundary Index Ingestion ---
-    -ingest-boundaries)
+    # --- Boundary Pass (geometry assembly) ---
+    -boundary-pass)
         shift
-        do_ingest_boundaries "$@"
+        do_boundary_pass "$@"
         ;;
 
     -generate-tiles)
-        do_generate_tiles
+        shift
+        do_generate_tiles "$@"
+        ;;
+
+    # Legacy alias
+    -ingest-boundaries)
+        shift
+        do_boundary_pass "$@"
         ;;
 
     # --- Augment ccodes (spatial country code assignment) ---
@@ -1196,15 +1203,17 @@ case "$1" in
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
         echo
-        echo "  -ingest-boundaries [OPTIONS]  Extract OSM/OHM admin boundaries into boundaries index"
+        echo "  -ingest-boundaries [OPTIONS]  Assemble boundary geometry (alias for -boundary-pass)"
+        echo "  -boundary-pass [OPTIONS]      Assemble full boundary geometry from PBF"
+        echo "  -generate-tiles [OPTIONS]     Generate .mbtiles from boundary places in ES"
         echo "    --source osm|ohm|both     Which PBF to process (default: both)"
         echo "    --replace                 Delete existing boundaries first"
         echo "    --no-tiles                Skip .mbtiles generation"
         echo
         echo "  Examples:"
-        echo "    $0 -ingest-boundaries                   # Both OSM + OHM"
-        echo "    $0 -ingest-boundaries --source osm      # OSM only"
-        echo "    $0 -ingest-boundaries --replace         # Re-extract from scratch"
+        echo "    $0 -boundary-pass                      # Both OSM + OHM"
+        echo "    $0 -boundary-pass --source osm         # OSM only"
+        echo "    $0 -generate-tiles                     # Generate all tilesets"
         echo
         echo "AUGMENT CCODES (runs against production ES):"
         echo "  -augment-ccodes [OPTIONS]"

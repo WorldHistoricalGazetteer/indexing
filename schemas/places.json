@@ -77,6 +77,12 @@
           "repr_point": {
             "type": "geo_point"
           },
+          "hull": {
+            "type": "geo_shape"
+          },
+          "bounds": {
+            "type": "float"
+          },
           "timespans": {
             "type": "nested",
             "properties": {
@@ -193,6 +199,9 @@
             "type": "keyword"
           }
         }
+      },
+      "boundary": {
+        "type": "keyword"
       },
       "indexed_at": {
         "type": "date"

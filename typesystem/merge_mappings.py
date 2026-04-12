@@ -1,6 +1,15 @@
 # types/merge_mappings.py
 
 """
+**DEPRECATED** — Superseded by ``processing/aat_lookup.py`` and the Django
+mapping UI.  The ``types`` index is now updated incrementally by the mapping
+UI; batch re-application of data-file mappings is handled by
+``processing.aat_lookup.apply_aat_mappings_to_index()``.
+
+This module is retained for reference only.
+
+---
+
 Merge cross-vocabulary AAT mappings into the ES `types` index.
 
 After `sync_aat_types.py` populates the base AAT hierarchy and

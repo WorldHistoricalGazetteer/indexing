@@ -4,7 +4,7 @@ Index Native Land Digital data.
 """
 import json, os, sys
 from pathlib import Path
-from processing.helpers import compute_representative_point, compute_bbox, compute_area_km2, simplify_geometry
+from processing.helpers import enrich_geometry, compute_area_km2
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
@@ -39,23 +39,24 @@ def process_territory(feature, namespace='nl'):
             seen_lsts.add(lst)
 
     if geometry:
-        geometry = simplify_geometry(geometry, tolerance_km=1.0)
-        rep_point = compute_representative_point(geometry)
-        bbox = compute_bbox(geometry)
+        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        geom_entry = enrich_geometry(geometry, timespans=timespans)
         area = compute_area_km2(geometry)
     else:
+        return None
+
+    if not geom_entry:
         return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [
-            {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
-        'types': [{'identifier': 'indigenous-territory', 'label': 'nativeland', 'sourceLabel': 'territory'}]
+        'geometries': [geom_entry],
+        'types': [{'identifier': 'indigenous-territory', 'label': 'nativeland', 'sourceLabel': 'territory'}],
+        'boundary': 'native',
     }
 
-    if bbox: place_doc['bbox'] = bbox
     if area: place_doc['area_km2'] = round(area, 2)
     if 'description' in props: place_doc['description'] = props['description']
     if 'color' in props: place_doc['display_color'] = props['color']
@@ -77,19 +78,22 @@ def process_language(feature, namespace='nl'):
     toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
 
     if geometry:
-        geometry = simplify_geometry(geometry, tolerance_km=1.0)
-        rep_point = compute_representative_point(geometry)
+        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        geom_entry = enrich_geometry(geometry, timespans=timespans)
         area = compute_area_km2(geometry)
     else:
+        return None
+
+    if not geom_entry:
         return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [
-            {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
-        'types': [{'identifier': 'indigenous-language-area', 'label': 'nativeland', 'sourceLabel': 'language'}]
+        'geometries': [geom_entry],
+        'types': [{'identifier': 'indigenous-language-area', 'label': 'nativeland', 'sourceLabel': 'language'}],
+        'boundary': 'native',
     }
 
     if area: place_doc['area_km2'] = round(area, 2)
@@ -112,19 +116,22 @@ def process_treaty(feature, namespace='nl'):
     toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
 
     if geometry:
-        geometry = simplify_geometry(geometry, tolerance_km=1.0)
-        rep_point = compute_representative_point(geometry)
+        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        geom_entry = enrich_geometry(geometry, timespans=timespans)
         area = compute_area_km2(geometry)
     else:
+        return None
+
+    if not geom_entry:
         return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [
-            {'geom': geometry, 'repr_point': rep_point, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}],
-        'types': [{'identifier': 'treaty-area', 'label': 'nativeland', 'sourceLabel': 'treaty'}]
+        'geometries': [geom_entry],
+        'types': [{'identifier': 'treaty-area', 'label': 'nativeland', 'sourceLabel': 'treaty'}],
+        'boundary': 'native',
     }
 
     if area: place_doc['area_km2'] = round(area, 2)

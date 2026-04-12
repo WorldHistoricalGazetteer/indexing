@@ -9,6 +9,7 @@ import zipfile
 import io
 
 from elasticsearch import Elasticsearch, helpers
+from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -54,20 +55,12 @@ def parse_gb1900_row(row):
     }]
 
     # Build geometries array with historical timespans
-    geometries = [{
-        'geom': {
-            'type': 'Point',
-            'coordinates': [lon, lat]
-        },
-        'repr_point': {
-            'lon': lon,
-            'lat': lat
-        },
-        'timespans': [{
-            'start': {'in': 1888},
-            'end': {'in': 1914}
-        }]
-    }]
+    timespans = [{'start': {'in': 1888}, 'end': {'in': 1914}}]
+    geom_entry = enrich_geometry(
+        {'type': 'Point', 'coordinates': [lon, lat]},
+        timespans=timespans,
+    )
+    geometries = [geom_entry] if geom_entry else []
 
     # Build place document
     place_doc = {

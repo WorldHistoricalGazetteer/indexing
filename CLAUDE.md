@@ -521,4 +521,8 @@ To cleanly re-ingest an authority (e.g. adding new OSM tag keys):
   feature class).
 - Geometry documents include both full `geom` (geo_shape) and `repr_point`
   (geo_point centroid) for efficient spatial queries.
+- All coordinates are rounded to **6 decimal places** (~0.11 m) at ingestion
+  time per RFC 7946, via `round_coordinates()` / `enrich_geometry()` in
+  `processing/helpers.py`.  This mitigates storage bloat from pseudo-precision
+  in upstream sources.  The constant `COORDINATE_PRECISION` controls this.
 

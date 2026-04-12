@@ -5,7 +5,7 @@ Index Index Villaris (1680) historical place data.
 import json, os, sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import compute_representative_point
+from processing.helpers import enrich_geometry
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
@@ -137,20 +137,15 @@ def process_iv_entry(entry, namespace='iv'):
                     seen_lsts.add(lst)
 
     if not geometry: return None
-    rep_point = compute_representative_point(geometry)
+    timespans = [{'start': {'in': 1680}, 'end': {'in': 1680}}]
+    geom_entry = enrich_geometry(geometry, timespans=timespans)
+    if not geom_entry: return None
 
     place_doc = {
         'place_id': place_id,
         'title': historical_name,
         'toponyms': toponyms,
-        'geometries': [{
-            'geom': geometry,
-            'repr_point': rep_point,
-            'timespans': [{
-                'start': {'in': 1680},
-                'end': {'in': 1680}
-            }]
-        }],
+        'geometries': [geom_entry],
         'ccodes': ['GB']
     }
 

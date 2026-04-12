@@ -12,6 +12,7 @@ import os
 
 import orjson  # Much faster than json
 from elasticsearch import Elasticsearch, helpers
+from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -199,11 +200,12 @@ def create_place_doc_fast(entity, entity_bytes):
 
     # Add geometries
     if coords:
-        doc['geometries'] = [{
-            'geom': {'type': 'Point', 'coordinates': coords},
-            'repr_point': {'lon': coords[0], 'lat': coords[1]},
-            'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-        }]
+        geom_entry = enrich_geometry(
+            {'type': 'Point', 'coordinates': coords},
+            timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+        )
+        if geom_entry:
+            doc['geometries'] = [geom_entry]
 
     # Add optional fields
     ccodes = []

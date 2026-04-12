@@ -6,7 +6,7 @@ Index Pleiades places data into Elasticsearch with memory-efficient streaming.
 
 import gzip
 import ijson
-from processing.helpers import compute_representative_point
+from processing.helpers import enrich_geometry
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -29,45 +29,29 @@ def extract_geometries(pleiades_record):
         if not geometry:
             continue
 
-        # Compute representative point
-        rep_point = compute_representative_point(geometry)
-
-        # Build geometry entry
-        geom_entry = {
-            'geom': geometry,
-            'repr_point': rep_point
-        }
-
         # Add temporal attestations if present
         # Pleiades has start/end directly on location
         start = loc.get('start')
         end = loc.get('end')
+        timespans = None
         if start is not None or end is not None:
             timespan = {}
             if start is not None:
                 timespan['start'] = {'in': start}
             if end is not None:
                 timespan['end'] = {'in': end}
-            geom_entry['timespans'] = [timespan]
+            timespans = [timespan]
 
-        geometries.append(geom_entry)
+        geom_entry = enrich_geometry(geometry, timespans=timespans)
+        if geom_entry:
+            geometries.append(geom_entry)
 
     # Fallback to reprPoint if no locations
     if not geometries and pleiades_record.get('reprPoint'):
         coords = pleiades_record['reprPoint']
-        geom = {
-            'type': 'Point',
-            'coordinates': coords
-        }
-        repr_pt = {
-            'lon': coords[0],
-            'lat': coords[1]
-        }
-        # Add to geometries array
-        geometries.append({
-            'geom': geom,
-            'repr_point': repr_pt
-        })
+        geom_entry = enrich_geometry({'type': 'Point', 'coordinates': coords})
+        if geom_entry:
+            geometries.append(geom_entry)
 
     return geometries
 

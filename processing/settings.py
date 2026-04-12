@@ -49,7 +49,6 @@ BACKUP_SNAPSHOT_DIR = os.getenv("BACKUP_SNAPSHOT_DIR", f"{IX1_BASE}/es_snapshots
 # Index names
 PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms")
-BOUNDARIES_INDEX = os.getenv("BOUNDARIES_INDEX", "boundaries")
 
 # Wikidata processing logs
 GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
@@ -61,9 +60,6 @@ OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"
 # OHM processing state file
 OHM_STATE_FILE = f"{IX1_BASE}/elastic/ohm_state.json"
 
-# Boundary extraction state files
-OSM_BOUNDARY_STATE_FILE = f"{IX1_BASE}/elastic/osm_boundary_state.json"
-OHM_BOUNDARY_STATE_FILE = f"{IX1_BASE}/elastic/ohm_boundary_state.json"
 
 # Remote Dataset Configurations
 AUTHORITIES = [
@@ -294,6 +290,33 @@ AUTHORITIES = [
             {
                 'url': 'https://datahub.io/core/geo-countries/_r/-/data/countries.geojson',
                 # Or maybe "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
+                'file_type': 'json',
+                'item_path': 'features',
+            }
+        ],
+    },
+    {  # PeriodO temporal periods with spatial coverage
+        'dataset_name': 'PeriodO',
+        'namespace': 'po',
+        'api_item': '',
+        'citation': 'PeriodO: A public domain gazetteer of historical, art-historical, and archaeological periods. https://perio.do/',
+        'files': [
+            {
+                'url': 'https://data.perio.do/d.json',
+                'name': 'p0d.json',
+                'file_type': 'json',
+            }
+        ],
+    },
+    {  # Cliopatria historical polity boundaries
+        'dataset_name': 'Cliopatria',
+        'namespace': 'clio',
+        'api_item': '',
+        'citation': 'Cliopatria: Historical polity boundaries from the Seshat Global History Databank. https://github.com/Seshat-Global-History-Databank/cliopatria',
+        'files': [
+            {
+                'url': 'https://github.com/Seshat-Global-History-Databank/cliopatria/raw/main/cliopatria.geojson.zip',
+                'name': 'cliopatria.geojson.zip',
                 'file_type': 'json',
                 'item_path': 'features',
             }

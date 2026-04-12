@@ -31,7 +31,6 @@ ELASTIC_PASS_FILE = f"{IX1_BASE}/es/config/elastic.password"
 TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms_*")
 PLACES_INDEX = os.getenv("PLACES_INDEX", "places_*")
 CLUSTERS_INDEX = os.getenv("CLUSTERS_INDEX", "clusters")
-BOUNDARIES_INDEX = os.getenv("BOUNDARIES_INDEX", "boundaries")
 
 # Symphonym model
 SYMPHONYM_MODEL_DIR = os.getenv("SYMPHONYM_MODEL_DIR", "")  # empty = auto-detect

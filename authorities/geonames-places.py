@@ -6,6 +6,7 @@ Index GeoNames places data into Elasticsearch.
 import sys
 
 from elasticsearch import Elasticsearch, helpers
+from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
@@ -90,20 +91,13 @@ def parse_geonames_line(line):
             })
 
     # Build geometries array (GeoNames has single point per place)
-    geometries = [{
-        'geom': {
-            'type': 'Point',
-            'coordinates': [float(fields[5]), float(fields[4])]  # lon, lat
-        },
-        'repr_point': {
-            'lon': float(fields[5]),
-            'lat': float(fields[4])
-        },
-        'timespans': [{
-            'start': {'in': 2025},
-            'end': {'in': 2025}
-        }]
-    }]
+    point_geom = {
+        'type': 'Point',
+        'coordinates': [float(fields[5]), float(fields[4])]  # lon, lat
+    }
+    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+    geom_entry = enrich_geometry(point_geom, timespans=timespans)
+    geometries = [geom_entry] if geom_entry else []
 
     # Build document
     doc = {

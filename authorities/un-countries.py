@@ -4,8 +4,7 @@ Index UN member countries with Natural Earth geometries.
 """
 import sys, zipfile, urllib.request
 from pathlib import Path
-from processing.helpers import compute_geodetic_centroid, compute_representative_point, compute_bbox, compute_area_km2, \
-    simplify_geometry
+from processing.helpers import enrich_geometry, compute_area_km2
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
@@ -124,7 +123,7 @@ def is_un_member(country_name):
     return False
 
 
-def create_country_place_doc(feature, simplification_tolerance_km=1.0):
+def create_country_place_doc(feature):
     """Create country place doc."""
     props = feature['properties']
     geometry = feature['geometry']
@@ -162,21 +161,18 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
                 {'toponym_id': f"{alt_name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]})
             seen_names.add(alt_name)
 
-    simplified_geom = simplify_geometry(geometry, tolerance_km=simplification_tolerance_km) or geometry
-    rep_point = compute_representative_point(simplified_geom) or compute_geodetic_centroid(simplified_geom)
-
-    geometry_entry = {
-        'geom': simplified_geom,
-        'repr_point': rep_point,
-        'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-    }
+    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+    geom_entry = enrich_geometry(geometry, timespans=timespans)
+    if not geom_entry:
+        return None
 
     doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [geometry_entry],
-        'types': [{'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}]
+        'geometries': [geom_entry],
+        'types': [{'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}],
+        'boundary': '2',
     }
 
     if iso_a2 and iso_a2 != '-99': doc['ccodes'] = [iso_a2]
@@ -197,7 +193,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     if relations: doc['relations'] = relations
 
     doc['admin_level'] = 0
-    area = compute_area_km2(simplified_geom)
+    area = compute_area_km2(geometry)
     if area: doc['area_km2'] = round(area, 2)
     if props.get('CONTINENT'): doc['continent'] = props['CONTINENT']
     if props.get('SUBREGION'): doc['subregion'] = props['SUBREGION']
@@ -210,7 +206,7 @@ def create_country_place_doc(feature, simplification_tolerance_km=1.0):
     return doc
 
 
-def index_un_countries(places_index='places', simplification_tolerance_km=1.0, download=True):
+def index_un_countries(places_index='places', download=True):
     """Index UN countries."""
     print("=" * 80)
     print("UN COUNTRIES")
@@ -226,15 +222,14 @@ def index_un_countries(places_index='places', simplification_tolerance_km=1.0, d
 
     features = read_shapefile_from_zip(zip_path)
 
-    print(f"\nProcessing {len(features)} countries...")
-    print(f"Simplification: {simplification_tolerance_km} km\n")
+    print(f"\nProcessing {len(features)} countries...\n")
 
     stats = {'processed': 0, 'places_indexed': 0, 'un_members': 0, 'non_un': 0, 'errors': 0}
     place_batch = []
 
     for i, feature in enumerate(features):
         try:
-            place_doc = create_country_place_doc(feature, simplification_tolerance_km)
+            place_doc = create_country_place_doc(feature)
             place_id = place_doc['place_id']
 
             name = feature['properties'].get('NAME', feature['properties'].get('ADMIN', ''))
@@ -278,13 +273,11 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Index UN countries')
     parser.add_argument('--no-download', action='store_true', help='Use existing data')
-    parser.add_argument('--simplify', type=float, default=1.0, help='Simplification tolerance (km)')
     parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
     index_un_countries(
         places_index=args.places_index,
-        simplification_tolerance_km=args.simplify,
         download=not args.no_download
     )
     create_checkpoint_snapshot(es, "un_countries")

@@ -6,11 +6,19 @@ Geospatial helper functions using GEOS (via Shapely) for accurate computations.
 This module provides geodetically-correct operations that account for Earth's
 spherical geometry, unlike simple arithmetic means which cause distortion at
 high latitudes.
+
+**Coordinate precision convention:** All coordinates are rounded to 6 decimal
+places (~0.11 m) at ingestion time per RFC 7946, via ``round_coordinates()``
+and ``enrich_geometry()``.  This mitigates storage bloat from the excessive
+pseudo-precision common in upstream data sources (Wikidata often has 10+ digits,
+OSM PBF stores 7).  The constant ``COORDINATE_PRECISION`` controls the number
+of decimal places.
 """
 
 from shapely.geometry import shape, Point, LineString, Polygon, MultiPoint, MultiLineString, MultiPolygon, \
     GeometryCollection
 from shapely.ops import transform
+from shapely.validation import make_valid as shapely_make_valid
 from pyproj import Transformer, CRS
 import json
 
@@ -95,6 +103,108 @@ def strip_z_coordinates(geojson_geom):
         return {
             'type': 'GeometryCollection',
             'geometries': [g for g in new_geometries if g]
+        }
+
+    return None
+
+
+# Default coordinate precision (decimal places).
+# 6 dp ≈ 0.11 m — matches RFC 7946 recommendation and exceeds the native
+# accuracy of every source authority.  Applied to all coordinates at ingestion
+# time to mitigate storage bloat from pseudo-precision.
+COORDINATE_PRECISION = 6
+
+
+def round_coordinates(geojson_geom, precision=COORDINATE_PRECISION):
+    """
+    Round all coordinates in a GeoJSON geometry to *precision* decimal places.
+
+    This is pure coordinate truncation (not topological simplification) and is
+    safe for any geometry type.  At 6 dp the maximum positional shift is
+    ~0.06 m — well below the accuracy of any source authority.
+
+    Optimised for the two dominant geometry types in the index:
+    - Point (~80% of 47M records): direct round, no recursion
+    - Polygon/MultiPolygon: tight loops, no per-coord function call overhead
+
+    Args:
+        geojson_geom: Dict with GeoJSON geometry (type, coordinates)
+        precision:    Number of decimal places (default: 6)
+
+    Returns:
+        New geometry dict with rounded coordinates, or None on bad input
+    """
+    if not geojson_geom:
+        return None
+
+    geom_type = geojson_geom.get('type')
+    coords = geojson_geom.get('coordinates')
+
+    if not geom_type:
+        return None
+
+    _round = round  # local binding avoids global lookup in tight loops
+
+    # ── Fast path: Point (vast majority of records) ─────────────────
+    if geom_type == 'Point':
+        if coords and len(coords) >= 2:
+            return {'type': 'Point',
+                    'coordinates': [_round(coords[0], precision),
+                                    _round(coords[1], precision)]}
+        return geojson_geom
+
+    # ── Fast path: Polygon ──────────────────────────────────────────
+    if geom_type == 'Polygon':
+        if not coords:
+            return geojson_geom
+        return {'type': 'Polygon',
+                'coordinates': [
+                    [[_round(c[0], precision), _round(c[1], precision)]
+                     for c in ring]
+                    for ring in coords
+                ]}
+
+    # ── Fast path: MultiPolygon ─────────────────────────────────────
+    if geom_type == 'MultiPolygon':
+        if not coords:
+            return geojson_geom
+        return {'type': 'MultiPolygon',
+                'coordinates': [
+                    [[
+                        [_round(c[0], precision), _round(c[1], precision)]
+                        for c in ring
+                    ] for ring in poly]
+                    for poly in coords
+                ]}
+
+    # ── Generic recursive fallback for remaining types ──────────────
+    def round_recursive(coords, depth):
+        if depth == 0:
+            if isinstance(coords, (list, tuple)) and len(coords) >= 2:
+                return [_round(coords[0], precision),
+                        _round(coords[1], precision)]
+            return coords
+        return [round_recursive(c, depth - 1) for c in coords]
+
+    depth_map = {
+        'LineString': 1,
+        'MultiPoint': 1,
+        'MultiLineString': 2,
+    }
+
+    if geom_type in depth_map:
+        if coords is None:
+            return None
+        return {
+            'type': geom_type,
+            'coordinates': round_recursive(coords, depth_map[geom_type]),
+        }
+    elif geom_type == 'GeometryCollection':
+        geometries = geojson_geom.get('geometries', [])
+        new_geometries = [round_coordinates(g, precision) for g in geometries]
+        return {
+            'type': 'GeometryCollection',
+            'geometries': [g for g in new_geometries if g],
         }
 
     return None
@@ -224,16 +334,19 @@ def compute_representative_point(geojson_geom):
             return None
 
         if isinstance(geom, Point):
-            return {'lon': geom.x, 'lat': geom.y}
+            return {'lon': round(geom.x, COORDINATE_PRECISION),
+                    'lat': round(geom.y, COORDINATE_PRECISION)}
 
         if isinstance(geom, GeometryCollection):
             rp = _representative_from_collection(geom)
             if rp is None:
                 return None
-            return {'lon': rp.x, 'lat': rp.y}
+            return {'lon': round(rp.x, COORDINATE_PRECISION),
+                    'lat': round(rp.y, COORDINATE_PRECISION)}
 
         rep_point = geom.representative_point()
-        return {'lon': rep_point.x, 'lat': rep_point.y}
+        return {'lon': round(rep_point.x, COORDINATE_PRECISION),
+                'lat': round(rep_point.y, COORDINATE_PRECISION)}
 
     except Exception as e:
         print(f"Error computing representative point: {e}")
@@ -444,6 +557,116 @@ def validate_geometry(geojson_geom):
 
     except Exception as e:
         return (False, None, f"Error validating geometry: {str(e)}")
+
+
+def enrich_geometry(geojson_geom, timespans=None):
+    """
+    Compute a full geometry entry for the places index from a GeoJSON geometry.
+
+    Accepts a GeoJSON geometry dict and returns a dict with:
+      - geom:       validated GeoJSON geometry (coordinates rounded to 6 dp)
+      - repr_point: {lon, lat} guaranteed inside the geometry (rounded to 6 dp)
+      - hull:       GeoJSON convex hull (rounded to 6 dp)
+      - bounds:     [west, south, east, north] bounding box (rounded to 6 dp)
+      - timespans:  passed through if provided
+
+    Coordinates are rounded **before** validation so that any self-intersections
+    introduced by rounding are caught and repaired.
+
+    Args:
+        geojson_geom: Dict with GeoJSON geometry (type, coordinates)
+        timespans:    Optional list of timespan dicts to attach
+
+    Returns:
+        Dict suitable for the ``geometries[]`` nested array, or None on failure
+    """
+    if not geojson_geom:
+        return None
+
+    try:
+        # ── 1. Round coordinates first ──────────────────────────────────
+        rounded_geojson = round_coordinates(geojson_geom)
+        if not rounded_geojson:
+            return None
+
+        # ── 2. Convert to Shapely (after rounding) ─────────────────────
+        geom = geojson_to_shapely(rounded_geojson)
+        if not geom or geom.is_empty:
+            return None
+
+        # ── 3. Validate / fix (catches rounding-induced intersections) ─
+        if not geom.is_valid:
+            geom = shapely_make_valid(geom)
+            if not geom.is_valid:
+                geom = geom.buffer(0)
+            if not geom.is_valid or geom.is_empty:
+                return None
+
+        # ── 4. Serialise to GeoJSON dict (already rounded) ─────────────
+        full_geom = geom.__geo_interface__
+
+        # ── 5. Representative point (reuse the Shapely object) ──────────
+        P = COORDINATE_PRECISION
+        rep_point = None
+        if isinstance(geom, Point):
+            rep_point = {'lon': round(geom.x, P), 'lat': round(geom.y, P)}
+        elif isinstance(geom, GeometryCollection):
+            rp = _representative_from_collection(geom)
+            if rp is not None:
+                rep_point = {'lon': round(rp.x, P), 'lat': round(rp.y, P)}
+        else:
+            try:
+                rp = geom.representative_point()
+                rep_point = {'lon': round(rp.x, P), 'lat': round(rp.y, P)}
+            except Exception:
+                pass
+
+        # ── 6. Convex hull + bounds (from the validated Shapely geom) ───
+        hull_geojson = None
+        bounds_arr = None
+        try:
+            hull = geom.convex_hull
+            if hull.is_empty or not hull.is_valid:
+                hull = geom.envelope
+            if hull and not hull.is_empty:
+                if not hull.is_valid:
+                    hull = hull.buffer(0)
+                if hull.is_valid and not hull.is_empty:
+                    hull_geojson = hull.__geo_interface__
+                    hb = hull.bounds  # (minx, miny, maxx, maxy)
+                    bounds_arr = [
+                        round(hb[0], P), round(hb[1], P),
+                        round(hb[2], P), round(hb[3], P),
+                    ]
+        except Exception:
+            try:
+                env = geom.envelope
+                if env and not env.is_empty and env.is_valid:
+                    hull_geojson = env.__geo_interface__
+                    eb = env.bounds
+                    bounds_arr = [
+                        round(eb[0], P), round(eb[1], P),
+                        round(eb[2], P), round(eb[3], P),
+                    ]
+            except Exception:
+                pass
+
+        # ── 7. Assemble result ──────────────────────────────────────────
+        entry = {'geom': full_geom}
+        if rep_point:
+            entry['repr_point'] = rep_point
+        if hull_geojson:
+            entry['hull'] = hull_geojson
+        if bounds_arr:
+            entry['bounds'] = bounds_arr
+        if timespans:
+            entry['timespans'] = timespans
+
+        return entry
+
+    except Exception as e:
+        print(f"Error in enrich_geometry: {e}")
+        return None
 
 
 # Example usage and testing

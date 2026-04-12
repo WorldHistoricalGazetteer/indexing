@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import compute_representative_point, compute_bbox
+from processing.helpers import enrich_geometry, compute_bbox
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
@@ -125,21 +125,16 @@ def process_dplace_feature(feature, namespace='dp'):
                 lon = lon - 360
                 geometry['coordinates'] = [lon, lat]
 
-    rep_point = compute_representative_point(geometry)
+    rep_point = None  # computed by enrich_geometry
 
     # Build place document
+    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+    geom_entry = enrich_geometry(geometry, timespans=timespans)
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [{
-            'geom': geometry,
-            'repr_point': rep_point,
-            'timespans': [{
-                'start': {'in': 2025},
-                'end': {'in': 2025}
-            }]
-        }]
+        'geometries': [geom_entry] if geom_entry else [],
     }
 
     # Add place type

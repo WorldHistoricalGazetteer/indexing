@@ -36,7 +36,7 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch, helpers
 
-from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX, BOUNDARIES_INDEX, GEOSHAPE_LOG_FILE, OSM_STATE_FILE, OSM_BOUNDARY_STATE_FILE, OHM_BOUNDARY_STATE_FILE
+from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_LOG_FILE, OSM_STATE_FILE
 
 es = Elasticsearch(ES_HOST)
 
@@ -81,8 +81,6 @@ def check_elasticsearch():
         if not es.indices.exists(index=TOPONYMS_INDEX):
             print(f"✗ '{TOPONYMS_INDEX}' index does not exist")
             return False
-        if not es.indices.exists(index=BOUNDARIES_INDEX):
-            print(f"⚠ '{BOUNDARIES_INDEX}' index does not exist (boundary ingestion will be skipped)")
         print("✓ Required indices exist")
         sys.stdout.flush()
         return True
@@ -179,47 +177,24 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     update_scripts = ['geonames-toponyms', 'wikidata-geoshapes', 'loc-relations']
     is_update_script = script_name in update_scripts
 
-    # Boundary scripts target the boundaries index, not places
-    boundary_scripts = ['osm-boundaries']
-    is_boundary_script = script_name in boundary_scripts
-    target_index = BOUNDARIES_INDEX if is_boundary_script else PLACES_INDEX
+    # Boundary pass scripts update existing docs
+    boundary_pass_scripts = ['osm-boundary-pass']
+    is_boundary_pass = script_name in boundary_pass_scripts
 
-    if not is_update_script:
-        if is_boundary_script:
-            # For boundary scripts, check boundary count by namespace
-            count = es.options(request_timeout=30).count(
-                index=BOUNDARIES_INDEX,
-                body={'query': {'prefix': {'boundary_id': f"{namespace}:"}}}
-            )['count']
-        else:
-            count = es.options(request_timeout=30).count(
-                index=PLACES_INDEX,
-                body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
-            )['count']
+    if not is_update_script and not is_boundary_pass:
+        count = es.options(request_timeout=30).count(
+            index=PLACES_INDEX,
+            body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
+        )['count']
 
         if count > 0:
             if replace_existing:
-                if is_boundary_script:
-                    # Delete existing boundaries for this namespace
-                    print(f"\nDeleting existing boundaries for namespace '{namespace}'")
-                    resp = es.options(request_timeout=3600).delete_by_query(
-                        index=BOUNDARIES_INDEX,
-                        body={'query': {'prefix': {'boundary_id': f"{namespace}:"}}},
-                        conflicts="proceed", refresh=True, slices="auto",
-                        wait_for_completion=True
-                    )
-                    print(f"  Deleted {resp.get('deleted', 0):,} boundaries")
-                    # Remove boundary state files
-                    for sf in [OSM_BOUNDARY_STATE_FILE, OHM_BOUNDARY_STATE_FILE]:
-                        if os.path.exists(sf):
-                            os.remove(sf)
-                else:
-                    delete_existing_namespace(namespace)
+                delete_existing_namespace(namespace)
 
-                    # Remove OSM_STATE_FILE if OSM is being re-ingested
-                    if namespace == 'osm':
-                        if os.path.exists(OSM_STATE_FILE):
-                            os.remove(OSM_STATE_FILE)
+                # Remove OSM_STATE_FILE if OSM is being re-ingested
+                if namespace == 'osm':
+                    if os.path.exists(OSM_STATE_FILE):
+                        os.remove(OSM_STATE_FILE)
 
             elif skip_existing:
                 print(f"Skipping {namespace}: {count:,} places already exist")
@@ -235,27 +210,17 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     try:
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
         subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
-        indices_to_refresh = [PLACES_INDEX, TOPONYMS_INDEX]
-        if es.indices.exists(index=BOUNDARIES_INDEX):
-            indices_to_refresh.append(BOUNDARIES_INDEX)
-        es.indices.refresh(index=",".join(indices_to_refresh))
+        es.indices.refresh(index=",".join([PLACES_INDEX, TOPONYMS_INDEX]))
         elapsed = datetime.now() - start_time
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
         sys.stdout.flush()
 
-        if not is_update_script:
-            if is_boundary_script:
-                count = es.options(request_timeout=30).count(
-                    index=BOUNDARIES_INDEX,
-                    body={'query': {'match_all': {}}}
-                )['count']
-                print(f"  Total boundaries: {count:,}")
-            else:
-                count = es.options(request_timeout=30).count(
-                    index=PLACES_INDEX,
-                    body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
-                )['count']
-                print(f"  Total {namespace.upper()} places: {count:,}")
+        if not is_update_script and not is_boundary_pass:
+            count = es.options(request_timeout=30).count(
+                index=PLACES_INDEX,
+                body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
+            )['count']
+            print(f"  Total {namespace.upper()} places: {count:,}")
             sys.stdout.flush()
 
         return True
@@ -281,7 +246,8 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     ingestion_order = [
         ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),  # 18,113,756 4:04:14
         ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),  # ~800K
-        ('osm', 'osm-boundaries', 'OSM+OHM admin boundaries', 'osm-boundaries'),  # → boundaries index
+        ('osm', 'osm-boundary-pass', 'OSM boundary geometry assembly', 'osm-boundary-pass'),  # updates osm: docs
+        ('ohm', 'osm-boundary-pass', 'OHM boundary geometry assembly', 'ohm-boundary-pass'),  # updates ohm: docs
         ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),  # 13,378,039 0:21:43
         ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),  # Places updated: 7,600,036; Relations added: 1,820,560; 0:35:40
         ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),  # 11,456,496 2:52:55
@@ -292,6 +258,8 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),  # 4,343 0:00:09
         ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),  # 1,174,449 0:02:02
         ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),  # 24,000 0:00:10
+        ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
+        ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
         ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),  # Places updated: 3,335 0:03:50
         ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),  # Places updated: 58,681 0:00:22
     ]

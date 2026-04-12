@@ -7,8 +7,8 @@
 #
 # Functions:
 #   do_ingest              Submit authority ingestion Slurm job
-#   do_ingest_boundaries   Extract OSM/OHM admin boundaries into boundaries index
-#   do_generate_tiles      Generate .mbtiles from existing GeoJSON Lines
+#   do_boundary_pass       Assemble full boundary geometry from PBF (Slurm)
+#   do_generate_tiles      Generate .mbtiles from boundary places in ES (Slurm)
 #   do_augment_ccodes      Spatial country code assignment (nohup on VM)
 
 source "${BASH_SOURCE[0]%/*}/_common.sh"
@@ -118,18 +118,17 @@ SBATCH_EOF
 }
 
 # ==============================================================================
-# BOUNDARY INDEX INGESTION (Slurm)
+# BOUNDARY PASS (Slurm) — assemble full geometry for boundary relations
 # ==============================================================================
 
-do_ingest_boundaries() {
-    # Usage: es -ingest-boundaries [OPTIONS]
+do_boundary_pass() {
+    # Usage: es -boundary-pass [OPTIONS]
     #   --source osm|ohm|both   Which PBF source(s) to process (default: both)
-    #   --replace                Delete existing boundaries before re-ingesting
 
     # Check staging is running
     if [ ! -f "$STAGING_INFO_FILE" ]; then
         echo "ERROR: No staging ES instance running"
-        echo "Start one first with: source $0 -staging-start --no-snapshot"
+        echo "Start one first with: source $0 -staging-start"
         return 1
     fi
 
@@ -145,21 +144,11 @@ do_ingest_boundaries() {
 
     # Parse arguments
     local SOURCE="both"
-    local REPLACE=false
-    local NO_TILES=false
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --source)
                 SOURCE="$2"
                 shift 2
-                ;;
-            --replace)
-                REPLACE=true
-                shift
-                ;;
-            --no-tiles)
-                NO_TILES=true
-                shift
                 ;;
             *)
                 shift
@@ -167,127 +156,68 @@ do_ingest_boundaries() {
         esac
     done
 
-
-    # Create a temporary sbatch script
-    BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundaries-XXXXXX.sbatch)
+    BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundary-pass-XXXXXX.sbatch)
 
     cat > "$BOUNDARY_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
-#SBATCH --job-name=es-boundaries
+#SBATCH --job-name=es-boundary-pass
 #SBATCH --time=12:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=128G
 #SBATCH --signal=B:SIGTERM@60
-#SBATCH --output=${STAGING_SLURM_LOGS}/boundaries-%j.out
-#SBATCH --error=${STAGING_SLURM_LOGS}/boundaries-%j.err
+#SBATCH --output=${STAGING_SLURM_LOGS}/boundary-pass-%j.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/boundary-pass-%j.err
 
 set -e
 
-# Raise open file limit — pyosmium's dense_file_array and tippecanoe
-# both need many FDs; Slurm default (1024) is too low.
 ulimit -n 65536 2>/dev/null || ulimit -n 8192 2>/dev/null || true
 
 echo "=========================================="
-echo "BOUNDARY INDEX INGESTION JOB"
+echo "BOUNDARY PASS JOB"
 echo "=========================================="
 echo "Started: \$(date)"
 echo "Source: $SOURCE"
 echo
 
-# Load environment
 source "$ENV_FILE"
 
-# Load staging ES connection info
 if [ ! -f "$STAGING_INFO_FILE" ]; then
     echo "ERROR: Staging ES no longer running"
     exit 1
 fi
 source "$STAGING_INFO_FILE"
-
-# Set ES_HOST for Python scripts
 export ES_HOST="http://\${ES_NODE}:\${ES_PORT}"
 
 echo "ES_HOST: \$ES_HOST"
 echo
 
-# Activate conda environment
 $(activate_environment)
 
 cd "$REPO_DIR"
 
-# Verify osmium-tool is available (needed for fast PBF pre-filtering)
-if ! command -v osmium &>/dev/null; then
-    echo "WARNING: osmium-tool not found in PATH"
-    echo "  The Python script checks fallback locations (~/.local/bin, base conda)"
-    echo "  but for reliability, install in the whg env:"
-    echo "    conda install -c conda-forge osmium-tool"
-    echo
+# Run boundary pass for each source
+if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "osm" ]; then
+    python -u -m authorities.osm-boundary-pass --source osm
 fi
-
-# Check if boundaries index exists, create if not
-BOUNDARY_EXISTS=\$(curl -s -o /dev/null -w "%{http_code}" "\$ES_HOST/boundaries")
-if [ "\$BOUNDARY_EXISTS" != "200" ]; then
-    echo "Creating boundaries index..."
-    python -m processing.create_indices 2>/dev/null || {
-        # If create_indices fails (places/toponyms already exist), create just boundaries
-        python -c "
-from elasticsearch import Elasticsearch
-import json
-es = Elasticsearch('\$ES_HOST', request_timeout=180)
-if not es.indices.exists(index='boundaries'):
-    with open('schemas/boundaries.json') as f:
-        schema = json.load(f)
-    es.indices.create(index='boundaries', body=schema, timeout='60s')
-    print('boundaries index created')
-else:
-    print('boundaries index already exists')
-"
-    }
+if [ "$SOURCE" = "both" ] || [ "$SOURCE" = "ohm" ]; then
+    python -u -m authorities.osm-boundary-pass --source ohm
 fi
-
-# Delete existing boundaries if --replace was specified
-if [ "$REPLACE" = "true" ]; then
-    echo "Deleting existing boundaries..."
-    curl -s -X POST "\$ES_HOST/boundaries/_delete_by_query?conflicts=proceed&refresh=true" \\
-        -H 'Content-Type: application/json' \\
-        -d '{"query":{"match_all":{}}}' | python3 -m json.tool
-    echo
-fi
-
-# Run boundary extraction
-TILE_FLAG=""
-if [ "$NO_TILES" = "true" ]; then
-    TILE_FLAG="--no-tiles"
-fi
-python -u -m authorities.osm-boundaries --source $SOURCE \$TILE_FLAG
 
 # Refresh index
-curl -s -X POST "\$ES_HOST/boundaries/_refresh" > /dev/null
-
-# Show final count
-echo
-echo "Boundary index stats:"
-curl -s "\$ES_HOST/_cat/indices/boundaries?v"
-echo
-echo "Counts by namespace:"
-curl -s "\$ES_HOST/boundaries/_search" \\
-    -H 'Content-Type: application/json' \\
-    -d '{"size":0,"aggs":{"by_ns":{"terms":{"field":"namespace"}},"by_level":{"terms":{"field":"admin_level","size":20}}}}' | python3 -m json.tool
+curl -s -X POST "\$ES_HOST/places/_refresh" > /dev/null
 
 echo
 echo "=========================================="
-echo "BOUNDARY INGESTION COMPLETE"
+echo "BOUNDARY PASS COMPLETE"
 echo "=========================================="
 echo "Finished: \$(date)"
 SBATCH_EOF
 
     echo
-    echo "Submitting boundary ingestion job..."
+    echo "Submitting boundary pass job..."
     echo "  Source: $SOURCE"
-    echo "  Replace existing: $REPLACE"
-    echo "  Generate tiles: $([ "$NO_TILES" = "true" ] && echo "no" || echo "yes")"
     echo
 
     JOBID=$(sbatch --parsable "$BOUNDARY_SCRIPT")
@@ -302,9 +232,7 @@ SBATCH_EOF
     echo
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/boundaries-${JOBID}.out"
-    echo
-    echo "Note: The staging ES instance must remain running for the duration."
+    echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-pass-${JOBID}.out"
 }
 
 
@@ -313,18 +241,44 @@ SBATCH_EOF
 # ==============================================================================
 
 do_generate_tiles() {
-    # Usage: es -generate-tiles
-    # Submits a short Slurm job to run tippecanoe on the existing GeoJSON Lines file.
+    # Usage: es -generate-tiles [--es-host URL] [--authority NAMESPACE]
+    # Submits a Slurm job to generate .mbtiles from boundary places in ES.
 
-    local GEOJSONL="${DATA_DIR}/boundaries/boundaries.geojsonl"
-    if [ ! -f "$GEOJSONL" ]; then
-        echo "ERROR: GeoJSON Lines file not found: $GEOJSONL"
-        echo "  Run 'es -ingest-boundaries' first to generate it."
-        return 1
+    local ES_URL=""
+    local AUTHORITY=""
+    local DEPLOY=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --es-host)
+                ES_URL="$2"
+                shift 2
+                ;;
+            --authority)
+                AUTHORITY="--authority $2"
+                shift 2
+                ;;
+            --deploy)
+                DEPLOY="--deploy"
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Default ES URL
+    if [ -z "$ES_URL" ]; then
+        if [ -f "$STAGING_INFO_FILE" ]; then
+            source "$STAGING_INFO_FILE"
+            ES_URL="http://${ES_NODE}:${ES_PORT}"
+        else
+            ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
+        fi
     fi
 
-    local SIZE=$(du -h "$GEOJSONL" | cut -f1)
-    echo "GeoJSON Lines file: $GEOJSONL ($SIZE)"
+    echo "ES host: $ES_URL"
 
     TILES_SCRIPT=$(mktemp /tmp/es-tiles-XXXXXX.sbatch)
 
@@ -343,24 +297,18 @@ do_generate_tiles() {
 set -e
 
 echo "=========================================="
-echo "BOUNDARY TILE GENERATION JOB"
+echo "TILESET GENERATION JOB"
 echo "=========================================="
 echo "Started: \$(date)"
 echo
 
-# Load environment
 source "$ENV_FILE"
 
-# Activate conda environment
 $(activate_environment)
 
 cd "$REPO_DIR"
 
-python -u -c "
-import importlib
-mod = importlib.import_module('authorities.osm-boundaries')
-mod.generate_mbtiles(mod.GEOJSONL_FILE, mod.MBTILES_FILE)
-"
+python -u -m processing.generate_tiles --es-host "$ES_URL" $AUTHORITY $DEPLOY
 
 echo
 echo "=========================================="

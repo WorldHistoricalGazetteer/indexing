@@ -9,7 +9,7 @@ from pathlib import Path
 # from phonetics.models import HybridPhoneticModel, PhoneticEncoder, CharEncoder
 # from phonetics.vocab import CharVocab, LangVocab
 
-from processing.settings import STAGING_REPO_NAME, PLACES_INDEX, TOPONYMS_INDEX, BOUNDARIES_INDEX, IX1_BASE
+from processing.settings import STAGING_REPO_NAME, PLACES_INDEX, TOPONYMS_INDEX, IX1_BASE
 
 
 # def load_phonetic_model(model_path: str = f"{IX1_BASE}/models/phonetic/checkpoints/final_model_b.pt", device: str = "cuda"):
@@ -96,7 +96,7 @@ def create_checkpoint_snapshot(es, snapshot_name="checkpoint", repo_name=STAGING
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     full_name = f"{snapshot_name}_{timestamp}"
 
-    indices = [PLACES_INDEX, TOPONYMS_INDEX, BOUNDARIES_INDEX]
+    indices = [PLACES_INDEX, TOPONYMS_INDEX]
 
     print(f"\nCreating checkpoint snapshot: {full_name}")
     print(f"  Indices: {', '.join(indices)}")

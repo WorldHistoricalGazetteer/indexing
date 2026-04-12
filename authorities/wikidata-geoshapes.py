@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE, GEOSHAPE_LOG_FILE
 from processing.utilities import create_checkpoint_snapshot
-from processing.helpers import compute_representative_point
+from processing.helpers import enrich_geometry
 from processing.geometry_collection_processor import (
     process_geometry_collection,
     validate_geometry
@@ -271,14 +271,14 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
             if not geometry:
                 continue
 
-            try:
-                rep_point = compute_representative_point(geometry)
-            except Exception as e:
-                rep_point = None
+            geom_entry = enrich_geometry(
+                geometry,
+                timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+            )
 
-            # If repr_point fails, clear cache and retry once
-            if not rep_point:
-                print(f"\n⚠ {place_id}: repr_point failed, refetching...")
+            # If enrich_geometry fails, clear cache and retry once
+            if not geom_entry:
+                print(f"\n⚠ {place_id}: enrich_geometry failed, refetching...")
 
                 # Delete from cache
                 conn = get_cache_conn()
@@ -288,18 +288,18 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
                 # Refetch
                 geometry = fetch_geojson_from_commons(ref_name, place_id)
                 if geometry:
-                    try:
-                        rep_point = compute_representative_point(geometry)
-                    except Exception as e:
-                        rep_point = None
+                    geom_entry = enrich_geometry(
+                        geometry,
+                        timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+                    )
 
-                if not rep_point:
+                if not geom_entry:
                     print(f"✗ {place_id}: Still failed after refetch, skipping")
                     continue
                 else:
                     print(f"✓ {place_id}: Succeeded on refetch")
 
-            # Update geometries array
+            # Update geometries array — replace the full geometry entry
             updates.append({
                 "_op_type": "update",
                 "_index": places_index,
@@ -309,21 +309,11 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
                         if (ctx._source.geometries == null || ctx._source.geometries.size() == 0) {
                             ctx._source.geometries = [params.new_geom];
                         } else {
-                            ctx._source.geometries[0].geom = params.geom;
-                            ctx._source.geometries[0].repr_point = params.rep;
+                            ctx._source.geometries[0] = params.new_geom;
                         }
                     """,
                     "params": {
-                        "geom": geometry,
-                        "rep": rep_point,
-                        "new_geom": {
-                            "geom": geometry,
-                            "repr_point": rep_point,
-                            "timespans": [{
-                                "start": {"in": 2025},
-                                "end": {"in": 2025}
-                            }]
-                        }
+                        "new_geom": geom_entry,
                     }
                 }
             })
