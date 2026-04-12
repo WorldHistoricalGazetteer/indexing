@@ -50,7 +50,27 @@ Fetch `cliopatria.geojson.zip` from `https://github.com/Seshat-Global-History-Da
 
 ### 9. Create standalone tileset generator (`processing/generate_tiles.py`)
 
-Accept `--es-host` and optional `--authority`. Identify boundary-qualifying places by querying on `boundary` field existence (`exists` filter). Group results by namespace prefix from `place_id`. For each authority with results: scroll matching docs, write geometry + properties (`title`, `boundary`, `namespace`, `tippecanoe:minzoom` derived from `boundary` value) as GeoJSON Lines to a temp file, invoke `tippecanoe` to produce `{namespace}.mbtiles`. The miscellaneous OSM/OHM boundaries should produce a separate tileset (e.g. `osm_misc.mbtiles`) distinct from the admin-level `osm.mbtiles`. Add `es -generate-tiles` command in `scripts/ingest.sh` as a Slurm job. Add an `scp`-based deploy step to push `.mbtiles` to TileServer GL light (via `ssh tileserver`), update its `config.json`, and restart the service if a new tileset was added.
+Accept `--es-host` and optional `--authority`. Identify boundary-qualifying places by querying on `boundary` field existence (`exists` filter). Group results by namespace prefix from `place_id`. For each authority with results: scroll matching docs, write geometry + properties as GeoJSON Lines to a temp file, invoke `tippecanoe` to produce `{namespace}.mbtiles`. The miscellaneous OSM/OHM boundaries should produce a separate tileset (e.g. `osm_misc.mbtiles`) distinct from the admin-level `osm.mbtiles`. Add `es -generate-tiles` command in `scripts/ingest.sh` as a Slurm job. Add an `resync`-based deploy step to push `.mbtiles` to TileServer GL light (user `whgadmin` at `134.209.177.234`), update its `config.json`, and restart the service if a new tileset was added.
+
+**Multilingual labels.** Each GeoJSON Lines feature must carry language-specific name properties so that the MapLibre GL JS client can switch display labels by language. The tileset generator fetches multilingual names from two sources: (a) the `toponyms[]` nested array on each place doc in the `places` index (each entry has `toponym_id` in `name@lang` format), and (b) for OSM/OHM, the `name:xx` tags already extracted during ingestion as language-tagged toponyms. For each boundary feature, write the following properties:
+
+- `name` — the place `title` (default fallback, always present)
+- `name_{lang}` — one property per language in a curated **display language set**, e.g. `name_en`, `name_fr`, `name_es`, `name_ar`, `name_zh`, `name_ru`, `name_de`, `name_pt`, `name_ja`, `name_ko`, `name_hi` (the six UN official languages plus five widely-used languages; the exact set is configurable)
+- `name_local` — the name in the primary local language of the country where the boundary is located, determined by matching the place's `ccodes` to a country→language lookup table (e.g. `FR` → `fr`, `JP` → `ja`); falls back to `name` if no local-language toponym exists
+
+When a language in the display set has no toponym for a given feature, that property is omitted (not set to empty). This keeps tile size bounded — only languages with actual data are included per feature.
+
+On the client side, MapLibre GL JS uses a style expression to select the label. When the user picks a language in the UI, the map style updates the text-field expression to:
+
+```json
+["coalesce", ["get", "name_{selectedLang}"], ["get", "name_local"], ["get", "name"]]
+```
+
+This falls back gracefully: preferred language → local name → default title. The `tippecanoe` invocation should use `--no-tile-compression` or equivalent settings that preserve all string properties without truncation.
+
+Other per-feature properties: `place_id` (enables the client to fetch full detail from the WHG API on click/hover), `boundary` (for styling and level/type filtering), `namespace` (source identification), and `tippecanoe:minzoom` (derived from `boundary` value for admin levels, a sensible default for other boundary types). No other fields — anything else (ccodes, wikidata links, population, etc.) is retrievable on demand via the API and would only bloat the tileset.
+
+**Integer feature IDs for feature-state highlighting.** MapLibre GL JS `feature-state` (used for hover/click highlighting) requires each vector tile feature to carry a numeric `id` at the GeoJSON top level (not inside `properties`). The ID must be unique within the tileset and stable across regenerations, fitting within JavaScript's `Number.MAX_SAFE_INTEGER` (2⁵³ − 1). Since each tileset covers a single namespace, the full 53 bits are available for the source ID — no namespace prefix is needed. For OSM/OHM admin tilesets, the relation ID (already an integer) is used directly. For authorities with non-numeric source IDs (PeriodO, Cliopatria), use the lower 53 bits of a stable hash of the string ID. The one exception is the **OSM/OHM (Miscellaneous)** tileset, which mixes two namespaces: use 1 high bit to discriminate osm (0) from ohm (1), with 52 bits for the source ID. Move the existing `encode_feature_id()` / `decode_feature_id()` from `osm-boundaries.py` to a shared module (e.g. `processing/feature_ids.py`) and simplify accordingly. The `place_id` string in `properties` handles API lookups; the integer `id` exists solely for `feature-state`.
 
 ### 10. Remove obsolete code
 
