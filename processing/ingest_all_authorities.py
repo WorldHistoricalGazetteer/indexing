@@ -292,6 +292,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),  # 4,343 0:00:09
         ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),  # 1,174,449 0:02:02
         ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),  # 24,000 0:00:10
+        ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),  # ~24K
         ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),  # Places updated: 3,335 0:03:50
         ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),  # Places updated: 58,681 0:00:22
     ]
@@ -322,7 +323,16 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
 
         # Skip if no data files found (only check for the first script of each namespace)
         if script_id.endswith('-places') or script_id == 'loc-relations':
-            if not auth_dir.exists() or not any(auth_dir.iterdir()):
+            # Trismegistos stores its database in the source tree, not DATA_DIR
+            if ns == 'tm':
+                tm_db = Path(__file__).resolve().parent.parent / 'authorities' / 'trismegistos' / 'tm_geo.db'
+                if not tm_db.exists():
+                    print(f"\n⚠ Skipping {ns}: tm_geo.db not found (run build_database.py first)")
+                    sys.stdout.flush()
+                    if ns not in results['skipped']:
+                        results['skipped'].append(ns)
+                    continue
+            elif not auth_dir.exists() or not any(auth_dir.iterdir()):
                 print(f"\n⚠ Skipping {ns}: No data files found")
                 sys.stdout.flush()
                 if ns not in results['skipped']:
