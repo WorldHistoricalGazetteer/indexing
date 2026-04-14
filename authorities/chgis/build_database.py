@@ -7,8 +7,9 @@ placename records spanning 220 BCE – 1911 CE with rich temporal, spatial,
 hierarchical, and multilingual toponym metadata.
 
 Usage:
-    python -m authorities.chgis.build_database              # full build
-    python -m authorities.chgis.build_database --summary    # print summary only
+    python -m authorities.chgis.build_database                # full build (SQL only)
+    python -m authorities.chgis.build_database --fetch-wikidata  # + Wikidata P4711 links
+    python -m authorities.chgis.build_database --summary      # print summary only
 
 The SQL dump is not committed to git (too large). If absent, it is fetched
 automatically from the fccs-dci/containerized_tgaz GitHub repository.
@@ -17,11 +18,13 @@ The resulting database is saved as authorities/chgis/tgaz.db
 """
 
 import argparse
+import json
 import logging
 import re
 import sqlite3
 import sys
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -85,6 +88,113 @@ def fetch_sql_dump():
             SQL_FILE.unlink()
         logger.error(f"Failed to download SQL dump: {e}")
         sys.exit(1)
+
+
+# =========================================================================
+# Phase 2: Fetch Wikidata links via P4711 (CHGIS ID) SPARQL query
+# =========================================================================
+
+WIKIDATA_SPARQL = "https://query.wikidata.org/sparql"
+
+# Fetch all Wikidata items with P4711, plus optional GeoNames (P1566).
+# Single query — the P4711 population is small (~5,700 items).
+SPARQL_QUERY = """\
+SELECT ?item ?chgis_id ?geonames ?itemLabel WHERE {
+  ?item wdt:P4711 ?chgis_id .
+  OPTIONAL { ?item wdt:P1566 ?geonames . }
+  SERVICE wikibase:label { bd:serviceParam wikibase:language "en,zh" . }
+}
+"""
+
+
+def fetch_wikidata_links(conn: sqlite3.Connection):
+    """Fetch CHGIS → Wikidata Q-ID mappings via the Wikidata SPARQL endpoint.
+
+    Uses property P4711 ("CHGIS ID") to find Wikidata items that reference
+    CHGIS place records.  Also captures GeoNames IDs (P1566) when present.
+
+    Results are stored in the wikidata_links table.  The function is
+    idempotent — existing rows are preserved (INSERT OR IGNORE).
+    """
+    cur = conn.cursor()
+
+    # Check existing count
+    cur.execute("SELECT COUNT(*) FROM wikidata_links")
+    existing = cur.fetchone()[0]
+    if existing > 0:
+        logger.info(f"wikidata_links already has {existing:,} rows — skipping SPARQL fetch")
+        logger.info("  (delete the table or the .db file to re-fetch)")
+        return
+
+    logger.info("Querying Wikidata SPARQL for P4711 (CHGIS ID) links...")
+
+    try:
+        params = urllib.parse.urlencode({
+            "query": SPARQL_QUERY,
+            "format": "json",
+        })
+        req = urllib.request.Request(
+            f"{WIKIDATA_SPARQL}?{params}",
+            headers={
+                "User-Agent": "WHG-Indexing/1.0 (https://whgazetteer.org; research)",
+                "Accept": "application/json",
+            },
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+    except Exception as e:
+        logger.error(f"SPARQL query failed: {e}")
+        logger.error("  Wikidata links not fetched — run again with --fetch-wikidata to retry")
+        return
+
+    bindings = data.get("results", {}).get("bindings", [])
+    if not bindings:
+        logger.warning("SPARQL returned no results")
+        return
+
+    inserted = 0
+    matched = 0
+    with_geonames = 0
+
+    for row in bindings:
+        chgis_id = row.get("chgis_id", {}).get("value", "")
+        qid_uri = row.get("item", {}).get("value", "")
+        geonames = row.get("geonames", {}).get("value")
+        label = row.get("itemLabel", {}).get("value")
+
+        if not chgis_id or not qid_uri:
+            continue
+
+        qid = qid_uri.rsplit("/", 1)[-1]  # http://www.wikidata.org/entity/Q123 → Q123
+
+        try:
+            cur.execute(
+                "INSERT OR IGNORE INTO wikidata_links (data_src_ref, qid, geonames_id, label) "
+                "VALUES (?, ?, ?, ?)",
+                (chgis_id, qid, geonames, label),
+            )
+            if cur.rowcount > 0:
+                inserted += 1
+                if geonames:
+                    with_geonames += 1
+        except Exception as e:
+            logger.warning(f"  Insert error for chgis_id={chgis_id}: {e}")
+
+    conn.commit()
+
+    # Count how many of those link to actual placename records in our DB
+    cur.execute("""
+        SELECT COUNT(DISTINCT wl.data_src_ref)
+        FROM wikidata_links wl
+        JOIN placename pn ON pn.data_src_ref = wl.data_src_ref
+                         AND pn.data_src = 'CHGIS'
+    """)
+    matched = cur.fetchone()[0]
+
+    logger.info(f"Wikidata links: {inserted:,} inserted, {matched:,} match CHGIS placenames, "
+                f"{with_geonames:,} also have GeoNames IDs")
+
 
 # =========================================================================
 # MySQL value parser (handles escapes, NULLs, nested quotes in long lines)
@@ -411,6 +521,20 @@ def create_schema(conn: sqlite3.Connection):
             FOREIGN KEY (placename_id) REFERENCES placename(id)
         )
     """)
+
+    # ── Wikidata cross-links (via P4711 SPARQL query) ──
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS wikidata_links (
+            data_src_ref    TEXT NOT NULL,
+            qid             TEXT NOT NULL,
+            geonames_id     TEXT,
+            label           TEXT,
+            PRIMARY KEY (data_src_ref, qid)
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_wd_qid ON wikidata_links(qid)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_wd_gn ON wikidata_links(geonames_id)")
 
     # ── WKT geometry definitions ──
 
@@ -948,6 +1072,29 @@ def print_summary(conn: sqlite3.Connection):
     for cc, cnt in cur.fetchall():
         print(f"    {cc:10s} {cnt:>8,}")
 
+    # ── Wikidata links ──
+    try:
+        cur.execute("SELECT COUNT(*) FROM wikidata_links")
+        wd_total = cur.fetchone()[0]
+        if wd_total > 0:
+            print(f"\n{'─' * 70}")
+            print("  Wikidata links (via P4711)")
+            print(f"{'─' * 70}")
+            print(f"  Total Wikidata Q-IDs:       {wd_total:>10,}")
+
+            cur.execute("""
+                SELECT COUNT(DISTINCT wl.data_src_ref)
+                FROM wikidata_links wl
+                JOIN placename pn ON pn.data_src_ref = wl.data_src_ref
+                                 AND pn.data_src = 'CHGIS'
+            """)
+            print(f"  Matching CHGIS placenames:   {cur.fetchone()[0]:>10,}")
+
+            cur.execute("SELECT COUNT(*) FROM wikidata_links WHERE geonames_id IS NOT NULL")
+            print(f"  With GeoNames ID:           {cur.fetchone()[0]:>10,}")
+    except Exception:
+        pass  # table may not exist in older databases
+
     # ── Sample records ──
     print(f"\n{'─' * 70}")
     print("  Sample placename records (first 5)")
@@ -989,9 +1136,11 @@ def print_summary(conn: sqlite3.Connection):
 def main():
     parser = argparse.ArgumentParser(description="Build CHGIS/TGAZ SQLite database")
     parser.add_argument("--summary", action="store_true", help="Print summary only")
+    parser.add_argument("--fetch-wikidata", action="store_true",
+                        help="Fetch Wikidata Q-IDs via P4711 SPARQL query")
     args = parser.parse_args()
 
-    if not args.summary:
+    if not args.summary and not args.fetch_wikidata:
         fetch_sql_dump()
 
     conn = sqlite3.connect(str(DB_FILE))
@@ -1001,6 +1150,12 @@ def main():
     create_schema(conn)
 
     if args.summary:
+        print_summary(conn)
+        conn.close()
+        return
+
+    if args.fetch_wikidata:
+        fetch_wikidata_links(conn)
         print_summary(conn)
         conn.close()
         return

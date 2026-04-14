@@ -68,10 +68,23 @@
   → maps to `relations[{relation_type: "preceded_by", related_place_id}]`
 - 62,487 places have at least one parent; 7,324 distinct parent entities
 
-### ⚠️ Links — Empty
+### ⚠️ Links — Empty in dump, but recoverable via Wikidata P4711
 - The `link` and `wkt_definition` tables are empty in this dump
-- No external cross-references to Wikidata, GeoNames, Pleiades, etc.
-- **Mitigation:** The `v5_id`/`v6_id` tables provide CHGIS version mappings. The CHGIS project has published concordance tables that could be used to derive Wikidata/GeoNames links in a future augmentation phase (similar to the TM georelations approach).
+- No external cross-references within the TGAZ data itself
+
+- **However:** Wikidata has property **P4711** ("CHGIS ID") on **5,674 items**.
+  The P4711 values are plain numeric IDs that match `data_src_ref` in the
+  `placename` table (and the numeric suffix of `hvd_` sys_ids). This gives us
+  a direct CHGIS → Wikidata concordance for ~7% of the corpus.
+  - Of those 5,674 Wikidata items, only 21 also carry GeoNames IDs (P1566) —
+    so GeoNames cross-linking is sparse via this route.
+  - The Wikidata links are more valuable anyway: our `wd:` authority already
+    indexes ~11M Wikidata places, so 5,674 hard links from `chgis:` → `wd:`
+    feed directly into the clustering pipeline.
+  - A `build_database.py --fetch-wikidata` phase (similar to the Trismegistos
+    `--resolve-wikidata` approach) could query the Wikidata SPARQL endpoint
+    for all P4711 values and store the Q-ID mappings in a `wikidata_links`
+    table. This is straightforward to add later.
 
 ---
 
