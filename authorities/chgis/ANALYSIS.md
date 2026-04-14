@@ -81,10 +81,9 @@
   - The Wikidata links are more valuable anyway: our `wd:` authority already
     indexes ~11M Wikidata places, so 5,674 hard links from `chgis:` → `wd:`
     feed directly into the clustering pipeline.
-  - A `build_database.py --fetch-wikidata` phase (similar to the Trismegistos
-    `--resolve-wikidata` approach) could query the Wikidata SPARQL endpoint
-    for all P4711 values and store the Q-ID mappings in a `wikidata_links`
-    table. This is straightforward to add later.
+  - `build_database.py --fetch-wikidata` queries the Wikidata SPARQL endpoint
+    for all P4711 values and stores the Q-ID mappings in a `wikidata_links`
+    table (also captures GeoNames IDs via P1566 when present).
 
 ---
 
