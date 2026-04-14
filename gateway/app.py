@@ -31,6 +31,7 @@ from .config import (
     get_elastic_password,
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
+from .extend import router as extend_router
 from .places import router as places_router
 from .reconcile import router as reconcile_router
 from .search import router as search_router
@@ -80,6 +81,8 @@ app.include_router(reconcile_router)
 app.include_router(search_router)
 # Mount places data endpoint
 app.include_router(places_router)
+# Mount data extension endpoint (OpenRefine extend)
+app.include_router(extend_router)
 
 
 # ---- Health Endpoint ----

@@ -322,4 +322,19 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # ~24K ancient/historical places with coordinates
+        'dataset_name': 'Trismegistos',
+        'namespace': 'tm',
+        'api_item': 'https://www.trismegistos.org/place/<id>',
+        'citation': 'Trismegistos: An interdisciplinary portal of the ancient world. https://www.trismegistos.org/',
+        'files': [
+            {
+                # Built locally by authorities/trismegistos/build_database.py
+                # from TM_geo.sql + TM GeoRelations API
+                'url': '',
+                'name': 'tm_geo.db',
+                'file_type': 'sqlite',
+            }
+        ],
+    },
 ]

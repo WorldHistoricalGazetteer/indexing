@@ -290,7 +290,16 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
 
         # Skip if no data files found (only check for the first script of each namespace)
         if script_id.endswith('-places') or script_id == 'loc-relations':
-            if not auth_dir.exists() or not any(auth_dir.iterdir()):
+            # Trismegistos stores its database in the source tree, not DATA_DIR
+            if ns == 'tm':
+                tm_db = Path(__file__).resolve().parent.parent / 'authorities' / 'trismegistos' / 'tm_geo.db'
+                if not tm_db.exists():
+                    print(f"\n⚠ Skipping {ns}: tm_geo.db not found (run build_database.py first)")
+                    sys.stdout.flush()
+                    if ns not in results['skipped']:
+                        results['skipped'].append(ns)
+                    continue
+            elif not auth_dir.exists() or not any(auth_dir.iterdir()):
                 print(f"\n⚠ Skipping {ns}: No data files found")
                 sys.stdout.flush()
                 if ns not in results['skipped']:
