@@ -3,3 +3,8 @@ zenodo/symphonym-v6.zip
 __pycache__/
 *.pyc
 .idea/
+
+# Large authority source dumps and derived databases
+authorities/chgis/*.sql
+authorities/chgis/*.db
+
