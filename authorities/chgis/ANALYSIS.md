@@ -58,7 +58,8 @@
 ### ✅ Types — Rich Historical Vocabulary
 - 898 feature types with Chinese (`name_vn`), pinyin (`name_tr`), English (`name_en`), and ADL class
 - Top types by usage: county (县, 12,752), prefecture (州, 3,804), commandery (郡, 2,938), prefecture (府, 1,462)
-- ADL classes already map to the AAT hierarchy (administrative areas, populated places, etc.)
+- **ADL** = Alexandria Digital Library Feature Type Thesaurus — a standard geographic feature classification developed at UC Santa Barbara (now largely superseded by TGN and AAT). Each TGAZ feature type carries an `adl_class` label (e.g. "administrative areas", "populated places", "hydrographic features") — there are 107 distinct ADL classes across 898 types
+- The ADL classes are **not explicitly mapped to AAT** in the data (the `ld_uri` column is empty for all 898 types). However, many ADL class labels have obvious AAT equivalents (e.g. "administrative areas" → AAT 300387176, "populated places" → AAT 300008347), so **a mapping could be constructed** as part of the WHG type system pipeline
 - Period-specific types: "commandery" (Qin–Sui), "circuit" (Song), "banner" (Qing) — this temporal typing is unique among WHG authorities
 
 ### ✅ Relations — Temporal Hierarchy + Succession
