@@ -322,6 +322,36 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # ~82K historical Chinese administrative places
+        'dataset_name': 'CHGIS',
+        'namespace': 'chgis',
+        'api_item': '',
+        'citation': 'China Historical GIS / Temporal Gazetteer (TGAZ). Harvard University & Fudan University. https://sites.fas.harvard.edu/~chgis/',
+        'files': [
+            {
+                # Built locally by authorities/chgis/build_database.py
+                # from 02-tgaz-dev-2018.sql (MySQL dump)
+                'url': '',
+                'name': 'tgaz.db',
+                'file_type': 'sqlite',
+            }
+        ],
+    },
+    {  # ~3.8K Song dynasty administrative entities
+        'dataset_name': 'DGSD',
+        'namespace': 'dgsd',
+        'api_item': '',
+        'citation': 'Digital Gazetteer of the Song Dynasty (DGSD) v1.1. Ruth Mostern & Elijah Meeks, UC Merced.',
+        'files': [
+            {
+                # Built locally by authorities/dgsd/build_database.py
+                # from dgsd11.sql (MySQL dump in 44108_dgsd11.zip)
+                'url': '',
+                'name': 'dgsd.db',
+                'file_type': 'sqlite',
+            }
+        ],
+    },
     {  # ~24K ancient/historical places with coordinates
         'dataset_name': 'Trismegistos',
         'namespace': 'tm',

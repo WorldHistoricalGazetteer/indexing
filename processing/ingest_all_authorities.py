@@ -258,6 +258,9 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),  # 4,343 0:00:09
         ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),  # 1,174,449 0:02:02
         ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),  # 24,000 0:00:10
+        ('chgis', 'chgis.places', 'CHGIS/TGAZ historical Chinese places', 'chgis-places'),  # ~82K
+        ('dgsd', 'dgsd.places', 'DGSD Song dynasty places', 'dgsd-places'),  # ~3.8K
+        ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),  # ~24K
         ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
         ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
         ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),  # Places updated: 3,335 0:03:50
@@ -290,15 +293,20 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
 
         # Skip if no data files found (only check for the first script of each namespace)
         if script_id.endswith('-places') or script_id == 'loc-relations':
-            # Trismegistos stores its database in the source tree, not DATA_DIR
-            if ns == 'tm':
-                tm_db = Path(__file__).resolve().parent.parent / 'authorities' / 'trismegistos' / 'tm_geo.db'
-                if not tm_db.exists():
-                    print(f"\n⚠ Skipping {ns}: tm_geo.db not found (run build_database.py first)")
+            # These authorities store their databases in the source tree, not DATA_DIR
+            # Their places.py scripts auto-build the DB if missing
+            SOURCE_TREE_DBS = {
+                'tm': ('trismegistos', 'tm_geo.db'),
+                'chgis': ('chgis', 'tgaz.db'),
+                'dgsd': ('dgsd', 'dgsd.db'),
+            }
+            if ns in SOURCE_TREE_DBS:
+                subdir, db_name = SOURCE_TREE_DBS[ns]
+                db_path = Path(__file__).resolve().parent.parent / 'authorities' / subdir / db_name
+                # Don't skip — the places.py script will auto-build if needed
+                if not db_path.exists():
+                    print(f"\n  Note: {db_name} not found; will be built automatically during ingestion")
                     sys.stdout.flush()
-                    if ns not in results['skipped']:
-                        results['skipped'].append(ns)
-                    continue
             elif not auth_dir.exists() or not any(auth_dir.iterdir()):
                 print(f"\n⚠ Skipping {ns}: No data files found")
                 sys.stdout.flush()
