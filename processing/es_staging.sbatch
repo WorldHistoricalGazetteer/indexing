@@ -226,10 +226,15 @@ if [ "${SKIP_SNAPSHOT_RESTORE:-0}" = "1" ]; then
     echo "SKIP_SNAPSHOT_RESTORE=1: Skipping snapshot restore, creating empty indices..."
     cd "$REPO_DIR"
 
-    # Activate conda environment if available
-    if [ -f "$IX1_BASE/miniconda/etc/profile.d/conda.sh" ]; then
-        source "$IX1_BASE/miniconda/etc/profile.d/conda.sh"
-        conda activate whg 2>/dev/null || true
+    # Activate conda environment (same paths as _common.sh)
+    CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+    [ ! -f "$CONDA_SETUP" ] && CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+    if [ -f "$CONDA_SETUP" ]; then
+        source "$CONDA_SETUP"
+        conda activate whg
+    else
+        echo "ERROR: conda not found"
+        exit 1
     fi
 
     # Set ES_HOST for the Python script
@@ -358,10 +363,15 @@ else
     echo "No complete snapshots found - creating empty indices..."
     cd "$REPO_DIR"
 
-    # Activate conda environment if available
-    if [ -f "$IX1_BASE/miniconda/etc/profile.d/conda.sh" ]; then
-        source "$IX1_BASE/miniconda/etc/profile.d/conda.sh"
-        conda activate whg 2>/dev/null || true
+    # Activate conda environment (same paths as _common.sh)
+    CONDA_SETUP="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"
+    [ ! -f "$CONDA_SETUP" ] && CONDA_SETUP="/ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh"
+    if [ -f "$CONDA_SETUP" ]; then
+        source "$CONDA_SETUP"
+        conda activate whg
+    else
+        echo "ERROR: conda not found"
+        exit 1
     fi
 
     # Set ES_HOST for the Python script

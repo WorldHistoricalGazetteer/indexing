@@ -20,7 +20,12 @@ STAGING_INFO_FILE = os.getenv("STAGING_INFO_FILE", f"{IX1_BASE}/esinfo/es-stagin
 
 
 def get_es_host():
-    """Return staging ES URL if a staging instance is running, else None."""
+    """Return ES URL from environment, staging info file, or None."""
+    # Check explicit environment variable first (set by sbatch scripts)
+    env_host = os.getenv("ES_HOST")
+    if env_host:
+        return env_host
+    # Fall back to staging info file
     if os.path.exists(STAGING_INFO_FILE):
         node = port = None
         with open(STAGING_INFO_FILE) as f:
