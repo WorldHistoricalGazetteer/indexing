@@ -49,7 +49,6 @@ do_ingest() {
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=120G
-#SBATCH --exclusive
 #SBATCH --signal=B:SIGTERM@60
 #SBATCH --output=${STAGING_SLURM_LOGS}/ingest-%j.out
 #SBATCH --error=${STAGING_SLURM_LOGS}/ingest-%j.err
