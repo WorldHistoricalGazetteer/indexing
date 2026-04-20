@@ -209,6 +209,9 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     start_time = datetime.now()
     try:
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
+        # Boundary pass scripts need --source to know which PBF to process
+        if script_name == 'osm-boundary-pass':
+            cmd.extend(["--source", namespace])
         subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
         es.indices.refresh(index=",".join([PLACES_INDEX, TOPONYMS_INDEX]))
         elapsed = datetime.now() - start_time
@@ -289,6 +292,10 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     results = {'successful': [], 'failed': [], 'skipped': []}
 
     for ns, script, desc, script_id in ingestion_order:
+        # Skip remaining scripts for a namespace that already failed
+        if ns in results['failed']:
+            continue
+
         auth_dir = Path(DATA_DIR) / 'authorities' / ns
 
         # Skip if no data files found (only check for the first script of each namespace)
@@ -300,6 +307,9 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
                 'chgis': ('chgis', 'tgaz.db'),
                 'dgsd': ('dgsd', 'dgsd.db'),
             }
+            # These authorities self-fetch their data at ingestion time
+            SELF_FETCHING = {'po', 'clio'}
+
             if ns in SOURCE_TREE_DBS:
                 subdir, db_name = SOURCE_TREE_DBS[ns]
                 db_path = Path(__file__).resolve().parent.parent / 'authorities' / subdir / db_name
@@ -307,6 +317,8 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
                 if not db_path.exists():
                     print(f"\n  Note: {db_name} not found; will be built automatically during ingestion")
                     sys.stdout.flush()
+            elif ns in SELF_FETCHING:
+                pass  # These scripts download their own data; don't skip
             elif not auth_dir.exists() or not any(auth_dir.iterdir()):
                 print(f"\n⚠ Skipping {ns}: No data files found")
                 sys.stdout.flush()
@@ -334,10 +346,11 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
         else:
             if ns not in results['failed']:
                 results['failed'].append(ns)
-            # Stop processing further scripts for this namespace if one fails
+            # Skip remaining scripts for this namespace, but continue with others
             print(f"Stopping further {ns} scripts due to failure")
             sys.stdout.flush()
-            break
+            # Mark namespace as failed so subsequent scripts for the same ns are skipped
+            continue
 
         time.sleep(2)
 
