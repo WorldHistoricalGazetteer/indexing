@@ -132,8 +132,11 @@ do_update() {
         fi
     fi
 
-    echo "Pulling latest from main..."
-    git pull origin main
+    echo "Fetching latest from main..."
+    git fetch origin main
+
+    # Reset to match origin/main exactly (deployment clone should mirror main)
+    git reset --hard origin/main
 
     echo "✓ Update complete"
 }
