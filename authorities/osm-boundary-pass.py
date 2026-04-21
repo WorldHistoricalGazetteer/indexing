@@ -38,7 +38,7 @@ from shapely.geometry import mapping
 from shapely.validation import make_valid
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, validate_geometry
 from processing.settings import ES_HOST, DATA_DIR
 
 # ---------------- CONFIG ----------------
@@ -175,6 +175,35 @@ def process_relation_tags(tags):
     return result
 
 
+def _iter_lon_values(geom):
+    """Yield longitudes from nested GeoJSON coordinates."""
+    if not isinstance(geom, dict):
+        return
+    coords = geom.get('coordinates')
+    if coords is None:
+        return
+
+    stack = [coords]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, (list, tuple)):
+            if len(cur) >= 2 and isinstance(cur[0], (int, float)) and isinstance(cur[1], (int, float)):
+                yield float(cur[0])
+            else:
+                for item in cur:
+                    stack.append(item)
+
+
+def _is_antimeridian_risky(geom):
+    """Heuristic: hulls spanning both sides of +/-180 often fail ES geo_shape parse."""
+    lons = list(_iter_lon_values(geom))
+    if not lons:
+        return False
+    min_lon = min(lons)
+    max_lon = max(lons)
+    return (min_lon < -170 and max_lon > 170) or (max_lon - min_lon > 300)
+
+
 # ---------------- PROCESSOR ----------------
 
 class BoundaryPassProcessor:
@@ -193,6 +222,10 @@ class BoundaryPassProcessor:
         self.geom_errors = 0
         self.areas_seen = 0
         self.tag_rejected = 0
+        self.hull_kept = 0
+        self.hull_fixed = 0
+        self.hull_dropped_invalid = 0
+        self.hull_dropped_antimeridian = 0
         self.start_time = time.time()
 
     def process_area(self, a):
@@ -229,6 +262,25 @@ class BoundaryPassProcessor:
             if not geom_entry:
                 self.geom_errors += 1
                 return
+
+            # Keep hull when valid (or fixable), drop only when still invalid
+            # or likely to fail ES geo_shape parsing across antimeridian.
+            if 'hull' in geom_entry:
+                hull = geom_entry.get('hull')
+                valid, fixed_hull, fix_note = validate_geometry(hull)
+                if not valid:
+                    geom_entry.pop('hull', None)
+                    self.hull_dropped_invalid += 1
+                else:
+                    if fixed_hull and fix_note:
+                        geom_entry['hull'] = fixed_hull
+                        self.hull_fixed += 1
+
+                    if _is_antimeridian_risky(geom_entry.get('hull')):
+                        geom_entry.pop('hull', None)
+                        self.hull_dropped_antimeridian += 1
+                    else:
+                        self.hull_kept += 1
 
             # Build partial update document
             update_doc = {
@@ -550,6 +602,10 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"  Documents updated:    {updated_count:,}")
         print(f"  Documents failed:     {failed_count:,}")
         print(f"  Missing docs (404):   {missing_doc_count:,}")
+        print(f"  Hull kept:            {processor.hull_kept:,}")
+        print(f"  Hull fixed:           {processor.hull_fixed:,}")
+        print(f"  Hull dropped invalid: {processor.hull_dropped_invalid:,}")
+        print(f"  Hull dropped anti-mer:{processor.hull_dropped_antimeridian:,}")
         print(f"  Skipped (invalid):    {processor.skipped_invalid:,}")
         print(f"  Skipped (empty):      {processor.skipped_empty:,}")
         print(f"  Geometry errors:      {processor.geom_errors:,}")

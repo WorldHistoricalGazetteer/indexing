@@ -189,6 +189,7 @@ class OSMHandler(osmium.SimpleHandler):
         self.tag_rejected = {'node': 0, 'way': 0, 'relation': 0}
         self.geom_errors = {'way': 0, 'relation': 0}
         self.geom_invalid = {'relation': 0}
+        self.relation_geom_fallbacks = 0
 
     def node(self, n):
         if not n.tags: return
@@ -234,18 +235,23 @@ class OSMHandler(osmium.SimpleHandler):
 
         tags = process_tags(r.tags)
         if tags:
+            # Always index a base relation doc so boundary pass has a target.
+            doc = create_doc(r.id, 'relation', tags, None)
             try:
                 wkb = self.wkbfab.create_multipolygon(r)
                 geom = wkblib.loads(wkb, hex=False)
 
                 if geom.is_valid:
                     geo = mapping(geom)
-                    self.buffer_callback(create_doc(r.id, 'relation', tags, geo))
+                    doc = create_doc(r.id, 'relation', tags, geo)
                     self.buffered['relation'] += 1
                 else:
                     self.geom_invalid['relation'] += 1
+                    self.relation_geom_fallbacks += 1
             except Exception:
                 self.geom_errors['relation'] += 1
+                self.relation_geom_fallbacks += 1
+            self.buffer_callback(doc)
         else:
             self.tag_rejected['relation'] += 1
         self.tracker.increment('relation')
@@ -355,7 +361,8 @@ def index_osm_optimized(pbf_file):
             f"    Relations: candidates={handler.candidates['relation']:,}, "
             f"buffered={handler.buffered['relation']:,}, rejected={handler.tag_rejected['relation']:,}, "
             f"geom_invalid={handler.geom_invalid['relation']:,}, "
-            f"geom_errors={handler.geom_errors['relation']:,}"
+            f"geom_errors={handler.geom_errors['relation']:,}, "
+            f"fallbacks={handler.relation_geom_fallbacks:,}"
         )
 
         print("Ingestion Complete.")
