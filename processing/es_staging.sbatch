@@ -174,7 +174,14 @@ echo "Elasticsearch PID: $ES_PID"
 echo "Waiting for Elasticsearch to start..."
 ES_URL="http://localhost:$STAGING_ES_PORT"
 
-for i in {1..60}; do
+# Startup can be slow on some nodes (JVM pre-touch + snapshot metadata load).
+# Allow override via env; defaults to 10 minutes.
+ES_STARTUP_POLL_INTERVAL_SECONDS="${STAGING_ES_STARTUP_POLL_INTERVAL_SECONDS:-2}"
+ES_STARTUP_TIMEOUT_SECONDS="${STAGING_ES_STARTUP_TIMEOUT_SECONDS:-600}"
+MAX_POLLS=$(( (ES_STARTUP_TIMEOUT_SECONDS + ES_STARTUP_POLL_INTERVAL_SECONDS - 1) / ES_STARTUP_POLL_INTERVAL_SECONDS ))
+echo "Startup timeout: ${ES_STARTUP_TIMEOUT_SECONDS}s (poll every ${ES_STARTUP_POLL_INTERVAL_SECONDS}s)"
+
+for ((i=1; i<=MAX_POLLS; i++)); do
     if curl -s "$ES_URL/_cluster/health" > /dev/null 2>&1; then
         echo "Elasticsearch is ready!"
         break
@@ -184,13 +191,14 @@ for i in {1..60}; do
         cat "$STAGING_LOG_DIR/elasticsearch.log"
         exit 1
     fi
-    sleep 2
+    sleep "$ES_STARTUP_POLL_INTERVAL_SECONDS"
 done
 
 # Verify ES is responding
 if ! curl -s "$ES_URL/_cluster/health" > /dev/null 2>&1; then
-    echo "ERROR: Elasticsearch failed to start within timeout"
-    cat "$STAGING_LOG_DIR/elasticsearch.log"
+    echo "ERROR: Elasticsearch failed to start within ${ES_STARTUP_TIMEOUT_SECONDS}s"
+    echo "--- Last 200 lines of Elasticsearch log ---"
+    tail -200 "$STAGING_LOG_DIR/elasticsearch.log" || true
     exit 1
 fi
 
