@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE, GEOSHAPE_LOG_FILE
 from processing.utilities import create_checkpoint_snapshot
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.geometry_collection_processor import (
     process_geometry_collection,
     validate_geometry
@@ -222,6 +222,9 @@ def fetch_task(args):
 
 
 def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     init_cache()  # Initialize cache database
     downloaded_ids = get_downloaded_list()
 
@@ -243,85 +246,101 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
     completed = 0
     start_time = time.time()
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
-        futures = {executor.submit(fetch_task, t): t for t in tasks}
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "wd_geoshapes") as gsw:
+        configure_module_writer(gsw)
 
-        for future in as_completed(futures):
-            place_id, geometry, ref_name = future.result()
-            completed += 1
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {executor.submit(fetch_task, t): t for t in tasks}
 
-            if completed % 5 == 0 or completed == total_tasks:
-                percent = (completed / total_tasks) * 100
-                elapsed = time.time() - start_time
-                rate = completed / elapsed if elapsed > 0 else 0
+            for future in as_completed(futures):
+                place_id, geometry, ref_name = future.result()
+                completed += 1
 
-                if rate > 0:
-                    remaining_items = total_tasks - completed
-                    eta_seconds = int(remaining_items / rate)
-                    eta_str = str(timedelta(seconds=eta_seconds))
-                else:
-                    eta_str = "--:--:--"
+                if completed % 5 == 0 or completed == total_tasks:
+                    percent = (completed / total_tasks) * 100
+                    elapsed = time.time() - start_time
+                    rate = completed / elapsed if elapsed > 0 else 0
 
-                display_name = (ref_name[:20] + '..') if len(ref_name) > 20 else ref_name
+                    if rate > 0:
+                        remaining_items = total_tasks - completed
+                        eta_seconds = int(remaining_items / rate)
+                        eta_str = str(timedelta(seconds=eta_seconds))
+                    else:
+                        eta_str = "--:--:--"
 
-                sys.stdout.write(
-                    f"\r[WD-Shapes] {completed:,}/{total_tasks:,} ({percent:.1f}%) | {rate:.1f} it/s | ETA: {eta_str} | Active: {display_name:<20}")
-                sys.stdout.flush()
-
-            if not geometry:
-                continue
-
-            geom_entry = enrich_geometry(
-                geometry,
-                timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
-            )
-
-            # If enrich_geometry fails, clear cache and retry once
-            if not geom_entry:
-                print(f"\n⚠ {place_id}: enrich_geometry failed, refetching...")
-
-                # Delete from cache
-                conn = get_cache_conn()
-                conn.execute("DELETE FROM geoshape_cache WHERE data_page = ?", (ref_name,))
-                conn.commit()
-
-                # Refetch
-                geometry = fetch_geojson_from_commons(ref_name, place_id)
-                if geometry:
-                    geom_entry = enrich_geometry(
-                        geometry,
-                        timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+                    display_name = (ref_name[:20] + '..') if len(ref_name) > 20 else ref_name
+                    sys.stdout.write(
+                        f"\r[WD-Shapes] {completed:,}/{total_tasks:,} ({percent:.1f}%) | {rate:.1f} it/s | ETA: {eta_str} | Active: {display_name:<20}"
                     )
+                    sys.stdout.flush()
 
-                if not geom_entry:
-                    print(f"✗ {place_id}: Still failed after refetch, skipping")
+                if not geometry:
                     continue
-                else:
+
+                geom_entry = enrich_geometry(
+                    geometry,
+                    timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+                    geom_key=f"{place_id}_0",
+                )
+
+                # If enrich_geometry fails, clear cache and retry once
+                if not geom_entry:
+                    print(f"\n⚠ {place_id}: enrich_geometry failed, refetching...")
+                    conn = get_cache_conn()
+                    conn.execute("DELETE FROM geoshape_cache WHERE data_page = ?", (ref_name,))
+                    conn.commit()
+
+                    geometry = fetch_geojson_from_commons(ref_name, place_id)
+                    if geometry:
+                        geom_entry = enrich_geometry(
+                            geometry,
+                            timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+                            geom_key=f"{place_id}_0",
+                        )
+
+                    if not geom_entry:
+                        print(f"✗ {place_id}: Still failed after refetch, skipping")
+                        continue
                     print(f"✓ {place_id}: Succeeded on refetch")
 
-            # Update geometries array — replace the full geometry entry
-            updates.append({
-                "_op_type": "update",
-                "_index": places_index,
-                "_id": place_id,
-                "script": {
-                    "source": """
-                        if (ctx._source.geometries == null || ctx._source.geometries.size() == 0) {
-                            ctx._source.geometries = [params.new_geom];
-                        } else {
-                            ctx._source.geometries[0] = params.new_geom;
-                        }
-                    """,
-                    "params": {
-                        "new_geom": geom_entry,
-                    }
-                }
-            })
-            log_downloaded(place_id)
+                h3_centroid = None
+                h3_cover = []
+                if geom_entry.get("repr_point"):
+                    rp = geom_entry["repr_point"]
+                    h3_centroid, h3_cover = compute_h3_fields(rp["lon"], rp["lat"], geometry)
 
-            if len(updates) >= batch_size:
-                helpers.bulk(es, updates, raise_on_error=False)
-                updates.clear()
+                updates.append({
+                    "_op_type": "update",
+                    "_index": places_index,
+                    "_id": place_id,
+                    "script": {
+                        "source": """
+                            if (ctx._source.geometries == null || ctx._source.geometries.size() == 0) {
+                                ctx._source.geometries = [params.new_geom];
+                            } else {
+                                ctx._source.geometries[0] = params.new_geom;
+                            }
+                            if (params.h3_centroid != null) {
+                                ctx._source.h3_centroid = params.h3_centroid;
+                                ctx._source.h3_cover = params.h3_cover;
+                            }
+                        """,
+                        "params": {
+                            "new_geom": geom_entry,
+                            "h3_centroid": h3_centroid,
+                            "h3_cover": h3_cover,
+                        }
+                    }
+                })
+                log_downloaded(place_id)
+
+                if len(updates) >= batch_size:
+                    helpers.bulk(es, updates, raise_on_error=False)
+                    updates.clear()
+
+        configure_module_writer(None)
+
+        print(f"\n[VAST] wikidata geoshape geometries staged: {gsw.count:,}")
 
     if updates:
         helpers.bulk(es, updates, raise_on_error=False)
