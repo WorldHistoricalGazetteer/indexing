@@ -836,7 +836,7 @@ This design is a **materialised, weighted place similarity graph with query-time
 
 ### Phase D — Client-side implementation
 
-> **See `plan-dynamicClusteringUI.prompt.md`** (§5, Phase D) — client-side clustering JS, UI changes, and Django thin-proxy changes are managed in the `whg3` project.
+> **See `plan-dynamicClusteringUI.prompt.md`** (§5, Phase D) — client-side clustering JS, UI changes, and Django thin-proxy changes are managed in the `whg3` project. [Stored locally on the `atlas` branch at /home/stephen/Documents/GitHub/whg3/plan-dynamicClusteringUI.prompt.md]
 
 ### Phase E — Cleanup and documentation
 

@@ -366,9 +366,12 @@ class BoundaryPassProcessor:
                       end='', flush=True)
 
         except Exception as e:
+            # These are osmium-level failures (invalid area topology in PBF data).
+            # No Shapely repair is possible here because osmium could not assemble
+            # a WKB geometry object at all — there is nothing to hand to Shapely.
             self.geom_errors += 1
             if self.geom_errors <= 5:
-                print(f"\n  Geometry error (relation {a.orig_id()}): {e}")
+                print(f"\n  Geometry error (osmium assembly, relation {a.orig_id()}): {e}")
 
 
 # ---------------- PROGRESS REPORTER ----------------
@@ -649,7 +652,9 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"  Documents updated:    {updated_count:,}")
         print(f"  Documents failed:     {failed_count:,}")
         print(f"  Missing docs (404):   {missing_doc_count:,}")
-        print(f"\n  Raw geometry repairs:")
+        print(f"\n  Geometry errors (osmium assembly failures, unrecoverable):")
+        print(f"    Count:              {processor.geom_errors:,}")
+        print(f"\n  WKB geometry repairs (got WKB but Shapely found it invalid):")
         print(f"    Fixed (total):      {processor.raw_geom_fixed:,}")
         print(f"    Fixed by buffer(0): {processor.raw_geom_fixed_by_buffer:,}")
         print(f"    Fixed by hull:      {processor.raw_geom_fixed_by_hull:,}")
@@ -661,7 +666,6 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"    Dropped anti-mer:   {processor.hull_dropped_antimeridian:,}")
         print(f"\n  Other:")
         print(f"    Skipped (empty):    {processor.skipped_empty:,}")
-        print(f"    Geometry errors:    {processor.geom_errors:,}")
         if missing_doc_samples:
             print(f"    Missing doc samples: {', '.join(missing_doc_samples)}")
 

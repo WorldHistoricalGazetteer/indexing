@@ -622,6 +622,11 @@ def enrich_geometry(geojson_geom, timespans=None):
                 pass
 
         # ── 6. Convex hull + bounds (from the validated Shapely geom) ───
+        # IMPORTANT: coordinates must be rounded to COORDINATE_PRECISION here,
+        # just like the main geometry was rounded in step 1.  Leaving hull
+        # coordinates at float64 precision (17 dp) produces near-collinear
+        # vertices that Shapely accepts but ES's stricter JTS parser rejects
+        # with "Polygon self-intersection".
         hull_geojson = None
         bounds_arr = None
         try:
@@ -632,22 +637,38 @@ def enrich_geometry(geojson_geom, timespans=None):
                 if not hull.is_valid:
                     hull = hull.buffer(0)
                 if hull.is_valid and not hull.is_empty:
-                    hull_geojson = hull.__geo_interface__
-                    hb = hull.bounds  # (minx, miny, maxx, maxy)
-                    bounds_arr = [
-                        round(hb[0], P), round(hb[1], P),
-                        round(hb[2], P), round(hb[3], P),
-                    ]
+                    # Round hull coordinates to match main geometry precision
+                    hull_geojson_raw = hull.__geo_interface__
+                    hull_geojson = round_coordinates(hull_geojson_raw, precision=P)
+                    # Re-validate after rounding (rounding can introduce micro-intersections)
+                    if hull_geojson:
+                        hull_rounded = geojson_to_shapely(hull_geojson)
+                        if hull_rounded and not hull_rounded.is_valid:
+                            hull_rounded = shapely_make_valid(hull_rounded)
+                            if hull_rounded and hull_rounded.is_valid and not hull_rounded.is_empty:
+                                hull_geojson = round_coordinates(
+                                    hull_rounded.__geo_interface__, precision=P
+                                )
+                            else:
+                                hull_geojson = None  # Cannot repair; omit hull
+                    if hull_geojson:
+                        hb = hull.bounds  # (minx, miny, maxx, maxy)
+                        bounds_arr = [
+                            round(hb[0], P), round(hb[1], P),
+                            round(hb[2], P), round(hb[3], P),
+                        ]
         except Exception:
             try:
                 env = geom.envelope
                 if env and not env.is_empty and env.is_valid:
-                    hull_geojson = env.__geo_interface__
-                    eb = env.bounds
-                    bounds_arr = [
-                        round(eb[0], P), round(eb[1], P),
-                        round(eb[2], P), round(eb[3], P),
-                    ]
+                    env_geojson = round_coordinates(env.__geo_interface__, precision=P)
+                    if env_geojson:
+                        hull_geojson = env_geojson
+                        eb = env.bounds
+                        bounds_arr = [
+                            round(eb[0], P), round(eb[1], P),
+                            round(eb[2], P), round(eb[3], P),
+                        ]
             except Exception:
                 pass
 
