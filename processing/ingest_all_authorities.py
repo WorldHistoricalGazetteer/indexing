@@ -197,21 +197,20 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
         )['count']
 
+        # If no docs exist for a resumable source, stale checkpoints can skip
+        # large parts of the source file and create apparent missing docs.
+        state_file = STATE_FILES.get(namespace)
+        if count == 0 and state_file and os.path.exists(state_file):
+            print(f"  Removing stale checkpoint for {namespace}: {state_file}")
+            os.remove(state_file)
+
         if count > 0:
             if replace_existing:
                 delete_existing_namespace(namespace)
 
                 # Remove namespace checkpoint file when re-ingesting from scratch
-                state_file = STATE_FILES.get(namespace)
                 if state_file and os.path.exists(state_file):
                     os.remove(state_file)
-
-            # If no docs exist for a resumable source, stale checkpoints can skip
-            # large parts of the source file and create apparent "missing docs".
-            state_file = STATE_FILES.get(namespace)
-            if count == 0 and state_file and os.path.exists(state_file):
-                print(f"  Removing stale checkpoint for {namespace}: {state_file}")
-                os.remove(state_file)
 
             elif skip_existing:
                 print(f"Skipping {namespace}: {count:,} places already exist")
