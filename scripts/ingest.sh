@@ -44,6 +44,7 @@ do_ingest() {
     cat > "$INGEST_SCRIPT" <<SBATCH_EOF
 #!/bin/bash
 #SBATCH --job-name=es-ingest
+#SBATCH --partition=smp
 #SBATCH --time=48:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
