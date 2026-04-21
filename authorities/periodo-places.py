@@ -17,6 +17,7 @@ Usage:
 
 import json
 import sys
+import time
 from pathlib import Path
 from datetime import datetime
 
@@ -31,6 +32,17 @@ from processing.utilities import create_checkpoint_snapshot
 PERIODO_URL = "https://data.perio.do/d.json"
 NAMESPACE = "po"
 GITHUB_API_BASE = "https://api.github.com/repos/periodo/periodo-places"
+PROGRESS_LOG_INTERVAL_SECONDS = 15
+
+
+def _log_progress(prefix, processed, *, total=None, start_ts=None, extra=""):
+    """Emit a periodic progress line suitable for persisted Slurm logs."""
+    elapsed = max(time.time() - start_ts, 0.0) if start_ts else 0.0
+    rate = (processed / elapsed) if elapsed > 0 else 0.0
+    total_part = f"/{total:,}" if total is not None else ""
+    elapsed_part = f" elapsed={elapsed/60:.1f}m rate={rate:.1f}/s"
+    extra_part = f" {extra}" if extra else ""
+    print(f"  {prefix}: {processed:,}{total_part}{elapsed_part}{extra_part}")
 
 
 def fetch_periodo_data(file_path=None):
@@ -202,8 +214,11 @@ def load_periodo_gazetteer_geometries():
 
     geometry_index = {}
     total_features = 0
+    started = time.time()
+    last_log = started
+    total_files = len(files)
 
-    for file_info in files:
+    for file_idx, file_info in enumerate(files, start=1):
         name = file_info.get('name')
         if not name:
             continue
@@ -241,6 +256,19 @@ def load_periodo_gazetteer_geometries():
 
             if clean_geom:
                 geometry_index[feature_id] = clean_geom
+
+            now = time.time()
+            if now - last_log >= PROGRESS_LOG_INTERVAL_SECONDS:
+                _log_progress(
+                    "Gazetteer features",
+                    total_features,
+                    start_ts=started,
+                    extra=(
+                        f"files={file_idx}/{total_files} "
+                        f"usable={len(geometry_index):,}"
+                    ),
+                )
+                last_log = now
 
     print(
         f"  Gazetteers: {len(files)} files, {total_features:,} features, "
@@ -350,6 +378,8 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
     if not geometry:
         spatial_uris = _extract_spatial_uris(spatial)
         spatial_geoms = [spatial_geometry_index[uri] for uri in spatial_uris if uri in spatial_geometry_index]
+        if len(spatial_geoms) >= 25:
+            print(f"  Merging {len(spatial_geoms)} gazetteer geometries for period {period_id} ...")
         geometry = _merge_geojson_geometries(spatial_geoms)
 
     # Extract temporal extent
@@ -482,17 +512,25 @@ def index_periodo(file_path=None, places_index='places'):
 
     print(f"Found {len(authorities)} authorities")
 
+    total_periods = sum(len(a.get('periods', {})) for a in authorities.values() if isinstance(a, dict))
+    if total_periods:
+        print(f"Found {total_periods:,} periods")
+
     batch = []
     total_indexed = 0
     total_skipped = 0
     with_geometry = 0
     without_geometry = 0
+    processed_periods = 0
+    started = time.time()
+    last_log = started
 
     for auth_id, auth_data in authorities.items():
         auth_label = auth_data.get('source', {}).get('title', '') if isinstance(auth_data.get('source'), dict) else ''
         periods = auth_data.get('periods', {})
 
         for period_id, period in periods.items():
+            processed_periods += 1
             try:
                 doc = process_periodo_period(
                     period_id, period, auth_id, auth_label, spatial_geometry_index
@@ -521,6 +559,20 @@ def index_periodo(file_path=None, places_index='places'):
 
                     if total_indexed % 1000 == 0:
                         print(f"\r  Indexed: {total_indexed:,}", end='', flush=True)
+
+                now = time.time()
+                if now - last_log >= PROGRESS_LOG_INTERVAL_SECONDS:
+                    _log_progress(
+                        "Periods processed",
+                        processed_periods,
+                        total=total_periods if total_periods else None,
+                        start_ts=started,
+                        extra=(
+                            f"indexed={total_indexed:,} skipped={total_skipped:,} "
+                            f"with_geom={with_geometry:,} without_geom={without_geometry:,}"
+                        ),
+                    )
+                    last_log = now
 
             except Exception as e:
                 total_skipped += 1
