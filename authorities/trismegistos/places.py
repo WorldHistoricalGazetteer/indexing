@@ -290,7 +290,7 @@ def country_to_ccode(country: str) -> str | None:
     return COUNTRY_TO_CCODE.get(clean)
 
 
-def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict | None:
+def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict:
     """Build an ES place document from a TM geo row + its georelations.
 
     Args:
@@ -298,13 +298,9 @@ def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict | None:
         relations: list of (partner, partner_id) tuples from georelations
 
     Returns:
-        Place document dict or None if coordinates are missing/invalid.
+        Place document dict. Geometry is optional when coordinates are missing.
     """
     coords = parse_coordinates(row["coordinates"])
-    if not coords:
-        return None
-
-    lon, lat = coords
     tm_id = row["tm_geo_id"]
     place_id = f"tm:{tm_id}"
 
@@ -374,23 +370,25 @@ def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict | None:
     if not toponyms:
         add_toponym(title, "und")
 
-    # ---- Geometry ----
-    geometry = {
-        "type": "Point",
-        "coordinates": [lon, lat],
-    }
-    repr_point = {"lon": lon, "lat": lat}
-    geom_entry: dict = {"geom": geometry, "repr_point": repr_point}
-    if timespans:
-        geom_entry["timespans"] = timespans
-
     # ---- Document ----
     doc: dict = {
         "place_id": place_id,
         "title": title,
         "toponyms": toponyms,
-        "geometries": [geom_entry],
     }
+
+    # ---- Geometry (optional) ----
+    if coords:
+        lon, lat = coords
+        geometry = {
+            "type": "Point",
+            "coordinates": [lon, lat],
+        }
+        repr_point = {"lon": lon, "lat": lat}
+        geom_entry: dict = {"geom": geometry, "repr_point": repr_point}
+        if timespans:
+            geom_entry["timespans"] = timespans
+        doc["geometries"] = [geom_entry]
 
     # ---- Country codes ----
     ccode = country_to_ccode(row["country"])
@@ -471,20 +469,20 @@ def index_trismegistos(places_index: str):
     print(f"  {sum(len(v) for v in georelations.values()):,} links for "
           f"{len(georelations):,} places")
 
-    # Count eligible records
+    # Count all non-ghost records
     cur = conn.cursor()
     cur.execute("""
         SELECT COUNT(*) FROM geo
-        WHERE coordinates != '' AND country != 'ghost name'
+        WHERE country != 'ghost name'
     """)
     total = cur.fetchone()[0]
-    print(f"\nIndexing {total:,} TM places with coordinates")
+    print(f"\nIndexing {total:,} TM places")
     print(f"Target index: {places_index}")
 
     # Stream geo records
     cur.execute("""
         SELECT * FROM geo
-        WHERE coordinates != '' AND country != 'ghost name'
+        WHERE country != 'ghost name'
         ORDER BY tm_geo_id
     """)
 
@@ -492,6 +490,8 @@ def index_trismegistos(places_index: str):
     indexed = 0
     skipped = 0
     errors = 0
+    with_geometry = 0
+    without_geometry = 0
     start_time = time.time()
 
     for row in cur:
@@ -501,10 +501,10 @@ def index_trismegistos(places_index: str):
         try:
             rels = georelations.get(tm_id, [])
             doc = build_place_doc(row_dict, rels)
-
-            if not doc:
-                skipped += 1
-                continue
+            if doc.get("geometries"):
+                with_geometry += 1
+            else:
+                without_geometry += 1
 
             batch.append({
                 "_index": places_index,
@@ -548,8 +548,10 @@ def index_trismegistos(places_index: str):
     print(f"  TRISMEGISTOS INGESTION COMPLETE")
     print(f"{'=' * 60}")
     print(f"  Indexed:  {indexed:,}")
-    print(f"  Skipped:  {skipped:,} (no valid coordinates)")
+    print(f"  Skipped:  {skipped:,}")
     print(f"  Errors:   {errors:,}")
+    print(f"  With geometry:    {with_geometry:,}")
+    print(f"  Without geometry: {without_geometry:,}")
     print(f"  Time:     {elapsed:.0f}s ({elapsed / 60:.1f}m)")
     print(f"  Rate:     {indexed / elapsed:.0f} docs/s")
     print()

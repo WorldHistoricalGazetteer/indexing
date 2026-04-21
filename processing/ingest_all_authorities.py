@@ -36,9 +36,23 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from elasticsearch import Elasticsearch, helpers
 
-from processing.settings import ES_HOST, DATA_DIR, AUTHORITIES, PLACES_INDEX, TOPONYMS_INDEX, GEOSHAPE_LOG_FILE, OSM_STATE_FILE
+from processing.settings import (
+    ES_HOST,
+    DATA_DIR,
+    AUTHORITIES,
+    PLACES_INDEX,
+    TOPONYMS_INDEX,
+    GEOSHAPE_LOG_FILE,
+    OSM_STATE_FILE,
+    OHM_STATE_FILE,
+)
 
 es = Elasticsearch(ES_HOST)
+
+STATE_FILES = {
+    'osm': OSM_STATE_FILE,
+    'ohm': OHM_STATE_FILE,
+}
 
 
 def delete_existing_namespace(namespace):
@@ -191,10 +205,17 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
             if replace_existing:
                 delete_existing_namespace(namespace)
 
-                # Remove OSM_STATE_FILE if OSM is being re-ingested
-                if namespace == 'osm':
-                    if os.path.exists(OSM_STATE_FILE):
-                        os.remove(OSM_STATE_FILE)
+                # Remove namespace checkpoint file when re-ingesting from scratch
+                state_file = STATE_FILES.get(namespace)
+                if state_file and os.path.exists(state_file):
+                    os.remove(state_file)
+
+            # If no docs exist for a resumable source, stale checkpoints can skip
+            # large parts of the source file and create apparent "missing docs".
+            state_file = STATE_FILES.get(namespace)
+            if count == 0 and state_file and os.path.exists(state_file):
+                print(f"  Removing stale checkpoint for {namespace}: {state_file}")
+                os.remove(state_file)
 
             elif skip_existing:
                 print(f"Skipping {namespace}: {count:,} places already exist")
@@ -248,8 +269,8 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     # Format: (namespace, script_name, description, script_id)
     ingestion_order = [
         ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),  # 18,113,756 4:04:14
-        ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),  # ~800K
         ('osm', 'osm-boundary-pass', 'OSM boundary geometry assembly', 'osm-boundary-pass'),  # updates osm: docs
+        ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),  # ~800K
         ('ohm', 'osm-boundary-pass', 'OHM boundary geometry assembly', 'ohm-boundary-pass'),  # updates ohm: docs
         ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),  # 13,378,039 0:21:43
         ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),  # Places updated: 7,600,036; Relations added: 1,820,560; 0:35:40

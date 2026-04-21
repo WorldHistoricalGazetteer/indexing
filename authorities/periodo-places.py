@@ -48,7 +48,22 @@ def fetch_periodo_data(file_path=None):
     print(f"Downloading PeriodO dataset from {PERIODO_URL} ...")
     resp = requests.get(PERIODO_URL, timeout=120)
     resp.raise_for_status()
-    data = resp.json()
+    try:
+        data = resp.json()
+    except ValueError:
+        # Some endpoints serve zstd-compressed bytes with Content-Encoding: zstd.
+        raw = resp.content
+        if raw.startswith(b"\x28\xb5\x2f\xfd"):
+            try:
+                import zstandard as zstd
+                data = json.loads(zstd.ZstdDecompressor().decompress(raw))
+            except Exception as e:
+                raise RuntimeError(
+                    "Failed to decode zstd-compressed PeriodO response. "
+                    "Install python package 'zstandard'."
+                ) from e
+        else:
+            raise
 
     # Cache
     cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,16 +96,39 @@ def _extract_geometry(spatial_coverage):
     for cov in coverages:
         if not isinstance(cov, dict):
             continue
+
+        # Some records nest geometry under representative/feature-like nodes
+        for nested_key in ('geometry', 'geojson', 'feature'):
+            nested = cov.get(nested_key)
+            if isinstance(nested, dict):
+                if nested.get('type') == 'Feature' and isinstance(nested.get('geometry'), dict):
+                    geom = nested['geometry']
+                    if 'type' in geom and 'coordinates' in geom:
+                        return geom
+                if 'type' in nested and 'coordinates' in nested:
+                    return nested
+
         # Check for inline geometry
         if 'geo:hasGeometry' in cov:
             geo_node = cov['geo:hasGeometry']
-            if isinstance(geo_node, dict):
-                wkt = geo_node.get('geo:asWKT', '')
+            nodes = geo_node if isinstance(geo_node, list) else [geo_node]
+            for node in nodes:
+                if not isinstance(node, dict):
+                    continue
+                wkt_node = node.get('geo:asWKT', '')
+                if isinstance(wkt_node, dict):
+                    wkt = wkt_node.get('@value', '')
+                else:
+                    wkt = wkt_node
+
                 if wkt:
                     # Convert WKT to GeoJSON (basic support for common types)
                     try:
                         from shapely import wkt as shapely_wkt
                         from shapely.geometry import mapping
+                        # Handle optional SRID prefixes, e.g. "SRID=4326;POLYGON(...)"
+                        if ';' in wkt and wkt.upper().startswith('SRID='):
+                            wkt = wkt.split(';', 1)[1]
                         geom = shapely_wkt.loads(wkt)
                         if geom and not geom.is_empty:
                             return mapping(geom)
@@ -110,22 +148,41 @@ def _extract_geometry(spatial_coverage):
     return None
 
 
+def _extract_label(period):
+    """Extract a representative label from PeriodO period metadata."""
+    label = period.get('label', '')
+    if isinstance(label, dict):
+        label = label.get('@value') or ''
+    if isinstance(label, list):
+        label = next((str(v) for v in label if v), '')
+    if label:
+        return str(label)
+
+    localized = period.get('localizedLabels', {})
+    if isinstance(localized, dict):
+        for labels in localized.values():
+            if isinstance(labels, list):
+                for item in labels:
+                    if isinstance(item, dict):
+                        value = item.get('@value')
+                        if value:
+                            return str(value)
+                    elif item:
+                        return str(item)
+            elif labels:
+                return str(labels)
+    return ''
+
+
 def process_periodo_period(period_id, period, authority_id, authority_label):
     """Process a single PeriodO period into a place document."""
-    label = period.get('label', '')
-    if not label:
-        # Try localized labels
-        localized = period.get('localizedLabels', {})
-        if localized:
-            label = next(iter(localized.values()), [''])[0] if localized else ''
+    label = _extract_label(period)
     if not label:
         return None
 
     # Extract spatial coverage
     spatial = period.get('spatialCoverage', [])
     geometry = _extract_geometry(spatial)
-    if not geometry:
-        return None
 
     # Extract temporal extent
     start_year = None
@@ -153,10 +210,6 @@ def process_periodo_period(period_id, period, authority_id, authority_label):
     clean_id = period_id.split('/')[-1] if '/' in period_id else period_id
     place_id = f"{NAMESPACE}:{clean_id}"
 
-    geom_entry = enrich_geometry(geometry, timespans=timespans or None)
-    if not geom_entry:
-        return None
-
     # Build toponyms
     toponyms = [{'toponym_id': f"{label}@en"}]
     if timespans:
@@ -166,7 +219,13 @@ def process_periodo_period(period_id, period, authority_id, authority_label):
     localized = period.get('localizedLabels', {})
     seen = {f"{label}@en"}
     for lang, labels in localized.items():
+        if not isinstance(labels, list):
+            labels = [labels]
         for lbl in labels:
+            if isinstance(lbl, dict):
+                lbl = lbl.get('@value', '')
+            if not lbl:
+                continue
             lst = f"{lbl}@{lang}"
             if lst not in seen:
                 entry = {'toponym_id': lst}
@@ -180,7 +239,6 @@ def process_periodo_period(period_id, period, authority_id, authority_label):
         'namespace': NAMESPACE,
         'title': label,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
         'types': [{
             'identifier': 'period',
             'label': 'periodo',
@@ -189,6 +247,11 @@ def process_periodo_period(period_id, period, authority_id, authority_label):
         'boundary': 'period',
         'indexed_at': datetime.now().isoformat(),
     }
+
+    if geometry:
+        geom_entry = enrich_geometry(geometry, timespans=timespans or None)
+        if geom_entry:
+            doc['geometries'] = [geom_entry]
 
     # Add spatial coverage description
     spatial_labels = []
@@ -245,6 +308,8 @@ def index_periodo(file_path=None, places_index='places'):
     batch = []
     total_indexed = 0
     total_skipped = 0
+    with_geometry = 0
+    without_geometry = 0
 
     for auth_id, auth_data in authorities.items():
         auth_label = auth_data.get('source', {}).get('title', '') if isinstance(auth_data.get('source'), dict) else ''
@@ -264,6 +329,11 @@ def index_periodo(file_path=None, places_index='places'):
                     '_id': doc['place_id'],
                     '_source': doc,
                 })
+
+                if doc.get('geometries'):
+                    with_geometry += 1
+                else:
+                    without_geometry += 1
 
                 if len(batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(
@@ -289,6 +359,8 @@ def index_periodo(file_path=None, places_index='places'):
     print(f"\n\nPeriodO ingestion complete:")
     print(f"  Indexed: {total_indexed:,}")
     print(f"  Skipped: {total_skipped:,}")
+    print(f"  With geometry: {with_geometry:,}")
+    print(f"  Without geometry: {without_geometry:,}")
 
     create_checkpoint_snapshot(es, 'periodo_places')
 
