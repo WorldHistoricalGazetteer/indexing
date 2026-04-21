@@ -34,7 +34,7 @@ from datetime import datetime
 
 import osmium
 import shapely.wkb as wkblib
-from shapely.geometry import mapping
+from shapely.geometry import mapping, shape
 from shapely.validation import make_valid
 
 from elasticsearch import Elasticsearch, helpers
@@ -222,6 +222,9 @@ class BoundaryPassProcessor:
         self.geom_errors = 0
         self.areas_seen = 0
         self.tag_rejected = 0
+        self.raw_geom_fixed = 0  # ← NEW: raw geometry repairs
+        self.raw_geom_fixed_by_buffer = 0  # ← NEW: buffer(0) repairs
+        self.raw_geom_fixed_by_hull = 0  # ← NEW: convex_hull fallbacks
         self.hull_kept = 0
         self.hull_fixed = 0
         self.hull_dropped_invalid = 0
@@ -241,12 +244,28 @@ class BoundaryPassProcessor:
             wkb = self.wkbfab.create_multipolygon(a)
             geom = wkblib.loads(wkb, hex=False)
 
+            # Escalate repair on raw assembly: make_valid → buffer(0) → envelope
             if not geom.is_valid:
+                original_geom = geom
                 geom = make_valid(geom)
-                if not geom.is_valid:
-                    self.skipped_invalid += 1
-                    return
-
+                if geom.is_valid:
+                    self.raw_geom_fixed += 1
+                else:
+                    # make_valid didn't work; try buffer(0)
+                    geom = original_geom.buffer(0)
+                    if geom.is_valid:
+                        self.raw_geom_fixed += 1
+                        self.raw_geom_fixed_by_buffer += 1
+                    else:
+                        # Still invalid; fall back to convex hull
+                        geom = original_geom.convex_hull
+                        if geom.is_valid:
+                            self.raw_geom_fixed += 1
+                            self.raw_geom_fixed_by_hull += 1
+                        else:
+                            self.skipped_invalid += 1
+                            return
+            
             if geom.is_empty:
                 self.skipped_empty += 1
                 return
@@ -267,20 +286,48 @@ class BoundaryPassProcessor:
             # or likely to fail ES geo_shape parsing across antimeridian.
             if 'hull' in geom_entry:
                 hull = geom_entry.get('hull')
-                valid, fixed_hull, fix_note = validate_geometry(hull)
-                if not valid:
+                if hull:
+                    try:
+                        # Convert GeoJSON dict to Shapely geometry
+                        if isinstance(hull, dict):
+                            hull_shapely = shape(hull)
+                        else:
+                            hull_shapely = hull
+                        
+                        # Escalate repair: make_valid → buffer(0) → envelope fallback
+                        was_valid = hull_shapely.is_valid
+                        if not was_valid:
+                            hull_shapely = make_valid(hull_shapely)
+                            if not hull_shapely.is_valid:
+                                hull_shapely = hull_shapely.buffer(0)
+                            if not hull_shapely.is_valid or hull_shapely.is_empty:
+                                # Fall back to axis-aligned bounding box (always valid)
+                                hull_shapely = hull_shapely.envelope
+                        
+                        if hull_shapely.is_valid and not hull_shapely.is_empty:
+                            fixed_hull = mapping(hull_shapely)
+                            
+                            # Check for antimeridian crossing issues
+                            if _is_antimeridian_risky(fixed_hull):
+                                geom_entry.pop('hull', None)
+                                self.hull_dropped_antimeridian += 1
+                            else:
+                                geom_entry['hull'] = fixed_hull
+                                if not was_valid:
+                                    self.hull_fixed += 1
+                                else:
+                                    self.hull_kept += 1
+                        else:
+                            # Still invalid after all repair attempts
+                            geom_entry.pop('hull', None)
+                            self.hull_dropped_invalid += 1
+                    except Exception as ex:
+                        # Unexpected error during hull processing
+                        geom_entry.pop('hull', None)
+                        self.hull_dropped_invalid += 1
+                else:
                     geom_entry.pop('hull', None)
                     self.hull_dropped_invalid += 1
-                else:
-                    if fixed_hull and fix_note:
-                        geom_entry['hull'] = fixed_hull
-                        self.hull_fixed += 1
-
-                    if _is_antimeridian_risky(geom_entry.get('hull')):
-                        geom_entry.pop('hull', None)
-                        self.hull_dropped_antimeridian += 1
-                    else:
-                        self.hull_kept += 1
 
             # Build partial update document
             update_doc = {
@@ -602,15 +649,21 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"  Documents updated:    {updated_count:,}")
         print(f"  Documents failed:     {failed_count:,}")
         print(f"  Missing docs (404):   {missing_doc_count:,}")
-        print(f"  Hull kept:            {processor.hull_kept:,}")
-        print(f"  Hull fixed:           {processor.hull_fixed:,}")
-        print(f"  Hull dropped invalid: {processor.hull_dropped_invalid:,}")
-        print(f"  Hull dropped anti-mer:{processor.hull_dropped_antimeridian:,}")
-        print(f"  Skipped (invalid):    {processor.skipped_invalid:,}")
-        print(f"  Skipped (empty):      {processor.skipped_empty:,}")
-        print(f"  Geometry errors:      {processor.geom_errors:,}")
+        print(f"\n  Raw geometry repairs:")
+        print(f"    Fixed (total):      {processor.raw_geom_fixed:,}")
+        print(f"    Fixed by buffer(0): {processor.raw_geom_fixed_by_buffer:,}")
+        print(f"    Fixed by hull:      {processor.raw_geom_fixed_by_hull:,}")
+        print(f"    Still invalid:      {processor.skipped_invalid:,}")
+        print(f"\n  Hull processing:")
+        print(f"    Kept:               {processor.hull_kept:,}")
+        print(f"    Fixed:              {processor.hull_fixed:,}")
+        print(f"    Dropped invalid:    {processor.hull_dropped_invalid:,}")
+        print(f"    Dropped anti-mer:   {processor.hull_dropped_antimeridian:,}")
+        print(f"\n  Other:")
+        print(f"    Skipped (empty):    {processor.skipped_empty:,}")
+        print(f"    Geometry errors:    {processor.geom_errors:,}")
         if missing_doc_samples:
-            print(f"  Missing doc samples:  {', '.join(missing_doc_samples)}")
+            print(f"    Missing doc samples: {', '.join(missing_doc_samples)}")
 
         return updated_count
 
