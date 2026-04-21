@@ -30,6 +30,10 @@ from processing.feature_ids import (
     encode_feature_id,
     encode_misc_feature_id,
 )
+from processing.osm_boundary_geometry import (
+    is_admin_boundary_value,
+    is_misc_boundary_value,
+)
 from processing.settings import DATA_DIR
 
 # Output directory
@@ -65,30 +69,14 @@ ADMIN_LEVEL_MINZOOM = {
     '6': 5, '7': 6, '8': 7, '9': 8, '10': 9, '11': 10,
 }
 
-# Curated miscellaneous boundary types (from osm-boundary-pass.py)
-CURATED_MISC_BOUNDARY_TYPES = {
-    'aboriginal_lands', 'barony', 'civil', 'civil_parish', 'climatic_zone',
-    'cofi_parish', 'environment', 'geographic', 'indigenous_administration',
-    'local_authority', 'native_reservation', 'obsolete_administrative',
-    'old_administrative', 'parish', 'political', 'rc_parish', 'region',
-}
-
-
 def _is_admin_level(boundary_value: str) -> bool:
     """Check if a boundary value is a numeric admin level."""
-    try:
-        return 0 <= int(boundary_value) <= 11
-    except (ValueError, TypeError):
-        return False
+    return is_admin_boundary_value(boundary_value)
 
 
 def _is_misc_boundary(boundary_value: str) -> bool:
     """Check if a boundary value is a curated miscellaneous type."""
-    if boundary_value in CURATED_MISC_BOUNDARY_TYPES:
-        return True
-    if boundary_value.startswith('histori'):
-        return True
-    return False
+    return is_misc_boundary_value(boundary_value)
 
 
 def _extract_source_id(place_id: str) -> int | str:

@@ -30,6 +30,12 @@
           }
         }
       },
+      "h3_centroid": {
+        "type": "keyword"
+      },
+      "h3_cover": {
+        "type": "keyword"
+      },
       "toponyms": {
         "type": "nested",
         "properties": {
@@ -71,8 +77,8 @@
       "geometries": {
         "type": "nested",
         "properties": {
-          "geom": {
-            "type": "geo_shape"
+          "has_geom": {
+            "type": "boolean"
           },
           "repr_point": {
             "type": "geo_point"
@@ -117,6 +123,15 @@
           },
           "sourceLabel": {
             "type": "keyword"
+          },
+          "aat_id": {
+            "type": "integer"
+          },
+          "aat_depth": {
+            "type": "integer"
+          },
+          "aat_ancestors": {
+            "type": "integer"
           }
         }
       },

@@ -19,7 +19,7 @@ import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, OSM_STATE_FILE
 
 # ---------------- CONFIG ----------------
@@ -106,12 +106,19 @@ def create_doc(osm_id, osm_type, tags, geometry):
 
     # Add geometry as geometries array
     if geometry:
-        geom_entry = enrich_geometry(geometry, timespans=[{
-            'start': {'in': 2025},
-            'end': {'in': 2025}
-        }])
+        geom_entry = enrich_geometry(
+            geometry,
+            timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+            geom_key=f"{place_id}_0",
+        )
         if geom_entry:
             doc['geometries'] = [geom_entry]
+            if geom_entry.get('repr_point'):
+                rp = geom_entry['repr_point']
+                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+                if h3c:
+                    doc['h3_centroid'] = h3c
+                    doc['h3_cover'] = h3cover
 
     # Types
     types = []
@@ -279,7 +286,27 @@ def stage_file_to_scratch(source_path, namespace='osm'):
     return target_path, True
 
 
+def run_integrated_boundary_pass(pbf_file):
+    """Complete OSM boundary relation geometry in-place in the places index."""
+    from processing.osm_boundary_geometry import run_boundary_pass
+
+    print()
+    print("-" * 80)
+    print("OSM FULL-GEOMETRY COMPLETION (integrated boundary pass)")
+    print("-" * 80)
+    print("Refreshing places index before geometry completion ...")
+
+    es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
+    es.indices.refresh(index='places')
+
+    run_boundary_pass(pbf_file, namespace='osm', places_index='places')
+    es.indices.refresh(index='places')
+
+
 def index_osm_optimized(pbf_file):
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
     tracker = ProgressTracker(OSM_STATE_FILE)
 
@@ -332,50 +359,56 @@ def index_osm_optimized(pbf_file):
     # Staging
     active_pbf, is_staged = stage_file_to_scratch(pbf_file)
 
-    try:
-        print("=" * 80)
-        print("OSM PLACES INGESTION")
-        print("=" * 80)
-        print(f"Starting Single-Pass Ingestion: {active_pbf}")
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "osm") as gsw:
+        configure_module_writer(gsw)
+        try:
+            print("=" * 80)
+            print("OSM PLACES INGESTION")
+            print("=" * 80)
+            print(f"Starting Single-Pass Ingestion: {active_pbf}")
 
-        handler = OSMHandler(tracker, add_to_buffer)
-        handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
+            handler = OSMHandler(tracker, add_to_buffer)
+            handler.apply_file(str(active_pbf), locations=True, idx='flex_mem')
 
-        flush_buffer()
-        tracker.save_state()
+            flush_buffer()
+            tracker.save_state()
 
-        print(f"\n\nIndexing complete:")
-        print(f"  Documents indexed: {indexed_count:,}")
-        print(f"  Documents failed: {failed_count:,}")
-        print("  Handler diagnostics:")
-        print(
-            f"    Nodes: candidates={handler.candidates['node']:,}, "
-            f"buffered={handler.buffered['node']:,}, rejected={handler.tag_rejected['node']:,}"
-        )
-        print(
-            f"    Ways: candidates={handler.candidates['way']:,}, "
-            f"buffered={handler.buffered['way']:,}, rejected={handler.tag_rejected['way']:,}, "
-            f"geom_errors={handler.geom_errors['way']:,}"
-        )
-        print(
-            f"    Relations: candidates={handler.candidates['relation']:,}, "
-            f"buffered={handler.buffered['relation']:,}, rejected={handler.tag_rejected['relation']:,}, "
-            f"geom_invalid={handler.geom_invalid['relation']:,}, "
-            f"geom_errors={handler.geom_errors['relation']:,}, "
-            f"fallbacks={handler.relation_geom_fallbacks:,}"
-        )
+            run_integrated_boundary_pass(active_pbf)
 
-        print("Ingestion Complete.")
+            print(f"\n\nIndexing complete:")
+            print(f"  Documents indexed: {indexed_count:,}")
+            print(f"  Documents failed: {failed_count:,}")
+            print(f"  Geometries in VAST store: {gsw.count:,}")
+            print("  Handler diagnostics:")
+            print(
+                f"    Nodes: candidates={handler.candidates['node']:,}, "
+                f"buffered={handler.buffered['node']:,}, rejected={handler.tag_rejected['node']:,}"
+            )
+            print(
+                f"    Ways: candidates={handler.candidates['way']:,}, "
+                f"buffered={handler.buffered['way']:,}, rejected={handler.tag_rejected['way']:,}, "
+                f"geom_errors={handler.geom_errors['way']:,}"
+            )
+            print(
+                f"    Relations: candidates={handler.candidates['relation']:,}, "
+                f"buffered={handler.buffered['relation']:,}, rejected={handler.tag_rejected['relation']:,}, "
+                f"geom_invalid={handler.geom_invalid['relation']:,}, "
+                f"geom_errors={handler.geom_errors['relation']:,}, "
+                f"fallbacks={handler.relation_geom_fallbacks:,}"
+            )
 
-    except Exception as e:
-        print(f"\nError: {e}")
-        import traceback
-        traceback.print_exc()
-        tracker.save_state()
-        raise
-    finally:
-        if is_staged and os.path.exists(active_pbf):
-            os.remove(active_pbf)
+            print("Ingestion Complete.")
+
+        except Exception as e:
+            print(f"\nError: {e}")
+            import traceback
+            traceback.print_exc()
+            tracker.save_state()
+            raise
+        finally:
+            configure_module_writer(None)
+            if is_staged and os.path.exists(active_pbf):
+                os.remove(active_pbf)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ Index GeoNames places data into Elasticsearch.
 import sys
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
@@ -99,6 +99,12 @@ def parse_geonames_line(line):
     geom_entry = enrich_geometry(point_geom, timespans=timespans)
     geometries = [geom_entry] if geom_entry else []
 
+    # H3 spatial index (top-level place fields)
+    h3_centroid, h3_cover = (None, [])
+    if geom_entry and geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3_centroid, h3_cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
+
     # Build document
     doc = {
         "place_id": f"gn:{fields[0]}",
@@ -119,6 +125,9 @@ def parse_geonames_line(line):
         doc["elevation"] = elevation
     if population is not None:
         doc["population"] = population
+    if h3_centroid:
+        doc["h3_centroid"] = h3_centroid
+        doc["h3_cover"] = h3_cover
 
     return doc
 

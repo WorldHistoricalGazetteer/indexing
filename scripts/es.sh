@@ -966,7 +966,7 @@ case "$1" in
         do_ingest "$@"
         ;;
 
-    # --- Boundary Pass (geometry assembly) ---
+    # --- Boundary Pass (manual geometry repair / replay) ---
     -boundary-pass)
         shift
         do_boundary_pass "$@"
@@ -1206,16 +1206,14 @@ case "$1" in
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
         echo
-        echo "  -ingest-boundaries [OPTIONS]  Assemble boundary geometry (alias for -boundary-pass)"
-        echo "  -boundary-pass [OPTIONS]      Assemble full boundary geometry from PBF"
+        echo "  -ingest-boundaries [OPTIONS]  Re-run OSM/OHM geometry completion (alias for -boundary-pass)"
+        echo "  -boundary-pass [OPTIONS]      Manual repair/replay of OSM/OHM full boundary geometry"
         echo "  -generate-tiles [OPTIONS]     Generate .mbtiles from boundary places in ES"
         echo "    --source osm|ohm|both     Which PBF to process (default: both)"
-        echo "    --replace                 Delete existing boundaries first"
-        echo "    --no-tiles                Skip .mbtiles generation"
         echo
         echo "  Examples:"
-        echo "    $0 -boundary-pass                      # Both OSM + OHM"
-        echo "    $0 -boundary-pass --source osm         # OSM only"
+        echo "    $0 -boundary-pass                      # Re-run geometry completion for both OSM + OHM"
+        echo "    $0 -boundary-pass --source osm         # Re-run geometry completion for OSM only"
         echo "    $0 -generate-tiles                     # Generate all tilesets"
         echo
         echo "AUGMENT CCODES (runs against production ES):"

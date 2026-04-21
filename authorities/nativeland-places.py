@@ -4,7 +4,7 @@ Index Native Land Digital data.
 """
 import json, os, sys
 from pathlib import Path
-from processing.helpers import enrich_geometry, compute_area_km2
+from processing.helpers import enrich_geometry, compute_area_km2, compute_h3_fields
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
@@ -40,7 +40,7 @@ def process_territory(feature, namespace='nl'):
 
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-        geom_entry = enrich_geometry(geometry, timespans=timespans)
+        geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
     else:
         return None
@@ -56,6 +56,13 @@ def process_territory(feature, namespace='nl'):
         'types': [{'identifier': 'indigenous-territory', 'label': 'nativeland', 'sourceLabel': 'territory'}],
         'boundary': 'native',
     }
+
+    if geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        if h3c:
+            place_doc['h3_centroid'] = h3c
+            place_doc['h3_cover'] = h3cover
 
     if area: place_doc['area_km2'] = round(area, 2)
     if 'description' in props: place_doc['description'] = props['description']
@@ -79,7 +86,7 @@ def process_language(feature, namespace='nl'):
 
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-        geom_entry = enrich_geometry(geometry, timespans=timespans)
+        geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
     else:
         return None
@@ -95,6 +102,13 @@ def process_language(feature, namespace='nl'):
         'types': [{'identifier': 'indigenous-language-area', 'label': 'nativeland', 'sourceLabel': 'language'}],
         'boundary': 'native',
     }
+
+    if geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        if h3c:
+            place_doc['h3_centroid'] = h3c
+            place_doc['h3_cover'] = h3cover
 
     if area: place_doc['area_km2'] = round(area, 2)
     if 'color' in props: place_doc['display_color'] = props['color']
@@ -117,7 +131,7 @@ def process_treaty(feature, namespace='nl'):
 
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-        geom_entry = enrich_geometry(geometry, timespans=timespans)
+        geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
     else:
         return None
@@ -134,6 +148,13 @@ def process_treaty(feature, namespace='nl'):
         'boundary': 'native',
     }
 
+    if geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        if h3c:
+            place_doc['h3_centroid'] = h3c
+            place_doc['h3_cover'] = h3cover
+
     if area: place_doc['area_km2'] = round(area, 2)
     if 'Date' in props: place_doc['treaty_date'] = props['Date']
     if 'color' in props: place_doc['display_color'] = props['color']
@@ -143,6 +164,9 @@ def process_treaty(feature, namespace='nl'):
 
 def index_nativeland_file(json_file, data_type, places_index='places'):
     """Process Native Land GeoJSON."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     print(f"Processing {data_type}: {json_file}")
 
     if not os.path.exists(json_file):
@@ -184,41 +208,45 @@ def index_nativeland_file(json_file, data_type, places_index='places'):
 
     print(f"Found {len(features)} {data_type}")
 
-    for i, feature in enumerate(features):
-        if (i + 1) % 100 == 0:
-            print(f"\r  {i + 1}/{len(features)}...", end='', flush=True)
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, f"nl_{data_type}") as gsw:
+        configure_module_writer(gsw)
+        for i, feature in enumerate(features):
+            if (i + 1) % 100 == 0:
+                print(f"\r  {i + 1}/{len(features)}...", end='', flush=True)
 
-        try:
-            place_doc = processor(feature, namespace='nl')
-            if not place_doc:
+            try:
+                place_doc = processor(feature, namespace='nl')
+                if not place_doc:
+                    skipped += 1
+                    continue
+
+                places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
+
+                if len(places_batch) >= BATCH_SIZE:
+                    try:
+                        success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
+                        places_count += success
+                        places_batch = []
+                    except Exception as e:
+                        print(f"  ERROR: {e}")
+                        places_batch = []
+
+            except Exception as e:
+                print(f"  ERROR {i}: {e}")
                 skipped += 1
                 continue
 
-            places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
+        if places_batch:
+            try:
+                success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
+                places_count += success
+            except Exception as e:
+                print(f"ERROR: {e}")
 
-            if len(places_batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
-                    places_count += success
-                    places_batch = []
-                except Exception as e:
-                    print(f"  ERROR: {e}")
-                    places_batch = []
-
-        except Exception as e:
-            print(f"  ERROR {i}: {e}")
-            skipped += 1
-            continue
-
-    if places_batch:
-        try:
-            success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
-            places_count += success
-        except Exception as e:
-            print(f"ERROR: {e}")
+        configure_module_writer(None)
 
     print(f"Complete: {data_type}")
-    print(f"Indexed: {places_count:,}, Skipped: {skipped:,}")
+    print(f"Indexed: {places_count:,}, Skipped: {skipped:,}, Geometries in VAST store: {gsw.count:,}")
 
 
 def index_all_nativeland():

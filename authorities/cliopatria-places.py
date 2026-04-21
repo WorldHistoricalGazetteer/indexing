@@ -24,7 +24,7 @@ from datetime import datetime
 
 import requests
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -136,7 +136,8 @@ def process_cliopatria_feature(feature):
         if end_year is not None:
             place_id = f"{NAMESPACE}:{clean_id}_{start_year}_{end_year}"
 
-    geom_entry = enrich_geometry(geometry, timespans=timespans or None)
+    geom_entry = enrich_geometry(geometry, timespans=timespans or None,
+                                 geom_key=f"{place_id}_0")
     if not geom_entry:
         return None
 
@@ -167,6 +168,12 @@ def process_cliopatria_feature(feature):
         'boundary': 'polity',
         'indexed_at': datetime.now().isoformat(),
     }
+    if geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        if h3c:
+            doc['h3_centroid'] = h3c
+            doc['h3_cover'] = h3cover
 
     # Wikidata link if present
     wd_id = props.get('Wikipedia', props.get('wikidata'))
@@ -187,6 +194,9 @@ def process_cliopatria_feature(feature):
 
 def index_cliopatria(file_path=None, places_index='places'):
     """Index Cliopatria polities into ES."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     print("=" * 80)
     print("CLIOPATRIA HISTORICAL POLITIES INGESTION")
     print("=" * 80)
@@ -204,44 +214,47 @@ def index_cliopatria(file_path=None, places_index='places'):
     batch = []
     total_indexed = 0
     total_skipped = 0
-    seen_ids = set()
+    seen_ids: set[str] = set()
 
-    for i, feature in enumerate(features):
-        try:
-            doc = process_cliopatria_feature(feature)
-            if not doc:
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "clio") as gsw:
+        configure_module_writer(gsw)
+        for i, feature in enumerate(features):
+            try:
+                doc = process_cliopatria_feature(feature)
+                if not doc:
+                    total_skipped += 1
+                    continue
+
+                # Handle duplicate IDs (same polity at different times)
+                if doc['place_id'] in seen_ids:
+                    counter = 1
+                    base_id = doc['place_id']
+                    while doc['place_id'] in seen_ids:
+                        doc['place_id'] = f"{base_id}_v{counter}"
+                        counter += 1
+                seen_ids.add(doc['place_id'])
+
+                batch.append({
+                    '_index': places_index,
+                    '_id': doc['place_id'],
+                    '_source': doc,
+                })
+
+                if len(batch) >= BATCH_SIZE:
+                    success, failed = helpers.bulk(
+                        es, batch, raise_on_error=False, stats_only=True
+                    )
+                    total_indexed += success
+                    batch = []
+
+                    if total_indexed % 1000 == 0:
+                        print(f"\r  Indexed: {total_indexed:,}", end='', flush=True)
+
+            except Exception as e:
                 total_skipped += 1
                 continue
 
-            # Handle duplicate IDs (same polity at different times)
-            if doc['place_id'] in seen_ids:
-                # Append a counter
-                counter = 1
-                base_id = doc['place_id']
-                while doc['place_id'] in seen_ids:
-                    doc['place_id'] = f"{base_id}_v{counter}"
-                    counter += 1
-            seen_ids.add(doc['place_id'])
-
-            batch.append({
-                '_index': places_index,
-                '_id': doc['place_id'],
-                '_source': doc,
-            })
-
-            if len(batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(
-                    es, batch, raise_on_error=False, stats_only=True
-                )
-                total_indexed += success
-                batch = []
-
-                if total_indexed % 1000 == 0:
-                    print(f"\r  Indexed: {total_indexed:,}", end='', flush=True)
-
-        except Exception as e:
-            total_skipped += 1
-            continue
+        configure_module_writer(None)
 
     # Flush remaining
     if batch:

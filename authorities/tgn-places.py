@@ -15,7 +15,7 @@ import time
 from pathlib import Path
 from collections import defaultdict
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -229,18 +229,26 @@ def index_tgn(zip_path, places_index):
             title = f"TGN {tgn_id}"
 
         place_id = f"tgn:{tgn_id}"
+        point_geom = {"type": "Point", "coordinates": [lon, lat]}
+        geom_entry = enrich_geometry(
+            point_geom,
+            timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
+        )
         doc = {
             "place_id": place_id,
             "title": title,
             "toponyms": toponyms,
-            "geometries": [enrich_geometry(
-                {"type": "Point", "coordinates": [lon, lat]},
-                timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
-            )],
+            "geometries": [geom_entry] if geom_entry else [],
             "source": "tgn",
             "namespace": "tgn",
             "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
         }
+        if geom_entry and geom_entry.get('repr_point'):
+            rp = geom_entry['repr_point']
+            h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
+            if h3c:
+                doc['h3_centroid'] = h3c
+                doc['h3_cover'] = h3cover
 
         batch.append({"_index": places_index, "_id": place_id, "_source": doc})
 

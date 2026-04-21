@@ -6,7 +6,7 @@ Index Pleiades places data into Elasticsearch with memory-efficient streaming.
 
 import gzip
 import ijson
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -20,11 +20,12 @@ def extract_geometries(pleiades_record):
     Extract all geometries from Pleiades locations array with temporal attestations.
     Returns: list of geometry objects with optional timespans
     """
+    place_id = f"pl:{pleiades_record['id']}"
     geometries = []
 
     locations = pleiades_record.get('locations', [])
 
-    for loc in locations:
+    for idx, loc in enumerate(locations):
         geometry = loc.get('geometry')
         if not geometry:
             continue
@@ -42,14 +43,16 @@ def extract_geometries(pleiades_record):
                 timespan['end'] = {'in': end}
             timespans = [timespan]
 
-        geom_entry = enrich_geometry(geometry, timespans=timespans)
+        geom_entry = enrich_geometry(geometry, timespans=timespans,
+                                     geom_key=f"{place_id}_{idx}")
         if geom_entry:
             geometries.append(geom_entry)
 
     # Fallback to reprPoint if no locations
     if not geometries and pleiades_record.get('reprPoint'):
         coords = pleiades_record['reprPoint']
-        geom_entry = enrich_geometry({'type': 'Point', 'coordinates': coords})
+        geom_entry = enrich_geometry({'type': 'Point', 'coordinates': coords},
+                                     geom_key=f"{place_id}_0")
         if geom_entry:
             geometries.append(geom_entry)
 
@@ -166,11 +169,27 @@ def create_place_doc(pleiades_record):
         if relations:
             doc['relations'] = relations
 
+    # H3 spatial index from primary geometry
+    primary = geometries[0] if geometries else None
+    if primary and primary.get('repr_point'):
+        rp = primary['repr_point']
+        locs = pleiades_record.get('locations', [])
+        raw_geom = locs[0].get('geometry') if locs else None
+        if not raw_geom and pleiades_record.get('reprPoint'):
+            raw_geom = {'type': 'Point', 'coordinates': pleiades_record['reprPoint']}
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], raw_geom)
+        if h3c:
+            doc['h3_centroid'] = h3c
+            doc['h3_cover'] = h3cover
+
     return doc
 
 
 def index_pleiades_streaming(file_path, places_index):
     """Stream parse Pleiades JSON to avoid loading entire file into memory."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     place_batch = []
     place_count = 0
     skipped = 0
@@ -179,69 +198,71 @@ def index_pleiades_streaming(file_path, places_index):
     print("Using ijson for memory-efficient parsing...")
     print("SCHEMA COMPLIANT VERSION")
 
-    try:
-        is_gzipped = file_path.endswith('.gz')
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "pl") as gsw:
+        configure_module_writer(gsw)
+        try:
+            is_gzipped = file_path.endswith('.gz')
 
-        if is_gzipped:
-            try:
-                file_obj = gzip.open(file_path, 'rb')
-                test_bytes = file_obj.read(100)
-                file_obj.seek(0)
-            except gzip.BadGzipFile:
-                print("Warning: File has .gz extension but is not gzipped")
-                file_obj = open(file_path, 'rb')
-        else:
-            file_obj = open(file_path, 'rb')
-
-        with file_obj:
-            # Detect format
-            first_bytes = file_obj.read(1000)
-            first_text = first_bytes.decode('utf-8', errors='ignore')
-            is_graph = '@graph' in first_text
-
-            file_obj.seek(0)
-
-            if is_graph:
-                parser = ijson.items(file_obj, '@graph.item')
-                print("Detected JSON-LD format with @graph")
-            else:
-                parser = ijson.items(file_obj, 'item')
-                print("Detected JSON array format")
-
-            for i, record in enumerate(parser):
-                if (i + 1) % 1000 == 0:
-                    print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
-
+            if is_gzipped:
                 try:
-                    place_doc = create_place_doc(record)
+                    file_obj = gzip.open(file_path, 'rb')
+                    test_bytes = file_obj.read(100)
+                    file_obj.seek(0)
+                except gzip.BadGzipFile:
+                    print("Warning: File has .gz extension but is not gzipped")
+                    file_obj = open(file_path, 'rb')
+            else:
+                file_obj = open(file_path, 'rb')
 
-                    if not place_doc:
+            with file_obj:
+                first_bytes = file_obj.read(1000)
+                first_text = first_bytes.decode('utf-8', errors='ignore')
+                is_graph = '@graph' in first_text
+
+                file_obj.seek(0)
+
+                if is_graph:
+                    parser = ijson.items(file_obj, '@graph.item')
+                    print("Detected JSON-LD format with @graph")
+                else:
+                    parser = ijson.items(file_obj, 'item')
+                    print("Detected JSON array format")
+
+                for i, record in enumerate(parser):
+                    if (i + 1) % 1000 == 0:
+                        print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
+
+                    try:
+                        place_doc = create_place_doc(record)
+
+                        if not place_doc:
+                            skipped += 1
+                            continue
+
+                        place_id = place_doc['place_id']
+
+                        place_batch.append({
+                            '_index': places_index,
+                            '_id': place_id,
+                            '_source': place_doc
+                        })
+
+                        if len(place_batch) >= BATCH_SIZE:
+                            success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+                            place_count += success
+                            place_batch = []
+
+                    except Exception as e:
+                        print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
                         skipped += 1
                         continue
 
-                    place_id = place_doc['place_id']
-
-                    place_batch.append({
-                        '_index': places_index,
-                        '_id': place_id,
-                        '_source': place_doc
-                    })
-
-                    if len(place_batch) >= BATCH_SIZE:
-                        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                        place_count += success
-                        place_batch = []
-
-                except Exception as e:
-                    print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
-                    skipped += 1
-                    continue
-
-    except ImportError:
-        print("\nERROR: ijson library not installed")
-        print("Install with: pip install ijson --break-system-packages")
-        print("\nFalling back to standard method...")
-        return index_pleiades_standard(file_path, places_index)
+        except ImportError:
+            configure_module_writer(None)
+            print("\nERROR: ijson library not installed")
+            return index_pleiades_standard(file_path, places_index)
+        finally:
+            configure_module_writer(None)
 
     if place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
@@ -250,6 +271,7 @@ def index_pleiades_streaming(file_path, places_index):
     print(f"\n\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
     print(f"Skipped (no location): {skipped:,}")
+    print(f"Geometries in VAST store: {gsw.count:,}")
 
 
 def index_pleiades_standard(file_path, places_index):

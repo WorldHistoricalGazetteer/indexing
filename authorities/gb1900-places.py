@@ -9,7 +9,7 @@ import zipfile
 import io
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -55,20 +55,27 @@ def parse_gb1900_row(row):
     }]
 
     # Build geometries array with historical timespans
+    point_geom = {'type': 'Point', 'coordinates': [lon, lat]}
     timespans = [{'start': {'in': 1888}, 'end': {'in': 1914}}]
-    geom_entry = enrich_geometry(
-        {'type': 'Point', 'coordinates': [lon, lat]},
-        timespans=timespans,
-    )
+    geom_entry = enrich_geometry(point_geom, timespans=timespans)
     geometries = [geom_entry] if geom_entry else []
+
+    # H3 spatial index (top-level place fields)
+    h3_centroid, h3_cover = (None, [])
+    if geom_entry and geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3_centroid, h3_cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
 
     # Build place document
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': geometries
+        'geometries': geometries,
     }
+    if h3_centroid:
+        place_doc['h3_centroid'] = h3_centroid
+        place_doc['h3_cover'] = h3_cover
 
     # Add country code
     nation = row.get('nation', row.get('Nation', row.get('NATION', ''))).strip()

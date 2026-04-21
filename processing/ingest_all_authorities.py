@@ -191,11 +191,7 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     update_scripts = ['geonames-toponyms', 'wikidata-geoshapes', 'loc-relations']
     is_update_script = script_name in update_scripts
 
-    # Boundary pass scripts update existing docs
-    boundary_pass_scripts = ['osm-boundary-pass']
-    is_boundary_pass = script_name in boundary_pass_scripts
-
-    if not is_update_script and not is_boundary_pass:
+    if not is_update_script:
         count = es.options(request_timeout=30).count(
             index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
@@ -230,16 +226,13 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     start_time = datetime.now()
     try:
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
-        # Boundary pass scripts need --source to know which PBF to process
-        if script_name == 'osm-boundary-pass':
-            cmd.extend(["--source", namespace])
         subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
         es.indices.refresh(index=",".join([PLACES_INDEX, TOPONYMS_INDEX]))
         elapsed = datetime.now() - start_time
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
         sys.stdout.flush()
 
-        if not is_update_script and not is_boundary_pass:
+        if not is_update_script:
             count = es.options(request_timeout=30).count(
                 index=PLACES_INDEX,
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
@@ -269,9 +262,7 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     # Format: (namespace, script_name, description, script_id)
     ingestion_order = [
         ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),  # 18,113,756 4:04:14
-        ('osm', 'osm-boundary-pass', 'OSM boundary geometry assembly', 'osm-boundary-pass'),  # updates osm: docs
         ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),  # ~800K
-        ('ohm', 'osm-boundary-pass', 'OHM boundary geometry assembly', 'ohm-boundary-pass'),  # updates ohm: docs
         ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),  # 13,378,039 0:21:43
         ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),  # Places updated: 7,600,036; Relations added: 1,820,560; 0:35:40
         ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),  # 11,456,496 2:52:55

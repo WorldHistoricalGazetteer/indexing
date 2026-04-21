@@ -65,6 +65,13 @@ OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"
 # OHM processing state file
 OHM_STATE_FILE = f"{IX1_BASE}/elastic/ohm_state.json"
 
+# External geometry store (VAST filesystem)
+# Full GeoJSON geometries are stored here instead of in Elasticsearch.
+# GEOM_STORE_DIR       — consolidated shard files + index.json (read path)
+# GEOM_STORE_STAGING_DIR — per-authority staging files written during ingestion
+GEOM_STORE_DIR = os.getenv("GEOM_STORE_DIR", f"{IX3_BASE}/geom")
+GEOM_STORE_STAGING_DIR = os.getenv("GEOM_STORE_STAGING_DIR", f"{IX3_BASE}/geom/staging")
+
 
 # Remote Dataset Configurations
 AUTHORITIES = [

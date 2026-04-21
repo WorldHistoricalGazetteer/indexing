@@ -12,7 +12,7 @@ import os
 
 import orjson  # Much faster than json
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -200,12 +200,19 @@ def create_place_doc_fast(entity, entity_bytes):
 
     # Add geometries
     if coords:
+        point_geom = {'type': 'Point', 'coordinates': coords}
         geom_entry = enrich_geometry(
-            {'type': 'Point', 'coordinates': coords},
+            point_geom,
             timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
         )
         if geom_entry:
             doc['geometries'] = [geom_entry]
+            if geom_entry.get('repr_point'):
+                rp = geom_entry['repr_point']
+                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
+                if h3c:
+                    doc['h3_centroid'] = h3c
+                    doc['h3_cover'] = h3cover
 
     # Add optional fields
     ccodes = []

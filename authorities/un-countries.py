@@ -4,7 +4,7 @@ Index UN member countries with Natural Earth geometries.
 """
 import sys, zipfile, urllib.request
 from pathlib import Path
-from processing.helpers import enrich_geometry, compute_area_km2
+from processing.helpers import enrich_geometry, compute_area_km2, compute_h3_fields
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
@@ -162,7 +162,8 @@ def create_country_place_doc(feature):
             seen_names.add(alt_name)
 
     timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-    geom_entry = enrich_geometry(geometry, timespans=timespans)
+    geom_entry = enrich_geometry(geometry, timespans=timespans,
+                                 geom_key=f"{place_id}_0")
     if not geom_entry:
         return None
 
@@ -174,6 +175,12 @@ def create_country_place_doc(feature):
         'types': [{'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}],
         'boundary': '2',
     }
+    if geom_entry.get('repr_point'):
+        rp = geom_entry['repr_point']
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        if h3c:
+            doc['h3_centroid'] = h3c
+            doc['h3_cover'] = h3cover
 
     if iso_a2 and iso_a2 != '-99': doc['ccodes'] = [iso_a2]
 
@@ -208,6 +215,9 @@ def create_country_place_doc(feature):
 
 def index_un_countries(places_index='places', download=True):
     """Index UN countries."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     print("=" * 80)
     print("UN COUNTRIES")
     print("=" * 80 + "\n")
@@ -227,27 +237,30 @@ def index_un_countries(places_index='places', download=True):
     stats = {'processed': 0, 'places_indexed': 0, 'un_members': 0, 'non_un': 0, 'errors': 0}
     place_batch = []
 
-    for i, feature in enumerate(features):
-        try:
-            place_doc = create_country_place_doc(feature)
-            place_id = place_doc['place_id']
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "un") as gsw:
+        configure_module_writer(gsw)
+        for i, feature in enumerate(features):
+            try:
+                place_doc = create_country_place_doc(feature)
+                place_id = place_doc['place_id']
 
-            name = feature['properties'].get('NAME', feature['properties'].get('ADMIN', ''))
-            if is_un_member(name):
-                stats['un_members'] += 1
-            else:
-                stats['non_un'] += 1
+                name = feature['properties'].get('NAME', feature['properties'].get('ADMIN', ''))
+                if is_un_member(name):
+                    stats['un_members'] += 1
+                else:
+                    stats['non_un'] += 1
 
-            place_batch.append({'_index': places_index, '_id': place_id, '_source': place_doc})
-            stats['processed'] += 1
+                place_batch.append({'_index': places_index, '_id': place_id, '_source': place_doc})
+                stats['processed'] += 1
 
-            if (i + 1) % 50 == 0:
-                print(f"Processed {i + 1}...")
+                if (i + 1) % 50 == 0:
+                    print(f"Processed {i + 1}...")
 
-        except Exception as e:
-            print(f"Error {i}: {e}")
-            stats['errors'] += 1
-            continue
+            except Exception as e:
+                print(f"Error {i}: {e}")
+                stats['errors'] += 1
+                continue
+        configure_module_writer(None)
 
     print("\nIndexing to Elasticsearch...")
 
@@ -266,6 +279,7 @@ def index_un_countries(places_index='places', download=True):
     print(f"UN members: {stats['un_members']}")
     print(f"Non-UN: {stats['non_un']}")
     print(f"Errors: {stats['errors']}")
+    print(f"Geometries in VAST store: {gsw.count:,}")
 
 
 if __name__ == "__main__":

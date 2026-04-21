@@ -7,7 +7,7 @@
 #
 # Functions:
 #   do_ingest              Submit authority ingestion Slurm job
-#   do_boundary_pass       Assemble full boundary geometry from PBF (Slurm)
+#   do_boundary_pass       Re-run OSM/OHM boundary geometry completion manually (Slurm)
 #   do_generate_tiles      Generate .mbtiles from boundary places in ES (Slurm)
 #   do_augment_ccodes      Spatial country code assignment (nohup on VM)
 
@@ -118,11 +118,13 @@ SBATCH_EOF
 }
 
 # ==============================================================================
-# BOUNDARY PASS (Slurm) — assemble full geometry for boundary relations
+# BOUNDARY PASS (Slurm) — manual repair/replay of OSM/OHM boundary geometry
 # ==============================================================================
 
 do_boundary_pass() {
     # Usage: es -boundary-pass [OPTIONS]
+    # Manual-only: normal `es -ingest` now runs OSM/OHM geometry completion
+    # inside `osm-places.py` / `ohm-places.py`.
     #   --source osm|ohm|both   Which PBF source(s) to process (default: both)
 
     # Check staging is running

@@ -22,6 +22,17 @@ from shapely.validation import make_valid as shapely_make_valid
 from pyproj import Transformer, CRS
 import json
 
+try:
+    import h3 as _h3
+    _H3_AVAILABLE = True
+except ImportError:
+    _H3_AVAILABLE = False
+
+# H3 reference resolution for h3_centroid (≈1.2 km hexagon edge)
+H3_CENTROID_RESOLUTION = 7
+# Maximum cells produced by polyfill before dropping to a coarser resolution
+H3_POLYFILL_MAX_CELLS = 10_000
+
 
 def geojson_to_shapely(geojson_geom):
     """
@@ -559,16 +570,124 @@ def validate_geometry(geojson_geom):
         return (False, None, f"Error validating geometry: {str(e)}")
 
 
-def enrich_geometry(geojson_geom, timespans=None):
+def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | None, list[str]]:
     """
-    Compute a full geometry entry for the places index from a GeoJSON geometry.
+    Compute ``h3_centroid`` and ``h3_cover`` for a place.
 
-    Accepts a GeoJSON geometry dict and returns a dict with:
-      - geom:       validated GeoJSON geometry (coordinates rounded to 6 dp)
-      - repr_point: {lon, lat} guaranteed inside the geometry (rounded to 6 dp)
-      - hull:       GeoJSON convex hull (rounded to 6 dp)
-      - bounds:     [west, south, east, north] bounding box (rounded to 6 dp)
-      - timespans:  passed through if provided
+    These are **top-level** fields on the place document (not nested inside
+    ``geometries[]``).  Call this for the primary geometry after
+    ``enrich_geometry()`` has produced a ``repr_point``, then set::
+
+        doc["h3_centroid"] = h3_centroid
+        doc["h3_cover"] = h3_cover
+
+    Args:
+        lon:          Longitude of the representative point (from repr_point).
+        lat:          Latitude of the representative point.
+        geojson_geom: Optional full GeoJSON geometry dict.  When supplied and
+                      non-Point, ``h3_cover`` is the compacted H3 cell set
+                      covering the full geometry.  For point geometries (or
+                      when omitted) ``h3_cover`` equals ``[h3_centroid]``.
+
+    Returns:
+        ``(h3_centroid, h3_cover)`` — both may be empty/None if h3 is
+        unavailable or the geometry is malformed.
+    """
+    if not _H3_AVAILABLE:
+        return None, []
+
+    try:
+        centroid_cell = _h3.latlng_to_cell(lat, lon, H3_CENTROID_RESOLUTION)
+    except Exception:
+        return None, []
+
+    # ── Cover for point / no geometry supplied ─────────────────────────
+    if geojson_geom is None:
+        return centroid_cell, [centroid_cell]
+
+    geom_type = geojson_geom.get("type", "")
+    if geom_type == "Point":
+        return centroid_cell, [centroid_cell]
+
+    # ── Cover for polygon/multipolygon: polyfill + compact ─────────────
+    if geom_type in ("Polygon", "MultiPolygon"):
+        try:
+            cells = _polyfill_adaptive(geojson_geom)
+            if cells:
+                cover = list(_h3.compact_cells(cells))
+                return centroid_cell, cover if cover else [centroid_cell]
+        except Exception:
+            pass
+
+    # ── LineString: buffer to a small polygon, then polyfill ───────────
+    if geom_type in ("LineString", "MultiLineString"):
+        try:
+            geom_shp = shape(geojson_geom)
+            # ~500 m buffer in degrees (≈ 0.005°)
+            buffered = geom_shp.buffer(0.005)
+            buf_geojson = json.loads(json.dumps(buffered.__geo_interface__))
+            cells = _polyfill_adaptive(buf_geojson)
+            if cells:
+                cover = list(_h3.compact_cells(cells))
+                return centroid_cell, cover if cover else [centroid_cell]
+        except Exception:
+            pass
+
+    # ── GeometryCollection: use centroid only ──────────────────────────
+    return centroid_cell, [centroid_cell]
+
+
+def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
+    """
+    Polyfill a GeoJSON polygon with H3 cells at an adaptive resolution.
+
+    Starts at ``H3_CENTROID_RESOLUTION`` (r7) and drops to r5 then r3 if the
+    cell count exceeds ``H3_POLYFILL_MAX_CELLS``.
+    """
+    if not _H3_AVAILABLE:
+        return set()
+
+    for res in (H3_CENTROID_RESOLUTION, 5, 3):
+        try:
+            h3_poly = _h3.geo_to_h3shape(geojson_geom)
+            cells = _h3.h3shape_to_cells(h3_poly, res)
+            if len(cells) <= H3_POLYFILL_MAX_CELLS:
+                return set(cells)
+        except Exception:
+            continue
+    return set()
+
+
+def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
+    """
+    Compute a geometry entry for the ``places`` index from a GeoJSON geometry.
+
+    Full geometries are **no longer stored in Elasticsearch**.  Instead, when a
+    ``geom_key`` is supplied and the module-level ``GeomStoreWriter`` is
+    configured (via ``processing.geom_store.configure_module_writer()``), the
+    validated WKB is written to the VAST geometry store and ``has_geom`` is
+    set to ``True`` in the returned entry.
+
+    Returns a dict suitable for the ``geometries[]`` nested array::
+
+        {
+          "has_geom":   bool,          # True iff full geom written to VAST
+          "repr_point": {"lon", "lat"},
+          "hull":       <GeoJSON convex hull>,
+          "bounds":     [west, south, east, north],
+          "timespans":  [...],         # passed through if provided
+        }
+
+    Additionally, to derive the **top-level** ``h3_centroid`` / ``h3_cover``
+    place fields, call ``compute_h3_fields()`` using the ``repr_point`` from
+    the returned entry::
+
+        geom_entry = enrich_geometry(geom, geom_key=f"{place_id}_0")
+        if geom_entry and geom_entry.get("repr_point"):
+            rp = geom_entry["repr_point"]
+            h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], geom)
+            doc["h3_centroid"] = h3c
+            doc["h3_cover"] = h3cover
 
     Coordinates are rounded **before** validation so that any self-intersections
     introduced by rounding are caught and repaired.
@@ -576,6 +695,8 @@ def enrich_geometry(geojson_geom, timespans=None):
     Args:
         geojson_geom: Dict with GeoJSON geometry (type, coordinates)
         timespans:    Optional list of timespan dicts to attach
+        geom_key:     Key for the VAST geometry store entry
+                      (``"{place_id}_{geom_idx}"``).  Required for VAST write.
 
     Returns:
         Dict suitable for the ``geometries[]`` nested array, or None on failure
@@ -602,7 +723,7 @@ def enrich_geometry(geojson_geom, timespans=None):
             if not geom.is_valid or geom.is_empty:
                 return None
 
-        # ── 4. Serialise to GeoJSON dict (already rounded) ─────────────
+        # ── 4. Serialise validated geometry to GeoJSON ──────────────────
         full_geom = geom.__geo_interface__
 
         # ── 5. Representative point (reuse the Shapely object) ──────────
@@ -621,12 +742,7 @@ def enrich_geometry(geojson_geom, timespans=None):
             except Exception:
                 pass
 
-        # ── 6. Convex hull + bounds (from the validated Shapely geom) ───
-        # IMPORTANT: coordinates must be rounded to COORDINATE_PRECISION here,
-        # just like the main geometry was rounded in step 1.  Leaving hull
-        # coordinates at float64 precision (17 dp) produces near-collinear
-        # vertices that Shapely accepts but ES's stricter JTS parser rejects
-        # with "Polygon self-intersection".
+        # ── 6. Convex hull + bounds ──────────────────────────────────────
         hull_geojson = None
         bounds_arr = None
         try:
@@ -637,10 +753,8 @@ def enrich_geometry(geojson_geom, timespans=None):
                 if not hull.is_valid:
                     hull = hull.buffer(0)
                 if hull.is_valid and not hull.is_empty:
-                    # Round hull coordinates to match main geometry precision
                     hull_geojson_raw = hull.__geo_interface__
                     hull_geojson = round_coordinates(hull_geojson_raw, precision=P)
-                    # Re-validate after rounding (rounding can introduce micro-intersections)
                     if hull_geojson:
                         hull_rounded = geojson_to_shapely(hull_geojson)
                         if hull_rounded and not hull_rounded.is_valid:
@@ -650,9 +764,9 @@ def enrich_geometry(geojson_geom, timespans=None):
                                     hull_rounded.__geo_interface__, precision=P
                                 )
                             else:
-                                hull_geojson = None  # Cannot repair; omit hull
+                                hull_geojson = None
                     if hull_geojson:
-                        hb = hull.bounds  # (minx, miny, maxx, maxy)
+                        hb = hull.bounds
                         bounds_arr = [
                             round(hb[0], P), round(hb[1], P),
                             round(hb[2], P), round(hb[3], P),
@@ -672,8 +786,24 @@ def enrich_geometry(geojson_geom, timespans=None):
             except Exception:
                 pass
 
-        # ── 7. Assemble result ──────────────────────────────────────────
-        entry = {'geom': full_geom}
+        # ── 7. Write full geometry to VAST store (if configured) ─────────
+        has_geom = False
+        is_non_trivial = not isinstance(geom, Point)
+        if is_non_trivial and geom_key:
+            from processing.geom_store import get_module_writer
+            writer = get_module_writer()
+            if writer is not None:
+                h3c = None
+                if rep_point and _H3_AVAILABLE:
+                    try:
+                        h3c = _h3.latlng_to_cell(rep_point["lat"], rep_point["lon"],
+                                                  H3_CENTROID_RESOLUTION)
+                    except Exception:
+                        pass
+                has_geom = writer.write(geom_key, h3c or "", full_geom)
+
+        # ── 8. Assemble result (no 'geom' field — stored externally) ─────
+        entry: dict = {'has_geom': has_geom}
         if rep_point:
             entry['repr_point'] = rep_point
         if hull_geojson:
