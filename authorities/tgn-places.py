@@ -182,89 +182,128 @@ def index_tgn(zip_path, places_index):
     batch = []
     count = 0
     start_time = time.time()
-    total = len(coordinates)
-    processed = 0
 
-    for place_uri, (lat, lon) in coordinates.items():
-        processed += 1
-
-        raw_place_id = place_uri.split("/tgn/")[-1]
-        tgn_id = place_map.get(raw_place_id, raw_place_id.replace("-place", ""))
-
-        # Get all terms
+    # Build a helper to create a doc from a tgn_id + optional (lat, lon)
+    def make_doc(tgn_id, lat=None, lon=None):
         term_uris = set(place_terms.get(tgn_id, []))
 
         toponyms = []
         seen_ids = set()
-
-        # Build Toponyms List
         for term_uri in term_uris:
             literal_data = term_literals.get(term_uri)
-            if not literal_data: continue
+            if not literal_data:
+                continue
             name, lang = literal_data
-
             toponym_id = f"{name}@{lang}"
-            if toponym_id in seen_ids: continue
-
+            if toponym_id in seen_ids:
+                continue
             toponyms.append({
                 "toponym_id": toponym_id,
                 "timespans": [{"start": {"in": 2025}, "end": {"in": 2025}}]
             })
             seen_ids.add(toponym_id)
 
-        # SEMANTIC TITLE SELECTION
+        # Skip unnamed records (no terms resolving to literals)
+        if not toponyms:
+            return None
+
+        # Title selection
         title = None
-        # 1. Try Preferred Label first
         if tgn_id in place_pref:
             pref_uri = place_pref[tgn_id]
             if pref_uri in term_literals:
                 title = term_literals[pref_uri][0]
-
-        # 2. Fallback to first available toponym
         if not title and toponyms:
             title = toponyms[0]["toponym_id"].split("@")[0]
-
-        # 3. Last Resort
         if not title:
-            title = f"TGN {tgn_id}"
+            return None  # truly unnamed — skip
 
         place_id = f"tgn:{tgn_id}"
-        point_geom = {"type": "Point", "coordinates": [lon, lat]}
-        geom_entry = enrich_geometry(
-            point_geom,
-            timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
-        )
         doc = {
             "place_id": place_id,
             "title": title,
             "toponyms": toponyms,
-            "geometries": [geom_entry] if geom_entry else [],
+            "geometries": [],
             "source": "tgn",
             "namespace": "tgn",
             "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
         }
-        if geom_entry and geom_entry.get('repr_point'):
-            rp = geom_entry['repr_point']
-            h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
-            if h3c:
-                doc['h3_centroid'] = h3c
-                doc['h3_cover'] = h3cover
 
-        batch.append({"_index": places_index, "_id": place_id, "_source": doc})
+        if lat is not None and lon is not None:
+            point_geom = {"type": "Point", "coordinates": [lon, lat]}
+            geom_entry = enrich_geometry(
+                point_geom,
+                timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
+            )
+            if geom_entry:
+                doc["geometries"] = [geom_entry]
+                if geom_entry.get('repr_point'):
+                    rp = geom_entry['repr_point']
+                    h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
+                    if h3c:
+                        doc['h3_centroid'] = h3c
+                        doc['h3_cover'] = h3cover
 
+        return doc
+
+    # --- Pass 1: records WITH coordinates ---
+    # Track which concept_ids have been handled via coordinates
+    concept_ids_with_coords = set()
+    processed = 0
+    total = len(coordinates)
+
+    for place_uri, (lat, lon) in coordinates.items():
+        processed += 1
+        raw_place_id = place_uri.split("/tgn/")[-1]
+        tgn_id = place_map.get(raw_place_id, raw_place_id.replace("-place", ""))
+        concept_ids_with_coords.add(tgn_id)
+
+        doc = make_doc(tgn_id, lat, lon)
+        if not doc:
+            continue
+
+        batch.append({"_index": places_index, "_id": doc["place_id"], "_source": doc})
         if len(batch) >= BATCH_SIZE:
             helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
             count += len(batch)
             batch.clear()
             if count % 10000 == 0:
-                sys.stdout.write(f"\rIndexed {count:,} ({(processed / total) * 100:.1f}%)")
+                sys.stdout.write(f"\rPass 1: {count:,} ({processed / total * 100:.1f}%)")
                 sys.stdout.flush()
 
     if batch:
         helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
         count += len(batch)
+        batch.clear()
 
-    print(f"\n\n✓ DONE: {count:,} places in {(time.time() - start_time) / 60:.1f} min")
+    print(f"\n  Pass 1 done: {count:,} places with geometry")
+
+    # --- Pass 2: named records WITHOUT coordinates ---
+    count_nogeom = 0
+    for tgn_id in place_terms:
+        if tgn_id in concept_ids_with_coords:
+            continue
+
+        doc = make_doc(tgn_id)
+        if not doc:
+            continue
+
+        batch.append({"_index": places_index, "_id": doc["place_id"], "_source": doc})
+        if len(batch) >= BATCH_SIZE:
+            helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
+            count_nogeom += len(batch)
+            batch.clear()
+            if count_nogeom % 10000 == 0:
+                sys.stdout.write(f"\rPass 2: {count_nogeom:,} no-geom records...")
+                sys.stdout.flush()
+
+    if batch:
+        helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
+        count_nogeom += len(batch)
+
+    total_count = count + count_nogeom
+    print(f"\n  Pass 2 done: {count_nogeom:,} places without geometry")
+    print(f"\n✓ DONE: {total_count:,} total places in {(time.time() - start_time) / 60:.1f} min")
     create_checkpoint_snapshot(es, "tgn_places_fixed")
 
 

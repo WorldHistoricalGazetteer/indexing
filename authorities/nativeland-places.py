@@ -38,26 +38,23 @@ def process_territory(feature, namespace='nl'):
             toponyms.append({'toponym_id': lst, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]})
             seen_lsts.add(lst)
 
+    geom_entry = None
+    area = None
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
-    else:
-        return None
-
-    if not geom_entry:
-        return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
+        'geometries': [geom_entry] if geom_entry else [],
         'types': [{'identifier': 'indigenous-territory', 'label': 'nativeland', 'sourceLabel': 'territory'}],
         'boundary': 'native',
     }
 
-    if geom_entry.get('repr_point'):
+    if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
         if h3c:
@@ -84,26 +81,23 @@ def process_language(feature, namespace='nl'):
 
     toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
 
+    geom_entry = None
+    area = None
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
-    else:
-        return None
-
-    if not geom_entry:
-        return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
+        'geometries': [geom_entry] if geom_entry else [],
         'types': [{'identifier': 'indigenous-language-area', 'label': 'nativeland', 'sourceLabel': 'language'}],
         'boundary': 'native',
     }
 
-    if geom_entry.get('repr_point'):
+    if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
         if h3c:
@@ -129,26 +123,23 @@ def process_treaty(feature, namespace='nl'):
 
     toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
 
+    geom_entry = None
+    area = None
     if geometry:
         timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
-    else:
-        return None
-
-    if not geom_entry:
-        return None
 
     place_doc = {
         'place_id': place_id,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
+        'geometries': [geom_entry] if geom_entry else [],
         'types': [{'identifier': 'treaty-area', 'label': 'nativeland', 'sourceLabel': 'treaty'}],
         'boundary': 'native',
     }
 
-    if geom_entry.get('repr_point'):
+    if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
         if h3c:

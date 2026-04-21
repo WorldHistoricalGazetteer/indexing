@@ -98,7 +98,7 @@ def process_dplace_feature(feature, namespace='dp'):
                     })
                     seen_lsts.add(lst)
 
-    # Extract geometry
+    # Extract geometry (optional — try lat/lon fallback but proceed without)
     if not geometry:
         lat = lang_obj.get('latitude', props.get('latitude'))
         lon = lang_obj.get('longitude', props.get('longitude'))
@@ -112,9 +112,7 @@ def process_dplace_feature(feature, namespace='dp'):
                     'coordinates': [lon, lat]
                 }
             except (ValueError, TypeError):
-                return None
-        else:
-            return None
+                geometry = None
 
     # Check for wrapped coordinates
     if geometry and geometry.get('type') == 'Point':

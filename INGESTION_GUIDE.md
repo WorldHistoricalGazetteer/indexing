@@ -21,7 +21,7 @@ Use staging before ingestion.
 
 ```bash
 cd /ix1/ishi/elastic
-source es.sh -staging-start --no-snapshot
+source scripts/es.sh -staging-start --no-snapshot
 es -staging-status
 es -staging-health
 ```

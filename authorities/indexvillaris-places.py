@@ -136,19 +136,17 @@ def process_iv_entry(entry, namespace='iv'):
                     })
                     seen_lsts.add(lst)
 
-    if not geometry: return None
     timespans = [{'start': {'in': 1680}, 'end': {'in': 1680}}]
-    geom_entry = enrich_geometry(geometry, timespans=timespans)
-    if not geom_entry: return None
+    geom_entry = enrich_geometry(geometry, timespans=timespans) if geometry else None
 
     place_doc = {
         'place_id': place_id,
         'title': historical_name,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
+        'geometries': [geom_entry] if geom_entry else [],
         'ccodes': ['GB']
     }
-    if geom_entry.get('repr_point'):
+    if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
         if h3c:

@@ -133,14 +133,14 @@ def create_place_doc(pleiades_record):
     # Extract toponyms with timespans array
     toponyms = extract_toponyms(pleiades_record)
 
+    # Skip if no name data
+    if not toponyms:
+        return None
+
     # Extract all geometries with temporal attestations
     geometries = extract_geometries(pleiades_record)
 
-    # Skip if no spatial data
-    if not geometries:
-        return None
-
-    # Build document
+    # Build document (geometry is optional)
     doc = {
         'place_id': place_id,
         'title': pleiades_record.get('title', ''),
@@ -270,7 +270,7 @@ def index_pleiades_streaming(file_path, places_index):
 
     print(f"\n\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
-    print(f"Skipped (no location): {skipped:,}")
+    print(f"Skipped (no name): {skipped:,}")
     print(f"Geometries in VAST store: {gsw.count:,}")
 
 
@@ -333,7 +333,7 @@ def index_pleiades_standard(file_path, places_index):
 
     print(f"\n\nIndexing complete!")
     print(f"Places indexed: {place_count:,}")
-    print(f"Skipped (no location): {skipped:,}")
+    print(f"Skipped (no name): {skipped:,}")
 
 
 if __name__ == "__main__":

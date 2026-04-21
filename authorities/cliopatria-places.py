@@ -102,8 +102,6 @@ def process_cliopatria_feature(feature):
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
 
-    if not geometry:
-        return None
 
     # Extract name/polity identifier
     name = (props.get('Name') or props.get('name') or
@@ -137,9 +135,7 @@ def process_cliopatria_feature(feature):
             place_id = f"{NAMESPACE}:{clean_id}_{start_year}_{end_year}"
 
     geom_entry = enrich_geometry(geometry, timespans=timespans or None,
-                                 geom_key=f"{place_id}_0")
-    if not geom_entry:
-        return None
+                                 geom_key=f"{place_id}_0") if geometry else None
 
     # Build toponyms
     toponyms = [{'toponym_id': f"{name}@und"}]
@@ -159,7 +155,7 @@ def process_cliopatria_feature(feature):
         'namespace': NAMESPACE,
         'title': name,
         'toponyms': toponyms,
-        'geometries': [geom_entry],
+        'geometries': [geom_entry] if geom_entry else [],
         'types': [{
             'identifier': 'polity',
             'label': 'cliopatria',
@@ -168,7 +164,7 @@ def process_cliopatria_feature(feature):
         'boundary': 'polity',
         'indexed_at': datetime.now().isoformat(),
     }
-    if geom_entry.get('repr_point'):
+    if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
         h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
         if h3c:
