@@ -24,7 +24,7 @@ import requests
 from shapely.geometry import shape, mapping, MultiPolygon
 from shapely.ops import unary_union
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -423,7 +423,8 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
             doc['geometries'] = [geom_entry]
             if geom_entry.get('repr_point'):
                 rp = geom_entry['repr_point']
-                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+                h3_geom = select_h3_cover_geometry(geom_entry, geometry)
+                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
                 if h3c:
                     doc['h3_centroid'] = h3c
                     doc['h3_cover'] = h3cover

@@ -19,7 +19,7 @@ import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, OSM_STATE_FILE
 
 # ---------------- CONFIG ----------------
@@ -115,7 +115,8 @@ def create_doc(osm_id, osm_type, tags, geometry):
             doc['geometries'] = [geom_entry]
             if geom_entry.get('repr_point'):
                 rp = geom_entry['repr_point']
-                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+                h3_geom = select_h3_cover_geometry(geom_entry, geometry)
+                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
                 if h3c:
                     doc['h3_centroid'] = h3c
                     doc['h3_cover'] = h3cover

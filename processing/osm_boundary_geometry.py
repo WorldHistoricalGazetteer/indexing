@@ -32,7 +32,7 @@ from elasticsearch import Elasticsearch, helpers
 from shapely.geometry import mapping, shape
 from shapely.validation import make_valid
 
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.settings import ES_HOST, DATA_DIR
 
 BULK_THREAD_COUNT = 4
@@ -202,6 +202,26 @@ def is_antimeridian_risky(geom):
     return (min_lon < -170 and max_lon > 170) or (max_lon - min_lon > 300)
 
 
+def build_h3_fields_for_geom_entry(geom_entry, raw_geom):
+    """Build top-level H3 fields for a finalized boundary geometry entry."""
+    if not isinstance(geom_entry, dict):
+        return None
+
+    rp = geom_entry.get('repr_point')
+    if not isinstance(rp, dict) or 'lon' not in rp or 'lat' not in rp:
+        return None
+
+    h3_geom = select_h3_cover_geometry(geom_entry, raw_geom)
+    h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
+    if not h3c:
+        return None
+
+    return {
+        'h3_centroid': h3c,
+        'h3_cover': h3cover,
+    }
+
+
 class BoundaryPassProcessor:
     """Process assembled Area objects and emit place updates."""
 
@@ -266,7 +286,8 @@ class BoundaryPassProcessor:
             relation_id = area.orig_id()
             place_id = f"{self.namespace}:r{relation_id}"
             timespans = build_timespans(tags)
-            geom_entry = enrich_geometry(mapping(geom), timespans=timespans or None)
+            raw_geom = mapping(geom)
+            geom_entry = enrich_geometry(raw_geom, timespans=timespans or None)
             if not geom_entry:
                 self.geom_errors += 1
                 return
@@ -325,6 +346,11 @@ class BoundaryPassProcessor:
                     'sourceLabel': f"boundary={tags['boundary_field']}",
                 }],
             }
+
+            h3_fields = build_h3_fields_for_geom_entry(geom_entry, raw_geom)
+            if h3_fields:
+                update_doc.update(h3_fields)
+                upsert_doc.update(h3_fields)
 
             self.buffer_callback(place_id, update_doc, upsert_doc)
             self.extracted += 1

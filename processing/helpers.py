@@ -570,6 +570,30 @@ def validate_geometry(geojson_geom):
         return (False, None, f"Error validating geometry: {str(e)}")
 
 
+def select_h3_cover_geometry(geom_entry: dict | None, fallback_geom: dict | None = None):
+    """
+    Choose the geometry used for ``h3_cover`` computation.
+
+    Prefer the already-computed convex hull from ``enrich_geometry()`` for
+    area geometries. This keeps ``h3_centroid`` unchanged while making H3
+    polyfill substantially cheaper for complex polygons. Falls back to the raw
+    geometry whenever no suitable hull is available.
+    """
+    if not isinstance(fallback_geom, dict):
+        return fallback_geom
+
+    fallback_type = fallback_geom.get("type")
+    if fallback_type not in {"Polygon", "MultiPolygon", "GeometryCollection"}:
+        return fallback_geom
+
+    if isinstance(geom_entry, dict):
+        hull = geom_entry.get("hull")
+        if isinstance(hull, dict) and hull.get("type") in {"Polygon", "MultiPolygon"}:
+            return hull
+
+    return fallback_geom
+
+
 def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | None, list[str]]:
     """
     Compute ``h3_centroid`` and ``h3_cover`` for a place.
@@ -584,10 +608,12 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
     Args:
         lon:          Longitude of the representative point (from repr_point).
         lat:          Latitude of the representative point.
-        geojson_geom: Optional full GeoJSON geometry dict.  When supplied and
+        geojson_geom: Optional GeoJSON geometry dict. When supplied and
                       non-Point, ``h3_cover`` is the compacted H3 cell set
-                      covering the full geometry.  For point geometries (or
-                      when omitted) ``h3_cover`` equals ``[h3_centroid]``.
+                      covering that geometry. Callers may pass the precomputed
+                      convex hull from ``enrich_geometry()`` as a faster,
+                      coarser approximation. For point geometries (or when
+                      omitted) ``h3_cover`` equals ``[h3_centroid]``.
 
     Returns:
         ``(h3_centroid, h3_cover)`` — both may be empty/None if h3 is
@@ -685,7 +711,8 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
         geom_entry = enrich_geometry(geom, geom_key=f"{place_id}_0")
         if geom_entry and geom_entry.get("repr_point"):
             rp = geom_entry["repr_point"]
-            h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], geom)
+            h3_geom = select_h3_cover_geometry(geom_entry, geom)
+            h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], h3_geom)
             doc["h3_centroid"] = h3c
             doc["h3_cover"] = h3cover
 

@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE, GEOSHAPE_LOG_FILE
 from processing.utilities import create_checkpoint_snapshot
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.geometry_collection_processor import (
     process_geometry_collection,
     validate_geometry
@@ -307,7 +307,8 @@ def process_geoshapes_from_file(places_index, refs_file, batch_size=100):
                 h3_cover = []
                 if geom_entry.get("repr_point"):
                     rp = geom_entry["repr_point"]
-                    h3_centroid, h3_cover = compute_h3_fields(rp["lon"], rp["lat"], geometry)
+                    h3_geom = select_h3_cover_geometry(geom_entry, geometry)
+                    h3_centroid, h3_cover = compute_h3_fields(rp["lon"], rp["lat"], h3_geom)
 
                 updates.append({
                     "_op_type": "update",

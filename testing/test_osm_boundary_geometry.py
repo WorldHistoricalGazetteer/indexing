@@ -6,7 +6,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import processing.osm_boundary_geometry as obg
 from processing.osm_boundary_geometry import (
+    build_h3_fields_for_geom_entry,
     build_timespans,
     is_admin_boundary_value,
     is_misc_boundary_value,
@@ -67,6 +69,42 @@ def run_tests():
 
     tags = FakeTags({'name': 'No Boundary'})
     assert process_relation_tags(tags) is None
+
+    geom_entry = {
+        'repr_point': {'lon': 1.5, 'lat': 2.5},
+        'hull': {'type': 'Polygon', 'coordinates': [[[0.0, 0.0], [3.0, 0.0], [3.0, 3.0], [0.0, 0.0]]]},
+    }
+    raw_geom = {'type': 'MultiPolygon', 'coordinates': [[[[0.0, 0.0], [2.0, 0.0], [2.0, 2.0], [0.0, 0.0]]]]}
+
+    original_select = obg.select_h3_cover_geometry
+    original_compute = obg.compute_h3_fields
+    captured = {}
+    try:
+        def fake_select(entry, raw):
+            captured['select_args'] = (entry, raw)
+            return {'type': 'Polygon', 'coordinates': [[[9.0, 9.0], [10.0, 9.0], [10.0, 10.0], [9.0, 9.0]]]}
+
+        def fake_compute(lon, lat, geom):
+            captured['compute_args'] = (lon, lat, geom)
+            return '872830828ffffff', ['872830828ffffff', '87283082cffffff']
+
+        obg.select_h3_cover_geometry = fake_select
+        obg.compute_h3_fields = fake_compute
+
+        assert build_h3_fields_for_geom_entry(geom_entry, raw_geom) == {
+            'h3_centroid': '872830828ffffff',
+            'h3_cover': ['872830828ffffff', '87283082cffffff'],
+        }
+        assert captured['select_args'] == (geom_entry, raw_geom)
+        assert captured['compute_args'] == (
+            1.5,
+            2.5,
+            {'type': 'Polygon', 'coordinates': [[[9.0, 9.0], [10.0, 9.0], [10.0, 10.0], [9.0, 9.0]]]},
+        )
+        assert build_h3_fields_for_geom_entry({}, raw_geom) is None
+    finally:
+        obg.select_h3_cover_geometry = original_select
+        obg.compute_h3_fields = original_compute
 
     print('Shared OSM/OHM boundary geometry helper tests passed.')
 

@@ -30,7 +30,7 @@ from shapely.ops import unary_union
 from shapely.validation import make_valid
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 
 # ---------------------------------------------------------------------------
 # UN M49 Geoscheme — country code → subregion → continent
@@ -361,7 +361,8 @@ def build_geoscheme_place_doc(name, boundary_value, geom,
     }
     if geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], raw_geom)
+        h3_geom = select_h3_cover_geometry(geom_entry, raw_geom)
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
             doc['h3_centroid'] = h3c
             doc['h3_cover'] = h3cover

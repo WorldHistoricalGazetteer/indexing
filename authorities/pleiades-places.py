@@ -6,7 +6,7 @@ Index Pleiades places data into Elasticsearch with memory-efficient streaming.
 
 import gzip
 import ijson
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -177,7 +177,8 @@ def create_place_doc(pleiades_record):
         raw_geom = locs[0].get('geometry') if locs else None
         if not raw_geom and pleiades_record.get('reprPoint'):
             raw_geom = {'type': 'Point', 'coordinates': pleiades_record['reprPoint']}
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], raw_geom)
+        h3_geom = select_h3_cover_geometry(primary, raw_geom)
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
             doc['h3_centroid'] = h3c
             doc['h3_cover'] = h3cover

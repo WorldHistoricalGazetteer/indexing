@@ -9,7 +9,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import enrich_geometry, compute_bbox, compute_h3_fields
+from processing.helpers import enrich_geometry, compute_bbox, compute_h3_fields, select_h3_cover_geometry
 
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
@@ -136,7 +136,8 @@ def process_dplace_feature(feature, namespace='dp'):
     }
     if geom_entry and geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        h3_geom = select_h3_cover_geometry(geom_entry, geometry)
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
         if h3c:
             place_doc['h3_centroid'] = h3c
             place_doc['h3_cover'] = h3cover
