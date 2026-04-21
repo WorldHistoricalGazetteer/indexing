@@ -192,6 +192,7 @@ class BoundaryPassProcessor:
         self.skipped_empty = 0
         self.geom_errors = 0
         self.areas_seen = 0
+        self.tag_rejected = 0
         self.start_time = time.time()
 
     def process_area(self, a):
@@ -200,6 +201,7 @@ class BoundaryPassProcessor:
 
         tags = process_relation_tags(a.tags)
         if not tags:
+            self.tag_rejected += 1
             return
 
         try:
@@ -234,7 +236,28 @@ class BoundaryPassProcessor:
                 'boundary': tags['boundary_field'],
             }
 
-            self.buffer_callback(place_id, update_doc)
+            # Upsert fallback for missing base docs from first pass.
+            upsert_doc = {
+                'place_id': place_id,
+                'title': tags['name'],
+                'toponyms': [
+                    {
+                        'toponym_id': f"{tags['name']}@und",
+                        **({'timespans': timespans} if timespans else {}),
+                    }
+                ],
+                'geometries': [geom_entry],
+                'boundary': tags['boundary_field'],
+                'types': [
+                    {
+                        'identifier': tags['boundary_field'],
+                        'label': self.namespace,
+                        'sourceLabel': f"boundary={tags['boundary_field']}",
+                    }
+                ],
+            }
+
+            self.buffer_callback(place_id, update_doc, upsert_doc)
             self.extracted += 1
 
             if self.extracted % 1000 == 0:
@@ -411,9 +434,11 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
     buffer_list = []
     updated_count = 0
     failed_count = 0
+    missing_doc_count = 0
+    missing_doc_samples = []
 
     def flush_buffer():
-        nonlocal updated_count, failed_count
+        nonlocal updated_count, failed_count, missing_doc_count
         if not buffer_list:
             return
         for success, info in helpers.parallel_bulk(
@@ -426,18 +451,29 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
                 updated_count += 1
             else:
                 failed_count += 1
+                op_info = next(iter(info.values())) if info else {}
+                op_error = op_info.get('error', {}) if isinstance(op_info, dict) else {}
+                if (
+                    isinstance(op_error, dict)
+                    and op_info.get('status') == 404
+                    and op_error.get('type') == 'document_missing_exception'
+                ):
+                    missing_doc_count += 1
+                    if len(missing_doc_samples) < 10:
+                        missing_doc_samples.append(op_info.get('_id', 'unknown'))
                 if failed_count <= 10:
                     print(f"\n  Bulk update error: {info}")
         buffer_list.clear()
         if updated_count % 5000 == 0:
             gc.collect()
 
-    def add_to_buffer(place_id, update_doc):
+    def add_to_buffer(place_id, update_doc, upsert_doc):
         buffer_list.append({
             '_op_type': 'update',
             '_index': places_index,
             '_id': place_id,
             'doc': update_doc,
+            'upsert': upsert_doc,
             'doc_as_upsert': False,
         })
         if len(buffer_list) >= 500:
@@ -453,6 +489,15 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"Source: {pbf_file}")
         print(f"Target index: {places_index}")
         print(f"Namespace: {namespace}")
+        print()
+
+        # Preflight counts help diagnose missing-doc failures.
+        try:
+            ns_count = es.count(index=places_index, body={'query': {'prefix': {'place_id': f"{namespace}:"}}})['count']
+            rel_count = es.count(index=places_index, body={'query': {'prefix': {'place_id': f"{namespace}:r"}}})['count']
+            print(f"Preflight counts in '{places_index}': {namespace}:*={ns_count:,}, {namespace}:r*={rel_count:,}")
+        except Exception as e:
+            print(f"Preflight count check failed: {e}")
         print()
 
         # Pre-filter
@@ -501,11 +546,15 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"\n\n{source_label} boundary pass complete:")
         print(f"  Relation areas seen:  {processor.areas_seen:,}")
         print(f"  Boundaries extracted: {processor.extracted:,}")
+        print(f"  Tag-filter rejected:  {processor.tag_rejected:,}")
         print(f"  Documents updated:    {updated_count:,}")
         print(f"  Documents failed:     {failed_count:,}")
+        print(f"  Missing docs (404):   {missing_doc_count:,}")
         print(f"  Skipped (invalid):    {processor.skipped_invalid:,}")
         print(f"  Skipped (empty):      {processor.skipped_empty:,}")
         print(f"  Geometry errors:      {processor.geom_errors:,}")
+        if missing_doc_samples:
+            print(f"  Missing doc samples:  {', '.join(missing_doc_samples)}")
 
         return updated_count
 

@@ -28,7 +28,6 @@ from shapely.geometry import mapping
 from elasticsearch import Elasticsearch, helpers
 from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, OHM_STATE_FILE
-from processing.utilities import create_checkpoint_snapshot
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -264,6 +263,11 @@ class OHMHandler(osmium.SimpleHandler):
         self.tracker = tracker
         self.buffer_callback = buffer_callback
         self.wkbfab = osmium.geom.WKBFactory()
+        self.candidates = {'node': 0, 'way': 0, 'relation': 0}
+        self.buffered = {'node': 0, 'way': 0, 'relation': 0}
+        self.tag_rejected = {'node': 0, 'way': 0, 'relation': 0}
+        self.geom_errors = {'way': 0, 'relation': 0}
+        self.geom_invalid = {'relation': 0}
 
     def node(self, n):
         if not n.tags:
@@ -271,10 +275,14 @@ class OHMHandler(osmium.SimpleHandler):
 
         if self.tracker.should_skip('node'):
             return
+        self.candidates['node'] += 1
         tags = process_tags(n.tags)
         if tags:
             geo = {'type': 'Point', 'coordinates': [n.location.lon, n.location.lat]}
             self.buffer_callback(create_doc(n.id, 'node', tags, geo))
+            self.buffered['node'] += 1
+        else:
+            self.tag_rejected['node'] += 1
         self.tracker.increment('node')
 
     def way(self, w):
@@ -283,6 +291,7 @@ class OHMHandler(osmium.SimpleHandler):
 
         if self.tracker.should_skip('way'):
             return
+        self.candidates['way'] += 1
 
         tags = process_tags(w.tags)
         if tags:
@@ -293,8 +302,11 @@ class OHMHandler(osmium.SimpleHandler):
 
                 geo = mapping(geom)
                 self.buffer_callback(create_doc(w.id, 'way', tags, geo))
+                self.buffered['way'] += 1
             except Exception:
-                pass
+                self.geom_errors['way'] += 1
+        else:
+            self.tag_rejected['way'] += 1
         self.tracker.increment('way')
 
     def relation(self, r):
@@ -303,6 +315,7 @@ class OHMHandler(osmium.SimpleHandler):
 
         if self.tracker.should_skip('relation'):
             return
+        self.candidates['relation'] += 1
 
         tags = process_tags(r.tags)
         if tags:
@@ -313,8 +326,13 @@ class OHMHandler(osmium.SimpleHandler):
                 if geom.is_valid:
                     geo = mapping(geom)
                     self.buffer_callback(create_doc(r.id, 'relation', tags, geo))
+                    self.buffered['relation'] += 1
+                else:
+                    self.geom_invalid['relation'] += 1
             except Exception:
-                pass
+                self.geom_errors['relation'] += 1
+        else:
+            self.tag_rejected['relation'] += 1
         self.tracker.increment('relation')
 
 
@@ -409,8 +427,23 @@ def index_ohm_optimized(pbf_file):
         print(f"\n\nIndexing complete:")
         print(f"  Documents indexed: {indexed_count:,}")
         print(f"  Documents failed: {failed_count:,}")
+        print("  Handler diagnostics:")
+        print(
+            f"    Nodes: candidates={handler.candidates['node']:,}, "
+            f"buffered={handler.buffered['node']:,}, rejected={handler.tag_rejected['node']:,}"
+        )
+        print(
+            f"    Ways: candidates={handler.candidates['way']:,}, "
+            f"buffered={handler.buffered['way']:,}, rejected={handler.tag_rejected['way']:,}, "
+            f"geom_errors={handler.geom_errors['way']:,}"
+        )
+        print(
+            f"    Relations: candidates={handler.candidates['relation']:,}, "
+            f"buffered={handler.buffered['relation']:,}, rejected={handler.tag_rejected['relation']:,}, "
+            f"geom_invalid={handler.geom_invalid['relation']:,}, "
+            f"geom_errors={handler.geom_errors['relation']:,}"
+        )
 
-        create_checkpoint_snapshot(es, 'ohm_places')
         print("Ingestion Complete.")
 
     except Exception as e:

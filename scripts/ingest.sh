@@ -112,7 +112,7 @@ SBATCH_EOF
     echo
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/ingest-${JOBID}.out"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/ingest-${JOBID}.*"
     echo
     echo "Note: The staging ES instance must remain running for the duration."
 }
@@ -232,7 +232,7 @@ SBATCH_EOF
     echo
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-pass-${JOBID}.out"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-pass-${JOBID}.*"
 }
 
 
@@ -330,7 +330,7 @@ SBATCH_EOF
     echo
     echo "Monitor with:"
     echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/tiles-${JOBID}.out"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/tiles-${JOBID}.*"
 }
 # =============================================================================
 # AUGMENT CCODES (spatial country code assignment)
