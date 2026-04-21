@@ -21,6 +21,8 @@ from pathlib import Path
 from datetime import datetime
 
 import requests
+from shapely.geometry import shape, mapping, MultiPolygon
+from shapely.ops import unary_union
 from elasticsearch import Elasticsearch, helpers
 from processing.helpers import enrich_geometry
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
@@ -28,6 +30,7 @@ from processing.utilities import create_checkpoint_snapshot
 
 PERIODO_URL = "https://data.perio.do/d.json"
 NAMESPACE = "po"
+GITHUB_API_BASE = "https://api.github.com/repos/periodo/periodo-places"
 
 
 def fetch_periodo_data(file_path=None):
@@ -83,6 +86,167 @@ def _parse_year(value):
         return int(str(value).lstrip('+'))
     except (ValueError, TypeError):
         return None
+
+
+def _collect_polygons(geom, out_polygons):
+    """Recursively collect valid polygon parts from any shapely geometry."""
+    gtype = geom.geom_type
+    if gtype == 'Polygon':
+        candidate = geom
+        if not candidate.is_valid:
+            candidate = candidate.buffer(0)
+        if candidate and not candidate.is_empty and candidate.is_valid:
+            out_polygons.append(candidate)
+        return
+
+    if gtype in ('MultiPolygon', 'GeometryCollection'):
+        for sub in geom.geoms:
+            _collect_polygons(sub, out_polygons)
+
+
+def _extract_and_validate_multipolygon(geometry_obj):
+    """Convert arbitrary geometry to a clean MultiPolygon GeoJSON dict."""
+    polygons = []
+    _collect_polygons(geometry_obj, polygons)
+    if not polygons:
+        return None
+
+    try:
+        merged = unary_union(polygons)
+    except Exception:
+        return None
+
+    # Union can still produce mixed collections; normalize again.
+    normalized = []
+    _collect_polygons(merged, normalized)
+    if not normalized:
+        return None
+
+    try:
+        final_geom = unary_union(normalized)
+    except Exception:
+        return None
+
+    if final_geom.geom_type == 'Polygon':
+        final_geom = MultiPolygon([final_geom])
+    elif final_geom.geom_type != 'MultiPolygon':
+        return None
+
+    if final_geom.is_empty or not final_geom.is_valid:
+        return None
+
+    return mapping(final_geom)
+
+
+def _extract_spatial_uris(spatial_coverage):
+    """Extract spatial coverage URIs from PeriodO period spatialCoverage values."""
+    if not spatial_coverage:
+        return []
+
+    coverages = spatial_coverage if isinstance(spatial_coverage, list) else [spatial_coverage]
+    uris = []
+    for cov in coverages:
+        if isinstance(cov, dict):
+            uri = cov.get('id') or cov.get('@id')
+            if uri:
+                uris.append(uri)
+        elif isinstance(cov, str):
+            uris.append(cov)
+    return uris
+
+
+def _merge_geojson_geometries(geometries):
+    """Merge multiple GeoJSON geometries into one clean MultiPolygon geometry."""
+    if not geometries:
+        return None
+
+    shapely_geoms = []
+    for geom in geometries:
+        try:
+            shapely_geoms.append(shape(geom))
+        except Exception:
+            continue
+
+    if not shapely_geoms:
+        return None
+
+    try:
+        merged = unary_union(shapely_geoms)
+    except Exception:
+        return None
+
+    return _extract_and_validate_multipolygon(merged)
+
+
+def load_periodo_gazetteer_geometries():
+    """Build a URI->geometry index from periodo-places gazetteer feature files."""
+    print("Loading PeriodO gazetteer polygons from periodo-places...")
+
+    try:
+        resp = requests.get(f"{GITHUB_API_BASE}/contents/gazetteers", timeout=60)
+        resp.raise_for_status()
+        files = [
+            item for item in resp.json()
+            if item.get('type') == 'file' and str(item.get('name', '')).endswith('.json')
+        ]
+    except Exception as e:
+        print(f"  Warning: failed to list gazetteers: {e}")
+        return {}
+
+    cache_dir = Path(DATA_DIR) / 'authorities' / 'periodo' / 'gazetteers'
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        cache_dir = Path(__file__).resolve().parent / 'periodo_gazetteers_cache'
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+    geometry_index = {}
+    total_features = 0
+
+    for file_info in files:
+        name = file_info.get('name')
+        if not name:
+            continue
+        cache_file = cache_dir / name
+
+        if cache_file.exists():
+            try:
+                gazetteer = json.loads(cache_file.read_text(encoding='utf-8'))
+            except Exception:
+                gazetteer = None
+        else:
+            gazetteer = None
+
+        if gazetteer is None:
+            try:
+                fresp = requests.get(file_info.get('download_url', ''), timeout=120)
+                fresp.raise_for_status()
+                gazetteer = fresp.json()
+                cache_file.write_text(json.dumps(gazetteer), encoding='utf-8')
+            except Exception as e:
+                print(f"  Warning: failed to fetch {name}: {e}")
+                continue
+
+        for feature in gazetteer.get('features', []):
+            total_features += 1
+            feature_id = feature.get('id')
+            geometry_data = feature.get('geometry')
+            if not feature_id or not geometry_data:
+                continue
+
+            try:
+                clean_geom = _extract_and_validate_multipolygon(shape(geometry_data))
+            except Exception:
+                clean_geom = None
+
+            if clean_geom:
+                geometry_index[feature_id] = clean_geom
+
+    print(
+        f"  Gazetteers: {len(files)} files, {total_features:,} features, "
+        f"{len(geometry_index):,} usable polygon geometries"
+    )
+    return geometry_index
 
 
 def _extract_geometry(spatial_coverage):
@@ -174,7 +338,7 @@ def _extract_label(period):
     return ''
 
 
-def process_periodo_period(period_id, period, authority_id, authority_label):
+def process_periodo_period(period_id, period, authority_id, authority_label, spatial_geometry_index):
     """Process a single PeriodO period into a place document."""
     label = _extract_label(period)
     if not label:
@@ -183,6 +347,10 @@ def process_periodo_period(period_id, period, authority_id, authority_label):
     # Extract spatial coverage
     spatial = period.get('spatialCoverage', [])
     geometry = _extract_geometry(spatial)
+    if not geometry:
+        spatial_uris = _extract_spatial_uris(spatial)
+        spatial_geoms = [spatial_geometry_index[uri] for uri in spatial_uris if uri in spatial_geometry_index]
+        geometry = _merge_geojson_geometries(spatial_geoms)
 
     # Extract temporal extent
     start_year = None
@@ -285,6 +453,7 @@ def index_periodo(file_path=None, places_index='places'):
 
     es = Elasticsearch(ES_HOST, request_timeout=180)
     data = fetch_periodo_data(file_path)
+    spatial_geometry_index = load_periodo_gazetteer_geometries()
 
     # PeriodO data structure: authorities → periods
     authorities = data.get('authorities', {})
@@ -318,7 +487,7 @@ def index_periodo(file_path=None, places_index='places'):
         for period_id, period in periods.items():
             try:
                 doc = process_periodo_period(
-                    period_id, period, auth_id, auth_label
+                    period_id, period, auth_id, auth_label, spatial_geometry_index
                 )
                 if not doc:
                     total_skipped += 1
