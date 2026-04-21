@@ -38,6 +38,7 @@ class ProgressTracker:
         self.load_state()
 
     def load_state(self):
+        print(f"Checkpoint file: {self.state_file}")
         if os.path.exists(self.state_file):
             try:
                 with open(self.state_file, 'r') as f:
@@ -46,6 +47,8 @@ class ProgressTracker:
                     print(f"RESUMING from checkpoint: {self.targets}")
             except Exception as e:
                 print(f"Warning: failed to read state file: {e}")
+        else:
+            print("Starting fresh (no checkpoint file found)")
 
     def save_state(self):
         temp_file = f"{self.state_file}.tmp"
@@ -55,6 +58,7 @@ class ProgressTracker:
                 'counts': self.counts
             }, f)
         os.replace(temp_file, self.state_file)
+        print(f"\nCheckpoint saved: {self.state_file}")
 
     def should_skip(self, type_):
         # "Fast-forward" logic
@@ -272,6 +276,9 @@ def stage_file_to_scratch(source_path, namespace='osm'):
         print("Notice: No scratch dir found, using network storage.")
         return source_path, False
 
+    print(f"Staging host: {os.uname().nodename}")
+    print(f"SLURM job: {os.environ.get('SLURM_JOB_ID', 'unknown')}")
+
     basename = os.path.basename(source_path)
     if namespace:
         basename = f"{namespace}_{basename}"
@@ -283,7 +290,11 @@ def stage_file_to_scratch(source_path, namespace='osm'):
         return target_path, True
 
     print(f"Staging to local scratch: {target_path}")
-    subprocess.run(['rsync', '-ah', str(source_path), target_path], check=True)
+    print("Copying source file with rsync progress...")
+    subprocess.run([
+        'rsync', '-ah', '--info=progress2,stats2', str(source_path), target_path
+    ], check=True)
+    print(f"Staging complete: {target_path}")
     return target_path, True
 
 
