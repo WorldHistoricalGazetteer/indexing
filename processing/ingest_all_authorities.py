@@ -28,13 +28,14 @@ When you specify `-n gn,wd`, it runs all GeoNames scripts then all Wikidata scri
 Unique Toponyms: 74,417,599 indexed in 1 day, 0:45:53
 """
 import os
+import json
 import subprocess
 import sys
 import time
 import argparse
 from pathlib import Path
-from datetime import datetime, timedelta
-from elasticsearch import Elasticsearch, helpers
+from datetime import datetime
+from elasticsearch import Elasticsearch
 
 from processing.settings import (
     ES_HOST,
@@ -45,14 +46,62 @@ from processing.settings import (
     GEOSHAPE_LOG_FILE,
     OSM_STATE_FILE,
     OHM_STATE_FILE,
+    AUTHORITY_SELECTION_FILE,
+    STAGED_BASE_DIR,
+    STAGED_RUNS_DIR,
+    STAGED_RUN_MANIFEST_FILE_TEMPLATE,
+    STAGED_MANIFEST_FILENAME,
 )
+from processing.staging_orchestrator import (
+    generate_run_id,
+    resolve_selected_authorities,
+    cleanup_deselected_staged_artefacts,
+    create_run_manifest,
+    load_run_manifest,
+    update_namespace_checkpoint,
+    finalize_run_manifest,
+    resolve_run_manifest_path,
+    summarize_run_manifest,
+    list_run_manifest_paths,
+    should_skip_script,
+    mark_run_resumed,
+    build_fanout_plan,
+    check_completion_barrier,
+)
+from processing.stage_writers import write_stage_event
+from processing.stage_writers import write_namespace_places_snapshot_jsonl
+from processing.namespace_materialize import materialize_namespace_snapshot_manifest
 
-es = Elasticsearch(ES_HOST)
+es = Elasticsearch(ES_HOST) if ES_HOST else None
 
 STATE_FILES = {
     'osm': OSM_STATE_FILE,
     'ohm': OHM_STATE_FILE,
 }
+
+# Full ingestion order with script IDs for tracking
+# Format: (namespace, script_name, description, script_id)
+INGESTION_ORDER = [
+    ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),
+    ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),
+    ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),
+    ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),
+    ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),
+    ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),
+    ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),
+    ('un', 'un-countries', 'UN member countries', 'un-countries'),
+    ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),
+    ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),
+    ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),
+    ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),
+    ('chgis', 'chgis.places', 'CHGIS/TGAZ historical Chinese places', 'chgis-places'),
+    ('dgsd', 'dgsd.places', 'DGSD Song dynasty places', 'dgsd-places'),
+    ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),
+    ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
+    ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
+    ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
+    ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
+]
 
 
 def delete_existing_namespace(namespace):
@@ -86,6 +135,10 @@ def delete_existing_namespace(namespace):
 
 
 def check_elasticsearch():
+    if es is None:
+        print("✗ Elasticsearch host is not configured (ES_HOST is empty)")
+        sys.stdout.flush()
+        return False
     try:
         info = es.info()
         print(f"✓ Elasticsearch {info['version']['number']} is running")
@@ -250,36 +303,24 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
         return False
 
 
-def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=False, delete_only=False):
+def ingest_all(
+    authorities_to_run=None,
+    skip_existing=True,
+    replace_existing=False,
+    delete_only=False,
+    run_manifest_path: Path | None = None,
+    run_id: str | None = None,
+    resume_run: bool = False,
+    write_stage_snapshots: bool = False,
+    materialize_namespace_manifest: bool = False,
+):
     """
     Run all configured ingestions in order.
 
     If authorities_to_run is specified, it should be namespace codes.
     All scripts for that namespace will be included in order.
     """
-    # Full ingestion order with script IDs for tracking
-    # Format: (namespace, script_name, description, script_id)
-    ingestion_order = [
-        ('osm', 'osm-places', 'OpenStreetMap', 'osm-places'),  # 18,113,756 4:04:14
-        ('ohm', 'ohm-places', 'OpenHistoricalMap', 'ohm-places'),  # ~800K
-        ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),  # 13,378,039 0:21:43
-        ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),  # Places updated: 7,600,036; Relations added: 1,820,560; 0:35:40
-        ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),  # 11,456,496 2:52:55
-        ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),  # 2,972,410 0:05:57
-        ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),  # 34,085 0:01:15
-        ('un', 'un-countries', 'UN member countries', 'un-countries'),  # 257 0:00:45
-        ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),  # 2,599 0:00:05
-        ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),  # 4,343 0:00:09
-        ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),  # 1,174,449 0:02:02
-        ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),  # 24,000 0:00:10
-        ('chgis', 'chgis.places', 'CHGIS/TGAZ historical Chinese places', 'chgis-places'),  # ~82K
-        ('dgsd', 'dgsd.places', 'DGSD Song dynasty places', 'dgsd-places'),  # ~3.8K
-        ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),  # ~24K
-        ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
-        ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
-        ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),  # Places updated: 3,335 0:03:50
-        ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),  # Places updated: 58,681 0:00:22
-    ]
+    ingestion_order = list(INGESTION_ORDER)
 
     # Filter by requested namespaces (includes ALL scripts for that namespace)
     if authorities_to_run:
@@ -298,72 +339,172 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     if not ingestion_order:
         print("\nNo authorities to process!")
         sys.stdout.flush()
-        return
+        return {'successful': [], 'failed': [], 'skipped': []}
+
+    if run_manifest_path and run_id:
+        effective_namespaces = sorted(set(authorities_to_run or [ns for ns, *_ in ingestion_order]))
+        if resume_run:
+            manifest = load_run_manifest(run_manifest_path)
+            plan = build_fanout_plan(effective_namespaces, manifest)
+            print("\nResume fan-out plan:")
+            print(f"  pending:   {', '.join(plan['pending']) or '-'}")
+            print(f"  running:   {', '.join(plan['running']) or '-'}")
+            print(f"  failed:    {', '.join(plan['failed']) or '-'}")
+            print(f"  completed: {', '.join(plan['completed']) or '-'}")
+            mark_run_resumed(run_manifest_path)
+        else:
+            create_run_manifest(run_manifest_path, run_id, effective_namespaces)
 
     results = {'successful': [], 'failed': [], 'skipped': []}
 
-    for ns, script, desc, script_id in ingestion_order:
-        # Skip remaining scripts for a namespace that already failed
-        if ns in results['failed']:
-            continue
-
-        auth_dir = Path(DATA_DIR) / 'authorities' / ns
-
-        # Skip if no data files found (only check for the first script of each namespace)
-        if script_id.endswith('-places') or script_id == 'loc-relations':
-            # These authorities store their databases in the source tree, not DATA_DIR
-            # Their places.py scripts auto-build the DB if missing
-            SOURCE_TREE_DBS = {
-                'tm': ('trismegistos', 'tm_geo.db'),
-                'chgis': ('chgis', 'tgaz.db'),
-                'dgsd': ('dgsd', 'dgsd.db'),
-            }
-            # These authorities self-fetch their data at ingestion time
-            SELF_FETCHING = {'po', 'clio'}
-
-            if ns in SOURCE_TREE_DBS:
-                subdir, db_name = SOURCE_TREE_DBS[ns]
-                db_path = Path(__file__).resolve().parent.parent / 'authorities' / subdir / db_name
-                # Don't skip — the places.py script will auto-build if needed
-                if not db_path.exists():
-                    print(f"\n  Note: {db_name} not found; will be built automatically during ingestion")
-                    sys.stdout.flush()
-            elif ns in SELF_FETCHING:
-                pass  # These scripts download their own data; don't skip
-            elif not auth_dir.exists() or not any(auth_dir.iterdir()):
-                print(f"\n⚠ Skipping {ns}: No data files found")
-                sys.stdout.flush()
-                if ns not in results['skipped']:
-                    results['skipped'].append(ns)
+    try:
+        for ns, script, desc, script_id in ingestion_order:
+            # Skip remaining scripts for a namespace that already failed
+            if ns in results['failed']:
                 continue
 
-        if delete_only:
-            # Only delete for the first script of each namespace
+            if run_manifest_path and resume_run and should_skip_script(run_manifest_path, ns, script_id):
+                print(f"Skipping {ns}/{script_id}: checkpoint already completed")
+                continue
+
+            auth_dir = Path(DATA_DIR) / 'authorities' / ns
+
+            # Skip if no data files found (only check for the first script of each namespace)
             if script_id.endswith('-places') or script_id == 'loc-relations':
-                delete_existing_namespace(ns)
+                # These authorities store their databases in the source tree, not DATA_DIR
+                # Their places.py scripts auto-build the DB if missing
+                SOURCE_TREE_DBS = {
+                    'tm': ('trismegistos', 'tm_geo.db'),
+                    'chgis': ('chgis', 'tgaz.db'),
+                    'dgsd': ('dgsd', 'dgsd.db'),
+                }
+                # These authorities self-fetch their data at ingestion time
+                SELF_FETCHING = {'po', 'clio'}
+
+                if ns in SOURCE_TREE_DBS:
+                    subdir, db_name = SOURCE_TREE_DBS[ns]
+                    db_path = Path(__file__).resolve().parent.parent / 'authorities' / subdir / db_name
+                    # Don't skip — the places.py script will auto-build if needed
+                    if not db_path.exists():
+                        print(f"\n  Note: {db_name} not found; will be built automatically during ingestion")
+                        sys.stdout.flush()
+                elif ns in SELF_FETCHING:
+                    pass  # These scripts download their own data; don't skip
+                elif not auth_dir.exists() or not any(auth_dir.iterdir()):
+                    print(f"\n⚠ Skipping {ns}: No data files found")
+                    sys.stdout.flush()
+                    if ns not in results['skipped']:
+                        results['skipped'].append(ns)
+                    continue
+
+            if delete_only:
+                # Only delete for the first script of each namespace
+                if script_id.endswith('-places') or script_id == 'loc-relations':
+                    delete_existing_namespace(ns)
+                    if ns not in results['successful']:
+                        results['successful'].append(ns)
+                continue
+
+            if ns == 'loc':
+                print(f"\nNOTE: LOC creates relations only, not new places")
+                sys.stdout.flush()
+
+            if run_manifest_path:
+                update_namespace_checkpoint(run_manifest_path, ns, script_id, "running")
+            if run_id:
+                try:
+                    write_stage_event(
+                        run_id=run_id,
+                        namespace=ns,
+                        script_id=script_id,
+                        status="running",
+                        stage="extract",
+                    )
+                except Exception as e:
+                    print(f"  Warning: failed to write stage event ({ns}/{script_id}/running): {e}")
+
+            success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
+
+            if success:
+                if run_manifest_path:
+                    update_namespace_checkpoint(run_manifest_path, ns, script_id, "completed")
+                if write_stage_snapshots and script_id.endswith('-places') and run_id and es is not None:
+                    try:
+                        snapshot_meta = write_namespace_places_snapshot_jsonl(
+                            es_client=es,
+                            index_name=PLACES_INDEX,
+                            namespace=ns,
+                            run_id=run_id,
+                        )
+                        write_stage_event(
+                            run_id=run_id,
+                            namespace=ns,
+                            script_id=script_id,
+                            status="snapshot_written",
+                            stage="extract",
+                            metrics={"docs_written": snapshot_meta.get("docs_written", 0)},
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write staged snapshot ({ns}/{script_id}): {e}")
+                if materialize_namespace_manifest and script_id.endswith('-places') and run_id:
+                    try:
+                        materialize_namespace_snapshot_manifest(
+                            namespace=ns,
+                            run_id=run_id,
+                            staged_base_dir=STAGED_BASE_DIR,
+                            extract_stage="extract",
+                            manifest_filename=STAGED_MANIFEST_FILENAME,
+                        )
+                        write_stage_event(
+                            run_id=run_id,
+                            namespace=ns,
+                            script_id=script_id,
+                            status="materialized",
+                            stage="patch",
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to materialize namespace manifest ({ns}/{script_id}): {e}")
+                if run_id:
+                    try:
+                        write_stage_event(
+                            run_id=run_id,
+                            namespace=ns,
+                            script_id=script_id,
+                            status="completed",
+                            stage="extract",
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write stage event ({ns}/{script_id}/completed): {e}")
                 if ns not in results['successful']:
                     results['successful'].append(ns)
-            continue
+            else:
+                if run_manifest_path:
+                    update_namespace_checkpoint(run_manifest_path, ns, script_id, "failed", error="script failed")
+                if run_id:
+                    try:
+                        write_stage_event(
+                            run_id=run_id,
+                            namespace=ns,
+                            script_id=script_id,
+                            status="failed",
+                            stage="extract",
+                            error="script failed",
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write stage event ({ns}/{script_id}/failed): {e}")
+                if ns not in results['failed']:
+                    results['failed'].append(ns)
+                # Skip remaining scripts for this namespace, but continue with others
+                print(f"Stopping further {ns} scripts due to failure")
+                sys.stdout.flush()
+                # Mark namespace as failed so subsequent scripts for the same ns are skipped
+                continue
 
-        if ns == 'loc':
-            print(f"\nNOTE: LOC creates relations only, not new places")
-            sys.stdout.flush()
-
-        success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
-
-        if success:
-            if ns not in results['successful']:
-                results['successful'].append(ns)
-        else:
-            if ns not in results['failed']:
-                results['failed'].append(ns)
-            # Skip remaining scripts for this namespace, but continue with others
-            print(f"Stopping further {ns} scripts due to failure")
-            sys.stdout.flush()
-            # Mark namespace as failed so subsequent scripts for the same ns are skipped
-            continue
-
-        time.sleep(2)
+            time.sleep(2)
+    except KeyboardInterrupt:
+        if run_manifest_path:
+            finalize_run_manifest(run_manifest_path, "aborted")
+        raise
 
     print(f"\n{'=' * 80}")
     print("INGESTION SUMMARY")
@@ -387,6 +528,47 @@ def ingest_all(authorities_to_run=None, skip_existing=True, replace_existing=Fal
     print(f"Total toponyms in index: {es.count(index=TOPONYMS_INDEX)['count']:,}")
     sys.stdout.flush()
 
+    if run_manifest_path:
+        final_status = "failed" if results['failed'] else "completed"
+        final_manifest = finalize_run_manifest(run_manifest_path, final_status)
+        done, incomplete = check_completion_barrier(final_manifest)
+        if not done:
+            print(f"\nBarrier incomplete (selected not fully completed): {', '.join(incomplete)}")
+
+    return results
+
+
+def print_run_status(run_manifest_path: Path, as_json: bool = False) -> int:
+    if not run_manifest_path.exists():
+        print(f"Run manifest not found: {run_manifest_path}")
+        return 1
+
+    manifest = json.loads(run_manifest_path.read_text(encoding="utf-8"))
+    summary = summarize_run_manifest(manifest)
+
+    if as_json:
+        payload = {
+            "run_id": manifest.get("run_id"),
+            "run_status": manifest.get("run_status", "in_progress"),
+            "created_at": manifest.get("created_at"),
+            "finished_at": manifest.get("finished_at"),
+            "selected_namespaces": manifest.get("selected_namespaces", []),
+            "summary": summary,
+            "namespaces": manifest.get("namespaces", {}),
+            "path": str(run_manifest_path),
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+
+    print(f"Run ID: {manifest.get('run_id')}")
+    print(f"Status: {manifest.get('run_status', 'in_progress')}")
+    print(f"Created: {manifest.get('created_at')}")
+    print(f"Finished: {manifest.get('finished_at', '-')}")
+    print("Namespaces:")
+    print(f"  total={summary['total_namespaces']} completed={summary['completed']} "
+          f"failed={summary['failed']} running={summary['running']} pending={summary['pending']}")
+    return 0
+
 
 def main():
     parser = argparse.ArgumentParser(description='Ingest all authority data sources into Elasticsearch')
@@ -395,6 +577,24 @@ def main():
     parser.add_argument('--check-only', action='store_true', help='Only check data availability, don\'t run ingestion')
     parser.add_argument('--skip-counts', action='store_true', help='Skip counting existing documents (faster startup)')
     parser.add_argument('--prepare-production', action='store_true', help='Run production preparation after ingestion')
+    parser.add_argument('--selection-file', default=AUTHORITY_SELECTION_FILE,
+                        help='Authority checkbox markdown file (default: authority-selection.md)')
+    parser.add_argument('--skip-selection-file', action='store_true',
+                        help='Ignore authority-selection file and use CLI namespaces/all')
+    parser.add_argument('--skip-stage-cleanup', action='store_true',
+                        help='Do not remove staged artefacts for deselected authorities')
+    parser.add_argument('--run-status', nargs='?', const='latest',
+                        help='Show run-manifest status (optional RUN_ID; default latest) and exit')
+    parser.add_argument('--run-status-json', action='store_true',
+                        help='With --run-status, print JSON instead of text')
+    parser.add_argument('--list-runs', action='store_true',
+                        help='List recent run manifests and exit')
+    parser.add_argument('--resume-run', nargs='?', const='latest',
+                        help='Resume from run manifest (optional RUN_ID; default latest)')
+    parser.add_argument('--write-stage-snapshots', action='store_true',
+                        help='After successful *-places scripts, write namespace staged extract snapshots (JSONL)')
+    parser.add_argument('--materialize-namespace-manifest', action='store_true',
+                        help='After successful *-places scripts, build namespace materialized snapshot manifest')
     parser.add_argument('-d', '--delete-only', action='store_true',
                         help='Delete specified authorities without ingesting')
     group = parser.add_mutually_exclusive_group()
@@ -403,6 +603,27 @@ def main():
     args = parser.parse_args()
 
     skip_existing = not args.replace_existing
+
+    if args.list_runs:
+        paths = list_run_manifest_paths(Path(STAGED_RUNS_DIR), limit=20)
+        if not paths:
+            print(f"No run manifests found in {STAGED_RUNS_DIR}")
+            sys.exit(1)
+        print(f"Latest run manifests in {STAGED_RUNS_DIR}:")
+        for p in paths:
+            print(f"  - {p.stem}")
+        sys.exit(0)
+
+    if args.run_status is not None:
+        run_id = None if args.run_status == 'latest' else args.run_status
+        manifest_path = resolve_run_manifest_path(Path(STAGED_RUNS_DIR), run_id=run_id)
+        if manifest_path is None:
+            if run_id:
+                print(f"No run manifest found for run id '{run_id}' in {STAGED_RUNS_DIR}")
+            else:
+                print(f"No run manifests found in {STAGED_RUNS_DIR}")
+            sys.exit(1)
+        sys.exit(print_run_status(manifest_path, as_json=args.run_status_json))
 
     print("=" * 80)
     print("AUTHORITY DATA INGESTION COORDINATOR")
@@ -430,10 +651,59 @@ def main():
         sys.stdout.flush()
         return
 
-    namespaces = [ns.strip() for ns in args.namespaces.split(',')] if args.namespaces else None
+    all_namespaces = list(dict.fromkeys(ns for ns, *_ in INGESTION_ORDER))
+    use_selection = not args.skip_selection_file and not args.namespaces
 
-    ingest_all(namespaces, skip_existing=skip_existing,
-               replace_existing=args.replace_existing, delete_only=args.delete_only)
+    if args.namespaces:
+        namespaces = [ns.strip() for ns in args.namespaces.split(',')]
+    elif use_selection:
+        selection_file = Path(args.selection_file)
+        namespaces = resolve_selected_authorities(selection_file, all_namespaces)
+        if not namespaces:
+            print(f"\nNo selected local authorities found in {selection_file}; falling back to all.")
+            namespaces = all_namespaces
+
+        if not args.skip_stage_cleanup:
+            removed = cleanup_deselected_staged_artefacts(
+                staged_base_dir=Path(STAGED_BASE_DIR),
+                selected_namespaces=namespaces,
+                known_namespaces=all_namespaces,
+            )
+            if removed:
+                print(f"Removed staged artefacts for deselected authorities: {', '.join(sorted(removed))}")
+    else:
+        namespaces = None
+
+    resume_mode = args.resume_run is not None
+    if resume_mode:
+        resume_run_id = None if args.resume_run == 'latest' else args.resume_run
+        resolved = resolve_run_manifest_path(Path(STAGED_RUNS_DIR), run_id=resume_run_id)
+        if resolved is None:
+            if resume_run_id:
+                print(f"No run manifest found for run id '{resume_run_id}' in {STAGED_RUNS_DIR}")
+            else:
+                print(f"No run manifests found in {STAGED_RUNS_DIR}")
+            sys.exit(1)
+        run_manifest_path = resolved
+        run_manifest = load_run_manifest(run_manifest_path)
+        run_id = run_manifest.get("run_id")
+    else:
+        run_id = generate_run_id()
+        run_manifest_path = Path(
+            STAGED_RUN_MANIFEST_FILE_TEMPLATE.format(runs_dir=STAGED_RUNS_DIR, run_id=run_id)
+        )
+
+    print(f"\nRun ID: {run_id}")
+    print(f"Run manifest: {run_manifest_path}")
+
+    results = ingest_all(namespaces, skip_existing=skip_existing,
+                         replace_existing=args.replace_existing,
+                         delete_only=args.delete_only,
+                         run_manifest_path=run_manifest_path,
+                         run_id=run_id,
+                         resume_run=resume_mode,
+                         write_stage_snapshots=args.write_stage_snapshots,
+                         materialize_namespace_manifest=args.materialize_namespace_manifest)
 
     if not args.delete_only and not namespaces:
         # Only run deduplication if processing all authorities
@@ -444,6 +714,9 @@ def main():
         print("\nNote: Skipping toponyms deduplication (only runs when processing all authorities)")
         print("      Run without -n flag to deduplicate toponyms across all authorities")
         sys.stdout.flush()
+
+    if results and results.get('failed'):
+        sys.exit(2)
 
 
 if __name__ == "__main__":

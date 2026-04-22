@@ -30,12 +30,6 @@
           }
         }
       },
-      "h3_centroid": {
-        "type": "keyword"
-      },
-      "h3_cover": {
-        "type": "keyword"
-      },
       "toponyms": {
         "type": "nested",
         "properties": {
@@ -89,6 +83,12 @@
           "bounds": {
             "type": "float"
           },
+          "h3_centroid": {
+            "type": "keyword"
+          },
+          "h3_cover": {
+            "type": "keyword"
+          },
           "timespans": {
             "type": "nested",
             "properties": {
@@ -127,11 +127,8 @@
           "aat_id": {
             "type": "integer"
           },
-          "aat_depth": {
-            "type": "integer"
-          },
-          "aat_ancestors": {
-            "type": "integer"
+          "aat_path": {
+            "type": "keyword"
           }
         }
       },

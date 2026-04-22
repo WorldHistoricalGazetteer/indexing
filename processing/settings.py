@@ -42,6 +42,12 @@ def get_es_host():
 ES_HOST = get_es_host()
 ES_HOST_PRODUCTION = os.getenv("PROD_ES_URL", "http://localhost:9200")
 
+# Production types-index lookup (Batch 2 preflight)
+TYPES_ES_HOST = os.getenv("TYPES_ES_HOST", ES_HOST_PRODUCTION)
+TYPES_INDEX = os.getenv("TYPES_INDEX", "types")
+TYPES_ES_USER = os.getenv("TYPES_ES_USER", "")
+TYPES_ES_PASSWORD = os.getenv("TYPES_ES_PASSWORD", "")
+
 # Indexing
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "5000"))
 
@@ -71,6 +77,31 @@ OHM_STATE_FILE = f"{IX1_BASE}/elastic/ohm_state.json"
 # GEOM_STORE_STAGING_DIR — per-authority staging files written during ingestion
 GEOM_STORE_DIR = os.getenv("GEOM_STORE_DIR", f"{IX3_BASE}/geom")
 GEOM_STORE_STAGING_DIR = os.getenv("GEOM_STORE_STAGING_DIR", f"{IX3_BASE}/geom/staging")
+
+# Staged ingestion artefacts (Batch 1 foundation)
+# Canonical staging root and authority-selection control file.
+REPO_ROOT = Path(__file__).resolve().parent.parent
+STAGED_BASE_DIR = os.getenv("STAGED_BASE_DIR", f"{IX3_BASE}/staged")
+STAGED_MANIFEST_FILENAME = os.getenv("STAGED_MANIFEST_FILENAME", "manifest.json")
+AUTHORITY_SELECTION_FILE = os.getenv(
+    "AUTHORITY_SELECTION_FILE",
+    str(REPO_ROOT / "authority-selection.md"),
+)
+
+# Namespaced staged layout templates (formatted with namespace, stage)
+STAGED_NAMESPACE_DIR_TEMPLATE = os.getenv(
+    "STAGED_NAMESPACE_DIR_TEMPLATE",
+    "{base}/{namespace}",
+)
+STAGED_STAGE_DIR_TEMPLATE = os.getenv(
+    "STAGED_STAGE_DIR_TEMPLATE",
+    "{base}/{namespace}/{stage}",
+)
+STAGED_RUNS_DIR = os.getenv("STAGED_RUNS_DIR", f"{STAGED_BASE_DIR}/runs")
+STAGED_RUN_MANIFEST_FILE_TEMPLATE = os.getenv(
+    "STAGED_RUN_MANIFEST_FILE_TEMPLATE",
+    "{runs_dir}/{run_id}.json",
+)
 
 
 # Remote Dataset Configurations
