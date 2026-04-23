@@ -160,9 +160,240 @@ SBATCH_EOF
             return 1
         fi
         echo
-        echo "Submitting dependent H3 array stage for run id: $RUN_ID"
-        do_h3_stage_array --run-id "$RUN_ID" --dependency "$JOBID"
+        echo "Submitting dependent boundary -> boundary_merge -> H3 chain for run id: $RUN_ID"
+
+        do_boundary_stage_array --run-id "$RUN_ID" --dependency "$JOBID" || return 1
+        local BOUNDARY_STAGE_JOBID="$LAST_SUBMITTED_JOBID"
+
+        do_boundary_merge_array --run-id "$RUN_ID" --dependency "$BOUNDARY_STAGE_JOBID" || return 1
+        local BOUNDARY_MERGE_JOBID="$LAST_SUBMITTED_JOBID"
+
+        do_h3_stage_array --run-id "$RUN_ID" --dependency "$BOUNDARY_MERGE_JOBID" || return 1
     fi
+}
+
+
+# =============================================================================
+# BOUNDARY STAGE (Slurm array, staged-only, osm/ohm only)
+# =============================================================================
+
+do_boundary_stage_array() {
+    local RUN_ID=""
+    local DEPENDENCY_JOBID=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --run-id)
+                RUN_ID="$2"
+                shift 2
+                ;;
+            --dependency)
+                DEPENDENCY_JOBID="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$RUN_ID" ]; then
+        echo "ERROR: --run-id is required for boundary stage array"
+        return 1
+    fi
+
+    local RUN_MANIFEST="${STAGED_RUNS_DIR}/${RUN_ID}.json"
+    if [ ! -f "$RUN_MANIFEST" ]; then
+        echo "ERROR: Run manifest not found: $RUN_MANIFEST"
+        return 1
+    fi
+
+    local TASK_COUNT
+    TASK_COUNT=$(python3 - <<PY
+import json
+from pathlib import Path
+manifest = json.loads(Path("$RUN_MANIFEST").read_text(encoding="utf-8"))
+selected = manifest.get("selected_namespaces", [])
+targets = [ns for ns in selected if ns in ("osm", "ohm")]
+print(len(targets))
+PY
+)
+
+    if [ -z "$TASK_COUNT" ] || [ "$TASK_COUNT" -le 0 ]; then
+        echo "Boundary stage skipped: no osm/ohm namespaces selected"
+        LAST_SUBMITTED_JOBID="$DEPENDENCY_JOBID"
+        return 0
+    fi
+
+    local ARRAY_END=$((TASK_COUNT - 1))
+    local BOUNDARY_SCRIPT
+    BOUNDARY_SCRIPT=$(mktemp /tmp/es-boundary-stage-XXXXXX.sbatch)
+
+    cat > "$BOUNDARY_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-boundary-stage
+#SBATCH --partition=smp
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --array=0-${ARRAY_END}
+#SBATCH --output=${STAGING_SLURM_LOGS}/boundary-stage-%A_%a.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/boundary-stage-%A_%a.err
+
+set -e
+
+source "$ENV_FILE"
+$(activate_environment)
+cd "$REPO_DIR"
+
+NAMESPACE=$(python3 - <<PY
+import json
+from pathlib import Path
+manifest = json.loads(Path("$RUN_MANIFEST").read_text(encoding="utf-8"))
+targets = [ns for ns in manifest.get("selected_namespaces", []) if ns in ("osm", "ohm")]
+idx = int("${SLURM_ARRAY_TASK_ID}")
+print(targets[idx])
+PY
+)
+
+python -u -m processing.boundary_stage --run-id "$RUN_ID" --namespace "$NAMESPACE" --manifest-path "$RUN_MANIFEST"
+SBATCH_EOF
+
+    local SBATCH_ARGS=(--parsable)
+    if [ -n "$DEPENDENCY_JOBID" ]; then
+        SBATCH_ARGS+=("--dependency=afterok:${DEPENDENCY_JOBID}")
+    fi
+
+    local JOBID
+    JOBID=$(sbatch "${SBATCH_ARGS[@]}" "$BOUNDARY_SCRIPT")
+    rm "$BOUNDARY_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit boundary stage array"
+        return 1
+    fi
+
+    LAST_SUBMITTED_JOBID="$JOBID"
+    echo "Submitted boundary stage array: $JOBID"
+    echo "  Run ID: $RUN_ID"
+    echo "  Tasks:  0-${ARRAY_END} (osm/ohm subset)"
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-stage-${JOBID}_*.out"
+}
+
+
+# =============================================================================
+# BOUNDARY MERGE (Slurm array, staged-only, osm/ohm only)
+# =============================================================================
+
+do_boundary_merge_array() {
+    local RUN_ID=""
+    local DEPENDENCY_JOBID=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --run-id)
+                RUN_ID="$2"
+                shift 2
+                ;;
+            --dependency)
+                DEPENDENCY_JOBID="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$RUN_ID" ]; then
+        echo "ERROR: --run-id is required for boundary merge array"
+        return 1
+    fi
+
+    local RUN_MANIFEST="${STAGED_RUNS_DIR}/${RUN_ID}.json"
+    if [ ! -f "$RUN_MANIFEST" ]; then
+        echo "ERROR: Run manifest not found: $RUN_MANIFEST"
+        return 1
+    fi
+
+    local TASK_COUNT
+    TASK_COUNT=$(python3 - <<PY
+import json
+from pathlib import Path
+manifest = json.loads(Path("$RUN_MANIFEST").read_text(encoding="utf-8"))
+selected = manifest.get("selected_namespaces", [])
+targets = [ns for ns in selected if ns in ("osm", "ohm")]
+print(len(targets))
+PY
+)
+
+    if [ -z "$TASK_COUNT" ] || [ "$TASK_COUNT" -le 0 ]; then
+        echo "Boundary merge skipped: no osm/ohm namespaces selected"
+        LAST_SUBMITTED_JOBID="$DEPENDENCY_JOBID"
+        return 0
+    fi
+
+    local ARRAY_END=$((TASK_COUNT - 1))
+    local MERGE_SCRIPT
+    MERGE_SCRIPT=$(mktemp /tmp/es-boundary-merge-XXXXXX.sbatch)
+
+    cat > "$MERGE_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-boundary-merge
+#SBATCH --partition=smp
+#SBATCH --time=08:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=4
+#SBATCH --mem=24G
+#SBATCH --array=0-${ARRAY_END}
+#SBATCH --output=${STAGING_SLURM_LOGS}/boundary-merge-%A_%a.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/boundary-merge-%A_%a.err
+
+set -e
+
+source "$ENV_FILE"
+$(activate_environment)
+cd "$REPO_DIR"
+
+NAMESPACE=$(python3 - <<PY
+import json
+from pathlib import Path
+manifest = json.loads(Path("$RUN_MANIFEST").read_text(encoding="utf-8"))
+targets = [ns for ns in manifest.get("selected_namespaces", []) if ns in ("osm", "ohm")]
+idx = int("${SLURM_ARRAY_TASK_ID}")
+print(targets[idx])
+PY
+)
+
+python -u -m processing.boundary_merge --run-id "$RUN_ID" --namespace "$NAMESPACE" --manifest-path "$RUN_MANIFEST"
+SBATCH_EOF
+
+    local SBATCH_ARGS=(--parsable)
+    if [ -n "$DEPENDENCY_JOBID" ]; then
+        SBATCH_ARGS+=("--dependency=afterok:${DEPENDENCY_JOBID}")
+    fi
+
+    local JOBID
+    JOBID=$(sbatch "${SBATCH_ARGS[@]}" "$MERGE_SCRIPT")
+    rm "$MERGE_SCRIPT"
+
+    if [ -z "$JOBID" ]; then
+        echo "ERROR: Failed to submit boundary merge array"
+        return 1
+    fi
+
+    LAST_SUBMITTED_JOBID="$JOBID"
+    echo "Submitted boundary merge array: $JOBID"
+    echo "  Run ID: $RUN_ID"
+    echo "  Tasks:  0-${ARRAY_END} (osm/ohm subset)"
+    echo "Monitor with:"
+    echo "  squeue -j $JOBID"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/boundary-merge-${JOBID}_*.out"
 }
 
 # =============================================================================
@@ -253,6 +484,8 @@ SBATCH_EOF
         echo "ERROR: Failed to submit H3 stage array"
         return 1
     fi
+
+    LAST_SUBMITTED_JOBID="$H3_JOBID"
 
     echo "Submitted H3 stage array job: $H3_JOBID"
     echo "  Run ID: $RUN_ID"

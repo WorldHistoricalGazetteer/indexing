@@ -70,7 +70,6 @@ from processing.staging_orchestrator import (
     update_namespace_stage_status,
 )
 from processing.stage_writers import (
-    estimate_wall_time_seconds,
     record_script_wall_time,
     write_namespace_places_snapshot_parquet,
     write_runtime_history_event,
@@ -114,6 +113,8 @@ FINAL_NAMESPACE_SCRIPT_ID = {
     "wd": "wd-geoshapes",
 }
 
+BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
+
 
 def _is_namespace_snapshot_trigger(namespace: str, script_id: str) -> bool:
     """Return True when a namespace has reached its final local mutator.
@@ -125,6 +126,62 @@ def _is_namespace_snapshot_trigger(namespace: str, script_id: str) -> bool:
     if namespace in FINAL_NAMESPACE_SCRIPT_ID:
         return script_id == FINAL_NAMESPACE_SCRIPT_ID[namespace]
     return script_id.endswith("-places")
+
+
+def _run_boundary_pre_h3_stages(
+    *,
+    namespace: str,
+    run_id: str,
+    run_manifest_path: Path | None,
+) -> bool:
+    """Run boundary stage + merge for namespaces requiring pre-H3 geometry completion.
+
+    Returns True on success, False on failure.
+    """
+    if namespace not in BOUNDARY_REQUIRED_NAMESPACES:
+        return True
+
+    cmd_boundary = [
+        sys.executable,
+        "-u",
+        "-m",
+        "processing.boundary_stage",
+        "--run-id",
+        run_id,
+        "--namespace",
+        namespace,
+    ]
+    if run_manifest_path is not None:
+        cmd_boundary.extend(["--manifest-path", str(run_manifest_path)])
+
+    cmd_merge = [
+        sys.executable,
+        "-u",
+        "-m",
+        "processing.boundary_merge",
+        "--run-id",
+        run_id,
+        "--namespace",
+        namespace,
+    ]
+    if run_manifest_path is not None:
+        cmd_merge.extend(["--manifest-path", str(run_manifest_path)])
+
+    try:
+        print(f"\nRunning boundary stage for {namespace} (pre-H3 requirement)...")
+        subprocess.run(cmd_boundary, check=True, stdout=sys.stdout, stderr=sys.stderr)
+
+        print(f"Running boundary merge for {namespace}...")
+        subprocess.run(cmd_merge, check=True, stdout=sys.stdout, stderr=sys.stderr)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"\n✗ Boundary pre-H3 stage failed for {namespace} with exit code {e.returncode}")
+        sys.stdout.flush()
+        return False
+    except Exception as e:
+        print(f"\n✗ Boundary pre-H3 stage failed for {namespace}: {e}")
+        sys.stdout.flush()
+        return False
 
 
 def delete_existing_namespace(namespace):
@@ -540,17 +597,73 @@ def ingest_all(
                         )
                     except Exception as e:
                         print(f"  Warning: failed to materialize namespace manifest ({ns}/{script_id}): {e}")
+
+                # Boundary completion is mandatory for osm/ohm before any H3 stage.
+                if should_snapshot and run_id and ns in BOUNDARY_REQUIRED_NAMESPACES:
+                    boundary_ok = _run_boundary_pre_h3_stages(
+                        namespace=ns,
+                        run_id=run_id,
+                        run_manifest_path=run_manifest_path,
+                    )
+                    if not boundary_ok:
+                        if run_manifest_path:
+                            update_namespace_stage_status(
+                                run_manifest_path,
+                                ns,
+                                "boundary",
+                                "failed",
+                                error="boundary stage/merge failed",
+                            )
+                        if ns not in results['failed']:
+                            results['failed'].append(ns)
+                        print(f"Stopping further {ns} scripts due to boundary stage failure")
+                        sys.stdout.flush()
+                        continue
+
+                # For namespaces without boundary stage, explicitly mark stages skipped.
+                if should_snapshot and run_manifest_path and ns not in BOUNDARY_REQUIRED_NAMESPACES:
+                    update_namespace_stage_status(run_manifest_path, ns, "boundary", "skipped")
+                    update_namespace_stage_status(run_manifest_path, ns, "boundary_merge", "skipped")
+
                 if run_manifest_path and should_snapshot:
                     update_namespace_stage_status(run_manifest_path, ns, "extract", "completed")
                     if defer_h3:
-                        update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
+                        if ns in BOUNDARY_REQUIRED_NAMESPACES:
+                            manifest = load_run_manifest(run_manifest_path)
+                            boundary_merge_status = (
+                                manifest.get("namespaces", {})
+                                .get(ns, {})
+                                .get("stages", {})
+                                .get("boundary_merge")
+                            )
+                            if boundary_merge_status == "completed":
+                                update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
+                            else:
+                                update_namespace_stage_status(
+                                    run_manifest_path,
+                                    ns,
+                                    "h3",
+                                    "failed",
+                                    error="boundary_merge must complete before H3",
+                                )
+                        else:
+                            update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
                 if run_id and should_snapshot and defer_h3:
                     try:
+                        h3_status = "pending"
+                        if run_manifest_path and ns in BOUNDARY_REQUIRED_NAMESPACES:
+                            manifest = load_run_manifest(run_manifest_path)
+                            h3_status = (
+                                manifest.get("namespaces", {})
+                                .get(ns, {})
+                                .get("stages", {})
+                                .get("h3", "pending")
+                            )
                         write_stage_event(
                             run_id=run_id,
                             namespace=ns,
                             script_id=script_id,
-                            status="pending",
+                            status=h3_status,
                             stage="h3",
                         )
                     except Exception as e:
@@ -777,6 +890,8 @@ def main():
     print("=" * 80)
     sys.stdout.flush()
 
+    resume_mode = args.resume_run is not None
+
     # In staged mode (--run-id or --resume-run), ES is not required during preprocessing.
     # Authority scripts will write to staged files instead.
     staging_mode = args.run_id is not None or resume_mode
@@ -832,7 +947,6 @@ def main():
     else:
         namespaces = None
 
-    resume_mode = args.resume_run is not None
     if resume_mode:
         if args.run_id:
             print("--run-id cannot be used with --resume-run")

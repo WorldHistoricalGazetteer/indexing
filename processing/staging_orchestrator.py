@@ -51,6 +51,8 @@ def create_run_manifest(manifest_path: Path, run_id: str, selected_namespaces: l
                 "scripts": {},
                 "stages": {
                     "extract": "pending",
+                    "boundary": "pending",
+                    "boundary_merge": "pending",
                     "h3": "pending",
                     "ccode": "pending",
                 },

@@ -23,8 +23,19 @@ from processing.stage_writers import record_script_wall_time, write_runtime_hist
 from processing.staging_orchestrator import load_run_manifest, update_namespace_stage_status
 
 
+BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
+
+
+def _extract_stage_dir(namespace: str) -> Path:
+    base = Path(STAGED_BASE_DIR) / namespace
+    boundary_merged = base / "boundary_merged"
+    if namespace in BOUNDARY_REQUIRED_NAMESPACES and boundary_merged.exists():
+        return boundary_merged
+    return base / "extract"
+
+
 def _iter_extract_docs(namespace: str) -> Iterable[dict[str, Any]]:
-    extract_dir = Path(STAGED_BASE_DIR) / namespace / "extract"
+    extract_dir = _extract_stage_dir(namespace)
     parquet_path = extract_dir / "places.parquet"
     jsonl_path = extract_dir / "places.jsonl"
 
@@ -118,6 +129,20 @@ def run_h3_stage(
     slurm_job_id: str | None = None,
     slurm_array_task_id: str | None = None,
 ) -> dict[str, Any]:
+    if namespace in BOUNDARY_REQUIRED_NAMESPACES:
+        manifest = load_run_manifest(manifest_path)
+        boundary_merge_status = (
+            manifest.get("namespaces", {})
+            .get(namespace, {})
+            .get("stages", {})
+            .get("boundary_merge")
+        )
+        if boundary_merge_status != "completed":
+            raise RuntimeError(
+                f"boundary_merge must be completed before H3 for namespace '{namespace}' "
+                f"(got: {boundary_merge_status})"
+            )
+
     out_dir = Path(STAGED_BASE_DIR) / namespace / "h3"
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / "places.h3.jsonl"
