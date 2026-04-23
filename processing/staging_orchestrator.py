@@ -46,7 +46,16 @@ def create_run_manifest(manifest_path: Path, run_id: str, selected_namespaces: l
         "created_at": datetime.now(timezone.utc).isoformat(),
         "selected_namespaces": selected_namespaces,
         "namespaces": {
-            ns: {"status": "pending", "scripts": {}} for ns in selected_namespaces
+            ns: {
+                "status": "pending",
+                "scripts": {},
+                "stages": {
+                    "extract": "pending",
+                    "h3": "pending",
+                    "ccode": "pending",
+                },
+            }
+            for ns in selected_namespaces
         },
     }
     _atomic_write_json(manifest_path, manifest)
@@ -137,6 +146,36 @@ def update_namespace_checkpoint(
     _atomic_write_json(manifest_path, manifest)
 
 
+def update_namespace_stage_status(
+    manifest_path: Path,
+    namespace: str,
+    stage: str,
+    status: str,
+    *,
+    error: str | None = None,
+    metrics: dict | None = None,
+) -> None:
+    """Update a namespace preprocessing stage status in the run manifest."""
+    manifest = load_run_manifest(manifest_path)
+    ns_entry = manifest.setdefault("namespaces", {}).setdefault(
+        namespace,
+        {"status": "pending", "scripts": {}, "stages": {}},
+    )
+    stages = ns_entry.setdefault("stages", {})
+    stages[stage] = status
+    if error:
+        stage_errors = ns_entry.setdefault("stage_errors", {})
+        stage_errors[stage] = error
+    if metrics:
+        stage_metrics = ns_entry.setdefault("stage_metrics", {})
+        stage_metrics[stage] = metrics
+    _atomic_write_json(manifest_path, manifest)
+
+
+def get_namespace_stage_status(manifest: dict, namespace: str, stage: str) -> str | None:
+    return manifest.get("namespaces", {}).get(namespace, {}).get("stages", {}).get(stage)
+
+
 def get_script_checkpoint(manifest_path: Path, namespace: str, script_id: str) -> str | None:
     """Return status for a namespace/script checkpoint if present."""
     if not manifest_path.exists():
@@ -194,6 +233,25 @@ def check_completion_barrier(manifest: dict) -> tuple[bool, list[str]]:
     selected = manifest.get("selected_namespaces", [])
     ns_data = manifest.get("namespaces", {})
     incomplete = [ns for ns in selected if ns_data.get(ns, {}).get("status") != "completed"]
+    return (len(incomplete) == 0, incomplete)
+
+
+def check_preprocessing_barrier(
+    manifest: dict,
+    required_stages: tuple[str, ...] = ("extract", "h3", "ccode"),
+) -> tuple[bool, dict[str, list[str]]]:
+    """Return whether all selected namespaces completed required preprocessing stages."""
+    selected = manifest.get("selected_namespaces", [])
+    incomplete: dict[str, list[str]] = {}
+    ns_data = manifest.get("namespaces", {})
+    for ns in selected:
+        missing = []
+        ns_stages = ns_data.get(ns, {}).get("stages", {})
+        for stage in required_stages:
+            if ns_stages.get(stage) != "completed":
+                missing.append(stage)
+        if missing:
+            incomplete[ns] = missing
     return (len(incomplete) == 0, incomplete)
 
 

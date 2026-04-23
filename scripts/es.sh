@@ -966,6 +966,11 @@ case "$1" in
         do_ingest "$@"
         ;;
 
+    -h3-stage)
+        shift
+        do_h3_stage_array "$@"
+        ;;
+
     # --- Boundary Pass (manual geometry repair / replay) ---
     -boundary-pass)
         shift
@@ -1194,17 +1199,27 @@ case "$1" in
         echo
         echo "INGESTION (requires staging ES running):"
         echo "  -ingest [OPTIONS]   Submit authority ingestion job to Slurm"
+        echo "  -h3-stage [OPTIONS] Submit decoupled staged H3 derivation as a Slurm array"
         echo
         echo "  Ingestion options (passed to ingest_all_authorities.py):"
         echo "    -n, --namespaces NS   Comma-separated list: gn,wd,pl,tgn,gb,un,osm,nl,dp,iv,loc"
         echo "    --skip-existing       Skip authorities already in index"
         echo "    --check-only          Check data availability only"
+        echo "    --defer-h3            Mark H3 as pending for separate H3 array stage"
+        echo "    --run-id ID           Use explicit run id (needed for chained H3 array)"
+        echo "    --submit-h3-array     Wrapper option: submit dependent -h3-stage after ingest"
+        echo
+        echo "  H3 stage options:"
+        echo "    --run-id ID           Required run id to process"
+        echo "    --dependency JOBID    Optional Slurm dependency (afterok:JOBID)"
         echo
         echo "  Examples:"
         echo "    $0 -ingest                        # Ingest all authorities"
         echo "    $0 -ingest -n gn,wd               # Ingest GeoNames and Wikidata only"
         echo "    $0 -ingest --skip-existing        # Skip already ingested"
         echo "    $0 -ingest --check-only           # Check what's available"
+        echo "    $0 -ingest --defer-h3 --submit-h3-array"
+        echo "    $0 -h3-stage --run-id ingest-20260423T120000Z"
         echo
         echo "  -ingest-boundaries [OPTIONS]  Re-run OSM/OHM geometry completion (alias for -boundary-pass)"
         echo "  -boundary-pass [OPTIONS]      Manual repair/replay of OSM/OHM full boundary geometry"

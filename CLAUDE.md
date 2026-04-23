@@ -16,6 +16,22 @@ WHG is an NEH-funded digital humanities project. The production ES instance
 runs on the University of Pittsburgh Center for Research Computing (CRC), with
 a Django front-end on DigitalOcean proxying to the CRC gateway.
 
+## Agent Runtime Paths (CRC)
+
+When operating on CRC via `ssh crc0`, agents should use these canonical paths:
+
+- **Repository root:** `/ix1/ishi/elastic`
+- **Conda activation script:** `/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh`
+- **Conda env name:** `whg`
+
+Example activation sequence:
+
+```bash
+source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
+conda activate whg
+cd /ix1/ishi/elastic
+```
+
 ---
 
 ## Architecture

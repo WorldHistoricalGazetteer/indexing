@@ -35,8 +35,46 @@ do_ingest() {
 
     echo "Staging ES is running at http://${ES_NODE}:${ES_PORT}"
 
-    # Build the Python command with all passed arguments
-    PYTHON_ARGS="$@"
+    # Parse wrapper-only options; forward the rest to ingest_all_authorities.py
+    local SUBMIT_H3_ARRAY=0
+    local DEFER_H3=0
+    local RUN_ID=""
+    local FORWARD_ARGS=()
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --submit-h3-array)
+                SUBMIT_H3_ARRAY=1
+                shift
+                ;;
+            --defer-h3)
+                DEFER_H3=1
+                FORWARD_ARGS+=("$1")
+                shift
+                ;;
+            --run-id)
+                RUN_ID="$2"
+                FORWARD_ARGS+=("$1" "$2")
+                shift 2
+                ;;
+            *)
+                FORWARD_ARGS+=("$1")
+                shift
+                ;;
+        esac
+    done
+
+    if [ "$SUBMIT_H3_ARRAY" = "1" ] && [ "$DEFER_H3" != "1" ]; then
+        DEFER_H3=1
+        FORWARD_ARGS+=("--defer-h3")
+    fi
+
+    if [ "$SUBMIT_H3_ARRAY" = "1" ] && [ -z "$RUN_ID" ]; then
+        RUN_ID="ingest-$(date -u +%Y%m%dT%H%M%SZ)"
+        FORWARD_ARGS+=("--run-id" "$RUN_ID")
+    fi
+
+    # Build the Python command with all forwarded arguments
+    PYTHON_ARGS="${FORWARD_ARGS[*]}"
 
     # Create a temporary sbatch script
     INGEST_SCRIPT=$(mktemp /tmp/es-ingest-XXXXXX.sbatch)
@@ -115,6 +153,113 @@ SBATCH_EOF
     echo "  tail -f ${STAGING_SLURM_LOGS}/ingest-${JOBID}.*"
     echo
     echo "Note: The staging ES instance must remain running for the duration."
+
+    if [ "$SUBMIT_H3_ARRAY" = "1" ]; then
+        if [ -z "$RUN_ID" ]; then
+            echo "ERROR: expected run id for H3 array submission"
+            return 1
+        fi
+        echo
+        echo "Submitting dependent H3 array stage for run id: $RUN_ID"
+        do_h3_stage_array --run-id "$RUN_ID" --dependency "$JOBID"
+    fi
+}
+
+# =============================================================================
+# H3 STAGE (Slurm array, staged-only)
+# =============================================================================
+
+do_h3_stage_array() {
+    local RUN_ID=""
+    local DEPENDENCY_JOBID=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --run-id)
+                RUN_ID="$2"
+                shift 2
+                ;;
+            --dependency)
+                DEPENDENCY_JOBID="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if [ -z "$RUN_ID" ]; then
+        echo "ERROR: --run-id is required for -h3-stage"
+        return 1
+    fi
+
+    local RUN_MANIFEST="${STAGED_RUNS_DIR}/${RUN_ID}.json"
+    if [ ! -f "$RUN_MANIFEST" ]; then
+        echo "ERROR: Run manifest not found: $RUN_MANIFEST"
+        return 1
+    fi
+
+    local TASK_COUNT
+    TASK_COUNT=$(python3 - <<PY
+import json
+from pathlib import Path
+manifest = json.loads(Path("$RUN_MANIFEST").read_text(encoding="utf-8"))
+print(len(manifest.get("selected_namespaces", [])))
+PY
+)
+
+    if [ -z "$TASK_COUNT" ] || [ "$TASK_COUNT" -le 0 ]; then
+        echo "ERROR: selected_namespaces is empty in $RUN_MANIFEST"
+        return 1
+    fi
+
+    local ARRAY_END=$((TASK_COUNT - 1))
+    local H3_SCRIPT
+    H3_SCRIPT=$(mktemp /tmp/es-h3-stage-XXXXXX.sbatch)
+
+    cat > "$H3_SCRIPT" <<SBATCH_EOF
+#!/bin/bash
+#SBATCH --job-name=es-h3-stage
+#SBATCH --partition=smp
+#SBATCH --time=24:00:00
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --array=0-${ARRAY_END}
+#SBATCH --output=${STAGING_SLURM_LOGS}/h3-stage-%A_%a.out
+#SBATCH --error=${STAGING_SLURM_LOGS}/h3-stage-%A_%a.err
+
+set -e
+
+source "$ENV_FILE"
+$(activate_environment)
+cd "$REPO_DIR"
+
+python -u -m processing.h3_stage --run-id "$RUN_ID"
+SBATCH_EOF
+
+    local SBATCH_ARGS=(--parsable)
+    if [ -n "$DEPENDENCY_JOBID" ]; then
+        SBATCH_ARGS+=("--dependency=afterok:${DEPENDENCY_JOBID}")
+    fi
+
+    local H3_JOBID
+    H3_JOBID=$(sbatch "${SBATCH_ARGS[@]}" "$H3_SCRIPT")
+    rm "$H3_SCRIPT"
+
+    if [ -z "$H3_JOBID" ]; then
+        echo "ERROR: Failed to submit H3 stage array"
+        return 1
+    fi
+
+    echo "Submitted H3 stage array job: $H3_JOBID"
+    echo "  Run ID: $RUN_ID"
+    echo "  Tasks:  0-${ARRAY_END}"
+    echo "Monitor with:"
+    echo "  squeue -j $H3_JOBID"
+    echo "  tail -f ${STAGING_SLURM_LOGS}/h3-stage-${H3_JOBID}_*.out"
 }
 
 # ==============================================================================
