@@ -69,7 +69,7 @@ from processing.staging_orchestrator import (
     check_completion_barrier,
 )
 from processing.stage_writers import write_stage_event
-from processing.stage_writers import write_namespace_places_snapshot_jsonl
+from processing.stage_writers import write_namespace_places_snapshot_parquet
 from processing.namespace_materialize import materialize_namespace_snapshot_manifest
 
 es = Elasticsearch(ES_HOST) if ES_HOST else None
@@ -102,6 +102,23 @@ INGESTION_ORDER = [
     ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
     ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
 ]
+
+FINAL_NAMESPACE_SCRIPT_ID = {
+    "gn": "gn-toponyms",
+    "wd": "wd-geoshapes",
+}
+
+
+def _is_namespace_snapshot_trigger(namespace: str, script_id: str) -> bool:
+    """Return True when a namespace has reached its final local mutator.
+
+    Most namespaces finalize after their `*-places` script. Namespaces with
+    follow-up mutators (currently GeoNames and Wikidata) finalize only after the
+    last namespace-local updater has run.
+    """
+    if namespace in FINAL_NAMESPACE_SCRIPT_ID:
+        return script_id == FINAL_NAMESPACE_SCRIPT_ID[namespace]
+    return script_id.endswith("-places")
 
 
 def delete_existing_namespace(namespace):
@@ -428,9 +445,10 @@ def ingest_all(
             if success:
                 if run_manifest_path:
                     update_namespace_checkpoint(run_manifest_path, ns, script_id, "completed")
-                if write_stage_snapshots and script_id.endswith('-places') and run_id and es is not None:
+                should_snapshot = _is_namespace_snapshot_trigger(ns, script_id)
+                if write_stage_snapshots and should_snapshot and run_id and es is not None:
                     try:
-                        snapshot_meta = write_namespace_places_snapshot_jsonl(
+                        snapshot_meta = write_namespace_places_snapshot_parquet(
                             es_client=es,
                             index_name=PLACES_INDEX,
                             namespace=ns,
@@ -442,11 +460,14 @@ def ingest_all(
                             script_id=script_id,
                             status="snapshot_written",
                             stage="extract",
-                            metrics={"docs_written": snapshot_meta.get("docs_written", 0)},
+                            metrics={
+                                "docs_written": snapshot_meta.get("docs_written", 0),
+                                "parquet_path": snapshot_meta.get("path"),
+                            },
                         )
                     except Exception as e:
                         print(f"  Warning: failed to write staged snapshot ({ns}/{script_id}): {e}")
-                if materialize_namespace_manifest and script_id.endswith('-places') and run_id:
+                if materialize_namespace_manifest and should_snapshot and run_id:
                     try:
                         materialize_namespace_snapshot_manifest(
                             namespace=ns,
@@ -592,9 +613,9 @@ def main():
     parser.add_argument('--resume-run', nargs='?', const='latest',
                         help='Resume from run manifest (optional RUN_ID; default latest)')
     parser.add_argument('--write-stage-snapshots', action='store_true',
-                        help='After successful *-places scripts, write namespace staged extract snapshots (JSONL)')
+                        help='After each namespace reaches its final local mutator, write namespace staged extract snapshots (Parquet)')
     parser.add_argument('--materialize-namespace-manifest', action='store_true',
-                        help='After successful *-places scripts, build namespace materialized snapshot manifest')
+                        help='After snapshot writing, build namespace materialized snapshot manifest')
     parser.add_argument('-d', '--delete-only', action='store_true',
                         help='Delete specified authorities without ingesting')
     group = parser.add_mutually_exclusive_group()
