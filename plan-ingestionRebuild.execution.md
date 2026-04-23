@@ -300,13 +300,13 @@ Tasks:
 
 Refactor three small authorities to the staged extraction pattern:
 
-- [ ] **`authorities/nativeland-places.py`** (nl)
+- [x] **`authorities/nativeland-places.py`** (nl)
   - Extract territory/language/treaty geometry + metadata.
   - Call `write_staged_place_doc(namespace="nl", doc)` instead of `helpers.bulk()`.
   - Geometry-store writes remain (already staged, separate).
   - ~1 min expected runtime.
 
-- [ ] **`authorities/periodo-places.py`** (po)
+- [x] **`authorities/periodo-places.py`** (po)
   - Extract period geometries from Periodo API.
   - Call `write_staged_place_doc(namespace="po", doc)` instead of `helpers.bulk()`.
   - ~1-5 min expected runtime (API dependent).
@@ -323,8 +323,8 @@ Validation gates:
 #### 4c. Remaining Authority Scripts (Phased Refactor)
 
 **Phase 1 (High Priority):**
-- [ ] `authorities/geonames-places.py` (gn) — large, but straightforward SQL iteration.
-- [ ] `authorities/wikidata-places.py` (wd) — large, but straightforward JSON streaming.
+- [x] `authorities/geonames-places.py` (gn) — large, but straightforward SQL iteration.
+- [x] `authorities/wikidata-places.py` (wd) — large, but straightforward JSON streaming.
 - [ ] `authorities/osm-places.py` (osm) — very large, heavy lifting; plan for parallelisation.
 - [ ] `authorities/ohm-places.py` (ohm) — large, similar to osm.
 

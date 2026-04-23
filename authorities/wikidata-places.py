@@ -12,11 +12,11 @@ import os
 
 import orjson  # Much faster than json
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+es = Elasticsearch(ES_HOST, request_timeout=180) if not is_staging_mode() else None
 
 # Pre-compile byte patterns for fast scanning
 SKIP_BYTES = {b'[', b']', b''}
@@ -207,12 +207,6 @@ def create_place_doc_fast(entity, entity_bytes):
         )
         if geom_entry:
             doc['geometries'] = [geom_entry]
-            if geom_entry.get('repr_point'):
-                rp = geom_entry['repr_point']
-                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
-                if h3c:
-                    doc['h3_centroid'] = h3c
-                    doc['h3_cover'] = h3cover
 
     # Add optional fields
     ccodes = []
@@ -270,6 +264,7 @@ def create_place_doc_fast(entity, entity_bytes):
 
 def index_wikidata(file_path, places_index, geoshape_refs_file):
     """Process Wikidata dump - OPTIMIZED."""
+    staged_mode = is_staging_mode()
     place_batch = []
     place_count = 0
     processed = 0
@@ -309,22 +304,30 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                     refs_f.write(orjson.dumps(ref_doc) + b'\n')
                     geoshape_count += 1
 
-                place_batch.append({
-                    '_index': places_index,
-                    '_id': place_id,
-                    '_source': place_doc
-                })
+                if staged_mode:
+                    write_staged_place_doc("wd", place_doc)
+                    place_count += 1
+                else:
+                    place_batch.append({
+                        '_index': places_index,
+                        '_id': place_id,
+                        '_source': place_doc
+                    })
 
-                if len(place_batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                    place_count += success
-                    place_batch = []
+                    if len(place_batch) >= BATCH_SIZE:
+                        if es is None:
+                            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
+                        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+                        place_count += success
+                        place_batch = []
 
             except Exception as e:
                 skipped += 1
                 continue
 
-        if place_batch:
+        if not staged_mode and place_batch:
+            if es is None:
+                raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
             success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
             place_count += success
 
@@ -344,4 +347,5 @@ if __name__ == "__main__":
     print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
 
     index_wikidata(WIKIDATA_FILE, PLACES_INDEX, GEOSHAPE_REFS_FILE)
-    create_checkpoint_snapshot(es, "wikidata_places")
+    if not is_staging_mode() and es:
+        create_checkpoint_snapshot(es, "wikidata_places")

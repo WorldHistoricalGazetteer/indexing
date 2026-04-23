@@ -6,11 +6,11 @@ Index GeoNames places data into Elasticsearch.
 import sys
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import stream_file, create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+es = Elasticsearch(ES_HOST, request_timeout=180) if not is_staging_mode() else None
 
 
 def normalize_lst(name, lang='und'):
@@ -99,12 +99,6 @@ def parse_geonames_line(line):
     geom_entry = enrich_geometry(point_geom, timespans=timespans)
     geometries = [geom_entry] if geom_entry else []
 
-    # H3 spatial index (top-level place fields)
-    h3_centroid, h3_cover = (None, [])
-    if geom_entry and geom_entry.get('repr_point'):
-        rp = geom_entry['repr_point']
-        h3_centroid, h3_cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
-
     # Build document
     doc = {
         "place_id": f"gn:{fields[0]}",
@@ -125,15 +119,12 @@ def parse_geonames_line(line):
         doc["elevation"] = elevation
     if population is not None:
         doc["population"] = population
-    if h3_centroid:
-        doc["h3_centroid"] = h3_centroid
-        doc["h3_cover"] = h3_cover
-
     return doc
 
 
 def index_batches(file_path, index_name):
     """Read file and bulk index in batches."""
+    staged_mode = is_staging_mode()
     batch = []
     count = 0
 
@@ -143,24 +134,32 @@ def index_batches(file_path, index_name):
 
         try:
             doc = parse_geonames_line(line)
-            batch.append({
-                "_index": index_name,
-                "_id": doc["place_id"],
-                "_source": doc
-            })
+            if staged_mode:
+                write_staged_place_doc("gn", doc)
+                count += 1
+            else:
+                batch.append({
+                    "_index": index_name,
+                    "_id": doc["place_id"],
+                    "_source": doc
+                })
 
-            if len(batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-                count += success
-                sys.stdout.write(f"\rProcessed {count:,} places...")
-                sys.stdout.flush()
-                batch = []
+                if len(batch) >= BATCH_SIZE:
+                    if es is None:
+                        raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
+                    success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
+                    count += success
+                    sys.stdout.write(f"\rProcessed {count:,} places...")
+                    sys.stdout.flush()
+                    batch = []
 
         except Exception as e:
             print(f"\nError processing line: {str(e)}")
             continue
 
-    if batch:
+    if not staged_mode and batch:
+        if es is None:
+            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
         success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
         count += success
 
@@ -180,8 +179,9 @@ if __name__ == "__main__":
 
     index_batches(GEONAMES_FILE, PLACES_INDEX)
 
-    print("\nCreating checkpoint snapshot...")
-    create_checkpoint_snapshot(es, "geonames_places")
+    if not is_staging_mode() and es:
+        print("\nCreating checkpoint snapshot...")
+        create_checkpoint_snapshot(es, "geonames_places")
 
     print("\n" + "=" * 80)
     print("COMPLETE")
