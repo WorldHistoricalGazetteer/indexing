@@ -150,6 +150,21 @@ indexing orchestration.
                          │ (per-namespace staged snapshot)
                          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
+│ BOUNDARY COMPLETION (Batch 4/5 bridge)                             │
+│ For osm/ohm only: assemble relation multipolygon geometry from PBF │
+│ and write staged boundary patches (no ES updates).                 │
+│ Output: {namespace}/boundary/places.boundary.jsonl                 │
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ (boundary patches)
+                         ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│ BOUNDARY MERGE (Batch 5)                                            │
+│ Merge boundary patches into staged snapshot before H3 processing.   │
+│ Output: {namespace}/boundary_merged/places.parquet                 │
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ (boundary-complete snapshot)
+                         ▼
+┌─────────────────────────────────────────────────────────────────────┐
 │ H3 DERIVATION (Batch 6, Slurm Array)                               │
 │ For each {namespace}/h3 task: read snapshot + full geom,           │
 │ compute h3_centroid/h3_cover per geometry, write patches.          │
@@ -190,6 +205,7 @@ indexing orchestration.
 
 **Key Properties**:
 - **No ES during Batches 4–7**: All processing on staged files.
+- **Boundary-before-H3 rule**: OSM/OHM boundary completion and merge must finish before H3/ccode.
 - **Per-namespace parallelisation**: Each namespace is independent until the barrier.
 - **Standardised outputs**: Each batch produces pre-defined artefacts (JSONL/Parquet snapshots, patches).
 - **Idempotent, resumable**: Failed stages can re-run; earlier stages' outputs are reused.
@@ -348,6 +364,10 @@ Each refactor follows the same pattern:
 
 #### 4d. Staged Snapshot Consolidation
 
+- [x] Implement `processing/boundary_stage.py` (osm/ohm only):
+  - Assemble relation multipolygon geometry from PBF (no ES updates).
+  - Emit staged boundary patches at `{namespace}/boundary/places.boundary.jsonl`.
+  - Strip any boundary-pass H3 fields so H3 remains a dedicated later stage.
 - [ ] Implement `_consolidate_extracts()` in `processing/stage_writers.py`:
   - After all authority scripts complete (per Batch 3 manifest), merge fragmented JSONL writes into consolidated Parquet per namespace.
   - This is a lightweight IO-only step (no reprocessing).
@@ -361,6 +381,7 @@ Validation gates:
 ### Batch 5: Per-Authority Patch-Collapse and Update Transforms
 
 Targets:
+- (new) `processing/boundary_merge.py` (merge boundary patches into staged snapshot)
 - (new) `processing/h3_merge.py` (merge H3 patches into staged snapshot)
 - (new) `processing/ccode_merge.py` (merge ccode patches into staged snapshot)
 - `processing/namespace_materialize.py` (already exists; finalize manifests)
@@ -369,6 +390,10 @@ Targets:
 Dependencies: Batch 4 (extract finished), Batch 6 (H3 patches available for merge), Batch 7 (ccodes patches available).
 
 Tasks:
+- [x] Implement `boundary_merge.py`:
+  - Reads staged extract snapshot + boundary patch JSONL for namespace.
+  - Merges completed boundary geometry into place docs before H3.
+  - Writes `{namespace}/boundary_merged/places.parquet|jsonl`.
 - [ ] Implement `h3_merge.py`:
   - Reads staged extract snapshot + H3 patch JSONL for a namespace.
   - Merges H3 fields into each place document's geometries.
