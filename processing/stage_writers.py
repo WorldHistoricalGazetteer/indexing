@@ -17,7 +17,9 @@ import pyarrow.parquet as pq
 
 from processing.settings import (
     GEOM_STORE_STAGING_DIR,
+    NAMESPACE_RUNTIME_HISTORY_FILE,
     STAGED_BASE_DIR,
+    STAGED_RUNS_DIR,
     STAGED_STAGE_DIR_TEMPLATE,
 )
 
@@ -37,6 +39,12 @@ def _stage_dir(namespace: str, stage: str) -> Path:
 
 def _utc_now_path_safe() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _runtime_history_path(run_id: str) -> Path:
+    runs_dir = Path(STAGED_RUNS_DIR)
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    return runs_dir / f"{run_id}.runtime.jsonl"
 
 
 def _geometry_staging_artefacts(namespace: str) -> list[str]:
@@ -107,6 +115,151 @@ def write_stage_event(
     with log_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(payload, ensure_ascii=True) + "\n")
     return log_path
+
+
+def write_runtime_history_event(
+    *,
+    run_id: str,
+    event: str,
+    status: str,
+    namespace: str | None = None,
+    script_id: str | None = None,
+    stage: str | None = None,
+    slurm_job_id: str | None = None,
+    slurm_array_task_id: str | None = None,
+    error: str | None = None,
+    details: dict[str, Any] | None = None,
+) -> Path:
+    """Append one JSON event to run-scoped runtime history.
+
+    This complements per-namespace stage logs with controller/job lifecycle
+    history that can be tailed independently from artefact directories.
+    """
+    payload: dict[str, Any] = {
+        "run_id": run_id,
+        "event": event,
+        "status": status,
+        "timestamp": _utc_now_iso(),
+    }
+    if namespace:
+        payload["namespace"] = namespace
+    if script_id:
+        payload["script_id"] = script_id
+    if stage:
+        payload["stage"] = stage
+    if slurm_job_id:
+        payload["slurm_job_id"] = slurm_job_id
+    if slurm_array_task_id:
+        payload["slurm_array_task_id"] = slurm_array_task_id
+    if error:
+        payload["error"] = error
+    if details:
+        payload["details"] = details
+
+    log_path = _runtime_history_path(run_id)
+    with log_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    return log_path
+
+
+def record_script_wall_time(
+    *,
+    namespace: str,
+    script_id: str,
+    run_id: str,
+    started_at: str,
+    finished_at: str,
+    wall_seconds: float,
+    status: str,
+    slurm_job_id: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Append a wall-time record to the **persistent cross-run** namespace runtime
+    history file.
+
+    This file lives at ``NAMESPACE_RUNTIME_HISTORY_FILE`` (default
+    ``{STAGED_BASE_DIR}/namespace-runtime-history.json``) and accumulates timing
+    data across all runs so that Slurm job submission can estimate sensible
+    ``--time`` allocations from historical runtimes.
+
+    Structure::
+
+        {
+          "nl": {
+            "nl-places": [
+              {
+                "run_id": "ingest-20260423T...",
+                "started_at": "2026-04-23T...",
+                "finished_at": "2026-04-23T...",
+                "wall_seconds": 47.3,
+                "status": "completed",
+                "slurm_job_id": "22862393"
+              }
+            ]
+          }
+        }
+
+    The file is updated atomically (write-tmp / replace) so concurrent writers
+    are unlikely to corrupt it, though true concurrent access should use a lock.
+    """
+    history_path = Path(NAMESPACE_RUNTIME_HISTORY_FILE)
+    history_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Load existing history (tolerant of missing or empty file)
+    history: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    if history_path.exists():
+        try:
+            history = json.loads(history_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            history = {}
+
+    record: dict[str, Any] = {
+        "run_id": run_id,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "wall_seconds": round(wall_seconds, 1),
+        "status": status,
+    }
+    if slurm_job_id:
+        record["slurm_job_id"] = slurm_job_id
+    if extra:
+        record.update(extra)
+
+    ns_history = history.setdefault(namespace, {})
+    script_history = ns_history.setdefault(script_id, [])
+    script_history.append(record)
+
+    # Atomic write
+    tmp = history_path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(history, indent=2, sort_keys=True), encoding="utf-8")
+    tmp.replace(history_path)
+
+
+def estimate_wall_time_seconds(namespace: str, script_id: str, default: int = 86400) -> int:
+    """Return an estimated wall-time in seconds for a namespace/script pair.
+
+    Looks up the median of the last 5 completed run times from the persistent
+    runtime history file.  Falls back to *default* (24 h) when no history
+    exists.  Adds a 20 % safety margin.
+    """
+    history_path = Path(NAMESPACE_RUNTIME_HISTORY_FILE)
+    if not history_path.exists():
+        return default
+
+    try:
+        history = json.loads(history_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return default
+
+    records = history.get(namespace, {}).get(script_id, [])
+    completed = [r["wall_seconds"] for r in records if r.get("status") == "completed"]
+    if not completed:
+        return default
+
+    # Median of last 5
+    sample = sorted(completed[-5:])
+    median = sample[len(sample) // 2]
+    return int(median * 1.20)  # 20 % safety margin
 
 
 def write_namespace_places_snapshot_jsonl(

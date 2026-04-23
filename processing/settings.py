@@ -103,6 +103,15 @@ STAGED_RUN_MANIFEST_FILE_TEMPLATE = os.getenv(
     "{runs_dir}/{run_id}.json",
 )
 
+# Persistent cross-run per-namespace wall-time history.
+# Used by Slurm array submission to estimate --time allocations from prior runs.
+# Structure: {namespace: {script_id: [{run_id, started_at, finished_at,
+#             wall_seconds, status, slurm_job_id?}]}}
+NAMESPACE_RUNTIME_HISTORY_FILE = os.getenv(
+    "NAMESPACE_RUNTIME_HISTORY_FILE",
+    f"{STAGED_BASE_DIR}/namespace-runtime-history.json",
+)
+
 
 # Remote Dataset Configurations
 AUTHORITIES = [

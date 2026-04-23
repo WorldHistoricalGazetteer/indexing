@@ -34,7 +34,7 @@ import sys
 import time
 import argparse
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from elasticsearch import Elasticsearch
 
 from processing.settings import (
@@ -67,9 +67,15 @@ from processing.staging_orchestrator import (
     mark_run_resumed,
     build_fanout_plan,
     check_completion_barrier,
+    update_namespace_stage_status,
 )
-from processing.stage_writers import write_stage_event
-from processing.stage_writers import write_namespace_places_snapshot_parquet
+from processing.stage_writers import (
+    estimate_wall_time_seconds,
+    record_script_wall_time,
+    write_namespace_places_snapshot_parquet,
+    write_runtime_history_event,
+    write_stage_event,
+)
 from processing.namespace_materialize import materialize_namespace_snapshot_manifest
 
 es = Elasticsearch(ES_HOST) if ES_HOST else None
@@ -330,6 +336,7 @@ def ingest_all(
     resume_run: bool = False,
     write_stage_snapshots: bool = False,
     materialize_namespace_manifest: bool = False,
+    defer_h3: bool = True,
 ):
     """
     Run all configured ingestions in order.
@@ -371,6 +378,20 @@ def ingest_all(
             mark_run_resumed(run_manifest_path)
         else:
             create_run_manifest(run_manifest_path, run_id, effective_namespaces)
+
+    if run_id:
+        try:
+            write_runtime_history_event(
+                run_id=run_id,
+                event="ingest_run",
+                status="resumed" if resume_run else "started",
+                details={
+                    "selected_namespaces": authorities_to_run or sorted(set(ns for ns, *_ in ingestion_order)),
+                    "defer_h3": defer_h3,
+                },
+            )
+        except Exception as e:
+            print(f"  Warning: failed to write runtime history event (run start): {e}")
 
     results = {'successful': [], 'failed': [], 'skipped': []}
 
@@ -428,6 +449,7 @@ def ingest_all(
 
             if run_manifest_path:
                 update_namespace_checkpoint(run_manifest_path, ns, script_id, "running")
+                update_namespace_stage_status(run_manifest_path, ns, "extract", "running")
             if run_id:
                 try:
                     write_stage_event(
@@ -439,8 +461,37 @@ def ingest_all(
                     )
                 except Exception as e:
                     print(f"  Warning: failed to write stage event ({ns}/{script_id}/running): {e}")
+                try:
+                    write_runtime_history_event(
+                        run_id=run_id,
+                        event="script",
+                        status="running",
+                        namespace=ns,
+                        script_id=script_id,
+                        stage="extract",
+                    )
+                except Exception as e:
+                    print(f"  Warning: failed to write runtime history event ({ns}/{script_id}/running): {e}")
 
+            _script_started_at = datetime.now(timezone.utc)
             success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
+            _script_finished_at = datetime.now(timezone.utc)
+            _wall_seconds = (_script_finished_at - _script_started_at).total_seconds()
+
+            if run_id:
+                try:
+                    record_script_wall_time(
+                        namespace=ns,
+                        script_id=script_id,
+                        run_id=run_id,
+                        started_at=_script_started_at.isoformat(),
+                        finished_at=_script_finished_at.isoformat(),
+                        wall_seconds=_wall_seconds,
+                        status="completed" if success else "failed",
+                        slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+                    )
+                except Exception as e:
+                    print(f"  Warning: failed to record script wall time ({ns}/{script_id}): {e}")
 
             if success:
                 if run_manifest_path:
@@ -485,6 +536,21 @@ def ingest_all(
                         )
                     except Exception as e:
                         print(f"  Warning: failed to materialize namespace manifest ({ns}/{script_id}): {e}")
+                if run_manifest_path and should_snapshot:
+                    update_namespace_stage_status(run_manifest_path, ns, "extract", "completed")
+                    if defer_h3:
+                        update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
+                if run_id and should_snapshot and defer_h3:
+                    try:
+                        write_stage_event(
+                            run_id=run_id,
+                            namespace=ns,
+                            script_id=script_id,
+                            status="pending",
+                            stage="h3",
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write stage event ({ns}/{script_id}/h3 pending): {e}")
                 if run_id:
                     try:
                         write_stage_event(
@@ -496,11 +562,24 @@ def ingest_all(
                         )
                     except Exception as e:
                         print(f"  Warning: failed to write stage event ({ns}/{script_id}/completed): {e}")
+                    try:
+                        write_runtime_history_event(
+                            run_id=run_id,
+                            event="script",
+                            status="completed",
+                            namespace=ns,
+                            script_id=script_id,
+                            stage="extract",
+                            details={"snapshot_trigger": should_snapshot},
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write runtime history event ({ns}/{script_id}/completed): {e}")
                 if ns not in results['successful']:
                     results['successful'].append(ns)
             else:
                 if run_manifest_path:
                     update_namespace_checkpoint(run_manifest_path, ns, script_id, "failed", error="script failed")
+                    update_namespace_stage_status(run_manifest_path, ns, "extract", "failed", error="script failed")
                 if run_id:
                     try:
                         write_stage_event(
@@ -513,6 +592,18 @@ def ingest_all(
                         )
                     except Exception as e:
                         print(f"  Warning: failed to write stage event ({ns}/{script_id}/failed): {e}")
+                    try:
+                        write_runtime_history_event(
+                            run_id=run_id,
+                            event="script",
+                            status="failed",
+                            namespace=ns,
+                            script_id=script_id,
+                            stage="extract",
+                            error="script failed",
+                        )
+                    except Exception as e:
+                        print(f"  Warning: failed to write runtime history event ({ns}/{script_id}/failed): {e}")
                 if ns not in results['failed']:
                     results['failed'].append(ns)
                 # Skip remaining scripts for this namespace, but continue with others
@@ -523,6 +614,15 @@ def ingest_all(
 
             time.sleep(2)
     except KeyboardInterrupt:
+        if run_id:
+            try:
+                write_runtime_history_event(
+                    run_id=run_id,
+                    event="ingest_run",
+                    status="aborted",
+                )
+            except Exception:
+                pass
         if run_manifest_path:
             finalize_run_manifest(run_manifest_path, "aborted")
         raise
@@ -555,6 +655,21 @@ def ingest_all(
         done, incomplete = check_completion_barrier(final_manifest)
         if not done:
             print(f"\nBarrier incomplete (selected not fully completed): {', '.join(incomplete)}")
+
+    if run_id:
+        try:
+            write_runtime_history_event(
+                run_id=run_id,
+                event="ingest_run",
+                status="failed" if results['failed'] else "completed",
+                details={
+                    "successful": sorted(results['successful']),
+                    "failed": sorted(results['failed']),
+                    "skipped": sorted(results['skipped']),
+                },
+            )
+        except Exception as e:
+            print(f"  Warning: failed to write runtime history event (run finished): {e}")
 
     return results
 
@@ -612,10 +727,17 @@ def main():
                         help='List recent run manifests and exit')
     parser.add_argument('--resume-run', nargs='?', const='latest',
                         help='Resume from run manifest (optional RUN_ID; default latest)')
+    parser.add_argument('--run-id',
+                        help='Explicit run id for new runs (useful for external orchestration/dependencies)')
     parser.add_argument('--write-stage-snapshots', action='store_true',
                         help='After each namespace reaches its final local mutator, write namespace staged extract snapshots (Parquet)')
     parser.add_argument('--materialize-namespace-manifest', action='store_true',
                         help='After snapshot writing, build namespace materialized snapshot manifest')
+    # H3 is deferred by default (run as a separate Slurm array after all authority
+    # extract stages complete).  Pass --inline-h3 to compute H3 during ingestion
+    # instead (not recommended for large authorities such as osm/ohm).
+    parser.add_argument('--inline-h3', action='store_true', default=False,
+                        help='Compute H3 inline during ingestion (default: defer to separate Slurm array job via h3_stage.py)')
     parser.add_argument('-d', '--delete-only', action='store_true',
                         help='Delete specified authorities without ingesting')
     group = parser.add_mutually_exclusive_group()
@@ -697,6 +819,9 @@ def main():
 
     resume_mode = args.resume_run is not None
     if resume_mode:
+        if args.run_id:
+            print("--run-id cannot be used with --resume-run")
+            sys.exit(1)
         resume_run_id = None if args.resume_run == 'latest' else args.resume_run
         resolved = resolve_run_manifest_path(Path(STAGED_RUNS_DIR), run_id=resume_run_id)
         if resolved is None:
@@ -709,7 +834,7 @@ def main():
         run_manifest = load_run_manifest(run_manifest_path)
         run_id = run_manifest.get("run_id")
     else:
-        run_id = generate_run_id()
+        run_id = args.run_id or generate_run_id()
         run_manifest_path = Path(
             STAGED_RUN_MANIFEST_FILE_TEMPLATE.format(runs_dir=STAGED_RUNS_DIR, run_id=run_id)
         )
@@ -724,7 +849,8 @@ def main():
                          run_id=run_id,
                          resume_run=resume_mode,
                          write_stage_snapshots=args.write_stage_snapshots,
-                         materialize_namespace_manifest=args.materialize_namespace_manifest)
+                         materialize_namespace_manifest=args.materialize_namespace_manifest,
+                         defer_h3=not args.inline_h3)
 
     if not args.delete_only and not namespaces:
         # Only run deduplication if processing all authorities
