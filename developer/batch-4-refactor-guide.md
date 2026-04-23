@@ -1,5 +1,7 @@
 # Batch 4: Authority Script Refactor Guide
 
+> This document supplements `/plan-ingestionRebuild.execution.md`
+
 ## Overview
 
 Authority scripts are being refactored from **custom ES indexers** to **lightweight staged extractors**.
@@ -83,20 +85,33 @@ print(f"  Total: {count} places processed")
 Refactor steps:
 1. Add imports at top level
 2. Check `is_staging_mode()` inside entry point (e.g., `index_periodo()`)
-3. Wrap each place doc emission in staged-vs-ES logic
-4. Keep ES-direct path for fallback
+3. Wrap each place doc emission in staged-vs-ES logic **<< NOTE: ES fallback to be removed**
+4. Keep ES-direct path for fallback **<< NOTE: ES fallback to be removed**
 
 ---
 
 ## Full Refactor Roadmap (Batch 4c)
 
-### Phase 1: Large Core Authorities (concurrent refactors)
+
+### Phase 0: Canaries
 - ✅ **nl** (Native Land) — 4K records, ~1 min
 - ✅ **po** (Periodo) — ~5K records, ~5 min
-- [ ] **gn** (GeoNames) — ~13M records; should use batched staged writes
-- [ ] **wd** (Wikidata) — ~11M records; streaming refactor
+
+**IMPORTANT NOTE:** These need now to be adjusted by **removing the ES fallback**. Ingestion will from now on only ever be run in staging mode for all authorities.
+
+### Phase 1a: Large Core Authorities (concurrent refactors)
+- ✅ **gn** (GeoNames) — ~13M records; should use batched staged writes
+- ✅ **wd** (Wikidata) — ~11M records; streaming refactor
+- [ ] `geonames-toponyms.py` (auxiliary toponym records)
+- [ ] `wikidata-geoshapes.py` (enrichment, not extraction)
+
+**IMPORTANT NOTE:** These need now to be adjusted by **removing the ES fallback**. Ingestion will from now on only ever be run in staging mode for all authorities. Work began on rescheduling `wikidata-geoshapes.py` to perform patching immediately after the primary ingestion, but is incomplete; nothing has yet been done to implement patching from `geonames-toponyms.py`.
+
+### Phase 1b: Large Core Authorities (concurrent refactors)
 - [ ] **osm** (OpenStreetMap) — ~18M records; may benefit from shard-level parallelisation
 - [ ] **ohm** (OpenHistoricalMap) — ~800K records
+
+**IMPORTANT NOTE:** Work has begun on these, but is incomplete because the handling of subsequent boundary pass patching is only partially implemented.
 
 ### Phase 2: Medium Authorities
 - [ ] TGN (~3M)
@@ -105,8 +120,6 @@ Refactor steps:
 - [ ] Index Villaris (~24K)
 
 ### Phase 3: Auxiliary / Update Scripts
-- [ ] `geonames-toponyms.py` (auxiliary toponym records)
-- [ ] `wikidata-geoshapes.py` (enrichment, not extraction)
 - [ ] `loc-relations.py` (relations-only)
 
 ### Phase 4: WHG Datasets
@@ -156,5 +169,5 @@ After extraction (Batches 4b, Batch 4c), the pipeline continues:
 9. **Batch 11**: Index load from staged snapshots
 10. **Batch 12**: Clustering
 
-All of Batches 5–12 read from staged files, **no direct ES access during staging**.
+All of Batches 5–10 read from staged files, **no direct ES access during staging**.
 
