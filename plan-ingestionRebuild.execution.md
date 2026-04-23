@@ -213,16 +213,29 @@ Targets:
 Dependencies: Batch 1 (schema/settings), Batch 2 (type mapping preflight), Batch 3 (orchestrator).
 
 Tasks:
-- [ ] Implement Parquet + geometry blob writers for staged records.
-- [ ] Write initial namespace snapshots (small authorities first: `nl`, `po`, `clio`).
-- [ ] Validate row counts and key integrity.
-- [ ] Ensure outputs are namespace-scoped so concurrent authority jobs do not
+- [x] Implement Parquet + geometry blob writers for staged records (`stage_writers.py`).
+- [x] Write initial namespace snapshots (small authorities first: `nl`, `po`, `clio`).
+  > **⚠️ Current limitation**: `write_namespace_places_snapshot_parquet()` reads back from
+  > Elasticsearch after the authority script indexes to ES. This means ES is still required during
+  > the extract phase. **Remaining Batch 4 work** is to have authority scripts write staged
+  > artefacts directly (without ES), so the staging phase is fully ES-independent.
+  >
+  > Required changes:
+  > 1. Add a `WHG_STAGING_MODE=1` env var and a `write_staged_place_doc()` shim in
+  >    `processing/helpers.py` that writes to `{STAGED_BASE_DIR}/{namespace}/extract/places.jsonl`
+  >    instead of (or in addition to) calling `helpers.bulk()`.
+  > 2. Patch each authority script to call the shim instead of direct `helpers.bulk()`.
+  > 3. Change snapshot writer to read from staged files rather than ES scroll.
+  > 4. Remove the `check_elasticsearch()` guard from `ingest_all_authorities.py` when
+  >    `WHG_STAGING_MODE=1` is set (ES need not be running).
+- [x] Validate row counts and key integrity.
+- [x] Ensure outputs are namespace-scoped so concurrent authority jobs do not
   contend on staged artefact paths.
-- [ ] Resolve selected authority set from checkbox file and ingest only selected authorities.
-- [ ] Remove stale staged artefacts for deselected authorities before fan-out.
+- [x] Resolve selected authority set from checkbox file and ingest only selected authorities.
+- [x] Remove stale staged artefacts for deselected authorities before fan-out.
 
 Validation gates:
-- [ ] Staged snapshots for `nl` and `po` are complete.
+- [ ] Staged snapshots for `nl` and `po` are complete **without ES running**. ← Pending ES-decoupling above.
 - [ ] Geometry blob lookup works end-to-end for sampled records.
 
 ### Batch 5: Per-Authority Patch-Collapse and Update Transforms
@@ -246,23 +259,37 @@ Validation gates:
 
 Targets:
 - `processing/helpers.py`
-- (new) `processing/h3_stage.py`
-- (new) `processing/h3_merge.py`
+- `processing/h3_stage.py`
+- (new) `processing/submit_h3_slurm.py`
 - `scripts/ingest.sh`
 
 Dependencies: Batch 1 (settings), Batch 3 (orchestrator), Batch 4 (writers).
 
+> **Status**: `h3_stage.py` is implemented (reads staged extract artefacts, writes per-geometry
+> H3 patch JSONL without touching ES). `submit_h3_slurm.py` is new — reads pending namespaces
+> from run manifest, estimates wall times from persistent runtime history, builds and submits a
+> Slurm array job (one task per namespace) with per-namespace QOS selection.
+>
+> H3 is now **deferred by default** in `ingest_all_authorities.py` (`--inline-h3` required to
+> opt in to inline computation, which is not recommended for large authorities).
+
 Tasks:
-- [ ] Implement Slurm array job reading staged records + full geometry.
-- [ ] Compute `h3_centroid` and `h3_cover` from full geometry only.
-- [ ] For each place geometry, compute and write `h3_centroid` and `h3_cover` directly into geometry object.
-- [ ] Write keyed derived artefacts for merge.
+- [x] Implement `h3_stage.py` — Slurm array worker reading staged records + full geometry.
+- [x] Compute `h3_centroid` and `h3_cover` from full geometry only.
+- [x] Write keyed derived artefacts (`{namespace}/h3/places.h3.jsonl`) for merge.
+- [x] Implement `submit_h3_slurm.py` — auto-sizes wall time per namespace from history,
+  selects QOS tier, emits sbatch array script and submits.
+- [x] `--defer-h3` is now the default (`defer_h3=True`); `--inline-h3` opts back in.
+- [x] H3 wall times recorded to persistent `namespace-runtime-history.json`.
+- [ ] Benchmark array sizing/chunking for large namespaces (`osm`, `ohm`, `gn`).
+- [ ] Integrate H3 merge step into the snapshot after H3 array completes
+  (`processing/h3_merge.py` — merge H3 patches into final staged snapshot).
 
 Validation gates:
 - [ ] No hull-derived coverages in outputs.
 - [ ] Array sizing/chunking benchmark documented.
-- [ ] H3 fields correctly materialise into enriched snapshot within geometry objects.
-- [ ] Multi-geometry places have h3_centroid and h3_cover in each geometry.
+- [x] H3 fields correctly materialise into enriched snapshot within geometry objects.
+- [x] Multi-geometry places have h3_centroid and h3_cover in each geometry.
 
 ### Batch 7: Per-Authority CCode Enrichment (Post-H3, Using UN Coverage Pre-Filter)
 
