@@ -19,8 +19,8 @@ import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, OSM_STATE_FILE
+from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
+from processing.settings import ES_HOST, DATA_DIR, OSM_STATE_FILE
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -117,13 +117,6 @@ def create_doc(osm_id, osm_type, tags, geometry):
         )
         if geom_entry:
             doc['geometries'] = [geom_entry]
-            if geom_entry.get('repr_point'):
-                rp = geom_entry['repr_point']
-                h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
-                if h3c:
-                    doc['h3_centroid'] = h3c
-                    doc['h3_cover'] = h3cover
 
     # Types
     types = []
@@ -319,7 +312,8 @@ def index_osm_optimized(pbf_file):
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
-    es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
+    staged_mode = is_staging_mode()
+    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
     tracker = ProgressTracker(OSM_STATE_FILE)
 
     # Signal Handling
@@ -340,7 +334,16 @@ def index_osm_optimized(pbf_file):
         nonlocal indexed_count, failed_count
         if not buffer_list: return
 
+        if staged_mode:
+            for action in buffer_list:
+                write_staged_place_doc("osm", action['_source'])
+                indexed_count += 1
+            buffer_list.clear()
+            return
+
         # Track results
+        if es is None:
+            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
         for success, info in helpers.parallel_bulk(
                 es, buffer_list,
                 thread_count=BULK_THREAD_COUNT,
@@ -385,7 +388,8 @@ def index_osm_optimized(pbf_file):
             flush_buffer()
             tracker.save_state()
 
-            run_integrated_boundary_pass(active_pbf)
+            if not staged_mode:
+                run_integrated_boundary_pass(active_pbf)
 
             print(f"\n\nIndexing complete:")
             print(f"  Documents indexed: {indexed_count:,}")

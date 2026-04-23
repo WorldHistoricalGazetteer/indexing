@@ -325,8 +325,8 @@ Validation gates:
 **Phase 1 (High Priority):**
 - [x] `authorities/geonames-places.py` (gn) — large, but straightforward SQL iteration.
 - [x] `authorities/wikidata-places.py` (wd) — large, but straightforward JSON streaming.
-- [ ] `authorities/osm-places.py` (osm) — very large, heavy lifting; plan for parallelisation.
-- [ ] `authorities/ohm-places.py` (ohm) — large, similar to osm.
+- [x] `authorities/osm-places.py` (osm) — very large, heavy lifting; plan for parallelisation.
+- [x] `authorities/ohm-places.py` (ohm) — large, similar to osm.
 
 **Phase 2 (Medium Priority):**
 - [ ] `authorities/tgn-places.py` (tgn), `authorities/pleiades-places.py` (pl).
