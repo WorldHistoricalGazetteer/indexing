@@ -847,6 +847,55 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
         return None
 
 
+# ============================================================================
+# Staged Extraction Shim: Authority Script Integration
+# ============================================================================
+
+def write_staged_place_doc(namespace: str, doc: dict) -> None:
+    """Write a standardised place document to the staged extract for a namespace.
+
+    Used by authority scripts running in ``WHG_STAGING_MODE=1`` to write place
+    documents to a staged JSONL file instead of indexing to Elasticsearch.
+
+    This function appends to ``{STAGED_BASE_DIR}/{namespace}/extract/places.jsonl``
+    and is the lightweight, standardised way for authority scripts to emit place
+    documents without ES access. The appended documents can later be consolidated
+    to Parquet by batch processes that expect bulk performance.
+
+    Args:
+        namespace (str): Authority namespace (e.g. ``gn``, ``wd``, ``osm``, ``nl``).
+        doc (dict): A place document conforming to the `places` ES schema (minus _index/_id).
+
+    Raises:
+        OSError: If the staged directory cannot be created or the file cannot be written.
+    """
+    import os
+    import json
+    from pathlib import Path
+
+    staged_base = os.environ.get(
+        "STAGED_BASE_DIR",
+        os.path.join(os.environ.get("IX3_BASE", "/vast/ishi"), "staged"),
+    )
+    extract_dir = Path(staged_base) / namespace / "extract"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    out_file = extract_dir / "places.jsonl"
+
+    # Append to JSONL (each doc on its own line)
+    if not isinstance(doc, dict):
+        raise TypeError(f"Expected dict, got {type(doc)}")
+
+    with out_file.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(doc, ensure_ascii=True) + "\n")
+
+
+def is_staging_mode() -> bool:
+    """Check if the current process is running in ``WHG_STAGING_MODE``."""
+    import os
+    return os.environ.get("WHG_STAGING_MODE", "").lower() in ("1", "true", "yes")
+
+
 # Example usage and testing
 if __name__ == "__main__":
     # Test with various geometries

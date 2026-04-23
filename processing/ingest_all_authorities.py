@@ -472,8 +472,12 @@ def ingest_all(
                     )
                 except Exception as e:
                     print(f"  Warning: failed to write runtime history event ({ns}/{script_id}/running): {e}")
-
             _script_started_at = datetime.now(timezone.utc)
+
+            # If running in staged mode, set environment variable for authority scripts
+            if run_manifest_path:
+                os.environ["WHG_STAGING_MODE"] = "1"
+
             success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
             _script_finished_at = datetime.now(timezone.utc)
             _wall_seconds = (_script_finished_at - _script_started_at).total_seconds()
@@ -773,21 +777,32 @@ def main():
     print("=" * 80)
     sys.stdout.flush()
 
-    if not check_elasticsearch():
-        sys.exit(1)
-
-    print("\nChecking available data files:")
-    sys.stdout.flush()
-    available = check_data_files()
-
-    if not args.skip_counts:
-        print("\nCurrent index counts:")
-        sys.stdout.flush()
-        counts = get_index_counts()
+    # In staged mode (--run-id or --resume-run), ES is not required during preprocessing.
+    # Authority scripts will write to staged files instead.
+    staging_mode = args.run_id is not None or resume_mode
+    if not staging_mode:
+        if not check_elasticsearch():
+            sys.exit(1)
     else:
-        print("\nSkipping index counts (--skip-counts specified)")
+        print(f"\nⓘ Staging mode detected (--run-id / --resume-run); ES not required for extract stage")
         sys.stdout.flush()
-        counts = {}
+
+    if not staging_mode:
+        print("\nChecking available data files:")
+        sys.stdout.flush()
+        available = check_data_files()
+
+        if not args.skip_counts:
+            print("\nCurrent index counts:")
+            sys.stdout.flush()
+            counts = get_index_counts()
+        else:
+            print("\nSkipping index counts (--skip-counts specified)")
+            sys.stdout.flush()
+            counts = {}
+    else:
+        print("\nSkipping data file checks and ES counts (staging mode)")
+        sys.stdout.flush()
 
     if args.check_only:
         print("\nCheck complete (--check-only specified)")
