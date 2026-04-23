@@ -92,6 +92,7 @@ INGESTION_ORDER = [
     ('gn', 'geonames-places', 'GeoNames places', 'gn-places'),
     ('gn', 'geonames-toponyms', 'GeoNames toponyms (updates places)', 'gn-toponyms'),
     ('wd', 'wikidata-places', 'Wikidata places', 'wd-places'),
+    ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
     ('tgn', 'tgn-places', 'Getty TGN', 'tgn-places'),
     ('pl', 'pleiades-places', 'Pleiades ancient places', 'pl-places'),
     ('un', 'un-countries', 'UN member countries', 'un-countries'),
@@ -105,7 +106,6 @@ INGESTION_ORDER = [
     ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
     ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
     ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
-    ('wd', 'wikidata-geoshapes', 'Wikidata geoshapes (updates places)', 'wd-geoshapes'),
 ]
 
 FINAL_NAMESPACE_SCRIPT_ID = {
