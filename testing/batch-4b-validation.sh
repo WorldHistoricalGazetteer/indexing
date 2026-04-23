@@ -15,6 +15,11 @@ CONDA_ENV="${CONDA_ENV:-whg}"
 STAGED_BASE_DIR="${STAGED_BASE_DIR:-/vast/ishi/staged}"
 LOG_DIR="${LOG_DIR:-/ix1/ishi/es/staging-logs}"
 
+# Slurm submission defaults
+# Keep these overrideable because cluster configs vary by account/partition.
+SLURM_PARTITION="${SLURM_PARTITION:-smp}"
+SLURM_QOS="${SLURM_QOS:-}"
+
 RUN_LOCAL=0
 if [[ "${1:-}" == "--run-local" ]]; then
   RUN_LOCAL=1
@@ -23,25 +28,66 @@ fi
 # Submit to Slurm by default when run from a login shell
 if [[ -z "${SLURM_JOB_ID:-}" && "$RUN_LOCAL" -eq 0 ]]; then
   mkdir -p "$LOG_DIR"
-  SUBMIT_CMD=(
-    sbatch
-    --job-name whg-b4b-validate
-    --partition htc
-    --qos htc-htc-s
-    --time 04:00:00
-    --nodes 1
-    --ntasks 1
-    --cpus-per-task 4
-    --mem 16G
-    --output "$LOG_DIR/whg-b4b-validate-%j.out"
-    --error "$LOG_DIR/whg-b4b-validate-%j.err"
-    --wrap "bash '$REPO_ROOT/testing/batch-4b-validation.sh' --run-local"
-  )
+
+  submit_once() {
+    local with_partition="$1"
+    local with_qos="$2"
+    local -a cmd=(
+      sbatch
+      --job-name whg-b4b-validate
+      --time 04:00:00
+      --nodes 1
+      --ntasks 1
+      --cpus-per-task 4
+      --mem 16G
+      --output "$LOG_DIR/whg-b4b-validate-%j.out"
+      --error "$LOG_DIR/whg-b4b-validate-%j.err"
+      --wrap "bash '$REPO_ROOT/testing/batch-4b-validation.sh' --run-local"
+    )
+
+    if [[ "$with_partition" -eq 1 && -n "$SLURM_PARTITION" ]]; then
+      cmd+=(--partition "$SLURM_PARTITION")
+    fi
+    if [[ "$with_qos" -eq 1 && -n "$SLURM_QOS" ]]; then
+      cmd+=(--qos "$SLURM_QOS")
+    fi
+
+    "${cmd[@]}"
+  }
 
   echo "Submitting Batch 4b validation to Slurm..."
-  "${SUBMIT_CMD[@]}"
-  echo "Submitted. Check logs in: $LOG_DIR"
-  exit 0
+
+  # Attempt 1: requested partition + qos (if provided)
+  if SUBMIT_OUT=$(submit_once 1 1 2>&1); then
+    echo "$SUBMIT_OUT"
+    echo "Submitted. Check logs in: $LOG_DIR"
+    exit 0
+  fi
+
+  echo "$SUBMIT_OUT"
+  echo "Retrying submission without --qos ..."
+
+  # Attempt 2: drop qos, keep partition
+  if SUBMIT_OUT=$(submit_once 1 0 2>&1); then
+    echo "$SUBMIT_OUT"
+    echo "Submitted. Check logs in: $LOG_DIR"
+    exit 0
+  fi
+
+  echo "$SUBMIT_OUT"
+  echo "Retrying submission with scheduler defaults (no --partition/--qos) ..."
+
+  # Attempt 3: let scheduler choose partition/qos defaults
+  if SUBMIT_OUT=$(submit_once 0 0 2>&1); then
+    echo "$SUBMIT_OUT"
+    echo "Submitted. Check logs in: $LOG_DIR"
+    exit 0
+  fi
+
+  echo "$SUBMIT_OUT"
+  echo "ERROR: Failed to submit Batch 4b validation job after retries"
+  echo "Hint: export SLURM_PARTITION and/or SLURM_QOS to account-valid values, then rerun."
+  exit 1
 fi
 
 # Colors for output
