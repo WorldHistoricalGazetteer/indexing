@@ -4,12 +4,20 @@ Index Native Land Digital data.
 """
 import json, os, sys
 from pathlib import Path
-from processing.helpers import enrich_geometry, compute_area_km2, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_area_km2,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+# Only connect to ES if not in staging mode
+es = Elasticsearch(ES_HOST, request_timeout=180) if not is_staging_mode() else None
 NL_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'nl'), None)
 
 
@@ -54,13 +62,6 @@ def process_territory(feature, namespace='nl'):
         'boundary': 'native',
     }
 
-    if geom_entry and geom_entry.get('repr_point'):
-        rp = geom_entry['repr_point']
-        h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
-        if h3c:
-            place_doc['h3_centroid'] = h3c
-            place_doc['h3_cover'] = h3cover
 
     if area: place_doc['area_km2'] = round(area, 2)
     if 'description' in props: place_doc['description'] = props['description']
@@ -98,13 +99,6 @@ def process_language(feature, namespace='nl'):
         'boundary': 'native',
     }
 
-    if geom_entry and geom_entry.get('repr_point'):
-        rp = geom_entry['repr_point']
-        h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
-        if h3c:
-            place_doc['h3_centroid'] = h3c
-            place_doc['h3_cover'] = h3cover
 
     if area: place_doc['area_km2'] = round(area, 2)
     if 'color' in props: place_doc['display_color'] = props['color']
@@ -141,13 +135,6 @@ def process_treaty(feature, namespace='nl'):
         'boundary': 'native',
     }
 
-    if geom_entry and geom_entry.get('repr_point'):
-        rp = geom_entry['repr_point']
-        h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
-        if h3c:
-            place_doc['h3_centroid'] = h3c
-            place_doc['h3_cover'] = h3cover
 
     if area: place_doc['area_km2'] = round(area, 2)
     if 'Date' in props: place_doc['treaty_date'] = props['Date']
@@ -180,6 +167,9 @@ def index_nativeland_file(json_file, data_type, places_index='places'):
     else:
         print(f"ERROR: Unknown type: {data_type}")
         return
+
+    # Check if running in staged extraction mode
+    staged_mode = is_staging_mode()
 
     places_batch = []
     places_count = 0
@@ -214,23 +204,30 @@ def index_nativeland_file(json_file, data_type, places_index='places'):
                     skipped += 1
                     continue
 
-                places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
+                if staged_mode:
+                    # Write to staged file (no ES)
+                    write_staged_place_doc(namespace='nl', doc=place_doc)
+                    places_count += 1
+                else:
+                    # ES-direct mode (backward compatible)
+                    places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
 
-                if len(places_batch) >= BATCH_SIZE:
-                    try:
-                        success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
-                        places_count += success
-                        places_batch = []
-                    except Exception as e:
-                        print(f"  ERROR: {e}")
-                        places_batch = []
+                    if len(places_batch) >= BATCH_SIZE:
+                        try:
+                            success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
+                            places_count += success
+                            places_batch = []
+                        except Exception as e:
+                            print(f"  ERROR: {e}")
+                            places_batch = []
 
             except Exception as e:
                 print(f"  ERROR {i}: {e}")
                 skipped += 1
                 continue
 
-        if places_batch:
+        # Final batch (ES mode only)
+        if not staged_mode and places_batch:
             try:
                 success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
                 places_count += success
@@ -286,4 +283,6 @@ if __name__ == "__main__":
         print("ERROR: Specify --file and --type, or use --all")
         parser.print_help()
 
-    create_checkpoint_snapshot(es, 'nativeland_places')
+    # Only create checkpoint snapshot if not in staged mode (ES required for this)
+    if not is_staging_mode() and es:
+        create_checkpoint_snapshot(es, 'nativeland_places')

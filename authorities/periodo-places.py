@@ -25,7 +25,13 @@ import requests
 from shapely.geometry import shape, mapping, MultiPolygon
 from shapely.ops import unary_union
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -451,13 +457,6 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
                                      geom_key=f"{place_id}_0")
         if geom_entry:
             doc['geometries'] = [geom_entry]
-            if geom_entry.get('repr_point'):
-                rp = geom_entry['repr_point']
-                h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-                h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
-                if h3c:
-                    doc['h3_centroid'] = h3c
-                    doc['h3_cover'] = h3cover
 
     # Add spatial coverage description
     spatial_labels = []
@@ -484,12 +483,16 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
 
 
 def index_periodo(file_path=None, places_index='places'):
-    """Index PeriodO periods into ES."""
+    """Index PeriodO periods into ES or staged format."""
     print("=" * 80)
     print("PeriodO TEMPORAL PERIODS INGESTION")
     print("=" * 80)
 
-    es = Elasticsearch(ES_HOST, request_timeout=180)
+    # Check if running in staged extraction mode
+    staged_mode = is_staging_mode()
+    
+    # Only connect to ES if not in staging mode
+    es = Elasticsearch(ES_HOST, request_timeout=180) if not staged_mode else None
     data = fetch_periodo_data(file_path)
     spatial_geometry_index = load_periodo_gazetteer_geometries()
 
@@ -539,18 +542,24 @@ def index_periodo(file_path=None, places_index='places'):
                     total_skipped += 1
                     continue
 
-                batch.append({
-                    '_index': places_index,
-                    '_id': doc['place_id'],
-                    '_source': doc,
-                })
+                if staged_mode:
+                    # Write to staged file (no ES)
+                    write_staged_place_doc(namespace='po', doc=doc)
+                    total_indexed += 1
+                else:
+                    # ES-direct mode (backward compatible)
+                    batch.append({
+                        '_index': places_index,
+                        '_id': doc['place_id'],
+                        '_source': doc,
+                    })
 
                 if doc.get('geometries'):
                     with_geometry += 1
                 else:
                     without_geometry += 1
 
-                if len(batch) >= BATCH_SIZE:
+                if not staged_mode and len(batch) >= BATCH_SIZE:
                     success, failed = helpers.bulk(
                         es, batch, raise_on_error=False, stats_only=True
                     )
@@ -578,8 +587,8 @@ def index_periodo(file_path=None, places_index='places'):
                 total_skipped += 1
                 continue
 
-    # Flush remaining
-    if batch:
+    # Flush remaining (ES mode only)
+    if not staged_mode and batch:
         success, failed = helpers.bulk(
             es, batch, raise_on_error=False, stats_only=True
         )
@@ -591,7 +600,9 @@ def index_periodo(file_path=None, places_index='places'):
     print(f"  With geometry: {with_geometry:,}")
     print(f"  Without geometry: {without_geometry:,}")
 
-    create_checkpoint_snapshot(es, 'periodo_places')
+    # Only create checkpoint snapshot if not in staged mode (ES required for this)
+    if not staged_mode and es:
+        create_checkpoint_snapshot(es, 'periodo_places')
 
 
 if __name__ == "__main__":
