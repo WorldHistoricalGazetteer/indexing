@@ -9,6 +9,15 @@ This plan is divided into **PR-sized batches** with explicit dependencies. Phase
 ordered to enable early validation and staging of core infrastructure before
 large-scale data operations (OSM, Wikidata, OHM).
 
+## IMPORTANT: ADDITIONAL REQUIREMENTS TO BE INCORPORATED INTO THIS PLAN
+
+- During (or after if more efficient) H3 computation, a condensed H3 coverage Set
+  should be precomputed for each authority (going forward they are to be known as "gazetteers", in common with all WHG "datasets" and "collections") and stored in the geometry store or as
+  a separate staged artefact. This will enable efficient filtering of authorities
+  during search based on Area filters, and is a prerequisite for the planned
+  Gazetteer selection UI.
+- Following indexing, a full inventory of all indexed gazetteers should be pushed to a new Django API endpoint. This will enable Django to take over the role described below for a markdown file which currently controls authority selection for staging and indexing. This API-driven approach will be more robust and maintainable than the current markdown file, which is a temporary expedient.
+
 ## Execution Model
 
 - **Global preflight**: establish the selected authority set, shared config,
