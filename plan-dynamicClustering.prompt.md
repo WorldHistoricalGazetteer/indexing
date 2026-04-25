@@ -1,23 +1,30 @@
-# Plan: Dynamic Query-Time Clustering with Precomputed Similarity Graph and Client-Side Threshold Control
+# Plan: Layered Co-Reference Recovery with Server-Side Dynamic Clustering and Optional Client-Side Reactivity
 
 ## Introduction
 
-WHG v3.2 presents search results as a flat list of individual place records — one per authority per real-world place. A search for "Paris" returns separate entries from GeoNames, Wikidata, OSM, TGN, and Pleiades, forcing the user to mentally deduplicate dozens of records that all refer to the same city. The current v3.5 clustering pipeline partially addresses this by pre-computing fixed equivalence clusters and storing static membership assignments in a `clusters` ES index, but this approach has fundamental limitations:
+WHG v3.2 presents search results as a flat list of individual place records — one per authority per real-world place. A search for "Paris" returns separate entries from GeoNames, Wikidata, OSM, TGN, and Pleiades, forcing the user to mentally deduplicate dozens of records that all refer to the same city. The current v3.5 clustering pipeline partially addresses this by precomputing fixed equivalence clusters and storing static membership assignments in a `clusters` ES index, but this approach has fundamental limitations: a single scoring threshold is baked in, the grouping is binary rather than tunable, the similarity model is opaque, and the cost of maintaining a 47M-record materialised pairwise graph is high and brittle in the face of re-ingestion.
 
-- **The threshold is baked in.** A single scoring cutoff determines what gets clustered. Users researching ancient Mediterranean geography need different grouping than users browsing modern administrative divisions — but there is no way to adjust sensitivity.
-- **Clustering is all-or-nothing.** The current "Group linked records" toggle in the Data Sources panel is a binary switch. There is no middle ground between "show everything flat" and "apply the pre-computed clustering."
-- **The similarity model is opaque.** Users cannot understand or influence what "similar enough to group" means. They cannot prioritise spatial proximity over name similarity, or vice versa.
-- **The architecture does not scale to 47M records.** Pre-computing and storing cluster membership for every place is expensive and brittle — any re-ingestion invalidates the entire membership index.
+An earlier iteration of this plan attempted to address these limitations by retaining the offline pairwise graph but deferring the final clustering decision to query time, with a per-query subgraph extracted from a precomputed adjacency-list store and a UI threshold slider driving Union-Find on the client. That design was workable but carried substantial machinery: top-K neighbour docs per place, edge symmetrisation logic, baseline cluster precomputation, an enriched `place_graph` index, and a careful payload architecture shipping per-edge signal breakdowns to the browser.
 
-This plan replaces the static clustering model with a **materialised similarity graph** that defers final grouping decisions to query time and ultimately to the user's browser. The core insight: do not ask "which places are the same?" offline and store the answer. Instead, ask "which places *might* be the same, and how similar are they across multiple dimensions?" offline, store the weighted evidence, and let the user decide what "same enough" means at search time via an interactive threshold slider and per-facet emphasis controls.
+This revision proposes a substantially simpler architecture, arrived at through a sequence of observations: that Symphonym's role at *discovery* time already collapses cross-script and orthographic variants into shared retrieval neighbourhoods, so co-reference recovery is largely a discovery problem rather than a post-discovery clustering problem; that the residual cases where co-referents fail to surface together (historical-name pairs, rebrandings, sparse cross-lingual records) can be addressed by a user-triggered second-phase toponym expansion that uses the toponyms index itself as the implicit similarity graph; that authority-asserted equivalence is qualitatively different from inferred similarity and deserves separate treatment; and that contributor-proposed clustering, fed back into the reconciliation store, lets the platform improve over time by the route of letting researchers say what they know rather than the route of inferring it from weak signals.
 
-Simultaneously, this plan externalises full geometries from ES to the VAST filesystem, introduces H3 spatial indexing for fast blocking and containment prefiltering, and enriches place records with AAT type hierarchy metadata — all changes that reduce ES index size, improve query performance, and prepare the data model for the eventual v4 migration to a native graph database.
+The result is a layered architecture in which each mechanism handles a specific slice of the co-reference problem with no overlapping responsibility:
+
+- **Symphonym discovery** retrieves candidates including phonetic, transliteration, and orthographic variants of the query, ensuring that cross-script and cross-orthographic co-referents reach the result set together rather than separately.
+- **Hard-link expansion** pulls in authority-asserted equivalents (sameAs, exactMatch, contributor reconciliation) for places already in the result set, recovering cases where co-referents share no toponym but are linked by explicit assertion.
+- **Server-side dynamic clustering** groups the result set at query time using available per-hit signals (toponym similarity, spatial proximity, temporal overlap, AAT type similarity, link intersection), with the clustering threshold driven by user choice and the scoring cached for reactive slider control.
+- **User-triggered Phase 2 toponym expansion** broadens the candidate pool when the user is dissatisfied with Phase 1 results or wishes to experiment, by issuing follow-up Symphonym searches for every toponym co-attested at any Phase 1 hit.
+- **User-proposed clustering** captures the contested residue: where automatic mechanisms have not grouped two records that the researcher recognises as co-referent, the user can propose a link, which enters the contributor reconciliation store and becomes a hard link for future queries.
+
+The materialised pairwise graph and the neighbour-doc machinery are removed entirely. The offline pipeline shrinks to hard-link harvesting (Phases 1A and 1B from the prior design) and Symphonym index maintenance, both of which are cheap and re-ingestion-tolerant. The architecture pre-figures the v4 graph-database migration rather than diverging from it, since query-time clustering with a thin hard-links overlay maps directly onto graph traversal in ArangoDB.
+
+Simultaneously, this plan retains the geometry, H3, and AAT enrichment work from the prior design: full geometries move out of ES into the VAST filesystem, H3 indexing supports fast spatial blocking, and AAT type metadata enables type-similarity scoring. These changes stand on their own merits independently of how clustering is performed and are described in §10–§12 below.
 
 ---
 
-**Summary of changes:**
+## Summary of Changes
 
-Replace the current static `clusters` index (which stores fixed membership assignments at a single threshold) with a **precomputed similarity graph** plus lightweight query-time and client-side clustering. The goal: when a user searches, results can be grouped on-the-fly according to a UI-controlled similarity slider (θ ∈ [0,1]), and the grouping updates interactively without re-querying the server. The existing 4-phase offline pipeline (hard links → exact toponyms → phonetic similarity → composite scoring + graph clustering) is retained for building the similarity graph, but the final clustering step becomes query-dependent rather than statically precomputed. Simultaneously, move full geometries out of ES into a **chunked WKB store on the VAST filesystem** (`/vast/ishi/`), replacing the `geom` field with a `has_geom` boolean and a stacked prefilter pipeline (H3 → bbox → hull → VAST read) for precise spatial operations.
+Replace the static `clusters` index and the precomputed similarity graph with a much smaller hard-link overlay and query-time scoring. Discovery and clustering both run at query time, with Symphonym handling cross-script and orthographic variation at the discovery stage and dynamic clustering operating over the resulting candidate set. A user-triggered Phase 2 broadens the candidate pool when needed; user-proposed clustering captures the contested residue. Geometry, H3, and AAT changes from the prior plan are retained.
 
 ---
 
@@ -25,239 +32,117 @@ Replace the current static `clusters` index (which stores fixed membership assig
 
 ```
 Offline pipeline (batch)
-  ├── Phase 1: Harvest hard links (authority sameAs, contributor reconciliation)
-  ├── Phase 2: Exact toponym co-attestation
-  ├── Phase 3: Phonetic similarity (Symphonym KNN)
-  └── Phase 4: Composite scoring → sparse similarity graph (persisted)
+  ├── Phase 1A: Authority hard links (relations with sameAs/closeMatch/exactMatch)
+  ├── Phase 1B: Contributor reconciliation links (WHG Django PostgreSQL)
+  └── Hard-links overlay maintained as a small, re-ingestion-tolerant view
 
 Query time (server)
-  ├── Step 1: Discovery (toponyms index — BM25 or Symphonym KNN)
-  ├── Step 2: Filtering + aggregations (places index)
-  ├── Step 3: Enrichment (toponyms + graph neighbors)
-  └── Step 4: Return compact clustering-ready payload
+  ├── Step 1: Discovery (toponyms index — Symphonym KNN or BM25)
+  ├── Step 2: Hard-link expansion (pull in authority-asserted equivalents)
+  ├── Step 3: Filtering + aggregations (places index)
+  ├── Step 4: Pair scoring within result set (H3-blocked, signal-decomposed)
+  ├── Step 5: Server-side Union-Find at requested threshold
+  └── Step 6: Return clustered results (and optionally edge list for reactive UI)
+
+User-triggered Phase 2 (server, opt-in)
+  ├── Collect toponym union of Phase 1 hits
+  ├── Issue expanded discovery search across union
+  ├── Re-cluster combined Phase 1 + Phase 2 set
+  └── Return expanded clustered results
 
 Client (browser)
-  ├── Receive per-result facet vectors + precomputed neighbor edges
-  ├── Build local similarity subgraph (pruned)
-  ├── Apply user-controlled threshold (slider)
-  ├── Union-Find clustering on filtered subgraph
-  └── Update display interactively (no round-trip)
+  ├── Default: receive clustered results, display
+  ├── Reactive option: receive scored edges, run Union-Find on slider change
+  ├── User actions: trigger Phase 2, propose links, unpropose links
+  └── Proposed links flow back to reconciliation store
 ```
 
 ---
 
-## 1. Multi-Facet Similarity Representation
+## 1. Discovery: Symphonym at the Front
 
-Each place carries separable, compact similarity signals rather than a single monolithic embedding. All are indexed at ingestion time (no new infrastructure cost since a full re-ingestion is planned).
+Discovery is the layer that does the most work for co-reference, and the architecture relies on it doing so. Symphonym's phonetic embedding space collapses transliteration and orthographic variants into tight retrieval neighbourhoods, which means that a query in any script or spelling tends to surface co-referent records carrying any of the equivalent forms.
 
-### 1a. Toponym similarity
+A query for "Beijing" retrieves records carrying "北京", "Peking", "Pékin", "Pequim", and other phonetically near-equivalent forms, because all of them sit close to "Beijing" in the embedding space. A query for "Москва" retrieves records carrying "Moscow", "Moscou", "Moskau", "Mosca", for the same reason. This is precisely the cross-script case that an offline pairwise-similarity graph would otherwise have to identify and store; Symphonym makes it a property of retrieval rather than a property of stored similarity.
 
-Handled by the `toponyms` index: Symphonym 128-d int8 embeddings + BM25 text fields. At query time the server computes toponym-match scores per place_id during discovery (Step 1). For client-side **phonetic re-scoring** — allowing the user to type a name variant and see how phonetically similar it is to each result's names — a compressed Symphonym embedding is included in the per-hit payload (see §5a). The `embed()` endpoint on the gateway produces the query-side embedding on demand.
+The cases Symphonym discovery does *not* handle by itself are those where the bridging name is not phonetically related to the query: "Lutèce" and "Paris" are not phonetic neighbours, and a query for either retrieves only records carrying that specific name or its phonetic neighbours. "Constantinople" and "Istanbul" are similarly disjoint. These cases require either hard-link expansion (§2) or user-triggered Phase 2 expansion (§5) to bring the co-referents into a shared result set.
 
-### 1b. Spatial — H3 multi-resolution cells
+### 1a. Discovery returns
 
-Add H3 fields to the `places` schema for fast spatial blocking and coarse containment:
+The discovery step returns the top N hits ranked by Symphonym query relevance (or BM25 for exact-match queries), with N capped at a configurable limit (default 200; see §3 for the rationale on this cap). Each hit carries the per-hit metadata described in §4 below.
 
-- `h3_centroid` (`keyword`) — H3 cell ID at a reference resolution (e.g. r7) for the representative point.
-- `h3_cover` (`keyword`, multi-valued) — compacted H3 cell IDs covering the full geometry. For point geometries this equals the centroid cell. For polygons, use `h3.polyfill()` + `h3.compact()` to avoid explosion on continental geometries. Cap at a maximum resolution to prevent massive arrays.
+### 1b. No changes to the toponyms index
 
-Multi-resolution buckets (r5, r7, r9) can be added later but are not required initially — compacted covers already span multiple resolutions.
-
-**Why H3 rather than only bbox/geo_shape:** H3 `terms` filters in ES are extremely fast (inverted index lookups), enable spatial blocking for client-side clustering (same cell = candidate pair), and provide resolution-adaptive containment. They form the first layer of a stacked prefilter pipeline: H3 → bbox (`bounds`) → hull → full geometry (VAST read). See §16 for the complete containment pipeline.
-
-### 1c. Temporal
-
-Already present: `toponyms[].timespans[].start.in` / `end.in` (nested integers on the `places` index). The gateway already filters on these. Temporal similarity between two places is computed during offline edge scoring (§2b) and baked into the composite edge weight — the client does not recompute it. For display purposes, the server returns a flattened temporal summary per result (see §5).
-
-### 1d. Type similarity — AAT depth and ancestor encoding
-
-Add to the `places` schema within `types[]` (nested):
-
-- `aat_id` (`integer`) — the mapped AAT concept ID (from the type system mapping pipeline). Null if unmapped.
-- `aat_depth` (`integer`) — depth in the AAT hierarchy (primary path).
-- `aat_ancestors` (`integer`, multi-valued) — materialized ancestor set (all ancestors via any path, deduplicated). Stored as a flat array for efficient set intersection.
-
-These are derivable from the `types` ES index (which already stores `depth`, `ancestors`, `path` per AAT concept). The `processing/aat_lookup.py` helper (from the consolidateBoundaries plan) computes these at ingestion time.
-
-**Offline type similarity** (baked into edge scores) uses the Wu-Palmer formula:
-
-```
-S_type = 2 * depth(LCA) / (depth(a) + depth(b))
-```
-
-where LCA is the lowest common ancestor, found as the deepest node present in both `aat_ancestors` arrays. AAT is nominally a tree but has weak DAG-like cross-links in practice; storing the full ancestor **set** (not just the primary path) handles this correctly. The intersection is computed offline during edge scoring — the client receives the pre-normalised type similarity component in the edge signal breakdown and does not recompute LCA.
-
-### 1e. Authority links (hard constraints)
-
-Already present: `links[]` and `relations[]` on the `places` index carry explicit cross-authority identifiers (e.g. Wikidata Q-IDs, GeoNames IDs). The offline pipeline harvests these as hard links (score = 1.0). At query time, shared authority link IDs between two results set `S_links ≈ 1` — functioning as hard or near-hard clustering constraints.
+The toponyms index continues to store Symphonym int8 embeddings and BM25 text fields as in the current v3.5 design. The Symphonym extensions for the 20+ languages already covered remain in place.
 
 ---
 
-## 2. Precompute a Sparse Similarity Graph (Offline)
+## 2. Hard-Link Expansion
 
-The existing 4-phase clustering pipeline (`clustering/`) is adapted to produce a **sparse similarity graph** rather than final cluster assignments.
+Hard links are authority-asserted equivalences: `sameAs`, `closeMatch`, `exactMatch` relations between place records, plus contributor reconciliation links from the WHG PostgreSQL store. They differ from inferred similarity in kind, not just in degree: they represent ground-truth identity claims made by gazetteer maintainers or contributing scholars, and they are citable, revertible, and version-tracked. The architecture treats them as first-class identity assertions rather than as one signal among many.
 
-### 2a. Retain Phases 1–3 unchanged
+### 2a. Offline harvesting
 
-- **Phase 1A**: Authority hard links (relations with sameAs/closeMatch/exactMatch).
-- **Phase 1B**: Contributor reconciliation links (WHG Django PostgreSQL).
-- **Phase 2**: Exact toponym co-attestation (shared toponym_id, spatially proximate).
-- **Phase 3**: Phonetic similarity (Symphonym KNN, spatially proximate).
+The existing Phase 1A and Phase 1B logic from the prior offline pipeline is retained:
 
-These phases generate candidate pairs with scored evidence signals — exactly the blocking step that reduces comparisons by orders of magnitude.
+- **Phase 1A** harvests authority `sameAs`/`closeMatch`/`exactMatch` relations from the `places` index `relations[]` field.
+- **Phase 1B** harvests contributor reconciliation decisions from the WHG Django PostgreSQL database, keyed on contributor place_id pairs.
 
-### 2b. Adapt Phase 4: Score but do not cluster
+The output is a flat hard-links table, indexed by place_id, with each entry listing the place_ids asserted to be equivalent (with provenance: which authority or contributor made the assertion, and at what confidence). This is small (orders of magnitude smaller than the prior pairwise-graph index) and cheap to rebuild from source on re-ingestion.
 
-Currently Phase 4 computes composite scores and then runs connected components + DBSCAN spatial sub-clustering to produce static membership docs. Under the new design:
+### 2b. Storage
 
-- **Keep** composite scoring (`scoring.py`): the weighted combination of signals (toponym exact, Symphonym similarity, spatial distance, type match, ccode overlap) produces a single `score` per pair.
-- **Keep** pairwise link docs in the `place_graph` index (doc_type = `pairwise`).
-- **Remove** static membership docs (doc_type = `membership`). These become query-time artifacts.
-- **Add** a top-K neighbor list per place (see §2c).
-
-### 2c. Persist per-place neighbor lists
-
-After scoring all pairwise docs, build a per-place adjacency list of the top-K neighbors (K ≈ 20–100) with edge weights. Store these as a new document type in the `place_graph` index:
+Hard links are stored as a new lightweight `hard_links` document type in the ES `place_graph` index (renamed from `clusters` for semantic clarity, even though the index now holds only this overlay). Each doc:
 
 ```json
 {
-  "doc_type": "neighbors",
-  "place_id": "gn:2988507",
-  "namespace": "gn",
-  "neighbors": [
-    {"place_id": "wd:Q90", "score": 0.95,
-     "s": {"n": 0.98, "sp": 0.92, "t": 0.85, "ty": 1.0, "l": 1.0}},
-    {"place_id": "osm:n12345", "score": 0.87,
-     "s": {"n": 0.90, "sp": 0.95, "t": null, "ty": 0.78, "l": 0.0}},
-    ...
+  "doc_type": "hard_links",
+  "place_id": "wd:Q90",
+  "namespace": "wd",
+  "links": [
+    {"place_id": "gn:2988507", "type": "sameAs", "source": "wikidata"},
+    {"place_id": "tgn:7008038", "type": "exactMatch", "source": "wikidata"},
+    {"place_id": "whg:contrib:abc123", "type": "sameAs", "source": "contributor:user42"}
   ],
-  "algorithm_version": "graph_v1.0",
   "created_at": "..."
 }
 ```
 
-This is the materialized adjacency list store — a domain-aware weighted similarity graph. At query time, the server fetches neighbor docs for result-set places in a single `terms` query.
+No scoring, no signal breakdown, no symmetrisation logic beyond ensuring both endpoints have entries pointing at each other. The `pairwise` and `neighbors` document types from the prior design are removed.
 
-### 2c′. Edge symmetrisation (critical)
+### 2c. Query-time expansion
 
-Top-K neighbor lists are inherently asymmetric: A may include B in its top-K, but B may not include A. This creates order-dependent clustering where Union-Find results change depending on which side's neighbor doc is read first.
+After the discovery step (§1), the gateway fetches the hard-link docs for all result-set place_ids in a single ES `terms` query. The union of linked place_ids, deduplicated against the existing result set, identifies places to pull in as expanded hits. The `places` documents for these are fetched (with the same metadata enrichment as discovery hits) and added to the response.
 
-**Required fix:** symmetrise edges during neighbor doc construction. For each pair (A, B), if A→B appears in A's top-K **or** B→A appears in B's top-K (or both), include the edge in **both** neighbor docs with `score = max(score_A→B, score_B→A)`. This ensures the graph is undirected and clustering is stable under threshold changes.
+A cap on hard-link expansion size (e.g. result-set size + 50%) prevents pathological cases where a heavily-linked record (a famous city with sameAs assertions to dozens of authorities) inflates the result set unboundedly. Expansion proceeds in priority order: contributor links first (they represent explicit human judgement), then authority `sameAs`, then `exactMatch`/`closeMatch`. Truncation, if it occurs, drops the weakest authority assertions first.
 
-**Degree truncation.** Symmetrisation can create degree imbalance — hub places (e.g. a major city referenced by many records) may accumulate far more than K neighbors, while peripheral records have few. To keep the client payload predictable, truncate per-node degree to `K_max_client` (e.g. 50) after symmetrisation, retaining the highest-scoring edges.
+### 2d. Provenance carried through to the response
 
-**Note on stored asymmetry.** Truncation can make the stored neighbor docs asymmetric: if hub A has 200 edges and truncates to 50, it may drop its edge to B, while B (with only 5 edges) retains its edge to A. However, this does **not** affect query-time symmetry because the gateway's subgraph extraction step (§10b) collects edges from **all** fetched neighbor docs — if B's doc includes the B→A edge, it appears in the response regardless of whether A's doc was truncated. The only scenario where an edge is truly lost is when **both** endpoints independently truncate the edge to each other (both are high-degree hubs that rank the mutual edge below their respective top-50). This is rare in practice: if both places are hubs with 200+ edges, the edge between two hubs is typically high-scoring and survives truncation on both sides. The worst-case impact is a small number of lost edges between moderately-connected hubs — acceptable given the payoff in payload predictability.
-
-### 2d. Optionally precompute baseline clusters
-
-Run connected components at a **high threshold** (e.g. 0.9) offline to identify near-certain identity groups. Store as a lightweight `baseline_cluster_id` on each neighbor doc. These provide instant grouping for obvious matches and a starting layer for client-side refinement (initial unions in the Union-Find).
-
-**Link-dominated construction.** Baseline clusters must be constructed using only **authority link signals** (`s.l`) and optionally very high toponym signals (`s.n ≥ 0.95`), not the full composite score with arbitrary weights. This is essential because the client can reweight facets arbitrarily — a user who sets `w_spatial` high and `w_name` low would find that baseline clusters (built with different weighting) contradict their semantic intent. By restricting baseline clusters to link-dominated evidence (the strongest and least subjective identity signal), they remain valid regardless of how the user tunes the emphasis sliders.
-
-### 2e. Edge retention threshold
-
-Only persist pairwise docs and neighbor entries where the composite score exceeds a floor (e.g. ε = 0.3). Edges below this threshold are unlikely to be useful even at the loosest user settings and would waste storage and query bandwidth.
+Each expanded hit is flagged with its expansion provenance: `via_hard_link: {source: "wikidata", linked_from: "wd:Q90"}`. This lets the UI display the record with appropriate context (e.g. "added because Wikidata asserts this is the same place as a hit in your results") and lets the user revert a problematic link if the assertion turns out to be wrong.
 
 ---
 
-## 3. Schema Changes
+## 3. Result-Set Sizing
 
-### 3a. `places` index (`schemas/places.json`)
+A central design decision in this revision is to cap the result set more tightly than the prior plan envisaged. The rationale is straightforward: discovery is assumed to do its job well, meaning that the top-N hits represent the strongest matches for the query, and the marginal value of hits beyond rank N falls off rapidly in interactive search use cases. A tighter cap reduces clustering compute, payload, and visual clutter, while sacrificing little of substance for the dominant use case.
 
-Within the existing `geometries[]` nested object:
+### 3a. Default cap
 
-- **Remove** the `geom` field (`geo_shape`). Full geometries are no longer stored in ES (see §16).
-- **Add** `has_geom` (`boolean`, default `false`) — when `true`, indicates that a full geometry for this geometry entry exists on the VAST filesystem. When `false`, `repr_point` is the only geometry supplied by the authority.
-- **Retain** `repr_point` (`geo_point`), `hull` (`geo_shape`), `bounds` (`float` array), `timespans` (nested).
+The default discovery cap is **200 hits**, plus up to 50% expansion via hard links, giving a maximum result-set size of ~300 records before clustering. This compares favourably to the prior plan's 500-hit budget while remaining well above the threshold at which research-meaningful results typically exhaust themselves.
 
-Add new top-level fields:
+### 3b. Reconciliation path
 
-- `h3_centroid` (`keyword`) — H3 cell at reference resolution for the representative point.
-- `h3_cover` (`keyword`, multi-valued) — compacted H3 coverage cells.
+Programmatic reconciliation (OpenRefine, scripted ETL) sometimes needs deeper recall than interactive search. The reconciliation endpoint accepts an explicit `result_limit` parameter overriding the default, with a hard ceiling at 500 to bound server cost. Reconciliation requests at the higher cap pay correspondingly more in scoring time but operate on the same code path.
 
-Within the existing `types[]` nested object, add:
+### 3c. User-triggered Phase 2
 
-- `aat_id` (`integer`) — mapped AAT concept ID.
-- `aat_depth` (`integer`) — AAT hierarchy depth.
-- `aat_ancestors` (`integer`, multi-valued) — materialized ancestor set (all ancestors, deduplicated).
-
-### 3b. `place_graph` index (replaces `clusters`)
-
-Rename the `clusters` index to `place_graph` to reflect its true role as a **materialized adjacency list store** (weighted graph edges), not a cluster assignment table. This prevents semantic confusion and eases v4 migration where these become native graph edges.
-
-The `place_graph` index contains two document types:
-
-**Pairwise docs** (retained from the existing pipeline):
-- `doc_type`: `"pairwise"` — scored evidence for a pair of places.
-- All existing pairwise fields unchanged (`place_id_a`, `place_id_b`, `score`, `signals`, etc.).
-
-**Neighbor docs** (new):
-- `doc_type`: `"neighbors"` (keyword)
-- `place_id`: the place this adjacency list belongs to (keyword)
-- `namespace`: extracted from place_id (keyword)
-- `neighbors`: object array, each `{place_id, score, s}` where `s` is a signal breakdown `{n, sp, t, ty, l}` (normalised per-facet scores). Stored as a non-indexed (enabled: false) object to avoid nested overhead, since these are only fetched by place_id, never queried internally.
-- `baseline_cluster_id`: optional (keyword) — precomputed high-threshold cluster.
-- `baseline_cluster_size`: optional (integer).
-- `algorithm_version`, `created_at`: as existing.
-
-Remove the `membership` document type — static cluster assignments are replaced entirely by query-time dynamic clustering.
-
-### 3c. No changes to `toponyms` index
-
-Symphonym embeddings and attestation arrays remain as-is.
-
-### 3d. No changes to `types` index
-
-AAT depth, ancestors, and path are already stored there. The new `aat_*` fields on `places.types[]` are derived from this index at ingestion time.
+Phase 2 expansion (§5) can grow the result set further by pulling in records sharing toponyms with Phase 1 hits. The Phase 2 cap is set independently and defaults to doubling the Phase 1 size: a 200-hit Phase 1 result with Phase 2 triggered yields up to ~400 records before clustering (200 from Phase 1, plus up to ~100 from hard-link expansion, plus up to ~100 from Phase 2 expansion, with overall dedup).
 
 ---
 
-## 4. Gateway Changes
+## 4. Per-Hit Payload
 
-### 4a. Search endpoint (`POST /api/search`)
-
-Adapt the existing 3-step architecture to include a new Step 3c:
-
-**Step 3c — Neighbor graph expansion.** For each surviving place_id, fetch its `neighbors` doc from the `place_graph` index (single `terms` query on `place_id` with `doc_type: "neighbors"`). Intersect each place's neighbor list with the result set to produce a **local similarity subgraph** — only edges between results that both survived filtering.
-
-**Response payload changes** (see §5 for detail):
-
-- Add per-result compact clustering signals (centroid, temporal summary, AAT info, baseline_cluster_id).
-- Add an `edges` array: the local similarity subgraph edges `[{a, b, score}]`.
-- Retain the existing flat `hits` list for backward compatibility.
-
-### 4b. New response model: `ClusterableSearchResponse`
-
-Extends `SearchResponse` with:
-
-- `edges: list[Edge]` — pairwise similarity edges between result place_ids, each with composite score and per-facet signal breakdown (§5b).
-- `query_emb: str` — base64-encoded Symphonym embedding of the query string (§5d).
-- `toponym_stoplist: list[str]` — high-frequency generic toponym tokens for synthetic edge filtering (§6i Rule A). Maintained server-side, included in every response.
-- `clustering_params: dict` — calibrated defaults for client-side clustering: `θ_bridge`, `θ_query`, `θ_synth`, `θ_synth_structural`, `τ_name`, `τ_link`, default facet weights `[w_n, w_sp, w_t, w_ty, w_l]`.
-- Each `SearchHit` gains: `h3` (string), `h3_cover` (string[]), `temporal_range` ([start, end] or null), `baseline_cluster_id` (str or null), `query_match` (object with `name`, `score`, and `phon_emb` — the discovery-time match signal for query-conditioned clustering, §5a).
-- Per-hit `aat_ids` and `aat_depths` are available for display (type-tree widget, tooltips) but are not used for client-side similarity — type similarity is precomputed in the edge signal breakdown.
-
-### 4c. Suggest endpoint — no change
-
-Typeahead remains lightweight and does not involve clustering.
-
-### 4d. Reconcile endpoint (`POST /api/reconcile`)
-
-Same adaptation as search: add optional neighbor expansion and edge emission. The existing `group_by_cluster` parameter (from CLUSTERS.md §2.3) is replaced by client-side grouping, but the server can still pre-group at a default threshold for non-JS consumers.
-
-### 4e. Server-side fallback clustering
-
-For API consumers that cannot do client-side clustering (e.g. OpenRefine, programmatic access), the server applies a default threshold (e.g. θ = 0.85) to the local subgraph and returns pre-grouped results. This reuses Union-Find logic implemented in Python on the gateway. The `SearchRequest` model gains an optional `cluster_threshold: float | None` parameter; when set, the server clusters and returns grouped results.
-
-**Determinism requirement.** Server-side clustering must produce stable, reproducible results for the same query and threshold. To ensure this, the server-side path uses only **Rule 1** (standard edge thresholding) with **fixed calibrated weights** — no Rule 2 (query-bridge), no Phase 2 (synthetic edges). This eliminates the non-deterministic behaviours that are acceptable in interactive UI but unacceptable for programmatic reconciliation workflows. Edge iteration order does not affect the result because Union-Find is commutative.
-
----
-
-## 5. Client-Side Clustering Payload
-
-### 5a. Per-result compact payload
-
-For each hit, the server returns (in addition to existing fields):
+Each hit returned from the gateway carries the following metadata, regardless of whether clustering is performed server-side, client-side, or in a hybrid arrangement:
 
 ```json
 {
@@ -269,26 +154,153 @@ For each hit, the server returns (in addition to existing fields):
   "h3": "871ea6d75ffffff",
   "h3_cover": ["871ea6d75ffffff", "851ea6d7fffffff"],
   "temporal_range": [-500, 2026],
-  "aat_ids": [300008347],
-  "aat_depths": [6],
-  "baseline_cluster_id": "c_abc123",
-  "query_match": {
-    "name": "Paris",
-    "score": 0.93,
-    "phon_emb": "<base64-encoded 128-byte int8 vector>"
-  },
-  "names": [...],
   "ccodes": ["FR"],
-  "types": [...],
-  "geometries": [...]
+  "names": [
+    {"toponym": "Paris", "lang": "fr", "timespans": [...]},
+    {"toponym": "Parigi", "lang": "it", "timespans": [...]},
+    {"toponym": "Lutèce", "lang": "fr", "timespans": [...]}
+  ],
+  "types": [
+    {"identifier": "PPLC", "label": "capital", "aat_id": 300008347, "aat_depth": 6, "aat_ancestors": [300387554, 300387552, 300236157]}
+  ],
+  "links": ["wd:Q90", "tgn:7008038"],
+  "geometries": [...],
+  "discovery_match": {
+    "name": "Paris",
+    "score": 0.93
+  },
+  "via_hard_link": null
 }
 ```
 
-The `query_match` object carries the discovery-time match signal: which toponym triggered the hit and how well it matched. `query_match.name` is the matched toponym string, `query_match.score` is the normalised discovery score (0–1), and `query_match.phon_emb` is the Symphonym 128-d int8 embedding of that toponym (base64-encoded, 128 bytes → 172 characters). The client uses `query_match.score` for query-conditioned clustering (§6h) and `query_match.phon_emb` for phonetic re-scoring (§6g).
+Notes:
 
-### 5b. Edges array
+- `names[]` carries the full toponym set, capped at the top-12 toponyms per hit, prioritised by attestation count and temporal-span breadth. The toponym set supports server-side cross-product scoring during the pair-scoring pass (§6a).
+- `discovery_match` records which toponym caused the hit and the discovery score, allowing the UI to highlight what matched without ambiguity.
+- `via_hard_link` is non-null on hits added by hard-link expansion (§2c), carrying the link source and the originating in-result place_id.
+- `aat_ancestors` enables Wu-Palmer type similarity computation server-side during pair scoring; the values are also returned to the client to support facet reweighting under the reactive option (§7b).
+- `h3` and `h3_cover` enable spatial blocking for the server-side pair-scoring pass.
+- No embedding data is shipped to the client by default. The optional embedding-shipping configuration described in §7c is available for clients that prefer fully reactive client-side scoring.
 
-Alongside the hits:
+The total payload per hit is approximately 1 KB compressed, giving a 200-hit response of around 200 KB before the optional edge list is added.
+
+---
+
+## 5. User-Triggered Phase 2 Toponym Expansion
+
+Phase 2 broadens the candidate pool by issuing follow-up Symphonym searches for every toponym attested at any Phase 1 hit, then re-clustering the combined set. It is **not** automatic: it runs only on explicit user request, either as a result-set-wide expansion or as a per-cluster "find more like this" action. The rationale for making it user-triggered rather than automatic is laid out in the conversation that produced this plan: as an automatic step it had to justify its latency cost on every query, but as a deliberate user action it pays its cost only when the user wants the broader recovery, removing the need for predictive heuristics.
+
+### 5a. Mechanism
+
+When the user triggers Phase 2:
+
+1. The gateway collects the toponym union across the relevant scope (whole result set, or single cluster, or single hit), capped at top-K toponyms per place (default 12) and deduplicated globally.
+2. The gateway issues a batched Symphonym search across the toponym union, retrieving the top-M hits per toponym (default M = 20), deduplicated against the existing result set.
+3. The combined Phase 1 + Phase 2 result set is re-scored and re-clustered (§6).
+4. The expanded clustered result is returned, with Phase 2 members visually distinguished from Phase 1 members in the UI.
+
+### 5b. Two granularities
+
+**Result-set-wide expansion.** Triggered by an "expand search" affordance in the search results header. Operates on the toponym union of all Phase 1 hits. Appropriate for cases where the user suspects their query terminology is too narrow ("I searched for Lutèce but I want everything that goes with this set of records").
+
+**Per-cluster expansion.** Triggered by a "find more like this" affordance on a specific cluster or hit. Operates on the toponym set of that cluster only. Appropriate for focused investigation ("I have the Wikidata Paris record, what else is co-referent with it specifically?"). Runs faster than the result-set-wide version because the toponym union is smaller.
+
+### 5c. Scope and bounding
+
+To prevent pathological expansion:
+
+- The toponym union is capped at the top-K toponyms per place (default 12), prioritised by attestation count and temporal breadth.
+- The expansion search returns at most M hits per toponym (default 20), with a global cap on Phase 2 additions (default equal to the Phase 1 size).
+- A small stoplist of high-frequency generic tokens ("Central", "Station", "Market", "Church", "School", "Main", "New", "San", "Saint", "North", "South", "East", "West") is excluded from the toponym union to prevent expansion via uninformative names. The stoplist is empirically derived from toponym frequency in the toponyms index (see §17f).
+
+### 5d. Phase 2 hits in the response
+
+Phase 2 hits carry a `via_phase_2: {triggered_from: "wd:Q90", matched_toponym: "Lutèce"}` flag, parallel to `via_hard_link`. The UI renders them with a distinguishing visual treatment (subtle border, icon, or section heading) so the user can see at a glance which records are direct query matches and which arrived via expansion. This preserves epistemic transparency: the user always knows why a record is in the result set.
+
+### 5e. Latency
+
+Phase 2 adds approximately 100–200 ms to the query-response cycle: the toponym-union search runs as a single batched ES query across the deduplicated toponym set (typically 1500–2500 distinct toponyms for a 200-hit Phase 1), and re-clustering is fast. Because Phase 2 is user-triggered, the user expects and tolerates this additional latency; the request is naturally accompanied by a "expanding..." indicator. Pipelining (issuing the toponym-union search while the UI is still presenting the user's choice) can shave this further but is not essential.
+
+### 5f. Diagnostic logging
+
+Phase 2 triggers are logged in aggregate with their queries, providing a free signal about where Phase 1 (Symphonym + hard links) is under-recovering co-references. Repeated triggers in a particular subdomain (medieval Latin toponyms, say) indicate areas where Symphonym coverage or hard-link density would benefit from improvement. The logs feed into a review dashboard for the WHG team and inform decisions about authority enrichment priorities.
+
+---
+
+## 6. Server-Side Dynamic Clustering
+
+Clustering runs at query time on the server, over the result set assembled by discovery (§1) plus hard-link expansion (§2) plus optionally Phase 2 expansion (§5). The threshold is set by request parameter; the user controls it via slider in the UI.
+
+### 6a. Pair scoring
+
+For each pair of places in the result set that passes spatial blocking (shared H3 cell at r7, or intersecting `h3_cover` at r5), the gateway computes a composite similarity score as a weighted sum of per-facet signals:
+
+| Signal | Description | Computation |
+|--------|-------------|-------------|
+| `s.n` | Toponym similarity | Maximum Symphonym int8 cosine over the cross-product of toponym embeddings between the two places. The toponym embeddings are already in the toponyms index from discovery; the gateway loads them for the result-set toponyms in a single batched fetch and scores in-process. |
+| `s.sp` | Spatial similarity | Function of `repr_point` haversine distance, with `h3_cover` overlap as bonus signal for places with full geometries |
+| `s.t` | Temporal similarity | Interval overlap between `temporal_range` ranges, normalised |
+| `s.ty` | Type similarity | Wu-Palmer over `aat_ancestors` arrays |
+| `s.l` | Link similarity | 1.0 if the pair appears in the hard-links overlay; otherwise 0 |
+
+The composite score is `S = w_n·s.n + w_sp·s.sp + w_t·s.t + w_ty·s.ty + w_l·s.l`, with default weights `w_n=0.30, w_sp=0.25, w_t=0.10, w_ty=0.10, w_l=0.25`. Null facets (e.g. missing temporal data) are handled by proportional weight redistribution: the null facet's weight is redistributed among the non-null facets, preserving the `[0, 1]` range of the composite.
+
+The pair-scoring pass is bounded by H3 blocking: for a 200-hit result set with H3 r7 blocking, candidate pairs typically number in the low hundreds rather than the 19,900 of an unblocked O(n²) pass. Total scoring time is a few tens of milliseconds.
+
+### 6b. Toponym scoring via Symphonym embeddings
+
+Symphonym int8 embeddings are already produced and stored in the toponyms index for discovery purposes. The pair-scoring pass reuses them: for each candidate place pair, the gateway loads the embeddings of all toponyms attested at both places (a batched fetch keyed by toponym IDs) and computes the maximum cosine similarity across the cross-product. For 200 hits with up to 12 toponyms per place, the toponym pool is bounded at ~2400 vectors, the loads are coalesced into a single ES fetch, and the cosine arithmetic is cheap (int8 dot products on 128-dimensional vectors, dominated by load latency rather than computation).
+
+The advantage of this approach over surface-form string similarity is that Symphonym handles cross-script and cross-orthographic variation natively. A Cyrillic "Москва" and a Latin "Moscow" are near-equivalent in Symphonym's phonetic embedding space, despite sharing zero characters, so the toponym signal correctly fires on cross-script pairs without any transliteration step. The same applies to historical-spelling variants, diacritic differences, and transliteration differences across authorities.
+
+### 6c. Union-Find at threshold
+
+After scoring, Union-Find runs over all pairs with composite score `S >= θ`, where θ is the request-supplied threshold (default 0.85). Hard links are unioned unconditionally as a bootstrapping pass before threshold-based unions, ensuring that `s.l = 1.0` pairs are always merged regardless of θ. The clustering is order-independent because Union-Find is commutative.
+
+### 6d. Cluster-size limiting
+
+To prevent mega-clusters in dense urban regions, clusters with more than `N_max` members (default 50) are split as a post-processing step: the threshold is tightened iteratively within the cluster until it fragments into sub-clusters all `<= N_max`, or until θ reaches 0.95 (at which point the cluster is accepted as genuinely co-referent). Hard-link edges are never cut during splitting.
+
+### 6e. Cluster representation
+
+Each cluster is returned with:
+
+- `cluster_id`: synthetic identifier for this query-clustering pass (not persistent across queries).
+- `members[]`: the place_ids in the cluster.
+- `representative`: the place_id of the highest-scoring or preferred-authority member, used for compact cluster display.
+- `aggregated`: union of names, types, ccodes, temporal range, authorities across members.
+
+### 6f. Reconciliation determinism
+
+The reconciliation endpoint uses the same code path as interactive search, with default weights and a default threshold. Determinism is automatic because the scoring is deterministic, Union-Find is order-independent, and the splitting post-process operates on a fixed input. No separate "fallback clustering" code path is needed; the primary clustering is the reconciliation clustering.
+
+### 6g. Server-side pair-score caching
+
+The most expensive part of server-side clustering is the pair-scoring pass (§6a). To support reactive slider-driven reclustering without repeatedly re-scoring, the gateway caches the scored pair list keyed on `(query, filters, result_set_hash)`. Cache hits skip directly to Union-Find at the new threshold, which runs in milliseconds. Cache eviction is LRU with a modest memory budget (a few hundred MB). Threshold changes that reuse a cached result complete in roughly one network round-trip with negligible server work, making slider control responsive even without client-side reclustering.
+
+---
+
+## 7. Client-Side Reactive Reclustering: Three Options
+
+The slider-driven reactivity that motivated the prior plan's heavy client-side architecture remains a desirable property, but it can be achieved in three different ways with different cost-benefit profiles. The architecture supports any of them; the choice can be made independently for different deployment scenarios (interactive web UI vs. reconciliation API vs. embedded widgets) or revisited as usage data emerges.
+
+### 7a. Option A — Server round-trip per slider change (debounced)
+
+The simplest approach: every slider movement triggers a debounced gateway request with the new threshold. With server-side pair-score caching (§6g), the server-side work is negligible (Union-Find only) and the round-trip is dominated by network latency.
+
+**Cost profile:** ~150–300 ms per slider rest position (debounce + round-trip + Union-Find + render). UI shows a "computing..." indicator during the gap.
+
+**Pros:** Simplest implementation, no client-side scoring logic, no payload inflation beyond the clustered result. Determinism is automatic. Works for non-JS clients (the threshold is just a request parameter). Suitable for the reconciliation API.
+
+**Cons:** Slider drag is not smooth; only rest positions update. May feel sluggish on high-latency networks (mobile, geographically distant clients).
+
+**Implementation:** Add a `cluster_threshold` parameter to the search request. The client debounces slider changes (default 200 ms) and re-issues the search. The gateway hits the pair-score cache and returns the re-clustered result.
+
+### 7b. Option B — Ship scored edges, run Union-Find client-side
+
+The middle option: the server computes scored pairs server-side as in Option A, but ships the scored-pair list to the client alongside the clustered result. Subsequent threshold changes run Union-Find in the browser over the cached pairs, with no round-trip.
+
+**Edge payload structure** (extending §4's per-hit payload with a top-level `edges` array):
 
 ```json
 {
@@ -296,259 +308,225 @@ Alongside the hits:
     {"a": "gn:2988507", "b": "wd:Q90", "score": 0.95,
      "s": {"n": 0.98, "sp": 0.92, "t": 0.85, "ty": 1.0, "l": 1.0}},
     {"a": "gn:2988507", "b": "osm:n12345", "score": 0.87,
-     "s": {"n": 0.90, "sp": 0.95, "t": null, "ty": 0.78, "l": 0.0}},
-    ...
+     "s": {"n": 0.90, "sp": 0.95, "t": null, "ty": 0.78, "l": 0.0}}
   ]
 }
 ```
 
-Each edge carries the composite `score` plus a signal breakdown `s` with per-facet normalised similarities: `n` (toponym), `sp` (spatial), `t` (temporal, null if either place lacks timespans), `ty` (type/AAT), `l` (links). The client uses these for facet-weight scaling (§6a). Only edges between result-set members are included.
+Each edge carries the composite `score` plus the per-facet signal breakdown `s`. The client re-runs Union-Find at the new threshold instantly; with the signal breakdown, the client can also offer **facet reweighting** ("prioritise spatial proximity") by recomputing the composite score with user-supplied weights before applying the threshold.
 
-### 5c. Payload size budget
+**Cost profile:** Edge payload of ~200–250 KB compressed for a 200-hit result set with H3-blocked pairs. Client-side Union-Find on threshold change: <10 ms. Total slider response: instantaneous.
 
-- ~500 results × ~500 bytes ≈ 250 KB (hits including query_match at ~200 bytes each)
-- ~2000 edges × ~120 bytes ≈ 240 KB (edges with signal breakdown)
-- query_emb: 172 bytes (negligible)
-- Total: ~490 KB before gzip, ~110–160 KB compressed — within budget.
+**Pros:** Truly reactive slider; no round-trips during interaction. Facet reweighting available without server work. Determinism is preserved because both server and client use the same scoring (the server scored once; the client only re-thresholds).
 
-**Hard cap:** `max_edges = 4000`. The gateway enforces this limit on the `edges` array, selecting edges by highest composite score globally. Without a cap, worst-case scenarios (dense urban + high K + symmetrisation: 500 × 50 / 2 = 12,500 edges ≈ 1.5–2 MB) degrade both transfer and client parsing time. The cap keeps payload under ~750 KB pre-compression in all cases.
+**Cons:** Modest payload increase. The client must implement Union-Find and the threshold-and-reweight logic, but these are small (~100 lines of JS). Not suitable for non-JS clients (which fall back to Option A).
 
-For result sets > 500, cap the edges to top-scoring pairs and/or restrict clustering to the top N results.
+**Implementation:** The gateway returns `edges[]` alongside the clustered result. The client renders the server-clustered result on initial load (so the initial display is correct without waiting for client-side computation), then runs its own Union-Find on subsequent slider changes.
 
-### 5d. Response-level query embedding
+### 7c. Option C — Ship embeddings, full client-side scoring (advanced)
 
-The response includes a top-level `query_emb` field: the Symphonym 128-d int8 embedding of the original query string (base64-encoded). For phonetic/fuzzy searches, this is the same embedding computed during discovery (zero additional cost). For exact/starts/in searches, the gateway generates it on demand via the Symphonym encoder (~5 ms).
+The most reactive option: the server ships per-hit toponym embeddings to the client, and the client computes pair scores from scratch as well as Union-Find. This decouples the client from the server's scoring choices entirely, allowing arbitrary reweighting (including changing what "toponym similarity" means by, say, switching from string similarity to phonetic-embedding cosine).
 
-This eliminates the need for the client to make a separate `GET /api/embed` call for the initial query string. The client uses `query_emb` for phonetic re-scoring (§6g) — comparing the query embedding against each hit's `query_match.phon_emb` to display query-relevance indicators. For the "Compare name variant" feature (where the user types a different name), the client still calls `/api/embed` for the new variant.
+**Per-hit embedding bundle:** Each hit's `names[]` entries are augmented with `phon_emb` (Symphonym 128-d int8 embedding, base64-encoded, ~185 bytes per toponym). With a cap of top-12 toponyms per place, this adds approximately 2.2 KB per hit, or ~440 KB compressed across a 200-hit result set.
+
+**Cost profile:** Larger payload (total ~600–700 KB compressed for a 200-hit result with embeddings). Client-side scoring: a few thousand toponym-pair cosine computations, ~10–50 ms in JS. Total slider + reweight response: still well under 100 ms.
+
+**Pros:** Maximum client-side flexibility. Enables on-the-fly switching between scoring methods. Facet reweighting can include reweighting *within* the toponym component (e.g. weighting phonetic similarity vs string similarity). Useful for power-user research interfaces and for embedded widgets that may want to experiment with scoring without server changes.
+
+**Cons:** Larger payload. Duplicates scoring logic between server and client (must stay synchronised). Determinism becomes harder to guarantee (floating-point cosine across browsers may produce minor variation). Not suitable for the reconciliation API or non-JS clients.
+
+**Implementation:** A request flag `include_embeddings: true` triggers the embedding-shipping path. Without this flag, hits do not carry embeddings and the client falls back to Option B or Option A.
+
+### 7d. Recommended default
+
+**Option A is the recommended default for the interactive search UI**, with debounced slider control and server-side pair-score caching providing acceptable reactivity at minimal complexity. Option B is offered as a configurable upgrade for clients that want smoother slider control or facet reweighting; the server work is identical and the only difference is whether the edges are shipped to the client or consumed internally. Option C is available for power-user contexts but is not part of the default interactive experience.
+
+This phased approach lets the implementation prioritise getting Option A working reliably, then add Option B as a refinement once the core architecture is solid, then evaluate Option C based on actual user demand.
+
+### 7e. Determinism guarantees by option
+
+| Option | Determinism for reconciliation | Determinism for interactive UI |
+|--------|-------------------------------|-------------------------------|
+| A | Strong (server is single source of truth) | Strong |
+| B | Strong (server-shipped edges are deterministic; client only re-thresholds) | Strong |
+| C | Approximate (cross-browser floating-point variation) | Acceptable |
+
+Reconciliation requests always use Option A's path regardless of the interactive-UI choice, ensuring deterministic and reproducible reconciliation output.
 
 ---
 
-## 6. Client-Side Clustering Algorithm
+## 8. User-Proposed Clustering
 
-### 6a. Edge scores and facet-weight scaling
+The platform exposes "propose a link" and "propose unlinking" as first-class user affordances within the search and cluster-display UI. The mechanism captures the contested residue that automatic mechanisms cannot adjudicate: cases where a researcher recognises co-reference (or non-co-reference) that the system has not detected (or has incorrectly detected).
 
-Each edge arrives from the server with a precomputed composite score that already incorporates all facets (toponym, spatial, temporal, type, links) — see §2b. The client's primary operation is **thresholding**: keep or discard edges based on the user's slider position θ.
+### 8a. UI affordances
 
-For richer control, the server decomposes the composite score into per-facet **signal components** on each edge:
+**Propose a link.** When the user is viewing a cluster or a flat list of results, they can select two records and assert that they refer to the same place. A small dialog captures an optional justification (citation, note, contextual evidence) and submits the assertion.
 
-```json
-{"a": "gn:2988507", "b": "wd:Q90", "score": 0.95,
- "s": {"n": 0.98, "sp": 0.92, "t": 0.85, "ty": 1.0, "l": 1.0}}
-```
+**Propose unlinking.** When viewing a cluster, the user can flag a member as not belonging — asserting that the system has incorrectly clustered this record with the others. The same justification dialog applies.
 
-where `s.n` = toponym, `s.sp` = spatial, `s.t` = temporal, `s.ty` = type, `s.l` = links — all pre-normalised to 0–1. The client can then reweight on the fly:
+Both affordances are equally prominent in the UI: the platform does not treat one direction (asserting identity) as more privileged than the other (asserting non-identity). This is deliberate, because in historical place research, distinguishing co-located but distinct places (a chapel within a parish, a market site within a town) is as important as identifying co-referents.
 
-```
-S = w_n·s.n + w_sp·s.sp + w_t·s.t + w_ty·s.ty + w_l·s.l
-```
+### 8b. Storage
 
-with UI-controlled emphasis sliders (e.g. "prioritise spatial proximity" or "prioritise name similarity"). This turns the system from simple threshold clustering into a **semantic lensing system** — the user can shift what "similar" means, not just how strict the cutoff is.
+User proposals enter the WHG Django PostgreSQL contributor reconciliation store, the same store that Phase 1B already harvests. New proposals join the existing data model:
 
-Default weights match the offline pipeline (`scoring.py`): w_n=0.30, w_sp=0.25, w_t=0.10, w_ty=0.10, w_l=0.25. The temporal and type facets are weighted lower because many records lack temporal data and type mappings are incomplete; links are weighted higher because authority assertions are the strongest identity signal.
+- Asserted-same: `{place_a, place_b, type: "sameAs", contributor, justification, timestamp}`.
+- Asserted-distinct: `{place_a, place_b, type: "distinct", contributor, justification, timestamp}`.
 
-**Null-facet handling.** When a signal component is `null` (e.g. `s.t = null` because one or both places lack timespans), the client **renormalises weights dynamically**: redistribute the null facet's weight proportionally among the non-null facets. For example, if `s.t = null` and the user's weights are `[0.30, 0.25, 0.10, 0.10, 0.25]`, the effective weights become `[0.30, 0.25, 0, 0.10, 0.25] / 0.90 = [0.333, 0.278, 0, 0.111, 0.278]`. This ensures records lacking temporal data are not penalised (treated as 0) or artificially boosted — they are simply scored on the available evidence. Both the server-side offline scoring (§9f) and the client-side reweighting must use the same renormalisation rule for consistency.
+The asserted-distinct relation is new: the prior schema only carried positive identity assertions. Adding negative assertions lets the platform record "these are not the same place" in a form that subsequent clustering can respect.
 
-**Known tradeoff: missing data scores higher than noisy data.** Redistribution means that two places with perfect name/spatial/link match but *no* temporal data will score higher than two places with perfect name/spatial/link but *slightly mismatched* temporal data (because the latter incurs a small temporal penalty while the former redistributes the temporal weight to the already-perfect facets). This is an inherent property of proportional redistribution — records are implicitly rewarded for missing a facet rather than having a weak value in it. We accept this tradeoff because: (1) the alternative (treating null as 0) is strictly worse in this domain — ~40% of place records lack temporal data, and penalising them would systematically under-cluster the majority of the corpus; (2) the temporal weight is only 0.10 by default, so the maximum scoring advantage from missing temporal data is `0.10 × (1 - S_t)` ≈ at most 0.10 — small relative to the other facets; (3) as temporal coverage improves through ongoing authority enrichment, the issue diminishes naturally.
+### 8c. Application in clustering
 
-**Int8 cosine similarity.** Symphonym embeddings are unit vectors quantized to int8 range [-128, 127]. For pre-normalised int8 vectors, the dot product is proportional to cosine similarity (norms are approximately equal across vectors). The client computes `dot(a, b) / (norm(a) × norm(b))` using `Int8Array` arithmetic. Server-side and client-side similarity values are consistent because both use the same quantized vectors.
+Both relations participate in §6's clustering:
 
-This approach keeps all expensive similarity computation server-side (in the offline pipeline), while giving the client cheap, instant re-weighting with no server round-trip. The client never recomputes spatial distances, temporal overlaps, or AAT LCA depths — it only applies weight coefficients to precomputed normalised scores.
+- Asserted-same entries flow through Phase 1B harvesting into the hard-links overlay (§2). They become unconditional unions in §6c.
+- Asserted-distinct entries become **hard splits**: pairs that may not be unioned regardless of edge score. The Union-Find pass is augmented with a hard-split check before each union: if `(a, b)` is asserted-distinct, the union is skipped. If a transitive chain (`a~b`, `b~c`) would put an asserted-distinct pair in the same cluster, the cluster is split during the post-processing step (§6d), with the splitting algorithm preferring to honour the asserted-distinct constraint at the cost of weaker edges within the would-be component.
 
-### 6b. Comparison pruning
+### 8d. Provenance and review
 
-Only compare pairs that have a precomputed edge. This avoids O(n²) explosion:
+User proposals are visible to other users with appropriate provenance: cluster-display tooltips can show "linked by user X (justification: ...)" or "split by user Y" so subsequent researchers can evaluate the assertion. A review queue in the WHG admin interface lets the team curate user proposals, accepting them as canonical hard links, demoting them to advisory, or removing them in cases of error.
 
-- The server already prunes to the local subgraph (edges between surviving results).
-- Additional client-side blocking: same H3 cell, or shared authority link, or same baseline cluster.
-- For ~500 results with ~2000 edges, clustering is O(n) — trivially fast.
+### 8e. Composability with the layered architecture
 
-### 6c. Union-Find with threshold
+User-proposed clustering composes cleanly with the other layers:
 
-```
-// Phase 1 — precomputed edges
-for each edge (a, b, signals):
-    S = reweight(signals, weights)    // with null-facet renormalisation (§6a)
+- A proposed-same assertion that survives review becomes a hard link, and Symphonym discovery + hard-link expansion (§1, §2) automatically apply it on future queries without re-clustering.
+- A proposed-distinct assertion is recorded once and persistently honoured, preventing the system from repeatedly making the same clustering error.
+- Phase 2 expansion (§5) respects user assertions: if a Phase 2 candidate is asserted-distinct from any Phase 1 hit, it is still pulled in (the user may want to inspect it) but not unioned in clustering.
 
-    // Rule 1 — standard: edge exceeds user threshold
-    if S >= θ:
-        union(a, b)
-
-    // Rule 2 — query bridge: relax threshold for query-relevant pairs (§6h)
-    elif S >= θ_bridge
-         AND min(query_score[a], query_score[b]) >= θ_query
-         AND (signals.n >= τ_name OR signals.l >= τ_link):   // name/link guard
-        union(a, b)
-
-// Phase 2a — synthetic phonetic edges for edgeless pairs (§6i)
-θ_synth_eff = max(θ_synth, θ)    // never below calibrated floor or user threshold
-for each spatial bucket (results sharing h3 centroid OR h3_cover intersection at r5):
-    for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
-        if NOT both_high_frequency(name[a], name[b]):  // stoplist guard (§6i)
-            if types_overlap(a, b):   // at least one shared type (§6i)
-                sim = cosine(phon_emb[a], phon_emb[b])
-                if sim >= θ_synth_eff:
-                    union(a, b)
-
-// Phase 2b — structural synthetic edges (§6i)
-for each spatial bucket (same as 2a):
-    for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
-        if (ccode_overlap(a, b) OR shared_namespace(a, b) OR shared_baseline(a, b)):
-            union at θ_synth_structural (≈ 0.7)
-
-// Phase 3 — post-processing: split oversized clusters (§6f)
-for each component C where |C| > N_max:
-    split C by tightening threshold within the component
-```
-
-Properties:
-- Edge iteration order does not affect the result — Union-Find is applied over all qualifying edges in a single pass (no sorting required). Complexity: O(E·α(n)) ≈ O(E).
-- Rule 2 has a **name/link guard** (`signals.n >= τ_name OR signals.l >= τ_link`, where `τ_name ≈ 0.5`, `τ_link ≈ 0.8`) that prevents the bridge from firing on weak edges between places matching generic query terms (e.g. "San", "New", "Central"). Without this guard, two places both matching a common query fragment would merge on a sub-threshold edge with no substantive name or link alignment.
-- Rule 2 and Phases 2a/2b can cause **non-monotonic behaviour**: lowering θ may merge clusters that were separate at higher θ due to the bridge and synthetic thresholds. In practice this is rare (bridge fires on <5% of edges, synthetic passes on edgeless pairs only). Tying `θ_synth_eff = max(θ_synth, θ)` limits the effect: at high θ, synthetic edges require even higher phonetic similarity, preserving monotonic feel in the common case.
-- Union-Find is near-linear and runs in <10 ms for 500 nodes.
-- The query-bridge rule (Rule 2) ensures query-relevant pairs cluster even when their precomputed toponym signal `s.n` is low — see §6h for the full rationale.
-- The phonetic synthetic-edge pass (Phase 2a) closes the "missing edge" gap for pairs that share spatial proximity, phonetic similarity, and type overlap but were never candidates in the offline pipeline — see §6i.
-- The structural synthetic-edge pass (Phase 2b) catches same-place records across authorities where phonetics fail (cross-lingual exonyms, sparse names) but structural signals confirm co-reference — see §6i.
-- Oversized clusters are split as a post-processing step (Phase 3), not blocked during union — see §6f.
-
-### 6d. Baseline cluster bootstrapping
-
-Before applying the user threshold, initialize the Union-Find with baseline clusters (if present): for all results sharing a `baseline_cluster_id`, union them. This provides instant grouping for obvious matches (e.g. GeoNames + Wikidata for the same city) before the user even touches the slider.
-
-**θ = 1.0 bypass.** When the user sets θ = 1.0 ("no grouping — flat list"), baseline bootstrapping is **skipped entirely**. The Union-Find starts with every result in its own singleton component, and since no edge can have a reweighted score ≥ 1.0, no unions occur. This guarantees a truly flat result list identical to unclustered behaviour. At any θ < 1.0, baseline bootstrapping runs normally.
-
-**Safety:** baseline clusters are **link-dominated** (§2d): constructed using only authority link signals (`s.l`) and very high toponym signals (`s.n ≥ 0.95`), not the full composite score. This ensures they remain valid regardless of how the user tunes facet weights. Bootstrapping cannot merge two *different* baseline clusters — it only unions results within the same cluster ID. Subsequent edges from Phase 1 may *expand* a baseline cluster by merging additional results into it, but only if those edges pass the user's threshold θ. Two separate baseline clusters can only end up in the same component if a chain of θ-passing edges connects them — which is correct behaviour, not a conflict.
-
-### 6e. Cluster display
-
-Each cluster gets:
-- **Representative**: highest-scoring hit (or preferred-authority heuristic).
-- **Aggregated metadata**: all names across members, all authorities, temporal span union, types union.
-- **Expandable**: user can expand a cluster to see individual member records.
-
-### 6f. Cluster-size limiting (post-processing)
-
-Union-Find can produce "mega-clusters" at low θ in dense urban regions (e.g. every "Paris" record in one group). Rather than blocking merges during the union pass (which introduces order-dependent results and breaks transitivity), oversized clusters are **split as a post-processing step** after the Union-Find completes:
-
-1. For each connected component with more than `N_max` members (e.g. 50):
-2. Extract the subgraph of edges within the component.
-3. Tighten the threshold iteratively: raise θ within this component until it fragments into sub-clusters all ≤ N_max, or until θ reaches 0.95 (at which point accept the large cluster as genuinely co-referent).
-4. Hard-link edges (authority sameAs, `s.l ≈ 1.0`) are never cut during splitting — they act as unbreakable bonds within the component.
-
-This preserves transitivity: if A~B and B~C both pass the user's threshold, they are always in the same component. Splitting only tightens the threshold *within* oversized components, producing deterministic and order-independent results.
-
-### 6g. Client-side phonetic re-scoring
-
-Each hit carries a `query_match.phon_emb` field: the Symphonym 128-d int8 embedding for the place's best-matching toponym. The response also includes `query_emb` — the embedding of the original query string (§5d). The client can use these to let the user type an alternative name variant and instantly see how phonetically close it is to every result — without a server round-trip.
-
-**Flow:**
-
-1. User types a variant in a "Compare name" input (e.g. "Parigi").
-2. The client calls `GET /api/embed?name=Parigi` on the gateway, which returns the Symphonym int8 embedding for the new variant (fast — single model inference, ~5 ms). For the *initial* query, `query_emb` from the response is used directly (no extra call needed).
-3. The client computes cosine similarity between the variant embedding and each hit's `query_match.phon_emb` in JavaScript. Int8 dot product on 128 dimensions is trivially fast (~0.01 ms per pair).
-4. Results are re-ranked or highlighted by phonetic proximity to the user's variant.
-
-This enables cross-script and cross-transliteration name comparison directly in the browser — a researcher can type a name in Arabic script and see which Latin-script results are phonetically closest, or compare a medieval spelling variant against modern authority records.
-
-The `query_match.phon_emb` vectors also serve a structural role in clustering: they enable **synthetic phonetic edges** for result pairs that lack a precomputed edge — see §6i.
-
-### 6h. Query-conditioned clustering
-
-Precomputed edges encode **query-independent** similarity (`place ↔ place`). But effective search-result clustering requires **query-conditioned** grouping (`query → place → place`). Consider: a user searches for "Big Apple". One result (Wikidata's New York City) matches via that alias. Other NYC records from GeoNames, OSM, etc. may also appear in the result set — matched via "New York" through different discovery paths or neighbor expansion — but the precomputed edge toponym signal `s.n` between "Big Apple" and "New York" is low because the names are phonetically unrelated. Standard threshold clustering could fail to group these co-referent results.
-
-**Solution:** add a **query-bridge rule** to the Union-Find. The server returns a `query_match.score` per hit (the toponym-level discovery score, §5a) and a `query_emb` at the response level (§5d). The client uses these to relax the edge threshold for query-relevant pairs:
-
-```
-for each edge (a, b, signals):
-    S = Σ w_i · signals[i]
-
-    // Rule 1 — standard: edge exceeds user threshold
-    if S >= θ:
-        union(a, b)
-
-    // Rule 2 — query bridge: relax threshold when both endpoints
-    // strongly match the query and have substantive name or link signal
-    elif S >= θ_bridge
-         AND min(query_score[a], query_score[b]) >= θ_query
-         AND (signals.n >= τ_name OR signals.l >= τ_link):
-        union(a, b)
-```
-
-Where:
-- `θ` is the user's main similarity threshold (slider).
-- `θ_bridge = θ × 0.6` (or a configurable floor, e.g. 0.3) — minimum edge quality for bridging.
-- `θ_query` — minimum query-match score (e.g. 0.7).
-- `τ_name ≈ 0.5` — minimum toponym signal for name-based bridge qualification.
-- `τ_link ≈ 0.8` — minimum link signal for link-based bridge qualification.
-
-**Why the name/link guard:** without it, two places both matching a generic query term ("San", "New", "Central") could merge on a weak edge that happens to exceed `θ_bridge`. The guard ensures the bridge only fires when there is *some* substantive name alignment (`s.n >= τ_name`) *or* a strong authority signal (`s.l >= τ_link`). This prevents the query-bridge from becoming a semantic shortcut that merges unrelated places sharing a common name fragment.
-
-**Why `min()` not `max()`:** both endpoints must strongly match the query for the bridge to fire. Using `max()` would let a single strong match pull in weakly-related neighbors indiscriminately. Using `min()` ensures both places are relevant to what the user searched for.
-
-**Why a precomputed edge is required:** merging two places purely because both match the query (without any precomputed edge) is dangerous — "London" would merge London-UK with London-Ohio. The bridge rule only relaxes the *threshold* on existing edges; it does not create edges from nothing.
-
-**Relationship to alias-aware scoring (§9f).** The primary defence against the alias problem is built into the offline pipeline: the toponym facet signal `s.n` on each edge is computed as the maximum Symphonym cosine similarity across ALL cross-name pairs of the two places, not just the single toponym that triggered blocking. This means the "Big Apple" ↔ "New York" case produces a high `s.n` (via the shared "New York" alias) even though the names that matched the user's query are phonetically unrelated. The query-bridge rule here is a **safety net** for residual gaps — edge cases where the max-pairwise toponym score is still coincidentally low but both places are clearly query-relevant. With alias-aware scoring in the graph, the bridge rule fires rarely; without it, the bridge rule would be the primary mechanism, which is less robust.
-
-### 6i. Synthetic edges (edgeless pairs)
-
-The precomputed graph, however recall-heavy the offline pipeline, will inevitably miss some co-referent pairs — rare aliases, missing language variants, or simply places that fell outside the blocking thresholds. Two complementary synthetic passes close this gap at query time.
-
-#### Synthetic Rule A — Phonetic (§6c Phase 2a)
-
-The `query_match.phon_emb` vectors in the payload enable **phonetic synthetic edges** between result pairs that have no precomputed edge.
-
-After the main Union-Find pass (§6c Phase 1), the client runs Phase 2a over spatial buckets:
-
-1. Group results by spatial proximity: same `h3` centroid (r7 ≈ 1.2 km) **or** `h3_cover` intersection at coarse resolution (r5 ≈ 8 km). Centroid equality catches point-vs-point matches; cover intersection catches cases where the same place has different centroids across authorities (e.g. Paris polygon vs Paris point, linear features, boundary geometries). No extra storage is required — `h3_cover` already exists on each place doc.
-2. Within each bucket, for every pair (a, b) not already in the same component and with no precomputed edge:
-   - **Stoplist guard:** skip if both `query_match.name` values are in a **high-frequency toponym stoplist** (e.g. "Central", "Station", "Market", "Church", "School", "Main", "Park", "New", "San", "Saint"). Without this guard, high phonetic similarity + same H3 + same type (e.g. "building") produces catastrophic merging in OSM-heavy urban regions. The stoplist is maintained server-side and included in the response metadata; it should contain the ~50–100 most common generic place-name tokens across all authorities.
-   - **Type constraint:** at least one type must overlap (shared `aat_id`, or both lacking type data). This prevents merging "Central Station" with "Central Park" in the same H3 cell. If both places have typed records, require at least one shared AAT ancestor; if either is untyped, allow the comparison (untyped records are common and should not be excluded).
-   - Compute `cosine(phon_emb[a], phon_emb[b])`.
-3. If the similarity exceeds `θ_synth_eff = max(θ_synth, θ)`, union them.
-
-#### Synthetic Rule B — Structural (§6c Phase 2b)
-
-A second synthetic pass catches same-place records across authorities where phonetics fail entirely — cross-lingual exonyms with weak phonetic alignment, sparse single-attestation records, or type-misaligned authorities (settlement vs admin unit). This pass uses **shared structural identifiers** rather than phonetic similarity:
-
-Within the same spatial buckets (h3 centroid or cover intersection):
-
-```
-for each pair (a, b) in bucket where find(a) ≠ find(b) AND no precomputed edge:
-    if (ccode_overlap(a, b) OR shared_namespace(a, b) OR shared_baseline(a, b)):
-        union at θ_synth_structural (≈ 0.7)
-```
-
-Rationale:
-- **Country code overlap** catches same-place records from different authorities that share a country (cheap, high precision when combined with spatial proximity).
-- **Shared authority namespace** catches records that somehow bypassed blocking but originate from the same source (rare but diagnostic).
-- **Shared `baseline_cluster_id`** propagates high-confidence offline groupings to pairs that lost their connecting edges during result-set pruning.
-
-This is very cheap (set intersections, no embedding computation), high precision (spatial + structural confirmation), and catches the dominant failure mode — edge incompleteness for cross-lingual or sparse records that phonetics alone cannot bridge.
-
-#### Cost analysis
-
-**Phonetic pass:** H3 bucketing reduces comparisons from O(n²) to O(Σ |bucket|²). Typical result sets have most buckets containing 1–5 results; dense urban areas might have ~20. With 500 results across ~200 buckets, total comparisons are a few hundred — each a ~0.01 ms int8 dot product plus a cheap type-set intersection. Total cost: <1 ms.
-
-**Structural pass:** same bucket structure, but comparisons are set intersections (ccodes, namespace string equality, baseline_cluster_id equality) — even cheaper than the phonetic pass.
-
-#### Why spatial gating is essential
-
-Without spatial gating, high phonetic similarity would merge phonetically similar but geographically distant places (e.g. "Springfield" in Illinois vs "Springfield" in Massachusetts). The H3 requirement ensures synthetic edges only form between spatially co-located results.
-
-**Why centroid-only is insufficient:** large polygons can have different centroids across authorities (e.g. one authority centroids Paris at the city hall, another at the geographic center of the commune polygon). Using `h3_cover` intersection at r5 catches these cases without requiring exact centroid alignment.
+The result is that the platform learns from researcher input over time, with the offline pipeline shrinking even further in conceptual scope: it just harvests what users (and authorities) have asserted, without inferring anything more. Inference is the responsibility of the query-time scoring pass, which is transparent and reproducible because it operates on shipped or shippable signals rather than precomputed scores.
 
 ---
 
-## 7. H3 Implementation Details
+## 9. Schema Changes
 
-### 7a. Computing H3 at ingestion
+### 9a. `places` index (`schemas/places.json`)
 
-In `processing/helpers.py` `enrich_geometry()`, add H3 computation:
+Within the existing `geometries[]` nested object:
 
-- **Point geometry**: `h3.latlng_to_cell(lat, lon, resolution=7)` for centroid; cover = [centroid].
-- **Polygon/MultiPolygon**: centroid cell as above; `h3.polygon_to_cells(polygon, resolution)` + `h3.compact_cells(cells)` for cover. Choose resolution adaptively: start at r7, if polyfill yields > 10,000 cells, drop to r5; if still > 10,000, drop to r3. Compact after polyfill to minimize array size.
-- **LineString**: buffer to small polygon, then polyfill; or sample points along the line.
+- **Remove** the `geom` field (`geo_shape`). Full geometries are no longer stored in ES (see §10).
+- **Add** `has_geom` (`boolean`, default `false`) — when `true`, indicates that a full geometry for this entry exists on the VAST filesystem.
+- **Retain** `repr_point` (`geo_point`), `hull` (`geo_shape`), `bounds` (`float` array), `timespans` (nested).
 
-### 7b. H3 resolution strategy
+Add new top-level fields:
+
+- `h3_centroid` (`keyword`) — H3 cell at reference resolution for the representative point.
+- `h3_cover` (`keyword`, multi-valued) — compacted H3 coverage cells.
+
+Within the existing `types[]` nested object, add:
+
+- `aat_id` (`integer`) — mapped AAT concept ID.
+- `aat_depth` (`integer`) — AAT hierarchy depth.
+- `aat_ancestors` (`integer`, multi-valued) — materialized ancestor set.
+
+No changes to the `names[]` (or `toponyms[]`) nested object beyond what already exists in v3.5: the surface forms, language tags, and timespans are sufficient. Symphonym embeddings are already maintained in the separate `toponyms` index and are loaded from there during the server-side pair-scoring pass (§6b).
+
+### 9b. `place_graph` index (replaces `clusters`)
+
+Renamed from `clusters` to `place_graph` for semantic clarity. The index contains a single document type:
+
+**Hard-link docs:**
+
+- `doc_type`: `"hard_links"` (keyword)
+- `place_id`: the place this overlay belongs to (keyword)
+- `namespace`: extracted from place_id (keyword)
+- `links`: object array, each `{place_id, type, source}` — symmetrised at ingestion so each pair appears in both endpoints' docs.
+- `created_at`: timestamp.
+
+The `pairwise`, `neighbors`, and `membership` document types from prior designs are removed.
+
+### 9c. `toponyms` index — unchanged
+
+Symphonym embeddings and attestation arrays remain as in the current v3.5 design.
+
+### 9d. `types` index — unchanged
+
+AAT depth, ancestors, and path are already stored. The new `aat_*` fields on `places.types[]` are derived from this index at ingestion time (§11).
+
+### 9e. WHG PostgreSQL — schema extension
+
+The contributor reconciliation table gains a `relation_type` column with values `sameAs` (existing semantics) or `distinct` (new, per §8b). Existing rows default to `sameAs` on migration.
+
+---
+
+## 10. External Geometry Store (VAST)
+
+Full geometries move out of ES into a chunked WKB store on the VAST filesystem (`/vast/ishi/`), replacing the `geom` field with a `has_geom` boolean and a stacked prefilter pipeline (H3 → bbox → hull → VAST read) for precise spatial operations. This section is largely unchanged from the prior plan and is reproduced here for completeness.
+
+### 10a. Storage layout
+
+```
+/vast/ishi/geometries/
+  ├── index.json                 # geom_key → {file, offset, length}
+  ├── geom_shard_0001.bin
+  ├── geom_shard_0002.bin
+  └── ...
+```
+
+Each shard is a binary file of concatenated WKB-encoded geometries. The index maps a geometry key (deterministic ID derived from `place_id` + authority namespace + geometry index) to a `(file, offset, length)` tuple.
+
+### 10b. Ingestion-time write path
+
+For each geometry in a place's `geometries[]` array:
+
+1. If the geometry is point-only, skip the VAST write; `has_geom` remains `false`.
+2. Otherwise serialise to WKB and append to a per-authority staging file, recording `{geom_key, h3_centroid, offset, length}` in a staging index.
+3. Set `has_geom: true` on the ES geometry entry.
+4. Do not include the full geometry in the ES document.
+
+After all authorities are ingested, run a consolidation step that sorts staging entries by `h3_centroid` (coarse resolution, e.g. r3), writes spatially-grouped shard files (`geom_shard_NNNN.bin`, splitting at a configurable shard size such as 256 MB), writes the final `index.json`, and deletes temporary staging files.
+
+### 10c. Query-time containment pipeline
+
+When precise containment is needed (e.g. "is this place inside boundary X?"):
+
+1. **H3 prefilter.** ES `terms` query on `h3_cover` eliminates ~90% of candidates.
+2. **Bbox rejection.** Check `bounds` array against the query bbox in-memory.
+3. **Hull containment.** Point-in-polygon on `hull` (stored in ES as `geo_shape`).
+4. **Full geometry.** For surviving candidates, load the geometry from VAST via the index, deserialise WKB, and perform exact containment with Shapely.
+
+### 10d. LRU cache
+
+An in-memory LRU cache (a few hundred MB) on the gateway process holds recently-loaded geometries. Hot regions (frequently-queried administrative boundaries) become effectively in-memory after first access.
+
+### 10e. Gateway geometry serving
+
+The `POST /api/search` and `POST /api/places` endpoints support three geometry modes:
+
+- **`geom: "repr_point"`** (default): return only `repr_point` from ES.
+- **`geom: "hull"`**: return `hull` from ES.
+- **`geom: "full"`**: load full geometries from VAST for surviving hits where `has_geom: true`.
+
+### 10f. Tileset generation
+
+The standalone tileset generator reads boundary geometries from the VAST store rather than from ES `_source`, making it independent of the ES index entirely.
+
+---
+
+## 11. AAT Type Enrichment at Ingestion
+
+(Largely unchanged from the prior plan.) The `processing/aat_lookup.py` module loads AAT mappings; for each place's `types[]` entry, it queries the `types` ES index for the corresponding `aat_id` to retrieve `depth` and `ancestors`, and stores `aat_id`, `aat_depth`, `aat_ancestors` alongside the existing identifier and label.
+
+Unmapped types (common for Wikidata and OSM) have null `aat_*` fields. The clustering scorer treats unmapped types as neutral: the type signal contributes 0 with redistributed weight, the same null-handling rule that applies to other facets.
+
+The `apply_aat_mappings_to_index()` function supports bulk-updating `types[]` entries on existing place docs when new AAT mappings are added via the Django mapping UI, avoiding re-ingestion.
+
+---
+
+## 12. H3 Implementation Details
+
+(Largely unchanged from the prior plan.)
+
+### 12a. Computing H3 at ingestion
+
+In `processing/helpers.py` `enrich_geometry()`:
+
+- **Point geometry:** `h3.latlng_to_cell(lat, lon, resolution=7)` for centroid; cover = [centroid].
+- **Polygon/MultiPolygon:** centroid cell as above; `h3.polygon_to_cells(polygon, resolution)` + `h3.compact_cells(cells)` for cover. Adapt resolution: start at r7, drop to r5 if polyfill yields >10,000 cells, drop to r3 if still too many.
+- **LineString:** buffer to small polygon, then polyfill.
+
+### 12b. Resolution strategy
 
 | Resolution | Hex edge ~km | Use case |
 |------------|-------------|----------|
@@ -557,426 +535,164 @@ In `processing/helpers.py` `enrich_geometry()`, add H3 computation:
 | r7 | ~1.2 km | Typical place clustering |
 | r9 | ~0.17 km | Dense urban disambiguation |
 
-For the `h3_centroid` field, use r7 as the default. The `h3_cover` field contains compacted cells which naturally span multiple resolutions.
+Default `h3_centroid` uses r7. The `h3_cover` field contains compacted cells naturally spanning multiple resolutions.
 
-### 7c. Query-time H3 usage
+### 12c. Query-time usage
 
-- **Spatial blocking in search**: when a `bounds` GeoJSON filter is provided, compute H3 cover of the bounds and add a `terms` filter on `h3_cover` as a fast prefilter before the more expensive `geo_shape` intersects query.
-- **Resolution adaptation**: the H3 cover of the query bounds must use a resolution appropriate to the query scale. A continent-level bbox covered at r7 would produce millions of cells. The gateway should choose the cover resolution dynamically: compute the query bbox area, select the coarsest resolution where cell area < bbox area / 100 (ensuring manageable cell counts), and compact the result. Alternatively, use a simple area-based lookup table:
-
-  | Query bbox approximate extent | Cover resolution |
-  |-------------------------------|-----------------|
-  | > 2,000 km | r3 |
-  | 200–2,000 km | r5 |
-  | 20–200 km | r7 |
-  | < 20 km | r9 |
-
-  The `h3_cover` field on place documents already contains compacted cells spanning multiple resolutions, so a coarse query-side cover still matches fine-resolution place covers via H3's hierarchical containment.
-
-- **Client-side**: two results sharing an `h3` value (centroid at r7) are spatially proximate — useful as a clustering signal.
+- **Spatial blocking in search.** When a `bounds` GeoJSON filter is provided, compute H3 cover of the bounds and add a `terms` filter on `h3_cover` as a fast prefilter before any `geo_shape` intersects query.
+- **Resolution adaptation.** The query-side cover uses a coarsest-appropriate resolution by bbox extent (>2000 km → r3, 200–2000 km → r5, 20–200 km → r7, <20 km → r9).
+- **Clustering blocking.** Server-side pair-scoring (§6a) uses H3 to limit pair enumeration to spatially proximate candidates only.
 
 ---
 
-## 8. AAT Type Enrichment at Ingestion
+## 13. API Endpoint Changes
 
-### 8a. Lookup pipeline
+### 13a. `POST /api/search` (and `POST /api/reconcile`)
 
-The `processing/aat_lookup.py` module (from the consolidateBoundaries plan) already provides `load_aat_mappings()`. Extend it to also return AAT depth and ancestors for each mapping:
+**New parameters:**
 
-1. For each place's `types[]` entry, look up the AAT mapping (e.g. GeoNames `PPL` → AAT `300008347`).
-2. Query the `types` ES index for that `aat_id` to get `depth` and `ancestors`.
-3. Store `aat_id`, `aat_depth`, and `aat_ancestors` alongside the existing `identifier`, `label`, `sourceLabel` in the place's `types[]` nested entry.
+- `cluster_threshold: float` (default 0.85) — clustering threshold θ.
+- `facet_weights: {n, sp, t, ty, l}` (optional) — override default weights for the composite score.
+- `phase_2: boolean | object` (default false) — trigger Phase 2 expansion. When an object, scope to a specific cluster: `{scope: "cluster", cluster_id: "..."}` or `{scope: "all"}`.
+- `include_edges: boolean` (default false) — return `edges[]` for client-side reactive reclustering (Option B, §7b).
+- `include_embeddings: boolean` (default false) — return Symphonym embeddings per toponym (Option C, §7c). Mutually compatible with `include_edges`.
+- `result_limit: int` (default 200, max 500) — discovery cap.
 
-### 8b. Handling unmapped types
+**Response additions:**
 
-Many types (especially Wikidata and OSM) do not yet have AAT mappings. These entries have null `aat_id`/`aat_depth`/`aat_ancestors`. The client-side similarity function treats unmapped types as neutral (S_type contributes 0, effectively reducing the weight pool for remaining facets).
+- `clusters[]`: list of cluster objects per §6e.
+- `edges[]` (when requested): scored pair list per §7b.
+- `phase_2_metadata` (when triggered): scope, toponym union size, expansion count.
+- Each hit gains `via_hard_link` and `via_phase_2` provenance flags (§4, §5d).
 
-### 8c. Updating AAT fields when mappings change
+**Removed parameters:**
 
-The `apply_aat_mappings_to_index()` function (consolidateBoundaries plan, step 2) already supports bulk-updating `types[]` entries on existing place docs. Extend it to also write `aat_id`, `aat_depth`, `aat_ancestors`. This avoids re-ingestion when the Django mapping UI adds new AAT mappings.
+- `group_by_cluster` (replaced by `cluster_threshold`).
 
----
+### 13b. `POST /api/places`
 
-## 9. Offline Pipeline Adaptations (`clustering/`)
+Geometry mode parameter (`geom`) per §10e. No clustering parameters (this endpoint serves single records).
 
-### 9a. `clustering/schemas.py`
+### 13c. `POST /api/links` (new)
 
-- Add `NeighborDoc` Pydantic model (doc_type = `"neighbors"`, place_id, namespace, neighbors list, baseline_cluster_id, baseline_cluster_size, algorithm_version, created_at).
-- Retain `PairwiseDoc` and `Signals` unchanged.
-- Remove `MembershipDoc`.
+For user-proposed clustering (§8). Accepts:
 
-### 9b. `clustering/clustering.py`
-
-- Rename `compute_clusters()` → `compute_neighbor_graph()`.
-- After scoring, for each place build its top-K neighbor list from all pairwise docs where it appears.
-- **Symmetrise edges**: for each pair (A, B), if either A→B or B→A appears in a top-K list, include the edge in both neighbor docs with `score = max(A→B, B→A)`. This may cause some neighbor docs to exceed K entries; that is acceptable.
-- Optionally run high-threshold connected components to assign `baseline_cluster_id`.
-- Return `list[NeighborDoc]` instead of `list[MembershipDoc]`.
-
-### 9c. `clustering/indexer.py`
-
-- Add `index_neighbor_docs()` function.
-- Retain `index_pairwise_docs()`.
-- Remove `index_membership_docs()` and `delete_stale_memberships()`.
-
-### 9d. `clustering/runner.py`
-
-- Phase 4 calls `compute_neighbor_graph()` and `index_neighbor_docs()`.
-- Incremental runs update neighbor docs for affected place_ids.
-- `show_stats()` reports neighbor doc count instead of membership count.
-
-### 9e. `clustering/config.py`
-
-- Add `neighbor_top_k: int = 50` to `ScoringConfig`.
-- Add `k_max_client: int = 50` to `ScoringConfig` — per-node degree cap after symmetrisation (§2c′).
-- Add `max_edges: int = 4000` to `ScoringConfig` — hard cap on edges in the response payload (§5c).
-- Add `baseline_cluster_threshold: float = 0.9` to `ScoringConfig`.
-- Add `weight_temporal: float = 0.10` (temporal interval overlap, computed during edge scoring using flattened timespans from the `places` index).
-- Add `theta_synth_structural: float = 0.7` — threshold for structural synthetic edges (§6i Rule B).
-- Add `tau_name: float = 0.5` — minimum toponym signal for query-bridge name guard (§6h).
-- Add `tau_link: float = 0.8` — minimum link signal for query-bridge link guard (§6h).
-- Add `toponym_stoplist: list[str]` — high-frequency generic toponym tokens for synthetic edge guard (§6i Rule A). Derived empirically from the toponyms index.
-- Retain all existing thresholds — they still govern which pairs enter the graph.
-
-### 9f. `clustering/scoring.py`
-
-- Extend `composite_score()` to compute and return **per-facet normalised signal components** alongside the composite score: `{n, sp, t, ty, l}`.
-- Add temporal similarity computation: interval overlap (Jaccard-like) between the flattened timespan unions of each place. Null when either place lacks timespans.
-
-  **Temporal similarity definition.** For each place, flatten all `timespans[].start.in` / `end.in` values into a union interval set (merge overlapping intervals). Then:
-
-  ```
-  S_t = overlap_duration / union_duration
-  ```
-
-  where `overlap_duration` is the total length of the intersection of the two union intervals, and `union_duration` is the total length of their union. Specific cases:
-  - If either place has no temporal data → `S_t = null` (handled by null-facet renormalisation).
-  - If both have open-ended ranges (no `end.in`) → treat as extending to the present year → `S_t` reflects overlap from start to now.
-  - If both are unbounded on both ends → `S_t = 1.0` (infinite overlap).
-  - Multiple intervals per place are merged before comparison (union of all intervals).
-
-- **Null-facet renormalisation**: when computing the composite score and a signal is null (e.g. temporal overlap when either place lacks timespans), redistribute that facet's weight proportionally among the non-null facets. This must match the client-side renormalisation rule (§6a) exactly, so the `score` field on each edge is consistent with what the client computes from the `s` breakdown under default weights.
-- **Score invariance guarantee.** The composite `score` on each edge MUST equal the weighted sum of signal components after null renormalisation under the default (calibrated) weights. Formally: `score == Σ (w_i / Σ_nonnull w_j) × s_i` for all non-null `s_i`. This invariant ensures that (a) the client can reconstruct the server's composite score exactly from the `s` breakdown under default weights, (b) server-side fallback clustering and client-side clustering produce identical results at the same threshold with default weights, and (c) debugging is tractable — any discrepancy between server and client scores indicates a bug, not a design ambiguity. Test this invariant as part of the offline pipeline validation (§9g).
-- These signal components are stored on each pairwise doc and propagated to neighbor docs for client-side facet-weight scaling.
-
-**Alias-aware toponym scoring.** The toponym facet signal `s.n` must capture the best name match across all aliases, not just the single toponym pair that generated the candidate during blocking (Phases 2–3). For each candidate pair (A, B), compute:
-
-```
-s.n = max { cosine(emb(t_a), emb(t_b))  ∀ t_a ∈ names(A), t_b ∈ names(B) }
+```json
+{
+  "place_a": "...",
+  "place_b": "...",
+  "type": "sameAs" | "distinct",
+  "justification": "..." (optional)
+}
 ```
 
-where `emb()` is the Symphonym 128-d int8 embedding (already stored on the `toponyms` index). If A has 5 names and B has 3 names, this is 15 int8 dot products — trivially cheap offline (~0.2 µs per pair).
+Authenticated. Records the proposal in the contributor reconciliation store. Future queries automatically respect the assertion via §2 (sameAs) or §6c augmented with hard-split logic (distinct).
 
-This handles the "Big Apple" problem at its root: place A = {"Big Apple", "New York"} and place B = {"New York", "NYC"} produce `s.n ≈ 1.0` from the "New York"↔"New York" pair, regardless of which alias matched the user's query. Without this, `s.n` would reflect only the single toponym that triggered blocking — which might be the phonetically-unrelated alias, yielding a deceptively low signal.
+### 13d. `GET /api/embed`
 
-**Implementation:** during Phase 4 scoring, for each candidate pair, fetch the Symphonym embeddings for all attestation toponyms of both places (available from the `toponyms` index or cached in DuckDB during the pipeline run). Compute all pairwise cosine similarities and take the max. With ~5 names per place on average and ~20M candidate pairs, total cost is ~20M × 25 × 0.2 µs ≈ 100 seconds — negligible relative to the hours-long pipeline.
-
-### 9g. Weight calibration (`clustering/calibration.py`)
-
-The existing `calibration.py` tunes scoring thresholds using positive/negative pair sampling (Phase 1A hard links as positive pairs, random cross-authority pairs as negatives). Extend it to also **derive optimal facet weights** for the combined similarity function:
-
-1. Using the same positive/negative pair sets, compute per-facet signal components for each pair.
-2. Fit a logistic regression (or similar lightweight model) to find the weight vector `[w_n, w_sp, w_t, w_ty, w_l]` that best separates positive pairs (true co-referents) from negatives.
-3. Output the calibrated weights to `clustering/config.py` as the default facet weights.
-4. These calibrated defaults become the initial weights both for the offline composite score and for the client-side default slider positions.
-5. Also derive the client-side clustering parameters `θ_bridge`, `θ_query`, `θ_synth`, `θ_synth_structural`, `τ_name`, and `τ_link` by evaluating precision/recall on the same pair sets under the query-bridge (§6h), phonetic synthetic-edge (§6i Rule A), and structural synthetic-edge (§6i Rule B) rules. Output these alongside the facet weights — the server includes them in the response so the client uses empirically grounded defaults rather than hard-coded constants.
-6. Validate the **score invariance** (§9f) on the calibration pair set: for every edge, verify that the stored composite `score` equals the weighted sum of signal components under default weights after null renormalisation. Flag any discrepancies as pipeline bugs.
-
-This is done during the pipeline build (Phase B), not deferred. The calibration data already exists (hard links provide ground truth); the only addition is fitting weights and thresholds alongside the existing calibration. Running calibration before the first full graph build ensures that the similarity graph and the client-side defaults use empirically grounded parameters from day one.
+Unchanged from the prior plan: returns the Symphonym int8 embedding for an arbitrary string. Used by the client for "compare name variant" workflows when embeddings are not shipped per-hit.
 
 ---
 
-## 10. Gateway Neighbor Expansion (`gateway/es_helpers.py`)
+## 14. Front-End UI Changes
 
-### 10a. New helper: `build_neighbor_lookup()`
+A separate document (`plan-dynamicClusteringUI.prompt.md` in `whg3`) covers UI implementation in detail. Key UI elements implied by this plan:
 
-```python
-def build_neighbor_lookup(place_ids: list[str]) -> dict:
-    """Fetch neighbor docs for a set of place_ids from the place_graph index."""
-    return {
-        "size": len(place_ids),
-        "query": {
-            "bool": {
-                "filter": [
-                    {"term": {"doc_type": "neighbors"}},
-                    {"terms": {"place_id": place_ids}},
-                ]
-            }
-        },
-        "_source": ["place_id", "neighbors", "baseline_cluster_id", "baseline_cluster_size"],
-    }
-```
-
-### 10b. Subgraph extraction
-
-In the search endpoint, after fetching neighbor docs:
-
-1. Build a set of all result place_ids.
-2. For each neighbor doc, filter its `neighbors[]` array to only those place_ids in the result set.
-3. Collect all surviving edges into the `edges` response array.
-4. Collect `baseline_cluster_id` per result.
-
-This produces the local similarity subgraph with no extra ES round-trips.
+- **Threshold slider** in the search results panel, controlling `cluster_threshold`. Debounced (Option A) or reactive (Option B) per the deployment choice.
+- **Facet weight sliders** (optional) for emphasising name vs spatial vs temporal vs type vs link similarity. Available with Option B or C.
+- **"Expand search" button** in the results header, triggering Phase 2 result-set-wide expansion (§5b).
+- **"Find more like this" affordance** on individual clusters and hits, triggering Phase 2 per-cluster expansion (§5b).
+- **"Propose link" / "Propose split" affordances** in cluster detail views (§8a).
+- **Provenance indicators** on hits: distinguishing direct query matches from hard-link expansions (§2d) and Phase 2 expansions (§5d).
+- **User-proposal review queue** in the WHG admin interface (§8d).
 
 ---
 
-## 11. Performance Characteristics
+## 15. Documentation Changes
 
-| Phase | Latency | Notes |
-|-------|---------|-------|
-| Offline graph build | Hours (Slurm) | Same as current clustering pipeline |
-| Server: discovery + filtering | ~200 ms | Unchanged from current search |
-| Server: neighbor lookup | ~50 ms | Single `terms` query, ~500 docs |
-| Server: subgraph extraction | ~5 ms | In-memory filtering |
-| Client: Union-Find clustering | <10 ms | ~500 nodes, ~2000 edges |
-| Client: slider re-clustering | <5 ms | Re-apply threshold, no recompute |
+### 15a. API changelog
 
-Total perceived latency: **~300 ms server + instant client interaction**.
+Document the following changes in the gateway API changelog:
 
----
+1. `POST /api/reconcile`: parameter `group_by_cluster` removed; replaced by `cluster_threshold: float`. New parameter `result_limit: int`.
+2. `POST /api/search`: new parameters `cluster_threshold`, `facet_weights`, `phase_2`, `include_edges`, `include_embeddings`, `result_limit`. Response gains `clusters[]`, optional `edges[]`, `phase_2_metadata`, per-hit `via_hard_link` and `via_phase_2`.
+3. `POST /api/places`: `geom` parameter modes `"repr_point"` (default), `"hull"`, `"full"`. Geometries served from VAST when `"full"` is requested.
+4. `POST /api/links`: new endpoint for user-proposed clustering.
+5. ES index `clusters` renamed to `place_graph`. Index now contains only `hard_links` document type; `pairwise`, `neighbors`, and `membership` types are removed.
 
-## 12. Failure Modes and Mitigations
-
-### 12a. No server-side pagination for clusterable results
-
-Client-side clustering requires the full result set and its edge subgraph in a single payload — traditional server-side pagination (page 1 = results 1–20, page 2 = results 21–40) is fundamentally incompatible because co-referent places split across pages could never be clustered together.
-
-The existing gateway architecture already avoids this: `SearchRequest.size` (max 500) returns all results in one response with no `page`/`offset` parameter. The clustering design preserves this: the entire clustering window (up to 500 results + up to 4000 edges) is delivered in a single payload. Any "pagination" is purely **client-side display pagination** — the browser holds all results and edges in memory, clusters them, and uses virtual scrolling or page controls to render subsets of the already-clustered list.
-
-For queries producing more than 500 matches, the gateway returns the top 500 by discovery score. Matches beyond 500 are not clusterable but are summarised in the response metadata (total hit count, facet aggregations). If a user needs to explore beyond the clustering window, they should refine the query (add filters, narrow spatial bounds) rather than paginate. This is consistent with the existing search UX — the current gateway already caps at 500.
-
-If future requirements demand clustering over larger result sets, the server-side fallback path (§4e) can cluster on the gateway and return pre-grouped results for any number of hits, since it has access to the full graph. But the client-side interactive clustering path is bounded at ~500 results by design.
-
-### 12b. Dense urban datasets (OSM-heavy)
-
-OSM contributes many spatially proximate records with similar names (e.g. "Pharmacy" × 50 in a city). Mitigations:
-- The offline pipeline's spatial proximity thresholds (`threshold_exact_km`, `threshold_phonetic_km`) already limit candidate pairs.
-- Type similarity separates "pharmacy" from "city" even when spatially co-located.
-
-### 12c. Weak type/temporal data → over-merging
-
-Many records (especially GeoNames) lack temporal data and have generic types. Mitigations:
-- Baseline clusters at θ = 0.9 only merge near-certain matches.
-- The default UI slider position should start high (e.g. 0.8), encouraging conservative grouping.
-- Hard links (authority sameAs) bypass the threshold entirely.
-
-### 12d. Stale neighbor graphs
-
-After authority re-ingestion, the neighbor graph must be rebuilt. Mitigations:
-- The existing `es -cluster --full` workflow triggers a complete rebuild.
-- Incremental runs (`es -cluster --incremental`) update affected neighbors.
-
-### 12e. Sparse graph fragmentation
-
-If the offline pipeline prunes edges aggressively (high ε floor, low K), the result graph may be disconnected even for true co-referents. This is the **dominant recall failure mode** — clustering becomes recall-limited by graph construction, not by θ. Lowering θ cannot fix missing edges. Mitigations:
-- Recall-heavy Phases 2–3 (exact co-attestation + phonetic KNN) generate candidates generously; the ε floor (§2e) is set conservatively low (0.3).
-- Alias-aware toponym scoring (§9f) produces strong edges for places sharing any name variant.
-- Phonetic synthetic edges (§6i Rule A) catch local gaps where spatial proximity + phonetic similarity indicate co-reference.
-- **Structural synthetic edges (§6i Rule B) catch co-referent records where phonetics fail entirely** — cross-lingual exonyms, sparse-name records, temporal divergence, type-misaligned authorities. Country code overlap + spatial proximity is a cheap, high-precision signal that requires no embedding computation.
-- The query-bridge rule (§6h) catches residual cases where both places strongly match the query.
-- If edge density proves too low in practice, increase `neighbor_top_k` (§9e) or lower ε.
-
----
-
-## 13. Relationship to Existing Architecture
-
-### 13a. Backward compatibility
-
-The v3.2 Django front-end queries legacy ES indices directly. The gateway must continue to proxy these queries until the Django app is updated to use the new `/api/search` response format. Beyond that, no backward compatibility with the old static `membership` document type is maintained — the `MembershipDoc` schema and all associated indexing/lookup code are removed outright.
-
-### 13b. Relationship to consolidateBoundaries plan
-
-Complementary, with one supersession:
-- H3 fields (§3a) are new additions alongside the `hull` and `bounds` fields from that plan.
-- AAT enrichment (§8) extends the AAT lookup helper from that plan.
-- The `geom` field in `geometries[]` (retained in that plan) is **replaced** here by `has_geom` + external VAST geometry store (§16). The consolidateBoundaries plan's `enrich_geometry()` helper must be updated accordingly.
-- Both plans share the assumption of a full re-ingestion.
-
-### 13c. Relationship to v4 graph model
-
-This design is a **materialised, weighted place similarity graph with query-time projection and client-side subgraph clustering**. It maps directly to a native graph model:
-
-- `place_graph` pairwise docs → graph edges with scored evidence.
-- `place_graph` neighbor docs → materialised adjacency lists (a performance cache over the edge set).
-- `places` docs → graph nodes with facet properties.
-- In v4 (ArangoDB or similar), pairwise docs become `relates_to` attestation edges, neighbor docs become traversal results from AQL queries, and client-side clustering transfers unchanged — it operates on a projected subgraph regardless of the server's storage engine.
-- A formal **graph schema (node/edge model + scoring invariants)** should be defined before v4 migration begins, making the transition mechanical rather than interpretive.
-
----
-
-## 14. Migration Path
-
-### Phase A — Schema augmentation and geometry externalization (during re-ingestion)
-
-1. Remove `geom` (`geo_shape`) from `geometries[]` in `schemas/places.json`; add `has_geom` (`boolean`).
-2. Add `h3_centroid`, `h3_cover` to `places` schema.
-3. Add `aat_id`, `aat_depth`, `aat_ancestors` to `places.types[]`.
-4. Implement the VAST geometry store: pack file writer, index builder, LRU cache reader (§16).
-5. Update `enrich_geometry()` to write full geometry to VAST and set `has_geom` on the ES doc.
-6. Compute all new fields during authority re-ingestion.
-7. Update gateway geometry-serving logic to read from VAST when `geom: "full"` is requested.
-
-### Phase B — Offline pipeline adaptation and calibration
-
-1. Add `NeighborDoc` schema and `neighbors` doc type to `place_graph` index (renamed from `clusters`).
-2. Implement alias-aware toponym scoring in `composite_score()`: max pairwise Symphonym cosine similarity across all names (§9f).
-3. Adapt Phase 4 to produce neighbor docs instead of membership docs.
-4. Run weight calibration (§9g) using hard-link ground truth to derive empirically grounded default facet weights.
-5. Run a full graph build pass with calibrated weights.
-6. Verify neighbor graph quality (spot-check known co-referent places, including alias-heavy cases like "Big Apple" / "New York").
-
-### Phase C — Gateway integration
-
-1. Add `build_neighbor_lookup()` helper.
-2. Add neighbor expansion step (Step 3c) to the search endpoint.
-3. Extend `SearchResponse` with edges, per-hit clustering signals, `query_match`, and response-level `query_emb`.
-4. Add Symphonym embedding extraction in the enrichment step: for each hit, build the `query_match` object from the discovery-time toponym match (name, score, and base64-encoded int8 embedding). Compute `query_emb` from the original query string.
-5. Add server-side fallback clustering (optional `cluster_threshold` parameter), including the query-bridge rule (§6h).
-6. Verify response payloads are within size budget.
-
-### Phase D — Client-side implementation
-
-> **See `plan-dynamicClusteringUI.prompt.md`** (§5, Phase D) — client-side clustering JS, UI changes, and Django thin-proxy changes are managed in the `whg3` project. [Stored locally on the `atlas` branch at /home/stephen/Documents/GitHub/whg3/plan-dynamicClusteringUI.prompt.md]
-
-### Phase E — Cleanup and documentation
-
-1. Remove `cluster_id` / `cluster_size` from the old `SearchHit` model.
-2. Remove `build_cluster_lookup()` from `gateway/es_helpers.py`.
-3. Remove `group_by_cluster` parameter from `ReconcileRequest` and all downstream code.
-4. Update `CLAUDE.md`, `CLUSTERS.md`, `developer/search-system-architecture.md`, `README.md` (§18c).
-5. OpenRefine migration guide and API changelog — see `plan-dynamicClusteringDocumentation.prompt.md`.
-6. Publish API changelog (§18b).
-
----
-
-## 15. Dependencies
-
-- **h3-py** (`h3`): Python H3 library for cell computation at ingestion time. Already available via pip; add to project dependencies.
-- **No new database software**: no PostGIS, no Redis, no FAISS. ES remains the search/index layer. The VAST filesystem provides the geometry store. The chunked WKB format (§16) requires only Shapely (already a project dependency) for serialization/deserialization — no GDAL or fiona.
-
----
-
-## 16. External Geometry Store (VAST Filesystem)
-
-### 16a. Motivation
-
-Full GeoJSON geometries (`geo_shape`) are the largest single contributor to ES document size — continental polygons, complex administrative boundaries, and multipolygon relations can be tens of KB each. Storing them in ES inflates shard sizes, slows retrieval, and wastes heap on fields rarely needed during search. Moving full geometries to the VAST filesystem (`/vast/ishi/`) eliminates this overhead while keeping them accessible for precise containment checks when needed.
-
-### 16b. Storage format
-
-Use a **chunked-binary archive** with a JSON index, **spatially sharded** for query-time locality:
-
-```
-/vast/ishi/geom/
-  ├── index.json              # { geom_key: { file, offset, length } }
-  ├── geom_shard_0001.bin     # packed WKB geometries, spatially grouped
-  ├── geom_shard_0002.bin
-  └── ...
-```
-
-The index maps geometry key → `{file, offset, length}`, enabling O(1) lookups. WKB serialization/deserialization uses Shapely (already a project dependency) — no GDAL, fiona, or other external binary libraries required.
-
-**Spatial sharding** (not authority-based): geometries are assigned to shard files based on their H3 centroid cell at a coarse resolution (e.g. r3 or r4). This means geometries from different authorities but in the same geographic region share a shard file. The benefit is critical at query time: a typical search result set spans multiple authorities (GeoNames + Wikidata + OSM for the same region), so authority-based packing would require random reads across many files per request. Spatial packing aligns file I/O with the query's geographic locality — a search for places in France reads predominantly from the France-region shards, regardless of which authority produced each record.
-
-During ingestion, a two-pass strategy handles this: first pass writes geometries to temporary per-authority files (matching the sequential authority ingestion order); a post-ingestion consolidation step re-packs them into spatially-sharded files sorted by H3 centroid and writes the final `index.json`.
-
-This format is chosen over FlatGeobuf because the primary access pattern is batch ID lookup (not spatial query), the write pattern benefits from incremental append during ingestion, and the multi-geometry-per-place model maps naturally to composite index keys. A FlatGeobuf export can be generated as a derivative artifact if direct GIS tool interoperability is needed.
-
-### 16c. Ingestion pipeline
-
-In `processing/helpers.py` `enrich_geometry()`, change the output structure:
-
-1. Compute `repr_point`, `hull`, `bounds`, `h3_centroid`, `h3_cover` as before — these go into the ES document.
-2. Serialize the full GeoJSON geometry to WKB and write it to a temporary per-authority staging file, recording `{geom_key, h3_centroid, offset, length}` in a staging index.
-3. Set `has_geom: true` on the ES geometry entry.
-4. Do **not** include the full geometry in the ES document.
-
-For point-only geometries (no polygon/line supplied by the authority):
-
-1. `repr_point` is the only spatial field in ES.
-2. `has_geom: false` — no external geometry exists.
-3. `hull` and `bounds` are omitted or trivially derived from the point.
-
-After all authorities are ingested, run a **consolidation step** that:
-
-1. Reads all staging files and sorts entries by `h3_centroid` (coarse resolution, e.g. r3).
-2. Writes spatially-grouped shard files (`geom_shard_NNNN.bin`), splitting at a configurable shard size (e.g. 256 MB).
-3. Writes the final `index.json` mapping each `geom_key` → `{file, offset, length}`.
-4. Deletes temporary staging files.
-
-### 16d. Query-time containment pipeline
-
-When the gateway needs to perform precise containment checks (e.g. "is this place inside boundary X?"):
-
-1. **H3 prefilter** — ES `terms` query on `h3_cover` eliminates ~90% of candidates.
-2. **Bbox rejection** — check `bounds` array against the query bbox in-memory (trivial).
-3. **Hull containment** — point-in-polygon on `hull` (stored in ES as `geo_shape`), rejecting false positives from H3 (important for thin/concave geometries).
-4. **Full geometry** — for surviving candidates only, load the geometry from VAST via the index, deserialize WKB, and perform exact containment with Shapely.
-
-Because the candidate set after steps 1–3 is typically small (tens of records), the VAST reads are fast and bounded.
-
-### 16e. LRU cache
-
-Add an in-memory LRU cache (a few hundred MB) for recently-loaded geometries on the gateway process. Hot regions (e.g. European administrative boundaries frequently used in spatial filters) become effectively in-memory after the first access.
-
-### 16f. Gateway geometry serving
-
-The existing `POST /api/search` and `POST /api/places` endpoints return `geometries[]` on each hit. Under the new design:
-
-- **Default** (`geom: "repr_point"`): return only `repr_point` from ES. No VAST access. Fast.
-- **Full** (`geom: "full"`): after the ES query, batch-load full geometries from VAST for all surviving place_ids where `has_geom: true`. Include them in the response as GeoJSON. This replaces the previous pattern of reading `geom` from the ES `_source`.
-- **Hull** (`geom: "hull"`): return `hull` from ES without VAST access. Useful for lightweight map display of approximate shapes.
-
-### 16g. Relationship to tileset generation
-
-The standalone tileset generator (`processing/generate_tiles.py` from the consolidateBoundaries plan) reads boundary geometries to produce `.mbtiles`. Under this design, it reads from the VAST geometry store rather than from ES `_source`, making it independent of the ES index entirely.
-
-### 16h. Attestation-level geometry
-
-Different authorities may assert different geometries for the same real-world place, potentially at different times. The `places.geometries[]` array already supports multiple entries (one per authority), each carrying its own `timespans`. The external geometry store preserves this: each geometry entry in `geometries[]` has its own `has_geom` flag, and the VAST index is keyed by `{place_id}_{geometry_index}` (or equivalently, a deterministic ID derived from place_id + authority namespace). In v4, when geometry attaches to attestation nodes rather than abstract places, the VAST store migrates unchanged — only the index keys change.
-
----
-
-## Further Considerations
-
-1. **Formal graph schema.** Before v4 migration, define a formal node/edge model with scoring invariants (e.g. "edge weights are symmetric", "hard links are never dropped below threshold", "signal components sum to composite score under default weights"). This document would make the ES → graph DB migration mechanical.
-
-2. **Minimum spanning forest per component (optional improvement).** The current approach (thresholded connected components) has a known weakness: chaining (A~B, B~C ⇒ A~C even when A~C is weak). The post-processing split (§6f) partially mitigates this. A stronger alternative: after building each component, keep only the strongest edges forming a minimum spanning tree, then prune weak bridges. This removes spurious chaining without heavy computation. Not required for v1, but worth evaluating if chaining proves problematic in practice.
-
-3. **High-frequency toponym stoplist.** The synthetic phonetic edge pass (§6i Rule A) requires a stoplist of generic place-name tokens to prevent catastrophic merging. This list should be derived empirically from the `toponyms` index (e.g. top 100 tokens by attestation count across all authorities). Initial candidates: "Central", "Station", "Market", "Church", "School", "Main", "Park", "New", "San", "Saint", "North", "South", "East", "West", "Old", "National", "Grand", "Royal", "Great". The stoplist is maintained as a server-side configuration and included in the search response metadata so the client can apply it during synthetic edge construction.
-
----
-
-## 17. Front-End UI Changes
-
-> **Moved to `plan-dynamicClusteringUI.prompt.md`** — the front-end UI, client-side clustering JS, and Django thin-proxy changes are managed in the `whg3` project. That document includes all necessary context (response payload format, client-side algorithm, UI specifications).
-
----
-
-## 18. Documentation Changes
-
-### 18a. OpenRefine / Reconciliation API documentation
-
-> **Moved to `plan-dynamicClusteringUI.prompt.md`** (§4a) — the Django-side API code (`api/crc_client.py`, reconciliation endpoint) is managed in the `whg3` project. The OpenRefine integration guide is in `plan-dynamicClusteringDocumentation.prompt.md` (§1).
-
-### 18b. API changelog
-
-Document the following breaking changes in the gateway API changelog:
-
-1. `POST /api/reconcile`: parameter `group_by_cluster` removed; replaced by `cluster_threshold: float | null`.
-2. `POST /api/search`: response now includes `edges` array and per-hit `phon_emb`, `h3`, `temporal_range`, `baseline_cluster_id` fields. New optional parameter `cluster_threshold: float | null`.
-3. `POST /api/places`: response `geometries[]` no longer includes `geom` (full geometry). Request `geom: "full"` to have the server load full geometries from VAST. New geometry modes: `"repr_point"` (default), `"hull"`, `"full"`.
-4. ES index `clusters` renamed to `place_graph`. Internal change — not directly exposed to API consumers, but affects any tooling that queries the index directly.
-
-### 18c. Internal documentation updates
+### 15b. Internal documentation updates
 
 | Document | Changes |
 |----------|---------|
-| `CLAUDE.md` | Update Gateway Architecture section: add `place_graph` index, `phon_emb` in hit payload, `cluster_threshold` parameter, VAST geometry store. Remove references to `clusters` index `membership` doc type. Update index table (add `place_graph`, remove `clusters`). |
-| `CLUSTERS.md` | Major rewrite or replacement — the document currently specifies static membership clustering. Replace with a description of the similarity graph architecture, neighbor docs, and query-time projection model. |
-| `developer/search-system-architecture.md` | Update §4 to describe the new Step 3c (neighbor expansion) and the clusterable response format. Update §2.7 to reflect facet filtering over clustered results. Remove references to `group_by_cluster`. |
-| `README.md` | Update the architecture diagram and index table. |
-| `gateway/reconcile.py` docstring | Update to describe `cluster_threshold` replacing `group_by_cluster`. |
+| `CLAUDE.md` | Update Gateway Architecture: add discovery-stage Symphonym role, hard-links overlay, server-side dynamic clustering, Phase 2 expansion, user proposals. Remove references to precomputed pairwise graph and neighbour docs. Update index table. |
+| `CLUSTERS.md` | Major rewrite. Replace static-membership and adjacency-list-store descriptions with the layered architecture: discovery, hard-link expansion, server-side dynamic clustering, Phase 2, user proposals. Document the three reactivity options (§7). |
+| `developer/search-system-architecture.md` | Update to describe query-time clustering at the gateway, hard-link overlay, Phase 2 expansion. Remove references to neighbour expansion, pairwise scoring storage, baseline cluster precomputation. |
+| `README.md` | Update architecture diagram and index table. |
+| `gateway/reconcile.py` docstring | Document `cluster_threshold`, `result_limit`, and the shared code path with interactive search. |
 
-OpenRefine integration guide documentation is in `plan-dynamicClusteringDocumentation.prompt.md` (§1).
+OpenRefine integration guide updates are in `plan-dynamicClusteringDocumentation.prompt.md`.
 
+---
+
+## 16. Migration and Retirement
+
+### 16a. Retired infrastructure
+
+The following components from the prior offline pipeline and v3.5 design are retired:
+
+- `clustering/scoring.py` composite-score persistence (scoring logic remains, but now runs at query time rather than offline).
+- `clustering/clusters.py` connected-components and DBSCAN sub-clustering for offline membership generation.
+- ES `clusters` index `pairwise`, `neighbors`, `membership` document types.
+- The neighbour-doc symmetrisation and degree-truncation logic.
+- The baseline-cluster precomputation step.
+- The client-side synthetic-edge passes (Phase 2a/2b in the prior plan): no longer needed because the discovery + hard-link + Phase 2 + user-proposal layers cover the same recovery cases more transparently.
+
+### 16b. Retained infrastructure
+
+The following components are retained and continue under the new architecture:
+
+- Symphonym index, training pipeline, and language-extension work.
+- `clustering/phase1_hard_links.py` (Phase 1A and 1B harvesting).
+- AAT type enrichment pipeline (`processing/aat_lookup.py`, `apply_aat_mappings_to_index()`).
+- H3 indexing in `processing/helpers.py`.
+- VAST geometry store and gateway containment pipeline.
+- Contributor reconciliation store in WHG Django PostgreSQL (extended per §9e).
+
+### 16c. Migration sequence
+
+1. Schema changes (§9): deploy new fields on `places` and rename `clusters` to `place_graph`. Run hard-link harvesting against the new schema.
+2. AAT enrichment backfill (§11): populate `types[].aat_*` fields.
+3. H3 backfill (§12): populate `h3_centroid` and `h3_cover`.
+4. VAST geometry migration (§10): write existing geometries to VAST, set `has_geom`, remove `geom` from ES.
+5. Gateway: deploy new clustering endpoint logic with Option A reactivity. Confirm reconciliation determinism on representative test queries.
+6. Front-end: deploy threshold slider, Phase 2 affordance, user-proposal UI.
+7. Optional later: Option B (edge shipping) for smoother slider control.
+8. Optional much later: Option C (embedding shipping) if power-user demand emerges.
+
+---
+
+## 17. Further Considerations
+
+### 17a. Empirical validation of the discovery-completeness assumption
+
+The architecture rests substantially on the claim that Symphonym discovery brings co-referent records into the result set together for the dominant query patterns. This is plausible but should be measured: take a sample of queries from production logs, run them under the new architecture, and count how often expected co-referents appear in Phase 1 vs require Phase 2 vs require hard-link expansion vs are missed entirely. The measurement informs whether the result-set cap (§3a) and the Phase 2 trigger threshold need adjustment, and identifies subdomains where hard-link density is insufficient.
+
+### 17b. Phase 2 default scoping
+
+The user-triggered model (§5) leaves the choice of result-set-wide vs per-cluster expansion to the user. Usage data may indicate that one scope is the dominant choice and could become a default with the other available as an "expand differently" option. Worth deferring until usage data exists.
+
+### 17c. Asserted-distinct splitting algorithm
+
+The hard-split logic in §8c is sketched but not specified in detail. If a chain `a~b~c` would put an asserted-distinct pair `(a, c)` in the same cluster, the algorithm must decide which edge to cut. A reasonable heuristic: cut the weakest edge in the chain that, when removed, separates the asserted-distinct endpoints. Multiple cuts may be needed if multiple asserted-distinct constraints apply. Worth specifying once enough asserted-distinct relations exist to test against, which will not be initially.
+
+### 17d. Phase 2 proximity to v4
+
+Phase 2's toponym-expansion mechanism is structurally similar to a graph traversal: starting from Phase 1 hits, follow toponym-attestation edges to reach co-referent records. In v4, this becomes an explicit graph traversal in ArangoDB rather than a batched ES search, with potentially better performance characteristics and richer query expressiveness. The v3.5 implementation is deliberately a simpler version that does not pre-figure graph-DB query language but produces equivalent results, easing the eventual transition.
+
+### 17e. Performance budget for the H3 pair-scoring pass
+
+§6a estimates "a few tens of milliseconds" for pair scoring on a 200-hit result set. This is plausible but unverified. A microbenchmark before production deployment, using realistic toponym counts and AAT ancestor depths, would confirm the estimate and surface any unexpected costs (e.g. AAT ancestor-set intersections at very deep nodes, or string-similarity degradation on long toponyms). The Symphonym discovery latency dominates total query time even in the worst case for pair scoring, so there is some headroom, but it is worth measuring.
+
+### 17f. Stoplist maintenance
+
+The Phase 2 stoplist (§5c) needs occasional review as the toponyms index grows. A periodic batch job (quarterly, perhaps) recomputes top-frequency tokens and proposes additions to the stoplist for review. The stoplist is small (a few dozen entries) and its contents are noncontroversial; the maintenance burden is light.
