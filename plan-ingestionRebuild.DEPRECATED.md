@@ -1,5 +1,7 @@
 # Plan: WHG Authority File Ingestion Pipeline Rebuild
 
+## WAIT: Can we drop the gating before indexing? Or allow bypass for single authorities? The situation has changed following review of clustering.
+
 ## Goal
 
 Build a decoupled, restartable ingestion pipeline where each namespace is fully
