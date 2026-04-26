@@ -24,24 +24,30 @@ Simultaneously, this plan retains the geometry, H3, and AAT enrichment work from
 
 ## Summary of Changes
 
-Replace the static `clusters` index and the precomputed similarity graph with a much smaller hard-link overlay and query-time scoring. Discovery and clustering both run at query time, with Symphonym handling cross-script and orthographic variation at the discovery stage and dynamic clustering operating over the resulting candidate set. A user-triggered Phase 2 broadens the candidate pool when needed; user-proposed clustering captures the contested residue. Geometry, H3, and AAT changes from the prior plan are retained.
+Replace the static `clusters` index and the precomputed similarity graph with a SQLite-based hard-link overlay on the Pitt VM, query-time scoring, and synchronous forwarding of contributor attestations from DO PostgreSQL to the Pitt SQLite for realtime contributor effects. Discovery and clustering both run at query time, with Symphonym handling cross-script and orthographic variation at the discovery stage and dynamic clustering operating over the resulting candidate set. A user-triggered Phase 2 broadens the candidate pool when needed; user-proposed clustering captures the contested residue and is honoured immediately on the next query. Geometry, H3, and AAT changes from the prior plan are retained.
 
 ---
 
 ## Core Architecture
 
 ```
-Offline pipeline (batch)
-  ├── Phase 1A: Authority hard links (relations with sameAs/closeMatch/exactMatch)
-  ├── Phase 1B: Contributor reconciliation links (WHG Django PostgreSQL)
-  └── Hard-links overlay maintained as a small, re-ingestion-tolerant view
+Offline pipeline (batch, periodic)
+  ├── Phase 1A: Authority hard-link harvest from staged ingestion files (VAST, Pitt)
+  ├── Phase 1B: Contributor hard-link replay from DO PG (active rows only)
+  └── Output: SQLite database on Pitt VM (consolidated, re-buildable)
 
-Query time (server)
+Submission time (synchronous, per contributor action)
+  ├── Django (DO) writes to PG contributor_attestations (durable log)
+  ├── Django calls Pitt POST /api/links (synchronous forwarding)
+  └── Pitt inserts row into SQLite (idempotent via INSERT OR IGNORE)
+
+Query time
+  ├── User → Django (DO) → Pitt gateway
   ├── Step 1: Discovery (toponyms index — Symphonym KNN or BM25)
-  ├── Step 2: Hard-link expansion (pull in authority-asserted equivalents)
+  ├── Step 2: Hard-link expansion (Pitt SQLite lookup, includes contributor + authority)
   ├── Step 3: Filtering + aggregations (places index)
   ├── Step 4: Pair scoring within result set (H3-blocked, signal-decomposed)
-  ├── Step 5: Server-side Union-Find at requested threshold
+  ├── Step 5: Three-pass Union-Find (hard splits, strong-link bootstrap, threshold-gated)
   └── Step 6: Return clustered results (and optionally edge list for reactive UI)
 
 User-triggered Phase 2 (server, opt-in)
@@ -54,7 +60,7 @@ Client (browser)
   ├── Default: receive clustered results, display
   ├── Reactive option: receive scored edges, run Union-Find on slider change
   ├── User actions: trigger Phase 2, propose links, unpropose links
-  └── Proposed links flow back to reconciliation store
+  └── Proposed links flow back through Django to DO PG and (forwarded) to Pitt SQLite
 ```
 
 ---
@@ -79,46 +85,165 @@ The toponyms index continues to store Symphonym int8 embeddings and BM25 text fi
 
 ## 2. Hard-Link Expansion
 
-Hard links are authority-asserted equivalences: `sameAs`, `closeMatch`, `exactMatch` relations between place records, plus contributor reconciliation links from the WHG PostgreSQL store. They differ from inferred similarity in kind, not just in degree: they represent ground-truth identity claims made by gazetteer maintainers or contributing scholars, and they are citable, revertible, and version-tracked. The architecture treats them as first-class identity assertions rather than as one signal among many.
+Hard links are authority-asserted or contributor-asserted equivalences: `sameAs`, `exactMatch`, `closeMatch`, and `distinct` relations between place records. They differ from inferred similarity in kind, not just in degree: they represent ground-truth identity claims made by gazetteer maintainers or contributing scholars, and they are citable, revertible, and version-tracked. The architecture treats them as first-class identity assertions rather than as one signal among many. The discrimination between SKOS relation types (`sameAs`/`exactMatch` as strong unconditional equivalence, `closeMatch` as weighted near-equivalence, `distinct` as asserted non-equivalence) and between source categories (authority vs contributor) is preserved through the entire pipeline.
 
-### 2a. Offline harvesting
+### 2a. Offline harvesting and the SQLite query store
 
-The existing Phase 1A and Phase 1B logic from the prior offline pipeline is retained:
+Hard links are gathered into a SQLite database on the Pitt VM, which serves as the query store for hard-link expansion at query time. SQLite is chosen over ES for several reasons: the workload is purely indexed point lookup by place_id (no full-text, no aggregation, no spatial), the data is naturally relational (typed edges with provenance), the absence of refresh-interval semantics simplifies bulk insertion and incremental updates, and the resulting database is small enough (a few hundred MB at full WHG scale) to operate as a single file with trivial backup and recovery. The SQLite file is co-located with the FastAPI gateway on the Pitt VM, providing sub-millisecond lookup latency on the hot path.
 
-- **Phase 1A** harvests authority `sameAs`/`closeMatch`/`exactMatch` relations from the `places` index `relations[]` field.
-- **Phase 1B** harvests contributor reconciliation decisions from the WHG Django PostgreSQL database, keyed on contributor place_id pairs.
+The schema:
 
-The output is a flat hard-links table, indexed by place_id, with each entry listing the place_ids asserted to be equivalent (with provenance: which authority or contributor made the assertion, and at what confidence). This is small (orders of magnitude smaller than the prior pairwise-graph index) and cheap to rebuild from source on re-ingestion.
+```sql
+CREATE TABLE hard_link_assertions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  place_a TEXT NOT NULL,           -- canonical place_id, e.g. "wd:Q90"
+  place_b TEXT NOT NULL,           -- canonical place_id, e.g. "gn:2988507"
+  relation_type TEXT NOT NULL,     -- 'sameAs' | 'exactMatch' | 'closeMatch' | 'distinct'
+  source_category TEXT NOT NULL,   -- 'authority' | 'contributor'
+  source_id TEXT NOT NULL,         -- 'wikidata' | 'tgn' | 'osm' | ... | 'contributor:<user_id>'
+  asserted_at TEXT,                -- ISO timestamp from source data, or contributor submission time
+  justification TEXT,              -- contributor justifications; null for authority assertions
+  CHECK (place_a < place_b),       -- canonical ordering eliminates directional duplicates
+  UNIQUE (place_a, place_b, relation_type, source_id)
+);
 
-### 2b. Storage
+CREATE INDEX ix_hla_place_a ON hard_link_assertions(place_a);
+CREATE INDEX ix_hla_place_b ON hard_link_assertions(place_b);
+CREATE INDEX ix_hla_source ON hard_link_assertions(source_category, source_id);
+```
 
-Hard links are stored as a new lightweight `hard_links` document type in the ES `place_graph` index (renamed from `clusters` for semantic clarity, even though the index now holds only this overlay). Each doc:
+The `place_a < place_b` CHECK enforces canonical ordering at the schema level, so symmetrisation is automatic: an authority asserting `gn:X sameAs wd:Y` and another asserting `wd:Y sameAs gn:X` collapse to the same row. The UNIQUE constraint allows multiple sources to make the same assertion (which is itself useful evidence) but forbids duplicate ingestion of the same assertion from the same source. The two-column indexes support the runtime query "give me all assertions involving any of these place_ids" efficiently for either endpoint.
+
+### 2b. Authority harvesting (Phase 1A)
+
+Authority assertions are harvested from the staged ingestion files on VAST, not from the populated ES `places` index. The advantages are that the harvest does not depend on ES indexing state (it can run before, during, or after the main `places` ingestion without coupling), the staged files are the canonical record of what each authority asserts, and a re-harvest after a fix to the harvesting logic does not require re-ingesting any authority data.
+
+For each authority's staged ingestion files, the harvest iterates records and emits one row per `relations[]` entry whose `type` is `sameAs`, `exactMatch`, or `closeMatch`:
+
+```python
+for staged_file in staged_authority_files:
+    for record in iter_records(staged_file):
+        for relation in record.get('relations', []):
+            if relation['type'] in ('sameAs', 'exactMatch', 'closeMatch'):
+                a, b = canonical_order(record['place_id'], relation['target'])
+                conn.execute(
+                    "INSERT OR IGNORE INTO hard_link_assertions "
+                    "(place_a, place_b, relation_type, source_category, source_id, asserted_at) "
+                    "VALUES (?, ?, ?, 'authority', ?, ?)",
+                    (a, b, relation['type'], record['namespace'], relation.get('asserted_at'))
+                )
+```
+
+`INSERT OR IGNORE` gives idempotent behaviour: the same source asserting the same thing twice across re-harvests is a no-op, while different sources asserting the same thing produce separate rows. Bulk insertion of tens of millions of rows runs in a few minutes with WAL mode and a large page cache; the operation is comfortable within batch-job time.
+
+### 2c. Contributor harvesting and durable log on DO (Phase 1B)
+
+Contributor assertions originate at the user-facing Django application on DigitalOcean. The DO PostgreSQL database holds a durable log of every contributor attestation, structured as an append-mostly history (revoked and amended assertions are status-tombstoned rather than deleted), and serves as the source of truth for the contributor pathway. The Pitt SQLite is a derived view over both authority files and this DO log; if the SQLite is destroyed it can be rebuilt fully from the two sources.
+
+The DO `contributor_attestations` schema:
+
+```sql
+CREATE TABLE contributor_attestations (
+  id SERIAL PRIMARY KEY,
+  place_a TEXT NOT NULL,
+  place_b TEXT NOT NULL,
+  relation_type TEXT NOT NULL,         -- 'sameAs' | 'exactMatch' | 'closeMatch' | 'distinct'
+  contributor_id INTEGER NOT NULL REFERENCES auth_user(id),
+  asserted_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  justification TEXT,
+  status TEXT NOT NULL DEFAULT 'active',  -- 'active' | 'revoked' | 'superseded'
+  superseded_by INTEGER REFERENCES contributor_attestations(id),
+  revoked_at TIMESTAMP,
+  CHECK (place_a < place_b)
+);
+CREATE INDEX ix_contrib_a ON contributor_attestations(place_a);
+CREATE INDEX ix_contrib_b ON contributor_attestations(place_b);
+CREATE INDEX ix_contrib_user ON contributor_attestations(contributor_id, asserted_at);
+CREATE INDEX ix_contrib_status ON contributor_attestations(status);
+```
+
+The `status` field preserves history: a contributor revoking an assertion sets `status = 'revoked'` and `revoked_at = NOW()` rather than deleting the row, and a contributor amending an assertion (e.g. changing `closeMatch` to `sameAs`, or correcting a justification) creates a new row marked active and updates the previous row to `status = 'superseded'` with `superseded_by` pointing at the new id. The full audit trail is recoverable, which matters for both contributor curation and incident response.
+
+This table replaces the existing user-attestation table that is being retired. Migration covers existing rows with `relation_type = 'sameAs'` and `status = 'active'` defaults.
+
+### 2d. Synchronous forwarding from DO to Pitt
+
+Contributor submissions are forwarded synchronously from DO to the Pitt SQLite at submission time, so the next query honours the new attestation immediately. This gives realtime contributor effects: a researcher proposing a link sees the platform's clustering reflect their assertion on their next search, which makes the contributor pathway feel like an interactive workflow rather than a submission-and-wait one.
+
+The submission flow:
+
+1. User submits an attestation through the Django UI.
+2. Django writes the attestation to DO PG `contributor_attestations`.
+3. Django calls `POST /api/links` on the Pitt gateway with the attestation payload.
+4. Pitt inserts the row into SQLite (via `INSERT OR IGNORE` for idempotency).
+5. Pitt returns success to Django.
+6. Django returns success to the user.
+
+If step 5 fails (network blip, transient gateway error), Django's local PG record persists and the call can be retried. The Pitt-side `INSERT OR IGNORE` makes retries safe: a successful first call followed by a retried second call is a no-op on the second attempt. If the Pitt-DO link is fully down, the entire site is non-functional anyway (all queries route through both servers), so submission-handling failures in this state are not unique to the contributor pathway and are surfaced through the same site-down handling as everything else.
+
+Revocation and amendment follow the same pattern: Django updates the DO PG record to `status = 'revoked'` (or creates a superseding row), then calls `DELETE /api/links/<assertion_key>` (and for amendments, `POST /api/links` with the new values) on Pitt. The Pitt SQLite reflects only the currently active state; the DO PG holds the full history.
+
+### 2e. SQLite rebuild and reconciliation
+
+A full SQLite rebuild can be performed at any time, recovering from corruption, schema migration, or simple periodic refresh:
+
+1. Drop and recreate the SQLite file at a temporary path.
+2. Run authority harvest from staged ingestion files (§2b).
+3. Replay active contributor assertions from DO PG (`SELECT ... WHERE status = 'active'`).
+4. Atomically rename the new file into place over the old one (the gateway's open file handle remains valid; the next open uses the new file).
+
+A periodic reconciliation job, less invasive than a full rebuild, compares DO PG `status = 'active'` rows against Pitt SQLite contributor rows and flags any drift: rows missing from Pitt that should be present (forward-replay), rows present in Pitt that have been revoked on DO (delete), rows whose values differ (amend in place). Drift detection is itself a useful diagnostic; if it becomes non-trivial the synchronous forwarding layer can be investigated. In normal operation drift should be zero or near-zero.
+
+### 2f. Query-time expansion
+
+After the discovery step (§1), the gateway issues a single SQLite query for all hard-link assertions involving any of the result-set place_ids:
+
+```sql
+SELECT
+    CASE WHEN place_a IN (?, ?, ...) THEN place_a ELSE place_b END AS in_result,
+    CASE WHEN place_a IN (?, ?, ...) THEN place_b ELSE place_a END AS expanded_to,
+    relation_type,
+    source_category,
+    source_id,
+    asserted_at,
+    justification
+FROM hard_link_assertions
+WHERE place_a IN (?, ?, ...) OR place_b IN (?, ?, ...);
+```
+
+The result set lists each linked place pair with full provenance. The gateway determines the expanded set of place_ids to fetch (deduplicated against the existing result set, prioritised per §2g), fetches the corresponding `places` documents from ES, and adds them to the response.
+
+`distinct` assertions are not used for expansion (they are evidence of non-equivalence rather than a basis for pulling in additional records) but are passed through to the clustering pass (§6c) where they act as hard splits.
+
+### 2g. Expansion priority and capping
+
+A cap on hard-link expansion size (default: result-set size + 50%) prevents pathological cases where a heavily-linked record (a famous city with sameAs assertions to dozens of authorities) inflates the result set unboundedly. Expansion proceeds in priority order:
+
+1. Contributor `sameAs` and `exactMatch` (explicit human judgement, strongest evidence of identity).
+2. Authority `sameAs` (strongest authority evidence).
+3. Authority `exactMatch` (typically cross-vocabulary alignment, slightly weaker than `sameAs`).
+4. Contributor `closeMatch` and authority `closeMatch` (explicit weak-equivalence, scored as 0.7 in §6c rather than unconditionally unioned).
+
+Truncation, if it occurs, drops `closeMatch` entries first, then weaker authority `exactMatch` entries, then authority `sameAs` from less-trusted sources, never contributor entries.
+
+### 2h. Provenance carried through to the response
+
+Each expanded hit is flagged with its expansion provenance:
 
 ```json
 {
-  "doc_type": "hard_links",
-  "place_id": "wd:Q90",
-  "namespace": "wd",
-  "links": [
-    {"place_id": "gn:2988507", "type": "sameAs", "source": "wikidata"},
-    {"place_id": "tgn:7008038", "type": "exactMatch", "source": "wikidata"},
-    {"place_id": "whg:contrib:abc123", "type": "sameAs", "source": "contributor:user42"}
-  ],
-  "created_at": "..."
+  "via_hard_link": {
+    "linked_from": "wd:Q90",
+    "relations": [
+      {"type": "sameAs", "source_category": "authority", "source_id": "wikidata"},
+      {"type": "sameAs", "source_category": "contributor", "source_id": "contributor:user42",
+       "justification": "Both records refer to the modern French capital."}
+    ]
+  }
 }
 ```
 
-No scoring, no signal breakdown, no symmetrisation logic beyond ensuring both endpoints have entries pointing at each other. The `pairwise` and `neighbors` document types from the prior design are removed.
-
-### 2c. Query-time expansion
-
-After the discovery step (§1), the gateway fetches the hard-link docs for all result-set place_ids in a single ES `terms` query. The union of linked place_ids, deduplicated against the existing result set, identifies places to pull in as expanded hits. The `places` documents for these are fetched (with the same metadata enrichment as discovery hits) and added to the response.
-
-A cap on hard-link expansion size (e.g. result-set size + 50%) prevents pathological cases where a heavily-linked record (a famous city with sameAs assertions to dozens of authorities) inflates the result set unboundedly. Expansion proceeds in priority order: contributor links first (they represent explicit human judgement), then authority `sameAs`, then `exactMatch`/`closeMatch`. Truncation, if it occurs, drops the weakest authority assertions first.
-
-### 2d. Provenance carried through to the response
-
-Each expanded hit is flagged with its expansion provenance: `via_hard_link: {source: "wikidata", linked_from: "wd:Q90"}`. This lets the UI display the record with appropriate context (e.g. "added because Wikidata asserts this is the same place as a hit in your results") and lets the user revert a problematic link if the assertion turns out to be wrong.
+The relations array preserves all evidence: a pair attested by multiple sources (authority + contributor, or two independent authorities) is represented with all of them, not collapsed to a single triple. The UI uses this to display rich provenance on demand ("added because Wikidata and contributor user42 both assert this is the same place").
 
 ---
 
@@ -241,7 +366,7 @@ For each pair of places in the result set that passes spatial blocking (shared H
 | `s.sp` | Spatial similarity | Function of `repr_point` haversine distance, with `h3_cover` overlap as bonus signal for places with full geometries |
 | `s.t` | Temporal similarity | Interval overlap between `temporal_range` ranges, normalised |
 | `s.ty` | Type similarity | Wu-Palmer over `aat_ancestors` arrays |
-| `s.l` | Link similarity | 1.0 if the pair appears in the hard-links overlay; otherwise 0 |
+| `s.l` | Link similarity | Derived from the SQLite hard-links lookup: 1.0 if the pair has any `sameAs` or `exactMatch` assertion (authority or contributor); 0.7 if the pair has only `closeMatch` assertions; 0 if no assertion. `distinct` assertions do not contribute to `s.l` but participate in clustering as hard splits (§6c). |
 
 The composite score is `S = w_n·s.n + w_sp·s.sp + w_t·s.t + w_ty·s.ty + w_l·s.l`, with default weights `w_n=0.30, w_sp=0.25, w_t=0.10, w_ty=0.10, w_l=0.25`. Null facets (e.g. missing temporal data) are handled by proportional weight redistribution: the null facet's weight is redistributed among the non-null facets, preserving the `[0, 1]` range of the composite.
 
@@ -253,9 +378,15 @@ Symphonym int8 embeddings are already produced and stored in the toponyms index 
 
 The advantage of this approach over surface-form string similarity is that Symphonym handles cross-script and cross-orthographic variation natively. A Cyrillic "Москва" and a Latin "Moscow" are near-equivalent in Symphonym's phonetic embedding space, despite sharing zero characters, so the toponym signal correctly fires on cross-script pairs without any transliteration step. The same applies to historical-spelling variants, diacritic differences, and transliteration differences across authorities.
 
-### 6c. Union-Find at threshold
+### 6c. Union-Find at threshold, with hard splits
 
-After scoring, Union-Find runs over all pairs with composite score `S >= θ`, where θ is the request-supplied threshold (default 0.85). Hard links are unioned unconditionally as a bootstrapping pass before threshold-based unions, ensuring that `s.l = 1.0` pairs are always merged regardless of θ. The clustering is order-independent because Union-Find is commutative.
+Clustering proceeds in three passes:
+
+1. **Hard-split registration.** All `distinct` assertions (authority or contributor) involving any pair in the result set are collected into a forbidden-pairs set. The Union-Find pass below honours this set: any union that would place both endpoints of a forbidden pair in the same component is skipped, and if a transitive chain (`a~b~c`) would put a forbidden pair `(a, c)` in one component, the chain is broken at the weakest non-hard-link edge.
+2. **Strong hard-link bootstrap.** All pairs with `sameAs` or `exactMatch` assertions are unioned unconditionally, subject to the hard-split check. This guarantees that authority-asserted strong equivalence and contributor-asserted strong equivalence are always honoured regardless of θ.
+3. **Threshold-gated Union-Find.** The remaining pairs (those with composite score `S >= θ`, including pairs whose `s.l = 0.7` from `closeMatch` evidence) are unioned in score order, again subject to the hard-split check.
+
+The clustering is order-independent for the unconditional bootstrap (Union-Find is commutative) and order-stable for the threshold pass (pairs are processed in deterministic score-then-place_id order, so the same input always produces the same output). The hard-split check makes the clustering not strictly Union-Find — it adds a "may not union" predicate — but the modification is small and the algorithm remains efficient.
 
 ### 6d. Cluster-size limiting
 
@@ -367,21 +498,28 @@ The platform exposes "propose a link" and "propose unlinking" as first-class use
 
 Both affordances are equally prominent in the UI: the platform does not treat one direction (asserting identity) as more privileged than the other (asserting non-identity). This is deliberate, because in historical place research, distinguishing co-located but distinct places (a chapel within a parish, a market site within a town) is as important as identifying co-referents.
 
-### 8b. Storage
+### 8b. Submission flow
 
-User proposals enter the WHG Django PostgreSQL contributor reconciliation store, the same store that Phase 1B already harvests. New proposals join the existing data model:
+User proposals enter the DO PostgreSQL `contributor_attestations` table (§2c), and are synchronously forwarded to the Pitt SQLite (§2d) so the next query honours the new assertion. The DO PG row is the durable record; the Pitt SQLite row is the runtime query store.
 
-- Asserted-same: `{place_a, place_b, type: "sameAs", contributor, justification, timestamp}`.
-- Asserted-distinct: `{place_a, place_b, type: "distinct", contributor, justification, timestamp}`.
+Schema for both tables and the synchronous forwarding mechanism are described in §2c and §2d. The salient property for user proposals is that the realtime contributor pathway gives an interactive feedback loop: a researcher proposing a link sees the platform's clustering reflect their assertion immediately on their next search, and can verify whether the result matches their intent.
 
-The asserted-distinct relation is new: the prior schema only carried positive identity assertions. Adding negative assertions lets the platform record "these are not the same place" in a form that subsequent clustering can respect.
+Two relation types are exposed via the propose-link UI:
+
+- **Asserted-same**: `relation_type` set to `sameAs` (most contributors will use this for explicit identity claims) or, when the contributor knows the assertion is for cross-vocabulary alignment with slight reservation, `closeMatch`. The UI defaults to `sameAs` and offers `closeMatch` as a "weaker" option with brief explanatory text.
+- **Asserted-distinct**: `relation_type` set to `distinct`. Recorded for the contrary case where the system has incorrectly clustered records that the contributor recognises as separate places.
+
+The propose-unlink UI defaults to `distinct`. The asserted-distinct relation is new in this design: the prior schema only carried positive identity assertions, and adding negative assertions lets the platform record "these are not the same place" in a form that subsequent clustering can respect.
 
 ### 8c. Application in clustering
 
-Both relations participate in §6's clustering:
+Both relation directions participate in §6c's three-pass clustering:
 
-- Asserted-same entries flow through Phase 1B harvesting into the hard-links overlay (§2). They become unconditional unions in §6c.
-- Asserted-distinct entries become **hard splits**: pairs that may not be unioned regardless of edge score. The Union-Find pass is augmented with a hard-split check before each union: if `(a, b)` is asserted-distinct, the union is skipped. If a transitive chain (`a~b`, `b~c`) would put an asserted-distinct pair in the same cluster, the cluster is split during the post-processing step (§6d), with the splitting algorithm preferring to honour the asserted-distinct constraint at the cost of weaker edges within the would-be component.
+- Asserted-same entries with `relation_type` `sameAs` or `exactMatch` are unioned unconditionally in pass 2 (subject to hard splits).
+- Asserted-same entries with `relation_type` `closeMatch` contribute `s.l = 0.7` and participate in the threshold-gated pass 3.
+- Asserted-distinct entries register as hard splits in pass 1 and prevent any union of the asserted-distinct pair regardless of score, including via transitive chains.
+
+Because contributor assertions reach Pitt SQLite synchronously at submission time, all three behaviours take effect on the very next query after submission. There is no batch-harvest staleness window for the contributor pathway.
 
 ### 8d. Provenance and review
 
@@ -422,31 +560,25 @@ Within the existing `types[]` nested object, add:
 
 No changes to the `names[]` (or `toponyms[]`) nested object beyond what already exists in v3.5: the surface forms, language tags, and timespans are sufficient. Symphonym embeddings are already maintained in the separate `toponyms` index and are loaded from there during the server-side pair-scoring pass (§6b).
 
-### 9b. `place_graph` index (replaces `clusters`)
+### 9b. ES `clusters` index — retired
 
-Renamed from `clusters` to `place_graph` for semantic clarity. The index contains a single document type:
+The existing ES `clusters` index is retired entirely. The originally-proposed `place_graph` ES index (which would have replaced `clusters`) is not created: hard links live in SQLite on Pitt (§2a), not in ES. The `pairwise`, `neighbors`, `membership`, and `hard_links` document types from prior designs are all removed; no ES analogue is retained.
 
-**Hard-link docs:**
+### 9c. SQLite `hard_link_assertions` — new
 
-- `doc_type`: `"hard_links"` (keyword)
-- `place_id`: the place this overlay belongs to (keyword)
-- `namespace`: extracted from place_id (keyword)
-- `links`: object array, each `{place_id, type, source}` — symmetrised at ingestion so each pair appears in both endpoints' docs.
-- `created_at`: timestamp.
+A new SQLite database on the Pitt VM holds the consolidated hard-links overlay used at query time. Schema is in §2a. The database is rebuilt from staged ingestion files (authority assertions) and the DO PG `contributor_attestations` table (contributor assertions) by the harvest pipeline (§2b, §2e). Stored at a configured path on the Pitt VM (e.g. `/data/whg/hard_links.sqlite`), readable by the gateway with WAL mode enabled.
 
-The `pairwise`, `neighbors`, and `membership` document types from prior designs are removed.
-
-### 9c. `toponyms` index — unchanged
+### 9d. `toponyms` index — unchanged
 
 Symphonym embeddings and attestation arrays remain as in the current v3.5 design.
 
-### 9d. `types` index — unchanged
+### 9e. `types` index — unchanged
 
 AAT depth, ancestors, and path are already stored. The new `aat_*` fields on `places.types[]` are derived from this index at ingestion time (§11).
 
-### 9e. WHG PostgreSQL — schema extension
+### 9f. DO PostgreSQL — `contributor_attestations` table
 
-The contributor reconciliation table gains a `relation_type` column with values `sameAs` (existing semantics) or `distinct` (new, per §8b). Existing rows default to `sameAs` on migration.
+The existing user-attestation table is retired and replaced by a new `contributor_attestations` table with the schema in §2c. Migration covers existing rows with default values (`relation_type = 'sameAs'`, `status = 'active'`). The new table adds `relation_type` (allowing `closeMatch`, `exactMatch`, `distinct` in addition to `sameAs`), a `status` field for revocation/supersession history, and a `superseded_by` self-reference for amendment chains.
 
 ---
 
@@ -573,22 +705,40 @@ Default `h3_centroid` uses r7. The `h3_cover` field contains compacted cells nat
 
 Geometry mode parameter (`geom`) per §10e. No clustering parameters (this endpoint serves single records).
 
-### 13c. `POST /api/links` (new)
+### 13c. `POST /api/links` (new, internal)
 
-For user-proposed clustering (§8). Accepts:
+Internal endpoint between Django (DO) and the Pitt gateway. Called by Django after a contributor submission has been written to DO PG `contributor_attestations`. Accepts:
 
 ```json
 {
   "place_a": "...",
   "place_b": "...",
-  "type": "sameAs" | "distinct",
-  "justification": "..." (optional)
+  "relation_type": "sameAs" | "exactMatch" | "closeMatch" | "distinct",
+  "source_category": "contributor",
+  "source_id": "contributor:<user_id>",
+  "asserted_at": "ISO timestamp",
+  "justification": "..."
 }
 ```
 
-Authenticated. Records the proposal in the contributor reconciliation store. Future queries automatically respect the assertion via §2 (sameAs) or §6c augmented with hard-split logic (distinct).
+The gateway inserts the row into the Pitt SQLite via `INSERT OR IGNORE`, making retries idempotent. Returns 200 on successful insert (or no-op on duplicate); 4xx on schema violation; 5xx on other errors. Not authenticated for end-users; only Django on DO is permitted to call this endpoint, secured via internal API key or mTLS as appropriate to the deployment.
 
-### 13d. `GET /api/embed`
+### 13d. `DELETE /api/links` (new, internal)
+
+Internal endpoint for revocation. Called by Django after marking a DO PG row as `revoked`. Accepts the canonical key fields:
+
+```json
+{
+  "place_a": "...",
+  "place_b": "...",
+  "relation_type": "...",
+  "source_id": "contributor:<user_id>"
+}
+```
+
+Removes the matching row from Pitt SQLite (or returns 200 with no-op if already absent, for idempotency). Same authentication model as `POST /api/links`.
+
+### 13e. `GET /api/embed`
 
 Unchanged from the prior plan: returns the Symphonym int8 embedding for an arbitrary string. Used by the client for "compare name variant" workflows when embeddings are not shipped per-hit.
 
@@ -603,7 +753,7 @@ A separate document (`plan-dynamicClusteringUI.prompt.md` in `whg3`) covers UI i
 - **"Expand search" button** in the results header, triggering Phase 2 result-set-wide expansion (§5b).
 - **"Find more like this" affordance** on individual clusters and hits, triggering Phase 2 per-cluster expansion (§5b).
 - **"Propose link" / "Propose split" affordances** in cluster detail views (§8a).
-- **Provenance indicators** on hits: distinguishing direct query matches from hard-link expansions (§2d) and Phase 2 expansions (§5d).
+- **Provenance indicators** on hits: distinguishing direct query matches from hard-link expansions (§2h) and Phase 2 expansions (§5d).
 - **User-proposal review queue** in the WHG admin interface (§8d).
 
 ---
@@ -617,8 +767,8 @@ Document the following changes in the gateway API changelog:
 1. `POST /api/reconcile`: parameter `group_by_cluster` removed; replaced by `cluster_threshold: float`. New parameter `result_limit: int`.
 2. `POST /api/search`: new parameters `cluster_threshold`, `facet_weights`, `phase_2`, `include_edges`, `include_embeddings`, `result_limit`. Response gains `clusters[]`, optional `edges[]`, `phase_2_metadata`, per-hit `via_hard_link` and `via_phase_2`.
 3. `POST /api/places`: `geom` parameter modes `"repr_point"` (default), `"hull"`, `"full"`. Geometries served from VAST when `"full"` is requested.
-4. `POST /api/links`: new endpoint for user-proposed clustering.
-5. ES index `clusters` renamed to `place_graph`. Index now contains only `hard_links` document type; `pairwise`, `neighbors`, and `membership` types are removed.
+4. `POST /api/links` and `DELETE /api/links`: new internal endpoints for synchronous forwarding of contributor attestations and revocations from Django (DO) to the Pitt gateway. Not user-facing.
+5. ES index `clusters` retired; not replaced by an ES `place_graph` index. Hard links live in a SQLite database on the Pitt VM (§9c). The `pairwise`, `neighbors`, `membership`, and any prior `hard_links` document types are all removed.
 
 ### 15b. Internal documentation updates
 
@@ -642,32 +792,36 @@ The following components from the prior offline pipeline and v3.5 design are ret
 
 - `clustering/scoring.py` composite-score persistence (scoring logic remains, but now runs at query time rather than offline).
 - `clustering/clusters.py` connected-components and DBSCAN sub-clustering for offline membership generation.
-- ES `clusters` index `pairwise`, `neighbors`, `membership` document types.
+- ES `clusters` index entirely; not replaced by an ES `place_graph` index either. Hard links live in SQLite on Pitt (§2a, §9c).
 - The neighbour-doc symmetrisation and degree-truncation logic.
 - The baseline-cluster precomputation step.
 - The client-side synthetic-edge passes (Phase 2a/2b in the prior plan): no longer needed because the discovery + hard-link + Phase 2 + user-proposal layers cover the same recovery cases more transparently.
+- The existing user-attestation table on DO PostgreSQL, replaced by `contributor_attestations` (§2c, §9f).
 
 ### 16b. Retained infrastructure
 
 The following components are retained and continue under the new architecture:
 
 - Symphonym index, training pipeline, and language-extension work.
-- `clustering/phase1_hard_links.py` (Phase 1A and 1B harvesting).
+- `clustering/phase1_hard_links.py` (authority and contributor harvesting), refactored to write to SQLite on Pitt rather than ES.
 - AAT type enrichment pipeline (`processing/aat_lookup.py`, `apply_aat_mappings_to_index()`).
 - H3 indexing in `processing/helpers.py`.
 - VAST geometry store and gateway containment pipeline.
-- Contributor reconciliation store in WHG Django PostgreSQL (extended per §9e).
+- Contributor reconciliation store on DO PostgreSQL, migrated from the existing user-attestation table to the new `contributor_attestations` schema (§2c, §9f).
 
 ### 16c. Migration sequence
 
-1. Schema changes (§9): deploy new fields on `places` and rename `clusters` to `place_graph`. Run hard-link harvesting against the new schema.
-2. AAT enrichment backfill (§11): populate `types[].aat_*` fields.
-3. H3 backfill (§12): populate `h3_centroid` and `h3_cover`.
-4. VAST geometry migration (§10): write existing geometries to VAST, set `has_geom`, remove `geom` from ES.
-5. Gateway: deploy new clustering endpoint logic with Option A reactivity. Confirm reconciliation determinism on representative test queries.
-6. Front-end: deploy threshold slider, Phase 2 affordance, user-proposal UI.
-7. Optional later: Option B (edge shipping) for smoother slider control.
-8. Optional much later: Option C (embedding shipping) if power-user demand emerges.
+1. Schema changes (§9): deploy new fields on `places`. Retire ES `clusters` index. Migrate DO PostgreSQL user-attestation table to the new `contributor_attestations` schema (default existing rows to `relation_type = 'sameAs'`, `status = 'active'`).
+2. Provision Pitt SQLite: create database file, schema, and indexes (§2a) at the configured path on the Pitt VM.
+3. AAT enrichment backfill (§11): populate `types[].aat_*` fields.
+4. H3 backfill (§12): populate `h3_centroid` and `h3_cover`.
+5. VAST geometry migration (§10): write existing geometries to VAST, set `has_geom`, remove `geom` from ES.
+6. Initial hard-link harvest: run authority harvesting from staged ingestion files (§2b) and replay active contributor assertions from DO PG (§2c) to populate Pitt SQLite for the first time.
+7. Deploy synchronous-forwarding logic in Django: wire contributor submission and revocation to call Pitt `POST /api/links` and `DELETE /api/links` after writing DO PG.
+8. Gateway: deploy new clustering endpoint logic with Option A reactivity. Confirm reconciliation determinism on representative test queries.
+9. Front-end: deploy threshold slider, Phase 2 affordance, user-proposal UI.
+10. Optional later: Option B (edge shipping) for smoother slider control.
+11. Optional much later: Option C (embedding shipping) if power-user demand emerges.
 
 ---
 
@@ -696,3 +850,13 @@ Phase 2's toponym-expansion mechanism is structurally similar to a graph travers
 ### 17f. Stoplist maintenance
 
 The Phase 2 stoplist (§5c) needs occasional review as the toponyms index grows. A periodic batch job (quarterly, perhaps) recomputes top-frequency tokens and proposes additions to the stoplist for review. The stoplist is small (a few dozen entries) and its contents are noncontroversial; the maintenance burden is light.
+
+### 17g. DO-Pitt reconciliation cadence and drift handling
+
+The synchronous forwarding model (§2d) keeps DO PG `contributor_attestations` and Pitt SQLite in sync at submission time. In normal operation drift should be zero or near-zero, but transient failures (network blips during the brief forwarding window, gateway restarts mid-call) can leave isolated rows on DO that did not reach Pitt. A periodic reconciliation job worth establishing:
+
+- **Cadence**: nightly or weekly, depending on observed drift rates. Initially weekly, with frequency increased if the diagnostic surfaces any persistent drift.
+- **Operation**: query DO PG for `status = 'active'` contributor rows; query Pitt SQLite for contributor rows; diff. Forward-replay any DO rows missing from Pitt; remove any Pitt rows whose DO counterparts are now `status = 'revoked'` or `'superseded'`.
+- **Diagnostic output**: a brief report (count of rows replayed, removed, found consistent) logged for review. Persistent non-zero drift over multiple runs is a signal to investigate the synchronous-forwarding layer.
+
+A full SQLite rebuild from staged files plus DO PG is also worth running periodically (monthly, perhaps), even when no drift is suspected, both as a defensive maintenance practice and as a way to verify that the rebuild procedure remains operational.
