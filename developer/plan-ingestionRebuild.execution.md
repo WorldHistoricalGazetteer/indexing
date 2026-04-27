@@ -1674,9 +1674,15 @@ pushed in-flight:
   per-namespace temporal-extent array (`8923084_[0-1]`); both tasks
   finished in **~1.5 s each**:
   - `_aggregates/nl.temporal_extent.json` → `[2025, 2025]`
-  - `_aggregates/po.temporal_extent.json` → `[null, null]` (pre-existing
-    issue in the staged po snapshot — the source records carry no
-    `timespans` field; the walker correctly returns null)
+  - `_aggregates/po.temporal_extent.json` → `[null, null]` — every
+    sampled po record on the staged snapshot has no `timespans` field on
+    any geometry / toponym / relation, even though
+    `authorities/periodo-places.py` clearly intends to populate them.
+    `gazetteer_temporal_extent` correctly returns null when no parseable
+    years exist; the bug is upstream in the po extract. See
+    "Follow-up: investigate po temporal pipeline" below — this needs to
+    be fixed before the next live run, since PeriodO's whole purpose is
+    temporal coverage.
 * Per-namespace **manifest stage status** flipped `pending` → `running`
   → `completed` in real time, surviving atomic-write race windows.
 * **Persistent runtime-history file** (`namespace-runtime-history.json`)
@@ -1719,6 +1725,49 @@ ceiling on po-shaped workloads. Reverted; kept the area-aware win.
   Batch 9 submitter.
 * **index_from_stage / hard_links / inventory push** — defer until at
   least one indexable corpus + UN are present.
+
+### Follow-up: investigate po temporal pipeline (must-fix before re-staging)
+
+PeriodO's entire reason to exist is temporal coverage of historical
+periods. Yet the staged po snapshot we tested against (built April 23)
+carries **no `timespans` on any record** — neither on geometries[],
+toponyms[], nor relations[]. The downstream `gazetteer_temporal_extent`
+correctly emits `[null, null]`, but the input is bad: the staged docs
+should have temporal data populated by `authorities/periodo-places.py`.
+
+Things to verify locally (no Slurm required):
+
+1. **Check periodo source-record shape against the parser's expectations.**
+   `authorities/periodo-places.py::_parse_year` does
+   ``int(str(value).lstrip('+'))`` and returns ``None`` on `ValueError`.
+   That works for bare years (`"500"`, `"-300"`, `"+1500"`) but **fails
+   silently** on ISO date strings (`"2020-12-31"`, `"500-01-01"`, etc.).
+   PeriodO's published JSON-LD often serialises temporal endpoints as
+   ISO date strings nested under richer shapes than `{"in": <year>}`
+   — e.g. `{"label": "...", "in": {"earliestYear": "1500"}}` or
+   `{"in": "1500-12-31"}`. Pull a fresh `p0d.json` and grep one
+   `period.start` / `period.stop` block to see the actual key names
+   and value types.
+2. **Trace through `process_period()` (lines ~390–410) by hand on a
+   sample record.** Determine whether `start_node.get('in', ...)`
+   returns the expected shape, whether `_parse_year` succeeds, and
+   whether `timespans` makes it onto the doc that `write_staged_place_doc`
+   sees.
+3. **Patch `_parse_year` to handle ISO dates** (e.g. take the first 4
+   chars before the first non-digit, with sign preservation; or
+   regex-extract the year). Add a unit test alongside the existing
+   ones in `tests/`.
+4. **Re-stage po locally** with the fix
+   (`WHG_STAGING_MODE=1 python -m authorities.periodo-places --confirm`
+   or equivalent) and verify a sampled doc now carries `timespans` on
+   geometries[] and toponyms[].
+5. Push, pull on CRC, re-run the temporal-extent array — `po`
+   `temporal_extent` should land at something like `[-3300, 1500]` (the
+   span of the PeriodO corpus).
+
+This is purely an authority-script bug; no orchestration / staging /
+Slurm changes are needed. Doing it locally avoids burning Slurm time
+on a buggy extract.
 
 ### Resume note — start the next session with OHM
 
