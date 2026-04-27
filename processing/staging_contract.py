@@ -93,6 +93,26 @@ CCODE_PATCH_REQUIRED_FIELDS = (
     "source",
 )
 
+# H3 patch record contract (emitted by h3_stage.py, consumed by h3_merge.py).
+# Each patch carries a list of per-geometry H3 fields, addressed by
+# ``geometry_index`` so multi-geometry places can be merged correctly.
+# Example::
+#
+#     {
+#       "place_id": "gn:2988507",
+#       "geometries": [
+#         {"geometry_index": 0,
+#          "h3_centroid": "8a2a107b59cffff",
+#          "h3_cover":    ["8a2a107b59cffff", "8a2a107b59c7fff"]}
+#       ]
+#     }
+H3_PATCH_REQUIRED_FIELDS = ("place_id", "geometries")
+H3_PATCH_GEOMETRY_REQUIRED_FIELDS = (
+    "geometry_index",
+    "h3_centroid",
+    "h3_cover",
+)
+
 
 def validate_required_fields(record: dict[str, Any], required_fields: tuple[str, ...]) -> None:
     missing = [f for f in required_fields if f not in record]
@@ -144,6 +164,41 @@ GLOBAL_COVERAGE_NAMESPACES = frozenset({
 })
 
 H3_COVERAGE_GLOBAL_SENTINEL = "global"
+
+
+# Namespaces that contribute only relations / hard-links and have no place
+# records of their own. They never participate in extract / boundary / H3 /
+# ccode / toponyms / inventory; they are consumed solely by Batch 12 (the
+# SQLite hard-link harvest). Selection of these namespaces in
+# ``authority-selection.md`` enrols them in Batch 12 only.
+RELATIONS_ONLY_NAMESPACES = frozenset({
+    "loc",
+})
+
+
+def is_relations_only(namespace: str) -> bool:
+    """Return True if the namespace contributes only relations (Batch 12 only)."""
+    return namespace in RELATIONS_ONLY_NAMESPACES
+
+
+def partition_namespaces(
+    namespaces: tuple[str, ...] | list[str] | frozenset[str],
+) -> tuple[list[str], list[str]]:
+    """Split a namespace list into (per_gazetteer, relations_only) buckets.
+
+    Per-gazetteer namespaces flow through Batches 4–11 (extract → ... → index).
+    Relations-only namespaces (currently ``{loc}``) skip every per-gazetteer
+    stage and are consumed only by Batch 12.
+    Order is preserved within each bucket.
+    """
+    per_gazetteer: list[str] = []
+    relations_only: list[str] = []
+    for ns in namespaces:
+        if is_relations_only(ns):
+            relations_only.append(ns)
+        else:
+            per_gazetteer.append(ns)
+    return per_gazetteer, relations_only
 
 # Aggregate file paths under ``{STAGED_BASE_DIR}/_aggregates/``. Two files per
 # non-global namespace; one file (with the sentinel) for global namespaces.

@@ -15,6 +15,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterable
 
+from processing.staging_contract import (
+    RELATIONS_ONLY_NAMESPACES,
+    is_relations_only,
+    partition_namespaces,
+)
+
 
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[(?P<state>[xX\s])]\s*`(?P<name>[^`]+)`")
 
@@ -35,30 +41,89 @@ def load_run_manifest(manifest_path: Path) -> dict:
     return json.loads(manifest_path.read_text(encoding="utf-8"))
 
 
-def create_run_manifest(manifest_path: Path, run_id: str, selected_namespaces: list[str]) -> dict:
-    """Create a new run manifest; fail if path already exists."""
+def _default_per_gazetteer_stages() -> dict[str, str]:
+    return {
+        "extract": "pending",
+        "boundary": "pending",
+        "boundary_merge": "pending",
+        "h3": "pending",
+        "h3_merge": "pending",
+        "h3_coverage": "pending",
+        "ccode": "pending",
+        "ccode_merge": "pending",
+        "tiles": "pending",
+    }
+
+
+def _default_relations_only_stages() -> dict[str, str]:
+    # Relations-only namespaces (LOC) are consumed by Batch 12 only; the
+    # per-gazetteer pipeline stages do not apply.
+    return {"hard_link_harvest": "pending"}
+
+
+def create_run_manifest(
+    manifest_path: Path,
+    run_id: str,
+    selected_namespaces: list[str],
+    *,
+    run_mode: str = "full",
+    update_namespaces: list[str] | None = None,
+) -> dict:
+    """Create a new run manifest; fail if path already exists.
+
+    Args:
+        run_mode: ``"full"`` (default) re-stages every selected namespace.
+            ``"partial"`` re-stages only ``update_namespaces``; staged artefacts
+            for namespaces in ``selected_namespaces`` but not in
+            ``update_namespaces`` are left in place untouched and treated as
+            barrier inputs alongside the freshly produced ones.
+        update_namespaces: required when ``run_mode='partial'``.
+    """
     if manifest_path.exists():
         raise FileExistsError(f"Run manifest already exists: {manifest_path}")
 
+    if run_mode not in ("full", "partial"):
+        raise ValueError(f"run_mode must be 'full' or 'partial', got {run_mode!r}")
+    if run_mode == "partial":
+        if not update_namespaces:
+            raise ValueError("partial run_mode requires update_namespaces")
+        unknown = set(update_namespaces) - set(selected_namespaces)
+        if unknown:
+            raise ValueError(
+                f"update_namespaces contains entries not in selected_namespaces: "
+                f"{sorted(unknown)}"
+            )
+
+    update_set = set(update_namespaces or selected_namespaces)
+
+    namespaces: dict[str, dict] = {}
+    for ns in selected_namespaces:
+        if is_relations_only(ns):
+            stages = _default_relations_only_stages()
+        else:
+            stages = _default_per_gazetteer_stages()
+
+        ns_entry: dict = {
+            "status": "pending",
+            "scripts": {},
+            "stages": stages,
+            "in_update_set": ns in update_set,
+        }
+        # In partial mode, namespaces outside the update set are treated as
+        # carried-over from a prior run; their stage states will be reconciled
+        # against on-disk artefacts by the controller before the barrier check.
+        if run_mode == "partial" and ns not in update_set:
+            ns_entry["status"] = "carried_over"
+        namespaces[ns] = ns_entry
+
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "run_id": run_id,
+        "run_mode": run_mode,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "selected_namespaces": selected_namespaces,
-        "namespaces": {
-            ns: {
-                "status": "pending",
-                "scripts": {},
-                "stages": {
-                    "extract": "pending",
-                    "boundary": "pending",
-                    "boundary_merge": "pending",
-                    "h3": "pending",
-                    "ccode": "pending",
-                },
-            }
-            for ns in selected_namespaces
-        },
+        "update_namespaces": sorted(update_set),
+        "namespaces": namespaces,
     }
     _atomic_write_json(manifest_path, manifest)
     return manifest
@@ -219,15 +284,33 @@ def summarize_run_manifest(manifest: dict) -> dict:
 
 
 def build_fanout_plan(selected_namespaces: list[str], manifest: dict) -> dict:
-    """Build lightweight orchestration plan buckets for controller usage."""
+    """Build lightweight orchestration plan buckets for controller usage.
+
+    Only per-gazetteer namespaces are included; relations-only namespaces
+    (LOC) skip the per-gazetteer pipeline entirely. Use ``relations_only_in_run``
+    to retrieve those for Batch 12.
+    """
     plan = {"pending": [], "running": [], "failed": [], "completed": []}
     ns_data = manifest.get("namespaces", {})
-    for ns in selected_namespaces:
+    per_gazetteer, _ = partition_namespaces(selected_namespaces)
+    for ns in per_gazetteer:
         status = ns_data.get(ns, {}).get("status", "pending")
+        if status == "carried_over":
+            # Treat carried-over namespaces (partial runs) as completed for the
+            # purposes of the per-gazetteer fan-out — they will not be
+            # re-staged and the barrier reconciler vouches for their artefacts.
+            status = "completed"
         if status not in plan:
             status = "pending"
         plan[status].append(ns)
     return plan
+
+
+def relations_only_in_run(manifest: dict) -> list[str]:
+    """Return relations-only namespaces selected in this run (Batch 12 input)."""
+    selected = manifest.get("selected_namespaces", [])
+    _, relations_only = partition_namespaces(selected)
+    return relations_only
 
 
 def check_completion_barrier(manifest: dict) -> tuple[bool, list[str]]:
@@ -242,11 +325,17 @@ def check_preprocessing_barrier(
     manifest: dict,
     required_stages: tuple[str, ...] = ("extract", "h3", "ccode"),
 ) -> tuple[bool, dict[str, list[str]]]:
-    """Return whether all selected namespaces completed required preprocessing stages."""
+    """Return whether all selected namespaces completed required preprocessing stages.
+
+    Relations-only namespaces (e.g. LOC) are excluded from this check entirely:
+    they have no per-gazetteer stages and are consumed only by Batch 12.
+    """
     selected = manifest.get("selected_namespaces", [])
     incomplete: dict[str, list[str]] = {}
     ns_data = manifest.get("namespaces", {})
     for ns in selected:
+        if is_relations_only(ns):
+            continue
         missing = []
         ns_stages = ns_data.get(ns, {}).get("stages", {})
         for stage in required_stages:
@@ -255,6 +344,56 @@ def check_preprocessing_barrier(
         if missing:
             incomplete[ns] = missing
     return (len(incomplete) == 0, incomplete)
+
+
+def reconcile_carried_over_namespaces(
+    manifest_path: Path,
+    staged_base_dir: Path,
+    required_stages: tuple[str, ...] = ("extract", "h3", "ccode"),
+) -> dict[str, list[str]]:
+    """For partial runs, mark carried-over namespaces' stages as ``completed``
+    when the on-disk staged artefacts are present.
+
+    Returns a dict mapping namespace → stages that could not be reconciled
+    (i.e. files missing on disk). Callers should treat a non-empty result as
+    a failure of the partial-run premise — those namespaces need a full re-run.
+    """
+    manifest = load_run_manifest(manifest_path)
+    if manifest.get("run_mode") != "partial":
+        return {}
+
+    update_set = set(manifest.get("update_namespaces", []))
+    ns_data = manifest.get("namespaces", {})
+    failures: dict[str, list[str]] = {}
+
+    stage_artefact_paths = {
+        "extract": ("extract/places.parquet", "extract/places.jsonl"),
+        "boundary": ("boundary/places.boundary.jsonl",),
+        "boundary_merge": ("boundary_merged/places.parquet",),
+        "h3": ("h3/places.h3.jsonl",),
+        "h3_merge": ("h3_merged/places.parquet", "h3_merged/places.jsonl"),
+        "ccode": ("ccode/places.ccode.jsonl",),
+        "ccode_merge": ("final/places.parquet", "final/places.jsonl"),
+    }
+
+    for ns, entry in ns_data.items():
+        if ns in update_set or is_relations_only(ns):
+            continue
+        ns_dir = staged_base_dir / ns
+        missing: list[str] = []
+        for stage in required_stages:
+            candidates = stage_artefact_paths.get(stage, ())
+            if not any((ns_dir / rel).exists() for rel in candidates):
+                missing.append(stage)
+                continue
+            entry.setdefault("stages", {})[stage] = "completed"
+        if missing:
+            failures[ns] = missing
+        else:
+            entry["status"] = "completed"
+
+    _atomic_write_json(manifest_path, manifest)
+    return failures
 
 
 def finalize_run_manifest(manifest_path: Path, run_status: str) -> dict:

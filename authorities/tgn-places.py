@@ -15,11 +15,17 @@ import time
 from pathlib import Path
 from collections import defaultdict
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+NAMESPACE = "tgn"
+es = None if is_staging_mode() else Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def decode_nt_string(s):
@@ -246,6 +252,8 @@ def index_tgn(zip_path, places_index):
 
         return doc
 
+    staged_mode = is_staging_mode()
+
     # --- Pass 1: records WITH coordinates ---
     # Track which concept_ids have been handled via coordinates
     concept_ids_with_coords = set()
@@ -262,6 +270,14 @@ def index_tgn(zip_path, places_index):
         if not doc:
             continue
 
+        if staged_mode:
+            write_staged_place_doc(namespace=NAMESPACE, doc=doc)
+            count += 1
+            if count % 10000 == 0:
+                sys.stdout.write(f"\rPass 1 (staged): {count:,} ({processed / total * 100:.1f}%)")
+                sys.stdout.flush()
+            continue
+
         batch.append({"_index": places_index, "_id": doc["place_id"], "_source": doc})
         if len(batch) >= BATCH_SIZE:
             helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
@@ -271,7 +287,7 @@ def index_tgn(zip_path, places_index):
                 sys.stdout.write(f"\rPass 1: {count:,} ({processed / total * 100:.1f}%)")
                 sys.stdout.flush()
 
-    if batch:
+    if not staged_mode and batch:
         helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
         count += len(batch)
         batch.clear()
@@ -288,6 +304,14 @@ def index_tgn(zip_path, places_index):
         if not doc:
             continue
 
+        if staged_mode:
+            write_staged_place_doc(namespace=NAMESPACE, doc=doc)
+            count_nogeom += 1
+            if count_nogeom % 10000 == 0:
+                sys.stdout.write(f"\rPass 2 (staged): {count_nogeom:,} no-geom records...")
+                sys.stdout.flush()
+            continue
+
         batch.append({"_index": places_index, "_id": doc["place_id"], "_source": doc})
         if len(batch) >= BATCH_SIZE:
             helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
@@ -297,14 +321,15 @@ def index_tgn(zip_path, places_index):
                 sys.stdout.write(f"\rPass 2: {count_nogeom:,} no-geom records...")
                 sys.stdout.flush()
 
-    if batch:
+    if not staged_mode and batch:
         helpers.bulk(es, batch, stats_only=True, raise_on_error=False)
         count_nogeom += len(batch)
 
     total_count = count + count_nogeom
     print(f"\n  Pass 2 done: {count_nogeom:,} places without geometry")
     print(f"\n✓ DONE: {total_count:,} total places in {(time.time() - start_time) / 60:.1f} min")
-    create_checkpoint_snapshot(es, "tgn_places_fixed")
+    if not staged_mode and es is not None:
+        create_checkpoint_snapshot(es, "tgn_places_fixed")
 
 
 if __name__ == "__main__":

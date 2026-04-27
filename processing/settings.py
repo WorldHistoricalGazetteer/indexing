@@ -111,6 +111,7 @@ STAGED_RUN_MANIFEST_FILE_TEMPLATE = os.getenv(
 from processing.staging_contract import (  # noqa: E402
     GLOBAL_COVERAGE_NAMESPACES,
     H3_COVERAGE_GLOBAL_SENTINEL,
+    RELATIONS_ONLY_NAMESPACES,
 )
 
 # Persistent cross-run per-namespace wall-time history.

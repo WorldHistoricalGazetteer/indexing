@@ -8,7 +8,7 @@
 # Functions:
 #   do_ingest              Submit authority ingestion Slurm job
 #   do_boundary_pass       Re-run OSM/OHM boundary geometry completion manually (Slurm)
-#   do_generate_tiles      Generate .mbtiles from boundary places in ES (Slurm)
+#   do_generate_tiles      Generate .mbtiles from staged boundary places (Slurm array, no ES)
 #   do_augment_ccodes      Spatial country code assignment (nohup on VM)
 
 source "${BASH_SOURCE[0]%/*}/_common.sh"
@@ -621,25 +621,36 @@ SBATCH_EOF
 # ==============================================================================
 
 do_generate_tiles() {
-    # Usage: es -generate-tiles [--es-host URL] [--authority NAMESPACE]
-    # Submits a Slurm job to generate .mbtiles from boundary places in ES.
+    # Usage: es -generate-tiles [--bucket BUCKET]... [--run-id RUN_ID] [--deploy]
+    # Submits a Slurm array job (one task per tile bucket) reading from
+    # staged snapshots + the geom store; no Elasticsearch dependency.
+    # Buckets: osm_admin, ohm_admin, osm_misc, po, clio, nl.
 
-    local ES_URL=""
-    local AUTHORITY=""
-    local DEPLOY=""
+    local RUN_ID=""
+    local BUCKETS_ARGS=""
+    local DEPLOY_ARG=""
+    local DEPEND_ARG=""
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --es-host)
-                ES_URL="$2"
+            --run-id)
+                RUN_ID="$2"
                 shift 2
                 ;;
-            --authority)
-                AUTHORITY="--authority $2"
+            --bucket|-b)
+                BUCKETS_ARGS="$BUCKETS_ARGS --bucket $2"
+                shift 2
+                ;;
+            --depend-on)
+                DEPEND_ARG="--depend-on $2"
                 shift 2
                 ;;
             --deploy)
-                DEPLOY="--deploy"
+                DEPLOY_ARG="--deploy"
+                shift
+                ;;
+            --dry-run)
+                DRY_RUN_ARG="--dry-run"
                 shift
                 ;;
             *)
@@ -648,69 +659,26 @@ do_generate_tiles() {
         esac
     done
 
-    # Default ES URL
-    if [ -z "$ES_URL" ]; then
-        if [ -f "$STAGING_INFO_FILE" ]; then
-            source "$STAGING_INFO_FILE"
-            ES_URL="http://${ES_NODE}:${ES_PORT}"
-        else
-            ES_URL="${PROD_ES_URL:-http://localhost:${PROD_ES_INTERNAL_PORT:-9201}}"
-        fi
-    fi
-
-    echo "ES host: $ES_URL"
-
-    TILES_SCRIPT=$(mktemp /tmp/es-tiles-XXXXXX.sbatch)
-
-    cat > "$TILES_SCRIPT" <<SBATCH_EOF
-#!/bin/bash
-#SBATCH --job-name=es-tiles
-#SBATCH --partition=smp
-#SBATCH --time=12:00:00
-#SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=64G
-#SBATCH --output=${STAGING_SLURM_LOGS}/tiles-%j.out
-#SBATCH --error=${STAGING_SLURM_LOGS}/tiles-%j.err
-
-set -e
-
-echo "=========================================="
-echo "TILESET GENERATION JOB"
-echo "=========================================="
-echo "Started: \$(date)"
-echo
-
-source "$ENV_FILE"
-
-$(activate_environment)
-
-cd "$REPO_DIR"
-
-python -u -m processing.generate_tiles --es-host "$ES_URL" $AUTHORITY $DEPLOY
-
-echo
-echo "=========================================="
-echo "TILE GENERATION COMPLETE"
-echo "=========================================="
-echo "Finished: \$(date)"
-SBATCH_EOF
-
-    echo "Submitting tile generation job..."
-    JOBID=$(sbatch --parsable "$TILES_SCRIPT")
-    rm "$TILES_SCRIPT"
-
-    if [ -z "$JOBID" ]; then
-        echo "ERROR: Failed to submit Slurm job"
+    if [ -z "$RUN_ID" ]; then
+        echo "ERROR: --run-id is required for staged tile generation"
         return 1
     fi
 
-    echo "Submitted job: $JOBID"
-    echo
-    echo "Monitor with:"
-    echo "  squeue -j $JOBID"
-    echo "  tail -f ${STAGING_SLURM_LOGS}/tiles-${JOBID}.*"
+    echo "Submitting bucket-driven tile generation array for run_id: $RUN_ID"
+
+    # --deploy is intentionally a post-array step (the array tasks each own
+    # one bucket; deployment is a single rsync of all completed mbtiles).
+    # Run `python -m processing.generate_tiles --deploy --skip-tippecanoe`
+    # after the array completes if you want to push results.
+    if [ -n "$DEPLOY_ARG" ]; then
+        echo "Note: --deploy is a post-array step; ignoring here."
+    fi
+
+    python -u -m processing.submit_tiles_slurm \
+        --run-id "$RUN_ID" \
+        $DEPEND_ARG \
+        ${DRY_RUN_ARG:-} \
+        $BUCKETS_ARGS
 }
 # =============================================================================
 # AUGMENT CCODES (spatial country code assignment)

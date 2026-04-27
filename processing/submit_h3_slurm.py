@@ -173,6 +173,21 @@ def _build_sbatch_script(
         f"    --manifest-path {manifest_path} \\",
         "    --namespace \"$NAMESPACE\" \\",
         f"    --array-task-id $SLURM_ARRAY_TASK_ID",
+        "",
+        "# Merge H3 patches into the staged snapshot so downstream stages",
+        "# (ccode enrichment, toponyms, indexing) read h3_merged/ artefacts.",
+        "python -m processing.h3_merge \\",
+        f"    --run-id {run_id} \\",
+        f"    --manifest-path {manifest_path} \\",
+        "    --namespace \"$NAMESPACE\"",
+        "",
+        "# Compact per-namespace H3 coverage to staged/_aggregates/ for use by",
+        "# Batch 7 (ccode enrichment pre-filter, when namespace == un) and",
+        "# Batch 11 (inventory push).",
+        "python -m processing.gazetteer_h3_coverage \\",
+        f"    --run-id {run_id} \\",
+        f"    --manifest-path {manifest_path} \\",
+        "    --namespace \"$NAMESPACE\"",
     ]
     return "\n".join(lines) + "\n"
 

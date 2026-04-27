@@ -331,6 +331,96 @@ def write_namespace_places_snapshot_jsonl(
     return metadata
 
 
+def _consolidate_extracts(
+    namespace: str,
+    *,
+    run_id: str | None = None,
+    remove_jsonl: bool = False,
+) -> dict[str, Any]:
+    """Merge per-namespace JSONL extract fragments into consolidated Parquet.
+
+    Reads ``{STAGED_BASE_DIR}/{namespace}/extract/places*.jsonl`` (the single
+    file produced by ``write_staged_place_doc`` plus any future shard variants)
+    and writes ``places.parquet`` into the same directory. Lightweight IO-only
+    step intended to run once after the orchestrator marks a namespace's
+    extract stage complete; idempotent when re-run over the same fragments.
+
+    Args:
+        namespace: Authority namespace whose extract should be consolidated.
+        run_id: Optional run identifier persisted into the sidecar metadata.
+        remove_jsonl: If True, delete the source JSONL fragments after a
+            successful Parquet write. Default False to preserve fragments for
+            debugging.
+
+    Returns:
+        A metadata dict mirroring the structure of ``places.snapshot.json``.
+    """
+    out_dir = _stage_dir(namespace, "extract")
+    if not out_dir.exists():
+        raise FileNotFoundError(f"No extract directory for namespace {namespace!r}")
+
+    fragments = sorted(out_dir.glob("places*.jsonl"))
+    if not fragments:
+        raise FileNotFoundError(
+            f"No JSONL fragments to consolidate under {out_dir}"
+        )
+
+    out_file = out_dir / "places.parquet"
+    writer: pq.ParquetWriter | None = None
+    docs_written = 0
+
+    try:
+        for fragment in fragments:
+            batch_rows: list[dict[str, Any]] = []
+            with fragment.open("r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        doc = json.loads(line)
+                    except json.JSONDecodeError as exc:
+                        raise ValueError(
+                            f"Invalid JSONL in {fragment}: {exc}"
+                        ) from exc
+                    batch_rows.append(_augment_doc_for_stage(doc))
+
+                    if len(batch_rows) >= 5000:
+                        writer = _write_parquet_batches(out_file, batch_rows, writer)
+                        docs_written += len(batch_rows)
+                        batch_rows = []
+
+            if batch_rows:
+                writer = _write_parquet_batches(out_file, batch_rows, writer)
+                docs_written += len(batch_rows)
+    finally:
+        if writer is not None:
+            writer.close()
+
+    if remove_jsonl:
+        for fragment in fragments:
+            fragment.unlink(missing_ok=True)
+
+    metadata: dict[str, Any] = {
+        "namespace": namespace,
+        "docs_written": docs_written,
+        "generated_at": _utc_now_iso(),
+        "path": str(out_file),
+        "fragments_consolidated": [str(p) for p in fragments],
+        "fragments_removed": remove_jsonl,
+        "geometry_staging_artefacts": _geometry_staging_artefacts(namespace),
+        "snapshot_id": f"{namespace}-{_utc_now_path_safe()}",
+    }
+    if run_id:
+        metadata["run_id"] = run_id
+
+    (out_dir / "places.snapshot.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    return metadata
+
+
 def write_namespace_places_snapshot_parquet(
     *,
     es_client: Elasticsearch,

@@ -5,12 +5,19 @@ Index Index Villaris (1680) historical place data.
 import json, os, sys
 from pathlib import Path
 from datetime import datetime
-from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+NAMESPACE = "iv"
+es = None if is_staging_mode() else Elasticsearch(ES_HOST, request_timeout=180)
 IV_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'iv'), None)
 
 
@@ -278,6 +285,7 @@ def index_iv_file(json_file, places_index='places'):
     print(f"Found {len(entries)} entries")
     start_time = datetime.now()
 
+    staged_mode = is_staging_mode()
     for i, entry in enumerate(entries):
         if (i + 1) % 500 == 0:
             elapsed = (datetime.now() - start_time).seconds
@@ -292,6 +300,11 @@ def index_iv_file(json_file, places_index='places'):
                     no_coords += 1
                 else:
                     skipped += 1
+                continue
+
+            if staged_mode:
+                write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
+                places_count += 1
                 continue
 
             places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
@@ -309,7 +322,7 @@ def index_iv_file(json_file, places_index='places'):
             skipped += 1
             continue
 
-    if places_batch:
+    if not staged_mode and places_batch:
         try:
             success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
             places_count += success
@@ -350,4 +363,5 @@ if __name__ == "__main__":
     print(f"File: {json_file}")
     print(f"Target: {args.places_index}\n")
     index_iv_file(str(json_file), args.places_index)
-    create_checkpoint_snapshot(es, "indexvillaris_places")
+    if not is_staging_mode() and es is not None:
+        create_checkpoint_snapshot(es, "indexvillaris_places")

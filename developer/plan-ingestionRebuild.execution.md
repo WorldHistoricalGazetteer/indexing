@@ -100,13 +100,15 @@ authority selection moves to the API and the markdown file is retired.
 |-------|-------|--------|
 | 1 | Schema / settings / staged layout | Done — `dataset_status` / `dataset_id` schema + writer guards added; aggregate contract + SQLite hard-link DDL documented in `staging_contract.py` |
 | 2 | Type-mapping preflight (production `types` index) | Done |
-| 3 | Orchestration + checkpointing | Done; needs Django-registry resolution path (later) |
+| 3 | Orchestration + checkpointing | Done — LOC routed to Batch 12 only; partial-run mode (`run_mode='partial'` + `update_namespaces`) wired through `staging_orchestrator.py`; Django-registry resolution path still deferred |
 | 4a | Staged extraction shim | Done (`helpers.py`) |
-| 4b | Canary refactors (`nl`, `po`) | Done |
+| 4b | Canary refactors (`nl`, `po`, `clio`) | Done — staged-mode + ES backward compat across all three |
 | 4c Phase 1 | `gn`, `wd`, `osm`, `ohm` refactor | Done |
-| 4c Phase 2–4 | `tgn`, `pl`, `gb`, `iv`, `geonames-toponyms`, `wikidata-geoshapes`, `whg` (incl. v3.2 datasets) | Pending |
-| 4d | Boundary stage + consolidation | `boundary_stage.py` + `boundary_merge.py` done; `_consolidate_extracts()` pending |
-| 5 | Patch-collapse merges | `boundary_merge.py` done; `h3_merge.py`, `ccode_merge.py` pending |
+| 4c Phase 2 | `tgn`, `pl`, `gb`, `iv` refactor | Done |
+| 4c Phase 3 | `geonames-toponyms`, `wikidata-geoshapes` (update scripts — different semantics) | Pending |
+| 4c Phase 4 | `whg` ingestion (DO API + LPF + per-Dataset/Collection sub-namespaces) | Pending — requires Django clone access |
+| 4d | Boundary stage + consolidation | `boundary_stage.py` + `boundary_merge.py` + `_consolidate_extracts()` done |
+| 5 | Patch-collapse merges | Done — `boundary_merge.py`, `h3_merge.py`, `ccode_merge.py`; H3/ccode patch contracts in `staging_contract.py`; idempotency + missing-file handling regression-tested |
 | 6 | H3 derivation **+ per-gazetteer H3 coverage compaction** (non-global only) | Done (`h3_stage.py`, `submit_h3_slurm.py`); coverage emit + benchmarking pending |
 | 7 | CCode enrichment | Pending (`ccode_enrichment.py`, `ccode_merge.py`) |
 | 8 | Global barrier | Pending (manifest validator) |
@@ -467,7 +469,10 @@ Targets:
 
 Dependencies: Batch 1.
 
-Status: complete.
+Status: complete. `aat_lookup.preflight_types_index` fails fast on missing index;
+`load_aat_mappings` and `apply_aat_mappings_to_index` populate `aat_id` / `aat_path` on
+staged docs alongside the original `sourceLabel`. Compatible with Batch 1's
+`dataset_status` / `dataset_id` additions — no AAT-side change needed.
 
 Tasks:
 
@@ -481,6 +486,8 @@ Validation gates:
 
 - [x] Type preflight fails fast when production `types` index is unavailable.
 - [x] Sample mappings return expected AAT IDs/path values.
+- [x] AAT enrichment is unaffected by the new `dataset_status` / `dataset_id` top-level
+  fields (they live alongside `types[]`, not inside it).
 
 ### Batch 3: Orchestration and Checkpointing
 
@@ -494,7 +501,8 @@ Targets:
 Dependencies: Batch 1, Batch 2.
 
 Status: complete; fan-out / fan-in dependency chain wired through `ingest.sh` for
-boundary → boundary_merge → H3.
+boundary → boundary_merge → H3. Today's plan refresh introduced two new constraints —
+LOC routing and partial-run mode — both implemented in `staging_orchestrator.py`.
 
 Tasks:
 
@@ -505,7 +513,20 @@ Tasks:
 - [x] Resolve run authority set from `authority-selection.md`.
 - [x] Add namespace-scoped run IDs and immutable manifests.
 - [x] Ensure idempotent reruns for a failed stage.
-- [ ] **(New, deferred to Batch 11 enabling work)** Add a fallback selection-resolution
+- [x] **Route relations-only namespaces (LOC) out of the per-gazetteer pipeline.**
+  `RELATIONS_ONLY_NAMESPACES = {"loc"}` in `staging_contract.py`;
+  `partition_namespaces`, `is_relations_only`, and `relations_only_in_run` expose the
+  split. `create_run_manifest` gives LOC a single `hard_link_harvest` stage instead of
+  the per-gazetteer pipeline; `check_preprocessing_barrier` skips LOC; `build_fanout_plan`
+  excludes it from per-gazetteer fan-out.
+- [x] **Partial-run mode (single-gazetteer / subset updates).** `create_run_manifest`
+  accepts `run_mode='partial'` + `update_namespaces=[...]`. Namespaces in the selected
+  set but not in the update set are marked `carried_over`; their staged artefacts are
+  left in place. `reconcile_carried_over_namespaces` walks the on-disk staged tree and
+  flips those namespaces' `extract` / `h3` / `ccode` stages to `completed` if the
+  expected artefacts are present, then the barrier check passes them through.
+  Schema bumped to `schema_version: 2` with `run_mode` + `update_namespaces` fields.
+- [ ] **(Deferred to Batch 11 enabling work)** Add a fallback selection-resolution
   path that consults the future Django gazetteer registry once it is available; keep the
   markdown file as the immediate source of truth.
 
@@ -513,6 +534,14 @@ Validation gates:
 
 - [x] Kill/restart test resumes from the next incomplete stage.
 - [x] Re-run does not duplicate outputs or corrupt manifests.
+- [x] LOC inclusion in `authority-selection.md` does not enrol it in
+  extract / boundary / H3 / ccode; the barrier passes with LOC stages still pending.
+- [x] Partial run with `update_namespaces=['nl']` over selected `['nl', 'po', 'gn']`
+  leaves po/gn artefacts in place, reconciles them as completed when on-disk artefacts
+  exist, and only re-stages `nl`. Reconcile reports missing artefacts as failures when
+  the staged tree is empty for a carried-over namespace.
+- [x] `create_run_manifest` rejects `run_mode='draft'`, `partial` without
+  `update_namespaces`, and `update_namespaces` not in `selected_namespaces`.
 
 ### Batch 4: Authority Script Refactor to Staged Extraction Pattern
 
@@ -536,15 +565,15 @@ Tasks:
 - [x] `write_staged_place_doc(namespace, doc)` in `processing/helpers.py`.
 - [x] Registry/factory in `processing/settings.py` mapping namespace → extraction script.
 - [x] `WHG_STAGING_MODE=1` env-var switch in `ingest_all_authorities.py`.
-- [ ] **(New)** Extend `write_staged_place_doc` to require `dataset_status` and
-  `dataset_id` on every doc (default `published` / `<namespace>`); reject docs missing
-  either field.
+- [x] **Extend `write_staged_place_doc` to require `dataset_status` and `dataset_id` on
+  every doc** (defaults filled at extract time: `published` / `<namespace>`; `whg`
+  namespace requires explicit `dataset_id`). Implemented in Batch 1.
 
 #### 4b. Authority Script Canaries
 
 - [x] `authorities/nativeland-places.py` (nl) — staged-mode + ES backward compatibility.
 - [x] `authorities/periodo-places.py` (po) — same.
-- [ ] `authorities/cliopatria-places.py` (clio, if it exists; else skip to `pl`).
+- [x] `authorities/cliopatria-places.py` (clio) — staged-mode + ES backward compatibility.
 
 Validation gates:
 
@@ -561,14 +590,18 @@ Validation gates:
 - [x] `authorities/osm-places.py` (osm).
 - [x] `authorities/ohm-places.py` (ohm).
 
-**Phase 2 (Medium Priority)** — pending:
+**Phase 2 (Medium Priority)** — done:
 
-- [ ] `authorities/tgn-places.py` (tgn).
-- [ ] `authorities/pleiades-places.py` (pl).
-- [ ] `authorities/gb1900-places.py` (gb).
-- [ ] `authorities/indexvillaris-places.py` (iv).
+- [x] `authorities/tgn-places.py` (tgn) — staged-mode + ES backward compatibility.
+- [x] `authorities/pleiades-places.py` (pl) — same; both streaming and standard fallback
+  paths handle staged mode.
+- [x] `authorities/gb1900-places.py` (gb).
+- [x] `authorities/indexvillaris-places.py` (iv).
 
-**Phase 3 (Lower Priority, Update Scripts)** — pending:
+**Phase 3 (Lower Priority, Update Scripts)** — pending; semantics differ from
+Phase 1/2 (these *update* existing staged records rather than *emit* new ones, so
+the staged-mode equivalent is a Parquet-merge step, not a `write_staged_place_doc`
+loop). Treat as a separate workstream after Phase 4.
 
 - [ ] `authorities/geonames-toponyms.py` (update; auxiliary toponym records).
 - [ ] `authorities/wikidata-geoshapes.py` (update; enriches existing places).
@@ -577,7 +610,10 @@ Validation gates:
   no role in the per-gazetteer extract → boundary → H3 → ccode pipeline. Its rows are
   consumed directly by the SQLite hard-link harvest in Batch 12.
 
-**Phase 4 (WHG Datasets — DO PostgreSQL is canonical)** — pending:
+**Phase 4 (WHG Datasets — DO PostgreSQL is canonical)** — pending; significant new
+work because there is no existing `whg-places.py` to refactor. Requires verifying the
+DO API contracts against the local Django clone at
+`/home/stephen/Documents/GitHub/whg3` before implementation begins.
 
 - [ ] `authorities/whg-places.py` (new). One script per run, but iterates over multiple
   Datasets/Collections. Responsibilities (formerly split off as a separate Batch 13a):
@@ -607,24 +643,34 @@ Each refactor follows the same pattern:
 
 - [x] `processing/boundary_stage.py` (osm/ohm only) — assemble relation multipolygon
   geometry from PBF, emit `{namespace}/boundary/places.boundary.jsonl`.
-- [ ] `_consolidate_extracts()` in `processing/stage_writers.py` — merge fragmented JSONL
-  writes into consolidated Parquet per namespace. Lightweight IO-only step that runs after
-  the orchestrator marks a namespace's extract stage complete.
+- [x] `_consolidate_extracts()` in `processing/stage_writers.py` — merge per-namespace
+  JSONL extract fragments into consolidated `places.parquet`, augmenting each geometry
+  with `geometry_index` / `geom_ref`, writing a `places.snapshot.json` sidecar, and
+  optionally removing the source JSONL fragments. Idempotent on re-run.
 
 Validation gates:
 
+- [x] `_consolidate_extracts()` round-trip: 2-doc canary writes + reads back via
+  `pyarrow.parquet`, with `dataset_status` / `dataset_id` populated and `geometry_index`
+  / `geom_ref` augmentation applied; rerun overwrites cleanly; missing extract dir
+  raises `FileNotFoundError`.
 - [ ] Staged snapshots for all selected gazetteers are complete and valid Parquet.
+  *(End-to-end gate — depends on a real run; deferred.)*
 - [ ] Row counts and key uniqueness verified per namespace.
-- [ ] No ES access during extraction or consolidation.
-- [ ] `dataset_status` and `dataset_id` present and correctly set on every record.
+  *(Same — verified during integration testing.)*
+- [x] No ES access during extraction or consolidation — `_consolidate_extracts()` only
+  uses `pyarrow` + filesystem IO; staged-mode authority scripts skip the
+  `Elasticsearch(...)` client entirely.
+- [x] `dataset_status` and `dataset_id` present on every staged record by virtue of
+  `write_staged_place_doc` filling defaults.
 
 ### Batch 5: Per-Gazetteer Patch-Collapse and Update Transforms
 
 Targets:
 
 - `processing/boundary_merge.py` ✅
-- `processing/h3_merge.py` (new)
-- `processing/ccode_merge.py` (new)
+- `processing/h3_merge.py` ✅
+- `processing/ccode_merge.py` ✅
 - `processing/namespace_materialize.py` (existing; finalise manifests)
 - `processing/ingest_all_authorities.py`
 
@@ -635,21 +681,63 @@ Tasks:
 - [x] `boundary_merge.py` — reads staged extract snapshot + boundary patch JSONL,
   merges completed boundary geometry into place docs before H3, writes
   `{namespace}/boundary_merged/places.parquet|jsonl`.
-- [ ] `h3_merge.py` — reads staged extract snapshot + H3 patch JSONL, merges H3 fields
-  into each place document's geometries, writes the H3-enriched snapshot.
-- [ ] `ccode_merge.py` — reads staged snapshot (post-H3) + ccode patch JSONL, merges
-  ccodes into each place document, writes the final snapshot.
-- [ ] Define patch merge semantics (e.g., ccode_merge treats patch entries as
-  authoritative; overwrites existing ccodes).
-- [ ] Idempotency: merging the same patches twice produces identical output.
-- [ ] Patch files reference correct geometry indices.
+- [x] `h3_merge.py` — reads `boundary_merged/` (osm/ohm) or `extract/` (others) +
+  `h3/places.h3.jsonl`, merges per-geometry `h3_centroid` / `h3_cover` into each
+  place document's geometries (addressed by `geometry_index`), writes
+  `{namespace}/h3_merged/places.parquet|jsonl`. Stage event + manifest updates wired
+  through `staging_orchestrator`.
+- [x] `ccode_merge.py` — reads `h3_merged/` + `ccode/places.ccode.jsonl`, overwrites
+  `doc.ccodes` with the patch list (authoritative), writes
+  `{namespace}/final/places.parquet|jsonl`.
+- [x] **Patch merge semantics defined.** `ccode_merge` is authoritative — the patch
+  list overwrites any prior `doc.ccodes` (including upstream values like the
+  Native Land `XX` placeholder). `h3_merge` is also authoritative for `h3_centroid`
+  and `h3_cover` per `geometry_index`. Other fields are passed through untouched.
+  Malformed patch rows (missing required fields) are silently dropped — see
+  validation gates for the regression test.
+- [x] **Idempotency.** Re-running either merge over the same source + patch files
+  produces identical output (regression-tested).
+- [x] **Patch files reference correct geometry indices.** `h3_stage.py` already
+  emits `geometry_index` per update; `h3_merge.py` matches against
+  `geom.get("geometry_index", idx)` so patches and source rows agree even if the
+  document order changes after a future re-shard.
+
+Patch contracts:
+
+```text
+H3 patch (JSONL line):
+  {
+    "place_id": "<ns>:<id>",
+    "geometries": [
+      {"geometry_index": 0, "h3_centroid": "<cell>", "h3_cover": ["<cell>", ...]}
+    ]
+  }
+  Required fields: place_id, geometries[].{geometry_index, h3_centroid, h3_cover}
+
+CCode patch (JSONL line):
+  {"place_id": "<ns>:<id>", "ccodes": ["GB", "FR"], "source": "un-h3-overlap"}
+  Required fields: place_id, ccodes, source
+```
+
+Both contracts are defined as constants in `processing/staging_contract.py`
+(`H3_PATCH_REQUIRED_FIELDS`, `H3_PATCH_GEOMETRY_REQUIRED_FIELDS`,
+`CCODE_PATCH_REQUIRED_FIELDS`) and validated via `validate_required_fields`.
 
 Validation gates:
 
-- [ ] Patch merge is idempotent and deterministic.
-- [ ] Output row counts and key integrity pass.
-- [ ] Enriched snapshots have `h3_centroid` / `h3_cover` per geometry and `ccodes` at
-  document level as expected.
+- [x] **Patch merge is idempotent and deterministic.** Synthetic 3-doc, 2-geometry
+  scenario: H3 patch (1 update, 1 unmatched, 1 malformed-dropped) and ccode patch
+  (2 updates, 1 unmatched, 1 malformed-dropped) both round-trip through Parquet
+  and re-run identically.
+- [x] **Output row counts and key integrity pass.** `docs_seen == docs_written`
+  for both merges; `patches_unmatched` reflects unresolved patches in the metrics.
+- [x] **Enriched snapshots have `h3_centroid` / `h3_cover` per geometry and `ccodes`
+  at document level as expected.** Verified against `pyarrow.parquet` readback;
+  unmatched documents pass through with `h3_*` fields absent on geometries and
+  prior `ccodes` overwritten only when a patch matches.
+- [x] **`FileNotFoundError`** is raised when the source snapshot or patch file is
+  missing, so orchestration treats a missing dependency as a failed stage rather
+  than a silent no-op.
 
 ### Batch 6: Per-Gazetteer H3 Derivation + Coverage Compaction (Slurm Array Job)
 
@@ -657,9 +745,9 @@ Targets:
 
 - `processing/helpers.py`
 - `processing/h3_stage.py` ✅
-- `processing/submit_h3_slurm.py` ✅
-- `processing/h3_merge.py` (called from Batch 5)
-- `processing/gazetteer_h3_coverage.py` (new — coverage compaction)
+- `processing/submit_h3_slurm.py` ✅ (now chains `h3_merge` + `gazetteer_h3_coverage` per task)
+- `processing/h3_merge.py` ✅ (called from Batch 5)
+- `processing/gazetteer_h3_coverage.py` ✅ (new — coverage compaction)
 
 Dependencies: Batch 4 (extract complete), Batch 3 (orchestrator).
 
@@ -680,18 +768,18 @@ Tasks:
 - [x] Per-namespace H3 stage status tracked in run manifest.
 - [ ] Benchmark wall times for large namespaces (`osm`, `ohm`, `gn`) to tune Slurm QOS
   defaults.
-- [ ] **(New, Master Plan §1.4.1 + E.2 item 1)** Per-gazetteer H3 coverage compaction:
-  - For **non-global** gazetteers, accumulate the union of `h3_centroid` + `h3_cover`
-    cells observed during the H3 stage and emit
-    `staged/_aggregates/{namespace}.h3_coverage.json` containing the **compacted** set
-    (`h3.compact_cells` to the smallest representation, typically dominated by r5/r6
-    parents — hundreds to a few thousand cells per large national-scale gazetteer).
-  - For **global** gazetteers (`osm`, `ohm`, `wd`, `gn`, `po`, `tgn`), **skip** the
-    cell-set computation entirely and write the sentinel `{"coverage": "global"}`.
-    Browser intersection tests shortcut on this sentinel without enumerating cells.
-  - The list of global namespaces is defined in `processing/settings.py` as
-    `GLOBAL_COVERAGE_NAMESPACES`; agents should not hard-code it elsewhere.
-  - Output is consumed by Batch 11 inventory push (Job A side of post-barrier flow).
+- [x] **(New, Master Plan §1.4.1 + E.2 item 1)** Per-gazetteer H3 coverage compaction
+  implemented in `processing/gazetteer_h3_coverage.py`:
+  - For **non-global** gazetteers, the script reads the H3 patch JSONL emitted by
+    `h3_stage.py`, accumulates the union of `h3_centroid` + `h3_cover` cells, and
+    emits `staged/_aggregates/{namespace}.h3_coverage.json` containing the
+    compacted set (`h3.compact_cells`).
+  - For **global** gazetteers (`GLOBAL_COVERAGE_NAMESPACES = {osm, ohm, wd, gn,
+    po, tgn}`), it writes the sentinel `{"coverage": "global"}` without
+    enumerating cells.
+  - Run per-namespace by `submit_h3_slurm.py` immediately after `h3_merge` in the
+    same array task; the resulting aggregate is consumed by Batch 7
+    (`ccode_enrichment.py`) for the UN namespace and by Batch 11 inventory push.
 
 Validation gates:
 
@@ -708,9 +796,9 @@ Validation gates:
 
 Targets:
 
-- `processing/ccode_enrichment.py` (new)
-- `processing/ccode_merge.py` (new; called from Batch 5)
-- `processing/ingest_all_authorities.py`
+- `processing/ccode_enrichment.py` ✅ (new)
+- `processing/ccode_merge.py` ✅ (called from Batch 5)
+- `processing/submit_ccode_slurm.py` ✅ (new — Slurm array submission, depends on H3 job)
 
 Dependencies: Batch 6 (H3 complete for all gazetteers, especially `un`).
 
@@ -721,15 +809,23 @@ Dependencies: Batch 6 (H3 complete for all gazetteers, especially `un`).
 
 Tasks:
 
-- [ ] `ccode_enrichment.py`:
-  - Load UN staged records with H3 coverage into memory.
-  - For each namespace ≠ un, iterate through H3-enriched staged snapshot.
-  - Use H3 intersection with UN coverage to pre-filter candidate ccodes per geometry.
-  - Implement point-in-polygon for points; polygon intersection / majority-overlap for
-    areas.
-  - Emit ccode patch records (`{namespace}/ccode/places.ccode.jsonl`).
-- [ ] `ccode_merge.py` reads staged snapshot + ccode patches, merges ccodes into docs.
-- [ ] Per-namespace ccode stage status in run manifest.
+- [x] `ccode_enrichment.py`:
+  - Loads UN's `h3_merged/` staged records and builds a per-cell ccode prefilter
+    by normalising every UN compacted `h3_cover` cell to a fixed resolution
+    (`PREFILTER_RESOLUTION = 4`).
+  - Iterates each non-UN namespace's `h3_merged/` snapshot; per place geometry,
+    walks `h3_cover` cells to the prefilter resolution and intersects with the
+    UN cell→ccodes index to collect candidate ccodes.
+  - Performs precise containment via Shapely against UN country geometries
+    loaded from the geom store (LRU-cached, falls back to staged hull when the
+    geom store is unavailable). Points use point-in-polygon (`intersects`);
+    areas use intersection with majority-overlap as the tie-break order.
+  - Emits `{place_id, ccodes, source}` patch records to
+    `{namespace}/ccode/places.ccode.jsonl` with `source = "un-h3-overlap"`.
+- [x] `ccode_merge.py` reads staged snapshot + ccode patches, merges ccodes into docs.
+- [x] Per-namespace ccode stage status updated in the run manifest by both
+  `ccode_enrichment.run_ccode_enrichment` (`ccode` stage) and
+  `ccode_merge.run_ccode_merge` (`ccode_merge` stage).
 
 Validation gates:
 
@@ -822,30 +918,48 @@ Validation gates:
 
 Targets:
 
-- `processing/generate_tiles.py`
-- `scripts/ingest.sh`
+- `processing/generate_tiles.py` ✅ (refactored — staged path is now the default)
+- `processing/submit_tiles_slurm.py` ✅ (new — bucket-driven Slurm array)
+- `scripts/ingest.sh` (es.sh wrapper still pending Batch 8 wiring)
 
-Dependencies: Batch 4/5/6 complete for relevant gazetteers; mixed-source outputs require
-all contributing gazetteers complete.
+Dependencies: Batch 4 (extract) for `po`/`clio`/`nl`; Batch 5 (`boundary_merge`) for
+`osm`/`ohm`. The job runs **before** the global barrier (Batch 8) so it can overlap with
+H3, ccode, and toponym work — it touches neither ES nor the barrier prerequisites.
 
 Tasks:
 
-- [ ] Refactor tile generation to read staged artefacts + geometry store only.
-- [ ] Produce required outputs:
-  - `po.mbtiles`
-  - `clio.mbtiles`
-  - `nl.mbtiles`
-  - `osm_admin.mbtiles`
-  - `ohm_admin.mbtiles`
-  - `osm_misc.mbtiles` (mixed OSM/OHM types)
-- [ ] Keep synthetic boundary products folded into OSM tileset.
-- [ ] Separate per-gazetteer tile jobs from mixed-source tile jobs where that reduces
-  scheduling contention.
+- [x] Tile generation reads staged artefacts (`final/` → `h3_merged/` →
+  `boundary_merged/` → `extract/` preference chain) and pulls full polygon
+  geometries exclusively from the external geom store (`GeomStoreReader`).
+  Docs without a resolvable `geom_ref` are dropped — there is no hull
+  fallback, since simplified hulls would mis-render at high zoom levels.
+  The Elasticsearch path has been removed entirely; the geom store at
+  `GEOM_STORE_DIR` is a hard prerequisite (`FileNotFoundError` raised if
+  missing).
+- [x] Required outputs are produced via the bucket-driven design
+  (`TILE_BUCKETS` in `generate_tiles.py`):
+  - `po.mbtiles` — `{po}`
+  - `clio.mbtiles` — `{clio}`
+  - `nl.mbtiles` — `{nl}`
+  - `osm_admin.mbtiles` — `{osm}` admin-level boundaries (0..11)
+  - `ohm_admin.mbtiles` — `{ohm}` admin-level boundaries
+  - `osm_misc.mbtiles` — mixed `{osm, ohm}` curated misc + historic-prefix types
+- [x] Synthetic boundary products from `un-geoscheme-boundaries.py` (which
+  emit under the `osm:` namespace) flow into `osm_admin` / `osm_misc`
+  automatically because bucket classification follows `place_id`, not the
+  source snapshot's location.
+- [x] Per-bucket Slurm tasks (one task per output bucket) eliminate writer
+  contention on the mixed `osm_misc` file: a single task streams *both* OSM
+  and OHM misc-boundary records into one output. Per-bucket prerequisites are
+  enforced by `submit_tiles_slurm._eligible_buckets` — buckets with any
+  contributing namespace's prerequisite stage incomplete are deferred.
 
 Validation gates:
 
-- [ ] Tile generation runs with ES stopped.
-- [ ] Output layers and counts are reproducible.
+- [x] Tile generation runs with ES stopped (no `elasticsearch` import remains
+  in `processing/generate_tiles.py`).
+- [ ] Output layers and counts are reproducible (deferred — needs an end-to-end
+  CRC dry run once Batch 8 wires this into `scripts/ingest.sh`).
 
 ### Batch 11: Index Loaders, Selection-Driven Lifecycle, Gazetteer Inventory Push
 

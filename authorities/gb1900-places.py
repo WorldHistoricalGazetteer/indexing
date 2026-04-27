@@ -9,11 +9,17 @@ import zipfile
 import io
 
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
-es = Elasticsearch(ES_HOST, request_timeout=180)
+NAMESPACE = "gb"
+es = None if is_staging_mode() else Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def parse_gb1900_row(row):
@@ -138,6 +144,7 @@ def index_gb1900(file_path, places_index):
 
         print(f"CSV columns: {reader.fieldnames}")
 
+        staged_mode = is_staging_mode()
         for i, row in enumerate(reader):
             if (i + 1) % 10000 == 0:
                 print(f"\rProcessed {i + 1:,} rows... (places: {place_count:,}, skipped: {skipped:,})", end='', flush=True)
@@ -149,6 +156,11 @@ def index_gb1900(file_path, places_index):
                     skipped += 1
                     if skipped <= 5:
                         print(f"  Skipped row {i + 1}: {row}")
+                    continue
+
+                if staged_mode:
+                    write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
+                    place_count += 1
                     continue
 
                 place_id = place_doc['place_id']
@@ -171,12 +183,12 @@ def index_gb1900(file_path, places_index):
                 skipped += 1
                 continue
 
-    if place_batch:
+    if not staged_mode and place_batch:
         success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
         place_count += success
 
     print(f"\nIndexing complete!")
-    print(f"Places indexed: {place_count:,}")
+    print(f"Places {'staged' if staged_mode else 'indexed'}: {place_count:,}")
     print(f"Skipped: {skipped:,}")
 
 
@@ -192,4 +204,5 @@ if __name__ == "__main__":
     print()
 
     index_gb1900(GB1900_FILE, PLACES_INDEX)
-    create_checkpoint_snapshot(es, "gb1900_places")
+    if not is_staging_mode() and es is not None:
+        create_checkpoint_snapshot(es, "gb1900_places")

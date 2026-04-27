@@ -24,7 +24,13 @@ from datetime import datetime
 
 import requests
 from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    write_staged_place_doc,
+    is_staging_mode,
+)
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
 
@@ -190,7 +196,7 @@ def process_cliopatria_feature(feature):
 
 
 def index_cliopatria(file_path=None, places_index='places'):
-    """Index Cliopatria polities into ES."""
+    """Index Cliopatria polities — staged JSONL or ES bulk depending on mode."""
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
@@ -198,7 +204,9 @@ def index_cliopatria(file_path=None, places_index='places'):
     print("CLIOPATRIA HISTORICAL POLITIES INGESTION")
     print("=" * 80)
 
-    es = Elasticsearch(ES_HOST, request_timeout=180)
+    staged_mode = is_staging_mode()
+    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180)
+
     data = fetch_cliopatria_data(file_path)
 
     features = data.get('features', [])
@@ -231,6 +239,13 @@ def index_cliopatria(file_path=None, places_index='places'):
                         counter += 1
                 seen_ids.add(doc['place_id'])
 
+                if staged_mode:
+                    write_staged_place_doc(namespace=NAMESPACE, doc=doc)
+                    total_indexed += 1
+                    if total_indexed % 1000 == 0:
+                        print(f"\r  Staged: {total_indexed:,}", end='', flush=True)
+                    continue
+
                 batch.append({
                     '_index': places_index,
                     '_id': doc['place_id'],
@@ -253,18 +268,19 @@ def index_cliopatria(file_path=None, places_index='places'):
 
         configure_module_writer(None)
 
-    # Flush remaining
-    if batch:
+    # Flush remaining (ES mode only)
+    if not staged_mode and batch:
         success, failed = helpers.bulk(
             es, batch, raise_on_error=False, stats_only=True
         )
         total_indexed += success
 
     print(f"\n\nCliopatria ingestion complete:")
-    print(f"  Indexed: {total_indexed:,}")
+    print(f"  {'Staged' if staged_mode else 'Indexed'}: {total_indexed:,}")
     print(f"  Skipped: {total_skipped:,}")
 
-    create_checkpoint_snapshot(es, 'cliopatria_places')
+    if not staged_mode and es is not None:
+        create_checkpoint_snapshot(es, 'cliopatria_places')
 
 
 if __name__ == "__main__":
