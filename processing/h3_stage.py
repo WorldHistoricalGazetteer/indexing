@@ -187,17 +187,56 @@ def run_h3_stage(
 
     _started_at = datetime.now(timezone.utc)
 
-    with out_path.open("w", encoding="utf-8") as fh:
-        for doc in _iter_extract_docs(namespace):
-            patch, seen, with_h3 = _build_h3_patch(doc)
-            geometries_seen += seen
-            geometries_with_h3 += with_h3
-            docs_seen += 1
-            if patch:
-                fh.write(json.dumps(patch, ensure_ascii=True) + "\n")
-                docs_patched += 1
-            if max_docs is not None and docs_seen >= max_docs:
-                break
+    # Parallel polyfill: hand each doc to a worker pool sized from the Slurm
+    # allocation (SLURM_CPUS_PER_TASK falls back to os.cpu_count() locally).
+    # Most of the wall time is the per-doc polyfill, which is a pure-CPU
+    # Python call that releases the GIL only intermittently — so processes
+    # rather than threads. ``imap_unordered`` keeps the writer happy without
+    # waiting for slow docs to drain.
+    n_workers = int(os.environ.get(
+        "SLURM_CPUS_PER_TASK",
+        str(max(1, (os.cpu_count() or 1) - 1)),
+    ))
+    n_workers = max(1, n_workers)
+
+    if n_workers <= 1:
+        with out_path.open("w", encoding="utf-8") as fh:
+            for doc in _iter_extract_docs(namespace):
+                patch, seen, with_h3 = _build_h3_patch(doc)
+                geometries_seen += seen
+                geometries_with_h3 += with_h3
+                docs_seen += 1
+                if patch:
+                    fh.write(json.dumps(patch, ensure_ascii=True) + "\n")
+                    docs_patched += 1
+                if max_docs is not None and docs_seen >= max_docs:
+                    break
+    else:
+        import multiprocessing as _mp
+        # ``spawn`` is the safe default on CRC (avoids fork+threading
+        # interactions with Shapely/GEOS handles inherited from the parent).
+        ctx = _mp.get_context("spawn")
+        with out_path.open("w", encoding="utf-8") as fh, \
+                ctx.Pool(processes=n_workers) as pool:
+            iterator = _iter_extract_docs(namespace)
+            if max_docs is not None:
+                # Cap upstream so workers don't process beyond the limit.
+                def _limited(src):
+                    for i, d in enumerate(src):
+                        if i >= max_docs: break
+                        yield d
+                iterator = _limited(iterator)
+            # chunksize tuned for typical doc-level work — small enough to
+            # keep workers fed, large enough to amortise IPC.
+            for patch, seen, with_h3 in pool.imap_unordered(
+                _build_h3_patch, iterator, chunksize=64,
+            ):
+                geometries_seen += seen
+                geometries_with_h3 += with_h3
+                docs_seen += 1
+                if patch:
+                    fh.write(json.dumps(patch, ensure_ascii=True) + "\n")
+                    docs_patched += 1
 
     metrics = {
         "docs_seen": docs_seen,
