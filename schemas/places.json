@@ -21,6 +21,12 @@
       "namespace": {
         "type": "keyword"
       },
+      "dataset_status": {
+        "type": "keyword"
+      },
+      "dataset_id": {
+        "type": "keyword"
+      },
       "title": {
         "type": "text",
         "fields": {

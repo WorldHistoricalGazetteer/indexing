@@ -851,6 +851,9 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
 # Staged Extraction Shim: Authority Script Integration
 # ============================================================================
 
+_VALID_DATASET_STATUSES = ("published", "pending")
+
+
 def write_staged_place_doc(namespace: str, doc: dict) -> None:
     """Write a standardised place document to the staged extract for a namespace.
 
@@ -862,16 +865,43 @@ def write_staged_place_doc(namespace: str, doc: dict) -> None:
     documents without ES access. The appended documents can later be consolidated
     to Parquet by batch processes that expect bulk performance.
 
+    Per Master Plan Appendix E.2 item 3, every emitted doc must carry
+    ``dataset_status`` (``'published'`` | ``'pending'``) and ``dataset_id``. If
+    absent, defaults are filled in: ``dataset_status='published'`` and
+    ``dataset_id=<namespace>`` for ordinary authorities. ``whg``-namespace docs
+    must set ``dataset_id`` themselves (sub-namespaced per Dataset/Collection,
+    e.g. ``'whg:1234'``); the helper raises if a ``whg`` doc is missing it.
+
     Args:
         namespace (str): Authority namespace (e.g. ``gn``, ``wd``, ``osm``, ``nl``).
         doc (dict): A place document conforming to the `places` ES schema (minus _index/_id).
 
     Raises:
         OSError: If the staged directory cannot be created or the file cannot be written.
+        TypeError: If ``doc`` is not a dict.
+        ValueError: If ``dataset_status`` is not one of ``'published'`` / ``'pending'``,
+            or if a ``whg``-namespace doc lacks an explicit ``dataset_id``.
     """
     import os
     import json
     from pathlib import Path
+
+    if not isinstance(doc, dict):
+        raise TypeError(f"Expected dict, got {type(doc)}")
+
+    status = doc.setdefault("dataset_status", "published")
+    if status not in _VALID_DATASET_STATUSES:
+        raise ValueError(
+            f"dataset_status must be one of {_VALID_DATASET_STATUSES}, got {status!r}"
+        )
+
+    if "dataset_id" not in doc:
+        if namespace == "whg":
+            raise ValueError(
+                "whg-namespace records must set dataset_id explicitly "
+                "(e.g. 'whg:<dataset_id>')"
+            )
+        doc["dataset_id"] = namespace
 
     staged_base = os.environ.get(
         "STAGED_BASE_DIR",
@@ -881,10 +911,6 @@ def write_staged_place_doc(namespace: str, doc: dict) -> None:
     extract_dir.mkdir(parents=True, exist_ok=True)
 
     out_file = extract_dir / "places.jsonl"
-
-    # Append to JSONL (each doc on its own line)
-    if not isinstance(doc, dict):
-        raise TypeError(f"Expected dict, got {type(doc)}")
 
     with out_file.open("a", encoding="utf-8") as f:
         f.write(json.dumps(doc, ensure_ascii=True) + "\n")
