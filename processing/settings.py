@@ -103,6 +103,16 @@ STAGED_RUN_MANIFEST_FILE_TEMPLATE = os.getenv(
     "{runs_dir}/{run_id}.json",
 )
 
+# Global gazetteers — coverage assumed worldwide; per-gazetteer H3 coverage
+# compaction in Batch 6 is skipped for these and the inventory entry carries the
+# sentinel "global" instead of an enumerated cell list (Master Plan §1.4.1).
+# Re-exported here from staging_contract so authority scripts and orchestration
+# code share a single value; do not hard-code elsewhere.
+from processing.staging_contract import (  # noqa: E402
+    GLOBAL_COVERAGE_NAMESPACES,
+    H3_COVERAGE_GLOBAL_SENTINEL,
+)
+
 # Persistent cross-run per-namespace wall-time history.
 # Used by Slurm array submission to estimate --time allocations from prior runs.
 # Structure: {namespace: {script_id: [{run_id, started_at, finished_at,
