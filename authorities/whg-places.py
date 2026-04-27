@@ -131,12 +131,30 @@ def discover_authority_datasets(
     session: requests.Session,
     *,
     base_url: str = WHG_API_BASE_URL,
+    include_pending: bool = False,
 ) -> list[dict[str, Any]]:
     """Return the list of datasets from ``/reconcile/authority-datasets``.
 
-    Each entry: ``{"id": int, "title": str, "place_count": int}``.
+    Per Django commit ``api/reconcile.py::AuthorityDatasetsView`` (this
+    repo's Django side), each entry now carries::
+
+        {"id": int, "title": str, "label": str|None, "description": str|None,
+         "ds_status": str|None, "public": bool|None, "authority": bool|None,
+         "owner_id": int|None, "place_count": int,
+         "dataset_status": "published"|"pending"}
+
+    ``dataset_status`` is the field this script consumes downstream — Django
+    derives it from ``(authority and public and ds_status in {accessioning,
+    indexed})`` so the rebuild doesn't have to re-implement the rule.
+
+    Pass ``include_pending=True`` to add ``?include_pending=true`` to the
+    URL — Django then includes datasets whose ``ds_status`` is anything
+    other than ``seed`` / ``format_error`` (so half-uploaded / invalid
+    datasets stay out of the index).
     """
     url = base_url.rstrip("/") + DISCOVERY_PATH
+    if include_pending:
+        url += "?include_pending=true"
     resp = _request_with_retry(session, url)
     body = resp.json()
     return list(body.get("result") or [])
@@ -407,8 +425,16 @@ def stage_all_authority_datasets(
     token: str | None = None,
     limit_features_per_dataset: int | None = None,
     dataset_filter: list[int] | None = None,
+    include_pending: bool = False,
 ) -> dict[str, Any]:
-    """Discover + stage every authority-eligible dataset."""
+    """Discover + stage every authority-eligible dataset.
+
+    When ``include_pending=True`` the discovery call also returns datasets
+    whose ``ds_status`` is anything other than ``seed`` / ``format_error``;
+    each entry's ``dataset_status`` (set by Django from
+    ``(authority and public and ds_status in {accessioning, indexed})``)
+    is propagated onto every staged place doc.
+    """
     token = _resolve_token(token)
     session = _make_session(token)
 
@@ -417,12 +443,15 @@ def stage_all_authority_datasets(
     print("=" * 78)
     print(f"WHG API: {base_url}")
     print(f"Auth:    {'bearer-token' if token else 'unauthenticated'}")
+    print(f"Pending: {'included' if include_pending else 'excluded'}")
 
-    datasets = discover_authority_datasets(session, base_url=base_url)
+    datasets = discover_authority_datasets(
+        session, base_url=base_url, include_pending=include_pending,
+    )
     if dataset_filter:
         keep = set(dataset_filter)
         datasets = [d for d in datasets if d.get("id") in keep]
-    print(f"Discovered {len(datasets)} authority datasets.")
+    print(f"Discovered {len(datasets)} datasets.")
 
     per_dataset: dict[str, dict[str, Any]] = {}
     totals = {"features_seen": 0, "docs_written": 0, "docs_skipped": 0}
@@ -432,28 +461,76 @@ def stage_all_authority_datasets(
         title = ds.get("title", "")
         if not isinstance(ds_id, int):
             continue
-        print(f"\n{title} (whg:{ds_id}, place_count={ds.get('place_count'):,}):")
+        # Django's AuthorityDatasetsView derives this; default to 'pending'
+        # if the field is absent (older Django build).
+        ds_status = str(ds.get("dataset_status") or "pending")
+        place_count = ds.get("place_count") or 0
+        print(
+            f"\n{title} (whg:{ds_id}, place_count={place_count:,}, "
+            f"status={ds_status}):"
+        )
         try:
             metrics = stage_dataset(
                 session,
                 dataset_sub_id=ds_id,
                 base_url=base_url,
-                dataset_status="published",
+                dataset_status=ds_status,
                 limit=limit_features_per_dataset,
             )
         except Exception as exc:
             print(f"  ✗ {ds_id}: {exc}", file=sys.stderr)
             continue
+        # Carry the discovery metadata onto the per-dataset metrics so the
+        # Batch 11 inventory push has dataset_id-keyed name / description /
+        # owner_user_id without a second discovery call.
+        metrics["title"] = title
+        metrics["description"] = ds.get("description")
+        metrics["dataset_status"] = ds_status
+        metrics["owner_user_id"] = ds.get("owner_id")
         per_dataset[str(ds_id)] = metrics
-        for k in totals:
-            totals[k] += metrics.get(k, 0)
+        for k in ("features_seen", "docs_written", "docs_skipped"):
+            totals[k] += int(metrics.get(k) or 0)
         print(f"  ✓ {ds_id}: {metrics}")
 
-    return {
+    summary = {
         "discovered": len(datasets),
         "per_dataset": per_dataset,
         "totals": totals,
     }
+
+    # Sidecar consumed by Batch 11 push_gazetteer_inventory: one inventory
+    # entry per WHG dataset (class='dataset', owner_user_id, status). Stable
+    # contract: ``staged/_aggregates/whg.datasets.json``.
+    try:
+        from processing.settings import STAGED_BASE_DIR
+        sidecar_path = (
+            Path(STAGED_BASE_DIR) / "_aggregates" / "whg.datasets.json"
+        )
+        sidecar_path.parent.mkdir(parents=True, exist_ok=True)
+        sidecar_payload = {
+            "namespace": WHG_NAMESPACE,
+            "datasets": [
+                {
+                    "id": f"{WHG_NAMESPACE}:{ds_id}",
+                    "name": meta.get("title") or f"WHG dataset {ds_id}",
+                    "description": meta.get("description"),
+                    "dataset_status": meta.get("dataset_status") or "pending",
+                    "owner_user_id": meta.get("owner_user_id"),
+                    "record_count": int(meta.get("docs_written") or 0),
+                }
+                for ds_id, meta in per_dataset.items()
+            ],
+        }
+        sidecar_path.write_text(
+            json.dumps(sidecar_payload, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        summary["sidecar_path"] = str(sidecar_path)
+    except Exception as exc:
+        print(f"WARNING: failed to write whg datasets sidecar: {exc}",
+              file=sys.stderr)
+
+    return summary
 
 
 def main() -> None:
@@ -474,12 +551,17 @@ def main() -> None:
                         help="Cap features per dataset (smoke testing only)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Discover only; do not fetch LPF or stage docs")
+    parser.add_argument("--include-pending", action="store_true",
+                        help="Also stage datasets that aren't authority=True yet "
+                             "(any ds_status except seed/format_error). Their "
+                             "staged docs carry dataset_status='pending'.")
     args = parser.parse_args()
 
     if args.dry_run:
         token = _resolve_token(args.token)
         datasets = discover_authority_datasets(
             _make_session(token), base_url=args.base_url,
+            include_pending=args.include_pending,
         )
         print(json.dumps({"discovered": datasets}, indent=2))
         return
@@ -489,6 +571,7 @@ def main() -> None:
         token=args.token,
         limit_features_per_dataset=args.limit,
         dataset_filter=args.dataset,
+        include_pending=args.include_pending,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 

@@ -252,26 +252,50 @@ controller layer.
 > `WorldHistoricalGazetteer/whg3`). Coding agents working on this plan should request
 > read access to that clone whenever cross-checking Django models, the
 > `contributor_attestations` table, the `Dataset` / `Collection` schema, the
-> `/reconcile/authority-datasets` and LPF endpoints, or the future gazetteer-registry
-> endpoint contract is necessary. **Do not** assume the Django code matches what is
-> described here without verifying against the clone.
+> `/reconcile/authority-datasets` and LPF endpoints, or the gazetteer-registry endpoint
+> contract is necessary. **Do not** assume the Django code matches what is described
+> here without verifying against the clone.
 
-- `Dataset.authority` controls dataset eligibility for authority ingestion.
-- Discovery endpoint: `GET /reconcile/authority-datasets`
-  (returns `result[{id,title,place_count}]`).
-- LPF endpoint per dataset: `GET /entity/dataset:<id>/api?filetype=lpf`
-  (streamed gzip response).
-- Auth: token/session auth (token query param or bearer token).
-- **(New, Master Plan §5.3, Appendix E.2 item 6)** Gazetteer registry endpoint
-  (POST/PUT) accepting the inventory payload listed in Batch 11. Endpoint contract to
-  be defined jointly with the Django team; the indexing pipeline is the producer.
-- **(New, Master Plan §2d–2e of `plan-dynamicClustering.DEPRECATED.md`,
-  reaffirmed in the Master Plan)** Pitt-side links endpoint:
-  - `POST /api/links` — Django forwards each contributor attestation here for
-    immediate insertion into the Pitt SQLite (idempotent via `INSERT OR IGNORE`).
-  - `DELETE /api/links/<assertion_key>` — Django forwards revocations.
-  These are gateway endpoints, so the indexing-side responsibility is to ship the
-  SQLite and document the schema; gateway implementation is tracked separately.
+The Django side has been brought up to date with this plan. Cross-references below
+point to specific files in the WHG3 clone:
+
+* **`Dataset.authority`** controls dataset eligibility for authority ingestion
+  (unchanged; in `datasets/models.py`).
+* **Discovery endpoint**: `GET /reconcile/authority-datasets`
+  (`api/reconcile.py::AuthorityDatasetsView`). Returns
+  `result[{id, title, label, description, ds_status, public, authority,
+  owner_id, place_count, dataset_status}]` — `dataset_status` is derived
+  Django-side as `"published"` when `(authority and public and ds_status in
+  {accessioning, indexed})`, otherwise `"pending"`. Pass
+  `?include_pending=true` to also enumerate datasets that aren't authority
+  yet (any `ds_status` except `seed` / `format_error`).
+* **LPF endpoint per dataset**: `GET /entity/dataset:<id>/api?filetype=lpf`
+  (`api/views_entity.py::EntityFeatureView`) — streamed gzipped GeoJSON
+  FeatureCollection. Unchanged.
+* **Auth**: token/session auth via `Authorization: Bearer <token>` header
+  or `?token=…` query param (`api/authentication.py::TokenQueryOrBearerAuthentication`).
+* **Gazetteer registry endpoint** (Master Plan §5.3, Appendix E.2 #6):
+  `POST/PUT /api/registry/inventory` (`api/views_indexing.py::GazetteerInventoryView`).
+  Idempotent upsert of the per-gazetteer registry; backed by the
+  `GazetteerRegistryEntry` model (migration `api/migrations/0002_indexing_rebuild.py`).
+  WHG datasets land as `class='dataset'` rows fanned out from the
+  `whg.datasets.json` sidecar written by `authorities/whg-places.py`.
+* **Retention notify endpoint** (Batch 14a): `POST /api/retention/notify`
+  (`api/views_indexing.py::RetentionNotifyView`). Logs the batch and, when
+  `settings.WHG_RETENTION_DISPATCH_FN` is configured, hands the payload off
+  to the configured callable for actual email / in-platform notification
+  dispatch.
+* **Contributor attestation API** (Master Plan §2a):
+  `POST/GET/DELETE /api/links` (`api/views_indexing.py::ContributorAttestationView`).
+  Backed by the `ContributorAttestation` model with composite `(place_a,
+  place_b, relation_type, user)` uniqueness, `place_a < place_b` CHECK
+  constraint, and `legacy_v3_2` flag (Batch 13b).
+* **Live forwarding to the gateway** (Master Plan §2d–2e): on every
+  ContributorAttestation save / delete, `api/signals.py::attestation_saved`
+  / `attestation_deleted` POST/DELETE the row to the gateway via
+  `api/crc_client.py::crc_post_link` / `crc_delete_link`. Best-effort: a
+  failure logs a warning and is reconciled by the next Batch 12
+  `contributor_replay` run.
 
 ---
 
@@ -1193,9 +1217,14 @@ Tasks:
   When `--require-hardlink-marker` is set the call also requires
   `staged/runs/{run_id}.hardlink_ship.json` (written by the Batch 12
   ship-to-Pitt step) — refuses to fire otherwise.
-- [ ] WHG-dataset entries (`class: "dataset"`, `owner_user_id`,
-  `whg:<dataset_id>`) are not yet emitted — Batch 13a / 4c Phase 4
-  still in flight.
+- [x] WHG-dataset entries (`class="dataset"`, `owner_user_id`,
+  `whg:<dataset_id>`) are emitted: `authorities/whg-places.py` writes a
+  sidecar `staged/_aggregates/whg.datasets.json` listing each
+  Dataset/Collection's title / description / dataset_status /
+  owner_user_id / record_count; `push_gazetteer_inventory.py::
+  _expand_whg_dataset_entries` fans the `whg` namespace out into one
+  `class='dataset'` inventory entry per dataset (or falls back to a single
+  `class='dataset'` bulk row when the sidecar is missing — first runs).
 
 Validation gates:
 
@@ -1207,8 +1236,12 @@ Validation gates:
 - [x] `dataset_status` and `dataset_id` index correctly: top-level
   `keyword` mapping was added in Batch 1; `index_from_stage` indexes the
   staged docs unchanged so both fields land as queryable keywords.
-- [ ] Inventory push round-trips through Django (deferred — Django
-  endpoint contract still TBD with the Django team).
+- [x] Inventory push round-trips through Django:
+  `processing/push_gazetteer_inventory.py` POSTs to
+  `${WHG_API_BASE_URL}/api/registry/inventory`, served by
+  `api/views_indexing.py::GazetteerInventoryView` against the
+  `GazetteerRegistryEntry` table. End-to-end live verification still
+  needs a CRC dry run.
 
 ### Batch 12: Hard-Link SQLite Harvest from Staged Files (Replaces Post-Index Clustering)
 
@@ -1398,9 +1431,10 @@ Tasks:
 
 - [ ] DO-side schema change: add `legacy_v3_2 BOOLEAN DEFAULT false` to
   `contributor_attestations`. *(Django team, tracked separately.)*
-- [x] Pitt-side: ``contributor_replay.py`` reads ``legacy_v3_2`` and encodes
-  the suffix onto ``source_id`` (``contributor:<user_id>:legacy_v3_2``).
-  Tolerates the column being absent on older DO schemas.
+- [x] Pitt-side: ``contributor_replay.py`` reads ``legacy_v3_2`` from the
+  Django ``api_contributorattestation`` table and encodes the suffix onto
+  ``source_id`` (``contributor:<user_id>:legacy_v3_2``). Tolerates the
+  column being absent on older DO schemas (defensive fallback).
 - [ ] Preserve v3.2 dataset metadata, accession history, in-progress
   reconciliations. *(Owned by Batch 4 Phase 4 / DO PG — no extra work
   needed in this repo.)*

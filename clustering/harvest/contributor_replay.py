@@ -34,32 +34,41 @@ from typing import Any, Iterator
 from clustering.sqlite_overlay import builder, insert_rows
 
 
-_DEFAULT_QUERY = """
+# Canonical Django-side table name (app label = ``api``,
+# model = ``ContributorAttestation``). See
+# ``../../../whg3/api/models.py`` and the ``api/migrations/0002_*`` migration.
+_TABLE = "api_contributorattestation"
+
+_DEFAULT_QUERY = f"""
     SELECT
         user_id,
+        dataset_id,
         place_a,
         place_b,
         relation_type,
         asserted_at,
         justification,
         COALESCE(legacy_v3_2, FALSE) AS legacy_v3_2
-    FROM contributor_attestations
+    FROM {_TABLE}
     WHERE status = 'active'
     ORDER BY id
 """
 
-# Fallback query used when the legacy_v3_2 column doesn't yet exist on the
-# DO side (Batch 13b is a future migration in the Django repo).
-_FALLBACK_QUERY = """
+# Fallback used when the ``legacy_v3_2`` column doesn't yet exist on the DO
+# side — defensive, since the migration that adds it ships in the same
+# rebuild. Also used when the older, unprefixed ``contributor_attestations``
+# table name is in play (pre-Django integration test fixtures).
+_FALLBACK_QUERY = f"""
     SELECT
         user_id,
+        dataset_id,
         place_a,
         place_b,
         relation_type,
         asserted_at,
         justification,
         FALSE AS legacy_v3_2
-    FROM contributor_attestations
+    FROM {_TABLE}
     WHERE status = 'active'
     ORDER BY id
 """

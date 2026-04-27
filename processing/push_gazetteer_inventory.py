@@ -168,10 +168,63 @@ def _read_record_count(namespace: str) -> int:
 # ---------------------------------------------------------------------------
 
 
+_WHG_NAMESPACE = "whg"
+_WHG_DATASETS_SIDECAR = "whg.datasets.json"
+
+
+def _whg_datasets_sidecar() -> Path:
+    return Path(STAGED_BASE_DIR) / "_aggregates" / _WHG_DATASETS_SIDECAR
+
+
+def _expand_whg_dataset_entries(
+    h3_coverage: Any,
+    temporal_extent: list[int | None],
+) -> list[dict[str, Any]]:
+    """Read the Batch 4c Phase 4 sidecar (written by ``whg-places.py``) and
+    fan out one inventory entry per WHG Dataset/Collection.
+
+    Each entry shares the bulk-namespace ``h3_coverage`` and
+    ``temporal_extent`` aggregates; per-dataset metadata
+    (``id``, ``name``, ``description``, ``owner_user_id``,
+    ``dataset_status``, ``record_count``) comes from the sidecar.
+    """
+    sidecar = _whg_datasets_sidecar()
+    if not sidecar.exists():
+        return []
+    try:
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    out: list[dict[str, Any]] = []
+    for ds in payload.get("datasets") or []:
+        if not isinstance(ds, dict) or "id" not in ds:
+            continue
+        out.append({
+            "id": ds["id"],                                 # e.g. "whg:1234"
+            "name": ds.get("name") or ds["id"],
+            "description": ds.get("description"),
+            "namespace": _WHG_NAMESPACE,
+            "class": "dataset",
+            "owner_user_id": ds.get("owner_user_id"),
+            "record_count": int(ds.get("record_count") or 0),
+            "status": str(ds.get("dataset_status") or "pending"),
+            "h3_coverage": h3_coverage,
+            "temporal_extent": temporal_extent,
+        })
+    return out
+
+
 def build_inventory_payload(
     run_inventory: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Build the per-namespace inventory entries from the Batch 8 inventory file."""
+    """Build the per-namespace inventory entries from the Batch 8 inventory file.
+
+    Most namespaces produce one entry (``class='authority'``). The ``whg``
+    namespace is fanned out into one entry per Dataset/Collection from the
+    sidecar written by ``authorities/whg-places.py``; if the sidecar is
+    missing the bulk ``whg`` entry is emitted instead so the push still
+    surfaces *something* on first runs.
+    """
     entries: list[dict[str, Any]] = []
     for ns_entry in run_inventory.get("per_gazetteer", []):
         ns = ns_entry["namespace"]
@@ -179,16 +232,25 @@ def build_inventory_payload(
             continue  # Defensive: barrier already excludes these.
         meta = _authority_meta(ns)
         start, end = _read_temporal_extent(ns)
+        h3 = _read_h3_coverage(ns)
+
+        if ns == _WHG_NAMESPACE:
+            fanned = _expand_whg_dataset_entries(h3, [start, end])
+            if fanned:
+                entries.extend(fanned)
+                continue
+            # Fall through to a bulk 'whg' entry if no sidecar exists yet.
+
         entries.append({
             "id": ns,
             "name": meta["name"],
             "description": meta["description"],
             "namespace": ns,
-            "class": "authority",
+            "class": "dataset" if ns == _WHG_NAMESPACE else "authority",
             "owner_user_id": None,
             "record_count": _read_record_count(ns),
             "status": "published",
-            "h3_coverage": _read_h3_coverage(ns),
+            "h3_coverage": h3,
             "temporal_extent": [start, end],
         })
     return entries

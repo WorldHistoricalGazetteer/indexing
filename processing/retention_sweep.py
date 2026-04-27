@@ -126,14 +126,24 @@ def _aggregate_pending_datasets(
     return resp.get("aggregations", {}).get("by_dataset", {}).get("buckets", [])
 
 
+# Django table names. ContributorAttestation lives in app ``api`` (see the
+# new migration ``api/migrations/0002_indexing_rebuild.py``); Dataset lives
+# in app ``datasets``.
+_TABLE_ATTESTATION = "api_contributorattestation"
+_TABLE_DATASET = "datasets_dataset"
+
+
 def _fetch_last_edit_per_dataset(
     dataset_ids: list[str],
 ) -> dict[str, datetime]:
     """Return the most recent contributor-edit timestamp per dataset_id.
 
-    Connects to DO PG via the existing SSH-tunnelled client. Returns an
-    empty dict if PG isn't reachable (caller treats that as "no recent
-    edits" — i.e. the timer continues to run from submission_date).
+    Sources from the Django ``ContributorAttestation`` table where
+    ``modified_at`` is ``auto_now``. The dataset_id key matches the
+    inventory's ``whg:<id>`` shape since whg-places.py / Django write the
+    same id format. Returns an empty dict if PG isn't reachable (caller
+    treats that as "no recent edits" — i.e. the timer continues to run
+    from ``submission_date``).
     """
     if not dataset_ids:
         return {}
@@ -146,9 +156,9 @@ def _fetch_last_edit_per_dataset(
     async def _fetch() -> dict[str, datetime]:
         async with pg_connection() as conn:
             rows = await conn.fetch(
-                """
+                f"""
                 SELECT dataset_id, MAX(modified_at) AS last_modified
-                FROM contributor_attestations
+                FROM {_TABLE_ATTESTATION}
                 WHERE dataset_id = ANY($1::text[])
                 GROUP BY dataset_id
                 """,
@@ -166,12 +176,38 @@ def _fetch_last_edit_per_dataset(
 
 def _fetch_dataset_status(dataset_ids: list[str]) -> dict[str, str]:
     """Return ``{dataset_id: status}`` for ``submitted`` / ``rejected`` /
-    ``private_permanent`` exclusions.
+    ``private_permanent`` / ``published`` exclusions.
 
-    Mirrors ``_fetch_last_edit_per_dataset`` — best-effort over PG.
+    Maps Django's ``Dataset`` model fields onto the rebuild's status
+    vocabulary:
+
+    * ``ds_status='accessioning'`` or ``'indexed'`` AND ``public=true``
+      → ``"published"`` (exempt).
+    * ``ds_status='reconciling'``  → ``"submitted"``  (timer paused).
+    * ``ds_status='wd-complete'``  → ``"submitted"``  (timer paused).
+    * Otherwise                    → ``"pending"``    (timer runs).
+
+    The ``private_permanent`` flag isn't in the current Django schema —
+    once added, this query will surface it. Best-effort over PG; returns
+    an empty dict on failure.
     """
     if not dataset_ids:
         return {}
+    # The dataset_ids carried here are the ``whg:<id>`` form used by
+    # the inventory; Django stores the bare integer ``id``. Strip the
+    # prefix so the JOIN works.
+    bare_ids: list[int] = []
+    for did in dataset_ids:
+        if isinstance(did, str) and did.startswith("whg:"):
+            try:
+                bare_ids.append(int(did.split(":", 1)[1]))
+            except ValueError:
+                continue
+        elif isinstance(did, int):
+            bare_ids.append(did)
+    if not bare_ids:
+        return {}
+
     try:
         import asyncio
         from clustering.pg_client import pg_connection
@@ -181,14 +217,24 @@ def _fetch_dataset_status(dataset_ids: list[str]) -> dict[str, str]:
     async def _fetch() -> dict[str, str]:
         async with pg_connection() as conn:
             rows = await conn.fetch(
-                """
-                SELECT dataset_id, status
-                FROM datasets
-                WHERE dataset_id = ANY($1::text[])
+                f"""
+                SELECT id, ds_status, public
+                FROM {_TABLE_DATASET}
+                WHERE id = ANY($1::int[])
                 """,
-                dataset_ids,
+                bare_ids,
             )
-            return {r["dataset_id"]: r["status"] for r in rows}
+            mapped: dict[str, str] = {}
+            for r in rows:
+                ds_status = r["ds_status"]
+                public = bool(r["public"])
+                if ds_status in ("accessioning", "indexed") and public:
+                    mapped[f"whg:{r['id']}"] = "published"
+                elif ds_status in ("reconciling", "wd-complete"):
+                    mapped[f"whg:{r['id']}"] = "submitted"
+                else:
+                    mapped[f"whg:{r['id']}"] = "pending"
+            return mapped
 
     try:
         return asyncio.run(_fetch())
