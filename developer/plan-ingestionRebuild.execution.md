@@ -1623,3 +1623,144 @@ Validation gates:
   shape, the `POST /api/links` endpoint, and the realtime forwarding from Django are
   **not** in scope for this ingestion plan; they are owned by the Master Plan and the
   gateway implementation. This plan provides the data those layers consume.
+
+---
+
+## Test Run Results — Session 2026-04-27
+
+First end-to-end Slurm exercise on CRC, run ID `smoke-20260427T184236Z`,
+namespaces `nl + po`, login node `crc2`/`crc0`, cluster `htc`.
+
+### Patches landed during the run
+
+The smoke surfaced four real bugs / friction points which were fixed and
+pushed in-flight:
+
+* `0668b0c` — every Slurm submitter now passes `-M htc` to `sbatch`. CRC is
+  multi-cluster Slurm and `htc` partition lives on the `htc` cluster; the
+  bare `sbatch <script>` defaulted to the wrong cluster and rejected
+  submission with *"Invalid account or account/partition combination"*.
+  Override via `WHG_SLURM_CLUSTER` env var.
+* `bb716af` — robust Slurm job-id extractor. `sbatch -M htc` writes
+  `Submitted batch job 12345 on cluster htc`; the previous `split()[-1]`
+  parser captured `htc` instead of `12345`. Now matches the first integer
+  token in the output.
+* `6418ab8` — area-aware H3 polyfill (see perf table below) **plus** drop
+  the stale `--staged` flag from `submit_tiles_slurm.py`'s
+  `generate_tiles` invocation (the flag was removed when the legacy ES
+  path was deleted).
+* `c2afb83` — revert a multiprocessing.Pool prototype after benchmarking
+  showed it added < 6% throughput on PeriodO at the cost of code
+  complexity (kept in the file's commit history with the bench notes).
+
+### What worked end-to-end
+
+* **`submit_h3_slurm`** submitted Slurm array `8922051_[0-1]` to the `htc`
+  cluster (partition `htc`, qos `htc-htc-s`, 1d wall, 4 cpu, 16 G mem).
+  Both array tasks landed on real compute nodes (`htc-n25` and `htc-n59`).
+* **`nl` array task** completed all three chained stages in **~3 min**:
+  `h3_stage` (8728 docs, 8728 patched, 100% h3 coverage)
+  → `h3_merge` (`nl/h3_merged/places.{jsonl,parquet}`)
+  → `gazetteer_h3_coverage` (`_aggregates/nl.h3_coverage.json`,
+  637 777 cells uncompacted → 567 163 compacted, ~12% reduction).
+* **`po` array task** completed all three chained stages — slow because
+  PeriodO records are large polygons that triggered the polyfill bottleneck
+  (see perf table). After the area-aware optimisation landed, a fresh
+  po-only run (`poperf-20260427T203518Z`, job `8923725`) finished in
+  **15:02** (3.85× speedup over the baseline 57:43).
+* **`po` h3_coverage** correctly emitted the `"global"` sentinel without
+  enumerating cells (po is in `GLOBAL_COVERAGE_NAMESPACES`).
+* **`submit_batch9_slurm --skip-toponyms`** for the same run submitted the
+  per-namespace temporal-extent array (`8923084_[0-1]`); both tasks
+  finished in **~1.5 s each**:
+  - `_aggregates/nl.temporal_extent.json` → `[2025, 2025]`
+  - `_aggregates/po.temporal_extent.json` → `[null, null]` (pre-existing
+    issue in the staged po snapshot — the source records carry no
+    `timespans` field; the walker correctly returns null)
+* Per-namespace **manifest stage status** flipped `pending` → `running`
+  → `completed` in real time, surviving atomic-write race windows.
+* **Persistent runtime-history file** (`namespace-runtime-history.json`)
+  picked up wall times for h3-stage / h3-merge / h3-coverage /
+  temporal-extent on this run, ready for the next submitter to auto-tune
+  `--time` from the median of the last 5 completed runs.
+
+### H3 polyfill optimisation — measured on po (9 017 docs / 7 815 polygons)
+
+| Variant | Wall | docs/s | Speedup |
+|---|---:|---:|---:|
+| Original (no opts) | 57:43 | 2.3 | 1.0× |
+| Area-aware `_polyfill_adaptive` (helpers.py) | ~16:00 (extrapolated) | ~8.2 | **3.6×** |
+| Area-aware + spawn `Pool(4)` worker pool | 15:02 | 8.7 | 3.85× |
+
+The area-aware change picks the highest H3 resolution whose estimated cell
+count fits the cap based on polygon bbox area, instead of always trying
+r7 first and waiting for the cap to drop it to r5. For a continent-scale
+period coverage that's the difference between enumerating ~22 k r7 cells
+(slow) and going straight to r5 (~450 cells). The multiprocessing pool
+added a marginal 6% at the cost of code complexity, spawn-mode startup
+overhead, and per-doc pickle cost — the single-threaded parent
+(read-jsonl + json.dumps + write + result aggregation) was the throughput
+ceiling on po-shaped workloads. Reverted; kept the area-aware win.
+
+### What was NOT exercised this round
+
+* **Tiles smoke** — the dry-run sbatch was verified clean after the
+  `--staged` flag fix, but the live run is blocked on consolidating
+  `/vast/ishi/geom/staging/` (~8 GB of per-namespace `*.bin` shards) into
+  `/vast/ishi/geom/index.json`. That's a separate one-time infra task,
+  not a rebuild-code issue. Both `nl` and `po` would otherwise have been
+  eligible (`po` would have produced an empty bucket — its records have
+  inline hulls rather than geom-store entries).
+* **ccode_enrichment** — needs UN's `h3_merged/` snapshot (UN wasn't in
+  this smoke run); marked `skipped` for nl + po so the temporal-extent
+  prerequisite check passed.
+* **toponyms / Symphonym** — the 2-day rebuild_toponyms_index job is too
+  large for a smoke; explicitly skipped via `--skip-toponyms` on the
+  Batch 9 submitter.
+* **index_from_stage / hard_links / inventory push** — defer until at
+  least one indexable corpus + UN are present.
+
+### Resume note — start the next session with OHM
+
+OHM (OpenHistoricalMap) is the right next test. It has the **same data
+shape and code path as OSM** (PBF input, `osm-boundary-pass.py` boundary
+geometry stage, multipolygon assembly, identical `boundary` field, same
+authority script class `osm-places.py`-style streaming) but at a much
+smaller scale (~800 K records vs ~18 M for OSM). Specifically:
+
+* It exercises the **boundary completion + boundary_merge stages**
+  (skipped for nl + po), so we test `processing/boundary_stage.py` and
+  `processing/boundary_merge.py` end-to-end on real data.
+* It exercises the **OSM/OHM-specific h3_stage source-resolution path**
+  (`update_merged → boundary_merged → extract` chain) which we didn't
+  touch on nl + po.
+* It exercises **tile bucket `ohm_admin`** (and contributes to the
+  mixed `osm_misc` bucket once OSM is also staged) — verifies the
+  bucket-driven `submit_tiles_slurm` path on a realistic boundary
+  corpus, once the geom store is consolidated.
+* It validates the **area-aware polyfill** on a different polygon-shape
+  distribution (admin boundaries vs period coverages). If it scales as
+  expected (~doc-count linear, area-aware behaving for small admin
+  polygons), full OSM will be tractable; if not, we tune further before
+  committing OSM time.
+* The ~800 K records also exercise the **runtime-history wall-time
+  estimator** (every per-stage wall time will land in the persistent
+  history file, so the next OSM submission auto-tunes its `--time`
+  request from real OHM measurements rather than the conservative
+  first-run defaults).
+
+Pre-OHM checklist:
+
+1. Confirm OHM staged extract exists at `/vast/ishi/staged/ohm/extract/`
+   (or run authority extract via `es -ingest -n ohm`).
+2. Run `processing/geom_store.py` to consolidate
+   `/vast/ishi/geom/staging/` → `/vast/ishi/geom/index.json` (needed
+   for OHM admin polygons in tiles, and for ccode_enrichment if/when
+   UN is included).
+3. Submit `boundary_stage` → `boundary_merge` → `submit_h3_slurm` chain
+   for ohm via the existing orchestration (or just `submit_h3_slurm`
+   if extract + boundary already done).
+4. Measure per-stage wall times against the runtime-history estimator's
+   defaults and adjust `_LARGE_NAMESPACES` / `_LARGE_DEFAULT_HOURS` in
+   `processing/submit_h3_slurm.py` if the medians drift far from the
+   conservative bounds.
