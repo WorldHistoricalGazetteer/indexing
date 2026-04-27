@@ -264,7 +264,7 @@ def submit(
         return None
 
     result = subprocess.run(
-        ["sbatch", str(sbatch_path)],
+        ["sbatch", "-M", os.environ.get("WHG_SLURM_CLUSTER", "htc"), str(sbatch_path)],
         capture_output=True,
         text=True,
         check=False,
