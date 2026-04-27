@@ -233,7 +233,7 @@ def submit(
         print(f"sbatch failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(result.returncode)
 
-    job_id = result.stdout.strip().split()[-1]
+    job_id = next((tok for tok in result.stdout.split() if tok.isdigit()), result.stdout.strip().split()[-1])
     print(f"Submitted Slurm array job: {job_id}  ({len(buckets)} tasks)")
     return job_id
 

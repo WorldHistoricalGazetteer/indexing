@@ -274,7 +274,7 @@ def submit(
         sys.exit(result.returncode)
 
     # Parse job id from "Submitted batch job 12345678"
-    job_id = result.stdout.strip().split()[-1]
+    job_id = next((tok for tok in result.stdout.split() if tok.isdigit()), result.stdout.strip().split()[-1])
     print(f"Submitted Slurm array job: {job_id}  ({len(namespaces)} tasks)")
     return job_id
 

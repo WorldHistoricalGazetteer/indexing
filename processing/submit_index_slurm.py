@@ -208,7 +208,7 @@ def _submit(sbatch_path: Path, *, dry_run: bool) -> str | None:
     if result.returncode != 0:
         print(f"sbatch failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(result.returncode)
-    return result.stdout.strip().split()[-1]
+    return next((tok for tok in result.stdout.split() if tok.isdigit()), result.stdout.strip().split()[-1])
 
 
 def submit(
