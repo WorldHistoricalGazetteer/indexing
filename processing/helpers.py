@@ -663,19 +663,87 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
     return centroid_cell, [centroid_cell]
 
 
-def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
-    """
-    Polyfill a GeoJSON polygon with H3 cells at an adaptive resolution.
+# Average H3 cell area in degrees² at each resolution (equator-equivalent).
+# Used by ``_polyfill_adaptive`` to pick a starting resolution that won't
+# overflow ``H3_POLYFILL_MAX_CELLS``: a continent-scale polygon (~1000 deg²)
+# would generate ~22 000 cells at r7 (over cap → wasted work) but only ~450
+# at r5 — so we start at r5 directly instead of trying r7 first.
+_H3_HEX_AREA_DEG2 = {
+    0: 38000.0, 1: 5400.0, 2: 770.0, 3: 110.0,
+    4: 16.0, 5: 2.2, 6: 0.31, 7: 0.045, 8: 0.0064,
+}
 
-    Starts at ``H3_CENTROID_RESOLUTION`` (r7) and drops to r5 then r3 if the
-    cell count exceeds ``H3_POLYFILL_MAX_CELLS``.
+
+def _bbox_area_deg2(geojson_geom: dict) -> float:
+    """Approximate polygon bounding-box area in degrees²."""
+    if not isinstance(geojson_geom, dict):
+        return 0.0
+    coords: list[list[float]] = []
+
+    def _walk(node):
+        if isinstance(node, list):
+            if (
+                node
+                and isinstance(node[0], (int, float))
+                and len(node) >= 2
+                and isinstance(node[1], (int, float))
+            ):
+                coords.append([float(node[0]), float(node[1])])
+            else:
+                for child in node:
+                    _walk(child)
+
+    _walk(geojson_geom.get("coordinates"))
+    if not coords:
+        return 0.0
+    lons = [c[0] for c in coords]
+    lats = [c[1] for c in coords]
+    return max(0.0, (max(lons) - min(lons)) * (max(lats) - min(lats)))
+
+
+def _pick_polyfill_resolution(bbox_area_deg2: float) -> int:
+    """Return the highest H3 resolution whose estimated cell count for a
+    polygon of ``bbox_area_deg2`` won't exceed ``H3_POLYFILL_MAX_CELLS``."""
+    for res in (H3_CENTROID_RESOLUTION, 5, 3):
+        hex_area = _H3_HEX_AREA_DEG2.get(res, 0.045)
+        if bbox_area_deg2 / max(hex_area, 1e-12) <= H3_POLYFILL_MAX_CELLS:
+            return res
+    return 3  # always at least try r3 as a last resort
+
+
+def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
+    """Polyfill a GeoJSON polygon with H3 cells at an adaptive resolution.
+
+    Starts at the highest resolution whose estimated cell count fits in
+    ``H3_POLYFILL_MAX_CELLS``; drops to the next coarser resolution on the
+    rare cases where the estimate undershoots the actual count.
+
+    The previous implementation always started at ``H3_CENTROID_RESOLUTION``
+    (r7) and waited for the polyfill to exceed the cap before falling back —
+    which burned O(seconds) per continent-scale polygon. The area-based
+    pre-selection avoids that wasted work entirely.
     """
     if not _H3_AVAILABLE:
         return set()
 
-    for res in (H3_CENTROID_RESOLUTION, 5, 3):
+    try:
+        h3_poly = _h3.geo_to_h3shape(geojson_geom)
+    except Exception:
+        return set()
+
+    bbox_area = _bbox_area_deg2(geojson_geom)
+    start_res = _pick_polyfill_resolution(bbox_area)
+
+    # Try the chosen res; on overflow drop to the next coarser one. The
+    # ordered candidate list keeps the original res 5 / res 3 fallback
+    # for shapes whose bbox underestimates the actual polyfill cost.
+    candidates: list[int] = []
+    for res in (start_res, 5, 3):
+        if res not in candidates:
+            candidates.append(res)
+
+    for res in candidates:
         try:
-            h3_poly = _h3.geo_to_h3shape(geojson_geom)
             cells = _h3.h3shape_to_cells(h3_poly, res)
             if len(cells) <= H3_POLYFILL_MAX_CELLS:
                 return set(cells)

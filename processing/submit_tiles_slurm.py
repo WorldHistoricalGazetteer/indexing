@@ -175,7 +175,6 @@ def _build_sbatch_script(
         "echo \"Array task $SLURM_ARRAY_TASK_ID → bucket: $BUCKET\"",
         "",
         "python -m processing.generate_tiles \\",
-        "    --staged \\",
         f"    --run-id {run_id} \\",
         f"    --manifest-path {manifest_path} \\",
         f"    --bucket \"$BUCKET\"{output_arg}",
