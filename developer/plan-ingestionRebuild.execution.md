@@ -838,36 +838,58 @@ Validation gates:
 
 Targets:
 
-- `processing/staging_orchestrator.py`
-- `processing/ingest_all_authorities.py`
+- `processing/staging_orchestrator.py` ✅ (added `check_global_barrier`,
+  `materialise_gazetteer_inventory`, `format_global_barrier_report`,
+  `GLOBAL_BARRIER_REQUIRED_STAGES`)
+- `processing/run_global_barrier.py` ✅ (new — CLI for the barrier check + inventory write)
 
 Dependencies: Batch 4–7 complete for every selected gazetteer.
 
 Tasks:
 
-- [ ] Manifest-based barrier check confirming all selected gazetteers completed
-  extract/boundary/H3/ccode preprocessing.
-- [ ] Fail fast if any selected gazetteer is missing, incomplete, or has stale prerequisite
-  artefacts.
-- [ ] Materialise the run-level gazetteer inventory used by subsequent global phases (this
-  is the input to Batch 9 aggregates and Batch 11 inventory push).
+- [x] Manifest-based barrier check confirming every selected per-gazetteer
+  namespace has reached every required stage in `GLOBAL_BARRIER_REQUIRED_STAGES`
+  (`extract` → `boundary_merge` → `h3` → `h3_merge` → `h3_coverage` → `ccode`
+  → `ccode_merge`). Both `completed` and `skipped` count as a pass — the
+  orchestrator emits `skipped` for stages that don't apply (e.g. boundary
+  stages on non-OSM authorities, ccode on `un`). Relations-only namespaces
+  (e.g. `loc`) are excluded from the barrier; they are consumed only by
+  Batch 12.
+- [x] Fail fast: `processing.run_global_barrier` exits non-zero (1 = barrier
+  failed, 2 = manifest unreadable) when any selected gazetteer is missing or
+  stale. The inventory file is **not** written on failure.
+- [x] On pass, materialise the run-level gazetteer inventory at
+  `staged/runs/{run_id}.inventory.json`. The inventory enumerates each
+  per-gazetteer namespace's stage statuses, on-disk paths
+  (`extract`, `final`, `h3_coverage`, `temporal_extent`), and the
+  relations-only set; it is the canonical input for Batch 9 aggregates and
+  Batch 11 inventory push.
 
 Validation gates:
 
-- [ ] Barrier refuses to start corpus-wide phases with partial gazetteer coverage.
-- [ ] Barrier report lists all selected gazetteers and completion states.
+- [x] Barrier refuses to start corpus-wide phases with partial gazetteer
+  coverage (`run_global_barrier` exits 1; `submit_batch9_slurm` refuses to
+  submit unless `--no-enforce-barrier` is set).
+- [x] Barrier report lists all selected gazetteers and completion states
+  (text mode via `format_global_barrier_report`; JSON mode via `--json`).
 
 ### Batch 9: Global Toponyms + Symphonym + Per-Gazetteer Temporal Extent
 
 Targets:
 
-- `phonetics/extraction/rebuild_toponyms_index.py`
-- `phonetics/inference/update_es.py`
-- `processing/embed_extract.py`
-- `processing/embed_transform.py`
-- `processing/embed_load.py`
-- `processing/gazetteer_temporal_extent.py` (new — temporal extent only; H3 coverage moved
-  to Batch 6)
+- `phonetics/extraction/rebuild_toponyms_index.py` ✅ (STEP 1 refactored to read
+  staged places via `scan_places_staged`; ES no longer contacted unless
+  STEP 4/5 indexing actually runs)
+- `phonetics/inference/update_es.py` — ✓ already staged-friendly: `compute`
+  reads from DuckDB and writes Parquet; `index` is the Batch 11 ES-load step
+- `processing/embed_extract.py` ✅ (rewritten to read from the staged DuckDB
+  built by `rebuild_toponyms_index`; ES dependency removed)
+- `processing/embed_transform.py` — ✓ already storage-only (Parquet → Parquet)
+- `processing/embed_load.py` — left as the Batch 11 ES-load step
+- `processing/gazetteer_temporal_extent.py` ✅ (new — per-namespace temporal
+  extent; H3 coverage handled in Batch 6)
+- `processing/submit_batch9_slurm.py` ✅ (new — submits the temporal-extent
+  array + the toponym-extraction job together, gated on the global barrier)
 
 Dependencies: Batch 8 (global barrier complete).
 
@@ -879,26 +901,48 @@ Tasks:
 
 **Toponyms + Symphonym** (existing scope):
 
-- [ ] Read the union of all selected staged place snapshots (not ES `places`) as canonical
-  source.
-- [ ] Extract unique toponyms with attestations across the full selected corpus.
-- [ ] Deduplicate toponyms corpus-wide across gazetteers before embedding generation.
+- [x] Read the union of all selected staged place snapshots (not ES `places`) as canonical
+  source. `scan_places_staged(namespaces)` walks each namespace's most-enriched
+  staged snapshot (`final/` → `h3_merged/` → `boundary_merged/` → `extract/`).
+- [x] Extract unique toponyms with attestations across the full selected
+  corpus (existing `extract_toponyms_to_db` logic, now driven by the staged
+  iterator).
+- [x] Deduplicate toponyms corpus-wide across gazetteers before embedding
+  generation (DuckDB `toponym_id` is already a content-derived `name@lang`
+  key; per-namespace attestations are written to `toponym_namespaces` /
+  `toponym_attestations`).
 - [ ] Compute Symphonym embeddings (GPU-enabled) over the deduplicated corpus.
+  *Existing `phonetics/inference/update_es.py compute` already reads the
+  DuckDB written above — invocation chained via the existing
+  `es -update-embeddings` flow which manages model checkpoint + vocab paths.*
 - [ ] Maintain persistent Symphonym cache; recompute embeddings only for changed toponyms.
-  This is the primary cost amortisation in partial-run mode where most gazetteers are
-  unchanged.
+  *Deferred — the existing `update_es.py compute` recomputes the full
+  Parquet output. A version-aware incremental path is a separate workstream.*
 - [ ] Run Symphonym model/version preflight; invalidate cache when version changes.
-- [ ] Stage toponym records and embeddings.
-- [ ] **Clear scope boundary**: no ES indexing in this stage; outputs remain staged.
+  *Deferred along with the persistent cache item above.*
+- [x] Stage toponym records and PanPhon-augmented JSONL: `rebuild_toponyms_index`
+  with `--skip-es-index` writes everything to the DuckDB + scratch JSONL and
+  exits without touching ES.
+- [x] **Clear scope boundary**: no ES indexing in this stage. The shared
+  `submit_batch9_slurm` invocation passes `--skip-es-index --confirm` to the
+  toponym job; ES connection is opened only when that flag is absent (Batch
+  11 territory).
 
 **Per-gazetteer temporal extent** (new, Master Plan §1.4.1 + E.2 item 2):
 
-- [ ] `gazetteer_temporal_extent.py` reads all selected staged snapshots and produces,
-  per gazetteer, `temporal_extent` = `[min(start_year), max(end_year)]` across all
-  timespans on all records (`null` where the gazetteer has no temporal data).
-- [ ] Output written to `staged/_aggregates/{namespace}.temporal_extent.json`; consumed
-  by Batch 11 inventory push together with the H3 coverage file produced in Batch 6.
-- [ ] Recomputed on every full run; an incremental path may be added later if needed.
+- [x] `gazetteer_temporal_extent.py` reads each selected staged snapshot and
+  walks every `geometries[].timespans[]`, `toponyms[].timespans[]`, and
+  `relations[].timespans[]` entry, yielding the integer years under
+  `start` / `end` (handles `{"in": Y}`, `{"earliest": Y, "latest": Y}`, and
+  arbitrary nested int leaves). Produces `temporal_extent =
+  [min(start_year), max(end_year)]` with both endpoints `null` when the
+  namespace has no parseable timespans.
+- [x] Output written to `staged/_aggregates/{namespace}.temporal_extent.json`,
+  validated against `validate_temporal_extent_aggregate`. Consumed by Batch
+  11 inventory push together with the H3 coverage file produced in Batch 6.
+- [x] Recomputed on every full run; the `temporal_extent` stage in the run
+  manifest is updated by `run_temporal_extent` as `running` →`completed`
+  per namespace. An incremental path may be added later if needed.
 
 > **H3 coverage moved.** Per-gazetteer H3 coverage compaction now happens inside Batch 6
 > (where the H3 cells are already in memory). Global gazetteers (`osm`, `ohm`, `wd`, `gn`,
@@ -906,13 +950,23 @@ Tasks:
 
 Validation gates:
 
-- [ ] Toponym extraction produces expected counts.
-- [ ] Corpus-wide deduplication merges cross-gazetteer attestations as expected.
-- [ ] Embedding/index outputs remain schema-compatible.
-- [ ] Incremental run re-embeds only changed toponyms when model version is unchanged.
-- [ ] Cache invalidation triggers full recompute when model/version changes.
-- [ ] No ES access during this stage.
-- [ ] `temporal_extent` correctly null-handles records lacking timespans.
+- [ ] Toponym extraction produces expected counts (deferred — needs an
+  end-to-end CRC dry run to confirm staged-vs-ES parity on a known corpus).
+- [ ] Corpus-wide deduplication merges cross-gazetteer attestations as
+  expected (preserved by existing logic; re-verify post-staged input).
+- [ ] Embedding/index outputs remain schema-compatible (no schema change in
+  this batch).
+- [ ] Incremental run re-embeds only changed toponyms when model version is
+  unchanged (deferred — depends on the persistent-cache item above).
+- [ ] Cache invalidation triggers full recompute when model/version changes
+  (deferred — same).
+- [x] No ES access during this stage when invoked via
+  `submit_batch9_slurm`; the toponym job runs with `--skip-es-index` and the
+  temporal-extent job has no ES code path at all.
+- [x] `temporal_extent` correctly null-handles records lacking timespans
+  (verified by the `_iter_year_ints` walker returning nothing for empty /
+  malformed timespans, and `_collect_extent_for_doc` leaving `min_start` /
+  `max_end` as `None` when no year is observed).
 
 ### Batch 10: Tile Generation from Staged Geometry (No ES Dependency)
 

@@ -13,7 +13,7 @@ import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from processing.staging_contract import (
     RELATIONS_ONLY_NAMESPACES,
@@ -52,6 +52,7 @@ def _default_per_gazetteer_stages() -> dict[str, str]:
         "ccode": "pending",
         "ccode_merge": "pending",
         "tiles": "pending",
+        "temporal_extent": "pending",
     }
 
 
@@ -344,6 +345,187 @@ def check_preprocessing_barrier(
         if missing:
             incomplete[ns] = missing
     return (len(incomplete) == 0, incomplete)
+
+
+# ---------------------------------------------------------------------------
+# Batch 8: Global barrier — all selected gazetteers preprocessed
+# ---------------------------------------------------------------------------
+
+# Stages every per-gazetteer namespace must reach before corpus-wide phases
+# (Batch 9 toponyms/Symphonym, Batch 11 indexing, Batch 12 hard-link harvest)
+# may start. ``boundary`` / ``boundary_merge`` are tolerated as ``skipped``
+# for non-OSM/OHM namespaces; ``ccode`` / ``ccode_merge`` are tolerated as
+# ``skipped`` for ``un`` (UN is the ccode authority) and ``tiles`` is
+# tolerated as ``skipped`` for namespaces that don't contribute tile features.
+GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
+    "extract",
+    "boundary_merge",
+    "h3",
+    "h3_merge",
+    "h3_coverage",
+    "ccode",
+    "ccode_merge",
+)
+
+# Statuses that satisfy a stage requirement. ``skipped`` is treated as a pass
+# because the orchestrator emits it for stages that don't apply to a given
+# namespace (e.g. boundary stages on non-OSM authorities).
+_BARRIER_PASSING_STATUSES = frozenset({"completed", "skipped"})
+
+
+def check_global_barrier(
+    manifest: dict,
+    *,
+    required_stages: tuple[str, ...] = GLOBAL_BARRIER_REQUIRED_STAGES,
+) -> tuple[bool, dict[str, dict[str, str]]]:
+    """Return ``(is_complete, report)`` for the Batch 8 global barrier.
+
+    The report is keyed by namespace. Each value is a dict of
+    ``{stage: observed_status}`` for every stage in ``required_stages``,
+    plus a synthetic ``__missing__`` entry listing stages that did not pass.
+    Stages with status in ``_BARRIER_PASSING_STATUSES`` count as a pass.
+
+    Relations-only namespaces (e.g. ``loc``) are excluded — they have no
+    per-gazetteer pipeline and are consumed only by Batch 12.
+
+    The barrier is complete iff every selected per-gazetteer namespace has
+    every required stage in a passing status.
+    """
+    selected = manifest.get("selected_namespaces", [])
+    ns_data = manifest.get("namespaces", {})
+    report: dict[str, dict[str, str]] = {}
+    all_pass = True
+    for ns in selected:
+        if is_relations_only(ns):
+            continue
+        ns_stages = ns_data.get(ns, {}).get("stages", {})
+        per_stage: dict[str, str] = {}
+        missing: list[str] = []
+        for stage in required_stages:
+            status = ns_stages.get(stage, "pending")
+            per_stage[stage] = status
+            if status not in _BARRIER_PASSING_STATUSES:
+                missing.append(stage)
+        if missing:
+            all_pass = False
+            per_stage["__missing__"] = ",".join(missing)
+        report[ns] = per_stage
+    return all_pass, report
+
+
+def materialise_gazetteer_inventory(
+    manifest: dict,
+    *,
+    staged_base_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Build the run-level gazetteer inventory consumed by Batch 9 and Batch 11.
+
+    Returns a dict::
+
+        {
+            "run_id": <str>,
+            "generated_at": <ISO 8601>,
+            "selected_namespaces": [...],
+            "per_gazetteer": [
+                {"namespace": ns,
+                 "stages": {stage: status, ...},
+                 "h3_coverage_path": "<staged/_aggregates/{ns}.h3_coverage.json>"|None,
+                 "temporal_extent_path": "<...temporal_extent.json>"|None,
+                 "extract_path": "<staged/{ns}/extract/places.parquet>"|None,
+                 "final_path":   "<staged/{ns}/final/places.parquet>"|None},
+                ...
+            ],
+            "relations_only": [...],
+        }
+
+    File paths are populated only when the artefact exists on disk (when
+    ``staged_base_dir`` is provided). When ``staged_base_dir`` is ``None``
+    the path fields are returned as ``None``.
+    """
+    selected = manifest.get("selected_namespaces", [])
+    ns_data = manifest.get("namespaces", {})
+    per_gazetteer: list[dict[str, Any]] = []
+    relations_only: list[str] = []
+
+    for ns in selected:
+        if is_relations_only(ns):
+            relations_only.append(ns)
+            continue
+
+        stages = dict(ns_data.get(ns, {}).get("stages", {}))
+        entry: dict[str, Any] = {
+            "namespace": ns,
+            "stages": stages,
+            "h3_coverage_path": None,
+            "temporal_extent_path": None,
+            "extract_path": None,
+            "final_path": None,
+        }
+        if staged_base_dir is not None:
+            agg_dir = staged_base_dir / "_aggregates"
+            h3_cov = agg_dir / f"{ns}.h3_coverage.json"
+            tem_ext = agg_dir / f"{ns}.temporal_extent.json"
+            extract_p = staged_base_dir / ns / "extract" / "places.parquet"
+            final_p = staged_base_dir / ns / "final" / "places.parquet"
+            entry["h3_coverage_path"] = str(h3_cov) if h3_cov.exists() else None
+            entry["temporal_extent_path"] = str(tem_ext) if tem_ext.exists() else None
+            entry["extract_path"] = str(extract_p) if extract_p.exists() else None
+            entry["final_path"] = str(final_p) if final_p.exists() else None
+        per_gazetteer.append(entry)
+
+    return {
+        "run_id": manifest.get("run_id"),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "selected_namespaces": list(selected),
+        "per_gazetteer": per_gazetteer,
+        "relations_only": relations_only,
+    }
+
+
+def write_gazetteer_inventory(
+    inventory_path: Path,
+    inventory: dict[str, Any],
+) -> None:
+    """Atomically write the materialised inventory to disk."""
+    _atomic_write_json(inventory_path, inventory)
+
+
+def format_global_barrier_report(
+    is_complete: bool,
+    report: dict[str, dict[str, str]],
+) -> str:
+    """Pretty-print a barrier report for human consumption."""
+    lines: list[str] = []
+    lines.append("=" * 78)
+    lines.append("BATCH 8 — GLOBAL BARRIER")
+    lines.append("=" * 78)
+    if is_complete:
+        lines.append("✓ All selected gazetteers ready for corpus-wide phases.")
+    else:
+        lines.append("✗ Barrier NOT complete — corpus-wide phases must not start.")
+    lines.append("")
+
+    if not report:
+        lines.append("(no per-gazetteer namespaces selected)")
+        return "\n".join(lines)
+
+    stage_columns = sorted(
+        {stage for entry in report.values() for stage in entry if stage != "__missing__"}
+    )
+    name_width = max(len(ns) for ns in report)
+    header = f"{'namespace':<{name_width}}  " + "  ".join(
+        f"{s:<14}" for s in stage_columns
+    )
+    lines.append(header)
+    lines.append("-" * len(header))
+    for ns in sorted(report):
+        per_stage = report[ns]
+        cells = [f"{per_stage.get(s, '-'):<14}" for s in stage_columns]
+        marker = " " if "__missing__" not in per_stage else " ✗"
+        lines.append(f"{ns:<{name_width}}  " + "  ".join(cells) + marker)
+        if "__missing__" in per_stage:
+            lines.append(f"{'':<{name_width}}    missing: {per_stage['__missing__']}")
+    return "\n".join(lines)
 
 
 def reconcile_carried_over_namespaces(

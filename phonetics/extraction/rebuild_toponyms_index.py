@@ -702,11 +702,86 @@ def optimize_db_after_load(conn, force: bool = False):
         logger.info("DuckDB indexes already exist, skipping...")
 
 
-def scan_places(es: Elasticsearch, index: str, batch_size: int = 2000) -> Iterator[Tuple[str, Dict]]:
-    """Scan places index, yielding (place_id, source) tuples."""
-    query = {"query": {"match_all": {}}, "_source": ["namespace", "toponyms"]}
-    for doc in helpers.scan(es, index=index, query=query, scroll='60m', size=batch_size):
-        yield doc['_id'], doc['_source']
+def _staged_namespace_source(namespace: str) -> Optional[Path]:
+    """Return the most-enriched staged snapshot file for a namespace, or None.
+
+    Walks the stage preference chain: ``final/`` → ``h3_merged/`` →
+    ``boundary_merged/`` → ``extract/``. Toponym extraction is fine reading
+    any of these — toponyms are populated at extract time and not mutated by
+    later stages.
+    """
+    from processing.settings import STAGED_BASE_DIR as _STAGED
+    base = Path(_STAGED) / namespace
+    for stage in ("final", "h3_merged", "boundary_merged", "extract"):
+        parquet = base / stage / "places.parquet"
+        if parquet.exists():
+            return parquet
+        jsonl = base / stage / "places.jsonl"
+        if jsonl.exists():
+            return jsonl
+    return None
+
+
+def _iter_staged_namespace(path: Path) -> Iterator[Dict]:
+    if path.suffix == ".parquet":
+        parquet = pq.ParquetFile(path)
+        for batch in parquet.iter_batches(batch_size=2000):
+            for row in batch.to_pylist():
+                if isinstance(row, dict):
+                    yield row
+        return
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            yield json.loads(line)
+
+
+def _count_staged_places(namespaces: List[str]) -> int:
+    """Sum row counts across each namespace's staged snapshot.
+
+    For Parquet this is a metadata-only lookup; for JSONL it falls back to
+    a line count. Used solely to drive the tqdm progress bar — best-effort,
+    returns 0 when a snapshot is missing.
+    """
+    total = 0
+    for ns in namespaces:
+        src = _staged_namespace_source(ns)
+        if src is None:
+            continue
+        try:
+            if src.suffix == ".parquet":
+                total += pq.ParquetFile(src).metadata.num_rows
+            else:
+                with src.open("r", encoding="utf-8") as fh:
+                    total += sum(1 for _ in fh if _.strip())
+        except Exception:
+            continue
+    return total
+
+
+def scan_places_staged(namespaces: List[str]) -> Iterator[Tuple[str, Dict]]:
+    """Yield ``(place_id, {'namespace': ns, 'toponyms': [...]})`` from staged docs.
+
+    This replaces the previous ES-coupled ``scan_places`` (Batch 9: no ES
+    access during the extraction stage). The ``namespace`` field is derived
+    from the ``place_id`` prefix when not present on the staged doc — staged
+    OSM/OHM docs do not carry an explicit ``namespace`` field.
+    """
+    for ns in namespaces:
+        src = _staged_namespace_source(ns)
+        if src is None:
+            logger.warning("No staged snapshot found for namespace %r — skipping", ns)
+            continue
+        for doc in _iter_staged_namespace(src):
+            place_id = doc.get("place_id")
+            if not place_id:
+                continue
+            namespace = doc.get("namespace")
+            if not namespace:
+                namespace = place_id.split(":", 1)[0] if ":" in place_id else ns
+            yield place_id, {"namespace": namespace, "toponyms": doc.get("toponyms") or []}
 
 
 def romanize_for_search(name: str, script: str) -> Optional[str]:
@@ -727,9 +802,9 @@ def romanize_for_search(name: str, script: str) -> Optional[str]:
     return None
 
 
-def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
+def extract_toponyms_to_db(conn, namespaces, batch_size, limit=None):
     """
-    Extract toponyms from places index to DuckDB, collecting:
+    Extract toponyms from staged place snapshots into DuckDB, collecting:
     - Toponym records with script detection
     - Namespace associations
     - Attestation back-references (place_ids)
@@ -737,15 +812,20 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
 
     Filters out:
     - Pre-romanized forms (e.g., "Beijing" tagged as zh with Latin script)
+
+    Sources every namespace's most-enriched staged snapshot (``final/`` →
+    ``h3_merged/`` → ``boundary_merged/`` → ``extract/``). Per Batch 9,
+    Elasticsearch is **not** consulted here — toponym extraction is part of
+    the staged corpus-wide phase that runs after the global barrier.
     """
-    try:
-        total = es.count(index=places_index)['count']
-    except Exception:
-        total = 0
+    total = _count_staged_places(namespaces)
     if limit:
         total = min(total, limit)
 
-    logger.info(f"Scanning {total:,} places from '{places_index}'")
+    logger.info(
+        f"Scanning {total:,} staged places across {len(namespaces)} namespaces: "
+        f"{', '.join(namespaces)}"
+    )
     places_processed = 0
     toponyms_extracted = 0
     toponyms_skipped = 0
@@ -754,7 +834,7 @@ def extract_toponyms_to_db(es, conn, places_index, batch_size, limit=None):
     script_counts: Counter = Counter()
     mismatch_counts: Counter = Counter()
 
-    iterator = scan_places(es, places_index, batch_size)
+    iterator = scan_places_staged(namespaces)
     if tqdm:
         iterator = tqdm(iterator, total=total, desc="Extracting", mininterval=10.0)
 
@@ -1910,9 +1990,19 @@ def main():
     parser = argparse.ArgumentParser(
         description='v6 Pipeline Phase 1: Rebuild ES toponyms index with PanPhon embeddings'
     )
-    parser.add_argument('--es-host', default=ES_HOST)
-    parser.add_argument('--places-index', default='places')
-    parser.add_argument('--toponyms-index', default='toponyms')
+    parser.add_argument('--es-host', default=ES_HOST,
+                        help='Elasticsearch URL (only used when STEP 4/5 indexing runs; '
+                             'pass --skip-es-index to omit ES entirely)')
+    parser.add_argument('--toponyms-index', default='toponyms',
+                        help='Target ES toponyms index (only used by STEP 4/5)')
+    parser.add_argument('--run-id',
+                        help='Run ID for staged extraction. Required unless --resume is set. '
+                             'Reads selected_namespaces from the run manifest.')
+    parser.add_argument('--manifest-path',
+                        help='Explicit run manifest path; if omitted derives from --run-id')
+    parser.add_argument('--namespaces', nargs='+',
+                        help='Override the staged-extraction namespace list. Defaults to the '
+                             'manifest selected_namespaces (excluding relations-only).')
     parser.add_argument('--schema-path', type=Path, default=SCHEMA_PATH)
     parser.add_argument('--db-path', type=Path, default=f'{IX1_BASE}/data/toponyms.duckdb',
                         help='Path for DuckDB database file')
@@ -1980,7 +2070,7 @@ def main():
         print("Run with --confirm to proceed.")
         print()
         print("This script will:")
-        print("  1. Scan all places to extract toponyms with attestations")
+        print("  1. Scan staged place snapshots to extract toponyms with attestations")
         print("  2. Filter out pre-romanized forms (lang-script mismatches)")
         print("  3. Generate expanded character vocabulary")
         print(f"  4. Compute IPA and PanPhon embeddings ({args.num_workers} parallel workers)")
@@ -1998,11 +2088,54 @@ def main():
     # Set output directory
     output_dir = args.output_dir or args.db_path.parent
 
-    # Connect to ES
-    es = Elasticsearch(args.es_host, max_retries=5, retry_on_timeout=True)
-    if not es.ping():
-        logger.error(f"Cannot connect to {args.es_host}")
-        sys.exit(1)
+    # Determine the namespace list to extract from staged snapshots. STEP 1
+    # never touches Elasticsearch (Batch 9 contract); ES is only consulted
+    # for STEP 4/5 when --skip-es-index is not set.
+    extraction_namespaces: List[str] = []
+    if not args.resume:
+        if args.namespaces:
+            extraction_namespaces = list(args.namespaces)
+        elif args.run_id or args.manifest_path:
+            from processing.settings import (
+                STAGED_RUN_MANIFEST_FILE_TEMPLATE as _MANIFEST_TPL,
+                STAGED_RUNS_DIR as _RUNS_DIR,
+            )
+            from processing.staging_contract import is_relations_only
+            from processing.staging_orchestrator import load_run_manifest
+            manifest_path = (
+                Path(args.manifest_path)
+                if args.manifest_path
+                else Path(_MANIFEST_TPL.format(runs_dir=_RUNS_DIR, run_id=args.run_id))
+            )
+            if not manifest_path.exists():
+                logger.error("Run manifest not found: %s", manifest_path)
+                sys.exit(1)
+            manifest = load_run_manifest(manifest_path)
+            extraction_namespaces = [
+                ns for ns in manifest.get("selected_namespaces", [])
+                if not is_relations_only(ns)
+            ]
+            if not extraction_namespaces:
+                logger.error(
+                    "Run manifest %s has no per-gazetteer selected namespaces", manifest_path
+                )
+                sys.exit(1)
+        else:
+            logger.error(
+                "STEP 1 (extraction) needs --run-id or --namespaces (or pass --resume "
+                "to skip extraction and reuse an existing DuckDB)"
+            )
+            sys.exit(1)
+
+    # Connect to ES only when STEP 4/5 will actually run.
+    es = None
+    if not args.skip_es_index or args.partial_update:
+        es = Elasticsearch(args.es_host, max_retries=5, retry_on_timeout=True)
+        if not es.ping():
+            logger.error(f"Cannot connect to {args.es_host}")
+            sys.exit(1)
+    else:
+        logger.info("Skipping ES connection (--skip-es-index set; staged-only mode)")
 
     final_db_path = args.db_path
     final_db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2023,15 +2156,15 @@ def main():
                 logger.info(f"Copying existing DB to scratch: {temp_db_path}")
                 shutil.copy2(final_db_path, temp_db_path)
             else:
-                # STEP 1: EXTRACTION (ES places -> DuckDB)
+                # STEP 1: EXTRACTION (staged places -> DuckDB)
                 logger.info("=" * 60)
-                logger.info("STEP 1: EXTRACTION (ES places -> DuckDB)")
+                logger.info("STEP 1: EXTRACTION (staged places -> DuckDB)")
                 logger.info("=" * 60)
 
                 conn = create_db(str(temp_db_path))
 
                 places_count, toponyms_count, skipped_count = extract_toponyms_to_db(
-                    es, conn, args.places_index, args.batch_size, args.limit
+                    conn, extraction_namespaces, args.batch_size, args.limit
                 )
                 logger.info(f"Extracted {toponyms_count:,} toponyms from {places_count:,} places")
                 logger.info(f"Skipped {skipped_count:,} pre-romanized/mismatched toponyms")
