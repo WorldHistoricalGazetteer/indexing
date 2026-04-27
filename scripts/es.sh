@@ -13,7 +13,8 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 
 # --- Domain modules (define functions used by the case dispatcher below) ---
 source "${SCRIPT_DIR}/symphonym.sh"
-source "${SCRIPT_DIR}/cluster.sh"
+# cluster.sh removed — Master Plan replaces ES post-index clustering with the
+# SQLite hard-link overlay (processing/submit_hardlinks_slurm.py).
 source "${SCRIPT_DIR}/ingest.sh"
 
 # =============================================================================
@@ -988,22 +989,11 @@ case "$1" in
         do_boundary_pass "$@"
         ;;
 
-    # --- Augment ccodes (spatial country code assignment) ---
-    -augment-ccodes)
-        shift
-        do_augment_ccodes "$@"
-        ;;
-
-    # --- Place Clustering (entity resolution across authorities) ---
-    -cluster)
-        shift
-        do_cluster "$@"
-        ;;
-
-    -cluster-finalize)
-        shift
-        do_cluster_finalize "$@"
-        ;;
+    # NOTE: -augment-ccodes / -cluster / -cluster-finalize have been
+    # retired. CCode enrichment is now staged (processing/ccode_enrichment.py
+    # via processing/submit_ccode_slurm.py); the Master Plan replaces ES
+    # post-index clustering with the SQLite hard-link overlay built by
+    # processing/submit_hardlinks_slurm.py and queried at search-time.
 
     # --- Force Merge (purge deleted docs) ---
     -forcemerge)
@@ -1231,39 +1221,16 @@ case "$1" in
         echo "    $0 -boundary-pass --source osm         # Re-run geometry completion for OSM only"
         echo "    $0 -generate-tiles                     # Generate all tilesets"
         echo
-        echo "AUGMENT CCODES (runs against production ES):"
-        echo "  -augment-ccodes [OPTIONS]"
-        echo "      Assign ISO 3166-1 alpha-2 country codes to places by spatially"
-        echo "      intersecting geometries against full-resolution Natural Earth polygons."
-        echo "      Scans places missing ccodes; batched updates with throttling."
+        echo "STAGED CCODE ENRICHMENT (replaces -augment-ccodes):"
+        echo "  python -m processing.submit_ccode_slurm --run-id <RUN_ID>"
+        echo "      Per-namespace ccode patches built against the staged UN H3 coverage,"
+        echo "      then merged into the namespace's final/places.parquet by ccode_merge."
         echo
-        echo "  Options (passed to processing.augment_ccodes):"
-        echo "    --dry-run              Compute matches but do not write to ES"
-        echo "    --recompute-all        Process all places, not just those missing ccodes"
-        echo "    --namespace NS         Only process a specific namespace (e.g. osm, wd, tgn)"
-        echo "    --batch-size N         Bulk update chunk size (default 500)"
-        echo "    --throttle SECS        Sleep between bulk flushes (default 0.5)"
-        echo "    --limit N              Max documents to scan (for testing)"
-        echo "    --snapshot             Create checkpoint snapshot after completion"
-        echo "    --no-download          Use already-cached Natural Earth data"
-        echo
-        echo "  Examples:"
-        echo "    $0 -augment-ccodes --dry-run --limit 100    # Test run"
-        echo "    $0 -augment-ccodes --namespace tgn           # Process TGN only"
-        echo "    $0 -augment-ccodes                           # Process all missing"
-        echo "    $0 -augment-ccodes --recompute-all           # Recompute everything"
-        echo
-        echo "PLACE CLUSTERING (entity resolution across authorities):"
-        echo "  -cluster [OPTIONS]"
-        echo "      Pre-compute equivalence clusters across authority records."
-        echo "      Hard links (authority sameAs, contributor reconciliation),"
-        echo "      toponym co-attestation, and Symphonym phonetic similarity."
-        echo
-        echo "  Execution modes:"
-        echo "    Default (on Pitt VM): runs under nohup against localhost ES."
-        echo "    --slurm (from CRC login node): snapshots production indices"
-        echo "            into staging ES, submits Slurm job, then use"
-        echo "            -cluster-finalize to push results back to production."
+        echo "HARD-LINK SQLITE OVERLAY (replaces ES post-index clustering):"
+        echo "  python -m processing.submit_hardlinks_slurm --run-id <RUN_ID> \\"
+        echo "      --pitt-user USER --pitt-host HOST --pitt-dir DIR"
+        echo "      Harvest authority + LOC + contributor hard-links into a SQLite file"
+        echo "      and ship-to-Pitt with atomic swap (Master Plan §2a)."
         echo
         echo "  Options (passed to clustering.runner):"
         echo "    --full               Full initial run (all phases)"

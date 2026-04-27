@@ -2365,8 +2365,43 @@ def main():
             sys.exit(1)
 
 
+def _main_with_walltime_telemetry():
+    """Wrap ``main`` so the persistent runtime-history file picks up the
+    wall-clock time. ``submit_batch9_slurm._estimate_toponym_wall`` reads
+    this on subsequent runs to right-size ``--time``."""
+    import os
+    import time as _time
+    from datetime import datetime as _dt, timezone as _tz
+    started = _dt.now(_tz.utc)
+    started_mono = _time.monotonic()
+    status = "completed"
+    try:
+        main()
+    except SystemExit as exc:
+        status = "completed" if (exc.code in (None, 0)) else "failed"
+        raise
+    except Exception:
+        status = "failed"
+        raise
+    finally:
+        try:
+            from processing.stage_writers import record_script_wall_time
+            record_script_wall_time(
+                namespace="toponyms",
+                script_id="rebuild-toponyms-index",
+                run_id=os.environ.get("WHG_RUN_ID", "ad-hoc"),
+                started_at=started.isoformat(),
+                finished_at=_dt.now(_tz.utc).isoformat(),
+                wall_seconds=_time.monotonic() - started_mono,
+                status=status,
+                slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+            )
+        except Exception:
+            pass
+
+
 if __name__ == '__main__':
-    main()
+    _main_with_walltime_telemetry()
 
 
 

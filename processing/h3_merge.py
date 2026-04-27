@@ -42,14 +42,23 @@ from processing.staging_orchestrator import update_namespace_stage_status
 
 
 # OSM/OHM run boundary completion before H3, so their H3 source is the
-# boundary-merged snapshot. Other namespaces read the extract directly.
+# boundary-merged snapshot. gn/wd run a Phase 3 update merge before H3 (the
+# auxiliary toponyms/geoshape patches), so their source is update_merged/.
+# Everything else reads the extract directly.
 BOUNDARY_REQUIRED_NAMESPACES = frozenset({"osm", "ohm"})
+
+from processing.staging_contract import UPDATE_PATCH_NAMESPACES  # noqa: E402
 
 
 def _source_dir(namespace: str) -> Path:
+    base = Path(STAGED_BASE_DIR) / namespace
     if namespace in BOUNDARY_REQUIRED_NAMESPACES:
-        return Path(STAGED_BASE_DIR) / namespace / "boundary_merged"
-    return Path(STAGED_BASE_DIR) / namespace / "extract"
+        return base / "boundary_merged"
+    if namespace in UPDATE_PATCH_NAMESPACES:
+        update_merged = base / "update_merged"
+        if update_merged.exists():
+            return update_merged
+    return base / "extract"
 
 
 def _iter_source_docs(namespace: str) -> Iterable[dict[str, Any]]:

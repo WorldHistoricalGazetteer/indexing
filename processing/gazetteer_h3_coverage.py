@@ -116,12 +116,36 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def compact_cells(cells: set[str]) -> list[str]:
-    """Compact a set of H3 cells to the smallest equivalent representation."""
+    """Compact a set of H3 cells to the smallest equivalent representation.
+
+    ``h3.compact_cells`` requires every input cell to be at the same
+    resolution. The cells coming out of ``h3_stage`` are a mix —
+    ``h3_centroid`` is res 7 while ``h3_cover`` may be res 3, 5, or 7
+    depending on polyfill — so we partition by resolution, compact each
+    group independently, and concatenate the results.
+    """
     if not cells:
         return []
     if not _H3_AVAILABLE:
         return sorted(cells)
-    return sorted(_h3.compact_cells(list(cells)))
+
+    by_resolution: dict[int, list[str]] = {}
+    for cell in cells:
+        try:
+            res = _h3.get_resolution(cell)
+        except Exception:
+            continue
+        by_resolution.setdefault(res, []).append(cell)
+
+    compacted: list[str] = []
+    for res, group in by_resolution.items():
+        try:
+            compacted.extend(_h3.compact_cells(group))
+        except Exception:
+            # Fall back to the uncompacted group on any per-resolution
+            # failure — better to over-state coverage than to lose cells.
+            compacted.extend(group)
+    return sorted(compacted)
 
 
 def build_global_aggregate(namespace: str) -> dict[str, Any]:

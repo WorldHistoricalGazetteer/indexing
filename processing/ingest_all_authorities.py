@@ -105,7 +105,11 @@ INGESTION_ORDER = [
     ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),
     ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
     ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
-    ('loc', 'loc-relations', 'Library of Congress relations (updates places)', 'loc-relations'),
+    ('whg', 'whg-places', 'WHG-contributed datasets (DO Django API)', 'whg-places'),
+    # NOTE: LOC has no place records of its own. It is now consumed
+    # exclusively by Batch 12 (clustering/harvest/loc_links.py) reading the
+    # NDJSON source directly into the SQLite hard-link overlay; it must not
+    # appear in the per-namespace extract pipeline.
 ]
 
 FINAL_NAMESPACE_SCRIPT_ID = {
@@ -320,8 +324,8 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     print(f"{'=' * 80}")
     sys.stdout.flush()
 
-    # For update scripts (toponyms, geoshapes, relations), always run
-    update_scripts = ['geonames-toponyms', 'wikidata-geoshapes', 'loc-relations']
+    # For update scripts (toponyms, geoshapes), always run
+    update_scripts = ['geonames-toponyms', 'wikidata-geoshapes']
     is_update_script = script_name in update_scripts
 
     if not is_update_script:
@@ -465,7 +469,7 @@ def ingest_all(
             auth_dir = Path(DATA_DIR) / 'authorities' / ns
 
             # Skip if no data files found (only check for the first script of each namespace)
-            if script_id.endswith('-places') or script_id == 'loc-relations':
+            if script_id.endswith('-places'):
                 # These authorities store their databases in the source tree, not DATA_DIR
                 # Their places.py scripts auto-build the DB if missing
                 SOURCE_TREE_DBS = {
@@ -494,15 +498,11 @@ def ingest_all(
 
             if delete_only:
                 # Only delete for the first script of each namespace
-                if script_id.endswith('-places') or script_id == 'loc-relations':
+                if script_id.endswith('-places'):
                     delete_existing_namespace(ns)
                     if ns not in results['successful']:
                         results['successful'].append(ns)
                 continue
-
-            if ns == 'loc':
-                print(f"\nNOTE: LOC creates relations only, not new places")
-                sys.stdout.flush()
 
             if run_manifest_path:
                 update_namespace_checkpoint(run_manifest_path, ns, script_id, "running")

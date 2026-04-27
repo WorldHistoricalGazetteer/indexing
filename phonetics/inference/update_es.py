@@ -98,10 +98,26 @@ def run_compute(args):
 
     Checkpointing: If output file already exists, skips processing (assumes complete).
     To restart from scratch, delete the output file first.
+
+    Persistent cache (Batch 9): A DuckDB cache at ``--cache-db`` (default
+    ``settings.SYMPHONYM_CACHE_DB``) is consulted before any GPU work. Hits
+    keyed on ``(toponym_id, embedding_version, sha256(checkpoint))`` are
+    written straight to the output Parquet; misses go to the GPU and are
+    appended to the cache as they are computed. A model-version bump or a
+    checkpoint-file change flips the hash and forces a full recompute.
+    Pass ``--no-cache`` to bypass the cache entirely (always-recompute).
     """
     import duckdb
     import os
     import shutil
+
+    from phonetics.inference.symphonym_cache import (
+        cache_size_for,
+        compute_checkpoint_hash,
+        insert_many,
+        load_hits,
+        open_cache,
+    )
 
     duckdb_path = Path(args.input_file)
     if not duckdb_path.exists():
@@ -116,6 +132,37 @@ def run_compute(args):
         logger.info(f"  Skipping compute step (checkpoint found)")
         logger.info(f"  To recompute, delete the file first: rm {final_output}")
         return
+
+    # ─── Version preflight + cache load ────────────────────────────────
+    use_cache = not getattr(args, "no_cache", False)
+    cache_conn = None
+    cache_hits: dict[str, bytes] = {}
+    checkpoint_hash = compute_checkpoint_hash(args.checkpoint)
+    logger.info(f"Checkpoint hash: {checkpoint_hash[:12]}…  (full sha256 stored)")
+    logger.info(f"Embedding version: {args.embedding_version}")
+
+    if use_cache:
+        from processing.settings import SYMPHONYM_CACHE_DB
+        cache_db = Path(getattr(args, "cache_db", None) or SYMPHONYM_CACHE_DB)
+        logger.info(f"Symphonym cache: {cache_db}")
+        cache_conn = open_cache(cache_db)
+        before_n = cache_size_for(
+            cache_conn,
+            model_version=args.embedding_version,
+            checkpoint_hash=checkpoint_hash,
+        )
+        logger.info(
+            f"Cache rows for current (version={args.embedding_version}, hash="
+            f"{checkpoint_hash[:12]}…): {before_n:,}"
+        )
+        cache_hits = load_hits(
+            cache_conn,
+            model_version=args.embedding_version,
+            checkpoint_hash=checkpoint_hash,
+        )
+        logger.info(f"Loaded {len(cache_hits):,} cache hits into memory")
+    else:
+        logger.info("Cache disabled (--no-cache); recomputing every embedding")
 
     logger.info(f"Loading model from {args.checkpoint}...")
     encoder = ToponymEncoder.from_checkpoint(
@@ -153,6 +200,8 @@ def run_compute(args):
     writer = pq.ParquetWriter(working_output, out_schema, compression='snappy')
 
     processed = 0
+    cache_hit_count = 0
+    cache_miss_count = 0
     start_time = time.time()
 
     # Stream from DuckDB in batches using fetchmany instead of fetchall
@@ -170,32 +219,72 @@ def run_compute(args):
             if not rows:
                 break
 
-            batch_buffer = []
+            # Partition the batch into (cache hits) + (cache misses → GPU).
+            hit_batch: list[dict] = []
+            miss_batch: list[dict] = []
             for row in rows:
                 toponym_id, name, lang, script = row
                 if not name or not name.strip():
                     continue
+                emb_bytes = cache_hits.get(toponym_id) if use_cache else None
+                if emb_bytes is not None:
+                    hit_batch.append({
+                        'toponym_id': toponym_id, 'embedding': list(emb_bytes),
+                    })
+                else:
+                    miss_batch.append({
+                        'toponym_id': toponym_id, 'name': name,
+                        'lang': lang, 'script': script,
+                    })
 
-                batch_buffer.append({
-                    'toponym_id': toponym_id,
-                    'name': name,
-                    'lang': lang,
-                    'script': script
-                })
+            if hit_batch:
+                # Hits go straight to the output Parquet, no GPU traffic.
+                writer.write_table(pa.Table.from_pylist(hit_batch, schema=out_schema))
+                processed += len(hit_batch)
+                cache_hit_count += len(hit_batch)
 
-            if batch_buffer:
-                # Process batch
-                _process_batch(encoder, batch_buffer, out_schema, writer)
-                processed += len(batch_buffer)
+            if miss_batch:
+                # GPU pass for cache misses.
+                miss_quantised = _process_batch(
+                    encoder, miss_batch, out_schema, writer,
+                )
+                processed += len(miss_batch)
+                cache_miss_count += len(miss_batch)
+                # Append the freshly-computed embeddings to the persistent
+                # cache so the next compute run hits them.
+                if use_cache and cache_conn is not None:
+                    pairs = [
+                        (b['toponym_id'], bytes(miss_quantised[i].tolist()))
+                        for i, b in enumerate(miss_batch)
+                    ]
+                    try:
+                        insert_many(
+                            cache_conn, pairs,
+                            model_version=args.embedding_version,
+                            checkpoint_hash=checkpoint_hash,
+                        )
+                    except Exception as exc:
+                        logger.warning(
+                            f"cache insert failed (non-fatal): {exc}"
+                        )
 
-                if processed % 50000 == 0:
-                    elapsed = time.time() - start_time
-                    rate = processed / elapsed
-                    eta = (total_rows - processed) / rate if rate > 0 else 0
-                    logger.info(f"Computed {processed:,} / {total_rows:,} ({rate:.1f} doc/s, ETA: {eta/60:.1f}m)")
+            if processed and processed % 50000 == 0:
+                elapsed = time.time() - start_time
+                rate = processed / elapsed
+                eta = (total_rows - processed) / rate if rate > 0 else 0
+                logger.info(
+                    f"Computed {processed:,} / {total_rows:,} ({rate:.1f} doc/s, "
+                    f"ETA: {eta/60:.1f}m, hits={cache_hit_count:,}, "
+                    f"misses={cache_miss_count:,})"
+                )
 
         writer.close()
         conn.close()
+        if cache_conn is not None:
+            try:
+                cache_conn.close()
+            except Exception:
+                pass
 
         # Move from scratch to final destination if needed
         if slurm_job_id and working_output != final_output:
@@ -207,13 +296,22 @@ def run_compute(args):
             logger.info(f"✓ Embeddings written to {final_output}")
 
         elapsed = time.time() - start_time
-        logger.info(f"Computation complete. {processed:,} embeddings saved in {elapsed/60:.1f}m")
+        logger.info(
+            f"Computation complete. {processed:,} embeddings saved in "
+            f"{elapsed/60:.1f}m  (cache: {cache_hit_count:,} hits, "
+            f"{cache_miss_count:,} misses)"
+        )
 
     except Exception as e:
         logger.error(f"Error during compute: {e}")
         # Clean up incomplete file
         writer.close()
         conn.close()
+        if cache_conn is not None:
+            try:
+                cache_conn.close()
+            except Exception:
+                pass
         if working_output.exists():
             logger.warning(f"Removing incomplete output: {working_output}")
             working_output.unlink()
@@ -489,6 +587,11 @@ def main():
     p_compute.add_argument('--vocab-dir', required=True,
                            help='Vocabulary directory')
     p_compute.add_argument('--device', default='cuda' if torch.cuda.is_available() else 'cpu')
+    p_compute.add_argument('--cache-db',
+                           help='Override the persistent Symphonym cache DuckDB path '
+                                '(default: settings.SYMPHONYM_CACHE_DB)')
+    p_compute.add_argument('--no-cache', action='store_true',
+                           help='Bypass the Symphonym cache (always recompute)')
     p_compute.set_defaults(func=run_compute)
 
     # --- INDEX (creates full index from DuckDB + embeddings) ---
@@ -503,7 +606,41 @@ def main():
     p_index.set_defaults(func=run_index)
 
     args = parser.parse_args()
-    args.func(args)
+
+    # Persistent cross-run wall-time history so submit_index_slurm /
+    # submit_batch9_slurm can size --time appropriately on subsequent runs.
+    # Telemetry only — never blocks the underlying job.
+    import os
+    import time as _time
+    from datetime import datetime as _dt, timezone as _tz
+    _started_at = _dt.now(_tz.utc)
+    _started_mono = _time.monotonic()
+    try:
+        args.func(args)
+        _status = "completed"
+    except SystemExit:
+        _status = "failed"
+        raise
+    except Exception:
+        _status = "failed"
+        raise
+    finally:
+        _wall = _time.monotonic() - _started_mono
+        try:
+            from processing.stage_writers import record_script_wall_time
+            record_script_wall_time(
+                namespace="toponyms",
+                script_id=f"update-es-{args.mode}",
+                run_id=os.environ.get("WHG_RUN_ID", "ad-hoc"),
+                started_at=_started_at.isoformat(),
+                finished_at=_dt.now(_tz.utc).isoformat(),
+                wall_seconds=_wall,
+                status=_status,
+                slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+                extra={"embedding_version": args.embedding_version},
+            )
+        except Exception:
+            pass
 
 
 if __name__ == '__main__':

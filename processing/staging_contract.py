@@ -181,6 +181,39 @@ def is_relations_only(namespace: str) -> bool:
     return namespace in RELATIONS_ONLY_NAMESPACES
 
 
+# ---------------------------------------------------------------------------
+# Update-patch namespaces (Batch 4c Phase 3)
+# ---------------------------------------------------------------------------
+# These authorities contribute *update* patches (toponyms, geometry refresh)
+# rather than fresh place records. After their primary `*-places.py` script
+# stages an extract, a follow-up `*-toponyms.py` / `*-geoshapes.py` script
+# emits a JSONL patch under ``staged/{namespace}/update_patch/`` that
+# ``processing/update_merge.py`` collapses into ``update_merged/``. The
+# stage chain (``UPDATE_MERGED_STAGE_NAME``) inserts between extract and
+# h3 for these namespaces.
+UPDATE_PATCH_NAMESPACES = frozenset({"gn", "wd"})
+
+UPDATE_PATCH_FILENAME = "places.update.jsonl"
+UPDATE_MERGED_DIRNAME = "update_merged"
+
+# A single patch row may carry any subset of these fields; missing fields
+# are passed through from the source record by ``update_merge``.
+UPDATE_PATCH_REQUIRED_FIELDS = ("place_id",)
+UPDATE_PATCH_OPTIONAL_FIELDS = (
+    "title",
+    "toponyms_to_add",
+    "relations_to_add",
+    "geometries_to_replace",
+    "h3_centroid",
+    "h3_cover",
+)
+
+
+def has_update_patch(namespace: str) -> bool:
+    """Return True if the namespace has a Phase 3 update-patch stage."""
+    return namespace in UPDATE_PATCH_NAMESPACES
+
+
 def partition_namespaces(
     namespaces: tuple[str, ...] | list[str] | frozenset[str],
 ) -> tuple[list[str], list[str]]:

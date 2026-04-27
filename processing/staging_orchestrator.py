@@ -44,6 +44,8 @@ def load_run_manifest(manifest_path: Path) -> dict:
 def _default_per_gazetteer_stages() -> dict[str, str]:
     return {
         "extract": "pending",
+        "update_patch": "pending",
+        "update_merge": "pending",
         "boundary": "pending",
         "boundary_merge": "pending",
         "h3": "pending",
@@ -53,6 +55,7 @@ def _default_per_gazetteer_stages() -> dict[str, str]:
         "ccode_merge": "pending",
         "tiles": "pending",
         "temporal_extent": "pending",
+        "index": "pending",
     }
 
 
@@ -550,6 +553,8 @@ def reconcile_carried_over_namespaces(
 
     stage_artefact_paths = {
         "extract": ("extract/places.parquet", "extract/places.jsonl"),
+        "update_patch": ("update_patch/places.update.jsonl",),
+        "update_merge": ("update_merged/places.parquet", "update_merged/places.jsonl"),
         "boundary": ("boundary/places.boundary.jsonl",),
         "boundary_merge": ("boundary_merged/places.parquet",),
         "h3": ("h3/places.h3.jsonl",),

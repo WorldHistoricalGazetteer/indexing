@@ -8,3 +8,9 @@ __pycache__/
 authorities/chgis/*.sql
 authorities/chgis/*.db
 
+# PeriodO gazetteer cache (downloaded by authorities/periodo-places.py)
+authorities/periodo_gazetteers_cache/
+
+# DGSD source DB (downloaded/built by authorities/dgsd.places)
+authorities/dgsd/*.db
+

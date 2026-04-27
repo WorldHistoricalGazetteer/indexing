@@ -20,6 +20,7 @@ import pyarrow.parquet as pq
 from processing.helpers import compute_h3_fields, select_h3_cover_geometry
 from processing.settings import STAGED_BASE_DIR, STAGED_RUN_MANIFEST_FILE_TEMPLATE, STAGED_RUNS_DIR
 from processing.stage_writers import record_script_wall_time, write_runtime_history_event, write_stage_event
+from processing.staging_contract import UPDATE_PATCH_NAMESPACES
 from processing.staging_orchestrator import load_run_manifest, update_namespace_stage_status
 
 
@@ -27,10 +28,24 @@ BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
 
 
 def _extract_stage_dir(namespace: str) -> Path:
+    """Resolve the snapshot directory H3 should read from.
+
+    Preference order per namespace:
+
+    * OSM/OHM → ``boundary_merged/`` once boundary completion is done.
+    * gn/wd  → ``update_merged/`` once the Phase 3 update patch has been
+      collapsed into the snapshot.
+    * everything else → ``extract/``.
+    """
     base = Path(STAGED_BASE_DIR) / namespace
-    boundary_merged = base / "boundary_merged"
-    if namespace in BOUNDARY_REQUIRED_NAMESPACES and boundary_merged.exists():
-        return boundary_merged
+    if namespace in BOUNDARY_REQUIRED_NAMESPACES:
+        boundary_merged = base / "boundary_merged"
+        if boundary_merged.exists():
+            return boundary_merged
+    if namespace in UPDATE_PATCH_NAMESPACES:
+        update_merged = base / "update_merged"
+        if update_merged.exists():
+            return update_merged
     return base / "extract"
 
 

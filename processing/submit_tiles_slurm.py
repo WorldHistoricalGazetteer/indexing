@@ -50,13 +50,31 @@ from processing.settings import (  # noqa: E402
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
 from processing.staging_orchestrator import load_run_manifest  # noqa: E402
 
 
 # Tile generation is IO-bound on the geom store reads and CPU-bound on
-# tippecanoe; 12 h is a generous default for the largest namespace (osm).
+# tippecanoe; 12 h is a generous default for the largest namespace (osm)
+# when the runtime-history file is empty (first run).
 _DEFAULT_WALL_SECONDS = 12 * 3_600
 _QOS = "htc-htc-s"  # ≤ 1 day tier; tile generation should never need longer
+
+
+def _estimate_wall_for_buckets(buckets: list[str]) -> int:
+    """Take the max of the per-(namespace, 'tiles') estimates across all
+    contributing namespaces. Falls back to ``_DEFAULT_WALL_SECONDS`` when no
+    namespace has wall-time history."""
+    contributors: set[str] = set()
+    for bucket in buckets:
+        contributors.update(TILE_BUCKETS.get(bucket, ()))
+    if not contributors:
+        return _DEFAULT_WALL_SECONDS
+    estimates = [
+        estimate_wall_time_seconds(ns, "tiles", default=_DEFAULT_WALL_SECONDS)
+        for ns in contributors
+    ]
+    return max(estimates)
 
 
 def _seconds_to_slurm_time(seconds: int) -> str:
@@ -124,7 +142,7 @@ def _build_sbatch_script(
     log_prefix = log_dir / f"whg-tiles-{run_id}-%A_%a"
 
     array_end = len(buckets) - 1
-    slurm_time = _seconds_to_slurm_time(_DEFAULT_WALL_SECONDS)
+    slurm_time = _seconds_to_slurm_time(_estimate_wall_for_buckets(buckets))
 
     output_arg = ""
     if output_dir is not None:

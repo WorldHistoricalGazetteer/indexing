@@ -30,12 +30,13 @@ Usage::
 from __future__ import annotations
 
 import json
+import os
 import sys
 import shutil
 import subprocess
 import time
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -68,6 +69,7 @@ _STAGED_SOURCE_PRIORITY = (
     "final",
     "h3_merged",
     "boundary_merged",
+    "update_merged",
     "extract",
 )
 
@@ -438,7 +440,11 @@ def generate_tiles_from_staged(
         FileNotFoundError: If the geometry store at ``GEOM_STORE_DIR`` is
             absent — tile generation cannot proceed without full polygons.
     """
-    from processing.stage_writers import write_runtime_history_event, write_stage_event
+    from processing.stage_writers import (
+        record_script_wall_time,
+        write_runtime_history_event,
+        write_stage_event,
+    )
     from processing.staging_orchestrator import update_namespace_stage_status
 
     print("=" * 80)
@@ -546,6 +552,19 @@ def generate_tiles_from_staged(
                     namespace=ns,
                     stage="tiles",
                     details=metrics,
+                )
+            except Exception:
+                pass
+            try:
+                # Persistent cross-run history so the next submit_tiles_slurm
+                # can size --time appropriately per namespace.
+                record_script_wall_time(
+                    namespace=ns, script_id="tiles", run_id=run_id,
+                    started_at=started.isoformat(),
+                    finished_at=(started + timedelta(seconds=wall_seconds)).isoformat(),
+                    wall_seconds=wall_seconds, status="completed",
+                    slurm_job_id=os.environ.get("SLURM_JOB_ID"),
+                    extra={"features_written": metrics["features_written"]},
                 )
             except Exception:
                 pass

@@ -123,6 +123,56 @@ NAMESPACE_RUNTIME_HISTORY_FILE = os.getenv(
     f"{STAGED_BASE_DIR}/namespace-runtime-history.json",
 )
 
+# ---------------------------------------------------------------------------
+# Runtime Prerequisites (plan §"Runtime Prerequisites")
+# ---------------------------------------------------------------------------
+
+# WHG API base URL used by Batch 4 Phase 4 (whg-places.py) discovery / LPF
+# fetch and by Batch 11 push_gazetteer_inventory.py for the gazetteer
+# registry endpoint. Override per environment via env var.
+WHG_API_BASE_URL = os.getenv("WHG_API_BASE_URL", "https://whgazetteer.org")
+
+# Gazetteer-registry endpoint relative to WHG_API_BASE_URL. Used by
+# push_gazetteer_inventory.py — overrideable via WHG_INVENTORY_ENDPOINT
+# (full URL takes precedence over base + path composition).
+WHG_INVENTORY_ENDPOINT = os.getenv(
+    "WHG_INVENTORY_ENDPOINT",
+    f"{WHG_API_BASE_URL.rstrip('/')}/api/registry/inventory",
+)
+
+# Token for authenticated WHG API calls. Read at request time; set via the
+# environment or a sidecar file (WHG_API_TOKEN_FILE) — never commit literals.
+WHG_API_TOKEN_FILE = os.getenv(
+    "WHG_API_TOKEN_FILE",
+    f"{IX1_BASE}/secrets/whg-api.token",
+)
+
+# HTTP retry/backoff defaults (used by push_gazetteer_inventory + future
+# whg-places.py discovery/fetch). Single source of truth so Slurm jobs and
+# manual invocations behave identically.
+WHG_HTTP_TIMEOUT = int(os.getenv("WHG_HTTP_TIMEOUT", "60"))
+WHG_HTTP_MAX_RETRIES = int(os.getenv("WHG_HTTP_MAX_RETRIES", "4"))
+WHG_HTTP_INITIAL_BACKOFF = float(os.getenv("WHG_HTTP_INITIAL_BACKOFF", "2.0"))
+
+# Pitt-side filesystem path that hosts the live SQLite hard-link database.
+# `processing/submit_hardlinks_slurm.py` ships into this directory; the
+# gateway opens `<filename>` from this directory read-only at search time.
+PITT_HARDLINK_DIR = os.getenv("PITT_HARDLINK_DIR", "/ix1/ishi/hardlinks")
+PITT_HARDLINK_FILENAME = os.getenv("PITT_HARDLINK_FILENAME", "hard_links.sqlite")
+PITT_HARDLINK_REMOTE_USER = os.getenv("PITT_HARDLINK_REMOTE_USER", "")
+PITT_HARDLINK_REMOTE_HOST = os.getenv("PITT_HARDLINK_REMOTE_HOST", "")
+
+# Persistent Symphonym embedding cache (Batch 9). Keyed on
+# (toponym_id, model_version, checkpoint_hash), so a model-version bump or
+# a checkpoint-file change automatically invalidates every prior entry. The
+# cache file is shared across runs; ``phonetics/inference/update_es.py
+# compute`` populates it on the first run and reads from it on subsequent
+# runs to skip GPU work for unchanged toponyms.
+SYMPHONYM_CACHE_DB = os.getenv(
+    "SYMPHONYM_CACHE_DB",
+    f"{IX1_BASE}/models/phonetic/symphonym_cache.duckdb",
+)
+
 
 # Remote Dataset Configurations
 AUTHORITIES = [

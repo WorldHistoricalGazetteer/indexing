@@ -1,30 +1,50 @@
-# authorities/geonames_toponyms.py
+# authorities/geonames-toponyms.py
 
 """
-Update GeoNames places with alternate names (toponyms) data.
+Stage GeoNames alternate-names as a Phase 3 update patch.
+
+Reads ``alternateNamesV2.zip`` and emits a per-place patch JSONL at
+``staged/gn/update_patch/places.update.jsonl`` consumed by
+``processing/update_merge.py``. Each row carries the toponyms to add (as
+``toponyms_to_add``), the preferred title (when present), and any
+cross-authority relations derived from the ``wkdt`` / ``link`` lines
+(``relations_to_add``).
+
+Per Master Plan + Batch 4c Phase 3: this script never contacts
+Elasticsearch. The ``update_merge`` stage collapses the patch into the
+namespace's ``update_merged/`` snapshot before H3 derivation.
 """
+
+from __future__ import annotations
+
+import json
+import os
 import sys
 from collections import defaultdict
+from pathlib import Path
 
-from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import stream_file, create_checkpoint_snapshot
-
-es = Elasticsearch(ES_HOST, request_timeout=180)
+from processing.settings import BATCH_SIZE, DATA_DIR, STAGED_BASE_DIR
+from processing.staging_contract import UPDATE_PATCH_FILENAME
+from processing.utilities import stream_file
 
 
-def normalize_lst(name, lang='und'):
+# ----------------------------------------------------------------------------
+# Source-line parsing (carried over from the legacy ES path)
+# ----------------------------------------------------------------------------
+
+
+def normalize_lst(name, lang="und"):
     """Ensure toponym is in LST format (name@lang)."""
     if not name:
         return None
-    if '@' in name:
+    if "@" in name:
         return name
     return f"{name}@{lang}"
 
 
 def parse_year(year_str):
     """Parse year string, handling empty, positive, and negative years."""
-    if not year_str or year_str.strip() == '':
+    if not year_str or year_str.strip() == "":
         return None
     try:
         return int(year_str.strip())
@@ -33,293 +53,195 @@ def parse_year(year_str):
 
 
 def parse_alternatename_line(line):
-    """
-    Parse alternateNames line.
+    """Parse one alternateNamesV2 line.
 
-    Returns:
-    - ('toponym', lst, timespans_list, is_preferred, place_id)
-    - ('relation', place_id, relation_dict)
-    - (None, ...)
+    Returns one of:
+    - ``("toponym", lst, timespans_list, is_preferred, place_id)``
+    - ``("relation", place_id, relation_dict)``
+    - ``(None,)`` for skipped/non-linguistic entries.
     """
     fields = line.split("\t")
 
-    lang_code = fields[2] if len(fields) > 2 else ''
+    lang_code = fields[2] if len(fields) > 2 else ""
     geoname_id = fields[1]
-    value = fields[3] if len(fields) > 3 else ''
+    value = fields[3] if len(fields) > 3 else ""
     place_id = f"gn:{geoname_id}"
 
-    # Handle wikidata IDs - use schema field names
-    if lang_code == 'wkdt' and value:
-        return ('relation', place_id, {
-            'relation_type': 'sameAs',
-            'related_place_id': f"wd:{value}",
-            'label': 'Wikidata'
-        })
+    # Cross-authority: Wikidata QID
+    if lang_code == "wkdt" and value:
+        return (
+            "relation", place_id,
+            {
+                "relation_type": "sameAs",
+                "related_place_id": f"wd:{value}",
+                "label": "Wikidata",
+            },
+        )
 
-    # Handle links - use schema field names
-    if lang_code == 'link' and value:
-        return ('relation', place_id, {
-            'relation_type': 'describedBy',
-            'related_place_id': value,
-            'label': 'External Link'
-        })
+    # External link
+    if lang_code == "link" and value:
+        return (
+            "relation", place_id,
+            {
+                "relation_type": "describedBy",
+                "related_place_id": value,
+                "label": "External Link",
+            },
+        )
 
-    # Skip non-linguistic entries
-    skip_codes = ['post', 'iata', 'icao', 'faac', 'unlc', 'tcid', 'abbr']
-    if lang_code in skip_codes:
+    # Skip non-linguistic entries (postal codes, airport codes, etc.).
+    if lang_code in {"post", "iata", "icao", "faac", "unlc", "tcid", "abbr"}:
         return (None,)
 
     if not value:
         return (None,)
 
-    # Build LST
     if lang_code:
-        lang_code = lang_code.replace('_', '-')
+        lang_code = lang_code.replace("_", "-")
         lst = normalize_lst(value, lang_code)
     else:
-        lst = normalize_lst(value, 'und')
+        lst = normalize_lst(value, "und")
 
-    # Parse temporal information into timespans array
     year_from = parse_year(fields[8]) if len(fields) > 8 else None
     year_to = parse_year(fields[9]) if len(fields) > 9 else None
 
     timespans_list = None
     if year_from is not None or year_to is not None:
-        timespan = {}
+        ts: dict = {}
         if year_from is not None:
-            timespan["start"] = {'in': year_from}
+            ts["start"] = {"in": year_from}
         if year_to is not None:
-            timespan["end"] = {'in': year_to}
-        timespans_list = [timespan]
+            ts["end"] = {"in": year_to}
+        timespans_list = [ts]
 
-    is_preferred = fields[4] == '1' if len(fields) > 4 else False
+    is_preferred = fields[4] == "1" if len(fields) > 4 else False
+    return ("toponym", lst, timespans_list, is_preferred, place_id)
 
-    return ('toponym', lst, timespans_list, is_preferred, place_id)
+
+# ----------------------------------------------------------------------------
+# Patch emission
+# ----------------------------------------------------------------------------
 
 
-def pass1_update_places_with_toponyms(file_path):
-    """PASS 1: Stream through file and update places with toponyms."""
-    print("\n" + "=" * 80)
-    print("PASS 1: UPDATING PLACES WITH TOPONYMS")
-    print("=" * 80)
+def _patch_path() -> Path:
+    return Path(STAGED_BASE_DIR) / "gn" / "update_patch" / UPDATE_PATCH_FILENAME
 
-    place_updates = defaultdict(lambda: {'toponyms': [], 'seen': set(), 'title': None})
 
+def _flush(buffer: dict, fh) -> int:
+    """Write one JSONL row per place_id to ``fh``; return count written."""
+    written = 0
+    for place_id, data in buffer.items():
+        toponyms_to_add = data["toponyms"]
+        relations_to_add = data["relations"]
+        title = data["title"]
+        if not toponyms_to_add and not relations_to_add and not title:
+            continue
+        row: dict = {"place_id": place_id}
+        if title:
+            row["title"] = title
+        if toponyms_to_add:
+            row["toponyms_to_add"] = toponyms_to_add
+        if relations_to_add:
+            row["relations_to_add"] = relations_to_add
+        fh.write(json.dumps(row, ensure_ascii=True) + "\n")
+        written += 1
+    buffer.clear()
+    return written
+
+
+def stage_alternatenames(file_path: str) -> dict:
+    """Stream the alternateNames file, emit one patch row per place.
+
+    Buffer size matches ``BATCH_SIZE`` so memory stays bounded; the same
+    ``place_id`` may appear in multiple flush windows when its lines aren't
+    contiguous in the source — ``update_merge`` folds those rows on read.
+    """
+    out_path = _patch_path()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    buffer = defaultdict(
+        lambda: {"toponyms": [], "seen": set(), "relations": [], "title": None}
+    )
+    rows_written = 0
     processed = 0
     skipped = 0
-    places_updated = 0
 
-    def flush_updates():
-        nonlocal places_updated
+    print("=" * 80)
+    print("GEONAMES TOPONYMS — STAGED PATCH EMISSION")
+    print("=" * 80)
+    print(f"Source: {file_path}")
+    print(f"Output: {out_path}")
 
-        if not place_updates:
-            return
+    with out_path.open("w", encoding="utf-8") as fh:
+        for line in stream_file(file_path):
+            if not line or line.startswith("#"):
+                continue
+            processed += 1
+            if processed % 100_000 == 0:
+                sys.stdout.write(
+                    f"\r  Processed {processed:,} lines | rows {rows_written:,}"
+                )
+                sys.stdout.flush()
 
-        batch = []
-        for place_id, data in place_updates.items():
-            if not data['toponyms']:
+            try:
+                result = parse_alternatename_line(line)
+            except Exception:
+                skipped += 1
                 continue
 
-            update_op = {
-                '_op_type': 'update',
-                '_index': 'places',
-                '_id': place_id,
-                'script': {
-                    'source': '''
-                        if (ctx._source.toponyms == null) {
-                            ctx._source.toponyms = [];
-                        }
-                        for (new_toponym in params.new_toponyms) {
-                            boolean exists = false;
-                            for (existing in ctx._source.toponyms) {
-                                if (existing.toponym_id == new_toponym.toponym_id) {
-                                    exists = true;
-                                    break;
-                                }
-                            }
-                            if (!exists) {
-                                ctx._source.toponyms.add(new_toponym);
-                            }
-                        }
-                        if (params.title != null) {
-                            ctx._source.title = params.title;
-                        }
-                    ''',
-                    'params': {
-                        'new_toponyms': data['toponyms'],
-                        'title': data['title']
-                    }
-                }
-            }
-            batch.append(update_op)
-
-        try:
-            success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-            places_updated += success
-
-            if failed > 0:
-                sys.stdout.write(f"\r  Updated {places_updated:,} places ({failed} failed)...")
+            if result[0] == "toponym":
+                _, lst, timespans_list, is_preferred, place_id = result
+                if lst is None or lst in buffer[place_id]["seen"]:
+                    continue
+                buffer[place_id]["seen"].add(lst)
+                entry: dict = {"toponym_id": lst}
+                if timespans_list:
+                    entry["timespans"] = timespans_list
+                buffer[place_id]["toponyms"].append(entry)
+                if is_preferred and buffer[place_id]["title"] is None:
+                    name = lst.split("@")[0] if "@" in lst else lst
+                    buffer[place_id]["title"] = name
+            elif result[0] == "relation":
+                _, place_id, relation = result
+                # Cheap dedupe within a flush window; update_merge does the
+                # final cross-window dedupe by (relation_type, related_place_id).
+                key = (relation["relation_type"], relation["related_place_id"])
+                if key in buffer[place_id].setdefault("rel_seen", set()):
+                    continue
+                buffer[place_id]["rel_seen"].add(key)
+                buffer[place_id]["relations"].append(relation)
             else:
-                sys.stdout.write(f"\r  Updated {places_updated:,} places...")
-            sys.stdout.flush()
-        except Exception as e:
-            print(f"\nError updating batch: {str(e)}")
-
-        place_updates.clear()
-
-    for line in stream_file(file_path):
-        if not line or line.startswith("#"):
-            continue
-
-        processed += 1
-        if processed % 100000 == 0:
-            sys.stdout.write(f"\r  Processed {processed:,} lines...")
-            sys.stdout.flush()
-
-        try:
-            result = parse_alternatename_line(line)
-
-            if result[0] != 'toponym':
                 skipped += 1
-                continue
 
-            _, lst, timespans_list, is_preferred, place_id = result
+            if len(buffer) >= BATCH_SIZE:
+                rows_written += _flush(buffer, fh)
 
-            if lst in place_updates[place_id]['seen']:
-                continue
+        rows_written += _flush(buffer, fh)
 
-            place_updates[place_id]['seen'].add(lst)
-
-            # Build toponym entry with timespans array
-            toponym_entry = {'toponym_id': lst}
-            if timespans_list:
-                toponym_entry['timespans'] = timespans_list
-
-            place_updates[place_id]['toponyms'].append(toponym_entry)
-
-            # Set preferred title
-            if is_preferred and place_updates[place_id]['title'] is None:
-                name = lst.split('@')[0] if '@' in lst else lst
-                place_updates[place_id]['title'] = name
-
-            if len(place_updates) >= BATCH_SIZE:
-                flush_updates()
-
-        except Exception as e:
-            skipped += 1
-            continue
-
-    flush_updates()
-
-    print(f"\n  Total places updated: {places_updated:,}")
-    return places_updated
+    print(
+        f"\nProcessed {processed:,} lines | skipped {skipped:,} | "
+        f"emitted {rows_written:,} patch rows"
+    )
+    print(f"Patch written: {out_path}")
+    return {
+        "lines_processed": processed,
+        "lines_skipped": skipped,
+        "rows_written": rows_written,
+        "patch_path": str(out_path),
+    }
 
 
-def pass2_update_places_with_relations(file_path):
-    """PASS 2: Stream through file and add relations."""
-    print("\n" + "=" * 80)
-    print("PASS 2: ADDING RELATIONS TO PLACES")
-    print("=" * 80)
-
-    batch = []
-    processed = 0
-    skipped = 0
-    relations_added = 0
-
-    for line in stream_file(file_path):
-        if not line or line.startswith("#"):
-            continue
-
-        processed += 1
-        if processed % 100000 == 0:
-            sys.stdout.write(f"\r  Processed {processed:,} lines, added {relations_added:,} relations...")
-            sys.stdout.flush()
-
-        try:
-            result = parse_alternatename_line(line)
-
-            if result[0] != 'relation':
-                skipped += 1
-                continue
-
-            _, place_id, relation = result
-
-            update_op = {
-                '_op_type': 'update',
-                '_index': 'places',
-                '_id': place_id,
-                'script': {
-                    'source': '''
-                        if (ctx._source.relations == null) {
-                            ctx._source.relations = [];
-                        }
-                        boolean exists = false;
-                        for (rel in ctx._source.relations) {
-                            if (rel.related_place_id == params.relation.related_place_id) {
-                                exists = true;
-                                break;
-                            }
-                        }
-                        if (!exists) {
-                            ctx._source.relations.add(params.relation);
-                        }
-                    ''',
-                    'params': {
-                        'relation': relation
-                    }
-                }
-            }
-
-            batch.append(update_op)
-
-            if len(batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-                    relations_added += success
-                    sys.stdout.write(f"\r  Added {relations_added:,} relations...")
-                    sys.stdout.flush()
-                    batch = []
-                except Exception as e:
-                    print(f"\nError updating batch: {str(e)}")
-                    batch = []
-
-        except Exception as e:
-            skipped += 1
-            continue
-
-    if batch:
-        try:
-            success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-            relations_added += success
-        except Exception as e:
-            print(f"\nError updating final batch: {str(e)}")
-
-    print(f"\n  Total relations added: {relations_added:,}")
-    return relations_added
+def main():
+    alternatenames_file = os.environ.get(
+        "GEONAMES_ALTERNATENAMES_FILE",
+        f"{DATA_DIR}/authorities/gn/alternateNamesV2.zip",
+    )
+    if not os.path.exists(alternatenames_file):
+        print(f"ERROR: source not found: {alternatenames_file}", file=sys.stderr)
+        sys.exit(1)
+    summary = stage_alternatenames(alternatenames_file)
+    print(json.dumps(summary, indent=2, sort_keys=True))
 
 
 if __name__ == "__main__":
-    ALTERNATENAMES_FILE = f"{DATA_DIR}/authorities/gn/alternateNamesV2.zip"
-
-    print("=" * 80)
-    print("GEONAMES TOPONYMS INGESTION")
-    print("=" * 80)
-    print(f"Source: {ALTERNATENAMES_FILE}")
-    print()
-
-    places_updated = pass1_update_places_with_toponyms(ALTERNATENAMES_FILE)
-    relations_count = pass2_update_places_with_relations(ALTERNATENAMES_FILE)
-
-    print("\n" + "=" * 80)
-    print("INGESTION COMPLETE")
-    print("=" * 80)
-    print(f"Places updated: {places_updated:,}")
-    print(f"Relations added: {relations_count:,}")
-    print()
-
-    print("Creating checkpoint snapshot...")
-    create_checkpoint_snapshot(es, "geonames_toponyms")
-
-    print("\n" + "=" * 80)
-    print("COMPLETE")
-    print("=" * 80)
+    main()

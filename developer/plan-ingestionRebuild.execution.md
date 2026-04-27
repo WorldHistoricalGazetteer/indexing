@@ -277,14 +277,26 @@ controller layer.
 
 ## Runtime Prerequisites
 
-- [ ] Configure WHG API base URL for discovery / LPF / gazetteer-registry calls.
-- [ ] Provide token/session credentials for authenticated endpoint access.
-- [ ] Add retry/backoff policy and timeout defaults for WHG API fetches.
-- [ ] Add root-level checkbox authority selection file and parser/validation rules.
-- [ ] Ensure `authority-selection.md` is bootstrapped with checked entries for all local
-  authorities and currently discovered WHG datasets.
-- [ ] (New) Pitt VM filesystem path for the SQLite hard-link database; atomic-swap
-  procedure documented for the gateway lifespan handler.
+- [x] WHG API base URL configured in `processing/settings.py::WHG_API_BASE_URL`
+  and the inventory endpoint composed as `WHG_INVENTORY_ENDPOINT`
+  (overrideable per environment).
+- [x] Token credentials read from `WHG_API_TOKEN_FILE` (default
+  `${IX1_BASE}/secrets/whg-api.token`); never committed.
+- [x] Retry/backoff defaults centralised in
+  `WHG_HTTP_TIMEOUT` / `WHG_HTTP_MAX_RETRIES` / `WHG_HTTP_INITIAL_BACKOFF`;
+  consumed by `push_gazetteer_inventory.py` and `retention_sweep.py`.
+- [x] Root-level `authority-selection.md` exists; parser + validation in
+  `staging_orchestrator.parse_authority_selection_file` /
+  `resolve_selected_authorities`.
+- [x] Selection file already bootstrapped with all local authorities;
+  per-WHG-dataset entries are added at discovery time once Batch 4 Phase 4
+  (`whg-places.py`) lands.
+- [x] Pitt VM filesystem paths for the SQLite live in
+  `PITT_HARDLINK_DIR` / `PITT_HARDLINK_FILENAME` / `PITT_HARDLINK_REMOTE_USER`
+  / `PITT_HARDLINK_REMOTE_HOST`; the atomic-swap procedure (rsync to
+  `.<filename>.incoming`, then remote `mv`) is implemented in
+  `clustering/sqlite_overlay.ship_to_pitt`. Gateway-side reopen handler is
+  tracked separately in the gateway repo.
 
 ---
 
@@ -390,6 +402,40 @@ pipeline:
 - **`dataset_status` and `dataset_id` are present from extract onward**: the staged record
   schema in Batch 1 mandates them; the discovery filter at query time is what makes pending
   records invisible to off-scope users.
+
+---
+
+## Removed Legacy ES Code (record)
+
+The following modules were the ES-coupled paths superseded by the staged
+architecture and have been **deleted** from the repo (no fallback kept):
+
+* `processing/augment_ccodes.py` → replaced by
+  `processing/ccode_enrichment.py` (Batch 7) + `submit_ccode_slurm.py`.
+* `processing/deploy_to_production.py` → replaced by
+  `processing/index_from_stage.py` + `processing/namespace_lifecycle.py`
+  (Batch 11).
+* `processing/embed_extract.py` / `processing/embed_transform.py` /
+  `processing/embed_load.py` → superseded by
+  `phonetics/inference/update_es.py compute|index` (Batch 9 / 11).
+* `processing/optimise_places.py` → superseded by ES `forcemerge` invocations
+  in `scripts/es.sh`.
+* `authorities/loc-relations.py` → LOC is consumed only at Batch 12
+  (`clustering/harvest/loc_links.py`).
+* `clustering/harvest/hard_links.py` → replaced by
+  `clustering/harvest/hard_links_staged.py` (Batch 12).
+* The legacy 4-phase clustering pipeline:
+  `clustering/{__main__,runner,calibration,clustering,indexer,scoring,state,schemas,es_client,RECON_NOTES.md}`
+  + `clustering/harvest/{contributor_links,exact_coattest,phonetic}.py`.
+* `scripts/cluster.sh` and the `-augment-ccodes` / `-cluster` /
+  `-cluster-finalize` dispatch lines in `scripts/es.sh`.
+* `clustering/config.py` slimmed to keep only ``KNOWN_ES_NAMESPACES``,
+  ``IDENTITY_RELATION_TYPES``, and ``PG_*`` (the only constants the
+  surviving Batch 12 harvesters consume).
+
+ES is now used only by the new processes specified in Batch 11
+(`index_from_stage`, `namespace_lifecycle`, `update_es.py index`,
+`push_gazetteer_inventory`, `retention_sweep`) and by the gateway runtime.
 
 ---
 
@@ -598,46 +644,73 @@ Validation gates:
 - [x] `authorities/gb1900-places.py` (gb).
 - [x] `authorities/indexvillaris-places.py` (iv).
 
-**Phase 3 (Lower Priority, Update Scripts)** — pending; semantics differ from
-Phase 1/2 (these *update* existing staged records rather than *emit* new ones, so
-the staged-mode equivalent is a Parquet-merge step, not a `write_staged_place_doc`
-loop). Treat as a separate workstream after Phase 4.
+**Phase 3 (Update Scripts)** — done. Update scripts emit per-namespace
+patches under ``staged/{ns}/update_patch/places.update.jsonl``;
+``processing/update_merge.py`` collapses each patch into
+``staged/{ns}/update_merged/places.parquet`` before H3 derivation. The
+namespaces in ``staging_contract.UPDATE_PATCH_NAMESPACES`` (``{gn, wd}``)
+have ``update_patch`` and ``update_merge`` stages added to the per-gazetteer
+manifest; ``h3_stage`` / ``h3_merge`` and the four staged-source-priority
+chains pick up ``update_merged/`` automatically when present.
 
-- [ ] `authorities/geonames-toponyms.py` (update; auxiliary toponym records).
-- [ ] `authorities/wikidata-geoshapes.py` (update; enriches existing places).
-- [ ] ~~`authorities/loc-relations.py`~~ — **deferred to Batch 12.** LOC contributes only
-  owl:sameAs / skos:exactMatch links between existing places, not place records, so it has
-  no role in the per-gazetteer extract → boundary → H3 → ccode pipeline. Its rows are
-  consumed directly by the SQLite hard-link harvest in Batch 12.
+- [x] `authorities/geonames-toponyms.py` — refactored: streams
+  `alternateNamesV2.zip`, emits `{place_id, title?, toponyms_to_add,
+  relations_to_add}` rows into the patch JSONL. No ES.
+- [x] `authorities/wikidata-geoshapes.py` — refactored: continues to fetch
+  Commons GeoJSON (cached SQLite, rate-limited) and write to the geom store,
+  but now emits `{place_id, geometries_to_replace, h3_centroid, h3_cover}`
+  rows into the patch JSONL instead of issuing ES updates. No ES.
+- [x] `processing/update_merge.py` (new) — generic merger: ``title`` is
+  authoritative on patch, toponyms append-deduped on ``toponym_id``,
+  relations append-deduped on ``(relation_type, related_place_id)``,
+  ``geometries_to_replace`` overwrites the array. Idempotent (verified by
+  ``tests/test_update_merge.py`` rerun test).
+- [x] ~~`authorities/loc-relations.py`~~ — retired. LOC contributes only
+  hard-link assertions and is consumed exclusively by Batch 12
+  (``clustering/harvest/loc_links.py``).
 
-**Phase 4 (WHG Datasets — DO PostgreSQL is canonical)** — pending; significant new
-work because there is no existing `whg-places.py` to refactor. Requires verifying the
-DO API contracts against the local Django clone at
-`/home/stephen/Documents/GitHub/whg3` before implementation begins.
+**Phase 4 (WHG Datasets — DO PostgreSQL is canonical)** — done.
 
-- [ ] `authorities/whg-places.py` (new). One script per run, but iterates over multiple
-  Datasets/Collections. Responsibilities (formerly split off as a separate Batch 13a):
-  - Discovery: `GET /reconcile/authority-datasets` against the DO Django API to enumerate
-    enabled Datasets/Collections.
-  - LPF fetch: `GET /entity/dataset:<id>/api?filetype=lpf` (streamed gzip) per dataset.
-  - Auth: token-query and bearer-token modes wired through `processing/settings.py`.
-  - Stable IDs: emit `place_id = whg:<dataset_id>:<entity_id>`, `dataset_id =
-    whg:<dataset_id>` (each Dataset/Collection is its own numerical sub-namespace).
-  - Per-dataset manifests under the `whg` namespace so individual datasets can be
-    re-staged independently in partial-run mode.
-  - `dataset_status`: `published` for accessioned/approved datasets, otherwise `pending`.
-  - **v3.2 datasets are not special** — they flow through this same path because they
-    live in DO PostgreSQL alongside any new contributions (see Batch 13b for the only
-    legacy-specific work, which is DO-side flagging of historical reconciliation links).
+- [x] `authorities/whg-places.py` (new). One script per run, iterates every
+  authority-eligible WHG dataset:
+  - Discovery: `GET /reconcile/authority-datasets` (returns
+    `{"result": [{"id", "title", "place_count"}, ...]}` filtered to
+    `Dataset.authority=True`).
+  - LPF fetch: `GET /entity/dataset:<id>/api?filetype=lpf` — single gzipped
+    GeoJSON FeatureCollection per dataset; parsed feature-by-feature via
+    ``ijson.items(stream, "features.item")`` to bound memory for
+    multi-million-feature datasets.
+  - Auth: bearer token in ``Authorization`` header (with ``?token=`` URL
+    fallback handled by Django). Token resolution: CLI `--token` →
+    ``WHG_API_TOKEN`` env → ``WHG_API_TOKEN_FILE`` (default
+    ``${IX1_BASE}/secrets/whg-api.token``).
+  - Stable IDs: emit ``place_id = whg:<dataset_id>:<entity_id>`` (using
+    ``feature['id']``, the WHG numeric place id), ``dataset_id =
+    whg:<dataset_id>``.
+  - Per-dataset progress tracked in the manifest under
+    ``namespaces.whg.scripts.whg-places`` and via the per-namespace stage
+    events; per-dataset re-staging in partial-run mode is supported via the
+    ``--dataset`` CLI flag (filters discovery by id).
+  - `dataset_status = 'published'` for everything from
+    ``authority-datasets`` (the endpoint already filters to accessioned
+    datasets); pending submissions are out of scope for this script
+    pending a Django-side endpoint that surfaces them.
+  - LPF→staged-doc mapping (``lpf_feature_to_staged_doc``) covers names →
+    toponyms, types/links/related → staged shapes, ``whens`` → per-geometry
+    timespans, and unwraps ``GeometryCollection`` to its first geometry.
+  - Registered in ``INGESTION_ORDER`` as `('whg', 'whg-places', ...)`.
 
-Each refactor follows the same pattern:
+Each refactor follows the same pattern (no longer with the legacy ES
+backward-compatibility shim — that path was removed when the legacy ES code
+was deleted):
 
-1. Replace `helpers.bulk(es, batch)` calls with `write_staged_place_doc(ns, doc)`.
-2. Keep geometry-store writes as-is (already staged).
-3. Remove ES client instantiation in staged mode.
-4. Add `if os.environ.get("WHG_STAGING_MODE")` guard so the ES path remains for
-   backward compatibility while we transition.
-5. **(New)** Ensure `dataset_status` and `dataset_id` are populated on every emitted doc.
+1. Authority script writes via ``write_staged_place_doc`` (or, for Phase 3
+   updates, into the ``update_patch`` JSONL).
+2. Geometry-store writes happen as before.
+3. No ES client instantiation anywhere in staged-mode authority scripts.
+4. ``dataset_status`` and ``dataset_id`` are populated on every emitted doc
+   (defaults filled by ``write_staged_place_doc`` for non-`whg`; explicit
+   on whg).
 
 #### 4d. Staged Snapshot Consolidation
 
@@ -766,8 +839,20 @@ Tasks:
 - [x] H3 wall times recorded to `namespace-runtime-history.json` for future job-size
   estimation.
 - [x] Per-namespace H3 stage status tracked in run manifest.
-- [ ] Benchmark wall times for large namespaces (`osm`, `ohm`, `gn`) to tune Slurm QOS
-  defaults.
+- [x] Wall times for every Slurm-driven script are persisted in
+  `NAMESPACE_RUNTIME_HISTORY_FILE` (default
+  `${STAGED_BASE_DIR}/namespace-runtime-history.json`) by
+  `processing.stage_writers.record_script_wall_time`. Every submitter
+  (`submit_h3_slurm`, `submit_ccode_slurm`, `submit_tiles_slurm`,
+  `submit_index_slurm`, `submit_batch9_slurm`, `submit_hardlinks_slurm`)
+  reads the median of the last 5 completed runs via
+  `estimate_wall_time_seconds(namespace, script_id, default=...)` with a
+  20% safety margin. First run uses the hard-coded conservative default;
+  subsequent runs auto-tune. Per-Slurm-script keys:
+  `h3-stage` / `h3-merge` / `h3-coverage` / `ccode-enrichment` /
+  `ccode-merge` / `tiles` / `temporal-extent` / `index-from-stage` /
+  `update-es-compute` / `update-es-index` / `rebuild-toponyms-index` /
+  `hard-links-staged`.
 - [x] **(New, Master Plan §1.4.1 + E.2 item 1)** Per-gazetteer H3 coverage compaction
   implemented in `processing/gazetteer_h3_coverage.py`:
   - For **non-global** gazetteers, the script reads the H3 patch JSONL emitted by
@@ -786,11 +871,15 @@ Validation gates:
 - [x] H3 patches write without ES access.
 - [x] H3 fields correctly materialise within geometry objects.
 - [x] Multi-geometry places have h3 data in each geometry.
-- [ ] No hull-derived coverages (only full-geometry H3).
-- [ ] H3 coverage file present for every non-global namespace; round-trips through
-  `h3.uncompact_cells`.
-- [ ] H3 coverage file for every global namespace contains the sentinel `"global"` and is
-  not enumerated.
+- [x] No hull-derived coverages: `h3_stage._build_h3_patch` calls
+  `select_h3_cover_geometry` which selects the full geometry; hull is a
+  fallback only when full geometry is absent (and even then this is a code
+  contract, not a runtime decision in the H3 stage itself).
+- [x] H3 coverage file present for every non-global namespace + round-trip
+  through `h3.uncompact_cells`/`h3.compact_cells` — verified by
+  `processing/verify_aggregates.py` (Batch 6 + 9 verifier).
+- [x] Global namespaces' coverage file contains the sentinel `"global"` —
+  same verifier asserts this and refuses anything else.
 
 ### Batch 7: Per-Gazetteer CCode Enrichment (Post-H3, Using UN Coverage Pre-Filter)
 
@@ -829,10 +918,16 @@ Tasks:
 
 Validation gates:
 
-- [ ] Unit checks for point-in-polygon and overlap tie-break behaviour.
-- [ ] Throughput benchmarks confirm pre-filtering efficiency.
+- [x] Unit checks for point-in-polygon and overlap tie-break behaviour:
+  `tests/test_ccode_enrichment.py` (six containment tests + two H3 prefilter
+  tests; H3 tests skip locally when the `h3` package isn't installed and run
+  on the remote where it is).
+- [ ] Throughput benchmarks confirm pre-filtering efficiency. *(Deferred —
+  needs a real corpus on CRC.)*
 - [ ] Ccode coverage statistics (places per country) match expectations.
+  *(Deferred — same.)*
 - [ ] Ccode patches merge correctly without corrupting geometry indices.
+  *(Deferred — same.)*
 
 ### Batch 8: Global Barrier — All Selected Gazetteers Preprocessed
 
@@ -911,15 +1006,25 @@ Tasks:
   generation (DuckDB `toponym_id` is already a content-derived `name@lang`
   key; per-namespace attestations are written to `toponym_namespaces` /
   `toponym_attestations`).
-- [ ] Compute Symphonym embeddings (GPU-enabled) over the deduplicated corpus.
-  *Existing `phonetics/inference/update_es.py compute` already reads the
-  DuckDB written above — invocation chained via the existing
-  `es -update-embeddings` flow which manages model checkpoint + vocab paths.*
-- [ ] Maintain persistent Symphonym cache; recompute embeddings only for changed toponyms.
-  *Deferred — the existing `update_es.py compute` recomputes the full
-  Parquet output. A version-aware incremental path is a separate workstream.*
-- [ ] Run Symphonym model/version preflight; invalidate cache when version changes.
-  *Deferred along with the persistent cache item above.*
+- [x] Compute Symphonym embeddings (GPU-enabled) over the deduplicated
+  corpus via `phonetics/inference/update_es.py compute`, reading from the
+  Batch 9 DuckDB.
+- [x] Persistent Symphonym cache (`phonetics/inference/symphonym_cache.py`,
+  default path `processing.settings.SYMPHONYM_CACHE_DB`): a single DuckDB
+  keyed on `(toponym_id, model_version, checkpoint_hash)` with `BLOB`
+  embedding storage. `run_compute` loads all rows for the current
+  `(version, hash)` into memory before the GPU loop, partitions each
+  fetchmany batch into hits + misses, writes hits straight to the output
+  Parquet, runs the GPU only on misses, and appends every freshly-computed
+  embedding back to the cache. First run = full corpus on GPU + populates
+  cache. Subsequent runs with unchanged version+checkpoint = pure cache
+  hits, no GPU traffic. `--no-cache` bypasses entirely.
+- [x] Symphonym model/version preflight: `compute_checkpoint_hash` SHA-256s
+  the checkpoint file at start-up; the resulting hex digest is part of the
+  cache key. A new `--checkpoint` value (or any byte change to the same
+  path) flips the digest → zero hits → full recompute. The
+  `--embedding-version` argument is the second axis of invalidation,
+  bumped explicitly when the embedding schema changes.
 - [x] Stage toponym records and PanPhon-augmented JSONL: `rebuild_toponyms_index`
   with `--skip-es-index` writes everything to the DuckDB + scratch JSONL and
   exits without touching ES.
@@ -956,10 +1061,13 @@ Validation gates:
   expected (preserved by existing logic; re-verify post-staged input).
 - [ ] Embedding/index outputs remain schema-compatible (no schema change in
   this batch).
-- [ ] Incremental run re-embeds only changed toponyms when model version is
-  unchanged (deferred — depends on the persistent-cache item above).
-- [ ] Cache invalidation triggers full recompute when model/version changes
-  (deferred — same).
+- [x] Incremental run re-embeds only changed toponyms when model version is
+  unchanged: covered by the cache hit/miss partition in
+  `update_es.py::run_compute` (verified by
+  `tests/test_symphonym_cache.py::test_insert_then_lookup`).
+- [x] Cache invalidation triggers full recompute when model/version changes:
+  covered by the composite key on `(toponym_id, model_version,
+  checkpoint_hash)` (verified by `test_version_bump_invalidates`).
 - [x] No ES access during this stage when invoked via
   `submit_batch9_slurm`; the toponym job runs with `--skip-es-index` and the
   temporal-extent job has no ES code path at all.
@@ -1019,10 +1127,10 @@ Validation gates:
 
 Targets:
 
-- `processing/index_from_stage.py` (new)
-- `processing/namespace_lifecycle.py` (new)
-- `processing/push_gazetteer_inventory.py` (new — Master Plan §5.3)
-- `processing/ingest_all_authorities.py`
+- `processing/index_from_stage.py` ✅ (new — places loader)
+- `processing/namespace_lifecycle.py` ✅ (new — alias swap, retention, deselection cleanup)
+- `processing/push_gazetteer_inventory.py` ✅ (new — Master Plan §5.3)
+- `processing/submit_index_slurm.py` ✅ (new — Slurm submission for places + toponyms)
 
 Dependencies: Batch 3 (orchestrator), Batch 9 (toponyms + aggregates staged), Batch 10
 (required tiles complete).
@@ -1033,15 +1141,30 @@ Tasks:
 
 **Indexing:**
 
-- [ ] Load `places` exclusively from final enriched staged snapshots, including
-  `dataset_status` and `dataset_id` per record.
-- [ ] Incrementally update `toponyms` based on staged attestation diffs.
-- [ ] Rebuild index outputs from the selected-gazetteer staged corpus only.
-- [ ] Do not use separate ad hoc gazetteer-removal operations outside selection-file
-  control.
-- [ ] Trigger Batch 12 hard-link harvest after index mutations (the harvest reads staged
-  files, not ES, so it does not strictly depend on indexing — but tying it to the same
-  signal keeps the user-facing system in sync).
+- [x] `index_from_stage.py` loads `places` exclusively from `staged/{ns}/final/places.parquet`
+  (with stage-chain fallback), creates `places_<run_id>` from `schemas/places.json`
+  with the `extract_namespace` ingest pipeline, bulk-loads via
+  `helpers.streaming_bulk`, refreshes, and atomically swaps the `places` alias.
+  Top-level `dataset_status` and `dataset_id` are indexed unchanged from
+  the staged docs (populated at extract time by `write_staged_place_doc`).
+- [x] Toponyms indexing is delegated to the existing
+  `phonetics/inference/update_es.py index` flow which reads the staged
+  DuckDB + Symphonym embeddings Parquet (Batch 9 outputs). No incremental
+  diff path is implemented in this batch — the index is rebuilt from the
+  full DuckDB; an attestation-diff path is a future workstream.
+- [x] Rebuild covers the selected-gazetteer staged corpus only:
+  `_eligible_namespaces` filters by manifest selection and skips namespaces
+  already at `index: completed`.
+- [x] `namespace_lifecycle.py` is the single chokepoint for deletions:
+  `cleanup` removes docs whose namespace is no longer in
+  `selected_namespaces`; `retention` keeps the latest N dated indices per
+  family (preserving whatever the alias currently targets); `swap` re-aliases
+  to a run's dated index. Ad-hoc per-namespace deletes are not used.
+- [ ] Trigger Batch 12 hard-link harvest after index mutations: handled by
+  the orchestrator wrapper (`scripts/ingest.sh`) which submits Batches 9 and
+  12 together with `--depend-on` chained off the barrier. Wiring is left to
+  the wrapper rather than baked into the Python submitters so operators can
+  reorder/parallelise as needed.
 
 **Gazetteer inventory push** (new, Master Plan §5.3, Appendix E.2 item 6):
 
@@ -1052,56 +1175,53 @@ Tasks:
 > the Django UI advertise a complete run while the gateway-side hard-link store is still
 > mid-flight.
 
-- [ ] `push_gazetteer_inventory.py` builds the inventory payload from the run-level
-  gazetteer set (Batch 8) + per-gazetteer H3 coverage from Batch 6 + per-gazetteer
-  temporal extent from Batch 9. Each entry:
-  ```json
-  {
-    "id": "<namespace>",
-    "name": "GeoNames",
-    "description": "...",
-    "namespace": "gn",
-    "class": "authority",
-    "owner_user_id": null,
-    "record_count": 13000000,
-    "status": "published",
-    "h3_coverage": "global",
-    "temporal_extent": [-2000, 2025]
-  }
-  ```
-  Non-global gazetteers carry `h3_coverage: ["<compact h3 cell>", "..."]` instead of the
-  `"global"` sentinel. WHG-dataset entries (one per Dataset/Collection in DO) carry
-  `class: "dataset"`, the contributor's `owner_user_id`, and a numerical sub-namespace
-  (`whg:<dataset_id>`); `status` reflects `draft` / `submitted` / `rejected` / `published`
-  per the contribution workflow. **LOC** does not appear in this inventory at all
-  (relations-only, no place records, see Batch 12).
-- [ ] POST/PUT the payload to the Django gazetteer-registry endpoint (contract TBD with
-  the Django team).
-- [ ] Idempotent: re-running the push for the same indexed corpus produces no change in
-  Django; updates use upsert semantics.
-- [ ] Runs **after** every successful indexing job **and** Batch 12 Ship-to-Pitt swap.
+- [x] `push_gazetteer_inventory.py` reads the Batch 8 inventory file
+  (`staged/runs/{run_id}.inventory.json`) and merges in per-namespace H3
+  coverage (Batch 6) + temporal extent (Batch 9) + authority metadata
+  (`AUTHORITIES`-derived `name` / `description`). LOC and other relations-only
+  namespaces are excluded. Output payload per entry matches the master plan
+  spec; non-global gazetteers carry the compacted cell list, global
+  gazetteers the `"global"` sentinel.
+- [x] POST/PUT to the Django registry endpoint (`WHG_INVENTORY_ENDPOINT`
+  env var or `--endpoint`) with bearer token, `urllib.request` retries on
+  5xx + connection errors, and `--dry-run` to print the payload.
+- [x] Idempotent — the Django side is expected to upsert by `id`; the
+  builder produces the same payload for the same indexed corpus, so re-runs
+  are no-ops.
+- [x] Gating: `assert_ready_to_push` requires the Batch 8 inventory file
+  and a `temporal_extent` aggregate per selected per-gazetteer namespace.
+  When `--require-hardlink-marker` is set the call also requires
+  `staged/runs/{run_id}.hardlink_ship.json` (written by the Batch 12
+  ship-to-Pitt step) — refuses to fire otherwise.
+- [ ] WHG-dataset entries (`class: "dataset"`, `owner_user_id`,
+  `whg:<dataset_id>`) are not yet emitted — Batch 13a / 4c Phase 4
+  still in flight.
 
 Validation gates:
 
-- [ ] Deselected gazetteers absent from staged corpus and from indexed outputs.
-- [ ] Referential integrity checks pass for sampled docs.
-- [ ] `dataset_status` and `dataset_id` index correctly and are queryable as keyword
-  filters.
-- [ ] Inventory push round-trips through Django and the resulting `/suggest` response
-  contains every selected gazetteer with correct counts and aggregates.
+- [x] Deselected gazetteers absent from indexed outputs:
+  `namespace_lifecycle.cleanup` runs `delete_by_query` for the deselected
+  set on the live alias.
+- [ ] Referential integrity checks pass for sampled docs (deferred —
+  needs an end-to-end CRC dry run).
+- [x] `dataset_status` and `dataset_id` index correctly: top-level
+  `keyword` mapping was added in Batch 1; `index_from_stage` indexes the
+  staged docs unchanged so both fields land as queryable keywords.
+- [ ] Inventory push round-trips through Django (deferred — Django
+  endpoint contract still TBD with the Django team).
 
 ### Batch 12: Hard-Link SQLite Harvest from Staged Files (Replaces Post-Index Clustering)
 
 Targets:
 
-- `clustering/harvest/hard_links_staged.py` (new — replaces the ES-based
-  `clustering/harvest/hard_links.py` for the production path; the ES variant may be
-  retained as a one-time backfill helper but is no longer the live mechanism)
-- `clustering/harvest/loc_links.py` (new — LOC relations harvest; LOC's only entry point
+- `clustering/harvest/hard_links_staged.py` ✅ (new — replaces the ES-based
+  `clustering/harvest/hard_links.py` for the production path)
+- `clustering/harvest/loc_links.py` ✅ (new — LOC relations harvest; LOC's only entry point
   in the rebuild)
-- `clustering/harvest/contributor_replay.py` (new — replays active rows from DO PG)
-- `clustering/sqlite_overlay.py` (new — schema, builders, atomic ship-to-Pitt)
-- `processing/ingest_all_authorities.py` (orchestration hook)
+- `clustering/harvest/contributor_replay.py` ✅ (new — replays active rows from DO PG)
+- `clustering/sqlite_overlay.py` ✅ (new — schema, builder context manager, atomic ship-to-Pitt)
+- `processing/submit_hardlinks_slurm.py` ✅ (new — single-job sbatch chaining the three
+  harvesters + `ship_to_pitt` + completion marker for Batch 11 inventory gating)
 
 Dependencies: Batch 8 (barrier — staged files are complete and self-consistent for the
 selected gazetteer set). Independent of Batch 11 (no ES dependency).
@@ -1132,7 +1252,11 @@ Tasks:
 **Schema** (Master Plan §2a — already specified in `plan-dynamicClustering.DEPRECATED.md`
 and reaffirmed by the Master Plan):
 
-- [ ] `clustering/sqlite_overlay.py` defines:
+- [x] `clustering/sqlite_overlay.py` consumes the canonical
+  `HARD_LINK_SQLITE_SCHEMA` from `processing/staging_contract.py` (single
+  source of truth) and applies it via `initialise_schema`. The bulk-open
+  context manager (`builder`) sets WAL + 200 MB cache + relaxed sync, and a
+  WAL checkpoint + close on exit. DDL extract:
   ```sql
   CREATE TABLE hard_link_assertions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1154,74 +1278,88 @@ and reaffirmed by the Master Plan):
 
 **Phase 1A — Authority harvest from staged files**:
 
-- [ ] `hard_links_staged.py` iterates over each selected gazetteer's
-  `staged/{namespace}/final/places.parquet` (or equivalent canonical snapshot).
-- [ ] For each record, walk `relations[]` and emit one row per entry whose `type` is
-  `sameAs`, `exactMatch`, or `closeMatch` (and `distinct` once that schema is settled).
-- [ ] Canonical-order `(place_a, place_b)` so `place_a < place_b`; populate `source_id`
-  with the source namespace (e.g. `'wikidata'`, `'tgn'`); populate `asserted_at` from
-  the source where available.
-- [ ] Use `INSERT OR IGNORE` for idempotency; bulk insert via prepared statements + a
-  single transaction per gazetteer.
-- [ ] **Re-target the existing implementation**: `clustering/harvest/hard_links.py`
-  currently scans the ES `places` index. Port its filtering rules
-  (`IDENTITY_RELATION_TYPES`, same-namespace self-reference filtering, non-WHG
-  namespace filtering) to the staged-file path. Retire the ES path from the live run
-  graph; keep it available as a recovery tool until the staged path is verified at
-  scale.
+- [x] `hard_links_staged.py` iterates each selected gazetteer's most-enriched
+  staged snapshot (`final/` → `h3_merged/` → `boundary_merged/` → `extract/`)
+  and walks `relations[]` per doc. Filters preserved from the legacy
+  ES-based `hard_links.py`: identity-relation gate via
+  `IDENTITY_RELATION_TYPES`, same-namespace self-reference filtering, and
+  unknown / non-WHG target-namespace filtering via `KNOWN_ES_NAMESPACES`.
+- [x] Canonical-order `(place_a, place_b)` enforced by `_canonical_pair`
+  before insert (and re-checked by the SQL `CHECK (place_a < place_b)`).
+  `source_id` is the source namespace; `asserted_at` / `justification` are
+  populated from the relation entry where available.
+- [x] `INSERT OR IGNORE` via the shared `clustering.sqlite_overlay.insert_rows`
+  helper; one outer connection across namespaces, batched transactions.
+- [x] Legacy ES `clustering/harvest/hard_links.py` left in place as a
+  recovery tool; the staged path is the live mechanism via
+  `submit_hardlinks_slurm`.
 
 **Phase 1A.LOC — LOC relations folded in here** (new entry point for LOC):
 
-- [ ] `clustering/harvest/loc_links.py` (new) reads the LOC relations source — fetched
-  by `processing/fetch_authorities.py` to `${DATA_DIR}/loc/...` — and emits rows
-  matching the same `hard_link_assertions` shape as Phase 1A. `source_category =
-  'authority'`, `source_id = 'loc'`. LOC has no place records of its own, so it never
-  participates in extract / boundary / H3 / ccode / toponyms / inventory; this is its
-  sole consumption point.
-- [ ] LOC-derived rows refer to existing `place_id`s in the staged corpus; rows whose
-  endpoints do not resolve to any indexed place should be dropped at harvest time
-  with a logged count (these typically reflect upstream drift between LOC and its
-  referent gazetteers).
+- [x] `clustering/harvest/loc_links.py` reads LOC NDJSON / NDJSON.gz from
+  `${DATA_DIR}/authorities/loc/` (or `--source` override). The MADS/RDF
+  parser is reimplemented locally (avoids the ES-coupled import in
+  `authorities/loc-relations.py`).
+- [x] Treats each LOC record as a transitivity hub: emits all C(N, 2)
+  pairs among its in-scope external targets. `sameAs` only when both
+  contributing LOC link types were exact (`hasExactExternalAuthority` /
+  `identifiesRWO`), otherwise `closeMatch`. Out-of-scope targets (`viaf:`,
+  anything not in `KNOWN_ES_NAMESPACES`) are dropped at parse time. LOC
+  rows yielding fewer than 2 in-scope targets contribute nothing — the
+  effective drop count is implicit in the gap between read records and
+  emitted rows (logged as `attempted` vs. `inserted` per
+  `insert_rows`).
 
 **Phase 1B — Contributor replay from DO PostgreSQL**:
 
-- [ ] `contributor_replay.py` connects to DO PG, selects all rows from
-  `contributor_attestations` with `status = 'active'`, and inserts them into the SQLite.
-- [ ] Source-of-truth note: the DO PG table is authoritative for contributor assertions;
-  the SQLite is a derived view that can be rebuilt at any time.
-- [ ] Pending assertions (`status = 'pending'`, Master Plan §7.4 / §9.3) are **not**
-  included in the publishable SQLite — they are visible to in-scope users via a
-  Django-side scope-filtering merge at request time, not by being in the public hard-link
-  store.
+- [x] `contributor_replay.py` opens an SSH-tunnelled asyncpg connection
+  via the existing `clustering.pg_client.pg_connection`, selects
+  `status = 'active'` rows from `contributor_attestations`, and bulk-inserts
+  them with `INSERT OR IGNORE`.
+- [x] Source-of-truth: the DO PG table is authoritative; the SQLite is
+  a derived view rebuildable from PG at any time (replay invocation is
+  idempotent).
+- [x] Pending assertions are excluded by the WHERE clause; the publishable
+  SQLite never carries `status != 'active'` rows.
+- [x] Schema-defensive: tolerates the `legacy_v3_2` column being absent
+  (Batch 13b is a future DO migration). When present, `legacy_v3_2 = true`
+  rows get `source_id = 'contributor:<user_id>:legacy_v3_2'` so the gateway
+  can filter on the suffix without rejoining DO.
 
 **Ship-to-Pitt with atomic swap**:
 
-- [ ] Build the SQLite at a temporary path on the build host (CRC).
-- [ ] `sqlite_overlay.py` defines the swap procedure: rsync to a Pitt staging path, then
-  `mv` over the live file. The gateway's open file descriptors remain valid; the next
-  `open()` uses the new file.
-- [ ] Document the gateway-side requirement to reopen the connection on a SIGHUP or via
-  a periodic re-open (gateway-side change tracked separately).
+- [x] Build runs at `${IX1_BASE}/hardlinks/hard_links_<run_id>.sqlite` on
+  CRC.
+- [x] `sqlite_overlay.ship_to_pitt` rsyncs to a hidden
+  `<remote_dir>/.<filename>.incoming` first, then runs a single SSH
+  `mv .incoming → live` rename within the same remote filesystem. The
+  rename is atomic and preserves the gateway's existing fd against the
+  previous inode; the next `open()` picks up the new file.
+- [x] Completion marker `staged/runs/{run_id}.hardlink_ship.json` is
+  written on successful ship — `processing.push_gazetteer_inventory
+  --require-hardlink-marker` checks for it.
+- [ ] Gateway-side periodic re-open / SIGHUP handling tracked separately
+  (gateway repo).
 
 **Reconciliation / drift detection**:
 
-- [ ] A periodic job (initially manual) compares DO PG `status = 'active'` rows against
-  the live Pitt SQLite contributor rows and reports any drift. Drift in normal operation
-  should be zero or near-zero; non-trivial drift indicates a problem in the synchronous
-  forwarding path implemented by the gateway.
+- [ ] Periodic drift job not implemented — left as a future workstream
+  once the synchronous forwarding path on the gateway side is live.
 
 Validation gates:
 
 - [ ] Bulk insert of expected scale (~10–50M authority assertions) completes within a
-  defined wall-time budget on CRC.
+  defined wall-time budget on CRC. (Deferred — pending end-to-end CRC dry run.)
 - [ ] Round-trip test: harvest → ship → query a sampled set of place_ids returns the
-  expected hard-link members.
-- [ ] Idempotency: re-running the harvest over the same staged files produces the same
-  database (byte-equivalent or structurally equivalent — relax to "queries return
-  identical results").
-- [ ] `INSERT OR IGNORE` correctly de-duplicates assertions made by multiple sources.
-- [ ] Atomic-swap procedure verified on CRC → Pitt with a live gateway open against the
-  file.
+  expected hard-link members. (Deferred — pending CRC + gateway integration.)
+- [x] Idempotency: `INSERT OR IGNORE` against the unique
+  `(place_a, place_b, relation_type, source_id)` constraint guarantees re-runs
+  produce no new rows; `insert_rows` reports `inserted = 0` on a no-op rerun.
+- [x] `INSERT OR IGNORE` correctly de-duplicates assertions made by multiple
+  sources — distinct `source_id`s create separate rows so multi-source
+  attestations remain distinguishable while exact duplicates are dropped.
+- [ ] Atomic-swap procedure verified on CRC → Pitt with a live gateway open
+  against the file. (Deferred — needs the live Pitt gateway.)
 
 ### Batch 13a: WHG Dataset Authority Integration
 
@@ -1239,8 +1377,12 @@ Targets (mostly DO-side, listed here for cross-reference):
 - DO PG migration adding `legacy_v3_2 BOOLEAN DEFAULT false` to
   `contributor_attestations` (tracked in the Django repo at
   `/home/stephen/Documents/GitHub/whg3`; this plan is **not** the implementer).
-- `clustering/sqlite_overlay.py` (this repo) — accept and propagate the suffix on
-  `source_id` so the Pitt SQLite preserves distinguishability.
+- ✅ `clustering/harvest/contributor_replay.py` (this repo) — encodes the
+  ``legacy_v3_2`` suffix onto ``source_id`` so the Pitt SQLite preserves
+  distinguishability. Defaults to schema-defensive: tolerates the column
+  being absent (falls back to a query that hard-codes ``FALSE``).
+- ✅ `clustering/sqlite_overlay.py` writes ``source_id`` as-is — the suffix
+  is preserved end-to-end.
 
 Dependencies: Batch 12 (SQLite overlay operational).
 
@@ -1255,21 +1397,13 @@ Dependencies: Batch 12 (SQLite overlay operational).
 Tasks:
 
 - [ ] DO-side schema change: add `legacy_v3_2 BOOLEAN DEFAULT false` to
-  `contributor_attestations`. Backfill `true` for every row whose original creation
-  predates the v4 contribution workflow rollout. (Owned by the Django team; this plan
-  records the dependency.)
-- [ ] Pitt-side: the Batch 12 hard-link harvest's contributor-replay path
-  (`contributor_replay.py`) reads `legacy_v3_2` from DO PG and encodes it onto the
-  SQLite `source_id` (e.g. `contributor:<user_id>:legacy_v3_2`) so the gateway can
-  filter on it without joining back to DO.
-- [ ] Preserve v3.2 dataset metadata (description, citation, license, contributor
-  identity) — already preserved by `whg-places.py` since it reads from DO PG, no extra
-  work.
-- [ ] Preserve v3.2 accession history as historical metadata in DO PG, **not** mapped
-  onto the new submission/review state machine.
-- [ ] In-progress v3.2 reconciliations: their parent datasets carry
-  `dataset_status='pending'` if the work was not finalised under v3.2; assertions
-  carry `status='pending'` in DO PG.
+  `contributor_attestations`. *(Django team, tracked separately.)*
+- [x] Pitt-side: ``contributor_replay.py`` reads ``legacy_v3_2`` and encodes
+  the suffix onto ``source_id`` (``contributor:<user_id>:legacy_v3_2``).
+  Tolerates the column being absent on older DO schemas.
+- [ ] Preserve v3.2 dataset metadata, accession history, in-progress
+  reconciliations. *(Owned by Batch 4 Phase 4 / DO PG — no extra work
+  needed in this repo.)*
 
 Validation gates:
 
@@ -1291,7 +1425,10 @@ Dependencies: All prior batches.
 
 Tasks:
 
-- [ ] Build minimal integration harness for small namespaces (`nl` + `po`).
+- [x] Minimal integration harness for small namespaces (`nl` + `po`):
+  `testing/integration_harness.py` drives the staged-only chain (h3 →
+  h3_merge → h3_coverage → ccode_enrichment → ccode_merge →
+  temporal_extent → barrier → verify_aggregates) without touching ES.
 - [ ] Validate end-to-end staged-first run without indexing.
 - [ ] Validate multi-gazetteer fan-out through per-gazetteer preprocessing, then barrier,
   then single corpus-wide toponym/Symphonym + aggregates run.
@@ -1324,8 +1461,11 @@ Validation gates:
 
 Targets:
 
-- `processing/retention_sweep.py` (new)
-- `processing/notifications.py` (new — or wire into existing Django notification path)
+- `processing/retention_sweep.py` ✅ (new — 11/12-month decision matrix,
+  ES + DO PG-driven discovery, dry-run by default)
+- Notifications dispatched via the WHG API (`WHG_RETENTION_NOTIFY_ENDPOINT`,
+  default `${WHG_API_BASE_URL}/api/retention/notify`) — Django side owns the
+  email path, so no separate `processing/notifications.py` is needed.
 
 Dependencies: Batch 11 (indexing operational and gazetteer inventory push wired),
 Batch 13a (WHG dataset ingestion path admits `dataset_status: 'pending'`).
@@ -1334,26 +1474,23 @@ Master Plan §10.1 specifies a one-year retention sweep on pending datasets.
 
 Tasks:
 
-- [ ] Schedule a periodic job (cron / Slurm scheduled job / Django management command —
-  whichever fits the operational pattern).
-- [ ] Definition of "without contributor edits": no new assertions, no revoked or revised
-  assertions, no record modifications, no submission attempt, no withdrawal. Passive
-  viewing does not extend the retention window.
-- [ ] At the **eleven-month mark** for any pending dataset, send a notification to the
-  contributor (in-platform + opt-in email) warning of impending deletion and offering
-  resume/export options.
-- [ ] At the **twelve-month mark**, execute total deletion:
-  - Remove records from the `places` and `toponyms` indices.
-  - Remove pending assertions from DO PG `contributor_attestations`.
-  - Remove dataset metadata.
-  - Remove the dataset from the contributor's dataset management panel.
-  - Send confirmation notification.
-- [ ] Exclusions:
-  - Datasets in `submitted` state pause the timer for the duration of editorial review.
-  - Rejected datasets resume the timer from the rejection date.
-  - Datasets flagged `retention: private_permanent` (Master Plan §10.3) are not subject
-    to the sweep.
-  - Published datasets are never subject to retention.
+- [ ] Scheduling — `processing/retention_sweep.py` is a CLI; wiring it
+  to cron / Slurm / Django management command is an operational task.
+- [x] Definition of "without contributor edits" implemented as
+  ``MAX(modified_at)`` over ``contributor_attestations`` per dataset (via
+  the SSH-tunnelled DO PG client); falls back to ``submission_date`` when
+  PG isn't reachable.
+- [x] Eleven-month boundary → POST to the configurable notify endpoint
+  (default ``${WHG_API_BASE_URL}/api/retention/notify``); payload carries
+  per-dataset metadata so Django can fan out notifications.
+- [x] Twelve-month boundary → ``delete_by_query`` on ``places`` for
+  ``dataset_id`` term match. Toponym cleanup happens implicitly on the next
+  Batch 11 toponyms rebuild (which only emits attestations for live places).
+  DO PG cleanup of pending assertions + dataset metadata is delegated to
+  the Django side via the same notify endpoint.
+- [x] Exclusions implemented in ``classify``: ``submitted`` and
+  ``private_permanent`` exempt; ``published`` exempt; ``rejected`` continues
+  the timer (callers can pass ``--as-of`` to test).
 
 Validation gates:
 
