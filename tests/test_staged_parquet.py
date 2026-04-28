@@ -31,6 +31,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from processing.staged_parquet import (
+    drop_nulls_for_parquet,
     normalize_for_parquet,
     strip_hull_for_parquet,
     write_parquet_from_jsonl,
@@ -92,6 +93,44 @@ class TestStripHullForParquet(unittest.TestCase):
         before = json.loads(json.dumps(doc))
         strip_hull_for_parquet(doc)
         self.assertEqual(doc, before)
+
+
+class TestDropNullsForParquet(unittest.TestCase):
+    def test_drops_top_level_nulls(self):
+        doc = {"place_id": "x:1", "population": None, "elevation": 100,
+               "boundary": None}
+        out = drop_nulls_for_parquet(doc)
+        self.assertEqual(out, {"place_id": "x:1", "elevation": 100})
+
+    def test_drops_nested_struct_nulls(self):
+        # The exact regression: timespan with end=None tripping pyarrow.
+        doc = {
+            "geometries": [{
+                "timespans": [{"start": {"in": 1500}, "end": None}],
+            }],
+        }
+        out = drop_nulls_for_parquet(doc)
+        self.assertEqual(out, {
+            "geometries": [{"timespans": [{"start": {"in": 1500}}]}],
+        })
+
+    def test_recurses_into_lists(self):
+        doc = {"items": [{"a": 1, "b": None}, {"a": None, "b": 2}]}
+        self.assertEqual(
+            drop_nulls_for_parquet(doc),
+            {"items": [{"a": 1}, {"b": 2}]},
+        )
+
+    def test_does_not_mutate_input(self):
+        doc = {"a": None, "b": [{"c": None}]}
+        before = json.loads(json.dumps(doc))
+        drop_nulls_for_parquet(doc)
+        self.assertEqual(doc, before)
+
+    def test_passes_through_scalars(self):
+        self.assertEqual(drop_nulls_for_parquet(42), 42)
+        self.assertEqual(drop_nulls_for_parquet("foo"), "foo")
+        self.assertIsNone(drop_nulls_for_parquet(None))
 
 
 class TestWriteParquetFromJsonl(unittest.TestCase):
@@ -172,6 +211,41 @@ class TestWriteParquetFromJsonl(unittest.TestCase):
                 write_parquet_from_jsonl(jsonl, parquet)
             leftover = list(Path(tmp).glob("*parquet_input*"))
             self.assertEqual(leftover, [])
+
+    def test_handles_explicit_nulls_in_struct_fields(self):
+        """Regression: OHM h3_merge crashed with ``ArrowNotImplementedError:
+        JSON conversion to struct<in: int64> is not supported`` when one
+        row had ``"end": null`` inside a timespan struct (boundary records
+        round-tripped through parquet preserve the null) and other rows
+        had ``"end": {"in": <year>}``.
+        """
+        rows = [
+            {"place_id": "ohm:r1", "geometries": [{
+                "geom": {"type": "Point", "coordinates": [0, 0]},
+                "timespans": [{"start": {"in": 1500}, "end": {"in": 1900}}],
+            }]},
+            {"place_id": "ohm:r2", "geometries": [{
+                "geom": {"type": "Point", "coordinates": [1, 1]},
+                "timespans": [{"start": {"in": 1700}, "end": None}],
+            }]},
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            jsonl = Path(tmp) / "places.jsonl"
+            parquet = Path(tmp) / "places.parquet"
+            with jsonl.open("w", encoding="utf-8") as fh:
+                for r in rows:
+                    fh.write(json.dumps(r, ensure_ascii=True) + "\n")
+            write_parquet_from_jsonl(jsonl, parquet)
+            self.assertTrue(parquet.exists())
+
+            table = pq.ParquetFile(parquet).read()
+            self.assertEqual(table.num_rows, 2)
+
+            # Canonical JSONL still has the explicit null — only the
+            # parquet sidecar drops it.
+            with jsonl.open("r", encoding="utf-8") as fh:
+                round_trip = [json.loads(line) for line in fh if line.strip()]
+            self.assertIsNone(round_trip[1]["geometries"][0]["timespans"][0]["end"])
 
 
 if __name__ == "__main__":

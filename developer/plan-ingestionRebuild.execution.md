@@ -2098,3 +2098,42 @@ contract, including a direct regression for the production crash
 Boundary chain timings (already captured) will combine with the
 post-boundary timings from the next clean run to give the OHM
 benchmark.
+
+#### Explicit-nulls-in-struct fix (h3_merge after boundary_merge)
+
+Re-running the postchain after the shared-module refactor exposed
+**another** ``pyarrow.read_json`` limitation:
+``ArrowNotImplementedError: JSON conversion to struct<in: int64> is
+not supported``. Symptom: h3_merge succeeded for ``po`` (where every
+record has both ``start.in`` and ``end.in`` populated) but failed for
+``ohm`` (where many boundary records have ``start_date`` but no
+``end_date``, producing ``{"start": {"in": 1500}, "end": null}``).
+
+Bisecting found the first offending row at index 1789 — a node with
+``"timespans": null`` after a long run of records that had
+``[{"start": {...}, "end": {...}}]``. The root cause is asymmetric:
+``pyarrow`` **writes** parquet with nullable struct slots fine, but
+``read_json`` **cannot read** a JSON literal ``null`` where another
+row has a struct value at the same path. h3_merge reads from
+``boundary_merged.parquet``, which preserves the nullable slots, then
+``json.dumps``-serialises them back to JSONL with explicit
+``"end": null`` — and that JSONL is the input to the next parquet
+conversion, which crashes.
+
+Fix: ``processing/staged_parquet.drop_nulls_for_parquet`` recursively
+strips ``None`` values from dicts and lists. Wired into
+``write_parquet_from_jsonl`` alongside ``strip_hull_for_parquet``.
+The canonical JSONL keeps the explicit nulls (matching the
+boundary_merge behaviour); only the parquet sidecar drops them, which
+is lossless because parquet's "absent" and "null" are encoded
+identically.
+
+6 new tests in ``tests/test_staged_parquet.py`` cover the recursive
+null-strip plus the regression case (explicit ``"end": null`` in a
+timespan struct adjacent to a fully-populated one). Total: **87/87
+unit tests pass**.
+
+Verified on the actual OHM h3_merged JSONL: the first 5000 rows fail
+``paj.read_json`` without the fix and pass with it. Now expecting the
+re-submitted postchain to clear h3_merge → h3_coverage →
+temporal_extent.

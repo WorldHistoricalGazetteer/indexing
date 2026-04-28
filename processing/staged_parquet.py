@@ -2,7 +2,7 @@
 
 Several stages (``boundary_merge``, ``h3_merge``) write a canonical
 ``places.jsonl`` and a parquet sidecar in ``places.parquet``. The parquet
-conversion has two recurring schema-stability issues with
+conversion has three recurring schema-stability issues with
 ``pyarrow.json.read_json``:
 
 1. **Empty nested-list fields** (``geometries=[]``, ``toponyms=[]``, …)
@@ -19,11 +19,22 @@ conversion has two recurring schema-stability issues with
    JSONL (or the staged geom store) — so the parquet sidecar staying
    hull-less is lossless.
 
-Use ``write_parquet_from_jsonl(jsonl_path, parquet_path)`` to do the
-hull-strip + parquet conversion in one call. Callers are expected to
-apply ``normalize_for_parquet`` to docs *before* writing the canonical
-JSONL (so the empty-list normalisation is also visible to downstream
-JSONL readers, which generally want it too).
+3. **Explicit JSON nulls inside struct-typed fields** — e.g. a timespan
+   serialised as ``{"start": {"in": 1500}, "end": null}`` (because the
+   source had only ``start_date``). ``pyarrow.read_json`` can write
+   parquet with nullable struct values but cannot *read* them from JSON,
+   producing ``ArrowNotImplementedError: JSON conversion to struct<...>
+   is not supported``. ``drop_nulls_for_parquet`` recursively removes
+   ``None`` values from the doc before parquet conversion. Because the
+   absent-vs-null distinction has no semantic meaning at the storage
+   level (parquet writes both as null), this is lossless for the
+   parquet sidecar.
+
+Use ``write_parquet_from_jsonl(jsonl_path, parquet_path)`` to do all
+three preprocessing steps + parquet conversion in one call. Callers are
+expected to apply ``normalize_for_parquet`` to docs *before* writing the
+canonical JSONL (so the empty-list normalisation is also visible to
+downstream JSONL readers, which generally want it too).
 """
 
 from __future__ import annotations
@@ -64,14 +75,34 @@ def strip_hull_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
     return stripped
 
 
+def drop_nulls_for_parquet(obj: Any) -> Any:
+    """Recursively drop ``None`` values from dicts (see module docstring).
+
+    JSON nulls inside struct-typed columns trip ``pyarrow.read_json``
+    when adjacent rows have a struct value at the same path. Round-tripping
+    a doc through parquet and back to JSONL — as ``h3_merge`` does after
+    reading from ``boundary_merged.parquet`` — introduces these explicit
+    nulls (parquet preserves nullable struct slots; ``json.dumps`` writes
+    them as JSON null). Stripping them out matches what the original
+    JSONL emitter would have produced (``ts['end'] = ...`` only when an
+    end_year was parsed) and keeps the parquet input pyarrow-clean.
+    """
+    if isinstance(obj, dict):
+        return {k: drop_nulls_for_parquet(v) for k, v in obj.items() if v is not None}
+    if isinstance(obj, list):
+        return [drop_nulls_for_parquet(v) for v in obj]
+    return obj
+
+
 def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> None:
     """Convert a canonical JSONL snapshot to a parquet sidecar.
 
-    Streams ``jsonl_path`` through ``strip_hull_for_parquet`` into a
-    sibling ``*.parquet_input.jsonl`` temp file (so the canonical JSONL
-    keeps hull for downstream consumers), then feeds the temp file to
-    pyarrow for parquet conversion. The temp file is removed even if
-    parquet writing fails, so callers don't need their own cleanup.
+    Streams ``jsonl_path`` through ``strip_hull_for_parquet`` and
+    ``drop_nulls_for_parquet`` into a sibling ``*.parquet_input.jsonl``
+    temp file (so the canonical JSONL keeps hull and explicit nulls for
+    downstream consumers), then feeds the temp file to pyarrow for
+    parquet conversion. The temp file is removed even if parquet writing
+    fails, so callers don't need their own cleanup.
 
     Caller is expected to have already applied ``normalize_for_parquet``
     to the docs in ``jsonl_path``.
@@ -84,8 +115,9 @@ def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> None:
                 if not line.strip():
                     continue
                 doc = json.loads(line)
-                stripped = strip_hull_for_parquet(doc)
-                out_fh.write(json.dumps(stripped, ensure_ascii=True) + "\n")
+                doc = strip_hull_for_parquet(doc)
+                doc = drop_nulls_for_parquet(doc)
+                out_fh.write(json.dumps(doc, ensure_ascii=True) + "\n")
         table = paj.read_json(str(parquet_input_path))
         pq.write_table(table, str(parquet_path))
     finally:
