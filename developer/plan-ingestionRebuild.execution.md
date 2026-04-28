@@ -2054,3 +2054,47 @@ type is `set[int]`). Total: 70/70 unit tests pass.
 
 Workers + finalize + post-chain cancelled at 65 min into the run; the
 clean re-run will start fresh once the fix is pushed.
+
+#### boundary_merge parquet hull crash + shared `staged_parquet` module
+
+Run id `ohmsmoke-22926571` v2 (planner 22932735, workers 22932736,
+finalize 22932737, postchain 22932765) ran the boundary chain to
+completion successfully:
+
+* Planner: ~3 min, perfect 1.00 max/min cost ratio across 16 shards.
+* Workers: 16 parallel array tasks. Wall times ranged from 02:29 to
+  ~07:05; median ~03:30. **All 16 shards completed** without the
+  long-tail stall that killed the original single-task attempt.
+* Finalize: ran cleanly, concatenated the per-shard JSONLs.
+* Postchain: **failed** at the first stage (boundary_merge) with
+  ``ArrowInvalid: Column(/geometries/[]/hull/coordinates/[]) changed
+  from number to array in row 216`` — the same hull-shape regression
+  we fixed in h3_merge but in boundary_merge's local copy of the
+  parquet conversion code.
+
+Refactor: extracted the parquet helpers into
+``processing/staged_parquet.py`` so the fix can't drift again:
+
+* ``normalize_for_parquet(doc)`` — empty nested-list fields → None.
+* ``strip_hull_for_parquet(doc)`` — drop ``geometries[].hull``.
+* ``write_parquet_from_jsonl(jsonl, parquet)`` — streams the canonical
+  JSONL through hull-strip into a sibling temp file, runs pyarrow,
+  cleans up the temp even on failure.
+
+Both ``processing/h3_merge.py`` and ``processing/boundary_merge.py``
+now import from the shared module; their local ``_normalize_for_parquet``
+implementations are reduced to thin re-exports for test stability.
+The h3_merge dual-write loop (canonical JSONL + parquet-input JSONL
+written in lockstep) is replaced by a simpler "write canonical JSONL
+once, then ``write_parquet_from_jsonl``" pattern that costs one extra
+disk pass on a 700 MB file (~30 s on this hardware) — worth it for
+the smaller diff and one-place-to-fix property.
+
+11 new tests in ``tests/test_staged_parquet.py`` lock in the
+contract, including a direct regression for the production crash
+(mixed Polygon/MultiPolygon hull rows in a single JSONL). Total:
+**81/81 unit tests pass**.
+
+Boundary chain timings (already captured) will combine with the
+post-boundary timings from the next clean run to give the OHM
+benchmark.

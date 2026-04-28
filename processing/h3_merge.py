@@ -24,7 +24,6 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-import pyarrow.json as paj
 import pyarrow.parquet as pq
 
 from processing.settings import (
@@ -33,6 +32,11 @@ from processing.settings import (
     STAGED_RUNS_DIR,
 )
 from processing.stage_writers import write_runtime_history_event, write_stage_event
+from processing.staged_parquet import (
+    normalize_for_parquet,
+    strip_hull_for_parquet,
+    write_parquet_from_jsonl,
+)
 from processing.staging_contract import (
     H3_PATCH_REQUIRED_FIELDS,
     H3_PATCH_GEOMETRY_REQUIRED_FIELDS,
@@ -167,45 +171,12 @@ def _apply_patch_to_doc(
     return merged, applied
 
 
-def _normalize_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
-    """Convert empty nested-list fields to None for stable parquet schema inference.
-
-    Applied to both the persisted JSONL and the temporary parquet-input
-    JSONL — downstream JSONL readers also benefit from the empty-list →
-    None normalisation.
-    """
-    normalized = dict(doc)
-    for key in ("geometries", "toponyms", "types", "relations"):
-        value = normalized.get(key)
-        if isinstance(value, list) and len(value) == 0:
-            normalized[key] = None
-    return normalized
-
-
-def _strip_hull_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
-    """Drop ``geometries[].hull`` before parquet conversion.
-
-    Pyarrow's JSON reader infers a single schema across all rows and rejects
-    mixed nesting depths within the same column. ``hull.coordinates``
-    legitimately varies (Polygon → ``[[lon,lat], …]``, MultiPolygon →
-    ``[[[lon,lat], …], …]``) across our authority sources, so any inferred
-    schema rejects some rows.
-
-    Hull is consumed by ``ccode_enrichment`` and ``generate_tiles``; both
-    read the JSONL (or the staged geom store) rather than the h3_merged
-    parquet, so dropping it from the parquet sidecar is lossless. The
-    persisted JSONL keeps hull.
-    """
-    stripped = dict(doc)
-    geometries = stripped.get("geometries")
-    if isinstance(geometries, list):
-        new_geoms = []
-        for geom in geometries:
-            if isinstance(geom, dict) and "hull" in geom:
-                geom = {k: v for k, v in geom.items() if k != "hull"}
-            new_geoms.append(geom)
-        stripped["geometries"] = new_geoms
-    return stripped
+# ``normalize_for_parquet`` and ``strip_hull_for_parquet`` live in
+# ``processing.staged_parquet`` so boundary_merge can share them.
+# Re-exported here as private aliases to keep the existing test imports
+# stable.
+_normalize_for_parquet = normalize_for_parquet
+_strip_hull_for_parquet = strip_hull_for_parquet
 
 
 def run_h3_merge(
@@ -244,9 +215,7 @@ def run_h3_merge(
     geometry_updates_applied = 0
     docs_written = 0
 
-    parquet_input_path = out_dir / "places.parquet_input.jsonl"
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl, \
-         parquet_input_path.open("w", encoding="utf-8") as parquet_input:
+    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
         for doc in _iter_source_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -257,21 +226,10 @@ def run_h3_merge(
                     docs_updated += 1
                     geometry_updates_applied += applied
 
-            normalised = _normalize_for_parquet(doc)
-            out_jsonl.write(json.dumps(normalised, ensure_ascii=True) + "\n")
-            parquet_input.write(
-                json.dumps(_strip_hull_for_parquet(normalised), ensure_ascii=True) + "\n"
-            )
+            out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
 
-    try:
-        table = paj.read_json(str(parquet_input_path))
-        pq.write_table(table, str(parquet_path))
-    finally:
-        try:
-            parquet_input_path.unlink()
-        except FileNotFoundError:
-            pass
+    write_parquet_from_jsonl(jsonl_path, parquet_path)
 
     metrics = {
         "docs_seen": docs_seen,

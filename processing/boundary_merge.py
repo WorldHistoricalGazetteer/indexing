@@ -19,7 +19,6 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-import pyarrow.json as paj
 import pyarrow.parquet as pq
 
 from processing.settings import (
@@ -28,6 +27,10 @@ from processing.settings import (
     STAGED_RUNS_DIR,
 )
 from processing.stage_writers import write_runtime_history_event, write_stage_event
+from processing.staged_parquet import (
+    normalize_for_parquet,
+    write_parquet_from_jsonl,
+)
 from processing.staging_orchestrator import update_namespace_stage_status
 
 
@@ -86,19 +89,9 @@ def _merge_update(doc: dict[str, Any], update_doc: dict[str, Any]) -> dict[str, 
     return merged
 
 
-def _normalize_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
-    """Normalize row for stable parquet schema inference.
-
-    Empty lists in nested object fields can cause row-by-row pyarrow inference to
-    alternate between ``list<null>`` and ``list<struct>``, which breaks a single
-    ParquetWriter schema. Convert known nested list fields to ``None`` when empty.
-    """
-    normalized = dict(doc)
-    for key in ("geometries", "toponyms", "types", "relations"):
-        value = normalized.get(key)
-        if isinstance(value, list) and len(value) == 0:
-            normalized[key] = None
-    return normalized
+# ``normalize_for_parquet`` lives in ``processing.staged_parquet`` so
+# h3_merge can share it.
+_normalize_for_parquet = normalize_for_parquet
 
 
 def run_boundary_merge(
@@ -149,8 +142,7 @@ def run_boundary_merge(
                 doc = _merge_update(doc, patch.get("update_doc") or {})
                 docs_updated += 1
 
-            doc = _normalize_for_parquet(doc)
-            out_jsonl.write(json.dumps(doc, ensure_ascii=True) + "\n")
+            out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
 
         # Optionally append upserts for patches with no existing base row.
@@ -159,14 +151,16 @@ def run_boundary_merge(
                 upsert_doc = patch.get("upsert_doc")
                 if not isinstance(upsert_doc, dict):
                     continue
-                upsert_doc = _normalize_for_parquet(upsert_doc)
-                out_jsonl.write(json.dumps(upsert_doc, ensure_ascii=True) + "\n")
+                out_jsonl.write(
+                    json.dumps(normalize_for_parquet(upsert_doc), ensure_ascii=True) + "\n"
+                )
                 docs_written += 1
 
-    # Convert merged JSONL to parquet in one pass after all rows are known.
-    # This avoids per-row schema drift (e.g. list<null> vs list<struct>).
-    table = paj.read_json(str(jsonl_path))
-    pq.write_table(table, str(parquet_path))
+    # Stream the canonical JSONL through hull-strip into a temp parquet-input
+    # JSONL, then convert to parquet. The canonical JSONL keeps hull intact
+    # for downstream consumers (ccode_enrichment, generate_tiles); only the
+    # parquet sidecar is hull-less (lossless — those consumers don't read it).
+    write_parquet_from_jsonl(jsonl_path, parquet_path)
 
     metrics = {
         "docs_seen": docs_seen,
