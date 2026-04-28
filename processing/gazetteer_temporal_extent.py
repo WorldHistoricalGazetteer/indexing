@@ -59,6 +59,40 @@ _STAGED_SOURCE_PRIORITY = (
 )
 
 
+# Sanity clamp on individual year readings before they reach the aggregate.
+# Catches obvious upstream typos (OHM's ``end_date=20222`` for what was
+# clearly meant to be ``2022``, ``-99999`` placeholders, etc.) without
+# distorting legitimate historical/contemporary content. The clamp is
+# applied **per year reading**, not to the final aggregate — so a single
+# bogus reading on one record can't poison the whole namespace's extent.
+#
+# Default range: -10000 (oldest known human civilizations) through
+# ``current_year + 100`` (allows reasonable forecast / planning data).
+# Per-namespace overrides below extend the range for sources that
+# legitimately go deeper in time (geological epochs, palaeontology, etc.).
+DEFAULT_CLAMP_MIN = -10_000
+
+# Namespaces whose corpus legitimately exceeds the default range. po
+# (PeriodO) contains geological-epoch records — the Hadean's start is
+# ~4.568 billion years ago — so we widen its lower bound to keep them.
+_NAMESPACE_CLAMP_OVERRIDES: dict[str, tuple[int, int]] = {
+    "po": (-5_000_000_000, 10_000),
+}
+
+
+def _default_clamp_max() -> int:
+    """Lazy default for upper clamp; computed at run time so the value
+    keeps current as the calendar advances and remains testable."""
+    return datetime.now(timezone.utc).year + 100
+
+
+def clamp_range_for(namespace: str) -> tuple[int, int]:
+    """Return ``(min_year, max_year)`` for clamping individual year readings."""
+    if namespace in _NAMESPACE_CLAMP_OVERRIDES:
+        return _NAMESPACE_CLAMP_OVERRIDES[namespace]
+    return DEFAULT_CLAMP_MIN, _default_clamp_max()
+
+
 def _aggregates_dir() -> Path:
     return Path(STAGED_BASE_DIR) / "_aggregates"
 
@@ -120,26 +154,39 @@ def _iter_year_ints(node: Any) -> Iterator[int]:
 
 def _collect_extent_for_doc(
     doc: dict[str, Any],
-) -> tuple[int | None, int | None]:
-    """Return (min_start, max_end) for a single staged place document.
+    *,
+    clamp_min: int,
+    clamp_max: int,
+) -> tuple[int | None, int | None, int]:
+    """Return ``(min_start, max_end, rejected_count)`` for one staged document.
 
-    Either may be ``None`` when the document carries no parseable year on
-    that endpoint.
+    Year readings outside ``[clamp_min, clamp_max]`` are rejected as outliers
+    (typically upstream parse bugs / typos like OHM's ``end_date=20222``).
+    Rejected readings are counted but never contribute to the extent.
+    Either of ``min_start`` / ``max_end`` may be ``None`` when the document
+    carries no in-range parseable year on that endpoint.
     """
     min_start: int | None = None
     max_end: int | None = None
+    rejected = 0
 
     def _scan(timespans: Any) -> None:
-        nonlocal min_start, max_end
+        nonlocal min_start, max_end, rejected
         if not isinstance(timespans, list):
             return
         for ts in timespans:
             if not isinstance(ts, dict):
                 continue
             for year in _iter_year_ints(ts.get("start")):
+                if year < clamp_min or year > clamp_max:
+                    rejected += 1
+                    continue
                 if min_start is None or year < min_start:
                     min_start = year
             for year in _iter_year_ints(ts.get("end")):
+                if year < clamp_min or year > clamp_max:
+                    rejected += 1
+                    continue
                 if max_end is None or year > max_end:
                     max_end = year
 
@@ -153,11 +200,21 @@ def _collect_extent_for_doc(
         if isinstance(rel, dict):
             _scan(rel.get("timespans"))
 
-    return min_start, max_end
+    return min_start, max_end, rejected
 
 
-def compute_temporal_extent(namespace: str) -> dict[str, Any]:
-    """Compute the aggregate dict for ``namespace`` (no IO side-effects)."""
+def compute_temporal_extent(
+    namespace: str,
+    *,
+    clamp_min: int | None = None,
+    clamp_max: int | None = None,
+) -> dict[str, Any]:
+    """Compute the aggregate dict for ``namespace`` (no IO side-effects).
+
+    ``clamp_min`` / ``clamp_max`` override the per-namespace default
+    (``clamp_range_for(namespace)``) — primarily useful for tests; production
+    runs should rely on the namespace defaults.
+    """
     src = _staged_namespace_source(namespace)
     if src is None:
         raise FileNotFoundError(
@@ -165,13 +222,23 @@ def compute_temporal_extent(namespace: str) -> dict[str, Any]:
             "Run extract / boundary_merge / h3_merge / ccode_merge first."
         )
 
+    default_min, default_max = clamp_range_for(namespace)
+    if clamp_min is None:
+        clamp_min = default_min
+    if clamp_max is None:
+        clamp_max = default_max
+
     record_count = 0
+    rejected_total = 0
     overall_min: int | None = None
     overall_max: int | None = None
 
     for doc in _iter_staged_docs(src):
         record_count += 1
-        doc_min, doc_max = _collect_extent_for_doc(doc)
+        doc_min, doc_max, doc_rejected = _collect_extent_for_doc(
+            doc, clamp_min=clamp_min, clamp_max=clamp_max,
+        )
+        rejected_total += doc_rejected
         if doc_min is not None and (overall_min is None or doc_min < overall_min):
             overall_min = doc_min
         if doc_max is not None and (overall_max is None or doc_max > overall_max):
@@ -182,6 +249,8 @@ def compute_temporal_extent(namespace: str) -> dict[str, Any]:
         "record_count": record_count,
         "temporal_extent": [overall_min, overall_max],
         "source_path": str(src),
+        "clamp_range": [clamp_min, clamp_max],
+        "rejected_readings": rejected_total,
     }
 
 
@@ -198,6 +267,8 @@ def run_temporal_extent(
     namespace: str,
     manifest_path: Path | None = None,
     slurm_job_id: str | None = None,
+    clamp_min: int | None = None,
+    clamp_max: int | None = None,
 ) -> dict[str, Any]:
     if manifest_path and manifest_path.exists():
         update_namespace_stage_status(
@@ -221,10 +292,13 @@ def run_temporal_extent(
     )
 
     started = datetime.now(timezone.utc)
-    payload = compute_temporal_extent(namespace)
+    payload = compute_temporal_extent(
+        namespace, clamp_min=clamp_min, clamp_max=clamp_max,
+    )
 
-    # Strip non-contract keys before validation/persistence — source_path is
-    # informational only and not part of the aggregate contract.
+    # Strip non-contract keys before validation/persistence — source_path,
+    # clamp_range and rejected_readings are informational only and not part
+    # of the aggregate contract.
     aggregate = {
         "namespace": payload["namespace"],
         "record_count": payload["record_count"],
@@ -242,6 +316,8 @@ def run_temporal_extent(
         "record_count": payload["record_count"],
         "temporal_extent": payload["temporal_extent"],
         "source_path": payload["source_path"],
+        "clamp_range": payload["clamp_range"],
+        "rejected_readings": payload["rejected_readings"],
         "wall_seconds": round(wall_seconds, 1),
     }
 
@@ -293,6 +369,16 @@ def main() -> None:
     parser.add_argument("--run-id", required=True, help="Run ID")
     parser.add_argument("--namespace", required=True, help="Namespace")
     parser.add_argument("--manifest-path", help="Explicit run manifest path")
+    parser.add_argument(
+        "--clamp-min", type=int,
+        help="Override the lower clamp on individual year readings "
+             "(default: per-namespace, see clamp_range_for)",
+    )
+    parser.add_argument(
+        "--clamp-max", type=int,
+        help="Override the upper clamp on individual year readings "
+             "(default: per-namespace, see clamp_range_for)",
+    )
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest_path) if args.manifest_path else Path(
@@ -309,6 +395,8 @@ def main() -> None:
         namespace=args.namespace,
         manifest_path=manifest_path if manifest_path.exists() else None,
         slurm_job_id=slurm_job_id,
+        clamp_min=args.clamp_min,
+        clamp_max=args.clamp_max,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 

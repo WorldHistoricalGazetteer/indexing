@@ -1948,3 +1948,83 @@ Until that's addressed, no OSM/OHM run that needs full multipolygon
 assembly will complete in a reasonable Slurm window. Recommend
 landing the per-relation timeout + parallel sharding before the next
 attempt.
+
+### Patches landed 2026-04-28 (post-OHM-smoke, pre-push)
+
+All four findings from the OHM smoke have local patches and tests.
+67/67 unit tests pass. Pushed in a separate session and CRC re-test
+pending.
+
+**Finding 2 — `h3_merge` source-resolution mismatch.** Fixed
+`processing/h3_merge.py::_source_dir` to mirror
+`h3_stage._extract_stage_dir`'s fall-through chain
+(`boundary_merged → update_merged → extract`). A smoke run that skips
+boundary completion now flows cleanly through h3_merge instead of
+crashing with `FileNotFoundError`. Covered by 3 tests in
+`tests/test_h3_merge_helpers.py`.
+
+**Finding 3 — `h3_merge` parquet hull crash.** Added
+`processing/h3_merge.py::_strip_hull_for_parquet`. The persisted JSONL
+keeps `hull` (downstream `ccode_enrichment` and `generate_tiles`
+consume it from there), and a temporary parquet-input JSONL with hulls
+stripped is fed to `pyarrow.json.read_json` for parquet conversion
+only. Covered by 4 tests; verified by running the OHM h3_merge happy
+path locally.
+
+**Finding 4 — temporal-extent outlier clamping.** Added a
+per-namespace clamp in
+`processing/gazetteer_temporal_extent.py`. Year readings outside
+`[clamp_min, clamp_max]` are dropped at the per-reading level (not the
+aggregate), so a few bogus tags can't poison a namespace's extent.
+Defaults: `[-10000, current_year + 100]`. The `po` namespace gets a
+geological-deep-time override `[-5_000_000_000, 10_000]` — without it,
+the just-verified po extent of `[-4567998050, 3000]` would have been
+clipped to `[null, null]`. The CLI gains `--clamp-min` / `--clamp-max`
+overrides; new metrics fields `clamp_range` and `rejected_readings`
+are exposed (informational; not part of the on-disk aggregate
+contract). Covered by 13 tests in
+`tests/test_temporal_extent_clamp.py` including the
+po-vs-default-clamp regression case.
+
+Predicted OHM impact (to verify on next CRC run): the previous
+`[-99999, 20222]` extent should land in the realistic
+`[<historic-min>, ~current_year]` range, and the metrics file should
+report a non-zero `rejected_readings` count.
+
+**Finding 1 — `boundary_stage` parallelisation.** Implemented a full
+sharded execution model with three new modules and a CLI extension to
+the existing one:
+
+* `processing/boundary_shard_planner.py` — scans the prefiltered PBF,
+  counts member ways per boundary relation, and bin-packs them into N
+  shards using the Longest Processing Time (LPT) greedy heuristic.
+  The largest single relation always lands alone on the lightest
+  shard, so max-shard-cost is minimised. Writes `shard_map.json`.
+* `processing/boundary_stage.py` — gains `--shard-id N --shard-map
+  PATH` worker mode. The worker uses `osmium getid -r` to subset the
+  prefiltered PBF down to just its assigned relation IDs (plus their
+  referenced ways and nodes), then runs normal area assembly on that
+  small subset. Writes `places.boundary.shard_<I>.jsonl`. Standalone
+  mode (no shard args) is preserved unchanged.
+* `processing/boundary_stage_finalize.py` — concatenates the per-shard
+  JSONLs into the canonical `places.boundary.jsonl` (the only path
+  `processing.boundary_merge` reads), aggregates per-shard metrics,
+  and flips the manifest's `boundary` stage to `completed` exactly
+  once.
+* `processing/submit_boundary_slurm.py` — orchestrates planner →
+  worker array → finalizer with `afterok` dependencies. Defaults: ohm
+  16 shards × 8h, osm 32 shards × 24h. Supports `--dry-run` for
+  sbatch inspection.
+
+Covered by 13 tests in `tests/test_boundary_shard_planner.py` (LPT
+correctness incl. dominant-relation-lands-alone, boundary-tag
+acceptance/rejection, shard-map round-trip). Submitter `--dry-run`
+produces well-formed sbatch scripts for all three jobs.
+
+Expected wall-time win on OHM (extrapolating from the cancelled
+single-task run): ~65 min became infeasible because of ~3 500 large
+relations stuck behind one another. With 16 parallel shards, no shard
+holds more than ~220 large-tail relations, and the heaviest
+single-relation cost (likely a continent or ocean) dominates only one
+shard. Net wall: should land in the **2–3 h** range for OHM, with
+linear scaling to ~6–8 h for full OSM at 32 shards.

@@ -51,9 +51,19 @@ from processing.staging_contract import UPDATE_PATCH_NAMESPACES  # noqa: E402
 
 
 def _source_dir(namespace: str) -> Path:
+    """Resolve the snapshot directory h3_merge should read from.
+
+    Mirrors ``processing.h3_stage._extract_stage_dir`` so the two stages
+    agree on which snapshot is authoritative for a given namespace. If
+    ``boundary_merge`` was skipped (e.g. smoke runs without full multipolygon
+    assembly), the OSM/OHM source falls through to ``extract/`` rather than
+    raising — h3_stage already does this and h3_merge needs to match.
+    """
     base = Path(STAGED_BASE_DIR) / namespace
     if namespace in BOUNDARY_REQUIRED_NAMESPACES:
-        return base / "boundary_merged"
+        boundary_merged = base / "boundary_merged"
+        if boundary_merged.exists():
+            return boundary_merged
     if namespace in UPDATE_PATCH_NAMESPACES:
         update_merged = base / "update_merged"
         if update_merged.exists():
@@ -158,13 +168,44 @@ def _apply_patch_to_doc(
 
 
 def _normalize_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
-    """Convert empty nested-list fields to None for stable Parquet inference."""
+    """Convert empty nested-list fields to None for stable parquet schema inference.
+
+    Applied to both the persisted JSONL and the temporary parquet-input
+    JSONL — downstream JSONL readers also benefit from the empty-list →
+    None normalisation.
+    """
     normalized = dict(doc)
     for key in ("geometries", "toponyms", "types", "relations"):
         value = normalized.get(key)
         if isinstance(value, list) and len(value) == 0:
             normalized[key] = None
     return normalized
+
+
+def _strip_hull_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
+    """Drop ``geometries[].hull`` before parquet conversion.
+
+    Pyarrow's JSON reader infers a single schema across all rows and rejects
+    mixed nesting depths within the same column. ``hull.coordinates``
+    legitimately varies (Polygon → ``[[lon,lat], …]``, MultiPolygon →
+    ``[[[lon,lat], …], …]``) across our authority sources, so any inferred
+    schema rejects some rows.
+
+    Hull is consumed by ``ccode_enrichment`` and ``generate_tiles``; both
+    read the JSONL (or the staged geom store) rather than the h3_merged
+    parquet, so dropping it from the parquet sidecar is lossless. The
+    persisted JSONL keeps hull.
+    """
+    stripped = dict(doc)
+    geometries = stripped.get("geometries")
+    if isinstance(geometries, list):
+        new_geoms = []
+        for geom in geometries:
+            if isinstance(geom, dict) and "hull" in geom:
+                geom = {k: v for k, v in geom.items() if k != "hull"}
+            new_geoms.append(geom)
+        stripped["geometries"] = new_geoms
+    return stripped
 
 
 def run_h3_merge(
@@ -203,7 +244,9 @@ def run_h3_merge(
     geometry_updates_applied = 0
     docs_written = 0
 
-    with jsonl_path.open("w", encoding="utf-8") as out_jsonl:
+    parquet_input_path = out_dir / "places.parquet_input.jsonl"
+    with jsonl_path.open("w", encoding="utf-8") as out_jsonl, \
+         parquet_input_path.open("w", encoding="utf-8") as parquet_input:
         for doc in _iter_source_docs(namespace):
             docs_seen += 1
             place_id = doc.get("place_id")
@@ -214,12 +257,21 @@ def run_h3_merge(
                     docs_updated += 1
                     geometry_updates_applied += applied
 
-            doc = _normalize_for_parquet(doc)
-            out_jsonl.write(json.dumps(doc, ensure_ascii=True) + "\n")
+            normalised = _normalize_for_parquet(doc)
+            out_jsonl.write(json.dumps(normalised, ensure_ascii=True) + "\n")
+            parquet_input.write(
+                json.dumps(_strip_hull_for_parquet(normalised), ensure_ascii=True) + "\n"
+            )
             docs_written += 1
 
-    table = paj.read_json(str(jsonl_path))
-    pq.write_table(table, str(parquet_path))
+    try:
+        table = paj.read_json(str(parquet_input_path))
+        pq.write_table(table, str(parquet_path))
+    finally:
+        try:
+            parquet_input_path.unlink()
+        except FileNotFoundError:
+            pass
 
     metrics = {
         "docs_seen": docs_seen,
