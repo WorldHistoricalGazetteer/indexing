@@ -9,6 +9,11 @@ Focuses on the deterministic, PBF-independent parts:
   would assemble (admin levels 0..11, continent, country_border, curated
   misc) and rejects everything else.
 * ``write_shard_map`` round-trips through json with the expected schema.
+* ``_load_shard_relation_ids`` returns the correct subset and is the same
+  set the worker uses for its leakage filter (regression test for the
+  cross-shard duplication observed during the first OHM benchmark, where
+  ``osmium getid -r`` followed relation→relation member refs and pulled
+  in ~4× extra relations per shard).
 """
 
 from __future__ import annotations
@@ -23,6 +28,7 @@ from processing.boundary_shard_planner import (
     plan_shards,
     write_shard_map,
 )
+from processing.boundary_stage import _load_shard_relation_ids
 
 
 class TestPlanShards(unittest.TestCase):
@@ -111,6 +117,54 @@ class TestWriteShardMap(unittest.TestCase):
         self.assertEqual(len(payload["shards"]), 2)
         flat = sorted(rid for s in payload["shards"] for rid in s["relation_ids"])
         self.assertEqual(flat, [1, 2, 3])
+
+
+class TestLoadShardRelationIds(unittest.TestCase):
+    """Regression: the worker's leakage filter relies on this returning the
+    EXACT set of relation IDs the planner assigned to a given shard.
+
+    A mismatch (off-by-one shard_id, str vs int IDs, mis-keyed lookup) would
+    silently re-introduce the cross-shard duplication that motivated the
+    filter in the first place.
+    """
+
+    def _make_map(self, tmp: str) -> Path:
+        shards = plan_shards(
+            [(100, 5), (200, 4), (300, 3), (400, 2), (500, 1)], 3,
+        )
+        out_path = Path(tmp) / "shard_map.json"
+        write_shard_map(
+            out_path, namespace="ohm", shards=shards, total_relations=5,
+        )
+        return out_path
+
+    def test_returns_set_of_ints(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            map_path = self._make_map(tmp)
+            assigned = {rid for s in json.loads(map_path.read_text())["shards"]
+                        if s["shard_id"] == 0 for rid in s["relation_ids"]}
+            ids = _load_shard_relation_ids(map_path, 0)
+        self.assertEqual(ids, assigned)
+        self.assertTrue(all(isinstance(x, int) for x in ids))
+
+    def test_unknown_shard_raises(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            map_path = self._make_map(tmp)
+            with self.assertRaises(KeyError):
+                _load_shard_relation_ids(map_path, 99)
+
+    def test_disjoint_across_shards(self):
+        """Every relation appears in exactly one shard's id set — guarantees
+        the worker filter cannot accidentally accept the same relation in
+        more than one shard."""
+        with tempfile.TemporaryDirectory() as tmp:
+            map_path = self._make_map(tmp)
+            payload = json.loads(map_path.read_text())
+            shard_ids = [s["shard_id"] for s in payload["shards"]]
+            id_sets = [_load_shard_relation_ids(map_path, sid) for sid in shard_ids]
+        union = set().union(*id_sets)
+        # Sum of sizes equals union size iff disjoint.
+        self.assertEqual(sum(len(s) for s in id_sets), len(union))
 
 
 if __name__ == "__main__":

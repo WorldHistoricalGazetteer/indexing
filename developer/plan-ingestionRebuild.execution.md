@@ -2028,3 +2028,29 @@ holds more than ~220 large-tail relations, and the heaviest
 single-relation cost (likely a continent or ocean) dominates only one
 shard. Net wall: should land in the **2–3 h** range for OHM, with
 linear scaling to ~6–8 h for full OSM at 32 shards.
+
+#### Cross-shard leakage fix (post first-attempt cancel)
+
+The first OHM benchmark attempt (run id `ohmsmoke-22926571`, planner
+22929253 → workers 22929254) ran the planner cleanly (28 s, perfect
+1.00 max/min cost ratio across the 16 shards) but each worker saw
+~21 000 areas instead of the assigned 4 366 — a ~4× over-extraction.
+
+Cause: ``osmium getid -r`` follows relation→relation member references
+(``subarea``, ``admin_centre``, ``label``, etc. — common on OSM/OHM
+admin boundaries), so each per-shard subset PBF contained many
+boundary relations that belonged to *other* shards. Without a filter,
+every shard re-assembled its leaked siblings and emitted duplicate
+boundary patches.
+
+Fix: in ``processing/boundary_stage.py``, the worker now keeps the
+shard's relation-ID set and skips any area whose ``orig_id()`` is
+not in it. The skip count is exposed as ``leaked_areas_skipped``
+in the per-shard metrics so the next run can quantify how aggressive
+the leakage really is. Three new tests in
+``tests/test_boundary_shard_planner.py`` lock in the contract
+(disjoint id-sets across shards, KeyError on unknown shard, returned
+type is `set[int]`). Total: 70/70 unit tests pass.
+
+Workers + finalize + post-chain cancelled at 65 min into the run; the
+clean re-run will start fresh once the fix is pushed.

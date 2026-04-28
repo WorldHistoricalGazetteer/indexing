@@ -232,14 +232,17 @@ def run_boundary_stage(
         processing_pbf = prefiltered
         filtered_pbf_path = prefiltered
 
+    # In shard mode, hold the assigned relation IDs so the area-iteration
+    # loop can drop osmium-leaked siblings (see comment at iteration site).
+    shard_relation_ids: set[int] | None = None
     if is_shard:
-        relation_ids = _load_shard_relation_ids(shard_map_path, shard_id)
-        if not relation_ids:
+        shard_relation_ids = _load_shard_relation_ids(shard_map_path, shard_id)
+        if not shard_relation_ids:
             print(f"  Shard {shard_id} has no relation_ids — exiting cleanly")
         else:
             shard_subset_path = _extract_shard_subset_pbf(
                 source_pbf=Path(processing_pbf),
-                relation_ids=relation_ids,
+                relation_ids=shard_relation_ids,
                 out_dir=Path(filter_dir),
                 namespace=namespace,
                 shard_id=shard_id,
@@ -274,16 +277,27 @@ def run_boundary_stage(
     signal.signal(signal.SIGTERM, signal_handler)
 
     started = time.time()
+    leaked_areas_skipped = 0
     try:
         idx_type = "flex_mem"
         fp = osmium.FileProcessor(processing_pbf).with_locations(idx_type).with_areas()
         with _ProgressReporter(processor, interval=30):
             for obj in fp:
-                if isinstance(obj, osmium.osm.Area) and not obj.from_way():
-                    processor.process_area(obj)
-                    areas_seen += 1
-                    if max_areas is not None and areas_seen >= max_areas:
-                        break
+                if not (isinstance(obj, osmium.osm.Area) and not obj.from_way()):
+                    continue
+                # ``osmium getid -r`` follows relation→relation member refs
+                # (subarea, admin_centre, label, etc.), so the per-shard
+                # subset PBF contains many relations that belong to other
+                # shards. Without this filter every shard re-assembles the
+                # leaked siblings, multiplying the work and producing
+                # duplicate boundary patches across shards.
+                if shard_relation_ids is not None and obj.orig_id() not in shard_relation_ids:
+                    leaked_areas_skipped += 1
+                    continue
+                processor.process_area(obj)
+                areas_seen += 1
+                if max_areas is not None and areas_seen >= max_areas:
+                    break
     except Exception:
         failed_count += 1
         raise
@@ -311,6 +325,7 @@ def run_boundary_stage(
     }
     if is_shard:
         metrics["shard_id"] = shard_id
+        metrics["leaked_areas_skipped"] = leaked_areas_skipped
 
     # Shard tasks should not race on the per-namespace manifest stage status —
     # the finalize step is responsible for flipping `boundary` to "completed".
