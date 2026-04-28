@@ -1,15 +1,32 @@
 # processing/un-countries.py
 """
 Index UN member countries with Natural Earth geometries.
+
+Supports two output modes:
+
+* Default (ES) — connect to ``ES_HOST`` and bulk-index country docs into
+  the configured ``places`` index.
+* ``WHG_STAGING_MODE=1`` — skip ES entirely; write each country doc to
+  ``{STAGED_BASE_DIR}/un/extract/places.jsonl`` via ``write_staged_place_doc``.
+  This is what feeds the staged-rebuild pipeline (boundary → h3 →
+  ccode → temporal_extent etc.) without needing a live ES.
+
+Either mode also writes country geometries to the persistent VAST geom
+store via ``GeomStoreWriter`` for use by ``ccode_enrichment``.
 """
 import sys, zipfile, urllib.request
 from pathlib import Path
-from processing.helpers import enrich_geometry, compute_area_km2, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_area_km2,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    is_staging_mode,
+    write_staged_place_doc,
+)
 from elasticsearch import Elasticsearch, helpers
 from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
 from processing.utilities import create_checkpoint_snapshot
-
-es = Elasticsearch(ES_HOST, request_timeout=180)
 
 NATURAL_EARTH_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
 
@@ -215,12 +232,15 @@ def create_country_place_doc(feature):
 
 
 def index_un_countries(places_index='places', download=True):
-    """Index UN countries."""
+    """Index UN countries to ES (default) or to the staged JSONL (staging mode)."""
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
+    staged_mode = is_staging_mode()
+    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180)
+
     print("=" * 80)
-    print("UN COUNTRIES")
+    print(f"UN COUNTRIES — {'STAGED' if staged_mode else 'ES'} MODE")
     print("=" * 80 + "\n")
 
     if download:
@@ -251,7 +271,11 @@ def index_un_countries(places_index='places', download=True):
                 else:
                     stats['non_un'] += 1
 
-                place_batch.append({'_index': places_index, '_id': place_id, '_source': place_doc})
+                if staged_mode:
+                    write_staged_place_doc(namespace='un', doc=place_doc)
+                    stats['places_indexed'] += 1
+                else:
+                    place_batch.append({'_index': places_index, '_id': place_id, '_source': place_doc})
                 stats['processed'] += 1
 
                 if (i + 1) % 50 == 0:
@@ -263,14 +287,14 @@ def index_un_countries(places_index='places', download=True):
                 continue
         configure_module_writer(None)
 
-    print("\nIndexing to Elasticsearch...")
-
-    if place_batch:
-        try:
-            success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-            stats['places_indexed'] = success
-        except Exception as e:
-            print(f"ERROR: {e}")
+    if not staged_mode:
+        print("\nIndexing to Elasticsearch...")
+        if place_batch:
+            try:
+                success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
+                stats['places_indexed'] = success
+            except Exception as e:
+                print(f"ERROR: {e}")
 
     print("\n" + "=" * 80)
     print("COMPLETE")
@@ -282,6 +306,8 @@ def index_un_countries(places_index='places', download=True):
     print(f"Errors: {stats['errors']}")
     print(f"Geometries in VAST store: {gsw.count:,}")
 
+    return es if not staged_mode else None
+
 
 if __name__ == "__main__":
     import argparse
@@ -291,8 +317,9 @@ if __name__ == "__main__":
     parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
-    index_un_countries(
+    es = index_un_countries(
         places_index=args.places_index,
         download=not args.no_download
     )
-    create_checkpoint_snapshot(es, "un_countries")
+    if es is not None:
+        create_checkpoint_snapshot(es, "un_countries")
