@@ -2319,3 +2319,219 @@ across consecutive Slurm jobs — `OSM_STATE_FILE` exists, but
 "stop-at-time-limit → resume → finish" is unproven on planet PBF.
 Doing this before committing 1+ day of htc time on the first full OSM
 extract remains a worthwhile pre-flight check.
+
+
+## Status snapshot — 2026-04-28 (end of session 4)
+
+### Namespaces that have run end-to-end (extract → final → temporal_extent)
+
+| NS | Records | Final-stage notes |
+|---|---:|---|
+| `po` | 9,047 | Range `[-4.567e9, 3000]` (Hadean → year 3000). Smoke session 2026-04-27. |
+| `nl` | 8,728 | Smoke session 2026-04-27. |
+| `ohm` | 905,205 | Boundary parallelisation (16 shards × LPT, max-shard 06:13:15). ccode 64.5% (583,954 / 905,205). Range `[-10000, 2100]`, 1,424 outliers rejected by clamp. |
+| `un` | 257 | Source of country boundaries — gating input for every other namespace's `ccode_enrichment`. ccode stage is N/A for un itself. |
+| `iv` | 24,000 | ccode 99.99% (23,998 / 24,000). Range `[1680, 2023]`. |
+| `pl` | 25,561 | ccode 66% (16,929 / 25,561; 7,311 records have no geometry — purely textual Pleiades references). Range `[-10000, 2100]`. |
+
+### Namespaces currently running (as of 2026-04-28 EOD)
+
+| NS | Job | Wall | State |
+|---|---|---:|---|
+| `osm` | smp 8934943 (htc-htc-l, 4d budget) | ~50 min | Still rsync'ing 86 GB PBF to scratch; processing not yet started. ETA: ~37–40 h total. |
+| `tgn` | htc 8935259 (htc-htc-s, 8h budget) | ~35 min | Still copying source to scratch; processing log silent so far. Watch this — if no progress after 1 h, investigate. |
+| `wd` | htc 8935260 (htc-htc-n, 24h budget) | ~35 min | Processing 3.3 M / ~11 M entities (~30%). On track. |
+
+### Namespaces NOT yet in staging mode
+
+These still have the old ES-only path and need a small staging-mode patch before they can flow through the staged-rebuild pipeline:
+
+| Authority script | NS | Records (approx) | Notes |
+|---|---|---:|---|
+| `geonames-places.py` | `gn` | ~13M | Update-merge mechanism is staging-aware; full extract is not. **Important for full rebuild.** |
+| `un-geoscheme-boundaries.py` | derives `osm:m49_*` | 24 (continents + subregions) | Reads existing un boundaries from ES and writes derived geometries. Needs deeper rework — the source-of-truth should be staged un, not ES. |
+| `gb1900-places.py` | `gb` | ~1.2M |  |
+| `dplace-places.py` | `dp` | ~2,600 |  |
+| `cliopatria-places.py` | `clio` | unknown |  |
+| `whg-places.py` | `whg` | dataset-driven | Special: per-Dataset/Collection scope; needs explicit `dataset_id` per the `write_staged_place_doc` contract. |
+
+The patch pattern is consistent — see `un-countries.py` for the canonical example (~30 lines): branch on `is_staging_mode()`, swap the bulk-index loop for `write_staged_place_doc(namespace=..., doc=...)`, guard `create_checkpoint_snapshot` and ES init.
+
+### Global stages still to run (after all namespaces extracted)
+
+These run **once per rebuild**, after every selected namespace has its own `final/places.parquet` written:
+
+1. **geom_store consolidation** (`processing/geom_store.py consolidate`) — merges per-authority shards in `/vast/ishi/geom/staging/<ns>/*.bin` into the consolidated `/vast/ishi/geom/index.json` + sharded `*.bin`. Required by:
+   * `ccode_enrichment` precise containment for places that have `geom_ref` but no inline hull (currently always falls back to hull or repr_point — works but loses precision).
+   * `generate_tiles` for OSM/OHM admin tile geometry.
+2. **Tiles** (`processing/submit_tiles_slurm.py`) — generates per-bucket `.geojsonl` + `.mbtiles` from the staged geom store. Buckets defined in `processing.generate_tiles.TILE_BUCKETS`: `osm_admin`, `ohm_admin`, `osm_misc`, `po`, `clio`, `nl`. Slurm array, one task per bucket. Prerequisite: every contributing namespace's `boundary_merge` (osm/ohm) or `extract` (others) must be `completed`.
+3. **Toponyms rebuild** (`phonetics/extraction/rebuild_toponyms_index.py`) — 5-step PanPhon pipeline (ES places → DuckDB → vocabulary → JSONL with IPA + PanPhon embeddings → ES). Multi-day GPU job.
+4. **Symphonym v7 embeddings** (`phonetics/inference/update_es.py compute` then `index`) — 128-d int8 embeddings for the toponyms index. GPU compute then ES index.
+5. **`processing/index_from_stage.py`** — load each namespace's `final/places.parquet` into a dated ES `places_YYYYMMDD` index, then alias swap.
+6. **Hard-link harvest** (Batch 12) — derive cluster hard-links directly from staged final docs, replacing the post-index clustering step. Runs offline against the `final/` snapshots.
+7. **Inventory push** (Batch 11) — push per-namespace coverage metadata to the gazetteer-inventory service.
+8. **Clustering finalise** (full or incremental) — only after the above. Existing `es -cluster --full --slurm` flow.
+
+---
+
+## Resumption playbook (read this first when resuming)
+
+> The intent of this section is that a future session can pick up work without having to re-discover the toolchain. Read top to bottom and follow the steps in order.
+
+### Step 0 — orient
+
+```
+ssh crc3 'cd /ix1/ishi/elastic && git log -1 --oneline'
+ssh crc3 'squeue -u stg135 -o "%.10i %.16j %.8T %.10M %.10l"'
+ssh crc3 'ls /vast/ishi/staged/'                  # which namespaces have any staged artefacts
+ssh crc3 'ls -t /vast/ishi/staged/runs/ | head -5' # most recent run manifests
+```
+
+The "Status snapshot" section above is the authoritative table — update it as namespaces complete or fail. **If you find yourself grepping the codebase to figure out what to do, you've skipped this playbook — go back and read it from the top.**
+
+### Step 1 — bring an in-flight extract to ground
+
+For each running extract job:
+
+```
+ssh crc3 'sacct -M htc -j JOBID --format=State,Elapsed --parsable2 --noheader'
+ssh crc3 'tail -50 /vast/ishi/staged/parallel-logs/extract-NS-JOBID.out'
+```
+
+Wait for `COMPLETED`. `RUNNING` for many hours on a copy/rsync stage is expected for `osm` (86 GB PBF) and `tgn` (large RDF dump).
+
+If a job hits `TIMEOUT` or `FAILED`, check the `.err` log; the authority scripts have checkpoint files (`OSM_STATE_FILE`, `OHM_STATE_FILE`, etc.) that allow resumption — re-submit and the script picks up from the last checkpoint.
+
+### Step 2 — for each completed extract, run the post-extract chain
+
+Single-namespace fast path (login node, suitable for ≤ ~1 M records). Replace `<ns>` with the namespace and pick a fresh `RUN_ID` if you don't already have one:
+
+```
+ssh crc3
+source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
+conda activate whg
+cd /ix1/ishi/elastic
+
+# Create a manifest if you don't have one for this set of namespaces:
+RUN_ID="smalls-$(date -u +%Y%m%dT%H%M%SZ)"
+python3 -c "
+from pathlib import Path
+from processing.staging_orchestrator import create_run_manifest, update_namespace_stage_status
+mp = Path('/vast/ishi/staged/runs/${RUN_ID}.json')
+namespaces = ['<ns>']  # edit
+create_run_manifest(mp, '${RUN_ID}', namespaces)
+for ns in namespaces:
+    update_namespace_stage_status(mp, ns, 'extract', 'completed')
+    update_namespace_stage_status(mp, ns, 'tiles', 'skipped')
+    update_namespace_stage_status(mp, ns, 'index', 'skipped')
+print('manifest at', mp)
+"
+
+MP="/vast/ishi/staged/runs/${RUN_ID}.json"
+ARGS="--run-id ${RUN_ID} --manifest-path ${MP}"
+
+for stage in h3_stage h3_merge gazetteer_h3_coverage \
+             ccode_enrichment ccode_merge \
+             gazetteer_temporal_extent; do
+    python -u -m processing.${stage} ${ARGS} --namespace <ns>
+done
+```
+
+Skip `ccode_enrichment` / `ccode_merge` for `un` itself (the source).
+
+### Step 3 — for OSM/OHM, run the boundary chain *before* the h3 chain
+
+The boundary completion stage assembles relation multipolygons that the extract emits as point fallbacks. It runs as four chained Slurm jobs (planner → mega + regular workers → finalize). Use:
+
+```
+python -m processing.submit_boundary_slurm \
+    --run-id ${RUN_ID} \
+    --namespace ohm   # or osm
+```
+
+Defaults are tuned per-namespace (`_DEFAULT_SHARD_COUNT`, `_DEFAULT_MEGA_SHARD_COUNT`, walls). Override with `--shard-count`, `--mega-shard-count`, `--regular-wall-hours`, `--mega-wall-hours`. After the chain finishes (`finalize` flips `boundary` → `completed`), go back to Step 2 for the post-extract chain — h3_stage will pick the boundary_merged source automatically.
+
+### Step 4 — patch any authority that lacks staging mode
+
+Pattern (modelled on `authorities/un-countries.py` 2026-04-28 patch):
+
+1. Add to imports: `from processing.helpers import is_staging_mode, write_staged_place_doc`
+2. Move ES client init out of module level into the `index_*` function: `es = None if is_staging_mode() else Elasticsearch(ES_HOST, ...)`
+3. In the per-doc loop, branch:
+   * staged: `write_staged_place_doc(namespace='<ns>', doc=place_doc)`; bump indexed counter inline.
+   * non-staged: append to the existing bulk batch.
+4. Guard the bulk-index block and `create_checkpoint_snapshot` with `if not staged_mode`.
+5. Verify locally: `python3 -c "import ast; ast.parse(open('authorities/SCRIPT.py').read())"`, then run the test suite: `python3 -m pytest tests/ -q`.
+
+The remaining authorities needing this: `geonames-places.py`, `gb1900-places.py`, `dplace-places.py`, `cliopatria-places.py`, `whg-places.py`. `un-geoscheme-boundaries.py` is more involved (reads from ES) and needs a deeper rework.
+
+### Step 5 — submit the extract for the patched authority
+
+Standard sbatch template (htc cluster from crc3). Replace NS, SCRIPT-STEM, and the resource line per the sizing table below.
+
+```
+SBATCH_PATH=/tmp/extract-NS.sbatch
+{
+  echo '#!/bin/bash'
+  echo '#SBATCH --job-name=extract-NS'
+  echo '#SBATCH --partition=htc'
+  echo '#SBATCH --qos=htc-htc-s'              # bump to -n (3d) or -l (6d) for large
+  echo '#SBATCH --time=02:00:00'
+  echo '#SBATCH --nodes=1'
+  echo '#SBATCH --ntasks=1'
+  echo '#SBATCH --cpus-per-task=4'
+  echo '#SBATCH --mem=16G'
+  echo '#SBATCH --output=/vast/ishi/staged/parallel-logs/extract-NS-%j.out'
+  echo '#SBATCH --error=/vast/ishi/staged/parallel-logs/extract-NS-%j.err'
+  echo
+  echo 'set -eo pipefail'
+  echo 'source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh'
+  echo 'conda activate whg'
+  echo 'cd /ix1/ishi/elastic'
+  echo 'export WHG_STAGING_MODE=1'
+  echo 'python -u -m authorities.SCRIPT-STEM'
+} > "$SBATCH_PATH"
+sbatch --parsable "$SBATCH_PATH"
+```
+
+`SCRIPT-STEM` is the file name without `.py`, e.g. `geonames-places`. The hyphen in module names is fine for `python -m`.
+
+Sizing rules of thumb (calibrated against the 2026-04-28 sweep):
+
+| Records | cpus / mem / wall / qos |
+|---|---|
+| ≤ 100 K | 4 / 16 G / 2 h / `htc-htc-s` |
+| ≤ 5 M | 8 / 32 G / 8 h / `htc-htc-s` |
+| ≤ 20 M | 8 / 64 G / 24 h / `htc-htc-n` |
+| 20 M+ (osm planet) | 8 / 120 G / 4 d / `htc-htc-l`; expect 30+ h with PBF rsync |
+
+### Step 6 — global stages (post-extract for every selected namespace)
+
+In order:
+
+1. `python -m processing.geom_store consolidate` (one-shot; idempotent).
+2. `python -m processing.submit_tiles_slurm --run-id <ID>` (Slurm array, one task per tile bucket).
+3. `python -m phonetics.extraction.rebuild_toponyms_index` (multi-day GPU job — submit to GPU partition).
+4. `python -m phonetics.inference.update_es compute --version <V>` then `index --version <V>`.
+5. `python -m processing.index_from_stage --run-id <ID>` per namespace, then alias swap.
+6. Hard-link harvest (Batch 12).
+7. Inventory push (Batch 11).
+8. `es -cluster --full --slurm` for full clustering finalisation.
+
+### Step 7 — verify the rebuild
+
+```
+ssh pitt 'ES_PASS=$(cat /ix1/ishi/es/config/elastic.password); \
+  curl -s -u "elastic:${ES_PASS}" \
+  "http://localhost:9200/_cat/indices/places_*?v"'
+```
+
+Check that the new `places_<datetag>` exists, doc count matches the sum of per-namespace `final/places.parquet` row counts, and the alias points to the new index.
+
+---
+
+## Cross-cutting issues seen during smoke runs (still relevant)
+
+1. **`pyarrow.read_json` schema-inference quirks.** Three variants patched into `processing/staged_parquet.py`: `normalize_for_parquet` (empty `[]` → `None`), `strip_hull_for_parquet` (drop hulls — they have variable nesting depth), `drop_nulls_for_parquet` (strip explicit nulls inside structs — they trip the JSON reader). Every merge stage that writes a parquet sidecar (`h3_merge`, `boundary_merge`, `ccode_merge`) now goes through `write_parquet_from_jsonl()`. If you add another merge stage, reuse this helper rather than calling `paj.read_json` directly.
+2. **`geom_store` consolidation never run end-to-end.** The per-authority writes to `/vast/ishi/geom/staging/<ns>/*.bin` work, but the consolidation into a single `index.json` + sharded `*.bin` has not been exercised. Until it is, `ccode_enrichment` falls back to staged hulls (which work, but lose precision against full polygon geometry) and tiles cannot run. **Highest-priority gap between "all extracts done" and "tile generation".**
+3. **`OSM_STATE_FILE` resumption is unproven across Slurm jobs.** The checkpoint file gets written and read within a single job; we haven't validated "stop at wall limit → restart from checkpoint in a new job → finish cleanly". If the first OSM extract runs long enough to hit its 4-day budget, this gets exercised by necessity. Worth a deliberate test on a smaller authority first.
