@@ -24,7 +24,6 @@ import json
 from pathlib import Path
 from typing import Any, Iterable
 
-import pyarrow.json as paj
 import pyarrow.parquet as pq
 
 from processing.settings import (
@@ -33,6 +32,10 @@ from processing.settings import (
     STAGED_RUNS_DIR,
 )
 from processing.stage_writers import write_runtime_history_event, write_stage_event
+from processing.staged_parquet import (
+    normalize_for_parquet,
+    write_parquet_from_jsonl,
+)
 from processing.staging_contract import (
     CCODE_PATCH_REQUIRED_FIELDS,
     validate_required_fields,
@@ -92,14 +95,9 @@ def _load_ccode_patches(namespace: str) -> dict[str, list[str]]:
     return patches
 
 
-def _normalize_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
-    """Convert empty nested-list fields to None for stable Parquet inference."""
-    normalized = dict(doc)
-    for key in ("geometries", "toponyms", "types", "relations"):
-        value = normalized.get(key)
-        if isinstance(value, list) and len(value) == 0:
-            normalized[key] = None
-    return normalized
+# ``normalize_for_parquet`` lives in ``processing.staged_parquet`` so
+# h3_merge, boundary_merge and ccode_merge all share it.
+_normalize_for_parquet = normalize_for_parquet
 
 
 def run_ccode_merge(
@@ -148,12 +146,13 @@ def run_ccode_merge(
                 doc["ccodes"] = new_ccodes
                 docs_updated += 1
 
-            doc = _normalize_for_parquet(doc)
-            out_jsonl.write(json.dumps(doc, ensure_ascii=True) + "\n")
+            out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
 
-    table = paj.read_json(str(jsonl_path))
-    pq.write_table(table, str(parquet_path))
+    # Stream the canonical JSONL through hull-strip + null-strip into a
+    # temp parquet-input JSONL, then convert to parquet. The canonical
+    # JSONL keeps hull and explicit nulls intact for downstream consumers.
+    write_parquet_from_jsonl(jsonl_path, parquet_path)
 
     metrics = {
         "docs_seen": docs_seen,
