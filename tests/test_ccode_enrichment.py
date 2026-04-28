@@ -169,3 +169,64 @@ class TestFilterByContainment(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Regression: _load_un_records reads JSONL (hull preserved), not parquet
+# (hull stripped by staged_parquet.strip_hull_for_parquet)
+# ---------------------------------------------------------------------------
+
+
+class TestIterStagedDocsPreferJsonl(unittest.TestCase):
+    """Regression for the OHM/pl benchmark finding: when the geom_store
+    is not yet consolidated, ccode_enrichment falls back to ``hull`` for
+    its UN containment check. The parquet sidecar drops hull (variable
+    nesting depths), so reading parquet gives ``hull=None`` for every
+    UN record and zero pl records get ccodes. ``prefer_jsonl=True``
+    avoids the parquet path so hull stays intact.
+    """
+
+    def _setup_h3_merged(self, tmp_dir, hull_in_parquet, hull_in_jsonl):
+        import json as _json
+        from pathlib import Path as _Path
+        ns_dir = _Path(tmp_dir) / "un" / "h3_merged"
+        ns_dir.mkdir(parents=True)
+        # JSONL: keeps hull
+        jsonl = ns_dir / "places.jsonl"
+        with jsonl.open("w", encoding="utf-8") as fh:
+            doc = {
+                "place_id": "un:xxx",
+                "geometries": [{
+                    "geometry_index": 0,
+                    "hull": {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]} if hull_in_jsonl else None,
+                }],
+            }
+            fh.write(_json.dumps(doc) + "\n")
+        # Parquet "side": represented as a separate JSONL written via paj.read_json
+        # (skipped if hull_in_parquet is False — emulate hull-stripped sidecar).
+        parquet_path = ns_dir / "places.parquet"
+        if hull_in_parquet:
+            import pyarrow.json as paj
+            import pyarrow.parquet as pq
+            paj.read_json(str(jsonl))  # may fail on mixed nesting; intentional
+            # For this test we don't actually need a parquet — we just need
+            # the existence to trigger the parquet-preferred path. Touch it.
+            parquet_path.write_bytes(b"")
+        else:
+            # Touch a placeholder parquet so the parquet-preferred branch is
+            # selected when prefer_jsonl=False.
+            parquet_path.write_bytes(b"")
+        return ns_dir
+
+    def test_prefer_jsonl_avoids_hull_stripping(self):
+        import tempfile, json as _json
+        from unittest import mock
+        from processing import ccode_enrichment
+        with tempfile.TemporaryDirectory() as tmp:
+            self._setup_h3_merged(tmp, hull_in_parquet=False, hull_in_jsonl=True)
+            with mock.patch.object(ccode_enrichment, "STAGED_BASE_DIR", tmp):
+                # prefer_jsonl=True must read jsonl, even though parquet exists.
+                docs = list(ccode_enrichment._iter_staged_docs("un", prefer_jsonl=True))
+        self.assertEqual(len(docs), 1)
+        self.assertIsNotNone(docs[0]["geometries"][0]["hull"])
+        self.assertEqual(docs[0]["geometries"][0]["hull"]["type"], "Polygon")

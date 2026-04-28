@@ -77,12 +77,26 @@ def _h3_merged_dir(namespace: str) -> Path:
     return Path(STAGED_BASE_DIR) / namespace / "h3_merged"
 
 
-def _iter_staged_docs(namespace: str) -> Iterator[dict[str, Any]]:
+def _iter_staged_docs(
+    namespace: str,
+    *,
+    prefer_jsonl: bool = False,
+) -> Iterator[dict[str, Any]]:
+    """Yield staged docs for ``namespace`` from h3_merged.
+
+    Defaults to the parquet sidecar when present (faster). Pass
+    ``prefer_jsonl=True`` when the caller depends on fields that
+    ``processing.staged_parquet.write_parquet_from_jsonl`` strips for
+    pyarrow compatibility — chiefly ``geometries[].hull``, which is
+    needed by ``_load_un_records`` for point-in-polygon containment when
+    the geom store hasn't been consolidated yet (so ``geom_ref`` lookups
+    return None and hull is the only source of polygon truth).
+    """
     src_dir = _h3_merged_dir(namespace)
     parquet_path = src_dir / "places.parquet"
     jsonl_path = src_dir / "places.jsonl"
 
-    if parquet_path.exists():
+    if not prefer_jsonl and parquet_path.exists():
         parquet = pq.ParquetFile(parquet_path)
         for batch in parquet.iter_batches(batch_size=2000):
             for row in batch.to_pylist():
@@ -364,7 +378,15 @@ def _filter_by_containment(
 
 
 def _load_un_records() -> list[dict[str, Any]]:
-    return list(_iter_staged_docs(UN_NAMESPACE))
+    """Read all UN docs from the JSONL specifically.
+
+    The parquet sidecar drops ``geometries[].hull`` (see
+    ``staged_parquet.strip_hull_for_parquet``); without hull, point-in-
+    polygon containment can't run unless the consolidated geom_store
+    index is available. Reading the JSONL keeps hull intact and lets
+    containment work in either configuration.
+    """
+    return list(_iter_staged_docs(UN_NAMESPACE, prefer_jsonl=True))
 
 
 def run_ccode_enrichment(
