@@ -1823,3 +1823,128 @@ Pre-OHM checklist:
    defaults and adjust `_LARGE_NAMESPACES` / `_LARGE_DEFAULT_HOURS` in
    `processing/submit_h3_slurm.py` if the medians drift far from the
    conservative bounds.
+
+## Test Run Results — Session 2026-04-28 (po follow-up + OHM smoke)
+
+### po temporal extent — re-verified after `_parse_year` fix
+
+After the `_parse_year` fix landed (commit `5472a80`), re-ran the
+po extract → h3_merge → temporal_extent chain on CRC. Results:
+
+| Stage | Wall | Output |
+|---|---:|---|
+| `extract` (login node, gazetteer cache warm) | ~30 s | 9 017 docs, 9 017 / 9 017 toponyms with timespans, 7 815 / 7 815 geometries with timespans |
+| `h3_merge` (login node) | ~5 s | 9 017 written, 7 815 patches applied, both jsonl + parquet |
+| `temporal_extent` | 2.5 s | `[-4567998050, 3000]` (was `[null, null]`) |
+
+The lower bound is the start of the Hadean — driven by geological-epoch
+periods in the corpus. Confirms the fix end-to-end and clears the
+earlier "must-fix before re-staging" gate.
+
+### OHM smoke run
+
+Goal: validate the OHM end-to-end chain (the trial run for full OSM)
+on `/ix1/ishi/data/authorities/ohm/planet-latest.osm.pbf` (~1.1 GB).
+Run id `ohmsmoke-22926571`; manifest at
+`/vast/ishi/staged/runs/ohmsmoke-22926571.json`.
+
+| Stage | Job | Wall | Notes |
+|---|---|---:|---|
+| `extract` | smp 22923902 | **30:38** | 905 205 docs / 654 012 geoms in geom_store / 99 512 relation fallbacks (boundary multipolygons that need `boundary_stage` to assemble) |
+| `boundary` | smp 22926571 | 65 min, **cancelled** | Stalled in long-tail multipolygon assembly — see finding below |
+| `boundary_merge` | — | skipped | Marked completed via white-lie so `h3_stage` gate would pass; `_extract_stage_dir` then falls through to `extract/` since `boundary_merged/` is absent |
+| `h3_stage` | smp 22928657 | **1:09** | 905 205 seen / 805 693 patched / 805 693 geometries with H3 (~13 k docs/s — almost all are point geometries from the extract fallback path) |
+| `h3_merge` | smp 22928658 | failed at parquet step | JSONL written intact (737 MB); parquet conversion crashed — see finding below |
+| `h3_coverage` | login | <1 s | `is_global: true` (compaction skipped, same as po) |
+| `temporal_extent` | login | **9.0 s** | `[-99999, 20222]` over 905 205 records (data-quality outliers from OHM `start_date` / `end_date` tags — see finding) |
+
+**Aggregates:**
+* `/vast/ishi/staged/_aggregates/ohm.h3_coverage.json` — `{"coverage": "global", "namespace": "ohm"}`
+* `/vast/ishi/staged/_aggregates/ohm.temporal_extent.json` — `{"namespace": "ohm", "record_count": 905205, "temporal_extent": [-99999, 20222]}`
+
+### Findings worth fixing before full OSM
+
+1. **`processing/boundary_stage.py` long-tail latency.** Throughput
+   dropped from ~380 / s in the first minute to **~4 / s after 30 min**
+   on the OHM PBF (only 39 boundaries assembled in the 29 min between
+   `[31m]` and `[60m]` checkpoints). Root cause: a small number of
+   very-large multipolygon assemblies (likely oceans, continental admin
+   units) dominate the tail. At this rate the run extrapolates to
+   100 + h for the last 3 500 of ~68 300 boundaries — full OSM
+   (~10× larger working set) would never finish under any reasonable
+   Slurm budget.
+
+   Suggested mitigations to evaluate (none implemented yet):
+
+   * **Per-relation timeout / skip with diagnostic** so a few
+     pathological assemblies don't block the rest. The fallbacks
+     already in the extract become the de-facto representative for
+     skipped relations.
+   * **Polygon-count / member-way pre-filter** that buckets relations
+     by size and processes the giant ones in a separate Slurm task
+     with a longer time budget (or with osmium's "no-area-validation"
+     mode for very large rings).
+   * **Sort relations by member count descending and process in
+     parallel** (one Slurm task per shard) so the long tail no longer
+     serialises behind the small relations.
+
+2. **`processing/h3_merge.py` source-resolution mismatch.** For
+   OSM/OHM, `h3_merge._source_dir` returns `boundary_merged/`
+   unconditionally and raises `FileNotFoundError` if it doesn't
+   exist, while `h3_stage._extract_stage_dir` falls through
+   `boundary_merged → update_merged → extract`. They should agree —
+   right now you can produce H3 patches from the extract fallback but
+   then can't merge them. Easy fix: copy the same fall-through chain
+   into `h3_merge._source_dir`.
+
+3. **`processing/h3_merge.py` parquet conversion fails on
+   variable-depth `geometries[].hull.coordinates`.** `pyarrow.json.read_json`
+   does schema inference and rejects rows where the same column has
+   different nesting depths (here: hulls that are sometimes Polygon
+   `[[lon,lat], …]` and sometimes MultiPolygon `[[[lon,lat], …], …]`).
+   The JSONL is written intact, only the parquet sidecar is missing.
+   Two acceptable fixes:
+
+   * **Strip `hull` from `_normalize_for_parquet`** before the parquet
+     re-read. Hull is consumed by `h3_stage` (already done by this
+     point), `ccode_enrichment`, and `generate_tiles`; both downstream
+     readers can pull hull from the JSONL or the staged geom store
+     instead of the h3_merged parquet.
+   * **Provide an explicit pyarrow schema** rather than letting
+     pyarrow infer — this keeps hull in parquet but adds maintenance
+     burden as the schema evolves.
+
+   The first option matches the smaller-diff-wins norm; the second is
+   only worth it if a downstream consumer explicitly needs hull from
+   the h3_merged parquet (none today).
+
+4. **OHM temporal_extent has data-quality outliers** (`-99999`, `20222`).
+   These come from upstream `start_date` / `end_date` tag values that
+   parse as bare integers but are clearly placeholders / typos. Not a
+   bug in the staged pipeline; consider clamping in `gazetteer_temporal_extent`
+   (e.g. drop years outside `[-10000, current_year + 10]`) to keep
+   downstream UI/search filters sane.
+
+### What this validates for full OSM
+
+* The h3 derivation path is **fast even at 905 K docs** when most
+  geometries fall back to points (1:09, ~13 k docs/s). For full OSM
+  (~18 M docs) at the same rate, expect **~25 minutes** for h3_stage
+  if a similar share of records are points — the polyfill remains the
+  cost driver only for the boundary-merged subset.
+* `h3_coverage` and `temporal_extent` scale linearly and are trivial
+  even on 900 K records (<10 s combined). No tuning needed.
+* `extract` for ~1 GB of PBF takes ~30 min single-process. Full OSM
+  (~80 GB planet PBF) at the same I/O rate would take **~40 h**, well
+  past any Slurm budget on `htc`. **Either** the existing checkpoint
+  + resume mechanism needs to be exercised across multiple Slurm jobs,
+  **or** the extract needs to be sharded by spatial bbox / PBF region.
+  This is the largest remaining unknown for full OSM.
+
+### Resume note — boundary_stage refactor before next OSM/OHM attempt
+
+The boundary-stage long-tail issue (finding 1) is the gating problem.
+Until that's addressed, no OSM/OHM run that needs full multipolygon
+assembly will complete in a reasonable Slurm window. Recommend
+landing the per-relation timeout + parallel sharding before the next
+attempt.
