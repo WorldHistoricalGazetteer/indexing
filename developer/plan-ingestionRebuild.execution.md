@@ -1679,10 +1679,12 @@ pushed in-flight:
     any geometry / toponym / relation, even though
     `authorities/periodo-places.py` clearly intends to populate them.
     `gazetteer_temporal_extent` correctly returns null when no parseable
-    years exist; the bug is upstream in the po extract. See
-    "Follow-up: investigate po temporal pipeline" below — this needs to
-    be fixed before the next live run, since PeriodO's whole purpose is
-    temporal coverage.
+    years exist; the bug was upstream in the po extract — `_parse_year`
+    silently returned None for every record because PeriodO wraps each
+    endpoint year in a `{"year": "<signed-string>"}` dict that the
+    parser tried to `int(str(...))`. Fixed in the same session; see
+    "Follow-up: investigate po temporal pipeline — RESOLVED" below. The
+    next po staging extract will populate timespans on every record.
 * Per-namespace **manifest stage status** flipped `pending` → `running`
   → `completed` in real time, surviving atomic-write race windows.
 * **Persistent runtime-history file** (`namespace-runtime-history.json`)
@@ -1726,48 +1728,56 @@ ceiling on po-shaped workloads. Reverted; kept the area-aware win.
 * **index_from_stage / hard_links / inventory push** — defer until at
   least one indexable corpus + UN are present.
 
-### Follow-up: investigate po temporal pipeline (must-fix before re-staging)
+### Follow-up: investigate po temporal pipeline — RESOLVED 2026-04-28
 
-PeriodO's entire reason to exist is temporal coverage of historical
-periods. Yet the staged po snapshot we tested against (built April 23)
-carries **no `timespans` on any record** — neither on geometries[],
-toponyms[], nor relations[]. The downstream `gazetteer_temporal_extent`
-correctly emits `[null, null]`, but the input is bad: the staged docs
-should have temporal data populated by `authorities/periodo-places.py`.
+**Root cause.** A fresh `p0d.json` survey across all 9 047 periods showed
+`period.start.in` / `period.stop.in` is **always a dict**, in one of two
+shapes:
 
-Things to verify locally (no Slurm required):
+* `{"year": "-0585"}` — single point (~94 % of endpoints; signed,
+  zero-padded string).
+* `{"earliestYear": X, "latestYear": Y}` — uncertain range (~6 %; same
+  string format).
 
-1. **Check periodo source-record shape against the parser's expectations.**
-   `authorities/periodo-places.py::_parse_year` does
-   ``int(str(value).lstrip('+'))`` and returns ``None`` on `ValueError`.
-   That works for bare years (`"500"`, `"-300"`, `"+1500"`) but **fails
-   silently** on ISO date strings (`"2020-12-31"`, `"500-01-01"`, etc.).
-   PeriodO's published JSON-LD often serialises temporal endpoints as
-   ISO date strings nested under richer shapes than `{"in": <year>}`
-   — e.g. `{"label": "...", "in": {"earliestYear": "1500"}}` or
-   `{"in": "1500-12-31"}`. Pull a fresh `p0d.json` and grep one
-   `period.start` / `period.stop` block to see the actual key names
-   and value types.
-2. **Trace through `process_period()` (lines ~390–410) by hand on a
-   sample record.** Determine whether `start_node.get('in', ...)`
-   returns the expected shape, whether `_parse_year` succeeds, and
-   whether `timespans` makes it onto the doc that `write_staged_place_doc`
-   sees.
-3. **Patch `_parse_year` to handle ISO dates** (e.g. take the first 4
-   chars before the first non-digit, with sign preservation; or
-   regex-extract the year). Add a unit test alongside the existing
-   ones in `tests/`.
-4. **Re-stage po locally** with the fix
-   (`WHG_STAGING_MODE=1 python -m authorities.periodo-places --confirm`
-   or equivalent) and verify a sampled doc now carries `timespans` on
-   geometries[] and toponyms[].
-5. Push, pull on CRC, re-run the temporal-extent array — `po`
-   `temporal_extent` should land at something like `[-3300, 1500]` (the
-   span of the PeriodO corpus).
+The old `_parse_year` did `int(str(value).lstrip('+'))` on the raw dict,
+so `int("{'year': '-0585'}")` raised `ValueError` and the helper
+silently returned `None` for **every** record. The original docstring's
+hypothesis ("ISO8601 year strings like '0500'") was wrong — no PeriodO
+record uses bare strings; it's always the wrapped dict. Also: the
+existing fallback `start_node.get('in', start_node.get('earliestYear'))`
+looked at the wrong nesting level (`earliestYear` is inside `in`, not on
+the parent `start`/`stop`), so that branch was dead.
 
-This is purely an authority-script bug; no orchestration / staging /
-Slurm changes are needed. Doing it locally avoids burning Slurm time
-on a buggy extract.
+**Fix** (`authorities/periodo-places.py`):
+
+* `_parse_year(value, *, prefer='earliest')` now recurses into the dict:
+  picks `'year'` when present, else `'earliestYear'` for `start` nodes
+  and `'latestYear'` for `stop` nodes — preserving the period's full
+  extent rather than collapsing the range to a midpoint.
+* Call sites updated to pass `prefer='earliest'` for `start_node.get('in')`
+  and `prefer='latest'` for `end_node.get('in')`.
+* Removed the dead top-level `earliestYear`/`latestYear` fallback.
+
+**Verification (local, no Slurm):**
+
+* New unit test `tests/test_periodo_parse_year.py` (6 cases: signed
+  zero-padded year dict, range dict with `prefer='earliest'`/`'latest'`,
+  bare values, None/empty, unparseable) — passes; full suite 31/31.
+* Smoke run of `process_periodo_period` against the fresh `p0d.json`
+  (geometry index empty to skip the slow gazetteer fetch) → **9 047 /
+  9 047** docs now carry `timespans` (was 0 / 9 047). Examples:
+  * "Early Bronze": `[{start: {in: -3499}, end: {in: -2249}}]`
+  * "Energy epoch five: fire" (range shape): `[{start: {in: -1500000},
+    end: {in: 2017}}]`
+
+`enrich_geometry(... timespans=timespans or None ...)` at line 456 was
+already wired up, so geometries[] entries pick up the same timespan
+list automatically once the toponym list is non-empty.
+
+**Next step on CRC.** Push the fix, pull on `/ix1/ishi/elastic`, re-run
+the po staging extract, then re-run the temporal-extent array — `po`
+`temporal_extent` should now land at roughly `[-1500000, 2017]` (driven
+by the geological-epoch periods in the corpus) rather than `[null, null]`.
 
 ### Resume note — start the next session with OHM
 

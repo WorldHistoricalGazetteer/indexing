@@ -95,12 +95,28 @@ def fetch_periodo_data(file_path=None):
     return data
 
 
-def _parse_year(value):
-    """Parse a year from PeriodO temporal extent."""
-    if not value:
+def _parse_year(value, *, prefer='earliest'):
+    """Parse a year from a PeriodO temporal-extent ``in`` value.
+
+    PeriodO nests the year under ``start.in`` / ``stop.in`` as a dict:
+
+    * ``{'year': '-0585'}`` — single point.
+    * ``{'earliestYear': X, 'latestYear': Y}`` — uncertain range; ``prefer``
+      selects which bound to return (``'earliest'`` for start nodes,
+      ``'latest'`` for stop nodes), so the recorded timespan still covers
+      the period's actual extent.
+
+    Bare strings/ints are also accepted defensively. Returns None if no
+    usable year can be extracted.
+    """
+    if value is None or value == '':
         return None
+    if isinstance(value, dict):
+        if 'year' in value:
+            return _parse_year(value.get('year'))
+        key = 'earliestYear' if prefer == 'earliest' else 'latestYear'
+        return _parse_year(value.get(key))
     try:
-        # PeriodO uses ISO8601 year strings like "0500", "-0300", etc.
         return int(str(value).lstrip('+'))
     except (ValueError, TypeError):
         return None
@@ -396,9 +412,9 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
     end_node = period.get('stop', {})
 
     if start_node:
-        start_year = _parse_year(start_node.get('in', start_node.get('earliestYear')))
+        start_year = _parse_year(start_node.get('in'), prefer='earliest')
     if end_node:
-        end_year = _parse_year(end_node.get('in', end_node.get('latestYear')))
+        end_year = _parse_year(end_node.get('in'), prefer='latest')
 
     timespans = []
     if start_year is not None or end_year is not None:
