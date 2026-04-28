@@ -7,37 +7,59 @@ run a single Slurm task processed boundaries at ~380/s for the first minute
 then dropped to ~4/s on the long tail — extrapolating to >100h to finish
 the last 5% of relations.
 
-This planner scans the prefiltered PBF, counts member ways per boundary
-relation, and bin-packs them across N shards using the Longest Processing
-Time (LPT) greedy heuristic on (member_count) as the cost proxy. The
-biggest single relation always lands alone on the lightest-loaded shard,
-so no shard can be slower than the single most expensive relation. With
-N parallel shards, the long tail no longer serialises.
+This planner scans the prefiltered PBF, computes a cost proxy per boundary
+relation, and produces a hybrid shard map:
 
-Member count is a coarse cost proxy — actual assembly cost depends on the
-total number of nodes in member ways — but for our purposes (separating
-the 5 continent-scale relations from the 70 000 small ones) it works well
-enough. A future improvement would be to also bin by ``sum(way.nodes)``,
-but that requires reading way nodes too.
+* The top ``--mega-shard-count`` relations (by cost) each get their own
+  dedicated single-relation shard. These shards run on a separate Slurm
+  array with a long wall budget.
+* The remaining relations are bin-packed across ``--shard-count`` regular
+  shards using the Longest Processing Time (LPT) greedy heuristic. Regular
+  shards run on a normal Slurm array with a shorter wall budget.
 
-Output (``shard_map.json``):
+This compresses the worst-shard wall toward the median: the long tail of
+mega-relations no longer determines the per-shard wall budget for the
+99.9% of well-behaved relations.
+
+Cost proxies (``--cost-proxy``):
+
+* ``member-count`` (cheap, single PBF pass) — counts member ways per
+  relation. Coarse: actual osmium assembly cost is dominated by node
+  density, not member count.
+* ``node-count`` (default; two PBF passes) — sums member-way node counts
+  per relation. Closely tracks osmium ``with_areas()`` assembly cost.
+
+Output (``shard_map.json``)::
 
   {
-    "namespace": "ohm",
-    "shard_count": 16,
-    "total_relations": 68301,
+    "namespace": "osm",
+    "cost_proxy": "node-count",
+    "shard_count": 32,
+    "regular_shard_count": 22,
+    "mega_shard_count": 10,
+    "total_relations": 5000000,
     "shards": [
-      {"shard_id": 0, "relation_ids": [1234, 5678, ...], "estimated_cost": 12345},
+      {"shard_id": 0, "mega": true, "relation_ids": [148838],
+       "estimated_cost": 9876543},
+      ...
+      {"shard_id": 10, "mega": false, "relation_ids": [...],
+       "estimated_cost": 1234567},
       ...
     ]
   }
 
-Run:
+Mega shards always come first (``shard_id`` 0..M-1); regular shards come
+next (``shard_id`` M..M+R-1). The Slurm submitter relies on this ordering
+to split the array.
+
+Run::
 
     python -m processing.boundary_shard_planner \\
         --pbf /path/to/planet-latest.osm.pbf \\
-        --namespace ohm \\
-        --shard-count 16 \\
+        --namespace osm \\
+        --shard-count 22 \\
+        --mega-shard-count 10 \\
+        --cost-proxy node-count \\
         --output /path/to/shard_map.json
 """
 
@@ -49,7 +71,6 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Iterable
 
 from processing.osm_boundary_geometry import (
     _require_osmium,
@@ -57,6 +78,11 @@ from processing.osm_boundary_geometry import (
     is_misc_boundary_value,
     prefilter_boundaries,
 )
+
+
+COST_PROXY_MEMBER_COUNT = "member-count"
+COST_PROXY_NODE_COUNT = "node-count"
+_COST_PROXIES = (COST_PROXY_MEMBER_COUNT, COST_PROXY_NODE_COUNT)
 
 
 def _is_boundary_candidate(tags: dict[str, str]) -> bool:
@@ -81,45 +107,105 @@ def _is_boundary_candidate(tags: dict[str, str]) -> bool:
     return is_misc_boundary_value(boundary_value)
 
 
-def enumerate_boundary_relations(pbf_path: Path) -> list[tuple[int, int]]:
-    """Scan a (prefiltered) PBF and return ``[(relation_id, member_count), …]``.
-
-    Reads only the relations section — does not assemble areas, does not
-    touch member ways or nodes. Cheap.
-    """
+def _enumerate_with_member_count(pbf_path: Path) -> list[tuple[int, int]]:
+    """Single-pass: count member ways per boundary relation."""
     osmium = _require_osmium()
     items: list[tuple[int, int]] = []
 
     fp = osmium.FileProcessor(str(pbf_path), osmium.osm.RELATION)
     for obj in fp:
-        if obj.is_relation():
-            tags = {tag.k: tag.v for tag in obj.tags}
-            if not _is_boundary_candidate(tags):
-                continue
-            member_count = sum(1 for _ in obj.members)
-            items.append((obj.id, member_count))
+        if not obj.is_relation():
+            continue
+        tags = {tag.k: tag.v for tag in obj.tags}
+        if not _is_boundary_candidate(tags):
+            continue
+        member_count = sum(1 for _ in obj.members)
+        items.append((obj.id, member_count))
 
     return items
 
 
-def plan_shards(
-    items: list[tuple[int, int]],
-    shard_count: int,
-) -> list[dict]:
-    """Bin-pack relations into shards using LPT (Longest Processing Time first).
+def _enumerate_with_node_count(pbf_path: Path) -> list[tuple[int, int]]:
+    """Two-pass: sum member-way node counts per boundary relation.
 
-    Sorts items by descending cost, then assigns each to the currently
-    lightest-loaded shard. Result: max-shard-cost is minimised; the
-    largest single relation always sits alone on the shard that ends
-    up at peak load.
+    Pass 1 (relations): for each boundary candidate, collect the set of
+    member way IDs.
+    Pass 2 (ways): build ``way_id → node_count`` for the union of needed
+    way IDs.
+    Then compute ``cost = sum(node_count(w) for w in members)`` per
+    relation.
+
+    A member way that is not present in the PBF (rare, but possible if
+    the prefilter dropped it) contributes 0 — that's a strict
+    underestimate, which is fine: the LPT packer just sees that relation
+    as cheaper.
     """
-    if shard_count <= 0:
-        raise ValueError("shard_count must be positive")
+    osmium = _require_osmium()
 
+    relation_members: dict[int, list[int]] = {}
+    needed_ways: set[int] = set()
+
+    fp = osmium.FileProcessor(str(pbf_path), osmium.osm.RELATION)
+    for obj in fp:
+        if not obj.is_relation():
+            continue
+        tags = {tag.k: tag.v for tag in obj.tags}
+        if not _is_boundary_candidate(tags):
+            continue
+        way_refs = [m.ref for m in obj.members if m.type == "w"]
+        relation_members[obj.id] = way_refs
+        needed_ways.update(way_refs)
+
+    way_node_counts: dict[int, int] = {}
+    if needed_ways:
+        fp = osmium.FileProcessor(str(pbf_path), osmium.osm.WAY)
+        for obj in fp:
+            if not obj.is_way():
+                continue
+            wid = obj.id
+            if wid in needed_ways:
+                way_node_counts[wid] = len(obj.nodes)
+
+    items: list[tuple[int, int]] = []
+    for rid, way_refs in relation_members.items():
+        cost = sum(way_node_counts.get(w, 0) for w in way_refs)
+        # Floor of 1 so a relation with no resolvable ways still gets
+        # placed (won't sit in a special bucket of cost-0 outliers).
+        items.append((rid, max(cost, 1)))
+    return items
+
+
+def enumerate_boundary_relations(
+    pbf_path: Path,
+    cost_proxy: str = COST_PROXY_NODE_COUNT,
+) -> list[tuple[int, int]]:
+    """Scan a (prefiltered) PBF and return ``[(relation_id, cost), …]``.
+
+    ``cost_proxy`` controls how cost is computed; see module docstring.
+    """
+    if cost_proxy == COST_PROXY_MEMBER_COUNT:
+        return _enumerate_with_member_count(pbf_path)
+    if cost_proxy == COST_PROXY_NODE_COUNT:
+        return _enumerate_with_node_count(pbf_path)
+    raise ValueError(
+        f"Unknown cost_proxy {cost_proxy!r}; expected one of {_COST_PROXIES}"
+    )
+
+
+def _lpt_pack(
+    items: list[tuple[int, int]], shard_count: int,
+) -> tuple[list[list[int]], list[int]]:
+    """Greedy Longest-Processing-Time bin-packing.
+
+    Returns ``(shard_relations, shard_loads)`` parallel lists of length
+    ``shard_count``. ``items`` is consumed in descending-cost order; each
+    item is assigned to the currently lightest shard. Result: max-shard
+    cost is minimised.
+    """
     sorted_items = sorted(items, key=lambda item: item[1], reverse=True)
 
-    shard_loads: list[int] = [0] * shard_count
     shard_relations: list[list[int]] = [[] for _ in range(shard_count)]
+    shard_loads: list[int] = [0] * shard_count
     heap = [(0, i) for i in range(shard_count)]
     heapq.heapify(heap)
 
@@ -129,14 +215,61 @@ def plan_shards(
         shard_loads[shard_id] = load + cost
         heapq.heappush(heap, (shard_loads[shard_id], shard_id))
 
-    return [
-        {
-            "shard_id": i,
-            "relation_ids": shard_relations[i],
-            "estimated_cost": shard_loads[i],
-        }
-        for i in range(shard_count)
-    ]
+    return shard_relations, shard_loads
+
+
+def plan_shards(
+    items: list[tuple[int, int]],
+    shard_count: int,
+    *,
+    mega_shard_count: int = 0,
+) -> list[dict]:
+    """Build the hybrid mega + regular shard list.
+
+    The top ``mega_shard_count`` relations (by cost) each get their own
+    dedicated single-relation shard. The remaining relations are
+    LPT-packed into ``shard_count`` regular shards.
+
+    Mega shards are emitted first (``shard_id`` 0..M-1) followed by
+    regular shards (``shard_id`` M..M+R-1). The Slurm submitter uses
+    this ordering to split the array.
+
+    With ``mega_shard_count=0`` the result is the original behaviour:
+    ``shard_count`` LPT-packed shards, none flagged as mega.
+    """
+    if shard_count <= 0:
+        raise ValueError("shard_count must be positive")
+    if mega_shard_count < 0:
+        raise ValueError("mega_shard_count must be non-negative")
+
+    sorted_items = sorted(items, key=lambda item: item[1], reverse=True)
+
+    # If we have fewer relations than mega slots, only the relations we
+    # actually have become mega shards.
+    effective_mega = min(mega_shard_count, len(sorted_items))
+    mega_items = sorted_items[:effective_mega]
+    rest_items = sorted_items[effective_mega:]
+
+    out: list[dict] = []
+
+    for offset, (relation_id, cost) in enumerate(mega_items):
+        out.append({
+            "shard_id": offset,
+            "mega": True,
+            "relation_ids": [relation_id],
+            "estimated_cost": cost,
+        })
+
+    regular_relations, regular_loads = _lpt_pack(rest_items, shard_count)
+    for i in range(shard_count):
+        out.append({
+            "shard_id": effective_mega + i,
+            "mega": False,
+            "relation_ids": regular_relations[i],
+            "estimated_cost": regular_loads[i],
+        })
+
+    return out
 
 
 def write_shard_map(
@@ -145,10 +278,16 @@ def write_shard_map(
     namespace: str,
     shards: list[dict],
     total_relations: int,
+    cost_proxy: str = COST_PROXY_NODE_COUNT,
 ) -> None:
+    mega_count = sum(1 for s in shards if s.get("mega"))
+    regular_count = len(shards) - mega_count
     payload = {
         "namespace": namespace,
+        "cost_proxy": cost_proxy,
         "shard_count": len(shards),
+        "regular_shard_count": regular_count,
+        "mega_shard_count": mega_count,
         "total_relations": total_relations,
         "shards": shards,
     }
@@ -163,10 +302,16 @@ def run_planner(
     shard_count: int,
     output_path: Path,
     skip_prefilter: bool = False,
+    mega_shard_count: int = 0,
+    cost_proxy: str = COST_PROXY_NODE_COUNT,
 ) -> dict:
-    """Pre-filter the PBF (if needed), count members per relation, write shard map."""
+    """Pre-filter the PBF (if needed), score relations, write shard map."""
     if not pbf_path.exists():
         raise FileNotFoundError(f"PBF file not found: {pbf_path}")
+    if cost_proxy not in _COST_PROXIES:
+        raise ValueError(
+            f"Unknown cost_proxy {cost_proxy!r}; expected one of {_COST_PROXIES}"
+        )
 
     started = time.time()
 
@@ -180,7 +325,7 @@ def run_planner(
         scan_pbf = Path(result) if result else pbf_path
 
     try:
-        items = enumerate_boundary_relations(scan_pbf)
+        items = enumerate_boundary_relations(scan_pbf, cost_proxy=cost_proxy)
     finally:
         if (
             prefiltered_path is not None
@@ -198,23 +343,38 @@ def run_planner(
             "either the PBF lacks boundary relations or the filter is too strict."
         )
 
-    shards = plan_shards(items, shard_count)
+    shards = plan_shards(items, shard_count, mega_shard_count=mega_shard_count)
     write_shard_map(
         output_path,
         namespace=namespace,
         shards=shards,
         total_relations=len(items),
+        cost_proxy=cost_proxy,
     )
 
     elapsed = time.time() - started
+    regular_shards = [s for s in shards if not s.get("mega")]
+    mega_shards = [s for s in shards if s.get("mega")]
     summary = {
         "namespace": namespace,
         "pbf_file": str(pbf_path),
-        "shard_count": shard_count,
+        "cost_proxy": cost_proxy,
+        "shard_count": len(shards),
+        "regular_shard_count": len(regular_shards),
+        "mega_shard_count": len(mega_shards),
         "total_relations": len(items),
-        "max_shard_relations": max(len(s["relation_ids"]) for s in shards),
-        "max_shard_cost": max(s["estimated_cost"] for s in shards),
-        "min_shard_cost": min(s["estimated_cost"] for s in shards),
+        "max_regular_shard_relations": (
+            max((len(s["relation_ids"]) for s in regular_shards), default=0)
+        ),
+        "max_regular_shard_cost": (
+            max((s["estimated_cost"] for s in regular_shards), default=0)
+        ),
+        "min_regular_shard_cost": (
+            min((s["estimated_cost"] for s in regular_shards), default=0)
+        ),
+        "max_mega_shard_cost": (
+            max((s["estimated_cost"] for s in mega_shards), default=0)
+        ),
         "shard_map_path": str(output_path),
         "elapsed_seconds": round(elapsed, 1),
     }
@@ -228,7 +388,14 @@ def main() -> None:
     parser.add_argument("--pbf", required=True, help="Path to OSM/OHM PBF file")
     parser.add_argument("--namespace", required=True, choices=["osm", "ohm"])
     parser.add_argument("--shard-count", type=int, required=True,
-                        help="Number of parallel shards to plan")
+                        help="Number of regular (LPT-packed) shards")
+    parser.add_argument("--mega-shard-count", type=int, default=0,
+                        help="Number of dedicated single-relation mega shards "
+                             "for the costliest relations (default: 0)")
+    parser.add_argument("--cost-proxy", choices=_COST_PROXIES,
+                        default=COST_PROXY_NODE_COUNT,
+                        help="Cost proxy for ranking and packing relations "
+                             f"(default: {COST_PROXY_NODE_COUNT})")
     parser.add_argument("--output", required=True,
                         help="Where to write the shard_map.json")
     parser.add_argument("--skip-prefilter", action="store_true",
@@ -241,6 +408,8 @@ def main() -> None:
         shard_count=args.shard_count,
         output_path=Path(args.output),
         skip_prefilter=args.skip_prefilter,
+        mega_shard_count=args.mega_shard_count,
+        cost_proxy=args.cost_proxy,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 

@@ -2137,3 +2137,185 @@ Verified on the actual OHM h3_merged JSONL: the first 5000 rows fail
 ``paj.read_json`` without the fix and pass with it. Now expecting the
 re-submitted postchain to clear h3_merge → h3_coverage →
 temporal_extent.
+
+### OHM full benchmark — END-TO-END SUCCESS (run id `ohmsmoke-22926571`)
+
+After three iterations to land the leakage filter, the shared
+``staged_parquet`` module, and ``drop_nulls_for_parquet``, the OHM
+chain ran end-to-end clean. Every stage produced the expected output;
+no stage was skipped or white-lied through. Per-stage wall times
+(in submission order):
+
+All times are formatted ``HH:MM:SS``.
+
+| Stage | Job | Wall (HH:MM:SS) | Throughput / output |
+|---|---|---:|---|
+| Extract | smp 22923902 | **00:30:38** | 905,205 docs / 654,012 geom_store entries / 99,512 relation fallbacks (boundary placeholders) |
+| Boundary planner | smp 22932735 | **00:04:07** | Prefilter 1.1 GB → 0.1 GB; enumerate 69,863 boundary candidates; LPT-pack into 16 shards (max/min cost ratio 1.00) |
+| Boundary workers | smp 22932736 (16-task array) | min **02:29:41** / median **~03:35** / **max 06:13:15** | 68,179 patches written across 16 shard JSONLs; longest shard determines effective wall |
+| Boundary finalize | smp 22932737 | **00:00:11** | Concatenate 16 shard JSONLs → 138 MB / 68,179 records |
+| Boundary_merge | smp postchain | **00:00:39** | 905,205 docs in/out, 68,179 patched, 0 unmatched |
+| H3_stage | smp postchain | **00:00:30** | 905,205 seen / 873,872 patched / 873,872 geometries with H3 (real polygons via boundary_merged input, not point-only fallbacks) |
+| H3_merge | htc 8934146 | **00:00:36** | 905,205 docs in/out, 873,872 updated, parquet sidecar written cleanly via the new pipeline |
+| H3_coverage | htc 8934146 | **00:00:01** | Global namespace, no compaction (same as po) |
+| Temporal_extent | htc 8934146 | **00:00:30** | 905,205 records, **1,424 outlier readings rejected** by the clamp, range **[-10000, 2100]** (vs `[-99999, 20222]` without clamp) |
+
+Per-shard wall times for the 16-task boundary worker array, sorted
+(HH:MM:SS): 02:29:41, 02:34:59, 02:58:22, 03:02:16, 03:02:42,
+03:20:40, 03:21:03, 03:33:18, 03:38:28, 03:47:51, 03:49:06, 04:39:04,
+04:47:39, 04:56:17, 05:31:53, **06:13:15**.
+
+**Effective end-to-end wall** (extract + boundary chain + postchain,
+serial-on-the-critical-path because boundary_merge depends on
+boundary finalize, h3_stage depends on boundary_merge, etc.):
+00:30:38 + 00:04:07 + 06:13:15 + 00:00:11 + 00:00:39 + 00:00:30 +
+00:00:36 + 00:00:01 + 00:00:30 = **~06:50:27** (almost 7 hours).
+
+The boundary worker max wall (6h 13m) dominates everything else by
+two orders of magnitude. The 16-shard parallelism still pays off
+massively: the original single-task attempt was cancelled at ~01:05
+after assembling 95% of boundaries with the long tail projected to
+take >100 h serially. With 16 parallel shards, the effective boundary
+wall is **bounded by the single hardest shard** (06:13:15 here) rather
+than summing across them — the 16 shards' aggregate CPU time was
+~63 h, vs ~6 h wall.
+
+A reasonable next refinement (not yet done): the 6:13 / 2:30 spread
+between the slowest and fastest shards is ~2.5×, which means LPT
+member-count packing isn't a great proxy for actual assembly cost.
+For OSM scale, **profiling assembly cost per relation directly** (or
+moving the heaviest 5–10 relations to dedicated single-relation
+shards with a longer wall budget) would compress that spread and
+reduce the worst-case wall further.
+
+**Outlier clamp working as designed.** The `clamp_range` was
+`[-10000, 2126]` (`current_year + 100` = 2126 at run time). 1,424
+year readings outside that range were dropped — about 0.16% of all
+year readings across the corpus (905,205 records × ~1-2 timespans
+each). The reported aggregate `[-10000, 2100]` puts the lower bound
+exactly at the clamp, so OHM has at least some pre-Holocene
+``start_date`` tags worth investigating later — but they're now
+quarantined from the search-UI temporal filter rather than being
+silent garbage.
+
+### OSM cost extrapolation
+
+Conservative scaling of the OHM measurements to OSM's planet PBF
+(~80 GB vs OHM's 1.1 GB; ~18 M records vs 905 K). Caveats: spatial
+density of admin boundaries and member-count distribution differ;
+treat as upper-bound estimates.
+
+| Stage | OHM wall (HH:MM:SS) | Scale factor | OSM projection | Notes |
+|---|---:|---:|---:|---|
+| Extract | 00:30:38 | ~73× (PBF size) | **~37 h** | **Single-task is well over the htc-htc-ll 21-day cap in CPU-cost terms but fits comfortably in wall time.** Bigger concern: it blocks every downstream stage and leaves no retry margin. OHM's existing checkpoint mechanism (`OHM_STATE_FILE`) suggests the extract can be resumed across multiple Slurm jobs — but that needs to be exercised end-to-end on real OSM scale. Alternative: shard by PBF region (osmium extract by bbox) and run parallel extracts per region. |
+| Boundary planner | 00:04:07 | ~73× (PBF size) | **~5 h** | Single-task; the 16s prefilter step on OHM scales to 16 × 73 ≈ 20 min on OSM PBF. The bulk of the rest is reading relation tags. May need bigger memory + smp `htc-htc-l` (6-day cap). |
+| Boundary workers | **06:13:15** (max) | linear in worst-shard relation cost | **~30–60 h per shard at 32 shards** | OHM's worst shard had a single relation at 4,612 members; OSM's largest admin/coastal relations are 5–10× larger. Per-shard wall scales with the *single largest relation in the shard*, not the average. Worst-case shard is currently uncapped; **profiling-driven sharding (give the top 5–10 mega-relations dedicated shards with longer wall budgets) is the highest-leverage optimisation before OSM.** Without it, plan for `htc-htc-l` (6 d) per worker and accept that shard wall is the long pole. |
+| Boundary finalize | 00:00:11 | ~10× | **~2 min** | Trivial. |
+| Boundary_merge | 00:00:39 | ~20× (records) | **~13 min** | I/O-bound. |
+| H3_stage | 00:00:30 | ~20× (records) + heavier polyfill cost | **~30 min** | OHM's 873K-in-30s rate was dominated by point hashes (sub-ms each); OSM's polygon mix may pull average per-doc cost up but most records are still points. |
+| H3_merge | 00:00:36 | ~20× | **~12 min** | I/O-bound. |
+| H3_coverage | 00:00:01 | global | **~1 min** | Trivial. |
+| Temporal_extent | 00:00:30 | ~20× | **~10 min** | I/O-bound. |
+| **Critical path** (extract → … → temporal_extent) | **~06:50** | | **~3–4 days** wall | Dominated by extract (~37 h serial) + worst boundary shard (~30–60 h). Postchain is rounding error. |
+
+**Bottom line for OSM:**
+
+* **Boundary worker long-pole is the real risk, not extract.** OHM's
+  single-task extract at 30 min projects to a single-task OSM extract
+  of ~37 h — long, but inside the 21-day Slurm cap and addressable
+  with the existing checkpoint mechanism. By contrast, OHM's worst
+  boundary shard at 6h 13m projects (without further work) to a
+  worst-shard OSM wall of 30–60 h — uncomfortably close to the cap
+  and very sensitive to the single biggest-cost relation that lands
+  on it.
+* **Highest-leverage optimisation before OSM**: profile actual osmium
+  assembly cost per relation (or use a much better cost proxy than
+  member count, e.g. ``sum(member_way.node_count)``), then route the
+  top ~10 mega-relations to dedicated single-relation shards with
+  long wall budgets. The remaining 99.99% of relations bin-pack
+  evenly into the rest. This compresses the worst-shard wall toward
+  the median, where the *aggregate-cost-balanced* shards live.
+* **Second-highest-leverage**: prove the OSM extract resume mechanism
+  works across consecutive Slurm jobs. The `OSM_STATE_FILE` /
+  `OHM_STATE_FILE` checkpoints exist; nothing has end-to-end
+  exercised "stop at job-time-limit, resume from checkpoint, continue
+  to completion" on real planet PBF data. A one-namespace
+  proof-of-concept (deliberately interrupt and resume) gives
+  confidence before committing 1+ day of htc time.
+* **Everything after the extract + boundary chain is rounding error.**
+  Postchain (boundary_merge + h3 + coverage + temporal) was 02:46
+  total on OHM and projects to ~70 min on OSM. No tuning needed.
+
+### Patch landed 2026-04-28 (highest-leverage optimisation, pre-OSM)
+
+The "highest-leverage optimisation before OSM" called out above
+(profile-driven mega-shard routing + better cost proxy) is implemented
+locally; pushed in a separate session and CRC re-test pending.
+
+**`processing/boundary_shard_planner.py` — node-count cost proxy +
+mega-shard routing.**
+
+* New `--cost-proxy {member-count, node-count}` flag; default
+  `node-count`. Member count is preserved as an opt-in for the OHM
+  scale (single-pass, no way-node read). Node count does a second PBF
+  pass (ways only, restricted to the union of way IDs referenced by
+  boundary candidates), summing `len(way.nodes)` per relation. This is
+  the actual osmium `with_areas()` assembly cost driver — way count
+  alone misses the 100×-spread between a 4k-member relation built from
+  short coastal segments vs. one built from continent-spanning ways.
+* New `--mega-shard-count N` flag; default 0 (preserves OHM behaviour).
+  When `N > 0`, the top-N relations by cost each get their own
+  dedicated single-relation shard (`mega: true`). The remaining
+  relations are LPT-packed into the regular `--shard-count` shards.
+* Output schema gains `cost_proxy`, `regular_shard_count`,
+  `mega_shard_count`, and a per-shard `mega: bool`. Mega shards are
+  always emitted first (`shard_id` 0..M-1) so the Slurm submitter can
+  cleanly split the array. Existing `_load_shard_relation_ids` lookup
+  in `boundary_stage.py` is unchanged — it already keys by `shard_id`,
+  which now spans both kinds.
+
+**`processing/submit_boundary_slurm.py` — split worker array.**
+
+* Now submits up to four jobs: planner → mega-array (optional) →
+  regular-array → finalizer. Mega and regular arrays both depend on
+  the planner; the finalizer depends on whichever worker arrays
+  actually ran.
+* Per-namespace defaults split into regular vs. mega:
+  - OHM: 16 regular × 8 h, 0 mega (unchanged behaviour for the
+    well-behaved OHM corpus).
+  - OSM: 22 regular × 24 h, 10 mega × 96 h.
+* Memory split: 32 GB regular, 64 GB mega — the heaviest single
+  relations are the ones most likely to OOM on a 32 GB worker.
+* Existing `--shard-count`, `--regular-wall-hours`, `--mega-wall-hours`,
+  `--cost-proxy` overrides exposed on the CLI for tuning during the
+  first OSM run.
+
+**Tests.** `tests/test_boundary_shard_planner.py` extended with a
+`TestPlanShardsMega` class (5 tests) and 2 new schema/disjointness
+checks. 24 tests total; 24/24 pass locally. Key invariants asserted:
+
+* Top-N by cost end up in single-relation mega shards.
+* Mega shards always have `shard_id` 0..M-1 (submitter contract).
+* Pulling out the whale compresses the max regular shard cost
+  dramatically (the whole point of the optimisation).
+* Mega + regular relation-ID sets remain disjoint — no regression of
+  the cross-shard leakage filter.
+
+**Expected impact on OSM worst-shard wall.** OHM's 06:13:15 max-shard
+wall was already dominated by *one* relation; the OHM extrapolation in
+the table above projects 30–60 h per OSM regular shard. With the top
+~10 OSM mega-relations isolated to dedicated 96 h shards, the
+remaining LPT-packed regular shards see only sub-mega relations and
+should compress toward the OHM median (03:35) × OSM scale ≈ 12–15 h
+per regular shard. The critical path becomes
+`max(extract, mega-shard wall)` — i.e. limited by either ~37 h extract
+or ~96 h budgeted mega wall (with the actual largest single relation
+likely landing well inside that envelope). Numbers to confirm on the
+first OSM run.
+
+**Not done (recorded as the second-highest-leverage item).** The OSM
+extract resume mechanism still has not been end-to-end exercised
+across consecutive Slurm jobs — `OSM_STATE_FILE` exists, but
+"stop-at-time-limit → resume → finish" is unproven on planet PBF.
+Doing this before committing 1+ day of htc time on the first full OSM
+extract remains a worthwhile pre-flight check.

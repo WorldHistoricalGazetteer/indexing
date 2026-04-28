@@ -5,6 +5,10 @@ Focuses on the deterministic, PBF-independent parts:
 * ``plan_shards`` Longest-Processing-Time bin-packing — the largest single
   relation always lands on the lightest-loaded shard, max load is
   minimised, and every relation appears exactly once.
+* Mega-shard routing — top-N relations get dedicated single-relation
+  shards, the rest LPT-pack into the remaining shards, and shard_id
+  ordering puts mega shards first (the Slurm submitter relies on this
+  to split the array).
 * ``_is_boundary_candidate`` accepts the same boundary types the worker
   would assemble (admin levels 0..11, continent, country_border, curated
   misc) and rejects everything else.
@@ -24,6 +28,8 @@ import unittest
 from pathlib import Path
 
 from processing.boundary_shard_planner import (
+    COST_PROXY_MEMBER_COUNT,
+    COST_PROXY_NODE_COUNT,
     _is_boundary_candidate,
     plan_shards,
     write_shard_map,
@@ -71,6 +77,88 @@ class TestPlanShards(unittest.TestCase):
         flat = [rid for shard in shards for rid in shard["relation_ids"]]
         self.assertEqual(sorted(flat), sorted(i for i, _ in items))
 
+    def test_default_no_mega_shards(self):
+        """With ``mega_shard_count=0`` (default), no shard is flagged mega."""
+        shards = plan_shards([(i, i + 1) for i in range(20)], 4)
+        self.assertEqual(len(shards), 4)
+        self.assertTrue(all(not s["mega"] for s in shards))
+
+
+class TestPlanShardsMega(unittest.TestCase):
+    """Mega-shard routing: top-N by cost get dedicated single-relation
+    shards, rest LPT-pack into the remaining shards."""
+
+    def test_top_n_get_dedicated_shards(self):
+        items = [(0, 1000), (1, 900), (2, 800), (3, 5), (4, 4), (5, 3), (6, 2)]
+        shards = plan_shards(items, shard_count=2, mega_shard_count=3)
+
+        self.assertEqual(len(shards), 5)
+        mega = [s for s in shards if s["mega"]]
+        regular = [s for s in shards if not s["mega"]]
+        self.assertEqual(len(mega), 3)
+        self.assertEqual(len(regular), 2)
+
+        # The three mega relations are exactly the top-3 by cost,
+        # each in its own single-relation shard.
+        mega_relation_ids = sorted(rid for s in mega for rid in s["relation_ids"])
+        self.assertEqual(mega_relation_ids, [0, 1, 2])
+        for s in mega:
+            self.assertEqual(len(s["relation_ids"]), 1)
+
+        # All other relations are in the regular shards.
+        regular_relation_ids = sorted(
+            rid for s in regular for rid in s["relation_ids"]
+        )
+        self.assertEqual(regular_relation_ids, [3, 4, 5, 6])
+
+    def test_mega_shards_come_first(self):
+        """Submitter relies on ``shard_id`` 0..M-1 == mega, then regular."""
+        shards = plan_shards(
+            [(i, 100 - i) for i in range(10)],
+            shard_count=4, mega_shard_count=3,
+        )
+        # Shard ids are 0..6 in order; first 3 are mega, last 4 regular.
+        self.assertEqual([s["shard_id"] for s in shards], list(range(7)))
+        for s in shards[:3]:
+            self.assertTrue(s["mega"])
+        for s in shards[3:]:
+            self.assertFalse(s["mega"])
+
+    def test_mega_count_exceeds_relations(self):
+        """If we ask for more mega shards than we have relations, the
+        excess shards simply don't materialise — no empty mega shards."""
+        items = [(0, 100), (1, 50)]
+        shards = plan_shards(items, shard_count=2, mega_shard_count=5)
+        mega = [s for s in shards if s["mega"]]
+        regular = [s for s in shards if not s["mega"]]
+        # Both relations became mega; regular shards are empty but exist.
+        self.assertEqual(len(mega), 2)
+        self.assertEqual(len(regular), 2)
+        for s in regular:
+            self.assertEqual(s["relation_ids"], [])
+
+    def test_mega_compresses_max_regular_load(self):
+        """Pulling out the top-N reduces max regular shard cost — that's
+        the whole point of the optimisation."""
+        # One whale + many minnows.
+        items = [(0, 100_000)] + [(i, 10) for i in range(1, 51)]
+
+        without_mega = plan_shards(items, shard_count=4)
+        with_mega = plan_shards(items, shard_count=4, mega_shard_count=1)
+
+        max_without = max(s["estimated_cost"] for s in without_mega)
+        max_regular_with = max(
+            s["estimated_cost"] for s in with_mega if not s["mega"]
+        )
+        # Without mega: the whale dominates one shard (~100_000).
+        # With mega: the whale is isolated; regular shards see only minnows.
+        self.assertGreaterEqual(max_without, 100_000)
+        self.assertLess(max_regular_with, 200)
+
+    def test_negative_mega_count_raises(self):
+        with self.assertRaises(ValueError):
+            plan_shards([(0, 1)], shard_count=2, mega_shard_count=-1)
+
 
 class TestIsBoundaryCandidate(unittest.TestCase):
     def test_admin_level_in_range(self):
@@ -109,14 +197,41 @@ class TestWriteShardMap(unittest.TestCase):
         shards = plan_shards([(1, 5), (2, 3), (3, 2)], 2)
         with tempfile.TemporaryDirectory() as tmp:
             out_path = Path(tmp) / "shard_map.json"
-            write_shard_map(out_path, namespace="ohm", shards=shards, total_relations=3)
+            write_shard_map(
+                out_path, namespace="ohm", shards=shards,
+                total_relations=3, cost_proxy=COST_PROXY_MEMBER_COUNT,
+            )
             payload = json.loads(out_path.read_text(encoding="utf-8"))
         self.assertEqual(payload["namespace"], "ohm")
         self.assertEqual(payload["shard_count"], 2)
+        self.assertEqual(payload["regular_shard_count"], 2)
+        self.assertEqual(payload["mega_shard_count"], 0)
+        self.assertEqual(payload["cost_proxy"], COST_PROXY_MEMBER_COUNT)
         self.assertEqual(payload["total_relations"], 3)
         self.assertEqual(len(payload["shards"]), 2)
         flat = sorted(rid for s in payload["shards"] for rid in s["relation_ids"])
         self.assertEqual(flat, [1, 2, 3])
+
+    def test_round_trip_with_mega(self):
+        shards = plan_shards(
+            [(1, 100), (2, 50), (3, 5), (4, 4), (5, 3)],
+            shard_count=2, mega_shard_count=2,
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            out_path = Path(tmp) / "shard_map.json"
+            write_shard_map(
+                out_path, namespace="osm", shards=shards,
+                total_relations=5, cost_proxy=COST_PROXY_NODE_COUNT,
+            )
+            payload = json.loads(out_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["regular_shard_count"], 2)
+        self.assertEqual(payload["mega_shard_count"], 2)
+        self.assertEqual(payload["cost_proxy"], COST_PROXY_NODE_COUNT)
+        # Mega shards always emit before regular shards.
+        self.assertTrue(payload["shards"][0]["mega"])
+        self.assertTrue(payload["shards"][1]["mega"])
+        self.assertFalse(payload["shards"][2]["mega"])
+        self.assertFalse(payload["shards"][3]["mega"])
 
 
 class TestLoadShardRelationIds(unittest.TestCase):
@@ -128,9 +243,10 @@ class TestLoadShardRelationIds(unittest.TestCase):
     filter in the first place.
     """
 
-    def _make_map(self, tmp: str) -> Path:
+    def _make_map(self, tmp: str, *, mega_shard_count: int = 0) -> Path:
         shards = plan_shards(
-            [(100, 5), (200, 4), (300, 3), (400, 2), (500, 1)], 3,
+            [(100, 50), (200, 40), (300, 30), (400, 20), (500, 10)],
+            shard_count=3, mega_shard_count=mega_shard_count,
         )
         out_path = Path(tmp) / "shard_map.json"
         write_shard_map(
@@ -165,6 +281,19 @@ class TestLoadShardRelationIds(unittest.TestCase):
         union = set().union(*id_sets)
         # Sum of sizes equals union size iff disjoint.
         self.assertEqual(sum(len(s) for s in id_sets), len(union))
+
+    def test_disjoint_across_mega_and_regular_shards(self):
+        """Mega + regular shards together must still be disjoint — the
+        worker leakage filter consumes both kinds via the same lookup."""
+        with tempfile.TemporaryDirectory() as tmp:
+            map_path = self._make_map(tmp, mega_shard_count=2)
+            payload = json.loads(map_path.read_text())
+            shard_ids = [s["shard_id"] for s in payload["shards"]]
+            id_sets = [_load_shard_relation_ids(map_path, sid) for sid in shard_ids]
+        union = set().union(*id_sets)
+        self.assertEqual(sum(len(s) for s in id_sets), len(union))
+        # Total recorded relation IDs equals the input.
+        self.assertEqual(len(union), 5)
 
 
 if __name__ == "__main__":
