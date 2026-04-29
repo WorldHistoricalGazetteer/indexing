@@ -33,10 +33,40 @@ STILL_EXISTING = 9999
 
 
 def ensure_database():
-    """Build the SQLite database if it doesn't exist."""
-    if DB_FILE.exists():
+    """Build the SQLite database if it's missing or empty.
+
+    The earlier behaviour (rebuild only if missing) silently produced
+    zero-row outputs when an empty placeholder ``tgaz.db`` already
+    existed — typically when a prior build aborted because the SQL
+    dump on disk was a Git LFS pointer instead of the real content.
+    Now we also trigger a rebuild when the ``placename`` table is
+    empty (or the schema isn't there at all), which covers both cases.
+    """
+    rebuild = not DB_FILE.exists()
+    if not rebuild:
+        try:
+            conn = sqlite3.connect(str(DB_FILE))
+            try:
+                row = conn.execute("SELECT COUNT(*) FROM placename").fetchone()
+                if not row or row[0] == 0:
+                    rebuild = True
+            except sqlite3.OperationalError:
+                # Schema not initialised — treat as missing.
+                rebuild = True
+            finally:
+                conn.close()
+        except sqlite3.DatabaseError:
+            # Corrupt/empty file — re-build.
+            rebuild = True
+
+    if not rebuild:
         return
-    print("Database not found — building from SQL dump...")
+
+    if DB_FILE.exists():
+        print(f"Existing database is empty/invalid — rebuilding from SQL dump...")
+        DB_FILE.unlink()
+    else:
+        print("Database not found — building from SQL dump...")
     subprocess.run(
         [sys.executable, "-m", "authorities.chgis.build_database"],
         check=True,

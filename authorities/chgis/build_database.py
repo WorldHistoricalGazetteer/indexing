@@ -39,20 +39,50 @@ DIR = Path(__file__).resolve().parent
 SQL_FILE = DIR / "02-tgaz-dev-2018.sql"
 DB_FILE = DIR / "tgaz.db"
 
-# GitHub raw URL for the SQL dump (main branch)
+# GitHub URL for the SQL dump. **Use ``github.com/.../raw/main/...``
+# (NOT ``raw.githubusercontent.com``)** — the upstream file is tracked
+# via Git LFS, and ``raw.githubusercontent.com`` serves the 134-byte LFS
+# pointer instead of the actual content. The ``github.com/.../raw/``
+# URL follows the LFS redirect to ``media.githubusercontent.com`` and
+# returns the real ~123 MB SQL dump.
 SQL_URL = (
-    "https://raw.githubusercontent.com/fccs-dci/containerized_tgaz"
-    "/main/mysql-init/02-tgaz-dev-2018.sql"
+    "https://github.com/fccs-dci/containerized_tgaz"
+    "/raw/main/mysql-init/02-tgaz-dev-2018.sql"
 )
+
+# Detect the case where someone has committed an LFS pointer file in
+# place of the real dump (the file we ship may already be a pointer if
+# the repo was cloned without ``git lfs pull``). LFS pointer files
+# begin with this exact line.
+_LFS_POINTER_MARKER = b"version https://git-lfs.github.com/spec/v1"
+
+
+def _is_lfs_pointer(path: Path) -> bool:
+    if not path.exists() or path.stat().st_size > 1024:
+        return False
+    try:
+        with path.open("rb") as fh:
+            return fh.read(len(_LFS_POINTER_MARKER)) == _LFS_POINTER_MARKER
+    except OSError:
+        return False
 
 
 def fetch_sql_dump():
-    """Download the SQL dump from GitHub if not present locally."""
+    """Download the SQL dump from GitHub if missing or an LFS pointer."""
     if SQL_FILE.exists():
-        logger.info(f"SQL dump already present ({SQL_FILE.stat().st_size / 1024 / 1024:.0f} MB)")
-        return
+        if _is_lfs_pointer(SQL_FILE):
+            logger.warning(
+                f"{SQL_FILE.name} is a Git LFS pointer "
+                f"({SQL_FILE.stat().st_size} bytes) — re-downloading"
+            )
+            SQL_FILE.unlink()
+        else:
+            logger.info(
+                f"SQL dump already present ({SQL_FILE.stat().st_size / 1024 / 1024:.0f} MB)"
+            )
+            return
 
-    logger.info(f"Downloading SQL dump from GitHub...")
+    logger.info(f"Downloading SQL dump from GitHub (LFS-redirect URL)...")
     logger.info(f"  {SQL_URL}")
 
     try:
