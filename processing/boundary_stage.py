@@ -38,6 +38,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from processing.geom_store import GeomStoreWriter, configure_module_writer
 from processing.osm_boundary_geometry import (
     BoundaryPassProcessor,
     _ProgressReporter,
@@ -47,6 +48,7 @@ from processing.osm_boundary_geometry import (
 )
 from processing.settings import (
     DATA_DIR,
+    GEOM_STORE_STAGING_DIR,
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
@@ -266,9 +268,22 @@ def run_boundary_stage(
 
     processor = BoundaryPassProcessor(add_patch, namespace)
 
+    # Per-shard geom_store staging file. Concurrent shards must not write to
+    # the same ``*.bin`` so each shard gets its own namespace key, picked up
+    # by ``consolidate_geom_store`` alongside the per-authority files. In
+    # non-shard mode there's a single writer for the namespace.
+    if is_shard:
+        geom_writer_ns = f"{namespace}_boundary_shard_{shard_id}"
+    else:
+        geom_writer_ns = f"{namespace}_boundary"
+    geom_writer = GeomStoreWriter(GEOM_STORE_STAGING_DIR, geom_writer_ns)
+    configure_module_writer(geom_writer)
+
     def signal_handler(sig, frame):  # pragma: no cover - runtime interruption path
         out.flush()
         out.close()
+        configure_module_writer(None)
+        geom_writer.close()
         if not is_shard and manifest_path and manifest_path.exists():
             update_namespace_stage_status(manifest_path, namespace, "boundary", "failed", error="signal")
         raise SystemExit(130)
@@ -303,6 +318,8 @@ def run_boundary_stage(
         raise
     finally:
         out.close()
+        configure_module_writer(None)
+        geom_writer.close()
         if filtered_pbf_path and os.path.exists(filtered_pbf_path):
             try:
                 os.remove(filtered_pbf_path)

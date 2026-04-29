@@ -287,7 +287,16 @@ class BoundaryPassProcessor:
             place_id = f"{self.namespace}:r{relation_id}"
             timespans = build_timespans(tags)
             raw_geom = mapping(geom)
-            geom_entry = enrich_geometry(raw_geom, timespans=timespans or None)
+            # ``geom_key`` is required for the multipolygon to be written to
+            # the geom store. Without it ``enrich_geometry`` only emits the
+            # hull/repr_point preview and ``has_geom`` stays False — leaving
+            # tile generation with nothing to tile (boundaries store full
+            # geom externally; the doc keeps only the simplified preview).
+            geom_entry = enrich_geometry(
+                raw_geom,
+                timespans=timespans or None,
+                geom_key=f"{place_id}_0",
+            )
             if not geom_entry:
                 self.geom_errors += 1
                 return
