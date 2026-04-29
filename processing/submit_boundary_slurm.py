@@ -82,7 +82,13 @@ _DEFAULT_MEGA_WALL_HOURS = {
     "ohm": 12,
     "osm": 96,
 }
-_PLANNER_WALL_HOURS = 1
+_PLANNER_WALL_HOURS = {
+    # OSM planet PBF (~92 GB) needs ~2-3 h to prefilter + enumerate boundary
+    # relations on a single node; pad to 6 h to leave headroom for scratch
+    # contention and avoid the 1 h timeout we hit on the first OSM run.
+    "ohm": 2,
+    "osm": 6,
+}
 _FINALIZE_WALL_HOURS = 1
 
 
@@ -138,7 +144,7 @@ def _build_planner_sbatch(
 #SBATCH --job-name=whg-boundary-planner-{run_id}
 #SBATCH --output={log_prefix}.out
 #SBATCH --error={log_prefix}.err
-#SBATCH --time={_hours_to_slurm_time(_PLANNER_WALL_HOURS)}
+#SBATCH --time={_hours_to_slurm_time(_PLANNER_WALL_HOURS[namespace])}
 #SBATCH --partition=smp
 #SBATCH --nodes=1
 #SBATCH --ntasks=1

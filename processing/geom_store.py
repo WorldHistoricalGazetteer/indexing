@@ -200,6 +200,7 @@ def consolidate_geom_store(
     output_dir: str | Path,
     shard_size_bytes: int = DEFAULT_SHARD_SIZE_BYTES,
     delete_staging: bool = True,
+    merge_with_existing: bool = False,
 ) -> int:
     """
     Read all per-authority staging files, sort by H3 centroid (r3), and write
@@ -211,6 +212,14 @@ def consolidate_geom_store(
         output_dir:        Destination for shard files and ``index.json``.
         shard_size_bytes:  Target shard file size (default 256 MB).
         delete_staging:    If True, remove staging files after consolidation.
+        merge_with_existing: If True and ``output_dir`` already holds shard
+                           files + ``index.json`` (from a prior consolidation),
+                           keep them in place and append new entries into
+                           freshly-numbered shards. Existing keys overwritten
+                           by re-staged entries point to the new shard. Use
+                           this after each round of additional staging (e.g.
+                           boundary_stage shards) so the 10M-entry base index
+                           isn't rebuilt from scratch each time.
 
     Returns:
         Total number of geometry entries written.
@@ -254,8 +263,34 @@ def consolidate_geom_store(
         staging_handles[bin_path.name] = open(bin_path, "rb")
 
     # ── 4. Write spatially-sharded output files ───────────────────────────
+    # In merge mode, preserve existing shards and continue from the next
+    # shard number — the existing index.json keys still resolve correctly
+    # because their (file, offset, length) tuples are unchanged. Re-staged
+    # keys overwrite the existing index entry to point at the new shard.
     final_index: dict[str, dict] = {}
-    shard_num = 1
+    starting_shard_num = 1
+    if merge_with_existing:
+        existing_index_path = output_dir / "index.json"
+        if existing_index_path.exists():
+            with open(existing_index_path) as f:
+                final_index = json.load(f)
+            existing_shards = sorted(output_dir.glob("geom_shard_*.bin"))
+            if existing_shards:
+                last_name = existing_shards[-1].name
+                try:
+                    last_num = int(
+                        last_name.replace("geom_shard_", "").replace(".bin", "")
+                    )
+                    starting_shard_num = last_num + 1
+                except ValueError:
+                    pass
+            print(
+                f"consolidate_geom_store: merging — kept "
+                f"{len(final_index):,} existing entries, "
+                f"new shards start at {starting_shard_num:04d}"
+            )
+
+    shard_num = starting_shard_num
     shard_path = output_dir / f"geom_shard_{shard_num:04d}.bin"
     shard_fh = open(shard_path, "wb")
     shard_offset = 0
