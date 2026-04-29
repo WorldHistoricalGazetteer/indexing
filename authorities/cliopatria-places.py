@@ -106,21 +106,31 @@ def process_cliopatria_feature(feature):
     geometry = feature.get('geometry')
 
 
-    # Extract name/polity identifier
+    # Extract name/polity identifier. Source uses ``Name`` + ``SeshatID``
+    # in the current Seshat-Global-History-Databank/cliopatria GeoJSON;
+    # the legacy ``PolID`` / ``polity`` keys are kept as fallbacks for older
+    # snapshots.
     name = (props.get('Name') or props.get('name') or
-            props.get('PolID') or props.get('polity') or '')
+            props.get('SeshatID') or props.get('PolID') or
+            props.get('polity') or '')
     if not name:
         return None
 
-    # Build place_id
-    polity_id = props.get('PolID', props.get('polity', name))
-    # Clean for use as ID
+    polity_id = (props.get('SeshatID') or props.get('PolID') or
+                 props.get('polity') or name)
     clean_id = str(polity_id).lower().replace(' ', '_').replace('/', '_')
     place_id = f"{NAMESPACE}:{clean_id}"
 
-    # Temporal extent
-    start_year = _parse_year(props.get('from', props.get('start', props.get('Date'))))
-    end_year = _parse_year(props.get('to', props.get('end')))
+    # Temporal extent — current Cliopatria source uses ``FromYear`` /
+    # ``ToYear``; legacy snapshots used ``from`` / ``start`` / ``Date``
+    # and ``to`` / ``end``.
+    start_year = _parse_year(
+        props.get('FromYear') or props.get('from')
+        or props.get('start') or props.get('Date')
+    )
+    end_year = _parse_year(
+        props.get('ToYear') or props.get('to') or props.get('end')
+    )
 
     timespans = []
     if start_year is not None or end_year is not None:
