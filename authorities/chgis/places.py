@@ -1,15 +1,16 @@
 # authorities/chgis/places.py
 
 """
-Index CHGIS/TGAZ places into Elasticsearch.
+Stage CHGIS/TGAZ places to the staged extract directory.
 
 Reads from the pre-built SQLite database (tgaz.db) produced by
-build_database.py.  Each placename record with valid coordinates becomes
+build_database.py. Each placename record with valid coordinates becomes
 a place document with rich temporal, hierarchical, and multilingual data.
 
-Usage:
-    python -m authorities.chgis.places
-    python -m authorities.chgis.places --places-index places_20260401
+Output: ``{STAGED_BASE_DIR}/chgis/extract/places.jsonl``
+
+ES indexing for this authority happens later via ``index_from_stage`` —
+this script no longer talks to Elasticsearch.
 
 Records: ~82K places (100% with coordinates).
 """
@@ -21,15 +22,11 @@ import sys
 import time
 from pathlib import Path
 
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
-from processing.settings import ES_HOST, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.helpers import enrich_geometry, write_staged_place_doc
 
+NAMESPACE = "chgis"
 DIR = Path(__file__).resolve().parent
 DB_FILE = DIR / "tgaz.db"
-
-es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # Year sentinel: 9999 = "still existing" in CHGIS
 STILL_EXISTING = 9999
@@ -245,8 +242,8 @@ def build_document(row, lookups):
     return doc
 
 
-def index_chgis(places_index: str):
-    """Read CHGIS SQLite database and bulk-index into ES."""
+def stage_chgis():
+    """Read CHGIS SQLite database and write staged place docs."""
     ensure_database()
 
     conn = sqlite3.connect(str(DB_FILE))
@@ -270,73 +267,41 @@ def index_chgis(places_index: str):
     """)
 
     start_time = time.time()
-    indexed = 0
-    errors = 0
-    batch = []
+    staged = 0
 
     for row in cur:
         doc = build_document(row, lookups)
-        batch.append({
-            "_index": places_index,
-            "_id": doc["place_id"],
-            "_source": doc,
-        })
-
-        if len(batch) >= BATCH_SIZE:
-            success, failed = helpers.bulk(
-                es, batch, raise_on_error=False, raise_on_exception=False,
-                stats_only=True,
-            )
-            indexed += success
-            errors += failed
+        write_staged_place_doc(NAMESPACE, doc)
+        staged += 1
+        if staged % 5_000 == 0:
             elapsed = time.time() - start_time
-            rate = indexed / elapsed if elapsed > 0 else 0
-            print(f"\r  Indexed: {indexed:,}  Errors: {errors:,}  "
-                  f"Rate: {rate:.0f} docs/s", end="", flush=True)
-            batch = []
-
-    # Final batch
-    if batch:
-        success, failed = helpers.bulk(
-            es, batch, raise_on_error=False, raise_on_exception=False,
-            stats_only=True,
-        )
-        indexed += success
-        errors += failed
+            rate = staged / elapsed if elapsed > 0 else 0
+            print(f"\r  Staged: {staged:,}  Rate: {rate:.0f} docs/s",
+                  end="", flush=True)
 
     conn.close()
     elapsed = time.time() - start_time
 
     print(f"\n\n{'=' * 60}")
-    print(f"  CHGIS/TGAZ INGESTION COMPLETE")
+    print(f"  CHGIS/TGAZ STAGING COMPLETE")
     print(f"{'=' * 60}")
-    print(f"  Indexed:  {indexed:,}")
-    print(f"  Errors:   {errors:,}")
+    print(f"  Staged:   {staged:,}")
     print(f"  Time:     {elapsed:.0f}s ({elapsed / 60:.1f}m)")
     if elapsed > 0:
-        print(f"  Rate:     {indexed / elapsed:.0f} docs/s")
+        print(f"  Rate:     {staged / elapsed:.0f} docs/s")
     print()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Index CHGIS/TGAZ places")
-    parser.add_argument(
-        "--places-index", default="places",
-        help="Target ES index name (default: places)",
-    )
+    parser = argparse.ArgumentParser(description="Stage CHGIS/TGAZ places")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("CHGIS / TGAZ PLACES INGESTION")
+    print("CHGIS / TGAZ PLACES STAGING")
     print("=" * 60)
     print(f"Source: {DB_FILE}")
-    print(f"Target index: {args.places_index}")
     print()
 
-    index_chgis(args.places_index)
-
-    print("Creating checkpoint snapshot...")
-    create_checkpoint_snapshot(es, "chgis_places")
-
+    stage_chgis()
     print("COMPLETE")
 

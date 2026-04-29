@@ -1,36 +1,63 @@
 # authorities/un-geoscheme-boundaries.py
 
 """
-UN M49 Geoscheme Boundary Generator.
+UN M49 Geoscheme Boundary Generator (staged-only).
 
 Derives supra-national boundary polygons (continents and subregions) by
-unioning level-2 country boundaries from the ``places`` ES index (filtering
-on ``boundary`` field value "2").  Also fetches Antarctica from the Overpass
-API (it's tagged ``boundary=continent`` in OSM).
+unioning level-2 country boundaries from the **staged ``un`` extract**.
+Also fetches Antarctica from the Overpass API (it's tagged
+``boundary=continent`` in OSM, not present in the un dataset).
 
 Produces place docs at:
-  - boundary="0": 7 continental macro-regions (Africa, Americas, Asia,
+  - boundary="0": continental macro-regions (Africa, Americas, Asia,
     Europe, Oceania, Antarctica)
-  - boundary="1": 22 geographical subregions + 2 intermediary regions
+  - boundary="1": geographical subregions + intermediary regions
 
-Uses ``osm:`` namespace with synthetic deterministic IDs (e.g.
-``osm:m49_africa``, ``osm:m49_eastern_africa``).
+Output: ``{STAGED_BASE_DIR}/osm/extract/places.jsonl`` (appended).
 
-Usage:
-    python -m authorities.un-geoscheme-boundaries --es-host URL
-    python -m authorities.un-geoscheme-boundaries --es-host URL --dry-run
+The M49 records use ``osm:m49_*`` (and ``osm:r<rel_id>`` for Antarctica)
+place IDs because they're conceptually OSM-style admin boundaries; this
+keeps tile-bucket and namespace-filter logic working unchanged.
+
+**Run order constraints:**
+
+1. Stage ``un`` first (``WHG_STAGING_MODE=1 python -m authorities.un-countries``).
+2. Then run this script. It appends ~25 docs to
+   ``staged/osm/extract/places.jsonl`` (creating that file if osm hasn't
+   been staged yet).
+3. ``osm`` extract may run **before or after** this script — but **never
+   concurrently**, since both append to the same file.
+
+Re-running this script duplicates its records (``write_staged_place_doc``
+appends without dedup). Clean up old ``osm:m49_*`` records from
+``osm/extract/places.jsonl`` before re-running, or simply re-stage osm
+from scratch.
+
+Usage::
+
+    WHG_STAGING_MODE=1 python -m authorities.un-geoscheme-boundaries
+    WHG_STAGING_MODE=1 python -m authorities.un-geoscheme-boundaries --dry-run
 """
 
+from __future__ import annotations
+
 import argparse
+import json
 from datetime import datetime
+from pathlib import Path
 
 import requests
 from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    enrich_geometry,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+    write_staged_place_doc,
+)
+from processing.settings import STAGED_BASE_DIR
 
 # ---------------------------------------------------------------------------
 # UN M49 Geoscheme — country code → subregion → continent
@@ -203,71 +230,108 @@ ANTARCTICA = {
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 OVERPASS_FALLBACK = 'https://overpass.kumi.systems/api/interpreter'
 
+UN_NAMESPACE = 'un'
+OUTPUT_NAMESPACE = 'osm'
+
 
 # ---------------------------------------------------------------------------
-# Fetch country geometries from the places index
+# Read country geometries from staged un
 # ---------------------------------------------------------------------------
 
-def fetch_country_geometries(es, places_index='places_*'):
+def _staged_un_jsonl_path() -> Path:
+    """Return the path to the staged un extract JSONL.
+
+    Reads from ``extract/`` (the one path un goes through — un has no
+    boundary or h3 stages of its own that overwrite this file at JSONL
+    level for our purposes). Reading JSONL specifically (not parquet)
+    keeps ``geometries[].hull`` intact — the parquet sidecar drops hull
+    via ``staged_parquet.strip_hull_for_parquet``.
     """
-    Fetch all boundary='2' places from the places index, keyed by country code.
+    return Path(STAGED_BASE_DIR) / UN_NAMESPACE / "extract" / "places.jsonl"
 
-    Returns:
-        dict mapping ISO alpha-2 code → Shapely geometry
+
+def fetch_country_geometries():
+    """Read all un docs from the staged extract and key them by ccode.
+
+    Returns ``{cc_iso2: shapely_geometry}``. Each un doc carries
+    ``ccodes=[<ISO_A2>]`` and one geometry under ``geometries[0]``.
+    The full polygon would normally come from the geom_store via
+    ``geom_ref``; if the consolidated geom_store isn't available
+    (current state of the rebuild — see the cross-cutting issues note
+    in execution.md), we fall back to the staged ``hull`` field, which
+    is a closed polygon representing each country's outer boundary.
+    Hull is good enough for unioning into M49 super-regions.
     """
-    print("Fetching boundary='2' places from ES ...")
-    query = {
-        'query': {'term': {'boundary': '2'}},
-        '_source': ['ccodes', 'geometries', 'place_id', 'title'],
-        'size': 500,
-    }
+    jsonl = _staged_un_jsonl_path()
+    if not jsonl.exists():
+        raise FileNotFoundError(
+            f"Staged un extract not found at {jsonl}. "
+            "Run ``WHG_STAGING_MODE=1 python -m authorities.un-countries`` first."
+        )
 
-    geometries = {}  # cc → list of Shapely geoms
-    count = 0
+    print(f"Reading un records from staged JSONL: {jsonl}")
 
-    resp = es.search(index=places_index, body=query, scroll='5m')
-    scroll_id = resp['_scroll_id']
+    geometries: dict[str, list] = {}
+    skipped_no_geom = 0
+    skipped_no_ccodes = 0
+    docs_seen = 0
 
-    while True:
-        hits = resp['hits']['hits']
-        if not hits:
-            break
-        for hit in hits:
-            src = hit['_source']
-            ccodes = src.get('ccodes', [])
-            geom_list = src.get('geometries', [])
-            if not geom_list or not ccodes:
+    with jsonl.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
                 continue
-            geom_data = geom_list[0].get('geom') if geom_list else None
-            if not geom_data:
+            doc = json.loads(line)
+            docs_seen += 1
+            ccodes = doc.get("ccodes") or []
+            geom_list = doc.get("geometries") or []
+            if not ccodes:
+                skipped_no_ccodes += 1
                 continue
+            if not geom_list:
+                skipped_no_geom += 1
+                continue
+
+            entry = geom_list[0] if isinstance(geom_list[0], dict) else None
+            if not entry:
+                skipped_no_geom += 1
+                continue
+
+            # Prefer the staged hull (always a Polygon/MultiPolygon for un
+            # countries, written by ``enrich_geometry`` with ``geom_key``).
+            hull = entry.get("hull")
+            if not hull:
+                skipped_no_geom += 1
+                continue
+
             try:
-                geom = shape(geom_data)
+                geom = shape(hull)
                 if not geom.is_valid:
                     geom = make_valid(geom)
                 if geom.is_empty:
                     continue
-                for cc in ccodes:
-                    cc = cc.upper()
-                    geometries.setdefault(cc, []).append(geom)
-                count += 1
             except Exception:
                 continue
-        resp = es.scroll(scroll_id=scroll_id, scroll='5m')
 
-    try:
-        es.clear_scroll(scroll_id=scroll_id)
-    except Exception:
-        pass
+            for cc in ccodes:
+                cc = cc.upper()
+                geometries.setdefault(cc, []).append(geom)
 
+    # Union per-ccode (some countries have multiple un docs in edge cases)
     result = {}
     for cc, geoms in geometries.items():
         if len(geoms) == 1:
             result[cc] = geoms[0]
         else:
-            result[cc] = unary_union(geoms)
+            try:
+                result[cc] = unary_union(geoms)
+            except Exception:
+                result[cc] = geoms[0]
 
-    print(f"  {count} country places fetched ({len(result)} unique ccodes)")
+    print(
+        f"  {docs_seen} un docs scanned; {len(result)} unique ccodes with usable geometry "
+        f"(skipped: no_geom={skipped_no_geom}, no_ccodes={skipped_no_ccodes})"
+    )
     return result
 
 
@@ -280,11 +344,11 @@ def fetch_antarctica():
     rel_id = ANTARCTICA['osm_relation']
     query = (
         '[out:json][timeout:120];'
-        'relation(%d);'
-        'out geom;' % rel_id
+        f'relation({rel_id});'
+        'out geom;'
     )
 
-    for endpoint in [OVERPASS_URL, OVERPASS_FALLBACK]:
+    for endpoint in (OVERPASS_URL, OVERPASS_FALLBACK):
         print(f"  Fetching Antarctica (r{rel_id}) from {endpoint} ...")
         try:
             resp = requests.post(
@@ -333,7 +397,7 @@ def fetch_antarctica():
 def _make_place_id(name):
     """Generate a deterministic osm: namespace place_id for M49 regions."""
     slug = name.lower().replace(' ', '_').replace('-', '_')
-    return f"osm:m49_{slug}"
+    return f"{OUTPUT_NAMESPACE}:m49_{slug}"
 
 
 def build_geoscheme_place_doc(name, boundary_value, geom,
@@ -347,7 +411,7 @@ def build_geoscheme_place_doc(name, boundary_value, geom,
 
     doc = {
         'place_id': place_id,
-        'namespace': 'osm',
+        'namespace': OUTPUT_NAMESPACE,
         'title': name,
         'toponyms': [{'toponym_id': f"{name}@en"}],
         'geometries': [geom_entry],
@@ -393,12 +457,8 @@ def _verify_country_coverage(country_geoms):
     found = set(country_geoms.keys())
     missing = all_needed - found
 
-    if 'FR' in missing:
-        print("  NOTE: France (FR) not found — may use ISO3166-1=FR tag "
-              "instead of ISO3166-1:alpha2=FR")
-
     if missing:
-        print(f"\n  WARNING: {len(missing)} M49 country codes not found:")
+        print(f"\n  WARNING: {len(missing)} M49 country codes not in staged un:")
         print(f"    {', '.join(sorted(missing))}")
     else:
         print(f"  ✓ All {len(all_needed)} M49 country codes found")
@@ -413,19 +473,15 @@ def _verify_country_coverage(country_geoms):
 # Main pipeline
 # ---------------------------------------------------------------------------
 
-def generate_geoscheme(es_host, dry_run=False, places_index='places_*',
-                       target_index='places'):
-    """Generate UN M49 geoscheme place docs from existing boundary='2' data."""
+def generate_geoscheme(dry_run=False):
+    """Generate UN M49 geoscheme docs from staged un, write to staged osm."""
     print("=" * 70)
-    print("UN M49 GEOSCHEME BOUNDARY GENERATION")
+    print("UN M49 GEOSCHEME BOUNDARY GENERATION (staged)")
     print("=" * 70)
 
-    es = Elasticsearch(es_host, request_timeout=120, max_retries=5,
-                       retry_on_timeout=True)
-
-    country_geoms = fetch_country_geometries(es, places_index)
+    country_geoms = fetch_country_geometries()
     if not country_geoms:
-        print("\nERROR: No boundary='2' places found.")
+        print("\nERROR: No country geometries loaded from staged un.")
         return []
 
     _verify_country_coverage(country_geoms)
@@ -492,7 +548,7 @@ def generate_geoscheme(es_host, dry_run=False, places_index='places_*',
             'Antarctica', '0', antarctica_geom,
             ANTARCTICA['wikidata'], ANTARCTICA['ccodes'])
         if doc:
-            doc['place_id'] = f"osm:r{ANTARCTICA['osm_relation']}"
+            doc['place_id'] = f"{OUTPUT_NAMESPACE}:r{ANTARCTICA['osm_relation']}"
             all_docs.append(doc)
             print("  ✓ Antarctica added")
     else:
@@ -509,54 +565,31 @@ def generate_geoscheme(es_host, dry_run=False, places_index='places_*',
     print(f"  Total: {len(all_docs)} documents")
 
     if dry_run:
-        print("\nDRY RUN — skipping indexing.")
+        print("\nDRY RUN — skipping staged write.")
         for d in all_docs:
             print(f"  {d['place_id']}: {d['title']} (boundary={d['boundary']})")
     else:
-        print(f"\nIndexing {len(all_docs)} docs into '{target_index}' ...")
-        actions = [
-            {'_index': target_index, '_id': doc['place_id'], '_source': doc}
-            for doc in all_docs
-        ]
-        success = 0
-        failed = 0
-        for ok, info in helpers.parallel_bulk(
-            es, actions, thread_count=2, raise_on_error=False,
-        ):
-            if ok:
-                success += 1
-            else:
-                failed += 1
-                if failed <= 5:
-                    print(f"  Bulk error: {info}")
-        print(f"  ✓ Indexed: {success}")
-        if failed:
-            print(f"  ✗ Failed: {failed}")
+        out_path = (
+            Path(STAGED_BASE_DIR) / OUTPUT_NAMESPACE / "extract" / "places.jsonl"
+        )
+        print(f"\nWriting {len(all_docs)} docs (append) → {out_path}")
+        for doc in all_docs:
+            write_staged_place_doc(namespace=OUTPUT_NAMESPACE, doc=doc)
+        print(f"  ✓ Appended {len(all_docs)} M49 docs")
 
     return all_docs
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate UN M49 geoscheme boundaries from existing "
-                    "boundary='2' places in ES",
+        description="Generate UN M49 geoscheme boundaries from staged un",
     )
-    parser.add_argument('--es-host', required=True, help='Elasticsearch URL')
-    parser.add_argument('--dry-run', action='store_true')
-    parser.add_argument('--places-index', default='places_*',
-                        help='Source places index pattern')
-    parser.add_argument('--target-index', default='places',
-                        help='Target index for writing docs')
+    parser.add_argument('--dry-run', action='store_true',
+                        help='Print derived docs without staging them')
     args = parser.parse_args()
 
-    generate_geoscheme(
-        es_host=args.es_host,
-        dry_run=args.dry_run,
-        places_index=args.places_index,
-        target_index=args.target_index,
-    )
+    generate_geoscheme(dry_run=args.dry_run)
 
 
 if __name__ == '__main__':
     main()
-

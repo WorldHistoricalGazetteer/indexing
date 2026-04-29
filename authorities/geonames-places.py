@@ -1,16 +1,21 @@
-# authorities/geonames_places.py
+# authorities/geonames-places.py
 
 """
-Index GeoNames places data into Elasticsearch.
+Stage GeoNames places data (~13 M points) to the staged extract
+directory used by the rebuild pipeline.
+
+Output: ``{STAGED_BASE_DIR}/gn/extract/places.jsonl``
+
+ES indexing for this authority happens later via ``index_from_stage`` —
+this script no longer talks to Elasticsearch.
 """
 import sys
 
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import stream_file, create_checkpoint_snapshot
+from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.settings import DATA_DIR
+from processing.utilities import stream_file
 
-es = Elasticsearch(ES_HOST, request_timeout=180) if not is_staging_mode() else None
+NAMESPACE = "gn"
 
 
 def normalize_lst(name, lang='und'):
@@ -49,14 +54,12 @@ def parse_geonames_line(line):
     """
     fields = line.split("\t")
 
-    # Build country codes array
     ccodes = []
     if fields[8]:
         ccodes.append(fields[8])
     if fields[9]:
         ccodes.extend([cc.strip() for cc in fields[9].split(",") if cc.strip()])
 
-    # Handle elevation - prefer elevation field, fall back to DEM
     elevation = None
     if fields[15] and fields[15] != '':
         try:
@@ -69,7 +72,6 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Handle population
     population = None
     if fields[14] and fields[14] != '':
         try:
@@ -77,31 +79,22 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    # Build toponyms array with timespans (GeoNames is current data - 2025)
+    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
     toponyms = []
     if fields[1]:
         lst = normalize_lst(fields[1], 'und')
         if lst:
-            toponyms.append({
-                "toponym_id": lst,
-                "timespans": [{
-                    "start": {"in": 2025},
-                    "end": {"in": 2025}
-                }]
-            })
+            toponyms.append({"toponym_id": lst, "timespans": timespans})
 
-    # Build geometries array (GeoNames has single point per place)
     point_geom = {
         'type': 'Point',
-        'coordinates': [float(fields[5]), float(fields[4])]  # lon, lat
+        'coordinates': [float(fields[5]), float(fields[4])],
     }
-    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
     geom_entry = enrich_geometry(point_geom, timespans=timespans)
     geometries = [geom_entry] if geom_entry else []
 
-    # Build document
     doc = {
-        "place_id": f"gn:{fields[0]}",
+        "place_id": f"{NAMESPACE}:{fields[0]}",
         "title": fields[1],
         "toponyms": toponyms,
         "ccodes": ccodes,
@@ -110,9 +103,9 @@ def parse_geonames_line(line):
             {
                 "identifier": fields[7] or fields[6],
                 "label": fields[6],
-                "sourceLabel": f"{fields[6]}.{fields[7]}" if fields[7] else fields[6]
+                "sourceLabel": f"{fields[6]}.{fields[7]}" if fields[7] else fields[6],
             }
-        ]
+        ],
     }
 
     if elevation is not None:
@@ -122,66 +115,36 @@ def parse_geonames_line(line):
     return doc
 
 
-def index_batches(file_path, index_name):
-    """Read file and bulk index in batches."""
-    staged_mode = is_staging_mode()
-    batch = []
+def stage_geonames(file_path):
+    """Stream GeoNames file and write staged place docs."""
     count = 0
-
     for line in stream_file(file_path):
         if not line or line.startswith("#"):
             continue
-
         try:
             doc = parse_geonames_line(line)
-            if staged_mode:
-                write_staged_place_doc("gn", doc)
-                count += 1
-            else:
-                batch.append({
-                    "_index": index_name,
-                    "_id": doc["place_id"],
-                    "_source": doc
-                })
-
-                if len(batch) >= BATCH_SIZE:
-                    if es is None:
-                        raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
-                    success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-                    count += success
-                    sys.stdout.write(f"\rProcessed {count:,} places...")
-                    sys.stdout.flush()
-                    batch = []
-
+            write_staged_place_doc(NAMESPACE, doc)
+            count += 1
+            if count % 100_000 == 0:
+                sys.stdout.write(f"\rStaged {count:,} places...")
+                sys.stdout.flush()
         except Exception as e:
-            print(f"\nError processing line: {str(e)}")
+            print(f"\nError processing line: {e}")
             continue
 
-    if not staged_mode and batch:
-        if es is None:
-            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
-        success, failed = helpers.bulk(es, batch, raise_on_error=False, stats_only=True)
-        count += success
-
-    print(f"\nIndexing complete. Total places indexed: {count:,}")
+    print(f"\nStaging complete. Total places staged: {count:,}")
 
 
 if __name__ == "__main__":
     GEONAMES_FILE = f"{DATA_DIR}/authorities/gn/allCountries.zip"
-    PLACES_INDEX = "places"
 
     print("=" * 80)
-    print("GEONAMES PLACES INGESTION")
+    print("GEONAMES PLACES STAGING")
     print("=" * 80)
     print(f"Source: {GEONAMES_FILE}")
-    print(f"Target index: {PLACES_INDEX}")
     print()
 
-    index_batches(GEONAMES_FILE, PLACES_INDEX)
-
-    if not is_staging_mode() and es:
-        print("\nCreating checkpoint snapshot...")
-        create_checkpoint_snapshot(es, "geonames_places")
+    stage_geonames(GEONAMES_FILE)
 
     print("\n" + "=" * 80)
     print("COMPLETE")

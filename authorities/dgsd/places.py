@@ -1,16 +1,18 @@
 # authorities/dgsd/places.py
 
 """
-Index DGSD (Digital Gazetteer of the Song Dynasty) places into Elasticsearch.
+Stage DGSD (Digital Gazetteer of the Song Dynasty) places to the staged
+extract directory.
 
 Reads from the pre-built SQLite database (dgsd.db) produced by
-build_database.py.  Each entity with valid coordinates becomes a place
-document; entities without coordinates are also indexed for their toponym
+build_database.py. Each entity with valid coordinates becomes a place
+document; entities without coordinates are also staged for their toponym
 and temporal value.
 
-Usage:
-    python -m authorities.dgsd.places
-    python -m authorities.dgsd.places --places-index places_20260401
+Output: ``{STAGED_BASE_DIR}/dgsd/extract/places.jsonl``
+
+ES indexing for this authority happens later via ``index_from_stage`` —
+this script no longer talks to Elasticsearch.
 
 Records: ~3.8K entities (2,006 with coordinates).
 """
@@ -22,15 +24,11 @@ import sys
 import time
 from pathlib import Path
 
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry
-from processing.settings import ES_HOST, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.helpers import enrich_geometry, write_staged_place_doc
 
+NAMESPACE = "dgsd"
 DIR = Path(__file__).resolve().parent
 DB_FILE = DIR / "dgsd.db"
-
-es = Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def ensure_database():
@@ -271,8 +269,8 @@ def build_document(entity_row, lookups):
     return doc
 
 
-def index_dgsd(places_index: str):
-    """Read DGSD SQLite database and bulk-index into ES."""
+def stage_dgsd():
+    """Read DGSD SQLite database and write staged place docs."""
     ensure_database()
 
     conn = sqlite3.connect(str(DB_FILE))
@@ -288,75 +286,42 @@ def index_dgsd(places_index: str):
     cur.execute("SELECT id, pinyin, chinese, english, parent_name FROM entity")
 
     start_time = time.time()
-    indexed = 0
-    skipped = 0
-    errors = 0
-    batch = []
+    staged = 0
 
     for row in cur:
         doc = build_document(row, lookups)
-        batch.append({
-            "_index": places_index,
-            "_id": doc["place_id"],
-            "_source": doc,
-        })
-
-        if len(batch) >= BATCH_SIZE:
-            success, failed = helpers.bulk(
-                es, batch, raise_on_error=False, raise_on_exception=False,
-                stats_only=True,
-            )
-            indexed += success
-            errors += failed
+        write_staged_place_doc(NAMESPACE, doc)
+        staged += 1
+        if staged % 500 == 0:
             elapsed = time.time() - start_time
-            rate = indexed / elapsed if elapsed > 0 else 0
-            print(f"\r  Indexed: {indexed:,}  Errors: {errors:,}  "
-                  f"Rate: {rate:.0f} docs/s", end="", flush=True)
-            batch = []
-
-    # Final batch
-    if batch:
-        success, failed = helpers.bulk(
-            es, batch, raise_on_error=False, raise_on_exception=False,
-            stats_only=True,
-        )
-        indexed += success
-        errors += failed
+            rate = staged / elapsed if elapsed > 0 else 0
+            print(f"\r  Staged: {staged:,}  Rate: {rate:.0f} docs/s",
+                  end="", flush=True)
 
     conn.close()
     elapsed = time.time() - start_time
 
     print(f"\n\n{'=' * 60}")
-    print(f"  DGSD INGESTION COMPLETE")
+    print(f"  DGSD STAGING COMPLETE")
     print(f"{'=' * 60}")
-    print(f"  Indexed:  {indexed:,}")
-    print(f"  Errors:   {errors:,}")
+    print(f"  Staged:   {staged:,}")
     print(f"  Time:     {elapsed:.0f}s ({elapsed / 60:.1f}m)")
     if elapsed > 0:
-        print(f"  Rate:     {indexed / elapsed:.0f} docs/s")
+        print(f"  Rate:     {staged / elapsed:.0f} docs/s")
     print()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Index DGSD places")
-    parser.add_argument(
-        "--places-index", default="places",
-        help="Target ES index name (default: places)",
-    )
+    parser = argparse.ArgumentParser(description="Stage DGSD places")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("DGSD — DIGITAL GAZETTEER OF THE SONG DYNASTY")
+    print("DGSD — DIGITAL GAZETTEER OF THE SONG DYNASTY (STAGING)")
     print("=" * 60)
     print(f"Source: {DB_FILE}")
-    print(f"Target index: {args.places_index}")
     print()
 
-    index_dgsd(args.places_index)
-
-    print("Creating checkpoint snapshot...")
-    create_checkpoint_snapshot(es, "dgsd_places")
-
+    stage_dgsd()
     print("COMPLETE")
 
 

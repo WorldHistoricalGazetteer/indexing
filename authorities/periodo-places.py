@@ -24,16 +24,13 @@ from datetime import datetime
 import requests
 from shapely.geometry import shape, mapping, MultiPolygon
 from shapely.ops import unary_union
-from elasticsearch import Elasticsearch, helpers
 from processing.helpers import (
     enrich_geometry,
     compute_h3_fields,
     select_h3_cover_geometry,
     write_staged_place_doc,
-    is_staging_mode,
 )
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.settings import DATA_DIR
 
 PERIODO_URL = "https://data.perio.do/d.json"
 NAMESPACE = "po"
@@ -498,27 +495,19 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
     return doc
 
 
-def index_periodo(file_path=None, places_index='places'):
-    """Index PeriodO periods into ES or staged format."""
+def stage_periodo(file_path=None):
+    """Stage PeriodO periods to {STAGED_BASE_DIR}/po/extract/places.jsonl."""
     print("=" * 80)
-    print("PeriodO TEMPORAL PERIODS INGESTION")
+    print("PeriodO TEMPORAL PERIODS STAGING")
     print("=" * 80)
 
-    # Check if running in staged extraction mode
-    staged_mode = is_staging_mode()
-    
-    # Only connect to ES if not in staging mode
-    es = Elasticsearch(ES_HOST, request_timeout=180) if not staged_mode else None
     data = fetch_periodo_data(file_path)
     spatial_geometry_index = load_periodo_gazetteer_geometries()
 
-    # PeriodO data structure: authorities → periods
     authorities = data.get('authorities', {})
     if not authorities:
-        # Try alternate structure (d.json wraps in @graph)
         graph = data.get('@graph', [])
         if graph:
-            # The dataset is a flat list; filter for period definitions
             authorities = {}
             for item in graph:
                 if 'periods' in item:
@@ -535,8 +524,7 @@ def index_periodo(file_path=None, places_index='places'):
     if total_periods:
         print(f"Found {total_periods:,} periods")
 
-    batch = []
-    total_indexed = 0
+    total_staged = 0
     total_skipped = 0
     with_geometry = 0
     without_geometry = 0
@@ -558,32 +546,13 @@ def index_periodo(file_path=None, places_index='places'):
                     total_skipped += 1
                     continue
 
-                if staged_mode:
-                    # Write to staged file (no ES)
-                    write_staged_place_doc(namespace='po', doc=doc)
-                    total_indexed += 1
-                else:
-                    # ES-direct mode (backward compatible)
-                    batch.append({
-                        '_index': places_index,
-                        '_id': doc['place_id'],
-                        '_source': doc,
-                    })
+                write_staged_place_doc(namespace='po', doc=doc)
+                total_staged += 1
 
                 if doc.get('geometries'):
                     with_geometry += 1
                 else:
                     without_geometry += 1
-
-                if not staged_mode and len(batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(
-                        es, batch, raise_on_error=False, stats_only=True
-                    )
-                    total_indexed += success
-                    batch = []
-
-                    if total_indexed % 1000 == 0:
-                        print(f"\r  Indexed: {total_indexed:,}", end='', flush=True)
 
                 now = time.time()
                 if now - last_log >= PROGRESS_LOG_INTERVAL_SECONDS:
@@ -593,41 +562,29 @@ def index_periodo(file_path=None, places_index='places'):
                         total=total_periods if total_periods else None,
                         start_ts=started,
                         extra=(
-                            f"indexed={total_indexed:,} skipped={total_skipped:,} "
+                            f"staged={total_staged:,} skipped={total_skipped:,} "
                             f"with_geom={with_geometry:,} without_geom={without_geometry:,}"
                         ),
                     )
                     last_log = now
 
-            except Exception as e:
+            except Exception:
                 total_skipped += 1
                 continue
 
-    # Flush remaining (ES mode only)
-    if not staged_mode and batch:
-        success, failed = helpers.bulk(
-            es, batch, raise_on_error=False, stats_only=True
-        )
-        total_indexed += success
-
-    print(f"\n\nPeriodO ingestion complete:")
-    print(f"  Indexed: {total_indexed:,}")
+    print(f"\n\nPeriodO staging complete:")
+    print(f"  Staged: {total_staged:,}")
     print(f"  Skipped: {total_skipped:,}")
     print(f"  With geometry: {with_geometry:,}")
     print(f"  Without geometry: {without_geometry:,}")
-
-    # Only create checkpoint snapshot if not in staged mode (ES required for this)
-    if not staged_mode and es:
-        create_checkpoint_snapshot(es, 'periodo_places')
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Index PeriodO periods')
+    parser = argparse.ArgumentParser(description='Stage PeriodO periods')
     parser.add_argument('--file', help='Path to PeriodO JSON-LD file')
-    parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
-    index_periodo(file_path=args.file, places_index=args.places_index)
+    stage_periodo(file_path=args.file)
 

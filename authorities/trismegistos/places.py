@@ -1,16 +1,17 @@
 # authorities/trismegistos/places.py
 
 """
-Index Trismegistos Geo places into Elasticsearch.
+Stage Trismegistos Geo places to the staged extract directory.
 
 Reads from the pre-built SQLite database (tm_geo.db) produced by
-build_database.py.  Each geo record with valid coordinates becomes a
+build_database.py. Each geo record with valid coordinates becomes a
 place document; georelations are mapped to relations (WHG authorities)
 and links (external partners).
 
-Usage:
-    python -m authorities.trismegistos.places
-    python -m authorities.trismegistos.places --places-index places_20260401
+Output: ``{STAGED_BASE_DIR}/tm/extract/places.jsonl``
+
+ES indexing for this authority happens later via ``index_from_stage`` —
+this script no longer talks to Elasticsearch.
 
 Records: ~24K places with coordinates (out of ~65K geo entries total).
 """
@@ -22,14 +23,11 @@ import sys
 import time
 from pathlib import Path
 
-from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.helpers import write_staged_place_doc
 
+NAMESPACE = "tm"
 DIR = Path(__file__).resolve().parent
 DB_FILE = DIR / "tm_geo.db"
-
-es = Elasticsearch(ES_HOST, request_timeout=180)
 
 # -------------------------------------------------------------------------
 # Country name → ISO 3166-1 alpha-2 mapping
@@ -453,8 +451,8 @@ def load_georelations(conn: sqlite3.Connection) -> dict[int, list[tuple[str, str
     return rels
 
 
-def index_trismegistos(places_index: str):
-    """Read TM SQLite database and bulk-index into ES."""
+def stage_trismegistos():
+    """Read TM SQLite database and write staged place docs."""
     if not DB_FILE.exists():
         print(f"ERROR: Database not found: {DB_FILE}")
         print("Run 'python -m authorities.trismegistos.build_database' first.")
@@ -463,33 +461,27 @@ def index_trismegistos(places_index: str):
     conn = sqlite3.connect(str(DB_FILE))
     conn.row_factory = sqlite3.Row
 
-    # Load georelations into memory (~72K rows, fits easily)
     print("Loading georelations...")
     georelations = load_georelations(conn)
     print(f"  {sum(len(v) for v in georelations.values()):,} links for "
           f"{len(georelations):,} places")
 
-    # Count all non-ghost records
     cur = conn.cursor()
     cur.execute("""
         SELECT COUNT(*) FROM geo
         WHERE country != 'ghost name'
     """)
     total = cur.fetchone()[0]
-    print(f"\nIndexing {total:,} TM places")
-    print(f"Target index: {places_index}")
+    print(f"\nStaging {total:,} TM places")
 
-    # Stream geo records
     cur.execute("""
         SELECT * FROM geo
         WHERE country != 'ghost name'
         ORDER BY tm_geo_id
     """)
 
-    batch = []
-    indexed = 0
+    staged = 0
     skipped = 0
-    errors = 0
     with_geometry = 0
     without_geometry = 0
     start_time = time.time()
@@ -506,25 +498,14 @@ def index_trismegistos(places_index: str):
             else:
                 without_geometry += 1
 
-            batch.append({
-                "_index": places_index,
-                "_id": doc["place_id"],
-                "_source": doc,
-            })
+            write_staged_place_doc(NAMESPACE, doc)
+            staged += 1
 
-            if len(batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(
-                    es, batch, raise_on_error=False, stats_only=True
-                )
-                indexed += success
-                errors += failed
-                batch = []
-
+            if staged % 1000 == 0:
                 elapsed = time.time() - start_time
-                rate = indexed / elapsed if elapsed > 0 else 0
+                rate = staged / elapsed if elapsed > 0 else 0
                 sys.stdout.write(
-                    f"\r  {indexed:,}/{total:,} indexed "
-                    f"({rate:.0f}/s, {errors} errors)"
+                    f"\r  {staged:,}/{total:,} staged ({rate:.0f}/s)"
                 )
                 sys.stdout.flush()
 
@@ -533,50 +514,33 @@ def index_trismegistos(places_index: str):
             skipped += 1
             continue
 
-    # Flush remaining
-    if batch:
-        success, failed = helpers.bulk(
-            es, batch, raise_on_error=False, stats_only=True
-        )
-        indexed += success
-        errors += failed
-
     conn.close()
     elapsed = time.time() - start_time
 
     print(f"\n\n{'=' * 60}")
-    print(f"  TRISMEGISTOS INGESTION COMPLETE")
+    print(f"  TRISMEGISTOS STAGING COMPLETE")
     print(f"{'=' * 60}")
-    print(f"  Indexed:  {indexed:,}")
+    print(f"  Staged:   {staged:,}")
     print(f"  Skipped:  {skipped:,}")
-    print(f"  Errors:   {errors:,}")
     print(f"  With geometry:    {with_geometry:,}")
     print(f"  Without geometry: {without_geometry:,}")
     print(f"  Time:     {elapsed:.0f}s ({elapsed / 60:.1f}m)")
-    print(f"  Rate:     {indexed / elapsed:.0f} docs/s")
+    if elapsed > 0:
+        print(f"  Rate:     {staged / elapsed:.0f} docs/s")
     print()
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Index Trismegistos Geo places")
-    parser.add_argument(
-        "--places-index", default="places",
-        help="Target ES index name (default: places)",
-    )
+    parser = argparse.ArgumentParser(description="Stage Trismegistos Geo places")
     args = parser.parse_args()
 
     print("=" * 60)
-    print("TRISMEGISTOS GEO PLACES INGESTION")
+    print("TRISMEGISTOS GEO PLACES STAGING")
     print("=" * 60)
     print(f"Source: {DB_FILE}")
-    print(f"Target index: {args.places_index}")
     print()
 
-    index_trismegistos(args.places_index)
-
-    print("Creating checkpoint snapshot...")
-    create_checkpoint_snapshot(es, "trismegistos_places")
-
+    stage_trismegistos()
     print("COMPLETE")
 
 

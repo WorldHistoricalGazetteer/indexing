@@ -10,14 +10,10 @@ from processing.helpers import (
     compute_h3_fields,
     select_h3_cover_geometry,
     write_staged_place_doc,
-    is_staging_mode,
 )
-from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, AUTHORITIES
-from processing.utilities import create_checkpoint_snapshot
+from processing.settings import DATA_DIR, AUTHORITIES
 
 NAMESPACE = "iv"
-es = None if is_staging_mode() else Elasticsearch(ES_HOST, request_timeout=180)
 IV_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'iv'), None)
 
 
@@ -239,8 +235,8 @@ def process_iv_entry(entry, namespace='iv'):
     return place_doc
 
 
-def index_iv_file(json_file, places_index='places'):
-    """Process Index Villaris JSON file."""
+def stage_iv_file(json_file):
+    """Stage Index Villaris JSON file to {STAGED_BASE_DIR}/iv/extract/places.jsonl."""
     print(f"Processing: {json_file}")
     if not os.path.exists(json_file):
         standard_path = Path(DATA_DIR) / 'authorities' / 'iv' / Path(json_file).name
@@ -250,7 +246,6 @@ def index_iv_file(json_file, places_index='places'):
             print(f"ERROR: Not found: {json_file}")
             return
 
-    places_batch = []
     places_count = 0
     skipped = 0
     no_coords = 0
@@ -285,12 +280,11 @@ def index_iv_file(json_file, places_index='places'):
     print(f"Found {len(entries)} entries")
     start_time = datetime.now()
 
-    staged_mode = is_staging_mode()
     for i, entry in enumerate(entries):
         if (i + 1) % 500 == 0:
             elapsed = (datetime.now() - start_time).seconds
             rate = i / elapsed if elapsed > 0 else 0
-            print(f"\r  {i + 1}/{len(entries)} ({rate:.1f}/s) - indexed: {places_count}", end='', flush=True)
+            print(f"\r  {i + 1}/{len(entries)} ({rate:.1f}/s) - staged: {places_count}", end='', flush=True)
 
         try:
             place_doc = process_iv_entry(entry)
@@ -302,39 +296,19 @@ def index_iv_file(json_file, places_index='places'):
                     skipped += 1
                 continue
 
-            if staged_mode:
-                write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
-                places_count += 1
-                continue
-
-            places_batch.append({'_index': places_index, '_id': place_doc['place_id'], '_source': place_doc})
-
-            if len(places_batch) >= BATCH_SIZE:
-                try:
-                    success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
-                    places_count += success
-                    places_batch = []
-                except Exception as e:
-                    print(f"  ERROR: {e}")
-                    places_batch = []
+            write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
+            places_count += 1
         except Exception as e:
             print(f"  ERROR {i}: {e}")
             skipped += 1
             continue
 
-    if not staged_mode and places_batch:
-        try:
-            success, failed = helpers.bulk(es, places_batch, raise_on_error=False, stats_only=True)
-            places_count += success
-        except Exception as e:
-            print(f"ERROR: {e}")
-
     elapsed = (datetime.now() - start_time).seconds
     print(f"\n{'=' * 80}")
-    print(f"INDEX VILLARIS COMPLETE")
+    print(f"INDEX VILLARIS STAGING COMPLETE")
     print(f"{'=' * 80}")
     print(f"Time: {elapsed}s")
-    print(f"Indexed: {places_count:,}")
+    print(f"Staged: {places_count:,}")
     print(f"No coords: {no_coords:,}")
     print(f"Skipped: {skipped:,}")
 
@@ -342,9 +316,8 @@ def index_iv_file(json_file, places_index='places'):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Index Index Villaris')
+    parser = argparse.ArgumentParser(description='Stage Index Villaris')
     parser.add_argument('--file', help='Path to JSON file')
-    parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
     if args.file:
@@ -355,13 +328,9 @@ if __name__ == "__main__":
             print("ERROR: No files configured")
             sys.exit(1)
         file_url = iv_files[0]['url']
-        filename = Path(file_url).name
-        if not filename: filename = 'IV-GB1900-OSM-WD.lp.json'
+        filename = Path(file_url).name or 'IV-GB1900-OSM-WD.lp.json'
         json_file = Path(DATA_DIR) / 'authorities' / 'iv' / filename
 
-    print(f"Index Villaris (SCHEMA V2)")
-    print(f"File: {json_file}")
-    print(f"Target: {args.places_index}\n")
-    index_iv_file(str(json_file), args.places_index)
-    if not is_staging_mode() and es is not None:
-        create_checkpoint_snapshot(es, "indexvillaris_places")
+    print(f"Index Villaris (STAGING)")
+    print(f"File: {json_file}\n")
+    stage_iv_file(str(json_file))

@@ -18,9 +18,8 @@ import osmium
 import shapely.wkb as wkblib
 from shapely.geometry import mapping
 
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
-from processing.settings import ES_HOST, DATA_DIR, OSM_STATE_FILE
+from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.settings import DATA_DIR, OSM_STATE_FILE
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -264,9 +263,26 @@ class OSMHandler(osmium.SimpleHandler):
 
 # ---------------- STAGING & MAIN ----------------
 def stage_file_to_scratch(source_path, namespace='osm'):
+    """Optionally rsync the PBF to local scratch for I/O speed.
+
+    **Off by default.** The osmium nodes pass on OSM/OHM is CPU-bound
+    (≈4000 nodes/s on htc), which translates to ~38 KB/s of PBF
+    consumption — well below NFS bandwidth. So rsync'ing 86 GB up front
+    (~2 h on htc) saves no real time during processing AND has to be
+    repeated if the job restarts from checkpoint (scratch is ephemeral).
+
+    To re-enable (e.g. if you observe NFS contention slowing the run),
+    export ``WHG_OSM_STAGE_TO_SCRATCH=1`` before submitting.
+    """
+    if os.environ.get('WHG_OSM_STAGE_TO_SCRATCH', '').lower() not in ('1', 'true', 'yes'):
+        print(f"Reading PBF directly from network storage: {source_path}")
+        print(f"Staging host: {os.uname().nodename}")
+        print(f"SLURM job: {os.environ.get('SLURM_JOB_ID', 'unknown')}")
+        return source_path, False
+
     scratch_dir = os.environ.get('SLURM_SCRATCH')
     if not scratch_dir or not os.path.exists(scratch_dir):
-        print("Notice: No scratch dir found, using network storage.")
+        print("Notice: WHG_OSM_STAGE_TO_SCRATCH set but no scratch dir found; using network storage.")
         return source_path, False
 
     print(f"Staging host: {os.uname().nodename}")
@@ -291,29 +307,10 @@ def stage_file_to_scratch(source_path, namespace='osm'):
     return target_path, True
 
 
-def run_integrated_boundary_pass(pbf_file):
-    """Complete OSM boundary relation geometry in-place in the places index."""
-    from processing.osm_boundary_geometry import run_boundary_pass
-
-    print()
-    print("-" * 80)
-    print("OSM FULL-GEOMETRY COMPLETION (integrated boundary pass)")
-    print("-" * 80)
-    print("Refreshing places index before geometry completion ...")
-
-    es = Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
-    es.indices.refresh(index='places')
-
-    run_boundary_pass(pbf_file, namespace='osm', places_index='places')
-    es.indices.refresh(index='places')
-
-
 def index_osm_optimized(pbf_file):
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
-    staged_mode = is_staging_mode()
-    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180, max_retries=10, retry_on_timeout=True)
     tracker = ProgressTracker(OSM_STATE_FILE)
 
     # Signal Handling
@@ -325,38 +322,19 @@ def index_osm_optimized(pbf_file):
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Parallel Bulk Buffer
+    # Buffer of staged place docs (kept as a list for the same per-50k flush
+    # cadence the previous bulk-index path used).
     buffer_list = []
     indexed_count = 0
     failed_count = 0
 
     def flush_buffer():
-        nonlocal indexed_count, failed_count
-        if not buffer_list: return
-
-        if staged_mode:
-            for action in buffer_list:
-                write_staged_place_doc("osm", action['_source'])
-                indexed_count += 1
-            buffer_list.clear()
+        nonlocal indexed_count
+        if not buffer_list:
             return
-
-        # Track results
-        if es is None:
-            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
-        for success, info in helpers.parallel_bulk(
-                es, buffer_list,
-                thread_count=BULK_THREAD_COUNT,
-                queue_size=QUEUE_SIZE,
-                raise_on_error=False
-        ):
-            if success:
-                indexed_count += 1
-            else:
-                failed_count += 1
-                if failed_count <= 5:  # Show first few errors
-                    print(f"\n  Bulk index error: {info}")
-
+        for action in buffer_list:
+            write_staged_place_doc("osm", action['_source'])
+            indexed_count += 1
         buffer_list.clear()
 
         if tracker.counts['node'] % 500000 == 0:
@@ -388,8 +366,9 @@ def index_osm_optimized(pbf_file):
             flush_buffer()
             tracker.save_state()
 
-            if not staged_mode:
-                run_integrated_boundary_pass(active_pbf)
+            # Boundary completion is the separate ``processing.boundary_stage``
+            # Slurm chain — the integrated ES-based path that used to live
+            # here is gone (this script no longer talks to ES).
 
             print(f"\n\nIndexing complete:")
             print(f"  Documents indexed: {indexed_count:,}")

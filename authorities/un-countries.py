@@ -1,18 +1,10 @@
-# processing/un-countries.py
+# authorities/un-countries.py
 """
-Index UN member countries with Natural Earth geometries.
+Stage UN member countries with Natural Earth geometries to
+``{STAGED_BASE_DIR}/un/extract/places.jsonl``.
 
-Supports two output modes:
-
-* Default (ES) — connect to ``ES_HOST`` and bulk-index country docs into
-  the configured ``places`` index.
-* ``WHG_STAGING_MODE=1`` — skip ES entirely; write each country doc to
-  ``{STAGED_BASE_DIR}/un/extract/places.jsonl`` via ``write_staged_place_doc``.
-  This is what feeds the staged-rebuild pipeline (boundary → h3 →
-  ccode → temporal_extent etc.) without needing a live ES.
-
-Either mode also writes country geometries to the persistent VAST geom
-store via ``GeomStoreWriter`` for use by ``ccode_enrichment``.
+Also writes country geometries to the persistent VAST geom store via
+``GeomStoreWriter`` for use by ``ccode_enrichment``.
 """
 import sys, zipfile, urllib.request
 from pathlib import Path
@@ -21,12 +13,9 @@ from processing.helpers import (
     compute_area_km2,
     compute_h3_fields,
     select_h3_cover_geometry,
-    is_staging_mode,
     write_staged_place_doc,
 )
-from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.settings import DATA_DIR
 
 NATURAL_EARTH_URL = "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
 
@@ -231,16 +220,13 @@ def create_country_place_doc(feature):
     return doc
 
 
-def index_un_countries(places_index='places', download=True):
-    """Index UN countries to ES (default) or to the staged JSONL (staging mode)."""
+def stage_un_countries(download=True):
+    """Stage UN countries to ``{STAGED_BASE_DIR}/un/extract/places.jsonl``."""
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
-    staged_mode = is_staging_mode()
-    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180)
-
     print("=" * 80)
-    print(f"UN COUNTRIES — {'STAGED' if staged_mode else 'ES'} MODE")
+    print("UN COUNTRIES STAGING")
     print("=" * 80 + "\n")
 
     if download:
@@ -255,15 +241,13 @@ def index_un_countries(places_index='places', download=True):
 
     print(f"\nProcessing {len(features)} countries...\n")
 
-    stats = {'processed': 0, 'places_indexed': 0, 'un_members': 0, 'non_un': 0, 'errors': 0}
-    place_batch = []
+    stats = {'processed': 0, 'places_staged': 0, 'un_members': 0, 'non_un': 0, 'errors': 0}
 
     with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "un") as gsw:
         configure_module_writer(gsw)
         for i, feature in enumerate(features):
             try:
                 place_doc = create_country_place_doc(feature)
-                place_id = place_doc['place_id']
 
                 name = feature['properties'].get('NAME', feature['properties'].get('ADMIN', ''))
                 if is_un_member(name):
@@ -271,11 +255,8 @@ def index_un_countries(places_index='places', download=True):
                 else:
                     stats['non_un'] += 1
 
-                if staged_mode:
-                    write_staged_place_doc(namespace='un', doc=place_doc)
-                    stats['places_indexed'] += 1
-                else:
-                    place_batch.append({'_index': places_index, '_id': place_id, '_source': place_doc})
+                write_staged_place_doc(namespace='un', doc=place_doc)
+                stats['places_staged'] += 1
                 stats['processed'] += 1
 
                 if (i + 1) % 50 == 0:
@@ -287,39 +268,22 @@ def index_un_countries(places_index='places', download=True):
                 continue
         configure_module_writer(None)
 
-    if not staged_mode:
-        print("\nIndexing to Elasticsearch...")
-        if place_batch:
-            try:
-                success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                stats['places_indexed'] = success
-            except Exception as e:
-                print(f"ERROR: {e}")
-
     print("\n" + "=" * 80)
     print("COMPLETE")
     print("=" * 80)
     print(f"Processed: {stats['processed']}")
-    print(f"Indexed: {stats['places_indexed']}")
+    print(f"Staged: {stats['places_staged']}")
     print(f"UN members: {stats['un_members']}")
     print(f"Non-UN: {stats['non_un']}")
     print(f"Errors: {stats['errors']}")
     print(f"Geometries in VAST store: {gsw.count:,}")
 
-    return es if not staged_mode else None
-
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Index UN countries')
+    parser = argparse.ArgumentParser(description='Stage UN countries')
     parser.add_argument('--no-download', action='store_true', help='Use existing data')
-    parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
-    es = index_un_countries(
-        places_index=args.places_index,
-        download=not args.no_download
-    )
-    if es is not None:
-        create_checkpoint_snapshot(es, "un_countries")
+    stage_un_countries(download=not args.no_download)

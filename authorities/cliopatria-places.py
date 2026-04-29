@@ -23,16 +23,13 @@ from pathlib import Path
 from datetime import datetime
 
 import requests
-from elasticsearch import Elasticsearch, helpers
 from processing.helpers import (
     enrich_geometry,
     compute_h3_fields,
     select_h3_cover_geometry,
     write_staged_place_doc,
-    is_staging_mode,
 )
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.settings import DATA_DIR
 
 CLIOPATRIA_URL = (
     "https://github.com/Seshat-Global-History-Databank/cliopatria/"
@@ -195,17 +192,14 @@ def process_cliopatria_feature(feature):
     return doc
 
 
-def index_cliopatria(file_path=None, places_index='places'):
-    """Index Cliopatria polities — staged JSONL or ES bulk depending on mode."""
+def stage_cliopatria(file_path=None):
+    """Stage Cliopatria polities to {STAGED_BASE_DIR}/clio/extract/places.jsonl."""
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
     print("=" * 80)
-    print("CLIOPATRIA HISTORICAL POLITIES INGESTION")
+    print("CLIOPATRIA HISTORICAL POLITIES STAGING")
     print("=" * 80)
-
-    staged_mode = is_staging_mode()
-    es = None if staged_mode else Elasticsearch(ES_HOST, request_timeout=180)
 
     data = fetch_cliopatria_data(file_path)
 
@@ -216,8 +210,7 @@ def index_cliopatria(file_path=None, places_index='places'):
 
     print(f"Found {len(features)} features")
 
-    batch = []
-    total_indexed = 0
+    total_staged = 0
     total_skipped = 0
     seen_ids: set[str] = set()
 
@@ -239,58 +232,29 @@ def index_cliopatria(file_path=None, places_index='places'):
                         counter += 1
                 seen_ids.add(doc['place_id'])
 
-                if staged_mode:
-                    write_staged_place_doc(namespace=NAMESPACE, doc=doc)
-                    total_indexed += 1
-                    if total_indexed % 1000 == 0:
-                        print(f"\r  Staged: {total_indexed:,}", end='', flush=True)
-                    continue
+                write_staged_place_doc(namespace=NAMESPACE, doc=doc)
+                total_staged += 1
+                if total_staged % 1000 == 0:
+                    print(f"\r  Staged: {total_staged:,}", end='', flush=True)
 
-                batch.append({
-                    '_index': places_index,
-                    '_id': doc['place_id'],
-                    '_source': doc,
-                })
-
-                if len(batch) >= BATCH_SIZE:
-                    success, failed = helpers.bulk(
-                        es, batch, raise_on_error=False, stats_only=True
-                    )
-                    total_indexed += success
-                    batch = []
-
-                    if total_indexed % 1000 == 0:
-                        print(f"\r  Indexed: {total_indexed:,}", end='', flush=True)
-
-            except Exception as e:
+            except Exception:
                 total_skipped += 1
                 continue
 
         configure_module_writer(None)
 
-    # Flush remaining (ES mode only)
-    if not staged_mode and batch:
-        success, failed = helpers.bulk(
-            es, batch, raise_on_error=False, stats_only=True
-        )
-        total_indexed += success
-
-    print(f"\n\nCliopatria ingestion complete:")
-    print(f"  {'Staged' if staged_mode else 'Indexed'}: {total_indexed:,}")
+    print(f"\n\nCliopatria staging complete:")
+    print(f"  Staged: {total_staged:,}")
     print(f"  Skipped: {total_skipped:,}")
-
-    if not staged_mode and es is not None:
-        create_checkpoint_snapshot(es, 'cliopatria_places')
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description='Index Cliopatria polities')
+    parser = argparse.ArgumentParser(description='Stage Cliopatria polities')
     parser.add_argument('--file', help='Path to Cliopatria GeoJSON file')
-    parser.add_argument('--places-index', default='places', help='Target index')
     args = parser.parse_args()
 
-    index_cliopatria(file_path=args.file, places_index=args.places_index)
+    stage_cliopatria(file_path=args.file)
 
 

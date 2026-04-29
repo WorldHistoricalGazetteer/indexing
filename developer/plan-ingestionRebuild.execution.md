@@ -2321,7 +2321,7 @@ Doing this before committing 1+ day of htc time on the first full OSM
 extract remains a worthwhile pre-flight check.
 
 
-## Status snapshot — 2026-04-28 (end of session 4)
+## Status snapshot — 2026-04-29
 
 ### Namespaces that have run end-to-end (extract → final → temporal_extent)
 
@@ -2333,29 +2333,43 @@ extract remains a worthwhile pre-flight check.
 | `un` | 257 | Source of country boundaries — gating input for every other namespace's `ccode_enrichment`. ccode stage is N/A for un itself. |
 | `iv` | 24,000 | ccode 99.99% (23,998 / 24,000). Range `[1680, 2023]`. |
 | `pl` | 25,561 | ccode 66% (16,929 / 25,561; 7,311 records have no geometry — purely textual Pleiades references). Range `[-10000, 2100]`. |
+| `tgn` | 2,991,044 | ccode 69.4% (2,075,890 / 2,991,044) in 7:07 wall. Range `[2025, 2025]` (TGN has no source temporal data → default current-year timespan), 0 outliers. Extract took 1:25 (Pass 1: 2,972,412 records with geometry; Pass 2: 18,632 without). |
 
-### Namespaces currently running (as of 2026-04-28 EOD)
+### Namespaces currently running (as of 2026-04-29)
 
 | NS | Job | Wall | State |
 |---|---|---:|---|
-| `osm` | smp 8934943 (htc-htc-l, 4d budget) | ~50 min | Still rsync'ing 86 GB PBF to scratch; processing not yet started. ETA: ~37–40 h total. |
-| `tgn` | htc 8935259 (htc-htc-s, 8h budget) | ~35 min | Still copying source to scratch; processing log silent so far. Watch this — if no progress after 1 h, investigate. |
-| `wd` | htc 8935260 (htc-htc-n, 24h budget) | ~35 min | Processing 3.3 M / ~11 M entities (~30%). On track. |
+| `osm` | htc 8934943 (htc-htc-l, 4d budget) | ~9 h | rsync done at ~3 h; nodes pass started at ~4000 nodes/sec sustained. **Concern:** at this rate the ~9 B node total projects to ~26 days, far past the 4-day budget. The `OSM_STATE_FILE` checkpoint mechanism may need to be exercised across multiple Slurm jobs to finish. Watch the candidates/buffered/rejected counters once the pass completes. |
+| `wd` | htc 8935260 (htc-htc-n, 24h budget) | ~9 h | Processing 57 M / ~100 M entities (~57%). 5.7 M places extracted, 29 K geoshapes. On track to finish well within budget. |
 
-### Namespaces NOT yet in staging mode
+### All authority scripts now staged-only
 
-These still have the old ES-only path and need a small staging-mode patch before they can flow through the staged-rebuild pipeline:
+As of 2026-04-29, every place-emitting authority script writes via
+``write_staged_place_doc`` and has no Elasticsearch dependency. The
+`Step 4` in the playbook below (patch authorities for staging mode)
+is therefore obsolete — it's left as documentation for the pattern,
+in case a new authority is added later.
 
-| Authority script | NS | Records (approx) | Notes |
-|---|---|---:|---|
-| `geonames-places.py` | `gn` | ~13M | Update-merge mechanism is staging-aware; full extract is not. **Important for full rebuild.** |
-| `un-geoscheme-boundaries.py` | derives `osm:m49_*` | 24 (continents + subregions) | Reads existing un boundaries from ES and writes derived geometries. Needs deeper rework — the source-of-truth should be staged un, not ES. |
-| `gb1900-places.py` | `gb` | ~1.2M |  |
-| `dplace-places.py` | `dp` | ~2,600 |  |
-| `cliopatria-places.py` | `clio` | unknown |  |
-| `whg-places.py` | `whg` | dataset-driven | Special: per-Dataset/Collection scope; needs explicit `dataset_id` per the `write_staged_place_doc` contract. |
-
-The patch pattern is consistent — see `un-countries.py` for the canonical example (~30 lines): branch on `is_staging_mode()`, swap the bulk-index loop for `write_staged_place_doc(namespace=..., doc=...)`, guard `create_checkpoint_snapshot` and ES init.
+| Script | Namespace | Notes |
+|---|---|---|
+| `chgis/places.py` | `chgis` | SQLite → staged JSONL |
+| `cliopatria-places.py` | `clio` | GeoJSON → staged JSONL + geom_store |
+| `dgsd/places.py` | `dgsd` | SQLite → staged JSONL |
+| `dplace-places.py` | `dp` | GeoJSON → staged JSONL |
+| `gb1900-places.py` | `gb` | CSV → staged JSONL |
+| `geonames-places.py` | `gn` | TSV stream → staged JSONL |
+| `indexvillaris-places.py` | `iv` | JSON → staged JSONL |
+| `nativeland-places.py` | `nl` | GeoJSON → staged JSONL + geom_store |
+| `ohm-places.py` | `ohm` | PBF → staged JSONL + geom_store |
+| `osm-places.py` | `osm` | PBF → staged JSONL + geom_store |
+| `periodo-places.py` | `po` | JSON-LD → staged JSONL |
+| `pleiades-places.py` | `pl` | JSON streaming → staged JSONL + geom_store |
+| `tgn-places.py` | `tgn` | RDF zip → staged JSONL |
+| `trismegistos/places.py` | `tm` | SQLite → staged JSONL |
+| `un-countries.py` | `un` | shapefile → staged JSONL + geom_store |
+| `un-geoscheme-boundaries.py` | `osm` (derived) | Reads staged `un` (JSONL — for hull); writes derived M49 continents/subregions/Antarctica via ``write_staged_place_doc(namespace='osm', ...)``. **Run after un is staged, never concurrently with osm extract** (both append to `osm/extract/places.jsonl`). |
+| `whg-places.py` | `whg` | LPF stream over WHG reconcile API → staged JSONL with per-Dataset `dataset_id` |
+| `wikidata-places.py` | `wd` | Wikidata dump → staged JSONL + geoshape_refs sidecar |
 
 ### Global stages still to run (after all namespaces extracted)
 
@@ -2451,19 +2465,33 @@ python -m processing.submit_boundary_slurm \
 
 Defaults are tuned per-namespace (`_DEFAULT_SHARD_COUNT`, `_DEFAULT_MEGA_SHARD_COUNT`, walls). Override with `--shard-count`, `--mega-shard-count`, `--regular-wall-hours`, `--mega-wall-hours`. After the chain finishes (`finalize` flips `boundary` → `completed`), go back to Step 2 for the post-extract chain — h3_stage will pick the boundary_merged source automatically.
 
-### Step 4 — patch any authority that lacks staging mode
+### Step 4 — patch any authority that lacks staging mode (HISTORICAL)
 
-Pattern (modelled on `authorities/un-countries.py` 2026-04-28 patch):
+> **2026-04-29: All current authority scripts are already staged-only.**
+> This step is left for documentation in case a brand-new authority is
+> added later. The pattern below produces a script that talks **only** to
+> the staged extract directory — never to ES.
 
-1. Add to imports: `from processing.helpers import is_staging_mode, write_staged_place_doc`
-2. Move ES client init out of module level into the `index_*` function: `es = None if is_staging_mode() else Elasticsearch(ES_HOST, ...)`
-3. In the per-doc loop, branch:
-   * staged: `write_staged_place_doc(namespace='<ns>', doc=place_doc)`; bump indexed counter inline.
-   * non-staged: append to the existing bulk batch.
-4. Guard the bulk-index block and `create_checkpoint_snapshot` with `if not staged_mode`.
-5. Verify locally: `python3 -c "import ast; ast.parse(open('authorities/SCRIPT.py').read())"`, then run the test suite: `python3 -m pytest tests/ -q`.
+Pattern (modelled on the 2026-04-29 staged-only conversion):
 
-The remaining authorities needing this: `geonames-places.py`, `gb1900-places.py`, `dplace-places.py`, `cliopatria-places.py`, `whg-places.py`. `un-geoscheme-boundaries.py` is more involved (reads from ES) and needs a deeper rework.
+1. Imports: drop `from elasticsearch import …` and
+   `from processing.utilities import create_checkpoint_snapshot`. Add
+   `from processing.helpers import write_staged_place_doc`.
+2. Drop `ES_HOST` and `BATCH_SIZE` from the `processing.settings` import.
+3. Drop the module-level ``es = Elasticsearch(...)`` / ``es = None if
+   is_staging_mode() else …`` line entirely.
+4. In the per-doc loop, replace the bulk-batch append with
+   `write_staged_place_doc(namespace='<ns>', doc=place_doc)`.
+5. Drop the `places_index` parameter, the `BATCH_SIZE` flush, the
+   final-batch flush, and the `create_checkpoint_snapshot` call.
+6. Rename `index_<x>` → `stage_<x>` for clarity (optional).
+7. Verify locally: `python3 -c "import ast; ast.parse(open('authorities/SCRIPT.py').read())"`, then run the test suite: `python3 -m pytest tests/ -q`.
+
+OSM/OHM also dropped a `run_integrated_boundary_pass` helper — the
+boundary-completion path is now the separate
+``processing.submit_boundary_slurm`` Slurm chain (planner → mega +
+regular workers → finalize). Don't bring that helper back into a new
+authority script; route to the boundary chain instead.
 
 ### Step 5 — submit the extract for the patched authority
 
@@ -2527,6 +2555,52 @@ ssh pitt 'ES_PASS=$(cat /ix1/ishi/es/config/elastic.password); \
 ```
 
 Check that the new `places_<datetag>` exists, doc count matches the sum of per-namespace `final/places.parquet` row counts, and the alias points to the new index.
+
+---
+
+## Patches landed 2026-04-29 — staged-only authority surface
+
+### `osm-places.py` / `ohm-places.py` — skip rsync to local scratch
+
+The PBF rsync to `$SLURM_SCRATCH` (~2 h on the OSM 86 GB planet) was a hold-over from earlier multi-pass workflows. With the current single-pass `osmium FileProcessor.with_areas()` extract:
+
+* The PBF is consumed at ~38 KB/s during processing (4000 nodes/s × ~9.5 bytes/node compressed).
+* NFS bandwidth from `/ix1/ishi` is 5–10 MB/s — 130–260× faster than what the processor can drink.
+* Local-scratch reads gain nothing in this regime.
+* Worse, scratch is ephemeral: any restart-from-checkpoint repeats the rsync, and the rsync itself blocks the start of useful work.
+
+Both scripts now read the PBF directly from `/ix1` by default. The escape hatch `WHG_OSM_STAGE_TO_SCRATCH=1` re-enables the rsync if NFS contention ever becomes a real issue. **Saves ~2 h per OSM extract.**
+
+### Every authority script is now staged-only
+
+The dual-mode (staged-or-ES) wiring has been ripped out of every place-emitting authority script. They now talk to `processing.helpers.write_staged_place_doc` exclusively; ES indexing happens later via the post-extract pipeline (h3 → ccode → temporal_extent → eventually `index_from_stage`).
+
+Net diff for the 17-file batch: **−551 lines** across 16 simplifications + 1 net-positive rewrite (`un-geoscheme-boundaries.py`). 96/96 unit tests still pass; nothing in `processing/` or `tests/` referenced the removed code paths.
+
+Per-file summary:
+
+| File | Net change | Notes |
+|---|---:|---|
+| `chgis/places.py` | −45 | Was pure ES; now SQLite → staged JSONL. |
+| `dgsd/places.py` | −50 | Was pure ES; now SQLite → staged JSONL. |
+| `trismegistos/places.py` | −52 | Was pure ES; now SQLite → staged JSONL. |
+| `cliopatria-places.py` | −41 | Dual-mode → staged-only. |
+| `dplace-places.py` | −82 | Dual-mode → staged-only. |
+| `gb1900-places.py` | −61 | Dual-mode → staged-only. |
+| `geonames-places.py` | −61 | Dual-mode → staged-only. (Earlier note that gn extract wasn't staging-aware was wrong — it had been since this session began. Now it has no ES path at all.) |
+| `indexvillaris-places.py` | −38 | Dual-mode → staged-only. |
+| `nativeland-places.py` | −45 | Dual-mode → staged-only. |
+| `ohm-places.py` | −53 | Dual-mode → staged-only; removed `run_integrated_boundary_pass` (boundary completion is now the separate `submit_boundary_slurm` Slurm chain). |
+| `osm-places.py` | −54 | Same as ohm. |
+| `periodo-places.py` | −42 | Dual-mode → staged-only. |
+| `pleiades-places.py` | −73 | Dual-mode → staged-only. |
+| `tgn-places.py` | −50 | Dual-mode → staged-only. |
+| `un-countries.py` | −47 | Dual-mode → staged-only. |
+| `wikidata-places.py` | −42 | Dual-mode → staged-only. |
+| `un-geoscheme-boundaries.py` | +69 | Was pure ES; now reads staged un (JSONL — for hull) and writes derived M49 docs via `write_staged_place_doc(namespace='osm', ...)`. **Run after un is staged, never concurrently with osm extract** (both append to `osm/extract/places.jsonl`). |
+| `whg-places.py` | unchanged | Was already pure staged (an earlier note in this doc was wrong). |
+
+**Currently-running jobs are unaffected** — the `osm` and `wd` Slurm jobs use the Python they were started with. Future restarts pick up the new code, which is functionally identical for the staged path (just with the unreachable ES branch removed).
 
 ---
 

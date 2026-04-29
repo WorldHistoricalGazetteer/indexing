@@ -1,9 +1,10 @@
 # processing/wikidata-places.py
 
 """
-Index Wikidata places data into Elasticsearch.
+Stage Wikidata places data to ``{STAGED_BASE_DIR}/wd/extract/places.jsonl``.
 
-OPTIMIZED VERSION - Uses orjson and byte-scanning for 3-5x speedup
+OPTIMIZED — uses orjson and byte-scanning for 3-5× speedup over the
+naive parser.
 """
 
 import gzip
@@ -11,12 +12,8 @@ import sys
 import os
 
 import orjson  # Much faster than json
-from elasticsearch import Elasticsearch, helpers
-from processing.helpers import enrich_geometry, is_staging_mode, write_staged_place_doc
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE, GEOSHAPE_REFS_FILE
-from processing.utilities import create_checkpoint_snapshot
-
-es = Elasticsearch(ES_HOST, request_timeout=180) if not is_staging_mode() else None
+from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE
 
 # Pre-compile byte patterns for fast scanning
 SKIP_BYTES = {b'[', b']', b''}
@@ -262,10 +259,8 @@ def create_place_doc_fast(entity, entity_bytes):
     return doc, geoshape_ref
 
 
-def index_wikidata(file_path, places_index, geoshape_refs_file):
-    """Process Wikidata dump - OPTIMIZED."""
-    staged_mode = is_staging_mode()
-    place_batch = []
+def stage_wikidata(file_path, geoshape_refs_file):
+    """Process Wikidata dump and stage records to /vast/ishi/staged/wd/extract/."""
     place_count = 0
     processed = 0
     skipped = 0
@@ -276,7 +271,7 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
 
     os.makedirs(os.path.dirname(geoshape_refs_file), exist_ok=True)
 
-    with open(geoshape_refs_file, 'wb') as refs_f:  # Binary mode for orjson
+    with open(geoshape_refs_file, 'wb') as refs_f:
         for entity in stream_wikidata_fast(file_path):
             processed += 1
 
@@ -287,65 +282,37 @@ def index_wikidata(file_path, places_index, geoshape_refs_file):
                 sys.stdout.flush()
 
             try:
-                # Serialize once for byte scanning
                 entity_bytes = orjson.dumps(entity)
-
                 place_doc, geoshape_ref = create_place_doc_fast(entity, entity_bytes)
 
                 if not place_doc:
                     skipped += 1
                     continue
 
-                place_id = place_doc['place_id']
                 qid = entity['id']
-
                 if geoshape_ref:
                     ref_doc = {'qid': qid, 'geoshape_ref': geoshape_ref}
                     refs_f.write(orjson.dumps(ref_doc) + b'\n')
                     geoshape_count += 1
 
-                if staged_mode:
-                    write_staged_place_doc("wd", place_doc)
-                    place_count += 1
-                else:
-                    place_batch.append({
-                        '_index': places_index,
-                        '_id': place_id,
-                        '_source': place_doc
-                    })
+                write_staged_place_doc("wd", place_doc)
+                place_count += 1
 
-                    if len(place_batch) >= BATCH_SIZE:
-                        if es is None:
-                            raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
-                        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                        place_count += success
-                        place_batch = []
-
-            except Exception as e:
+            except Exception:
                 skipped += 1
                 continue
 
-        if not staged_mode and place_batch:
-            if es is None:
-                raise RuntimeError("Elasticsearch client unavailable in non-staging mode")
-            success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-            place_count += success
-
-    print(f"\n\nIndexing complete!")
+    print(f"\n\nStaging complete!")
     print(f"Total entities processed: {processed:,}")
-    print(f"Places indexed: {place_count:,}")
+    print(f"Places staged: {place_count:,}")
     print(f"Geoshape references saved: {geoshape_count:,}")
     print(f"Skipped (non-geographic): {skipped:,}")
 
 
 if __name__ == "__main__":
     WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all/latest-all.json.gz"
-    PLACES_INDEX = "places"
 
-    print(f"Starting to index Wikidata from {WIKIDATA_FILE}")
-    print(f"Target index: {PLACES_INDEX}")
+    print(f"Starting to stage Wikidata from {WIKIDATA_FILE}")
     print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
 
-    index_wikidata(WIKIDATA_FILE, PLACES_INDEX, GEOSHAPE_REFS_FILE)
-    if not is_staging_mode() and es:
-        create_checkpoint_snapshot(es, "wikidata_places")
+    stage_wikidata(WIKIDATA_FILE, GEOSHAPE_REFS_FILE)

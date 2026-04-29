@@ -1,7 +1,8 @@
 # processing/pleiades-places.py
 
 """
-Index Pleiades places data into Elasticsearch with memory-efficient streaming.
+Stage Pleiades places data to ``{STAGED_BASE_DIR}/pl/extract/places.jsonl``
+using memory-efficient streaming via ijson.
 """
 
 import gzip
@@ -11,15 +12,10 @@ from processing.helpers import (
     compute_h3_fields,
     select_h3_cover_geometry,
     write_staged_place_doc,
-    is_staging_mode,
 )
-
-from elasticsearch import Elasticsearch, helpers
-from processing.settings import ES_HOST, DATA_DIR, BATCH_SIZE
-from processing.utilities import create_checkpoint_snapshot
+from processing.settings import DATA_DIR
 
 NAMESPACE = "pl"
-es = None if is_staging_mode() else Elasticsearch(ES_HOST, request_timeout=180)
 
 
 def extract_geometries(pleiades_record):
@@ -193,18 +189,16 @@ def create_place_doc(pleiades_record):
     return doc
 
 
-def index_pleiades_streaming(file_path, places_index):
-    """Stream parse Pleiades JSON to avoid loading entire file into memory."""
+def stage_pleiades_streaming(file_path):
+    """Stream parse Pleiades JSON and write staged place docs."""
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
 
-    place_batch = []
     place_count = 0
     skipped = 0
 
     print(f"Streaming Pleiades data from {file_path}")
     print("Using ijson for memory-efficient parsing...")
-    print("SCHEMA COMPLIANT VERSION")
 
     with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "pl") as gsw:
         configure_module_writer(gsw)
@@ -214,7 +208,7 @@ def index_pleiades_streaming(file_path, places_index):
             if is_gzipped:
                 try:
                     file_obj = gzip.open(file_path, 'rb')
-                    test_bytes = file_obj.read(100)
+                    file_obj.read(100)
                     file_obj.seek(0)
                 except gzip.BadGzipFile:
                     print("Warning: File has .gz extension but is not gzipped")
@@ -236,63 +230,39 @@ def index_pleiades_streaming(file_path, places_index):
                     parser = ijson.items(file_obj, 'item')
                     print("Detected JSON array format")
 
-                staged_mode = is_staging_mode()
                 for i, record in enumerate(parser):
                     if (i + 1) % 1000 == 0:
                         print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
 
                     try:
                         place_doc = create_place_doc(record)
-
                         if not place_doc:
                             skipped += 1
                             continue
-
-                        if staged_mode:
-                            write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
-                            place_count += 1
-                            continue
-
-                        place_id = place_doc['place_id']
-
-                        place_batch.append({
-                            '_index': places_index,
-                            '_id': place_id,
-                            '_source': place_doc
-                        })
-
-                        if len(place_batch) >= BATCH_SIZE:
-                            success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                            place_count += success
-                            place_batch = []
-
+                        write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
+                        place_count += 1
                     except Exception as e:
-                        print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
+                        print(f"\nError processing record {record.get('id', 'unknown')}: {e}")
                         skipped += 1
                         continue
 
         except ImportError:
             configure_module_writer(None)
             print("\nERROR: ijson library not installed")
-            return index_pleiades_standard(file_path, places_index)
+            return stage_pleiades_standard(file_path)
         finally:
             configure_module_writer(None)
 
-    if not is_staging_mode() and place_batch:
-        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-        place_count += success
-
-    print(f"\n\nIndexing complete!")
-    print(f"Places indexed: {place_count:,}")
+    print(f"\n\nStaging complete!")
+    print(f"Places staged: {place_count:,}")
     print(f"Skipped (no name): {skipped:,}")
     print(f"Geometries in VAST store: {gsw.count:,}")
 
 
-def index_pleiades_standard(file_path, places_index):
+def stage_pleiades_standard(file_path):
     """Standard method - loads entire file into memory. Fallback only."""
     import json
 
-    place_batch = []
     place_count = 0
     skipped = 0
 
@@ -312,57 +282,30 @@ def index_pleiades_standard(file_path, places_index):
 
     print(f"Found {len(records)} Pleiades records")
 
-    staged_mode = is_staging_mode()
     for i, record in enumerate(records):
         if (i + 1) % 1000 == 0:
             print(f"\rProcessed {i + 1:,} records... (places: {place_count:,})", end='', flush=True)
 
         try:
             place_doc = create_place_doc(record)
-
             if not place_doc:
                 skipped += 1
                 continue
-
-            if staged_mode:
-                write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
-                place_count += 1
-                continue
-
-            place_id = place_doc['place_id']
-
-            place_batch.append({
-                '_index': places_index,
-                '_id': place_id,
-                '_source': place_doc
-            })
-
-            if len(place_batch) >= BATCH_SIZE:
-                success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-                place_count += success
-                place_batch = []
-
+            write_staged_place_doc(namespace=NAMESPACE, doc=place_doc)
+            place_count += 1
         except Exception as e:
-            print(f"\nError processing record {record.get('id', 'unknown')}: {str(e)}")
+            print(f"\nError processing record {record.get('id', 'unknown')}: {e}")
             skipped += 1
             continue
 
-    if not staged_mode and place_batch:
-        success, failed = helpers.bulk(es, place_batch, raise_on_error=False, stats_only=True)
-        place_count += success
-
-    print(f"\n\nIndexing complete!")
-    print(f"Places indexed: {place_count:,}")
+    print(f"\n\nStaging complete!")
+    print(f"Places staged: {place_count:,}")
     print(f"Skipped (no name): {skipped:,}")
 
 
 if __name__ == "__main__":
     PLEIADES_FILE = f"{DATA_DIR}/pleiades/pleiades-places-latest/pleiades-places-latest.json.gz"
-    PLACES_INDEX = "places"
 
-    print(f"Starting to index Pleiades from {PLEIADES_FILE}")
-    print(f"Target index: {PLACES_INDEX}\n")
+    print(f"Starting to stage Pleiades from {PLEIADES_FILE}\n")
 
-    index_pleiades_streaming(PLEIADES_FILE, PLACES_INDEX)
-    if not is_staging_mode() and es is not None:
-        create_checkpoint_snapshot(es, "pleiades_places")
+    stage_pleiades_streaming(PLEIADES_FILE)
