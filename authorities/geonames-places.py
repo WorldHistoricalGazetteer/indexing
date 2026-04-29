@@ -79,18 +79,21 @@ def parse_geonames_line(line):
         except ValueError:
             pass
 
-    timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+    # GeoNames carries no temporal data, so toponyms and geometries are
+    # emitted without timespans. The earlier 2025 placeholder collapsed
+    # gazetteer_temporal_extent to ``[2025, 2025]`` for the whole 13M-doc
+    # corpus, masking real historical coverage from other authorities.
     toponyms = []
     if fields[1]:
         lst = normalize_lst(fields[1], 'und')
         if lst:
-            toponyms.append({"toponym_id": lst, "timespans": timespans})
+            toponyms.append({"toponym_id": lst})
 
     point_geom = {
         'type': 'Point',
         'coordinates': [float(fields[5]), float(fields[4])],
     }
-    geom_entry = enrich_geometry(point_geom, timespans=timespans)
+    geom_entry = enrich_geometry(point_geom)
     geometries = [geom_entry] if geom_entry else []
 
     doc = {

@@ -134,6 +134,91 @@ def extract_population_fast(claims):
     return None
 
 
+def _year_from_wikidata_time(time_str):
+    """Parse a Wikidata time string into an integer year.
+
+    Format is ``+YYYY-MM-DDTHH:MM:SSZ`` (CE) or ``-YYYY-MM-DDTHH:MM:SSZ``
+    (BCE), with variable-width year for deep past. Returns ``None`` for
+    unparseable input.
+    """
+    if not isinstance(time_str, str) or len(time_str) < 5:
+        return None
+    sign = time_str[0]
+    if sign not in ("+", "-"):
+        return None
+    rest = time_str[1:]
+    dash = rest.find("-")
+    if dash <= 0:
+        return None
+    try:
+        year = int(rest[:dash])
+    except ValueError:
+        return None
+    return -year if sign == "-" else year
+
+
+def _earliest_year(claims, prop):
+    years = []
+    for claim in claims.get(prop) or ():
+        try:
+            year = _year_from_wikidata_time(
+                claim["mainsnak"]["datavalue"]["value"]["time"]
+            )
+        except (KeyError, TypeError):
+            continue
+        if year is not None:
+            years.append(year)
+    return min(years) if years else None
+
+
+def _latest_year(claims, prop):
+    years = []
+    for claim in claims.get(prop) or ():
+        try:
+            year = _year_from_wikidata_time(
+                claim["mainsnak"]["datavalue"]["value"]["time"]
+            )
+        except (KeyError, TypeError):
+            continue
+        if year is not None:
+            years.append(year)
+    return max(years) if years else None
+
+
+def build_wikidata_timespans(claims):
+    """Build a ``timespans`` list from Wikidata temporal claims.
+
+    Properties consulted:
+      * P571 — inception (start)
+      * P580 — start time (alternative start)
+      * P576 — dissolved, abolished or demolished (end)
+      * P582 — end time (alternative end)
+      * P585 — point in time (single-point fallback for both ends)
+
+    Returns ``[]`` when no usable temporal data is present, so docs without
+    historical metadata don't drag the corpus-wide temporal extent toward
+    today's date.
+    """
+    start = _earliest_year(claims, "P571")
+    if start is None:
+        start = _earliest_year(claims, "P580")
+    end = _latest_year(claims, "P576")
+    if end is None:
+        end = _latest_year(claims, "P582")
+    if start is None and end is None:
+        # Fall back to a single point-in-time reference; otherwise skip.
+        point = _earliest_year(claims, "P585")
+        if point is None:
+            return []
+        return [{"start": {"in": point}, "end": {"in": point}}]
+    ts = {}
+    if start is not None:
+        ts["start"] = {"in": start}
+    if end is not None:
+        ts["end"] = {"in": end}
+    return [ts]
+
+
 def create_place_doc_fast(entity, entity_bytes):
     """Create place document - OPTIMIZED."""
     qid = entity.get('id')
@@ -158,7 +243,13 @@ def create_place_doc_fast(entity, entity_bytes):
     labels = entity.get('labels', {})
     title = labels.get('en', {}).get('value') or labels.get('mul', {}).get('value') or qid
 
-    # Build toponyms
+    # Build toponyms — attach the entity-level timespan when available so
+    # toponym attestations span the period the place actually existed (real
+    # historical settlements, dissolved kingdoms, etc.). Authorities without
+    # temporal data emit no timespans, leaving them out of the corpus-wide
+    # extent rather than pinning them to today.
+    timespans = build_wikidata_timespans(claims)
+
     toponyms = []
     seen = set()
 
@@ -168,10 +259,10 @@ def create_place_doc_fast(entity, entity_bytes):
             continue
         lst = f"{name}@{lang}"
         if lst not in seen:
-            toponyms.append({
-                'toponym_id': lst,
-                'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-            })
+            entry = {'toponym_id': lst}
+            if timespans:
+                entry['timespans'] = timespans
+            toponyms.append(entry)
             seen.add(lst)
 
     # Add aliases
@@ -182,10 +273,10 @@ def create_place_doc_fast(entity, entity_bytes):
                 continue
             lst = f"{name}@{lang}"
             if lst not in seen:
-                toponyms.append({
-                    'toponym_id': lst,
-                    'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-                })
+                entry = {'toponym_id': lst}
+                if timespans:
+                    entry['timespans'] = timespans
+                toponyms.append(entry)
                 seen.add(lst)
 
     # Build base document
@@ -195,13 +286,11 @@ def create_place_doc_fast(entity, entity_bytes):
         'toponyms': toponyms
     }
 
-    # Add geometries
+    # Add geometries — propagate timespans onto each geometry entry too so
+    # gazetteer_temporal_extent picks them up alongside the toponyms.
     if coords:
         point_geom = {'type': 'Point', 'coordinates': coords}
-        geom_entry = enrich_geometry(
-            point_geom,
-            timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
-        )
+        geom_entry = enrich_geometry(point_geom, timespans=timespans or None)
         if geom_entry:
             doc['geometries'] = [geom_entry]
 

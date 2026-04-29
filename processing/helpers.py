@@ -971,6 +971,14 @@ def write_staged_place_doc(namespace: str, doc: dict) -> None:
             )
         doc["dataset_id"] = namespace
 
+    # Augment the doc so each ``geometries[]`` entry carries ``geometry_index``
+    # and ``geom_ref`` — required by tile generation and ccode_enrichment to
+    # look up full polygons from the geom store. Done at write time so the
+    # canonical JSONL matches the parquet sidecar produced later by
+    # ``_consolidate_extracts`` (which calls the same augmenter).
+    from processing.stage_writers import _augment_doc_for_stage
+    doc = _augment_doc_for_stage(doc)
+
     staged_base = os.environ.get(
         "STAGED_BASE_DIR",
         os.path.join(os.environ.get("IX3_BASE", "/vast/ishi"), "staged"),

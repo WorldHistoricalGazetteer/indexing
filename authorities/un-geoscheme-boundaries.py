@@ -475,6 +475,9 @@ def _verify_country_coverage(country_geoms):
 
 def generate_geoscheme(dry_run=False):
     """Generate UN M49 geoscheme docs from staged un, write to staged osm."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     print("=" * 70)
     print("UN M49 GEOSCHEME BOUNDARY GENERATION (staged)")
     print("=" * 70)
@@ -488,71 +491,92 @@ def generate_geoscheme(dry_run=False):
 
     all_docs = []
 
-    # Subregions (boundary="1")
-    print("\nBuilding subregions (boundary='1') ...")
-    for name, info in M49_SUBREGIONS.items():
-        geoms = [country_geoms[cc] for cc in info['ccodes'] if cc in country_geoms]
-        found_codes = [cc for cc in info['ccodes'] if cc in country_geoms]
-        if not geoms:
-            print(f"  ✗ {name}: no country geometries found")
-            continue
-        union = make_valid(unary_union(geoms))
-        doc = build_geoscheme_place_doc(
-            name, '1', union, info.get('wikidata'), found_codes)
-        if doc:
-            all_docs.append(doc)
-            print(f"  ✓ {name}: {len(found_codes)}/{len(info['ccodes'])} countries")
+    # The M49 polygons need to land in the geom store so tile generation can
+    # render them. They're written under a dedicated ``osm_geoscheme`` staging
+    # file so they don't race with the per-shard osm boundary writers — keys
+    # remain ``osm:m49_*_0`` / ``osm:r{antarctica_id}_0`` and resolve from
+    # the consolidated index regardless of which staging file held them.
+    writer_ctx = (
+        GeomStoreWriter(GEOM_STORE_STAGING_DIR, "osm_geoscheme")
+        if not dry_run else None
+    )
 
-    # Intermediary regions (boundary="1")
-    print("\nBuilding intermediary regions (boundary='1') ...")
-    for name, info in M49_INTERMEDIARY.items():
-        all_codes = []
-        for sub_name in info['subregions']:
-            all_codes.extend(M49_SUBREGIONS.get(sub_name, {}).get('ccodes', []))
-        geoms = [country_geoms[cc] for cc in all_codes if cc in country_geoms]
-        found_codes = sorted(set(cc for cc in all_codes if cc in country_geoms))
-        if not geoms:
-            print(f"  ✗ {name}: no geometries")
-            continue
-        union = make_valid(unary_union(geoms))
-        doc = build_geoscheme_place_doc(
-            name, '1', union, info.get('wikidata'), found_codes)
-        if doc:
-            all_docs.append(doc)
-            print(f"  ✓ {name}: {len(found_codes)} countries")
+    def _close_writer():
+        configure_module_writer(None)
+        if writer_ctx is not None:
+            writer_ctx.close()
 
-    # Continents (boundary="0")
-    print("\nBuilding continents (boundary='0') ...")
-    continent_codes = {}
-    for name, info in M49_SUBREGIONS.items():
-        continent_codes.setdefault(info['continent'], set()).update(info['ccodes'])
-    for name, info in M49_CONTINENTS.items():
-        codes = continent_codes.get(name, set())
-        geoms = [country_geoms[cc] for cc in codes if cc in country_geoms]
-        found_codes = sorted(cc for cc in codes if cc in country_geoms)
-        if not geoms:
-            print(f"  ✗ {name}: no geometries")
-            continue
-        union = make_valid(unary_union(geoms))
-        doc = build_geoscheme_place_doc(
-            name, '0', union, info.get('wikidata'), found_codes)
-        if doc:
-            all_docs.append(doc)
-            print(f"  ✓ {name}: {len(found_codes)} countries")
+    if writer_ctx is not None:
+        configure_module_writer(writer_ctx)
 
-    # Antarctica
-    print("\nFetching Antarctica ...")
-    antarctica_geom = fetch_antarctica()
-    if antarctica_geom:
-        doc = build_geoscheme_place_doc(
-            'Antarctica', '0', antarctica_geom,
-            ANTARCTICA['wikidata'], ANTARCTICA['ccodes'])
-        if doc:
-            doc['place_id'] = f"{OUTPUT_NAMESPACE}:r{ANTARCTICA['osm_relation']}"
-            all_docs.append(doc)
-            print("  ✓ Antarctica added")
-    else:
-        print("  ✗ Antarctica skipped (Overpass unavailable)")
+    try:
+        # Subregions (boundary="1")
+        print("\nBuilding subregions (boundary='1') ...")
+        for name, info in M49_SUBREGIONS.items():
+            geoms = [country_geoms[cc] for cc in info['ccodes'] if cc in country_geoms]
+            found_codes = [cc for cc in info['ccodes'] if cc in country_geoms]
+            if not geoms:
+                print(f"  ✗ {name}: no country geometries found")
+                continue
+            union = make_valid(unary_union(geoms))
+            doc = build_geoscheme_place_doc(
+                name, '1', union, info.get('wikidata'), found_codes)
+            if doc:
+                all_docs.append(doc)
+                print(f"  ✓ {name}: {len(found_codes)}/{len(info['ccodes'])} countries")
+
+        # Intermediary regions (boundary="1")
+        print("\nBuilding intermediary regions (boundary='1') ...")
+        for name, info in M49_INTERMEDIARY.items():
+            all_codes = []
+            for sub_name in info['subregions']:
+                all_codes.extend(M49_SUBREGIONS.get(sub_name, {}).get('ccodes', []))
+            geoms = [country_geoms[cc] for cc in all_codes if cc in country_geoms]
+            found_codes = sorted(set(cc for cc in all_codes if cc in country_geoms))
+            if not geoms:
+                print(f"  ✗ {name}: no geometries")
+                continue
+            union = make_valid(unary_union(geoms))
+            doc = build_geoscheme_place_doc(
+                name, '1', union, info.get('wikidata'), found_codes)
+            if doc:
+                all_docs.append(doc)
+                print(f"  ✓ {name}: {len(found_codes)} countries")
+
+        # Continents (boundary="0")
+        print("\nBuilding continents (boundary='0') ...")
+        continent_codes = {}
+        for name, info in M49_SUBREGIONS.items():
+            continent_codes.setdefault(info['continent'], set()).update(info['ccodes'])
+        for name, info in M49_CONTINENTS.items():
+            codes = continent_codes.get(name, set())
+            geoms = [country_geoms[cc] for cc in codes if cc in country_geoms]
+            found_codes = sorted(cc for cc in codes if cc in country_geoms)
+            if not geoms:
+                print(f"  ✗ {name}: no geometries")
+                continue
+            union = make_valid(unary_union(geoms))
+            doc = build_geoscheme_place_doc(
+                name, '0', union, info.get('wikidata'), found_codes)
+            if doc:
+                all_docs.append(doc)
+                print(f"  ✓ {name}: {len(found_codes)} countries")
+
+        # Antarctica
+        print("\nFetching Antarctica ...")
+        antarctica_geom = fetch_antarctica()
+        if antarctica_geom:
+            doc = build_geoscheme_place_doc(
+                'Antarctica', '0', antarctica_geom,
+                ANTARCTICA['wikidata'], ANTARCTICA['ccodes'])
+            if doc:
+                doc['place_id'] = f"{OUTPUT_NAMESPACE}:r{ANTARCTICA['osm_relation']}"
+                all_docs.append(doc)
+                print("  ✓ Antarctica added")
+        else:
+            print("  ✗ Antarctica skipped (Overpass unavailable)")
+    finally:
+        _close_writer()
 
     # Summary
     print("\n--- Summary ---")

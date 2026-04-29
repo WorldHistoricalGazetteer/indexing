@@ -497,6 +497,9 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
 
 def stage_periodo(file_path=None):
     """Stage PeriodO periods to {STAGED_BASE_DIR}/po/extract/places.jsonl."""
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+    from processing.settings import GEOM_STORE_STAGING_DIR
+
     print("=" * 80)
     print("PeriodO TEMPORAL PERIODS STAGING")
     print("=" * 80)
@@ -532,45 +535,50 @@ def stage_periodo(file_path=None):
     started = time.time()
     last_log = started
 
-    for auth_id, auth_data in authorities.items():
-        auth_label = auth_data.get('source', {}).get('title', '') if isinstance(auth_data.get('source'), dict) else ''
-        periods = auth_data.get('periods', {})
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "po") as gsw:
+        configure_module_writer(gsw)
+        try:
+            for auth_id, auth_data in authorities.items():
+                auth_label = auth_data.get('source', {}).get('title', '') if isinstance(auth_data.get('source'), dict) else ''
+                periods = auth_data.get('periods', {})
 
-        for period_id, period in periods.items():
-            processed_periods += 1
-            try:
-                doc = process_periodo_period(
-                    period_id, period, auth_id, auth_label, spatial_geometry_index
-                )
-                if not doc:
-                    total_skipped += 1
-                    continue
+                for period_id, period in periods.items():
+                    processed_periods += 1
+                    try:
+                        doc = process_periodo_period(
+                            period_id, period, auth_id, auth_label, spatial_geometry_index
+                        )
+                        if not doc:
+                            total_skipped += 1
+                            continue
 
-                write_staged_place_doc(namespace='po', doc=doc)
-                total_staged += 1
+                        write_staged_place_doc(namespace='po', doc=doc)
+                        total_staged += 1
 
-                if doc.get('geometries'):
-                    with_geometry += 1
-                else:
-                    without_geometry += 1
+                        if doc.get('geometries'):
+                            with_geometry += 1
+                        else:
+                            without_geometry += 1
 
-                now = time.time()
-                if now - last_log >= PROGRESS_LOG_INTERVAL_SECONDS:
-                    _log_progress(
-                        "Periods processed",
-                        processed_periods,
-                        total=total_periods if total_periods else None,
-                        start_ts=started,
-                        extra=(
-                            f"staged={total_staged:,} skipped={total_skipped:,} "
-                            f"with_geom={with_geometry:,} without_geom={without_geometry:,}"
-                        ),
-                    )
-                    last_log = now
+                        now = time.time()
+                        if now - last_log >= PROGRESS_LOG_INTERVAL_SECONDS:
+                            _log_progress(
+                                "Periods processed",
+                                processed_periods,
+                                total=total_periods if total_periods else None,
+                                start_ts=started,
+                                extra=(
+                                    f"staged={total_staged:,} skipped={total_skipped:,} "
+                                    f"with_geom={with_geometry:,} without_geom={without_geometry:,}"
+                                ),
+                            )
+                            last_log = now
 
-            except Exception:
-                total_skipped += 1
-                continue
+                    except Exception:
+                        total_skipped += 1
+                        continue
+        finally:
+            configure_module_writer(None)
 
     print(f"\n\nPeriodO staging complete:")
     print(f"  Staged: {total_staged:,}")
