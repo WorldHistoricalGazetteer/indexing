@@ -43,6 +43,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pyarrow as pa
 import pyarrow.json as paj
 import pyarrow.parquet as pq
 
@@ -94,8 +95,8 @@ def drop_nulls_for_parquet(obj: Any) -> Any:
     return obj
 
 
-def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> None:
-    """Convert a canonical JSONL snapshot to a parquet sidecar.
+def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> bool:
+    """Convert a canonical JSONL snapshot to a parquet sidecar (best-effort).
 
     Streams ``jsonl_path`` through ``strip_hull_for_parquet`` and
     ``drop_nulls_for_parquet`` into a sibling ``*.parquet_input.jsonl``
@@ -106,8 +107,26 @@ def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> None:
 
     Caller is expected to have already applied ``normalize_for_parquet``
     to the docs in ``jsonl_path``.
+
+    Returns ``True`` if the parquet sidecar was written, ``False`` if
+    pyarrow's schema inference failed mid-conversion. Common failure
+    modes (handled gracefully):
+
+    * Mixed types across rows in nested fields (e.g. WHG LPF timespans
+      where ``earliest`` is sometimes a string ISO date, sometimes a
+      bare number — the staging contract doesn't enforce a single type
+      and different LPF datasets normalise differently).
+    * Other ``ArrowInvalid`` / ``ArrowNotImplementedError`` cases that
+      slip through ``strip_hull_for_parquet`` / ``drop_nulls_for_parquet``.
+
+    The canonical JSONL is left intact in either case. Downstream readers
+    (``ccode_enrichment``, ``gazetteer_temporal_extent``, ``boundary_merge``,
+    ``h3_merge``) all use a "parquet if exists, else jsonl" priority,
+    so a missing parquet falls through to JSONL automatically — slower
+    on big namespaces but functionally complete.
     """
     parquet_input_path = parquet_path.with_suffix(".parquet_input.jsonl")
+    parquet_written = False
     try:
         with jsonl_path.open("r", encoding="utf-8") as in_fh, \
              parquet_input_path.open("w", encoding="utf-8") as out_fh:
@@ -118,10 +137,28 @@ def write_parquet_from_jsonl(jsonl_path: Path, parquet_path: Path) -> None:
                 doc = strip_hull_for_parquet(doc)
                 doc = drop_nulls_for_parquet(doc)
                 out_fh.write(json.dumps(doc, ensure_ascii=True) + "\n")
-        table = paj.read_json(str(parquet_input_path))
-        pq.write_table(table, str(parquet_path))
+        try:
+            table = paj.read_json(str(parquet_input_path))
+            pq.write_table(table, str(parquet_path))
+            parquet_written = True
+        except (pa.ArrowInvalid, pa.ArrowNotImplementedError) as exc:
+            print(
+                f"WARN: parquet sidecar at {parquet_path} skipped — "
+                f"pyarrow schema inference failed ({exc.__class__.__name__}: {exc})",
+                flush=True,
+            )
+            print(
+                f"      JSONL is intact at {jsonl_path}; downstream stages "
+                "fall back to JSONL automatically.",
+                flush=True,
+            )
+            try:
+                parquet_path.unlink()
+            except FileNotFoundError:
+                pass
     finally:
         try:
             parquet_input_path.unlink()
         except FileNotFoundError:
             pass
+    return parquet_written
