@@ -280,7 +280,15 @@ def _build_staged_feature(
         return None
     geom_ref = geom_entry.get("geom_ref")
     if not isinstance(geom_ref, str) or not geom_ref:
-        return None
+        # Authority scripts emit JSONL via ``write_staged_place_doc`` which
+        # bypasses ``_augment_doc_for_stage`` — so ``geom_ref`` is absent on
+        # extracted docs even when the geom store has the entry. Synthesize
+        # the canonical key (``"{place_id}_{idx}"``) when ``has_geom`` is set,
+        # matching ``stage_writers._augment_doc_for_stage``.
+        if not geom_entry.get("has_geom"):
+            return None
+        idx = geom_entry.get("geometry_index", 0)
+        geom_ref = f"{place_id}_{idx}"
     full_geom = reader.get(geom_ref)
     if not full_geom:
         return None
