@@ -26,7 +26,11 @@ from processing.settings import (
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
-from processing.stage_writers import write_runtime_history_event, write_stage_event
+from processing.stage_writers import (
+    _augment_doc_for_stage,
+    write_runtime_history_event,
+    write_stage_event,
+)
 from processing.staged_parquet import (
     normalize_for_parquet,
     write_parquet_from_jsonl,
@@ -142,6 +146,11 @@ def run_boundary_merge(
                 doc = _merge_update(doc, patch.get("update_doc") or {})
                 docs_updated += 1
 
+            # Re-augment geom_ref on every row: boundary_stage's patches
+            # ship ``has_geom: True`` but no ``geom_ref`` (the patch payload
+            # bypasses ``_augment_doc_for_stage``), so the merged doc would
+            # otherwise lose the lookup key tile generation needs.
+            doc = _augment_doc_for_stage(doc)
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
 
@@ -151,6 +160,7 @@ def run_boundary_merge(
                 upsert_doc = patch.get("upsert_doc")
                 if not isinstance(upsert_doc, dict):
                     continue
+                upsert_doc = _augment_doc_for_stage(upsert_doc)
                 out_jsonl.write(
                     json.dumps(normalize_for_parquet(upsert_doc), ensure_ascii=True) + "\n"
                 )
