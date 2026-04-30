@@ -128,6 +128,29 @@ def _write_array_map(buckets: list[str], work_dir: Path) -> Path:
     return map_path
 
 
+_BUCKET_MEM_GB = {
+    # Tippecanoe peak RSS scales with the GeoJSONL input + tile-pyramid
+    # working set. Empirically: clio (68 MB → 1.7 GB mbtiles, peak ~3 GB);
+    # po (6.6 MB → 1.1 GB, peak ~2 GB); ohm_admin (6 GB → OOM at 16 GB).
+    # OSM admin/misc will dwarf ohm_admin again, so reserve plenty.
+    "po": 16,
+    "clio": 16,
+    "nl": 16,
+    "ohm_admin": 96,
+    "osm_admin": 192,
+    "osm_misc": 192,
+}
+_DEFAULT_MEM_GB = 32
+
+
+def _max_bucket_mem_gb(buckets: list[str]) -> int:
+    """Whole-array memory must satisfy the heaviest bucket (homogeneous array)."""
+    return max(
+        (_BUCKET_MEM_GB.get(b, _DEFAULT_MEM_GB) for b in buckets),
+        default=_DEFAULT_MEM_GB,
+    )
+
+
 def _build_sbatch_script(
     *,
     run_id: str,
@@ -143,6 +166,7 @@ def _build_sbatch_script(
 
     array_end = len(buckets) - 1
     slurm_time = _seconds_to_slurm_time(_estimate_wall_for_buckets(buckets))
+    slurm_mem_gb = _max_bucket_mem_gb(buckets)
 
     output_arg = ""
     if output_dir is not None:
@@ -160,7 +184,7 @@ def _build_sbatch_script(
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         "#SBATCH --cpus-per-task=4",
-        "#SBATCH --mem=16G",
+        f"#SBATCH --mem={slurm_mem_gb}G",
     ]
     if depend_on:
         lines.append(f"#SBATCH --dependency=afterok:{depend_on}")
