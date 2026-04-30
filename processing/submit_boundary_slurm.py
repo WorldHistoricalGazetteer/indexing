@@ -136,6 +136,7 @@ def _build_planner_sbatch(
     mega_shard_count: int,
     cost_proxy: str,
     shard_map_path: Path,
+    prefiltered_pbf_path: Path,
     work_dir: Path,
     log_dir: Path,
 ) -> Path:
@@ -162,7 +163,8 @@ python -m processing.boundary_shard_planner \\
     --shard-count {shard_count} \\
     --mega-shard-count {mega_shard_count} \\
     --cost-proxy {cost_proxy} \\
-    --output {shard_map_path}
+    --output {shard_map_path} \\
+    --keep-prefilter {prefiltered_pbf_path}
 """
     sbatch_path = work_dir / f"boundary_planner_{namespace}.sbatch"
     sbatch_path.write_text(body, encoding="utf-8")
@@ -181,6 +183,7 @@ def _build_worker_sbatch(
     label: str,
     shard_map_path: Path,
     manifest_path: Path,
+    prefiltered_pbf_path: Path,
     work_dir: Path,
     log_dir: Path,
 ) -> Path:
@@ -209,7 +212,8 @@ python -u -m processing.boundary_stage \\
     --pbf-file {pbf_file} \\
     --manifest-path {manifest_path} \\
     --shard-id $SLURM_ARRAY_TASK_ID \\
-    --shard-map {shard_map_path}
+    --shard-map {shard_map_path} \\
+    --prefiltered-pbf {prefiltered_pbf_path}
 """
     sbatch_path = work_dir / f"boundary_{label}_{namespace}.sbatch"
     sbatch_path.write_text(body, encoding="utf-8")
@@ -287,6 +291,9 @@ def submit(
     log_dir.mkdir(parents=True, exist_ok=True)
 
     shard_map_path = work_dir / f"boundary_shard_map_{namespace}.json"
+    # Persistent prefilter shared across planner + workers. Lives next to
+    # the shard map so cleanup (deleting the run work_dir) sweeps it too.
+    prefiltered_pbf_path = work_dir / f"{namespace}_boundary_prefiltered.osm.pbf"
 
     print(f"Submitting boundary chain for namespace '{namespace}'")
     print(f"  PBF:                 {pbf_file}")
@@ -294,12 +301,14 @@ def submit(
     print(f"  Regular shards:      {shard_count}  (wall: {regular_wall_hours}h, mem: {regular_mem_gb}G)")
     print(f"  Mega shards:         {mega_shard_count} (wall: {mega_wall_hours}h, mem: {mega_mem_gb}G)")
     print(f"  Shard map:           {shard_map_path}")
+    print(f"  Prefiltered PBF:     {prefiltered_pbf_path}")
     print(f"  Manifest:            {manifest_path}")
 
     planner_sbatch = _build_planner_sbatch(
         run_id=run_id, namespace=namespace, pbf_file=pbf_file,
         shard_count=shard_count, mega_shard_count=mega_shard_count,
         cost_proxy=cost_proxy, shard_map_path=shard_map_path,
+        prefiltered_pbf_path=prefiltered_pbf_path,
         work_dir=work_dir, log_dir=log_dir,
     )
     planner_jobid = _submit(planner_sbatch, depend_on=None, dry_run=dry_run)
@@ -316,6 +325,7 @@ def submit(
             wall_hours=mega_wall_hours, mem_gb=mega_mem_gb,
             label="mega", shard_map_path=shard_map_path,
             manifest_path=manifest_path,
+            prefiltered_pbf_path=prefiltered_pbf_path,
             work_dir=work_dir, log_dir=log_dir,
         )
         mega_jobid = _submit(
@@ -335,6 +345,7 @@ def submit(
             wall_hours=regular_wall_hours, mem_gb=regular_mem_gb,
             label="regular", shard_map_path=shard_map_path,
             manifest_path=manifest_path,
+            prefiltered_pbf_path=prefiltered_pbf_path,
             work_dir=work_dir, log_dir=log_dir,
         )
         regular_jobid = _submit(

@@ -304,8 +304,14 @@ def run_planner(
     skip_prefilter: bool = False,
     mega_shard_count: int = 0,
     cost_proxy: str = COST_PROXY_NODE_COUNT,
+    keep_prefilter: Path | None = None,
 ) -> dict:
-    """Pre-filter the PBF (if needed), score relations, write shard map."""
+    """Pre-filter the PBF (if needed), score relations, write shard map.
+
+    ``keep_prefilter``: if provided, copy the prefiltered PBF to that path
+    on success so downstream workers can reuse it (avoiding 32× duplicate
+    pre-filter on the 92 GB OSM PBF — the original cause of the SMP timeouts).
+    """
     if not pbf_path.exists():
         raise FileNotFoundError(f"PBF file not found: {pbf_path}")
     if cost_proxy not in _COST_PROXIES:
@@ -327,11 +333,22 @@ def run_planner(
     try:
         items = enumerate_boundary_relations(scan_pbf, cost_proxy=cost_proxy)
     finally:
+        # Persist the prefilter for workers before deleting the scratch copy.
+        # Use shutil.copyfile rather than rename since scratch and the target
+        # are typically different filesystems.
         if (
             prefiltered_path is not None
             and prefiltered_path.exists()
             and prefiltered_path != pbf_path
         ):
+            if keep_prefilter is not None:
+                import shutil
+                keep_prefilter.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(prefiltered_path, keep_prefilter)
+                print(
+                    f"  Persisted prefiltered PBF → {keep_prefilter} "
+                    f"({keep_prefilter.stat().st_size / 1e9:.1f} GB)"
+                )
             try:
                 prefiltered_path.unlink()
             except OSError:
@@ -400,6 +417,9 @@ def main() -> None:
                         help="Where to write the shard_map.json")
     parser.add_argument("--skip-prefilter", action="store_true",
                         help="Skip osmium tags-filter (input is already filtered)")
+    parser.add_argument("--keep-prefilter",
+                        help="If set, copy the prefiltered PBF to this path "
+                             "so downstream boundary_stage workers can reuse it.")
     args = parser.parse_args()
 
     summary = run_planner(
@@ -410,6 +430,7 @@ def main() -> None:
         skip_prefilter=args.skip_prefilter,
         mega_shard_count=args.mega_shard_count,
         cost_proxy=args.cost_proxy,
+        keep_prefilter=Path(args.keep_prefilter) if args.keep_prefilter else None,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
 

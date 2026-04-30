@@ -163,6 +163,7 @@ def run_boundary_stage(
     max_areas: int | None = None,
     shard_id: int | None = None,
     shard_map_path: Path | None = None,
+    prefiltered_pbf: Path | None = None,
 ) -> dict[str, Any]:
     """Assemble boundary geometry and emit staged boundary patches.
 
@@ -224,15 +225,24 @@ def run_boundary_stage(
     scratch = os.environ.get("SLURM_SCRATCH") or os.environ.get("TMPDIR")
     filter_dir = scratch if (scratch and os.path.isdir(scratch)) else os.environ.get("TMPDIR", "/tmp")
 
-    # Optional pre-filter to speed up area assembly.
+    # Optional pre-filter to speed up area assembly. If the planner already
+    # produced a prefiltered PBF on shared storage (passed via
+    # ``prefiltered_pbf``), reuse it and skip the in-worker prefilter — this
+    # avoids 32 simultaneous workers each doing a 2 h+ prefilter pass on the
+    # 92 GB OSM PBF, which was the cause of the SMP-array timeouts.
     filtered_pbf_path: str | None = None
     shard_subset_path: Path | None = None
     processing_pbf = str(pbf_file)
-    filtered_path = os.path.join(filter_dir, f"{namespace}_boundary_stage_filtered.osm.pbf")
-    prefiltered = prefilter_boundaries(pbf_file, filtered_path)
-    if prefiltered:
-        processing_pbf = prefiltered
-        filtered_pbf_path = prefiltered
+    if prefiltered_pbf is not None and prefiltered_pbf.exists():
+        print(f"Reusing planner-produced prefiltered PBF: {prefiltered_pbf} "
+              f"({prefiltered_pbf.stat().st_size / 1e9:.1f} GB) — skipping in-worker prefilter")
+        processing_pbf = str(prefiltered_pbf)
+    else:
+        filtered_path = os.path.join(filter_dir, f"{namespace}_boundary_stage_filtered.osm.pbf")
+        prefiltered = prefilter_boundaries(pbf_file, filtered_path)
+        if prefiltered:
+            processing_pbf = prefiltered
+            filtered_pbf_path = prefiltered
 
     # In shard mode, hold the assigned relation IDs so the area-iteration
     # loop can drop osmium-leaked siblings (see comment at iteration site).
@@ -382,6 +392,10 @@ def main() -> None:
                         help="Process only this shard's relations (requires --shard-map)")
     parser.add_argument("--shard-map",
                         help="Path to shard_map.json from boundary_shard_planner")
+    parser.add_argument("--prefiltered-pbf",
+                        help="Path to a pre-built boundary-only PBF (from "
+                             "boundary_shard_planner --keep-prefilter). "
+                             "When set, skips the in-worker tags-filter pass.")
     args = parser.parse_args()
 
     manifest_path = Path(args.manifest_path) if args.manifest_path else Path(
@@ -391,6 +405,7 @@ def main() -> None:
     pbf_file = Path(args.pbf_file) if args.pbf_file else _default_pbf_for(args.namespace)
 
     shard_map_path = Path(args.shard_map) if args.shard_map else None
+    prefiltered_pbf = Path(args.prefiltered_pbf) if args.prefiltered_pbf else None
 
     metrics = run_boundary_stage(
         run_id=args.run_id,
@@ -400,6 +415,7 @@ def main() -> None:
         max_areas=args.max_areas,
         shard_id=args.shard_id,
         shard_map_path=shard_map_path,
+        prefiltered_pbf=prefiltered_pbf,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
