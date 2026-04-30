@@ -83,11 +83,11 @@ _DEFAULT_MEGA_WALL_HOURS = {
     "osm": 96,
 }
 _PLANNER_WALL_HOURS = {
-    # OSM planet PBF (~92 GB) needs ~2-3 h to prefilter + enumerate boundary
-    # relations on a single node; pad to 6 h to leave headroom for scratch
-    # contention and avoid the 1 h timeout we hit on the first OSM run.
-    "ohm": 2,
-    "osm": 6,
+    # OSM planet PBF (~92 GB) prefilter alone is multi-hour; previous runs
+    # took 5 h 11 m → 6 h timeout, so allow 12 h of headroom for SMP node
+    # variance and the keep-prefilter copy to /vast.
+    "ohm": 4,
+    "osm": 12,
 }
 _FINALIZE_WALL_HOURS = 1
 
