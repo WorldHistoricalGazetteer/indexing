@@ -517,6 +517,7 @@ def generate_tiles_from_staged(
         print(f"  {bucket}: {bucket_counts.get(bucket, 0):,}")
 
     tilesets_generated: list[Path] = []
+    bucket_failures: list[str] = []
     if skip_tippecanoe:
         print("\n--skip-tippecanoe specified; GeoJSONL written but no .mbtiles produced.")
     else:
@@ -526,6 +527,20 @@ def generate_tiles_from_staged(
             description = f"WHG {bucket}"
             if generate_tileset(geojsonl, mbtiles, bucket, description):
                 tilesets_generated.append(mbtiles)
+            else:
+                # Empty GeoJSONL ("nothing to tile") is benign; tippecanoe
+                # exiting non-zero on a non-empty input is a real failure
+                # (typically OOM) and must not be recorded as completed —
+                # otherwise wall-time estimators pick up the partial run
+                # and undersize the next attempt's Slurm budget.
+                if geojsonl.exists() and geojsonl.stat().st_size > 0:
+                    bucket_failures.append(bucket)
+
+    # Distinguish per-namespace status: if any bucket the namespace contributes
+    # to failed tippecanoe, mark its tiles stage failed; otherwise completed.
+    def _ns_status(ns: str) -> str:
+        ns_buckets = [b for b in selected if ns in TILE_BUCKETS[b]]
+        return "failed" if any(b in bucket_failures for b in ns_buckets) else "completed"
 
     if manifest_path is not None and manifest_path.exists():
         for ns in contributing_namespaces:
@@ -535,7 +550,7 @@ def generate_tiles_from_staged(
                 "wall_seconds": round(wall_seconds, 1),
             }
             update_namespace_stage_status(
-                manifest_path, ns, "tiles", "completed", metrics=metrics
+                manifest_path, ns, "tiles", _ns_status(ns), metrics=metrics
             )
     if run_id:
         for ns in contributing_namespaces:
@@ -544,19 +559,20 @@ def generate_tiles_from_staged(
                 "buckets": [b for b in selected if ns in TILE_BUCKETS[b]],
                 "wall_seconds": round(wall_seconds, 1),
             }
+            ns_status = _ns_status(ns)
             try:
                 write_stage_event(
                     run_id=run_id,
                     namespace=ns,
                     script_id="tiles",
-                    status="completed",
+                    status=ns_status,
                     stage="tiles",
                     metrics=metrics,
                 )
                 write_runtime_history_event(
                     run_id=run_id,
                     event="tiles",
-                    status="completed",
+                    status=ns_status,
                     namespace=ns,
                     stage="tiles",
                     details=metrics,
@@ -570,7 +586,7 @@ def generate_tiles_from_staged(
                     namespace=ns, script_id="tiles", run_id=run_id,
                     started_at=started.isoformat(),
                     finished_at=(started + timedelta(seconds=wall_seconds)).isoformat(),
-                    wall_seconds=wall_seconds, status="completed",
+                    wall_seconds=wall_seconds, status=ns_status,
                     slurm_job_id=os.environ.get("SLURM_JOB_ID"),
                     extra={"features_written": metrics["features_written"]},
                 )
