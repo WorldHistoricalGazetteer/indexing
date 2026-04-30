@@ -55,26 +55,44 @@ from processing.staging_orchestrator import load_run_manifest  # noqa: E402
 
 
 # Tile generation is IO-bound on the geom store reads and CPU-bound on
-# tippecanoe; 12 h is a generous default for the largest namespace (osm)
-# when the runtime-history file is empty (first run).
+# tippecanoe. Per-bucket budgets reflect observed peak input sizes:
+# clio 68 MB → 12 m, po 6.6 MB → 46 m (zoom-pyramid heavy), ohm_admin 6 GB
+# → still running at 5 h on the 6 h budget, osm_admin/osm_misc will dwarf
+# ohm_admin again. Keep ohm/osm buckets in the 1-day QOS by capping at
+# the htc-htc-s tier maximum.
 _DEFAULT_WALL_SECONDS = 12 * 3_600
+_BUCKET_WALL_SECONDS = {
+    "po": 4 * 3_600,
+    "clio": 4 * 3_600,
+    "nl": 4 * 3_600,
+    "ohm_admin": 24 * 3_600,
+    "osm_admin": 24 * 3_600,
+    "osm_misc": 24 * 3_600,
+}
 _QOS = "htc-htc-s"  # ≤ 1 day tier; tile generation should never need longer
 
 
 def _estimate_wall_for_buckets(buckets: list[str]) -> int:
-    """Take the max of the per-(namespace, 'tiles') estimates across all
-    contributing namespaces. Falls back to ``_DEFAULT_WALL_SECONDS`` when no
-    namespace has wall-time history."""
+    """Cap the wall budget at the heaviest bucket's per-bucket default,
+    even when runtime history would suggest a smaller estimate. The
+    history can record a ``status="completed"`` short run that is really
+    just a partial pass (e.g. tippecanoe killed by OOM after the GeoJSONL
+    write step) — undersizing the next attempt would waste the previous
+    run."""
+    bucket_default = max(
+        (_BUCKET_WALL_SECONDS.get(b, _DEFAULT_WALL_SECONDS) for b in buckets),
+        default=_DEFAULT_WALL_SECONDS,
+    )
     contributors: set[str] = set()
     for bucket in buckets:
         contributors.update(TILE_BUCKETS.get(bucket, ()))
     if not contributors:
-        return _DEFAULT_WALL_SECONDS
+        return bucket_default
     estimates = [
-        estimate_wall_time_seconds(ns, "tiles", default=_DEFAULT_WALL_SECONDS)
+        estimate_wall_time_seconds(ns, "tiles", default=bucket_default)
         for ns in contributors
     ]
-    return max(estimates)
+    return max(estimates + [bucket_default])
 
 
 def _seconds_to_slurm_time(seconds: int) -> str:
