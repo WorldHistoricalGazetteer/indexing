@@ -252,7 +252,15 @@ def estimate_wall_time_seconds(namespace: str, script_id: str, default: int = 86
         return default
 
     records = history.get(namespace, {}).get(script_id, [])
-    completed = [r["wall_seconds"] for r in records if r.get("status") == "completed"]
+    # Skip records that did real work *but* finished with zero output —
+    # those are pre-fix runs (e.g. tile generation that found 0 features
+    # because every doc was missing ``geom_ref``) and using them as a
+    # base estimate caused Slurm to kill the next real run after seconds.
+    completed = [
+        r["wall_seconds"]
+        for r in records
+        if r.get("status") == "completed" and r.get("features_written", 1) > 0
+    ]
     if not completed:
         return default
 
