@@ -57,34 +57,50 @@ from processing.staging_orchestrator import update_namespace_stage_status
 # ``--data-dir`` for tests / dated-snapshot runs.
 DEFAULT_DATA_DIR = Path(__file__).resolve().parent.parent / "typesystem" / "data"
 
+# Source-snapshot priority — same cascade as ``gazetteer_temporal_extent``.
+# Namespaces that bypass ccode (po — temporal-only; un — supplies ccodes
+# itself) never produce ``final/``, so we read from the most-enriched
+# upstream snapshot instead. Output always lands in ``final/`` so
+# downstream stages (temporal_extent, tile gen, index_from_stage) have a
+# single canonical input dir.
+_STAGED_SOURCE_PRIORITY = (
+    "final",
+    "h3_merged",
+    "boundary_merged",
+    "update_merged",
+    "extract",
+)
+
+
+def _resolve_source_path(namespace: str) -> Path:
+    base = Path(STAGED_BASE_DIR) / namespace
+    for stage in _STAGED_SOURCE_PRIORITY:
+        for filename in ("places.parquet", "places.jsonl"):
+            candidate = base / stage / filename
+            if candidate.exists():
+                return candidate
+    raise FileNotFoundError(
+        f"No staged snapshot found for namespace '{namespace}' — "
+        f"checked {_STAGED_SOURCE_PRIORITY} under {base}"
+    )
+
 
 def _iter_source_docs(namespace: str) -> Iterable[dict[str, Any]]:
-    """Stream the namespace's ``final/`` snapshot — parquet first, JSONL fallback."""
-    src_dir = Path(STAGED_BASE_DIR) / namespace / "final"
-    parquet_path = src_dir / "places.parquet"
-    jsonl_path = src_dir / "places.jsonl"
-
-    if parquet_path.exists():
-        parquet = pq.ParquetFile(parquet_path)
+    """Stream the namespace's most-enriched snapshot."""
+    src = _resolve_source_path(namespace)
+    if src.suffix == ".parquet":
+        parquet = pq.ParquetFile(src)
         for batch in parquet.iter_batches(batch_size=2000):
             for row in batch.to_pylist():
                 if isinstance(row, dict):
                     yield row
         return
-
-    if jsonl_path.exists():
-        with jsonl_path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                line = line.strip()
-                if not line:
-                    continue
-                yield json.loads(line)
-        return
-
-    raise FileNotFoundError(
-        f"No final-stage snapshot for namespace '{namespace}': "
-        f"expected {parquet_path} or {jsonl_path}"
-    )
+    with src.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            yield json.loads(line)
 
 
 def augment_doc(
