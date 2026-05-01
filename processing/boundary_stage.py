@@ -233,7 +233,14 @@ def run_boundary_stage(
     filtered_pbf_path: str | None = None
     shard_subset_path: Path | None = None
     processing_pbf = str(pbf_file)
-    if prefiltered_pbf is not None and prefiltered_pbf.exists():
+    # A 0-byte ``prefiltered_pbf`` means the planner's prefilter timed out
+    # and produced no usable output — fall back to the in-worker prefilter
+    # rather than crashing on "blob contains no data" inside ``osmium getid``.
+    if (
+        prefiltered_pbf is not None
+        and prefiltered_pbf.exists()
+        and prefiltered_pbf.stat().st_size > 0
+    ):
         print(f"Reusing planner-produced prefiltered PBF: {prefiltered_pbf} "
               f"({prefiltered_pbf.stat().st_size / 1e9:.1f} GB) — skipping in-worker prefilter")
         processing_pbf = str(prefiltered_pbf)

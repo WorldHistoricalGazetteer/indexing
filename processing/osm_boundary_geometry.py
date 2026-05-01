@@ -466,6 +466,9 @@ def prefilter_boundaries(input_pbf, output_pbf):
     print(f"  Input:  {input_pbf} ({input_size_gb:.1f} GB)")
     start = time.time()
 
+    # 6 h: the 92 GB OSM planet PBF needs ~3-5 h on busy SMP nodes — the
+    # earlier 2 h cap timed out and left an empty scratch file that crashed
+    # every downstream worker.
     try:
         result = subprocess.run(
             [
@@ -478,10 +481,10 @@ def prefilter_boundaries(input_pbf, output_pbf):
             stdout=sys.stdout,
             stderr=sys.stderr,
             env=osmium_env,
-            timeout=7200,
+            timeout=21600,
         )
     except subprocess.TimeoutExpired:
-        print("  Pre-filter timed out after 2 hours")
+        print("  Pre-filter timed out after 6 hours")
         return None
     except FileNotFoundError:
         print("  osmium command failed to execute")

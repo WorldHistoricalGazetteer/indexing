@@ -321,6 +321,7 @@ def run_planner(
 
     started = time.time()
 
+    prefilter_succeeded = False
     if skip_prefilter:
         scan_pbf = pbf_path
         prefiltered_path = None
@@ -328,26 +329,33 @@ def run_planner(
         scratch = os.environ.get("SLURM_SCRATCH") or os.environ.get("TMPDIR", "/tmp")
         prefiltered_path = Path(scratch) / f"{namespace}_boundary_planner_filtered.osm.pbf"
         result = prefilter_boundaries(pbf_path, str(prefiltered_path))
+        prefilter_succeeded = bool(result)
         scan_pbf = Path(result) if result else pbf_path
 
     try:
         items = enumerate_boundary_relations(scan_pbf, cost_proxy=cost_proxy)
     finally:
-        # Persist the prefilter for workers before deleting the scratch copy.
-        # Use shutil.copyfile rather than rename since scratch and the target
-        # are typically different filesystems.
+        # Persist the prefilter for workers only when it actually succeeded
+        # — a failed/timed-out prefilter leaves a 0-byte scratch file which
+        # would crash every worker with "blob contains no data" if copied.
         if (
             prefiltered_path is not None
             and prefiltered_path.exists()
             and prefiltered_path != pbf_path
         ):
-            if keep_prefilter is not None:
+            if keep_prefilter is not None and prefilter_succeeded:
                 import shutil
                 keep_prefilter.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copyfile(prefiltered_path, keep_prefilter)
                 print(
                     f"  Persisted prefiltered PBF → {keep_prefilter} "
                     f"({keep_prefilter.stat().st_size / 1e9:.1f} GB)"
+                )
+            elif keep_prefilter is not None:
+                print(
+                    f"  Skipping prefilter persistence — prefilter did not "
+                    f"produce a usable output (workers will fall back to "
+                    f"in-job prefilter)."
                 )
             try:
                 prefiltered_path.unlink()
