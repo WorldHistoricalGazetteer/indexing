@@ -375,10 +375,17 @@ if $DO_BUILD; then
         echo ""
         echo "--- Wikidata types ---"
         $PYTHON -m typesystem.build_wikidata_types --es-host $BUILD_ES_HOST
+
+        echo ""
+        echo "--- AAT hierarchy file (id → {path, label_en}) ---"
+        # Required by processing.aat_enrich on Slurm compute nodes (which
+        # can't reach the production ES types index for hierarchy lookups).
+        $PYTHON -m typesystem.build_aat_hierarchy_file --es-host $BUILD_ES_HOST
     else
         echo ""
         echo "--- Wikidata types: SKIPPED (no ES reachable) ---"
         echo "  Run this step from the VM: ssh pitt, then bash scripts/types.sh --build-vocabs"
+        echo "--- AAT hierarchy file: SKIPPED (needs ES — same prerequisite) ---"
     fi
 
     echo ""

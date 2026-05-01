@@ -53,6 +53,11 @@ def _default_per_gazetteer_stages() -> dict[str, str]:
         "h3_coverage": "pending",
         "ccode": "pending",
         "ccode_merge": "pending",
+        # Augments final/places.{jsonl,parquet} types[] with aat_ids/aat_paths
+        # using file-based lookup tables under typesystem/data/. Runs after
+        # ccode_merge so it can rewrite final/ in place; downstream stages
+        # (temporal_extent, tiles, index) pick up the enrichment for free.
+        "aat_enrich": "pending",
         "tiles": "pending",
         "temporal_extent": "pending",
         "index": "pending",
@@ -368,6 +373,7 @@ GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
     "h3_coverage",
     "ccode",
     "ccode_merge",
+    "aat_enrich",
 )
 
 # Statuses that satisfy a stage requirement. ``skipped`` is treated as a pass

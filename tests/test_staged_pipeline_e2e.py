@@ -150,7 +150,7 @@ class StagedPipelineE2E(unittest.TestCase):
 
     def test_pipeline(self):
         from processing import (
-            ccode_enrichment, ccode_merge, gazetteer_h3_coverage,
+            aat_enrich, ccode_enrichment, ccode_merge, gazetteer_h3_coverage,
             gazetteer_temporal_extent, h3_merge, h3_stage,
         )
 
@@ -177,6 +177,35 @@ class StagedPipelineE2E(unittest.TestCase):
             run_id=self.run_id, namespace="nl",
             manifest_path=self.manifest_path,
         )
+
+        # AAT enrichment — point at a synthetic data dir with empty vocab
+        # files + an empty hierarchy so the stage runs end-to-end without
+        # actually augmenting anything (the real lookups need data files
+        # built from production ES, which the sandbox lacks).
+        from tempfile import TemporaryDirectory
+        aat_data_tmp = TemporaryDirectory()
+        self.addCleanup(aat_data_tmp.cleanup)
+        aat_data_dir = Path(aat_data_tmp.name)
+        for vocab_file in ("osm.json", "ohm.json", "geonames.json",
+                           "wikidata.json", "pleiades.json"):
+            (aat_data_dir / vocab_file).write_text("{}", encoding="utf-8")
+        (aat_data_dir / "aat_hierarchy.json").write_text("{}", encoding="utf-8")
+        for ns in ("un", "nl"):
+            # nl actually has a final/places.{jsonl,parquet} from ccode_merge;
+            # un doesn't (ccode skipped) so we synthesise one from h3_merged.
+            from processing.settings import STAGED_BASE_DIR
+            final_dir = Path(STAGED_BASE_DIR) / ns / "final"
+            if not (final_dir / "places.jsonl").exists() and not (final_dir / "places.parquet").exists():
+                final_dir.mkdir(parents=True, exist_ok=True)
+                src = Path(STAGED_BASE_DIR) / ns / "h3_merged" / "places.parquet"
+                if src.exists():
+                    import shutil
+                    shutil.copy(src, final_dir / "places.parquet")
+            aat_enrich.run_aat_enrich(
+                run_id=self.run_id, namespace=ns,
+                manifest_path=self.manifest_path,
+                data_dir=aat_data_dir,
+            )
 
         for ns in ("un", "nl"):
             gazetteer_temporal_extent.run_temporal_extent(

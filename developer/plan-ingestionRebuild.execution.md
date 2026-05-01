@@ -322,6 +322,32 @@ point to specific files in the WHG3 clone:
   `clustering/sqlite_overlay.ship_to_pitt`. Gateway-side reopen handler is
   tracked separately in the gateway repo.
 
+### ES connectivity from CRC vs the Pitt VM
+
+Production ES binds to `localhost:9201` on the Pitt VM (`PROD_ES_INTERNAL_PORT`
+in `.env`). The gateway on `0.0.0.0:9200` is the only port exposed through the
+CRC perimeter firewall. Reachability matrix (verified 2026-05-01):
+
+| Caller | URL | Auth | Notes |
+|---|---|---|---|
+| Pitt VM (`ssh pitt`, runs as `gazetteer` env) | `http://localhost:9201` | password file | `/home/gazetteer/miniconda/envs/whg/bin/python` is the right interpreter; group-readable as `ishi` |
+| CRC login (`crc0`, `crc3`) | `http://gazetteer.crcd.pitt.edu:9200` | password file | DNS resolves; HTTP 200 with Basic auth |
+| CRC compute (Slurm jobs) | **firewalled** | n/a | `curl` to `gazetteer.crcd.pitt.edu:9200` times out — must use a staging ES instance with a restored production snapshot |
+| Local dev workstation | tunnel via `ssh pitt` | password file | direct DNS resolves to the gateway but only the VM has localhost:9201 |
+
+Password lives at `${IX1_BASE}/es/config/elastic.password` (group `ishi`,
+mode 0640). `typesystem/es_client.create_client` reads it automatically when
+the `--es-host` URL omits credentials.
+
+**Do NOT run `typesystem` builds locally**: without `--es-host`,
+`build_wikidata_types` is silently skipped and `aat_mapper sparql` falls back
+to Getty's AAT SPARQL endpoint, which has been returning HTTP 503 on every
+query and produces no useful mapping output. The orchestrator
+(`scripts/types.sh --build-vocabs --map`) is designed to run from the Pitt
+VM (where `localhost:9201` is available) — submit `--map` Slurm jobs only
+when a staging ES on a CRC compute node is online with the production data
+restored.
+
 ---
 
 ## Parallelisation Model and Contention Points
@@ -530,27 +556,53 @@ Validation gates:
   extent). Negative cases (mismatched sentinel, malformed cell list, malformed extent)
   raise `ValueError`.
 
-### Batch 2: Type Mapping Preflight (Production `types` Index)
+### Batch 2: Type Mapping Augmentation (file-based, Slurm-friendly)
 
 Targets:
 
-- `processing/aat_lookup.py`
+- `processing/aat_lookup.py` (preflight + ES-based lookups, used by mapping UI / ad-hoc tools)
+- `processing/aat_data_lookup.py` (file-based loaders for ingestion-time augmentation)
+- `processing/aat_enrich.py` (post-chain stage)
+- `typesystem/build_aat_hierarchy_file.py` (prep-phase exporter)
 - `processing/settings.py`
 
 Dependencies: Batch 1.
 
-Status: complete. `aat_lookup.preflight_types_index` fails fast on missing index;
-`load_aat_mappings` and `apply_aat_mappings_to_index` populate `aat_id` / `aat_path` on
-staged docs alongside the original `sourceLabel`. Compatible with Batch 1's
-`dataset_status` / `dataset_id` additions — no AAT-side change needed.
+Status: file-based path implemented 2026-05-01. The original ES-driven design
+(``apply_aat_mappings_to_index`` reading from production ``types``) couldn't
+be wired into the ingestion pipeline because Slurm compute nodes can't reach
+the production gateway (firewalled). The file-based path solves that:
+
+* ``scripts/types.sh --build-vocabs`` (run on the Pitt VM during prep) writes
+  five vocab files plus ``typesystem/data/aat_hierarchy.json`` to the shared
+  ``/ix1`` mount.
+* New post-chain stage ``aat_enrich`` runs between ``ccode_merge`` and
+  ``temporal_extent``: loads the lookup tables (~30 MB total), augments each
+  doc's ``types[]`` entry with parallel ``aat_ids`` (long array) and
+  ``aat_paths`` (keyword array, hierarchy paths from ``aat_hierarchy.json``),
+  rewrites ``final/places.{jsonl,parquet}`` in place. Tile generation,
+  temporal extent and the index loader pick up the enrichment for free.
+* ``schemas/places.json`` declares ``types[i].aat_ids: long`` and
+  ``types[i].aat_paths: keyword`` so prefix queries on ``aat_paths`` work
+  for hierarchy filters at search time.
 
 Tasks:
 
 - [x] Add preflight check for production ES availability and `types` index access.
 - [x] Implement direct reverse-lookup mapping against production `types` index fields
-  (e.g. `gn_fcodes`, `wd_qids`, `osm_tags`, `ohm_tags`).
-- [x] During ingestion, store both original source type and mapped AAT path string in
-  staged place records.
+  (e.g. `gn_fcodes`, `wd_qids`, `osm_tags`, `ohm_tags`). Used by the Django mapping
+  UI and ad-hoc tools that run from the VM where ES is reachable.
+- [x] **File-based ingestion-time augmentation.** ``processing/aat_enrich`` reads
+  ``typesystem/data/{osm,ohm,geonames,wikidata,pleiades,aat_hierarchy}.json`` and
+  rewrites each namespace's ``final/places.{jsonl,parquet}`` to carry
+  ``aat_ids`` + ``aat_paths`` on every ``types[]`` entry that has a mapping.
+- [x] **Hierarchy file builder.** ``typesystem/build_aat_hierarchy_file`` scrolls the
+  production ``types`` index and dumps ``aat_id → {path, label_en}`` to
+  ``typesystem/data/aat_hierarchy.json``. Bundled into ``scripts/types.sh
+  --build-vocabs`` so the prep-phase command produces all six files in one go.
+- [x] **Stage wiring.** ``aat_enrich`` is in ``_default_per_gazetteer_stages`` and
+  in ``GLOBAL_BARRIER_REQUIRED_STAGES``. Per-namespace status flips to
+  ``completed`` via the standard manifest path.
 
 Validation gates:
 
@@ -558,6 +610,17 @@ Validation gates:
 - [x] Sample mappings return expected AAT IDs/path values.
 - [x] AAT enrichment is unaffected by the new `dataset_status` / `dataset_id` top-level
   fields (they live alongside `types[]`, not inside it).
+- [x] ``aat_enrich`` is idempotent: re-running over an already-enriched
+  ``final/places.jsonl`` produces the same output (each types[] entry has its
+  ``aat_ids``/``aat_paths`` overwritten with the same values).
+- [x] ``load_aat_hierarchy`` fails fast when ``aat_hierarchy.json`` is missing —
+  surfaces a stale/incomplete prep phase clearly.
+
+**TODO (do not forget):** one-time backfill of every namespace whose ``final/``
+snapshot pre-dates the ``aat_enrich`` stage (chgis, clio, dgsd, dp, gb, gn, iv,
+ohm, pl, po, tgn, tm, un, whg, wd at the time of writing — 15 namespaces). Run
+as a Slurm array on htc once ``typesystem/data/aat_hierarchy.json`` is in
+place and the user has pulled the patch on CRC.
 
 ### Batch 3: Orchestration and Checkpointing
 
@@ -2388,6 +2451,142 @@ These run **once per rebuild**, after every selected namespace has its own `fina
 
 ---
 
+## Status snapshot — 2026-05-01
+
+Supersedes the 2026-04-29 snapshot.
+
+### All authority extracts + post-chains complete
+
+Every selected namespace has a clean `final/places.jsonl` (and parquet
+sidecar where pyarrow could infer a stable schema) carrying `geom_ref`
+on every row that has full geometry in the consolidated geom store.
+`temporal_extent` aggregates re-computed after the wd/gn placeholder
+fix.
+
+| NS | Records | ccode % | temporal_extent | Notes |
+|---|---:|---:|---|---|
+| `chgis` | 82,117 | — | — | Static dump → SQLite. |
+| `clio` | 15,690 | 90.9 % | `[-3400, 2024]` | All polygons in geom_store. |
+| `dgsd` | 3,828 | — | — | No geometry. |
+| `dp` | 2,599 | — | — | Point-only. |
+| `gb` | 1,174,449 | — | — | GB1900, point-only. |
+| `gn` | 13,378,039 | 77.4 % | `[null, null]` | Placeholder removed; GeoNames carries no temporal data. |
+| `iv` | 24,000 | 99.99 % | `[1680, 2023]` | Index Villaris. |
+| `ohm` | 905,205 | 64.5 % | `[-10000, 2100]` | Re-run after boundary_stage fix; admin polygons in geom_store. |
+| `osm` | 20,289,865 | (post-chain pending) | (pending) | Extract complete; boundary chain in flight (see below). |
+| `pl` | 25,561 | 66 % | `[-10000, 2100]` | Pleiades. |
+| `po` | 9,017 | — | (per-period) | Re-run with GeomStoreWriter wired up; 7,815 polygons in geom_store. |
+| `tgn` | 2,991,044 | 69.4 % | `[2025, 2025]` | TGN itself emits no temporal data; placeholder retained pending domain decision (TGN has no inception/abolition concept). |
+| `tm` | 64,196 | — | — | Trismegistos. |
+| `un` | 258 | — | per-country | Country boundaries — gating input for ccode_enrichment. |
+| `wd` | 11,459,393 | 79.7 % | `[-10000, 2126]` | Re-extracted with P571/P576/P580/P582/P585 timespan extraction. |
+| `whg` | 14,206 | 98.5 % | `[678, 2017]` | Discovered via DO Django API. |
+
+### Consolidated geom store
+
+- `/vast/ishi/geom/index.json`: 10,683,062 keys
+  - `osm`: 9,931,004 (ways/nodes from extract + 30 M49 polygons from un-geoscheme)
+  - `ohm`: 722,191 (654K ways from extract + 68K relation boundaries from rerun)
+  - `clio`: 14,322 · `pl`: 7,471 · `po`: 7,815 · `un`: 259
+- 47 shard files, ~250 MB each (~8 GB total).
+- Built via `consolidate_geom_store(merge_with_existing=True)` — additive
+  re-consolidation now possible after later staging passes.
+
+### Tiles
+
+- `clio.mbtiles` (1681 MB), `po.mbtiles` (1129 MB) **done** — committed
+  to the staged `tiles/` output dir.
+- `ohm_admin.mbtiles` **in flight** as job 8980859 (24 h budget, 96 G mem;
+  tippecanoe at ~92 % when last polled).
+- `osm_admin` / `osm_misc` blocked on OSM boundary chain.
+
+### OSM boundary chain in flight
+
+`osm-boundary-rerun-20260501T012000Z` — combines all the patches from
+"Patches landed 2026-04-29 → 2026-05-01" (planner-shared prefilter,
+6 h prefilter timeout, per-namespace planner walltime). Planner currently
+running on `smp`; mega/regular/finalize chained `afterok`.
+
+### Type-system pipeline refreshed
+
+Run from the Pitt VM (per `scripts/types.sh` design intent), against
+`http://localhost:9201`:
+
+| Vocab | Total | Mapped | % |
+|---|---:|---:|---:|
+| `osm` | 3,316 | 851 | 25.7 % |
+| `ohm` | 906 | 513 | 56.6 % |
+| `geonames` | 684 | 250 | 36.5 % |
+| `wikidata` | 10,308 | 2,243 | 21.8 % |
+| `pleiades` | 229 | 164 | 71.6 % |
+| **Total** | **15,443** | **4,021** | **26.0 %** |
+
+Wikidata bridge (`aat_mapper wikidata --es-host`) contributed 1,911
+P1014 mappings — only available because we ran with ES, not Getty
+SPARQL fallback. AAT label matching (`aat_mapper sparql --es-host`)
+against the production `types` index added 314 fuzzy + 64 exact
+ohm matches, 149 + 23 geonames, 312 + 20 wikidata, 13 pleiades. Total
+across all vocabs: 4,434 mappings (28.7 %); the per-vocab table above
+counts the AAT-bridge wikidata entries once even though they appear in
+both the `wikidata_bridge` and `aat_es` rollups in the report.
+
+### Global stages still to run (after OSM boundary chain finishes)
+
+Same list as before (geom_store consolidation **already done** for the
+non-OSM namespaces; will need an additive re-merge after OSM boundary
+shards write their per-shard `osm_boundary_shard_*.bin` files):
+
+1. ~~geom_store consolidation~~ — done; **re-merge needed** after OSM
+   boundary completes (use `consolidate_geom_store(merge_with_existing=True)`).
+2. ~~OSM tile buckets~~ (`osm_admin`, `osm_misc`) — submit after
+   `boundary_merge.osm` completes.
+3. **Toponyms rebuild** (5-step PanPhon pipeline).
+4. **Symphonym v7 embeddings** (GPU).
+5. **ES index loaders** (`processing/index_from_stage.py`).
+6. **Hard-link harvest** (Batch 12).
+7. **Inventory push** (Batch 11).
+8. **Clustering finalise**.
+
+---
+
+## Mass-rebuild prep phase (run before any extracts)
+
+Before launching the per-namespace extracts for a fresh rebuild, refresh the
+type-system data files on the Pitt VM. These files live on the shared ``/ix1``
+mount, so a single run on pitt makes them visible to every CRC compute node
+(including Slurm boundary/post-chain workers) without any sync step:
+
+```
+ssh pitt
+cd /ix1/ishi/elastic
+bash scripts/types.sh --build-vocabs    # geonames + pleiades + wikidata + aat_hierarchy
+```
+
+This produces:
+
+* ``typesystem/data/geonames.json``
+* ``typesystem/data/pleiades.json``
+* ``typesystem/data/wikidata.json``  (requires ES — only buildable from pitt)
+* ``typesystem/data/aat_hierarchy.json``  (id → {path, label_en} from production ``types``)
+* (re-applied) ``typesystem/data/osm.json`` and ``ohm.json`` (committed in the repo)
+
+The ``aat_enrich`` post-chain stage reads these directly. Slurm compute nodes
+see the same inodes via NFS — no ``git pull`` or rsync between pitt and CRC
+needed.
+
+If you want a versioned snapshot pinned to a particular rebuild, optionally
+``git add typesystem/data/{geonames,pleiades,wikidata,aat_hierarchy}.json &&
+git commit -m "refresh type-system for rebuild <date>" && git push`` from
+pitt. This is for audit/curatorial reasons only — operationally the files
+work the moment they're written.
+
+The next time a curator updates AAT mappings via the Django UI (writes to
+the production ``types`` index), re-run the prep step above to refresh the
+file snapshots; ``aat_enrich`` will then pick up the new mappings on its
+next run for each namespace. No re-extract / no boundary re-run needed.
+
+---
+
 ## Resumption playbook (read this first when resuming)
 
 > The intent of this section is that a future session can pick up work without having to re-discover the toolchain. Read top to bottom and follow the steps in order.
@@ -2604,8 +2803,176 @@ Per-file summary:
 
 ---
 
+## Patches landed 2026-04-29 → 2026-05-01
+
+A run-driven cluster of fixes uncovered while bringing the boundary chain,
+tile generation, and timespan extraction to a working state. Listed in the
+order they were diagnosed.
+
+### `boundary_stage` writes admin polygons to geom_store
+
+`processing/osm_boundary_geometry.BoundaryPassProcessor.process_area` was
+calling `enrich_geometry(raw_geom, timespans=…)` **without `geom_key`**, so
+multipolygons assembled from OSM/OHM relations were never persisted —
+docs got `has_geom=False` and tile generation found nothing to tile.
+
+Fix: pass `geom_key=f"{place_id}_0"` so `enrich_geometry` routes the WKB
+to the configured `GeomStoreWriter`. Wire the writer up inside
+`processing/boundary_stage.run_boundary_stage` with a per-shard namespace
+key (`f"{namespace}_boundary_shard_{shard_id}"` in shard mode) so concurrent
+workers don't race on the same `*.bin`. Closed and configured via
+`configure_module_writer` in both the `signal_handler` and the `finally`
+block so a SIGTERM doesn't leak open handles.
+
+### `boundary_merge` re-augments `geom_ref`
+
+The patches written by `boundary_stage` carry `has_geom=True` but no
+`geom_ref` (the patch payload skips `_augment_doc_for_stage`). After
+`_merge_update` overlays the patch onto the source extract doc, the merged
+output ended up with `has_geom=True, geom_ref=None` — tile generation
+dropped every boundary record on that key check.
+
+Fix: call `_augment_doc_for_stage(doc)` on every row before
+`out_jsonl.write` (and on each upsert row). `h3_merge` and `ccode_merge`
+preserve the field via shallow copy, so the synthesised `geom_ref` flows
+through to `final/places.jsonl`.
+
+### `geom_store.consolidate_geom_store(merge_with_existing=True)`
+
+The original consolidator was destructive — it always wrote `geom_shard_0001+`
+from scratch, clobbering any prior shards. Re-consolidating after later
+staging passes (po re-run, un-geoscheme re-run, the OSM/OHM boundary chains)
+would have wiped the 10.6 M-entry base index built from the authority extracts.
+
+Fix: new `merge_with_existing` parameter loads the existing `index.json`
+into `final_index`, finds the highest existing shard number, and starts
+new shards at `next_shard_num`. Existing entries' `(file, offset, length)`
+tuples remain valid (we don't touch the existing shards on disk). Re-staged
+keys overwrite the existing `final_index` entry to point at the new shard.
+
+### Planner-shared prefiltered PBF
+
+Each of 32 OSM boundary workers was independently re-pre-filtering the
+92 GB OSM planet PBF, hitting in-process timeouts (`osmium tags-filter`
+2 h cap) and crashing under FS contention. 27/32 workers FAILED at exactly
+3 h.
+
+Fix:
+
+- `boundary_shard_planner` accepts `--keep-prefilter PATH`; the planner
+  copies its (already-built) prefiltered PBF to `<work_dir>/<ns>_boundary_prefiltered.osm.pbf`
+  before exiting **iff `prefilter_boundaries` actually returned a path**.
+  An earlier rev unconditionally copied the scratch file even when the
+  prefilter timed out, leaving a 0-byte target that crashed every worker
+  with "blob contains no data".
+- `boundary_stage` accepts `--prefiltered-pbf PATH`; if the file exists
+  AND `stat().st_size > 0`, the worker skips its in-job prefilter and
+  reuses the shared file. Workers fall back to in-job prefilter
+  otherwise, so the chain still completes (slowly) if the planner copy
+  was skipped.
+- `submit_boundary_slurm` wires both flags through. Per-namespace
+  planner walltime is now `{"ohm": 4, "osm": 12}` h (previously a
+  single `1` h that timed out OSM); `prefilter_boundaries` timeout
+  bumped from 2 h → 6 h.
+
+### Wikidata + GeoNames timespan extraction
+
+Both authorities were emitting a hardcoded `[{"start": {"in": 2025},
+"end": {"in": 2025}}]` placeholder on every toponym and geometry. After
+`gazetteer_temporal_extent` aggregation that collapsed wd's corpus-wide
+extent to `[2025, 2025]` and gn's to the same — drowning out real
+historical timespans from other authorities.
+
+Fix:
+
+- `wikidata-places.py` — new `_year_from_wikidata_time` parser handles the
+  `±YYYY-MM-DDTHH:MM:SSZ` format (variable-width year, BCE marker),
+  plus `build_wikidata_timespans` that consults P571 (inception),
+  P580 (start time), P576 (dissolved/abolished/demolished), P582 (end
+  time), and P585 (point in time, fallback). Returns `[]` when no
+  temporal claim is present so the doc stays out of the corpus extent.
+  Spot check: Portugal (`wd:Q45`) now carries `timespans=[{"start":
+  {"in": 1128}}]` — the founding of the Kingdom of Portugal.
+- `geonames-places.py` — drop the placeholder entirely; GeoNames
+  carries no temporal data and toponyms/geometries are emitted with
+  no `timespans` key. wd post-chain re-run produced
+  `temporal_extent=[-10000, 2126]`; gn produced `[null, null]` (correct).
+
+### `periodo` + `un-geoscheme` polygon persistence
+
+Neither script wired up a `GeomStoreWriter`, so their polygon outputs
+(periodo period coverage, M49 continents/subregions) had `has_geom=False`
+and weren't tileable.
+
+Fix: both scripts now `with GeomStoreWriter(GEOM_STORE_STAGING_DIR,
+"po")` / `"osm_geoscheme"` and `configure_module_writer(gsw)` around
+the doc-emission loops. Place IDs are unchanged
+(`po:p…`, `osm:m49_…_0`, `osm:r2186646_0` for Antarctica) so the
+consolidated index resolves them transparently.
+
+### `helpers.write_staged_place_doc` augments at write time
+
+Every authority script bypassed `_augment_doc_for_stage` because
+`write_staged_place_doc` only did `json.dump(doc)`. So freshly extracted
+JSONL never carried `geom_ref` or `geometry_index`. The `boundary_merge`
+fix above re-applies the augment for boundary-merged rows, but extracts
+that don't go through `boundary_merge` (most authorities) still missed it.
+
+Fix: `write_staged_place_doc` now calls `_augment_doc_for_stage(doc)`
+inline (lazy-imported to avoid a circular import). Existing staged
+JSONL on disk lacks `geom_ref`, but `generate_tiles._build_staged_feature`
+synthesises the canonical `f"{place_id}_{idx}"` when `has_geom=True`
+and `geom_ref` is missing — so the fallback covers pre-fix data
+without forcing a re-extract of the smaller authorities.
+
+### Tile generation: per-bucket walltime + memory + status accuracy
+
+`submit_tiles_slurm` originally used a single `--mem=16G` and a
+runtime-history wall-time estimator. After clio (16 G fine, 12 m wall)
+and po (16 G fine, 46 m wall) succeeded, ohm_admin OOM'd at 16 G after
+2 h 24 m (6 GB GeoJSONL → tippecanoe peak RSS).
+
+Fix:
+
+- `_BUCKET_MEM_GB` map: `po/clio/nl=16, ohm_admin=96, osm_admin/osm_misc=192`,
+  default 32. Slurm `--mem` is the max across all buckets in the
+  array (homogeneous array constraint).
+- `_BUCKET_WALL_SECONDS` map: `po/clio/nl=4 h, ohm_admin/osm_admin/osm_misc=24 h`
+  (the `htc-htc-s` QOS ceiling). Estimator now caps at the per-bucket
+  default rather than blindly trusting historical median — earlier
+  the median was 30-90 s from the pre-fix 0-feature runs and Slurm
+  killed the next attempt after 2 m.
+- `generate_tiles` now records `status="failed"` (not `completed`) when
+  tippecanoe exits non-zero on a non-empty GeoJSONL, so the estimator
+  filter (`features_written > 0` *and* `status == "completed"`) drops
+  partial runs from history.
+- `estimate_wall_time_seconds` skips records with `features_written == 0`
+  outright.
+
+### Tile bucket results so far
+
+| Bucket | Input GeoJSONL | mbtiles | Wall | Notes |
+|---|---:|---:|---:|---|
+| `po` | 6.6 MB | 1129 MB | 46 m | 7 815 features. |
+| `clio` | 68 MB | 1681 MB | 12 m | 13 831 features. |
+| `ohm_admin` | 6.0 GB | (in flight) | 11 h+ | 96 G mem, 24 h budget; tippecanoe at ~92 % when last polled. |
+| `osm_admin` | (pending) | — | — | Blocked on OSM boundary chain. |
+| `osm_misc` | (pending) | — | — | Same. |
+
+### OSM boundary chain — current attempt
+
+`osm-boundary-rerun-20260501T012000Z` is the chain that combines all the
+fixes above. Planner now persists the prefilter to a known path on
+`/vast`; workers reuse it; per-namespace walltime is `12 h` (planner)
++ `24 h` (regular workers) + `96 h` (mega workers); finalize concatenates
+shard JSONLs and flips `manifest['ohm']['stages']['boundary']` to
+`completed`. The previous attempts were derailed by the in-process
+timeouts and the 0-byte prefilter copy; this one should be the clean run.
+
+---
+
 ## Cross-cutting issues seen during smoke runs (still relevant)
 
 1. **`pyarrow.read_json` schema-inference quirks.** Three variants patched into `processing/staged_parquet.py`: `normalize_for_parquet` (empty `[]` → `None`), `strip_hull_for_parquet` (drop hulls — they have variable nesting depth), `drop_nulls_for_parquet` (strip explicit nulls inside structs — they trip the JSON reader). Every merge stage that writes a parquet sidecar (`h3_merge`, `boundary_merge`, `ccode_merge`) now goes through `write_parquet_from_jsonl()`. If you add another merge stage, reuse this helper rather than calling `paj.read_json` directly.
-2. **`geom_store` consolidation never run end-to-end.** The per-authority writes to `/vast/ishi/geom/staging/<ns>/*.bin` work, but the consolidation into a single `index.json` + sharded `*.bin` has not been exercised. Until it is, `ccode_enrichment` falls back to staged hulls (which work, but lose precision against full polygon geometry) and tiles cannot run. **Highest-priority gap between "all extracts done" and "tile generation".**
+2. ~~**`geom_store` consolidation never run end-to-end.**~~ **RESOLVED 2026-04-30.** Consolidation (10.6 M entries across 29 shards) ran in 5 m 50 s; additive re-merge mode (`merge_with_existing=True`) added 112 K new entries from po, un-geoscheme, and OHM boundary in a further ~2 min. See "Patches landed 2026-04-29 → 2026-05-01" for the merge-mode patch. OSM boundary chain output will need one more additive re-merge once it completes.
 3. **`OSM_STATE_FILE` resumption is unproven across Slurm jobs.** The checkpoint file gets written and read within a single job; we haven't validated "stop at wall limit → restart from checkpoint in a new job → finish cleanly". If the first OSM extract runs long enough to hit its 4-day budget, this gets exercised by necessity. Worth a deliberate test on a smaller authority first.

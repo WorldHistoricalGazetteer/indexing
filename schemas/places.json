@@ -130,10 +130,10 @@
           "sourceLabel": {
             "type": "keyword"
           },
-          "aat_id": {
-            "type": "integer"
+          "aat_ids": {
+            "type": "long"
           },
-          "aat_path": {
+          "aat_paths": {
             "type": "keyword"
           }
         }
