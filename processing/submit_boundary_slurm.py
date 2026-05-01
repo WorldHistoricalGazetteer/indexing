@@ -135,8 +135,14 @@ def _submit(sbatch_path: Path, *, depend_on: list[str] | None, dry_run: bool) ->
         print(f"sbatch failed:\n{result.stderr}", file=sys.stderr)
         sys.exit(result.returncode)
 
-    job_id = next((tok for tok in result.stdout.split() if tok.isdigit()),
-                  result.stdout.strip().split()[-1])
+    # ``sbatch --parsable -M <cluster>`` emits ``<jobid>;<cluster>``;
+    # without ``-M`` it emits ``<jobid>``. Strip any cluster suffix so
+    # the dependency string we hand to the next sbatch is just the jobid.
+    raw = result.stdout.strip().split(";", 1)[0]
+    job_id = raw if raw.isdigit() else next(
+        (tok for tok in result.stdout.split() if tok.isdigit()),
+        raw,
+    )
     print(f"  Submitted: {job_id}  ({sbatch_path.name})")
     return job_id
 
