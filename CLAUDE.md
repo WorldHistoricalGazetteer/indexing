@@ -20,7 +20,10 @@ a Django front-end on DigitalOcean proxying to the CRC gateway.
 
 When operating on CRC via `ssh crc0`, agents should use these canonical paths:
 
-- **Repository root:** `/ix1/ishi/elastic`
+- **Repository root:** `/vast/ishi/elastic` (relocated 2026-05-01 from
+  `/ix1/ishi/elastic` to put Python imports / log writes / Slurm WorkDir on
+  flash storage; the `/ix1` NFS volume was buckling under the small-file
+  read pattern from concurrent boundary/tile workers).
 - **Conda activation script:** `/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh`
 - **Conda env name:** `whg`
 
@@ -29,8 +32,17 @@ Example activation sequence:
 ```bash
 source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
 conda activate whg
-cd /ix1/ishi/elastic
+cd /vast/ishi/elastic
 ```
+
+**What stays on `/ix1`** (deliberately, to keep `/vast` free for ES):
+
+- Authority data files: `/ix1/ishi/data/authorities/*` (the 92 GB OSM PBF, etc.)
+- Credentials: `/ix1/ishi/secrets/`, `/ix1/ishi/es/config/`
+- Snapshot exchange: `/ix1/ishi/snapshots/`
+
+The boundary planner reads the OSM PBF from `/ix1` once per rebuild (its
+prefilter output is persisted to `/vast` so workers never read `/ix1`).
 
 ---
 

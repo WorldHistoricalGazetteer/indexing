@@ -2558,7 +2558,7 @@ mount, so a single run on pitt makes them visible to every CRC compute node
 
 ```
 ssh pitt
-cd /ix1/ishi/elastic
+cd /vast/ishi/elastic
 bash scripts/types.sh --build-vocabs    # geonames + pleiades + wikidata + aat_hierarchy
 ```
 
@@ -2594,7 +2594,7 @@ next run for each namespace. No re-extract / no boundary re-run needed.
 ### Step 0 — orient
 
 ```
-ssh crc3 'cd /ix1/ishi/elastic && git log -1 --oneline'
+ssh crc3 'cd /vast/ishi/elastic && git log -1 --oneline'
 ssh crc3 'squeue -u stg135 -o "%.10i %.16j %.8T %.10M %.10l"'
 ssh crc3 'ls /vast/ishi/staged/'                  # which namespaces have any staged artefacts
 ssh crc3 'ls -t /vast/ishi/staged/runs/ | head -5' # most recent run manifests
@@ -2623,7 +2623,7 @@ Single-namespace fast path (login node, suitable for ≤ ~1 M records). Replace 
 ssh crc3
 source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
 conda activate whg
-cd /ix1/ishi/elastic
+cd /vast/ishi/elastic
 
 # Create a manifest if you don't have one for this set of namespaces:
 RUN_ID="smalls-$(date -u +%Y%m%dT%H%M%SZ)"
@@ -2714,7 +2714,7 @@ SBATCH_PATH=/tmp/extract-NS.sbatch
   echo 'set -eo pipefail'
   echo 'source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh'
   echo 'conda activate whg'
-  echo 'cd /ix1/ishi/elastic'
+  echo 'cd /vast/ishi/elastic'
   echo 'export WHG_STAGING_MODE=1'
   echo 'python -u -m authorities.SCRIPT-STEM'
 } > "$SBATCH_PATH"
@@ -2968,6 +2968,36 @@ fixes above. Planner now persists the prefilter to a known path on
 shard JSONLs and flips `manifest['ohm']['stages']['boundary']` to
 `completed`. The previous attempts were derailed by the in-process
 timeouts and the 0-byte prefilter copy; this one should be the clean run.
+
+### Repo relocation: `/ix1/ishi/elastic` → `/vast/ishi/elastic` (2026-05-01)
+
+Sysadmin flagged our htc jobs as a top contributor to `/ix1` NFS slowdown.
+Diagnosis: every Slurm job set `WorkDir=/ix1/ishi/elastic`, so each Python
+invocation generated a stream of small-file reads from the slow NFS
+volume — multiplied across 30+ concurrent boundary/tile workers, this was
+hammering `/ix1`'s metadata path. The 92 GB OSM PBF read by the planner
+was a separate (much rarer) bandwidth load.
+
+Resolution:
+
+1. Cancelled all in-flight htc jobs (planner, mega + regular arrays,
+   finalize, ohm tile gen) to stop adding to the load immediately.
+2. `git clone --depth 50` of the repo into `/vast/ishi/elastic`; small
+   targeted rsync of `.env` + `typesystem/data/*.json` (untracked
+   operational state).
+3. **What stayed on `/ix1`**: authority data files (`/ix1/ishi/data/...`,
+   including the 92 GB OSM PBF), credentials (`/ix1/ishi/secrets/`,
+   `/ix1/ishi/es/config/`). The boundary planner reads the PBF *once* per
+   rebuild from `/ix1`, persists the prefilter to `/vast`; every worker
+   reads from `/vast` only.
+
+Code is relocation-friendly — `submit_*.py` derive `_REPO_ROOT` from
+`__file__`, `scripts/_common.sh` derives `REPO_DIR` from `$SCRIPT_DIR/..`,
+`processing/settings.py` separates `IX1_BASE` (data) from `IX3_BASE`
+(`/vast`, where staging/geom_store already live). No code changes needed.
+
+CLAUDE.md, the resumption playbook, and the prep-phase doc all updated
+to point at `/vast/ishi/elastic`.
 
 ---
 
