@@ -173,7 +173,14 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
         '--simplification', '10',
         '--detect-shared-borders',
         '--coalesce-densest-as-needed',
-        '--extend-zooms-if-still-dropping',
+        # NOTE: ``--extend-zooms-if-still-dropping`` was tried and removed.
+        # On dense corpora (ohm_admin's 68 K admin boundaries, projected
+        # OSM_admin/osm_misc much larger) tippecanoe kept extending past
+        # z10 into z12+ in a futile attempt to fit every feature, blowing
+        # past 24 h Slurm walls. Admin boundaries don't need sub-z10
+        # detail — at z10 each tile is ~40 km, well above country/state/
+        # district line resolution — so the densest-coalesce behaviour
+        # alone produces the right size/quality tradeoff.
         '--no-tile-compression',
         '--read-parallel',
         str(geojsonl_path),
