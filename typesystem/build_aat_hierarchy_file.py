@@ -30,7 +30,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from elasticsearch import Elasticsearch, helpers
+from elasticsearch import helpers
+
+from typesystem.es_client import create_client
 
 DEFAULT_INDEX = "types"
 DEFAULT_ES_HOST = "http://localhost:9201"
@@ -65,7 +67,10 @@ def build(
     index_name: str = DEFAULT_INDEX,
     output_path: Path = DEFAULT_OUTPUT,
 ) -> dict[str, Any]:
-    es = Elasticsearch(es_host)
+    # Use the shared client helper so the elastic password file at
+    # /ix1/ishi/es/config/elastic.password is picked up automatically when
+    # the URL omits inline credentials (matches the other build_* scripts).
+    es = create_client(es_host, request_timeout=120)
     if not es.indices.exists(index=index_name):
         raise RuntimeError(f"types index '{index_name}' missing on {es_host}")
 
