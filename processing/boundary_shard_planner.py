@@ -126,52 +126,54 @@ def _enumerate_with_member_count(pbf_path: Path) -> list[tuple[int, int]]:
 
 
 def _enumerate_with_node_count(pbf_path: Path) -> list[tuple[int, int]]:
-    """Two-pass: sum member-way node counts per boundary relation.
+    """Single-pass: sum member-way node counts per boundary relation.
 
-    Pass 1 (relations): for each boundary candidate, collect the set of
-    member way IDs.
-    Pass 2 (ways): build ``way_id → node_count`` for the union of needed
-    way IDs.
-    Then compute ``cost = sum(node_count(w) for w in members)`` per
-    relation.
+    PBF stores objects in canonical order (nodes, then ways, then
+    relations). A single forward scan can therefore:
 
-    A member way that is not present in the PBF (rare, but possible if
-    the prefilter dropped it) contributes 0 — that's a strict
-    underestimate, which is fine: the LPT packer just sees that relation
-    as cheaper.
+    1. Cache ``way_id → node_count`` for every way encountered.
+    2. For each relation, look up the cost from the cache.
+
+    This replaces a previous two-pass design (one ``FileProcessor`` for
+    relations to collect ``needed_ways``, then a second for ways to build
+    the count map) which doubled disk I/O on the planner's hot path. On
+    the OSM planet prefiltered PBF (~5 GB), the second read was adding
+    ~30-60 min to the planner wall.
+
+    Memory: dict of every way in the prefiltered PBF. For OSM planet
+    boundary subset that's ~10-50M ways × ~80 bytes/entry ≈ 1-4 GB —
+    well within the planner's 16 GB Slurm budget.
+
+    A member way absent from the PBF (rare; possible if the prefilter
+    dropped it) contributes 0 — a strict underestimate, which is fine for
+    LPT packing.
     """
     osmium = _require_osmium()
 
-    relation_members: dict[int, list[int]] = {}
-    needed_ways: set[int] = set()
-
-    fp = osmium.FileProcessor(str(pbf_path), osmium.osm.RELATION)
-    for obj in fp:
-        if not obj.is_relation():
-            continue
-        tags = {tag.k: tag.v for tag in obj.tags}
-        if not _is_boundary_candidate(tags):
-            continue
-        way_refs = [m.ref for m in obj.members if m.type == "w"]
-        relation_members[obj.id] = way_refs
-        needed_ways.update(way_refs)
-
     way_node_counts: dict[int, int] = {}
-    if needed_ways:
-        fp = osmium.FileProcessor(str(pbf_path), osmium.osm.WAY)
-        for obj in fp:
-            if not obj.is_way():
-                continue
-            wid = obj.id
-            if wid in needed_ways:
-                way_node_counts[wid] = len(obj.nodes)
-
     items: list[tuple[int, int]] = []
-    for rid, way_refs in relation_members.items():
-        cost = sum(way_node_counts.get(w, 0) for w in way_refs)
-        # Floor of 1 so a relation with no resolvable ways still gets
-        # placed (won't sit in a special bucket of cost-0 outliers).
-        items.append((rid, max(cost, 1)))
+
+    # ``osmium.osm.WAY | osmium.osm.RELATION`` skips node blocks at the
+    # PBF level — we don't need node tags or geometry, just way→count and
+    # relation→members. PBF block order guarantees ways finish before
+    # relations begin, so the dict is fully populated by the time we need
+    # to look up costs.
+    fp = osmium.FileProcessor(str(pbf_path), osmium.osm.WAY | osmium.osm.RELATION)
+    for obj in fp:
+        if obj.is_way():
+            way_node_counts[obj.id] = len(obj.nodes)
+        elif obj.is_relation():
+            tags = {tag.k: tag.v for tag in obj.tags}
+            if not _is_boundary_candidate(tags):
+                continue
+            cost = sum(
+                way_node_counts.get(m.ref, 0)
+                for m in obj.members
+                if m.type == "w"
+            )
+            # Floor of 1 so a relation with no resolvable ways still gets
+            # placed (won't sit in a special bucket of cost-0 outliers).
+            items.append((obj.id, max(cost, 1)))
     return items
 
 
