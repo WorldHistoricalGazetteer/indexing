@@ -331,6 +331,13 @@ if $DO_BUILD; then
     echo ""
     echo "=== Step 1: Build vocabulary files ==="
 
+    # Force group-readable output. The gazetteer user on pitt runs with
+    # umask 0077 by default, which would write the data files at mode 0600
+    # — unreadable by stg135 / Slurm jobs over NFS. The data files are
+    # operational artefacts shared across the ishi group; force 0022 so
+    # they land at 0644.
+    umask 0022
+
     # Detect Python: try VM conda, then CRC conda, then system python
     if [ -x "$VM_PYTHON" ]; then
         PYTHON="$VM_PYTHON"
