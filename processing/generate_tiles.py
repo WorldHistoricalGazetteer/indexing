@@ -168,19 +168,25 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
         '--layer', layer_name,
         '--name', f'WHG {layer_name}',
         '--description', description or f'WHG {layer_name} boundaries',
-        '--minimum-zoom', '0',
+        # ``--minimum-zoom 2``: skip z0 (1 tile, the entire world) and z1
+        # (4 quadrant tiles). Both forced tippecanoe to fit every admin
+        # boundary on Earth into a single ≤500 KB tile, triggering a
+        # multi-hour sparsification loop on dense corpora (ohm_admin =
+        # 68 K boundaries, OSM will be much larger). At z0/z1 admin
+        # boundaries render as a few-pixel sliver anyway — z2 (16 tiles,
+        # ~2500 km each) is the lowest useful zoom for boundary data.
+        '--minimum-zoom', '2',
         '--maximum-zoom', '10',
         '--simplification', '10',
         '--detect-shared-borders',
         '--coalesce-densest-as-needed',
         # NOTE: ``--extend-zooms-if-still-dropping`` was tried and removed.
-        # On dense corpora (ohm_admin's 68 K admin boundaries, projected
-        # OSM_admin/osm_misc much larger) tippecanoe kept extending past
-        # z10 into z12+ in a futile attempt to fit every feature, blowing
-        # past 24 h Slurm walls. Admin boundaries don't need sub-z10
-        # detail — at z10 each tile is ~40 km, well above country/state/
-        # district line resolution — so the densest-coalesce behaviour
-        # alone produces the right size/quality tradeoff.
+        # On dense corpora tippecanoe kept extending past z10 into z12+ in
+        # a futile attempt to fit every feature, blowing past 24 h Slurm
+        # walls. Admin boundaries don't need sub-z10 detail — at z10 each
+        # tile is ~40 km, well above country/state/district line
+        # resolution — so the densest-coalesce behaviour alone produces
+        # the right size/quality tradeoff.
         '--no-tile-compression',
         '--read-parallel',
         str(geojsonl_path),
