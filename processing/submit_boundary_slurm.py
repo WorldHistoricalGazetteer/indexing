@@ -83,13 +83,27 @@ _DEFAULT_MEGA_WALL_HOURS = {
     "osm": 96,
 }
 _PLANNER_WALL_HOURS = {
-    # OSM planet PBF (~92 GB) prefilter alone is multi-hour; previous runs
-    # took 5 h 11 m → 6 h timeout, so allow 12 h of headroom for SMP node
-    # variance and the keep-prefilter copy to /vast.
+    # OSM planet PBF (~92 GB) prefilter is dominated by NFS read of
+    # ``/ix1``; observed effective rates 1-5 MB/s, so 92 GB → 5-25 h.
+    # Pair with the 12 h ``prefilter_boundaries`` subprocess timeout in
+    # ``osm_boundary_geometry``: planner needs prefilter time +
+    # ~1 h enumerate (single-pass fix landed 2026-05-01) + few-min
+    # persist-copy + finalize-step margin. 24 h is comfortably above the
+    # observed 12 h ceiling and below the htc-htc-s 1-day QOS limit.
     "ohm": 4,
-    "osm": 12,
+    "osm": 24,
 }
 _FINALIZE_WALL_HOURS = 1
+
+# Cluster + QOS picked per job class. Probed 2026-05-01: htc nodes
+# average ~40 % faster NFS reads from /ix1 than smp (htc 18 MB/s avg,
+# smp 13 MB/s; OSM PBF prefilter is NFS-bound). Mega workers' 96 h
+# budget exceeds htc-htc-s' 1-day cap and needs htc-htc-l (6 days);
+# regular workers fit htc-htc-s.
+_CLUSTER = "htc"
+_PARTITION = "htc"
+_QOS_SHORT = "htc-htc-s"   # ≤ 1 day  — planner, regular workers, finalize
+_QOS_LONG = "htc-htc-l"    # ≤ 6 days — mega workers (96 h)
 
 
 def _default_pbf_for(namespace: str) -> Path:
@@ -110,7 +124,7 @@ def _submit(sbatch_path: Path, *, depend_on: list[str] | None, dry_run: bool) ->
         print("--- END ---")
         return None
 
-    cmd = ["sbatch", "--parsable"]
+    cmd = ["sbatch", "--parsable", "-M", _CLUSTER]
     if depend_on:
         joined = ":".join(depend_on)
         cmd.append(f"--dependency=afterok:{joined}")
@@ -146,7 +160,8 @@ def _build_planner_sbatch(
 #SBATCH --output={log_prefix}.out
 #SBATCH --error={log_prefix}.err
 #SBATCH --time={_hours_to_slurm_time(_PLANNER_WALL_HOURS[namespace])}
-#SBATCH --partition=smp
+#SBATCH --partition={_PARTITION}
+#SBATCH --qos={_QOS_SHORT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -187,6 +202,11 @@ def _build_worker_sbatch(
     work_dir: Path,
     log_dir: Path,
 ) -> Path:
+    # Mega workers' 96 h budget exceeds the 1-day htc-htc-s ceiling, so
+    # they run on htc-htc-l (6 days). Regular workers' 24 h budget fits
+    # htc-htc-s. Choice keyed off ``label`` to avoid leaking caller-side
+    # knowledge of the QOS table.
+    qos = _QOS_LONG if label == "mega" else _QOS_SHORT
     log_prefix = log_dir / f"whg-boundary-{label}-{run_id}-%A_%a"
     body = f"""#!/bin/bash
 #SBATCH --job-name=whg-boundary-{label}-{run_id}
@@ -194,7 +214,8 @@ def _build_worker_sbatch(
 #SBATCH --error={log_prefix}.err
 #SBATCH --array={array_first}-{array_last}
 #SBATCH --time={_hours_to_slurm_time(wall_hours)}
-#SBATCH --partition=smp
+#SBATCH --partition={_PARTITION}
+#SBATCH --qos={qos}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
@@ -235,7 +256,8 @@ def _build_finalize_sbatch(
 #SBATCH --output={log_prefix}.out
 #SBATCH --error={log_prefix}.err
 #SBATCH --time={_hours_to_slurm_time(_FINALIZE_WALL_HOURS)}
-#SBATCH --partition=smp
+#SBATCH --partition={_PARTITION}
+#SBATCH --qos={_QOS_SHORT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2

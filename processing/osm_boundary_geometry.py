@@ -466,9 +466,12 @@ def prefilter_boundaries(input_pbf, output_pbf):
     print(f"  Input:  {input_pbf} ({input_size_gb:.1f} GB)")
     start = time.time()
 
-    # 6 h: the 92 GB OSM planet PBF needs ~3-5 h on busy SMP nodes — the
-    # earlier 2 h cap timed out and left an empty scratch file that crashed
-    # every downstream worker.
+    # 12 h: the 92 GB OSM planet PBF read from ``/ix1`` NFS is the
+    # dominant cost, and effective NFS read rates on busy days drop to
+    # 1-3 MB/s (probed 2026-05-01: 4 GiB sequential read couldn't finish
+    # in 30 min). At 2 MB/s, 92 GB needs ~13 h — earlier 2 h then 6 h
+    # caps both timed out under contention. 12 h is generous; the
+    # planner Slurm walltime is bumped accordingly.
     try:
         result = subprocess.run(
             [
@@ -481,10 +484,10 @@ def prefilter_boundaries(input_pbf, output_pbf):
             stdout=sys.stdout,
             stderr=sys.stderr,
             env=osmium_env,
-            timeout=21600,
+            timeout=43200,
         )
     except subprocess.TimeoutExpired:
-        print("  Pre-filter timed out after 6 hours")
+        print("  Pre-filter timed out after 12 hours")
         return None
     except FileNotFoundError:
         print("  osmium command failed to execute")
