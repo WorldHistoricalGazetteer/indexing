@@ -209,6 +209,12 @@ def _build_sbatch_script(
     lines.extend([
         "",
         "set -eo pipefail",
+        # Tippecanoe holds one fd per concurrent tile-write thread plus
+        # bookkeeping; the default 1024 ulimit blew up ohm_admin at
+        # 6 GB/68 K-feature scale ("Too many open files"). 65536 is the
+        # hard cap on most Linux distros and gives ~10× more headroom
+        # than tippecanoe needs even on osm_admin.
+        "ulimit -n 65536",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
         f"cd {_REPO}",
