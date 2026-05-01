@@ -8,12 +8,15 @@ This module provides lightweight, dependency-free utilities for:
 
 from __future__ import annotations
 
+import contextlib
+import fcntl
 import json
+import os
 import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Iterable, Iterator
 
 from processing.staging_contract import (
     RELATIONS_ONLY_NAMESPACES,
@@ -30,9 +33,45 @@ def generate_run_id(prefix: str = "ingest") -> str:
     return f"{prefix}-{ts}"
 
 
+@contextlib.contextmanager
+def _manifest_lock(manifest_path: Path) -> Iterator[None]:
+    """Cross-process exclusive lock on a manifest's read-modify-write cycle.
+
+    Each Slurm task that updates a shared manifest (per-namespace stage
+    status, per-script checkpoint, finalize) acquires this lock first so
+    its read-modify-write sequence is serialised against every other
+    writer. The lock is held on a sidecar ``<manifest>.lock`` file so it
+    works even when the manifest itself doesn't yet exist on disk.
+
+    ``fcntl.flock`` semantics: blocking, exclusive, released either by
+    explicit unlock or by file-handle close. Works across processes on
+    the same node and across nodes on NFSv4 (which is what /vast on CRC
+    runs); the lock travels with the inode, not the open handle.
+    """
+    manifest_path = Path(manifest_path)
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = manifest_path.with_suffix(manifest_path.suffix + ".lock")
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
 def _atomic_write_json(path: Path, payload: dict) -> None:
+    """Atomic write of ``payload`` to ``path``.
+
+    Uses a per-process tmp filename (``<path>.tmp.<pid>``) so concurrent
+    writers in the same dir don't clobber each other's tmp file before the
+    ``replace``. Callers that read-modify-write must do so inside a
+    ``_manifest_lock`` to avoid lost updates between read and write.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp = path.with_suffix(f"{path.suffix}.tmp.{os.getpid()}")
     tmp.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
     tmp.replace(path)
 
@@ -201,25 +240,26 @@ def update_namespace_checkpoint(
     status: str,
     error: str | None = None,
 ) -> None:
-    manifest = load_run_manifest(manifest_path)
-    ns_entry = manifest.setdefault("namespaces", {}).setdefault(namespace, {"status": "pending", "scripts": {}})
-    scripts = ns_entry.setdefault("scripts", {})
-    scripts[script_id] = {
-        "status": status,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
-    }
-    if error:
-        scripts[script_id]["error"] = error
+    with _manifest_lock(manifest_path):
+        manifest = load_run_manifest(manifest_path)
+        ns_entry = manifest.setdefault("namespaces", {}).setdefault(namespace, {"status": "pending", "scripts": {}})
+        scripts = ns_entry.setdefault("scripts", {})
+        scripts[script_id] = {
+            "status": status,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if error:
+            scripts[script_id]["error"] = error
 
-    script_statuses = [v.get("status") for v in scripts.values()]
-    if script_statuses and all(s == "completed" for s in script_statuses):
-        ns_entry["status"] = "completed"
-    elif any(s == "failed" for s in script_statuses):
-        ns_entry["status"] = "failed"
-    elif any(s == "running" for s in script_statuses):
-        ns_entry["status"] = "running"
+        script_statuses = [v.get("status") for v in scripts.values()]
+        if script_statuses and all(s == "completed" for s in script_statuses):
+            ns_entry["status"] = "completed"
+        elif any(s == "failed" for s in script_statuses):
+            ns_entry["status"] = "failed"
+        elif any(s == "running" for s in script_statuses):
+            ns_entry["status"] = "running"
 
-    _atomic_write_json(manifest_path, manifest)
+        _atomic_write_json(manifest_path, manifest)
 
 
 def update_namespace_stage_status(
@@ -232,20 +272,21 @@ def update_namespace_stage_status(
     metrics: dict | None = None,
 ) -> None:
     """Update a namespace preprocessing stage status in the run manifest."""
-    manifest = load_run_manifest(manifest_path)
-    ns_entry = manifest.setdefault("namespaces", {}).setdefault(
-        namespace,
-        {"status": "pending", "scripts": {}, "stages": {}},
-    )
-    stages = ns_entry.setdefault("stages", {})
-    stages[stage] = status
-    if error:
-        stage_errors = ns_entry.setdefault("stage_errors", {})
-        stage_errors[stage] = error
-    if metrics:
-        stage_metrics = ns_entry.setdefault("stage_metrics", {})
-        stage_metrics[stage] = metrics
-    _atomic_write_json(manifest_path, manifest)
+    with _manifest_lock(manifest_path):
+        manifest = load_run_manifest(manifest_path)
+        ns_entry = manifest.setdefault("namespaces", {}).setdefault(
+            namespace,
+            {"status": "pending", "scripts": {}, "stages": {}},
+        )
+        stages = ns_entry.setdefault("stages", {})
+        stages[stage] = status
+        if error:
+            stage_errors = ns_entry.setdefault("stage_errors", {})
+            stage_errors[stage] = error
+        if metrics:
+            stage_metrics = ns_entry.setdefault("stage_metrics", {})
+            stage_metrics[stage] = metrics
+        _atomic_write_json(manifest_path, manifest)
 
 
 def get_namespace_stage_status(manifest: dict, namespace: str, stage: str) -> str | None:
@@ -272,10 +313,11 @@ def should_skip_script(manifest_path: Path, namespace: str, script_id: str) -> b
 
 
 def mark_run_resumed(manifest_path: Path) -> dict:
-    manifest = load_run_manifest(manifest_path)
-    manifest["resumed_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["resume_count"] = int(manifest.get("resume_count", 0)) + 1
-    _atomic_write_json(manifest_path, manifest)
+    with _manifest_lock(manifest_path):
+        manifest = load_run_manifest(manifest_path)
+        manifest["resumed_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["resume_count"] = int(manifest.get("resume_count", 0)) + 1
+        _atomic_write_json(manifest_path, manifest)
     return manifest
 
 
@@ -549,53 +591,55 @@ def reconcile_carried_over_namespaces(
     (i.e. files missing on disk). Callers should treat a non-empty result as
     a failure of the partial-run premise — those namespaces need a full re-run.
     """
-    manifest = load_run_manifest(manifest_path)
-    if manifest.get("run_mode") != "partial":
-        return {}
+    with _manifest_lock(manifest_path):
+        manifest = load_run_manifest(manifest_path)
+        if manifest.get("run_mode") != "partial":
+            return {}
 
-    update_set = set(manifest.get("update_namespaces", []))
-    ns_data = manifest.get("namespaces", {})
-    failures: dict[str, list[str]] = {}
+        update_set = set(manifest.get("update_namespaces", []))
+        ns_data = manifest.get("namespaces", {})
+        failures: dict[str, list[str]] = {}
 
-    stage_artefact_paths = {
-        "extract": ("extract/places.parquet", "extract/places.jsonl"),
-        "update_patch": ("update_patch/places.update.jsonl",),
-        "update_merge": ("update_merged/places.parquet", "update_merged/places.jsonl"),
-        "boundary": ("boundary/places.boundary.jsonl",),
-        "boundary_merge": ("boundary_merged/places.parquet",),
-        "h3": ("h3/places.h3.jsonl",),
-        "h3_merge": ("h3_merged/places.parquet", "h3_merged/places.jsonl"),
-        "ccode": ("ccode/places.ccode.jsonl",),
-        "ccode_merge": ("final/places.parquet", "final/places.jsonl"),
-    }
+        stage_artefact_paths = {
+            "extract": ("extract/places.parquet", "extract/places.jsonl"),
+            "update_patch": ("update_patch/places.update.jsonl",),
+            "update_merge": ("update_merged/places.parquet", "update_merged/places.jsonl"),
+            "boundary": ("boundary/places.boundary.jsonl",),
+            "boundary_merge": ("boundary_merged/places.parquet",),
+            "h3": ("h3/places.h3.jsonl",),
+            "h3_merge": ("h3_merged/places.parquet", "h3_merged/places.jsonl"),
+            "ccode": ("ccode/places.ccode.jsonl",),
+            "ccode_merge": ("final/places.parquet", "final/places.jsonl"),
+        }
 
-    for ns, entry in ns_data.items():
-        if ns in update_set or is_relations_only(ns):
-            continue
-        ns_dir = staged_base_dir / ns
-        missing: list[str] = []
-        for stage in required_stages:
-            candidates = stage_artefact_paths.get(stage, ())
-            if not any((ns_dir / rel).exists() for rel in candidates):
-                missing.append(stage)
+        for ns, entry in ns_data.items():
+            if ns in update_set or is_relations_only(ns):
                 continue
-            entry.setdefault("stages", {})[stage] = "completed"
-        if missing:
-            failures[ns] = missing
-        else:
-            entry["status"] = "completed"
+            ns_dir = staged_base_dir / ns
+            missing: list[str] = []
+            for stage in required_stages:
+                candidates = stage_artefact_paths.get(stage, ())
+                if not any((ns_dir / rel).exists() for rel in candidates):
+                    missing.append(stage)
+                    continue
+                entry.setdefault("stages", {})[stage] = "completed"
+            if missing:
+                failures[ns] = missing
+            else:
+                entry["status"] = "completed"
 
-    _atomic_write_json(manifest_path, manifest)
+        _atomic_write_json(manifest_path, manifest)
     return failures
 
 
 def finalize_run_manifest(manifest_path: Path, run_status: str) -> dict:
     """Finalize a run manifest with terminal status and summary."""
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest["run_status"] = run_status
-    manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
-    manifest["summary"] = summarize_run_manifest(manifest)
-    _atomic_write_json(manifest_path, manifest)
+    with _manifest_lock(manifest_path):
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["run_status"] = run_status
+        manifest["finished_at"] = datetime.now(timezone.utc).isoformat()
+        manifest["summary"] = summarize_run_manifest(manifest)
+        _atomic_write_json(manifest_path, manifest)
     return manifest
 
 
