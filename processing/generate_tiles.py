@@ -8,14 +8,21 @@ Reads boundary-qualifying records from the staged snapshot pipeline
 full polygon geometries from the external geometry store. No Elasticsearch
 dependency.
 
-The output layout matches the master plan:
+The output layout has three families of bucket:
 
-    osm_admin.mbtiles   ohm_admin.mbtiles   osm_misc.mbtiles  (mixed OSM/OHM)
-    po.mbtiles          clio.mbtiles        nl.mbtiles
+* **Fixed buckets** — boundary-gated, kept verbatim from the original design:
+  ``osm_admin.mbtiles``, ``ohm_admin.mbtiles`` (admin levels only) and
+  ``osm_misc.mbtiles`` (mixed OSM/OHM misc-boundary features).
+* **Per-namespace buckets** — one ``<ns>.mbtiles`` per authority namespace
+  containing every doc with renderable geometry (point or polygon). Used by
+  the redesigned WHG Atlas to render each gazetteer as its own layer.
+* **Per-WHG-dataset buckets** — one ``whg-<dataset_sub_id>.mbtiles`` per WHG
+  contributor dataset, discovered at submit time from
+  ``staged/_aggregates/whg.datasets.json``.
 
-Tile generation is **bucket-driven**: each bucket has a fixed list of
-contributing namespaces (see ``TILE_BUCKETS``) and a single owning writer to
-avoid file-write contention on the mixed ``osm_misc`` bucket.
+Tile generation is **bucket-driven**: each bucket has a fixed (or computed)
+list of contributing namespaces and a single owning writer, so concurrent
+Slurm tasks (one per bucket) never race on the same output file.
 
 Multilingual labels come from ``toponyms[]`` (``toponym_id`` in
 ``name@lang`` format).
@@ -24,6 +31,8 @@ Usage::
 
     python -m processing.generate_tiles
     python -m processing.generate_tiles --bucket osm_admin --bucket ohm_admin
+    python -m processing.generate_tiles --bucket gn --bucket wd
+    python -m processing.generate_tiles --bucket whg-1234
     python -m processing.generate_tiles --run-id <RUN_ID>
 """
 
@@ -103,18 +112,103 @@ ADMIN_LEVEL_MINZOOM = {
     '6': 5, '7': 6, '8': 7, '9': 8, '10': 9, '11': 10,
 }
 
-# Bucket → list of input namespaces that contribute features. Each bucket has
-# a single owning Slurm task to avoid file-write contention; the mixed
-# ``osm_misc`` bucket is owned by one task that streams *both* OSM and OHM
-# misc-boundary records into a single file.
-TILE_BUCKETS: dict[str, tuple[str, ...]] = {
+# Fixed buckets — boundary-gated; require ``boundary`` field on every doc and
+# pull full polygons from the geom store. The mixed ``osm_misc`` bucket is
+# owned by one task that streams *both* OSM and OHM misc-boundary records.
+_FIXED_BUCKETS: dict[str, tuple[str, ...]] = {
     "osm_admin": ("osm",),
     "ohm_admin": ("ohm",),
     "osm_misc":  ("osm", "ohm"),
-    "po":        ("po",),
-    "clio":      ("clio",),
-    "nl":        ("nl",),
 }
+
+# Per-namespace buckets — one ``<ns>.mbtiles`` per authority namespace, with
+# every doc that carries renderable geometry (full polygon via geom_store, or
+# point via ``repr_point``). ``osm`` and ``ohm`` are excluded (handled by the
+# fixed buckets); ``whg`` is excluded (handled per-dataset below). ``po``,
+# ``clio`` and ``nl`` keep their existing filenames — under the new code path
+# the inclusion rule is "every doc in the namespace with geometry", which for
+# these three namespaces is identical to the legacy "boundary present" rule
+# (every doc has ``boundary`` set).
+_PER_NAMESPACE_BUCKETS: tuple[str, ...] = (
+    "chgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl",
+    "pl", "po", "tgn", "tm", "un", "wd",
+)
+
+# Prefix used by per-WHG-dataset buckets. The full bucket name is
+# ``f"{_WHG_BUCKET_PREFIX}{dataset_sub_id}"`` (e.g. ``whg-1234``). The set of
+# WHG buckets is enumerated at submit time from the staged sidecar at
+# ``STAGED_BASE_DIR/_aggregates/whg.datasets.json``.
+_WHG_BUCKET_PREFIX = "whg-"
+
+# Back-compat: ``submit_tiles_slurm`` and a handful of tests still import this
+# symbol. It now reflects only the **fixed** buckets — per-namespace and
+# per-WHG-dataset buckets are resolved at submit time via ``resolve_buckets``.
+TILE_BUCKETS: dict[str, tuple[str, ...]] = dict(_FIXED_BUCKETS)
+
+
+def _bucket_contributors(bucket: str) -> tuple[str, ...]:
+    """Return the contributing namespace tuple for any kind of bucket."""
+    if bucket in _FIXED_BUCKETS:
+        return _FIXED_BUCKETS[bucket]
+    if bucket in _PER_NAMESPACE_BUCKETS:
+        return (bucket,)
+    if bucket.startswith(_WHG_BUCKET_PREFIX):
+        return ("whg",)
+    return ()
+
+
+def _whg_dataset_sub_id(bucket: str) -> str | None:
+    """Extract ``dataset_sub_id`` from a ``whg-<id>`` bucket name."""
+    if not bucket.startswith(_WHG_BUCKET_PREFIX):
+        return None
+    sub_id = bucket[len(_WHG_BUCKET_PREFIX):]
+    return sub_id or None
+
+
+def _load_whg_dataset_sub_ids() -> list[str]:
+    """Read ``staged/_aggregates/whg.datasets.json`` and return sub-IDs."""
+    sidecar = Path(STAGED_BASE_DIR) / "_aggregates" / "whg.datasets.json"
+    if not sidecar.exists():
+        return []
+    try:
+        payload = json.loads(sidecar.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    sub_ids: list[str] = []
+    for entry in payload.get("datasets") or ():
+        ds_id = entry.get("id") or ""
+        # Sidecar IDs are namespaced ("whg:1234"); strip the namespace.
+        if ":" in ds_id:
+            _, sub = ds_id.split(":", 1)
+        else:
+            sub = ds_id
+        if sub:
+            sub_ids.append(sub)
+    return sub_ids
+
+
+def resolve_buckets(manifest: dict | None = None) -> list[str]:
+    """Enumerate every tile bucket eligible for the current staged corpus.
+
+    Order: fixed buckets first (preserves historical Slurm task ordering), then
+    per-namespace buckets, then per-WHG-dataset buckets in the order they
+    appear in the sidecar. The ``manifest`` argument is accepted for forward
+    compatibility but currently unused — the submitter applies its own
+    eligibility filters via ``_required_stage_for``.
+    """
+    buckets: list[str] = list(_FIXED_BUCKETS)
+    buckets.extend(_PER_NAMESPACE_BUCKETS)
+    for sub_id in _load_whg_dataset_sub_ids():
+        buckets.append(f"{_WHG_BUCKET_PREFIX}{sub_id}")
+    return buckets
+
+
+def _is_known_bucket(bucket: str) -> bool:
+    return (
+        bucket in _FIXED_BUCKETS
+        or bucket in _PER_NAMESPACE_BUCKETS
+        or (bucket.startswith(_WHG_BUCKET_PREFIX) and bool(_whg_dataset_sub_id(bucket)))
+    )
 
 
 def _is_admin_level(boundary_value: str) -> bool:
@@ -261,19 +355,44 @@ def _iter_staged_docs(path: Path) -> Iterator[dict[str, Any]]:
             yield json.loads(line)
 
 
+def _has_renderable_geometry(geom_entry: Any) -> bool:
+    """True when an entry in ``doc['geometries']`` can produce a feature.
+
+    Either a polygon retrievable from the geom store (``geom_ref`` /
+    ``has_geom``) or a point inline on the doc (``repr_point``) qualifies.
+    """
+    if not isinstance(geom_entry, dict):
+        return False
+    geom_ref = geom_entry.get("geom_ref")
+    if isinstance(geom_ref, str) and geom_ref:
+        return True
+    if geom_entry.get("has_geom"):
+        return True
+    rp = geom_entry.get("repr_point")
+    if isinstance(rp, dict) and "lon" in rp and "lat" in rp:
+        return True
+    return False
+
+
 def _build_staged_feature(
     doc: dict[str, Any],
     namespace: str,
     reader: GeomStoreReader,
     *,
     misc: bool = False,
+    require_boundary: bool = True,
 ) -> dict[str, Any] | None:
     """Build a tippecanoe-ready Feature from a staged place doc.
 
-    Returns ``None`` when the doc has no boundary value, no geometries, or no
-    full polygon retrievable from the geom store. The geom store is the only
-    accepted source for tile geometry — staged hulls (coarser, simplified
-    bounding shapes) are not used.
+    With ``require_boundary=True`` (fixed buckets) the doc must carry a
+    ``boundary`` value and a full polygon retrievable from the geom store —
+    matches the original boundary-only behaviour.
+
+    With ``require_boundary=False`` (per-namespace and per-WHG-dataset
+    buckets) the doc still needs *some* renderable geometry: the function
+    first tries the geom store for a polygon and falls back to a Point
+    geometry synthesised from ``repr_point`` when the store has nothing.
+    Returns ``None`` when no geometry of either kind is available.
 
     ``misc=True`` re-encodes the feature ID under the OSM/OHM 1-bit
     discrimination scheme used for the mixed ``osm_misc`` tileset.
@@ -282,7 +401,7 @@ def _build_staged_feature(
     if not place_id:
         return None
     boundary = doc.get("boundary")
-    if not boundary:
+    if require_boundary and not boundary:
         return None
 
     geometries = doc.get("geometries") or []
@@ -291,31 +410,44 @@ def _build_staged_feature(
     geom_entry = geometries[0]
     if not isinstance(geom_entry, dict):
         return None
+
+    full_geom: dict[str, Any] | None = None
     geom_ref = geom_entry.get("geom_ref")
-    if not isinstance(geom_ref, str) or not geom_ref:
+    if isinstance(geom_ref, str) and geom_ref:
+        full_geom = reader.get(geom_ref)
+    elif geom_entry.get("has_geom"):
         # Authority scripts emit JSONL via ``write_staged_place_doc`` which
         # bypasses ``_augment_doc_for_stage`` — so ``geom_ref`` is absent on
         # extracted docs even when the geom store has the entry. Synthesize
         # the canonical key (``"{place_id}_{idx}"``) when ``has_geom`` is set,
         # matching ``stage_writers._augment_doc_for_stage``.
-        if not geom_entry.get("has_geom"):
-            return None
         idx = geom_entry.get("geometry_index", 0)
-        geom_ref = f"{place_id}_{idx}"
-    full_geom = reader.get(geom_ref)
+        full_geom = reader.get(f"{place_id}_{idx}")
+
+    if not full_geom and not require_boundary:
+        rp = geom_entry.get("repr_point")
+        if isinstance(rp, dict) and "lon" in rp and "lat" in rp:
+            full_geom = {
+                "type": "Point",
+                "coordinates": [rp["lon"], rp["lat"]],
+            }
+
     if not full_geom:
         return None
 
     props: dict[str, Any] = {
         "place_id": place_id,
-        "boundary": boundary,
         "namespace": namespace,
     }
+    if boundary:
+        props["boundary"] = boundary
 
-    if _is_admin_level(boundary):
+    if boundary and _is_admin_level(boundary):
         minzoom = ADMIN_LEVEL_MINZOOM.get(boundary, 0)
-    else:
+    elif boundary:
         minzoom = 3
+    else:
+        minzoom = 0
     if minzoom > 0:
         props["tippecanoe:minzoom"] = minzoom
 
@@ -360,24 +492,47 @@ def _doc_belongs_to_bucket(
 ) -> tuple[bool, bool]:
     """Return (matches, is_misc).
 
-    A doc qualifies for ``bucket`` when its ``boundary`` field falls into the
-    bucket's category. ``is_misc`` toggles the alternate feature-id encoding
-    used by ``osm_misc``.
-    """
-    boundary = doc.get("boundary")
-    if not boundary:
-        return False, False
+    For fixed buckets (``osm_admin`` / ``ohm_admin`` / ``osm_misc``) the doc
+    must carry a ``boundary`` value of the right category. For per-namespace
+    buckets the doc's namespace must match the bucket name and it must carry
+    some renderable geometry. For per-WHG-dataset buckets the namespace must
+    be ``whg`` and the ``place_id`` must start with ``whg:<sub_id>:``.
 
+    ``is_misc`` toggles the alternate feature-id encoding used by ``osm_misc``.
+    """
     if bucket in ("osm_admin", "ohm_admin"):
+        boundary = doc.get("boundary")
+        if not boundary:
+            return False, False
         if namespace not in ("osm", "ohm"):
             return False, False
         return _is_admin_level(boundary), False
     if bucket == "osm_misc":
+        boundary = doc.get("boundary")
+        if not boundary:
+            return False, False
         if namespace not in ("osm", "ohm"):
             return False, False
         return _is_misc_boundary(boundary), True
-    if bucket in ("po", "clio", "nl"):
-        return namespace == bucket, False
+
+    if bucket in _PER_NAMESPACE_BUCKETS:
+        if namespace != bucket:
+            return False, False
+        geoms = doc.get("geometries") or []
+        return any(_has_renderable_geometry(g) for g in geoms), False
+
+    if bucket.startswith(_WHG_BUCKET_PREFIX):
+        if namespace != "whg":
+            return False, False
+        sub_id = _whg_dataset_sub_id(bucket)
+        if not sub_id:
+            return False, False
+        place_id = doc.get("place_id") or ""
+        if not place_id.startswith(f"whg:{sub_id}:"):
+            return False, False
+        geoms = doc.get("geometries") or []
+        return any(_has_renderable_geometry(g) for g in geoms), False
+
     return False, False
 
 
@@ -392,10 +547,11 @@ def _stream_bucket(
     Truncates the output file once at the start so reruns are clean. Returns a
     breakdown of feature counts per contributing namespace.
     """
-    contributors = TILE_BUCKETS.get(bucket, ())
+    contributors = _bucket_contributors(bucket)
     if not contributors:
         return {}
 
+    require_boundary = bucket in _FIXED_BUCKETS
     geojsonl_path.write_bytes(b"")
     written: dict[str, int] = defaultdict(int)
 
@@ -413,7 +569,11 @@ def _stream_bucket(
                 matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
                 if not matches:
                     continue
-                feature = _build_staged_feature(doc, ns, reader, misc=is_misc)
+                feature = _build_staged_feature(
+                    doc, ns, reader,
+                    misc=is_misc,
+                    require_boundary=require_boundary,
+                )
                 if feature is None:
                     continue
                 fh.write(orjson.dumps(feature))
@@ -434,22 +594,27 @@ def generate_tiles_from_staged(
 ) -> list[Path]:
     """Tileset generation from staged snapshots — no ES dependency.
 
-    Each *bucket* (``osm_admin``, ``ohm_admin``, ``osm_misc``, ``po``,
-    ``clio``, ``nl``) has a fixed list of contributing namespaces (see
-    ``TILE_BUCKETS``); a single call writes one tileset per bucket. This
-    bucket-driven design keeps each output file owned by exactly one writer
-    so concurrent Slurm tasks (one task per bucket) never race on the same
-    GeoJSONL file.
+    Three families of bucket are produced, each owned by a single writer so
+    concurrent Slurm tasks (one task per bucket) never race on the same
+    output file:
+
+    * Fixed buckets (``osm_admin``, ``ohm_admin``, ``osm_misc``) — boundary-
+      gated, polygon-only, fed from the geom store.
+    * Per-namespace buckets — one ``<ns>.mbtiles`` per authority namespace,
+      every doc with renderable geometry (point or polygon).
+    * Per-WHG-dataset buckets — ``whg-<dataset_sub_id>.mbtiles``, one per
+      contributor dataset discovered at submit time.
 
     For each contributing namespace the function streams the most-enriched
     staged snapshot (``final/`` → ``h3_merged/`` → ``boundary_merged/`` →
-    ``extract/``) and fetches full polygon geometries from the geom store.
-    The geom store is required: if a doc lacks a ``geom_ref`` or the store
-    cannot resolve it, that doc is dropped (no hull approximation).
+    ``extract/``). Polygon geometries come from the geom store; point-only
+    docs use the inline ``repr_point`` field. Fixed buckets refuse the
+    point-fallback path so their output remains polygon-only.
 
     Args:
-        buckets: Restrict to these tile buckets (default: all of
-            ``TILE_BUCKETS``). Unknown values are silently dropped.
+        buckets: Restrict to these tile buckets (default: every fixed +
+            per-namespace + per-WHG-dataset bucket). Unknown values are
+            silently dropped.
         output_dir: Override default output directory (``DATA_DIR/tiles``).
         deploy: rsync resulting ``.mbtiles`` to the tile server when True.
         run_id, manifest_path: Optional manifest hooks; the ``tiles`` stage
@@ -475,14 +640,17 @@ def generate_tiles_from_staged(
     out_dir = Path(output_dir) if output_dir else TILES_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    selected = [b for b in (buckets or list(TILE_BUCKETS)) if b in TILE_BUCKETS]
+    if buckets:
+        selected = [b for b in buckets if _is_known_bucket(b)]
+    else:
+        selected = resolve_buckets()
     if not selected:
         print("No tile buckets selected.")
         return []
 
     contributing_namespaces: set[str] = set()
     for bucket in selected:
-        contributing_namespaces.update(TILE_BUCKETS[bucket])
+        contributing_namespaces.update(_bucket_contributors(bucket))
 
     reader = GeomStoreReader(GEOM_STORE_DIR)
 
@@ -511,7 +679,7 @@ def generate_tiles_from_staged(
         for bucket in selected:
             geojsonl_path = out_dir / f"{bucket}.geojsonl"
             bucket_paths[bucket] = geojsonl_path
-            print(f"\nStreaming bucket '{bucket}' from {TILE_BUCKETS[bucket]} ...")
+            print(f"\nStreaming bucket '{bucket}' from {_bucket_contributors(bucket)} ...")
             written = _stream_bucket(bucket, reader, geojsonl_path=geojsonl_path)
             bucket_counts[bucket] = sum(written.values())
             for ns, n in written.items():
@@ -551,15 +719,17 @@ def generate_tiles_from_staged(
 
     # Distinguish per-namespace status: if any bucket the namespace contributes
     # to failed tippecanoe, mark its tiles stage failed; otherwise completed.
+    def _ns_buckets(ns: str) -> list[str]:
+        return [b for b in selected if ns in _bucket_contributors(b)]
+
     def _ns_status(ns: str) -> str:
-        ns_buckets = [b for b in selected if ns in TILE_BUCKETS[b]]
-        return "failed" if any(b in bucket_failures for b in ns_buckets) else "completed"
+        return "failed" if any(b in bucket_failures for b in _ns_buckets(ns)) else "completed"
 
     if manifest_path is not None and manifest_path.exists():
         for ns in contributing_namespaces:
             metrics = {
                 "features_written": per_namespace_totals.get(ns, 0),
-                "buckets": [b for b in selected if ns in TILE_BUCKETS[b]],
+                "buckets": _ns_buckets(ns),
                 "wall_seconds": round(wall_seconds, 1),
             }
             update_namespace_stage_status(
@@ -569,7 +739,7 @@ def generate_tiles_from_staged(
         for ns in contributing_namespaces:
             metrics = {
                 "features_written": per_namespace_totals.get(ns, 0),
-                "buckets": [b for b in selected if ns in TILE_BUCKETS[b]],
+                "buckets": _ns_buckets(ns),
                 "wall_seconds": round(wall_seconds, 1),
             }
             ns_status = _ns_status(ns)
@@ -627,8 +797,9 @@ def main():
         description="Generate .mbtiles tilesets from staged boundary places"
     )
     parser.add_argument('--bucket', '-b', action='append',
-                        help='Restrict to tile bucket(s); pass multiple times. Defaults to all of '
-                             f'{tuple(TILE_BUCKETS)}.')
+                        help='Restrict to tile bucket(s); pass multiple times. '
+                             'Default: every fixed bucket + every per-namespace bucket '
+                             '+ every WHG dataset bucket discovered in the staged sidecar.')
     parser.add_argument('--output-dir', help='Output directory for tilesets')
     parser.add_argument('--deploy', action='store_true',
                         help='Deploy tilesets to TileServer GL via rsync')

@@ -107,6 +107,48 @@ do_install() {
     echo
 }
 
+_update_clone() {
+    # Reset a single deployment clone to origin/main. Stashes local changes
+    # after confirmation. Returns 1 on user-cancelled stash, 2 on missing repo.
+    local clone_dir="$1"
+    local label="$2"
+
+    if [ ! -d "$clone_dir" ]; then
+        echo "  ($label) skipped — repository not found at $clone_dir"
+        return 2
+    fi
+
+    cd "$clone_dir"
+
+    if ! git diff --quiet 2>/dev/null; then
+        echo "  ($label) WARNING: local changes present:"
+        git status --short
+        echo
+        read -p "  Stash changes in $label clone and continue? (y/n): " confirm
+        if [ "$confirm" = "y" ]; then
+            git stash
+            echo "  ($label) Changes stashed. Restore later with: git -C $clone_dir stash pop"
+        else
+            echo "  ($label) Cancelled."
+            return 1
+        fi
+    fi
+
+    echo "  ($label) Fetching latest from main..."
+    # Shallow clones (--depth=1) need --depth=1 on the fetch too, otherwise
+    # git tries to resolve missing history and bails out.
+    if [ -f "$clone_dir/.git/shallow" ]; then
+        git fetch --depth=1 origin main
+    else
+        git fetch origin main
+    fi
+
+    # Reset to match origin/main exactly (deployment clone should mirror main)
+    git reset --hard origin/main
+    echo "  ($label) ✓ Updated to $(git rev-parse --short HEAD)"
+    return 0
+}
+
 do_update() {
     echo "Updating from git repository..."
 
@@ -116,28 +158,21 @@ do_update() {
         return 1
     fi
 
-    cd "$REPO_DIR"
+    # Primary clone on /ix1.
+    _update_clone "$REPO_DIR" "/ix1" || {
+        local rc=$?
+        [ "$rc" = "1" ] && return 1
+    }
 
-    # Check for local changes
-    if ! git diff --quiet 2>/dev/null; then
-        echo "WARNING: You have local changes:"
-        git status --short
-        echo
-        read -p "Stash changes and continue? (y/n): " confirm
-        if [ "$confirm" = "y" ]; then
-            git stash
-            echo "Changes stashed. Restore later with: git stash pop"
-        else
-            echo "Cancelled."
-            return 1
-        fi
+    # Operational shallow clone on /vast (Slurm jobs run from here so Python
+    # imports and log writes stay off the /ix1 NFS mount). Skipped silently
+    # if VAST_REPO_DIR is unset or the directory doesn't exist.
+    if [ -n "${VAST_REPO_DIR:-}" ] && [ "$VAST_REPO_DIR" != "$REPO_DIR" ]; then
+        _update_clone "$VAST_REPO_DIR" "/vast" || {
+            local rc=$?
+            [ "$rc" = "1" ] && return 1
+        }
     fi
-
-    echo "Fetching latest from main..."
-    git fetch origin main
-
-    # Reset to match origin/main exactly (deployment clone should mirror main)
-    git reset --hard origin/main
 
     echo "✓ Update complete"
 }
