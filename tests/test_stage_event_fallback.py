@@ -139,5 +139,72 @@ class TestStageCompletedFallback(unittest.TestCase):
         )
 
 
+class TestBarrierFallback(unittest.TestCase):
+    """check_global_barrier should pass when the manifest is stale but the
+    per-namespace event log shows completion."""
+
+    def setUp(self):
+        from processing import staging_orchestrator
+        self.staging_orchestrator = staging_orchestrator
+        self.tmp = TemporaryDirectory()
+        self.staged = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _events(self, ns: str, stage: str, statuses: list[str]) -> None:
+        path = self.staged / ns / stage / "events.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w") as f:
+            for s in statuses:
+                f.write(json.dumps({"stage": stage, "status": s}) + "\n")
+
+    def test_stale_manifest_passes_via_event_log(self):
+        # Manifest stuck on running for ccode_merge; event log says completed.
+        manifest = {
+            "selected_namespaces": ["gn"],
+            "namespaces": {
+                "gn": {
+                    "stages": {
+                        "extract": "completed",
+                        "boundary_merge": "skipped",
+                        "h3": "completed",
+                        "h3_merge": "completed",
+                        "h3_coverage": "completed",
+                        "ccode": "completed",
+                        "ccode_merge": "running",   # stale
+                        "aat_enrich": "running",    # stale
+                    }
+                }
+            },
+        }
+        self._events("gn", "ccode_merge", ["running", "completed"])
+        self._events("gn", "aat_enrich",  ["running", "completed"])
+        is_complete, report = self.staging_orchestrator.check_global_barrier(
+            manifest, staged_base_dir=str(self.staged),
+        )
+        self.assertTrue(is_complete, report)
+
+    def test_genuinely_running_stage_blocks(self):
+        manifest = {
+            "selected_namespaces": ["osm"],
+            "namespaces": {
+                "osm": {
+                    "stages": {s: "completed" for s in [
+                        "extract", "boundary_merge", "h3", "h3_merge",
+                        "h3_coverage", "ccode", "ccode_merge",
+                    ]} | {"aat_enrich": "running"}
+                }
+            },
+        }
+        # Event log also shows running — barrier should NOT pass.
+        self._events("osm", "aat_enrich", ["running"])
+        is_complete, report = self.staging_orchestrator.check_global_barrier(
+            manifest, staged_base_dir=str(self.staged),
+        )
+        self.assertFalse(is_complete)
+        self.assertIn("aat_enrich", report["osm"]["__missing__"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -117,7 +117,12 @@ def write_stage_event(
     return log_path
 
 
-def read_last_stage_status(namespace: str, stage: str) -> str | None:
+def read_last_stage_status(
+    namespace: str,
+    stage: str,
+    *,
+    staged_base_dir: str | Path | None = None,
+) -> str | None:
     """Return the status from the most recent event in
     ``<staged>/<namespace>/<stage>/events.jsonl``, or ``None`` when the log
     is missing/empty.
@@ -128,8 +133,17 @@ def read_last_stage_status(namespace: str, stage: str) -> str | None:
     manifests (``runs/<run_id>.json``) only see the run that owned them, so
     they can fall stale across retries — see ``submit_tiles_slurm`` which
     falls back to this reader when the manifest is silent.
+
+    ``staged_base_dir`` overrides the module-level ``STAGED_BASE_DIR`` for
+    tests; production callers should leave it unset.
     """
-    log_path = _stage_dir(namespace, stage) / "events.jsonl"
+    if staged_base_dir is None:
+        log_path = _stage_dir(namespace, stage) / "events.jsonl"
+    else:
+        stage_path = STAGED_STAGE_DIR_TEMPLATE.format(
+            base=str(staged_base_dir), namespace=namespace, stage=stage,
+        )
+        log_path = Path(stage_path) / "events.jsonl"
     if not log_path.exists():
         return None
     last_status: str | None = None

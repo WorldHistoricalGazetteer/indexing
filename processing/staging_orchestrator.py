@@ -424,10 +424,48 @@ GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
 _BARRIER_PASSING_STATUSES = frozenset({"completed", "skipped"})
 
 
+def stage_status_with_fallback(
+    manifest: dict,
+    namespace: str,
+    stage: str,
+    *,
+    staged_base_dir: str | Path | None = None,
+) -> str:
+    """Resolve a stage status with a per-namespace event-log fallback.
+
+    Prefers ``manifest.namespaces.<ns>.stages.<stage>`` when set to a passing
+    status (``completed`` / ``skipped``). Otherwise reads the authoritative
+    per-namespace ``events.jsonl`` (cross-run; written by every Slurm task
+    regardless of run_id) and returns its last status. When neither the
+    manifest nor the event log knows about the stage, returns ``pending``.
+
+    The fallback is what makes retries under fresh ``run_id``s self-heal:
+    they update events but no manifest of their own, so manifest-only
+    consumers fall stale across runs (see ``processing.stage_writers``
+    docstring on ``read_last_stage_status``).
+    """
+    # Local import to avoid a top-level cycle: stage_writers also imports
+    # from processing.settings, and staging_orchestrator is loaded eagerly
+    # by the orchestration entry points.
+    from processing.stage_writers import read_last_stage_status
+
+    ns_stages = manifest.get("namespaces", {}).get(namespace, {}).get("stages", {})
+    manifest_status = ns_stages.get(stage)
+    if manifest_status in _BARRIER_PASSING_STATUSES:
+        return manifest_status
+    fallback = read_last_stage_status(namespace, stage, staged_base_dir=staged_base_dir)
+    if fallback is not None:
+        return fallback
+    # Surface whatever the manifest had (even ``running``/``failed``) so the
+    # caller can distinguish "in progress" from "never started".
+    return manifest_status or "pending"
+
+
 def check_global_barrier(
     manifest: dict,
     *,
     required_stages: tuple[str, ...] = GLOBAL_BARRIER_REQUIRED_STAGES,
+    staged_base_dir: str | Path | None = None,
 ) -> tuple[bool, dict[str, dict[str, str]]]:
     """Return ``(is_complete, report)`` for the Batch 8 global barrier.
 
@@ -439,21 +477,26 @@ def check_global_barrier(
     Relations-only namespaces (e.g. ``loc``) are excluded — they have no
     per-gazetteer pipeline and are consumed only by Batch 12.
 
+    Status resolution uses ``stage_status_with_fallback``: the manifest is
+    consulted first, then the per-namespace ``events.jsonl`` as a
+    cross-run fallback so retries that didn't update this manifest still
+    count.
+
     The barrier is complete iff every selected per-gazetteer namespace has
     every required stage in a passing status.
     """
     selected = manifest.get("selected_namespaces", [])
-    ns_data = manifest.get("namespaces", {})
     report: dict[str, dict[str, str]] = {}
     all_pass = True
     for ns in selected:
         if is_relations_only(ns):
             continue
-        ns_stages = ns_data.get(ns, {}).get("stages", {})
         per_stage: dict[str, str] = {}
         missing: list[str] = []
         for stage in required_stages:
-            status = ns_stages.get(stage, "pending")
+            status = stage_status_with_fallback(
+                manifest, ns, stage, staged_base_dir=staged_base_dir
+            )
             per_stage[stage] = status
             if status not in _BARRIER_PASSING_STATUSES:
                 missing.append(stage)

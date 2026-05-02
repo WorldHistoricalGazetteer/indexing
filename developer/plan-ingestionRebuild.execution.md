@@ -112,7 +112,7 @@ authority selection moves to the API and the markdown file is retired.
 | 6 | H3 derivation **+ per-gazetteer H3 coverage compaction** (non-global only) | Done (`h3_stage.py`, `submit_h3_slurm.py`); coverage emit + benchmarking pending |
 | 7 | CCode enrichment | Pending (`ccode_enrichment.py`, `ccode_merge.py`) |
 | 8 | Global barrier | Pending (manifest validator) |
-| 9 | Toponyms + Symphonym **+ per-gazetteer temporal extent** | Pending; temporal aggregate is new |
+| 9 | Toponyms + Symphonym **+ per-gazetteer temporal extent** | Pending; temporal aggregate is new. **Production rebuilds: pass `--training-namespaces _none_` to skip IPA + PanPhon (training-only artefacts; not in the active toponyms schema or gateway query path).** |
 | 10 | Tile generation (no ES) — runs **ahead of** Global Barrier | Pending |
 | 11 | Index loaders + **gazetteer inventory push (final-step gating)** | Pending; inventory push is new and gates on Batches 9, 11 *and* 12 |
 | 12 | **SQLite hard-link harvest** — staged authority links + LOC relations + DO contributor replay (replaces post-index ES clustering) | New; pre-existing `clustering/harvest/hard_links.py` (ES-based) supplies the algorithm but must be re-targeted at staged files; LOC enters here |
@@ -135,6 +135,12 @@ authority selection moves to the API and the markdown file is retired.
 - **Pre-barrier global work**: tile generation (Batch 10) runs as soon as its contributing
   gazetteers complete the relevant local stages, **ahead of** the Global Barrier — there is
   no need to gate tile production on full-corpus completion.
+  Tile **completion is not part of the barrier check**: `tiles` is deliberately absent from
+  `staging_orchestrator.GLOBAL_BARRIER_REQUIRED_STAGES`, and neither Batch 9 nor Batch 12
+  has a Slurm dependency on tile job IDs. Heavy tile buckets (`osm_admin`, `osm_misc`,
+  `gn`, `wd`) may therefore continue running in parallel with the post-barrier corpus-wide
+  jobs — their only output is `.mbtiles` files on disk and nothing downstream reads them
+  during the rebuild. The only practical interaction is shared Slurm capacity.
 - **Global barrier** (Batch 8): corpus-wide post-barrier phases must wait until every
   selected gazetteer reports preprocessing complete in its manifest.
 - **Global post-barrier phases (parallelisable)**: toponym deduplication + Symphonym
@@ -1119,6 +1125,28 @@ Tasks:
   `submit_batch9_slurm` invocation passes `--skip-es-index --confirm` to the
   toponym job; ES connection is opened only when that flag is absent (Batch
   11 territory).
+- [x] **IPA + PanPhon are training-only — skip on production rebuilds.**
+  Symphonym v6/v7 inference embeds `(toponym, lang)` directly: the active
+  `schemas/toponyms.json` has no `panphon_embedding` field, and `gateway/`
+  has zero references to `panphon` or `ipa`. The IPA+PanPhon column is
+  computed only for `--training-namespaces` (default `gn wd tgn`), and
+  feeds the *training-data prep* step ("phonetic clustering for pair
+  generation" + "phonetic hard negative mining") for the next Symphonym
+  re-train cycle.
+
+  - **Production rebuild** (no model retrain): pass
+    `--training-namespaces _none_` (or any unmatched name) to skip the
+    Epitran + Phonikud + CharsiuG2P workers entirely. Cuts the
+    `rebuild_toponyms_index` wall time from ~3 h to <1 h on the gn+wd+tgn
+    24M-toponym subset.
+  - **Re-training cycle**: keep the default `--training-namespaces gn wd
+    tgn` so the export Parquet ships with PanPhon vectors for the teacher
+    signal.
+
+  Concretely: `submit_batch9_slurm` defaults to passing
+  `--training-namespaces _none_` to `rebuild_toponyms_index`. Re-training
+  cycles must opt back in with `--for-retrain` (added 2026-05-02), which
+  drops the override and lets the underlying default `gn wd tgn` apply.
 
 **Per-gazetteer temporal extent** (new, Master Plan §1.4.1 + E.2 item 2):
 

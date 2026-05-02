@@ -104,18 +104,21 @@ def _seconds_to_slurm_time(seconds: int) -> str:
 
 def _eligible_temporal_namespaces(manifest: dict) -> list[str]:
     """Return per-gazetteer namespaces with ``ccode_merge`` complete that have
-    not already produced a temporal extent."""
+    not already produced a temporal extent.
+
+    Uses the manifest+event-log fallback so retries under fresh run_ids
+    self-heal (see ``staging_orchestrator.stage_status_with_fallback``).
+    """
+    from processing.staging_orchestrator import stage_status_with_fallback
+
     out: list[str] = []
-    ns_data = manifest.get("namespaces", {})
     for ns in manifest.get("selected_namespaces", []):
         if is_relations_only(ns):
             continue
-        stages = ns_data.get(ns, {}).get("stages", {})
-        # Final snapshot must exist (ccode_merge) — the temporal extent walks
-        # the most-enriched snapshot.
-        if stages.get("ccode_merge") not in ("completed", "skipped"):
+        ccode_status = stage_status_with_fallback(manifest, ns, "ccode_merge")
+        if ccode_status not in ("completed", "skipped"):
             continue
-        if stages.get("temporal_extent") == "completed":
+        if stage_status_with_fallback(manifest, ns, "temporal_extent") == "completed":
             continue
         out.append(ns)
     return out
@@ -262,6 +265,7 @@ def submit(
     db_path: Path | None = None,
     output_dir: Path | None = None,
     extra_toponym_args: str = "",
+    for_retrain: bool = False,
 ) -> dict[str, str | None]:
     """Submit the Batch 9 array(s); return ``{job_kind: slurm_job_id|None}``."""
     manifest = load_run_manifest(manifest_path)
@@ -316,13 +320,25 @@ def submit(
     if not skip_toponyms:
         db_path = db_path or Path(IX1_BASE) / "data" / "toponyms.db"
         output_dir = output_dir or (Path(IX1_BASE) / "models" / "phonetic" / "data" / f"v{run_id}")
+        # IPA + PanPhon are training-only artefacts: the active toponyms
+        # schema has no panphon_embedding field and the gateway never reads
+        # IPA. Default to skipping the Epitran/Phonikud/CharsiuG2P pipeline
+        # by passing an unmatched name to --training-namespaces. Re-training
+        # cycles must opt in with --for-retrain so the export Parquet ships
+        # with the teacher signal.
+        if for_retrain:
+            extra_args = (" " + extra_toponym_args.strip()) if extra_toponym_args else ""
+        else:
+            skip_panphon_arg = "--training-namespaces _none_"
+            tail = (" " + extra_toponym_args.strip()) if extra_toponym_args else ""
+            extra_args = f" {skip_panphon_arg}{tail}"
         sbatch_text = _build_toponym_sbatch(
             run_id=run_id,
             manifest_path=manifest_path,
             depend_on=depend_on,
             db_path=db_path,
             output_dir=output_dir,
-            extra_args=(" " + extra_toponym_args.strip()) if extra_toponym_args else "",
+            extra_args=extra_args,
         )
         sbatch_path = work_dir / "toponyms.sbatch"
         sbatch_path.write_text(sbatch_text, encoding="utf-8")
@@ -357,6 +373,10 @@ def main() -> None:
                         help="Override the output directory for toponym vocab/coverage stats")
     parser.add_argument("--toponym-extra-args", default="",
                         help="Extra args appended to rebuild_toponyms_index (e.g. --resume)")
+    parser.add_argument("--for-retrain", action="store_true",
+                        help="Compute IPA + PanPhon (gn/wd/tgn defaults) for the next "
+                             "Symphonym re-train cycle. Without this flag, those columns "
+                             "are skipped — they're not used at search time.")
     args = parser.parse_args()
 
     if args.manifest_path:
@@ -383,6 +403,7 @@ def main() -> None:
         db_path=Path(args.db_path) if args.db_path else None,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         extra_toponym_args=args.toponym_extra_args,
+        for_retrain=args.for_retrain,
     )
 
 
