@@ -60,11 +60,13 @@ class TestCacheRoundTrip(unittest.TestCase):
             self.assertEqual(hits["London@en"], b"\x01" * 128)
 
     def test_int8_quantised_embedding_roundtrip(self):
-        # Regression for the 2026-05-02 ValueError: bytes must be in
-        # range(0, 256) — the compute path was doing
-        # ``bytes(int8_arr.tolist())`` which rejects negative values. The
-        # fix is ``int8_arr.tobytes()``. This test guards the cache
-        # contract: insert raw int8 bytes, get them back unchanged.
+        # Two-part regression for the 2026-05-02 quantisation bugs:
+        #   1) WRITE side: ``bytes(int8_arr.tolist())`` rejects negative
+        #      values → fixed with ``int8_arr.tobytes()``.
+        #   2) READ side: ``list(emb_bytes)`` yields unsigned 0..255 which
+        #      the int8 Parquet schema rejects (e.g. 245 → "Value 245 too
+        #      large to fit in C integer type") → fixed with
+        #      ``np.frombuffer(emb_bytes, dtype=np.int8).tolist()``.
         import numpy as np
         from phonetics.inference.update_es import (
             quantize_embeddings_to_bytes,
@@ -73,11 +75,10 @@ class TestCacheRoundTrip(unittest.TestCase):
         # Realistic L2-normalised float32 with both signs.
         emb = np.array([[0.5, -0.5, 0.0, 1.0, -1.0]], dtype=np.float32)
         quantised = quantize_embeddings_to_bytes(emb)        # int8
-        # The buggy idiom raises; verify it's still buggy so we know our
-        # test catches it if someone reverts the fix.
+        # WRITE: the buggy idiom raises; verify so we catch any revert.
         with self.assertRaises(ValueError):
             bytes(quantised[0].tolist())
-        # The correct idiom (what the fix uses) preserves bytes verbatim.
+        # WRITE: the correct idiom preserves bytes verbatim.
         emb_bytes = quantised[0].tobytes()
         self.assertEqual(len(emb_bytes), 5)
 
@@ -88,6 +89,17 @@ class TestCacheRoundTrip(unittest.TestCase):
             )
             hits = load_hits(conn, model_version=7, checkpoint_hash="cafebabe")
             self.assertEqual(hits["Negativo@xx"], emb_bytes)
+
+            # READ: list(bytes) gives unsigned ints that misalign for int8.
+            unsigned = list(hits["Negativo@xx"])
+            self.assertTrue(any(v > 127 for v in unsigned),
+                            "test sample should include a negative→245-ish value")
+            # READ (correct): frombuffer with int8 dtype gives signed ints
+            # within [-128, 127] suitable for the Parquet int8 column.
+            signed = np.frombuffer(hits["Negativo@xx"], dtype=np.int8).tolist()
+            self.assertTrue(all(-128 <= v <= 127 for v in signed))
+            self.assertEqual(len(signed), len(unsigned))
+
             # Round-trip through dequantise still produces the original.
             recovered = np.frombuffer(hits["Negativo@xx"], dtype=np.int8)
             float_back = dequantize_embeddings_from_bytes(recovered)

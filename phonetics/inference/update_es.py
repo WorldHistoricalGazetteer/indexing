@@ -228,8 +228,14 @@ def run_compute(args):
                     continue
                 emb_bytes = cache_hits.get(toponym_id) if use_cache else None
                 if emb_bytes is not None:
+                    # Cache stores raw int8 byte patterns (written via
+                    # ``np.int8.tobytes()`` in the miss path below).
+                    # ``list(bytes)`` would yield unsigned 0..255, which the
+                    # int8 Parquet schema rejects (e.g. 245 → "Value 245 too
+                    # large"). Reinterpret as int8 to round-trip the sign.
+                    emb_int8 = np.frombuffer(emb_bytes, dtype=np.int8).tolist()
                     hit_batch.append({
-                        'toponym_id': toponym_id, 'embedding': list(emb_bytes),
+                        'toponym_id': toponym_id, 'embedding': emb_int8,
                     })
                 else:
                     miss_batch.append({
