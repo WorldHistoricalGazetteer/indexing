@@ -286,6 +286,21 @@ point to specific files in the WHG3 clone:
   `GazetteerRegistryEntry` model (migration `api/migrations/0002_indexing_rebuild.py`).
   WHG datasets land as `class='dataset'` rows fanned out from the
   `whg.datasets.json` sidecar written by `authorities/whg-places.py`.
+  **Curatorial fields are admin-managed and must NOT be in the push payload.**
+  The `GazetteerRegistryEntry` model carries three additional fields
+  (`core`, `tileset_polygon_only`, `gazetteer_type`) that staff configure via
+  Django admin (`api/admin.py::GazetteerRegistryEntryAdmin`). They are
+  intentionally omitted from `_upsert_one`'s `defaults` dict — adding them
+  would silently reset staff curation on every push. The omission is the
+  contract; anyone widening the payload schema in
+  `processing/push_gazetteer_inventory.py` must coordinate with the Django
+  side to keep these three fields out of the upsert. An inline comment in
+  `_upsert_one` names them; cross-reference Master Plan §1.4.3.
+  See also `api/migrations/0003_gazetteer_curatorial_fields.py` (adds the
+  fields, seeds the ten currently-known authorities; uses `atomic = False`
+  because the pre-populated table requires the column-add to commit before
+  the `core` index can be built — PostgreSQL trigger events otherwise block
+  in-transaction `CREATE INDEX`).
 * **Retention notify endpoint** (Batch 14a): `POST /api/retention/notify`
   (`api/views_indexing.py::RetentionNotifyView`). Logs the batch and, when
   `settings.WHG_RETENTION_DISPATCH_FN` is configured, hands the payload off
@@ -1316,6 +1331,16 @@ Tasks:
   _expand_whg_dataset_entries` fans the `whg` namespace out into one
   `class='dataset'` inventory entry per dataset (or falls back to a single
   `class='dataset'` bulk row when the sidecar is missing — first runs).
+- [x] Payload schema **must not** include curatorial fields (`core`,
+  `tileset_polygon_only`, `gazetteer_type`). These are admin-only fields on
+  the Django side (Master Plan §1.4.3); pushing them would silently reset
+  staff curation. The current builder does not include them; preserve this
+  invariant if/when the payload is extended.
+- [x] No row with `id="whg"` should be emitted as an aggregate: the
+  Specialist Gazetteers parent row in the Atlas offcanvas is hardcoded in
+  the template as a UI grouping (Master Plan §1.4.4), and the Django-side
+  template loop defensively skips any DB row with `id="whg"`. The pipeline
+  emits per-dataset `whg:<dataset_id>` rows only.
 
 Validation gates:
 
