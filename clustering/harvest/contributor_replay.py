@@ -153,14 +153,30 @@ def _coerce_iso(value: Any) -> str | None:
     return str(value)
 
 
+_BOGUS_IDENTIFIER_TAILS = frozenset({"none", "null", "undefined", "nan", ""})
+
+
 def _looks_namespaced(s: str) -> bool:
     """``identifier`` strings stored on PlaceLink should be namespaced
-    (e.g. ``wd:Q90``, ``tgn:7000874``). Reject bare strings that lack the
-    ``<ns>:<id>`` shape — they would corrupt the cluster store."""
+    (e.g. ``wd:Q90``, ``tgn:7000874``). Reject obviously broken values:
+
+    * Missing colon, or empty either side of the colon.
+    * Sentinel tails like ``wd:None`` / ``wd:null`` (curator tools wrote a
+      Python ``None``/JS ``null`` literal as the identifier).
+    * Wikidata-namespaced IDs without the ``Q``/``P``/``L``/``M`` prefix
+      — Wikidata entity IDs are always letter-prefixed; bare digits are a
+      legacy data-entry bug from earlier curation tools.
+    """
     if ":" not in s:
         return False
     ns, _, rest = s.partition(":")
-    return bool(ns) and bool(rest)
+    if not ns or not rest:
+        return False
+    if rest.lower() in _BOGUS_IDENTIFIER_TAILS:
+        return False
+    if ns == "wd" and not rest[0].isalpha():
+        return False
+    return True
 
 
 def _place_link_to_hard_link(record: dict[str, Any]) -> dict[str, Any] | None:

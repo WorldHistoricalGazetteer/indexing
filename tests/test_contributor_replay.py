@@ -56,6 +56,26 @@ class TestPlaceLinkMapping(unittest.TestCase):
         self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b=":Q90")))
         self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b="wd:")))
 
+    def test_rejects_bogus_sentinel_identifiers(self):
+        # Curator tools sometimes wrote Python `None` / JS `null` as the
+        # authrecord_id — observed in the live whgv3beta data 2026-05-02.
+        for bad in ("wd:None", "wd:null", "wd:NONE", "tgn:undefined", "wd:nan", "wd:"):
+            self.assertIsNone(
+                cr._place_link_to_hard_link(_pl(place_b=bad)),
+                f"should reject {bad}",
+            )
+
+    def test_rejects_wikidata_without_letter_prefix(self):
+        # WD entity IDs are always Q/P/L/M-prefixed; bare digits are bad data.
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b="wd:1628979")))
+        # But other namespaces (gn, tgn) DO use bare numeric IDs and stay valid.
+        ok = cr._place_link_to_hard_link(_pl(place_b="gn:3092472"))
+        self.assertIsNotNone(ok)
+        ok = cr._place_link_to_hard_link(_pl(place_b="wd:Q90"))
+        self.assertIsNotNone(ok)
+        ok = cr._place_link_to_hard_link(_pl(place_b="wd:P31"))
+        self.assertIsNotNone(ok)
+
     def test_rejects_missing_user(self):
         self.assertIsNone(cr._place_link_to_hard_link(_pl(user_id=None)))
 

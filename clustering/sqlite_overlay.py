@@ -151,6 +151,14 @@ def insert_rows(
         nonlocal inserted
         if not batch:
             return
+        # ``conn.total_changes`` is the absolute count of row changes since
+        # the connection opened — diffing before/after the batch gives the
+        # correct insert count even when ``cursor.rowcount`` and
+        # ``SELECT changes()`` misbehave (which they do on
+        # ``executemany`` + ``INSERT OR IGNORE``: ``changes()`` reads the
+        # most recent statement, which after ``COMMIT`` is the COMMIT
+        # itself = 0; ``rowcount`` returns -1 on several SQLite versions).
+        before = conn.total_changes
         conn.execute("BEGIN")
         try:
             cursor.executemany(_INSERT_SQL, batch)
@@ -158,10 +166,7 @@ def insert_rows(
         except Exception:
             conn.execute("ROLLBACK")
             raise
-        # ``rowcount`` after executemany on an OR IGNORE reflects the number
-        # of rows actually written, modulo SQLite version quirks. We use
-        # changes() as a more reliable counter.
-        inserted += int(conn.execute("SELECT changes()").fetchone()[0])
+        inserted += conn.total_changes - before
         batch.clear()
 
     for row in rows:
