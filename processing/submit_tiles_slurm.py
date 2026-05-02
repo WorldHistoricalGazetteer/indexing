@@ -64,6 +64,7 @@ from processing.settings import (  # noqa: E402
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+from processing.stage_writers import read_last_stage_status  # noqa: E402
 from processing.staging_contract import (  # noqa: E402
     AGGREGATE_TEMPORAL_EXTENT_FILENAME_TEMPLATE,
 )
@@ -176,9 +177,19 @@ def _required_stage_for(namespace: str) -> str:
 
 
 def _stage_completed(manifest: dict, namespace: str, stage: str) -> bool:
+    """True when the manifest OR the per-namespace event log says completed.
+
+    The manifest only sees the run that owned it; a retry under a fresh
+    run_id leaves the original manifest stale (the retry writes events but
+    no manifest of its own). The per-namespace ``events.jsonl`` is
+    append-only and authoritative across runs, so we use it as a fallback
+    when the manifest reports anything other than ``completed``.
+    """
     ns_data = manifest.get("namespaces", {}).get(namespace, {})
     stages = ns_data.get("stages", {})
-    return stages.get(stage) == "completed"
+    if stages.get(stage) == "completed":
+        return True
+    return read_last_stage_status(namespace, stage) == "completed"
 
 
 def _eligible_buckets(manifest: dict) -> list[str]:

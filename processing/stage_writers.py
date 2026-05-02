@@ -117,6 +117,42 @@ def write_stage_event(
     return log_path
 
 
+def read_last_stage_status(namespace: str, stage: str) -> str | None:
+    """Return the status from the most recent event in
+    ``<staged>/<namespace>/<stage>/events.jsonl``, or ``None`` when the log
+    is missing/empty.
+
+    This is the **authoritative cross-run** view of a namespace's stage state:
+    every Slurm task appends here regardless of which run_id it ran under,
+    so it picks up retries that wrote no manifest of their own. Run-scoped
+    manifests (``runs/<run_id>.json``) only see the run that owned them, so
+    they can fall stale across retries — see ``submit_tiles_slurm`` which
+    falls back to this reader when the manifest is silent.
+    """
+    log_path = _stage_dir(namespace, stage) / "events.jsonl"
+    if not log_path.exists():
+        return None
+    last_status: str | None = None
+    try:
+        with log_path.open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    ev = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if ev.get("stage") != stage:
+                    continue
+                status = ev.get("status")
+                if isinstance(status, str):
+                    last_status = status
+    except OSError:
+        return None
+    return last_status
+
+
 def write_runtime_history_event(
     *,
     run_id: str,
