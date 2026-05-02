@@ -1,6 +1,13 @@
 #!/usr/bin/env python3
 """Per-namespace ccode enrichment (Batch 7).
 
+**Memory:** loads the full UN per-geometry ``h3_cover`` and country
+polygons into memory. Empirical floor is ~16 GiB; recommended budget is
+**24 GiB** (matches ``submit_ccode_slurm._build_sbatch_script``).
+``run_ccode_enrichment`` warns at startup when the cgroup limit is below
+that floor — heed the warning or expect an OOM-kill mid-run on namespaces
+with many candidate ccodes (e.g. po crashed at 8 GiB on 2026-05-02).
+
 For each non-UN namespace's H3-enriched staged snapshot, derive a list of
 country codes (ISO 3166-1 alpha-2) from the spatial overlap with the staged
 ``un`` gazetteer's country geometries. Output is a JSONL patch consumed by
@@ -389,6 +396,53 @@ def _load_un_records() -> list[dict[str, Any]]:
     return list(_iter_staged_docs(UN_NAMESPACE, prefer_jsonl=True))
 
 
+_RECOMMENDED_MEM_GIB = 24
+
+
+def _warn_if_under_provisioned() -> None:
+    """Emit a loud warning when the cgroup memory limit is below the
+    empirical floor for ccode_enrichment.
+
+    No effect outside cgroup-bounded environments (e.g. interactive runs on
+    a host without cgroup memory controllers); only Slurm tasks under a
+    ``--mem`` budget are constrained, and that's where OOM-kills happen.
+    """
+    import os
+    candidates = (
+        "/sys/fs/cgroup/memory.max",                        # cgroup v2
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",      # cgroup v1
+    )
+    for path in candidates:
+        if not os.path.exists(path):
+            continue
+        try:
+            raw = open(path).read().strip()
+        except OSError:
+            continue
+        if raw in ("", "max"):
+            return
+        try:
+            limit_bytes = int(raw)
+        except ValueError:
+            return
+        # cgroup v1 reports an absurdly large value when no limit is set;
+        # treat anything ≥ 1 PiB as effectively unlimited.
+        if limit_bytes >= (1 << 50):
+            return
+        limit_gib = limit_bytes / (1024 ** 3)
+        if limit_gib < _RECOMMENDED_MEM_GIB:
+            import sys
+            print(
+                f"WARNING: ccode_enrichment cgroup memory limit is "
+                f"{limit_gib:.1f} GiB, below the recommended "
+                f"{_RECOMMENDED_MEM_GIB} GiB. Loading UN h3_cover and "
+                "country polygons typically peaks at 16-20 GiB. Likely "
+                f"to OOM mid-run — increase to --mem={_RECOMMENDED_MEM_GIB}G.",
+                file=sys.stderr, flush=True,
+            )
+        return
+
+
 def run_ccode_enrichment(
     *,
     run_id: str,
@@ -402,6 +456,8 @@ def run_ccode_enrichment(
         )
     if not _H3_AVAILABLE:
         raise RuntimeError("h3 library is required for ccode enrichment")
+
+    _warn_if_under_provisioned()
 
     if manifest_path and manifest_path.exists():
         update_namespace_stage_status(manifest_path, namespace, "ccode", "running")
