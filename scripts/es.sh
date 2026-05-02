@@ -110,6 +110,12 @@ do_install() {
 _update_clone() {
     # Reset a single deployment clone to origin/main. Stashes local changes
     # after confirmation. Returns 1 on user-cancelled stash, 2 on missing repo.
+    #
+    # The /vast clone may be owned by a different user (e.g. stg135 set it up
+    # but `es` is invoked as `gazetteer`), so git's dubious-ownership check
+    # would otherwise refuse every command. ``-c safe.directory=...`` trusts
+    # this one path for the lifetime of each invocation, without polluting
+    # the user's global git config.
     local clone_dir="$1"
     local label="$2"
 
@@ -118,15 +124,15 @@ _update_clone() {
         return 2
     fi
 
-    cd "$clone_dir"
+    local g=(git -C "$clone_dir" -c "safe.directory=$clone_dir")
 
-    if ! git diff --quiet 2>/dev/null; then
+    if ! "${g[@]}" diff --quiet 2>/dev/null; then
         echo "  ($label) WARNING: local changes present:"
-        git status --short
+        "${g[@]}" status --short
         echo
         read -p "  Stash changes in $label clone and continue? (y/n): " confirm
         if [ "$confirm" = "y" ]; then
-            git stash
+            "${g[@]}" stash
             echo "  ($label) Changes stashed. Restore later with: git -C $clone_dir stash pop"
         else
             echo "  ($label) Cancelled."
@@ -138,14 +144,14 @@ _update_clone() {
     # Shallow clones (--depth=1) need --depth=1 on the fetch too, otherwise
     # git tries to resolve missing history and bails out.
     if [ -f "$clone_dir/.git/shallow" ]; then
-        git fetch --depth=1 origin main
+        "${g[@]}" fetch --depth=1 origin main
     else
-        git fetch origin main
+        "${g[@]}" fetch origin main
     fi
 
     # Reset to match origin/main exactly (deployment clone should mirror main)
-    git reset --hard origin/main
-    echo "  ($label) ✓ Updated to $(git rev-parse --short HEAD)"
+    "${g[@]}" reset --hard origin/main
+    echo "  ($label) ✓ Updated to $("${g[@]}" rev-parse --short HEAD)"
     return 0
 }
 
