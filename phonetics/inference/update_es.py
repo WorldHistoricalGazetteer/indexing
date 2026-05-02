@@ -253,11 +253,16 @@ def run_compute(args):
                 # Append the freshly-computed embeddings to the persistent
                 # cache so the next compute run hits them.
                 if use_cache and cache_conn is not None:
-                    pairs = [
-                        (b['toponym_id'], bytes(miss_quantised[i].tolist()))
-                        for i, b in enumerate(miss_batch)
-                    ]
+                    # ``miss_quantised`` is an int8 numpy array. Direct
+                    # ``bytes(arr.tolist())`` rejects negative values
+                    # (Python's ``bytes`` requires uint8 in [0,255]) — use
+                    # ``tobytes()`` which preserves the int8 byte pattern
+                    # verbatim, matching how ``load_hits`` reads it back.
                     try:
+                        pairs = [
+                            (b['toponym_id'], miss_quantised[i].tobytes())
+                            for i, b in enumerate(miss_batch)
+                        ]
                         insert_many(
                             cache_conn, pairs,
                             model_version=args.embedding_version,
