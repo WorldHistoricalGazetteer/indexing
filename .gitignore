@@ -4,6 +4,11 @@ __pycache__/
 *.pyc
 .idea/
 
+# Per-host secret overrides — loaded by clustering/config.py after the
+# tracked .env, so values here take precedence. Never commit credentials.
+.env.local
+.env.secret
+
 # Large authority source dumps and derived databases
 authorities/chgis/*.sql
 authorities/chgis/*.db

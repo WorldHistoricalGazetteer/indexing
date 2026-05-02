@@ -33,11 +33,17 @@ Selection rules (per user, 2026-05-02):
 * **Sources**: ``place_link`` + ``close_matches`` only. The legacy ES
   ``whg`` index ``relation.parent`` field is intentionally NOT consulted
   — assumed redundant with ``close_matches``.
-* **CloseMatch basis**: ``reviewed`` or ``authid`` only. ``imported`` is
-  excluded as evidence of intent without human review.
-* **Dataset status**: only places belonging to ``ds_status = 'accessioned'``
-  datasets contribute. Pending / draft / rejected datasets are skipped
-  entirely.
+* **CloseMatch basis**: ``reviewed``, ``authid``, **and** ``imported`` are
+  all included. The bulk ``imported`` rows in whgv3beta represent a
+  pre-approved import from another table; the user confirmed they should
+  be treated as previously contributor-approved.
+* **Dataset status**: only places belonging to "late-curation" datasets
+  contribute (``ds_status`` ∈ ``indexed`` / ``accessioning`` /
+  ``wd-complete`` — there are zero ``accessioned`` rows in whgv3beta;
+  the equivalent v3 lifecycle states are these three). Earlier states
+  (``reconciling``, ``uploaded``, ``remote``, ``format_ok``, ``updated``)
+  and ``NULL`` are excluded as not-yet-curated. Override at runtime via
+  ``WHG_PUBLISHABLE_DS_STATUSES`` (comma-separated env var) if needed.
 
 ``place_id`` namespacing: the new contract is
 ``f"whg:{datasets.id}:{places.id}"``. Note ``places.dataset`` is a
@@ -63,6 +69,25 @@ from clustering.sqlite_overlay import builder, insert_rows
 # ---------------------------------------------------------------------------
 
 
+# The ds_status values that count as "publishable" for hard-link harvest.
+# whgv3beta has no rows in the canonical ``accessioned`` state — the live
+# late-curation states are ``indexed`` / ``accessioning`` / ``wd-complete``.
+# Override at runtime with the ``WHG_PUBLISHABLE_DS_STATUSES`` env var
+# (comma-separated, e.g. ``indexed,accessioned``).
+_DEFAULT_PUBLISHABLE_DS_STATUSES = ("indexed", "accessioning", "wd-complete")
+
+
+def _publishable_ds_statuses() -> tuple[str, ...]:
+    import os
+    raw = os.getenv("WHG_PUBLISHABLE_DS_STATUSES")
+    if not raw:
+        return _DEFAULT_PUBLISHABLE_DS_STATUSES
+    statuses = tuple(s.strip() for s in raw.split(",") if s.strip())
+    return statuses or _DEFAULT_PUBLISHABLE_DS_STATUSES
+
+
+# Bound at query time as a single $1 array parameter — asyncpg expands
+# Python tuples/lists into PG arrays for ANY()/= ANY().
 _PLACE_LINK_QUERY = """
     SELECT
         ('whg:' || d.id::text || ':' || pl.place_id::text) AS place_a,
@@ -76,10 +101,14 @@ _PLACE_LINK_QUERY = """
       AND pl.jsonb->>'identifier' IS NOT NULL
       AND pl.jsonb->>'identifier' <> ''
       AND pl.reviewer_id IS NOT NULL
-      AND d.ds_status = 'accessioned'
+      AND d.ds_status = ANY($1::text[])
 """
 
 
+# ``imported`` is included alongside ``reviewed`` / ``authid`` because the
+# bulk ``imported`` rows in whgv3beta come from a pre-approved import from
+# another table (per user, 2026-05-02). All three count as
+# contributor-approved equivalences for clustering purposes.
 _CLOSE_MATCH_QUERY = """
     SELECT
         ('whg:' || da.id::text || ':' || cm.place_a_id::text) AS place_a,
@@ -92,9 +121,9 @@ _CLOSE_MATCH_QUERY = """
     JOIN places   pb ON pb.id    = cm.place_b_id
     JOIN datasets da ON da.label = pa.dataset
     JOIN datasets db ON db.label = pb.dataset
-    WHERE da.ds_status = 'accessioned'
-      AND db.ds_status = 'accessioned'
-      AND cm.basis IN ('reviewed', 'authid')
+    WHERE da.ds_status = ANY($1::text[])
+      AND db.ds_status = ANY($1::text[])
+      AND cm.basis IN ('reviewed', 'authid', 'imported')
       AND cm.created_by_id IS NOT NULL
 """
 
@@ -196,9 +225,10 @@ async def _fetch_all_async() -> tuple[list[dict[str, Any]], list[dict[str, Any]]
     # not needed for the LOC / staged harvesters.
     from clustering.pg_client import pg_connection  # noqa: WPS433
 
+    statuses = list(_publishable_ds_statuses())
     async with pg_connection() as conn:
-        place_link_rows = await conn.fetch(_PLACE_LINK_QUERY)
-        close_match_rows = await conn.fetch(_CLOSE_MATCH_QUERY)
+        place_link_rows = await conn.fetch(_PLACE_LINK_QUERY, statuses)
+        close_match_rows = await conn.fetch(_CLOSE_MATCH_QUERY, statuses)
     return [dict(r) for r in place_link_rows], [dict(r) for r in close_match_rows]
 
 

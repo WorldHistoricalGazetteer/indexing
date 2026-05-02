@@ -1,0 +1,142 @@
+"""Tests for the legacy v3.2 contributor attestation replay.
+
+The replay reads from two DO PG tables (``place_link`` + ``close_matches``)
+and converts each row into the canonical hard_link_assertions shape. These
+tests cover the row→row mapping logic without touching PG: we feed
+synthetic rows that match the SELECT projections in
+``_PLACE_LINK_QUERY`` / ``_CLOSE_MATCH_QUERY``.
+"""
+
+from __future__ import annotations
+
+import unittest
+from datetime import datetime, timezone
+
+from clustering.harvest import contributor_replay as cr
+
+
+def _pl(**overrides):
+    base = {
+        "place_a": "whg:42:101",                       # contributor's WHG place
+        "place_b": "wd:Q90",                           # authority concordance
+        "user_id": 7,
+        "asserted_at": datetime(2025, 6, 1, tzinfo=timezone.utc),
+    }
+    base.update(overrides)
+    return base
+
+
+def _cm(**overrides):
+    base = {
+        "place_a": "whg:1:200",
+        "place_b": "whg:5:50",
+        "user_id": 9,
+        "asserted_at": datetime(2025, 7, 1, tzinfo=timezone.utc),
+        "basis": "reviewed",
+    }
+    base.update(overrides)
+    return base
+
+
+class TestPlaceLinkMapping(unittest.TestCase):
+    def test_basic_conversion(self):
+        row = cr._place_link_to_hard_link(_pl())
+        self.assertEqual(row["relation_type"], "closeMatch")
+        self.assertEqual(row["source_category"], "contributor")
+        self.assertEqual(row["source_id"], "contributor:7:legacy_v3_2")
+        self.assertEqual(row["justification"], "place_link")
+        # Both endpoints present, lex-canonicalized
+        self.assertEqual({row["place_a"], row["place_b"]}, {"whg:42:101", "wd:Q90"})
+        self.assertLess(row["place_a"], row["place_b"])
+        self.assertEqual(row["asserted_at"], "2025-06-01T00:00:00+00:00")
+
+    def test_rejects_bare_identifier(self):
+        # Defensive: jsonb.identifier without a namespace prefix is corrupt.
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b="Q90")))
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b=":Q90")))
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(place_b="wd:")))
+
+    def test_rejects_missing_user(self):
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(user_id=None)))
+
+    def test_rejects_self_loop(self):
+        self.assertIsNone(cr._place_link_to_hard_link(_pl(place_a="wd:Q90", place_b="wd:Q90")))
+
+
+class TestCloseMatchMapping(unittest.TestCase):
+    def test_reviewed_basis(self):
+        row = cr._close_match_to_hard_link(_cm(basis="reviewed"))
+        self.assertEqual(row["relation_type"], "closeMatch")
+        self.assertEqual(row["source_id"], "contributor:9:legacy_v3_2")
+        self.assertEqual(row["justification"], "close_match:reviewed")
+        # Lex-canonicalized
+        self.assertEqual(row["place_a"], "whg:1:200")
+        self.assertEqual(row["place_b"], "whg:5:50")
+
+    def test_authid_basis(self):
+        row = cr._close_match_to_hard_link(_cm(basis="authid"))
+        self.assertEqual(row["justification"], "close_match:authid")
+
+    def test_self_loop_rejected(self):
+        self.assertIsNone(
+            cr._close_match_to_hard_link(_cm(place_a="whg:1:50", place_b="whg:1:50"))
+        )
+
+    def test_missing_user_rejected(self):
+        self.assertIsNone(cr._close_match_to_hard_link(_cm(user_id=None)))
+
+
+class TestIterHardLinkRows(unittest.TestCase):
+    def test_combines_sources_with_per_source_counts(self):
+        pl_rows = [_pl(), _pl(place_b="bare-no-colon")]   # 1 valid, 1 rejected
+        cm_rows = [_cm(), _cm(basis="authid"), _cm(user_id=None)]  # 2 valid, 1 rejected
+        rows, counts = cr.iter_hard_link_rows(pl_rows, cm_rows)
+        self.assertEqual(len(rows), 3)
+        self.assertEqual(counts, {
+            "place_link_input": 2,
+            "place_link_converted": 1,
+            "close_match_input": 3,
+            "close_match_converted": 2,
+        })
+
+
+class TestSourceIdContract(unittest.TestCase):
+    def test_legacy_suffix_always_present(self):
+        # Every row from this harvest is v3 legacy data — the gateway needs
+        # the suffix to filter it once dynamic-cluster attestations land.
+        for uid in (1, 999, "alice"):
+            self.assertEqual(cr._build_source_id(uid), f"contributor:{uid}:legacy_v3_2")
+
+
+class TestPublishableStatusOverride(unittest.TestCase):
+    """The default `ds_status` filter is overridable via env var so the
+    same code can target whgv2 (`accessioned`) or whgv3beta
+    (`indexed`/`accessioning`/`wd-complete`) without code change."""
+
+    def test_default_when_env_unset(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(
+                cr._publishable_ds_statuses(),
+                cr._DEFAULT_PUBLISHABLE_DS_STATUSES,
+            )
+
+    def test_env_override(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"WHG_PUBLISHABLE_DS_STATUSES": "accessioned, indexed"}):
+            self.assertEqual(cr._publishable_ds_statuses(), ("accessioned", "indexed"))
+
+    def test_empty_env_falls_back_to_default(self):
+        import os
+        from unittest import mock
+        with mock.patch.dict(os.environ, {"WHG_PUBLISHABLE_DS_STATUSES": "  "}):
+            self.assertEqual(
+                cr._publishable_ds_statuses(),
+                cr._DEFAULT_PUBLISHABLE_DS_STATUSES,
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

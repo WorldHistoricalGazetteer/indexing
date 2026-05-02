@@ -14,19 +14,27 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-_env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(_env_path)
+# Load the tracked .env first (defaults / non-secret config), then layer the
+# gitignored .env.local for per-host secrets. ``override=True`` means values
+# in .env.local replace anything from .env or the existing process env.
+_repo_root = Path(__file__).parent.parent
+load_dotenv(_repo_root / ".env")
+load_dotenv(_repo_root / ".env.local", override=True)
 
 
 # ---------------------------------------------------------------------------
 # WHG PostgreSQL (on DigitalOcean VM, via SSH tunnel)
 # Used by clustering/pg_client.py + clustering/harvest/contributor_replay.py
+#
+# ``PG_DB_PASSWORD`` belongs in ``.env.local`` (gitignored), never in ``.env``.
+# When unset, asyncpg falls back to ``~/.pgpass`` if present.
 # ---------------------------------------------------------------------------
 PG_SSH_HOST = os.getenv("PG_SSH_HOST", "whg")  # SSH config alias
 PG_DB_NAME = os.getenv("PG_DB_NAME", "whgv2")
 PG_DB_USER = os.getenv("PG_DB_USER", "postgres")
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")  # local after SSH tunnel
 PG_DB_PORT = int(os.getenv("PG_DB_PORT", "5432"))
+PG_DB_PASSWORD = os.getenv("PG_DB_PASSWORD")  # None → asyncpg falls back to ~/.pgpass
 
 
 # ---------------------------------------------------------------------------
