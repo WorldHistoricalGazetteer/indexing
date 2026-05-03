@@ -187,6 +187,37 @@ SYMPHONYM_EMBEDDINGS_DIR = os.getenv(
 )
 
 
+# ---------------------------------------------------------------------------
+# Tileserver deployment (Batch 10 final step)
+#
+# .mbtiles produced on /ix1 are pushed to the TileServer GL host. CRC compute
+# nodes don't have an SSH key for the tileserver, so the push is routed via
+# the Pitt VM (``TILESERVER_PROXY``) which does. The compute task SSHs to
+# the proxy, which then SCPs the file from /ix1 (shared NFS mount) to the
+# tileserver. Each per-bucket tile-gen task triggers its own push on
+# success — restart of the tileserver service is intentionally NOT
+# automatic; it's gated on ALL tilesets being deployed and verified.
+# ---------------------------------------------------------------------------
+TILESERVER_PROXY        = os.getenv("TILESERVER_PROXY",        "pitt")
+TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "134.209.177.234")
+TILESERVER_USER         = os.getenv("TILESERVER_USER",         "whgadmin")
+TILESERVER_TILES_DIR    = os.getenv("TILESERVER_TILES_DIR",    "/srv/tileserver/tiles")
+# Absolute path to rsync ON THE PROXY (Pitt VM). rsync isn't on stg135's
+# PATH there but is in the gazetteer/whg conda env, so we invoke it by
+# absolute path. Set to empty to force scp fallback.
+TILESERVER_PROXY_RSYNC  = os.getenv(
+    "TILESERVER_PROXY_RSYNC",
+    "/home/gazetteer/miniconda/envs/whg/bin/rsync",
+)
+# systemctl unit names (space-separated for env-var convenience). Both
+# ``tiler.service`` and ``tileserver-gl-light.service`` need restarting
+# after a fresh batch of mbtiles arrives.
+TILESERVER_SERVICES     = os.getenv(
+    "TILESERVER_SERVICES",
+    "tiler.service tileserver-gl-light.service",
+).split()
+
+
 # Remote Dataset Configurations
 AUTHORITIES = [
     {  # 2024: 37k+ places

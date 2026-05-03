@@ -298,25 +298,178 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
     return False
 
 
-def deploy_tilesets(mbtiles_paths, remote_host='134.209.177.234',
-                    remote_user='whgadmin',
-                    remote_dir='/data/tileserver/mbtiles'):
-    """Deploy .mbtiles to TileServer GL light via rsync."""
-    print(f"\nDeploying {len(mbtiles_paths)} tilesets to {remote_user}@{remote_host} ...")
+def push_mbtiles_to_tileserver(
+    mbtiles_path: Path,
+    *,
+    via_proxy: bool = True,
+    proxy_host: str | None = None,
+    remote_user: str | None = None,
+    remote_host: str | None = None,
+    remote_dir: str | None = None,
+    proxy_rsync: str | None = None,
+    timeout: int = 7200,
+) -> bool:
+    """Push a single ``.mbtiles`` file to the TileServer GL host.
 
-    for path in mbtiles_paths:
-        if not path.exists():
-            continue
-        target = f"{remote_user}@{remote_host}:{remote_dir}/{path.name}"
-        print(f"  rsync {path.name} → {target}")
+    The push is routed through ``proxy_host`` (default: the Pitt VM —
+    ``settings.TILESERVER_PROXY``) because CRC compute nodes don't carry an
+    SSH key for the tileserver, but the proxy does. The proxy reads the
+    source file from /ix1 (its NFS mount) and rsyncs to the tileserver.
+
+    Set ``via_proxy=False`` when calling from a host that already has the
+    tileserver SSH key — rsync runs locally in that case.
+
+    Prefers rsync (with ``--partial --partial-dir=.tmp`` so an interrupted
+    transfer leaves the existing destination file intact and the partial
+    in a sidecar dir; the next run resumes), but falls back to ``scp -p``
+    if rsync isn't reachable (settings.TILESERVER_PROXY_RSYNC empty). On
+    the Pitt VM rsync lives in the gazetteer/whg conda env and isn't on
+    stg135's PATH, hence the absolute-path setting.
+
+    Returns True on success, False on failure (does not raise — caller
+    decides how to react).
+    """
+    from processing.settings import (
+        TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER,
+        TILESERVER_TILES_DIR, TILESERVER_PROXY_RSYNC,
+    )
+
+    proxy_host = proxy_host or TILESERVER_PROXY
+    remote_user = remote_user or TILESERVER_USER
+    remote_host = remote_host or TILESERVER_HOST
+    remote_dir = remote_dir or TILESERVER_TILES_DIR
+    if proxy_rsync is None:
+        proxy_rsync = TILESERVER_PROXY_RSYNC
+
+    if not mbtiles_path.exists():
+        print(f"  ✗ source missing: {mbtiles_path}")
+        return False
+
+    target = f"{remote_user}@{remote_host}:{remote_dir}/"
+    size_mb = mbtiles_path.stat().st_size / 1e6
+    use_rsync = bool(proxy_rsync) if via_proxy else bool(shutil.which("rsync"))
+    tool = "rsync" if use_rsync else "scp"
+    print(f"  → {tool} {mbtiles_path.name} ({size_mb:.1f} MB) → {target}", flush=True)
+
+    if via_proxy:
+        if use_rsync:
+            # Quote the rsync invocation since it's executed by the
+            # remote shell. ``--partial`` + ``--partial-dir=.tmp``: an
+            # interrupted transfer leaves the existing target file
+            # intact and parks the partial in ``<dest>/.tmp/<name>``;
+            # the next run resumes from there. ``--info=stats1``: one
+            # tidy summary line at the end (no progress noise that
+            # would flood Slurm logs).
+            remote_cmd = (
+                f"{proxy_rsync} -a --partial --partial-dir=.tmp "
+                f"--info=stats1 {mbtiles_path} {target}"
+            )
+        else:
+            remote_cmd = f"scp -p -B {mbtiles_path} {target}"
+        cmd = [
+            "ssh", "-o", "BatchMode=yes", "-o", "ServerAliveInterval=30",
+            proxy_host, remote_cmd,
+        ]
+    else:
+        if use_rsync:
+            cmd = [
+                "rsync", "-a", "--partial", "--partial-dir=.tmp",
+                "--info=stats1", str(mbtiles_path), target,
+            ]
+        else:
+            cmd = ["scp", "-p", "-B", str(mbtiles_path), target]
+
+    try:
         result = subprocess.run(
-            ['rsync', '-az', '--progress', str(path), target],
-            stdout=sys.stdout, stderr=sys.stderr,
+            cmd, capture_output=True, text=True, timeout=timeout,
         )
-        if result.returncode != 0:
-            print(f"  ✗ rsync failed for {path.name}")
+    except subprocess.TimeoutExpired:
+        print(f"  ✗ push timed out after {timeout}s: {mbtiles_path.name}")
+        return False
 
-    print("  Deploy complete")
+    if result.returncode == 0:
+        # rsync's stats1 output goes to stdout; one short summary line.
+        if use_rsync and result.stdout.strip():
+            tail = result.stdout.strip().splitlines()[-1][:120]
+            print(f"    ✓ {mbtiles_path.name} pushed  ({tail})", flush=True)
+        else:
+            print(f"    ✓ {mbtiles_path.name} pushed", flush=True)
+        return True
+    print(
+        f"    ✗ push failed (rc={result.returncode}): {mbtiles_path.name}\n"
+        f"      stderr: {result.stderr.strip()[:500]}",
+        flush=True,
+    )
+    return False
+
+
+def deploy_tilesets(mbtiles_paths, **kwargs) -> dict[str, bool]:
+    """Push a list of .mbtiles files to the tileserver. Bulk wrapper.
+
+    Returns ``{name: success_bool}`` so the caller can react per-file.
+    Used by the post-array catch-up path; per-bucket pushes during a tile
+    gen run go through ``push_mbtiles_to_tileserver`` directly.
+    """
+    print(f"\nDeploying {len(mbtiles_paths)} tilesets via Pitt-VM proxy …")
+    results: dict[str, bool] = {}
+    for path in mbtiles_paths:
+        results[path.name] = push_mbtiles_to_tileserver(path, **kwargs)
+    ok = sum(1 for v in results.values() if v)
+    print(f"  Deploy summary: {ok}/{len(mbtiles_paths)} succeeded")
+    return results
+
+
+def restart_tileserver(
+    *,
+    via_proxy: bool = True,
+    proxy_host: str | None = None,
+    remote_user: str | None = None,
+    remote_host: str | None = None,
+    services: list[str] | None = None,
+    timeout: int = 120,
+) -> bool:
+    """Restart the TileServer GL services so newly-deployed mbtiles are picked up.
+
+    Per the user's contract (2026-05-03), this is **only ever called once
+    per rebuild**, after every gazetteer's mbtiles has been pushed AND the
+    push was verified. Per-bucket tile-gen tasks must NOT call this.
+    """
+    from processing.settings import (
+        TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER, TILESERVER_SERVICES,
+    )
+
+    proxy_host = proxy_host or TILESERVER_PROXY
+    remote_user = remote_user or TILESERVER_USER
+    remote_host = remote_host or TILESERVER_HOST
+    services = services or list(TILESERVER_SERVICES)
+
+    print(f"\nRestarting tileserver services: {services} on {remote_user}@{remote_host}")
+    # The forever-service init scripts on the tileserver use sudo for
+    # systemctl restart; the proxy's whgadmin SSH key has the right
+    # sudoers entry (or the service unit allows whgadmin without sudo).
+    restart_cmd = "sudo systemctl restart " + " ".join(services)
+    if via_proxy:
+        cmd = [
+            "ssh", "-o", "BatchMode=yes", proxy_host,
+            f'ssh {remote_user}@{remote_host} "{restart_cmd}"',
+        ]
+    else:
+        cmd = ["ssh", f"{remote_user}@{remote_host}", restart_cmd]
+
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        print(f"  ✗ restart timed out after {timeout}s")
+        return False
+
+    if result.returncode == 0:
+        print("  ✓ tileserver services restarted")
+        return True
+    print(
+        f"  ✗ restart failed (rc={result.returncode})\n"
+        f"    stderr: {result.stderr.strip()[:500]}"
+    )
+    return False
 
 
 def _staged_namespace_source(namespace: str) -> Path | None:
@@ -699,6 +852,7 @@ def generate_tiles_from_staged(
 
     tilesets_generated: list[Path] = []
     bucket_failures: list[str] = []
+    push_failures: list[str] = []
     if skip_tippecanoe:
         print("\n--skip-tippecanoe specified; GeoJSONL written but no .mbtiles produced.")
     else:
@@ -708,6 +862,17 @@ def generate_tiles_from_staged(
             description = f"WHG {bucket}"
             if generate_tileset(geojsonl, mbtiles, bucket, description):
                 tilesets_generated.append(mbtiles)
+                # Per-bucket auto-push to the tileserver. Routes via the
+                # Pitt VM proxy because CRC compute nodes have no SSH key
+                # for the tileserver. Push failure is non-fatal here —
+                # the .mbtiles is still on /ix1 for a later catch-up
+                # push and the pipeline can continue. The eventual
+                # tileserver service restart is the user's manual step
+                # and gates on every bucket having pushed (see
+                # ``push_failures`` below).
+                if deploy:
+                    if not push_mbtiles_to_tileserver(mbtiles):
+                        push_failures.append(bucket)
             else:
                 # Empty GeoJSONL ("nothing to tile") is benign; tippecanoe
                 # exiting non-zero on a non-empty input is a real failure
@@ -785,7 +950,20 @@ def generate_tiles_from_staged(
         print(f"    {p.name}: {size_mb:.1f} MB")
 
     if deploy and tilesets_generated:
-        deploy_tilesets(tilesets_generated)
+        if push_failures:
+            print(
+                f"\n⚠ {len(push_failures)} of {len(tilesets_generated)} per-bucket "
+                f"pushes FAILED: {push_failures}\n"
+                "  Re-run with --bucket <name> for each, or "
+                "`python -m processing.generate_tiles --redeploy` to retry pushes only.\n"
+                "  Tileserver service restart is GATED on all pushes succeeding "
+                "— do NOT restart until this list is empty."
+            )
+        else:
+            print(
+                f"\n✓ All {len(tilesets_generated)} buckets pushed to the tileserver. "
+                "Tileserver service restart is the user's separate, explicit step."
+            )
 
     return tilesets_generated
 
@@ -801,14 +979,42 @@ def main():
                              'Default: every fixed bucket + every per-namespace bucket '
                              '+ every WHG dataset bucket discovered in the staged sidecar.')
     parser.add_argument('--output-dir', help='Output directory for tilesets')
-    parser.add_argument('--deploy', action='store_true',
-                        help='Deploy tilesets to TileServer GL via rsync')
+    # Deploy is ON by default — per-bucket auto-push to the tileserver as
+    # each .mbtiles completes (via the Pitt VM proxy). Use --no-deploy
+    # for testing / dry-runs that should not touch the tileserver.
+    parser.add_argument('--no-deploy', dest='deploy', action='store_false',
+                        default=True,
+                        help='Disable per-bucket push to the tileserver '
+                             '(default: push automatically)')
+    parser.add_argument('--redeploy-only', action='store_true',
+                        help='Skip tile generation entirely; just push the '
+                             'already-built .mbtiles for the selected buckets '
+                             'to the tileserver. Use as a catch-up after a '
+                             'partial deploy or push failure.')
     parser.add_argument('--run-id', help='Run ID for manifest updates')
     parser.add_argument('--manifest-path',
                         help='Run manifest path; if omitted derives from --run-id')
     parser.add_argument('--skip-tippecanoe', action='store_true',
                         help='Write only GeoJSONL files, do not invoke tippecanoe')
     args = parser.parse_args()
+
+    if args.redeploy_only:
+        # Push existing .mbtiles only; no tile gen.
+        out_dir = Path(args.output_dir) if args.output_dir else TILES_OUTPUT_DIR
+        if args.bucket:
+            paths = [out_dir / f"{b}.mbtiles" for b in args.bucket if (out_dir / f"{b}.mbtiles").exists()]
+        else:
+            paths = sorted(out_dir.glob("*.mbtiles"))
+        if not paths:
+            print(f"No .mbtiles found in {out_dir} for selected buckets.")
+            return
+        print(f"Redeploy-only: pushing {len(paths)} existing .mbtiles ...")
+        results = deploy_tilesets(paths)
+        failed = [n for n, ok in results.items() if not ok]
+        if failed:
+            print(f"\n⚠ {len(failed)} push(es) failed: {failed}")
+            sys.exit(1)
+        return
 
     manifest_path = None
     if args.manifest_path:
