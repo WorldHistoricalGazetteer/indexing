@@ -1,0 +1,1448 @@
+{
+  "version": 8,
+  "name": "WHG Context",
+  "metadata": {
+    "whg:backgroundcolour": "#c3ddec",
+    "mapbox:autocomposite": false,
+    "mapbox:type": "template",
+    "whg:tilegen": {
+      "buckets": {
+        "osm_admin": [
+          {
+            "name": "continental",
+            "minzoom": 0,
+            "maxzoom": 4,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "0",
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "country",
+            "minzoom": 0,
+            "maxzoom": 8,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "minzoom": 3,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "3",
+                "4"
+              ]
+            }
+          },
+          {
+            "name": "district",
+            "minzoom": 5,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "5",
+                "6"
+              ]
+            }
+          },
+          {
+            "name": "local",
+            "minzoom": 7,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "7",
+                "8",
+                "9",
+                "10",
+                "11"
+              ]
+            }
+          }
+        ],
+        "ohm_admin": [
+          {
+            "name": "continental",
+            "minzoom": 0,
+            "maxzoom": 4,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "0",
+                "1"
+              ]
+            }
+          },
+          {
+            "name": "country",
+            "minzoom": 0,
+            "maxzoom": 8,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "2"
+              ]
+            }
+          },
+          {
+            "name": "state",
+            "minzoom": 3,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "3",
+                "4"
+              ]
+            }
+          },
+          {
+            "name": "district",
+            "minzoom": 5,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "5",
+                "6"
+              ]
+            }
+          },
+          {
+            "name": "local",
+            "minzoom": 7,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "7",
+                "8",
+                "9",
+                "10",
+                "11"
+              ]
+            }
+          }
+        ],
+        "osm_misc": [
+          {
+            "name": "broad-regional",
+            "minzoom": 2,
+            "maxzoom": 6,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "region",
+                "geographic",
+                "environment",
+                "climatic_zone",
+                "obsolete_administrative",
+                "old_administrative"
+              ]
+            }
+          },
+          {
+            "name": "historical",
+            "minzoom": 4,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "historic",
+                "historical",
+                "historic-parish",
+                "historic:administrative",
+                "historic:county",
+                "historical:administrative",
+                "historic_administrative",
+                "historic_church_province",
+                "historic_county",
+                "historic_diocese",
+                "historic_locality",
+                "historic_lot",
+                "historic_parish",
+                "historic_parish_union",
+                "historic_political",
+                "historic_riding",
+                "historic_site",
+                "political"
+              ]
+            }
+          },
+          {
+            "name": "parish-local",
+            "minzoom": 6,
+            "maxzoom": 10,
+            "where": {
+              "property": "boundary",
+              "in": [
+                "civil",
+                "civil_parish",
+                "barony",
+                "parish",
+                "cofi_parish",
+                "rc_parish",
+                "local_authority",
+                "aboriginal_lands",
+                "indigenous_administration"
+              ]
+            }
+          }
+        ],
+        "po": [
+          {
+            "name": "all",
+            "minzoom": 2,
+            "maxzoom": 10,
+            "where": null
+          }
+        ],
+        "clio": [
+          {
+            "name": "all",
+            "minzoom": 2,
+            "maxzoom": 10,
+            "where": null
+          }
+        ],
+        "nl": [
+          {
+            "name": "all",
+            "minzoom": 2,
+            "maxzoom": 10,
+            "where": null
+          }
+        ]
+      }
+    }
+  },
+  "center": [
+    20.73,
+    51.91
+  ],
+  "zoom": 2.3,
+  "bearing": 0,
+  "pitch": 0,
+  "sources": {
+    "basemap": {
+      "type": "raster",
+      "maxzoom": 6,
+      "url": "mbtiles://{natural-earth-2-landcover}"
+    },
+    "terrarium-local": {
+      "type": "raster-dem",
+      "url": "mbtiles://{terrarium}",
+      "minzoom": 0,
+      "maxzoom": 8,
+      "tileSize": 256,
+      "encoding": "terrarium"
+    },
+    "terrarium-aws": {
+      "type": "raster-dem",
+      "tiles": [
+        "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+      ],
+      "minzoom": 9,
+      "maxzoom": 15,
+      "tileSize": 256,
+      "encoding": "terrarium"
+    },
+    "natural_earth": {
+      "type": "vector",
+      "maxzoom": 7,
+      "url": "mbtiles://{whg-ne-basic}"
+    },
+    "osm_admin": {
+      "type": "vector",
+      "url": "mbtiles://{osm_admin}",
+      "minzoom": 0,
+      "maxzoom": 10
+    },
+    "ohm_admin": {
+      "type": "vector",
+      "url": "mbtiles://{ohm_admin}",
+      "minzoom": 0,
+      "maxzoom": 10
+    },
+    "osm_misc": {
+      "type": "vector",
+      "url": "mbtiles://{osm_misc}",
+      "minzoom": 2,
+      "maxzoom": 10
+    },
+    "po": {
+      "type": "vector",
+      "url": "mbtiles://{po}",
+      "minzoom": 2,
+      "maxzoom": 10
+    },
+    "clio": {
+      "type": "vector",
+      "url": "mbtiles://{clio}",
+      "minzoom": 2,
+      "maxzoom": 10
+    },
+    "nl": {
+      "type": "vector",
+      "url": "mbtiles://{nl}",
+      "minzoom": 2,
+      "maxzoom": 10
+    }
+  },
+  "glyphs": "{fontstack}/{range}.pbf",
+  "sprite": "{styleJsonFolder}/sprite",
+  "layers": [
+    {
+      "id": "osm_admin-line-continental",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries",
+        "whg:switchlabel": "Continental"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 0,
+      "maxzoom": 4,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#7090b0",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "osm_admin-label-continental",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries Labels",
+        "whg:switchlabel": "Continental"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 0,
+      "maxzoom": 5,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "osm_admin-line-country",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries",
+        "whg:switchlabel": "Country"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 0,
+      "maxzoom": 8,
+      "filter": [
+        "==",
+        [
+          "get",
+          "boundary"
+        ],
+        "2"
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#7090b0",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "osm_admin-label-country",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries Labels",
+        "whg:switchlabel": "Country"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 2,
+      "maxzoom": 8,
+      "filter": [
+        "==",
+        [
+          "get",
+          "boundary"
+        ],
+        "2"
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "osm_admin-line-state",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries",
+        "whg:switchlabel": "State / Region"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 3,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "3",
+          "4"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#7090b0",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "osm_admin-label-state",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries Labels",
+        "whg:switchlabel": "State / Region"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 3,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "3",
+          "4"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "osm_admin-line-district",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries",
+        "whg:switchlabel": "District"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 5,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "5",
+          "6"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#7090b0",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "osm_admin-label-district",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries Labels",
+        "whg:switchlabel": "District"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 5,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "5",
+          "6"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "osm_admin-line-local",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries",
+        "whg:switchlabel": "Local"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 7,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#7090b0",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "osm_admin-label-local",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OSM Boundaries Labels",
+        "whg:switchlabel": "Local"
+      },
+      "source": "osm_admin",
+      "source-layer": "osm_admin",
+      "minzoom": 7,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "ohm_admin-line-continental",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries",
+        "whg:switchlabel": "Continental"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 0,
+      "maxzoom": 4,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07060",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "ohm_admin-label-continental",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries Labels",
+        "whg:switchlabel": "Continental"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 0,
+      "maxzoom": 5,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "0",
+          "1"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "ohm_admin-line-country",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries",
+        "whg:switchlabel": "Country"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 0,
+      "maxzoom": 8,
+      "filter": [
+        "==",
+        [
+          "get",
+          "boundary"
+        ],
+        "2"
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07060",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "ohm_admin-label-country",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries Labels",
+        "whg:switchlabel": "Country"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 2,
+      "maxzoom": 8,
+      "filter": [
+        "==",
+        [
+          "get",
+          "boundary"
+        ],
+        "2"
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "ohm_admin-line-state",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries",
+        "whg:switchlabel": "State / Region"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 3,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "3",
+          "4"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07060",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "ohm_admin-label-state",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries Labels",
+        "whg:switchlabel": "State / Region"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 3,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "3",
+          "4"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "ohm_admin-line-district",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries",
+        "whg:switchlabel": "District"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 5,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "5",
+          "6"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07060",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "ohm_admin-label-district",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries Labels",
+        "whg:switchlabel": "District"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 5,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "5",
+          "6"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "ohm_admin-line-local",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries",
+        "whg:switchlabel": "Local"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 7,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07060",
+        "line-width": {
+          "stops": [
+            [
+              2,
+              0.3
+            ],
+            [
+              10,
+              0.8
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "id": "ohm_admin-label-local",
+      "type": "symbol",
+      "metadata": {
+        "whg:switchgroup": "OHM Boundaries Labels",
+        "whg:switchlabel": "Local"
+      },
+      "source": "ohm_admin",
+      "source-layer": "ohm_admin",
+      "minzoom": 7,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "7",
+          "8",
+          "9",
+          "10",
+          "11"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none",
+        "text-field": [
+          "coalesce",
+          [
+            "get",
+            "name_local"
+          ],
+          [
+            "get",
+            "name"
+          ]
+        ],
+        "text-size": 11,
+        "symbol-placement": "point"
+      },
+      "paint": {
+        "text-color": "#444",
+        "text-halo-color": "#fff",
+        "text-halo-width": 1
+      }
+    },
+    {
+      "id": "osm_misc-fill-broad-regional",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "OSM/OHM Misc Boundaries",
+        "whg:switchlabel": "Broad Regional"
+      },
+      "source": "osm_misc",
+      "source-layer": "osm_misc",
+      "minzoom": 2,
+      "maxzoom": 6,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "region",
+          "geographic",
+          "environment",
+          "climatic_zone",
+          "obsolete_administrative",
+          "old_administrative"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#9080a0",
+        "fill-opacity": 0.18,
+        "fill-outline-color": "#9080a0"
+      }
+    },
+    {
+      "id": "osm_misc-fill-historical",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "OSM/OHM Misc Boundaries",
+        "whg:switchlabel": "Historical"
+      },
+      "source": "osm_misc",
+      "source-layer": "osm_misc",
+      "minzoom": 4,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "historic",
+          "historical",
+          "historic-parish",
+          "historic:administrative",
+          "historic:county",
+          "historical:administrative",
+          "historic_administrative",
+          "historic_church_province",
+          "historic_county",
+          "historic_diocese",
+          "historic_locality",
+          "historic_lot",
+          "historic_parish",
+          "historic_parish_union",
+          "historic_political",
+          "historic_riding",
+          "historic_site",
+          "political"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#a07a4a",
+        "fill-opacity": 0.18,
+        "fill-outline-color": "#a07a4a"
+      }
+    },
+    {
+      "id": "osm_misc-fill-parish-local",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "OSM/OHM Misc Boundaries",
+        "whg:switchlabel": "Parish Local"
+      },
+      "source": "osm_misc",
+      "source-layer": "osm_misc",
+      "minzoom": 6,
+      "maxzoom": 10,
+      "filter": [
+        "match",
+        [
+          "get",
+          "boundary"
+        ],
+        [
+          "civil",
+          "civil_parish",
+          "barony",
+          "parish",
+          "cofi_parish",
+          "rc_parish",
+          "local_authority",
+          "aboriginal_lands",
+          "indigenous_administration"
+        ],
+        true,
+        false
+      ],
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#5a8eb0",
+        "fill-opacity": 0.18,
+        "fill-outline-color": "#5a8eb0"
+      }
+    },
+    {
+      "id": "po-fill",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "PeriodO Period Extents"
+      },
+      "source": "po",
+      "source-layer": "po",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#a07ab8",
+        "fill-opacity": 0.16,
+        "fill-outline-color": "#a07ab8"
+      }
+    },
+    {
+      "id": "po-line",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "PeriodO Period Extents (outline)"
+      },
+      "source": "po",
+      "source-layer": "po",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#a07ab8",
+        "line-width": 0.6,
+        "line-opacity": 0.7
+      }
+    },
+    {
+      "id": "clio-fill",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "Clio-Infra Historical States"
+      },
+      "source": "clio",
+      "source-layer": "clio",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#b88a52",
+        "fill-opacity": 0.16,
+        "fill-outline-color": "#b88a52"
+      }
+    },
+    {
+      "id": "clio-line",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "Clio-Infra Historical States (outline)"
+      },
+      "source": "clio",
+      "source-layer": "clio",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#b88a52",
+        "line-width": 0.6,
+        "line-opacity": 0.7
+      }
+    },
+    {
+      "id": "nl-fill",
+      "type": "fill",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "Native Land Territories"
+      },
+      "source": "nl",
+      "source-layer": "nl",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#5a8470",
+        "fill-opacity": 0.16,
+        "fill-outline-color": "#5a8470"
+      }
+    },
+    {
+      "id": "nl-line",
+      "type": "line",
+      "metadata": {
+        "whg:switchgroup": "Historical / Indigenous",
+        "whg:switchlabel": "Native Land Territories (outline)"
+      },
+      "source": "nl",
+      "source-layer": "nl",
+      "minzoom": 2,
+      "maxzoom": 10,
+      "layout": {
+        "visibility": "none",
+        "line-join": "round"
+      },
+      "paint": {
+        "line-color": "#5a8470",
+        "line-width": 0.6,
+        "line-opacity": 0.7
+      }
+    }
+  ]
+}

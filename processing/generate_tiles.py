@@ -241,8 +241,24 @@ def _extract_toponyms_by_lang(toponyms: list[dict]) -> dict[str, str]:
     return by_lang
 
 
-def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
-    """Generate .mbtiles from GeoJSON Lines file using tippecanoe."""
+def generate_tileset(
+    geojsonl_path,
+    mbtiles_path,
+    layer_name,
+    description='',
+    *,
+    minzoom: int = 2,
+    maxzoom: int = 10,
+):
+    """Generate .mbtiles from GeoJSON Lines file using tippecanoe.
+
+    ``minzoom`` defaults to 2 because at z0/z1 a single tile must hold
+    the entire world's boundary geometry, which forces tippecanoe into
+    a multi-hour sparsification loop on dense corpora. Use a smaller
+    minzoom (0 or 1) ONLY for sparse subsets — the band-aware caller in
+    ``generate_tiles_from_staged`` handles this safely by partitioning
+    features per band before calling here.
+    """
     tippecanoe = shutil.which('tippecanoe')
     if not tippecanoe:
         print("  WARNING: tippecanoe not found — skipping .mbtiles generation")
@@ -253,7 +269,7 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
         return False
 
     size_mb = geojsonl_path.stat().st_size / 1e6
-    print(f"  Generating {mbtiles_path.name} from {size_mb:.1f} MB ...")
+    print(f"  Generating {mbtiles_path.name} from {size_mb:.1f} MB (z{minzoom}-{maxzoom}) ...")
 
     cmd = [
         tippecanoe,
@@ -262,15 +278,8 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
         '--layer', layer_name,
         '--name', f'WHG {layer_name}',
         '--description', description or f'WHG {layer_name} boundaries',
-        # ``--minimum-zoom 2``: skip z0 (1 tile, the entire world) and z1
-        # (4 quadrant tiles). Both forced tippecanoe to fit every admin
-        # boundary on Earth into a single ≤500 KB tile, triggering a
-        # multi-hour sparsification loop on dense corpora (ohm_admin =
-        # 68 K boundaries, OSM will be much larger). At z0/z1 admin
-        # boundaries render as a few-pixel sliver anyway — z2 (16 tiles,
-        # ~2500 km each) is the lowest useful zoom for boundary data.
-        '--minimum-zoom', '2',
-        '--maximum-zoom', '10',
+        '--minimum-zoom', str(minzoom),
+        '--maximum-zoom', str(maxzoom),
         '--simplification', '10',
         '--detect-shared-borders',
         '--coalesce-densest-as-needed',
@@ -844,6 +853,136 @@ def _stream_bucket(
     return dict(written)
 
 
+def _stream_bucket_banded(
+    bucket: str,
+    reader: GeomStoreReader,
+    bands: list,                       # list[Band] from tilegen_bands
+    *,
+    out_dir: Path,
+) -> tuple[dict[str, Path], dict[str, dict[str, int]]]:
+    """Stream a bucket's features into ONE geojsonl per band.
+
+    Returns ``(band_paths, per_band_counts)``:
+
+    * ``band_paths`` — ``{band.name: Path}`` for each band that received
+      at least one feature. Bands with zero features are omitted (no
+      empty file is written).
+    * ``per_band_counts`` — ``{band.name: {namespace: count}}`` for
+      diagnostics.
+
+    Features that match no band are dropped (logged via the "unmatched"
+    counter, not a separate file).
+    """
+    from processing.tilegen_bands import assign_band
+
+    contributors = _bucket_contributors(bucket)
+    if not contributors:
+        return {}, {}
+
+    require_boundary = bucket in _FIXED_BUCKETS
+    band_paths = {b.name: out_dir / f"{bucket}.{b.name}.geojsonl" for b in bands}
+    for p in band_paths.values():
+        p.write_bytes(b"")  # truncate
+    band_counts: dict[str, dict[str, int]] = {b.name: defaultdict(int) for b in bands}
+    unmatched = 0
+
+    handles = {name: open(p, "ab") for name, p in band_paths.items()}
+    try:
+        for namespace in contributors:
+            src = _staged_namespace_source(namespace)
+            if src is None:
+                continue
+            for doc in _iter_staged_docs(src):
+                place_id = doc.get("place_id") or ""
+                ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
+                matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
+                if not matches:
+                    continue
+                feature = _build_staged_feature(
+                    doc, ns, reader,
+                    misc=is_misc, require_boundary=require_boundary,
+                )
+                if feature is None:
+                    continue
+                band = assign_band(feature, bands)
+                if band is None:
+                    unmatched += 1
+                    continue
+                handles[band.name].write(orjson.dumps(feature))
+                handles[band.name].write(b"\n")
+                band_counts[band.name][ns] += 1
+    finally:
+        for h in handles.values():
+            h.close()
+
+    if unmatched:
+        print(f"  ⚠ {unmatched:,} features matched no band (dropped)")
+
+    # Drop empty bands from band_paths so callers don't waste tippecanoe
+    # invocations on them.
+    band_paths = {
+        name: path for name, path in band_paths.items()
+        if path.exists() and path.stat().st_size > 0
+    }
+    return band_paths, {name: dict(c) for name, c in band_counts.items()}
+
+
+def tile_join(
+    band_mbtiles: list[Path],
+    output: Path,
+    *,
+    layer_name: str | None = None,
+) -> bool:
+    """Combine per-band ``.mbtiles`` into one canonical bucket mbtiles
+    using ``tile-join`` from the tippecanoe suite.
+
+    Returns True on success. Removes the per-band intermediate files
+    on success (caller can keep them by setting an env var if needed).
+    """
+    if not band_mbtiles:
+        print("  ✗ tile_join: no bands provided")
+        return False
+    if len(band_mbtiles) == 1:
+        # Trivial case: just rename. tile-join works but is wasteful.
+        if output.exists():
+            output.unlink()
+        band_mbtiles[0].rename(output)
+        size_mb = output.stat().st_size / 1e6
+        print(f"  ✓ {output.name} (1 band, renamed): {size_mb:.1f} MB")
+        return True
+
+    tj = shutil.which("tile-join")
+    if not tj:
+        print("  ✗ tile-join binary not found on PATH")
+        return False
+
+    if output.exists():
+        output.unlink()
+    cmd = [tj, "--force", "--no-tile-compression", "-o", str(output)]
+    if layer_name:
+        cmd.extend(["-l", layer_name])
+    cmd.extend(str(p) for p in band_mbtiles)
+
+    print(f"  joining {len(band_mbtiles)} band mbtiles → {output.name} ...")
+    start = time.time()
+    result = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+    elapsed = time.time() - start
+    if result.returncode != 0:
+        print(f"  ✗ tile-join failed (rc={result.returncode})")
+        return False
+
+    size_mb = output.stat().st_size / 1e6 if output.exists() else 0
+    print(f"  ✓ {output.name}: {size_mb:.1f} MB ({elapsed:.0f}s, {len(band_mbtiles)} bands joined)")
+
+    # Cleanup intermediates
+    for p in band_mbtiles:
+        try:
+            p.unlink()
+        except OSError:
+            pass
+    return True
+
+
 def generate_tiles_from_staged(
     *,
     buckets: list[str] | None = None,
@@ -931,21 +1070,52 @@ def generate_tiles_from_staged(
             except Exception:
                 pass
 
+    # Load band rules once. Buckets with an entry get multi-band
+    # streaming + tippecanoe + tile-join; buckets without an entry use
+    # the legacy single-pass path (back-compat, e.g. the per-namespace
+    # point sources where banding adds no value).
+    from processing.tilegen_bands import load_bands as _load_bands
+    bands_per_bucket = _load_bands()
+
     bucket_counts: dict[str, int] = {}
     per_namespace_totals: dict[str, int] = defaultdict(int)
-    bucket_paths: dict[str, Path] = {}
+    bucket_band_paths: dict[str, dict[str, Path]] = {}   # bucket → {band_name: geojsonl}
+    bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
+    bucket_uses_bands: dict[str, bool] = {}
 
     started = datetime.now(timezone.utc)
     try:
         for bucket in selected:
-            geojsonl_path = out_dir / f"{bucket}.geojsonl"
-            bucket_paths[bucket] = geojsonl_path
-            print(f"\nStreaming bucket '{bucket}' from {_bucket_contributors(bucket)} ...")
-            written = _stream_bucket(bucket, reader, geojsonl_path=geojsonl_path)
-            bucket_counts[bucket] = sum(written.values())
-            for ns, n in written.items():
-                per_namespace_totals[ns] += n
-                print(f"  {ns} → {bucket}: {n:,} features")
+            bands = bands_per_bucket.get(bucket)
+            if bands and len(bands) > 1:
+                bucket_uses_bands[bucket] = True
+                print(f"\nStreaming bucket '{bucket}' (banded: {[b.name for b in bands]}) "
+                      f"from {_bucket_contributors(bucket)} ...")
+                band_paths, band_counts = _stream_bucket_banded(
+                    bucket, reader, bands, out_dir=out_dir,
+                )
+                bucket_band_paths[bucket] = band_paths
+                bucket_counts[bucket] = sum(
+                    sum(c.values()) for c in band_counts.values()
+                )
+                for band_name, ns_counts in band_counts.items():
+                    total = sum(ns_counts.values())
+                    if total:
+                        print(f"  {bucket}/{band_name}: {total:,} features "
+                              f"({', '.join(f'{ns}={n:,}' for ns, n in ns_counts.items())})")
+                for ns_counts in band_counts.values():
+                    for ns, n in ns_counts.items():
+                        per_namespace_totals[ns] += n
+            else:
+                bucket_uses_bands[bucket] = False
+                geojsonl_path = out_dir / f"{bucket}.geojsonl"
+                bucket_geojsonl[bucket] = geojsonl_path
+                print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
+                written = _stream_bucket(bucket, reader, geojsonl_path=geojsonl_path)
+                bucket_counts[bucket] = sum(written.values())
+                for ns, n in written.items():
+                    per_namespace_totals[ns] += n
+                    print(f"  {ns} → {bucket}: {n:,} features")
     finally:
         try:
             reader.close()
@@ -965,30 +1135,59 @@ def generate_tiles_from_staged(
         print("\n--skip-tippecanoe specified; GeoJSONL written but no .mbtiles produced.")
     else:
         for bucket in selected:
-            geojsonl = bucket_paths[bucket]
             mbtiles = out_dir / f"{bucket}.mbtiles"
             description = f"WHG {bucket}"
-            if generate_tileset(geojsonl, mbtiles, bucket, description):
-                tilesets_generated.append(mbtiles)
-                # Per-bucket auto-push to the tileserver. Routes via the
-                # Pitt VM proxy because CRC compute nodes have no SSH key
-                # for the tileserver. Push failure is non-fatal here —
-                # the .mbtiles is still on /ix1 for a later catch-up
-                # push and the pipeline can continue. The eventual
-                # tileserver service restart is the user's manual step
-                # and gates on every bucket having pushed (see
-                # ``push_failures`` below).
-                if deploy:
-                    if not push_mbtiles_to_tileserver(mbtiles):
+
+            if bucket_uses_bands.get(bucket):
+                # Multi-band: tippecanoe per band → tile-join into final
+                bands = bands_per_bucket[bucket]
+                band_paths = bucket_band_paths.get(bucket, {})
+                band_mbtiles: list[Path] = []
+                for band in bands:
+                    if band.name not in band_paths:
+                        continue   # empty band, no features
+                    band_geojsonl = band_paths[band.name]
+                    band_mbtile = out_dir / f"{bucket}.{band.name}.mbtiles"
+                    print(f"\n  band '{band.name}' (z{band.minzoom}-{band.maxzoom})")
+                    if generate_tileset(
+                        band_geojsonl, band_mbtile, bucket, description,
+                        minzoom=band.minzoom, maxzoom=band.maxzoom,
+                    ):
+                        band_mbtiles.append(band_mbtile)
+                    else:
+                        if band_geojsonl.exists() and band_geojsonl.stat().st_size > 0:
+                            bucket_failures.append(f"{bucket}/{band.name}")
+
+                if band_mbtiles and tile_join(band_mbtiles, mbtiles, layer_name=bucket):
+                    tilesets_generated.append(mbtiles)
+                    if deploy and not push_mbtiles_to_tileserver(mbtiles):
                         push_failures.append(bucket)
-            else:
-                # Empty GeoJSONL ("nothing to tile") is benign; tippecanoe
-                # exiting non-zero on a non-empty input is a real failure
-                # (typically OOM) and must not be recorded as completed —
-                # otherwise wall-time estimators pick up the partial run
-                # and undersize the next attempt's Slurm budget.
-                if geojsonl.exists() and geojsonl.stat().st_size > 0:
+                else:
                     bucket_failures.append(bucket)
+            else:
+                geojsonl = bucket_geojsonl[bucket]
+                if generate_tileset(geojsonl, mbtiles, bucket, description):
+                    tilesets_generated.append(mbtiles)
+                    # Per-bucket auto-push to the tileserver. Routes via the
+                    # Pitt VM proxy because CRC compute nodes have no SSH key
+                    # for the tileserver. Push failure is non-fatal here —
+                    # the .mbtiles is still on /ix1 for a later catch-up
+                    # push and the pipeline can continue. The eventual
+                    # tileserver service restart is the user's manual step
+                    # and gates on every bucket having pushed (see
+                    # ``push_failures`` below).
+                    if deploy:
+                        if not push_mbtiles_to_tileserver(mbtiles):
+                            push_failures.append(bucket)
+                else:
+                    # Empty GeoJSONL ("nothing to tile") is benign;
+                    # tippecanoe exiting non-zero on a non-empty input is
+                    # a real failure (typically OOM) and must not be
+                    # recorded as completed — otherwise wall-time
+                    # estimators pick up the partial run and undersize
+                    # the next attempt's Slurm budget.
+                    if geojsonl.exists() and geojsonl.stat().st_size > 0:
+                        bucket_failures.append(bucket)
 
     # Distinguish per-namespace status: if any bucket the namespace contributes
     # to failed tippecanoe, mark its tiles stage failed; otherwise completed.
