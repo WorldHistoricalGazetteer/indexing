@@ -181,6 +181,12 @@ def swap_alias(
             actions.append({"remove": {"index": old, "alias": alias_name}})
     except Exception:
         pass  # Alias doesn't yet exist.
+    # If a CONCRETE index exists with the same name as the alias (e.g. the
+    # empty placeholder created by staging --no-snapshot), atomically drop
+    # it in the same _aliases call so the add doesn't fail with
+    # invalid_alias_name_exception.
+    if es.indices.exists(index=alias_name) and alias_name not in previous:
+        actions.append({"remove_index": {"index": alias_name}})
     actions.append({"add": {"index": new_index, "alias": alias_name}})
     es.indices.update_aliases(body={"actions": actions})
     return previous
