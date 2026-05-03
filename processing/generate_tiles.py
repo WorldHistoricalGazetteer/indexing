@@ -467,12 +467,30 @@ def restart_tileserver(
     remote_host: str | None = None,
     services: list[str] | None = None,
     timeout: int = 120,
+    settle_seconds: int = 5,
 ) -> bool:
     """Restart the TileServer GL services so newly-deployed mbtiles are picked up.
 
     Per the user's contract (2026-05-03), this is **only ever called once
     per rebuild**, after every gazetteer's mbtiles has been pushed AND the
     push was verified. Per-bucket tile-gen tasks must NOT call this.
+
+    The forever-service init scripts on the tileserver host (whg-tileboss)
+    don't cooperate with ``systemctl restart``: the init script loses PID
+    tracking and the long-lived node child keeps running with the stale
+    config; successive restarts just spawn zombie forever monitors. So
+    this helper:
+
+    1. ``pkill -9 -f <unit>`` on the tileserver to kill ALL forever
+       monitors AND the wrapped node children for each service.
+    2. Sleeps ``settle_seconds`` so the OS releases sockets/pids.
+    3. ``systemctl restart`` (or ``start``) to spawn ONE clean instance
+       per service.
+    4. Verifies a single forever monitor + single child remain.
+
+    Returns True on success, False on any step failure (does not raise —
+    caller decides). See ``feedback_tileserver_restart.md`` memory for the
+    history of the gotcha that drove this design.
     """
     from processing.settings import (
         TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER, TILESERVER_SERVICES,
@@ -483,18 +501,46 @@ def restart_tileserver(
     remote_host = remote_host or TILESERVER_HOST
     services = services or list(TILESERVER_SERVICES)
 
-    print(f"\nRestarting tileserver services: {services} on {remote_user}@{remote_host}")
-    # The forever-service init scripts on the tileserver use sudo for
-    # systemctl restart; the proxy's whgadmin SSH key has the right
-    # sudoers entry (or the service unit allows whgadmin without sudo).
-    restart_cmd = "sudo systemctl restart " + " ".join(services)
+    print(
+        f"\nRestarting tileserver services: {services} on "
+        f"{remote_user}@{remote_host} (pkill + restart)"
+    )
+
+    # Map .service unit name → process pattern to pkill on the worker
+    # (forever-service wraps these binaries). Chosen to match both the
+    # forever monitor process and the wrapped node child.
+    pkill_patterns = {
+        "tileserver-gl-light.service": "tileserver-gl-light",
+        "tiler.service":               "/srv/tiler/tiler.js",
+    }
+
+    # Build the chained remote command: kill each service, sleep, then
+    # restart each unit, then enumerate to confirm exactly one
+    # forever-monitor + one worker per service.
+    pkill_steps = " && ".join(
+        f"sudo pkill -9 -f {pkill_patterns.get(svc, svc.replace('.service', ''))} || true"
+        for svc in services
+    )
+    restart_steps = " && ".join(
+        f"sudo systemctl restart {svc}" for svc in services
+    )
+    verify_steps = "; ".join(
+        f"echo {svc!r}: $(pgrep -cf {pkill_patterns.get(svc, svc.replace('.service', ''))})"
+        for svc in services
+    )
+    remote_cmd = (
+        f"{pkill_steps}; sleep {settle_seconds}; "
+        f"{restart_steps}; sleep {settle_seconds}; {verify_steps}"
+    )
+
     if via_proxy:
         cmd = [
             "ssh", "-o", "BatchMode=yes", proxy_host,
-            f'ssh {remote_user}@{remote_host} "{restart_cmd}"',
+            f'ssh -o BatchMode=yes {remote_user}@{remote_host} "{remote_cmd}"',
         ]
     else:
-        cmd = ["ssh", f"{remote_user}@{remote_host}", restart_cmd]
+        cmd = ["ssh", "-o", "BatchMode=yes",
+               f"{remote_user}@{remote_host}", remote_cmd]
 
     try:
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
@@ -502,13 +548,35 @@ def restart_tileserver(
         print(f"  ✗ restart timed out after {timeout}s")
         return False
 
-    if result.returncode == 0:
-        print("  ✓ tileserver services restarted")
-        return True
-    print(
-        f"  ✗ restart failed (rc={result.returncode})\n"
-        f"    stderr: {result.stderr.strip()[:500]}"
-    )
+    if result.returncode != 0:
+        print(
+            f"  ✗ restart failed (rc={result.returncode})\n"
+            f"    stderr: {result.stderr.strip()[:500]}"
+        )
+        return False
+
+    # Per-service process counts came back on stdout in the form
+    # ``'tileserver-gl-light.service': 2``. Expect exactly 2 (monitor +
+    # child) per service for a healthy outcome. Anything else is
+    # noteworthy but not strictly fatal — flag it.
+    print("  ✓ tileserver services restarted; verification:")
+    healthy = True
+    for line in result.stdout.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        print(f"    {line}")
+        # Lines look like "'tileserver-gl-light.service': 2"
+        if line.endswith(": 2"):
+            continue
+        # A 0 means nothing came back up — that's bad
+        if line.endswith(": 0"):
+            healthy = False
+    if not healthy:
+        print(
+            "    ⚠ at least one service has zero processes — restart probably failed"
+        )
+    return healthy
     return False
 
 
