@@ -326,10 +326,13 @@ def _running_on_proxy(proxy_host: str) -> bool:
     try:
         proxy_resolved = socket.gethostbyname(proxy_host)
     except (socket.gaierror, socket.error, OSError):
-        # Can't resolve the proxy host — almost certainly because we ARE
-        # the proxy (i.e. the SSH config alias only exists on remote
-        # hosts that ssh INTO us). Treat as "running on proxy".
-        return True
+        # The proxy isn't DNS-resolvable here — almost always because it's
+        # an SSH config alias (defined in ~/.ssh/config on hosts that ssh
+        # INTO the proxy, but not as a real hostname). That means we are
+        # NOT on the proxy; we just don't have the alias for SSH-internal
+        # use. Let the caller's via_proxy default (True) stand so SSH
+        # picks up the alias naturally.
+        return False
     if proxy_resolved in local_names:
         return True
     if any(name == proxy_host.lower() for name in local_names):
@@ -960,7 +963,12 @@ def tile_join(
         output.unlink()
     cmd = [tj, "--force", "--no-tile-compression", "-o", str(output)]
     if layer_name:
-        cmd.extend(["-l", layer_name])
+        # -l filters input features to the named layer (every band emits
+        # only that layer, so this is a safety check). -n sets the output
+        # mbtiles name field; without it tile-join concatenates the input
+        # names with " + " and the tileserver tilejson ends up as e.g.
+        # "WHG osm_admin + WHG osm_admin + ...".
+        cmd.extend(["-l", layer_name, "-n", f"WHG {layer_name}"])
     cmd.extend(str(p) for p in band_mbtiles)
 
     print(f"  joining {len(band_mbtiles)} band mbtiles → {output.name} ...")
