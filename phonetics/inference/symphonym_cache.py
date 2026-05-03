@@ -89,14 +89,35 @@ def compute_checkpoint_hash(checkpoint_path: str | Path,
 # ---------------------------------------------------------------------------
 
 
-def open_cache(db_path: str | Path) -> duckdb.DuckDBPyConnection:
+def open_cache(
+    db_path: str | Path,
+    *,
+    read_only: bool = False,
+) -> duckdb.DuckDBPyConnection:
     """Open (or create) the cache file and ensure the schema is present.
 
-    Caller owns the connection. ``DuckDB`` handles cross-process locking so
-    concurrent compute runs are safe; conflicting inserts are dropped by
-    the ``PRIMARY KEY`` (``INSERT OR IGNORE`` semantics via the SQL).
+    Caller owns the connection. By default opens in read/write mode (which
+    DuckDB enforces with an exclusive file lock — see DuckDB concurrency
+    docs). Pass ``read_only=True`` to allow multiple concurrent readers,
+    which is what sharded GPU compute does (each shard loads cache hits
+    but never writes; writes would conflict across shard processes).
+
+    In read-only mode the cache file MUST already exist with the schema
+    applied — DuckDB cannot create a new file or run DDL. Callers wanting
+    a fresh cache on first use should run a one-shot writer first to
+    materialise the schema.
     """
     db_path = Path(db_path)
+    if read_only:
+        if not db_path.exists():
+            raise FileNotFoundError(
+                f"Cache file does not exist: {db_path}. Read-only mode requires "
+                "the file to already exist with the schema applied. Run a writer "
+                "(open_cache(..., read_only=False)) once first to materialise it."
+            )
+        conn = duckdb.connect(str(db_path), read_only=True)
+        # DDL not allowed in read_only mode; schema is already there.
+        return conn
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = duckdb.connect(str(db_path))
     conn.execute(_SCHEMA)

@@ -177,12 +177,21 @@ def run_compute(args):
         from processing.settings import SYMPHONYM_CACHE_DB
         cache_db = Path(getattr(args, "cache_db", None) or SYMPHONYM_CACHE_DB)
         if sharded_cache_writes_disabled:
+            # DuckDB's default mode acquires an exclusive file lock — so 4
+            # parallel shards racing to open the same cache fail with
+            # "Conflicting lock is held in PID -50" (only one wins).
+            # Read-only mode supports concurrent readers across processes
+            # AND skips schema DDL (which the file already has from prior
+            # writer runs). The cache file MUST exist; the recovery path
+            # has already populated it from the migrated /ix1 cache + any
+            # previous compute runs.
             logger.info(
                 f"Symphonym cache (READ-ONLY in sharded mode): {cache_db}"
             )
+            cache_conn = open_cache(cache_db, read_only=True)
         else:
             logger.info(f"Symphonym cache: {cache_db}")
-        cache_conn = open_cache(cache_db)
+            cache_conn = open_cache(cache_db)
         before_n = cache_size_for(
             cache_conn,
             model_version=args.embedding_version,

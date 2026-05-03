@@ -162,5 +162,40 @@ class TestCacheRoundTrip(unittest.TestCase):
             )
 
 
+class TestReadOnlyCache(unittest.TestCase):
+    """Regression for the 2026-05-03 sharded GPU array failure: 4 shards
+    racing to ``open_cache`` in default RW mode all tried to acquire the
+    same exclusive DuckDB file lock; only one won, three failed with
+    ``Conflicting lock is held in PID -50``. The fix is opening the cache
+    ``read_only=True`` in sharded mode."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.db = Path(self._tmp.name) / "cache.duckdb"
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def test_readonly_on_missing_file_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            open_cache(self.db, read_only=True)
+
+    def test_concurrent_readers_dont_lock_contend(self):
+        # Materialise the file with a single writer first.
+        w = open_cache(self.db)
+        insert_many(w, [("x@en", b"\x01" * 128)],
+                    model_version=7, checkpoint_hash="aaaa")
+        w.close()
+        # Now three concurrent readers must all succeed.
+        readers = [open_cache(self.db, read_only=True) for _ in range(3)]
+        try:
+            counts = [r.execute("SELECT COUNT(*) FROM embeddings").fetchone()[0]
+                      for r in readers]
+            self.assertEqual(counts, [1, 1, 1])
+        finally:
+            for r in readers:
+                r.close()
+
+
 if __name__ == "__main__":
     unittest.main()
