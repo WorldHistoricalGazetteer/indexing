@@ -298,6 +298,36 @@ def generate_tileset(geojsonl_path, mbtiles_path, layer_name, description=''):
     return False
 
 
+def _running_on_proxy(proxy_host: str) -> bool:
+    """True when this process is already running on ``proxy_host`` —
+    in which case the SSH hop to itself would fail (the proxy host
+    isn't a self-alias) AND is wasteful. Detection is conservative:
+    we resolve both ``socket.gethostname()`` / ``getfqdn()`` and the
+    given ``proxy_host`` and compare. Falls through to ``False`` on
+    any resolution error (caller defaults to via_proxy=True)."""
+    import socket
+    try:
+        local_names = {
+            socket.gethostname().lower(),
+            socket.getfqdn().lower(),
+            socket.gethostbyname(socket.gethostname()),
+        }
+    except (socket.error, OSError):
+        return False
+    try:
+        proxy_resolved = socket.gethostbyname(proxy_host)
+    except (socket.gaierror, socket.error, OSError):
+        # Can't resolve the proxy host — almost certainly because we ARE
+        # the proxy (i.e. the SSH config alias only exists on remote
+        # hosts that ssh INTO us). Treat as "running on proxy".
+        return True
+    if proxy_resolved in local_names:
+        return True
+    if any(name == proxy_host.lower() for name in local_names):
+        return True
+    return False
+
+
 def push_mbtiles_to_tileserver(
     mbtiles_path: Path,
     *,
@@ -316,8 +346,13 @@ def push_mbtiles_to_tileserver(
     SSH key for the tileserver, but the proxy does. The proxy reads the
     source file from /ix1 (its NFS mount) and rsyncs to the tileserver.
 
-    Set ``via_proxy=False`` when calling from a host that already has the
-    tileserver SSH key — rsync runs locally in that case.
+    When invoked **on** the proxy host itself (e.g. running
+    ``--redeploy-only`` directly from pitt), ``ssh pitt …`` would fail
+    with "Could not resolve hostname pitt" — proxy hosts aren't usually
+    self-aliases. We auto-detect this case via ``_running_on_proxy`` and
+    fall back to a direct local scp/rsync, bypassing the SSH hop.
+
+    Set ``via_proxy=False`` explicitly to force direct mode.
 
     Prefers rsync (with ``--partial --partial-dir=.tmp`` so an interrupted
     transfer leaves the existing destination file intact and the partial
@@ -340,6 +375,11 @@ def push_mbtiles_to_tileserver(
     remote_dir = remote_dir or TILESERVER_TILES_DIR
     if proxy_rsync is None:
         proxy_rsync = TILESERVER_PROXY_RSYNC
+
+    # Auto-detect: if the caller asked for via_proxy but we ARE the proxy,
+    # silently switch to direct mode rather than failing on self-SSH.
+    if via_proxy and _running_on_proxy(proxy_host):
+        via_proxy = False
 
     if not mbtiles_path.exists():
         print(f"  ✗ source missing: {mbtiles_path}")
