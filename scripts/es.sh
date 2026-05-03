@@ -158,17 +158,29 @@ _update_clone() {
 do_update() {
     echo "Updating from git repository..."
 
-    if [ ! -d "$REPO_DIR" ]; then
-        echo "ERROR: Repository not found at $REPO_DIR"
+    if [ ! -d "$REPO_DIR" ] && [ ! -d "${VAST_REPO_DIR:-}" ]; then
+        echo "ERROR: No repository found at $REPO_DIR or ${VAST_REPO_DIR:-<unset>}"
         echo "Run installation first or clone manually."
         return 1
     fi
 
-    # Primary clone on /ix1.
-    _update_clone "$REPO_DIR" "/ix1" || {
-        local rc=$?
-        [ "$rc" = "1" ] && return 1
-    }
+    # ix1_failed: track failure of the /ix1 clone update so /vast can still
+    # proceed when /ix1 NFS is overloaded (the common reason for git
+    # operations on /ix1 to hang). Only an explicit user-cancelled stash
+    # (rc=1) aborts the whole update — ANY other failure on /ix1 is logged
+    # and we move on to /vast, which is the actual hot-path clone.
+    local ix1_failed=0
+    if [ -d "$REPO_DIR" ]; then
+        _update_clone "$REPO_DIR" "/ix1" || {
+            local rc=$?
+            if [ "$rc" = "1" ]; then
+                # User cancelled the stash prompt — respect that.
+                return 1
+            fi
+            echo "  (/ix1) update failed (rc=$rc) — continuing to /vast"
+            ix1_failed=1
+        }
+    fi
 
     # Operational shallow clone on /vast (Slurm jobs run from here so Python
     # imports and log writes stay off the /ix1 NFS mount). Skipped silently
@@ -177,10 +189,17 @@ do_update() {
         _update_clone "$VAST_REPO_DIR" "/vast" || {
             local rc=$?
             [ "$rc" = "1" ] && return 1
+            echo "  (/vast) update failed (rc=$rc)"
+            # If both clones failed it's a real problem — surface it.
+            [ "$ix1_failed" = "1" ] && return 1
         }
     fi
 
-    echo "✓ Update complete"
+    if [ "$ix1_failed" = "1" ]; then
+        echo "⚠ Update partial: /vast updated, /ix1 skipped (NFS likely overloaded)"
+    else
+        echo "✓ Update complete"
+    fi
 }
 
 # =============================================================================
