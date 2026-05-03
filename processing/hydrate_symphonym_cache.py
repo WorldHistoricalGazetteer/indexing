@@ -197,9 +197,15 @@ def main() -> None:
         description="Bootstrap Symphonym cache from production ES toponyms",
     )
     parser.add_argument("--es-host", default=os.getenv("PROD_ES_URL", "http://localhost:9200"))
-    parser.add_argument("--es-password-file",
-                        default="/ix1/ishi/es/config/elastic.password",
-                        help="File containing the elastic user password (default: production location)")
+    parser.add_argument(
+        "--es-password-file",
+        default=None,
+        help=(
+            "File containing the elastic user password. Default: prefer "
+            "~/elastic.pw (cached locally — avoids /ix1 NFS contention) if "
+            "present, else /ix1/ishi/es/config/elastic.password."
+        ),
+    )
     parser.add_argument("--index-pattern", default="toponyms_*",
                         help="ES index pattern to scroll (default: toponyms_*)")
     parser.add_argument("--checkpoint", type=Path, required=True,
@@ -230,13 +236,27 @@ def main() -> None:
     if not args.checkpoint.exists():
         sys.exit(f"ERROR: checkpoint not found: {args.checkpoint}")
 
-    es_password = None
-    pw_file = Path(args.es_password_file)
-    if pw_file.exists():
-        es_password = pw_file.read_text().strip()
+    # Resolve password file — explicit arg wins; else prefer the local
+    # cache (~/elastic.pw) over the /ix1 canonical, since /ix1 NFS is
+    # often the bottleneck on this host.
+    if args.es_password_file:
+        pw_candidates = [Path(args.es_password_file)]
     else:
-        logger.warning(f"ES password file not found at {pw_file} — "
-                       "trying without auth")
+        pw_candidates = [
+            Path.home() / "elastic.pw",
+            Path("/ix1/ishi/es/config/elastic.password"),
+        ]
+    es_password = None
+    for pw_file in pw_candidates:
+        if pw_file.exists():
+            es_password = pw_file.read_text().strip()
+            logger.info(f"ES password loaded from {pw_file}")
+            break
+    if es_password is None:
+        logger.warning(
+            f"No ES password file found in {[str(p) for p in pw_candidates]} "
+            "— trying without auth"
+        )
 
     summary = hydrate(
         es_host=args.es_host,
