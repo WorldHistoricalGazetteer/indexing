@@ -161,11 +161,12 @@ def run_compute(args):
 
     # ─── Version preflight + cache load ────────────────────────────────
     use_cache = not getattr(args, "no_cache", False)
-    if sharded and use_cache:
-        # Concurrent DuckDB writers on the cache would lock-contend.
-        # Force-disable cache for sharded runs; merge can populate later.
-        logger.info("Sharded mode: forcing --no-cache (avoids concurrent writer contention)")
-        use_cache = False
+    # In sharded mode we still read the cache (DuckDB supports concurrent
+    # readers and this is the whole point of pre-hydrating from production
+    # ES) but skip cache writes — multiple shard processes appending to
+    # the same DuckDB file would lock-contend. Misses just don't enrich
+    # the cache; a separate post-merge ingest can populate them.
+    sharded_cache_writes_disabled = sharded and use_cache
     cache_conn = None
     cache_hits: dict[str, bytes] = {}
     checkpoint_hash = compute_checkpoint_hash(args.checkpoint)
@@ -175,7 +176,12 @@ def run_compute(args):
     if use_cache:
         from processing.settings import SYMPHONYM_CACHE_DB
         cache_db = Path(getattr(args, "cache_db", None) or SYMPHONYM_CACHE_DB)
-        logger.info(f"Symphonym cache: {cache_db}")
+        if sharded_cache_writes_disabled:
+            logger.info(
+                f"Symphonym cache (READ-ONLY in sharded mode): {cache_db}"
+            )
+        else:
+            logger.info(f"Symphonym cache: {cache_db}")
         cache_conn = open_cache(cache_db)
         before_n = cache_size_for(
             cache_conn,
@@ -305,8 +311,11 @@ def run_compute(args):
                 processed += len(miss_batch)
                 cache_miss_count += len(miss_batch)
                 # Append the freshly-computed embeddings to the persistent
-                # cache so the next compute run hits them.
-                if use_cache and cache_conn is not None:
+                # cache so the next compute run hits them. Skipped in
+                # sharded mode — concurrent DuckDB writers from sibling
+                # shards would lock-contend; a separate post-merge job
+                # can ingest the merged Parquet into the cache instead.
+                if use_cache and cache_conn is not None and not sharded_cache_writes_disabled:
                     # ``miss_quantised`` is an int8 numpy array. Direct
                     # ``bytes(arr.tolist())`` rejects negative values
                     # (Python's ``bytes`` requires uint8 in [0,255]) — use
