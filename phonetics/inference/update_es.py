@@ -124,7 +124,33 @@ def run_compute(args):
         logger.error(f"DuckDB database not found: {args.input_file}")
         sys.exit(1)
 
+    # ─── Multi-GPU sharding ────────────────────────────────────────────
+    # When ``--num-shards N`` (with N>1) is set, this process owns the
+    # subset of toponyms whose ``hash(toponym_id) %% N == shard_id``. Each
+    # shard writes its own Parquet (``<output>.shard_<id>.parquet``) and
+    # they're concatenated post-array. The shared cache is bypassed for
+    # sharded runs to avoid concurrent-writer DuckDB lock contention; a
+    # one-shot post-array job can populate the cache from the merged
+    # Parquet if needed.
+    shard_id = getattr(args, "shard_id", 0)
+    num_shards = getattr(args, "num_shards", 1)
+    if num_shards < 1:
+        logger.error(f"--num-shards must be ≥1, got {num_shards}")
+        sys.exit(1)
+    if not (0 <= shard_id < num_shards):
+        logger.error(f"--shard-id {shard_id} out of range for --num-shards {num_shards}")
+        sys.exit(1)
+    sharded = num_shards > 1
+    if sharded:
+        logger.info(f"Sharded mode: shard {shard_id} of {num_shards}")
+
     final_output = Path(args.output_file)
+    if sharded:
+        # Suffix the output so concurrent shards don't clobber each other.
+        final_output = final_output.with_suffix(
+            f".shard_{shard_id}{final_output.suffix}"
+        )
+        logger.info(f"Sharded output file: {final_output}")
 
     # Check if output already exists (checkpoint)
     if final_output.exists():
@@ -135,6 +161,11 @@ def run_compute(args):
 
     # ─── Version preflight + cache load ────────────────────────────────
     use_cache = not getattr(args, "no_cache", False)
+    if sharded and use_cache:
+        # Concurrent DuckDB writers on the cache would lock-contend.
+        # Force-disable cache for sharded runs; merge can populate later.
+        logger.info("Sharded mode: forcing --no-cache (avoids concurrent writer contention)")
+        use_cache = False
     cache_conn = None
     cache_hits: dict[str, bytes] = {}
     checkpoint_hash = compute_checkpoint_hash(args.checkpoint)
@@ -174,9 +205,25 @@ def run_compute(args):
     logger.info(f"Connecting to DuckDB at {duckdb_path}...")
     conn = duckdb.connect(str(duckdb_path), read_only=True)
 
-    # Get total count (all toponyms, not just training subset)
-    total_rows = conn.execute("SELECT COUNT(*) FROM toponyms WHERE name IS NOT NULL AND TRIM(name) != ''").fetchone()[0]
-    logger.info(f"Total toponyms to process: {total_rows:,}")
+    # Build shared WHERE clause; sharding adds a hash predicate so that
+    # disjoint subsets of toponyms are owned by each shard worker.
+    where_clauses = ["name IS NOT NULL", "TRIM(name) != ''"]
+    if sharded:
+        # DuckDB ``hash(x)`` returns a uint64; modulo over num_shards gives
+        # a uniform distribution across shards.
+        where_clauses.append(f"(hash(toponym_id) % {num_shards}) = {shard_id}")
+    where_sql = " AND ".join(where_clauses)
+
+    total_rows = conn.execute(
+        f"SELECT COUNT(*) FROM toponyms WHERE {where_sql}"
+    ).fetchone()[0]
+    if sharded:
+        logger.info(
+            f"Toponyms in shard {shard_id}/{num_shards}: {total_rows:,} "
+            f"(approx 1/{num_shards} of corpus)"
+        )
+    else:
+        logger.info(f"Total toponyms to process: {total_rows:,}")
 
     # Use scratch for intermediate writes if in Slurm job
     slurm_job_id = os.environ.get('SLURM_JOB_ID')
@@ -204,14 +251,15 @@ def run_compute(args):
     cache_miss_count = 0
     start_time = time.time()
 
-    # Stream from DuckDB in batches using fetchmany instead of fetchall
+    # Stream from DuckDB in batches using fetchmany instead of fetchall.
+    # ``where_sql`` already includes the shard filter (when sharded).
     batch_size = args.batch_size
-    cursor = conn.execute('''
-        SELECT toponym_id, name, lang, script
-        FROM toponyms
-        WHERE name IS NOT NULL AND TRIM(name) != ''
-        ORDER BY toponym_id
-    ''')
+    cursor = conn.execute(
+        f'''SELECT toponym_id, name, lang, script
+            FROM toponyms
+            WHERE {where_sql}
+            ORDER BY toponym_id'''
+    )
 
     try:
         while True:
@@ -603,6 +651,16 @@ def main():
                                 '(default: settings.SYMPHONYM_CACHE_DB)')
     p_compute.add_argument('--no-cache', action='store_true',
                            help='Bypass the Symphonym cache (always recompute)')
+    p_compute.add_argument('--shard-id', type=int, default=0,
+                           help='This shard\'s 0-based index when running '
+                                'a sharded multi-GPU array (default: 0)')
+    p_compute.add_argument('--num-shards', type=int, default=1,
+                           help='Total shards in a sharded multi-GPU array '
+                                '(default: 1 = no sharding). When >1, this '
+                                'task processes only toponyms whose '
+                                'hash(toponym_id) %% num_shards == shard_id, '
+                                'and the output filename is suffixed with '
+                                '.shard_<id>.parquet.')
     p_compute.set_defaults(func=run_compute)
 
     # --- INDEX (creates full index from DuckDB + embeddings) ---
