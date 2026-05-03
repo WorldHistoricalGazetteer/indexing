@@ -168,9 +168,22 @@ PITT_HARDLINK_REMOTE_HOST = os.getenv("PITT_HARDLINK_REMOTE_HOST", "")
 # cache file is shared across runs; ``phonetics/inference/update_es.py
 # compute`` populates it on the first run and reads from it on subsequent
 # runs to skip GPU work for unchanged toponyms.
+#
+# Lives on /vast (IX3_BASE) to avoid the /ix1 NFS contention that makes
+# every-batch appends a throughput bottleneck. The May-2026 rebuild's
+# 28h-on-/ix1 estimate was dominated by /ix1 latency; relocating to NVMe
+# fast storage takes batch-flush time from seconds to sub-millisecond.
 SYMPHONYM_CACHE_DB = os.getenv(
     "SYMPHONYM_CACHE_DB",
-    f"{IX1_BASE}/models/phonetic/symphonym_cache.duckdb",
+    f"{IX3_BASE}/models/phonetic/symphonym_cache.duckdb",
+)
+
+# Embeddings parquet output (Batch 9 → Batch 11 handoff). Same /vast
+# rationale as SYMPHONYM_CACHE_DB: written sequentially during compute,
+# read once by the index step, then can be archived to /ix1 if desired.
+SYMPHONYM_EMBEDDINGS_DIR = os.getenv(
+    "SYMPHONYM_EMBEDDINGS_DIR",
+    f"{IX3_BASE}/models/phonetic/data",
 )
 
 
