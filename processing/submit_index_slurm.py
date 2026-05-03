@@ -186,7 +186,7 @@ def _build_toponyms_sbatch(
         "",
         "python -u -m phonetics.inference.update_es index \\",
         f"    --es-host \"{es_host}\" \\",
-        f"    --index toponyms_{run_id} \\",
+        f"    --index toponyms_{run_id.lower()} \\",
         f"    --embedding-version {embedding_version} \\",
         f"    --duckdb-file {duckdb_file} \\",
         f"    --embeddings-file {embeddings_file} \\",

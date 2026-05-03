@@ -112,9 +112,11 @@ def index_name_for_run(run_id: str) -> str:
     """Return the ES index name for a run.
 
     Uses the canonical ``places_<run_id>`` shape so the gateway's
-    ``places_*`` pattern picks it up.
+    ``places_*`` pattern picks it up. ES rejects uppercase in index
+    names, so the run_id is lowercased here (run_ids commonly carry an
+    ISO timestamp like ``...T130000Z``).
     """
-    return f"places_{run_id}"
+    return f"places_{run_id}".lower()
 
 
 # ---------------------------------------------------------------------------
