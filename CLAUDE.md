@@ -236,6 +236,7 @@ elevation    integer
 | Module | Role |
 |--------|------|
 | `app.py` | FastAPI application, lifespan (pre-warms Symphonym), health endpoint, phonetic search + embed endpoints, catch-all HTTP/WebSocket proxy |
+| `reingest.py` | `POST /api/registry/reingest` + `GET /api/registry/reingest/{job_id}` — admin-triggered Slurm submission of `scripts/reingest.sbatch <namespace>` via SSH from the Pitt VM to a CRC login node. No bearer auth (Pitt firewall whitelists DO IP). Concurrency guard via `squeue -n reingest-<ns>` — returns 409 with the existing job_id so Django can adopt. |
 | `config.py` | Loads `.env`; exports `ES_BACKEND` (localhost:9201), `KIBANA_BACKEND` (localhost:5601), index name patterns (`places_*`, `toponyms_*`, `clusters`), Symphonym model dir |
 | `search.py` | `POST /api/search` and `GET /api/suggest` — the main search router |
 | `reconcile.py` | `POST /api/reconcile` — reconciliation search (same 3-step architecture as search) |
