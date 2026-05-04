@@ -53,6 +53,7 @@ from processing.stage_writers import (
 from processing.staging_contract import is_relations_only
 from processing.staging_orchestrator import (
     load_run_manifest,
+    stage_status_with_fallback,
     update_namespace_stage_status,
 )
 
@@ -286,16 +287,18 @@ def _eligible_namespaces(manifest: dict, only: list[str] | None = None) -> list[
     snapshot is the extract — ccode_merge is legitimately skipped there.
     """
     out: list[str] = []
-    ns_data = manifest.get("namespaces", {})
     for ns in manifest.get("selected_namespaces", []):
         if is_relations_only(ns):
             continue
         if only and ns not in only:
             continue
-        stages = ns_data.get(ns, {}).get("stages", {})
-        if stages.get("ccode_merge") not in ("completed", "skipped"):
+        # Use the event-log fallback so a stale manifest (e.g. a fresh
+        # run_id whose own manifest never observed an earlier completion)
+        # doesn't drop a namespace whose final/places.parquet is on disk.
+        ccode = stage_status_with_fallback(manifest, ns, "ccode_merge")
+        if ccode not in ("completed", "skipped"):
             continue
-        if stages.get("index") == "completed":
+        if stage_status_with_fallback(manifest, ns, "index") == "completed":
             continue
         out.append(ns)
     return out
