@@ -431,10 +431,15 @@ class GeomStoreReader:
 
 if __name__ == "__main__":
     import argparse
+    import json as _json
+    import sys as _sys
+    from pathlib import Path as _Path
+
     from processing.settings import GEOM_STORE_STAGING_DIR, GEOM_STORE_DIR
 
     parser = argparse.ArgumentParser(
-        description="Consolidate per-authority geometry staging files into spatially-sharded VAST store."
+        description="Consolidate per-authority geometry staging files into "
+                    "spatially-sharded VAST store.",
     )
     parser.add_argument("--staging-dir", default=str(GEOM_STORE_STAGING_DIR),
                         help="Directory with staging *.bin + *.index.json files")
@@ -444,13 +449,66 @@ if __name__ == "__main__":
                         help="Target shard file size in MB (default 256)")
     parser.add_argument("--keep-staging", action="store_true",
                         help="Do not delete staging files after consolidation")
+    # Explicit merge mode — required for any output directory that already
+    # holds a non-empty index. Without this, the rebuild-from-scratch default
+    # silently orphans every existing entry and writes a fresh shard 0001
+    # containing only the staged additions. The author of this CLI's prior
+    # silent default lost a 10.7M-entry index.json on 2026-05-04 — that
+    # accident is the reason this flag is now required.
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument("--merge", dest="merge", action="store_true",
+                      help="Merge new staging entries into the existing index. "
+                           "Existing shards are preserved; new shards are "
+                           "appended; re-staged keys overwrite their index "
+                           "entry to point at the new shard. The normal "
+                           "incremental path.")
+    mode.add_argument("--rebuild-from-scratch", dest="merge",
+                      action="store_false",
+                      help="Treat the output as empty; rewrite shards and "
+                           "index.json from staging only. ALL existing entries "
+                           "in the output index are abandoned (orphaning their "
+                           "shard data). Refuses to run if the existing "
+                           "index is non-empty unless --confirm-wipe is given.")
+    parser.add_argument("--confirm-wipe", action="store_true",
+                        help="Required acknowledgement when "
+                             "--rebuild-from-scratch is chosen against a "
+                             "non-empty existing index. Prints the size of "
+                             "the index that will be discarded.")
     args = parser.parse_args()
+
+    if not args.merge:
+        existing_index_path = _Path(args.output_dir) / "index.json"
+        existing_count = 0
+        if existing_index_path.exists():
+            try:
+                with existing_index_path.open() as _f:
+                    existing_count = len(_json.load(_f))
+            except Exception:
+                existing_count = -1  # unreadable but present
+        if existing_count != 0 and not args.confirm_wipe:
+            print(
+                f"REFUSING TO RUN: --rebuild-from-scratch would discard the "
+                f"existing index at {existing_index_path} "
+                f"({existing_count if existing_count >= 0 else 'unknown'} "
+                f"entries). Re-invoke with --confirm-wipe to proceed, or use "
+                f"--merge to add incrementally.",
+                file=_sys.stderr,
+            )
+            _sys.exit(2)
+        if existing_count != 0:
+            print(
+                f"WARNING: --rebuild-from-scratch --confirm-wipe — discarding "
+                f"existing index of {existing_count} entries. Existing shard "
+                f"files will become orphans on disk.",
+                file=_sys.stderr,
+            )
 
     consolidate_geom_store(
         staging_dir=args.staging_dir,
         output_dir=args.output_dir,
         shard_size_bytes=args.shard_size_mb * 1024 * 1024,
         delete_staging=not args.keep_staging,
+        merge_with_existing=args.merge,
     )
 
 
