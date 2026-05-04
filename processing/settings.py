@@ -140,11 +140,29 @@ WHG_INVENTORY_ENDPOINT = os.getenv(
     f"{WHG_API_BASE_URL.rstrip('/')}/api/registry/inventory",
 )
 
+# Dev-server inventory endpoint. The dev WHG runs its own Postgres, so
+# every successful inventory push to prod is also mirrored here when the
+# dev server is reachable. A failed reachability preflight or a failed
+# push to dev does NOT abort the script — prod is the source of truth.
+WHG_DEV_API_BASE_URL = os.getenv(
+    "WHG_DEV_API_BASE_URL", "https://dev.whgazetteer.org",
+)
+WHG_DEV_INVENTORY_ENDPOINT = os.getenv(
+    "WHG_DEV_INVENTORY_ENDPOINT",
+    f"{WHG_DEV_API_BASE_URL.rstrip('/')}/api/registry/inventory",
+)
+
 # Token for authenticated WHG API calls. Read at request time; set via the
 # environment or a sidecar file (WHG_API_TOKEN_FILE) — never commit literals.
 WHG_API_TOKEN_FILE = os.getenv(
     "WHG_API_TOKEN_FILE",
     f"{IX1_BASE}/secrets/whg-api.token",
+)
+# Optional separate token for the dev server — falls back to WHG_API_TOKEN_FILE
+# when this file doesn't exist (most deployments share the secret).
+WHG_DEV_API_TOKEN_FILE = os.getenv(
+    "WHG_DEV_API_TOKEN_FILE",
+    f"{IX1_BASE}/secrets/whg-dev-api.token",
 )
 
 # HTTP retry/backoff defaults (used by push_gazetteer_inventory + future

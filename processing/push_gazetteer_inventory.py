@@ -63,6 +63,8 @@ from processing.settings import (
     STAGED_BASE_DIR,
     STAGED_RUNS_DIR,
     WHG_API_TOKEN_FILE,
+    WHG_DEV_API_TOKEN_FILE,
+    WHG_DEV_INVENTORY_ENDPOINT,
     WHG_HTTP_INITIAL_BACKOFF,
     WHG_HTTP_MAX_RETRIES,
     WHG_HTTP_TIMEOUT,
@@ -75,6 +77,38 @@ from processing.staging_contract import (
     H3_COVERAGE_GLOBAL_SENTINEL,
     is_relations_only,
 )
+
+def is_endpoint_reachable(url: str, *, timeout: float = 5.0) -> bool:
+    """Quick preflight: is the host answering HTTP at all?
+
+    Returns True for ANY HTTP response (200/4xx all count — the server is
+    up and reachable). Returns False on connection-refused, DNS failure,
+    timeout, or 5xx. Used by the dev-mirror push so a transiently-down
+    dev server doesn't fail the whole pipeline.
+    """
+    req = urlrequest.Request(url, method="HEAD")
+    try:
+        with urlrequest.urlopen(req, timeout=timeout) as resp:
+            return resp.getcode() < 500
+    except urlerror.HTTPError as exc:
+        # Server answered with an HTTP error — it's UP, just unhappy.
+        # 5xx counts as down; 4xx (auth/method-not-allowed) counts as up.
+        return exc.code < 500
+    except Exception:
+        # Connection refused, DNS error, timeout — server is down/unreachable.
+        return False
+
+
+def _read_token(path: str | Path | None) -> str | None:
+    """Best-effort token file read; returns ``None`` on missing/empty."""
+    if not path:
+        return None
+    p = Path(path).expanduser()
+    if not p.exists():
+        return None
+    txt = p.read_text(encoding="utf-8").strip()
+    return txt or None
+
 
 # Default Django endpoint — settings-derived but env-overridable.
 _DEFAULT_ENDPOINT = WHG_INVENTORY_ENDPOINT
@@ -331,6 +365,16 @@ def push_inventory(
     if auth_token:
         headers["Authorization"] = f"Bearer {auth_token}"
 
+    # An API POST should never legitimately redirect — a 3xx (e.g. Django
+    # bouncing an unauthenticated request to /admin/login) silently
+    # masquerades as success when urllib follows the redirect to a 200
+    # login page. Build an opener with no redirect handler so 3xx
+    # surfaces as HTTPError and the caller sees the real failure.
+    class _NoRedirect(urlrequest.HTTPRedirectHandler):
+        def redirect_request(self, req, fp, code, msg, headers, newurl):
+            return None  # urllib treats this as "give up redirecting"
+    opener = urlrequest.build_opener(_NoRedirect())
+
     last_err: str | None = None
     backoff = initial_backoff
     for attempt in range(1, max_retries + 1):
@@ -338,8 +382,18 @@ def push_inventory(
             req = urlrequest.Request(
                 endpoint, data=body, headers=headers, method=method,
             )
-            with urlrequest.urlopen(req, timeout=timeout) as resp:
+            with opener.open(req, timeout=timeout) as resp:
                 status = resp.getcode()
+                if status >= 300:
+                    # urllib didn't raise on 3xx because we suppressed the
+                    # redirect; do it ourselves so the caller's normal
+                    # error path runs.
+                    raise urlerror.HTTPError(
+                        endpoint, status,
+                        f"Unexpected redirect ({status}) — endpoint may "
+                        f"be requiring session auth instead of bearer token",
+                        resp.headers, None,
+                    )
                 resp_body = resp.read().decode("utf-8", errors="replace")
                 return status, resp_body
         except urlerror.HTTPError as exc:
@@ -383,6 +437,15 @@ def main() -> None:
                         help="Refuse to push unless the Batch 12 ship-to-Pitt "
                              "marker exists for this run_id")
     parser.add_argument("--timeout", type=int, default=WHG_HTTP_TIMEOUT)
+    parser.add_argument("--dev-endpoint", default=WHG_DEV_INVENTORY_ENDPOINT,
+                        help="Dev-server registry endpoint URL "
+                             "(mirrors the prod push; pass empty string to disable)")
+    parser.add_argument("--dev-auth-token-file",
+                        default=WHG_DEV_API_TOKEN_FILE,
+                        help="File containing the dev-server bearer token "
+                             "(falls back to --auth-token-file if missing)")
+    parser.add_argument("--no-dev-push", action="store_true",
+                        help="Skip the dev-server mirror push entirely")
     args = parser.parse_args()
 
     try:
@@ -404,11 +467,7 @@ def main() -> None:
                          indent=2, sort_keys=True))
         return
 
-    auth_token: str | None = None
-    if args.auth_token_file:
-        auth_token = Path(args.auth_token_file).expanduser().read_text(
-            encoding="utf-8"
-        ).strip()
+    auth_token = _read_token(args.auth_token_file)
 
     status, body = push_inventory(
         payload,
@@ -417,9 +476,33 @@ def main() -> None:
         auth_token=auth_token,
         timeout=args.timeout,
     )
-    print(f"OK: HTTP {status}")
+    print(f"prod {args.endpoint} → HTTP {status}")
     if body:
         print(body[:1000])
+
+    # Dev-server mirror — best-effort. Reachability preflight first; on
+    # any failure (down, push error) we warn but do not fail the pipeline,
+    # because prod is the source of truth.
+    if args.no_dev_push or not args.dev_endpoint:
+        return
+    if not is_endpoint_reachable(args.dev_endpoint):
+        print(f"dev {args.dev_endpoint} → unreachable, skipping mirror")
+        return
+    dev_token = _read_token(args.dev_auth_token_file) or auth_token
+    try:
+        dev_status, dev_body = push_inventory(
+            payload,
+            endpoint=args.dev_endpoint,
+            method=args.method,
+            auth_token=dev_token,
+            timeout=args.timeout,
+        )
+        print(f"dev {args.dev_endpoint} → HTTP {dev_status}")
+        if dev_body:
+            print(dev_body[:1000])
+    except RuntimeError as exc:
+        print(f"dev {args.dev_endpoint} → FAILED (continuing): {exc}",
+              file=sys.stderr)
 
 
 if __name__ == "__main__":

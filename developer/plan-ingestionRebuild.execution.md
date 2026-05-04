@@ -152,9 +152,11 @@ authority selection moves to the API and the markdown file is retired.
   any artefact contracts.
 - **Indexing** (Batch 11) follows Batch 9 (it loads the final toponyms + places).
 - **Gazetteer inventory push** (Batch 11, *final step*): gated on the successful completion
-  of indexing **and** the SQLite hard-link harvest. The inventory push is the user-facing
-  signal to Django that the run is complete; it must not fire while the gateway-side
-  hard-link database is still being shipped to Pitt.
+  of **production cutover** (the new dated indices live behind the `places` / `toponyms`
+  aliases on the Pitt prod ES) **and** the SQLite hard-link harvest's Ship-to-Pitt step.
+  The inventory push is the user-facing signal to Django that the run is complete; it must
+  not fire while the staging-side indices are merely built (not yet promoted to prod) or
+  while the gateway-side hard-link database is still being shipped to Pitt.
 
 Toponym deduplication and Symphonym generation are **not gazetteer-local** in this design;
 they run once over the union of all selected gazetteers after the preprocessing barrier.
@@ -233,12 +235,19 @@ controller layer.
    separate Slurm allocations. Serialise them via dependency only if filesystem-bandwidth
    contention is observed.
 8. After Job A completes, start or verify the **staging ES instance**.
-9. Submit the **Indexing** job (depends on Job A). After Job B (hard-link harvest)
-   completes, submit the **Ship-to-Pitt** atomic swap.
-10. **Gazetteer inventory push** is the **final step** of the run and is gated on **all of**
-    successful indexing (Job A → indexing) and successful Ship-to-Pitt (Job B → swap).
-    The push is the signal to Django that the ingestion/indexing run is complete, so it
-    must not fire until both the ES indices and the Pitt-side SQLite reflect the new run.
+9. Submit the **Indexing** job (depends on Job A) — loads `places_<run_id>` and
+   `toponyms_<run_id>` on **staging**. After Job B (hard-link harvest) completes, submit
+   the **Ship-to-Pitt** atomic swap.
+10. **Production cutover** — restore both dated indices from the staging snapshot onto
+    the Pitt **production** ES (the staging snapshot repo is mounted read-only on prod;
+    no file copy needed) and atomically swap the prod `places` / `toponyms` aliases. Old
+    dated indices are retained for one rebuild cycle as a rollback hatch.
+11. **Gazetteer inventory push** is the **final step** of the run and is gated on **all of**
+    successful **production cutover** (aliases now point at the new dated indices) and
+    successful Ship-to-Pitt (Job B → swap). The push is the signal to Django that the
+    ingestion/indexing run is complete, so it must not fire until **production** ES and
+    the Pitt-side SQLite both reflect the new run. (Staging-only indexing does not satisfy
+    this gate; the gateway serves from prod, not staging.)
 
 ### Resume / retry model
 
@@ -1300,10 +1309,13 @@ Tasks:
 
 > **Final-step gating.** The inventory push is the user-facing signal to Django that the
 > ingestion/indexing run is complete. It must be gated on **all of**: successful
-> indexing (Job A descendants — toponyms, places), and successful Ship-to-Pitt of the
-> SQLite hard-link database (Job B → Batch 12 atomic swap). Firing it earlier would let
-> the Django UI advertise a complete run while the gateway-side hard-link store is still
-> mid-flight.
+> **production cutover** (the new dated `places_<run_id>` / `toponyms_<run_id>` indices
+> are restored on the Pitt prod ES and the prod `places` / `toponyms` aliases now point at
+> them), and successful Ship-to-Pitt of the SQLite hard-link database (Job B → Batch 12
+> atomic swap). Firing it earlier would let the Django UI advertise a complete run while
+> either (a) the gateway is still serving the old prod indices because cutover hasn't
+> happened, or (b) the gateway-side hard-link store is still mid-flight. Staging-side
+> indexing alone does not satisfy this gate — the gateway serves from prod, not staging.
 
 - [x] `push_gazetteer_inventory.py` reads the Batch 8 inventory file
   (`staged/runs/{run_id}.inventory.json`) and merges in per-namespace H3
@@ -2595,10 +2607,28 @@ shards write their per-shard `osm_boundary_shard_*.bin` files):
    `boundary_merge.osm` completes.
 3. **Toponyms rebuild** (5-step PanPhon pipeline).
 4. **Symphonym v7 embeddings** (GPU).
-5. **ES index loaders** (`processing/index_from_stage.py`).
-6. **Hard-link harvest** (Batch 12).
-7. **Inventory push** (Batch 11).
-8. **Clustering finalise**.
+5. **ES index loaders — staging side** (`processing/index_from_stage.py`):
+   builds `places_<run_id>` and `toponyms_<run_id>` on the Slurm staging ES.
+6. **Forcemerge + final snapshot** of the staging indices (`max_num_segments=1`,
+   then snapshot to `staging_repo` — file-system repo on `/ix1/ishi/es/snapshots/staging`,
+   mounted read-only on the Pitt prod ES).
+7. **Hard-link harvest** (Batch 12) — produces the SQLite + ships to Pitt with
+   atomic swap; writes `staged/runs/{run_id}.hardlink_ship.json` marker.
+8. **Production cutover** — restore `places_<run_id>` and `toponyms_<run_id>` from
+   the staging snapshot onto the Pitt prod ES (the staging repo is mounted read-only
+   there, so no file copy is needed), atomically swap the prod `places` / `toponyms`
+   aliases to the new indices, and retain the previous dated indices for one rebuild
+   cycle as a rollback hatch.
+9. **Inventory push** (Batch 11) — gated on cutover (8) **and** ship-to-Pitt marker (7).
+10. ~~**Clustering finalise**~~ — **retired** by the Batch 12 architecture change.
+    The previous post-index ES clustering job (Atlas batch jobs producing
+    `clusters_<run_id>` + `es -cluster-finalize` alias swap) has been
+    superseded by the SQLite hard-link harvest (Batch 12 above) plus
+    query-time clustering driven by the gateway/browser (Master Plan Part III).
+    The `clusters` index on prod ES is no longer rebuilt by the ingestion
+    pipeline; the existing `clusters_20260325` index is now legacy and may be
+    retained or removed at operator discretion (it is harmless either way
+    because the gateway no longer reads from it).
 
 ---
 
