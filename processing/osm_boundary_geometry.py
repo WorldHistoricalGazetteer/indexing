@@ -32,6 +32,15 @@ from elasticsearch import Elasticsearch, helpers
 from shapely.geometry import mapping, shape
 from shapely.validation import make_valid
 
+# antimeridian: splits polygons crossing +/-180 longitude into multipolygon
+# parts so tippecanoe and ES both render them correctly. Without this,
+# Pacific-rim countries (Russia, USA-Aleutians, Fiji, Tuvalu, Kiribati,
+# NZ Chathams) end up as globe-spanning polygons in the geom_store and
+# break tile generation low-zoom coverage. Hard import — this pipeline
+# requires it; the previous "drop antimeridian-risky hull" workaround was
+# a band-aid for ES indexing only and didn't fix the underlying geometry.
+import antimeridian
+
 from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.settings import ES_HOST, DATA_DIR
 
@@ -202,6 +211,51 @@ def is_antimeridian_risky(geom):
     return (min_lon < -170 and max_lon > 170) or (max_lon - min_lon > 300)
 
 
+def split_at_antimeridian(geom):
+    """Split a shapely Polygon/MultiPolygon at +/-180 longitude when it
+    spans the antimeridian, so downstream consumers (geom_store, tippecanoe,
+    ES geo_shape) see properly bounded parts.
+
+    No-op for geometries that don't cross the antimeridian. Returns the
+    original geometry on any error (defensive — callers must still validate).
+    """
+    if geom is None or geom.is_empty:
+        return geom
+    # Cheap pre-check via the existing heuristic on the GeoJSON mapping —
+    # avoids paying the antimeridian library cost for the 99.9% of polygons
+    # that don't cross.
+    try:
+        if not is_antimeridian_risky(mapping(geom)):
+            return geom
+    except Exception:
+        return geom
+    try:
+        # Dispatch on geom type — fix_polygon / fix_multi_polygon return
+        # shapely; fix_shape may return a __geo_interface__ dict depending
+        # on input. Going via the typed entry points keeps the return
+        # consistent.
+        if geom.geom_type == "Polygon":
+            fixed = antimeridian.fix_polygon(geom)
+        elif geom.geom_type == "MultiPolygon":
+            fixed = antimeridian.fix_multi_polygon(geom)
+        else:
+            return geom
+        if fixed is None:
+            return geom
+        # Some library entry points return a __geo_interface__-style dict;
+        # normalise back to shapely so callers (mapping(), make_valid(), …)
+        # work uniformly.
+        if isinstance(fixed, dict):
+            fixed = shape(fixed)
+        if fixed.is_empty:
+            return geom
+        return fixed
+    except Exception:
+        # Library can choke on degenerate inputs; fall back to original
+        # so the existing drop-hull-on-risky path catches it downstream.
+        return geom
+
+
 def build_h3_fields_for_geom_entry(geom_entry, raw_geom):
     """Build top-level H3 fields for a finalized boundary geometry entry."""
     if not isinstance(geom_entry, dict):
@@ -244,6 +298,7 @@ class BoundaryPassProcessor:
         self.hull_fixed = 0
         self.hull_dropped_invalid = 0
         self.hull_dropped_antimeridian = 0
+        self.antimeridian_split = 0
         self.start_time = time.time()
 
     def process_area(self, area):
@@ -282,6 +337,16 @@ class BoundaryPassProcessor:
             if geom.is_empty:
                 self.skipped_empty += 1
                 return
+
+            # Split at the antimeridian BEFORE writing to geom_store / building
+            # the hull. Without this, Pacific-rim countries (Russia, USA, Fiji,
+            # Tuvalu, Kiribati, ...) end up as multipolygons whose vertices span
+            # -180..+180 and tippecanoe paints them across the entire globe at
+            # low zoom (causing huge tile-size pressure → dropped tiles).
+            split_geom = split_at_antimeridian(geom)
+            if split_geom is not geom:
+                self.antimeridian_split += 1
+                geom = split_geom
 
             relation_id = area.orig_id()
             place_id = f"{self.namespace}:r{relation_id}"
@@ -644,6 +709,8 @@ def run_boundary_pass(pbf_file, namespace, places_index='places'):
         print(f"    Fixed:              {processor.hull_fixed:,}")
         print(f"    Dropped invalid:    {processor.hull_dropped_invalid:,}")
         print(f"    Dropped anti-mer:   {processor.hull_dropped_antimeridian:,}")
+        print(f"\n  Antimeridian splitting (raw geom split before geom_store write):")
+        print(f"    Polygons split:     {processor.antimeridian_split:,}")
         print(f"\n  Other:")
         print(f"    Skipped (empty):    {processor.skipped_empty:,}")
         if missing_doc_samples:

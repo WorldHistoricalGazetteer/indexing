@@ -51,6 +51,7 @@ from shapely.geometry import shape, mapping
 from shapely.ops import unary_union
 from shapely.validation import make_valid
 
+from processing.osm_boundary_geometry import split_at_antimeridian
 from processing.helpers import (
     enrich_geometry,
     compute_h3_fields,
@@ -518,7 +519,21 @@ def generate_geoscheme(dry_run=False):
             if not geoms:
                 print(f"  ✗ {name}: no country geometries found")
                 continue
-            union = make_valid(unary_union(geoms))
+            # M49 regions whose member countries include antimeridian-crossers
+            # (Kiribati, Russia, USA-Aleutians, Fiji, NZ Chathams, ...) produce
+            # unions that wrap from -180 to +180 — and tippecanoe then renders
+            # them across the entire globe at low zoom. We must split EACH
+            # member at +/-180 *before* unioning; otherwise unary_union folds
+            # the wrap into a single CW-wound globe-spanning polygon that the
+            # antimeridian library can no longer disentangle. Splitting after
+            # union (defensive second pass) catches any residual wrap.
+            # make_valid AFTER split — splitting can produce zero-area sliver
+            # rings along the dateline that crash unary_union with a
+            # TopologyException side-location-conflict. make_valid heals them.
+            split_members = [
+                make_valid(split_at_antimeridian(g)) for g in geoms
+            ]
+            union = split_at_antimeridian(make_valid(unary_union(split_members)))
             doc = build_geoscheme_place_doc(
                 name, '1', union, info.get('wikidata'), found_codes)
             if doc:
@@ -536,7 +551,21 @@ def generate_geoscheme(dry_run=False):
             if not geoms:
                 print(f"  ✗ {name}: no geometries")
                 continue
-            union = make_valid(unary_union(geoms))
+            # M49 regions whose member countries include antimeridian-crossers
+            # (Kiribati, Russia, USA-Aleutians, Fiji, NZ Chathams, ...) produce
+            # unions that wrap from -180 to +180 — and tippecanoe then renders
+            # them across the entire globe at low zoom. We must split EACH
+            # member at +/-180 *before* unioning; otherwise unary_union folds
+            # the wrap into a single CW-wound globe-spanning polygon that the
+            # antimeridian library can no longer disentangle. Splitting after
+            # union (defensive second pass) catches any residual wrap.
+            # make_valid AFTER split — splitting can produce zero-area sliver
+            # rings along the dateline that crash unary_union with a
+            # TopologyException side-location-conflict. make_valid heals them.
+            split_members = [
+                make_valid(split_at_antimeridian(g)) for g in geoms
+            ]
+            union = split_at_antimeridian(make_valid(unary_union(split_members)))
             doc = build_geoscheme_place_doc(
                 name, '1', union, info.get('wikidata'), found_codes)
             if doc:
@@ -555,7 +584,21 @@ def generate_geoscheme(dry_run=False):
             if not geoms:
                 print(f"  ✗ {name}: no geometries")
                 continue
-            union = make_valid(unary_union(geoms))
+            # M49 regions whose member countries include antimeridian-crossers
+            # (Kiribati, Russia, USA-Aleutians, Fiji, NZ Chathams, ...) produce
+            # unions that wrap from -180 to +180 — and tippecanoe then renders
+            # them across the entire globe at low zoom. We must split EACH
+            # member at +/-180 *before* unioning; otherwise unary_union folds
+            # the wrap into a single CW-wound globe-spanning polygon that the
+            # antimeridian library can no longer disentangle. Splitting after
+            # union (defensive second pass) catches any residual wrap.
+            # make_valid AFTER split — splitting can produce zero-area sliver
+            # rings along the dateline that crash unary_union with a
+            # TopologyException side-location-conflict. make_valid heals them.
+            split_members = [
+                make_valid(split_at_antimeridian(g)) for g in geoms
+            ]
+            union = split_at_antimeridian(make_valid(unary_union(split_members)))
             doc = build_geoscheme_place_doc(
                 name, '0', union, info.get('wikidata'), found_codes)
             if doc:
@@ -566,6 +609,7 @@ def generate_geoscheme(dry_run=False):
         print("\nFetching Antarctica ...")
         antarctica_geom = fetch_antarctica()
         if antarctica_geom:
+            antarctica_geom = split_at_antimeridian(antarctica_geom)
             doc = build_geoscheme_place_doc(
                 'Antarctica', '0', antarctica_geom,
                 ANTARCTICA['wikidata'], ANTARCTICA['ccodes'])
