@@ -14,8 +14,17 @@ canonical bucket mbtiles. The pattern lets us:
   zooms.
 
 The source of truth is the ``metadata.whg:tilegen.buckets`` block in
-``tileserver/whg-context.style.json`` — adding a new band means editing
-that JSON, no code change required.
+the canonical ``whg-context`` style.json, which lives in the **tileboss**
+repo at ``tileserver/styles/whg-context/style.json``. Adding a new band
+means editing that JSON in the tileboss repo (or regenerating it via
+``scripts/build_whg_context_style.py`` here, which writes to the sibling
+tileboss clone), no code change required.
+
+How ``load_bands`` resolves the file:
+  1. Caller-supplied ``style_path`` argument
+  2. ``WHG_STYLE_PATH`` env var (file path or http(s) URL)
+  3. Sibling tileboss clone at ``<indexing>/../tileboss/tileserver/styles/whg-context/style.json``
+  4. HTTP fetch from the tileboss ``production`` branch on GitHub
 
 Where-clause format (one supported shape, kept simple by design):
 ``{"property": <str>, "in": [<str>, ...]}`` matches features whose
@@ -26,16 +35,31 @@ feature (used by single-band buckets).
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.request import urlopen
 
 
-# Default location of the canonical style. Override by passing an
-# explicit path to ``load_bands``.
-DEFAULT_STYLE_PATH = (
-    Path(__file__).parent.parent / "tileserver" / "whg-context.style.json"
+# Sibling tileboss clone path (used as second-tier fallback). Operators
+# can clone tileboss next to indexing for offline / local-dev use.
+_SIBLING_TILEBOSS_STYLE = (
+    Path(__file__).parent.parent.parent
+    / "tileboss" / "tileserver" / "styles" / "whg-context" / "style.json"
 )
+
+# Last-resort fetch — the production-branch raw URL on GitHub. CDN-backed
+# and byte-identical to what the live tileserver serves.
+_GITHUB_RAW_STYLE_URL = (
+    "https://raw.githubusercontent.com/WorldHistoricalGazetteer/tileboss"
+    "/production/tileserver/styles/whg-context/style.json"
+)
+
+# Back-compat alias retained for callers that pass DEFAULT_STYLE_PATH
+# explicitly. New code should call ``load_bands()`` with no args and let
+# the resolver pick up the canonical location.
+DEFAULT_STYLE_PATH = _SIBLING_TILEBOSS_STYLE
 
 
 @dataclass(frozen=True)
@@ -62,6 +86,55 @@ class Band:
         return feature_value in set(values)
 
 
+def _read_one(src: str | Path) -> dict | None:
+    """Read+parse one source (path or URL). Returns the dict or ``None``
+    on any error — caller decides whether to fall through."""
+    s = str(src)
+    try:
+        if s.startswith(("http://", "https://")):
+            with urlopen(s, timeout=10) as resp:
+                return json.loads(resp.read())
+        p = Path(s)
+        if not p.exists():
+            return None
+        with p.open() as f:
+            return json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def _load_style_json(style_path: Path | str | None) -> dict | None:
+    """Resolve the canonical whg-context style.json.
+
+    When the caller supplies ``style_path`` it is **authoritative** — no
+    fall-through. This preserves the contract that "if you point me at
+    a specific file, I use it and only it" (broken file ⇒ empty bands).
+
+    When ``style_path`` is None, walk the auto-detect chain:
+      1. ``WHG_STYLE_PATH`` env var (path or http(s) URL)
+      2. Sibling tileboss clone at ``../tileboss/...``
+      3. HTTP fetch from the tileboss production branch on GitHub
+
+    Returns the parsed JSON dict on success, ``None`` on any failure
+    (caller treats as "no bands configured", legacy single-pass mode).
+    """
+    if style_path is not None:
+        return _read_one(style_path)
+
+    candidates: list[str | Path] = []
+    env = os.environ.get("WHG_STYLE_PATH")
+    if env:
+        candidates.append(env)
+    candidates.append(_SIBLING_TILEBOSS_STYLE)
+    candidates.append(_GITHUB_RAW_STYLE_URL)
+
+    for cand in candidates:
+        result = _read_one(cand)
+        if result is not None:
+            return result
+    return None
+
+
 def load_bands(
     style_path: Path | str | None = None,
 ) -> dict[str, list[Band]]:
@@ -72,14 +145,12 @@ def load_bands(
 
     Returns an empty dict on missing file / missing block. Callers must
     handle that as "no bands configured" (legacy single-pass mode).
+
+    Resolution order for the style file is documented in the module
+    docstring; pass ``style_path`` to override.
     """
-    path = Path(style_path) if style_path else DEFAULT_STYLE_PATH
-    if not path.exists():
-        return {}
-    try:
-        with path.open() as f:
-            style = json.load(f)
-    except (OSError, json.JSONDecodeError):
+    style = _load_style_json(style_path)
+    if style is None:
         return {}
     raw = (
         style.get("metadata", {})

@@ -507,6 +507,13 @@ sbatch processing/es_staging.sbatch
 - The `places` index uses `refresh_interval: -1` during bulk ingestion for
   performance; refresh manually after ingestion.
 - The `hf/` directory contains the Symphonym model for HuggingFace deployment.
+- **Tile-gen banding** reads `tileserver/styles/whg-context/style.json` from the
+  sibling **tileboss** repo (`WorldHistoricalGazetteer/tileboss`, branch
+  `production`) — clone it next to indexing (`<indexing>/../tileboss`) for
+  local dev or set `WHG_STYLE_PATH`; on CRC `processing/tilegen_bands.load_bands`
+  falls back to fetching the file from GitHub raw. The generator
+  `scripts/build_whg_context_style.py` writes directly into the sibling
+  tileboss clone — commit & push from there.
 
 ### Toponym pipeline (two-stage embedding)
 

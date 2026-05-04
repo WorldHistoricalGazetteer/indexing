@@ -1,13 +1,17 @@
-"""Build tileserver/whg-context.style.json with banding metadata.
+"""Build tileboss/tileserver/styles/whg-context/style.json with banding metadata.
 
 This script is the source-of-truth generator for the WHG context style
-served at /styles/whg-context on the tileserver. It writes:
+served at /styles/whg-context on the tileserver. The OUTPUT FILE lives in
+the *tileboss* repo (a sibling clone next to this indexing repo) — that
+is the canonical location served by tileserver-gl-light and the file
+``processing/tilegen_bands.py`` reads when planning band partitions.
+
+The script writes:
 
   - Vector sources for all tilegen buckets
   - Per-tileset layers (line, fill, label) with whg:switchgroup/switchlabel
     metadata so the UI layer switcher exposes each toggle
-  - z=0-1 visibility for continental + country admin lines (the new
-    addition for global views)
+  - z=0-1 visibility for continental + country admin lines (for global views)
   - A top-level metadata.whg:tilegen.buckets block declaring the BANDS
     that processing/generate_tiles.py uses to partition features for
     multi-band tippecanoe runs (then tile-join'd into the canonical
@@ -17,13 +21,24 @@ Layer visibility (minzoom/maxzoom) and band visibility (in the metadata
 block) are kept in sync — the band's max/min zoom must cover every
 layer that filters on its features, otherwise some style layers would
 have no underlying tile data.
+
+After running this script, review ``git status`` in the tileboss clone,
+commit, and ``git push origin production``. The live tileserver picks up
+changes via ``git pull`` on /srv.
 """
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
-OUT = Path(__file__).parent.parent / "tileserver" / "whg-context.style.json"
+# Output: the canonical style.json in the sibling tileboss clone. Override
+# with ``WHG_STYLE_OUT`` for testing or alternative clone locations.
+OUT = Path(os.environ.get(
+    "WHG_STYLE_OUT",
+    str(Path(__file__).parent.parent.parent / "tileboss"
+        / "tileserver" / "styles" / "whg-context" / "style.json"),
+))
 
 # ─── tilegen banding metadata (read by generate_tiles.py) ─────────────
 # Bands are partitions of the features destined for one bucket; each
