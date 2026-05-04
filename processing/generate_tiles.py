@@ -10,9 +10,13 @@ dependency.
 
 The output layout has three families of bucket:
 
-* **Fixed buckets** — boundary-gated, kept verbatim from the original design:
-  ``osm_admin.mbtiles``, ``ohm_admin.mbtiles`` (admin levels only) and
-  ``osm_misc.mbtiles`` (mixed OSM/OHM misc-boundary features).
+* **Fixed buckets** — boundary-gated:
+  ``osm.mbtiles``, ``ohm.mbtiles`` (administrative levels — bucket name
+  equals the authority namespace per the contract in
+  ``whg3/developer/plan-tileset-namespace-rename.contract.md``) and
+  ``osm_misc.mbtiles`` (mixed OSM/OHM misc-boundary features — outlier
+  that stays under its category-cluster name because it spans both
+  namespaces and isn't a namespace itself).
 * **Per-namespace buckets** — one ``<ns>.mbtiles`` per authority namespace
   containing every doc with renderable geometry (point or polygon). Used by
   the redesigned WHG Atlas to render each gazetteer as its own layer.
@@ -30,7 +34,7 @@ Multilingual labels come from ``toponyms[]`` (``toponym_id`` in
 Usage::
 
     python -m processing.generate_tiles
-    python -m processing.generate_tiles --bucket osm_admin --bucket ohm_admin
+    python -m processing.generate_tiles --bucket osm --bucket ohm
     python -m processing.generate_tiles --bucket gn --bucket wd
     python -m processing.generate_tiles --bucket whg-1234
     python -m processing.generate_tiles --run-id <RUN_ID>
@@ -115,10 +119,17 @@ ADMIN_LEVEL_MINZOOM = {
 # Fixed buckets — boundary-gated; require ``boundary`` field on every doc and
 # pull full polygons from the geom store. The mixed ``osm_misc`` bucket is
 # owned by one task that streams *both* OSM and OHM misc-boundary records.
+#
+# Bucket name = authority namespace for ``osm`` and ``ohm`` per the contract
+# at ``whg3/developer/plan-tileset-namespace-rename.contract.md`` (the Atlas
+# UI's ``tileSourceFor()`` collapses to identity once this holds for every
+# non-outlier authority). ``osm_misc`` keeps its category-cluster name
+# because it's not a namespace — it spans both osm and ohm and is purely a
+# tileset/UI label for misc boundary tags.
 _FIXED_BUCKETS: dict[str, tuple[str, ...]] = {
-    "osm_admin": ("osm",),
-    "ohm_admin": ("ohm",),
-    "osm_misc":  ("osm", "ohm"),
+    "osm":      ("osm",),
+    "ohm":      ("ohm",),
+    "osm_misc": ("osm", "ohm"),
 }
 
 # Per-namespace buckets — one ``<ns>.mbtiles`` per authority namespace, with
@@ -765,19 +776,23 @@ def _doc_belongs_to_bucket(
 ) -> tuple[bool, bool]:
     """Return (matches, is_misc).
 
-    For fixed buckets (``osm_admin`` / ``ohm_admin`` / ``osm_misc``) the doc
-    must carry a ``boundary`` value of the right category. For per-namespace
-    buckets the doc's namespace must match the bucket name and it must carry
-    some renderable geometry. For per-WHG-dataset buckets the namespace must
-    be ``whg`` and the ``place_id`` must start with ``whg:<sub_id>:``.
+    For fixed buckets (``osm`` / ``ohm`` / ``osm_misc``) the doc must carry
+    a ``boundary`` value of the right category. For per-namespace buckets
+    the doc's namespace must match the bucket name and it must carry some
+    renderable geometry. For per-WHG-dataset buckets the namespace must be
+    ``whg`` and the ``place_id`` must start with ``whg:<sub_id>:``.
 
     ``is_misc`` toggles the alternate feature-id encoding used by ``osm_misc``.
     """
-    if bucket in ("osm_admin", "ohm_admin"):
+    # Admin-boundary fixed buckets — note ``osm`` and ``ohm`` here are the
+    # FIXED-BUCKET keys (admin only), not the per-namespace catch-all path
+    # that follows. The check is unambiguous because ``namespace == bucket``
+    # AND ``boundary`` must be admin-level.
+    if bucket in ("osm", "ohm"):
         boundary = doc.get("boundary")
         if not boundary:
             return False, False
-        if namespace not in ("osm", "ohm"):
+        if namespace != bucket:
             return False, False
         return _is_admin_level(boundary), False
     if bucket == "osm_misc":
@@ -967,7 +982,7 @@ def tile_join(
         # only that layer, so this is a safety check). -n sets the output
         # mbtiles name field; without it tile-join concatenates the input
         # names with " + " and the tileserver tilejson ends up as e.g.
-        # "WHG osm_admin + WHG osm_admin + ...".
+        # "WHG osm + WHG osm + ...".
         cmd.extend(["-l", layer_name, "-n", f"WHG {layer_name}"])
     cmd.extend(str(p) for p in band_mbtiles)
 
@@ -1006,8 +1021,8 @@ def generate_tiles_from_staged(
     concurrent Slurm tasks (one task per bucket) never race on the same
     output file:
 
-    * Fixed buckets (``osm_admin``, ``ohm_admin``, ``osm_misc``) — boundary-
-      gated, polygon-only, fed from the geom store.
+    * Fixed buckets (``osm``, ``ohm``, ``osm_misc``) — boundary-gated,
+      polygon-only, fed from the geom store.
     * Per-namespace buckets — one ``<ns>.mbtiles`` per authority namespace,
       every doc with renderable geometry (point or polygon).
     * Per-WHG-dataset buckets — ``whg-<dataset_sub_id>.mbtiles``, one per

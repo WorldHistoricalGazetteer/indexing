@@ -99,18 +99,21 @@ SINGLE_BAND_2_10 = [{"name": "all", "minzoom": 2, "maxzoom": 10,
                       "where": None}]   # None = match all features
 
 TILEGEN_BUCKETS = {
-    "osm_admin": ADMIN_BANDS,
-    "ohm_admin": ADMIN_BANDS,
-    "osm_misc":  OSM_MISC_BANDS,
-    "po":        SINGLE_BAND_2_10,
-    "clio":      SINGLE_BAND_2_10,
-    "nl":        SINGLE_BAND_2_10,
+    # Per the rename contract (whg3/developer/plan-tileset-namespace-rename.contract.md)
+    # the admin bucket name == authority namespace. ``osm_misc`` is the
+    # documented outlier (category cluster spanning both osm and ohm).
+    "osm":      ADMIN_BANDS,
+    "ohm":      ADMIN_BANDS,
+    "osm_misc": OSM_MISC_BANDS,
+    "po":       SINGLE_BAND_2_10,
+    "clio":     SINGLE_BAND_2_10,
+    "nl":       SINGLE_BAND_2_10,
 }
 
 
 # ─── style helper builders ────────────────────────────────────────────
 def admin_line_layer(*, src, level_id, label, level_filter, color, layer_minzoom, layer_maxzoom):
-    src_group = {"osm_admin": "OSM Boundaries", "ohm_admin": "OHM Boundaries"}[src]
+    src_group = {"osm": "OSM Boundaries", "ohm": "OHM Boundaries"}[src]
     return {
         "id": f"{src}-line-{level_id}",
         "type": "line",
@@ -127,7 +130,7 @@ def admin_line_layer(*, src, level_id, label, level_filter, color, layer_minzoom
 
 
 def label_layer(*, src, level_id, label, level_filter, lbl_minzoom, lbl_maxzoom):
-    src_group = {"osm_admin": "OSM Boundaries", "ohm_admin": "OHM Boundaries"}[src]
+    src_group = {"osm": "OSM Boundaries", "ohm": "OHM Boundaries"}[src]
     return {
         "id": f"{src}-label-{level_id}",
         "type": "symbol",
@@ -158,7 +161,7 @@ def make_layers():
     # layers will be preserved from the live style.json on push (we
     # merge into existing 'layers' array rather than overwrite).
 
-    admin_palette = {"osm_admin": "#7090b0", "ohm_admin": "#a07060"}
+    admin_palette = {"osm": "#7090b0", "ohm": "#a07060"}
     admin_levels = [
         # (level_id, label, filter,                                                   layer_minzoom, layer_maxzoom, lbl_min, lbl_max)
         ("continental", "Continental", ["match", ["get", "boundary"], ["0", "1"], True, False],   0, 4, 0, 5),
@@ -167,7 +170,7 @@ def make_layers():
         ("district",    "District",    ["match", ["get", "boundary"], ["5", "6"], True, False],     5, 10, 5, 10),
         ("local",       "Local",       ["match", ["get", "boundary"], ["7", "8", "9", "10", "11"], True, False],  7, 10, 7, 10),
     ]
-    for src in ("osm_admin", "ohm_admin"):
+    for src in ("osm", "ohm"):
         color = admin_palette[src]
         for lev_id, label, lev_filter, lyr_min, lyr_max, lbl_min, lbl_max in admin_levels:
             layers.append(admin_line_layer(
@@ -279,8 +282,8 @@ def main():
                 "type": "vector", "maxzoom": 7,
                 "url": "mbtiles://{whg-ne-basic}",
             },
-            "osm_admin": {"type": "vector", "url": "mbtiles://{osm_admin}", "minzoom": 0, "maxzoom": 10},
-            "ohm_admin": {"type": "vector", "url": "mbtiles://{ohm_admin}", "minzoom": 0, "maxzoom": 10},
+            "osm":       {"type": "vector", "url": "mbtiles://{osm}",       "minzoom": 0, "maxzoom": 10},
+            "ohm":       {"type": "vector", "url": "mbtiles://{ohm}",       "minzoom": 0, "maxzoom": 10},
             "osm_misc":  {"type": "vector", "url": "mbtiles://{osm_misc}",  "minzoom": 2, "maxzoom": 10},
             "po":        {"type": "vector", "url": "mbtiles://{po}",        "minzoom": 2, "maxzoom": 10},
             "clio":      {"type": "vector", "url": "mbtiles://{clio}",      "minzoom": 2, "maxzoom": 10},
@@ -291,19 +294,53 @@ def main():
         "layers": make_layers(),
     }
 
+    # Merge into the live style.json rather than overwrite — the live file
+    # carries hand-patched basemap layers (background, ice, water, river,
+    # ocean, lakes, the basemap raster, natural_earth, terrarium-*) that
+    # this generator has never produced. Overwriting them once cost an
+    # afternoon of re-patching; keep the surgery surgical.
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    with OUT.open("w") as f:
-        json.dump(style, f, indent=2)
+    if OUT.exists():
+        with OUT.open() as f:
+            live = json.load(f)
+        # Owned: metadata.whg:tilegen.buckets, the boundary sources, and
+        # boundary-bucket-bound layers. Everything else is preserved.
+        owned_buckets = set(TILEGEN_BUCKETS)
+        live_md = live.setdefault("metadata", {})
+        live_md.setdefault("whg:tilegen", {})["buckets"] = TILEGEN_BUCKETS
+        # Replace owned source entries; keep all others untouched.
+        live_sources = live.setdefault("sources", {})
+        for src_id, src_def in style["sources"].items():
+            if src_id in owned_buckets:
+                live_sources[src_id] = src_def
+        # Replace owned layers — anything whose ``source`` is in the
+        # bucket-owned set. Other layers (basemap, terrain, natural_earth)
+        # are preserved as-is. Generated layers append at the end so they
+        # paint on top of the basemap stack.
+        live_layers = live.setdefault("layers", [])
+        live["layers"] = (
+            [l for l in live_layers if l.get("source") not in owned_buckets]
+            + style["layers"]
+        )
+        with OUT.open("w") as f:
+            json.dump(live, f, indent=2)
+        merged = live
+    else:
+        # No live file yet — write the generator-only template. Operator
+        # must follow up with a basemap-layer patch (see comment above).
+        with OUT.open("w") as f:
+            json.dump(style, f, indent=2)
+        merged = style
 
     # Sanity-check JSON round-trip.
     with OUT.open() as f:
         json.load(f)
 
     print(f"wrote {OUT}")
-    print(f"  sources: {sorted(style['sources'])}")
-    print(f"  layers:  {len(style['layers'])}")
+    print(f"  sources: {sorted(merged['sources'])}")
+    print(f"  layers:  {len(merged['layers'])}")
     print(f"  buckets in metadata.whg:tilegen.buckets: "
-          f"{sorted(style['metadata']['whg:tilegen']['buckets'])}")
+          f"{sorted(merged['metadata']['whg:tilegen']['buckets'])}")
 
 
 if __name__ == "__main__":

@@ -624,7 +624,8 @@ do_generate_tiles() {
     # Usage: es -generate-tiles [--bucket BUCKET]... [--run-id RUN_ID] [--deploy]
     # Submits a Slurm array job (one task per tile bucket) reading from
     # staged snapshots + the geom store; no Elasticsearch dependency.
-    # Buckets: osm_admin, ohm_admin, osm_misc, po, clio, nl.
+    # Fixed buckets: osm, ohm, osm_misc, po, clio, nl.
+    # Plus per-namespace and per-WHG-dataset buckets resolved at submit time.
 
     local RUN_ID=""
     local BUCKETS_ARGS=""

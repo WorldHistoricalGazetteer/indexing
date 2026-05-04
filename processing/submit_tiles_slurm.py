@@ -9,7 +9,7 @@ The submission is **bucket-driven**: each Slurm array task owns exactly one
 tile bucket and streams its full list of contributing namespaces from staged
 snapshots. Three families of bucket are produced:
 
-* **Fixed buckets** — ``osm_admin``, ``ohm_admin``, ``osm_misc``: boundary-
+* **Fixed buckets** — ``osm``, ``ohm``, ``osm_misc``: boundary-
   gated, polygon-only. Require ``boundary_merge`` complete on every
   contributing OSM/OHM namespace.
 * **Per-namespace buckets** — one bucket per authority namespace
@@ -74,11 +74,11 @@ from processing.staging_orchestrator import load_run_manifest  # noqa: E402
 # input + tile-pyramid working set.
 #
 # Fixed-bucket budgets reflect observed peaks: clio (68 MB → 1.7 GB mbtiles,
-# peak ~3 GB); po (6.6 MB → 1.1 GB, peak ~2 GB); ohm_admin (6 GB → OOM at
-# 16 GB, settles around 96 GB). OSM admin/misc dwarf ohm_admin again.
+# peak ~3 GB); po (6.6 MB → 1.1 GB, peak ~2 GB); ohm (6 GB → OOM at
+# 16 GB, settles around 96 GB). OSM admin/misc dwarf ohm admin again.
 _FIXED_RESOURCES: dict[str, dict[str, int]] = {
-    "osm_admin": {"mem_gb": 192, "wall_s": 24 * 3_600},
-    "ohm_admin": {"mem_gb": 96,  "wall_s": 24 * 3_600},
+    "osm":      {"mem_gb": 192, "wall_s": 24 * 3_600},
+    "ohm":      {"mem_gb": 96,  "wall_s": 24 * 3_600},
     "osm_misc":  {"mem_gb": 192, "wall_s": 24 * 3_600},
 }
 
@@ -300,10 +300,10 @@ def _build_sbatch_script(
         "",
         "set -eo pipefail",
         # Tippecanoe holds one fd per concurrent tile-write thread plus
-        # bookkeeping; the default 1024 ulimit blew up ohm_admin at
+        # bookkeeping; the default 1024 ulimit blew up ohm at
         # 6 GB/68 K-feature scale ("Too many open files"). 65536 is the
         # hard cap on most Linux distros and gives ~10× more headroom
-        # than tippecanoe needs even on osm_admin.
+        # than tippecanoe needs even on osm.
         "ulimit -n 65536",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
