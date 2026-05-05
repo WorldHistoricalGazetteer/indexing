@@ -597,53 +597,82 @@ def restart_tileserver(
         "tileserver-gl-light.service": "tileserver-gl-light",
         "tiler.service":               "/srv/tiler/tiler.js",
     }
-    verify_steps = "; ".join(
+
+    # CRITICAL: ``restart_services.sh`` runs ``sudo pkill -f
+    # tileserver-gl-light`` (and similar for tiler). If our SSH session's
+    # argv contains those literal strings — e.g. via an appended
+    # ``echo … pgrep -cf tileserver-gl-light`` — ``pkill -f`` kills our
+    # own remote shell mid-flight and SSH returns rc=255 with empty
+    # output. So the restart and the verification MUST run in separate
+    # SSH sessions: session 1's argv only mentions the script, session 2
+    # only mentions the verify pattern, and neither carries the
+    # cross-pattern that pkill is hunting.
+    restart_cmd = "cd /srv && bash restart_services.sh"
+    verify_cmd = "; ".join(
         f"echo {svc!r}: $(pgrep -cf {pkill_patterns.get(svc, svc.replace('.service', ''))})"
         for svc in services
     )
-    # whg-tileboss owns the script. Run it from /srv (its CWD) and then
-    # emit one ``'<svc>': N`` line per service for the verification loop
-    # below.
-    remote_cmd = f"cd /srv && bash restart_services.sh && sleep 2 && {verify_steps}"
 
-    if TILESERVER_SSH_KEY:
-        cmd = [
-            "ssh", "-i", TILESERVER_SSH_KEY,
-            "-o", "BatchMode=yes",
-            "-o", "StrictHostKeyChecking=accept-new",
-            "-o", "ServerAliveInterval=30",
-            f"{remote_user}@{remote_host}", remote_cmd,
-        ]
-    elif via_proxy:
-        # Two-hop: local → proxy → tileserver. The inner ssh inherits the
-        # proxy host's ambient key (the historical operator path).
-        cmd = [
-            "ssh", "-o", "BatchMode=yes", proxy_host,
-            f'ssh -o BatchMode=yes {remote_user}@{remote_host} "{remote_cmd}"',
-        ]
-    else:
-        cmd = ["ssh", "-o", "BatchMode=yes",
-               f"{remote_user}@{remote_host}", remote_cmd]
+    def _build_cmd(remote: str) -> list[str]:
+        if TILESERVER_SSH_KEY:
+            return [
+                "ssh", "-i", TILESERVER_SSH_KEY,
+                "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=accept-new",
+                "-o", "ServerAliveInterval=30",
+                f"{remote_user}@{remote_host}", remote,
+            ]
+        if via_proxy:
+            return [
+                "ssh", "-o", "BatchMode=yes", proxy_host,
+                f'ssh -o BatchMode=yes {remote_user}@{remote_host} "{remote}"',
+            ]
+        return ["ssh", "-o", "BatchMode=yes",
+                f"{remote_user}@{remote_host}", remote]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(
+            _build_cmd(restart_cmd),
+            capture_output=True, text=True, timeout=timeout,
+        )
     except subprocess.TimeoutExpired:
         print(f"  ✗ restart timed out after {timeout}s")
         return False
 
     if result.returncode != 0:
         print(
-            f"  ✗ restart failed (rc={result.returncode})\n"
+            f"  ✗ restart_services.sh failed (rc={result.returncode})\n"
             f"    stderr: {result.stderr.strip()[:500]}"
         )
+        return False
+
+    print("  ✓ /srv/restart_services.sh returned 0")
+
+    # Give forever-service a moment to (re)spawn the wrapped node
+    # children before we count processes.
+    time.sleep(3)
+
+    try:
+        verify = subprocess.run(
+            _build_cmd(verify_cmd),
+            capture_output=True, text=True, timeout=30,
+        )
+    except subprocess.TimeoutExpired:
+        print("  ⚠ verification SSH timed out — restart probably succeeded "
+              "but the process counts could not be confirmed")
+        return False
+
+    if verify.returncode != 0:
+        print(f"  ⚠ verification SSH rc={verify.returncode}; "
+              f"stderr: {verify.stderr.strip()[:200]}")
         return False
 
     # Per-service process counts came back on stdout in the form
     # ``'tileserver-gl-light.service': 2``. Anything > 0 means the
     # service is back up; 0 is a hard failure to flag.
-    print("  ✓ /srv/restart_services.sh returned 0; verification:")
+    print("  Verification:")
     healthy = True
-    for line in result.stdout.strip().splitlines():
+    for line in verify.stdout.strip().splitlines():
         line = line.strip()
         if not line:
             continue
