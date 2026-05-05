@@ -60,26 +60,42 @@ from processing.settings import (  # noqa: E402
 from processing.staging_orchestrator import load_run_manifest  # noqa: E402
 
 
-# Defaults tuned to OHM scale; OSM is ~10× larger by member-way count and
-# routes the heaviest relations to dedicated mega shards.
+# Defaults tuned per-namespace. OSM was always sharded heavily because of
+# its raw scale. OHM was originally given 16 / 0 / 8 h on the assumption
+# that "smaller dataset = smaller per-shard work" — but the 2026-05-04
+# antimer-fix run proved that wrong: 6 of 16 OHM regular shards hit the
+# 8 h wall and timed out. The per-relation cost on OHM is dominated by
+# historical-empire complexity (many parts, frequent antimeridian
+# crossings — Russian Empire, British Empire, et al.) which the
+# node-count cost proxy under-weights, AND the planner allocated zero
+# mega shards because OHM's TOTAL node count doesn't trip the mega-tier
+# heuristic. Tuned in three layers:
+#   1. Halve per-regular-shard work: 16 → 32.
+#   2. Bump per-regular-shard wall: 8 → 24 h. Slurm bills elapsed not
+#      requested wall, so easy shards still finish fast — wall is just
+#      a cap.
+#   3. Floor a mega tier on OHM: 0 → 4 mega shards. Catches the
+#      historical-empire outliers regardless of node-count totals.
 _DEFAULT_SHARD_COUNT = {
-    "ohm": 16,
+    "ohm": 32,
     "osm": 22,
 }
 _DEFAULT_MEGA_SHARD_COUNT = {
-    "ohm": 0,
+    "ohm": 4,
     "osm": 10,
 }
 _DEFAULT_REGULAR_WALL_HOURS = {
-    "ohm": 8,
+    "ohm": 24,
     "osm": 24,
 }
 # Mega shards each hold the costliest single relations (continent-scale
 # admin, oceans). Wall budget is tuned to a single mega-relation's
 # expected assembly time — generous because the worst-shard wall is now
-# the long pole.
+# the long pole. OHM bumped 12 → 48 h since the new mega tier will
+# actually receive the historical-empire outliers that previously went
+# to under-walled regular shards.
 _DEFAULT_MEGA_WALL_HOURS = {
-    "ohm": 12,
+    "ohm": 48,
     "osm": 96,
 }
 _PLANNER_WALL_HOURS = {
