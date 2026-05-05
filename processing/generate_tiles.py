@@ -151,6 +151,36 @@ _PER_NAMESPACE_BUCKETS: tuple[str, ...] = (
 # ``STAGED_BASE_DIR/_aggregates/whg.datasets.json``.
 _WHG_BUCKET_PREFIX = "whg-"
 
+# Context-overlay buckets — synthetic tilesets derived from a single
+# authority namespace, filtered to a specific feature subset, and
+# generated WITHOUT clustering so every selected feature survives at
+# every zoom. They render as background context in the Atlas and are
+# deliberately NOT part of the gazetteer registry: there is no
+# ``GazetteerRegistryEntry`` for them and they never appear in the
+# Batch 8 ``per_gazetteer`` inventory (which is built per authority
+# namespace, not per bucket), so the Batch 11 push to Django leaves
+# them alone. Their bucket names use a non-standard ``<namespace>_<tag>``
+# form to make their derived nature obvious in logs and on disk.
+#
+# Each entry: bucket → {namespace contributor, fcode whitelist, zoom
+# range, clustering flag}. The fcode filter is applied via
+# ``_doc_belongs_to_bucket`` against ``types[0].identifier``.
+_CONTEXT_OVERLAY_BUCKETS: dict[str, dict[str, Any]] = {
+    "gn_capitals": {
+        "namespace": "gn",
+        # Capitals (PPLC current, PPLG seat-of-government, PPLCH
+        # historical capital) plus PPLA (first-order admin seat) — the
+        # latter is included because GeoNames sometimes records a
+        # country capital as PPLA depending on its administrative role,
+        # and we want both representations to render.
+        "fcodes": frozenset(["PPLC", "PPLG", "PPLCH", "PPLA"]),
+        "minzoom": 0,
+        "maxzoom": 10,
+        "cluster_points": False,
+        "description": "WHG context overlay: GeoNames capitals & first-order admin seats",
+    },
+}
+
 # Back-compat: ``submit_tiles_slurm`` and a handful of tests still import this
 # symbol. It now reflects only the **fixed** buckets — per-namespace and
 # per-WHG-dataset buckets are resolved at submit time via ``resolve_buckets``.
@@ -163,6 +193,8 @@ def _bucket_contributors(bucket: str) -> tuple[str, ...]:
         return _FIXED_BUCKETS[bucket]
     if bucket in _PER_NAMESPACE_BUCKETS:
         return (bucket,)
+    if bucket in _CONTEXT_OVERLAY_BUCKETS:
+        return (_CONTEXT_OVERLAY_BUCKETS[bucket]["namespace"],)
     if bucket.startswith(_WHG_BUCKET_PREFIX):
         return ("whg",)
     return ()
@@ -201,14 +233,16 @@ def _load_whg_dataset_sub_ids() -> list[str]:
 def resolve_buckets(manifest: dict | None = None) -> list[str]:
     """Enumerate every tile bucket eligible for the current staged corpus.
 
-    Order: fixed buckets first (preserves historical Slurm task ordering), then
-    per-namespace buckets, then per-WHG-dataset buckets in the order they
-    appear in the sidecar. The ``manifest`` argument is accepted for forward
-    compatibility but currently unused — the submitter applies its own
-    eligibility filters via ``_required_stage_for``.
+    Order: fixed buckets first (preserves historical Slurm task ordering),
+    then per-namespace buckets, then context-overlay buckets, then
+    per-WHG-dataset buckets in the order they appear in the sidecar. The
+    ``manifest`` argument is accepted for forward compatibility but
+    currently unused — the submitter applies its own eligibility filters
+    via ``_required_stage_for``.
     """
     buckets: list[str] = list(_FIXED_BUCKETS)
     buckets.extend(_PER_NAMESPACE_BUCKETS)
+    buckets.extend(_CONTEXT_OVERLAY_BUCKETS)
     for sub_id in _load_whg_dataset_sub_ids():
         buckets.append(f"{_WHG_BUCKET_PREFIX}{sub_id}")
     return buckets
@@ -218,6 +252,7 @@ def _is_known_bucket(bucket: str) -> bool:
     return (
         bucket in _FIXED_BUCKETS
         or bucket in _PER_NAMESPACE_BUCKETS
+        or bucket in _CONTEXT_OVERLAY_BUCKETS
         or (bucket.startswith(_WHG_BUCKET_PREFIX) and bool(_whg_dataset_sub_id(bucket)))
     )
 
@@ -909,6 +944,18 @@ def _doc_belongs_to_bucket(
         geoms = doc.get("geometries") or []
         return any(_has_renderable_geometry(g) for g in geoms), False
 
+    if bucket in _CONTEXT_OVERLAY_BUCKETS:
+        cfg = _CONTEXT_OVERLAY_BUCKETS[bucket]
+        if namespace != cfg["namespace"]:
+            return False, False
+        geoms = doc.get("geometries") or []
+        if not any(_has_renderable_geometry(g) for g in geoms):
+            return False, False
+        types = doc.get("types") or []
+        first = types[0] if types and isinstance(types[0], dict) else None
+        fcode = first.get("identifier") if first else None
+        return (isinstance(fcode, str) and fcode in cfg["fcodes"]), False
+
     if bucket.startswith(_WHG_BUCKET_PREFIX):
         if namespace != "whg":
             return False, False
@@ -1296,10 +1343,28 @@ def generate_tiles_from_staged(
                 # (points) and ``--coalesce-densest-as-needed`` (polygons)
                 # flags let tippecanoe sparsify dense low-zoom tiles. The
                 # banded path keeps its own per-band minzooms.
+                #
+                # Context-overlay buckets carry their own per-bucket
+                # config (zoom range, no clustering) — they are pre-
+                # filtered to a small subset (e.g. world capitals) and
+                # don't need or want the density-driven coalescing that
+                # would drop their important features.
+                ctx_cfg = _CONTEXT_OVERLAY_BUCKETS.get(bucket)
+                if ctx_cfg is not None:
+                    tile_minzoom = ctx_cfg["minzoom"]
+                    tile_maxzoom = ctx_cfg["maxzoom"]
+                    tile_cluster = ctx_cfg["cluster_points"]
+                    tile_description = ctx_cfg.get("description") or description
+                else:
+                    tile_minzoom = 0
+                    tile_maxzoom = 10
+                    tile_cluster = True
+                    tile_description = description
                 if generate_tileset(
-                    geojsonl, mbtiles, bucket, description,
-                    minzoom=0,
-                    cluster_points=True,
+                    geojsonl, mbtiles, bucket, tile_description,
+                    minzoom=tile_minzoom,
+                    maxzoom=tile_maxzoom,
+                    cluster_points=tile_cluster,
                 ):
                     tilesets_generated.append(mbtiles)
                     # Per-bucket auto-push to the tileserver. Routes via the
