@@ -411,7 +411,7 @@ def push_mbtiles_to_tileserver(
     """
     from processing.settings import (
         TILESERVER_PROXY, TILESERVER_HOST, TILESERVER_USER,
-        TILESERVER_TILES_DIR, TILESERVER_PROXY_RSYNC,
+        TILESERVER_TILES_DIR, TILESERVER_PROXY_RSYNC, TILESERVER_SSH_KEY,
     )
 
     proxy_host = proxy_host or TILESERVER_PROXY
@@ -420,6 +420,15 @@ def push_mbtiles_to_tileserver(
     remote_dir = remote_dir or TILESERVER_TILES_DIR
     if proxy_rsync is None:
         proxy_rsync = TILESERVER_PROXY_RSYNC
+
+    # Direct-mode short-circuit: when ``TILESERVER_SSH_KEY`` is configured
+    # the runtime has its own authentication to the tileserver, so the
+    # proxy hop is unnecessary (and on CRC compute nodes actively
+    # broken — they can't resolve the ``pitt`` alias). The auto-detect
+    # for "running ON the proxy" still fires below for the local-box and
+    # Pitt-VM cases that don't set the key.
+    if TILESERVER_SSH_KEY:
+        via_proxy = False
 
     # Auto-detect: if the caller asked for via_proxy but we ARE the proxy,
     # silently switch to direct mode rather than failing on self-SSH.
@@ -435,6 +444,17 @@ def push_mbtiles_to_tileserver(
     use_rsync = bool(proxy_rsync) if via_proxy else bool(shutil.which("rsync"))
     tool = "rsync" if use_rsync else "scp"
     print(f"  → {tool} {mbtiles_path.name} ({size_mb:.1f} MB) → {target}", flush=True)
+
+    # Build the ``-e`` argument once for direct mode so rsync/scp use the
+    # configured key. ``StrictHostKeyChecking=accept-new`` lets the first
+    # connection from a fresh compute node trust the host without prompt
+    # while still failing if the host key changes later.
+    direct_ssh_e: str | None = None
+    if not via_proxy and TILESERVER_SSH_KEY:
+        direct_ssh_e = (
+            f"ssh -i {TILESERVER_SSH_KEY} -o BatchMode=yes "
+            "-o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30"
+        )
 
     if via_proxy:
         if use_rsync:
@@ -459,10 +479,17 @@ def push_mbtiles_to_tileserver(
         if use_rsync:
             cmd = [
                 "rsync", "-a", "--partial", "--partial-dir=.tmp",
-                "--info=stats1", str(mbtiles_path), target,
+                "--info=stats1",
             ]
+            if direct_ssh_e:
+                cmd += ["-e", direct_ssh_e]
+            cmd += [str(mbtiles_path), target]
         else:
-            cmd = ["scp", "-p", "-B", str(mbtiles_path), target]
+            cmd = ["scp", "-p", "-B"]
+            if TILESERVER_SSH_KEY:
+                cmd += ["-i", TILESERVER_SSH_KEY,
+                        "-o", "StrictHostKeyChecking=accept-new"]
+            cmd += [str(mbtiles_path), target]
 
     try:
         result = subprocess.run(

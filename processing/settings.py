@@ -220,6 +220,14 @@ TILESERVER_PROXY        = os.getenv("TILESERVER_PROXY",        "pitt")
 TILESERVER_HOST         = os.getenv("TILESERVER_HOST",         "134.209.177.234")
 TILESERVER_USER         = os.getenv("TILESERVER_USER",         "whgadmin")
 TILESERVER_TILES_DIR    = os.getenv("TILESERVER_TILES_DIR",    "/srv/tileserver/tiles")
+# Optional direct-mode SSH key. When set, ``push_mbtiles_to_tileserver``
+# bypasses the proxy hop entirely and runs rsync from the local host
+# straight to ``TILESERVER_USER@TILESERVER_HOST`` using this key. CRC
+# compute nodes can reach the tileserver on port 22 but lack the ``pitt``
+# alias, so the canonical CRC ``.env`` points this at a 0600-mode copy of
+# stg135's id_ed25519 on /vast/ishi/secrets. Leave unset on the user's
+# local box so the proxy path stays default there.
+TILESERVER_SSH_KEY      = os.getenv("TILESERVER_SSH_KEY",      "")
 # Absolute path to rsync ON THE PROXY (Pitt VM). rsync isn't on stg135's
 # PATH there but is in the gazetteer/whg conda env, so we invoke it by
 # absolute path. Set to empty to force scp fallback.
