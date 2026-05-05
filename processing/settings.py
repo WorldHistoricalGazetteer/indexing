@@ -4,9 +4,15 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Load .env from repository root
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+# Load .env (shared defaults, committed) and then .env.local (per-host
+# overrides + secrets, gitignored) with override=True so .env.local wins.
+# Mirrors the pattern in clustering/config.py — host-specific paths like
+# TILESERVER_SSH_KEY (only valid on CRC) and PG_DB_PASSWORD belong in
+# .env.local; .env is for shared, syncable defaults that are safe to
+# commit.
+_repo_root = Path(__file__).parent.parent
+load_dotenv(_repo_root / ".env")
+load_dotenv(_repo_root / ".env.local", override=True)
 
 # Base paths
 IX1_BASE = os.getenv("IX1_BASE", "/ix1/ishi")
