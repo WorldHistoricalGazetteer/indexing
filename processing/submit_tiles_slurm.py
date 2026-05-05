@@ -392,9 +392,29 @@ def submit(
     dry_run: bool = False,
     output_dir: Path | None = None,
     with_restart: bool = True,
+    only_buckets: list[str] | None = None,
 ) -> list[str]:
     manifest = load_run_manifest(manifest_path)
     buckets = _eligible_buckets(manifest)
+
+    if only_buckets:
+        # Intersect with the explicit allow-list. This is the safety hatch
+        # for partial rebuilds (e.g. ``--only-bucket osm --only-bucket ohm
+        # --only-bucket osm_misc`` when the geom_store has just been
+        # refreshed for OSM/OHM but every other namespace's tilesets are
+        # already current). Without it the per-namespace event-log
+        # fallback in ``stage_status_with_fallback`` re-eligibilises every
+        # bucket that has ever completed ``aat_enrich`` — exactly what
+        # made the 2026-05-05 postbarrier wipe a working tileset.
+        allow = set(only_buckets)
+        rejected = [b for b in buckets if b not in allow]
+        buckets = [b for b in buckets if b in allow]
+        unknown = [b for b in only_buckets if b not in (set(rejected) | set(buckets))]
+        if unknown:
+            print(f"--only-bucket: ignoring unknown / ineligible: {unknown}")
+        if rejected:
+            print(f"--only-bucket: filtered out {len(rejected)} bucket(s) "
+                  f"that the manifest+events would have queued: {rejected}")
 
     if not buckets:
         print("No tile buckets eligible (prerequisites incomplete or already done).")
@@ -485,6 +505,15 @@ def main() -> None:
         help="Skip the trailing tileserver-restart job (default: submit it "
              "with afterok dependency on every tile array)",
     )
+    parser.add_argument(
+        "--only-bucket", dest="only_buckets", action="append", default=None,
+        help="Restrict the eligible-buckets set to these names "
+             "(repeatable). Use for partial rebuilds (e.g. "
+             "'--only-bucket osm --only-bucket ohm --only-bucket osm_misc') "
+             "when only specific buckets need regeneration; without this "
+             "flag the event-log fallback may re-queue every bucket that "
+             "ever completed aat_enrich.",
+    )
     args = parser.parse_args()
 
     if args.manifest_path:
@@ -508,6 +537,7 @@ def main() -> None:
         dry_run=args.dry_run,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         with_restart=args.with_restart,
+        only_buckets=args.only_buckets,
     )
 
 
