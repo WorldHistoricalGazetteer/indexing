@@ -1213,9 +1213,14 @@ def generate_tiles_from_staged(
                 geojsonl = bucket_geojsonl[bucket]
                 # Non-banded buckets are per-namespace (gn, wd, tgn, …) or
                 # per-WHG-dataset (whg-<id>) — both can carry point
-                # features, so enable point clustering.
+                # features, so enable point clustering. ``minzoom=0`` is
+                # safe here because the active ``--cluster-densest-as-needed``
+                # (points) and ``--coalesce-densest-as-needed`` (polygons)
+                # flags let tippecanoe sparsify dense low-zoom tiles. The
+                # banded path keeps its own per-band minzooms.
                 if generate_tileset(
                     geojsonl, mbtiles, bucket, description,
+                    minzoom=0,
                     cluster_points=True,
                 ):
                     tilesets_generated.append(mbtiles)

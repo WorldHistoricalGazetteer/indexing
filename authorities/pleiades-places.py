@@ -33,6 +33,15 @@ def extract_geometries(pleiades_record):
         if not geometry:
             continue
 
+        # Drop Polygon / MultiPolygon entries: in Pleiades these are almost
+        # entirely Barrington-Atlas 1°×1° representative bboxes (~3,860 of
+        # ~4,372 polygon docs) plus a long tail of "Undetermined location"
+        # gestures. The few real ones (fort walls, archaeological outlines)
+        # are sub-tile at the zoom levels we render, so the visual loss is
+        # negligible compared with the noise removed.
+        if geometry.get('type') in ('Polygon', 'MultiPolygon'):
+            continue
+
         # Add temporal attestations if present
         # Pleiades has start/end directly on location
         start = loc.get('start')
