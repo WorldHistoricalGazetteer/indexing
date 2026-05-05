@@ -58,17 +58,36 @@ if ! python -m processing.fetch_authorities --namespace "$NAMESPACE" --age 0; th
     echo "if the data is genuinely missing."
 fi
 
-# Step 2 — re-run the staged extract for this namespace. Convention:
-# every authority's extract entry-point is ``authorities/<ns>-places.py``
-# and is staging-aware via WHG_STAGING_MODE=1.
+# Step 2 — re-run the staged extract for this namespace.
+#
+# The authority namespace (used as the place_id prefix) usually differs
+# from the source-name in the script filename (e.g. ``clio`` extracts
+# from ``cliopatria-places.py``). The default fallback handles the
+# happy case where they match (``osm`` → ``osm-places.py``).
 echo
 echo "--- Step 2/2: staged extract ---"
-SCRIPT="authorities/${NAMESPACE}-places.py"
+case "$NAMESPACE" in
+    clio) SCRIPT="authorities/cliopatria-places.py" ;;
+    po)   SCRIPT="authorities/periodo-places.py" ;;
+    nl)   SCRIPT="authorities/nativeland-places.py" ;;
+    pl)   SCRIPT="authorities/pleiades-places.py" ;;
+    gn)   SCRIPT="authorities/geonames-places.py" ;;
+    gb)   SCRIPT="authorities/gb1900-places.py" ;;
+    iv)   SCRIPT="authorities/indexvillaris-places.py" ;;
+    dp)   SCRIPT="authorities/dplace-places.py" ;;
+    wd)   SCRIPT="authorities/wikidata-places.py" ;;
+    un)   SCRIPT="authorities/un-countries.py" ;;
+    *)    SCRIPT="authorities/${NAMESPACE}-places.py" ;;
+esac
 if [ ! -f "$SCRIPT" ]; then
     echo "ERROR: extract script not found: $SCRIPT" >&2
     exit 2
 fi
-WHG_STAGING_MODE=1 python "$SCRIPT"
+# Authority scripts live under ``authorities/`` and ``import processing.*``.
+# Running them as plain scripts puts only ``authorities/`` on sys.path, so
+# pin PYTHONPATH to the repo root.
+PYTHONPATH="$(pwd)${PYTHONPATH:+:$PYTHONPATH}" \
+    WHG_STAGING_MODE=1 python "$SCRIPT"
 
 END_TS=$(date -u +%FT%TZ)
 echo
