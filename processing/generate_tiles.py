@@ -260,6 +260,7 @@ def generate_tileset(
     *,
     minzoom: int = 2,
     maxzoom: int = 10,
+    cluster_points: bool = False,
 ):
     """Generate .mbtiles from GeoJSON Lines file using tippecanoe.
 
@@ -269,6 +270,15 @@ def generate_tileset(
     minzoom (0 or 1) ONLY for sparse subsets — the band-aware caller in
     ``generate_tiles_from_staged`` handles this safely by partitioning
     features per band before calling here.
+
+    ``cluster_points`` is for buckets that may contain point features
+    (per-namespace and per-WHG-dataset buckets). When set, tippecanoe
+    clusters points within ten pixels at zooms <= 8, attaching a
+    ``point_count`` attribute to each surviving cluster point so the
+    Atlas heatmap layer can weight by density. Above z8 individual
+    points are emitted unchanged. Polygon/line features are unaffected.
+    Fixed admin buckets (``osm``, ``ohm``, ``osm_misc``) are polygon-
+    only and pass ``cluster_points=False``.
     """
     tippecanoe = shutil.which('tippecanoe')
     if not tippecanoe:
@@ -303,8 +313,20 @@ def generate_tileset(
         # the right size/quality tradeoff.
         '--no-tile-compression',
         '--read-parallel',
-        str(geojsonl_path),
     ]
+    if cluster_points:
+        # Cluster point features at zooms <= 8 within 10 px. Tippecanoe
+        # auto-attaches a ``point_count`` attribute to each surviving
+        # cluster point — the Atlas heatmap layer reads it as the weight.
+        # ``--cluster-densest-as-needed`` lets tippecanoe widen the
+        # cluster radius if a tile is still too large after the initial
+        # pass. Polygon/line features are unaffected by these flags.
+        cmd += [
+            '--cluster-distance', '10',
+            '--cluster-maxzoom', '8',
+            '--cluster-densest-as-needed',
+        ]
+    cmd.append(str(geojsonl_path))
 
     start = time.time()
     result = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
@@ -1189,7 +1211,13 @@ def generate_tiles_from_staged(
                     bucket_failures.append(bucket)
             else:
                 geojsonl = bucket_geojsonl[bucket]
-                if generate_tileset(geojsonl, mbtiles, bucket, description):
+                # Non-banded buckets are per-namespace (gn, wd, tgn, …) or
+                # per-WHG-dataset (whg-<id>) — both can carry point
+                # features, so enable point clustering.
+                if generate_tileset(
+                    geojsonl, mbtiles, bucket, description,
+                    cluster_points=True,
+                ):
                     tilesets_generated.append(mbtiles)
                     # Per-bucket auto-push to the tileserver. Routes via the
                     # Pitt VM proxy because CRC compute nodes have no SSH key
