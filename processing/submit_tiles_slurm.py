@@ -339,6 +339,51 @@ def _submit_one_sbatch(sbatch_path: Path) -> str:
     return raw or result.stdout.strip()
 
 
+def _build_restart_sbatch_script(
+    *,
+    run_id: str,
+    array_job_ids: list[str],
+) -> str:
+    """Build the trailing restart sbatch fired ``afterok`` of every tile array.
+
+    The job is intentionally tiny (single task, low resources, short wall) —
+    it just SSHes the tileserver, runs ``/srv/restart_services.sh``, and
+    verifies the services came back. The ``afterok`` chain makes Slurm
+    skip it automatically if any tile-gen task failed: the contract is
+    "restart only after every push verified", and a failed array task
+    means an unpushed bucket.
+    """
+    log_dir = Path(_REPO) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_prefix = log_dir / f"whg-tiles-restart-{run_id}-%j"
+
+    deps = ":".join(array_job_ids)
+    lines = [
+        "#!/bin/bash",
+        f"#SBATCH --job-name=whg-tiles-restart-{run_id}",
+        f"#SBATCH --output={log_prefix}.out",
+        f"#SBATCH --error={log_prefix}.err",
+        "#SBATCH --time=00:05:00",
+        "#SBATCH --partition=htc",
+        f"#SBATCH --qos={_DEFAULT_QOS}",
+        "#SBATCH --nodes=1",
+        "#SBATCH --ntasks=1",
+        "#SBATCH --cpus-per-task=1",
+        "#SBATCH --mem=512M",
+        f"#SBATCH --dependency=afterok:{deps}",
+        "",
+        "set -eo pipefail",
+        f"source {_CONDA_SH}",
+        f"conda activate {_CONDA_ENV}",
+        f"cd {_REPO}",
+        "",
+        "python -c 'import sys; "
+        "from processing.generate_tiles import restart_tileserver; "
+        "sys.exit(0 if restart_tileserver() else 1)'",
+    ]
+    return "\n".join(lines) + "\n"
+
+
 def submit(
     *,
     run_id: str,
@@ -346,6 +391,7 @@ def submit(
     depend_on: str | None = None,
     dry_run: bool = False,
     output_dir: Path | None = None,
+    with_restart: bool = True,
 ) -> list[str]:
     manifest = load_run_manifest(manifest_path)
     buckets = _eligible_buckets(manifest)
@@ -398,6 +444,26 @@ def submit(
         )
         job_ids.append(job_id)
 
+    if with_restart and job_ids:
+        restart_text = _build_restart_sbatch_script(
+            run_id=run_id, array_job_ids=job_ids,
+        )
+        restart_path = work_dir / "tiles_restart.sbatch"
+        restart_path.write_text(restart_text, encoding="utf-8")
+        print(f"\nRestart sbatch script written to: {restart_path}")
+
+        if dry_run:
+            print("\n--- DRY RUN: restart sbatch contents ---")
+            print(restart_text)
+            print("--- END ---")
+        else:
+            restart_jid = _submit_one_sbatch(restart_path)
+            print(
+                f"Submitted tileserver restart job: {restart_jid}  "
+                f"(afterok of {len(job_ids)} array job(s))"
+            )
+            job_ids.append(restart_jid)
+
     return job_ids
 
 
@@ -414,6 +480,11 @@ def main() -> None:
     parser.add_argument("--output-dir", help="Override default tile output directory")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print sbatch but do not submit")
+    parser.add_argument(
+        "--no-restart", dest="with_restart", action="store_false", default=True,
+        help="Skip the trailing tileserver-restart job (default: submit it "
+             "with afterok dependency on every tile array)",
+    )
     args = parser.parse_args()
 
     if args.manifest_path:
@@ -436,6 +507,7 @@ def main() -> None:
         depend_on=args.depend_on,
         dry_run=args.dry_run,
         output_dir=Path(args.output_dir) if args.output_dir else None,
+        with_restart=args.with_restart,
     )
 
 
