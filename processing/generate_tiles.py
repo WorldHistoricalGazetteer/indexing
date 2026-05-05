@@ -773,6 +773,23 @@ def _build_staged_feature(
     if "name_local" not in props and "und" in names_by_lang:
         props["name_local"] = names_by_lang["und"]
 
+    # Settlement-significance metadata for the GeoNames bucket only.
+    # ``population`` is a top-level int and ``fcode`` is the GeoNames
+    # feature-code (PPLC capital, PPL generic populated place, ADM1
+    # admin-1, …) held in the staged doc's ``types[0].identifier``. The
+    # Atlas settlement overlay reads them from the ``gn`` tileset; other
+    # buckets don't need the bytes (the overlay is GN-driven), so we keep
+    # them out to hold tile size down for the polygon-heavy authorities.
+    if namespace == "gn":
+        pop = doc.get("population")
+        if isinstance(pop, (int, float)) and pop > 0:
+            props["population"] = int(pop)
+        types = doc.get("types") or []
+        if types and isinstance(types[0], dict):
+            fcode = types[0].get("identifier")
+            if isinstance(fcode, str) and fcode:
+                props["fcode"] = fcode
+
     source_id = _extract_source_id(place_id)
     if misc:
         if isinstance(source_id, int):
