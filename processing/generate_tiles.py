@@ -168,12 +168,15 @@ _WHG_BUCKET_PREFIX = "whg-"
 _CONTEXT_OVERLAY_BUCKETS: dict[str, dict[str, Any]] = {
     "gn_capitals": {
         "namespace": "gn",
-        # Capitals (PPLC current, PPLG seat-of-government, PPLCH
-        # historical capital) plus PPLA (first-order admin seat) — the
-        # latter is included because GeoNames sometimes records a
-        # country capital as PPLA depending on its administrative role,
-        # and we want both representations to render.
-        "fcodes": frozenset(["PPLC", "PPLG", "PPLCH", "PPLA"]),
+        # Present-day capitals only: PPLC (capital of a political
+        # entity) and PPLG (seat of government), plus PPLA (first-order
+        # admin seat) since GeoNames records some country capitals
+        # under that code depending on their administrative role.
+        # PPLCH (historical capital) was tried earlier but pulled in
+        # noisy historical artefacts like "(former) Roman catholic
+        # diocese of London" that don't belong on a capitals overlay,
+        # so it's excluded here.
+        "fcodes": frozenset(["PPLC", "PPLG", "PPLA"]),
         "minzoom": 0,
         "maxzoom": 10,
         "cluster_points": False,

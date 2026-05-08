@@ -84,6 +84,8 @@ class PlaceDetail(BaseModel):
     fclasses: list[str] = []
     population: int | None = None
     elevation: int | None = None
+    boundary: str | None = None
+    timespans: list[dict] = []
 
 
 class PlacesResponse(BaseModel):
@@ -99,6 +101,7 @@ ALL_PLACE_FIELDS = [
     "place_id", "namespace", "title", "ccodes", "types",
     "geometries", "links", "descriptions", "depictions",
     "relations", "population", "elevation", "fclasses",
+    "boundary", "timespans",
 ]
 
 
@@ -134,6 +137,41 @@ def _extract_repr_point(geometries: list[dict]) -> list[float] | None:
             if isinstance(rp, list) and len(rp) == 2:
                 return rp
     return None
+
+
+def _collapse_timespans(src: dict) -> list[dict]:
+    """Collapse nested timespan ranges into a single overall range.
+
+    Timespans live nested under ``toponyms[].timespans``, ``geometries[].timespans``,
+    and ``relations[].timespans`` (see schemas/places.json). Each timespan has
+    ``start.in`` and ``end.in`` integer year fields. We take the global
+    min(start.in) and max(end.in) across all three sources to give callers a
+    single "active from–to" summary.
+
+    Returns ``[{"start": <int>, "end": <int>}]`` or ``[]`` if no timespans
+    are present. Either bound may be ``None`` if only one side is attested.
+    """
+    starts: list[int] = []
+    ends: list[int] = []
+    for parent_key in ("toponyms", "geometries", "relations"):
+        for entry in src.get(parent_key) or []:
+            if not isinstance(entry, dict):
+                continue
+            for ts in entry.get("timespans") or []:
+                if not isinstance(ts, dict):
+                    continue
+                start_in = (ts.get("start") or {}).get("in")
+                end_in = (ts.get("end") or {}).get("in")
+                if isinstance(start_in, int):
+                    starts.append(start_in)
+                if isinstance(end_in, int):
+                    ends.append(end_in)
+    if not starts and not ends:
+        return []
+    return [{
+        "start": min(starts) if starts else None,
+        "end": max(ends) if ends else None,
+    }]
 
 
 def _format_geometries(raw_geoms: list[dict]) -> list[dict]:
@@ -241,6 +279,8 @@ def _format_place_detail(
         fclasses=src.get("fclasses", []),
         population=src.get("population"),
         elevation=src.get("elevation"),
+        boundary=src.get("boundary"),
+        timespans=_collapse_timespans(src),
     )
 
     # If specific fields were requested, zero out the rest
@@ -249,6 +289,7 @@ def _format_place_detail(
             "names", "ccodes", "types", "geometries", "repr_point",
             "links", "descriptions", "depictions", "relations",
             "fclasses", "population", "elevation",
+            "boundary", "timespans",
         }
         for f in all_optional - requested_fields:
             if hasattr(detail, f):
