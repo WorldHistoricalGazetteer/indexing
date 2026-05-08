@@ -66,6 +66,7 @@ class PlacesRequest(BaseModel):
 class CandidateName(BaseModel):
     label: str
     lang: str | None = None
+    timespans: list[dict] = []
 
 
 class PlaceDetail(BaseModel):
@@ -139,6 +140,29 @@ def _extract_repr_point(geometries: list[dict]) -> list[float] | None:
     return None
 
 
+def _normalise_timespans(raw: list) -> list[dict]:
+    """Flatten nested ``{start: {in: <int>}, end: {in: <int>}}`` shapes into
+    plain ``[{start: <int>, end: <int>}]`` entries.
+
+    Either bound may be ``None`` if only one side is attested. Empty list
+    when no usable timespans are present.
+    """
+    out: list[dict] = []
+    for ts in raw or []:
+        if not isinstance(ts, dict):
+            continue
+        start_in = (ts.get("start") or {}).get("in")
+        end_in = (ts.get("end") or {}).get("in")
+        if not isinstance(start_in, int):
+            start_in = None
+        if not isinstance(end_in, int):
+            end_in = None
+        if start_in is None and end_in is None:
+            continue
+        out.append({"start": start_in, "end": end_in})
+    return out
+
+
 def _collapse_timespans(src: dict) -> list[dict]:
     """Collapse nested timespan ranges into a single overall range.
 
@@ -175,7 +199,7 @@ def _collapse_timespans(src: dict) -> list[dict]:
 
 
 def _format_geometries(raw_geoms: list[dict]) -> list[dict]:
-    """Format geometry objects with full geom + repr_point."""
+    """Format geometry objects with full geom + repr_point + timespans."""
     result = []
     for g in raw_geoms:
         entry: dict = {}
@@ -191,6 +215,9 @@ def _format_geometries(raw_geoms: list[dict]) -> list[dict]:
                 entry["repr_point"] = [rp.get("lon", 0), rp.get("lat", 0)]
             elif isinstance(rp, list) and len(rp) == 2:
                 entry["repr_point"] = rp
+        ts = _normalise_timespans(g.get("timespans") or [])
+        if ts:
+            entry["timespans"] = ts
         if entry:
             result.append(entry)
     return result
@@ -210,14 +237,30 @@ def _format_place_detail(
     """
     pid = src.get("place_id", "")
 
+    # Build a (label, lang) → timespans lookup from the place's nested
+    # toponyms so timespan data survives whichever name-enrichment path
+    # _format_place_detail takes.
+    nested_topos = src.get("toponyms") or []
+    timespan_lookup: dict[tuple[str, str | None], list[dict]] = {}
+    for t in nested_topos:
+        if not isinstance(t, dict):
+            continue
+        label = t.get("label") or ""
+        lang = t.get("lang")
+        ts = _normalise_timespans(t.get("timespans") or [])
+        if label and ts:
+            timespan_lookup.setdefault((label, lang), []).extend(ts)
+
     # Names — prefer toponym enrichment, fall back to nested place data
     names: list[CandidateName] = []
     seen_labels: set[str] = set()
-    name_data = toponyms if toponyms is not None else src.get("toponyms", [])
+    name_data = toponyms if toponyms is not None else nested_topos
     for t in name_data:
         label = t.get("label", "")
         if label and label not in seen_labels:
-            names.append(CandidateName(label=label, lang=t.get("lang")))
+            lang = t.get("lang")
+            ts = timespan_lookup.get((label, lang)) or []
+            names.append(CandidateName(label=label, lang=lang, timespans=ts))
             seen_labels.add(label)
 
     # Geometries
@@ -253,12 +296,13 @@ def _format_place_detail(
         for d in src.get("depictions", [])
     ]
 
-    # Relations
+    # Relations — include per-relation timespans when present
     relations = [
         {
             "relation_type": r.get("relation_type", ""),
             "related_place_id": r.get("related_place_id", ""),
             "label": r.get("label", ""),
+            "timespans": _normalise_timespans(r.get("timespans") or []),
         }
         for r in src.get("relations", [])
     ]
