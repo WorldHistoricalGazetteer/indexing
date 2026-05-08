@@ -221,12 +221,17 @@ def build_places_filter(
         })
 
     if bounds and _has_geometries(bounds):
+        # Filter on geometries.repr_point (geo_point) rather than the old
+        # geometries.geom geo_shape: post-barrier reindex (2026-05-02)
+        # stores the per-geometry shape as a structured object that is no
+        # longer queryable as a geo_shape, and only `whg` places carry the
+        # alternate `geometries.hull`. repr_point is universally populated.
         filter_clauses.append({
             "nested": {
                 "path": "geometries",
                 "query": {
                     "geo_shape": {
-                        "geometries.geom": {
+                        "geometries.repr_point": {
                             "shape": bounds,
                             "relation": "intersects",
                         }
