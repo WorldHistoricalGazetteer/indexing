@@ -185,7 +185,7 @@ def _format_candidate(
         place_id=src.get("place_id", ""),
         title=src.get("title", ""),
         names=names,
-        ccodes=src.get("ccodes", []),
+        ccodes=src.get("ccodes") or [],
         score=score,
         namespace=src.get("namespace", ""),
         geometries=geometries,
