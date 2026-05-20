@@ -44,6 +44,14 @@ cd /vast/ishi/elastic
 The boundary planner reads the OSM PBF from `/ix1` once per rebuild (its
 prefilter output is persisted to `/vast` so workers never read `/ix1`).
 
+**Kibana binaries live on `/vast`** (`KIBANA_HOME=${IX3_BASE}/kibana-bin`,
+i.e. `/vast/ishi/kibana-bin`, moved there 2026-05-20). Loading Kibana's ~173
+plugins is thousands of small-file reads — pathologically slow on the `/ix1`
+NFSv4 mount (~30 min cold start, process pinned in `D`/I-O-wait) versus ~60s
+from `/vast` flash. The same small-file pathology is why ES data lives on
+`/vast`. Only `kibana-bin` moved; Kibana's `path.data` and PID file stay on
+`/ix1` (small, infrequent I/O).
+
 ---
 
 ## Architecture
