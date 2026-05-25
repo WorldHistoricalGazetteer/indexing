@@ -466,9 +466,9 @@ async def search(req: SearchRequest):
 
         results.append(SearchHit(
             place_id=pid,
-            title=src.get("title", ""),
+            title=src.get("title", "") or "",
             names=names,
-            ccodes=src.get("ccodes", []),
+            ccodes=src.get("ccodes") or [],  # _source may carry ccodes: null
             types=types,
             repr_point=repr_point,
             geometries=full_geoms if full_geoms else None,
