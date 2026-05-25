@@ -468,41 +468,54 @@ def main() -> None:
         return
 
     auth_token = _read_token(args.auth_token_file)
-
-    status, body = push_inventory(
-        payload,
-        endpoint=args.endpoint,
-        method=args.method,
-        auth_token=auth_token,
-        timeout=args.timeout,
-    )
-    print(f"prod {args.endpoint} → HTTP {status}")
-    if body:
-        print(body[:1000])
-
-    # Dev-server mirror — best-effort. Reachability preflight first; on
-    # any failure (down, push error) we warn but do not fail the pipeline,
-    # because prod is the source of truth.
-    if args.no_dev_push or not args.dev_endpoint:
-        return
-    if not is_endpoint_reachable(args.dev_endpoint):
-        print(f"dev {args.dev_endpoint} → unreachable, skipping mirror")
-        return
     dev_token = _read_token(args.dev_auth_token_file) or auth_token
-    try:
-        dev_status, dev_body = push_inventory(
-            payload,
-            endpoint=args.dev_endpoint,
-            method=args.method,
-            auth_token=dev_token,
-            timeout=args.timeout,
+
+    # Both stacks are first-class push targets. The prod ↔ dev registries
+    # MUST stay in sync because the Atlas cutover in prod is gradual, so a
+    # one-sided update would drift them (as happened on 2026-05-04, when a
+    # dev-only follow-up added an osm_misc row prod never received). We push
+    # the same payload to every target and exit non-zero if ANY target
+    # fails; the push is an idempotent upsert keyed by id, so re-running
+    # after a transient failure simply re-syncs. Use --no-dev-push (or an
+    # empty --dev-endpoint) to deliberately target prod only.
+    targets: list[tuple[str, str, str | None]] = [
+        ("prod", args.endpoint, auth_token),
+    ]
+    if not args.no_dev_push and args.dev_endpoint:
+        targets.append(("dev", args.dev_endpoint, dev_token))
+
+    failures: list[str] = []
+    for label, endpoint, token in targets:
+        # An unreachable target is a failure, not a silent skip — keeping
+        # the two registries in sync is the whole point.
+        if not is_endpoint_reachable(endpoint):
+            print(f"{label} {endpoint} → unreachable", file=sys.stderr)
+            failures.append(f"{label}: unreachable")
+            continue
+        try:
+            status, body = push_inventory(
+                payload,
+                endpoint=endpoint,
+                method=args.method,
+                auth_token=token,
+                timeout=args.timeout,
+            )
+            print(f"{label} {endpoint} → HTTP {status}")
+            if body:
+                print(body[:1000])
+        except RuntimeError as exc:
+            print(f"{label} {endpoint} → FAILED: {exc}", file=sys.stderr)
+            failures.append(f"{label}: {exc}")
+
+    if failures:
+        print(
+            f"ERROR: inventory push incomplete — {len(failures)} of "
+            f"{len(targets)} target(s) failed; registries may be out of sync. "
+            f"Re-run to resync (push is idempotent). "
+            f"Failures: {'; '.join(failures)}",
+            file=sys.stderr,
         )
-        print(f"dev {args.dev_endpoint} → HTTP {dev_status}")
-        if dev_body:
-            print(dev_body[:1000])
-    except RuntimeError as exc:
-        print(f"dev {args.dev_endpoint} → FAILED (continuing): {exc}",
-              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

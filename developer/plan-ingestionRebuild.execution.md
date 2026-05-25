@@ -120,7 +120,7 @@ authority selection moves to the API and the markdown file is retired.
 | 8 | Global barrier | Done — barrier crossed for the `postbarrier-20260502` run |
 | 9 | Toponyms + Symphonym **+ per-gazetteer temporal extent** | Done — `toponyms_postbarrier-20260502t130000z` live (67.5M docs). **Production rebuilds: pass `--training-namespaces _none_` to skip IPA + PanPhon (training-only artefacts; not in the active toponyms schema or gateway query path).** |
 | 10 | Tile generation (no ES) — runs **ahead of** Global Barrier | Done — tilesets generated (and OSM/OHM admin tiles re-run on 2026-05-05 after the geom_store wipe; see 2026-05-25 snapshot) |
-| 11 | Index loaders + **gazetteer inventory push (final-step gating)** | Done — `index_from_stage` loaded all 16 namespaces into `places_postbarrier-…`, alias swapped. Inventory push: **unverified** (no marker found 2026-05-25 — confirm before relying on the Django gazetteer registry) |
+| 11 | Index loaders + **gazetteer inventory push (final-step gating)** | Done — `index_from_stage` loaded all 16 namespaces into `places_postbarrier-…`, alias swapped. Inventory push **verified** (2026-05-25): registry pushed to **both** stacks on 2026-05-04 — `GazetteerRegistryEntry` holds 24 gazetteers (matching counts) on prod-main *and* dev-atlas. (The push writes no marker, hence the earlier "unverified"; confirmed by reading both Postgres DBs.) |
 | 12 | **SQLite hard-link harvest** — staged authority links + LOC relations + DO contributor replay (replaces post-index ES clustering) | Done — `postbarrier-20260502T130000Z.hardlink_ship.json` ship marker present; SQLite overlay shipped to Pitt |
 | 13a | WHG dataset authority discovery / LPF integration | Folded into 4c Phase 4 (no separate batch) |
 | 13b | **v3.2 legacy reconciliation flagging** (DO-side, narrow scope) | New; **pending** (DO-side data update) |
@@ -2679,8 +2679,14 @@ Question on resumption: did the 2026-05-05 OSM/OHM boundary re-run leave prod ES
 
 ### Outstanding (not blocking — the platform is live)
 
-1. **Batch 11 inventory push** — *unverified*. No inventory-push marker found; confirm whether
-   the Django gazetteer registry received the per-gazetteer inventory before relying on it.
+1. ~~**Batch 11 inventory push** — unverified.~~ **RESOLVED 2026-05-25.** Verified by reading
+   both DO Postgres DBs: `GazetteerRegistryEntry` was pushed to **both** stacks on 2026-05-04
+   (24 gazetteers each, matching record counts) — prod-main *and* dev-atlas, because the Atlas
+   cutover in prod is gradual and both registries must stay in sync. Two stale placeholder rows
+   (prod-only `dplace`, dev-only `osm_misc` from an asymmetric follow-up push) were deleted so
+   the two stacks now hold the identical 24-row set. `push_gazetteer_inventory.py` was hardened:
+   **dev is now a first-class push target** (was best-effort mirror) — it pushes the same
+   payload to both endpoints and exits non-zero if either fails, so future pushes can't drift.
 2. **Batch 13b** — DO-side `legacy_v3_2 = true` flagging of historical reconciliation links
    (PostgreSQL data update). Pending.
 3. **Batch 14 / 14a** — formal test harness + the pending-dataset retention sweep. Pending.
