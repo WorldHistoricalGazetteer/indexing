@@ -358,9 +358,9 @@ def build_places_filter(
         bool_query["must_not"] = must_not_clauses
 
     geom_fields = (
-        ["geometries.geom", "geometries.repr_point"]
+        ["geometries.geom", "geometries.repr_point", "geometries.has_geom"]
         if geom == "full"
-        else ["geometries.repr_point"]
+        else ["geometries.repr_point", "geometries.has_geom"]
     )
     # Fields the Python-side containment refine needs when a region is active:
     # h3_cover (fuzzy), repr_point (fast-path / fallback), bounds, and

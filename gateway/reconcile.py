@@ -128,7 +128,11 @@ class CandidateName(BaseModel):
 
 
 class CandidateGeometry(BaseModel):
-    repr_point: Optional[list[float]] = None  # [lon, lat]
+    repr_point: Optional[list[float]] = Field(
+        None, description="Representative point [lon, lat] (always present for a located place).")
+    has_geom: bool = Field(
+        False, description="True iff this candidate has a full POLYGON geometry — i.e. it can serve as a "
+                           "containment region (`contained_in`). Point/line-only geometries return False.")
 
 
 class CandidateHit(BaseModel):
@@ -186,17 +190,19 @@ def _format_candidate(
             names.append(CandidateName(label=label, lang=t.get("lang")))
             seen_labels.add(label)
 
-    # Extract representative points from nested geometries
+    # Extract representative points + the polygon flag from nested geometries. has_geom lets a client
+    # tell a polygon (usable as a containment region) from a point/line, which repr_point alone can't.
     geometries = []
     for g in src.get("geometries", []):
         rp = g.get("repr_point")
-        if rp:
-            if isinstance(rp, dict):
-                geometries.append(CandidateGeometry(
-                    repr_point=[rp.get("lon", 0), rp.get("lat", 0)]
-                ))
-            elif isinstance(rp, list) and len(rp) == 2:
-                geometries.append(CandidateGeometry(repr_point=rp))
+        has_geom = bool(g.get("has_geom"))
+        point = None
+        if isinstance(rp, dict):
+            point = [rp.get("lon", 0), rp.get("lat", 0)]
+        elif isinstance(rp, list) and len(rp) == 2:
+            point = rp
+        if point or has_geom:
+            geometries.append(CandidateGeometry(repr_point=point, has_geom=has_geom))
 
     return CandidateHit(
         place_id=src.get("place_id", ""),
@@ -238,6 +244,15 @@ async def reconcile_search(req: ReconcileRequest):
 
     The candidates are ranked by the toponym-match score carried forward
     from step 1.
+
+    **Response.**  A ``ReconcileResponse`` with a flat ``hits`` list of
+    ``CandidateHit`` objects (and, when ``group_by_cluster=True``, parallel
+    ``clusters``).  Each hit carries ``geometries[]``, where every entry has
+    a ``repr_point`` and a ``has_geom`` flag — ``has_geom=True`` marks a
+    candidate backed by a full **polygon** geometry, i.e. one usable as a
+    ``contained_in`` containment region.  Point/line-only candidates report
+    ``has_geom=False``; use this to pick valid parents for hierarchical /
+    containment-scoped reconciliation.
     """
     import httpx
     from collections import defaultdict
