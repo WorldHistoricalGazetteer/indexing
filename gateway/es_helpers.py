@@ -362,13 +362,16 @@ def build_places_filter(
         if geom == "full"
         else ["geometries.repr_point"]
     )
-    # ``h3_cover`` is needed for the Python-side fuzzy containment refine when a
-    # region is active; cheap keyword field, so always include it.
-    if region is not None and "geometries.h3_cover" not in geom_fields:
-        geom_fields.append("geometries.h3_cover")
-        if "geometries.geom" not in geom_fields:
-            # exact-mode refine parses full geom from _source
-            geom_fields.append("geometries.geom")
+    # Fields the Python-side containment refine needs when a region is active:
+    # h3_cover (fuzzy), repr_point (fast-path / fallback), bounds, and
+    # geometry_index (to build the geom-store key "{place_id}_{idx}" for the
+    # exact-mode polygon fetch). The full polygon is NOT in _source — exact mode
+    # reads it from the /vast geom-store instead.
+    if region is not None:
+        for f in ("geometries.h3_cover", "geometries.repr_point",
+                  "geometries.geometry_index"):
+            if f not in geom_fields:
+                geom_fields.append(f)
     source_fields = [
         "place_id", "namespace", "title", "ccodes",
         *geom_fields,

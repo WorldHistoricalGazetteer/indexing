@@ -52,7 +52,8 @@ class TestRegionBuild(unittest.TestCase):
     def test_cover_built_and_bounded(self):
         region = spatial.region_from_geojson(_square(0, 0, 2, 2))
         self.assertIsNotNone(region)
-        self.assertTrue(region.has_area)
+        self.assertTrue(region.has_cover)
+        self.assertIsNotNone(region.prepared)  # bounds-built region has geometry
         self.assertTrue(region.resolutions)
         total = sum(len(c) for c in region.cover_by_res.values())
         self.assertGreater(total, 0)
@@ -160,21 +161,29 @@ class _StubClient:
 
 @unittest.skipUnless(_DEPS, "h3 + shapely required")
 class TestResolveRegion(unittest.TestCase):
-    def test_builds_from_place_source_and_caches(self):
-        poly = _square(0, 0, 3, 3)
-        hits = [{"_source": {"place_id": "un:XX", "geometries": [{"geom": poly}]}}]
+    def test_builds_from_source_h3_cover_and_caches(self):
+        # Real postbarrier _source carries h3_cover/bounds/geometry_index — NOT
+        # the full geom. resolve_region builds the region cover from h3_cover.
+        cover = _cover_for(_square(0, 0, 3, 3))
+        bounds = [0, 0, 3, 3]
+        hits = [{"_source": {
+            "place_id": "un:XX",
+            "geometries": [{"h3_cover": cover, "bounds": bounds, "geometry_index": 0}],
+        }}]
         client = _StubClient(hits)
         region = asyncio.run(spatial.resolve_region(["un:XX"], client, None))
-        self.assertTrue(region.has_area)
+        self.assertTrue(region.has_cover)
+        self.assertEqual(region.geom_keys, ("un:XX_0",))
         self.assertEqual(client.calls, 1)
+        # A point inside the region passes the fuzzy test.
+        h = _hit(rp=[1.5, 1.5])
+        self.assertTrue(spatial.hit_matches(h["_source"], region, "fuzzy", "intersects"))
         # Second call for the same id is a cache hit — no further ES fetch.
         region2 = asyncio.run(spatial.resolve_region(["un:XX"], client, None))
         self.assertIs(region, region2)
         self.assertEqual(client.calls, 1)
 
-    def test_no_geometry_raises(self):
-        # Place with only a (non-areal) point still yields a degenerate region,
-        # but a place with NO geometry at all must raise RegionError.
+    def test_no_coverage_raises(self):
         hits = [{"_source": {"place_id": "x:1", "geometries": []}}]
         client = _StubClient(hits)
         with self.assertRaises(spatial.RegionError):

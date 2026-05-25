@@ -346,8 +346,12 @@ async def reconcile_search(req: ReconcileRequest):
         # Step 2.5: Precise containment refine (fuzzy H3 / exact Shapely)
         # --------------------------------------------------------------
         if region is not None:
+            reader = None
+            if req.containment == "exact":
+                reader = spatial.get_geom_reader()
+                region.load_geometry(reader)
             raw_hits = spatial.apply_containment(
-                raw_hits, region, req.containment, req.relation,
+                raw_hits, region, req.containment, req.relation, reader=reader,
             )
             raw_hits = raw_hits[: req.size * 4]
 
