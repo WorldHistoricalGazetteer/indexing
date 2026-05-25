@@ -3,3 +3,7 @@ __pycache__/
 _upload_staging/
 *.safetensors
 
+# Resolved at runtime by gateway/symphonym.py:_resolve_model_dir
+final_model.pt
+vocab
+
