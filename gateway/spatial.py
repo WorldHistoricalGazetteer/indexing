@@ -1,0 +1,577 @@
+# gateway/spatial.py
+"""
+Spatial-containment engine for ``/api/search`` and ``/api/reconcile``.
+
+Resolves a *containment region* from a set of place_ids (or raw GeoJSON) and
+filters candidate place hits by **fuzzy** (H3, cheap, tolerant) or **exact**
+(Shapely) containment. **No Elasticsearch reindex.**
+
+What's available where (postbarrier index, verified 2026-05-25):
+
+* ES ``_source`` per geometry carries ``repr_point`` (guaranteed *within* the
+  geometry — see ``processing.helpers.enrich_geometry`` → ``representative_point``),
+  ``h3_centroid`` (r7), ``h3_cover`` (compacted, mixed-resolution cells covering
+  the geometry), ``bounds`` (bbox) and ``geometry_index``. **The full polygon is
+  NOT in ``_source``.**
+* Full polygons live in the ``/vast`` geom-store (``processing.geom_store``),
+  keyed ``"{place_id}_{geometry_index}"``.
+
+So **fuzzy** containment runs entirely off ``_source`` (h3_cover) — no ``/vast``
+dependency — while **exact** containment reads real polygons from the geom-store
+via a cached ``GeomStoreReader`` and tests them with Shapely.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import logging
+from collections import OrderedDict
+from dataclasses import dataclass, field
+from typing import Any, Iterable, Optional
+
+from .config import ES_BACKEND, PLACES_INDEX
+from .es_helpers import ES_HEADERS, extract_repr_point, extract_place_geoms
+
+logger = logging.getLogger("gateway.spatial")
+
+try:
+    import h3 as _h3
+    _H3_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _h3 = None
+    _H3_AVAILABLE = False
+
+try:
+    from shapely.geometry import shape as _shape, Point as _Point, mapping as _mapping
+    from shapely.ops import unary_union as _unary_union
+    from shapely.prepared import prep as _prep
+    _SHAPELY_AVAILABLE = True
+except Exception:  # pragma: no cover
+    _SHAPELY_AVAILABLE = False
+
+
+# H3 polyfill controls (used only by region_from_geojson, where we have a real
+# geometry). Mirrors processing.helpers to keep the gateway import-light.
+H3_POLYFILL_MAX_CELLS = 10_000
+H3_CENTROID_RESOLUTION = 7
+_H3_HEX_AREA_DEG2 = {
+    0: 38000.0, 1: 5400.0, 2: 770.0, 3: 110.0,
+    4: 16.0, 5: 2.2, 6: 0.31, 7: 0.045, 8: 0.0064,
+}
+_ES_H3_TERMS_CAP = 4000
+_REGION_CACHE_MAX = 128
+
+
+class RegionError(ValueError):
+    """A containment region could not be built (e.g. no usable geometry)."""
+
+
+# ---------------------------------------------------------------------------
+# Geom-store reader (lazy singleton; only the exact path needs it / /vast)
+# ---------------------------------------------------------------------------
+_reader: Any = None
+_reader_init = False
+
+
+def get_geom_reader():
+    """Return a cached ``GeomStoreReader`` for the exact path, or None if the
+    ``/vast`` geom-store is unavailable (exact then degrades to repr_point)."""
+    global _reader, _reader_init
+    if _reader_init:
+        return _reader
+    _reader_init = True
+    try:
+        from processing.geom_store import GeomStoreReader
+        from processing.settings import GEOM_STORE_DIR
+        _reader = GeomStoreReader(GEOM_STORE_DIR)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("geom-store unavailable — exact containment degraded: %s", exc)
+        _reader = None
+    return _reader
+
+
+# ---------------------------------------------------------------------------
+# H3 helpers
+# ---------------------------------------------------------------------------
+
+def _pick_polyfill_resolution(bbox_area_deg2: float) -> int:
+    for res in (H3_CENTROID_RESOLUTION, 5, 3):
+        if bbox_area_deg2 / max(_H3_HEX_AREA_DEG2.get(res, 0.045), 1e-12) <= H3_POLYFILL_MAX_CELLS:
+            return res
+    return 3
+
+
+def _polyfill(geom) -> set[str]:
+    if not _H3_AVAILABLE:
+        return set()
+    try:
+        shape_obj = _h3.geo_to_h3shape(_mapping(geom))
+    except Exception:
+        return set()
+    minx, miny, maxx, maxy = geom.bounds
+    start = _pick_polyfill_resolution(max(0.0, (maxx - minx) * (maxy - miny)))
+    tried: list[int] = []
+    for res in (start, 5, 3):
+        if res in tried:
+            continue
+        tried.append(res)
+        try:
+            cells = _h3.h3shape_to_cells(shape_obj, res)
+            if len(cells) <= H3_POLYFILL_MAX_CELLS:
+                return set(cells)
+        except Exception:
+            continue
+    return set()
+
+
+def _group_by_res(cells: Iterable[str]) -> dict[int, set[str]]:
+    by_res: dict[int, set[str]] = {}
+    for cell in cells:
+        if not isinstance(cell, str) or not cell:
+            continue
+        try:
+            res = _h3.get_resolution(cell)
+        except Exception:
+            continue
+        by_res.setdefault(res, set()).add(cell)
+    return by_res
+
+
+def _safe_parent(cell: str, res: int) -> Optional[str]:
+    try:
+        return _h3.cell_to_parent(cell, res)
+    except Exception:
+        return None
+
+
+def _es_h3_terms(cover_by_res: dict[int, set[str]]) -> list[str]:
+    """Region cover cells + their ancestors, for the ES ``h3_cover`` terms
+    recall clause (catches large candidates spanning the region). Capped."""
+    if not _H3_AVAILABLE:
+        return []
+    terms: set[str] = set()
+    for res, cells in cover_by_res.items():
+        for cell in cells:
+            terms.add(cell)
+            for parent_res in range(res - 1, -1, -1):
+                p = _safe_parent(cell, parent_res)
+                if p is None:
+                    break
+                terms.add(p)
+        if len(terms) > _ES_H3_TERMS_CAP:
+            flat: set[str] = set()
+            for cs in cover_by_res.values():
+                flat.update(cs)
+            return list(flat)[:_ES_H3_TERMS_CAP]
+    return list(terms)
+
+
+# ---------------------------------------------------------------------------
+# Resolved region
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ResolvedRegion:
+    cover_by_res: dict[int, set[str]]      # fuzzy: region H3 cover, by resolution
+    resolutions: tuple[int, ...]
+    bbox_geojson: dict                     # envelope for the cheap ES gate
+    h3_terms: list[str]                    # region cells + ancestors (ES recall)
+    geom_keys: tuple[str, ...] = ()        # "{pid}_{idx}" keys for lazy exact load
+    union: Any = None                      # shapely region (exact; lazy)
+    prepared: Any = None                   # prep(union) (exact; lazy)
+    _geom_loaded: bool = False
+
+    @property
+    def has_cover(self) -> bool:
+        return bool(self.cover_by_res)
+
+    def load_geometry(self, reader) -> bool:
+        """Load the region's real polygons from the geom-store for exact tests.
+        Returns True if a usable geometry is now available."""
+        if self.prepared is not None:
+            return True
+        if self._geom_loaded:
+            return self.prepared is not None
+        self._geom_loaded = True
+        if reader is None or not _SHAPELY_AVAILABLE:
+            return False
+        shapes = []
+        for key in self.geom_keys:
+            try:
+                gj = reader.get(key)
+            except Exception:
+                gj = None
+            if gj:
+                shp = _safe_shape(gj)
+                if shp is not None:
+                    shapes.append(shp)
+        if not shapes:
+            return False
+        try:
+            self.union = _unary_union(shapes) if len(shapes) > 1 else shapes[0]
+            self.prepared = _prep(self.union)
+        except Exception:
+            self.union = None
+            self.prepared = None
+            return False
+        return True
+
+
+def _safe_shape(gj: dict):
+    try:
+        shp = _shape(gj)
+        if shp is None or shp.is_empty:
+            return None
+        if not shp.is_valid:
+            shp = shp.buffer(0)
+        return None if shp.is_empty else shp
+    except Exception:
+        return None
+
+
+def _bbox_geojson_from_bounds(bounds_list: list[list[float]]) -> Optional[dict]:
+    boxes = [b for b in bounds_list if isinstance(b, (list, tuple)) and len(b) == 4]
+    if not boxes:
+        return None
+    w = min(b[0] for b in boxes); s = min(b[1] for b in boxes)
+    e = max(b[2] for b in boxes); n = max(b[3] for b in boxes)
+    return {"type": "Polygon", "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]]}
+
+
+# --- region cache (in-process, size-capped) ---
+_region_cache: "OrderedDict[str, ResolvedRegion]" = OrderedDict()
+
+
+def _cache_get(key: str) -> Optional[ResolvedRegion]:
+    region = _region_cache.get(key)
+    if region is not None:
+        _region_cache.move_to_end(key)
+    return region
+
+
+def _cache_put(key: str, region: ResolvedRegion) -> None:
+    _region_cache[key] = region
+    _region_cache.move_to_end(key)
+    while len(_region_cache) > _REGION_CACHE_MAX:
+        _region_cache.popitem(last=False)
+
+
+def region_from_geojson(bounds: dict) -> Optional[ResolvedRegion]:
+    """Build a region from a raw GeoJSON geometry (the ``bounds`` param). The
+    geometry is supplied, so both fuzzy (polyfill → cover) and exact (prepared
+    union) are available without the geom-store."""
+    if not _SHAPELY_AVAILABLE or not isinstance(bounds, dict):
+        return None
+    key = "gj:" + hashlib.sha1(json.dumps(bounds, sort_keys=True).encode()).hexdigest()
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    parts = []
+    if bounds.get("type") == "GeometryCollection":
+        parts = [g for g in bounds.get("geometries", []) if isinstance(g, dict)]
+    elif bounds.get("type") and bounds.get("coordinates"):
+        parts = [bounds]
+    shapes = [s for s in (_safe_shape(p) for p in parts) if s is not None]
+    if not shapes:
+        return None
+    union = _unary_union(shapes) if len(shapes) > 1 else shapes[0]
+    if union.is_empty:
+        return None
+
+    cover = _group_by_res(_polyfill(union)) if union.area > 0 else {}
+    if not cover:
+        try:
+            rp = union.representative_point()
+            cover = {H3_CENTROID_RESOLUTION: {_h3.latlng_to_cell(rp.y, rp.x, H3_CENTROID_RESOLUTION)}}
+        except Exception:
+            cover = {}
+    minx, miny, maxx, maxy = union.bounds
+    region = ResolvedRegion(
+        cover_by_res=cover,
+        resolutions=tuple(sorted(cover.keys())),
+        bbox_geojson={"type": "Polygon", "coordinates": [[
+            [minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]]]},
+        h3_terms=_es_h3_terms(cover),
+        union=union,
+        prepared=_prep(union),
+        _geom_loaded=True,
+    )
+    _cache_put(key, region)
+    return region
+
+
+async def resolve_region(place_ids: list[str], client, auth) -> ResolvedRegion:
+    """Resolve a region from place_ids using only ES ``_source``: the region's
+    H3 cover (fuzzy) + bbox + the geom-store keys for lazy exact loading.
+
+    Raises ``RegionError`` when the places carry no usable coverage.
+    """
+    if not _H3_AVAILABLE:
+        raise RegionError("h3 unavailable in the gateway")
+    ids = sorted({p for p in (place_ids or []) if p})
+    if not ids:
+        raise RegionError("contained_in is empty")
+    key = "ids:" + "|".join(ids)
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    body = {
+        "size": len(ids),
+        "query": {"terms": {"place_id": ids}},
+        "_source": [
+            "place_id",
+            "geometries.h3_cover",
+            "geometries.geometry_index",
+            "geometries.bounds",
+            "geometries.repr_point",
+            "geometries.has_geom",
+        ],
+    }
+    resp = await client.post(
+        f"{ES_BACKEND}/{PLACES_INDEX}/_search",
+        json=body, auth=auth, headers=ES_HEADERS,
+    )
+    resp.raise_for_status()
+    hits = resp.json().get("hits", {}).get("hits", [])
+    if not hits:
+        raise RegionError(f"no places found for contained_in: {ids}")
+
+    all_cells: set[str] = set()
+    bounds_list: list[list[float]] = []
+    geom_keys: list[str] = []
+    for h in hits:
+        src = h.get("_source", {})
+        pid = src.get("place_id")
+        for idx, g in enumerate(src.get("geometries", []) or []):
+            if not isinstance(g, dict):
+                continue
+            cover = g.get("h3_cover")
+            if isinstance(cover, list):
+                all_cells.update(c for c in cover if isinstance(c, str))
+            elif isinstance(cover, str) and cover:
+                all_cells.add(cover)
+            b = g.get("bounds")
+            if isinstance(b, list) and len(b) == 4:
+                bounds_list.append(b)
+            if pid is not None:
+                geom_keys.append(f"{pid}_{g.get('geometry_index', idx)}")
+
+    cover_by_res = _group_by_res(all_cells)
+    if not cover_by_res:
+        raise RegionError(f"contained_in places have no h3 coverage: {ids}")
+
+    bbox = _bbox_geojson_from_bounds(bounds_list)
+    if bbox is None:
+        # Derive a bbox from the region cover cells as a fallback.
+        bbox = _bbox_from_cells(all_cells)
+
+    region = ResolvedRegion(
+        cover_by_res=cover_by_res,
+        resolutions=tuple(sorted(cover_by_res.keys())),
+        bbox_geojson=bbox,
+        h3_terms=_es_h3_terms(cover_by_res),
+        geom_keys=tuple(geom_keys),
+    )
+    _cache_put(key, region)
+    return region
+
+
+def _bbox_from_cells(cells: Iterable[str]) -> dict:
+    lons: list[float] = []
+    lats: list[float] = []
+    for cell in cells:
+        try:
+            lat, lon = _h3.cell_to_latlng(cell)
+        except Exception:
+            continue
+        lons.append(lon); lats.append(lat)
+    if not lons:
+        return {"type": "Polygon", "coordinates": [[[-180, -90], [180, -90], [180, 90], [-180, 90], [-180, -90]]]}
+    # pad by ~one r4 cell (~0.3°) so boundary candidates are gathered
+    pad = 0.3
+    w, e = min(lons) - pad, max(lons) + pad
+    s, n = min(lats) - pad, max(lats) + pad
+    return {"type": "Polygon", "coordinates": [[[w, s], [e, s], [e, n], [w, n], [w, s]]]}
+
+
+# ---------------------------------------------------------------------------
+# Containment tests
+# ---------------------------------------------------------------------------
+
+def _collect_h3_cover(src: dict) -> list[str]:
+    cover: list[str] = []
+    for g in src.get("geometries", []) or []:
+        if not isinstance(g, dict):
+            continue
+        cc = g.get("h3_cover")
+        if isinstance(cc, list):
+            cover.extend(c for c in cc if isinstance(c, str))
+        elif isinstance(cc, str) and cc:
+            cover.append(cc)
+    return cover
+
+
+def _normalise_cells_to_resolution(cells: Iterable[str], target_res: int) -> set[str]:
+    """Walk cells to ``target_res`` (parent if finer, children if coarser).
+    Ported from processing.ccode_enrichment."""
+    out: set[str] = set()
+    for cell in cells:
+        if not isinstance(cell, str) or not cell:
+            continue
+        try:
+            res = _h3.get_resolution(cell)
+        except Exception:
+            continue
+        if res == target_res:
+            out.add(cell)
+        elif res > target_res:
+            p = _safe_parent(cell, target_res)
+            if p is not None:
+                out.add(p)
+        else:
+            try:
+                out.update(_h3.cell_to_children(cell, target_res))
+            except Exception:
+                continue
+    return out
+
+
+def _point_in_region_h3(repr_point, region: ResolvedRegion) -> bool:
+    if not _H3_AVAILABLE or not repr_point:
+        return False
+    lon, lat = repr_point[0], repr_point[1]
+    for res in region.resolutions:
+        try:
+            if _h3.latlng_to_cell(lat, lon, res) in region.cover_by_res[res]:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _cover_overlaps_region(cover: list[str], region: ResolvedRegion) -> bool:
+    if not cover:
+        return False
+    for res in region.resolutions:
+        if _normalise_cells_to_resolution(cover, res) & region.cover_by_res[res]:
+            return True
+    return False
+
+
+def _cover_within_region(cover: list[str], region: ResolvedRegion) -> bool:
+    if not cover or not _H3_AVAILABLE:
+        return False
+    for cell in cover:
+        try:
+            cres = _h3.get_resolution(cell)
+        except Exception:
+            return False
+        inside = False
+        for res in region.resolutions:
+            if res > cres:
+                continue
+            target = cell if res == cres else _safe_parent(cell, res)
+            if target is not None and target in region.cover_by_res[res]:
+                inside = True
+                break
+        if not inside:
+            return False
+    return True
+
+
+def _candidate_geometry(src: dict, reader):
+    """Build the candidate's Shapely geometry from the geom-store (exact mode),
+    falling back to its repr_point if the polygon is unavailable."""
+    pid = src.get("place_id")
+    shapes = []
+    if reader is not None and pid:
+        for idx, g in enumerate(src.get("geometries", []) or []):
+            if not isinstance(g, dict):
+                continue
+            try:
+                gj = reader.get(f"{pid}_{g.get('geometry_index', idx)}")
+            except Exception:
+                gj = None
+            if gj:
+                shp = _safe_shape(gj)
+                if shp is not None:
+                    shapes.append(shp)
+    if not shapes:
+        # Fallback: any inline _source geom (rare in prod — usually only a
+        # repr_point Point is recoverable here, which is still a valid point
+        # test) — also the path unit tests exercise.
+        for gj in extract_place_geoms(src):
+            shp = _safe_shape(gj)
+            if shp is not None:
+                shapes.append(shp)
+    if shapes:
+        try:
+            return _unary_union(shapes) if len(shapes) > 1 else shapes[0]
+        except Exception:
+            return shapes[0]
+    return None
+
+
+def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, reader=None) -> bool:
+    rp = extract_repr_point(src)
+
+    if mode == "exact" and _SHAPELY_AVAILABLE and region.prepared is not None:
+        if relation == "within":
+            g = _candidate_geometry(src, reader)
+            if g is None:
+                return False
+            try:
+                return region.prepared.contains(g)
+            except Exception:
+                return False
+        # intersects: repr_point is guaranteed within the place geometry, so if
+        # it lies within R the geometry intersects R — skip the geom-store fetch.
+        if rp:
+            try:
+                if region.prepared.intersects(_Point(rp[0], rp[1])):
+                    return True
+            except Exception:
+                pass
+        g = _candidate_geometry(src, reader)
+        if g is None:
+            return False
+        try:
+            return region.prepared.intersects(g)
+        except Exception:
+            return False
+
+    # fuzzy (default; also the fallback when exact geometry is unavailable)
+    cover = _collect_h3_cover(src)
+    if relation == "within":
+        if not _point_in_region_h3(rp, region):
+            return False
+        return _cover_within_region(cover, region) if cover else True
+    if _point_in_region_h3(rp, region):
+        return True
+    return _cover_overlaps_region(cover, region)
+
+
+def apply_containment(
+    hits: list[dict], region: ResolvedRegion, mode: str = "fuzzy",
+    relation: str = "intersects", reader=None,
+) -> list[dict]:
+    """Filter ES place hits to those matching the containment region.
+
+    For ``mode='exact'`` the caller should pass ``reader`` (a GeomStoreReader)
+    and have called ``region.load_geometry(reader)``; if the region geometry
+    could not be loaded, exact silently degrades to the fuzzy test.
+    """
+    if region is None:
+        return hits
+    out: list[dict] = []
+    for hit in hits:
+        src = hit.get("_source", {})
+        try:
+            if hit_matches(src, region, mode, relation, reader=reader):
+                out.append(hit)
+        except Exception as exc:
+            logger.debug("containment test failed for a hit: %s", exc)
+    return out

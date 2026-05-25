@@ -38,6 +38,60 @@ ES_HEADERS = {"Content-Type": "application/json"}
 
 
 # ---------------------------------------------------------------------------
+# Geometry extraction from a place ``_source`` (shared by extend + spatial)
+# ---------------------------------------------------------------------------
+
+def extract_place_geoms(src: dict) -> list[dict]:
+    """Extract GeoJSON geometry objects from a place ``_source``.
+
+    Handles ES-wrapped (``{"geom": {...}}``), raw GeoJSON, and ``location``
+    forms; falls back to a Point built from ``repr_point`` when no full
+    geometry is present. Returns ALL geometries (not just the first), so
+    multi-geometry places are tested in full.
+    """
+    geoms: list[dict] = []
+    for g in src.get("geometries", []) or []:
+        if not isinstance(g, dict):
+            continue
+        geom_obj = g.get("geom")
+        if isinstance(geom_obj, dict) and geom_obj.get("type") and geom_obj.get("coordinates"):
+            geoms.append({"type": geom_obj["type"], "coordinates": geom_obj["coordinates"]})
+            continue
+        if g.get("type") and g.get("coordinates"):
+            geoms.append({"type": g["type"], "coordinates": g["coordinates"]})
+            continue
+        loc = g.get("location")
+        if isinstance(loc, dict) and loc.get("type") and loc.get("coordinates"):
+            geoms.append({"type": loc["type"], "coordinates": loc["coordinates"]})
+
+    if not geoms:
+        rp = extract_repr_point(src)
+        if rp:
+            geoms.append({"type": "Point", "coordinates": rp})
+    return geoms
+
+
+def extract_repr_point(src: dict) -> list[float] | None:
+    """Extract ``[lon, lat]`` from a place's top-level or per-geometry repr_point."""
+    rp = src.get("repr_point")
+    if rp:
+        if isinstance(rp, dict):
+            return [rp.get("lon", 0), rp.get("lat", 0)]
+        if isinstance(rp, list) and len(rp) == 2:
+            return rp
+    for g in src.get("geometries", []) or []:
+        if not isinstance(g, dict):
+            continue
+        rp = g.get("repr_point")
+        if rp:
+            if isinstance(rp, dict):
+                return [rp.get("lon", 0), rp.get("lat", 0)]
+            if isinstance(rp, list) and len(rp) == 2:
+                return rp
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Step 1 helpers — Toponym discovery
 # ---------------------------------------------------------------------------
 
@@ -157,7 +211,7 @@ def _has_geometries(bounds: dict) -> bool:
         return bool(bounds.get("geometries"))
     return bool(geom_type)
 def build_places_filter(
-    place_ids: list[str],
+    place_ids: list[str] | None,
     ccodes: list[str] | None,
     bounds: dict | None,
     start_year: int | None,
@@ -169,6 +223,7 @@ def build_places_filter(
     types: list[str] | None = None,
     extra_source: list[str] | None = None,
     geom: str = "full",
+    region=None,
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
@@ -188,10 +243,16 @@ def build_places_filter(
         geom: ``"full"`` (default) returns ``geometries.geom`` and
             ``geometries.repr_point``; ``"repr_point"`` returns only the
             centroid, keeping responses lightweight for list/suggest views.
+        region: An optional resolved containment region (duck-typed; expects
+            ``.bbox_geojson`` and ``.h3_terms``). When set, adds a coarse
+            spatial gate — ``repr_point`` intersecting the region bbox OR
+            ``h3_cover`` matching the region's cells — to pre-trim candidates
+            before the precise Python-side containment refine. ``place_ids``
+            may be ``None``/empty for a pure-spatial query.
     """
-    filter_clauses: list[dict] = [
-        {"terms": {"place_id": place_ids}},
-    ]
+    filter_clauses: list[dict] = []
+    if place_ids:
+        filter_clauses.append({"terms": {"place_id": place_ids}})
     must_not_clauses: list[dict] = []
 
     if namespaces:
@@ -240,6 +301,36 @@ def build_places_filter(
             }
         })
 
+    # Containment region — coarse spatial gate. repr_point ∈ bbox(R) is cheap
+    # and (since repr_point is guaranteed within the geometry) a true-positive
+    # signal; the h3_cover terms clause adds recall for large polygons that
+    # overlap R far from their repr_point. The precise containment decision is
+    # made Python-side in ``spatial.apply_containment``.
+    if region is not None:
+        should: list[dict] = [
+            {
+                "nested": {
+                    "path": "geometries",
+                    "query": {
+                        "geo_shape": {
+                            "geometries.repr_point": {
+                                "shape": region.bbox_geojson,
+                                "relation": "intersects",
+                            }
+                        }
+                    },
+                }
+            }
+        ]
+        if getattr(region, "h3_terms", None):
+            should.append({
+                "nested": {
+                    "path": "geometries",
+                    "query": {"terms": {"geometries.h3_cover": region.h3_terms}},
+                }
+            })
+        filter_clauses.append({"bool": {"should": should, "minimum_should_match": 1}})
+
     if start_year is not None or end_year is not None:
         temporal_conditions = []
         if start_year is not None:
@@ -271,6 +362,16 @@ def build_places_filter(
         if geom == "full"
         else ["geometries.repr_point"]
     )
+    # Fields the Python-side containment refine needs when a region is active:
+    # h3_cover (fuzzy), repr_point (fast-path / fallback), bounds, and
+    # geometry_index (to build the geom-store key "{place_id}_{idx}" for the
+    # exact-mode polygon fetch). The full polygon is NOT in _source — exact mode
+    # reads it from the /vast geom-store instead.
+    if region is not None:
+        for f in ("geometries.h3_cover", "geometries.repr_point",
+                  "geometries.geometry_index"):
+            if f not in geom_fields:
+                geom_fields.append(f)
     source_fields = [
         "place_id", "namespace", "title", "ccodes",
         *geom_fields,
