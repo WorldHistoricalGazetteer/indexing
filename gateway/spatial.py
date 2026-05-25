@@ -520,6 +520,17 @@ def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, rea
 
     if mode == "exact" and _SHAPELY_AVAILABLE and region.prepared is not None:
         if relation == "within":
+            # Cheap, exact fast-reject: repr_point is guaranteed within the
+            # candidate's geometry, so geometry ⊆ R requires repr_point ∈ R.
+            # A point-in-polygon test (~µs) lets us skip the expensive
+            # geom-store polygon load for every candidate that overlaps R but
+            # spills outside it (e.g. cross-border polygons).
+            if rp:
+                try:
+                    if not region.prepared.intersects(_Point(rp[0], rp[1])):
+                        return False
+                except Exception:
+                    pass
             g = _candidate_geometry(src, reader)
             if g is None:
                 return False
