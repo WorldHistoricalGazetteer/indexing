@@ -18,9 +18,10 @@ from collections import defaultdict
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 
+from . import spatial
 from .config import (
     ES_BACKEND,
     PLACES_INDEX,
@@ -51,9 +52,29 @@ router = APIRouter(prefix="/api", tags=["Search"])
 class SearchRequest(BaseModel):
     """Query shape sent by the WHG Django beta proxy."""
 
-    query: str = Field(..., description="Search text")
+    query: Optional[str] = Field(
+        None,
+        description="Search text. Optional — omit for a pure-spatial query "
+                    "(must then supply contained_in or bounds).",
+    )
     mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic")
     ccodes: Optional[list[str]] = Field(None, description="ISO-3166 country code filter")
+    contained_in: Optional[list[str]] = Field(
+        None,
+        description="Place_ids whose geometries define a containment region. "
+                    "Results are filtered to places spatially contained-in / "
+                    "intersecting the union of those geometries.",
+    )
+    containment: str = Field(
+        "fuzzy",
+        description="Containment test for contained_in/bounds: 'fuzzy' (H3 "
+                    "cell-based, fast, tolerant) | 'exact' (Shapely geometry).",
+    )
+    relation: str = Field(
+        "intersects",
+        description="Spatial relation: 'intersects' (any overlap, default) | "
+                    "'within' (candidate geometry fully inside the region).",
+    )
     fclasses: Optional[list[str]] = Field(
         None,
         description="GeoNames feature-class letters (e.g. ['P', 'A']). "
@@ -188,8 +209,10 @@ async def search(req: SearchRequest):
       **Step 3 — Enrichment.**  Fetch full toponym inventory for surviving
       places, plus cluster membership for prominence ranking.
     """
-    if not req.query or not req.query.strip():
+    has_query = bool(req.query and req.query.strip())
+    if not has_query and not req.contained_in and not req.bounds:
         return SearchResponse()
+    pure_spatial = not has_query
 
     auth = es_auth()
 
@@ -202,45 +225,65 @@ async def search(req: SearchRequest):
     async with httpx.AsyncClient(timeout=30) as client:
 
         # ------------------------------------------------------------------
-        # Step 1: Discovery — search toponyms → collect unique place_ids
+        # Step 0: Resolve containment region (contained_in place_ids or bounds)
         # ------------------------------------------------------------------
 
-        if req.mode in ("fuzzy", "phonetic"):
-            knn_body = build_phonetic_knn(req.query, k=200, similarity=0.7)
-            if knn_body:
-                knn_resp = await client.post(
-                    f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                    json=knn_body, auth=auth, headers=ES_HEADERS,
-                )
-                knn_resp.raise_for_status()
-                knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
-        else:
-            text_body = build_toponym_query(req.query, req.mode, size=200)
-            text_resp = await client.post(
-                f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                json=text_body, auth=auth, headers=ES_HEADERS,
-            )
-            text_resp.raise_for_status()
-            text_hits = text_resp.json().get("hits", {}).get("hits", [])
-            collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
+        region = None
+        if req.contained_in:
+            try:
+                region = await spatial.resolve_region(req.contained_in, client, auth)
+            except spatial.RegionError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+        elif req.bounds:
+            region = spatial.region_from_geojson(req.bounds)
 
-        if not place_scores:
+        if pure_spatial and region is None and not req.bounds:
             return SearchResponse()
+
+        # ------------------------------------------------------------------
+        # Step 1: Discovery — search toponyms → collect unique place_ids
+        # (skipped for a pure-spatial query)
+        # ------------------------------------------------------------------
+
+        if not pure_spatial:
+            if req.mode in ("fuzzy", "phonetic"):
+                knn_body = build_phonetic_knn(req.query, k=200, similarity=0.7)
+                if knn_body:
+                    knn_resp = await client.post(
+                        f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                        json=knn_body, auth=auth, headers=ES_HEADERS,
+                    )
+                    knn_resp.raise_for_status()
+                    knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
+                    collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
+            else:
+                text_body = build_toponym_query(req.query, req.mode, size=200)
+                text_resp = await client.post(
+                    f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                    json=text_body, auth=auth, headers=ES_HEADERS,
+                )
+                text_resp.raise_for_status()
+                text_hits = text_resp.json().get("hits", {}).get("hits", [])
+                collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
+
+            if not place_scores:
+                return SearchResponse()
 
         # ------------------------------------------------------------------
         # Step 2: Filtering + Aggregations — fetch places by ID + filters
         # ------------------------------------------------------------------
 
-        fetch_ids = list(place_scores.keys())
+        fetch_ids = list(place_scores.keys()) if not pure_spatial else None
 
         places_body = build_places_filter(
             place_ids=fetch_ids,
             ccodes=req.ccodes,
-            bounds=req.bounds,
+            bounds=(req.bounds if region is None else None),
+            region=region,
             start_year=req.start_year,
             end_year=req.end_year,
-            size=req.size * 4,  # over-fetch for re-ranking
+            # over-fetch more for pure-spatial (region refine drops candidates)
+            size=min(req.size * (8 if pure_spatial else 4), 10000),
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
@@ -286,6 +329,16 @@ async def search(req: SearchRequest):
         places_result = places_resp.json()
 
         raw_hits = places_result.get("hits", {}).get("hits", [])
+
+        # --------------------------------------------------------------
+        # Step 2.5: Precise containment refine (fuzzy H3 / exact Shapely)
+        # --------------------------------------------------------------
+        if region is not None:
+            raw_hits = spatial.apply_containment(
+                raw_hits, region, req.containment, req.relation,
+            )
+            raw_hits = raw_hits[: req.size * 4]  # keep enrichment bounded
+
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
         ]
@@ -453,7 +506,13 @@ async def search(req: SearchRequest):
             "count": bucket.get("doc_count", 0),
         })
 
-    total = places_result.get("hits", {}).get("total", {}).get("value", len(results))
+    # When a containment region is active the ES total counts pre-refine
+    # candidates; report the post-refine survivor count instead (within the
+    # over-fetch window — facets/aggregations still reflect the candidate set).
+    if region is not None:
+        total = len(surviving_pids)
+    else:
+        total = places_result.get("hits", {}).get("total", {}).get("value", len(results))
 
     return SearchResponse(
         hits=results,

@@ -38,9 +38,10 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from . import spatial
 from .config import (
     ES_BACKEND,
     CLUSTERS_INDEX,
@@ -83,6 +84,22 @@ class ReconcileRequest(BaseModel):
                     "(e.g. ['aat:300008347']). Filters on nested types.identifier.",
     )
     bounds: Optional[dict] = Field(None, description="GeoJSON geometry for spatial filter (intersects)")
+    contained_in: Optional[list[str]] = Field(
+        None,
+        description="Place_ids whose geometries define a containment region. "
+                    "Candidates are filtered to places spatially contained-in / "
+                    "intersecting the union of those geometries.",
+    )
+    containment: str = Field(
+        "fuzzy",
+        description="Containment test for contained_in/bounds: 'fuzzy' (H3 "
+                    "cell-based, fast, tolerant) | 'exact' (Shapely geometry).",
+    )
+    relation: str = Field(
+        "intersects",
+        description="Spatial relation: 'intersects' (any overlap, default) | "
+                    "'within' (candidate geometry fully inside the region).",
+    )
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
     size: int = Field(50, ge=1, le=500, description="Max results to return")
@@ -225,8 +242,10 @@ async def reconcile_search(req: ReconcileRequest):
     import httpx
     from collections import defaultdict
 
-    if not req.query:
+    has_query = bool(req.query and req.query.strip())
+    if not has_query and not req.contained_in and not req.bounds:
         return ReconcileResponse()
+    pure_spatial = not has_query
 
     auth = _es_auth()
 
@@ -241,35 +260,53 @@ async def reconcile_search(req: ReconcileRequest):
 
     async with httpx.AsyncClient(timeout=30) as client:
         # ------------------------------------------------------------------
-        # Step 1: Discovery — search toponyms → collect unique place_ids
+        # Step 0: Resolve containment region (contained_in place_ids or bounds)
         # ------------------------------------------------------------------
 
-        if req.mode in ("fuzzy", "phonetic"):
-            knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
-            if knn_body:
-                knn_resp = await client.post(
+        region = None
+        if req.contained_in:
+            try:
+                region = await spatial.resolve_region(req.contained_in, client, auth)
+            except spatial.RegionError as exc:
+                raise HTTPException(status_code=422, detail=str(exc))
+        elif req.bounds:
+            region = spatial.region_from_geojson(req.bounds)
+
+        if pure_spatial and region is None and not req.bounds:
+            return ReconcileResponse()
+
+        # ------------------------------------------------------------------
+        # Step 1: Discovery — search toponyms → collect unique place_ids
+        # (skipped for a pure-spatial query)
+        # ------------------------------------------------------------------
+
+        if not pure_spatial:
+            if req.mode in ("fuzzy", "phonetic"):
+                knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
+                if knn_body:
+                    knn_resp = await client.post(
+                        f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                        json=knn_body,
+                        auth=auth,
+                        headers=ES_HEADERS,
+                    )
+                    knn_resp.raise_for_status()
+                    knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
+                    _collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
+            else:
+                text_body = _build_toponym_query(req.query, req.mode, size=200)
+                text_resp = await client.post(
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                    json=knn_body,
+                    json=text_body,
                     auth=auth,
                     headers=ES_HEADERS,
                 )
-                knn_resp.raise_for_status()
-                knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                _collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
-        else:
-            text_body = _build_toponym_query(req.query, req.mode, size=200)
-            text_resp = await client.post(
-                f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                json=text_body,
-                auth=auth,
-                headers=ES_HEADERS,
-            )
-            text_resp.raise_for_status()
-            text_hits = text_resp.json().get("hits", {}).get("hits", [])
-            _collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
+                text_resp.raise_for_status()
+                text_hits = text_resp.json().get("hits", {}).get("hits", [])
+                _collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
 
-        if not place_scores:
-            return ReconcileResponse()
+            if not place_scores:
+                return ReconcileResponse()
 
         # ------------------------------------------------------------------
         # Step 2: Filtering — fetch places by ID + spatial/temporal/ccode
@@ -279,15 +316,16 @@ async def reconcile_search(req: ReconcileRequest):
         # inverted-index lookup that handles thousands of IDs with
         # negligible cost.  Over-fetch (size * 4) so that re-ranking
         # in Step 4 can surface the best candidates after filters trim.
-        fetch_ids = list(place_scores.keys())
+        fetch_ids = list(place_scores.keys()) if not pure_spatial else None
 
         places_body = _build_places_filter(
             place_ids=fetch_ids,
             ccodes=req.ccodes,
-            bounds=req.bounds,
+            bounds=(req.bounds if region is None else None),
+            region=region,
             start_year=req.start_year,
             end_year=req.end_year,
-            size=req.size * 4,
+            size=min(req.size * (8 if pure_spatial else 4), 10000),
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
@@ -303,6 +341,16 @@ async def reconcile_search(req: ReconcileRequest):
         places_result = places_resp.json()
 
         raw_hits = places_result.get("hits", {}).get("hits", [])
+
+        # --------------------------------------------------------------
+        # Step 2.5: Precise containment refine (fuzzy H3 / exact Shapely)
+        # --------------------------------------------------------------
+        if region is not None:
+            raw_hits = spatial.apply_containment(
+                raw_hits, region, req.containment, req.relation,
+            )
+            raw_hits = raw_hits[: req.size * 4]
+
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
         ]

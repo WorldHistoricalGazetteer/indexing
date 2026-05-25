@@ -34,6 +34,8 @@ from .es_helpers import (
     es_auth,
     ES_HEADERS,
     build_toponym_lookup,
+    extract_place_geoms as _extract_geojson_geoms,
+    extract_repr_point as _extract_repr_point_raw,
 )
 
 logger = logging.getLogger("gateway.extend")
@@ -146,59 +148,9 @@ def _wrap_value(val: Any) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Geometry helpers
+# Geometry helpers — shared implementations live in es_helpers
+# (imported above as _extract_geojson_geoms / _extract_repr_point_raw).
 # ---------------------------------------------------------------------------
-
-def _extract_geojson_geoms(src: dict) -> list[dict]:
-    """
-    Extract GeoJSON geometry objects from a place record.
-
-    Handles both raw GeoJSON (``{"type": "Point", ...}``) and
-    ES-wrapped (``{"geom": {"type": "Point", ...}}``).  Falls back to
-    ``repr_point`` when no full geometries exist.
-    """
-    geoms: list[dict] = []
-    for g in src.get("geometries", []):
-        # ES-wrapped shape
-        geom_obj = g.get("geom")
-        if isinstance(geom_obj, dict) and geom_obj.get("type") and geom_obj.get("coordinates"):
-            geoms.append({"type": geom_obj["type"], "coordinates": geom_obj["coordinates"]})
-            continue
-        # Raw GeoJSON (used by some authorities)
-        if g.get("type") and g.get("coordinates"):
-            geoms.append({"type": g["type"], "coordinates": g["coordinates"]})
-            continue
-        # Wrapped under "location"
-        loc = g.get("location")
-        if isinstance(loc, dict) and loc.get("type") and loc.get("coordinates"):
-            geoms.append({"type": loc["type"], "coordinates": loc["coordinates"]})
-
-    # Fall back to repr_point
-    if not geoms:
-        rp = _extract_repr_point_raw(src)
-        if rp:
-            geoms.append({"type": "Point", "coordinates": rp})
-    return geoms
-
-
-def _extract_repr_point_raw(src: dict) -> list[float] | None:
-    """Extract [lon, lat] from repr_point or the first geometry's repr_point."""
-    # Top-level repr_point
-    rp = src.get("repr_point")
-    if rp:
-        if isinstance(rp, dict):
-            return [rp.get("lon", 0), rp.get("lat", 0)]
-        if isinstance(rp, list) and len(rp) == 2:
-            return rp
-    # Nested in geometries
-    for g in src.get("geometries", []):
-        rp = g.get("repr_point")
-        if rp:
-            if isinstance(rp, dict):
-                return [rp.get("lon", 0), rp.get("lat", 0)]
-            if isinstance(rp, list) and len(rp) == 2:
-                return rp
-    return None
 
 
 def _geojson_to_wkt(geojson: dict) -> str | None:

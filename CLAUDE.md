@@ -66,9 +66,13 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
 - **Gateway** (`gateway/`): FastAPI app on port 9200 (the only port open
   through the CRC firewall). Routes Kibana traffic by `Host` header, proxies
   all other HTTP to ES on localhost:9201. Custom endpoints under `/api/`:
-  - `POST /api/search` — full filtered search (3-step: discovery → filtering → enrichment)
+  - `POST /api/search` — full filtered search (3-step: discovery → filtering → enrichment).
+    Supports **spatial containment** via `contained_in` (place_ids defining the region) or
+    `bounds` (raw GeoJSON), with `containment` = `fuzzy` (H3) | `exact` (Shapely) and
+    `relation` = `intersects` | `within`. `query` is optional — omit for a pure-spatial query.
   - `GET /api/suggest` — fast typeahead on toponyms index
-  - `POST /api/reconcile` — reconciliation search (same 3-step architecture)
+  - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
+    `contained_in`/`containment`/`relation` spatial-containment params as `/api/search`)
   - `GET /api/search/phonetic` — Symphonym KNN phonetic search
   - `GET /api/embed`, `POST /api/embed` — Symphonym embedding generation
   - `GET /api/health` — gateway + ES cluster health check
@@ -248,7 +252,8 @@ elevation    integer
 | `config.py` | Loads `.env`; exports `ES_BACKEND` (localhost:9201), `KIBANA_BACKEND` (localhost:5601), index name patterns (`places_*`, `toponyms_*`, `clusters`), Symphonym model dir |
 | `search.py` | `POST /api/search` and `GET /api/suggest` — the main search router |
 | `reconcile.py` | `POST /api/reconcile` — reconciliation search (same 3-step architecture as search) |
-| `es_helpers.py` | Shared ES query builders: `build_toponym_query`, `build_phonetic_knn`, `collect_place_ids`, `build_places_filter`, `build_toponym_lookup`, `build_cluster_lookup`, `build_suggest_query` |
+| `es_helpers.py` | Shared ES query builders: `build_toponym_query`, `build_phonetic_knn`, `collect_place_ids`, `build_places_filter`, `build_toponym_lookup`, `build_cluster_lookup`, `build_suggest_query`; geometry extractors `extract_place_geoms`/`extract_repr_point` |
+| `spatial.py` | Spatial-containment engine (no reindex): `resolve_region` (place_ids → region), `region_from_geojson` (bounds → region), `apply_containment` (fuzzy H3 / exact Shapely). H3 prefilter + Shapely `prep()` refine ported from `processing/ccode_enrichment.py`; exploits `repr_point ∈ geom` guarantee. Used by `search.py` + `reconcile.py` Step 2.5. |
 | `proxy.py` | Async reverse proxy (httpx + websockets) with connection pooling |
 | `symphonym.py` | Lazy-loads Symphonym v7 UniversalEncoder; provides `embed()`, `embed_batch()`, `quantize_to_byte()`, `build_knn_query()` |
 

@@ -230,16 +230,52 @@ The gateway endpoint `POST /api/search` accepts:
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `query` | string | *required* | Search text |
+| `query` | string \| null | null | Search text. **Optional** — omit for a pure-spatial query (must then supply `contained_in` or `bounds`). |
 | `mode` | string | `"fuzzy"` | `exact` \| `starts` \| `in` \| `fuzzy` \| `phonetic` |
 | `ccodes` | string[] \| null | null | ISO-3166 country codes |
-| `bounds` | GeoJSON dict \| null | null | Spatial filter geometry (intersects) |
+| `bounds` | GeoJSON dict \| null | null | Spatial filter geometry. Routed through the containment engine (§4.4a). |
+| `contained_in` | string[] \| null | null | Place_ids whose geometries define a containment region (§4.4a). |
+| `containment` | string | `"fuzzy"` | `fuzzy` (H3 cell-based) \| `exact` (Shapely geometry). |
+| `relation` | string | `"intersects"` | `intersects` (any overlap) \| `within` (candidate fully inside region). |
 | `start_year` | int \| null | null | Temporal filter start |
 | `end_year` | int \| null | null | Temporal filter end |
 | `undated` | bool | false | Include places with no timespans |
 | `size` | int | 100 | Max results (1–500) |
 | `exclude_namespaces` | string[] | `["gb"]` | Namespace prefixes to exclude |
 | `geom` | string | `"full"` | `"full"` (complete geometries + repr_point) or `"repr_point"` (centroids only) |
+
+`POST /api/reconcile` accepts the same `contained_in` / `containment` / `relation` fields
+(its `query` was already optional).
+
+### 4.2a Spatial-containment filter (`contained_in` / `bounds`) — `gateway/spatial.py`
+
+A general spatial-containment capability used by the Atlas UI and the WHG Reconciliation API.
+Callers pass **place_ids** (`contained_in`) and/or raw GeoJSON (`bounds`); the gateway resolves
+them to a **containment region** and filters results to places that `intersects` / `within` it.
+**No Elasticsearch reindex** — it uses only already-indexed fields.
+
+Two-pass engine (mirrors `processing/ccode_enrichment.py`):
+
+1. **Step 0 — resolve region.** `resolve_region(place_ids)` fetches the region places' own
+   `geom` from `_source` and Shapely-unions them; `region_from_geojson(bounds)` does the same
+   for raw geometry. Builds a compacted, multi-resolution **H3 cover** (adaptive polyfill,
+   capped) + a prepared Shapely geometry. Resolved regions are cached (the Atlas pattern reuses
+   the same region repeatedly). A region place with no geometry → **HTTP 422**. (The
+   gazetteer-level `h3_coverage="global"` sentinel is irrelevant here — per-place geometry
+   exists for all gazetteers, so osm/ohm/wd/gn/po/tgn polygons are valid regions.)
+2. **Step 1 — candidate gather (ES).** Text+spatial → toponym discovery as usual; pure-spatial
+   → skip discovery and gather via `build_places_filter(region=…)`: `repr_point` ∈ region bbox
+   **OR** `h3_cover` ∩ region cells (the latter gives recall for large polygons that overlap the
+   region away from their representative point).
+3. **Step 2.5 — refine** (`apply_containment`): **fuzzy** = H3 cell membership (cheap, tolerant
+   to the coarsest region-cover resolution); **exact** = Shapely `prepared.intersects/contains`.
+   Key optimisation: `repr_point` is computed via `representative_point()` so it is **guaranteed
+   within the place geometry** — hence `repr_point ∈ region ⟹ intersects` with no Shapely, so
+   the exact refine only parses full geometry for the smaller `h3_cover`-gathered subset.
+
+**Caveat:** type/country **facets** are computed by ES on the pre-refine candidate set, so they
+slightly over-count relative to the refined hits (documented; recompute-in-Python is a possible
+follow-up). The response `total` for region queries reports the post-refine survivor count.
 
 ### 4.3 Step 1 — Discovery (toponym search)
 
