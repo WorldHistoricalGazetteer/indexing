@@ -3091,6 +3091,10 @@ Fix:
 
 ### Tile bucket results so far
 
+> **⚠️ The 2026-05-01 table below is SUPERSEDED — see "Verified tile state (2026-05-25)".**
+> It froze with `ohm_admin` in flight and OSM blocked; all buckets in fact completed by
+> 2026-05-05 and are deployed and registered on the tileserver.
+
 | Bucket | Input GeoJSONL | mbtiles | Wall | Notes |
 |---|---:|---:|---:|---|
 | `po` | 6.6 MB | 1129 MB | 46 m | 7 815 features. |
@@ -3099,15 +3103,42 @@ Fix:
 | `osm_admin` | (pending) | — | — | Blocked on OSM boundary chain. |
 | `osm_misc` | (pending) | — | — | Same. |
 
-### OSM boundary chain — current attempt
+### Verified tile state (2026-05-25)
 
-`osm-boundary-rerun-20260501T012000Z` is the chain that combines all the
-fixes above. Planner now persists the prefilter to a known path on
-`/vast`; workers reuse it; per-namespace walltime is `12 h` (planner)
-+ `24 h` (regular workers) + `96 h` (mega workers); finalize concatenates
-shard JSONLs and flips `manifest['ohm']['stages']['boundary']` to
-`completed`. The previous attempts were derailed by the in-process
-timeouts and the 0-byte prefilter copy; this one should be the clean run.
+Checked live against CRC (`/ix1/ishi/data/tiles/`), the tileserver
+(`/srv/tileserver/tiles/` + `config.json` + `whg-context/style.json`) and the
+per-namespace tile-stage event logs. **Generation, push and registration are all
+complete** — the doc table above is stale.
+
+- **25 tilesets generated + deployed + registered**, all dated 2026-05-05:
+  - **Fixed (boundary-gated):** `osm` (1.08 GB), `ohm` (601 MB), `osm_misc` (125 MB) —
+    `osm`/`ohm` completed under `osm-ohm-rebuild-20260505T202349Z` (755 423 osm /
+    68 154 ohm features). These replace the pre-rename `osm_admin`/`ohm_admin` names.
+  - **Per-namespace (14):** `gn` (1.49 GB), `wd` (1.52 GB), `clio` (1.59 GB), `po` (966 MB),
+    `tgn` (378 MB), `gb` (125 MB), `nl` (112 MB), `un` (73 MB), `pl`, `iv`, `chgis`, `tm`,
+    `dp`, `dgsd`.
+  - **Context overlay:** `gn_capitals` (3.1 MB).
+  - **Per-WHG-dataset:** 7 `whg-*` (892, 1052, 1076, 1361, 1481, 1485, 1486).
+- All 25 are in tileserver `config.json` `data{}`; `whg-context/style.json` sources include
+  `osm`, `ohm`, `osm_misc`, `clio`, `nl`, `po`.
+- **Stale pre-rename artifacts removed (2026-05-25):** `osm_admin.mbtiles` +
+  `ohm_admin.mbtiles` (dated 05-03) deleted from `/ix1/ishi/data/tiles/` — superseded by
+  `osm`/`ohm`, never pushed to the tileserver.
+
+**Open tail — WHG-dataset coverage (not an OSM/OHM/context-tile gap):** `config.json` still
+carries **79 legacy `datasets-*` / `collections-*`** contributor tilesets (WHG v3, 2024-era).
+**These MUST remain** — the legacy system still serves them. Only **7 new `whg-*`** buckets
+exist, matching the small `whg` slice pulled this rebuild (14,206 records). Full migration of
+contributed datasets onto `whg-*` buckets is the real outstanding item; ties to the Batch 11
+inventory-push / WHG-coverage thread.
+
+### OSM boundary chain — RESOLVED
+
+`osm-boundary-rerun-20260501T012000Z` (planner persists prefilter to `/vast`; workers reuse it;
+finalize concatenates shard JSONLs and flips `boundary` → `completed`) ran clean. OSM/OHM
+`boundary_merge` completed and fed the 2026-05-05 admin tilesets above. Boundary geometry was
+indexed into prod via the 2026-05-02 `osm/final` snapshot (see the 2026-05-25 status snapshot:
+prod does **not** need an OSM re-index).
 
 ### Repo relocation: `/ix1/ishi/elastic` → `/vast/ishi/elastic` (2026-05-01)
 
