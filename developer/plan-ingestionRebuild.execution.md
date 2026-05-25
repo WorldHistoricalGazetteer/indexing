@@ -96,6 +96,12 @@ authority selection moves to the API and the markdown file is retired.
 
 ### Status snapshot
 
+> **⚠️ 2026-05-25:** Batches 1–12 are **complete and live in production** — the full rebuild
+> was cut over on 2026-05-03/04 (`places`/`toponyms` aliases → `*_postbarrier-20260502t130000z`).
+> See the **"Status snapshot — 2026-05-25"** section below for the authoritative live state. The
+> table below is updated to match. Only the DO-side legacy flagging (13b), the formal test
+> harness (14), and the future retention sweep (14a) remain open.
+
 | Batch | Scope | Status |
 |-------|-------|--------|
 | 1 | Schema / settings / staged layout | Done — `dataset_status` / `dataset_id` schema + writer guards added; aggregate contract + SQLite hard-link DDL documented in `staging_contract.py` |
@@ -105,21 +111,21 @@ authority selection moves to the API and the markdown file is retired.
 | 4b | Canary refactors (`nl`, `po`, `clio`) | Done — staged-mode + ES backward compat across all three |
 | 4c Phase 1 | `gn`, `wd`, `osm`, `ohm` refactor | Done |
 | 4c Phase 2 | `tgn`, `pl`, `gb`, `iv` refactor | Done |
-| 4c Phase 3 | `geonames-toponyms`, `wikidata-geoshapes` (update scripts — different semantics) | Pending |
-| 4c Phase 4 | `whg` ingestion (DO API + LPF + per-Dataset/Collection sub-namespaces) | Pending — requires Django clone access |
+| 4c Phase 3 | `geonames-toponyms`, `wikidata-geoshapes` (update scripts — different semantics) | Done — `gn` final carries toponyms (via `gn-toponyms`), `wd` final carries geoshapes; both indexed into prod |
+| 4c Phase 4 | `whg` ingestion (DO API + LPF + per-Dataset/Collection sub-namespaces) | Done — 14,206 `whg` records discovered via DO Django API; in prod |
 | 4d | Boundary stage + consolidation | `boundary_stage.py` + `boundary_merge.py` + `_consolidate_extracts()` done |
 | 5 | Patch-collapse merges | Done — `boundary_merge.py`, `h3_merge.py`, `ccode_merge.py`; H3/ccode patch contracts in `staging_contract.py`; idempotency + missing-file handling regression-tested |
-| 6 | H3 derivation **+ per-gazetteer H3 coverage compaction** (non-global only) | Done (`h3_stage.py`, `submit_h3_slurm.py`); coverage emit + benchmarking pending |
-| 7 | CCode enrichment | Pending (`ccode_enrichment.py`, `ccode_merge.py`) |
-| 8 | Global barrier | Pending (manifest validator) |
-| 9 | Toponyms + Symphonym **+ per-gazetteer temporal extent** | Pending; temporal aggregate is new. **Production rebuilds: pass `--training-namespaces _none_` to skip IPA + PanPhon (training-only artefacts; not in the active toponyms schema or gateway query path).** |
-| 10 | Tile generation (no ES) — runs **ahead of** Global Barrier | Pending |
-| 11 | Index loaders + **gazetteer inventory push (final-step gating)** | Pending; inventory push is new and gates on Batches 9, 11 *and* 12 |
-| 12 | **SQLite hard-link harvest** — staged authority links + LOC relations + DO contributor replay (replaces post-index ES clustering) | New; pre-existing `clustering/harvest/hard_links.py` (ES-based) supplies the algorithm but must be re-targeted at staged files; LOC enters here |
+| 6 | H3 derivation **+ per-gazetteer H3 coverage compaction** (non-global only) | Done (`h3_stage.py`, `submit_h3_slurm.py`); live in prod (`geometries[].h3_centroid` / `h3_cover`) |
+| 7 | CCode enrichment | Done (`ccode_enrichment.py`, `ccode_merge.py`) — staged spatial enrichment via UN H3 prefilter; **retired** old `es -augment-ccodes` / `augment_ccodes.py`; in prod |
+| 8 | Global barrier | Done — barrier crossed for the `postbarrier-20260502` run |
+| 9 | Toponyms + Symphonym **+ per-gazetteer temporal extent** | Done — `toponyms_postbarrier-20260502t130000z` live (67.5M docs). **Production rebuilds: pass `--training-namespaces _none_` to skip IPA + PanPhon (training-only artefacts; not in the active toponyms schema or gateway query path).** |
+| 10 | Tile generation (no ES) — runs **ahead of** Global Barrier | Done — tilesets generated (and OSM/OHM admin tiles re-run on 2026-05-05 after the geom_store wipe; see 2026-05-25 snapshot) |
+| 11 | Index loaders + **gazetteer inventory push (final-step gating)** | Done — `index_from_stage` loaded all 16 namespaces into `places_postbarrier-…`, alias swapped. Inventory push: **unverified** (no marker found 2026-05-25 — confirm before relying on the Django gazetteer registry) |
+| 12 | **SQLite hard-link harvest** — staged authority links + LOC relations + DO contributor replay (replaces post-index ES clustering) | Done — `postbarrier-20260502T130000Z.hardlink_ship.json` ship marker present; SQLite overlay shipped to Pitt |
 | 13a | WHG dataset authority discovery / LPF integration | Folded into 4c Phase 4 (no separate batch) |
-| 13b | **v3.2 legacy reconciliation flagging** (DO-side, narrow scope) | New; pending |
-| 14 | Test harness + integration rollout | Pending |
-| 14a | **Retention sweep** for pending datasets | New; pending |
+| 13b | **v3.2 legacy reconciliation flagging** (DO-side, narrow scope) | New; **pending** (DO-side data update) |
+| 14 | Test harness + integration rollout | **Pending** |
+| 14a | **Retention sweep** for pending datasets | New; **pending** (future scheduled job) |
 
 ---
 
@@ -2629,6 +2635,57 @@ shards write their per-shard `osm_boundary_shard_*.bin` files):
     pipeline; the existing `clusters_20260325` index is now legacy and may be
     retained or removed at operator discretion (it is harmless either way
     because the gateway no longer reads from it).
+
+---
+
+## Status snapshot — 2026-05-25 (resumption after 3-week gap)
+
+Supersedes the 2026-05-01 snapshot. Verified live against prod ES (`_cat/aliases`,
+`_cat/indices` on `localhost:9201`) and CRC staging (`/vast/ishi/staged/`).
+
+### The rebuild is COMPLETE and LIVE in production
+
+The decoupled-staging rebuild was cut over to production on **2026-05-03/04**. Current prod
+aliases:
+
+| Alias | Concrete index | Created | Docs | Note |
+|---|---|---|---:|---|
+| `places` | `places_postbarrier-20260502t130000z` | 2026-05-03 | 332.6M | New rebuild — all 16 namespaces |
+| `toponyms` | `toponyms_postbarrier-20260502t130000z` | 2026-05-03 | 67.5M | New rebuild |
+| `clusters` | `clusters_20260325` | 2026-03-25 | 41.1M | **Legacy** — gateway no longer reads it (Batch 12 retired ES clustering). Harmless; may be deleted. |
+| `types` | `types_20260404_150351` | 2026-04-04 | 59K | Current |
+
+- Old `places_20260317` / `toponyms_20260317` retained as a **rollback hatch** (one cycle).
+- `postbarrier-20260502T130000Z.hardlink_ship.json` present → Batch 12 SQLite overlay shipped.
+- All 16 namespaces have a completed `final/places.parquet` on `/vast/ishi/staged/<ns>/final/`.
+- h3 (`geometries[].h3_centroid`/`h3_cover`) and ccodes are baked into the live index. ccode
+  coverage is partial **by design** (geometry-less records can't be spatially assigned):
+  whg 98.5% · iv ~100% · clio 91% · wd 80% · gn 77% · tgn 69% · pl 66% · ohm 64.5%.
+
+### OSM does NOT need a re-index (resolved 2026-05-25)
+
+Question on resumption: did the 2026-05-05 OSM/OHM boundary re-run leave prod ES stale? **No.**
+
+- Prod OSM was indexed **2026-05-04 06:24** (`index` stage `completed`, 20,289,895 docs) from
+  `osm/final/places.parquet` dated **2026-05-02** — i.e. built *after* the boundary_stage /
+  boundary_merge fixes landed (by 2026-05-01).
+- The `osm-ohm-rebuild-20260505T202349Z` run executed **only** `boundary_merge` + `tiles`
+  (manifest confirms — no `h3`/`ccode`/`final`/`index` stages). It regenerated the geom_store
+  + admin tilesets after the 2026-05-05 accidental `--rebuild-from-scratch` wipe (see memory
+  `feedback_partial_tile_rebuild`); it did **not** produce new place-document content.
+- `osm/final/places.parquet` is unchanged (still 2026-05-02), and there is **no `places_*`
+  index newer than `postbarrier`**. So prod OSM already reflects the correct post-boundary-fix
+  snapshot; the May-5 work was tile/geom_store recovery consumed by the tileserver only.
+
+### Outstanding (not blocking — the platform is live)
+
+1. **Batch 11 inventory push** — *unverified*. No inventory-push marker found; confirm whether
+   the Django gazetteer registry received the per-gazetteer inventory before relying on it.
+2. **Batch 13b** — DO-side `legacy_v3_2 = true` flagging of historical reconciliation links
+   (PostgreSQL data update). Pending.
+3. **Batch 14 / 14a** — formal test harness + the pending-dataset retention sweep. Pending.
+4. **TGN temporal extent** — placeholder `[2025, 2025]` (TGN emits no inception/abolition).
+   Domain decision still open; harmless.
 
 ---
 
