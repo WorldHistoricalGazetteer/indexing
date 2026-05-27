@@ -659,7 +659,26 @@ def compute_h3_fields(lon: float, lat: float, geojson_geom=None) -> tuple[str | 
         except Exception:
             pass
 
-    # ── GeometryCollection: use centroid only ──────────────────────────
+    # ── GeometryCollection: polyfill the union of its polygonal members ─
+    # (e.g. antimeridian-split polygons, or the M49 continent overlays).
+    if geom_type == "GeometryCollection":
+        try:
+            polys = [
+                g for g in (geojson_geom.get("geometries") or [])
+                if isinstance(g, dict) and g.get("type") in ("Polygon", "MultiPolygon")
+            ]
+            if polys:
+                from shapely.ops import unary_union
+                merged = unary_union([shape(p) for p in polys])
+                merged_geojson = json.loads(json.dumps(merged.__geo_interface__))
+                cells = _polyfill_adaptive(merged_geojson)
+                if cells:
+                    cover = list(_h3.compact_cells(cells))
+                    return centroid_cell, cover if cover else [centroid_cell]
+        except Exception:
+            pass
+
+    # ── Fallback: centroid only ─────────────────────────────────────────
     return centroid_cell, [centroid_cell]
 
 

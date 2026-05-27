@@ -27,6 +27,60 @@ from processing.staging_orchestrator import load_run_manifest, update_namespace_
 BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
 
 
+# ---------------------------------------------------------------------------
+# Cover geometry source
+# ---------------------------------------------------------------------------
+# h3_cover for an area feature must be computed from the feature's real polygon.
+# The staged ``hull`` (the previous cover source) is dropped from parquet
+# sidecars by ``staged_parquet.strip_hull_for_parquet`` for schema stability, so
+# any stage reading the parquet (which ``_iter_extract_docs`` prefers) sees no
+# hull and would otherwise fall back to a centroid-only cover. The authoritative
+# geometry lives in the geom store, keyed by ``geom_ref`` (=
+# ``"{place_id}_{geometry_index}"``); we read it from there and fall back to the
+# hull / inline geom when the store is unavailable or the feature has none.
+try:
+    from processing.geom_store import GeomStoreReader as _GeomStoreReader
+    from processing.settings import GEOM_STORE_DIR as _GEOM_STORE_DIR
+except Exception:  # pragma: no cover - geom store optional at import time
+    _GeomStoreReader = None
+    _GEOM_STORE_DIR = None
+
+_geom_reader = None
+_geom_reader_tried = False
+
+
+def get_geom_reader():
+    """Lazily open a cached ``GeomStoreReader`` (or None if unavailable)."""
+    global _geom_reader, _geom_reader_tried
+    if not _geom_reader_tried:
+        _geom_reader_tried = True
+        if _GeomStoreReader is not None and _GEOM_STORE_DIR:
+            try:
+                _geom_reader = _GeomStoreReader(_GEOM_STORE_DIR)
+            except Exception:
+                _geom_reader = None
+    return _geom_reader
+
+
+def cover_geometry_for(geom: dict, place_id: str, geometry_index, reader) -> dict | None:
+    """Return the GeoJSON geometry to polyfill for ``h3_cover``.
+
+    Prefers the authoritative polygon from the geom store (for ``has_geom``
+    features); falls back to the staged hull / inline geom (the prior
+    behaviour, still correct for namespaces whose h3 reads hull-bearing JSONL).
+    Returns ``None`` for point features (→ centroid-only cover, as intended).
+    """
+    if reader is not None and geom.get("has_geom"):
+        key = geom.get("geom_ref") or f"{place_id}_{geometry_index}"
+        try:
+            gj = reader.get(key)
+        except Exception:
+            gj = None
+        if isinstance(gj, dict) and gj.get("type") and gj.get("coordinates"):
+            return gj
+    return select_h3_cover_geometry(geom, geom.get("hull"))
+
+
 def _extract_stage_dir(namespace: str) -> Path:
     """Resolve the snapshot directory H3 should read from.
 
@@ -83,6 +137,7 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
     updates: list[dict[str, Any]] = []
     geom_seen = 0
     geom_with_h3 = 0
+    reader = get_geom_reader()
     for idx, geom in enumerate(geometries):
         if not isinstance(geom, dict):
             continue
@@ -93,7 +148,8 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
         if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
             continue
 
-        h3_geom = select_h3_cover_geometry(geom, geom.get("hull"))
+        gi = geom.get("geometry_index", idx)
+        h3_geom = cover_geometry_for(geom, place_id, gi, reader)
         h3_centroid, h3_cover = compute_h3_fields(
             lon=float(lon),
             lat=float(lat),
@@ -105,7 +161,7 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
         geom_with_h3 += 1
         updates.append(
             {
-                "geometry_index": geom.get("geometry_index", idx),
+                "geometry_index": gi,
                 "h3_centroid": h3_centroid,
                 "h3_cover": h3_cover,
             }
