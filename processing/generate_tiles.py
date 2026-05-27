@@ -142,7 +142,7 @@ _FIXED_BUCKETS: dict[str, tuple[str, ...]] = {
 # (every doc has ``boundary`` set).
 _PER_NAMESPACE_BUCKETS: tuple[str, ...] = (
     "chgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl",
-    "pl", "po", "tgn", "tm", "un", "wd",
+    "pl", "po", "tgn", "tm", "ukhc", "un", "wd",
 )
 
 # Prefix used by per-WHG-dataset buckets. The full bucket name is
