@@ -343,27 +343,30 @@ def _build_restart_sbatch_script(
     *,
     run_id: str,
     array_job_ids: list[str],
+    buckets: list[str],
 ) -> str:
-    """Build the trailing restart sbatch fired ``afterok`` of every tile array.
+    """Build the trailing finalize sbatch fired ``afterok`` of every tile array.
 
-    The job is intentionally tiny (single task, low resources, short wall) —
-    it just SSHes the tileserver, runs ``/srv/restart_services.sh``, and
-    verifies the services came back. The ``afterok`` chain makes Slurm
-    skip it automatically if any tile-gen task failed: the contract is
-    "restart only after every push verified", and a failed array task
-    means an unpushed bucket.
+    Per the contract (push → config rewrite → restart → confirm, all before the
+    Django inventory push), this one tiny job — gated ``afterok`` so it runs only
+    when every bucket pushed cleanly — does a **single** safe rewrite of the
+    tileserver ``config.json`` registering all of this run's buckets, restarts the
+    server, and verifies each tileset serves. It supersedes the old bare
+    ``restart_tileserver`` call (``update_tileserver_config`` restarts + verifies
+    itself, preserving every other config entry).
     """
     log_dir = Path(_REPO) / "logs"
     log_dir.mkdir(parents=True, exist_ok=True)
     log_prefix = log_dir / f"whg-tiles-restart-{run_id}-%j"
 
     deps = ":".join(array_job_ids)
+    bucket_args = " ".join(f"--bucket {b}" for b in buckets)
     lines = [
         "#!/bin/bash",
         f"#SBATCH --job-name=whg-tiles-restart-{run_id}",
         f"#SBATCH --output={log_prefix}.out",
         f"#SBATCH --error={log_prefix}.err",
-        "#SBATCH --time=00:05:00",
+        "#SBATCH --time=00:10:00",
         "#SBATCH --partition=htc",
         f"#SBATCH --qos={_DEFAULT_QOS}",
         "#SBATCH --nodes=1",
@@ -372,14 +375,13 @@ def _build_restart_sbatch_script(
         "#SBATCH --mem=512M",
         f"#SBATCH --dependency=afterok:{deps}",
         "",
-        "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        "set -eo pipefail",
         f"cd {_REPO}",
         "",
-        "python -c 'import sys; "
-        "from processing.generate_tiles import restart_tileserver; "
-        "sys.exit(0 if restart_tileserver() else 1)'",
+        # Single combined rewrite of all this run's buckets + restart + verify.
+        f"python -u -m processing.update_tileserver_config {bucket_args} --execute",
     ]
     return "\n".join(lines) + "\n"
 
@@ -466,7 +468,7 @@ def submit(
 
     if with_restart and job_ids:
         restart_text = _build_restart_sbatch_script(
-            run_id=run_id, array_job_ids=job_ids,
+            run_id=run_id, array_job_ids=job_ids, buckets=buckets,
         )
         restart_path = work_dir / "tiles_restart.sbatch"
         restart_path.write_text(restart_text, encoding="utf-8")
