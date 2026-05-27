@@ -85,27 +85,37 @@ def _find_zip() -> Path:
 
 
 def _read_counties(zip_path: Path):
-    """Yield ``(properties, geojson_geometry)`` for each county in the zip's shapefile."""
-    import geopandas as gpd
-    from shapely.geometry import mapping
+    """Yield ``(properties, geojson_geometry)`` for each county in the zip's shapefile.
 
-    inner_shp = [n for n in zipfile.ZipFile(zip_path).namelist()
-                 if n.lower().endswith(".shp")]
-    if not inner_shp:
-        raise FileNotFoundError(f"No .shp inside {zip_path}")
+    Uses pyshp (pure-Python; no GDAL) and reads the .shp/.dbf/.shx straight from
+    the zip via in-memory buffers. The configured file is the WGS84 ("WG84")
+    variant, so coordinates are already lon/lat — no reprojection is needed (and
+    pyshp does none). pyshp is present in both the CRC and pitt ``whg`` envs.
+    """
+    import io
+    import shapefile  # pyshp
 
-    gdf = gpd.read_file(f"zip://{zip_path}!{inner_shp[0]}")
-    # Index uses WGS84 lon/lat; reproject defensively if a non-4326 file is used.
-    if gdf.crs is not None and gdf.crs.to_epsg() != 4326:
-        gdf = gdf.to_crs(epsg=4326)
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
 
-    attr_cols = [c for c in gdf.columns if c != "geometry"]
-    for _, row in gdf.iterrows():
-        geom = row.geometry
-        if geom is None or geom.is_empty:
-            continue
-        props = {c: row[c] for c in attr_cols}
-        yield props, mapping(geom)
+        def _member(ext: str) -> str | None:
+            hits = [n for n in names if n.lower().endswith(ext)]
+            return hits[0] if hits else None
+
+        shp_n, dbf_n, shx_n = _member(".shp"), _member(".dbf"), _member(".shx")
+        if not shp_n or not dbf_n:
+            raise FileNotFoundError(f"Missing .shp/.dbf inside {zip_path}")
+
+        reader = shapefile.Reader(
+            shp=io.BytesIO(zf.read(shp_n)),
+            dbf=io.BytesIO(zf.read(dbf_n)),
+            shx=io.BytesIO(zf.read(shx_n)) if shx_n else None,
+        )
+        for sr in reader.iterShapeRecords():
+            geom = sr.shape.__geo_interface__
+            if not geom or not geom.get("coordinates"):
+                continue
+            yield sr.record.as_dict(), geom
 
 
 def process_county(props: dict, geometry: dict) -> dict | None:
