@@ -337,10 +337,14 @@ def consolidate_geom_store(
     for fh in staging_handles.values():
         fh.close()
 
-    # ── 5. Write final index ───────────────────────────────────────────────
+    # ── 5. Write final index (atomically) ──────────────────────────────────
+    # Write to a temp file and rename so a concurrent reader (e.g. the live
+    # gateway during an incremental --merge) never sees a half-written index.
     index_path = output_dir / "index.json"
-    with open(index_path, "w") as f:
+    tmp_index_path = output_dir / "index.json.tmp"
+    with open(tmp_index_path, "w") as f:
         json.dump(final_index, f)
+    os.replace(tmp_index_path, index_path)
     print(f"consolidate_geom_store: wrote {written:,} geometries across "
           f"{shard_num} shards → {output_dir}")
 
