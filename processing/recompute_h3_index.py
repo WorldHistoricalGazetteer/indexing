@@ -70,31 +70,55 @@ def _repr_lonlat(geom: dict) -> tuple[float, float] | None:
 # Phase 1 — compute
 # ---------------------------------------------------------------------------
 
-def _scroll(sess, body: dict, scroll: str = "5m") -> Iterable[dict]:
-    """Yield hits from a (possibly sliced) scroll."""
-    r = sess.post(f"{ES_URL}/{PLACES_ALIAS}/_search?scroll={scroll}", data=json.dumps(body))
+def _open_pit(sess, keep_alive: str) -> str:
+    r = sess.post(f"{ES_URL}/{PLACES_ALIAS}/_pit?keep_alive={keep_alive}")
     r.raise_for_status()
-    data = r.json()
-    sid = data.get("_scroll_id")
+    return r.json()["id"]
+
+
+def _close_pit(sess, pit_id: str) -> None:
+    try:
+        sess.delete(f"{ES_URL}/_pit", data=json.dumps({"id": pit_id}))
+    except Exception:
+        pass
+
+
+def _paginate(sess, query: dict, source: list[str], batch: int,
+              slice_id: int, slice_max: int, after: list | None = None,
+              keep_alive: str = "30m") -> Iterable[tuple[dict, list]]:
+    """Yield ``(hit, sort)`` via PIT + ``search_after``.
+
+    Robust to slow batches: a PIT's keep_alive is refreshed on every search
+    call, so a long-running page (large polygons → slow polyfill) cannot orphan
+    the context the way a fixed scroll TTL did. ``after`` resumes a crashed run.
+    """
+    pit_id = _open_pit(sess, keep_alive)
     try:
         while True:
+            body: dict[str, Any] = {
+                "size": batch,
+                "_source": source,
+                "query": query,
+                "sort": [{"_shard_doc": "asc"}],
+                "pit": {"id": pit_id, "keep_alive": keep_alive},
+                "track_total_hits": False,
+            }
+            if slice_max > 1:
+                body["slice"] = {"id": slice_id, "max": slice_max}
+            if after is not None:
+                body["search_after"] = after
+            r = sess.post(f"{ES_URL}/_search", data=json.dumps(body))
+            r.raise_for_status()
+            data = r.json()
+            pit_id = data.get("pit_id", pit_id)  # PIT id may rotate
             hits = data.get("hits", {}).get("hits", [])
             if not hits:
                 break
             for h in hits:
-                yield h
-            r = sess.post(f"{ES_URL}/_search/scroll",
-                          data=json.dumps({"scroll": scroll, "scroll_id": sid}))
-            r.raise_for_status()
-            data = r.json()
-            sid = data.get("_scroll_id")
+                yield h, h.get("sort")
+            after = hits[-1].get("sort")
     finally:
-        if sid:
-            try:
-                sess.delete(f"{ES_URL}/_search/scroll",
-                            data=json.dumps({"scroll_id": [sid]}))
-            except Exception:
-                pass
+        _close_pit(sess, pit_id)
 
 
 def compute(args) -> int:
@@ -111,20 +135,28 @@ def compute(args) -> int:
             "minimum_should_match": 1,
         }
     }
-    body: dict[str, Any] = {
-        "size": args.batch,
-        "_source": ["place_id", "geometries.geometry_index", "geometries.has_geom",
-                    "geometries.repr_point", "geometries.h3_cover", "geometries.h3_centroid"],
-        "query": query,
-        "sort": ["_doc"],
-    }
-    if args.of > 1:
-        body["slice"] = {"id": args.slice, "max": args.of}
+    source = ["place_id", "geometries.geometry_index", "geometries.has_geom",
+              "geometries.repr_point", "geometries.h3_cover", "geometries.h3_centroid"]
+
+    # Resume: a per-slice cursor file holds the last processed search_after key
+    # so a crash never restarts the (multi-hour) scan from zero. Output is
+    # appended when resuming; the apply phase is idempotent on duplicates.
+    cursor_path = f"{args.out}.cursor"
+    after = None
+    mode = "w"
+    try:
+        with open(cursor_path) as fh:
+            after = json.load(fh)
+            mode = "a"
+            print(f"[slice {args.slice}/{args.of}] resuming after {after}", flush=True)
+    except (FileNotFoundError, ValueError):
+        after = None
 
     docs = changed = geoms = errors = 0
     t0 = time.time()
-    with open(args.out, "w", encoding="utf-8") as out:
-        for hit in _scroll(sess, body):
+    with open(args.out, mode, encoding="utf-8") as out:
+        for hit, sort in _paginate(sess, query, source, args.batch,
+                                   args.slice, args.of, after=after):
             docs += 1
             src = hit.get("_source", {})
             pid = src.get("place_id")
@@ -156,11 +188,21 @@ def compute(args) -> int:
             if patch_geoms:
                 changed += 1
                 out.write(json.dumps({"place_id": pid, "geometries": patch_geoms}) + "\n")
+            if docs % 10000 == 0:
+                out.flush()
+                with open(cursor_path, "w") as cf:
+                    json.dump(sort, cf)  # checkpoint resume key
             if docs % 50000 == 0:
                 rate = docs / max(time.time() - t0, 1e-6)
                 print(f"[slice {args.slice}/{args.of}] scanned={docs} changed={changed} "
                       f"geoms={geoms} errors={errors} rate={rate:.0f}/s", flush=True)
     dt = time.time() - t0
+    # Completed cleanly — drop the cursor so a future run starts fresh.
+    try:
+        import os
+        os.remove(cursor_path)
+    except OSError:
+        pass
     print(f"[slice {args.slice}/{args.of}] DONE scanned={docs} changed={changed} "
           f"geoms={geoms} errors={errors} in {dt:.0f}s -> {args.out}", flush=True)
     return 0
