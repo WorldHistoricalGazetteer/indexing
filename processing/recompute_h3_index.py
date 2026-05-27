@@ -44,6 +44,15 @@ ES_URL = "http://localhost:9201"
 PLACES_ALIAS = "places"
 ELASTIC_PASSWORD_FILE = "/ix1/ishi/es/config/elastic.password"
 
+# A feature whose bounding box is smaller than ~one r7 cell (≈1.2 km / 0.01°)
+# cannot produce a multi-cell h3_cover — its cover is just the centroid, which
+# is already what is indexed, and it is matched in spatial containment via its
+# repr_point regardless. The h3_cover bug only ever broke *multi-cell* features
+# (regions / boundaries). So skip the expensive geom-store read + polyfill for
+# sub-cell features entirely and recompute only the ones that were actually
+# wrong. This avoids reading the millions of buildings / POIs / small ways.
+SKIP_BBOX_DEG = 0.01
+
 
 def _auth() -> tuple[str, str]:
     with open(ELASTIC_PASSWORD_FILE) as fh:
@@ -55,6 +64,26 @@ def _session() -> requests.Session:
     s.auth = _auth()
     s.headers.update({"Content-Type": "application/json"})
     return s
+
+
+def _bbox_maxdim_deg(geom: dict) -> float | None:
+    """Largest bbox side (degrees) from the stored ``bounds`` [w,s,e,n].
+
+    Returns ``None`` when bounds are absent, malformed, or antimeridian-spanning
+    (w > e) — i.e. "unknown / treat as large", so such features are never
+    skipped by the sub-cell gate.
+    """
+    b = geom.get("bounds")
+    if not (isinstance(b, list) and len(b) == 4):
+        return None
+    try:
+        w, s, e, n = (float(x) for x in b)
+    except (TypeError, ValueError):
+        return None
+    dx = e - w
+    if dx < 0:  # crosses the antimeridian → not sub-cell
+        return None
+    return max(dx, n - s)
 
 
 def _repr_lonlat(geom: dict) -> tuple[float, float] | None:
@@ -136,7 +165,8 @@ def compute(args) -> int:
         }
     }
     source = ["place_id", "geometries.geometry_index", "geometries.has_geom",
-              "geometries.repr_point", "geometries.h3_cover", "geometries.h3_centroid"]
+              "geometries.repr_point", "geometries.h3_cover", "geometries.h3_centroid",
+              "geometries.bounds"]
 
     # Resume: a per-slice cursor file holds the last processed search_after key
     # so a crash never restarts the (multi-hour) scan from zero. Output is
@@ -152,7 +182,7 @@ def compute(args) -> int:
     except (FileNotFoundError, ValueError):
         after = None
 
-    docs = changed = geoms = errors = 0
+    docs = changed = geoms = errors = skipped = 0
     t0 = time.time()
     with open(args.out, mode, encoding="utf-8") as out:
         for hit, sort in _paginate(sess, query, source, args.batch,
@@ -166,6 +196,12 @@ def compute(args) -> int:
                     continue
                 geoms += 1
                 gi = g.get("geometry_index", idx)
+                # Sub-cell features keep their (correct) centroid cover — skip
+                # the geom-store read + polyfill entirely.
+                md = _bbox_maxdim_deg(g)
+                if md is not None and md < SKIP_BBOX_DEG:
+                    skipped += 1
+                    continue
                 ll = _repr_lonlat(g)
                 if ll is None:
                     continue
@@ -195,7 +231,8 @@ def compute(args) -> int:
             if docs % 50000 == 0:
                 rate = docs / max(time.time() - t0, 1e-6)
                 print(f"[slice {args.slice}/{args.of}] scanned={docs} changed={changed} "
-                      f"geoms={geoms} errors={errors} rate={rate:.0f}/s", flush=True)
+                      f"geoms={geoms} skipped={skipped} errors={errors} "
+                      f"rate={rate:.0f}/s", flush=True)
     dt = time.time() - t0
     # Completed cleanly — drop the cursor so a future run starts fresh.
     try:
@@ -204,7 +241,8 @@ def compute(args) -> int:
     except OSError:
         pass
     print(f"[slice {args.slice}/{args.of}] DONE scanned={docs} changed={changed} "
-          f"geoms={geoms} errors={errors} in {dt:.0f}s -> {args.out}", flush=True)
+          f"geoms={geoms} skipped={skipped} errors={errors} in {dt:.0f}s "
+          f"-> {args.out}", flush=True)
     return 0
 
 
