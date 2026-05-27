@@ -62,7 +62,9 @@ from processing.settings import (
     AUTHORITIES,
     STAGED_BASE_DIR,
     STAGED_RUNS_DIR,
+    WHG_API_TOKEN,
     WHG_API_TOKEN_FILE,
+    WHG_DEV_API_TOKEN,
     WHG_DEV_API_TOKEN_FILE,
     WHG_DEV_INVENTORY_ENDPOINT,
     WHG_HTTP_INITIAL_BACKOFF,
@@ -290,6 +292,74 @@ def build_inventory_payload(
     return entries
 
 
+def build_single_authority_entry(namespace: str) -> dict[str, Any]:
+    """Build one ``class='authority'`` inventory entry from the per-namespace
+    aggregates — for an incremental single-namespace push (no full-run inventory).
+
+    Requires the namespace's ``h3_coverage`` + ``temporal_extent`` aggregates to
+    exist (generate them with ``processing.gazetteer_h3_coverage`` and
+    ``processing.gazetteer_temporal_extent`` from the staged ``final`` snapshot).
+    """
+    if is_relations_only(namespace):
+        raise RuntimeError(f"{namespace} is relations-only — it has no inventory entry")
+    if namespace not in GLOBAL_COVERAGE_NAMESPACES and not _h3_coverage_path(namespace).exists():
+        raise RuntimeError(
+            f"Missing h3_coverage aggregate for {namespace}: {_h3_coverage_path(namespace)}. "
+            f"Run `python -m processing.gazetteer_h3_coverage --run-id <RUN_ID> --namespace {namespace}`."
+        )
+    if not _temporal_extent_path(namespace).exists():
+        raise RuntimeError(
+            f"Missing temporal_extent aggregate for {namespace}: {_temporal_extent_path(namespace)}. "
+            f"Run `python -m processing.gazetteer_temporal_extent --run-id <RUN_ID> --namespace {namespace}`."
+        )
+    meta = _authority_meta(namespace)
+    start, end = _read_temporal_extent(namespace)
+    return {
+        "id": namespace,
+        "name": meta["name"],
+        "description": meta["description"],
+        "namespace": namespace,
+        "class": "authority",
+        "owner_user_id": None,
+        "record_count": _read_record_count(namespace),
+        "status": "published",
+        "h3_coverage": _read_h3_coverage(namespace),
+        "temporal_extent": list(_read_temporal_extent(namespace)),
+    }
+
+
+def assert_tilesets_served(payload: list[dict[str, Any]], *, skip: bool = False) -> None:
+    """Hard ordering gate (the contract: confirm serving BEFORE the manifest push).
+
+    For every ``class='authority'`` entry — each of which has a per-namespace
+    tileset ``<ns>.mbtiles`` — confirm the tileserver actually serves
+    ``/data/<ns>.json``; refuse the push otherwise. The inventory push is a manual
+    final step (not Slurm-scheduled), so this runtime precondition is the
+    enforceable form of "tilesets served before Django is told the gazetteer
+    exists". Reuses the SSH localhost-curl verifier (works from CRC compute / pitt).
+    """
+    namespaces = list(dict.fromkeys(
+        e["namespace"] for e in payload if e.get("class") == "authority" and e.get("namespace")
+    ))
+    if not namespaces:
+        return
+    if skip:
+        print(f"WARNING: --skip-tileserver-check set; NOT confirming tilesets serve "
+              f"for {', '.join(namespaces)} before the manifest push.", file=sys.stderr)
+        return
+    from processing.update_tileserver_config import verify_serving
+    print(f"Preflight: confirming tilesets serve for {', '.join(namespaces)} ...")
+    results = verify_serving(namespaces)
+    missing = [n for n, ok in results.items() if not ok]
+    if missing:
+        raise RuntimeError(
+            f"Refusing inventory push — tileset(s) not served: {', '.join(missing)}. "
+            f"Push tiles and run `python -m processing.update_tileserver_config "
+            f"--bucket {' --bucket '.join(missing)} --execute` first "
+            f"(or pass --skip-tileserver-check to override)."
+        )
+
+
 # ---------------------------------------------------------------------------
 # Gating
 # ---------------------------------------------------------------------------
@@ -423,7 +493,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build and push the WHG gazetteer inventory to Django"
     )
-    parser.add_argument("--run-id", required=True, help="Run ID")
+    parser.add_argument("--run-id", help="Run ID (required for a full-run push)")
+    parser.add_argument("--namespace",
+                        help="Push a single authority namespace incrementally "
+                             "(no full-run inventory needed; builds the entry from "
+                             "that namespace's aggregates). Mutually exclusive with a "
+                             "full-run push.")
+    parser.add_argument("--skip-tileserver-check", action="store_true",
+                        help="Override the preflight that refuses to push unless each "
+                             "authority's tileset is served (not recommended)")
     parser.add_argument("--endpoint", default=_DEFAULT_ENDPOINT,
                         help="Django registry endpoint URL")
     parser.add_argument("--method", default="POST", choices=("POST", "PUT"))
@@ -448,17 +526,26 @@ def main() -> None:
                         help="Skip the dev-server mirror push entirely")
     args = parser.parse_args()
 
+    if bool(args.namespace) == bool(args.run_id):
+        print("ERROR: pass exactly one of --namespace (single incremental push) "
+              "or --run-id (full-run push).", file=sys.stderr)
+        sys.exit(1)
+
     try:
-        inventory_path = assert_ready_to_push(
-            args.run_id,
-            require_hardlink_marker=args.require_hardlink_marker,
-        )
+        if args.namespace:
+            # Incremental single-namespace push — build the entry from that
+            # namespace's aggregates; no full-run inventory / barrier needed.
+            payload = [build_single_authority_entry(args.namespace)]
+        else:
+            inventory_path = assert_ready_to_push(
+                args.run_id,
+                require_hardlink_marker=args.require_hardlink_marker,
+            )
+            inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+            payload = build_inventory_payload(inventory)
     except RuntimeError as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         sys.exit(1)
-
-    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
-    payload = build_inventory_payload(inventory)
 
     if args.dry_run:
         print(json.dumps({"endpoint": args.endpoint,
@@ -467,8 +554,17 @@ def main() -> None:
                          indent=2, sort_keys=True))
         return
 
-    auth_token = _read_token(args.auth_token_file)
-    dev_token = _read_token(args.dev_auth_token_file) or auth_token
+    # Hard ordering gate: tilesets must be served before Django is told the
+    # gazetteer exists.
+    try:
+        assert_tilesets_served(payload, skip=args.skip_tileserver_check)
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+    # Token: prefer the environment (WHG_API_TOKEN in .env.local) over the file.
+    auth_token = WHG_API_TOKEN or _read_token(args.auth_token_file)
+    dev_token = WHG_DEV_API_TOKEN or _read_token(args.dev_auth_token_file) or auth_token
 
     # Both stacks are first-class push targets. The prod ↔ dev registries
     # MUST stay in sync because the Atlas cutover in prod is gradual, so a

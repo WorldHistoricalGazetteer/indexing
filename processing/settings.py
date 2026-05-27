@@ -170,6 +170,11 @@ WHG_DEV_API_TOKEN_FILE = os.getenv(
     "WHG_DEV_API_TOKEN_FILE",
     f"{IX1_BASE}/secrets/whg-dev-api.token",
 )
+# Token may also be supplied directly via the environment (e.g. WHG_API_TOKEN in
+# the gitignored .env.local) — preferred over the token file when set. NEVER put
+# this in the tracked .env. WHG_DEV_API_TOKEN falls back to WHG_API_TOKEN.
+WHG_API_TOKEN = os.getenv("WHG_API_TOKEN")
+WHG_DEV_API_TOKEN = os.getenv("WHG_DEV_API_TOKEN")
 
 # HTTP retry/backoff defaults (used by push_gazetteer_inventory + future
 # whg-places.py discovery/fetch). Single source of truth so Slurm jobs and
