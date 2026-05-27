@@ -35,7 +35,6 @@ import json
 import subprocess
 import sys
 import time
-import urllib.request
 from datetime import datetime, timezone
 
 from processing.settings import (
@@ -107,23 +106,49 @@ def plan_changes(cfg: dict, buckets: list[str]) -> tuple[dict, list[str], list[s
     return merged, added, updated, skipped
 
 
-def write_remote_config(merged: dict) -> None:
-    """Atomically replace the remote config: stdin→tmp, validate, backup, mv."""
+def write_remote_config(merged: dict) -> str:
+    """Atomically replace the remote config: stdin→tmp, validate, backup, mv.
+
+    Returns the remote path of the pre-change backup, so the caller can restore
+    it quickly if the server fails to come back cleanly.
+    """
     payload = json.dumps(merged, indent=2, ensure_ascii=False)
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup = f"{CONFIG_PATH}.bak.{ts}"
     # One shell: write tmp from stdin, JSON-validate it, back up current, atomic mv.
     remote = (
         f'cfg={CONFIG_PATH}; tmp="$cfg.new.$$"; '
         f'cat > "$tmp" && '
         f'python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$tmp" && '
-        f'cp -p "$cfg" "$cfg.bak.{ts}" && '
+        f'cp -p "$cfg" "{backup}" && '
         f'mv "$tmp" "$cfg" && echo WROTE_OK'
     )
     r = _ssh(remote, input_text=payload)
     if r.returncode != 0 or "WROTE_OK" not in r.stdout:
         raise SystemExit(f"Atomic config write failed (original untouched): "
                          f"rc={r.returncode} err={r.stderr.strip()} out={r.stdout.strip()}")
-    print(f"  config.json rewritten (backup: config.json.bak.{ts})")
+    print(f"  config.json rewritten (backup kept: {backup})")
+    return backup
+
+
+def rollback_config(backup: str) -> bool:
+    """Restore a previously-kept backup over config.json (keeping the rejected
+    config aside for inspection), then restart. For fast recovery when the new
+    config left the server unhealthy."""
+    ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    remote = (
+        f'cfg={CONFIG_PATH}; '
+        f'test -f "{backup}" && '
+        f'cp -p "$cfg" "$cfg.rejected.{ts}" && '
+        f'cp -p "{backup}" "$cfg" && echo ROLLED_BACK'
+    )
+    r = _ssh(remote)
+    if r.returncode != 0 or "ROLLED_BACK" not in r.stdout:
+        print(f"  ✗ ROLLBACK FAILED — manual intervention needed. Backup: {backup}  "
+              f"err={r.stderr.strip()}", file=sys.stderr)
+        return False
+    print(f"  rolled back to {backup} (rejected config saved as config.json.rejected.{ts})")
+    return restart_tileserver()
 
 
 def restart_tileserver() -> bool:
@@ -140,23 +165,22 @@ def restart_tileserver() -> bool:
 
 
 def verify_serving(buckets: list[str], *, attempts: int = 10, delay: float = 3.0) -> dict[str, bool]:
-    """GET http://host:PORT/data/<bucket>.json for each bucket (with retries —
-    the server takes a few seconds to come up after restart)."""
+    """Confirm each tileset serves by cur-ling ``/data/<bucket>.json`` on the
+    tileserver's own localhost (via SSH), with retries — so the check works from
+    any pipeline host (CRC compute nodes may lack outbound HTTP) and the server
+    has a few seconds to come up after restart."""
     results: dict[str, bool] = {}
     for b in buckets:
-        url = f"http://{TILESERVER_HOST}:{HTTP_PORT}/data/{b}.json"
+        path = f"http://localhost:{HTTP_PORT}/data/{b}.json"
         ok = False
-        for i in range(attempts):
-            try:
-                with urllib.request.urlopen(url, timeout=10) as resp:
-                    if resp.status == 200:
-                        ok = True
-                        break
-            except Exception:
-                pass
+        for _ in range(attempts):
+            r = _ssh(f"curl -s -o /dev/null -w '%{{http_code}}' {path}", timeout=30)
+            if r.returncode == 0 and r.stdout.strip() == "200":
+                ok = True
+                break
             time.sleep(delay)
         results[b] = ok
-        print(f"  serving {b}: {'OK' if ok else 'NOT SERVED'}  ({url})")
+        print(f"  serving {b}: {'OK (200)' if ok else 'NOT SERVED'}  (localhost:{HTTP_PORT}/data/{b}.json)")
     return results
 
 
@@ -191,21 +215,31 @@ def update_tileserver_config(buckets: list[str], *, execute: bool = False,
               "restart, and verify. No changes made.")
         return True
 
-    write_remote_config(merged)
+    backup = write_remote_config(merged)
 
+    # Any failure below (server didn't come back, or a tileset doesn't serve)
+    # triggers an immediate rollback to the pre-change backup so the live server
+    # is restored to its known-good state quickly.
+    failure_reason = None
     if do_restart:
         print("Restarting tileserver ...")
         if not restart_tileserver():
-            print("  ✗ tileserver did not come back cleanly", file=sys.stderr)
-            return False
+            failure_reason = "tileserver did not come back cleanly"
 
-    if do_verify:
+    if failure_reason is None and do_verify:
         print("Verifying serving ...")
         results = verify_serving([b for b in (added + updated)])
         failed = [b for b, ok in results.items() if not ok]
         if failed:
-            print(f"  ✗ not served after restart: {', '.join(failed)}", file=sys.stderr)
-            return False
+            failure_reason = f"tilesets not served after restart: {', '.join(failed)}"
+
+    if failure_reason is not None:
+        print(f"  ✗ {failure_reason} — rolling back ...", file=sys.stderr)
+        restored = rollback_config(backup) if do_restart else False
+        print(f"  rollback {'restored prior config' if restored else 'INCOMPLETE — check the host'}.",
+              file=sys.stderr)
+        return False
+
     print("Done — tileserver config updated and serving confirmed.")
     return True
 
