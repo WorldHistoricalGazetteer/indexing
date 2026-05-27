@@ -17,7 +17,12 @@ from typing import Any, Iterable
 
 import pyarrow.parquet as pq
 
-from processing.helpers import compute_h3_fields, select_h3_cover_geometry
+from processing.helpers import (
+    H3_SUBCELL_BBOX_DEG,
+    bbox_maxdim_deg,
+    compute_h3_fields,
+    select_h3_cover_geometry,
+)
 from processing.settings import STAGED_BASE_DIR, STAGED_RUN_MANIFEST_FILE_TEMPLATE, STAGED_RUNS_DIR
 from processing.stage_writers import record_script_wall_time, write_runtime_history_event, write_stage_event
 from processing.staging_contract import UPDATE_PATCH_NAMESPACES
@@ -149,7 +154,15 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
             continue
 
         gi = geom.get("geometry_index", idx)
-        h3_geom = cover_geometry_for(geom, place_id, gi, reader)
+        # Sub-cell features cannot span more than the centroid cell, so skip the
+        # geom-store read + polyfill and derive the centroid-only cover directly
+        # (identical output). Only features large enough to produce a multi-cell
+        # cover pay the full cost.
+        maxdim = bbox_maxdim_deg(geom.get("bounds"))
+        if maxdim is not None and maxdim < H3_SUBCELL_BBOX_DEG:
+            h3_geom = None
+        else:
+            h3_geom = cover_geometry_for(geom, place_id, gi, reader)
         h3_centroid, h3_cover = compute_h3_fields(
             lon=float(lon),
             lat=float(lat),

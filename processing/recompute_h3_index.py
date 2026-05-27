@@ -35,7 +35,7 @@ from typing import Any, Iterable
 
 import requests
 
-from processing.helpers import compute_h3_fields
+from processing.helpers import H3_SUBCELL_BBOX_DEG, bbox_maxdim_deg, compute_h3_fields
 from processing.geom_store import GeomStoreReader
 from processing.settings import GEOM_STORE_DIR
 
@@ -44,14 +44,11 @@ ES_URL = "http://localhost:9201"
 PLACES_ALIAS = "places"
 ELASTIC_PASSWORD_FILE = "/ix1/ishi/es/config/elastic.password"
 
-# A feature whose bounding box is smaller than ~one r7 cell (≈1.2 km / 0.01°)
-# cannot produce a multi-cell h3_cover — its cover is just the centroid, which
-# is already what is indexed, and it is matched in spatial containment via its
-# repr_point regardless. The h3_cover bug only ever broke *multi-cell* features
-# (regions / boundaries). So skip the expensive geom-store read + polyfill for
-# sub-cell features entirely and recompute only the ones that were actually
-# wrong. This avoids reading the millions of buildings / POIs / small ways.
-SKIP_BBOX_DEG = 0.01
+# The h3_cover bug only ever broke *multi-cell* features (regions / boundaries);
+# sub-cell features keep a centroid-only cover that is already correct and are
+# matched in spatial containment via their repr_point regardless. Skip the
+# expensive geom-store read + polyfill for them (shared gate in helpers, same
+# threshold the ingestion h3_stage now uses).
 
 
 def _auth() -> tuple[str, str]:
@@ -64,26 +61,6 @@ def _session() -> requests.Session:
     s.auth = _auth()
     s.headers.update({"Content-Type": "application/json"})
     return s
-
-
-def _bbox_maxdim_deg(geom: dict) -> float | None:
-    """Largest bbox side (degrees) from the stored ``bounds`` [w,s,e,n].
-
-    Returns ``None`` when bounds are absent, malformed, or antimeridian-spanning
-    (w > e) — i.e. "unknown / treat as large", so such features are never
-    skipped by the sub-cell gate.
-    """
-    b = geom.get("bounds")
-    if not (isinstance(b, list) and len(b) == 4):
-        return None
-    try:
-        w, s, e, n = (float(x) for x in b)
-    except (TypeError, ValueError):
-        return None
-    dx = e - w
-    if dx < 0:  # crosses the antimeridian → not sub-cell
-        return None
-    return max(dx, n - s)
 
 
 def _repr_lonlat(geom: dict) -> tuple[float, float] | None:
@@ -198,8 +175,8 @@ def compute(args) -> int:
                 gi = g.get("geometry_index", idx)
                 # Sub-cell features keep their (correct) centroid cover — skip
                 # the geom-store read + polyfill entirely.
-                md = _bbox_maxdim_deg(g)
-                if md is not None and md < SKIP_BBOX_DEG:
+                md = bbox_maxdim_deg(g.get("bounds"))
+                if md is not None and md < H3_SUBCELL_BBOX_DEG:
                     skipped += 1
                     continue
                 ll = _repr_lonlat(g)

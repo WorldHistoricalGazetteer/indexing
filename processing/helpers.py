@@ -58,6 +58,33 @@ def _count_vertices(geojson_geom: dict) -> int:
     return n
 
 
+# A feature whose bounding box is smaller than ~one r7 cell (≈1.2 km / 0.01°)
+# cannot produce a multi-cell h3_cover — its cover is just the centroid cell.
+# Callers can therefore skip loading the full polygon and polyfilling it, and
+# emit the centroid-only cover directly (output-identical, far cheaper). This is
+# what spares ingestion / remediation from reading the millions of buildings,
+# POIs and small ways whose covers were never wrong.
+H3_SUBCELL_BBOX_DEG = 0.01
+
+
+def bbox_maxdim_deg(bounds) -> float | None:
+    """Largest bounding-box side in degrees from a stored ``[w, s, e, n]``.
+
+    Returns ``None`` when bounds are absent/malformed or antimeridian-spanning
+    (``w > e``) — i.e. "unknown / treat as large" — so the caller does not skip.
+    """
+    if not (isinstance(bounds, (list, tuple)) and len(bounds) == 4):
+        return None
+    try:
+        w, s, e, n = (float(x) for x in bounds)
+    except (TypeError, ValueError):
+        return None
+    dx = e - w
+    if dx < 0:  # crosses the antimeridian → not sub-cell
+        return None
+    return max(dx, n - s)
+
+
 def geojson_to_shapely(geojson_geom):
     """
     Convert GeoJSON geometry dict to Shapely geometry object.
