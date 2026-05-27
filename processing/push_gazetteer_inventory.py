@@ -102,14 +102,22 @@ def is_endpoint_reachable(url: str, *, timeout: float = 5.0) -> bool:
 
 
 def _read_token(path: str | Path | None) -> str | None:
-    """Best-effort token file read; returns ``None`` on missing/empty."""
+    """Best-effort token file read; returns ``None`` on missing/empty/unreadable.
+
+    Tolerates ``PermissionError`` (the secrets dir is often mode-restricted, so
+    even ``exists()`` can raise EACCES) — the caller falls back to the env token
+    or the shared prod token.
+    """
     if not path:
         return None
-    p = Path(path).expanduser()
-    if not p.exists():
+    try:
+        p = Path(path).expanduser()
+        if not p.exists():
+            return None
+        txt = p.read_text(encoding="utf-8").strip()
+        return txt or None
+    except OSError:
         return None
-    txt = p.read_text(encoding="utf-8").strip()
-    return txt or None
 
 
 # Default Django endpoint — settings-derived but env-overridable.
