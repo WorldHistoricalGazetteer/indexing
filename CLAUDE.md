@@ -454,6 +454,15 @@ python -m processing.ingest_all_authorities               # all (skip existing)
 python -m processing.ingest_all_authorities -n osm -r     # replace OSM
 python -m processing.ingest_all_authorities --check-only  # dry run
 
+# Incremental single-namespace add to the LIVE index (no full rebuild; see workflow below)
+python -m processing.index_namespace --namespace ukhc --es-host URL --execute   # places + toponym augment (dry-run by default)
+python -m processing.update_tileserver_config --bucket ukhc --execute           # safe tileserver config rewrite + restart + verify
+python -m processing.push_gazetteer_inventory --namespace ukhc                   # Django registry upsert (gated on tileset serving)
+
+# Repair h3_cover in the live index in place (one-off remediation)
+python -m processing.recompute_h3_index compute --namespaces osm,ohm --of 4 --slice K --out FILE
+python -m processing.recompute_h3_index apply   --patch '/path/part.*.jsonl' --rps 1500
+
 # Staging ES (via es.sh)
 source es.sh -staging-start                               # restore latest snapshot
 source es.sh -staging-start --places-only                 # restore only places index
@@ -558,6 +567,45 @@ To cleanly re-ingest an authority (e.g. adding new OSM tag keys):
 4. Recompute Symphonym embeddings (stage 2)
 5. Re-run clustering
 
+### Incremental single-namespace add (one authority, between full rebuilds)
+
+To fold **one** (small) authority into the **live** indices without a full
+rebuild — e.g. `ukhc` (UK Historic Counties), added 2026-05-27. **Order matters:**
+
+1. **Fetch + extract** — `fetch_authorities -n <ns>`, then the staging-aware
+   authority script (→ staged `extract/` + geom-store staging).
+2. **Merge geoms → main store** — `python -m processing.geom_store --merge
+   --keep-staging` (incremental; existing shards untouched, `index.json` written
+   atomically). Must precede H3 so `h3_stage` polyfills the *real* polygon, not
+   the convex hull.
+3. **Stage chain → `final/places.parquet`** — `h3_stage` → `h3_merge` →
+   `ccode_merge` (an empty `ccode/places.ccode.jsonl` patch passes ccodes
+   through untouched).
+4. **`processing.index_namespace --namespace <ns> --source-stage final
+   --execute`** — bulk-indexes places into the concrete index **behind the
+   `places` alias** (NOT `index_from_stage`, which builds a *new* index + swaps
+   the alias = full-rebuild cutover), and **augments** toponyms (appends
+   `place_id` to `attestations` + ns to `namespaces`; **never overwrites the
+   embedding**). Dry-run by default; guards against indexing geometries with no
+   `h3_cover`.
+5. **Aggregates** — `gazetteer_h3_coverage` + `gazetteer_temporal_extent
+   --namespace <ns>` (feed the registry push).
+6. **Tiles** — register the bucket in `generate_tiles._PER_NAMESPACE_BUCKETS`,
+   generate on a compute node, deploy, then **`processing.update_tileserver_config
+   --bucket <ns> --execute`** — one safe rewrite of the tileserver `config.json`
+   (preserves all other entries; atomic write + timestamped backup + restart +
+   serving-verify + auto-rollback on failure).
+7. **Registry (LAST)** — **`processing.push_gazetteer_inventory --namespace
+   <ns>`** — cumulative single-namespace upsert to the Django gazetteer registry
+   (prod + dev); a **preflight gate refuses to push unless the tileset serves**.
+8. **`es gateway-restart`** so the gateway re-reads the geom-store index for
+   exact containment.
+
+Notes: the prod `places` index references the `extract_namespace` ingest pipeline
+— recreate it from `schemas/places_pipeline.json` if a snapshot-restore dropped
+it (otherwise writes 400). Secrets (`WHG_API_TOKEN`, `TILESERVER_SSH_KEY`) live in
+the gitignored **`.env.local`**, never the tracked `.env`.
+
 ---
 
 ## Codebase Conventions
@@ -569,8 +617,12 @@ To cleanly re-ingest an authority (e.g. adding new OSM tag keys):
 - Type documents use `{identifier, label, sourceLabel}` where `label` indicates
   the source vocabulary (e.g. `osm`, `wikidata`, `pleiades`, `P` for GeoNames
   feature class).
-- Geometry documents include both full `geom` (geo_shape) and `repr_point`
-  (geo_point centroid) for efficient spatial queries.
+- Full geometries live in the `/vast` geom store (keyed
+  `{place_id}_{geometry_index}`), **not** in ES `_source`. Each ES `geometries[]`
+  entry carries `repr_point` (geo_point, guaranteed *within* the geometry),
+  `bounds`, and `h3_cover` / `h3_centroid` — the latter computed from the real
+  geom-store polygon (incl. GeometryCollections; large polygons are simplified
+  before polyfill) by `h3_stage` / `helpers.compute_h3_fields`.
 - All coordinates are rounded to **6 decimal places** (~0.11 m) at ingestion
   time per RFC 7946, via `round_coordinates()` / `enrich_geometry()` in
   `processing/helpers.py`.  This mitigates storage bloat from pseudo-precision
