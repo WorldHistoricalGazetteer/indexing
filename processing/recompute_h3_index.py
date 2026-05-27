@@ -187,7 +187,12 @@ def compute(args) -> int:
                 except Exception:
                     gj = None
                     errors += 1
-                if not (isinstance(gj, dict) and gj.get("type") and gj.get("coordinates")):
+                # A valid geom dict has "type" and EITHER "coordinates"
+                # (Polygon/MultiPolygon/LineString/…) OR "geometries"
+                # (GeometryCollection — how antimeridian-spanning features are
+                # stored). compute_h3_fields handles both; don't reject GCs here.
+                if not (isinstance(gj, dict) and gj.get("type")
+                        and (gj.get("coordinates") or gj.get("geometries"))):
                     continue
                 centroid, cover = compute_h3_fields(lon=ll[0], lat=ll[1], geojson_geom=gj)
                 if not cover:

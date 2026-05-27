@@ -81,7 +81,11 @@ def cover_geometry_for(geom: dict, place_id: str, geometry_index, reader) -> dic
             gj = reader.get(key)
         except Exception:
             gj = None
-        if isinstance(gj, dict) and gj.get("type") and gj.get("coordinates"):
+        # Accept GeometryCollections (which carry "geometries", not
+        # "coordinates") — antimeridian-spanning features are stored that way and
+        # compute_h3_fields handles them. Rejecting them here would silently drop
+        # back to the hull/centroid cover for those large features.
+        if isinstance(gj, dict) and gj.get("type") and (gj.get("coordinates") or gj.get("geometries")):
             return gj
     return select_h3_cover_geometry(geom, geom.get("hull"))
 
