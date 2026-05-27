@@ -33,6 +33,30 @@ H3_CENTROID_RESOLUTION = 7
 # Maximum cells produced by polyfill before dropping to a coarser resolution
 H3_POLYFILL_MAX_CELLS = 10_000
 
+# ``h3shape_to_cells`` runtime scales with the polygon's *vertex* count as well
+# as its area, so a hugely detailed boundary (full-resolution OSM coastline with
+# 10⁵–10⁶ vertices) can take minutes even when the cell count is bounded. Above
+# this many vertices we first simplify the polygon to a tolerance comparable to
+# the target resolution's edge length — the h3_cover is a coarse fuzzy prefilter,
+# so dropping sub-cell detail does not change the resulting cell set materially.
+H3_SIMPLIFY_VERTEX_THRESHOLD = 5_000
+# Douglas–Peucker tolerance (degrees) ≈ half the H3 edge length at each res.
+_H3_SIMPLIFY_TOL_DEG = {3: 0.25, 4: 0.10, 5: 0.04, 6: 0.015, 7: 0.005}
+
+
+def _count_vertices(geojson_geom: dict) -> int:
+    """Cheaply count coordinate pairs in a GeoJSON geometry (no Shapely)."""
+    n = 0
+    stack = [geojson_geom.get("coordinates")]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, list):
+            if node and isinstance(node[0], (int, float)):
+                n += 1
+            else:
+                stack.extend(node)
+    return n
+
 
 def geojson_to_shapely(geojson_geom):
     """
@@ -745,13 +769,25 @@ def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
     if not _H3_AVAILABLE:
         return set()
 
+    bbox_area = _bbox_area_deg2(geojson_geom)
+    start_res = _pick_polyfill_resolution(bbox_area)
+
+    # Bound ``h3shape_to_cells`` cost on hyper-detailed boundaries by simplifying
+    # away sub-resolution vertices first. Gated on vertex count so small geoms
+    # (which must keep their shape) are never simplified.
+    if _count_vertices(geojson_geom) > H3_SIMPLIFY_VERTEX_THRESHOLD:
+        try:
+            tol = _H3_SIMPLIFY_TOL_DEG.get(start_res, 0.04)
+            simplified = shape(geojson_geom).simplify(tol, preserve_topology=True)
+            if not simplified.is_empty:
+                geojson_geom = json.loads(json.dumps(simplified.__geo_interface__))
+        except Exception:
+            pass  # fall back to the original geometry
+
     try:
         h3_poly = _h3.geo_to_h3shape(geojson_geom)
     except Exception:
         return set()
-
-    bbox_area = _bbox_area_deg2(geojson_geom)
-    start_res = _pick_polyfill_resolution(bbox_area)
 
     # Try the chosen res; on overflow drop to the next coarser one. The
     # ordered candidate list keeps the original res 5 / res 3 fallback
