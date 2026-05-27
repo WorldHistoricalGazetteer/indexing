@@ -19,6 +19,7 @@ This file is the canonical run-selection control for ingestion.
 - [x] `un` - UN countries
 - [x] `dp` - D-PLACE
 - [x] `nl` - Native Land
+- [x] `ukhc` - UK Historic Counties
 - [x] `gb` - GB1900
 - [x] `iv` - Index Villaris
 - [x] `chgis` - CHGIS/TGAZ

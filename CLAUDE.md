@@ -315,6 +315,7 @@ Index names use wildcard/alias patterns for dated indices:
 | `gb` | GB1900 | ~1.2M | None currently |
 | `loc` | Library of Congress | Relations only | N/A |
 | `nl` | Native Land | ~4K | Territory/language/treaty types |
+| `ukhc` | UK Historic Counties (Historic County Borders Project) | 92 | `historic-county` (polygon boundaries; `boundary=historic-county`; end 1974, Welsh counties start 1542, others open) |
 | `dp` | D-PLACE | ~2.6K | Language point data |
 | `iv` | Index Villaris | ~24K | Historical gazetteer |
 | `un` | ISO3166 countries | ~257 | Country entities |

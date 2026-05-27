@@ -484,6 +484,23 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # UK historic counties (92 polygons; regional containment geographies)
+        'dataset_name': 'UKHistoricCounties',
+        'namespace': 'ukhc',
+        'api_item': '',
+        'citation': 'Historic County Borders Project (Historic Counties Trust). https://county-borders.co.uk/',
+        'files': [
+            {
+                # Definition A = whole historic counties (Yorkshire / Lincolnshire
+                # as single counties, not split into ridings / parts), full-
+                # resolution WGS84 polygons. Swap to *_Simplified.zip (~5 MB) for a
+                # lighter set, or UKDefinitionB_* for the ridings / parts split.
+                'url': 'https://county-borders.co.uk/UKDefinitionA_WG84_Full_Resolution.zip',
+                'name': 'UKDefinitionA_WG84_Full_Resolution.zip',
+                'file_type': 'shapefile-zip',
+            }
+        ],
+    },
     {  # PeriodO temporal periods with spatial coverage
         'dataset_name': 'PeriodO',
         'namespace': 'po',

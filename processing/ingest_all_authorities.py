@@ -98,6 +98,7 @@ INGESTION_ORDER = [
     ('un', 'un-countries', 'UN member countries', 'un-countries'),
     ('dp', 'dplace-places', 'D-PLACE linguistic data', 'dp-places'),
     ('nl', 'nativeland-places', 'Native Land territories', 'nl-places'),
+    ('ukhc', 'ukhc-places', 'UK Historic Counties', 'ukhc-places'),
     ('gb', 'gb1900-places', 'GB1900 British places', 'gb-places'),
     ('iv', 'indexvillaris-places', 'Index Villaris 1680', 'iv-places'),
     ('chgis', 'chgis.places', 'CHGIS/TGAZ historical Chinese places', 'chgis-places'),
