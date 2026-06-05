@@ -578,4 +578,23 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # ~16.3K Ottoman populated places from 19th-c. population registers (NFS.d.)
+        'dataset_name': 'Ottoman NFS Gazetteer',
+        'namespace': 'ofs',
+        'api_item': '',
+        'citation': 'Kabadayı, M.E., Boykov, G., Sefer, A. & Gerrits, P. (2022). '
+                    'Ottoman NFS Gazetteer (16,296 populated places, 1830-1849). '
+                    'Zenodo. https://doi.org/10.5281/zenodo.7351936',
+        'files': [
+            {
+                # Zenodo exposes no stable per-asset download API on this record;
+                # fetch the single .xlsx manually into ${DATA_DIR}/authorities/ofs/.
+                # Staged by authorities/ottnfs-places.py (points only; see its
+                # docstring runbook for the incremental single-namespace add).
+                'url': 'https://zenodo.org/records/7351936',
+                'name': 'Kabadayi_Boykov_Sefer_Gerrits_Ottoman_NFS_Gazetteer.xlsx',
+                'file_type': 'xlsx',
+            }
+        ],
+    },
 ]
