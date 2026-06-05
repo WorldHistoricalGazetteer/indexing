@@ -199,9 +199,10 @@ def cmd_index(args) -> None:
 
     ok = errs = 0
     t0 = time.time()
-    for success, info in streaming_bulk(es, actions(), chunk_size=args.batch_size,
+    for success, info in streaming_bulk(es.options(request_timeout=300), actions(),
+                                        chunk_size=args.batch_size,
                                         raise_on_error=False, max_retries=3,
-                                        initial_backoff=2, request_timeout=300):
+                                        initial_backoff=2):
         if success:
             ok += 1
         else:

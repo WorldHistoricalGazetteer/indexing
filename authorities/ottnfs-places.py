@@ -70,6 +70,24 @@ Activate first:  source <conda>/etc/profile.d/conda.sh && conda activate whg && 
      overwrites embeddings. New toponyms are created WITHOUT embeddings → run the
      Symphonym backfill in step 5a so they become fuzzy/phonetic-searchable.)
 
+ 5a. EMBEDDING BACKFILL — new toponyms are created WITHOUT a Symphonym vector
+    (exact/prefix-searchable, but not fuzzy/phonetic KNN). The toponyms index
+    stores ONLY the `embedding` (128-d byte) — no IPA/PanPhon — and inference is
+    name-only (Student model). Three phases, /vast-bridged (prod ES on pitt, GPU
+    on CRC). Preferred input is the index-time emission (no ES re-scan):
+      # at step 4, add: --emit-new-toponyms /vast/ishi/staged/ofs/backfill/new.jsonl
+      # compute on a CRC GPU node (sbatch -M gpu --partition a100 --gres=gpu:1):
+      python -m phonetics.inference.backfill_embeddings compute \
+          --in /vast/ishi/staged/ofs/backfill/new.jsonl \
+          --out /vast/ishi/staged/ofs/backfill/embeddings.jsonl --device cuda
+      # index on pitt (embedding_version MUST match the index — currently 7):
+      python -m phonetics.inference.backfill_embeddings index --es-host <PROD> \
+          --in /vast/ishi/staged/ofs/backfill/embeddings.jsonl --embedding-version 7
+    Or, post-hoc (also heals pre-existing gaps), run `export --namespace ofs`
+    instead of --emit-new-toponyms to derive the set from ES (must_not exists
+    embedding). ofs's 2026-06-05 load used this post-hoc path (28,643 toponyms,
+    ~2s GPU compute, 8s index).
+
  5. AGGREGATES (feed the registry push):
       python -m processing.gazetteer_h3_coverage   --namespace ofs
       python -m processing.gazetteer_temporal_extent --namespace ofs
