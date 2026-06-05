@@ -280,7 +280,8 @@ def _existing_topids(es, index, ids: list[str]) -> set[str]:
     return found
 
 
-def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, execute):
+def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, execute,
+                            emit_new_toponyms=None):
     indexed_at = datetime.now(timezone.utc).isoformat()
     topids = [r["toponym_id"] for r in attest_records]
     print(f"\n[toponyms] target index: {index}")
@@ -292,6 +293,25 @@ def plan_and_index_toponyms(es, index, namespace, attest_records, *, replace, ex
     print(f"[toponyms]   new (created WITHOUT embedding — need backfill): {len(new_ids):,}")
     if new_ids:
         print(f"[toponyms]   sample new: {', '.join(new_ids[:8])}")
+
+    # Capture the newly-created toponyms (the only ones lacking an embedding) at
+    # index time — the zero-rescan input for the Symphonym backfill `compute`
+    # phase (phonetics.inference.backfill_embeddings). Written whether dry-run or
+    # execute: it's the set that WILL need embeddings once this run is applied.
+    if emit_new_toponyms:
+        new_set = set(new_ids)
+        out = Path(emit_new_toponyms)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        n = 0
+        with out.open("w", encoding="utf-8") as fh:
+            for r in attest_records:
+                if r["toponym_id"] in new_set:
+                    fh.write(json.dumps({"toponym_id": r["toponym_id"],
+                                         "name": r["name"],
+                                         "lang": r["lang"] or "und"}, ensure_ascii=False) + "\n")
+                    n += 1
+        print(f"[toponyms]   emitted {n:,} new-toponym records → {out}  "
+              f"(feed to backfill_embeddings compute)")
 
     if replace:
         print(f"[toponyms] REPLACE: strip stale '{namespace}:' attestations first "
@@ -357,6 +377,10 @@ def main() -> None:
                     help="Index places even if some lack h3_cover (not recommended)")
     ap.add_argument("--execute", action="store_true",
                     help="Apply changes (default: dry-run, no writes)")
+    ap.add_argument("--emit-new-toponyms", metavar="FILE",
+                    help="Write {toponym_id,name,lang} JSONL for the newly-created "
+                         "(embedding-less) toponyms — the zero-rescan input for "
+                         "phonetics.inference.backfill_embeddings compute")
     args = ap.parse_args()
 
     es = Elasticsearch(args.es_host, request_timeout=120)
@@ -378,7 +402,8 @@ def main() -> None:
     if not args.places_only:
         toponyms_index = resolve_concrete_index(es, TOPONYMS_ALIAS)
         plan_and_index_toponyms(es, toponyms_index, args.namespace, attest_records,
-                                replace=args.replace, execute=args.execute)
+                                replace=args.replace, execute=args.execute,
+                                emit_new_toponyms=args.emit_new_toponyms)
 
     if args.execute and not args.toponyms_only:
         es.indices.refresh(index=resolve_concrete_index(es, PLACES_ALIAS))
