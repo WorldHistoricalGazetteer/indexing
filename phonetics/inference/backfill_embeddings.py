@@ -182,50 +182,46 @@ def cmd_compute(args) -> None:
 # ---------------------------------------------------------------------------
 
 def cmd_index(args) -> None:
-    from elasticsearch.helpers import streaming_bulk
+    from elasticsearch import helpers as es_helpers
 
     es = _es_client(args.es_host, args.es_password_file)
     now = datetime.now(timezone.utc).isoformat()
 
-    def actions():
-        for line in Path(args.inp).open(encoding="utf-8"):
-            if not line.strip():
-                continue
-            rec = json.loads(line)
-            vec = rec["embedding"]
-            if len(vec) != EMBEDDING_DIM:
-                raise ValueError(f"bad embedding length {len(vec)} for {rec['toponym_id']!r}")
-            yield {
-                "_op_type": "update",
-                "_index": args.index,
-                "_id": rec["toponym_id"],
-                "doc": {
-                    "embedding": vec,
-                    "embedding_version": args.embedding_version,
-                    "indexed_at": now,
-                },
-            }
+    def to_action(rec):
+        vec = rec["embedding"]
+        if len(vec) != EMBEDDING_DIM:
+            raise ValueError(f"bad embedding length {len(vec)} for {rec['toponym_id']!r}")
+        return {
+            "_op_type": "update", "_index": args.index, "_id": rec["toponym_id"],
+            "doc": {"embedding": vec, "embedding_version": args.embedding_version,
+                    "indexed_at": now},
+        }
 
     if args.dry_run:
         n = sum(1 for _ in Path(args.inp).open(encoding="utf-8") if _.strip())
         print(f"[index] DRY-RUN: would update {n:,} docs in {args.index} "
-              f"(embedding + embedding_version={args.embedding_version}). No writes.")
+              f"(embedding + embedding_version={args.embedding_version}); "
+              f"chunk={args.batch_size}, throttle={args.throttle}s/chunk. No writes.")
         return
 
+    # Explicit batches + an inter-chunk sleep so a 16.5M-scale run PACES prod ES
+    # (which is serving live search) instead of saturating it. throttle=0 = flat
+    # out (fine for small runs like a single incremental add).
+    es_opt = es.options(request_timeout=300)
     ok = errs = 0
     t0 = time.time()
-    for success, info in streaming_bulk(es.options(request_timeout=300), actions(),
-                                        chunk_size=args.batch_size,
-                                        raise_on_error=False, max_retries=3,
-                                        initial_backoff=2):
-        if success:
-            ok += 1
-        else:
-            errs += 1
-            if errs <= 5:
-                print(f"[index]   error: {info}")
-        if (ok + errs) % 20_000 == 0:
-            print(f"[index]   {ok:,} ok / {errs:,} err ({(ok+errs)/(time.time()-t0):.0f}/s)")
+    next_report = 100_000
+    for chunk in _stream_batches(args.inp, args.batch_size):
+        c_ok, c_errs = es_helpers.bulk(es_opt, [to_action(r) for r in chunk],
+                                       raise_on_error=False, max_retries=3, initial_backoff=2)
+        ok += c_ok
+        errs += len(c_errs) if isinstance(c_errs, list) else c_errs
+        if ok + errs >= next_report:
+            rate = (ok + errs) / (time.time() - t0)
+            print(f"[index]   {ok:,} ok / {errs:,} err ({rate:.0f}/s)", flush=True)
+            next_report += 100_000
+        if args.throttle:
+            time.sleep(args.throttle)
     es.indices.refresh(index=args.index)
     print(f"[index] done: ok={ok:,} errors={errs:,}  ({time.time()-t0:.0f}s)  refreshed {args.index}")
 
@@ -264,6 +260,9 @@ def main() -> None:
     pi.add_argument("--embedding-version", type=int, required=True,
                     help="MUST match the index's prevailing version (currently 7)")
     pi.add_argument("--batch-size", type=int, default=2000)
+    pi.add_argument("--throttle", type=float, default=0.0, metavar="SECONDS",
+                    help="Sleep this long between bulk chunks to pace prod ES "
+                         "(default 0 = flat out; use e.g. 0.2-0.5 for the 16.5M backlog)")
     pi.add_argument("--dry-run", action="store_true")
     pi.set_defaults(func=cmd_index)
 
