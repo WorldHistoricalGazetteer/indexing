@@ -29,10 +29,10 @@ single repr_point cell) but stay in the chain. Run on CRC unless noted; long
 Python is fine on `pitt`, never on a CRC login node — use a compute node / Slurm.
 Activate first:  source <conda>/etc/profile.d/conda.sh && conda activate whg && cd /vast/ishi/elastic
 
- 0. PREP — drop the .xlsx into ${DATA_DIR}/authorities/ofs/ (manual; Zenodo has
-    no stable asset API), then confirm headers map cleanly:
-      python -m authorities.ottnfs-places --file <path>.xlsx --dump-headers
-    Extend HEADER_ALIASES until nothing prints under UNMAPPED.
+ 0. FETCH + verify — auto-download the .xlsx (AUTHORITIES['ofs'] points at the
+    stable Zenodo direct-asset endpoint), then confirm headers map cleanly:
+      python -m processing.fetch_authorities -n ofs --age 0
+      python -m authorities.ottnfs-places --dump-headers   # expect no UNMAPPED
 
  1. EXTRACT — stage places.jsonl + geom-store staging (WHG_STAGING_MODE set by
     the wrapper; or export WHG_STAGING_MODE=1):

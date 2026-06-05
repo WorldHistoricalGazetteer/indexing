@@ -587,11 +587,15 @@ AUTHORITIES = [
                     'Zenodo. https://doi.org/10.5281/zenodo.7351936',
         'files': [
             {
-                # Zenodo exposes no stable per-asset download API on this record;
-                # fetch the single .xlsx manually into ${DATA_DIR}/authorities/ofs/.
-                # Staged by authorities/ottnfs-places.py (points only; see its
-                # docstring runbook for the incremental single-namespace add).
-                'url': 'https://zenodo.org/records/7351936',
+                # Stable Zenodo direct-asset endpoint: returns the .xlsx with a
+                # content-length (octet-stream) and follows redirects, so
+                # fetch_authorities downloads it automatically (NOT the HTML
+                # record page at /records/7351936). Saved under the clean `name`
+                # below. Staged by authorities/ottnfs-places.py (points only; see
+                # its docstring runbook for the incremental single-namespace add).
+                'url': 'https://zenodo.org/api/records/7351936/files/'
+                       'Kabadayi_Boykov_Sefer_Gerrits_Ottoman_NFS_Gazetteer_'
+                       '23112022_16296_populated_places_version_1.xlsx/content',
                 'name': 'Kabadayi_Boykov_Sefer_Gerrits_Ottoman_NFS_Gazetteer.xlsx',
                 'file_type': 'xlsx',
             }
