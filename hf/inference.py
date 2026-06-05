@@ -295,6 +295,40 @@ class SymphonymModel:
             )
 
         self._model.to(self.device).eval()
+        self._sanitize_vocab_ids()
+
+    def _sanitize_vocab_ids(self) -> int:
+        """Clamp any vocab id that exceeds its trained embedding table to <UNK>.
+
+        The on-disk vocab files can carry ids beyond the model's char/script/lang
+        embedding tables (vocab/model size drift). An out-of-range id is a hard
+        failure at lookup time — a CUDA device-side assert that poisons the whole
+        context on GPU, or an ``IndexError`` (HTTP 500) on CPU — even though such
+        a token *should* simply fall back to <UNK>. The tokeniser maps via
+        ``dict.get(key, in_range_default)``, so clamping every dict VALUE into
+        range makes those tokens degrade gracefully to <UNK>. Valid entries are
+        untouched → embeddings for normal inputs are byte-for-byte identical.
+        """
+        vsz = self._model.char_embed.num_embeddings
+        ssz = self._model.script_embed.num_embeddings
+        lsz = self._model.lang_embed.num_embeddings
+        unk_char = self._char_to_id.get("<UNK>", 1)
+        unk_lang = self._lang_to_id.get("<UNK>", 0)
+        unk_char = unk_char if 0 <= unk_char < vsz else 0
+        unk_lang = unk_lang if 0 <= unk_lang < lsz else 0
+        remapped = 0
+        for d, size, default in ((self._char_to_id, vsz, unk_char),
+                                 (self._script_to_id, ssz, 0),
+                                 (self._lang_to_id, lsz, unk_lang)):
+            for k, v in list(d.items()):
+                if not (0 <= v < size):
+                    d[k] = default
+                    remapped += 1
+        if remapped:
+            import sys
+            print(f"[SymphonymModel] sanitised {remapped} out-of-table vocab id(s) "
+                  f"→ UNK (char<{vsz}, script<{ssz}, lang<{lsz})", file=sys.stderr)
+        return remapped
 
     # ------------------------------------------------------------------
     # Tokenisation
