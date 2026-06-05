@@ -137,19 +137,34 @@ def _quantize(emb) -> list[int]:
     return q.tolist()
 
 
+def _stream_batches(path: str, size: int):
+    """Yield lists of <=size parsed rows, streaming the file (bounded memory).
+
+    Scales to the ~16.5M index-wide backlog without materialising all rows.
+    """
+    batch = []
+    with Path(path).open(encoding="utf-8") as fh:
+        for line in fh:
+            if not line.strip():
+                continue
+            batch.append(json.loads(line))
+            if len(batch) >= size:
+                yield batch
+                batch = []
+    if batch:
+        yield batch
+
+
 def cmd_compute(args) -> None:
     model = _load_model(args.device, args.model_dir)
-
-    rows = [json.loads(l) for l in Path(args.inp).open(encoding="utf-8") if l.strip()]
-    print(f"[compute] {len(rows):,} names to embed (batch={args.batch_size})")
+    print(f"[compute] streaming {args.inp} (batch={args.batch_size})")
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     done = 0
     t0 = time.time()
     with out.open("w", encoding="utf-8") as fh:
-        for i in range(0, len(rows), args.batch_size):
-            chunk = rows[i:i + args.batch_size]
+        for chunk in _stream_batches(args.inp, args.batch_size):
             embs = model.batch_embed([(r["name"], r["lang"]) for r in chunk])
             for r, emb in zip(chunk, embs):
                 vec = _quantize(emb)
@@ -157,8 +172,8 @@ def cmd_compute(args) -> None:
                     raise ValueError(f"expected {EMBEDDING_DIM}-d, got {len(vec)} for {r['toponym_id']!r}")
                 fh.write(json.dumps({"toponym_id": r["toponym_id"], "embedding": vec}) + "\n")
             done += len(chunk)
-            if done % 20_000 == 0 or done == len(rows):
-                print(f"[compute]   {done:,}/{len(rows):,} ({done/(time.time()-t0):.0f}/s)")
+            if done % 100_000 == 0:
+                print(f"[compute]   {done:,} embedded ({done/(time.time()-t0):.0f}/s)", flush=True)
     print(f"[compute] done: {done:,} embeddings → {out}  ({time.time()-t0:.0f}s)")
 
 
