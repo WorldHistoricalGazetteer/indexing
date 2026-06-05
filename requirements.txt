@@ -1,0 +1,39 @@
+# WHG indexing — core runtime requirements (the `whg` conda env).
+#
+# Derived from the third-party top-level imports across processing/,
+# authorities/, gateway/ and typesystem/. Python 3.11+ required.
+#
+# The Symphonym / phonetics G2P stack (torch, epitran, panphon, charsiu-g2p,
+# …) is listed separately in hf/requirements.txt — install that too on hosts
+# that run the toponym-embedding pipeline.
+
+# Elasticsearch + data plumbing
+elasticsearch
+python-dotenv
+ijson
+orjson
+numpy
+pyarrow
+duckdb
+requests
+
+# Geometry / spatial
+shapely
+h3
+pyproj
+antimeridian
+osmium            # pyosmium — OSM/OHM PBF parsing
+
+# Authority file formats
+openpyxl          # .xlsx reader (Ottoman NFS gazetteer authority)
+
+# Gateway (FastAPI search/proxy service)
+fastapi
+uvicorn
+starlette
+httpx
+websockets
+pydantic
+
+# Misc authority helpers
+pypinyin          # CHGIS pinyin romanisation
