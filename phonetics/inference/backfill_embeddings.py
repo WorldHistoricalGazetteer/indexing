@@ -128,7 +128,44 @@ def _load_model(device: str, model_dir: str | None):
         sys.path.insert(0, str(hf_dir))
     from inference import SymphonymModel
     print(f"[compute] loading SymphonymModel from {md} on {device} ...")
-    return SymphonymModel(model_dir=md, device=device)
+    model = SymphonymModel(model_dir=md, device=device)
+    _sanitize_vocab(model)
+    return model
+
+
+def _sanitize_vocab(model) -> int:
+    """Remap any vocab id that exceeds its embedding table to an in-range UNK.
+
+    The on-disk vocab files can carry ids beyond the trained model's embedding
+    tables (vocab/model size drift). An out-of-range id triggers a CUDA
+    device-side 'index out of bounds' assert mid-batch — which poisons the CUDA
+    context and kills the whole job (observed on the global wd/osm/gn backlog at
+    ~1.85M docs; never on ofs's short, common-script names). The tokenizer maps
+    via dict.get(key, in_range_default), so clamping every dict VALUE into range
+    fully prevents the crash. Valid entries are untouched → normal embeddings are
+    identical; only names with out-of-table tokens degrade gracefully to UNK.
+    """
+    enc = model._model
+    vsz, ssz, lsz = (enc.char_embed.num_embeddings,
+                     enc.script_embed.num_embeddings,
+                     enc.lang_embed.num_embeddings)
+    unk_char = model._char_to_id.get("<UNK>", 1)
+    unk_lang = model._lang_to_id.get("<UNK>", 0)
+    unk_char = unk_char if 0 <= unk_char < vsz else 0
+    unk_lang = unk_lang if 0 <= unk_lang < lsz else 0
+    cbad = sbad = lbad = 0
+    for k, v in list(model._char_to_id.items()):
+        if not (0 <= v < vsz):
+            model._char_to_id[k] = unk_char; cbad += 1
+    for k, v in list(model._script_to_id.items()):
+        if not (0 <= v < ssz):
+            model._script_to_id[k] = 0; sbad += 1
+    for k, v in list(model._lang_to_id.items()):
+        if not (0 <= v < lsz):
+            model._lang_to_id[k] = unk_lang; lbad += 1
+    print(f"[compute] vocab sanitised vs tables (char<{vsz}, script<{ssz}, "
+          f"lang<{lsz}): remapped char×{cbad}, script×{sbad}, lang×{lbad}")
+    return cbad + sbad + lbad
 
 
 def _quantize(emb) -> list[int]:
