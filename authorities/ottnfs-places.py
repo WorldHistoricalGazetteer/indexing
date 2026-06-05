@@ -24,9 +24,16 @@ version bumps the schema.
 ----------------------------------------------------------------------------
 
 === INCREMENTAL SINGLE-NAMESPACE ADD RUNBOOK (ns=ofs) ======================
-Point-only authority → the geom-merge / H3 steps are cheap (each geom is a
-single repr_point cell) but stay in the chain. Run on CRC unless noted; long
-Python is fine on `pitt`, never on a CRC login node — use a compute node / Slurm.
+POINT-ONLY SHORTCUT: ofs is point-only, so the geom_store/H3/ccode staging
+chain (steps 2-3 below) is ALL NO-OPS and is SKIPPED — verified on the
+2026-06-05 prod load. Points have has_geom=False / geom_ref=None (nothing goes
+to the geom store; the global geom staging dir stays empty), helpers compute
+h3_cover/h3_centroid INLINE during EXTRACT (from repr_point, which IS the real
+H3 for a point), and ccodes are left unset (assigned spatially later). So index
+straight from the `extract` stage. Keep steps 2-3 only for POLYGON authorities
+(e.g. ukhc), where H3 must come from the real geom-store polygon.
+Run on CRC unless noted; long Python is fine on `pitt`, never on a CRC login
+node — use a compute node / Slurm.
 Activate first:  source <conda>/etc/profile.d/conda.sh && conda activate whg && cd /vast/ishi/elastic
 
  0. FETCH + verify — auto-download the .xlsx (AUTHORITIES['ofs'] points at the
@@ -34,25 +41,34 @@ Activate first:  source <conda>/etc/profile.d/conda.sh && conda activate whg && 
       python -m processing.fetch_authorities -n ofs --age 0
       python -m authorities.ottnfs-places --dump-headers   # expect no UNMAPPED
 
- 1. EXTRACT — stage places.jsonl + geom-store staging (WHG_STAGING_MODE set by
-    the wrapper; or export WHG_STAGING_MODE=1):
+ 1. EXTRACT — stage places.jsonl (also computes h3_cover/h3_centroid inline):
       python -m authorities.ottnfs-places            # uses AUTHORITIES['ofs'] file
 
- 2. MERGE GEOMS → main store (incremental; must precede H3):
-      python -m processing.geom_store --merge --keep-staging
+ 2-3. SKIPPED for ofs (point-only — see POINT-ONLY SHORTCUT above). For a
+    polygon authority you would instead run, IN ORDER:
+      python -m processing.geom_store --merge --keep-staging      # before H3
+      python -m processing.h3_stage   --run-id <RID> --namespace <ns>
+      python -m processing.h3_merge   --run-id <RID> --namespace <ns>
+      : > ${STAGED_BASE_DIR}/<ns>/ccode/places.ccode.jsonl        # empty pass-through
+      python -m processing.ccode_merge --run-id <RID> --namespace <ns>
+    (h3_stage/h3_merge/ccode_merge are manifest-driven — they need a run-id.)
 
- 3. STAGE CHAIN → final/places.parquet (points: h3_stage writes h3_centroid +
-    a single-cell h3_cover; ccode patch is an empty pass-through):
-      python -m processing.h3_stage     --namespace ofs
-      python -m processing.h3_merge     --namespace ofs
-      : > ${STAGED_BASE_DIR}/ofs/ccode/places.ccode.jsonl   # empty = pass through
-      python -m processing.ccode_merge  --namespace ofs
-
- 4. INDEX into the live `places` alias + augment toponyms (dry-run first):
-      python -m processing.index_namespace --namespace ofs --source-stage final --es-host <PROD>
-      python -m processing.index_namespace --namespace ofs --source-stage final --es-host <PROD> --execute
-    (Guards against indexing geoms with no h3_cover; appends place_id to
-     toponym attestations + 'ofs' to namespaces, never overwrites embeddings.)
+ 4. INDEX into the live `places` alias + augment toponyms. Source stage =
+    `extract` for ofs (it already carries h3_cover; index_namespace's _missing_h3
+    guard only trips on has_geom=True geoms, so points are exempt). MUST run ON
+    pitt — prod ES is firewalled to pitt's localhost:9201; /vast/ishi/staged is
+    shared so pitt sees the extract. pitt has no /ihome: use
+    /home/gazetteer/miniconda/envs/whg/bin/python. NOTE: index_namespace builds
+    Elasticsearch(es_host) with NO auth arg AND prints es_host, so do NOT embed
+    the prod password in the URL (401 without, leaks with). Either pass a
+    no-auth host on an unsecured port, or drive its functions with a basic_auth
+    client (pw from /ix1/ishi/es/config/elastic.password) — see git log
+    2026-06-05 for the driver snippet. Dry-run first (omit --execute):
+      python -m processing.index_namespace --namespace ofs --source-stage extract --es-host <PROD>
+      python -m processing.index_namespace --namespace ofs --source-stage extract --es-host <PROD> --execute
+    (Appends place_id to toponym attestations + 'ofs' to namespaces, never
+     overwrites embeddings. New toponyms are created WITHOUT embeddings → run the
+     Symphonym backfill in step 5a so they become fuzzy/phonetic-searchable.)
 
  5. AGGREGATES (feed the registry push):
       python -m processing.gazetteer_h3_coverage   --namespace ofs
@@ -94,6 +110,8 @@ Activate first:  source <conda>/etc/profile.d/conda.sh && conda activate whg && 
 
  8. Re-read the geom store for exact containment:
       es gateway-restart
+    NB: NOT needed for a point-only ns like ofs — exact containment reads the
+    geom store, which holds no point entries. Only run it for polygon adds.
 ===========================================================================
 """
 
