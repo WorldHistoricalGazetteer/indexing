@@ -1,0 +1,274 @@
+Delivered-To: stephen@docuracy.co.uk
+Received: by 2002:a05:6022:9013:b0:103:c53d:f4b0 with SMTP id bc19csp2646351lab;
+        Wed, 3 Jun 2026 12:08:12 -0700 (PDT)
+X-Received: by 2002:a05:6808:144f:b0:485:d6e7:9dcb with SMTP id 5614622812f47-4865a462626mr2712121b6e.0.1780513692387;
+        Wed, 03 Jun 2026 12:08:12 -0700 (PDT)
+ARC-Seal: i=1; a=rsa-sha256; t=1780513692; cv=none;
+        d=google.com; s=arc-20240605;
+        b=IQIInfkqYmJLwrZvE+r1WFWeNBr6SjVWodyVuM35nGg971p6UoP/sc36nh9Jx/NjEm
+         5MFk1khuoUzkteWdpDzEd0bGBcT3PYnKq+ky5AYA67rGFljZeVt9YvWmjyOziFj4h935
+         Niap5c+tkTLr5bCRt1k3DZSjoYYwhQI36U8yEVyh5jUkO2EBR8XjEuazdmAfZKEN00CL
+         xjX5EBKciJKQQkCogZKjL+18gE3qXaS64J5PsUpTwuh7GSLwxA8Bfthen+hRXypdoo38
+         QXgV5QJGhuVAs+cp+HDbSG0svxMkYmEgZulj/MY1a8OQ39YKm5Q1JljGK+eFFY56E/15
+         1bfA==
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com; s=arc-20240605;
+        h=date:to:references:message-id:subject:mime-version:from
+         :dkim-signature;
+        bh=Ft1lLyLr0ApDw94QRzQhrOubCanfGk4UXUEFNCCLErs=;
+        fh=coguVLVYLcEtFEyIwokpX3G59UjUkqHhWFCiFniswG4=;
+        b=OkBdqrcex1uT929V/RfrSLeuiMKM9WkmDTXTY8YlUzLL/YHzFAg1TOZhqhI5+8iVIx
+         Eb3L1+Pi3t8kasnU+IJlGrfgBuWQxttgbNuJG4hVT3qxWnjRcHMC4ieWz90NmkO53i+N
+         /kQktQpikl9l5ooOyY4VFyvbIQInpdm1DSK0KB8x4il/rnb27BtAoxIEqU/RdX509l5W
+         XPR8w6Hl1ZNDZyGU+uIr0mLx2Bq7lb7dP2Q5TnL0hVCpYq7jYJfSXJD7fAeW7d5q4MBp
+         pFxz5463nrgqhutKVjleNciDKAaX5fs5bsCwiGFjQ/yhC20Lv/Pu4Wt7gD95Lnack3hP
+         kMNQ==;
+        dara=google.com
+ARC-Authentication-Results: i=1; mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20251104 header.b=o9RSjuUp;
+       spf=pass (google.com: domain of karl.geog@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=karl.geog@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=neutral header.i=@docuracy.co.uk
+Return-Path: <karl.geog@gmail.com>
+Received: from mail-sor-f41.google.com (mail-sor-f41.google.com. [209.85.220.41])
+        by mx.google.com with SMTPS id 5614622812f47-4865b7bf6e6sor1213060b6e.8.2026.06.03.12.08.12
+        for <stephen@docuracy.co.uk>
+        (Google Transport Security);
+        Wed, 03 Jun 2026 12:08:12 -0700 (PDT)
+Received-SPF: pass (google.com: domain of karl.geog@gmail.com designates 209.85.220.41 as permitted sender) client-ip=209.85.220.41;
+Authentication-Results: mx.google.com;
+       dkim=pass header.i=@gmail.com header.s=20251104 header.b=o9RSjuUp;
+       spf=pass (google.com: domain of karl.geog@gmail.com designates 209.85.220.41 as permitted sender) smtp.mailfrom=karl.geog@gmail.com;
+       dmarc=pass (p=NONE sp=QUARANTINE dis=NONE) header.from=gmail.com;
+       dara=neutral header.i=@docuracy.co.uk
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=gmail.com; s=20251104; t=1780513692; x=1781118492; darn=docuracy.co.uk;
+        h=date:to:references:message-id:subject:mime-version:from:from:to:cc
+         :subject:date:message-id:reply-to;
+        bh=Ft1lLyLr0ApDw94QRzQhrOubCanfGk4UXUEFNCCLErs=;
+        b=o9RSjuUpk5k3W1JFvRpWwvYmY5V6E4Pn0QfxJoMGfp7CNjGiPRLF5p0BjhuBCNLskk
+         xKhGtgbLUuyzMBRNrB94U4RX26nFFou9ZUrYH4edRqs0fHoyyjNjXdzzavqZj9XpSCMq
+         pxArAvKbw7k5ZHCfRlFsIFrPX8PKlOJlfr6+JalIPk9slgB7yG4XFPMuUE3lB1jCjaJR
+         UEf4AiKf2hlzuoZKtEmSeJmSBxiUuqYSwsd2B66W0ClqqS0+lYQxTOCVPk1KfT9GF/lh
+         Ptpg3gjE7sKtwikTdMuUq9KmMquFdAkLqZXnHiKfz4vnqcUZBM5UBCRphLfIpI0dq+3L
+         mydA==
+X-Google-DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed;
+        d=1e100.net; s=20251104; t=1780513692; x=1781118492;
+        h=date:to:references:message-id:subject:mime-version:from:x-gm-gg
+         :x-gm-message-state:from:to:cc:subject:date:message-id:reply-to;
+        bh=Ft1lLyLr0ApDw94QRzQhrOubCanfGk4UXUEFNCCLErs=;
+        b=Yx1XCjUubmeJQLl+wkK9q1YUUvYHMdmF2xO3o1fBxIXwwJpAwY8IHFDO5CVbdrxlNi
+         MNFiwQ2npYLxm/R0Mv+fHnF5bEQTcbOKO1amhx1Mm3YAuebo2ckhrayVNid0aJiMpT0x
+         FqJOghOAlrgEUW4crt83zQuFlNHlL0iX+sEoltUCWCoqMJpyvIb0SN62bPahlV6LfxYh
+         fwxBHGqawBh+AvM/OqrSGYx9oJ9QgtEG0qgit234s1fM7e0LdL7WxVCnpaJKEEUOhcZK
+         PtSIzMpDCiWQ4kNSrj1h70OPFyyVRB9Zc38fTyRtapQd2/e+fKZZX1LxHxVfOvcSpTAn
+         +W1Q==
+X-Gm-Message-State: AOJu0YwC+S5V5rz/sPoWesZsg9vd+4WK942lS/aVOtAIvmhvhcPPmxbS
+	mFzNXGNzUIGQSOy2Stdnog1IzFTaFOAypvYENglQjLfwBysmwWSCi5P/CNjgng==
+X-Gm-Gg: Acq92OEXrD6TiE4Crk7jOd+phzcU+6OmY9NKGOmCMqlijyB6tArKkExzlWCjii4AELZ
+	Vki57QaAU9bfl6+AZC9ug7QnEvw6qGec3FUKrGXPKaKzYkdQpHUYY9fg5hZjW2oo69CkQUng9Pb
+	TpydI4o9fnsDfUWKrZB91usKTryGs7LbxHOaZ2bziQ+gItjNhXNn7wCa9O/L9SA47RzMG/UTqu+
+	DhI14AJgebixnmgefDHM9hD5zU9twt4bYX3G3iRbiHLIWdaIqkrbcCQMqX/HBd92x4L3e5Ic1mc
+	h2fb8TA8hCagd+wB7TV/7XT3r7ap7CegMM15f8rHXLrhUObG8GhX8T0K++q7xeau+rlvpyJUdIs
+	NnA2ZEGJ3Vg7zkzD2eZaOuJzGEDXnSGwQG53tDwjy6Nv5S1eg0SvuxVOSLnZoAwENVaWFs6EMd5
+	YvysrXwVFrsdsKdE4BgrG/f8QkVOf2MT65ewom4j3vZ8YZ2VmarkeAez+icL81HiM=
+X-Received: by 2002:a05:6808:4f0b:b0:485:e704:4c12 with SMTP id 5614622812f47-4865a913f48mr3159705b6e.8.1780513691791;
+        Wed, 03 Jun 2026 12:08:11 -0700 (PDT)
+Return-Path: <karl.geog@gmail.com>
+Received: from smtpclient.apple ([2601:8c3:8600:2660:39d5:30b8:df56:d1b])
+        by smtp.gmail.com with ESMTPSA id 5614622812f47-4865b9c733fsm2377572b6e.16.2026.06.03.12.08.10
+        (version=TLS1_2 cipher=ECDHE-ECDSA-AES128-GCM-SHA256 bits=128/128);
+        Wed, 03 Jun 2026 12:08:11 -0700 (PDT)
+From: Karl G <karl.geog@gmail.com>
+Content-Type: multipart/alternative;
+	boundary="Apple-Mail=_F026D465-3A64-49FE-938A-A4077F4FAD65"
+Mime-Version: 1.0 (Mac OS X Mail 16.0 \(3864.600.51.1.1\))
+Subject: Fwd: Carmen's notes for Alcedo/TopUrbi
+Message-Id: <FCAF651F-9DF5-40D9-BD8D-A41888E21FF3@gmail.com>
+References: <CAO3PAbVOQsw7tH2Fpg_CEmxoU4CyVPtG1pSHn4iv9+acg2SHhw@mail.gmail.com>
+To: "Gadd, Stephen" <stephen@docuracy.co.uk>,
+ "Vashist, Palak" <PAV82@pitt.edu>,
+ Ruth Mostern <rmostern@pitt.edu>
+Date: Wed, 3 Jun 2026 13:08:00 -0600
+X-Mailer: Apple Mail (2.3864.600.51.1.1)
+
+
+--Apple-Mail=_F026D465-3A64-49FE-938A-A4077F4FAD65
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/plain;
+	charset=utf-8
+
+For context if it helps, here is the latest extended message from Carmen
+
+> Begin forwarded message:
+>=20
+> From: Carmen Brando Lebas <carmen.brando@gmail.com>
+> Subject: RE : hello again and Alcedo/TopUrbi
+> Date: March 23, 2026 at 5:01:19=E2=80=AFAM MDT
+> To: Karl Grossner <karl.geog@gmail.com>, Karl Grossner =
+<karl@kgeographer.org>
+>=20
+> Hi Karl,
+>=20
+> Thank you, glad to hear from you =E2=80=94 I hope things are well to =
+you and yours too!
+>=20
+> Werner has now completed the work on the Alcedo dictionary within the =
+TopUrbi project, covering both the TEI digital edition and the =
+historical place gazetteer.
+> Jean-Paul Zu=C3=B1iga (TopUrbi's PI) and Werner have both been in =
+touch with Gimena del Rio on this.
+> One key difference from Gimena's original approach is that we chose to =
+work from the original Spanish edition, whereas Gimena mentioned she had =
+started with an English translation.
+> Starting from the Spanish meant essentially beginning from scratch, =
+which took up Werner's full two-year contract within TopUrbi.
+>=20
+> Please note that the repository you found is no longer active and the =
+data there is outdated. The current resources =E2=80=94 scripts, data, =
+TEI Publisher app (still in progress), and bibliographic references =E2=80=
+=94 are in our main repository: =
+https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-project =
+(the second part of the README is in English)
+>=20
+> The most up-to-date gazetteer data is in the TEI index here:
+> =
+https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-data/-/tree=
+/main/auxiliary?ref_type=3Dheads=20
+>=20
+> On the question of data sharing: TopUrbi was funded by the French =
+National Research Agency (ANR), which requires us to make our data FAIR.
+> We chose an open licence with a non-commercial restriction =E2=80=94 =
+CC BY-NC 4.0 (https://creativecommons.org/licenses/by-nc/4.0/). Would =
+this be compatible with WHG's requirements?
+>=20
+> We are also required to systematically cite the project by its full =
+name and code: ANR TopUrbi =E2=80=94 Topographie de l'urbanisation =
+imp=C3=A9riale hispanique (Projet-ANR-21-CE27-0023). Ideally, I would =
+like this attribution to appear at the record level in WHG =E2=80=94 is =
+that something that could be arranged?
+>=20
+> Contributing our gazetteer to WHG has been part of my plan from the =
+beginning. I was hoping to convert the data to the WHG format, but since =
+Werner's departure I've had to take care of several things we hadn't =
+finished. We are currently working with JINNTEC to customise and improve =
+the TEI Publisher site for the dictionary.
+>=20
+> If you have a workflow to facilitate the conversion to the WHG data =
+model, that would be a great help.
+>=20
+> Werner mentioned that you both previously imported the HGIS de las =
+Indias into WHG =E2=80=94 I would like to do the same for the TopUrbi =
+gazetteer, which is geolocated and linked to Werner's HGIS (and =
+Geonames). We would prefer to have it as a separate dataset in WHG =
+(keeping of course links to HGIS).
+>=20
+> As you can imagine, many places in Alcedo have not yet been =
+geolocated. We have set up a web interface to allow experts to =
+contribute, but as with all projects of this kind, it is an ongoing =
+effort.
+>=20
+> Looking forward to hearing your thoughts!
+>=20
+> Sorry for the long mail, I will be more available in April to discuss =
+if you like, especially to discuss a plan to convert the data and check =
+output.
+>=20
+> best,
+> Carmen
+> PS : My EHESS address has problems today, this is why I use my gmail =
+address..
+
+
+--Apple-Mail=_F026D465-3A64-49FE-938A-A4077F4FAD65
+Content-Transfer-Encoding: quoted-printable
+Content-Type: text/html;
+	charset=utf-8
+
+<html aria-label=3D"message body"><head><meta http-equiv=3D"content-type" =
+content=3D"text/html; charset=3Dutf-8"></head><body =
+style=3D"overflow-wrap: break-word; -webkit-nbsp-mode: space; =
+line-break: after-white-space;"><div dir=3D"auto" style=3D"overflow-wrap: =
+break-word; -webkit-nbsp-mode: space; line-break: =
+after-white-space;">For context if it helps, here is the latest extended =
+message from Carmen<br =
+id=3D"lineBreakAtBeginningOfMessage"><div><br><blockquote =
+type=3D"cite"><div>Begin forwarded message:</div><br =
+class=3D"Apple-interchange-newline"><div style=3D"margin-top: 0px; =
+margin-right: 0px; margin-bottom: 0px; margin-left: 0px;"><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif; color:rgba(0, 0, 0, 1.0);"><b>From: </b></span><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif;">Carmen Brando Lebas =
+&lt;carmen.brando@gmail.com&gt;<br></span></div><div style=3D"margin-top: =
+0px; margin-right: 0px; margin-bottom: 0px; margin-left: 0px;"><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif; color:rgba(0, 0, 0, 1.0);"><b>Subject: </b></span><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif;"><b>RE : hello again and =
+Alcedo/TopUrbi</b><br></span></div><div style=3D"margin-top: 0px; =
+margin-right: 0px; margin-bottom: 0px; margin-left: 0px;"><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif; color:rgba(0, 0, 0, 1.0);"><b>Date: </b></span><span =
+style=3D"font-family: -webkit-system-font, Helvetica Neue, Helvetica, =
+sans-serif;">March 23, 2026 at 5:01:19=E2=80=AFAM =
+MDT<br></span></div><div style=3D"margin-top: 0px; margin-right: 0px; =
+margin-bottom: 0px; margin-left: 0px;"><span style=3D"font-family: =
+-webkit-system-font, Helvetica Neue, Helvetica, sans-serif; =
+color:rgba(0, 0, 0, 1.0);"><b>To: </b></span><span style=3D"font-family: =
+-webkit-system-font, Helvetica Neue, Helvetica, sans-serif;">Karl =
+Grossner &lt;karl.geog@gmail.com&gt;, Karl Grossner =
+&lt;karl@kgeographer.org&gt;<br></span></div><br><div><div dir=3D"ltr">Hi =
+Karl,<br><br>Thank you, glad to hear from you =E2=80=94 I hope things =
+are well to you and yours too!<br><br>Werner has now completed the work =
+on the Alcedo dictionary within the TopUrbi project, covering both the =
+TEI digital edition and the historical place gazetteer.<br>Jean-Paul =
+Zu=C3=B1iga (TopUrbi's PI) and Werner have both been in touch with =
+Gimena del Rio on this.<br>One key difference from Gimena's original =
+approach is that we chose to work from the original Spanish edition, =
+whereas Gimena mentioned she had started with an English =
+translation.<br>Starting from the Spanish meant essentially beginning =
+from scratch, which took up Werner's full two-year contract within =
+TopUrbi.<br><br>Please note that the repository you found is no longer =
+active and the data there is outdated. The current resources =E2=80=94 =
+scripts, data, TEI Publisher app (still in progress), and bibliographic =
+references =E2=80=94 are in our main repository: <b><a =
+href=3D"https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-pro=
+ject">https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-proje=
+ct</a> (the second part of the README is in English)</b><br><br>The most =
+up-to-date gazetteer data is in the TEI index here:<br><b><a =
+href=3D"https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-dat=
+a/-/tree/main/auxiliary?ref_type=3Dheads">https://gitlab.huma-num.fr/plate=
+forme-geomatique-et-hn/topurbi-data/-/tree/main/auxiliary?ref_type=3Dheads=
+</a> <br></b><br>On the question of data sharing: TopUrbi was funded by =
+the French National Research Agency (ANR), which requires us to make our =
+data FAIR.<br><b>We chose an open licence with a non-commercial =
+restriction =E2=80=94 CC BY-NC 4.0 (<a =
+href=3D"https://creativecommons.org/licenses/by-nc/4.0/">https://creativec=
+ommons.org/licenses/by-nc/4.0/</a>). Would this be compatible with WHG's =
+requirements?<br></b><br>We are also required to systematically cite the =
+project by its full name and code:<b> ANR TopUrbi =E2=80=94 Topographie =
+de l'urbanisation imp=C3=A9riale hispanique (Projet-ANR-21-CE27-0023). =
+Ideally, I would like this attribution to appear at the record level in =
+WHG =E2=80=94 is that something that could be =
+arranged?</b><br><br>Contributing our gazetteer to WHG has been part of =
+my plan from the beginning. I was hoping to convert the data to the WHG =
+format, but since Werner's departure I've had to take care of several =
+things we hadn't finished. We are currently working with JINNTEC to =
+customise and improve the TEI Publisher site for the =
+dictionary.<br><br>If you have a workflow to facilitate the conversion =
+to the WHG data model, that would be a great help.<br><br>Werner =
+mentioned that you both previously imported the HGIS de las Indias into =
+WHG =E2=80=94 I would like to do the same for the TopUrbi gazetteer, =
+which is geolocated and linked to Werner's HGIS (and Geonames). We would =
+prefer to have it as a separate dataset in WHG (keeping of course links =
+to HGIS).<br><br>As you can imagine, many places in Alcedo have not yet =
+been geolocated. We have set up a web interface to allow experts to =
+contribute, but as with all projects of this kind, it is an ongoing =
+effort.<br><br>Looking forward to hearing your thoughts!<br><br>Sorry =
+for the long mail, I will be more available in April to discuss if you =
+like, especially to discuss a plan to convert the data and check =
+output.<br><br>best,<br>Carmen<div>PS : My EHESS address has problems =
+today, this is why I use my gmail address..</div></div>
+</div></blockquote></div><br></div></body></html>=
+
+--Apple-Mail=_F026D465-3A64-49FE-938A-A4077F4FAD65--

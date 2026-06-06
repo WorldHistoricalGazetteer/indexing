@@ -166,15 +166,18 @@ first-pass assumptions were WRONG — flagged in notes.
 > This is the ONLY unseeded *SPDX* — the audit's other gaps (nl, ukhc, chgis) are
 > bespoke **non-SPDX** terms needing custom `License` rows, not seed additions.
 
-> **Custom `License` rows needed on WHG (non-SPDX bespoke terms):**
-> - **nl** — Native Land Digital Data Sovereignty Treaty (NC + redistribution-by-permission)
-> - **ukhc** — Historic Counties Trust permissive terms (commercial OK, attribution requested)
-> - **chgis** — CHGIS academic-research-only (no commercial / resale / redistribution)
+> **Custom `License` rows — DONE on WHG atlas/dev (2026-06-06, licensing/0003).**
+> The three bespoke sources now bind to custom `License` rows via these
+> `license_spdx` lookup keys (set in `AUTHORITIES`):
+> - **nl** → `custom-nativeland-dst` (commercial=False, custom=True)
+> - **ukhc** → `custom-historic-counties` (commercial=True, custom=True)
+> - **chgis** → `custom-chgis-academic` (commercial=False, custom=True)
 >
-> Until these rows exist, the three entries push their `citation_text` / `license_url`
-> / `rights_holder` / `source_url` but **omit `license_spdx`** (so no wrong licence FK
-> is asserted). Settings carry the verified facts; only the WHG `License` FK awaits the
-> custom rows.
+> Plus `CC-BY-ND-4.0` seeded (dgsd). All four resolve on **dev**. **Prod parity
+> lands at the atlas→main promotion** — until then a prod push logs "unknown
+> license_spdx" + skips the FK for these four (the other fields still upsert;
+> self-corrects with a re-push after promotion). The other 16 authorities resolve
+> on prod today.
 
 Bespoke / non-SPDX terms → use `custom-public-domain` only if truly PD; otherwise flag for a `custom=True` WHG `License` row + a free-text rights statement (coordinate with the WHG repo).
 

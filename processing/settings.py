@@ -460,8 +460,10 @@ AUTHORITIES = [
         # Verified 2026-06-06: Native Land Digital "Data Sovereignty Treaty" (OCAP®)
         # — bespoke terms, NOT CC0/SPDX: NON-COMMERCIAL only, redistribution by
         # explicit permission, mandatory attribution + acknowledgement of Indigenous
-        # communities as stewards. No license_spdx → needs a CUSTOM WHG License row.
+        # communities as stewards. Bound to WHG custom License 'custom-nativeland-dst'
+        # (commercial=False, custom=True; seeded on WHG atlas 2026-06-06).
         'citation_text': 'Indigenous territory, language, and treaty data provided by Native Land Digital (native-land.ca), used under the Native Land Digital Data Sovereignty Treaty; Indigenous communities are the rightful stewards of this data.',
+        'license_spdx': 'custom-nativeland-dst',  # WHG custom License row (non-SPDX terms)
         'license_url': 'https://api-docs.native-land.ca/data-sovereignty-treaty',
         'rights_holder': 'Native Land Digital',
         'source_url': 'https://native-land.ca/',
@@ -581,9 +583,10 @@ AUTHORITIES = [
         'namespace': 'ukhc',
         # Verified 2026-06-06 (county-borders.co.uk terms): free for personal/
         # educational/non-commercial AND commercial use, attribution requested
-        # ("would appreciate"). No formal SPDX licence → no license_spdx; model as a
-        # custom permissive WHG License row.
+        # ("would appreciate"). Bound to WHG custom License 'custom-historic-counties'
+        # (commercial=True, custom=True; seeded on WHG atlas 2026-06-06).
         'citation_text': 'Historic county boundary data provided by the Historic County Borders Project (Historic Counties Trust), https://county-borders.co.uk.',
+        'license_spdx': 'custom-historic-counties',  # WHG custom License row (non-SPDX terms)
         'license_url': 'https://county-borders.co.uk/',
         'rights_holder': 'Historic Counties Trust',
         'source_url': 'https://county-borders.co.uk/',
@@ -648,10 +651,11 @@ AUTHORITIES = [
         'namespace': 'chgis',
         # Verified 2026-06-06 (chgis.fas.harvard.edu/data/chgis/v6): bespoke
         # "academic research only" terms — NO commercial use, resale, OR
-        # redistribution (stricter than any CC licence). No license_spdx → needs a
-        # CUSTOM WHG License row; the no-redistribution clause may warrant direct
-        # permission, given WHG serves the data.
+        # redistribution (stricter than any CC licence). Bound to WHG custom License
+        # 'custom-chgis-academic' (commercial=False, custom=True; seeded on WHG atlas
+        # 2026-06-06). No-redistribution clause may warrant direct permission.
         'citation_text': 'CHGIS, Version 6. © Fairbank Center for Chinese Studies, Harvard University & Center for Historical Geographical Studies, Fudan University, 2016.',
+        'license_spdx': 'custom-chgis-academic',  # WHG custom License row (non-SPDX terms)
         'license_url': 'https://chgis.fas.harvard.edu/data/chgis/v6/',
         'rights_holder': 'Fairbank Center for Chinese Studies, Harvard University & Center for Historical Geographical Studies, Fudan University',
         'source_url': 'https://chgis.fairbank.fas.harvard.edu/',
