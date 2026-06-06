@@ -1,0 +1,2625 @@
+{
+ "_comment": "CHGIS ftype (name_en) -> Getty AAT. Hybrid: granular static for high-volume admin/settlement/religious ftypes, adl_class fallback for the tail. Source: authorities/chgis (tgaz ftype).",
+ "types": [
+  {
+   "value": "Dai fiefdom",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "Nanzhao Chieftanship",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "Nanzhao administrative region",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "Tibetan county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "aboriginal county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "aboriginal department",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "aboriginal office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "acting capital",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "acting imperial offices",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "administrative area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agricultural colony",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agricultural colony commander",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agricultural field",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agricultural office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agriculture area",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "agriculture commission",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "altar",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "ancestor temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "artificial mountain",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "autonomous area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "autonomous banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "autonomous county boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "autonomous district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "autonomous region boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "auxiliary capital",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "bandit suppression commission",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "banner boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "banner general",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "border domain",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "branch secretariat",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "brazier",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "buddhist temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "bunker",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "cabin",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "camp",
+   "adl_class": "camps",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "capital district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "cattle ranch",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "cave",
+   "adl_class": "caves",
+   "aat_mapping": {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "chief town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "chiefs office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "chieftanship",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "church",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "churchyard",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "circuit",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "city",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "civilian superior prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "commandant district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "commanderate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "commandery",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235537,
+    "aat_term": "commanderies",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "commercial agricultural colony",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "commercial agriculture area",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "commissioner office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "committee district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "company command",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "confucian temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "constabulary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "country",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "country capital",
+   "adl_class": "capitals",
+   "aat_mapping": {
+    "aat_id": 300387219,
+    "aat_term": "national capitals",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000771,
+    "aat_term": "counties",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "county administrative office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "county level municipality boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "county sub-district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "county town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "county-level district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "daoist temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "decorative gate",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "defense command",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "defense commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "department",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "department magistrate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "dependent country commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "domain",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "empire",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "encampment",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "evacuation area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "feifdom",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "feudal lord",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "feudal lordship",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "fief",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "firing range",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "flower nursery",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "fortified settlement",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "fortress",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "front banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "frontier subprefectural office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "garrison",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "garrison town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "grand minister of the secretariat",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "grand ministers superintendant",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "great banner general",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "greenhouse",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "guard house",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "hamlet",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "hay yard",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "hill",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "horse ranch",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "hundred household village",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "independent county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "independent prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235099,
+    "aat_term": "prefectures",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "independent regime",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "independent sub-prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "independent territory",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "industrial agricultural district",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "industrial prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "inspectorate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "jeweled pagoda",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "joint banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "josshouse",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "khanate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "league",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "league boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "left banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "left wing front banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "left wing middle banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "left wing rear banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "limestone cave",
+   "adl_class": "caves",
+   "aat_mapping": {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "livestock nursery",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "local aboriginal administrative office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "local god temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "local office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "loose reign county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "loose reign department",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "loose reign prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "main department of independent prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235099,
+    "aat_term": "prefectures",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "main department of independent sub-prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "man-made mound",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "market town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "marquisate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "metropolitan area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "metropolitan district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "middle banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military agricultural colony",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military and civilian central office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military and civilian central office under the route command",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military and civilian office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military and civilian office under the route command",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military and civilian pacification commission",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military exercise area",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military garrison",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "military prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235099,
+    "aat_term": "prefectures",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "military training commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "militia office",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mine field",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mine-laying practice area",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "monastery",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "mongolian sacred stones",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mosque",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mound",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mountain",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mountain pass",
+   "adl_class": "caves",
+   "aat_mapping": {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mountain range",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "mulberry orchard",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "nation",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "natural mound",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "noble clan prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "nursery",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "occupied territory",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "official residence",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "old pillbox",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "orchard",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "organic farm",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "outpost",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "overlorship",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "pacification commission",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "paddy field",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "pagoda",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "park",
+   "adl_class": "parks",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "pasture land",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "patrol division office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "peak",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "place of worship",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "populated place",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235099,
+    "aat_term": "prefectures",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "prefecture administrative office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "prefecture level municipality boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "prefecture sub-district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "prefecture-level district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "princedom",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "principal prefect",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "protectorate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "province",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000774,
+    "aat_term": "provinces",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "province-level district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "provincial administrative commission",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "provincial administrative office",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "ranchland",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "rear banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "regency",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "regime capital",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "region",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "relic pagoda",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "resident's committee",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "restricted area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "ridge",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "right banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "right wing front banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "right wing middle banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "right wing rear banner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "river",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "route",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "royal domain and imperial capital",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "rubber tree plantation",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "rural township",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sacred stone pile",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "second command sub-district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "security post",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sentry building",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sentry post",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "settlement",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "shallow cave",
+   "adl_class": "caves",
+   "aat_mapping": {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sheep dip",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sheep ranch",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "shogunate",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "shrine",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sinkhole",
+   "adl_class": "caves",
+   "aat_mapping": {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "slope",
+   "adl_class": "mountains",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "special administrative region",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "state managed farm",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sub-district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "sub-prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "submarine practice area",
+   "adl_class": "military areas",
+   "aat_mapping": {
+    "aat_id": 300164060,
+    "aat_term": "military installations",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "submerged agriculture area",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "suburb",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "superior prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300235099,
+    "aat_term": "prefectures",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "supervisory district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "supply commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "surveillance commissioner",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "synagogue",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "tea plantation",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "temple",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "temporary commandery",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "temporary county",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "ten thousand household district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "third",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "thousand household town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "threshing ground",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "town",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008375,
+    "aat_term": "towns",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "township",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "township with urban population boundary",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "treaty district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "tree farm",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "tree nursery",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "trench",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "tripod",
+   "adl_class": "religious facilities",
+   "aat_mapping": {
+    "aat_id": 300007391,
+    "aat_term": "religious buildings",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "unincorporated area",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "unspecified plantation",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "urban district - county level",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "urban district - prefecture level",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "urban prefecture",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "urban sub-district",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "valley",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "vegetable agriculture area",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "vegetable cellar",
+   "adl_class": "agricultural sites",
+   "aat_mapping": {
+    "aat_id": 300008631,
+    "aat_term": "agricultural land",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "viceroyalty",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "village",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "villages and small towns",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300008372,
+    "aat_term": "villages",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "walled town",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300008375,
+    "aat_term": "towns",
+    "confidence": 0.9,
+    "source": "static"
+   }
+  },
+  {
+   "value": "walled village",
+   "adl_class": "populated places",
+   "aat_mapping": {
+    "aat_id": 300008347,
+    "aat_term": "inhabited places",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "ward",
+   "adl_class": "administrative areas",
+   "aat_mapping": {
+    "aat_id": 300000705,
+    "aat_term": "districts",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  },
+  {
+   "value": "wilderness",
+   "adl_class": "parks",
+   "aat_mapping": {
+    "aat_id": 300182722,
+    "aat_term": "geographic regions",
+    "confidence": 0.6,
+    "source": "adl_class"
+   }
+  }
+ ]
+}

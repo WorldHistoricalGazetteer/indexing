@@ -861,10 +861,13 @@ def load_sql_dump(conn: sqlite3.Connection):
     with open(SQL_FILE, 'r', encoding='utf-8') as f:
         content = f.read()
 
-    # Find all INSERT statements
-    # Pattern: INSERT INTO `tablename` VALUES (...);
+    # Find all INSERT statements. Terminate on the mysqldump statement boundary
+    # `;\n` (optionally trailing spaces/CR), NOT the first bare `;` — a `;` inside
+    # a quoted value (e.g. an ftype citation/note) otherwise truncates the INSERT
+    # mid-statement and silently drops every later row. This lost 249 of 1147
+    # `ftype` rows, so only 30% of CHGIS places resolved a feature type.
     insert_pattern = re.compile(
-        r"INSERT INTO `(\w+)` VALUES\s*(.*?);",
+        r"INSERT INTO `(\w+)` VALUES\s*(.*?);[ \t\r]*\n",
         re.DOTALL
     )
 
