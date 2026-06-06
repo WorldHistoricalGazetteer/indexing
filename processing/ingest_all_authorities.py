@@ -106,6 +106,7 @@ INGESTION_ORDER = [
     ('tm', 'trismegistos.places', 'Trismegistos ancient places', 'tm-places'),
     ('ofs', 'ottnfs-places', 'Ottoman NFS gazetteer', 'ofs-places'),
     ('og', 'ottgaz-places', 'Ottoman gazetteer (admin units)', 'og-places'),
+    ('alc', 'alcedo-places', 'Alcedo / TopUrbi (1786-89 Americas)', 'alc-places'),
     ('po', 'periodo-places', 'PeriodO temporal periods', 'po-places'),
     ('clio', 'cliopatria-places', 'Cliopatria historical polities', 'clio-places'),
     ('whg', 'whg-places', 'WHG-contributed datasets (DO Django API)', 'whg-places'),

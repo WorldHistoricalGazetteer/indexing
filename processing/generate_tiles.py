@@ -141,7 +141,7 @@ _FIXED_BUCKETS: dict[str, tuple[str, ...]] = {
 # these three namespaces is identical to the legacy "boundary present" rule
 # (every doc has ``boundary`` set).
 _PER_NAMESPACE_BUCKETS: tuple[str, ...] = (
-    "chgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl",
+    "alc", "chgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl",
     "ofs", "og", "pl", "po", "tgn", "tm", "ukhc", "un", "wd",
 )
 

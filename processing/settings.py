@@ -724,6 +724,37 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # ~17.5K places from Alcedo's 1786-89 Diccionario (ANR TopUrbi digitisation)
+        'dataset_name': 'Alcedo',
+        'namespace': 'alc',
+        'api_item': '',
+        # Antonio de Alcedo, Diccionario geográfico-histórico de las Indias
+        # Occidentales ó América (1786-89); TEI digital edition by Werner Stangl
+        # under ANR TopUrbi (PI Jean-Paul Zúñiga; technical lead Carmen Brando,
+        # EHESS); LP-TSV export by Karl Grossner. Point geometries only (geowkt
+        # deferred). CC-BY-NC 4.0; ANR mandates record-level attribution of the
+        # project code (carried in citation_text). Linked to HGIS de las Indias
+        # (in WHG as lugares/territorios) + GeoNames/TGN via the links column.
+        'citation_text': "Antonio de Alcedo, Diccionario geográfico-histórico de las "
+                         "Indias Occidentales ó América (1786-1789); digital edition by "
+                         "Werner Stangl. ANR TopUrbi — Topographie de l'urbanisation "
+                         "impériale hispanique (Projet-ANR-21-CE27-0023).",
+        'license_spdx': 'CC-BY-NC-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-nc/4.0/',
+        'rights_holder': 'ANR TopUrbi (Projet-ANR-21-CE27-0023); Werner Stangl',
+        'source_url': 'https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-project',
+        'contributors': [],
+        'files': [
+            {
+                # Karl Grossner's LP-TSV export (17,467 rows). The sibling
+                # alcedo_sample_500.tsv is a 500-row sample for quick tests.
+                'url': 'https://raw.githubusercontent.com/kgeographer/topurbi/'
+                       'main/whg/data/alcedo_lptsv.tsv',
+                'name': 'alcedo_lptsv.tsv',
+                'file_type': 'tsv',
+            }
+        ],
+    },
     {  # ~16.3K Ottoman populated places from 19th-c. population registers (NFS.d.)
         'dataset_name': 'Ottoman NFS Gazetteer',
         'namespace': 'ofs',
