@@ -12,14 +12,17 @@ Source: https://ottgaz.org  /  https://github.com/whanley/Ottoman-Gazetteer
 ottgaz carries NO native coordinates (only ~222 records link to Wikidata).
 Geometry is therefore WHG-COMPUTED, flagged via the geometries[] provenance
 fields established for this:
-  * source        = 'ofs'  → convex hull of the member ``ofs`` points that fall
-                             in this admin unit (this script).
-                  = 'wd'   → point pulled from our linked Wikidata record
-                             (filled post-index by interlink_ottgaz, pitt-side).
+  * source        = 'ofs'  → convex hull of the member ``ofs`` points in this
+                             admin unit (this script; an AREA approximation).
+                  = 'wd'   → geometry pulled from our linked Wikidata record
+                             (post-index UPGRADE — applied ONLY when that record
+                             has a polygon richer than the ofs hull; a bare wd
+                             point never replaces a computed hull).
                   = 'og'   → inherent in ottgaz (none today).
-  * approximation = 'convex_hull' | 'centroid' for the computed geoms above.
-Wikidata-linked units PREFER the 'wd' geometry (done post-index); this script
-computes the 'ofs' hull as the fallback/where no WD link exists.
+  * approximation = 'convex_hull' | 'centroid' for the computed geoms above;
+                    'exact' for a real wd polygon.
+This script computes the 'ofs' hull for EVERY ofs-matching unit (incl. those
+with a WD link — an area beats a point); the WD upgrade happens later, pitt-side.
 
 Output: ``{STAGED_BASE_DIR}/og/extract/places.jsonl``.
 ES indexing happens later via ``processing.index_namespace`` (geometry-less
@@ -261,24 +264,25 @@ def process_row(row, ofs_idx, name_to_id):
         doc["wikidata_qid"] = qid  # marker for the post-index 'wd' geometry pull
 
     # --- geometry: computed convex hull from ofs member points ---------------
-    # Wikidata-linked units defer to the 'wd' point (filled post-index); compute
-    # the 'ofs' hull only as the fallback when there is no WD link.
-    if not qid:
-        pts = _match_points(unit.lower(), _norm(title), parents_n, ofs_idx)
-        geo, approx = _hull_geometry(pts) if pts else (None, None)
-        if geo:
-            ge = enrich_geometry(geo, timespans=ts)
-            if ge:
-                ge["source"] = "ofs"
-                ge["approximation"] = approx
-                rp = ge.get("repr_point")
-                if rp:
-                    h3g = select_h3_cover_geometry(ge, geo)
-                    h3c, h3cov = compute_h3_fields(rp["lon"], rp["lat"], h3g)
-                    if h3c:
-                        doc["h3_centroid"] = h3c
-                        doc["h3_cover"] = h3cov
-                doc["geometries"] = [ge]
+    # Compute the 'ofs' hull for EVERY unit that matches ofs members — an admin
+    # AREA beats a single point, so we do this even for wikidata-linked units.
+    # A post-index step then UPGRADES a unit to its 'wd' geometry ONLY when that
+    # record carries a polygon richer than this hull (never hull → bare point).
+    pts = _match_points(unit.lower(), _norm(title), parents_n, ofs_idx)
+    geo, approx = _hull_geometry(pts) if pts else (None, None)
+    if geo:
+        ge = enrich_geometry(geo, timespans=ts)
+        if ge:
+            ge["source"] = "ofs"
+            ge["approximation"] = approx
+            rp = ge.get("repr_point")
+            if rp:
+                h3g = select_h3_cover_geometry(ge, geo)
+                h3c, h3cov = compute_h3_fields(rp["lon"], rp["lat"], h3g)
+                if h3c:
+                    doc["h3_centroid"] = h3c
+                    doc["h3_cover"] = h3cov
+            doc["geometries"] = [ge]
 
     if unit:
         doc["admin_unit"] = unit
