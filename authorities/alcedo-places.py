@@ -189,8 +189,12 @@ def process_row(row):
                 h3_geom = select_h3_cover_geometry(geom_entry, geometry)
                 h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], h3_geom)
                 if h3c:
-                    place_doc["h3_centroid"] = h3c
-                    place_doc["h3_cover"] = h3cover
+                    # Nest h3 INSIDE the geometry (NOT top-level): that is where
+                    # the schema, ccode_enrichment._extract_place_h3_cells, and
+                    # gateway/spatial.py read it. (Top-level placement was the
+                    # ofs/og bug that needed a post-index relocation.)
+                    geom_entry["h3_centroid"] = h3c
+                    geom_entry["h3_cover"] = h3cover
 
     # --- type: verbatim featuretype + intrinsic AAT (per-row) ------------
     # Only emitted when the source assigned a featuretype (untyped places are
