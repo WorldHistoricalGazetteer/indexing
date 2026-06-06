@@ -650,6 +650,33 @@ GEONAMES_STATIC_MAPPINGS = {
 }
 
 
+# Curated Pleiades place-type → (aat_id, aat_term) for types that lack a
+# source-provided ``same_as`` AAT URI. IDs validated against the production
+# aat_hierarchy.json by label. ``cmd_static`` applies these to existing
+# pleiades.json entries AND appends any that the vocabulary file is missing
+# (several types appear on places but not in the built vocab file).
+#
+# NB: "station" is DELIBERATELY omitted. In the Pleiades vocabulary it is not a
+# generic transit station — it denotes a route stopping-place (mansio/mutatio)
+# sense and is applied inconsistently, with no clean AAT equivalent. Mapping it
+# would misclassify ~1.2k places, so it is left unmapped on purpose.
+PLEIADES_STATIC_MAPPINGS = {
+    "fort": (300006909, "forts"),
+    "fort-group": (300006909, "forts"),
+    "province": (300000774, "provinces"),
+    "church": (300007466, "churches (buildings)"),
+    "settlement-modern": (300008347, "inhabited places"),
+    "city-gate": (300005080, "city gates"),
+    "bath": (300007353, "public baths"),
+    "cemetery": (300266755, "cemeteries"),
+    "aqueduct": (300006165, "aqueducts"),
+    "temple": (300007595, "temples (buildings)"),
+    "dam": (300006084, "dams"),
+    "villa": (300005517, "villas"),
+    "military-installation-or-camp-temporary": (300164060, "military installations"),
+}
+
+
 # ============================================================================
 # Subcommands
 # ============================================================================
@@ -703,8 +730,10 @@ def cmd_static():
     pl_applied = 0
     try:
         pl_data = load_data_file("pleiades.json")
+        seen_ids = set()
         for identifier, entry in iter_values(pl_data, "pleiades"):
-            # Pleiades types may already have aat_id from same_as URIs
+            seen_ids.add(identifier)
+            # Source same_as URIs take priority (authoritative).
             if "aat_id" in entry and "aat_mapping" not in entry:
                 set_aat_mapping(
                     entry, entry["aat_id"],
@@ -712,8 +741,22 @@ def cmd_static():
                     "authoritative", "pleiades_same_as"
                 )
                 pl_applied += 1
+            # Curated top-up for types without a source same_as mapping.
+            elif "aat_mapping" not in entry and identifier in PLEIADES_STATIC_MAPPINGS:
+                aat_id, aat_term = PLEIADES_STATIC_MAPPINGS[identifier]
+                set_aat_mapping(entry, aat_id, aat_term, "curated", "static_pleiades")
+                pl_applied += 1
+        # Several curated types appear on places but are absent from the vocab
+        # file — append them so the committed dict fully reproduces coverage.
+        pl_values = pl_data.setdefault("values", [])
+        for identifier, (aat_id, aat_term) in PLEIADES_STATIC_MAPPINGS.items():
+            if identifier not in seen_ids:
+                new_entry = {"value": identifier, "label": identifier}
+                set_aat_mapping(new_entry, aat_id, aat_term, "curated", "static_pleiades")
+                pl_values.append(new_entry)
+                pl_applied += 1
         save_data_file("pleiades.json", pl_data)
-        print(f"  Pleiades: {pl_applied} mappings applied (from same_as)")
+        print(f"  Pleiades: {pl_applied} mappings applied (same_as + curated static)")
     except FileNotFoundError:
         print("  Pleiades: skipped (pleiades.json not found)")
 
