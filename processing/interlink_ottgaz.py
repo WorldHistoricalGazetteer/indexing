@@ -253,15 +253,37 @@ def cmd_wd_geometry(args):
     idxname = _concrete(es, "places")
     now = datetime.now(timezone.utc).isoformat()
 
+    def _wd_geom(rp, approx):
+        return {"has_geom": False, "repr_point": rp, "source": "wd",
+                "approximation": approx, "timespans": []}
+
+    # (1) prod
     def actions():
         for pid, rp, approx in upgrades:
-            geom = {"has_geom": False, "repr_point": rp, "source": "wd",
-                    "approximation": approx, "timespans": []}
             yield {"_op_type": "update", "_index": idxname, "_id": pid,
-                   "doc": {"geometries": [geom], "indexed_at": now}}
+                   "doc": {"geometries": [_wd_geom(rp, approx)], "indexed_at": now}}
     ok, errs = es_helpers.bulk(es, actions(), chunk_size=500, raise_on_error=False)
     es.indices.refresh(index=idxname)
-    print(f"[wd-geometry] updated ok={ok:,} errors={len(errs) if isinstance(errs, list) else errs}")
+    print(f"[wd-geometry] prod updated ok={ok:,} errors={len(errs) if isinstance(errs, list) else errs}")
+
+    # (2) staged extract — the tiles' source of truth; keep it consistent with
+    # prod so generate_tiles (which reads staged, not ES) renders these units.
+    up = {pid: (rp, approx) for pid, rp, approx in upgrades}
+    ext = _og_extract()
+    out_lines, patched = [], 0
+    for line in ext.open(encoding="utf-8"):
+        if not line.strip():
+            continue
+        d = json.loads(line)
+        if d["place_id"] in up:
+            rp, approx = up[d["place_id"]]
+            d["geometries"] = [_wd_geom(rp, approx)]
+            patched += 1
+        out_lines.append(json.dumps(d, ensure_ascii=False))
+    tmp = ext.with_suffix(".jsonl.tmp")
+    tmp.write_text("\n".join(out_lines) + "\n", encoding="utf-8")
+    tmp.replace(ext)
+    print(f"[wd-geometry] staged extract patched: {patched:,} docs → {ext}")
 
 
 def main():
