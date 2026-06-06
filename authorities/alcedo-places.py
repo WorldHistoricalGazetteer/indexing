@@ -164,12 +164,13 @@ def process_row(row):
             pass
 
     # --- toponyms (Spanish) ----------------------------------------------
-    toponyms, seen = [], set()
-    for nm in (title, _v(row, "lemma")):
-        nm = nm.strip()
-        if nm and f"{nm}@{LANG}" not in seen:
-            seen.add(f"{nm}@{LANG}")
-            toponyms.append({"toponym_id": f"{nm}@{LANG}", "timespans": timespans})
+    # Normname (title) is the canonical normalised form. The raw `lemma` is the
+    # printed headword (ALL-CAPS in the dictionary), so add it only when it is a
+    # genuinely different name, not merely a casing/duplicate variant.
+    toponyms = [{"toponym_id": f"{title}@{LANG}", "timespans": timespans}]
+    lemma = _v(row, "lemma")
+    if lemma and lemma.casefold() != title.casefold():
+        toponyms.append({"toponym_id": f"{lemma}@{LANG}", "timespans": timespans})
 
     place_doc = {
         "place_id": place_id,
