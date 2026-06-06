@@ -1,0 +1,214 @@
+# Handoff — Authority Citation / Licence / Rights Metadata (Batch 11 upgrade)
+
+**Audience:** Claude Code running in the `indexing` repo (`/home/stephen/PycharmProjects/indexing`).
+**Status:** ready to execute — the WHG (Django) side is built, deployed, and live (atlas/dev; prod parity follows at the atlas→main promotion).
+**Origin spec:** §10 of `whg3/developer/plan-citations-licences-credit.prompt.md` (the WHG repo). This doc is the executable counterpart of that spec.
+
+---
+
+## 0. Why
+
+Authority gazetteers today carry a **single free-text `citation` blob** per `AUTHORITIES` entry, which the Batch 11 push (`processing/push_gazetteer_inventory.py`) sends as the registry row's `description`. The blob mixes citation + licence + URL, is **stale/imprecise**, and in several cases asserts the **wrong licence** (WHG historically over-stamped everything `CC-BY-NC-4.0`, which is legally wrong over ODbL / ODC-By / CC-BY / public-domain sources).
+
+The WHG registry now has **structured, push-managed** attribution fields. This handoff upgrades the ingestion side to populate them truthfully:
+
+1. Migrate `AUTHORITIES` from the `citation` blob to **structured keys**.
+2. Teach the push to emit them.
+3. **Audit and correct every authority's real upstream licence** (research work — the existing blobs cannot be trusted).
+4. Do a full, all-namespace reconciliation push (dry-run → diff → live) to **both prod and dev**.
+
+---
+
+## 1. The WHG endpoint contract (already live — do not change WHG)
+
+`POST {WHG_INVENTORY_ENDPOINT}` (prod `https://whgazetteer.org/api/registry/inventory`; dev mirror `WHG_DEV_INVENTORY_ENDPOINT`). Bearer/token auth as today. Body is `{"gazetteers": [ <entry>, ... ]}`.
+
+Each entry keeps its current keys (`id`, `name`, `description`, `namespace`, `class`, `owner_user_id`, `record_count`, `status`, `h3_coverage`, `temporal_extent`) and **may now also include** these optional Phase 4 fields:
+
+| Payload key      | Type            | WHG behaviour |
+|------------------|-----------------|---------------|
+| `citation_text`  | string          | Human-readable citation. WHG's `attribution_for()` prefers this over `description`. |
+| `license_spdx`   | string          | Resolved to a `License` FK by SPDX id. **Unknown codes are logged and skipped** (the rest of the entry still upserts) — never fatal. |
+| `license_url`    | string (URL)    | Per-source deed override; falls back to the canonical `License.url` when null. |
+| `rights_holder`  | string          | e.g. "J. Paul Getty Trust". |
+| `source_url`     | string (URL)    | Homepage / landing page. |
+| `contributors`   | list of objects | CRediT-shaped `[{"name","role","orcid"}]`; stored as `contributors_csl`. Optional. |
+
+**Two contract guarantees that make this low-risk:**
+
+- **Only keys present in the payload are written.** Omitting a field leaves any existing registry value intact. So a partial or staged rollout is safe.
+- **Unknown payload keys are ignored** and **unknown `license_spdx` is skipped** (logged, not rejected). So pushing the upgraded payload to a prod that hasn't yet received the Phase 4 code is harmless — prod simply won't store the extras until parity lands. **You do not need to wait for prod parity to start sending the new fields.**
+
+### 1.1 Licence SPDX ids seeded on WHG
+
+`license_spdx` must match a seeded `licensing.License` row, or it's skipped. Currently seeded:
+
+```
+CC0-1.0   CC-BY-3.0   CC-BY-4.0   CC-BY-NC-4.0   CC-BY-SA-4.0
+ODbL-1.0  ODC-By-1.0  custom-public-domain
+```
+
+If the audit (§3) turns up a licence **not** in this set (e.g. `CC-BY-NC-SA-4.0`, `CC-BY-2.5`), there are two options:
+- **Add a seed row on WHG** — a one-line addition to `whg3/licensing/migrations/0002_seed_licenses.py`'s data list (or a new data migration). Coordinate this with the WHG repo; it's a trivial WHG change. **Preferred** for genuine SPDX licences.
+- **Fall back** to the closest correct seeded row (or `custom-public-domain` for PD) **plus** a `license_url` override and a note. Use only for bespoke/non-SPDX terms.
+
+Record any needed-but-unseeded SPDX ids in §3's table so the WHG seed can be extended in one pass.
+
+---
+
+## 2. Task 1 — Upgrade the ingestion pathway (mechanical)
+
+### 2.1 Restructure each `AUTHORITIES` entry (`processing/settings.py`)
+
+For every authority, **add** the structured keys alongside the existing `citation` (keep `citation` as a back-compat alias during transition — nothing else reads it yet, but leave it until the push is confirmed):
+
+```python
+{
+    'dataset_name': 'TGN',
+    'namespace': 'tgn',
+    # NEW structured keys:
+    'citation_text': 'The Getty Thesaurus of Geographic Names® (TGN), J. Paul Getty Trust.',
+    'license_spdx':  'ODC-By-1.0',
+    'license_url':   'https://opendatacommons.org/licenses/by/1-0/',
+    'rights_holder': 'J. Paul Getty Trust',
+    'source_url':    'https://www.getty.edu/research/tools/vocabularies/tgn/',
+    'contributors':  [],   # optional CRediT list where the source documents roles
+    # legacy (leave during transition):
+    'citation': 'The Getty Thesaurus of Geographic Names® (TGN) is provided by ...',
+    'api_item': '...',
+    'files': [ ... ],
+}
+```
+
+All new keys are **optional** — supply whatever the source documents (design decision: metadata flexibility). At minimum aim for `citation_text` + `license_spdx` + `rights_holder` + `source_url` per authority.
+
+### 2.2 Extend the metadata lookup + payload builders (`processing/push_gazetteer_inventory.py`)
+
+`_authority_meta(namespace)` currently returns only `{"name", "description"}`. Extend it to surface the new keys, e.g.:
+
+```python
+def _authority_meta(namespace: str) -> dict[str, Any]:
+    for auth in AUTHORITIES:
+        if auth.get("namespace") == namespace:
+            return {
+                "name": auth.get("dataset_name") or namespace.upper(),
+                # description stays = the legacy blob for back-compat / prose;
+                # citation_text is the structured human citation.
+                "description": auth.get("citation"),
+                "citation_text": auth.get("citation_text"),
+                "license_spdx": auth.get("license_spdx"),
+                "license_url": auth.get("license_url"),
+                "rights_holder": auth.get("rights_holder"),
+                "source_url": auth.get("source_url"),
+                "contributors": auth.get("contributors") or [],
+            }
+    return {"name": namespace.upper(), "description": None}
+```
+
+Then merge the new keys into the entry dict in **both** builders — `build_inventory_payload()` (~line 290) and `build_single_authority_entry()` (~line 327). A small helper avoids drift:
+
+```python
+def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
+    """Only include keys that are actually set (the endpoint leaves omitted
+    fields untouched, so don't send nulls that would clobber curated values)."""
+    out = {}
+    for k in ("citation_text", "license_spdx", "license_url",
+              "rights_holder", "source_url"):
+        if meta.get(k):
+            out[k] = meta[k]
+    if meta.get("contributors"):
+        out["contributors"] = meta["contributors"]
+    return out
+```
+
+…and in each builder: `entry.update(_attribution_fields(meta))` before appending. (The `whg`-dataset fan-out in `_expand_whg_dataset_entries()` is per-Dataset, not authority-sourced — leave it untouched; dataset attribution comes from the contributor workflow, not `AUTHORITIES`.)
+
+### 2.3 Update the module docstring payload example
+
+Reflect the new optional keys in the `build_inventory_payload` docstring example so the contract is self-documenting (mirror the table in §1).
+
+---
+
+## 3. Task 2 — Audit + correct every authority's real licence (RESEARCH WORK)
+
+**This is the substantive part and must not be done mechanically.** The existing `citation` blobs are stale and several licences are wrong. For **each** namespace below, verify against the source's current site/terms and fill in: SPDX id (or `custom`), deed URL, rights holder, a clean citation, and any documented contributor roles.
+
+The table below is a **first-pass starting point** drawn from the existing blobs and prior knowledge. **Every row is marked with a confidence flag — `CONFIRM` rows are best-guesses that REQUIRE verification before the live push; `VERIFY` rows are largely unknown.** Do not treat any of this as authoritative.
+
+| ns    | name                  | first-pass `license_spdx` | rights_holder (first pass)      | confidence | notes |
+|-------|-----------------------|---------------------------|---------------------------------|------------|-------|
+| pl    | Pleiades              | `CC-BY-3.0`               | Institute for the Study of the Ancient World | CONFIRM | blob says CC-BY 3.0; confirm not yet 4.0 |
+| gn    | GeoNames              | `CC-BY-4.0`               | Unxos GmbH                      | CONFIRM | GeoNames is CC-BY 4.0; confirm |
+| tgn   | TGN                   | `ODC-By-1.0`              | J. Paul Getty Trust             | CONFIRM | blob already says ODC-By 1.0 |
+| wd    | Wikidata              | `CC0-1.0`                 | Wikimedia Foundation            | CONFIRM | Wikidata data is CC0 |
+| osm   | OSM                   | `ODbL-1.0`                | OpenStreetMap contributors      | CONFIRM | share-alike — never assert -NC |
+| ohm   | OHM                   | `ODbL-1.0`                | OpenHistoricalMap contributors  | CONFIRM | share-alike |
+| loc   | LOC                   | — (relations-only)        | —                               | n/a | excluded from inventory; no registry row |
+| nl    | NativeLand            | ?                         | Native Land Digital             | VERIFY | terms are use-by-permission / non-commercial-ish — check carefully |
+| dp    | DPlace                | `CC-BY-4.0`               | D-PLACE / MPI-SHH               | CONFIRM | D-PLACE is CC-BY 4.0 |
+| gb    | GB1900                | `CC0-1.0`                 | GB1900 project / NLS            | VERIFY | released CC0/PD — confirm exact deed |
+| iv    | Index Villaris (1680) | `custom-public-domain`    | (historical; digitiser?)        | VERIFY | source is PD; the *digitised dataset* licence may differ |
+| un    | ISO3166 / Natural Earth | `custom-public-domain`  | Natural Earth                   | CONFIRM | Natural Earth is public domain |
+| ukhc  | UK Historic Counties  | ?                         | Historic Counties Trust         | VERIFY | likely CC-BY-SA — confirm version |
+| po    | PeriodO               | `CC0-1.0`                 | PeriodO project                 | CONFIRM | PeriodO data is CC0 |
+| clio  | Cliopatria (Seshat)   | ?                         | Seshat Global History Databank  | VERIFY | Seshat licensing varies (CC-BY-NC-SA?) — check the cliopatria repo LICENSE |
+| chgis | CHGIS / TGAZ          | ?                         | Harvard & Fudan University      | VERIFY | CHGIS has had CC-BY-NC-SA terms — confirm |
+| dgsd  | DGSD                  | ?                         | Ruth Mostern & Elijah Meeks, UC Merced | VERIFY | check the v1.1 release terms |
+| tm    | Trismegistos          | ?                         | Trismegistos / KU Leuven        | VERIFY | restrictive academic terms — likely CC-BY-NC-SA + conditions; read TM terms |
+| ofs   | Ottoman NFS Gazetteer | ?                         | Kabadayı et al. (2022)          | VERIFY | per the dataset's deposit licence (Zenodo?) |
+| og    | Ottoman Gazetteer     | ?                         | Hanley (2021)                   | VERIFY | per the dataset's deposit licence |
+
+For any `VERIFY`/`CONFIRM` row whose true licence is **not in the seeded SPDX set** (§1.1), note the needed SPDX id here so the WHG seed can be extended:
+
+> _Needed-but-unseeded SPDX ids found during audit: …_
+
+Bespoke / non-SPDX terms → use `custom-public-domain` only if truly PD; otherwise flag for a `custom=True` WHG `License` row + a free-text rights statement (coordinate with the WHG repo).
+
+---
+
+## 4. Task 3 — All-namespace reconciliation push
+
+Push **all** namespaces (a full reconciliation, not just changed ones) so every `GazetteerRegistryEntry` is refreshed against the new contract. Both prod and dev are first-class targets (the push already mirrors to both by default — see the `("prod", …), ("dev", …)` target loop ~line 586).
+
+```bash
+# 1. DRY RUN — inspect the full payload, confirm the new keys are present
+python -m processing.push_gazetteer_inventory --run-id <RUN_ID> --dry-run \
+  | python -m json.tool | less
+
+# 2. Diff review — compare what each registry row WOULD become against current.
+#    (Eyeball the dry-run JSON; spot-check 3-4 namespaces incl. an ODbL one
+#    and a PD one to confirm license_spdx + rights_holder are correct.)
+
+# 3. LIVE — pushes prod AND the dev mirror (omit --no-dev-push to hit both)
+python -m processing.push_gazetteer_inventory --run-id <RUN_ID> \
+  --auth-token-file ~/.whg/inventory.token
+
+# Prod-only (if you must stage): add --no-dev-push
+# Dev-only smoke test first: --endpoint <dev-url> --no-dev-push  (or set
+#   --dev-endpoint and an empty --endpoint is NOT supported — use --endpoint
+#   pointed at dev for a dev-only trial)
+```
+
+**Recommended sequence:** dry-run → push **dev only** first and eyeball the WHG dev Gazetteers offcanvas + `GET /api/attribution/?namespaces=tgn,osm` (as a superuser, since dev gates anon) → then the full prod+dev push.
+
+### 4.1 Verify on the WHG side after the push
+
+- Dev attribution endpoint (superuser/bearer on dev): `GET /api/attribution/?namespaces=tgn,osm,wd` should now show `license: {spdx_id, label, url}`, `rights_holder`, and `citation` sourced from `citation_text`.
+- Django admin → API → Gazetteer registry entries: the "Attribution / licence / rights" fieldset should be populated (and will now be **overwritten** by each push — it became the source of truth the moment the push started sending these fields).
+- Unknown-SPDX warnings appear in the WHG `indexing` logger if any `license_spdx` didn't resolve — chase those down (seed the licence or fix the code).
+
+---
+
+## 5. Definition of done
+
+- [ ] Every `AUTHORITIES` entry (except relations-only `loc`) has `citation_text`, `license_spdx`, `rights_holder`, `source_url` set, with licences **verified against the live source**, not copied from the old blob.
+- [ ] Any needed-but-unseeded SPDX licences are listed for the WHG seed (and added there).
+- [ ] `_authority_meta` + both payload builders emit the new fields; module docstring updated.
+- [ ] Dry-run reviewed; dev push verified via the attribution endpoint + admin; full prod+dev push done; no unresolved unknown-SPDX warnings.
+- [ ] No authority still implicitly carries the wrong `CC-BY-NC-4.0` assertion.
+
+## 6. Out of scope (WHG-side, already done or separate)
+
+- The registry schema + endpoint + `attribution_for()` + admin fieldset (WHG Phase 4 — **done**, atlas/dev live).
+- Surfacing attribution in the public place/search/download responses (WHG Phase 3/5 — separate).
+- CRediT for contributed *datasets/collections* (WHG Phase 2 — done; this handoff only concerns *authority* contributors via the optional `contributors` key).
