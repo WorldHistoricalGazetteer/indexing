@@ -830,6 +830,15 @@ def _build_staged_feature(
         full_geom = reader.get(f"{place_id}_{idx}")
 
     if not full_geom and not require_boundary:
+        # WHG-computed approximation polygons (e.g. ottgaz admin hulls) live in
+        # the inline ``hull`` field with ``has_geom=False`` — they are kept OUT
+        # of the authoritative geom store. Render them as polygons; their
+        # ``source``/``approximation`` provenance flags mark them as approximate.
+        hull = geom_entry.get("hull")
+        if isinstance(hull, dict) and hull.get("type") in ("Polygon", "MultiPolygon"):
+            full_geom = hull
+
+    if not full_geom and not require_boundary:
         rp = geom_entry.get("repr_point")
         if isinstance(rp, dict) and "lon" in rp and "lat" in rp:
             full_geom = {
