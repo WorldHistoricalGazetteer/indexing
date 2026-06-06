@@ -77,6 +77,22 @@ ALC_START, ALC_END = 1786, 1789
 LANG = "es"
 LINK_TYPE = "closeMatch"
 
+# Source-page reference into the TEI edition (TEI Publisher). Each Alcedo entry is
+# a TEI <entry xml:id="..."> whose id == the source entry_id (e.g. id_00005),
+# living in the per-volume document Alcedo_vol_{N}.xml. We emit a links[] entry of
+# type 'primaryTopicOf' (the TEI entry's primary topic IS this place).
+# NB the TEI Publisher app was being (re)deployed by JINNTEC as of 2026-06 (the
+# documented base 404s currently) — these links are canonical + forward-compatible
+# and resolve once it is live. If the deployed route differs, fix _TEI_BASE only.
+_TEI_BASE = "https://sourcesetdonnees.huma-num.fr/exist/apps/topurbi-alcedo"
+
+
+def _tei_link(volume, entry_id):
+    vol = (volume or "").strip()
+    if not vol or not entry_id:
+        return None
+    return f"{_TEI_BASE}/Alcedo_vol_{vol}.xml#{entry_id}"
+
 # conf_loc_verbal -> geometries[].approximation (our convex_hull/centroid/exact
 # convention). Values not listed, or in _DROP_GEOM, mean we keep NO geometry
 # (the coordinates are an unlocated sentinel, e.g. 0.03/0.03).
@@ -199,10 +215,18 @@ def process_row(row):
     if desc:
         place_doc["descriptions"] = [{"value": desc, "lang": LANG}]
 
-    # --- links: numeric gazetteermatch == HGIS de las Indias id ----------
+    # --- links: HGIS reconciliation + TEI source-page reference -----------
+    links = []
+    # numeric gazetteermatch == HGIS de las Indias id (in WHG as lugares/territorios)
     gm = _v(row, "gazetteermatch")
     if gm and gm.replace(".", "").isdigit():
-        place_doc["links"] = [{"type": LINK_TYPE, "identifier": f"indias:{int(float(gm))}"}]
+        links.append({"type": LINK_TYPE, "identifier": f"indias:{int(float(gm))}"})
+    # source-page reference into the TEI edition (by entry xml:id, per volume)
+    tei = _tei_link(_v(row, "volume"), entry_id)
+    if tei:
+        links.append({"type": "primaryTopicOf", "identifier": tei})
+    if links:
+        place_doc["links"] = links
 
     # --- colonial admin parents as NAMED `within` relations --------------
     # Province/District/Partido are free-text colonial units (not boundary IDs),
