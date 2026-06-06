@@ -219,56 +219,75 @@ def cmd_wd_geometry(args):
     print(f"[wd-geometry] og units with a Wikidata link: {len(linked):,}")
 
     qids = [q for _, q, _ in linked]
-    wd_geom = {}  # qid -> (repr_point, has_geom_polygon)
+    wd_geom = {}  # qid -> geom_entry dict (repr_point / has_geom / geom_ref / hull)
     for i in range(0, len(qids), 500):
         chunk = qids[i:i + 500]
         res = es.search(index="places", size=len(chunk),
                         query={"terms": {"place_id": [f"wd:{q}" for q in chunk]}},
                         _source=["place_id", "geometries"])
         for h in res["hits"]["hits"]:
-            q = h["_source"]["place_id"].split(":", 1)[1]
+            pid_wd = h["_source"]["place_id"]
+            q = pid_wd.split(":", 1)[1]
             geoms = h["_source"].get("geometries") or []
             if geoms:
                 g = geoms[0]
-                wd_geom[q] = (g.get("repr_point"), bool(g.get("has_geom")))
+                has = bool(g.get("has_geom"))
+                wd_geom[q] = {
+                    "repr_point": g.get("repr_point"),
+                    "has_geom": has,
+                    # reference the wd polygon in the shared geom store by its key
+                    "geom_ref": g.get("geom_ref") or (
+                        f'{pid_wd}_{g.get("geometry_index", 0)}' if has else None),
+                    "hull": g.get("hull"),
+                }
 
-    upgrades = []
+    def _build(wg):
+        """wd polygon > ofs hull > wd point — return the og geom_entry or None."""
+        if not wg or not wg.get("repr_point"):
+            return None
+        if wg["has_geom"]:  # wd has a polygon → reference it (overrides ofs hull)
+            return {"has_geom": True, "geom_ref": wg["geom_ref"], "repr_point": wg["repr_point"],
+                    "hull": wg.get("hull"), "source": "wd", "approximation": "exact",
+                    "timespans": []}
+        return {"has_geom": False, "repr_point": wg["repr_point"], "source": "wd",
+                "approximation": "centroid", "timespans": []}  # wd point only
+
+    upgrades = []  # (pid, geom_entry)
+    polys = 0
     for pid, qid, has_ofs_hull in linked:
         wg = wd_geom.get(qid)
-        if not wg or not wg[0]:
+        geom = _build(wg)
+        if not geom:
             continue
-        rp, wd_polygon = wg
-        # wd polygon > ofs hull > wd point: only act if wd has a polygon, or the
-        # og unit currently has no geometry at all.
-        if wd_polygon or not has_ofs_hull:
-            upgrades.append((pid, rp, "exact" if wd_polygon else "centroid"))
+        # apply when wd is a polygon (richer than the hull) OR og has no hull
+        if geom["has_geom"]:
+            polys += 1
+            upgrades.append((pid, geom))
+        elif not has_ofs_hull:
+            upgrades.append((pid, geom))
 
     print(f"[wd-geometry] wd records with geometry: {len(wd_geom):,}  "
-          f"og upgrades to apply: {len(upgrades):,}")
+          f"og upgrades: {len(upgrades):,}  (of which wd POLYGONS: {polys:,})")
     if not args.execute:
-        print("  sample:", upgrades[:3])
+        print("  sample:", [(p, g["source"], g["approximation"], g["has_geom"]) for p, g in upgrades[:3]])
         print("[wd-geometry] DRY-RUN — no writes.")
         return
 
     idxname = _concrete(es, "places")
     now = datetime.now(timezone.utc).isoformat()
 
-    def _wd_geom(rp, approx):
-        return {"has_geom": False, "repr_point": rp, "source": "wd",
-                "approximation": approx, "timespans": []}
-
     # (1) prod
     def actions():
-        for pid, rp, approx in upgrades:
+        for pid, geom in upgrades:
             yield {"_op_type": "update", "_index": idxname, "_id": pid,
-                   "doc": {"geometries": [_wd_geom(rp, approx)], "indexed_at": now}}
+                   "doc": {"geometries": [geom], "indexed_at": now}}
     ok, errs = es_helpers.bulk(es, actions(), chunk_size=500, raise_on_error=False)
     es.indices.refresh(index=idxname)
     print(f"[wd-geometry] prod updated ok={ok:,} errors={len(errs) if isinstance(errs, list) else errs}")
 
     # (2) staged extract — the tiles' source of truth; keep it consistent with
     # prod so generate_tiles (which reads staged, not ES) renders these units.
-    up = {pid: (rp, approx) for pid, rp, approx in upgrades}
+    up = {pid: geom for pid, geom in upgrades}
     ext = _og_extract()
     out_lines, patched = [], 0
     for line in ext.open(encoding="utf-8"):
@@ -276,8 +295,7 @@ def cmd_wd_geometry(args):
             continue
         d = json.loads(line)
         if d["place_id"] in up:
-            rp, approx = up[d["place_id"]]
-            d["geometries"] = [_wd_geom(rp, approx)]
+            d["geometries"] = [up[d["place_id"]]]
             patched += 1
         out_lines.append(json.dumps(d, ensure_ascii=False))
     tmp = ext.with_suffix(".jsonl.tmp")
