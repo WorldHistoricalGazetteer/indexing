@@ -118,7 +118,10 @@ def _load_flat_values(path: Path) -> dict[str, list[int]]:
         return {}
     data = json.loads(path.read_text(encoding="utf-8"))
     out: dict[str, list[int]] = {}
-    for entry in data.get("values") or ():
+    # Pleiades carries a "deprecated" list of retired type ids that still appear
+    # on live places (e.g. fort/province/church) — load their mappings too.
+    # wd/un/chgis have no "deprecated" key, so this is a no-op for them.
+    for entry in list(data.get("values") or ()) + list(data.get("deprecated") or ()):
         key = entry.get("value") or entry.get("identifier")
         aat_id = _aat_id_from_mapping(entry.get("aat_mapping"))
         if key and aat_id is not None:
