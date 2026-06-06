@@ -1,14 +1,23 @@
 #!/usr/bin/env python
 """Submit Batch 9 Slurm jobs (post-global-barrier, Job A in the dependency flow).
 
-Two jobs are submitted from the same call:
+Three jobs are submitted from the same call:
 
-1. **Per-gazetteer temporal extent** (array, one task per per-gazetteer
+1. **Per-gazetteer AAT enrichment** (array, one task per per-gazetteer
+   namespace) — runs ``processing.aat_enrich``, folding ``aat_ids`` +
+   ``aat_paths`` into each ``types[]`` entry of the namespace's
+   ``staged/{ns}/final`` snapshot. This MUST precede temporal extent / tiles /
+   indexing so the indexed corpus carries AAT. (Previously this stage existed
+   and was barrier-required but was never wired into any submit script, so it
+   only ran when invoked by hand — leaving namespaces silently un-enriched.)
+
+2. **Per-gazetteer temporal extent** (array, one task per per-gazetteer
    namespace) — runs ``processing.gazetteer_temporal_extent`` over the
    namespace's most-enriched staged snapshot and writes
-   ``staged/_aggregates/{ns}.temporal_extent.json``.
+   ``staged/_aggregates/{ns}.temporal_extent.json``. Depends on the AAT
+   enrichment array so it reads the enriched ``final`` snapshot.
 
-2. **Global toponym extraction** (single job) — runs
+3. **Global toponym extraction** (single job) — runs
    ``phonetics.extraction.rebuild_toponyms_index`` in staged-only mode
    (``--run-id <RUN_ID> --skip-es-index --confirm``). STEP 1 reads from
    staged places, STEPs 2–3 build the DuckDB + vocabulary + PanPhon JSONL.
@@ -66,6 +75,12 @@ from processing.staging_orchestrator import (  # noqa: E402
 _TEMPORAL_WALL_SECONDS = 4 * 3_600  # 4 h ceiling per task
 _TEMPORAL_QOS = "htc-htc-s"
 
+# AAT enrich is a streaming file scan + in-memory dict lookups (~30 MB of vocab
+# maps + the hierarchy). Even osm (~20 M docs, the largest) is parquet-in /
+# parquet-out — comfortably under the 4 h ceiling.
+_AAT_ENRICH_WALL_SECONDS = 4 * 3_600
+_AAT_ENRICH_QOS = "htc-htc-s"
+
 # Toponym extraction (rebuild_toponyms_index.py) is large: full corpus scan +
 # IPA/PanPhon for every training-namespace toponym. Match the existing
 # allocation used by symphonym.sh::do_rebuild_toponyms on first runs; later
@@ -81,6 +96,18 @@ def _estimate_temporal_wall(namespaces: list[str]) -> int:
     estimates = [
         estimate_wall_time_seconds(ns, "temporal-extent",
                                    default=_TEMPORAL_WALL_SECONDS)
+        for ns in namespaces
+    ]
+    return max(estimates)
+
+
+def _estimate_aat_enrich_wall(namespaces: list[str]) -> int:
+    """Max of per-namespace 'aat-enrich' history; default-aware."""
+    if not namespaces:
+        return _AAT_ENRICH_WALL_SECONDS
+    estimates = [
+        estimate_wall_time_seconds(ns, "aat-enrich",
+                                   default=_AAT_ENRICH_WALL_SECONDS)
         for ns in namespaces
     ]
     return max(estimates)
@@ -124,11 +151,88 @@ def _eligible_temporal_namespaces(manifest: dict) -> list[str]:
     return out
 
 
-def _write_array_map(namespaces: list[str], work_dir: Path) -> Path:
+def _eligible_aat_enrich_namespaces(manifest: dict) -> list[str]:
+    """Return per-gazetteer namespaces with ``ccode_merge`` complete that have
+    not already been AAT-enriched.
+
+    Same gate as temporal extent (``ccode_merge`` completed/skipped — ``skipped``
+    covers ``un``/``po``, which bypass ccode and whose ``final`` is sourced from
+    the most-enriched upstream snapshot). Uses the manifest+event-log fallback so
+    retries under fresh run_ids self-heal.
+    """
+    from processing.staging_orchestrator import stage_status_with_fallback
+
+    out: list[str] = []
+    for ns in manifest.get("selected_namespaces", []):
+        if is_relations_only(ns):
+            continue
+        ccode_status = stage_status_with_fallback(manifest, ns, "ccode_merge")
+        if ccode_status not in ("completed", "skipped"):
+            continue
+        if stage_status_with_fallback(manifest, ns, "aat_enrich") == "completed":
+            continue
+        out.append(ns)
+    return out
+
+
+def _write_array_map(
+    namespaces: list[str],
+    work_dir: Path,
+    name: str = "temporal_extent_array_map.json",
+) -> Path:
     array_map = {str(i): ns for i, ns in enumerate(namespaces)}
-    map_path = work_dir / "temporal_extent_array_map.json"
+    map_path = work_dir / name
     map_path.write_text(json.dumps(array_map, indent=2), encoding="utf-8")
     return map_path
+
+
+def _build_aat_enrich_sbatch(
+    *,
+    run_id: str,
+    namespaces: list[str],
+    manifest_path: Path,
+    array_map_path: Path,
+    depend_on: str | None,
+) -> str:
+    log_dir = Path(_REPO) / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_prefix = log_dir / f"whg-aat-enrich-{run_id}-%A_%a"
+
+    array_end = len(namespaces) - 1
+    slurm_time = _seconds_to_slurm_time(_estimate_aat_enrich_wall(namespaces))
+
+    lines = [
+        "#!/bin/bash",
+        f"#SBATCH --job-name=whg-aat-enrich-{run_id}",
+        f"#SBATCH --output={log_prefix}.out",
+        f"#SBATCH --error={log_prefix}.err",
+        f"#SBATCH --array=0-{array_end}",
+        f"#SBATCH --time={slurm_time}",
+        "#SBATCH --partition=htc",
+        f"#SBATCH --qos={_AAT_ENRICH_QOS}",
+        "#SBATCH --nodes=1",
+        "#SBATCH --ntasks=1",
+        "#SBATCH --cpus-per-task=2",
+        "#SBATCH --mem=8G",
+    ]
+    if depend_on:
+        lines.append(f"#SBATCH --dependency=afterok:{depend_on}")
+    lines.extend([
+        "",
+        "set -eo pipefail",
+        f"source {_CONDA_SH}",
+        f"conda activate {_CONDA_ENV}",
+        f"cd {_REPO}",
+        "",
+        f"NAMESPACE=$(python -c \"import json; d=json.load(open('{array_map_path}')); print(d[str($SLURM_ARRAY_TASK_ID)])\")",
+        "echo \"Array task $SLURM_ARRAY_TASK_ID → namespace: $NAMESPACE\"",
+        "",
+        "python -m processing.aat_enrich \\",
+        f"    --run-id {run_id} \\",
+        f"    --manifest-path {manifest_path} \\",
+        "    --namespace \"$NAMESPACE\"",
+    ])
+    return "\n".join(lines) + "\n"
 
 
 def _build_temporal_sbatch(
@@ -261,6 +365,7 @@ def submit(
     dry_run: bool = False,
     skip_toponyms: bool = False,
     skip_temporal_extent: bool = False,
+    skip_aat_enrich: bool = False,
     enforce_barrier: bool = True,
     db_path: Path | None = None,
     output_dir: Path | None = None,
@@ -291,7 +396,41 @@ def submit(
 
     submitted: dict[str, str | None] = {}
 
+    # ---- Per-gazetteer AAT enrichment (array) ----------------------------
+    # Must precede temporal extent / tiles / indexing: it rewrites each
+    # namespace's ``final`` snapshot with folded aat_ids/aat_paths. Temporal
+    # extent then depends on it so it reads the enriched snapshot.
+    aat_enrich_job: str | None = None
+    if not skip_aat_enrich:
+        ns_aat = _eligible_aat_enrich_namespaces(manifest)
+        if not ns_aat:
+            print("No namespaces eligible for aat_enrich (already done or "
+                  "ccode_merge not complete) — skipping.")
+            submitted["aat_enrich"] = None
+        else:
+            print(f"AAT enrich namespaces ({len(ns_aat)}): {', '.join(ns_aat)}")
+            aat_map_path = _write_array_map(
+                ns_aat, work_dir, name="aat_enrich_array_map.json"
+            )
+            sbatch_text = _build_aat_enrich_sbatch(
+                run_id=run_id,
+                namespaces=ns_aat,
+                manifest_path=manifest_path,
+                array_map_path=aat_map_path,
+                depend_on=depend_on,
+            )
+            sbatch_path = work_dir / "aat_enrich_array.sbatch"
+            sbatch_path.write_text(sbatch_text, encoding="utf-8")
+            print(f"Sbatch written: {sbatch_path}")
+            submitted["aat_enrich"] = _submit(sbatch_path, dry_run=dry_run)
+            aat_enrich_job = submitted["aat_enrich"]
+            if aat_enrich_job:
+                print(f"Submitted aat_enrich array: {aat_enrich_job}")
+
     # ---- Per-gazetteer temporal extent (array) ---------------------------
+    # Chain after AAT enrich (when submitted) so it reads the enriched
+    # ``final`` snapshot; otherwise fall back to the barrier dependency.
+    temporal_depend = aat_enrich_job or depend_on
     if not skip_temporal_extent:
         namespaces = _eligible_temporal_namespaces(manifest)
         if not namespaces:
@@ -307,7 +446,7 @@ def submit(
                 namespaces=namespaces,
                 manifest_path=manifest_path,
                 array_map_path=array_map_path,
-                depend_on=depend_on,
+                depend_on=temporal_depend,
             )
             sbatch_path = work_dir / "temporal_extent_array.sbatch"
             sbatch_path.write_text(sbatch_text, encoding="utf-8")
@@ -366,6 +505,8 @@ def main() -> None:
                         help="Skip the toponym extraction job")
     parser.add_argument("--skip-temporal-extent", action="store_true",
                         help="Skip the per-namespace temporal extent array")
+    parser.add_argument("--skip-aat-enrich", action="store_true",
+                        help="Skip the per-namespace AAT enrichment array")
     parser.add_argument("--no-enforce-barrier", action="store_true",
                         help="Submit even if the global barrier check fails (debug only)")
     parser.add_argument("--db-path", help="Override the DuckDB output path for toponyms")
@@ -399,6 +540,7 @@ def main() -> None:
         dry_run=args.dry_run,
         skip_toponyms=args.skip_toponyms,
         skip_temporal_extent=args.skip_temporal_extent,
+        skip_aat_enrich=args.skip_aat_enrich,
         enforce_barrier=not args.no_enforce_barrier,
         db_path=Path(args.db_path) if args.db_path else None,
         output_dir=Path(args.output_dir) if args.output_dir else None,

@@ -289,9 +289,12 @@ def _eligible_namespaces(manifest: dict, only: list[str] | None = None) -> list[
     """Return per-gazetteer namespaces ready for indexing.
 
     A namespace is eligible when its ``ccode_merge`` stage is ``completed``
-    or ``skipped`` (i.e. it has a final snapshot) and its ``index`` stage is
-    not yet ``completed``. ``un`` is treated like the rest because its final
-    snapshot is the extract — ccode_merge is legitimately skipped there.
+    or ``skipped`` (i.e. it has a final snapshot), its ``aat_enrich`` stage is
+    ``completed`` or ``skipped`` (so the indexed docs carry folded AAT — this is
+    the hard gate that prevents indexing un-enriched namespaces; aat_enrich is a
+    Batch 9 stage), and its ``index`` stage is not yet ``completed``. ``un`` is
+    treated like the rest because its final snapshot is the extract —
+    ccode_merge is legitimately skipped there.
     """
     out: list[str] = []
     for ns in manifest.get("selected_namespaces", []):
@@ -304,6 +307,9 @@ def _eligible_namespaces(manifest: dict, only: list[str] | None = None) -> list[
         # doesn't drop a namespace whose final/places.parquet is on disk.
         ccode = stage_status_with_fallback(manifest, ns, "ccode_merge")
         if ccode not in ("completed", "skipped"):
+            continue
+        aat = stage_status_with_fallback(manifest, ns, "aat_enrich")
+        if aat not in ("completed", "skipped"):
             continue
         if stage_status_with_fallback(manifest, ns, "index") == "completed":
             continue

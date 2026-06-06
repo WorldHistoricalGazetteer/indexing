@@ -407,6 +407,13 @@ def check_preprocessing_barrier(
 # for non-OSM/OHM namespaces; ``ccode`` / ``ccode_merge`` are tolerated as
 # ``skipped`` for ``un`` (UN is the ccode authority) and ``tiles`` is
 # tolerated as ``skipped`` for namespaces that don't contribute tile features.
+#
+# NB: ``aat_enrich`` is deliberately NOT here. It is a Batch 9 (post-barrier)
+# stage — see ``submit_batch9_slurm`` — so requiring it at the barrier would
+# deadlock (the barrier would wait for a stage that only runs after it). The
+# guarantee that no un-enriched namespace gets indexed lives instead in
+# ``index_from_stage._eligible_namespaces``, which requires ``aat_enrich``
+# completed/skipped before a namespace is indexed.
 GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
     "extract",
     "boundary_merge",
@@ -415,7 +422,6 @@ GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
     "h3_coverage",
     "ccode",
     "ccode_merge",
-    "aat_enrich",
 )
 
 # Statuses that satisfy a stage requirement. ``skipped`` is treated as a pass

@@ -186,24 +186,26 @@ class TestBarrierFallback(unittest.TestCase):
         self.assertTrue(is_complete, report)
 
     def test_genuinely_running_stage_blocks(self):
+        # ccode_merge is a barrier-required stage (aat_enrich is NOT — it is a
+        # post-barrier Batch 9 stage, gated at indexing instead).
         manifest = {
             "selected_namespaces": ["osm"],
             "namespaces": {
                 "osm": {
                     "stages": {s: "completed" for s in [
                         "extract", "boundary_merge", "h3", "h3_merge",
-                        "h3_coverage", "ccode", "ccode_merge",
-                    ]} | {"aat_enrich": "running"}
+                        "h3_coverage", "ccode",
+                    ]} | {"ccode_merge": "running"}
                 }
             },
         }
         # Event log also shows running — barrier should NOT pass.
-        self._events("osm", "aat_enrich", ["running"])
+        self._events("osm", "ccode_merge", ["running"])
         is_complete, report = self.staging_orchestrator.check_global_barrier(
             manifest, staged_base_dir=str(self.staged),
         )
         self.assertFalse(is_complete)
-        self.assertIn("aat_enrich", report["osm"]["__missing__"])
+        self.assertIn("ccode_merge", report["osm"]["__missing__"])
 
 
 if __name__ == "__main__":
