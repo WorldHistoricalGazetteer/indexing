@@ -218,11 +218,33 @@ python -m processing.push_gazetteer_inventory --run-id <RUN_ID> \
 
 ## 5. Definition of done
 
-- [ ] Every `AUTHORITIES` entry (except relations-only `loc`) has `citation_text`, `license_spdx`, `rights_holder`, `source_url` set, with licences **verified against the live source**, not copied from the old blob.
-- [ ] Any needed-but-unseeded SPDX licences are listed for the WHG seed (and added there).
-- [ ] `_authority_meta` + both payload builders emit the new fields; module docstring updated.
-- [ ] Dry-run reviewed; dev push verified via the attribution endpoint + admin; full prod+dev push done; no unresolved unknown-SPDX warnings.
-- [ ] No authority still implicitly carries the wrong `CC-BY-NC-4.0` assertion.
+- [x] Every `AUTHORITIES` entry (except relations-only `loc`) has `citation_text`, `license_spdx`, `rights_holder`, `source_url` set, with licences **verified against the live source**, not copied from the old blob. (commit 0b750d1 + 0f27f13)
+- [x] Any needed-but-unseeded SPDX licences listed + added to the WHG seed: `CC-BY-ND-4.0` + custom rows `custom-nativeland-dst` / `custom-historic-counties` / `custom-chgis-academic` (WHG licensing/0003, atlas/dev).
+- [x] `_authority_meta` + both payload builders emit the new fields; module docstring updated.
+- [x] Dry-run reviewed; dev push done + **verified via the attribution endpoint** (all 19 authorities incl. the 4 custom/ND resolve their full license block, no unknown-SPDX errors); full prod+dev push done (HTTP 200, 23 + 3×1 upserted, no errors).
+- [x] No authority still implicitly carries the wrong `CC-BY-NC-4.0` assertion.
+
+### ⚠ Remaining: prod re-push after the atlas→main promotion
+
+**Pushed 2026-06-06** via `postbarrier-20260502T130000Z` (full run, 16 authorities
++ whg) + single-namespace pushes for `ofs`/`og`/`ukhc` (not in that run inventory),
+to **prod and dev**, with `--skip-tileserver-check` (reconciliation of already-served
+gazetteers).
+
+**Dev = fully live and verified.** **Prod accepted the push but stores none of the
+new attribution fields yet** — prod's WHG code is pre-Phase-4, so per the §1
+forward-compat guarantee it kept the legacy `citation` blob and ignored
+`citation_text`/`license_spdx`/`rights_holder`/`source_url` for **all 19**
+authorities (not just the 4 new-licence ones). This is harmless and expected.
+
+→ **After the atlas→main promotion lands the Phase-4 code + licensing/0003 on prod,
+re-run the identical push** to populate prod:
+```bash
+# on crc0 (native stg135 uid reads the secrets tokens)
+python -m processing.push_gazetteer_inventory --run-id postbarrier-20260502T130000Z --skip-tileserver-check
+for ns in ofs og ukhc; do python -m processing.push_gazetteer_inventory --namespace $ns --skip-tileserver-check; done
+# verify: GET https://whgazetteer.org/api/attribution/?namespaces=osm,dgsd,nl  (browser UA; the GET is bot-gated)
+```
 
 ## 6. Out of scope (WHG-side, already done or separate)
 
