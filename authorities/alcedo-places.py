@@ -39,18 +39,37 @@ point-only shortcut, ccodes are NOT skipped — `Nation` is colonial, so run a
 SPATIAL ccode pass after extract. Follow authorities/ottnfs-places.py's runbook
 substituting alc for ofs, with these deltas:
   0. FETCH: python -m processing.fetch_authorities -n alc --age 0
-  1. EXTRACT: python -m authorities.alcedo-places
-  2. CCODES (spatial — points need it; Nation is colonial not modern):
-       python -m processing.ccode_enrichment --namespace alc --source-stage extract \
-         --out ${STAGED_BASE_DIR}/alc/ccode/places.ccode.jsonl
-       (then apply at/after index via processing.apply_ccode_patch, or fold in
-        before indexing). On prod incremental adds use processing.apply_ccode_patch.
-  3. INDEX:  python -m processing.index_namespace --namespace alc --source-stage extract --es-host <PROD> --execute
-  4. AAT:    types already carry aat_ids (intrinsic, from Featuretype_AAT). Run
-       processing.apply_aat_enrich --namespace alc  to path-fill aat_paths.
-  5. Symphonym embedding backfill for the new Spanish toponyms (name-only).
-  6-8. aggregates -> tiles (bucket `alc` registered in generate_tiles) ->
-       update_tileserver_config -> push_gazetteer_inventory --namespace alc.
+  1. EXTRACT: python -m authorities.alcedo-places   (h3 nested in geometries[])
+  2. INDEX (prod ES on pitt; firewalled, no /ihome). index_namespace.main builds
+     an UNAUTH client + prints es_host, so drive its funcs with a basic_auth
+     client (pw from /ix1/ishi/es/config/elastic.password) — see the verified
+     driver in git log 2026-06-06 (/tmp/alc_index_driver.py). Add
+     --emit-new-toponyms /vast/ishi/staged/alc/backfill/new.jsonl for step 5.
+  3. AAT path-fill: processing.apply_aat_enrich --namespace alc --execute (types
+     already carry intrinsic aat_ids from Featuretype_AAT; this adds aat_paths).
+  4. CCODES (spatial — points need it; Nation is colonial, not modern). NB
+     ccode_enrichment.main is --run-id/--namespace and reads the namespace's
+     h3_merged/ + un's h3_merged/. For a point-only incremental add:
+       cp staged/alc/extract/places.jsonl staged/alc/h3_merged/places.jsonl
+       # on a CRC compute node, 28G (UN polygons in mem):
+       run_ccode_enrichment(run_id="alc-incr", namespace="alc", manifest_path=None)
+       # -> staged/alc/ccode/places.ccode.jsonl ; then on pitt:
+       processing.apply_ccode_patch --patch .../alc/ccode/places.ccode.jsonl --execute
+  5. EMBEDDINGS: backfill_embeddings compute (CRC GPU, -M gpu --partition a100
+     --gres=gpu:1) on new.jsonl -> embeddings.jsonl; then on pitt:
+       backfill_embeddings index --es-host ... --in embeddings.jsonl --embedding-version 7
+  6. AGGREGATES (--run-id alc-incr --namespace alc): gazetteer_temporal_extent
+     works off extract; gazetteer_h3_coverage needs staged/alc/h3/places.h3.jsonl
+     — synthesise it from the extract's nested geometries[].h3_cover (point-only
+     skips h3_stage): one line per place {place_id, geometries:[{geometry_index,
+     h3_centroid, h3_cover}]}.
+  7. TILES (CRC compute node; won't import on pitt — antimeridian):
+       generate_tiles --bucket alc  (auto-deploys mbtiles), then on pitt:
+       update_tileserver_config --bucket alc --execute  (rewrite+restart+verify).
+  8. REGISTRY (LAST, gated on tileset serving; run on crc0 for the native-uid
+     token): push_gazetteer_inventory --namespace alc  (prod + dev).
+  Loaded to prod 2026-06-06: 18,031 places, 15,981 toponyms (all embedded),
+  15,174 ccodes, 17,999 AAT, tileset + registry on prod+dev.
 ===========================================================================
 """
 
