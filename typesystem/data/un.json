@@ -1,0 +1,23 @@
+{
+  "_comment": "UN/ISO3166 country entities. The un authority assigns type identifier 'country' to all members and 'continent' to Antarctica (not a sovereign state). Mapped to AAT nations / continents. Lookup key = type identifier.",
+  "values": [
+    {
+      "value": "country",
+      "aat_mapping": {
+        "aat_id": 300128207,
+        "aat_term": "nations",
+        "confidence": 1.0,
+        "source": "static"
+      }
+    },
+    {
+      "value": "continent",
+      "aat_mapping": {
+        "aat_id": 300128176,
+        "aat_term": "continents",
+        "confidence": 1.0,
+        "source": "static"
+      }
+    }
+  ]
+}

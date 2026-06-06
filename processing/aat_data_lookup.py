@@ -29,7 +29,15 @@ doc's ``types[]`` entries:
 | ``"ohm"``                 | ohm       | ``sourceLabel``                      |
 | ``"wikidata"``            | wd        | ``identifier`` (e.g. ``Q515``)       |
 | ``"pleiades"``            | pleiades  | ``identifier`` (e.g. ``settlement``) |
+| ``"un"``                  | un        | ``identifier`` (``country``/``continent``) |
+| ``"chgis"``               | chgis     | ``identifier`` (CHGIS ftype name_en) |
 | ``"A"``/``"H"``/``"P"``…  | gn        | ``sourceLabel`` (e.g. ``P.PPL``)     |
+
+``un.json`` / ``chgis.json`` use the same flat ``values`` shape as
+``wikidata.json``/``pleiades.json`` and are matched on the doc's
+``identifier``. (CHGIS ``sourceLabel`` is the native-script ``name_vn``, so
+matching MUST use ``identifier`` = ``name_en``, which is the key in
+``chgis.json``.)
 """
 
 from __future__ import annotations
@@ -40,7 +48,7 @@ from typing import Any
 
 # All vocab keys used by aat_enrich. The strings here also drive the
 # per-vocab loader dispatch in ``load_all_aat_mappings``.
-VOCABS: tuple[str, ...] = ("osm", "ohm", "gn", "wd", "pleiades")
+VOCABS: tuple[str, ...] = ("osm", "ohm", "gn", "wd", "pleiades", "un", "chgis")
 
 # The single-letter geonames feature classes. Used to recognise gn-typed
 # entries from a doc's ``types[i].label`` field at augmentation time.
@@ -132,6 +140,8 @@ def load_all_aat_mappings(data_dir: Path) -> dict[str, dict[str, list[int]]]:
         "gn": _load_geonames(data_dir / "geonames.json"),
         "wd": _load_flat_values(data_dir / "wikidata.json"),
         "pleiades": _load_flat_values(data_dir / "pleiades.json"),
+        "un": _load_flat_values(data_dir / "un.json"),
+        "chgis": _load_flat_values(data_dir / "chgis.json"),
     }
 
 
@@ -166,6 +176,10 @@ def vocab_for_type_entry(label: str | None) -> str | None:
         return "wd"
     if label == "pleiades":
         return "pleiades"
+    if label == "un":
+        return "un"
+    if label == "chgis":
+        return "chgis"
     if label in GEONAMES_FEATURE_CLASSES:
         return "gn"
     return None
@@ -175,7 +189,7 @@ def lookup_key_for_type_entry(vocab: str, type_entry: dict) -> str | None:
     """Pull the right lookup key off a ``types[]`` entry for the given vocab."""
     if vocab in ("osm", "ohm", "gn"):
         key = type_entry.get("sourceLabel")
-    elif vocab in ("wd", "pleiades"):
+    elif vocab in ("wd", "pleiades", "un", "chgis"):
         key = type_entry.get("identifier")
     else:
         return None

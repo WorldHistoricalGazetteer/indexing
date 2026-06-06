@@ -300,6 +300,10 @@ def process_row(row):
         'label': 'ottnfs',
         'sourceLabel': 'vanished populated place (NFS.d.)' if vanished
                        else 'populated place (NFS.d.)',
+        # Direct-AAT authority: carry the id in `aat_ids` too so the folded
+        # corpus shape is reproduced on re-ingest without the central pipeline
+        # (label 'ottnfs' isn't a mapped vocab — its AAT is intrinsic).
+        'aat_ids': [300008347],
     }]
 
     # --- admin parents as NAMED relations (NOT resolved geometries) -------

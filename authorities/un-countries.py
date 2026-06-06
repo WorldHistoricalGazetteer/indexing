@@ -178,7 +178,15 @@ def create_country_place_doc(feature):
         'title': name,
         'toponyms': toponyms,
         'geometries': [geom_entry],
-        'types': [{'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}],
+        # Antarctica (ISO AQ/ATA) is a continent, not a sovereign state — give it
+        # a distinct identifier so the AAT pipeline (typesystem/data/un.json)
+        # maps it to "continents" rather than "nations".
+        'types': [(
+            {'identifier': 'continent', 'label': 'un', 'sourceLabel': 'continent'}
+            if (iso_a3 or '').upper() == 'ATA' or (iso_a2 or '').upper() == 'AQ'
+            or name.lower() == 'antarctica'
+            else {'identifier': 'country', 'label': 'un', 'sourceLabel': 'sovereign-country'}
+        )],
         'boundary': '2',
     }
     if geom_entry.get('repr_point'):
