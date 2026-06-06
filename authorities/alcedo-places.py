@@ -74,6 +74,7 @@ substituting alc for ofs, with these deltas:
 """
 
 import csv
+import re
 import sys
 from pathlib import Path
 from datetime import datetime
@@ -87,7 +88,6 @@ from processing.helpers import (
 from processing.settings import DATA_DIR, AUTHORITIES
 
 NAMESPACE = "alc"  # Alcedo / TopUrbi
-ADM_NS = "alc-adm"  # pseudo-namespace for named (unresolved) colonial admin parents
 
 ALC_CONFIG = next((a for a in AUTHORITIES if a['namespace'] == NAMESPACE), None)
 
@@ -125,10 +125,15 @@ _APPROX = {
 _DROP_GEOM = {"unlocated", "unspecified", ""}
 
 
-def _v(row, key):
-    """Cleaned cell value; treat pandas/CSV null sentinels as empty."""
-    val = (row.get(key) or "").strip()
+def _clean(val):
+    """Treat pandas/CSV null sentinels as empty."""
+    val = (val or "").strip()
     return "" if val in ("nan", "None", "NaN", "\\N", "-") else val
+
+
+def _v(row, key):
+    """Cleaned cell value for a row/key."""
+    return _clean(row.get(key))
 
 
 def _aat_id(raw):
@@ -147,8 +152,49 @@ def _aat_id(raw):
     return v if 300000000 <= v <= 300999999 else None
 
 
-def process_row(row):
-    """Map one Alcedo_structured.csv row (dict) to a place doc, or None."""
+# Admin/container featuretypes that can be the TARGET of a `within` relation, in
+# resolution-preference order (a Province value prefers a 'Provincia' entry, etc.).
+_ADMIN_FT_PRIORITY = {
+    "Reyno": 0, "Provincia": 1, "Gobierno": 2, "Capitanía general": 2,
+    "Audiencia": 2, "Intendencia": 3, "Jurisdicción": 4, "Corregimiento": 4,
+    "Alcaldía mayor": 4, "Partido": 5, "Distrito": 5, "Departamento": 5,
+}
+# Non-informative admin field values — never resolve/emit a relation for these.
+_ADMIN_NOISE = {"unspecified", "unknown", "ambiguous"}
+
+
+def _admin_val(raw):
+    v = _clean(raw)
+    return "" if v.lower() in _ADMIN_NOISE else v
+
+
+def build_admin_index(csv_path):
+    """Map admin-unit name (lower) → its alc place_id, so colonial Province/
+    District/Partido fields can be reconciled to the REAL indexed alc entry that
+    IS that admin unit (best featuretype wins per _ADMIN_FT_PRIORITY)."""
+    best: dict[str, tuple[int, str]] = {}
+    for row in _row_iter(csv_path):
+        if _v(row, "entrytype") != "Toponym":
+            continue
+        pri = _ADMIN_FT_PRIORITY.get(_v(row, "featuretype"))
+        if pri is None:
+            continue
+        name = _v(row, "Normname").lower()
+        eid = _v(row, "entry_id")
+        if not name or not eid:
+            continue
+        cur = best.get(name)
+        if cur is None or pri < cur[0]:
+            best[name] = (pri, f"{NAMESPACE}:{eid}")
+    return {name: pid for name, (pri, pid) in best.items()}
+
+
+def process_row(row, admin_index):
+    """Map one Alcedo_structured.csv row (dict) to a place doc, or None.
+
+    ``admin_index`` (from build_admin_index) resolves the colonial Province/
+    District/Partido fields to the real indexed alc admin entry's place_id.
+    """
     entry_id = _v(row, "entry_id")
     title = _v(row, "Normname") or _v(row, "lemma")
     if not entry_id or not title:
@@ -240,11 +286,15 @@ def process_row(row):
         place_doc["descriptions"] = [{"value": desc, "lang": LANG}]
 
     # --- links: HGIS reconciliation + TEI source-page reference -----------
+    # gazetteermatch is the entry's match in HGIS de las Indias (already in WHG as
+    # lugares/territorios): NUMERIC ids are lugares (settlements/features),
+    # uppercase-alnum codes (e.g. JUPECUAB) are territorios (admin districts).
     links = []
-    # numeric gazetteermatch == HGIS de las Indias id (in WHG as lugares/territorios)
     gm = _v(row, "gazetteermatch")
     if gm and gm.replace(".", "").isdigit():
         links.append({"type": LINK_TYPE, "identifier": f"indias:{int(float(gm))}"})
+    elif gm and re.fullmatch(r"[A-Z0-9]{4,}", gm):           # HGIS territorio code
+        links.append({"type": LINK_TYPE, "identifier": f"indias:{gm}"})
     # source-page reference into the TEI edition (by entry xml:id, per volume)
     tei = _tei_link(_v(row, "volume"), entry_id)
     if tei:
@@ -252,17 +302,23 @@ def process_row(row):
     if links:
         place_doc["links"] = links
 
-    # --- colonial admin parents as NAMED `within` relations --------------
-    # Province/District/Partido are free-text colonial units (not boundary IDs),
-    # so synthesise stable pseudo-ids under alc-adm: to graph-link siblings
-    # without claiming a match to a real boundary in `places`.
+    # --- containing admin units → `within` relations to REAL indexed places ---
+    # Resolve each colonial Province/District/Partido NAME to the alc entry that
+    # IS that admin unit (same source + period; that entry is itself indexed and
+    # carries its own HGIS/wd reconciliation). No pseudo-ids — emit a relation
+    # only when it resolves to a real, different alc place_id.
     relations = []
+    seen_targets = set()
     for lvl in ("Province", "District", "Partido"):
-        name = _v(row, lvl)
-        if name:
+        name = _admin_val(row.get(lvl))
+        if not name:
+            continue
+        target = admin_index.get(name.lower())
+        if target and target != place_id and target not in seen_targets:
+            seen_targets.add(target)
             relations.append({
                 "relation_type": "within",
-                "related_place_id": f"{ADM_NS}:{lvl.lower()}:{name.lower().replace(' ', '_')}",
+                "related_place_id": target,
                 "label": f"{lvl}: {name}",
                 "timespans": timespans,
             })
@@ -291,6 +347,10 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
             print(f"ERROR: File not found: {csv_path}")
             return
 
+    # First pass: index the admin entries so within-relations resolve to real ids.
+    admin_index = build_admin_index(csv_path)
+    print(f"admin index: {len(admin_index):,} admin-unit names → alc place_ids")
+
     staged, skipped, errors = 0, 0, 0
     start = datetime.now()
     for i, row in enumerate(_row_iter(csv_path)):
@@ -299,7 +359,7 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
         if not dry and (i + 1) % 2000 == 0:
             print(f"\r  {i + 1} rows - staged: {staged}", end="", flush=True)
         try:
-            doc = process_row(row)
+            doc = process_row(row, admin_index)
             if not doc:
                 skipped += 1
                 continue

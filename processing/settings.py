@@ -745,7 +745,19 @@ AUTHORITIES = [
         'license_url': 'https://creativecommons.org/licenses/by-nc/4.0/',
         'rights_holder': 'ANR TopUrbi (Projet-ANR-21-CE27-0023); Werner Stangl',
         'source_url': 'https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-project',
-        'contributors': [],
+        'contributors': [
+            {'name': 'Werner Stangl', 'role': 'Data curation'},
+            {'name': 'Jean-Paul Zúñiga', 'role': 'Project administration'},
+            {'name': 'Carmen Brando', 'role': 'Software'},
+        ],
+        # Legacy free-text blob: the push sends it as `description`, which is all a
+        # pre-Phase-4 prod stores until the atlas→main promotion (citation_text +
+        # the structured fields are already live on dev).
+        'citation': 'Antonio de Alcedo, Diccionario geográfico-histórico de las '
+                    'Indias Occidentales ó América (1786-1789). Digital edition by '
+                    'Werner Stangl under ANR TopUrbi (Projet-ANR-21-CE27-0023), '
+                    'https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/topurbi-project '
+                    '(CC-BY-NC 4.0).',
         'files': [
             {
                 # Werner's pristine structured export (pipe-delimited, ~19.3k rows)
