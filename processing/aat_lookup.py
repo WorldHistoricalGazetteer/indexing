@@ -376,6 +376,7 @@ def apply_aat_mappings_to_index(
     places_index: str = "places",
     batch_size: int = 500,
     es_types: Elasticsearch | None = None,
+    sleep_between_batches: float = 0.0,
 ):
     """
     Scroll existing place docs for a given namespace and bulk-update their
@@ -454,6 +455,10 @@ def apply_aat_mappings_to_index(
         if scanned % 10000 == 0:
             print(f"  Scanned {scanned:,} docs, updated {updated:,} ...",
                   flush=True)
+
+        if sleep_between_batches:
+            import time
+            time.sleep(sleep_between_batches)
 
         resp = es_places.scroll(scroll_id=scroll_id, scroll="10m")
 
