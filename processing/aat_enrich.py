@@ -128,6 +128,28 @@ def augment_doc(
             new_types.append(entry)
             continue
         types_seen += 1
+        # Path-fill: a type that already carries aat_ids but no aat_paths gets its
+        # hierarchy paths here. Covers direct-AAT authorities (ofs/og) whose label
+        # ('ottnfs'/'ottgaz') isn't a mapped vocab — their aat_ids are intrinsic, set
+        # by the authority script — so they'd otherwise never become hierarchy-
+        # searchable. Idempotent for vocab-mapped entries (they already carry paths).
+        existing_ids = entry.get("aat_ids")
+        if existing_ids and not entry.get("aat_paths"):
+            paths = []
+            for a in existing_ids:
+                try:
+                    h = hierarchy.get(int(a))
+                except (TypeError, ValueError):
+                    h = None
+                if h and h.get("path"):
+                    paths.append(h["path"])
+            if paths:
+                new_entry = dict(entry)
+                new_entry["aat_paths"] = paths
+                new_types.append(new_entry)
+                augmented += 1
+                changed = True
+                continue
         vocab = vocab_for_type_entry(entry.get("label"))
         if vocab is None:
             new_types.append(entry)
