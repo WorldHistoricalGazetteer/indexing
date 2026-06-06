@@ -133,34 +133,48 @@ Reflect the new optional keys in the `build_inventory_payload` docstring example
 
 **This is the substantive part and must not be done mechanically.** The existing `citation` blobs are stale and several licences are wrong. For **each** namespace below, verify against the source's current site/terms and fill in: SPDX id (or `custom`), deed URL, rights holder, a clean citation, and any documented contributor roles.
 
-The table below is a **first-pass starting point** drawn from the existing blobs and prior knowledge. **Every row is marked with a confidence flag — `CONFIRM` rows are best-guesses that REQUIRE verification before the live push; `VERIFY` rows are largely unknown.** Do not treat any of this as authoritative.
+**AUDIT COMPLETE (2026-06-06).** The table below is now VERIFIED against each
+source's official terms/repo/deposit (web research + primary-source fetch) and
+applied to `processing/settings.py`. Confidence is `high` unless noted. Several
+first-pass assumptions were WRONG — flagged in notes.
 
-| ns    | name                  | first-pass `license_spdx` | rights_holder (first pass)      | confidence | notes |
-|-------|-----------------------|---------------------------|---------------------------------|------------|-------|
-| pl    | Pleiades              | `CC-BY-3.0`               | Institute for the Study of the Ancient World | CONFIRM | blob says CC-BY 3.0; confirm not yet 4.0 |
-| gn    | GeoNames              | `CC-BY-4.0`               | Unxos GmbH                      | CONFIRM | GeoNames is CC-BY 4.0; confirm |
-| tgn   | TGN                   | `ODC-By-1.0`              | J. Paul Getty Trust             | CONFIRM | blob already says ODC-By 1.0 |
-| wd    | Wikidata              | `CC0-1.0`                 | Wikimedia Foundation            | CONFIRM | Wikidata data is CC0 |
-| osm   | OSM                   | `ODbL-1.0`                | OpenStreetMap contributors      | CONFIRM | share-alike — never assert -NC |
-| ohm   | OHM                   | `ODbL-1.0`                | OpenHistoricalMap contributors  | CONFIRM | share-alike |
-| loc   | LOC                   | — (relations-only)        | —                               | n/a | excluded from inventory; no registry row |
-| nl    | NativeLand            | ?                         | Native Land Digital             | VERIFY | terms are use-by-permission / non-commercial-ish — check carefully |
-| dp    | DPlace                | `CC-BY-4.0`               | D-PLACE / MPI-SHH               | CONFIRM | D-PLACE is CC-BY 4.0 |
-| gb    | GB1900                | `CC0-1.0`                 | GB1900 project / NLS            | VERIFY | released CC0/PD — confirm exact deed |
-| iv    | Index Villaris (1680) | `custom-public-domain`    | (historical; digitiser?)        | VERIFY | source is PD; the *digitised dataset* licence may differ |
-| un    | ISO3166 / Natural Earth | `custom-public-domain`  | Natural Earth                   | CONFIRM | Natural Earth is public domain |
-| ukhc  | UK Historic Counties  | ?                         | Historic Counties Trust         | VERIFY | likely CC-BY-SA — confirm version |
-| po    | PeriodO               | `CC0-1.0`                 | PeriodO project                 | CONFIRM | PeriodO data is CC0 |
-| clio  | Cliopatria (Seshat)   | ?                         | Seshat Global History Databank  | VERIFY | Seshat licensing varies (CC-BY-NC-SA?) — check the cliopatria repo LICENSE |
-| chgis | CHGIS / TGAZ          | ?                         | Harvard & Fudan University      | VERIFY | CHGIS has had CC-BY-NC-SA terms — confirm |
-| dgsd  | DGSD                  | ?                         | Ruth Mostern & Elijah Meeks, UC Merced | VERIFY | check the v1.1 release terms |
-| tm    | Trismegistos          | ?                         | Trismegistos / KU Leuven        | VERIFY | restrictive academic terms — likely CC-BY-NC-SA + conditions; read TM terms |
-| ofs   | Ottoman NFS Gazetteer | ?                         | Kabadayı et al. (2022)          | VERIFY | per the dataset's deposit licence (Zenodo?) |
-| og    | Ottoman Gazetteer     | ?                         | Hanley (2021)                   | VERIFY | per the dataset's deposit licence |
+| ns    | name                  | `license_spdx`          | rights_holder                     | conf. | notes |
+|-------|-----------------------|-------------------------|-----------------------------------|-------|-------|
+| pl    | Pleiades              | `CC-BY-3.0`             | ISAW (NYU) & AWMC (UNC)           | high  | confirmed still **3.0** not 4.0 — pleiades.stoa.org/credits |
+| gn    | GeoNames              | `CC-BY-4.0`             | Unxos GmbH                        | high  | geonames.org/about.html |
+| tgn   | TGN                   | `ODC-By-1.0`            | J. Paul Getty Trust               | high  | getty.edu obtain-vocabularies |
+| wd    | Wikidata              | `CC0-1.0`               | Wikimedia Foundation              | high  | data namespaces are CC0 |
+| osm   | OSM                   | `ODbL-1.0`              | OpenStreetMap contributors        | high  | data is ODbL |
+| ohm   | OHM                   | `CC0-1.0`               | OpenHistoricalMap contributors    | high  | **WRONG first-pass: NOT ODbL** — OHM is CC0 PD dedication |
+| dp    | D-PLACE               | `CC-BY-NC-4.0`          | MPI for Evolutionary Anthropology | high  | **WRONG first-pass: NC**, not plain CC-BY; also cite upstream datasets |
+| un    | ISO3166 / Natural Earth | `custom-public-domain`| Natural Earth                     | high  | public domain |
+| po    | PeriodO               | `CC0-1.0`               | PeriodO contributors              | high  | perio.do/license |
+| gb    | GB1900                | `CC-BY-SA-4.0`          | GB Historical GIS + GB1900 partners | med | **WRONG first-pass: not CC0** — the abridged gazetteer (~1.17M = our count) is BY-SA; only the raw dump is CC0. SA deed version unstated; 4.0 assumed |
+| nl    | NativeLand            | **custom (NO SPDX)**    | Native Land Digital               | high  | Data Sovereignty Treaty (OCAP®): NON-COMMERCIAL + redistribution-by-permission → **custom WHG License row** |
+| ukhc  | UK Historic Counties  | **custom (NO SPDX)**    | Historic Counties Trust           | high  | bespoke permissive (commercial OK), attribution requested → **custom WHG License row** |
+| iv    | Index Villaris (1680) | `CC-BY-SA-4.0`          | Gadd & Litvine (1680 src is PD)   | high  | repo LICENSE via GitHub API; 1680 John Adams source is PD |
+| clio  | Cliopatria (Seshat)   | `CC-BY-4.0`             | Seshat: Global History Databank   | high  | repo LICENSE.md |
+| chgis | CHGIS / TGAZ          | **custom (NO SPDX)**    | Harvard (Fairbank) & Fudan        | high  | academic-research-only: NO commercial use, resale, OR **redistribution** → **custom WHG License row** + possibly direct permission |
+| dgsd  | DGSD                  | `CC-BY-ND-4.0` ⚠UNSEEDED | Ruth Mostern & Elijah Meeks      | high  | **WRONG first-pass: ND** (D-Scholarship badge), not NC-SA. ND not a blocker — Mostern is **WHG's PI** and endorses use. Needs seeding |
+| tm    | Trismegistos          | `CC-BY-SA-4.0`          | Trismegistos / KU Leuven          | high  | **NOT non-commercial** (contrary to first-pass fear); trismegistos.org/dataservices |
+| ofs   | Ottoman NFS Gazetteer | `CC-BY-4.0`             | Kabadayı, Sefer, Boykov & Gerrits | high  | Zenodo 7351936 Rights field |
+| og    | Ottoman Gazetteer     | `CC-BY-NC-4.0`          | Will Hanley (FSU)                 | high  | repo LICENSE + README badge |
+| loc   | LOC                   | — (relations-only)      | —                                 | n/a   | excluded from inventory; no registry row |
 
-For any `VERIFY`/`CONFIRM` row whose true licence is **not in the seeded SPDX set** (§1.1), note the needed SPDX id here so the WHG seed can be extended:
+> **Needed-but-unseeded SPDX ids found during audit: `CC-BY-ND-4.0`** (dgsd only).
+> Seed it on WHG (one-line addition to `licensing/migrations/0002_seed_licenses.py`).
+> This is the ONLY unseeded *SPDX* — the audit's other gaps (nl, ukhc, chgis) are
+> bespoke **non-SPDX** terms needing custom `License` rows, not seed additions.
 
-> _Needed-but-unseeded SPDX ids found during audit: …_
+> **Custom `License` rows needed on WHG (non-SPDX bespoke terms):**
+> - **nl** — Native Land Digital Data Sovereignty Treaty (NC + redistribution-by-permission)
+> - **ukhc** — Historic Counties Trust permissive terms (commercial OK, attribution requested)
+> - **chgis** — CHGIS academic-research-only (no commercial / resale / redistribution)
+>
+> Until these rows exist, the three entries push their `citation_text` / `license_url`
+> / `rights_holder` / `source_url` but **omit `license_spdx`** (so no wrong licence FK
+> is asserted). Settings carry the verified facts; only the WHG `License` FK awaits the
+> custom rows.
 
 Bespoke / non-SPDX terms → use `custom-public-domain` only if truly PD; otherwise flag for a `custom=True` WHG `License` row + a free-text rights statement (coordinate with the WHG repo).
 

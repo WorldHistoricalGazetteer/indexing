@@ -9,10 +9,14 @@ Inputs:
   set, or ``"global"`` sentinel for global gazetteers.
 * ``staged/_aggregates/{ns}.temporal_extent.json`` (Batch 9) —
   ``[min(start_year), max(end_year)]`` (each may be ``null``).
-* ``processing.settings.AUTHORITIES`` — `dataset_name` / `citation`.
+* ``processing.settings.AUTHORITIES`` — ``dataset_name`` / ``citation`` plus the
+  structured attribution keys (``citation_text``, ``license_spdx``,
+  ``license_url``, ``rights_holder``, ``source_url``, ``contributors``).
 
 Output payload (one entry per per-gazetteer namespace; LOC excluded —
-relations-only)::
+relations-only). The Phase 4 attribution keys are OPTIONAL — only those set in
+``AUTHORITIES`` are sent (the endpoint leaves omitted fields untouched, and
+skips+logs an unknown ``license_spdx`` rather than failing)::
 
     {
       "id": "gn",
@@ -24,7 +28,12 @@ relations-only)::
       "record_count": 13000000,
       "status": "published",
       "h3_coverage": "global",
-      "temporal_extent": [-2000, 2025]
+      "temporal_extent": [-2000, 2025],
+      "citation_text": "GeoNames geographical database, Unxos GmbH.",
+      "license_spdx": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "rights_holder": "Unxos GmbH",
+      "source_url": "https://www.geonames.org/"
     }
 
 Push semantics:
@@ -132,19 +141,45 @@ _HARDLINK_SHIP_MARKER_TEMPLATE = "{runs_dir}/{run_id}.hardlink_ship.json"
 # ---------------------------------------------------------------------------
 
 
-def _authority_meta(namespace: str) -> dict[str, str | None]:
-    """Look up dataset_name + citation for a namespace from settings.AUTHORITIES.
+def _authority_meta(namespace: str) -> dict[str, Any]:
+    """Look up name + citation + structured attribution for a namespace.
 
-    Returns sensible defaults when the authority isn't registered (e.g. a
-    namespace ingested via an out-of-tree script).
+    ``description`` stays = the legacy free-text ``citation`` blob (back-compat /
+    prose); the structured Phase 4 keys (``citation_text``, ``license_spdx``, …)
+    are surfaced separately. Returns sensible defaults when the authority isn't
+    registered (e.g. a namespace ingested via an out-of-tree script).
     """
     for auth in AUTHORITIES:
         if auth.get("namespace") == namespace:
             return {
                 "name": auth.get("dataset_name") or namespace.upper(),
                 "description": auth.get("citation"),
+                "citation_text": auth.get("citation_text"),
+                "license_spdx": auth.get("license_spdx"),
+                "license_url": auth.get("license_url"),
+                "rights_holder": auth.get("rights_holder"),
+                "source_url": auth.get("source_url"),
+                "contributors": auth.get("contributors") or [],
             }
     return {"name": namespace.upper(), "description": None}
+
+
+def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
+    """Return only the attribution keys that are actually set.
+
+    The WHG endpoint leaves omitted fields untouched (it never clobbers an
+    existing registry value with a null), so we must NOT send empty keys —
+    only forward what ``AUTHORITIES`` actually defines. Unknown ``license_spdx``
+    is skipped+logged WHG-side, so sending a not-yet-seeded SPDX is harmless.
+    """
+    out: dict[str, Any] = {}
+    for k in ("citation_text", "license_spdx", "license_url",
+              "rights_holder", "source_url"):
+        if meta.get(k):
+            out[k] = meta[k]
+    if meta.get("contributors"):
+        out["contributors"] = meta["contributors"]
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -285,7 +320,7 @@ def build_inventory_payload(
                 continue
             # Fall through to a bulk 'whg' entry if no sidecar exists yet.
 
-        entries.append({
+        entry = {
             "id": ns,
             "name": meta["name"],
             "description": meta["description"],
@@ -296,7 +331,9 @@ def build_inventory_payload(
             "status": "published",
             "h3_coverage": h3,
             "temporal_extent": [start, end],
-        })
+        }
+        entry.update(_attribution_fields(meta))
+        entries.append(entry)
     return entries
 
 
@@ -322,7 +359,7 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         )
     meta = _authority_meta(namespace)
     start, end = _read_temporal_extent(namespace)
-    return {
+    entry = {
         "id": namespace,
         "name": meta["name"],
         "description": meta["description"],
@@ -334,6 +371,8 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         "h3_coverage": _read_h3_coverage(namespace),
         "temporal_extent": list(_read_temporal_extent(namespace)),
     }
+    entry.update(_attribution_fields(meta))
+    return entry
 
 
 def assert_tilesets_served(payload: list[dict[str, Any]], *, skip: bool = False) -> None:

@@ -260,6 +260,13 @@ AUTHORITIES = [
     {  # 2024: 37k+ places
         'dataset_name': 'Pleiades',
         'namespace': 'pl',
+        # Structured attribution (verified 2026-06-06 against pleiades.stoa.org/credits).
+        'citation_text': 'Pleiades: A Gazetteer of Past Places, edited by the Institute for the Study of the Ancient World and the Ancient World Mapping Center.',
+        'license_spdx': 'CC-BY-3.0',  # still 3.0 (confirmed — NOT 4.0)
+        'license_url': 'https://creativecommons.org/licenses/by/3.0/',
+        'rights_holder': 'Institute for the Study of the Ancient World (NYU) & Ancient World Mapping Center (UNC Chapel Hill)',
+        'source_url': 'https://pleiades.stoa.org/',
+        'contributors': [],
         'api_item': 'https://pleiades.stoa.org/places/<id>/json',
         'citation': 'Pleiades: A community-built gazetteer and graph of ancient places. Copyright © Institute for the Study of the Ancient World. Sharing and remixing permitted under terms of the Creative Commons Attribution 3.0 License (cc-by). https://pleiades.stoa.org/',
         'files': [
@@ -273,6 +280,13 @@ AUTHORITIES = [
     {  # 2024: 12m+ places
         'dataset_name': 'GeoNames',
         'namespace': 'gn',
+        # Verified 2026-06-06 against geonames.org/about.html.
+        'citation_text': 'GeoNames geographical database, Unxos GmbH.',
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
+        'rights_holder': 'Unxos GmbH',
+        'source_url': 'https://www.geonames.org/',
+        'contributors': [],
         'api_item': 'http://api.geonames.org/getJSON?formatted=true&geonameId=<id>&username=<username>&style=full',
         'citation': 'GeoNames geographical database. https://www.geonames.org/',
         'files': [
@@ -305,6 +319,13 @@ AUTHORITIES = [
     {  # 2024: 3m+ places
         'dataset_name': 'TGN',
         'namespace': 'tgn',
+        # Verified 2026-06-06 against getty.edu/research/tools/vocabularies/obtain.
+        'citation_text': 'Getty Thesaurus of Geographic Names (TGN), J. Paul Getty Trust.',
+        'license_spdx': 'ODC-By-1.0',
+        'license_url': 'https://opendatacommons.org/licenses/by/1-0/',
+        'rights_holder': 'J. Paul Getty Trust',
+        'source_url': 'https://www.getty.edu/research/tools/vocabularies/tgn/',
+        'contributors': [],
         'api_item': 'https://vocab.getty.edu/tgn/<id>.jsonld',
         'citation': 'The Getty Thesaurus of Geographic Names® (TGN) is provided by the J. Paul Getty Trust under the Open Data Commons Attribution License (ODC-By) 1.0. https://www.getty.edu/research/tools/vocabularies/tgn/',
         'files': [
@@ -324,6 +345,13 @@ AUTHORITIES = [
     {  # 2024: 8m+ items classified as places with geometry
         'dataset_name': 'Wikidata',
         'namespace': 'wd',
+        # Verified 2026-06-06 against wikidata.org/wiki/Wikidata:Licensing (data is CC0).
+        'citation_text': 'Wikidata, Wikimedia Foundation.',
+        'license_spdx': 'CC0-1.0',
+        'license_url': 'https://creativecommons.org/publicdomain/zero/1.0/',
+        'rights_holder': 'Wikimedia Foundation',
+        'source_url': 'https://www.wikidata.org/',
+        'contributors': [],
         'api_item': 'https://www.wikidata.org/wiki/Special:EntityData/<id>.json',
         'citation': 'Wikidata is a free and open knowledge base that can be read and edited by both humans and machines. https://www.wikidata.org/',
         'files': [
@@ -341,6 +369,13 @@ AUTHORITIES = [
     {  # 2024: >14.8m named places with multiple toponyms (file includes some unnamed features)
         'dataset_name': 'OSM',
         'namespace': 'osm',
+        # Verified 2026-06-06 against openstreetmap.org/copyright (data is ODbL).
+        'citation_text': 'OpenStreetMap, © OpenStreetMap contributors.',
+        'license_spdx': 'ODbL-1.0',
+        'license_url': 'https://opendatacommons.org/licenses/odbl/1-0/',
+        'rights_holder': 'OpenStreetMap contributors',
+        'source_url': 'https://www.openstreetmap.org/',
+        'contributors': [],
         'api_item': 'https://nominatim.openstreetmap.org/details.php?osmtype=R&osmid=<id>&format=json',
         'citation': 'OpenStreetMap is open data, licensed under the Open Data Commons Open Database License (ODbL). https://www.openstreetmap.org/',
         'files': [
@@ -359,6 +394,15 @@ AUTHORITIES = [
     {  # ~800K+ historical places with temporal coverage
         'dataset_name': 'OHM',
         'namespace': 'ohm',
+        # Verified 2026-06-06: OHM is CC0 (public-domain dedication), NOT ODbL like
+        # OSM — wiki.openstreetmap.org/wiki/OpenHistoricalMap/Copyright. Attribution
+        # encouraged but not required.
+        'citation_text': 'OpenHistoricalMap, by OpenHistoricalMap contributors.',
+        'license_spdx': 'CC0-1.0',
+        'license_url': 'https://creativecommons.org/publicdomain/zero/1.0/',
+        'rights_holder': 'OpenHistoricalMap contributors',
+        'source_url': 'https://www.openhistoricalmap.org/',
+        'contributors': [],
         'api_item': '',
         'citation': 'OpenHistoricalMap is open data, licensed under the Open Data Commons Open Database License (ODbL). https://www.openhistoricalmap.org/',
         'files': [
@@ -413,6 +457,15 @@ AUTHORITIES = [
     {
         'dataset_name': 'NativeLand',
         'namespace': 'nl',
+        # Verified 2026-06-06: Native Land Digital "Data Sovereignty Treaty" (OCAP®)
+        # — bespoke terms, NOT CC0/SPDX: NON-COMMERCIAL only, redistribution by
+        # explicit permission, mandatory attribution + acknowledgement of Indigenous
+        # communities as stewards. No license_spdx → needs a CUSTOM WHG License row.
+        'citation_text': 'Indigenous territory, language, and treaty data provided by Native Land Digital (native-land.ca), used under the Native Land Digital Data Sovereignty Treaty; Indigenous communities are the rightful stewards of this data.',
+        'license_url': 'https://api-docs.native-land.ca/data-sovereignty-treaty',
+        'rights_holder': 'Native Land Digital',
+        'source_url': 'https://native-land.ca/',
+        'contributors': [],
         'api_item': '',
         'citation': 'Native Land Digital. https://native-land.ca/',
         'files': [
@@ -440,6 +493,15 @@ AUTHORITIES = [
     {
         'dataset_name': 'DPlace',
         'namespace': 'dp',
+        # Verified 2026-06-06 (d-place.org/about): CC-BY-NC-4.0 (NonCommercial),
+        # NOT plain CC-BY-4.0. D-PLACE aggregates many upstream ethnographic
+        # datasets, each with its own citation, in addition to Kirby et al. 2016.
+        'citation_text': 'D-PLACE: The Global Database of Cultural, Linguistic and Environmental Diversity, Max Planck Institute for Evolutionary Anthropology.',
+        'license_spdx': 'CC-BY-NC-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-nc/4.0/',
+        'rights_holder': 'Max Planck Institute for Evolutionary Anthropology (D-PLACE)',
+        'source_url': 'https://d-place.org/',
+        'contributors': [],
         'api_item': '',
         'citation': 'D-PLACE: A Global Database of Cultural, Linguistic and Environmental Diversity. https://d-place.org/',
         'files': [
@@ -453,6 +515,15 @@ AUTHORITIES = [
     {
         'dataset_name': 'GB1900',
         'namespace': 'gb',
+        # Verified 2026-06-06: WHG ingests the *abridged* GB1900 gazetteer
+        # (~1.17M rows, matching our count) = CC-BY-SA; only the raw dump is CC0.
+        # Share-alike + attribution required (visionofbritain.org.uk/data).
+        'citation_text': 'GB1900 Gazetteer, Great Britain Historical GIS and the GB1900 project partners and volunteers.',
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Great Britain Historical GIS & the GB1900 project partners and volunteers',
+        'source_url': 'https://www.pastplace.org/data/',
+        'contributors': [],
         'api_item': '',
         'citation': 'GB1900 Gazetteer: British place names, 1888-1914. https://www.pastplace.org/data/#tabgb1900',
         'files': [
@@ -466,6 +537,15 @@ AUTHORITIES = [
     {  # 24,000 place names
         'dataset_name': 'IndexVillaris',
         'namespace': 'iv',
+        # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
+        # The 1680 source (John Adams) is public domain; the digitised dataset is the
+        # licensed layer. Share-alike + attribution to the digital editors required.
+        'citation_text': 'Index Villaris (1680, John Adams; public domain); digital GIS edition by Stephen Gadd and Alexis Litvine (DOI 10.5281/zenodo.4748653).',
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Stephen Gadd & Alexis Litvine (digital edition); original 1680 work by John Adams (public domain)',
+        'source_url': 'https://github.com/docuracy/IndexVillaris1680',
+        'contributors': [],
         'api_item': '',
         'citation': 'Index Villaris, 1680',
         'files': [
@@ -478,6 +558,13 @@ AUTHORITIES = [
     {  # ISO Countries
         'dataset_name': 'ISO3166',
         'namespace': 'un',  # United Nations countries and territories
+        # Verified 2026-06-06 (naturalearthdata.com/about/terms-of-use): public domain.
+        'citation_text': 'Country boundaries from Natural Earth (naturalearthdata.com).',
+        'license_spdx': 'custom-public-domain',
+        'license_url': 'https://www.naturalearthdata.com/about/terms-of-use/',
+        'rights_holder': 'Natural Earth',
+        'source_url': 'https://www.naturalearthdata.com/',
+        'contributors': [],
         'api_item': '',
         'citation': 'Natural Earth Data. Public domain. https://www.naturalearthdata.com/',
         'files': [
@@ -492,6 +579,15 @@ AUTHORITIES = [
     {  # UK historic counties (92 polygons; regional containment geographies)
         'dataset_name': 'UKHistoricCounties',
         'namespace': 'ukhc',
+        # Verified 2026-06-06 (county-borders.co.uk terms): free for personal/
+        # educational/non-commercial AND commercial use, attribution requested
+        # ("would appreciate"). No formal SPDX licence → no license_spdx; model as a
+        # custom permissive WHG License row.
+        'citation_text': 'Historic county boundary data provided by the Historic County Borders Project (Historic Counties Trust), https://county-borders.co.uk.',
+        'license_url': 'https://county-borders.co.uk/',
+        'rights_holder': 'Historic Counties Trust',
+        'source_url': 'https://county-borders.co.uk/',
+        'contributors': [],
         'api_item': '',
         'citation': 'Historic County Borders Project (Historic Counties Trust). https://county-borders.co.uk/',
         'files': [
@@ -509,6 +605,13 @@ AUTHORITIES = [
     {  # PeriodO temporal periods with spatial coverage
         'dataset_name': 'PeriodO',
         'namespace': 'po',
+        # Verified 2026-06-06 (perio.do/license): CC0 public-domain dedication.
+        'citation_text': 'PeriodO: A Gazetteer of Period Definitions for Linking and Visualizing Data, PeriodO contributors.',
+        'license_spdx': 'CC0-1.0',
+        'license_url': 'https://creativecommons.org/publicdomain/zero/1.0/',
+        'rights_holder': 'PeriodO contributors',
+        'source_url': 'https://perio.do/',
+        'contributors': [],
         'api_item': '',
         'citation': 'PeriodO: A public domain gazetteer of historical, art-historical, and archaeological periods. https://perio.do/',
         'files': [
@@ -522,6 +625,13 @@ AUTHORITIES = [
     {  # Cliopatria historical polity boundaries
         'dataset_name': 'Cliopatria',
         'namespace': 'clio',
+        # Verified 2026-06-06 via repo LICENSE.md (CC-BY-4.0).
+        'citation_text': 'Cliopatria: A Modular GIS-Ready Dataset of Historical Polity Boundaries, Seshat: Global History Databank.',
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
+        'rights_holder': 'Seshat: Global History Databank',
+        'source_url': 'https://github.com/Seshat-Global-History-Databank/cliopatria',
+        'contributors': [],
         'api_item': '',
         'citation': 'Cliopatria: Historical polity boundaries from the Seshat Global History Databank. https://github.com/Seshat-Global-History-Databank/cliopatria',
         'files': [
@@ -536,6 +646,16 @@ AUTHORITIES = [
     {  # ~82K historical Chinese administrative places
         'dataset_name': 'CHGIS',
         'namespace': 'chgis',
+        # Verified 2026-06-06 (chgis.fas.harvard.edu/data/chgis/v6): bespoke
+        # "academic research only" terms — NO commercial use, resale, OR
+        # redistribution (stricter than any CC licence). No license_spdx → needs a
+        # CUSTOM WHG License row; the no-redistribution clause may warrant direct
+        # permission, given WHG serves the data.
+        'citation_text': 'CHGIS, Version 6. © Fairbank Center for Chinese Studies, Harvard University & Center for Historical Geographical Studies, Fudan University, 2016.',
+        'license_url': 'https://chgis.fas.harvard.edu/data/chgis/v6/',
+        'rights_holder': 'Fairbank Center for Chinese Studies, Harvard University & Center for Historical Geographical Studies, Fudan University',
+        'source_url': 'https://chgis.fairbank.fas.harvard.edu/',
+        'contributors': [],
         'api_item': '',
         'citation': 'China Historical GIS / Temporal Gazetteer (TGAZ). Harvard University & Fudan University. https://sites.fas.harvard.edu/~chgis/',
         'files': [
@@ -551,6 +671,19 @@ AUTHORITIES = [
     {  # ~3.8K Song dynasty administrative entities
         'dataset_name': 'DGSD',
         'namespace': 'dgsd',
+        # Verified 2026-06-06 via the D-Scholarship record badge: CC-BY-ND-4.0
+        # (NoDerivatives) — corrects an earlier CC-BY-NC-SA guess. NOT yet in the WHG
+        # seeded SPDX set (WHG skips+logs until seeded → seed CC-BY-ND-4.0). The ND
+        # term nominally restricts distributing DERIVATIVES, but this is NOT a blocker
+        # for WHG: DGSD's author Ruth Mostern is WHG's PI and endorses all use here.
+        # Licence recorded truthfully regardless (deposit also marks "Copyright Not
+        # Evaluated"; data is factual/historical, from Hope Wright's 1958 index).
+        'citation_text': 'Ruth Mostern and Elijah Meeks, The Digital Gazetteer of the Song Dynasty, Version 1.1, University of Pittsburgh D-Scholarship, 2022.',
+        'license_spdx': 'CC-BY-ND-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-nd/4.0/',
+        'rights_holder': 'Ruth Mostern & Elijah Meeks',
+        'source_url': 'https://d-scholarship.pitt.edu/44108/',
+        'contributors': [],
         'api_item': '',
         'citation': 'Digital Gazetteer of the Song Dynasty (DGSD) v1.1. Ruth Mostern & Elijah Meeks, UC Merced.',
         'files': [
@@ -566,6 +699,15 @@ AUTHORITIES = [
     {  # ~24K ancient/historical places with coordinates
         'dataset_name': 'Trismegistos',
         'namespace': 'tm',
+        # Verified 2026-06-06 (trismegistos.org/dataservices): CC-BY-SA-4.0 (NOT
+        # non-commercial, contrary to common assumption). Share-alike applies to
+        # derivative datasets; registration only needed for premium features.
+        'citation_text': 'Trismegistos (TM Geo / Places), Trismegistos, KU Leuven.',
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Trismegistos / KU Leuven',
+        'source_url': 'https://www.trismegistos.org/',
+        'contributors': [],
         'api_item': 'https://www.trismegistos.org/place/<id>',
         'citation': 'Trismegistos: An interdisciplinary portal of the ancient world. https://www.trismegistos.org/',
         'files': [
@@ -581,6 +723,13 @@ AUTHORITIES = [
     {  # ~16.3K Ottoman populated places from 19th-c. population registers (NFS.d.)
         'dataset_name': 'Ottoman NFS Gazetteer',
         'namespace': 'ofs',
+        # Verified 2026-06-06 (Zenodo record 7351936 Rights field): CC-BY-4.0.
+        'citation_text': 'Kabadayı, M. Erdem, Akın Sefer, Grigor Boykov & Piet Gerrits (2022). Ottoman NFS Gazetteer. Zenodo. https://doi.org/10.5281/zenodo.7351936.',
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
+        'rights_holder': 'M. Erdem Kabadayı, Akın Sefer, Grigor Boykov & Piet Gerrits',
+        'source_url': 'https://zenodo.org/records/7351936',
+        'contributors': [],
         'api_item': '',
         'citation': 'Kabadayı, M.E., Boykov, G., Sefer, A. & Gerrits, P. (2022). '
                     'Ottoman NFS Gazetteer (16,296 populated places, 1830-1849). '
@@ -604,6 +753,13 @@ AUTHORITIES = [
     {  # ~6.3K Ottoman administrative units (eyalet/vilayet/sancak/kaza/nahiye)
         'dataset_name': 'Ottoman Gazetteer (ottgaz)',
         'namespace': 'og',
+        # Verified 2026-06-06 via repo LICENSE + README badge: CC-BY-NC-4.0.
+        'citation_text': 'Hanley, Will (2021). Ottoman Gazetteer (ottgaz.org), transformed from Tahir Sezen, Osmanlı Yer Adları.',
+        'license_spdx': 'CC-BY-NC-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-nc/4.0/',
+        'rights_holder': 'Will Hanley (Florida State University)',
+        'source_url': 'https://ottgaz.org/',
+        'contributors': [],
         'api_item': 'https://ottgaz.org/wiki/Item:<id>',
         # Licence: CC-BY-NC 4.0. Will Hanley (FSU), transformed from Tahir Sezen,
         # Osmanlı Yer Adları. No native coordinates — WHG computes convex-hull
