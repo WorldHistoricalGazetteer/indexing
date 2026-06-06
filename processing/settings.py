@@ -601,4 +601,25 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # ~6.3K Ottoman administrative units (eyalet/vilayet/sancak/kaza/nahiye)
+        'dataset_name': 'Ottoman Gazetteer (ottgaz)',
+        'namespace': 'og',
+        'api_item': 'https://ottgaz.org/wiki/Item:<id>',
+        # Licence: CC-BY-NC 4.0. Will Hanley (FSU), transformed from Tahir Sezen,
+        # Osmanlı Yer Adları. No native coordinates — WHG computes convex-hull
+        # geometry from ofs member points (source='ofs') or pulls points from
+        # linked Wikidata records (source='wd'); see authorities/ottgaz-places.py.
+        'citation': 'Hanley, W. (2021). Ottoman Gazetteer (ottgaz): a linkable '
+                    'database of Ottoman administrative units, transformed from '
+                    'Tahir Sezen, Osmanlı Yer Adları. https://ottgaz.org / '
+                    'https://github.com/whanley/Ottoman-Gazetteer (CC-BY-NC 4.0)',
+        'files': [
+            {
+                'url': 'https://raw.githubusercontent.com/whanley/Ottoman-Gazetteer/'
+                       'master/data/archived-versions/ottgaz-data-9.tsv',
+                'name': 'ottgaz-data-9.tsv',
+                'file_type': 'tsv',
+            }
+        ],
+    },
 ]

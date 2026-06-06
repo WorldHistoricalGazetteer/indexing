@@ -80,6 +80,14 @@
           "has_geom": {
             "type": "boolean"
           },
+          "source": {
+            "type": "keyword",
+            "_comment": "Namespace the geometry was sourced/derived from: the record's own namespace when inherent in the source (e.g. 'og'); 'ofs' for a hull WHG computed from another namespace's component points; 'wd' for a geometry pulled from a linked Wikidata record. Absent on legacy docs = source-inherent."
+          },
+          "approximation": {
+            "type": "keyword",
+            "_comment": "Nature of the geometry vs the true extent: 'exact' (or absent) for a faithful source geometry; 'convex_hull' | 'concave_hull' | 'bbox' | 'centroid' for a WHG-computed approximation."
+          },
           "repr_point": {
             "type": "geo_point"
           },
