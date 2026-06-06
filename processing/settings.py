@@ -731,10 +731,12 @@ AUTHORITIES = [
         # Antonio de Alcedo, Diccionario geográfico-histórico de las Indias
         # Occidentales ó América (1786-89); TEI digital edition by Werner Stangl
         # under ANR TopUrbi (PI Jean-Paul Zúñiga; technical lead Carmen Brando,
-        # EHESS); LP-TSV export by Karl Grossner. Point geometries only (geowkt
-        # deferred). CC-BY-NC 4.0; ANR mandates record-level attribution of the
-        # project code (carried in citation_text). Linked to HGIS de las Indias
-        # (in WHG as lugares/territorios) + GeoNames/TGN via the links column.
+        # EHESS). Point geometries only. CC-BY-NC 4.0; ANR mandates record-level
+        # attribution of the project code (carried in citation_text). Linked to
+        # HGIS de las Indias (in WHG as lugares/territorios) via gazetteermatch.
+        # We ingest Werner's pristine structured export (pipe-delimited) from the
+        # OFFICIAL gitlab repo — NOT Karl Grossner's derived LP-TSV, which dropped
+        # the per-row AAT + confidence columns. See authorities/alcedo-places.py.
         'citation_text': "Antonio de Alcedo, Diccionario geográfico-histórico de las "
                          "Indias Occidentales ó América (1786-1789); digital edition by "
                          "Werner Stangl. ANR TopUrbi — Topographie de l'urbanisation "
@@ -746,12 +748,14 @@ AUTHORITIES = [
         'contributors': [],
         'files': [
             {
-                # Karl Grossner's LP-TSV export (17,467 rows). The sibling
-                # alcedo_sample_500.tsv is a 500-row sample for quick tests.
-                'url': 'https://raw.githubusercontent.com/kgeographer/topurbi/'
-                       'main/whg/data/alcedo_lptsv.tsv',
-                'name': 'alcedo_lptsv.tsv',
-                'file_type': 'tsv',
+                # Werner's pristine structured export (pipe-delimited, ~19.3k rows)
+                # from the official TopUrbi gitlab. The mapper parses '|' and keeps
+                # only entrytype=='Toponym' (drops Referral/Correction/Term).
+                'url': 'https://gitlab.huma-num.fr/plateforme-geomatique-et-hn/'
+                       'topurbi-project/-/raw/main/UpdateDataWorkflow/csv/'
+                       'Alcedo_structured.csv',
+                'name': 'Alcedo_structured.csv',
+                'file_type': 'csv',
             }
         ],
     },
