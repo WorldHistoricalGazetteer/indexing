@@ -235,9 +235,6 @@
       },
       "indexed_at": {
         "type": "date"
-      },
-      "flags": {
-        "type": "keyword"
       }
     }
   }

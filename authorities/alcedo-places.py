@@ -134,13 +134,48 @@ _DROP_GEOM = {"unlocated", "unspecified", ""}
 # Correction errata (line/folio refs, "should say…") vs real place-additions.
 _ERRATA_RE = re.compile(
     r"\b(l[ií]nea|l[ií]n\.|fol\.|col\.|dice|ha de decir|l[ée]ase|p[áa]g\.|debe decir)\b", re.I)
-# AAT status concepts (verified in aat_hierarchy.json) used to record entry nature.
-_AAT_LEGENDARY = 300412112   # 'legendary places' — for fantastical/imaginary entries
-_AAT_ETHNIC = 300191997      # 'ethnic groups'   — for Term/Social peoples
+# AAT concepts used to record entry nature AS types (no separate flags field —
+# status is expressed via AAT, temporality, or dropped per design).
+_AAT_LEGENDARY = 300412112   # 'legendary places'             — fantastical/imaginary
+_AAT_ETHNIC = 300191997      # 'ethnic groups'                — Term/Social peoples
+_AAT_DOUBTFUL = 300435722    # 'possibly' (certainty qualifier) — doubtful/uncertain id
+#   NB AAT has no "doubtful place" *type*; 'possibly' is its closest uncertainty
+#   indicator. 'historical' is left to temporality (not a type); 'fictional' →
+#   _AAT_LEGENDARY; Alcedo-specific provenance (from_correction) is not recorded.
+
+_VEASE_RE = re.compile(r"v[ée]ase", re.I)
 
 
 def _is_true(row, key):
     return (row.get(key) or "").strip().lower() == "true"
+
+
+def build_alias_map(csv_path):
+    """{target_title_lower: [alias toponym names]} from PURE-ALIAS Referrals
+    ('NAME, Véase X' → add NAME as an alternate toponym to place X). Distinct
+    homonym referrals ('…otro… Véase Y' — a different place described elsewhere)
+    are dropped: they add nothing new (the place is Y, already indexed)."""
+    amap = {}
+    for row in _row_iter(csv_path):
+        if _v(row, "entrytype") != "Referral":
+            continue
+        content, nm = _v(row, "content"), _v(row, "Normname")
+        if not content or not nm or not _VEASE_RE.search(content):
+            continue
+        # An alias has little descriptive text before 'Véase'; a homonym has a
+        # full clause ("Tiene el mismo nombre otro …") → drop the latter.
+        body = re.sub(r"^\s*" + re.escape(nm) + r"\s*,?\s*", "", content, flags=re.I)
+        if len(_VEASE_RE.split(body)[0].strip(" ,.")) >= 25:
+            continue
+        m = re.search(r"v[ée]ase\s+(?:el\s+art[ií]culo\s+)?(.+?)[\.\s]*$", content, flags=re.I)
+        if not m:
+            continue
+        target = m.group(1).strip(" .,").lower()
+        if target and target != nm.lower():
+            amap.setdefault(target, [])
+            if nm not in amap[target]:
+                amap[target].append(nm)
+    return amap
 
 
 def _clean(val):
@@ -261,53 +296,42 @@ def _gm_key(gm):
     return None
 
 
-def process_row(row, admin_index, hgis_idx):
+def process_row(row, admin_index, hgis_idx, alias_map):
     """Map one Alcedo_structured.csv row (dict) to a place doc, or None.
 
     ``admin_index`` resolves Province/District/Partido → real indexed alc admin
     place_ids. ``hgis_idx`` = (hgis_src_ids, hgis_lugar_points) from the staged
     `hgis` authority — resolves gazetteermatch → real hgis: links AND upgrades/fills
-    weak/missing alc geometry from the matched hgis lugar's precise point. This is
-    the self-triggering HGIS interlink (no separate pipeline step; reproducible on
-    re-extract once hgis is staged).
+    weak/missing alc geometry from the matched hgis lugar's precise point (the
+    self-triggering HGIS interlink). ``alias_map`` (build_alias_map) folds Referral
+    alternate names into the place they refer to.
     """
     entry_id = _v(row, "entry_id")
     title = _v(row, "Normname") or _v(row, "lemma")
     if not entry_id or not title:
         return None
-    # Inclusion by entrytype — bring in as much as possible, flagging the nature
-    # (status recorded as AAT type + `flags`; see below):
-    #   Toponym                        -> place (incl. fictional/doubtful/historical)
-    #   Correction (NOT errata)        -> a real place added via an errata note
-    #                                     (~172; flag 'from_correction')
-    #   Term where featuretype=Social  -> a people / ethnic group (~43; flag
-    #                                     'people'; AAT 'ethnic groups')
-    #   Referral                       -> "Véase X" alternate-name variant (~403;
-    #                                     flag 'name_variant'; stub w/ the redirect
-    #                                     text as its description)
-    # SKIPPED: Term glossary (animals/plants/foods/diseases…) and Correction errata
-    # ("línea N dice X, ha de decir Y") — genuinely non-places.
+    # Inclusion by entrytype. Status is expressed via AAT types / temporality, NOT
+    # a flags field (no schema extension):
+    #   Toponym                        -> place (incl. fictional/doubtful via AAT)
+    #   Correction (NOT errata)        -> a real place added via an errata note (~149)
+    #   Term where featuretype=Social  -> a people / ethnic group (~43; AAT 'ethnic
+    #                                     groups')
+    #   Referral                       -> NOT a place. Pure aliases ('NAME, Véase X')
+    #                                     fold NAME into X's toponyms (build_alias_map,
+    #                                     applied below to the target); homonym
+    #                                     referrals are dropped (add nothing new).
+    # SKIPPED: Term glossary (animals/plants/foods/diseases…) and Correction errata.
     entrytype = _v(row, "entrytype")
     featuretype = _v(row, "featuretype")
-    flags = []
+    is_people = entrytype == "Term" and featuretype == "Social"
     if entrytype == "Toponym":
         pass
     elif entrytype == "Correction" and not _ERRATA_RE.search(_v(row, "content")):
-        flags.append("from_correction")
-    elif entrytype == "Term" and featuretype == "Social":
-        flags.append("people")
-    elif entrytype == "Referral":
-        flags.append("name_variant")
+        pass
+    elif is_people:
+        pass
     else:
         return None
-    # Veracity/quality status (recorded, not dropped): fictional (legendary/
-    # imaginary), doubtful (uncertain identification), historical (no longer extant).
-    if _is_true(row, "fantastical"):
-        flags.append("fictional")
-    if _is_true(row, "doubtful"):
-        flags.append("doubtful")
-    if _is_true(row, "historical"):
-        flags.append("historical")
 
     place_id = f"{NAMESPACE}:{entry_id}"
     timespans = [{"start": {"in": ALC_START}, "end": {"in": ALC_END}}]
@@ -331,9 +355,18 @@ def process_row(row, admin_index, hgis_idx):
     # printed headword (ALL-CAPS in the dictionary), so add it only when it is a
     # genuinely different name, not merely a casing/duplicate variant.
     toponyms = [{"toponym_id": f"{title}@{LANG}", "timespans": timespans}]
+    seen_top = {title.casefold()}
     lemma = _v(row, "lemma")
-    if lemma and lemma.casefold() != title.casefold():
+    if lemma and lemma.casefold() not in seen_top:
         toponyms.append({"toponym_id": f"{lemma}@{LANG}", "timespans": timespans})
+        seen_top.add(lemma.casefold())
+    # Fold pure-alias Referrals ('NAME, Véase X') into THIS place's toponyms when it
+    # is the referral target X (build_alias_map keys by target title). The Referral
+    # rows themselves are dropped (not places); their names live here instead.
+    for alias in alias_map.get(title.lower(), ()):
+        if alias.casefold() not in seen_top:
+            toponyms.append({"toponym_id": f"{alias}@{LANG}", "timespans": timespans})
+            seen_top.add(alias.casefold())
 
     place_doc = {
         "place_id": place_id,
@@ -379,7 +412,7 @@ def process_row(row, admin_index, hgis_idx):
     # by processing.aat_enrich.
     types = []
     if featuretype:
-        if "people" in flags:
+        if is_people:
             aat_ids = [_AAT_ETHNIC]          # Term/Social → 'ethnic groups' (source AAT=0)
         else:
             aat_ids = []
@@ -391,12 +424,21 @@ def process_row(row, admin_index, hgis_idx):
         if aat_ids:
             t["aat_ids"] = aat_ids
         types.append(t)
-    # Record fictional/legendary status AS a type too (per direction: AAT type +
-    # flags). The place keeps its featuretype type; this adds the veracity concept.
-    if "fictional" in flags:
-        types.append({"identifier": "legendary-place", "label": "alcedo",
+    # Veracity / certainty recorded AS types (per design: no flags field — status is
+    # expressed via AAT). The place keeps its featuretype type; these ADD a veracity
+    # concept. Each carries a self-explaining `sourceLabel`, because the AAT concept
+    # is generic: 'legendary places' (300412112) reads cleanly for fictional, but
+    # 'possibly' (300435722) is a generic CERTAINTY qualifier, not a place-type, so
+    # the human label "doubtful (uncertain identification)" alongside the id is what
+    # actually conveys Alcedo's `doubtful` — the id just makes it machine-tractable.
+    if _is_true(row, "fantastical"):
+        types.append({"identifier": "legendary", "label": "alcedo",
                       "sourceLabel": "legendary / imaginary place",
                       "aat_ids": [_AAT_LEGENDARY]})
+    if _is_true(row, "doubtful"):
+        types.append({"identifier": "doubtful", "label": "alcedo",
+                      "sourceLabel": "doubtful (uncertain identification)",
+                      "aat_ids": [_AAT_DOUBTFUL]})
     if types:
         place_doc["types"] = types
 
@@ -447,12 +489,6 @@ def process_row(row, admin_index, hgis_idx):
     if relations:
         place_doc["relations"] = relations
 
-    # Veracity / category flags (fictional, doubtful, historical, from_correction,
-    # people, name_variant) — recorded so downstream can render "legendary place",
-    # "doubtful", etc. (fictional + people are ALSO carried as AAT types above).
-    if flags:
-        place_doc["flags"] = flags
-
     # ccodes deliberately UNSET — assigned spatially downstream (Nation is the
     # colonial power, not the modern country).
     return place_doc
@@ -481,6 +517,19 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
     # Load the staged hgis authority for the self-triggering interlink (links +
     # geometry upgrade). Depends on hgis being staged first (INGESTION_ORDER).
     hgis_idx = _load_hgis_index()
+    # Pre-scan Referrals → {target title: [alias names]} so pure-alias referrals
+    # fold into their target place's toponyms (the referral rows are then dropped).
+    alias_map = build_alias_map(csv_path)
+    n_alias = sum(len(v) for v in alias_map.values())
+    print(f"alias map: {n_alias:,} alias names → {len(alias_map):,} target places")
+
+    # write_staged_place_doc APPENDS, so truncate any prior extract first — a
+    # re-extract must reproduce the file exactly, not stack onto a stale copy.
+    if not dry:
+        out = Path(STAGED_BASE_DIR) / NAMESPACE / "extract" / "places.jsonl"
+        if out.exists():
+            out.unlink()
+            print(f"cleared stale extract: {out}")
 
     staged, skipped, errors = 0, 0, 0
     start = datetime.now()
@@ -490,7 +539,7 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
         if not dry and (i + 1) % 2000 == 0:
             print(f"\r  {i + 1} rows - staged: {staged}", end="", flush=True)
         try:
-            doc = process_row(row, admin_index, hgis_idx)
+            doc = process_row(row, admin_index, hgis_idx, alias_map)
             if not doc:
                 skipped += 1
                 continue
