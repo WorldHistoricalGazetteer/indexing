@@ -131,6 +131,17 @@ _APPROX = {
 }
 _DROP_GEOM = {"unlocated", "unspecified", ""}
 
+# Correction errata (line/folio refs, "should say…") vs real place-additions.
+_ERRATA_RE = re.compile(
+    r"\b(l[ií]nea|l[ií]n\.|fol\.|col\.|dice|ha de decir|l[ée]ase|p[áa]g\.|debe decir)\b", re.I)
+# AAT status concepts (verified in aat_hierarchy.json) used to record entry nature.
+_AAT_LEGENDARY = 300412112   # 'legendary places' — for fantastical/imaginary entries
+_AAT_ETHNIC = 300191997      # 'ethnic groups'   — for Term/Social peoples
+
+
+def _is_true(row, key):
+    return (row.get(key) or "").strip().lower() == "true"
+
 
 def _clean(val):
     """Treat pandas/CSV null sentinels as empty."""
@@ -264,19 +275,39 @@ def process_row(row, admin_index, hgis_idx):
     title = _v(row, "Normname") or _v(row, "lemma")
     if not entry_id or not title:
         return None
-    # Keep only actual PLACE entries. The exclusion is on entrytype, NOT on a
-    # missing featuretype/geometry — WHG allows untyped + geometryless places, and
-    # a handful of real Toponyms lack a featuretype. The other entrytypes are
-    # genuinely non-places:
-    #   Referral   — "Véase el artículo X" see-also pointers
-    #   Correction — editorial errata
-    #   Term       — the vol-5 americanismos glossary (animals/plants/foods/
-    #                diseases…); all AAT-less, with bogus representative coords.
-    # `fantastical` (legendary places, ~11) is deliberately KEPT — Alcedo
-    # documented them and they are valid historical-gazetteer content.
-    if _v(row, "entrytype") != "Toponym":
-        return None
+    # Inclusion by entrytype — bring in as much as possible, flagging the nature
+    # (status recorded as AAT type + `flags`; see below):
+    #   Toponym                        -> place (incl. fictional/doubtful/historical)
+    #   Correction (NOT errata)        -> a real place added via an errata note
+    #                                     (~172; flag 'from_correction')
+    #   Term where featuretype=Social  -> a people / ethnic group (~43; flag
+    #                                     'people'; AAT 'ethnic groups')
+    #   Referral                       -> "Véase X" alternate-name variant (~403;
+    #                                     flag 'name_variant'; stub w/ the redirect
+    #                                     text as its description)
+    # SKIPPED: Term glossary (animals/plants/foods/diseases…) and Correction errata
+    # ("línea N dice X, ha de decir Y") — genuinely non-places.
+    entrytype = _v(row, "entrytype")
     featuretype = _v(row, "featuretype")
+    flags = []
+    if entrytype == "Toponym":
+        pass
+    elif entrytype == "Correction" and not _ERRATA_RE.search(_v(row, "content")):
+        flags.append("from_correction")
+    elif entrytype == "Term" and featuretype == "Social":
+        flags.append("people")
+    elif entrytype == "Referral":
+        flags.append("name_variant")
+    else:
+        return None
+    # Veracity/quality status (recorded, not dropped): fictional (legendary/
+    # imaginary), doubtful (uncertain identification), historical (no longer extant).
+    if _is_true(row, "fantastical"):
+        flags.append("fictional")
+    if _is_true(row, "doubtful"):
+        flags.append("doubtful")
+    if _is_true(row, "historical"):
+        flags.append("historical")
 
     place_id = f"{NAMESPACE}:{entry_id}"
     timespans = [{"start": {"in": ALC_START}, "end": {"in": ALC_END}}]
@@ -346,16 +377,28 @@ def process_row(row, admin_index, hgis_idx):
     # Featuretype_AAT and the more specific featuretype_literal_AAT — WHG now
     # accepts ALL AAT concepts, not a supported subset); aat_paths are path-filled
     # by processing.aat_enrich.
+    types = []
     if featuretype:
-        aat_ids = []
-        for col in ("Featuretype_AAT", "featuretype_literal_AAT"):
-            a = _aat_id(row.get(col))
-            if a and a not in aat_ids:
-                aat_ids.append(a)
+        if "people" in flags:
+            aat_ids = [_AAT_ETHNIC]          # Term/Social → 'ethnic groups' (source AAT=0)
+        else:
+            aat_ids = []
+            for col in ("Featuretype_AAT", "featuretype_literal_AAT"):
+                a = _aat_id(row.get(col))
+                if a and a not in aat_ids:
+                    aat_ids.append(a)
         t = {"identifier": featuretype, "label": "alcedo", "sourceLabel": featuretype}
         if aat_ids:
             t["aat_ids"] = aat_ids
-        place_doc["types"] = [t]
+        types.append(t)
+    # Record fictional/legendary status AS a type too (per direction: AAT type +
+    # flags). The place keeps its featuretype type; this adds the veracity concept.
+    if "fictional" in flags:
+        types.append({"identifier": "legendary-place", "label": "alcedo",
+                      "sourceLabel": "legendary / imaginary place",
+                      "aat_ids": [_AAT_LEGENDARY]})
+    if types:
+        place_doc["types"] = types
 
     # --- descriptions (full Spanish entry text) --------------------------
     desc = _v(row, "content")
@@ -403,6 +446,12 @@ def process_row(row, admin_index, hgis_idx):
             })
     if relations:
         place_doc["relations"] = relations
+
+    # Veracity / category flags (fictional, doubtful, historical, from_correction,
+    # people, name_variant) — recorded so downstream can render "legendary place",
+    # "doubtful", etc. (fictional + people are ALSO carried as AAT types above).
+    if flags:
+        place_doc["flags"] = flags
 
     # ccodes deliberately UNSET — assigned spatially downstream (Nation is the
     # colonial power, not the modern country).

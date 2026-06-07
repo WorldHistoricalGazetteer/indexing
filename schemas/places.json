@@ -9,8 +9,12 @@
       "translog.durability": "async",
       "translog.sync_interval": "5s",
       "translog.flush_threshold_size": "2gb",
-      "sort.field": ["place_id"],
-      "sort.order": ["asc"]
+      "sort.field": [
+        "place_id"
+      ],
+      "sort.order": [
+        "asc"
+      ]
     }
   },
   "mappings": {
@@ -231,6 +235,9 @@
       },
       "indexed_at": {
         "type": "date"
+      },
+      "flags": {
+        "type": "keyword"
       }
     }
   }
