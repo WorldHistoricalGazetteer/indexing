@@ -91,7 +91,7 @@ from processing.helpers import (
     select_h3_cover_geometry,
     write_staged_place_doc,
 )
-from processing.settings import DATA_DIR, AUTHORITIES
+from processing.settings import DATA_DIR, AUTHORITIES, STAGED_BASE_DIR
 
 NAMESPACE = "alc"  # Alcedo / TopUrbi
 
