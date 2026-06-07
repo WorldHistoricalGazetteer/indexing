@@ -286,15 +286,17 @@ def process_row(row, admin_index):
         place_doc["descriptions"] = [{"value": desc, "lang": LANG}]
 
     # --- links: HGIS reconciliation + TEI source-page reference -----------
-    # gazetteermatch is the entry's match in HGIS de las Indias (already in WHG as
-    # lugares/territorios): NUMERIC ids are lugares (settlements/features),
-    # uppercase-alnum codes (e.g. JUPECUAB) are territorios (admin districts).
+    # gazetteermatch is the entry's match in HGIS de las Indias, now ingested as
+    # the WHG `hgis` authority (place_id = hgis:<src_id>): NUMERIC ids are lugares
+    # (settlements/features), uppercase-alnum codes (e.g. JUPECUAB) are territorios
+    # (admin districts). Emit hgis: closeMatch links (the legacy indias: aliases
+    # only resolved in WHG's deprecated indices).
     links = []
     gm = _v(row, "gazetteermatch")
     if gm and gm.replace(".", "").isdigit():
-        links.append({"type": LINK_TYPE, "identifier": f"indias:{int(float(gm))}"})
+        links.append({"type": LINK_TYPE, "identifier": f"hgis:{int(float(gm))}"})
     elif gm and re.fullmatch(r"[A-Z0-9]{4,}", gm):           # HGIS territorio code
-        links.append({"type": LINK_TYPE, "identifier": f"indias:{gm}"})
+        links.append({"type": LINK_TYPE, "identifier": f"hgis:{gm}"})
     # source-page reference into the TEI edition (by entry xml:id, per volume)
     tei = _tei_link(_v(row, "volume"), entry_id)
     if tei:
