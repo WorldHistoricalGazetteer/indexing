@@ -20,8 +20,14 @@ This lets WHG own the full transform and gain, for free:
   * content              — full Spanish entry text -> descriptions[].
   * conf_loc_verbal      — rich location confidence -> geometries[].approximation
                            (and drives dropping bogus unlocated coordinates).
-  * gazetteermatch       — numeric HGIS de las Indias ids -> indias: links
-                           (HGIS is already in WHG as lugares/territorios).
+  * gazetteermatch       — HGIS de las Indias ids -> hgis: closeMatch links
+                           (resolved against the staged `hgis` authority) AND a
+                           geometry UPGRADE: weak/missing alc placements are filled
+                           from the matched hgis lugar's precise point. This alc↔hgis
+                           interlink is SELF-TRIGGERING here (no separate pipeline
+                           step) and so DEPENDS ON `hgis` being staged first
+                           (INGESTION_ORDER places hgis before alc). See
+                           _load_hgis_index / [[hgis_authority]].
   * Province/District     — colonial admin parents -> named `within` relations.
 
 POINT geometries only. NB `Nation` is the COLONIAL power (Spain/Britain/France…),
@@ -189,11 +195,69 @@ def build_admin_index(csv_path):
     return {name: pid for name, (pri, pid) in best.items()}
 
 
-def process_row(row, admin_index):
+_HGIS_IDX = None  # cached (set_of_hgis_src_ids, {lugar_src_id: point_geom_fields})
+
+
+def _load_hgis_index():
+    """Load the staged `hgis` authority for the self-triggering alc→hgis interlink:
+    returns (all hgis src_ids, {lugar src_id → point geom fields}). Read once.
+
+    DEPENDENCY: `hgis` must be staged BEFORE `alc` (INGESTION_ORDER places hgis
+    first). If absent, links are emitted best-effort and no geometry upgrade runs.
+    """
+    global _HGIS_IDX
+    if _HGIS_IDX is not None:
+        return _HGIS_IDX
+    src_ids, points = set(), {}
+    base = Path(STAGED_BASE_DIR) / "hgis"
+    path = next((base / st / "places.jsonl" for st in ("h3_merged", "extract")
+                 if (base / st / "places.jsonl").exists()), None)
+    if path is None:
+        print("  WARNING: no staged `hgis` data found — gazetteermatch links emitted "
+              "best-effort, no geometry upgrade. Ingest `hgis` before `alc`.")
+        _HGIS_IDX = (src_ids, points)
+        return _HGIS_IDX
+    print(f"  loading hgis interlink index from {path} ...")
+    with path.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            d = json.loads(line)
+            pid = d.get("place_id") or ""
+            if not pid.startswith("hgis:"):
+                continue
+            sid = pid.split(":", 1)[1]
+            src_ids.add(sid)
+            g = (d.get("geometries") or [None])[0]
+            if g and not g.get("has_geom") and g.get("repr_point"):  # lugar (point)
+                points[sid] = {k: g[k] for k in
+                               ("repr_point", "bounds", "h3_centroid", "h3_cover") if g.get(k)}
+    print(f"  hgis interlink index: {len(src_ids):,} src_ids, {len(points):,} lugar points")
+    _HGIS_IDX = (src_ids, points)
+    return _HGIS_IDX
+
+
+def _gm_key(gm):
+    """gazetteermatch → hgis src_id key (numeric str | alnum territorio code) | None."""
+    if not gm:
+        return None
+    if gm.replace(".", "").isdigit():
+        return str(int(float(gm)))
+    if re.fullmatch(r"[A-Z0-9]{4,}", gm):
+        return gm
+    return None
+
+
+def process_row(row, admin_index, hgis_idx):
     """Map one Alcedo_structured.csv row (dict) to a place doc, or None.
 
-    ``admin_index`` (from build_admin_index) resolves the colonial Province/
-    District/Partido fields to the real indexed alc admin entry's place_id.
+    ``admin_index`` resolves Province/District/Partido → real indexed alc admin
+    place_ids. ``hgis_idx`` = (hgis_src_ids, hgis_lugar_points) from the staged
+    `hgis` authority — resolves gazetteermatch → real hgis: links AND upgrades/fills
+    weak/missing alc geometry from the matched hgis lugar's precise point. This is
+    the self-triggering HGIS interlink (no separate pipeline step; reproducible on
+    re-extract once hgis is staged).
     """
     entry_id = _v(row, "entry_id")
     title = _v(row, "Normname") or _v(row, "lemma")
@@ -215,6 +279,8 @@ def process_row(row, admin_index):
 
     place_id = f"{NAMESPACE}:{entry_id}"
     timespans = [{"start": {"in": ALC_START}, "end": {"in": ALC_END}}]
+    hgis_src_ids, hgis_points = hgis_idx
+    gmkey = _gm_key(_v(row, "gazetteermatch"))
 
     # --- geometry: points only; drop unlocated sentinels -----------------
     conf = _v(row, "conf_loc_verbal").lower()
@@ -244,21 +310,31 @@ def process_row(row, admin_index):
         "geometries": [],
     }
 
-    if geometry:
+    # HGIS interlink: if gazetteermatch resolves to an hgis lugar point AND alc's
+    # own placement is missing or weak (centroid/approximate province stand-in),
+    # use the hgis precise point (source='hgis', approximation='exact'); else use
+    # alc's own point. h3 is nested INSIDE the geometry (where the schema,
+    # ccode_enrichment, and gateway/spatial.py read it).
+    approx = _APPROX.get(conf, "approximate")
+    hgis_pt = hgis_points.get(gmkey) if gmkey else None
+    if hgis_pt and (geometry is None or approx in ("centroid", "approximate")):
+        ge = {"has_geom": False, "source": "hgis", "approximation": "exact",
+              "repr_point": hgis_pt["repr_point"], "timespans": timespans}
+        for k in ("bounds", "h3_centroid", "h3_cover"):
+            if hgis_pt.get(k):
+                ge[k] = hgis_pt[k]
+        place_doc["geometries"] = [ge]
+    elif geometry:
         geom_entry = enrich_geometry(geometry, timespans=timespans)
         if geom_entry:
             geom_entry["source"] = NAMESPACE
-            geom_entry["approximation"] = _APPROX.get(conf, "approximate")
+            geom_entry["approximation"] = approx
             place_doc["geometries"] = [geom_entry]
             rp = geom_entry.get("repr_point")
             if rp:
                 h3_geom = select_h3_cover_geometry(geom_entry, geometry)
                 h3c, h3cover = compute_h3_fields(rp["lon"], rp["lat"], h3_geom)
                 if h3c:
-                    # Nest h3 INSIDE the geometry (NOT top-level): that is where
-                    # the schema, ccode_enrichment._extract_place_h3_cells, and
-                    # gateway/spatial.py read it. (Top-level placement was the
-                    # ofs/og bug that needed a post-index relocation.)
                     geom_entry["h3_centroid"] = h3c
                     geom_entry["h3_cover"] = h3cover
 
@@ -292,11 +368,11 @@ def process_row(row, admin_index):
     # (admin districts). Emit hgis: closeMatch links (the legacy indias: aliases
     # only resolved in WHG's deprecated indices).
     links = []
-    gm = _v(row, "gazetteermatch")
-    if gm and gm.replace(".", "").isdigit():
-        links.append({"type": LINK_TYPE, "identifier": f"hgis:{int(float(gm))}"})
-    elif gm and re.fullmatch(r"[A-Z0-9]{4,}", gm):           # HGIS territorio code
-        links.append({"type": LINK_TYPE, "identifier": f"hgis:{gm}"})
+    # hgis closeMatch — resolved against the staged hgis index: emit only when the
+    # target hgis place exists (if hgis wasn't staged, emit best-effort to resolve
+    # later). lugares (numeric) + territorios (alnum) both resolve.
+    if gmkey and (not hgis_src_ids or gmkey in hgis_src_ids):
+        links.append({"type": LINK_TYPE, "identifier": f"hgis:{gmkey}"})
     # source-page reference into the TEI edition (by entry xml:id, per volume)
     tei = _tei_link(_v(row, "volume"), entry_id)
     if tei:
@@ -352,6 +428,9 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
     # First pass: index the admin entries so within-relations resolve to real ids.
     admin_index = build_admin_index(csv_path)
     print(f"admin index: {len(admin_index):,} admin-unit names → alc place_ids")
+    # Load the staged hgis authority for the self-triggering interlink (links +
+    # geometry upgrade). Depends on hgis being staged first (INGESTION_ORDER).
+    hgis_idx = _load_hgis_index()
 
     staged, skipped, errors = 0, 0, 0
     start = datetime.now()
@@ -361,7 +440,7 @@ def stage_alcedo_file(csv_path, limit=None, dry=False):
         if not dry and (i + 1) % 2000 == 0:
             print(f"\r  {i + 1} rows - staged: {staged}", end="", flush=True)
         try:
-            doc = process_row(row, admin_index)
+            doc = process_row(row, admin_index, hgis_idx)
             if not doc:
                 skipped += 1
                 continue
