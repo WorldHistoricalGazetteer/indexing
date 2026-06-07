@@ -735,6 +735,10 @@ AUTHORITIES = [
         # is hgis-indias.net / Harvard Dataverse. CC-BY-SA 4.0 (verified 2026-06-07:
         # "All data within HGIS de las Indias ... CC Attribution-Share Alike 4.0").
         # Polygon-bearing → full geom-store/h3/ccode chain; see authorities/hgis-places.py.
+        'description': 'A historical-geographic information system of Bourbon Spanish '
+                       'America (1701-1808): administrative territorios (polygons) and '
+                       'lugares/settlements (points), richly cross-referenced to GeoNames, '
+                       'Wikidata, the Getty TGN, LoC and VIAF.',
         'citation_text': 'HGIS de las Indias: a historical-geographic information system of '
                          'Bourbon Spanish America (1701-1808). Werner Stangl, University of '
                          'Graz (FWF-funded). https://www.hgis-indias.net/',
@@ -766,6 +770,10 @@ AUTHORITIES = [
         # We ingest Werner's pristine structured export (pipe-delimited) from the
         # OFFICIAL gitlab repo — NOT Karl Grossner's derived LP-TSV, which dropped
         # the per-row AAT + confidence columns. See authorities/alcedo-places.py.
+        'description': "Antonio de Alcedo's Diccionario geográfico-histórico de las Indias "
+                       "Occidentales ó América (1786-89): ~18,600 settlements, regions, "
+                       "peoples and features across colonial Spanish America, with full "
+                       "Spanish entry texts and source-page links to the TEI edition.",
         'citation_text': "Antonio de Alcedo, Diccionario geográfico-histórico de las "
                          "Indias Occidentales ó América (1786-1789); digital edition by "
                          "Werner Stangl. ANR TopUrbi — Topographie de l'urbanisation "

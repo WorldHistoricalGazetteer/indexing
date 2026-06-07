@@ -153,19 +153,33 @@ def _authority_meta(namespace: str) -> dict[str, Any]:
         if auth.get("namespace") == namespace:
             return {
                 "name": auth.get("dataset_name") or namespace.upper(),
-                "description": auth.get("citation"),
+                # description = a prose blurb if provided, else the legacy citation
+                # blob (back-compat). The structured citation is `citation_text`.
+                "description": auth.get("description") or auth.get("citation"),
                 "citation_text": auth.get("citation_text"),
                 "license_spdx": auth.get("license_spdx"),
                 "license_url": auth.get("license_url"),
                 "rights_holder": auth.get("rights_holder"),
                 "source_url": auth.get("source_url"),
+                "image": auth.get("image"),
                 "contributors": auth.get("contributors") or [],
             }
     return {"name": namespace.upper(), "description": None}
 
 
+def _last_modified(namespace: str) -> str | None:
+    """Best-effort last-modified (ISO date) for the gazetteer = the mtime of the
+    namespace's temporal_extent aggregate, written when it was last ingested."""
+    p = _temporal_extent_path(namespace)
+    try:
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc).date().isoformat()
+    except (OSError, ValueError):
+        return None
+
+
 def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
-    """Return only the attribution keys that are actually set.
+    """Return only the attribution + standardized-rendering keys that are set.
 
     The WHG endpoint leaves omitted fields untouched (it never clobbers an
     existing registry value with a null), so we must NOT send empty keys —
@@ -174,7 +188,7 @@ def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     for k in ("citation_text", "license_spdx", "license_url",
-              "rights_holder", "source_url"):
+              "rights_holder", "source_url", "image"):
         if meta.get(k):
             out[k] = meta[k]
     if meta.get("contributors"):
@@ -333,6 +347,9 @@ def build_inventory_payload(
             "temporal_extent": [start, end],
         }
         entry.update(_attribution_fields(meta))
+        lm = _last_modified(ns)
+        if lm:
+            entry["last_modified"] = lm
         entries.append(entry)
     return entries
 
@@ -372,6 +389,9 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         "temporal_extent": list(_read_temporal_extent(namespace)),
     }
     entry.update(_attribution_fields(meta))
+    lm = _last_modified(namespace)
+    if lm:
+        entry["last_modified"] = lm
     return entry
 
 
