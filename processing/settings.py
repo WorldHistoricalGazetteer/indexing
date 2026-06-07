@@ -724,6 +724,35 @@ AUTHORITIES = [
             }
         ],
     },
+    {  # HGIS de las Indias — Bourbon Spanish America 1701-1808 (lugares + territorios)
+        'dataset_name': 'HGIS de las Indias',
+        'namespace': 'hgis',
+        'api_item': '',
+        # Werner Stangl, HGIS de las Indias (University of Graz, FWF-funded
+        # 2015-2017): lugares (settlements, points) + territorios (administrative,
+        # polygons), combined into ONE authority. Imported from WHG LPF exports,
+        # which are transient and NOT referenced in attribution — canonical source
+        # is hgis-indias.net / Harvard Dataverse. CC-BY-SA 4.0 (verified 2026-06-07:
+        # "All data within HGIS de las Indias ... CC Attribution-Share Alike 4.0").
+        # Polygon-bearing → full geom-store/h3/ccode chain; see authorities/hgis-places.py.
+        'citation_text': 'HGIS de las Indias: a historical-geographic information system of '
+                         'Bourbon Spanish America (1701-1808). Werner Stangl, University of '
+                         'Graz (FWF-funded). https://www.hgis-indias.net/',
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Werner Stangl (HGIS de las Indias) / University of Graz',
+        'source_url': 'https://www.hgis-indias.net/',
+        'contributors': [
+            {'name': 'Werner Stangl', 'role': 'Data curation'},
+        ],
+        'files': [
+            # Local LPF imports (lugares + territorios). Large; not committed —
+            # place under DATA_DIR/authorities/hgis/. No fetch URL (the upstream
+            # WHG export is transient; re-import from hgis-indias.net / Dataverse).
+            {'url': '', 'name': 'whg_dataset_14.lpf', 'file_type': 'lpf'},
+            {'url': '', 'name': 'whg_dataset_15.lpf', 'file_type': 'lpf'},
+        ],
+    },
     {  # ~17.5K places from Alcedo's 1786-89 Diccionario (ANR TopUrbi digitisation)
         'dataset_name': 'Alcedo',
         'namespace': 'alc',

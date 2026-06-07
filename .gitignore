@@ -19,3 +19,7 @@ authorities/periodo_gazetteers_cache/
 # DGSD source DB (downloaded/built by authorities/dgsd.places)
 authorities/dgsd/*.db
 
+
+# LPF data artifacts (large; generated/staged for ingestion, not source)
+*.lpf
+authorities/hgis/*.lpf
