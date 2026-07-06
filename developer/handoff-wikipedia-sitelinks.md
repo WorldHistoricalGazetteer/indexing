@@ -53,12 +53,35 @@ if wiki_links:
 - **Dedup:** if you also add authority `links` later, dedupe by `identifier`.
 - **Keep it cheap:** this is in the hot per-entity loop over the whole dump — the code above is O(sitelinks) and allocation-light; avoid regex.
 
+## Status: DONE (index side) — landed via update patch, not a full rebuild
+- **Extraction** implemented in `create_place_doc_fast` (see `authorities/wikidata-places.py`):
+  reads `entity['sitelinks']`, emits `{type:"seeAlso", identifier:<url>}` into `doc['links']`,
+  capped by the `WIKIPEDIA_SITELINK_LANGS` allow-list.
+- **Patch route** (avoids a full wd rebuild + toponym/cluster re-run):
+  - `processing/wikidata_links_patch.py` — streams the dump once, **reuses `create_place_doc_fast`**
+    so the emitted `place_id`s/`links` are byte-identical to a rebuild (patch set ⊆ live index),
+    and writes `{place_id, links}` JSONL.
+  - `processing/apply_links_patch.py` — Painless scripted update that **merges** the links into
+    each live doc, deduped by `identifier` (idempotent; preserves any pre-existing links). Dry-run
+    by default; run ON pitt against `localhost:9201`.
+
+  Run on CRC/pitt (the dump lives on `/ix1`, prod ES on pitt):
+  ```bash
+  # 1. generate the patch (streams ${DATA_DIR}/wikidata/latest-all/latest-all.json.gz)
+  python -m processing.wikidata_links_patch \
+      --out /vast/ishi/staged/wd/update_patch/places.links.jsonl
+  # 2. apply to the live places index (dry-run first, then --execute)
+  python -m processing.apply_links_patch --es-host http://localhost:9201 \
+      --patch /vast/ishi/staged/wd/update_patch/places.links.jsonl --throttle 0.2
+  python -m processing.apply_links_patch --es-host http://localhost:9201 \
+      --patch /vast/ishi/staged/wd/update_patch/places.links.jsonl --throttle 0.2 --execute
+  ```
+
 ## Verification
-1. Stage a slice and inspect: run the wd staging over a small sample (or grep the dump for a known QID —
-   **Q84 = London**, **Q90 = Paris**) and confirm `places.jsonl` records now carry
+1. Stage a slice and inspect: `wikidata_links_patch.py --limit 50 --out /tmp/sample.jsonl`
+   (or grep the dump for **Q84 = London**, **Q90 = Paris**) and confirm rows carry
    `links: [{type:"seeAlso", identifier:"https://en.wikipedia.org/wiki/London"}, …]`.
-2. Reindex (or apply as an update patch if a full wd rebuild is too costly — see
-   `processing/apply_update_patch.py`; `links` would need to be an allowed patch field).
+2. Apply the patch (step 2 above) — dry-run reports the row count and a sample before `--execute`.
 3. Query the live index / gateway for a wd place and confirm the `links` come back.
 
 ## Companion change (separate task, `website` repo — for whoever picks this up next)
