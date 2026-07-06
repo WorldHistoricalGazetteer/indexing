@@ -120,6 +120,13 @@ class ReconcileRequest(BaseModel):
                     "The 'clusters' field in the response will be populated "
                     "with grouped results alongside the flat 'hits' list.",
     )
+    query_vector: Optional[list[int]] = Field(
+        None,
+        description="Client-computed int8 (128-d) Symphonym embedding for the query. "
+                    "When supplied with mode='phonetic'/'fuzzy', the gateway uses it "
+                    "directly for KNN and skips the server-side embed (offloads that "
+                    "cost; also lets the client language-condition the embedding).",
+    )
 
 
 class CandidateName(BaseModel):
@@ -297,7 +304,7 @@ async def reconcile_search(req: ReconcileRequest):
 
         if not pure_spatial:
             if req.mode in ("fuzzy", "phonetic"):
-                knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7)
+                knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7, query_vector=req.query_vector)
                 if knn_body:
                     knn_resp = await client.post(
                         f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",

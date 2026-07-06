@@ -147,17 +147,20 @@ def build_phonetic_knn(
     lang: str = "und",
     k: int = 200,
     similarity: float = 0.7,
+    query_vector: list[int] | None = None,
 ) -> dict | None:
     """
     Build a KNN query body using Symphonym.
 
-    Returns None if Symphonym is unavailable.
+    When ``query_vector`` is supplied (a client-computed int8 embedding) the
+    server-side embed is skipped. Returns None if Symphonym is unavailable.
     """
     try:
         from . import symphonym
         body = symphonym.build_knn_query(
             name=query, lang=lang, k=k,
             num_candidates=max(k * 2, 400),
+            query_vector=query_vector,
         )
         body["knn"]["similarity"] = similarity
         body["_source"] = ["name", "lang", "attestations"]

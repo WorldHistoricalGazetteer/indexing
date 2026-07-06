@@ -167,6 +167,7 @@ def build_knn_query(
     num_candidates: int = 100,
     index: str = "toponyms",
     extra_filter: Optional[dict] = None,
+    query_vector: Optional[list[int]] = None,
 ) -> dict:
     """
     Build an ES KNN search body for phonetic similarity.
@@ -186,8 +187,11 @@ def build_knn_query(
     Returns:
         Dict with "knn" and optionally other ES search body keys.
     """
-    emb = embed(name, lang=lang)
-    query_vector = quantize_to_byte(emb)
+    # A caller-supplied vector (already int8-quantised, e.g. from the browser Symphonym model)
+    # lets us skip the server-side embed — the client offloads that cost. Fall back to embedding
+    # the query text here when none is provided.
+    if query_vector is None:
+        query_vector = quantize_to_byte(embed(name, lang=lang))
 
     knn = {
         "field": "embedding",
