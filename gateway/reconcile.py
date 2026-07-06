@@ -150,6 +150,7 @@ class CandidateHit(BaseModel):
     score: float = 0
     namespace: str = ""
     geometries: list[CandidateGeometry] = []
+    links: list[dict] = []  # authority / Wikipedia links from the place _source (e.g. Wikidata sitelinks)
 
 
 class ClusterGroup(BaseModel):
@@ -219,6 +220,7 @@ def _format_candidate(
         score=score,
         namespace=src.get("namespace", ""),
         geometries=geometries,
+        links=src.get("links") or [],
     )
 
 

@@ -376,7 +376,7 @@ def build_places_filter(
             if f not in geom_fields:
                 geom_fields.append(f)
     source_fields = [
-        "place_id", "namespace", "title", "ccodes",
+        "place_id", "namespace", "title", "ccodes", "links",
         *geom_fields,
     ]
     if extra_source:
