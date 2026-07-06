@@ -10,10 +10,20 @@ naive parser.
 import gzip
 import sys
 import os
+from urllib.parse import quote
 
 import orjson  # Much faster than json
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE
+
+# Wikipedia sitelink allow-list. A well-known place can carry 100–300 sitelinks;
+# storing every URL bloats the index, so we keep only these language wikis.
+# Tune this set to taste (kept broad enough to cover the WHG UI languages plus
+# the largest Wikipedias). `enwiki` is effectively always desired.
+WIKIPEDIA_SITELINK_LANGS = frozenset({
+    'en', 'fr', 'de', 'es', 'it', 'pt', 'nl', 'ru', 'pl', 'sv',
+    'zh', 'ja', 'ar', 'fa', 'tr', 'uk', 'he', 'el', 'cs', 'ca',
+})
 
 # Pre-compile byte patterns for fast scanning
 SKIP_BYTES = {b'[', b']', b''}
@@ -344,6 +354,25 @@ def create_place_doc_fast(entity, entity_bytes):
             'related_place_id': f"gn:{gn_id}",
             'label': 'GeoNames'
         }]
+
+    # Wikipedia links from Wikidata sitelinks. `seeAlso` is the LPF/SKOS-neutral
+    # choice for an article URL (NOT closeMatch/exactMatch — those are reserved
+    # for authority co-references). O(sitelinks), allocation-light: this runs in
+    # the hot per-entity loop over the whole dump.
+    wiki_links = []
+    for site, sl in (entity.get('sitelinks') or {}).items():
+        if not site.endswith('wiki'):  # skip wikiquote/wikivoyage/commons/etc.
+            continue
+        lang = site[:-4]  # 'enwiki' -> 'en'
+        if lang not in WIKIPEDIA_SITELINK_LANGS:
+            continue
+        title = sl.get('title')
+        if not title:
+            continue
+        url = f"https://{lang}.wikipedia.org/wiki/" + quote(title.replace(' ', '_'))
+        wiki_links.append({'type': 'seeAlso', 'identifier': url})
+    if wiki_links:
+        doc['links'] = wiki_links
 
     return doc, geoshape_ref
 
