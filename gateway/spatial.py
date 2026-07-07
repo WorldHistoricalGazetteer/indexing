@@ -302,17 +302,34 @@ def region_from_geojson(bounds: dict) -> Optional[ResolvedRegion]:
     return region
 
 
-async def resolve_region(place_ids: list[str], client, auth) -> ResolvedRegion:
+def _strip_place_prefix(pid: str) -> str:
+    """Normalise a ``contained_in`` id: strip a leading ``place:`` so a client
+    passing the canonical candidate id form (``place:ukhc:CMB``) resolves to the
+    bare namespaced id (``ukhc:CMB``) rather than silently hitting no-resolve."""
+    if isinstance(pid, str) and pid.startswith("place:"):
+        return pid[len("place:"):]
+    return pid
+
+
+async def resolve_region(place_ids: list[str], client, auth) -> Optional[ResolvedRegion]:
     """Resolve a region from place_ids using only ES ``_source``: the region's
     H3 cover (fuzzy) + bbox + the geom-store keys for lazy exact loading.
 
-    Raises ``RegionError`` when the places carry no usable coverage.
+    Only geometries that carry a usable **area** geometry (``has_geom = true`` —
+    polygon/multipolygon) contribute to the region. Ids that are point-only,
+    unresolvable, or malformed are silently **dropped** from the containment set.
+
+    Returns ``None`` when no id resolves to a usable area geometry — the caller
+    should then run the query **without spatial containment** (identical to
+    omitting ``contained_in``). Raises ``RegionError`` only for a gateway
+    misconfiguration (H3 unavailable).
     """
     if not _H3_AVAILABLE:
         raise RegionError("h3 unavailable in the gateway")
-    ids = sorted({p for p in (place_ids or []) if p})
+    ids = sorted({_strip_place_prefix(p) for p in (place_ids or []) if p})
+    ids = [i for i in ids if i]
     if not ids:
-        raise RegionError("contained_in is empty")
+        return None
     key = "ids:" + "|".join(ids)
     cached = _cache_get(key)
     if cached is not None:
@@ -337,7 +354,8 @@ async def resolve_region(place_ids: list[str], client, auth) -> ResolvedRegion:
     resp.raise_for_status()
     hits = resp.json().get("hits", {}).get("hits", [])
     if not hits:
-        raise RegionError(f"no places found for contained_in: {ids}")
+        # No id resolved to a place at all → no usable container → unconstrained.
+        return None
 
     all_cells: set[str] = set()
     bounds_list: list[list[float]] = []
@@ -347,6 +365,12 @@ async def resolve_region(place_ids: list[str], client, auth) -> ResolvedRegion:
         pid = src.get("place_id")
         for idx, g in enumerate(src.get("geometries", []) or []):
             if not isinstance(g, dict):
+                continue
+            # Only area geometries (a full polygon written to the geom-store)
+            # define a usable container. Point-only geometries (has_geom=false)
+            # carry an h3_cover of a single centroid cell, which would otherwise
+            # produce a degraded, container-independent filter — drop them.
+            if not g.get("has_geom"):
                 continue
             cover = g.get("h3_cover")
             if isinstance(cover, list):
@@ -361,7 +385,8 @@ async def resolve_region(place_ids: list[str], client, auth) -> ResolvedRegion:
 
     cover_by_res = _group_by_res(all_cells)
     if not cover_by_res:
-        raise RegionError(f"contained_in places have no h3 coverage: {ids}")
+        # Every resolved id was point-only / non-area → no usable container.
+        return None
 
     bbox = _bbox_geojson_from_bounds(bounds_list)
     if bbox is None:

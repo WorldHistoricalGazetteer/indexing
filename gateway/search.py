@@ -231,6 +231,9 @@ async def search(req: SearchRequest):
         region = None
         if req.contained_in:
             try:
+                # resolve_region returns None when no id yields a usable AREA
+                # geometry (point-only / unresolvable) — the query then runs
+                # unconstrained, exactly as if contained_in were omitted.
                 region = await spatial.resolve_region(req.contained_in, client, auth)
             except spatial.RegionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))

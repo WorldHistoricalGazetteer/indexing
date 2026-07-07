@@ -164,14 +164,17 @@ class TestResolveRegion(unittest.TestCase):
     def test_builds_from_source_h3_cover_and_caches(self):
         # Real postbarrier _source carries h3_cover/bounds/geometry_index — NOT
         # the full geom. resolve_region builds the region cover from h3_cover.
+        # Only area geometries (has_geom=True) define a usable container.
         cover = _cover_for(_square(0, 0, 3, 3))
         bounds = [0, 0, 3, 3]
         hits = [{"_source": {
             "place_id": "un:XX",
-            "geometries": [{"h3_cover": cover, "bounds": bounds, "geometry_index": 0}],
+            "geometries": [{"h3_cover": cover, "bounds": bounds,
+                            "geometry_index": 0, "has_geom": True}],
         }}]
         client = _StubClient(hits)
         region = asyncio.run(spatial.resolve_region(["un:XX"], client, None))
+        self.assertIsNotNone(region)
         self.assertTrue(region.has_cover)
         self.assertEqual(region.geom_keys, ("un:XX_0",))
         self.assertEqual(client.calls, 1)
@@ -183,16 +186,67 @@ class TestResolveRegion(unittest.TestCase):
         self.assertIs(region, region2)
         self.assertEqual(client.calls, 1)
 
-    def test_no_coverage_raises(self):
+    def test_point_only_container_returns_none(self):
+        # A point-only container (has_geom=False) has an h3_cover of a single
+        # centroid cell — it must be DROPPED, not used as a degraded region.
+        hits = [{"_source": {
+            "place_id": "wd:Q60576135",
+            "geometries": [{"h3_cover": [h3.latlng_to_cell(51.0, -1.3, 7)],
+                            "bounds": [-1.3, 51.0, -1.3, 51.0],
+                            "geometry_index": 0, "has_geom": False}],
+        }}]
+        client = _StubClient(hits)
+        region = asyncio.run(spatial.resolve_region(["wd:Q60576135"], client, None))
+        self.assertIsNone(region)
+
+    def test_polygon_plus_point_only_uses_only_polygon(self):
+        # One polygon container + one point-only container → region built from
+        # the polygon alone (same as passing the polygon id by itself).
+        cover = _cover_for(_square(0, 0, 3, 3))
+        hits = [
+            {"_source": {"place_id": "ukhc:CMB", "geometries": [
+                {"h3_cover": cover, "bounds": [0, 0, 3, 3],
+                 "geometry_index": 0, "has_geom": True}]}},
+            {"_source": {"place_id": "wd:Q60576135", "geometries": [
+                {"h3_cover": [h3.latlng_to_cell(51.0, -1.3, 7)],
+                 "bounds": [-1.3, 51.0, -1.3, 51.0],
+                 "geometry_index": 0, "has_geom": False}]}},
+        ]
+        client = _StubClient(hits)
+        region = asyncio.run(
+            spatial.resolve_region(["ukhc:CMB", "wd:Q60576135"], client, None))
+        self.assertIsNotNone(region)
+        self.assertEqual(region.geom_keys, ("ukhc:CMB_0",))
+
+    def test_no_coverage_returns_none(self):
+        # Resolved place with no geometries → no usable container → unconstrained.
         hits = [{"_source": {"place_id": "x:1", "geometries": []}}]
         client = _StubClient(hits)
-        with self.assertRaises(spatial.RegionError):
-            asyncio.run(spatial.resolve_region(["x:1"], client, None))
+        self.assertIsNone(asyncio.run(spatial.resolve_region(["x:1"], client, None)))
 
-    def test_unknown_ids_raise(self):
+    def test_unknown_ids_return_none(self):
+        # Nonexistent id resolves to nothing → unconstrained (no error).
         client = _StubClient([])
-        with self.assertRaises(spatial.RegionError):
-            asyncio.run(spatial.resolve_region(["nope:1"], client, None))
+        self.assertIsNone(asyncio.run(spatial.resolve_region(["nope:1"], client, None)))
+
+    def test_place_prefix_is_stripped(self):
+        # A client passing the canonical candidate id form (place:ukhc:CMB) must
+        # resolve to the bare namespaced id rather than hitting the no-resolve path.
+        cover = _cover_for(_square(0, 0, 3, 3))
+        captured = {}
+
+        class _CapturingClient(_StubClient):
+            async def post(self, url, json=None, auth=None, headers=None):
+                captured["ids"] = json["query"]["terms"]["place_id"]
+                return await super().post(url, json=json, auth=auth, headers=headers)
+
+        hits = [{"_source": {"place_id": "ukhc:CMB", "geometries": [
+            {"h3_cover": cover, "bounds": [0, 0, 3, 3],
+             "geometry_index": 0, "has_geom": True}]}}]
+        client = _CapturingClient(hits)
+        region = asyncio.run(spatial.resolve_region(["place:ukhc:CMB"], client, None))
+        self.assertIsNotNone(region)
+        self.assertEqual(captured["ids"], ["ukhc:CMB"])
 
 
 if __name__ == "__main__":
