@@ -42,6 +42,7 @@ from typesystem.aat_config import (
     AAT_NT_TERMS,
     AAT_SCOPE_NOTE_URI_PREFIX,
     AAT_TERM_URI_PREFIX,
+    AAT_TREE_PROMOTE_TO_ROOT,
     AAT_URI_PREFIX,
     GVP_BROADER_GENERIC,
     GVP_BROADER_PREFERRED,
@@ -50,6 +51,19 @@ from typesystem.aat_config import (
     SKOSXL_LITERAL_FORM,
     SKOSXL_PREF_LABEL,
 )
+
+# The genuine place-type roots. A concept is a place type iff it IS one of these, or descends from one
+# (any ancestor on its materialised path). The walk currently seeds only from the entry points, so every
+# visited node is already a place descendant; computing the flag (rather than blanket True) makes the
+# invariant explicit and stays correct if the seeding ever broadens to non-place branches. NB: a prod
+# `types` index that contains the generic AAT facets (Objects/Agents/…) was built by an older/different
+# ingestion — re-running THIS sync produces a place-only index; the facets then simply aren't present.
+_PLACE_ROOTS = set(AAT_ENTRY_POINTS) | set(AAT_TREE_PROMOTE_TO_ROOT)
+
+
+def is_place_type_for(ancestors, aat_id):
+    """True iff the concept is, or descends from, a place-type root (via its materialised path)."""
+    return aat_id in _PLACE_ROOTS or bool(_PLACE_ROOTS.intersection(ancestors))
 
 logger = logging.getLogger(__name__)
 
@@ -470,7 +484,7 @@ def walk_hierarchy(preferred_parent, children, parents_map, labels, notes,
             'path': path,
             'ancestors': ancestors,
             'depth': depth,
-            'is_place_type': True,
+            'is_place_type': is_place_type_for(ancestors, aat_id),
         }
 
         # Multilingual labels: {lang: label_string}
@@ -602,7 +616,7 @@ def crawl_api():
             'path': path,
             'ancestors': ancestors,
             'depth': depth,
-            'is_place_type': True,
+            'is_place_type': is_place_type_for(ancestors, aat_id),
         }
         if labels_ml:
             entry['labels'] = labels_ml
