@@ -185,8 +185,11 @@ def _extract_timespans(src: dict) -> list[dict]:
     seen: set[tuple] = set()
     spans: list[dict] = []
     for field in ("toponyms", "geometries", "relations"):
-        for obj in src.get(field, []):
-            for ts in obj.get("timespans", []):
+        # NB: use ``or []`` rather than a ``.get`` default — an ES record may
+        # carry the field explicitly set to ``null`` (e.g. ``geometries: null``
+        # on period records), in which case ``.get(field, [])`` returns None.
+        for obj in (src.get(field) or []):
+            for ts in (obj.get("timespans") or []):
                 begin = ts.get("start", {}).get("in")
                 end = ts.get("end", {}).get("in")
                 key = (begin, end)
@@ -287,18 +290,18 @@ def _extract_property(
 
         # --- Countries ---
         case "whg:countries_codes":
-            ccodes = src.get("ccodes", [])
+            ccodes = src.get("ccodes") or []
             return ccodes or None
 
         case "whg:countries_objects":
-            ccodes = src.get("ccodes", [])
+            ccodes = src.get("ccodes") or []
             return [
                 {"code": c, "label": _country_label(c)} for c in ccodes
             ] or None
 
         # --- Types ---
         case "whg:types_objects":
-            types = src.get("types", [])
+            types = src.get("types") or []
             return [
                 {
                     "identifier": t.get("identifier", ""),
@@ -310,11 +313,11 @@ def _extract_property(
 
         # --- Feature classes ---
         case "whg:classes_codes":
-            fclasses = src.get("fclasses", [])
+            fclasses = src.get("fclasses") or []
             return fclasses or None
 
         case "whg:classes_objects":
-            fclasses = src.get("fclasses", [])
+            fclasses = src.get("fclasses") or []
             return [
                 {
                     "code": fc,
@@ -462,8 +465,18 @@ async def extend(req: ExtendRequest):
         row: dict[str, list[dict]] = {}
         for prop_id in prop_ids:
             if src:
-                val = _extract_property(prop_id, src, names)
-                row[prop_id] = _wrap_value(val)
+                # Per-id, per-property resilience: a malformed value for one
+                # record must never blank the rest of the batch. Degrade the
+                # offending cell to empty and keep going.
+                try:
+                    val = _extract_property(prop_id, src, names)
+                    row[prop_id] = _wrap_value(val)
+                except Exception as e:
+                    logger.warning(
+                        "extend: property %s failed for %s (returning empty): %s",
+                        prop_id, raw_id, e,
+                    )
+                    row[prop_id] = []
             else:
                 # Record not found — return empty for all properties
                 row[prop_id] = []
