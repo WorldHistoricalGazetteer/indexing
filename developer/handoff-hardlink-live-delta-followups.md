@@ -46,15 +46,21 @@ wire prod submit args) — see "Remaining / deploy" at the end of this section.
 >    `test_sqlite_overlay.py` (runs the exact `_PRUNE_REMOTE_PY` snippet locally:
 >    cutoff boundary, NULL-keep, in-flight-keep). 37 passed.
 >
+> **Prod dry-run — ✅ done 2026-07-11** (CRC compute node → DO PG `whgv3beta`).
+> Legacy path confirmed live: 34,569 `place_link` + 3,206 `close_match` harvested,
+> correct `contributor:<uid>:legacy_v3_2` source_ids, canonical ordering. New
+> attestation query executes against the real `api_contributorattestation` schema
+> and returns **0 active rows** — expected: the live `/api/links` receiver only
+> landed 2026-07-11, so the table is still empty. `attestation_input` /
+> `attestation_converted` stay 0 until contributor links flow through the receiver;
+> the mapping is unit-tested for then. (NB `clustering/config.py` `PG_DB_NAME`
+> default `whgv2` is stale — the live DB is `whgv3beta`; prod works via `.env.local`
+> override, but the default is misleading. Separate cleanup.)
+>
 > **Remaining / deploy**
 > - Deploy `gateway/links.py` to Pitt + `gw restart` (as `gazetteer`) so the live-delta
 >   is (re)created group-writable — an already-existing `-rw-r--r--` file is upgraded on
 >   the next gateway write by `_ensure_group_writable`.
-> - **Prod dry-run** of the harvest to confirm the `api_contributorattestation`
->   column names / active-row counts:
->   `python -m clustering.harvest.contributor_replay --db-path /tmp/hl.sqlite --dry-run`
->   (couldn't introspect prod PG from the dev box — auto-mode blocks prod reads — but
->   the query columns are verified against the whg3 model source).
 > - The prod `submit_hardlinks_slurm` invocation must pass `--pitt-user/--pitt-host/--pitt-dir`
 >   (already required for shipping) so the prune runs; `--pitt-live-db` defaults to
 >   `{IX3_BASE}/hardlinks/hard_links_live.sqlite` (matches `gateway/links.py::LIVE_DB_PATH`).
