@@ -169,11 +169,33 @@ already-built features**, and (4) polish/ops/docs.
       patch onto place docs (`apply_links_patch` pattern). Add the schema field
       only if built.
 
-**Browser (whg3 — gated on §6 main↔atlas):**
+**Browser (whg3 — `staging` dev → `main` prod; see §6):**
 - [ ] `clustering.js` — the full scorer (all facets) + Union-Find + synthetic-edge
       passes + θ/weight sliders + cluster cards (Master Plan §3–4), with an
       embedding-source abstraction (payload-decode for Atlas, worker-inference for
       the Workbench).
+
+> **📌 FOR THE whg3 AGENT — the `edges[]` hard-link payload is now live on the
+> gateway (2026-07-11).** The `s.l` hard-link signal your scorer consumes is
+> **already shipped** by the CRC gateway; you do not need any indexing-side work to
+> start on it. To receive it:
+> - Send **`"include_hard_links": true`** in the `POST /api/search` **and/or**
+>   `POST /api/reconcile` body (default is `false`, so it's opt-in — nothing changes
+>   until you ask for it).
+> - The response gains an **`edges[]`** array; each element is
+>   `{"a": "<place_id>", "b": "<place_id>", "relation_type": "sameAs|exactMatch|closeMatch|distinct", "source": "<source_id>", "via_hard_link": true}`.
+>   `a < b` is canonically ordered. `source` is the assertion origin (e.g.
+>   `"wikidata"`, `"loc"`, `"contributor:<user_id>"`).
+> - Edges cover the **result set + a bounded 1-hop** outward expansion, so an edge's
+>   `b` (or `a`) may reference a place *not* in `hits[]` — treat a hard link to an
+>   off-result place as a real assertion (it can seed a synthetic edge / baseline
+>   component), or ignore it; your call.
+> - These are the **authoritative** co-reference edges (`via_hard_link`); feed them
+>   straight into Union-Find as forced merges (`sameAs`/`exactMatch`) or forced
+>   splits (`distinct` — see the open question below), distinct from the *inferred*
+>   `s.n`/`s.sp`/`s.t`/`s.ty` signals your scorer computes.
+> - Source of truth for the shape: `gateway/hard_link_expansion.py::HardLinkEdge`
+>   and `tests/test_hard_link_expansion.py` in this repo.
 
 **Cleanup:**
 - [ ] **Delete the stale `clusters` index** (`clusters_20260325`, dead `cluster_v1.0`
@@ -186,25 +208,30 @@ already-built features**, and (4) polish/ops/docs.
 
 Because **all** scoring + clustering is now client-side, the indexing side is pure
 *fuel* — none of it produces visible clustering on its own. The visible payoff is
-entirely in whg3's `clustering.js`, which is gated on the **§6 main↔atlas
-reconciliation**. So that decision is the true gate; the gateway/offline work above
-can proceed in parallel but only lights up once the browser side lands.
+entirely in whg3's `clustering.js`. The `atlas`-vs-`main` divergence that used to
+gate this is **resolved** (§6): whg3 now has a single active line — develop on
+**`staging`** (dev), push regularly to **`main`** (prod) — so the browser work is
+just ordinary whg3-side work with no cross-branch decision blocking it. The
+gateway/offline *fuel* below and the browser scorer can now proceed **in parallel**;
+the fuel lights up as `clustering.js` lands on `staging` and flows to `main`.
 
 **Recommended start order (indexing side — all unblocked, no §6 dependency):**
-1. ~~**Hard-link expansion + ship**~~ — ✅ **DONE 2026-07-11** (see item above);
-   gives `POST /api/links` a real-time reconcile effect. Remaining: Pitt deploy +
-   `gw restart`.
-2. **Per-hit payload assembly** + **AAT ancestors** + offline **calibration params**
+- ~~**Hard-link expansion + ship**~~ — ✅ **DONE + deployed to prod 2026-07-11** (see
+  item above); gives `POST /api/links` a real-time reconcile effect.
+1. **Per-hit payload assembly** + **AAT ancestors** + offline **calibration params**
    (`clustering_params` / `toponym_stoplist`) — additive; this is the fuel the
-   browser scorer will consume.
-3. **Additive param plumbing** — `include_embeddings`, `facet_weights`, `phase_2`,
+   browser scorer will consume. **← now the recommended next indexing-side pickup.**
+2. **Additive param plumbing** — `include_embeddings`, `facet_weights`, `phase_2`,
    `result_limit`.
 
 **Hold until the whg3 browser side is ready (⚠️ these break the live contract — land
-them WITH the §6 cutover, never ahead):** remove `group_by_cluster` /
-`cluster_threshold`, retire `build_cluster_lookup`, swap the prominence tiebreaker,
-delete the `clusters` index. The browser `clustering.js` itself is gated on §6 and
-is whg3-side work — not this repo.
+them WITH the whg3 side that stops sending/reading the retired fields, never
+ahead):** remove `group_by_cluster` / `cluster_threshold`, retire
+`build_cluster_lookup`, swap the prominence tiebreaker, delete the `clusters` index.
+The coordination is now a simple `staging`→`main` sequencing (§6), not a branch
+reconciliation: land the whg3 change on `staging`, then retire the server field in
+the same push window to `main`. The browser `clustering.js` itself is whg3-side work
+— not this repo.
 
 ### Open questions
 - **`distinct` semantics** — hard split (arch plan §6c) vs strong negative weight
@@ -322,46 +349,42 @@ The rebuild is done; three tail items remain (all "not blocking"):
       already sends it and the gateway ignores it until active.
 - [ ] **Prod re-push of citation/licence metadata** (`handoff-citation-metadata.md`).
       Done on dev; prod stores none of the new attribution fields because prod's
-      website code predates Phase-4. **Gated on the whg3 `atlas → main`
-      promotion** landing the Phase-4 code + `licensing/0003` migration; then
+      website code predates Phase-4. **Gated on the Phase-4 code + `licensing/0003`
+      migration reaching `main` (prod)** via the `staging`→`main` flow (§6); then
       re-run the identical inventory push incl. the `for ns in ofs og ukhc`
       single-namespace pushes. Four custom/ND licence keys resolve on dev only
       until prod parity.
 
 ---
 
-## 6. whg3 `main` vs `atlas` divergence (the website side)  ★ major, website-side
+## 6. whg3 branch model — `staging` (dev) → `main` (prod)  ★ resolved
 
-> **CORRECTED 2026-07-10.** Earlier this section said the `atlas` branch removes
-> the `workbench/` app. That misread the diff direction. The branches diverged at
-> merge-base **2026-05-04**; **`main` is the active line** and has since built the
-> **Collaborative Workbench (beta)** — 15+ commits through 2026-07-10 (Place
-> Collection editor, record/dataset check-out, publish-back, community
-> "Suggestions", in-editor geometry drawing). **`atlas` development is paused**
-> (tip 2026-06-22) and simply predates the Workbench — it does *not* delete a
-> feature main still has; main added it after atlas branched.
+> **RESOLVED 2026-07-11 (SG).** The old `main`-vs-`atlas` divergence is **closed**:
+> `atlas` is **abandoned** — no further development happens on it. whg3 now runs a
+> single active line with a conventional two-branch flow:
+>
+> - **`staging`** — the development branch (dev server). All new website work —
+>   the Atlas UI (folded in behind a **staff-only BETA gate**), the Collaborative
+>   Workbench, the citations/licensing overhaul, **and the `clustering.js` client-
+>   side scorer/clustering** — lands here first.
+> - **`main`** — the production branch. `staging` is pushed to `main` **regularly**
+>   as features stabilise; prod tracks `main`.
+>
+> The BETA gate lets the Atlas + clustering work ship to `main` incrementally
+> without public exposure, so there is no big-bang cutover to coordinate.
 
-Two divergent website lines exist and the relationship needs your call — this is
-**not** a clean "promote atlas → main":
-
-- **`main`** — active; the **Collaborative Workbench** authoring suite lives here
-  (`workbench/` + `api/` `ContributorAttestation`/`RecordSuggestion` models, CRC
-  gateway client `api/crc_client.py` → `/api/reconcile`,`/api/places`,`/api/extend`,
-  `/api/links`), plus the citations/licensing overhaul.
-- **`atlas`** — paused; the Atlas-map default UI + "Gazetteers" reframe + region/
-  type-tree/period/polity widgets + client-side dynamic-clustering scaffolding.
-
-**RESOLVED 2026-07-11 (SG, in progress on whg3):** `main` is the single line.
-The **Atlas UI is being folded into `main`** (which already carries the BETA
-Workbench), behind a **staff-only BETA gate** so it ships incrementally without
-public exposure while the client-side scoring/clustering is built. This collapses
-the divergence and gives `clustering.js` one home. Consequences for this plan:
-- §1's browser work (`clustering.js`) is no longer gated on a separate atlas
-  promotion — it targets `main` behind the BETA gate.
-- §5's citation re-push "gated on atlas→main" becomes "gated on the Phase-4 /
-  licensing code reaching prod on `main`" (same code, single line now).
-- SG will do the whg3 merge + BETA gate, then return here to reassess §1 next
-  steps against the unified line.
+Consequences for this plan (the earlier "atlas → main promotion" framing is gone):
+- **§1's browser work (`clustering.js`) is no longer gated on any branch
+  reconciliation.** It is ordinary whg3-side work on `staging`, flowing to `main`
+  behind the BETA gate. The gateway *fuel* (edges[], payload assembly, calibration)
+  and the browser scorer proceed **in parallel**. The gateway `edges[]` payload it
+  consumes is **already live on prod** (see §1's "📌 FOR THE whg3 AGENT" callout).
+- **§5's citation re-push** is gated simply on the Phase-4 / licensing code reaching
+  **`main`** (via `staging`) — same code, single line.
+- The contract-breaking gateway changes in §1 (remove `group_by_cluster` /
+  `cluster_threshold`, retire `build_cluster_lookup`) are now a straightforward
+  `staging`→`main` sequencing: land the whg3 change that stops sending/reading the
+  field on `staging`, then retire the server field in the same push window to `main`.
 
 ---
 
@@ -430,8 +453,9 @@ still served alongside only 7 new `whg-<id>` buckets.
 
 1. **Quick wins first:** confirm/restart gateway for `query_vector` (§5);
    docs refresh (§9).
-2. **Unblock the website release:** drive the whg3 `atlas → main` promotion (§6),
-   which then lets you do the citation prod re-push (§5).
+2. **Website release flow (§6):** whg3 develops on `staging` and pushes to `main`
+   (prod) regularly — no branch reconciliation to drive anymore. As the Phase-4 /
+   licensing code reaches `main`, do the citation prod re-push (§5).
 3. **Contributed gazetteers (§3):** decide the publication set, ingest, tile,
    register — this is self-contained and visibly grows the corpus.
 4. **AAT/type system (§2):** start with TGN→AAT (3M docs, biggest single win)
@@ -439,10 +463,11 @@ still served alongside only 7 new `whg-<id>` buckets.
 5. **Clustering re-architecture (§1):** the largest effort, but now pure *fuel*
    for the browser — nothing here shows clustering on its own. Gateway/offline in
    parallel: (a) offline calibration (`clustering_params` + `toponym_stoplist`) +
-   AAT ancestors; (b) gateway payload assembly + hard-link expansion + scope
-   filter + `/api/links` receiver; (c) drop the `clusters`-index join and delete
-   the stale index. The visible payoff — `clustering.js` (all scoring + Union-Find)
-   — lives in whg3 and is **gated on the §6 main↔atlas decision**.
+   AAT ancestors; (b) gateway payload assembly + scope filter (**hard-link
+   expansion + `/api/links` receiver ✅ DONE + deployed**); (c) drop the
+   `clusters`-index join and delete the stale index. The visible payoff —
+   `clustering.js` (all scoring + Union-Find) — lives in whg3 on `staging`→`main`
+   (the `edges[]` fuel it needs is already live on prod).
 6. **Rebuild tail (§4)** and **tile cleanup (§8)** as ongoing hygiene.
 
 ---
