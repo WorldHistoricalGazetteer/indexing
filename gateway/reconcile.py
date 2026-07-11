@@ -35,6 +35,7 @@ to merge with legacy results.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Optional
 
@@ -42,6 +43,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from . import spatial
+from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .config import (
     ES_BACKEND,
     CLUSTERS_INDEX,
@@ -127,6 +129,14 @@ class ReconcileRequest(BaseModel):
                     "directly for KNN and skips the server-side embed (offloads that "
                     "cost; also lets the client language-condition the embedding).",
     )
+    include_hard_links: bool = Field(
+        default=False,
+        description="When True, ship the co-reference hard-link edges "
+                    "(sameAs/exactMatch/closeMatch/distinct) touching the result "
+                    "set — the union of the batch overlay + live-delta, deduped. "
+                    "Fuel for the browser-side scorer/clustering; additive "
+                    "(empty when no overlay is present). Off by default.",
+    )
 
 
 class CandidateName(BaseModel):
@@ -164,6 +174,7 @@ class ClusterGroup(BaseModel):
 class ReconcileResponse(BaseModel):
     hits: list[CandidateHit] = []  # flat list (always populated)
     clusters: list[ClusterGroup] = []  # grouped view (populated when group_by_cluster=True)
+    edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     max_score: float = 0
     total: int = 0
 
@@ -456,9 +467,22 @@ async def reconcile_search(req: ReconcileRequest):
             auth,
         )
 
+    # ------------------------------------------------------------------
+    # Step 6 (optional): Hard-link expansion — ship co-reference edges
+    # ------------------------------------------------------------------
+
+    edges: list[HardLinkEdge] = []
+    if req.include_hard_links and candidates:
+        try:
+            edges = await asyncio.to_thread(
+                expand_hard_links, [c.place_id for c in candidates])
+        except Exception as e:  # best-effort enrichment — never fail the query
+            logger.warning("Hard-link expansion failed (non-fatal): %s", e)
+
     return ReconcileResponse(
         hits=candidates,
         clusters=cluster_groups,
+        edges=edges,
         max_score=candidates[0].score if candidates else 0,
         total=places_result.get("hits", {}).get("total", {}).get("value", len(candidates)),
     )

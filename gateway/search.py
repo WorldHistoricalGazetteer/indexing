@@ -13,6 +13,7 @@ aggregations for server-side type/country facets.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from typing import Optional
@@ -22,6 +23,7 @@ from fastapi import APIRouter, Query, HTTPException
 from pydantic import BaseModel, Field
 
 from . import spatial
+from .hard_link_expansion import HardLinkEdge, expand_hard_links
 from .config import (
     ES_BACKEND,
     PLACES_INDEX,
@@ -106,6 +108,14 @@ class SearchRequest(BaseModel):
             "plus repr_point; 'repr_point' returns centroids only (lighter)."
         ),
     )
+    include_hard_links: bool = Field(
+        default=False,
+        description="When True, ship the co-reference hard-link edges "
+                    "(sameAs/exactMatch/closeMatch/distinct) touching the result "
+                    "set — the union of the batch overlay + live-delta, deduped. "
+                    "Fuel for the browser-side scorer/clustering; additive "
+                    "(empty when no overlay is present). Off by default.",
+    )
 
 
 class SearchHit(BaseModel):
@@ -134,6 +144,7 @@ class SearchResponse(BaseModel):
     total: int = 0
     max_score: float = 0
     facets: Facets = Facets()
+    edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
 
 
 class SuggestItem(BaseModel):
@@ -521,10 +532,23 @@ async def search(req: SearchRequest):
     else:
         total = places_result.get("hits", {}).get("total", {}).get("value", len(results))
 
+    # ------------------------------------------------------------------
+    # Step 6 (optional): Hard-link expansion — ship co-reference edges
+    # ------------------------------------------------------------------
+
+    edges: list[HardLinkEdge] = []
+    if req.include_hard_links and results:
+        try:
+            edges = await asyncio.to_thread(
+                expand_hard_links, [r.place_id for r in results])
+        except Exception as e:  # best-effort enrichment — never fail the query
+            logger.warning("Hard-link expansion failed (non-fatal): %s", e)
+
     return SearchResponse(
         hits=results,
         total=total,
         max_score=results[0].score if results else 0,
         facets=facets,
+        edges=edges,
     )
 

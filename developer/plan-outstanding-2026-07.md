@@ -108,19 +108,22 @@ already-built features**, and (4) polish/ops/docs.
       `timespans`), `aat_ids` + `aat_ancestors` (from `types.aat_paths`),
       `query_match{name,score}`; optional per-toponym `phon_emb` gated on
       `include_embeddings`.
-- [ ] **Hard-link expansion + ship** ★ **recommended next indexing-side pickup**
-      *(unblocked; additive; safe to ship ahead of the browser)* — query the
-      **union of the batch overlay + the live-delta** (`hard_links_live.sqlite`) for
-      result-set assertions (+ bounded 1-hop) and emit them as edges
-      `{a,b,relation_type,source}` with `via_hard_link` provenance. Reading the
-      live-delta here is what gives a `POST /api/links` real-time reconcile effect —
-      this **is** "Ticket B" from `developer/handoff-hardlink-live-delta-followups.md`;
-      there is no reconcile-time hard-link expansion today, so Ticket B is a
-      requirement *on this item*, not a standalone task. The live-delta is now
-      **self-maintaining** (Ticket A, 2026-07-11), so the union read is bounded and
-      safe — the receiver + prune plumbing this depends on already exists. (Pending
-      contributor assertions are merged separately at Django from DO Postgres,
-      scope-filtered — Master Plan Part VII.)
+- [x] **Hard-link expansion + ship** — **IMPLEMENTED 2026-07-11**
+      (`gateway/hard_link_expansion.py` + `tests/test_hard_link_expansion.py`;
+      wired into `/api/search` + `/api/reconcile`). Queries the **union of the batch
+      overlay + the live-delta** (`hard_links_live.sqlite`), deduped by the overlay
+      UNIQUE key `(place_a,place_b,relation_type,source_id)`, for result-set
+      assertions **+ bounded 1-hop**, and emits them as `edges[]`
+      `{a,b,relation_type,source,via_hard_link}`. Opt-in per query via a new
+      `include_hard_links` flag (default `False` → zero behaviour change; additive,
+      safe ahead of the browser); both stores opened **read-only, best-effort**
+      (missing/mid-swap file skipped, never fatal). Reading the live-delta here is
+      what gives `POST /api/links` its real-time reconcile effect — this **was**
+      "Ticket B" from `developer/handoff-hardlink-live-delta-followups.md`. Live-delta
+      is self-maintaining (Ticket A, 2026-07-11). (Pending contributor assertions are
+      merged separately at Django from DO Postgres, scope-filtered — Master Plan
+      Part VII.) **Remaining:** deploy to Pitt + `gw restart`; the browser consumer
+      (whg3 `clustering.js`) that reads `edges[]` is still gated on §6.
 - [ ] **Discovery scope filter** — accept pending `dataset_id` scope tokens; filter
       `dataset_status:published OR dataset_id ∈ scope`; Django merges DO pending
       assertions (Master Plan Part VII).
@@ -138,9 +141,10 @@ already-built features**, and (4) polish/ops/docs.
       group-writable so the batch user can prune it. Live-verified against `whgv3beta`
       (table still empty until contributor links flow). The live-delta is now
       **self-maintaining / bounded**. `handoff-hardlink-live-delta-followups.md` is CLOSED.
-    - [ ] **Live reconcile-time union(batch, live-delta) lookup** — NOT a separate
-      task; it **is** the "Hard-link expansion + ship" item above. Tracked there.
-      See `developer/handoff-api-links-receiver.md`.
+    - [x] **Live reconcile-time union(batch, live-delta) lookup** — NOT a separate
+      task; it **was** the "Hard-link expansion + ship" item above, now **IMPLEMENTED
+      2026-07-11** (`gateway/hard_link_expansion.py`). See
+      `developer/handoff-api-links-receiver.md`.
 - [ ] **Params** — *(additive, safe now:)* add `include_embeddings`, `facet_weights`
       (pass-through), `phase_2`, `result_limit`. *(⚠️ contract-breaking — sequence
       WITH the whg3 cutover, not before:)* **remove** `group_by_cluster` **and**
@@ -187,9 +191,9 @@ reconciliation**. So that decision is the true gate; the gateway/offline work ab
 can proceed in parallel but only lights up once the browser side lands.
 
 **Recommended start order (indexing side — all unblocked, no §6 dependency):**
-1. **Hard-link expansion + ship** — additive; directly continues Ticket A (the
-   receiver + live-delta prune it needs already exist); gives `POST /api/links` a
-   real-time reconcile effect. Best first pickup.
+1. ~~**Hard-link expansion + ship**~~ — ✅ **DONE 2026-07-11** (see item above);
+   gives `POST /api/links` a real-time reconcile effect. Remaining: Pitt deploy +
+   `gw restart`.
 2. **Per-hit payload assembly** + **AAT ancestors** + offline **calibration params**
    (`clustering_params` / `toponym_stoplist`) — additive; this is the fuel the
    browser scorer will consume.
