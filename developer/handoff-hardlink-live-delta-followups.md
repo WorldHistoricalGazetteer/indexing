@@ -8,8 +8,9 @@ The receiver writes each live contributor hard-link (create/revoke forwarded by
 whg3 `crc_post_link`/`crc_delete_link`) into a **live-delta** SQLite at
 `{IX3_BASE}/hardlinks/hard_links_live.sqlite` (`/vast/ishi/hardlinks/…`) with the
 same schema as the batch overlay. It is deliberately a *second* file — the batch
-overlay is read-only + atomically swapped. Two follow-ups make it fully useful.
-They are independent and can ship in either order.
+overlay is read-only + atomically swapped. **Ticket A below is the one actionable
+follow-up here** (indexing-side, no clustering dependency). Ticket B turned out
+*not* to be standalone and has been **folded into plan §1** — see below.
 
 ---
 
@@ -52,28 +53,36 @@ present in both stores.
 
 ---
 
-## Ticket B — Live reconcile-time consumption (union batch overlay + live-delta)
+## Ticket B — REDUNDANT (folded into plan §1) — do NOT build separately
 
-**Problem.** Nothing at **reconcile time** reads `hard_link_assertions` yet — the
-batch clustering phase is the only consumer. So a live `/api/links` write gives
-durability + faster next-rebuild inclusion, **not** real-time reconcile effect.
+"Live reconcile-time consumption" (union of batch overlay + live-delta so a
+`POST /api/links` affects reconcile immediately) is **not a standalone task**: the
+gateway does **no** reconcile-time hard-link expansion today, so this is a
+*requirement on building that expansion*, which is the **"Hard-link expansion +
+ship"** item in `developer/plan-outstanding-2026-07.md` §1. That item now
+explicitly says to read the **union of the batch overlay + the live-delta** (dedup
+by the `(place_a, place_b, relation_type, source_id)` UNIQUE key), with pending
+assertions merged at Django from DO Postgres (Master Plan Part VII).
 
-**Do.** When the gateway performs hard-link expansion for a result set, read the
-**union of the batch overlay + the live-delta** (both opened read-only; `ATTACH`
-one to the other, or two queries merged in Python), deduplicated by the
-`(place_a, place_b, relation_type, source_id)` UNIQUE key. Pending contributor
-assertions (DO Postgres, scope-filtered) are merged separately at the Django side
-per Master Plan Part VII — this ticket is only the two Pitt-side SQLite files.
+So there is nothing to do under "Ticket B" here — it lands when §1's client-side
+clustering hard-link expansion is built, which is **gated on the whg3 main↔atlas
+consolidation** (the browser side that consumes the shipped edges).
 
-**Scope note.** This is part of the larger **"hard-link expansion + ship"** gateway
-item in the clustering re-architecture (`developer/plan-outstanding-2026-07.md`
-§1) — implement it *with* that work, not as a standalone bolt-on. It's what makes
-a `POST /api/links` visible in reconcile without waiting for a rebuild.
+---
 
-**Cross-refs.** `plan-outstanding-2026-07.md` §1 (Gateway → "Hard-link expansion +
-ship"), `plan-dynamicClustering.DEPRECATED.md` §2 (query-time expansion),
-`gateway/links.py`, `clustering/sqlite_overlay.py`.
+## After Ticket A — where the remaining hard-link work lives
 
-**Acceptance.** A hard link created via `POST /api/links` is reflected in the
-gateway's reconcile hard-link expansion without a re-clustering run; a `DELETE`
-removes it likewise.
+Once Ticket A ships, the receiver is fully self-maintaining: the live-delta stays
+bounded and fresh contributor links are folded into the batch overlay each build.
+The **storage side is then complete**. Everything left is *consumption*, and it
+lives in `developer/plan-outstanding-2026-07.md` §1 (the clustering
+re-architecture), **not here**:
+
+- gateway **hard-link expansion + ship** — reads union(batch overlay + live-delta),
+  emits edges to the browser (this subsumes old Ticket B);
+- `clustering.js` — browser-side scoring + Union-Find;
+- delete the stale `clusters` index.
+
+That work is gated on the whg3 **main↔atlas** consolidation. So the next action
+after Ticket A is **not to open a new hard-link ticket here** — it's to pick up
+§1 once that gate clears. This follow-up doc can be closed when Ticket A is done.
