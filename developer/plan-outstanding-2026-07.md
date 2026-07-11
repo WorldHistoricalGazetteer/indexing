@@ -108,9 +108,15 @@ already-built features**, and (4) polish/ops/docs.
       `timespans`), `aat_ids` + `aat_ancestors` (from `types.aat_paths`),
       `query_match{name,score}`; optional per-toponym `phon_emb` gated on
       `include_embeddings`.
-- [ ] **Hard-link expansion + ship** — query the overlay for result-set assertions
-      (+ bounded 1-hop) and emit them as edges `{a,b,relation_type,source}` with
-      `via_hard_link` provenance.
+- [ ] **Hard-link expansion + ship** — query the **union of the batch overlay + the
+      live-delta** (`hard_links_live.sqlite`) for result-set assertions (+ bounded
+      1-hop) and emit them as edges `{a,b,relation_type,source}` with `via_hard_link`
+      provenance. Reading the live-delta here is what gives a `POST /api/links`
+      real-time reconcile effect — this **is** "Ticket B" from
+      `developer/handoff-hardlink-live-delta-followups.md`; there is no reconcile-time
+      hard-link expansion today, so Ticket B is a requirement *on this item*, not a
+      standalone task. (Pending contributor assertions are merged separately at
+      Django from DO Postgres, scope-filtered — Master Plan Part VII.)
 - [ ] **Discovery scope filter** — accept pending `dataset_id` scope tokens; filter
       `dataset_status:published OR dataset_id ∈ scope`; Django merges DO pending
       assertions (Master Plan Part VII).
