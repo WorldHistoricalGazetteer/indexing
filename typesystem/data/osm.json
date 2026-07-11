@@ -11,7 +11,13 @@
         "count": 2087218,
         "fraction": 0.2248,
         "in_wiki": true,
-        "description": "A smaller rural community, typically with fewer than 100-200 inhabitants, and little infrastructure."
+        "description": "A smaller rural community, typically with fewer than 100-200 inhabitants, and little infrastructure.",
+        "aat_mapping": {
+          "aat_id": 300008584,
+          "aat_term": "hamlets",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "locality",
@@ -25,70 +31,130 @@
         "count": 1741399,
         "fraction": 0.1876,
         "in_wiki": true,
-        "description": "A smaller distinct settlement, smaller than a town with few facilities available with people traveling to nearby towns to access these."
+        "description": "A smaller distinct settlement, smaller than a town with few facilities available with people traveling to nearby towns to access these.",
+        "aat_mapping": {
+          "aat_id": 300008372,
+          "aat_term": "villages",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "isolated_dwelling",
         "count": 850936,
         "fraction": 0.0917,
         "in_wiki": true,
-        "description": "The smallest kind of settlement (1-2 households)."
+        "description": "The smallest kind of settlement (1-2 households).",
+        "aat_mapping": {
+          "aat_id": 300005929,
+          "aat_term": "dwellings",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "islet",
         "count": 701350,
         "fraction": 0.0755,
         "in_wiki": true,
-        "description": "A very small island (smaller than 1 km²)."
+        "description": "A very small island (smaller than 1 km²).",
+        "aat_mapping": {
+          "aat_id": 300008680,
+          "aat_term": "islands",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "neighbourhood",
         "count": 532050,
         "fraction": 0.0573,
         "in_wiki": true,
-        "description": "A neighbourhood is a smaller named, geographically localised place within a suburb of a larger city or within a town or village"
+        "description": "A neighbourhood is a smaller named, geographically localised place within a suburb of a larger city or within a town or village",
+        "aat_mapping": {
+          "aat_id": 300000745,
+          "aat_term": "suburbs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "plot",
         "count": 308443,
         "fraction": 0.0332,
         "in_wiki": true,
-        "description": "A named plot is a tract or parcel of land owned or meant to be owned by some owner."
+        "description": "A named plot is a tract or parcel of land owned or meant to be owned by some owner.",
+        "aat_mapping": {
+          "aat_id": 300000280,
+          "aat_term": "plots (land)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "farm",
         "count": 281674,
         "fraction": 0.0303,
         "in_wiki": true,
-        "description": "An individually named farm."
+        "description": "An individually named farm.",
+        "aat_mapping": {
+          "aat_id": 300000206,
+          "aat_term": "farms",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "suburb",
         "count": 160438,
         "fraction": 0.0173,
         "in_wiki": true,
-        "description": "A part of a town or city with a well-known name and often a distinct identity."
+        "description": "A part of a town or city with a well-known name and often a distinct identity.",
+        "aat_mapping": {
+          "aat_id": 300000745,
+          "aat_term": "suburbs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "quarter",
         "count": 158761,
         "fraction": 0.0171,
         "in_wiki": true,
-        "description": "A quarter is a named, geographically localised place within a suburb of a larger city or within a town, which is bigger than a neighbourhood."
+        "description": "A quarter is a named, geographically localised place within a suburb of a larger city or within a town, which is bigger than a neighbourhood.",
+        "aat_mapping": {
+          "aat_id": 300000745,
+          "aat_term": "suburbs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "town",
         "count": 117349,
         "fraction": 0.0126,
         "in_wiki": true,
-        "description": "An important urban centre, between a village and a city in size."
+        "description": "An important urban centre, between a village and a city in size.",
+        "aat_mapping": {
+          "aat_id": 300008375,
+          "aat_term": "towns",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "square",
         "count": 108160,
         "fraction": 0.0117,
         "in_wiki": true,
-        "description": "A town or village square: a (typically) paved open space, generally of architectural significance, which is surrounded by buildings in a built-up area such as a city, town or village."
+        "description": "A town or village square: a (typically) paved open space, generally of architectural significance, which is surrounded by buildings in a built-up area such as a city, town or village.",
+        "aat_mapping": {
+          "aat_id": 300008072,
+          "aat_term": "open spaces",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "city_block",
@@ -102,7 +168,13 @@
         "count": 100079,
         "fraction": 0.0108,
         "in_wiki": true,
-        "description": "Any piece of land that is completely surrounded by water and isolated from other significant landmasses (bigger than 1 km²)."
+        "description": "Any piece of land that is completely surrounded by water and isolated from other significant landmasses (bigger than 1 km²).",
+        "aat_mapping": {
+          "aat_id": 300008680,
+          "aat_term": "islands",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "allotments",
@@ -116,28 +188,52 @@
         "count": 16830,
         "fraction": 0.0018,
         "in_wiki": true,
-        "description": "A municipality - single urban administrative division having corporate status."
+        "description": "A municipality - single urban administrative division having corporate status.",
+        "aat_mapping": {
+          "aat_id": 300265612,
+          "aat_term": "municipalities",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "city",
         "count": 15318,
         "fraction": 0.0017,
         "in_wiki": true,
-        "description": "The largest urban settlement or settlements within the territory."
+        "description": "The largest urban settlement or settlements within the territory.",
+        "aat_mapping": {
+          "aat_id": 300008389,
+          "aat_term": "cities",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "county",
         "count": 8849,
         "fraction": 0.001,
         "in_wiki": true,
-        "description": "A county - a geographical region of a country."
+        "description": "A county - a geographical region of a country.",
+        "aat_mapping": {
+          "aat_id": 300000771,
+          "aat_term": "counties",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "civil_parish",
         "count": 4311,
         "fraction": 0.0005,
         "in_wiki": true,
-        "description": null
+        "description": null,
+        "aat_mapping": {
+          "aat_id": 300000778,
+          "aat_term": "parishes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "district",
@@ -151,21 +247,39 @@
         "count": 3138,
         "fraction": 0.0003,
         "in_wiki": true,
-        "description": "Used both as a broad tag for geographic or historical areas with no clear boundary and for distinct administration areas (with specific boundaries) in some countries."
+        "description": "Used both as a broad tag for geographic or historical areas with no clear boundary and for distinct administration areas (with specific boundaries) in some countries.",
+        "aat_mapping": {
+          "aat_id": 300182722,
+          "aat_term": "geographic regions",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "archipelago",
         "count": 2727,
         "fraction": 0.0003,
         "in_wiki": true,
-        "description": "A named group or chain of closely related islands and islets."
+        "description": "A named group or chain of closely related islands and islets.",
+        "aat_mapping": {
+          "aat_id": 300386854,
+          "aat_term": "archipelagos",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "state",
         "count": 2008,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "A large sub-national political/administrative area."
+        "description": "A large sub-national political/administrative area.",
+        "aat_mapping": {
+          "aat_id": 300000776,
+          "aat_term": "boroughs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "subdivision",
@@ -207,7 +321,13 @@
         "count": 590,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "A part in a larger city grouped into administrative unit."
+        "description": "A part in a larger city grouped into administrative unit.",
+        "aat_mapping": {
+          "aat_id": 300000776,
+          "aat_term": "boroughs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "field",
@@ -228,7 +348,13 @@
         "count": 227,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A nation state or other high-level national political/administrative area."
+        "description": "A nation state or other high-level national political/administrative area.",
+        "aat_mapping": {
+          "aat_id": 300128207,
+          "aat_term": "nations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ward",
@@ -256,7 +382,13 @@
         "count": 148,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A large body of salt water part of, or connected to, an ocean."
+        "description": "A large body of salt water part of, or connected to, an ocean.",
+        "aat_mapping": {
+          "aat_id": 300008694,
+          "aat_term": "seas",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "camp",
@@ -599,7 +731,13 @@
         "count": 9,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "One of the seven continents: Africa, Antarctica, Asia, Europe, North America, Oceania, South America."
+        "description": "One of the seven continents: Africa, Antarctica, Asia, Europe, North America, Oceania, South America.",
+        "aat_mapping": {
+          "aat_id": 300128176,
+          "aat_term": "continents",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "park",
@@ -837,7 +975,13 @@
         "count": 5,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "The world's five main major oceanic divisions."
+        "description": "The world's five main major oceanic divisions.",
+        "aat_mapping": {
+          "aat_id": 300008687,
+          "aat_term": "oceans",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "raceway",
@@ -1427,28 +1571,52 @@
         "count": 22621288,
         "fraction": 0.2497,
         "in_wiki": true,
-        "description": "Any inland body of water, from natural such as a lake or pond to artificial like a moat or canal."
+        "description": "Any inland body of water, from natural such as a lake or pond to artificial like a moat or canal.",
+        "aat_mapping": {
+          "aat_id": 300008680,
+          "aat_term": "bodies of water",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wood",
         "count": 12209201,
         "fraction": 0.1348,
         "in_wiki": true,
-        "description": "Tree-covered area (a 'forest' or 'wood')"
+        "description": "Tree-covered area (a 'forest' or 'wood')",
+        "aat_mapping": {
+          "aat_id": 300132294,
+          "aat_term": "natural landscapes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "scrub",
         "count": 5436853,
         "fraction": 0.06,
         "in_wiki": true,
-        "description": "Uncultivated land covered with shrubs, bushes or stunted trees."
+        "description": "Uncultivated land covered with shrubs, bushes or stunted trees.",
+        "aat_mapping": {
+          "aat_id": 300132294,
+          "aat_term": "natural landscapes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wetland",
         "count": 4470419,
         "fraction": 0.0493,
         "in_wiki": true,
-        "description": "A natural area subject to inundation or with waterlogged ground"
+        "description": "A natural area subject to inundation or with waterlogged ground",
+        "aat_mapping": {
+          "aat_id": 300008832,
+          "aat_term": "wetlands",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "grassland",
@@ -1483,28 +1651,52 @@
         "count": 1086946,
         "fraction": 0.012,
         "in_wiki": true,
-        "description": "The top (summit) of a hill or mountain."
+        "description": "The top (summit) of a hill or mountain.",
+        "aat_mapping": {
+          "aat_id": 300008795,
+          "aat_term": "peaks (landforms)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "cliff",
         "count": 980453,
         "fraction": 0.0108,
         "in_wiki": true,
-        "description": "A vertical or almost vertical natural drop in terrain, usually with a bare rock surface. The bottom of the cliff is on the right side of the way."
+        "description": "A vertical or almost vertical natural drop in terrain, usually with a bare rock surface. The bottom of the cliff is on the right side of the way.",
+        "aat_mapping": {
+          "aat_id": 300008773,
+          "aat_term": "cliffs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "heath",
         "count": 647342,
         "fraction": 0.0071,
         "in_wiki": true,
-        "description": "A dwarf-shrub habitat, characterised by open, low growing woody vegetation, often dominated by plants of the Ericaceae."
+        "description": "A dwarf-shrub habitat, characterised by open, low growing woody vegetation, often dominated by plants of the Ericaceae.",
+        "aat_mapping": {
+          "aat_id": 300132294,
+          "aat_term": "natural landscapes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "sand",
         "count": 588889,
         "fraction": 0.0065,
         "in_wiki": true,
-        "description": "An area covered by sand with no or very little vegetation."
+        "description": "An area covered by sand with no or very little vegetation.",
+        "aat_mapping": {
+          "aat_id": 300008755,
+          "aat_term": "dunes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "scree",
@@ -1525,14 +1717,26 @@
         "count": 276522,
         "fraction": 0.0031,
         "in_wiki": true,
-        "description": "A place where ground water flows naturally from the ground"
+        "description": "A place where ground water flows naturally from the ground",
+        "aat_mapping": {
+          "aat_id": 300008697,
+          "aat_term": "springs (bodies of water)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ridge",
         "count": 246304,
         "fraction": 0.0027,
         "in_wiki": true,
-        "description": "A mountain landform with a continuous elevated crest or linear hill"
+        "description": "A mountain landform with a continuous elevated crest or linear hill",
+        "aat_mapping": {
+          "aat_id": 300008812,
+          "aat_term": "ridges (landforms)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "rock",
@@ -1546,21 +1750,39 @@
         "count": 242403,
         "fraction": 0.0027,
         "in_wiki": true,
-        "description": "Landform along a body of water which consists of sand, shingle or other loose material."
+        "description": "Landform along a body of water which consists of sand, shingle or other loose material.",
+        "aat_mapping": {
+          "aat_id": 300008816,
+          "aat_term": "beaches",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "reef",
         "count": 117150,
         "fraction": 0.0013,
         "in_wiki": true,
-        "description": "A feature (rock, sandbar, coral, etc) lying permanently beneath the surface of the water."
+        "description": "A feature (rock, sandbar, coral, etc) lying permanently beneath the surface of the water.",
+        "aat_mapping": {
+          "aat_id": 300132316,
+          "aat_term": "reefs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "glacier",
         "count": 115305,
         "fraction": 0.0013,
         "in_wiki": true,
-        "description": "A permanent body of ice formed naturally from snow that is moving under its own weight."
+        "description": "A permanent body of ice formed naturally from snow that is moving under its own weight.",
+        "aat_mapping": {
+          "aat_id": 300008781,
+          "aat_term": "glaciers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "shrubbery",
@@ -1574,7 +1796,13 @@
         "count": 89278,
         "fraction": 0.001,
         "in_wiki": true,
-        "description": "Named area of water mostly surrounded by land but with level connection to the ocean or a lake."
+        "description": "Named area of water mostly surrounded by land but with level connection to the ocean or a lake.",
+        "aat_mapping": {
+          "aat_id": 300132315,
+          "aat_term": "bays (bodies of water)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "stone",
@@ -1595,14 +1823,26 @@
         "count": 77837,
         "fraction": 0.0009,
         "in_wiki": true,
-        "description": "The lowest point along a ridge or between two mountain tops."
+        "description": "The lowest point along a ridge or between two mountain tops.",
+        "aat_mapping": {
+          "aat_id": 300008815,
+          "aat_term": "saddles (landforms)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "cave_entrance",
         "count": 70946,
         "fraction": 0.0008,
         "in_wiki": true,
-        "description": "An entrance to a cave: a natural underground space large enough for a human to enter"
+        "description": "An entrance to a cave: a natural underground space large enough for a human to enter",
+        "aat_mapping": {
+          "aat_id": 300008746,
+          "aat_term": "caves",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "hill",
@@ -1616,7 +1856,13 @@
         "count": 61899,
         "fraction": 0.0007,
         "in_wiki": true,
-        "description": "A natural depression flanked by ridges or ranges of mountains or hills"
+        "description": "A natural depression flanked by ridges or ranges of mountains or hills",
+        "aat_mapping": {
+          "aat_id": 300008861,
+          "aat_term": "valleys",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "land",
@@ -1630,7 +1876,13 @@
         "count": 55788,
         "fraction": 0.0006,
         "in_wiki": true,
-        "description": "A piece of elevated land sticking out into the sea or large lake."
+        "description": "A piece of elevated land sticking out into the sea or large lake.",
+        "aat_mapping": {
+          "aat_id": 300008775,
+          "aat_term": "capes (landforms)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "sinkhole",
@@ -1693,7 +1945,13 @@
         "count": 10037,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "An opening exposed on the earth's surface where volcanic material is emitted."
+        "description": "An opening exposed on the earth's surface where volcanic material is emitted.",
+        "aat_mapping": {
+          "aat_id": 300132325,
+          "aat_term": "volcanoes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "grass",
@@ -1707,7 +1965,13 @@
         "count": 8367,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "A narrow area of water surrounded by land on two sides and by water on two other sides."
+        "description": "A narrow area of water surrounded by land on two sides and by water on two other sides.",
+        "aat_mapping": {
+          "aat_id": 300008700,
+          "aat_term": "straits",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "birds_nest",
@@ -1742,7 +2006,13 @@
         "count": 7177,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "A spring of geothermally heated groundwater"
+        "description": "A spring of geothermally heated groundwater",
+        "aat_mapping": {
+          "aat_id": 300008700,
+          "aat_term": "hot springs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "tree_group",
@@ -1791,7 +2061,13 @@
         "count": 3449,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A piece of land projecting into water from a larger land mass, nearly surrounded by water"
+        "description": "A piece of land projecting into water from a larger land mass, nearly surrounded by water",
+        "aat_mapping": {
+          "aat_id": 300008804,
+          "aat_term": "peninsulas",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "slope",
@@ -2829,28 +3105,52 @@
         "count": 2288864,
         "fraction": 0.4334,
         "in_wiki": true,
-        "description": "A small body of standing water, man-made in most cases"
+        "description": "A small body of standing water, man-made in most cases",
+        "aat_mapping": {
+          "aat_id": 300008689,
+          "aat_term": "ponds",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "lake",
         "count": 885622,
         "fraction": 0.1677,
         "in_wiki": true,
-        "description": "A natural or semi-natural body of relatively still fresh or salt water which is surrounded by land."
+        "description": "A natural or semi-natural body of relatively still fresh or salt water which is surrounded by land.",
+        "aat_mapping": {
+          "aat_id": 300008680,
+          "aat_term": "lakes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "reservoir",
         "count": 859151,
         "fraction": 0.1627,
         "in_wiki": true,
-        "description": "An artificial lake which may be used to store water. Usually formed by a dam over a natural water course."
+        "description": "An artificial lake which may be used to store water. Usually formed by a dam over a natural water course.",
+        "aat_mapping": {
+          "aat_id": 300006191,
+          "aat_term": "reservoirs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "river",
         "count": 512843,
         "fraction": 0.0971,
         "in_wiki": true,
-        "description": "The water covered area of a river."
+        "description": "The water covered area of a river.",
+        "aat_mapping": {
+          "aat_id": 300008707,
+          "aat_term": "rivers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "basin",
@@ -2871,35 +3171,65 @@
         "count": 68077,
         "fraction": 0.0129,
         "in_wiki": true,
-        "description": "The area covered by the water of a canal"
+        "description": "The area covered by the water of a canal",
+        "aat_mapping": {
+          "aat_id": 300006075,
+          "aat_term": "canals",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "stream",
         "count": 54575,
         "fraction": 0.0103,
         "in_wiki": true,
-        "description": "The water covered area of a stream: a naturally-formed watercourse which is narrower than a river"
+        "description": "The water covered area of a stream: a naturally-formed watercourse which is narrower than a river",
+        "aat_mapping": {
+          "aat_id": 300008699,
+          "aat_term": "streams",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "oxbow",
         "count": 52591,
         "fraction": 0.01,
         "in_wiki": true,
-        "description": "U-shaped body of water formed when a wide meander from the main stem of a river is cut off to create a lake."
+        "description": "U-shaped body of water formed when a wide meander from the main stem of a river is cut off to create a lake.",
+        "aat_mapping": {
+          "aat_id": 300008707,
+          "aat_term": "rivers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ditch",
         "count": 40156,
         "fraction": 0.0076,
         "in_wiki": true,
-        "description": "The water covered area of a waterway=ditch - a simple artificial waterway serving as a barrier or for draining surrounding land."
+        "description": "The water covered area of a waterway=ditch - a simple artificial waterway serving as a barrier or for draining surrounding land.",
+        "aat_mapping": {
+          "aat_id": 300006176,
+          "aat_term": "ditches",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "lagoon",
         "count": 12613,
         "fraction": 0.0024,
         "in_wiki": true,
-        "description": "A body of shallow sea water or brackish water separated from the sea by a barrier."
+        "description": "A body of shallow sea water or brackish water separated from the sea by a barrier.",
+        "aat_mapping": {
+          "aat_id": 300132315,
+          "aat_term": "bays (bodies of water)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "drain",
@@ -2955,7 +3285,13 @@
         "count": 2658,
         "fraction": 0.0005,
         "in_wiki": true,
-        "description": "A deep, wide defensive ditch, normally filled with water, dug to surround a fortified habitation."
+        "description": "A deep, wide defensive ditch, normally filled with water, dug to surround a fortified habitation.",
+        "aat_mapping": {
+          "aat_id": 300006295,
+          "aat_term": "moats",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "pan",
@@ -2997,7 +3333,13 @@
         "count": 1338,
         "fraction": 0.0003,
         "in_wiki": true,
-        "description": "Describes a harbour basin, a sheltered body of water where ships, boats, and barges can be docked."
+        "description": "Describes a harbour basin, a sheltered body of water where ships, boats, and barges can be docked.",
+        "aat_mapping": {
+          "aat_id": 300008678,
+          "aat_term": "harbors",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "fountain",
@@ -4238,21 +4580,39 @@
         "count": 28908159,
         "fraction": 0.7372,
         "in_wiki": true,
-        "description": "A naturally-forming waterway that is too narrow to be classed as a river."
+        "description": "A naturally-forming waterway that is too narrow to be classed as a river.",
+        "aat_mapping": {
+          "aat_id": 300008699,
+          "aat_term": "streams",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ditch",
         "count": 4602805,
         "fraction": 0.1174,
         "in_wiki": true,
-        "description": "A small artificial drainage waterway, usually unlined."
+        "description": "A small artificial drainage waterway, usually unlined.",
+        "aat_mapping": {
+          "aat_id": 300006176,
+          "aat_term": "ditches",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "river",
         "count": 2016664,
         "fraction": 0.0514,
         "in_wiki": true,
-        "description": "The linear flow of a river, in flow direction."
+        "description": "The linear flow of a river, in flow direction.",
+        "aat_mapping": {
+          "aat_id": 300008707,
+          "aat_term": "rivers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "drain",
@@ -4266,14 +4626,26 @@
         "count": 956273,
         "fraction": 0.0244,
         "in_wiki": true,
-        "description": "An artificial open flow waterway used to carry useful water for transportation, waterpower, or irrigation."
+        "description": "An artificial open flow waterway used to carry useful water for transportation, waterpower, or irrigation.",
+        "aat_mapping": {
+          "aat_id": 300006075,
+          "aat_term": "canals",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "dam",
         "count": 264116,
         "fraction": 0.0067,
         "in_wiki": true,
-        "description": "A barrier built across a river or stream to block and regulate the flow of the river."
+        "description": "A barrier built across a river or stream to block and regulate the flow of the river.",
+        "aat_mapping": {
+          "aat_id": 300006079,
+          "aat_term": "dams",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "weir",
@@ -4294,7 +4666,13 @@
         "count": 85828,
         "fraction": 0.0022,
         "in_wiki": true,
-        "description": "A place where water flows over a vertical drop or a series of drops in the course of a stream or river."
+        "description": "A place where water flows over a vertical drop or a series of drops in the course of a stream or river.",
+        "aat_mapping": {
+          "aat_id": 300132324,
+          "aat_term": "waterfalls",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "flowline",
@@ -4364,7 +4742,13 @@
         "count": 6993,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "An enclosed area for ships or boats within which the height of the water can be managed, or a dry dock."
+        "description": "An enclosed area for ships or boats within which the height of the water can be managed, or a dry dock.",
+        "aat_mapping": {
+          "aat_id": 300120631,
+          "aat_term": "docks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "stream_end",
@@ -5647,7 +6031,13 @@
         "count": 481440,
         "fraction": 0.2171,
         "in_wiki": true,
-        "description": "Small memorials, usually remembering special persons, people who lost their lives in the wars, past events or missing places."
+        "description": "Small memorials, usually remembering special persons, people who lost their lives in the wars, past events or missing places.",
+        "aat_mapping": {
+          "aat_id": 300006780,
+          "aat_term": "memorials",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wayside_cross",
@@ -5661,7 +6051,13 @@
         "count": 223431,
         "fraction": 0.1007,
         "in_wiki": true,
-        "description": "A place in which evidence of past activity is preserved."
+        "description": "A place in which evidence of past activity is preserved.",
+        "aat_mapping": {
+          "aat_id": 300000810,
+          "aat_term": "archaeological sites",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "yes",
@@ -5675,49 +6071,91 @@
         "count": 177875,
         "fraction": 0.0802,
         "in_wiki": true,
-        "description": "Remains of structures that were once complete, but have fallen into partial or complete disrepair."
+        "description": "Remains of structures that were once complete, but have fallen into partial or complete disrepair.",
+        "aat_mapping": {
+          "aat_id": 300008057,
+          "aat_term": "ruins",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wayside_shrine",
         "count": 162662,
         "fraction": 0.0733,
         "in_wiki": true,
-        "description": "A shrine often showing a religious depiction. Tag is used also for modern shrines."
+        "description": "A shrine often showing a religious depiction. Tag is used also for modern shrines.",
+        "aat_mapping": {
+          "aat_id": 300007558,
+          "aat_term": "shrines",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "boundary_stone",
         "count": 94096,
         "fraction": 0.0424,
         "in_wiki": true,
-        "description": "A historic physical marker that identifies a boundary"
+        "description": "A historic physical marker that identifies a boundary",
+        "aat_mapping": {
+          "aat_id": 300006971,
+          "aat_term": "boundary markers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "building",
         "count": 88940,
         "fraction": 0.0401,
         "in_wiki": true,
-        "description": "Unspecified historic building."
+        "description": "Unspecified historic building.",
+        "aat_mapping": {
+          "aat_id": 300004792,
+          "aat_term": "buildings",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "tomb",
         "count": 71387,
         "fraction": 0.0322,
         "in_wiki": true,
-        "description": "A structure where somebody has been buried."
+        "description": "A structure where somebody has been buried.",
+        "aat_mapping": {
+          "aat_id": 300005926,
+          "aat_term": "tombs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "monument",
         "count": 71217,
         "fraction": 0.0321,
         "in_wiki": true,
-        "description": "A memorial object, which is especially large, built to remember, show respect to a person or group of people or to commemorate an event."
+        "description": "A memorial object, which is especially large, built to remember, show respect to a person or group of people or to commemorate an event.",
+        "aat_mapping": {
+          "aat_id": 300006958,
+          "aat_term": "monuments",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "castle",
         "count": 53536,
         "fraction": 0.0241,
         "in_wiki": true,
-        "description": "Used for various kinds of castles, palaces, fortresses, manors, stately homes, kremlins, shiros and other."
+        "description": "Used for various kinds of castles, palaces, fortresses, manors, stately homes, kremlins, shiros and other.",
+        "aat_mapping": {
+          "aat_id": 300006891,
+          "aat_term": "castles (fortifications)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "charcoal_pile",
@@ -5752,7 +6190,13 @@
         "count": 19245,
         "fraction": 0.0087,
         "in_wiki": true,
-        "description": "Historic manors/mansions having different use today"
+        "description": "Historic manors/mansions having different use today",
+        "aat_mapping": {
+          "aat_id": 300005828,
+          "aat_term": "manor houses",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "citywalls",
@@ -5773,14 +6217,26 @@
         "count": 13364,
         "fraction": 0.006,
         "in_wiki": true,
-        "description": "Location of historic underground mine workings for minerals such as coal or lead."
+        "description": "Location of historic underground mine workings for minerals such as coal or lead.",
+        "aat_mapping": {
+          "aat_id": 300000195,
+          "aat_term": "mines (extractive industry sites)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "church",
         "count": 12417,
         "fraction": 0.0056,
         "in_wiki": true,
-        "description": "A church with a historical value."
+        "description": "A church with a historical value.",
+        "aat_mapping": {
+          "aat_id": 300007466,
+          "aat_term": "churches",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "mine_shaft",
@@ -5801,21 +6257,39 @@
         "count": 9092,
         "fraction": 0.0041,
         "in_wiki": true,
-        "description": "A military fort, a stand-alone defensive structure which differs from a castle in that there is no permanent residence."
+        "description": "A military fort, a stand-alone defensive structure which differs from a castle in that there is no permanent residence.",
+        "aat_mapping": {
+          "aat_id": 300006909,
+          "aat_term": "forts",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "city_gate",
         "count": 8879,
         "fraction": 0.004,
         "in_wiki": true,
-        "description": "A city gate within a city wall."
+        "description": "A city gate within a city wall.",
+        "aat_mapping": {
+          "aat_id": 300002779,
+          "aat_term": "city gates",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "milestone",
         "count": 8700,
         "fraction": 0.0039,
         "in_wiki": true,
-        "description": "A historic marker that shows the distance to important destinations."
+        "description": "A historic marker that shows the distance to important destinations.",
+        "aat_mapping": {
+          "aat_id": 300006973,
+          "aat_term": "milestones",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "house",
@@ -5843,7 +6317,13 @@
         "count": 5665,
         "fraction": 0.0026,
         "in_wiki": true,
-        "description": "A nautical craft that has been sunk or destroyed."
+        "description": "A nautical craft that has been sunk or destroyed.",
+        "aat_mapping": {
+          "aat_id": 300188189,
+          "aat_term": "shipwrecks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "hollow_way",
@@ -5871,7 +6351,13 @@
         "count": 3442,
         "fraction": 0.0016,
         "in_wiki": true,
-        "description": "This property distinguishes a tower as historic"
+        "description": "This property distinguishes a tower as historic",
+        "aat_mapping": {
+          "aat_id": 300004847,
+          "aat_term": "towers (building divisions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "bunker",
@@ -5892,21 +6378,39 @@
         "count": 2848,
         "fraction": 0.0013,
         "in_wiki": true,
-        "description": "Building/place that is a historically significant monastery."
+        "description": "Building/place that is a historically significant monastery.",
+        "aat_mapping": {
+          "aat_id": 300005616,
+          "aat_term": "monasteries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "farm",
         "count": 2824,
         "fraction": 0.0013,
         "in_wiki": true,
-        "description": "A historical farm, kept in its original state."
+        "description": "A historical farm, kept in its original state.",
+        "aat_mapping": {
+          "aat_id": 300000206,
+          "aat_term": "farms",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "bridge",
         "count": 2654,
         "fraction": 0.0012,
         "in_wiki": false,
-        "description": ""
+        "description": "",
+        "aat_mapping": {
+          "aat_id": 300007836,
+          "aat_term": "bridges (built works)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "district",
@@ -5934,7 +6438,13 @@
         "count": 2263,
         "fraction": 0.001,
         "in_wiki": true,
-        "description": "The site of a battle or military skirmish in the past."
+        "description": "The site of a battle or military skirmish in the past.",
+        "aat_mapping": {
+          "aat_id": 300000824,
+          "aat_term": "battlefields",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "naval",
@@ -5948,7 +6458,13 @@
         "count": 2038,
         "fraction": 0.0009,
         "in_wiki": true,
-        "description": "A cemetery with historic significance."
+        "description": "A cemetery with historic significance.",
+        "aat_mapping": {
+          "aat_id": 300000632,
+          "aat_term": "cemeteries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "military",
@@ -5990,7 +6506,13 @@
         "count": 1452,
         "fraction": 0.0007,
         "in_wiki": true,
-        "description": "A historic structure to convey water"
+        "description": "A historic structure to convey water",
+        "aat_mapping": {
+          "aat_id": 300006165,
+          "aat_term": "aqueducts",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "tank",
@@ -6228,7 +6750,13 @@
         "count": 416,
         "fraction": 0.0002,
         "in_wiki": false,
-        "description": ""
+        "description": "",
+        "aat_mapping": {
+          "aat_id": 300007741,
+          "aat_term": "lighthouses",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "marker",
@@ -6333,7 +6861,13 @@
         "count": 291,
         "fraction": 0.0001,
         "in_wiki": false,
-        "description": ""
+        "description": "",
+        "aat_mapping": {
+          "aat_id": 300005734,
+          "aat_term": "palaces",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "kiln",
@@ -6396,7 +6930,13 @@
         "count": 214,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "An ancient pagan temple in_situ and in various degree of preservation, such as Ziggurat, Egyptian temple, Mithraeum, Erechtheion, Buddhist, Meso-American and other ancient religious and rituals' temples, with a historical and archaeological value."
+        "description": "An ancient pagan temple in_situ and in various degree of preservation, such as Ziggurat, Egyptian temple, Mithraeum, Erechtheion, Buddhist, Meso-American and other ancient religious and rituals' temples, with a historical and archaeological value.",
+        "aat_mapping": {
+          "aat_id": 300007595,
+          "aat_term": "temples",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "coat_of_arms",
@@ -7056,14 +7596,26 @@
         "count": 11320076,
         "fraction": 0.2239,
         "in_wiki": true,
-        "description": "Area of farmland used mainly for tillage (annual crops)."
+        "description": "Area of farmland used mainly for tillage (annual crops).",
+        "aat_mapping": {
+          "aat_id": 300000206,
+          "aat_term": "farms",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "residential",
         "count": 10430876,
         "fraction": 0.2063,
         "in_wiki": true,
-        "description": "A portion of land predominantly used for residential purposes."
+        "description": "A portion of land predominantly used for residential purposes.",
+        "aat_mapping": {
+          "aat_id": 300008347,
+          "aat_term": "inhabited places",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "grass",
@@ -7077,21 +7629,39 @@
         "count": 5840778,
         "fraction": 0.1155,
         "in_wiki": true,
-        "description": "Forest or woodland, sometimes considered to be restricted to managed woodlands or tree plantations."
+        "description": "Forest or woodland, sometimes considered to be restricted to managed woodlands or tree plantations.",
+        "aat_mapping": {
+          "aat_id": 300132294,
+          "aat_term": "natural landscapes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "meadow",
         "count": 5355449,
         "fraction": 0.1059,
         "in_wiki": true,
-        "description": "An area of meadow or pasture: land primarily vegetated by grass and other non-woody plants, mainly used for hay or grazing."
+        "description": "An area of meadow or pasture: land primarily vegetated by grass and other non-woody plants, mainly used for hay or grazing.",
+        "aat_mapping": {
+          "aat_id": 300132294,
+          "aat_term": "natural landscapes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "orchard",
         "count": 1804601,
         "fraction": 0.0357,
         "in_wiki": true,
-        "description": "Used to mark intentional planting of trees or shrubs maintained for food production"
+        "description": "Used to mark intentional planting of trees or shrubs maintained for food production",
+        "aat_mapping": {
+          "aat_id": 300000206,
+          "aat_term": "farms",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "farmyard",
@@ -7105,28 +7675,52 @@
         "count": 1386982,
         "fraction": 0.0274,
         "in_wiki": true,
-        "description": "An area with predominantly workshops, factories or warehouses."
+        "description": "An area with predominantly workshops, factories or warehouses.",
+        "aat_mapping": {
+          "aat_id": 300000757,
+          "aat_term": "industrial districts",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "vineyard",
         "count": 847032,
         "fraction": 0.0168,
         "in_wiki": true,
-        "description": "Used to tag vineyards, a piece of land where grapes are grown."
+        "description": "Used to tag vineyards, a piece of land where grapes are grown.",
+        "aat_mapping": {
+          "aat_id": 300000206,
+          "aat_term": "farms",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "cemetery",
         "count": 587013,
         "fraction": 0.0116,
         "in_wiki": true,
-        "description": "A place where people, or sometimes animals are buried that isn't part of a place of worship"
+        "description": "A place where people, or sometimes animals are buried that isn't part of a place of worship",
+        "aat_mapping": {
+          "aat_id": 300000292,
+          "aat_term": "cemeteries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "commercial",
         "count": 571991,
         "fraction": 0.0113,
         "in_wiki": true,
-        "description": "A commercial zone, predominantly offices or services."
+        "description": "A commercial zone, predominantly offices or services.",
+        "aat_mapping": {
+          "aat_id": 300000745,
+          "aat_term": "suburbs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "allotments",
@@ -7161,21 +7755,39 @@
         "count": 251739,
         "fraction": 0.005,
         "in_wiki": true,
-        "description": "An area of land used for surface extraction (open-pit mining)."
+        "description": "An area of land used for surface extraction (open-pit mining).",
+        "aat_mapping": {
+          "aat_id": 300000195,
+          "aat_term": "mines (extractive industry sites)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "reservoir",
         "count": 196696,
         "fraction": 0.0039,
         "in_wiki": true,
-        "description": "Using this tag is discouraged; use tag:natural=water + tag:water=reservoir instead."
+        "description": "Using this tag is discouraged; use tag:natural=water + tag:water=reservoir instead.",
+        "aat_mapping": {
+          "aat_id": 300006191,
+          "aat_term": "reservoirs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "recreation_ground",
         "count": 180603,
         "fraction": 0.0036,
         "in_wiki": true,
-        "description": "An open green space for general recreation, which often includes formal or informal pitches, nets and so on. Often municipally owned, sometimes part of colleges / companies or commercially operated."
+        "description": "An open green space for general recreation, which often includes formal or informal pitches, nets and so on. Often municipally owned, sometimes part of colleges / companies or commercially operated.",
+        "aat_mapping": {
+          "aat_id": 300008072,
+          "aat_term": "open spaces",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "brownfield",
@@ -7238,7 +7850,13 @@
         "count": 94073,
         "fraction": 0.0019,
         "in_wiki": true,
-        "description": "Area used for military purposes."
+        "description": "Area used for military purposes.",
+        "aat_mapping": {
+          "aat_id": 300000810,
+          "aat_term": "archaeological sites",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "greenfield",
@@ -7378,7 +7996,13 @@
         "count": 2533,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "The harbour land, consisting of queys, wharfs, piers, warehouses, storage areas, stockpiles, service roads, railway tracks, and much more. Often behind a fence with its own access control."
+        "description": "The harbour land, consisting of queys, wharfs, piers, warehouses, storage areas, stockpiles, service roads, railway tracks, and much more. Often behind a fence with its own access control.",
+        "aat_mapping": {
+          "aat_id": 300120580,
+          "aat_term": "ports",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "reservoir_watershed",
@@ -8486,7 +9110,13 @@
         "count": 1591556,
         "fraction": 0.048,
         "in_wiki": true,
-        "description": "A place where religious services are conducted."
+        "description": "A place where religious services are conducted.",
+        "aat_mapping": {
+          "aat_id": 300007391,
+          "aat_term": "religious buildings",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "restaurant",
@@ -8500,7 +9130,13 @@
         "count": 1425117,
         "fraction": 0.043,
         "in_wiki": true,
-        "description": "A primary or secondary school (pupils typically aged 6 to 18)."
+        "description": "A primary or secondary school (pupils typically aged 6 to 18).",
+        "aat_mapping": {
+          "aat_id": 300007165,
+          "aat_term": "schools (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "waste_basket",
@@ -8640,7 +9276,13 @@
         "count": 216846,
         "fraction": 0.0065,
         "in_wiki": true,
-        "description": "A hospital providing in-patient medical treatment."
+        "description": "A hospital providing in-patient medical treatment.",
+        "aat_mapping": {
+          "aat_id": 300007145,
+          "aat_term": "hospitals",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "clinic",
@@ -8682,7 +9324,13 @@
         "count": 195963,
         "fraction": 0.0059,
         "in_wiki": true,
-        "description": "A fountain with cultural, decorational or historical significance or which serves a recreational purpose."
+        "description": "A fountain with cultural, decorational or historical significance or which serves a recreational purpose.",
+        "aat_mapping": {
+          "aat_id": 300006203,
+          "aat_term": "fountains",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "charging_station",
@@ -8703,7 +9351,13 @@
         "count": 171925,
         "fraction": 0.0052,
         "in_wiki": true,
-        "description": "A townhall serves as a community administrative center or meeting place."
+        "description": "A townhall serves as a community administrative center or meeting place.",
+        "aat_mapping": {
+          "aat_id": 300007237,
+          "aat_term": "town halls",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "police",
@@ -8717,7 +9371,13 @@
         "count": 159188,
         "fraction": 0.0048,
         "in_wiki": true,
-        "description": "A place where people (or sometimes animals) are buried, usually close to a place of worship."
+        "description": "A place where people (or sometimes animals) are buried, usually close to a place of worship.",
+        "aat_mapping": {
+          "aat_id": 300000360,
+          "aat_term": "burial grounds",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "dentist",
@@ -8745,14 +9405,26 @@
         "count": 111142,
         "fraction": 0.0034,
         "in_wiki": true,
-        "description": "A place to read and/or borrow books."
+        "description": "A place to read and/or borrow books.",
+        "aat_mapping": {
+          "aat_id": 300007150,
+          "aat_term": "libraries (institutions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "marketplace",
         "count": 96406,
         "fraction": 0.0029,
         "in_wiki": true,
-        "description": "A marketplace where goods and services are traded daily or weekly."
+        "description": "A marketplace where goods and services are traded daily or weekly.",
+        "aat_mapping": {
+          "aat_id": 300112348,
+          "aat_term": "marketplaces",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "parcel_locker",
@@ -8787,7 +9459,13 @@
         "count": 70568,
         "fraction": 0.0021,
         "in_wiki": true,
-        "description": "A place for further education, a post-secondary education institution which is not a University"
+        "description": "A place for further education, a post-secondary education institution which is not a University",
+        "aat_mapping": {
+          "aat_id": 300008331,
+          "aat_term": "colleges",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "bus_station",
@@ -8815,14 +9493,26 @@
         "count": 57379,
         "fraction": 0.0017,
         "in_wiki": true,
-        "description": "An educational institution designed for instruction, examination, or both, of students in many branches of advanced learning."
+        "description": "An educational institution designed for instruction, examination, or both, of students in many branches of advanced learning.",
+        "aat_mapping": {
+          "aat_id": 300007166,
+          "aat_term": "universities (institutions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "theatre",
         "count": 51995,
         "fraction": 0.0016,
         "in_wiki": true,
-        "description": "A place where live performances occur, such as plays, musicals and formal concerts."
+        "description": "A place where live performances occur, such as plays, musicals and formal concerts.",
+        "aat_mapping": {
+          "aat_id": 300007117,
+          "aat_term": "theaters (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "taxi",
@@ -8941,7 +9631,13 @@
         "count": 30888,
         "fraction": 0.0009,
         "in_wiki": true,
-        "description": "A building which is home to a court of law, which administers justice according to the rule of law."
+        "description": "A building which is home to a court of law, which administers justice according to the rule of law.",
+        "aat_mapping": {
+          "aat_id": 300007425,
+          "aat_term": "courthouses",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "watering_place",
@@ -9004,7 +9700,13 @@
         "count": 15806,
         "fraction": 0.0005,
         "in_wiki": true,
-        "description": "An active monastery or convent, occupied by a community of monks or nuns living under religious vows."
+        "description": "An active monastery or convent, occupied by a community of monks or nuns living under religious vows.",
+        "aat_mapping": {
+          "aat_id": 300000641,
+          "aat_term": "monasteries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "lounger",
@@ -9018,7 +9720,13 @@
         "count": 15277,
         "fraction": 0.0005,
         "in_wiki": true,
-        "description": "A prison or jail where people are incarcerated before trial or after conviction"
+        "description": "A prison or jail where people are incarcerated before trial or after conviction",
+        "aat_mapping": {
+          "aat_id": 300007147,
+          "aat_term": "prisons",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "internet_cafe",
@@ -9881,7 +10589,13 @@
         "count": 445695,
         "fraction": 0.1138,
         "in_wiki": true,
-        "description": "Hotel – an establishment that provides paid lodging."
+        "description": "Hotel – an establishment that provides paid lodging.",
+        "aat_mapping": {
+          "aat_id": 300007166,
+          "aat_term": "hotels",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "artwork",
@@ -9902,7 +10616,13 @@
         "count": 250951,
         "fraction": 0.0641,
         "in_wiki": true,
-        "description": "An object of interest for a tourist, or a purpose-built tourist attraction"
+        "description": "An object of interest for a tourist, or a purpose-built tourist attraction",
+        "aat_mapping": {
+          "aat_id": 300006958,
+          "aat_term": "monuments",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "guest_house",
@@ -9937,7 +10657,13 @@
         "count": 109040,
         "fraction": 0.0279,
         "in_wiki": true,
-        "description": "A museum: an institution with exhibitions on scientific, historical, cultural topics"
+        "description": "A museum: an institution with exhibitions on scientific, historical, cultural topics",
+        "aat_mapping": {
+          "aat_id": 300005768,
+          "aat_term": "museums (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "chalet",
@@ -9979,7 +10705,13 @@
         "count": 20969,
         "fraction": 0.0054,
         "in_wiki": true,
-        "description": "An area or building that displays a variety of visual art exhibitions."
+        "description": "An area or building that displays a variety of visual art exhibitions.",
+        "aat_mapping": {
+          "aat_id": 300005768,
+          "aat_term": "galleries (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wilderness_hut",
@@ -10014,7 +10746,13 @@
         "count": 9095,
         "fraction": 0.0023,
         "in_wiki": true,
-        "description": "A zoological garden, where animals are confined for viewing by the public."
+        "description": "A zoological garden, where animals are confined for viewing by the public.",
+        "aat_mapping": {
+          "aat_id": 300005581,
+          "aat_term": "zoos",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "aquarium",
@@ -10469,7 +11207,13 @@
         "count": 12,
         "fraction": 0.0,
         "in_wiki": false,
-        "description": ""
+        "description": "",
+        "aat_mapping": {
+          "aat_id": 300006891,
+          "aat_term": "castles (fortifications)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "boat_trip",
@@ -11297,14 +12041,26 @@
         "count": 1507032,
         "fraction": 0.1336,
         "in_wiki": true,
-        "description": "A place where flowers and other plants are grown in a decorative and structured manner or for scientific purposes."
+        "description": "A place where flowers and other plants are grown in a decorative and structured manner or for scientific purposes.",
+        "aat_mapping": {
+          "aat_id": 300008090,
+          "aat_term": "gardens (open spaces)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "park",
         "count": 1277829,
         "fraction": 0.1133,
         "in_wiki": true,
-        "description": "A park, usually in an urban (municipal) setting, created for recreation and relaxation."
+        "description": "A park, usually in an urban (municipal) setting, created for recreation and relaxation.",
+        "aat_mapping": {
+          "aat_id": 300008072,
+          "aat_term": "open spaces",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "playground",
@@ -11339,7 +12095,13 @@
         "count": 148084,
         "fraction": 0.0131,
         "in_wiki": true,
-        "description": "A protected area of importance for wildlife, flora, fauna or features of geological or other special interest."
+        "description": "A protected area of importance for wildlife, flora, fauna or features of geological or other special interest.",
+        "aat_mapping": {
+          "aat_id": 300008069,
+          "aat_term": "national parks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "fitness_centre",
@@ -11381,7 +12143,13 @@
         "count": 51664,
         "fraction": 0.0046,
         "in_wiki": true,
-        "description": "A major sports facility with substantial tiered seating."
+        "description": "A major sports facility with substantial tiered seating.",
+        "aat_mapping": {
+          "aat_id": 300007108,
+          "aat_term": "stadiums",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "firepit",
@@ -11409,7 +12177,13 @@
         "count": 31422,
         "fraction": 0.0028,
         "in_wiki": true,
-        "description": "A facility for mooring leisure yachts and motor boats."
+        "description": "A facility for mooring leisure yachts and motor boats.",
+        "aat_mapping": {
+          "aat_id": 300120471,
+          "aat_term": "marinas",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "common",
@@ -12699,7 +13473,13 @@
         "count": 727652,
         "fraction": 0.0766,
         "in_wiki": true,
-        "description": "Raised walkway over water supported by pillars or floating and secured."
+        "description": "Raised walkway over water supported by pillars or floating and secured.",
+        "aat_mapping": {
+          "aat_id": 300120631,
+          "aat_term": "docks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "cutline",
@@ -12727,7 +13507,13 @@
         "count": 448646,
         "fraction": 0.0472,
         "in_wiki": true,
-        "description": "A tower is a free-standing structure which is higher than it is wide."
+        "description": "A tower is a free-standing structure which is higher than it is wide.",
+        "aat_mapping": {
+          "aat_id": 300004847,
+          "aat_term": "towers (building divisions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "surveillance",
@@ -12769,7 +13555,13 @@
         "count": 343857,
         "fraction": 0.0362,
         "in_wiki": true,
-        "description": "A structural facility to access ground water, created by digging or drilling."
+        "description": "A structural facility to access ground water, created by digging or drilling.",
+        "aat_mapping": {
+          "aat_id": 300006209,
+          "aat_term": "wells",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "embankment",
@@ -12790,7 +13582,13 @@
         "count": 311380,
         "fraction": 0.0328,
         "in_wiki": true,
-        "description": "The outline of a bridge, grouping together all features for that bridge."
+        "description": "The outline of a bridge, grouping together all features for that bridge.",
+        "aat_mapping": {
+          "aat_id": 300007836,
+          "aat_term": "bridges (built works)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "street_cabinet",
@@ -12804,7 +13602,13 @@
         "count": 238301,
         "fraction": 0.0251,
         "in_wiki": true,
-        "description": "A factory or industrial production plant."
+        "description": "A factory or industrial production plant.",
+        "aat_mapping": {
+          "aat_id": 300006232,
+          "aat_term": "factories",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "flagpole",
@@ -12818,7 +13622,13 @@
         "count": 165312,
         "fraction": 0.0174,
         "in_wiki": true,
-        "description": "Structure with a water tank at an altitude to increase pressure in water network"
+        "description": "Structure with a water tank at an altitude to increase pressure in water network",
+        "aat_mapping": {
+          "aat_id": 300007880,
+          "aat_term": "water towers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "chimney",
@@ -12923,7 +13733,13 @@
         "count": 35768,
         "fraction": 0.0038,
         "in_wiki": true,
-        "description": "An embankment built to restrict the flow of water or other liquids"
+        "description": "An embankment built to restrict the flow of water or other liquids",
+        "aat_mapping": {
+          "aat_id": 300006177,
+          "aat_term": "dikes",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "pumping_station",
@@ -13042,14 +13858,26 @@
         "count": 14676,
         "fraction": 0.0015,
         "in_wiki": true,
-        "description": "Tower that emits light to serve as a navigational aid at sea or on inland waterway"
+        "description": "Tower that emits light to serve as a navigational aid at sea or on inland waterway",
+        "aat_mapping": {
+          "aat_id": 300007741,
+          "aat_term": "lighthouses",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "watermill",
         "count": 14365,
         "fraction": 0.0015,
         "in_wiki": true,
-        "description": "A mill driven by water power."
+        "description": "A mill driven by water power.",
+        "aat_mapping": {
+          "aat_id": 300006280,
+          "aat_term": "watermills",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "cairn",
@@ -13063,7 +13891,13 @@
         "count": 12435,
         "fraction": 0.0013,
         "in_wiki": true,
-        "description": "A traditional windmill, historically used to mill grain with wind power."
+        "description": "A traditional windmill, historically used to mill grain with wind power.",
+        "aat_mapping": {
+          "aat_id": 300006281,
+          "aat_term": "windmills",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ceremonial_gate",
@@ -13329,7 +14163,13 @@
         "count": 3346,
         "fraction": 0.0004,
         "in_wiki": true,
-        "description": "Observatory: a location used for observing terrestrial or celestial events."
+        "description": "Observatory: a location used for observing terrestrial or celestial events.",
+        "aat_mapping": {
+          "aat_id": 300007303,
+          "aat_term": "observatories",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "insect_hotel",
@@ -14101,14 +14941,26 @@
         "count": 2135225,
         "fraction": 0.835,
         "in_wiki": true,
-        "description": "An administrative boundary recognised by governments for administrative purposes."
+        "description": "An administrative boundary recognised by governments for administrative purposes.",
+        "aat_mapping": {
+          "aat_id": 300261086,
+          "aat_term": "political administrative bodies",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "protected_area",
         "count": 132397,
         "fraction": 0.0518,
         "in_wiki": true,
-        "description": "Used to mark boundaries of protected areas including national parks, wilderness, marine protection areas, heritage sites and other, similar areas."
+        "description": "Used to mark boundaries of protected areas including national parks, wilderness, marine protection areas, heritage sites and other, similar areas.",
+        "aat_mapping": {
+          "aat_id": 300008069,
+          "aat_term": "national parks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "postal_code",
@@ -14157,7 +15009,13 @@
         "count": 13777,
         "fraction": 0.0054,
         "in_wiki": true,
-        "description": "A historic administrative boundary (use judiciously)."
+        "description": "A historic administrative boundary (use judiciously).",
+        "aat_mapping": {
+          "aat_id": 300261086,
+          "aat_term": "political administrative bodies",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "health",
@@ -14192,7 +15050,13 @@
         "count": 6087,
         "fraction": 0.0024,
         "in_wiki": true,
-        "description": "The boundary of a national park, an area of natural beauty, set aside for conservation and for recreation"
+        "description": "The boundary of a national park, an area of natural beauty, set aside for conservation and for recreation",
+        "aat_mapping": {
+          "aat_id": 300008069,
+          "aat_term": "national parks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "landuse",
@@ -15510,7 +16374,13 @@
         "count": 107015,
         "fraction": 0.5381,
         "in_wiki": true,
-        "description": "A military installation capable of withstanding an attack, which is currently used as a bunker."
+        "description": "A military installation capable of withstanding an attack, which is currently used as a bunker.",
+        "aat_mapping": {
+          "aat_id": 300006926,
+          "aat_term": "bunkers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "trench",
@@ -15524,7 +16394,13 @@
         "count": 16030,
         "fraction": 0.0806,
         "in_wiki": true,
-        "description": "Buildings where military personnel live and sleep."
+        "description": "Buildings where military personnel live and sleep.",
+        "aat_mapping": {
+          "aat_id": 300006871,
+          "aat_term": "barracks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "office",
@@ -15552,7 +16428,13 @@
         "count": 4483,
         "fraction": 0.0225,
         "in_wiki": true,
-        "description": "A facility where military personnel and equipment are based."
+        "description": "A facility where military personnel and equipment are based.",
+        "aat_mapping": {
+          "aat_id": 300000455,
+          "aat_term": "military installations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "yes",
@@ -15587,7 +16469,13 @@
         "count": 2353,
         "fraction": 0.0118,
         "in_wiki": true,
-        "description": "A place where military planes take off and land."
+        "description": "A place where military planes take off and land.",
+        "aat_mapping": {
+          "aat_id": 300007027,
+          "aat_term": "airfields",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "obstacle_course",
@@ -15622,7 +16510,13 @@
         "count": 526,
         "fraction": 0.0026,
         "in_wiki": true,
-        "description": "Using this tag is discouraged, use tag:military=base and tag:military_service=navy instead."
+        "description": "Using this tag is discouraged, use tag:military=base and tag:military_service=navy instead.",
+        "aat_mapping": {
+          "aat_id": 300000888,
+          "aat_term": "naval bases",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ammunition",
@@ -16968,7 +17862,13 @@
         "count": 46109,
         "fraction": 0.0421,
         "in_wiki": true,
-        "description": "An aerodrome, airport or airfield"
+        "description": "An aerodrome, airport or airfield",
+        "aat_mapping": {
+          "aat_id": 300007026,
+          "aat_term": "airports",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "holding_position",
@@ -18412,7 +19312,13 @@
         "count": 103604,
         "fraction": 0.0125,
         "in_wiki": true,
-        "description": "A railway station."
+        "description": "A railway station.",
+        "aat_mapping": {
+          "aat_id": 300007783,
+          "aat_term": "railroad stations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "tram_level_crossing",
@@ -18482,7 +19388,13 @@
         "count": 34762,
         "fraction": 0.0042,
         "in_wiki": true,
-        "description": "A small station, may not have a platform, trains may only stop on request."
+        "description": "A small station, may not have a platform, trains may only stop on request.",
+        "aat_mapping": {
+          "aat_id": 300007783,
+          "aat_term": "railroad stations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "railway_crossing",
@@ -22072,7 +22984,13 @@
         "count": 1329329,
         "fraction": 0.0019,
         "in_wiki": true,
-        "description": "A building originally built as a school building."
+        "description": "A building originally built as a school building.",
+        "aat_mapping": {
+          "aat_id": 300007165,
+          "aat_term": "schools (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "retail",
@@ -22149,7 +23067,13 @@
         "count": 429760,
         "fraction": 0.0006,
         "in_wiki": true,
-        "description": "A building that was built as a church."
+        "description": "A building that was built as a church.",
+        "aat_mapping": {
+          "aat_id": 300007466,
+          "aat_term": "churches",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "bungalow",
@@ -22212,21 +23136,39 @@
         "count": 174735,
         "fraction": 0.0003,
         "in_wiki": true,
-        "description": "A university building."
+        "description": "A university building.",
+        "aat_mapping": {
+          "aat_id": 300007166,
+          "aat_term": "universities (institutions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "hospital",
         "count": 168824,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "A building which forms part of a hospital."
+        "description": "A building which forms part of a hospital.",
+        "aat_mapping": {
+          "aat_id": 300007145,
+          "aat_term": "hospitals",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "hotel",
         "count": 157494,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "A building designed with separate rooms available for overnight accommodation."
+        "description": "A building designed with separate rooms available for overnight accommodation.",
+        "aat_mapping": {
+          "aat_id": 300007166,
+          "aat_term": "hotels",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "kindergarten",
@@ -22240,7 +23182,13 @@
         "count": 118010,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "Building built as chapel."
+        "description": "Building built as chapel.",
+        "aat_mapping": {
+          "aat_id": 300004590,
+          "aat_term": "chapels",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "boathouse",
@@ -22254,7 +23202,13 @@
         "count": 106960,
         "fraction": 0.0002,
         "in_wiki": true,
-        "description": "A building that was built as a mosque."
+        "description": "A building that was built as a mosque.",
+        "aat_mapping": {
+          "aat_id": 300007544,
+          "aat_term": "mosques",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ger",
@@ -22310,7 +23264,13 @@
         "count": 59399,
         "fraction": 0.0001,
         "in_wiki": true,
-        "description": "A train station building"
+        "description": "A train station building",
+        "aat_mapping": {
+          "aat_id": 300007783,
+          "aat_term": "railroad stations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "college",
@@ -22373,14 +23333,26 @@
         "count": 32021,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building built to house government offices."
+        "description": "A building built to house government offices.",
+        "aat_mapping": {
+          "aat_id": 300007429,
+          "aat_term": "government buildings",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "temple",
         "count": 31201,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building that was built as a temple"
+        "description": "A building that was built as a temple",
+        "aat_mapping": {
+          "aat_id": 300007595,
+          "aat_term": "temples",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "toilets",
@@ -22506,7 +23478,13 @@
         "count": 11744,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building which was built as stadium."
+        "description": "A building which was built as stadium.",
+        "aat_mapping": {
+          "aat_id": 300007180,
+          "aat_term": "stadiums",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "digester",
@@ -22527,7 +23505,13 @@
         "count": 10650,
         "fraction": 0.0,
         "in_wiki": false,
-        "description": ""
+        "description": "",
+        "aat_mapping": {
+          "aat_id": 300005926,
+          "aat_term": "tombs",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "religious",
@@ -22597,7 +23581,13 @@
         "count": 7449,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A tower which is a building."
+        "description": "A tower which is a building.",
+        "aat_mapping": {
+          "aat_id": 300004847,
+          "aat_term": "towers (building divisions)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "wayside_shrine",
@@ -22618,14 +23608,26 @@
         "count": 6475,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building that was built as a shrine"
+        "description": "A building that was built as a shrine",
+        "aat_mapping": {
+          "aat_id": 300007558,
+          "aat_term": "shrines",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "military",
         "count": 6375,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "An unspecific building constructed for military purposes."
+        "description": "An unspecific building constructed for military purposes.",
+        "aat_mapping": {
+          "aat_id": 300000455,
+          "aat_term": "military installations",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "dam",
@@ -22702,7 +23704,13 @@
         "count": 4114,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building constructed as monastery"
+        "description": "A building constructed as monastery",
+        "aat_mapping": {
+          "aat_id": 300000641,
+          "aat_term": "monasteries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "canopy",
@@ -22744,7 +23752,13 @@
         "count": 3527,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building constructed as a castle."
+        "description": "A building constructed as a castle.",
+        "aat_mapping": {
+          "aat_id": 300006891,
+          "aat_term": "castles (fortifications)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "gatehouse",
@@ -22772,7 +23786,13 @@
         "count": 3429,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building that was built as a cathedral."
+        "description": "A building that was built as a cathedral.",
+        "aat_mapping": {
+          "aat_id": 300007501,
+          "aat_term": "cathedrals",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "tank",
@@ -22870,14 +23890,26 @@
         "count": 2146,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building which was designed as a museum."
+        "description": "A building which was designed as a museum.",
+        "aat_mapping": {
+          "aat_id": 300005768,
+          "aat_term": "museums (buildings)",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "barracks",
         "count": 2140,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building built to house military personnel or laborers."
+        "description": "A building built to house military personnel or laborers.",
+        "aat_mapping": {
+          "aat_id": 300006691,
+          "aat_term": "barracks",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "other",
@@ -22912,7 +23944,13 @@
         "count": 1921,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building constructed as a prison."
+        "description": "A building constructed as a prison.",
+        "aat_mapping": {
+          "aat_id": 300343479,
+          "aat_term": "prisons",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "administrative",
@@ -22926,7 +23964,13 @@
         "count": 1911,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A watertower"
+        "description": "A watertower",
+        "aat_mapping": {
+          "aat_id": 300007880,
+          "aat_term": "water towers",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "utility",
@@ -22954,7 +23998,13 @@
         "count": 1865,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building that was built as a synagogue."
+        "description": "A building that was built as a synagogue.",
+        "aat_mapping": {
+          "aat_id": 300007590,
+          "aat_term": "synagogues",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "ruin",
@@ -23213,7 +24263,13 @@
         "count": 956,
         "fraction": 0.0,
         "in_wiki": true,
-        "description": "A building that has been constructed as a library."
+        "description": "A building that has been constructed as a library.",
+        "aat_mapping": {
+          "aat_id": 300007145,
+          "aat_term": "libraries",
+          "confidence": "curated",
+          "source": "static_osm"
+        }
       },
       {
         "value": "yurt",
