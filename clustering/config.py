@@ -30,7 +30,11 @@ load_dotenv(_repo_root / ".env.local", override=True)
 # When unset, asyncpg falls back to ``~/.pgpass`` if present.
 # ---------------------------------------------------------------------------
 PG_SSH_HOST = os.getenv("PG_SSH_HOST", "whg")  # SSH config alias
-PG_DB_NAME = os.getenv("PG_DB_NAME", "whgv2")
+# The live WHG database is ``whgv3beta`` (holds ``place_link`` / ``close_matches``
+# and the new ``api_contributorattestation`` table). Prod overrides this via
+# ``.env.local`` anyway, but the default must point at the real DB so a dev box
+# without ``.env.local`` doesn't silently connect to a stale/absent ``whgv2``.
+PG_DB_NAME = os.getenv("PG_DB_NAME", "whgv3beta")
 PG_DB_USER = os.getenv("PG_DB_USER", "postgres")
 PG_DB_HOST = os.getenv("PG_DB_HOST", "localhost")  # local after SSH tunnel
 PG_DB_PORT = int(os.getenv("PG_DB_PORT", "5432"))
