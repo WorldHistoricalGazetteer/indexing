@@ -1,8 +1,17 @@
 # Handoff — follow-ups for the `/api/links` live-delta receiver
 
-**Status:** open. Created 2026-07-11 after the receiver landed
-(`gateway/links.py`, branch `feat/api-links-receiver`;
-see `developer/handoff-api-links-receiver.md`).
+**Status:** ✅ **CLOSED 2026-07-11.** Ticket A shipped to `main` (commits
+`c17314b`…`94ae401`): batch harvest of active `api_contributorattestation` rows
++ post-ship live-delta prune + group-writable live-delta + `PG_DB_NAME` default
+fix. Live dry-run verified against `whgv3beta` (legacy path live; attestation
+query correct, table still empty until contributor links flow). Gateway deployed
++ restarted. The storage side is now self-maintaining. Ticket B is **not** work
+for this doc — it lands with `developer/plan-outstanding-2026-07.md` §1 (the
+clustering re-architecture, gated on the whg3 main↔atlas consolidation). Nothing
+further to do here.
+
+Created 2026-07-11 after the receiver landed (`gateway/links.py`, branch
+`feat/api-links-receiver`; see `developer/handoff-api-links-receiver.md`).
 
 The receiver writes each live contributor hard-link (create/revoke forwarded by
 whg3 `crc_post_link`/`crc_delete_link`) into a **live-delta** SQLite at
