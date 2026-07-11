@@ -57,7 +57,7 @@ from pydantic import BaseModel, Field
 from processing.staging_contract import validate_hard_link_row
 from clustering.sqlite_overlay import _INSERT_SQL, _row_tuple, initialise_schema
 
-from .config import IX1_BASE
+from .config import IX3_BASE
 
 logger = logging.getLogger("gateway.links")
 
@@ -69,12 +69,13 @@ router = APIRouter(prefix="/api", tags=["Links"])
 # ---------------------------------------------------------------------------
 
 # The live-delta DB — a SECOND SQLite the batch ``ship_to_pitt`` swap never
-# touches. Default sits alongside the batch overlay dir (``submit_hardlinks_slurm``
-# ships the batch DB to ``{IX1_BASE}/hardlinks``). Override per-deployment.
-# NB: pin/confirm this path with the team before prod — it must be a path the
-# gateway process can open read-write and that the batch swap leaves alone.
+# touches. Defaults to fast /vast flash (``IX3_BASE``); the batch overlay lives
+# on /ix1, so this is a distinct file the batch swap never rewrites. The gateway
+# runs as ``gazetteer`` (group ``ishi``) and ``/vast/ishi`` is group-writable,
+# so ``_connect`` can create the dir + file on first use. Override per-deployment
+# via ``HARD_LINK_LIVE_DB``.
 LIVE_DB_PATH = Path(os.getenv(
-    "HARD_LINK_LIVE_DB", f"{IX1_BASE}/hardlinks/hard_links_live.sqlite"))
+    "HARD_LINK_LIVE_DB", f"{IX3_BASE}/hardlinks/hard_links_live.sqlite"))
 
 # SQLite busy timeout for the (low-volume, one-per-contributor-action) writes.
 _BUSY_TIMEOUT_MS = int(os.getenv("HARD_LINK_LIVE_BUSY_TIMEOUT_MS", "5000"))

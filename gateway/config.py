@@ -25,6 +25,9 @@ KIBANA_HOST_KEYWORD = "kibana"
 
 # ES credentials (for gateway health checks and KNN queries)
 IX1_BASE = os.getenv("IX1_BASE", "/ix1/ishi")
+# Fast flash storage (mirrors processing.settings.IX3_BASE). Prefer this over
+# /ix1 for latency-sensitive gateway-owned files — /ix1 (NFS) can be slow.
+IX3_BASE = os.getenv("IX3_BASE", "/vast/ishi")
 ELASTIC_PASS_FILE = f"{IX1_BASE}/es/config/elastic.password"
 
 # ES index names (may be dated aliases like toponyms_20260317)
