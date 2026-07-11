@@ -108,34 +108,50 @@ already-built features**, and (4) polish/ops/docs.
       `timespans`), `aat_ids` + `aat_ancestors` (from `types.aat_paths`),
       `query_match{name,score}`; optional per-toponym `phon_emb` gated on
       `include_embeddings`.
-- [ ] **Hard-link expansion + ship** — query the **union of the batch overlay + the
-      live-delta** (`hard_links_live.sqlite`) for result-set assertions (+ bounded
-      1-hop) and emit them as edges `{a,b,relation_type,source}` with `via_hard_link`
-      provenance. Reading the live-delta here is what gives a `POST /api/links`
-      real-time reconcile effect — this **is** "Ticket B" from
-      `developer/handoff-hardlink-live-delta-followups.md`; there is no reconcile-time
-      hard-link expansion today, so Ticket B is a requirement *on this item*, not a
-      standalone task. (Pending contributor assertions are merged separately at
-      Django from DO Postgres, scope-filtered — Master Plan Part VII.)
+- [ ] **Hard-link expansion + ship** ★ **recommended next indexing-side pickup**
+      *(unblocked; additive; safe to ship ahead of the browser)* — query the
+      **union of the batch overlay + the live-delta** (`hard_links_live.sqlite`) for
+      result-set assertions (+ bounded 1-hop) and emit them as edges
+      `{a,b,relation_type,source}` with `via_hard_link` provenance. Reading the
+      live-delta here is what gives a `POST /api/links` real-time reconcile effect —
+      this **is** "Ticket B" from `developer/handoff-hardlink-live-delta-followups.md`;
+      there is no reconcile-time hard-link expansion today, so Ticket B is a
+      requirement *on this item*, not a standalone task. The live-delta is now
+      **self-maintaining** (Ticket A, 2026-07-11), so the union read is bounded and
+      safe — the receiver + prune plumbing this depends on already exists. (Pending
+      contributor assertions are merged separately at Django from DO Postgres,
+      scope-filtered — Master Plan Part VII.)
 - [ ] **Discovery scope filter** — accept pending `dataset_id` scope tokens; filter
       `dataset_status:published OR dataset_id ∈ scope`; Django merges DO pending
       assertions (Master Plan Part VII).
 - [x] **`POST /api/links` + `DELETE /api/links`** internal endpoints (arch plan
       §13c/d) — **implemented 2026-07-11** (`gateway/links.py` + tests, branch
       `feat/api-links-receiver`; writes a separate live-delta SQLite, contract
-      reused from `sqlite_overlay`/`staging_contract`). Follow-ups (separate
-      tickets): batch harvest of fresh `ContributorAttestation` rows +
-      live-delta pruning in `contributor_replay.py`; optional live reconcile-time
-      union(batch, live-delta) lookup; deploy on Pitt. See
-      `developer/handoff-api-links-receiver.md`.
-- [ ] **Params** — add `include_embeddings`, `facet_weights` (pass-through),
-      `phase_2`, `result_limit`; **remove** `group_by_cluster` **and**
-      `cluster_threshold` (no server clustering). Retire `build_cluster_lookup` /
-      the `clusters`-index join.
+      reused from `sqlite_overlay`/`staging_contract`). **Deployed to Pitt +
+      restarted 2026-07-11.** Follow-ups now resolved:
+    - [x] **Batch harvest of fresh `ContributorAttestation` rows + live-delta prune**
+      — shipped 2026-07-11 (Ticket A, commits `c17314b`…`94ae401`):
+      `contributor_replay.py` folds active attestations into the batch overlay
+      (source_id mirrors the whg3 model; no `ds_status` filter so batch ⊇ live-delta);
+      `submit_hardlinks_slurm.py` prunes the live-delta after each ship (cutoff =
+      pre-harvest timestamp, keeps in-flight rows); gateway creates the live-delta
+      group-writable so the batch user can prune it. Live-verified against `whgv3beta`
+      (table still empty until contributor links flow). The live-delta is now
+      **self-maintaining / bounded**. `handoff-hardlink-live-delta-followups.md` is CLOSED.
+    - [ ] **Live reconcile-time union(batch, live-delta) lookup** — NOT a separate
+      task; it **is** the "Hard-link expansion + ship" item above. Tracked there.
+      See `developer/handoff-api-links-receiver.md`.
+- [ ] **Params** — *(additive, safe now:)* add `include_embeddings`, `facet_weights`
+      (pass-through), `phase_2`, `result_limit`. *(⚠️ contract-breaking — sequence
+      WITH the whg3 cutover, not before:)* **remove** `group_by_cluster` **and**
+      `cluster_threshold` (no server clustering), retire `build_cluster_lookup` /
+      the `clusters`-index join. These change the live `/api/search`+`/api/reconcile`
+      response and would break the current UI if it still sends/reads them.
 - [ ] **Prominence ranking** — the initial (pre-cluster) ranking used the `clusters`
       index's `cluster_size` as a tiebreaker; with the index gone, replace it
       (baseline component size if precomputed, else attestation count / population,
-      or drop the tiebreaker).
+      or drop the tiebreaker). *(⚠️ coupled to the `build_cluster_lookup` retirement /
+      `clusters`-index removal — same coordination gate.)*
 
 **Offline (indexing pipeline):**
 - [ ] **Calibration** — produce `clustering_params` (θ_bridge/θ_query/θ_synth/
@@ -157,8 +173,8 @@ already-built features**, and (4) polish/ops/docs.
 
 **Cleanup:**
 - [ ] **Delete the stale `clusters` index** (`clusters_20260325`, dead `cluster_v1.0`
-      HDBSCAN) once the gateway no longer reads it — DO-side grep confirmed nothing
-      else does.
+      HDBSCAN) ⚠️ **do LAST** — only after the `build_cluster_lookup` retirement ships
+      (i.e. the gateway no longer reads it). DO-side grep confirmed nothing else does.
 - [ ] Refresh `search-system-architecture.md` + `CLAUDE.md` for the client-side
       scoring/clustering model.
 
@@ -169,6 +185,22 @@ Because **all** scoring + clustering is now client-side, the indexing side is pu
 entirely in whg3's `clustering.js`, which is gated on the **§6 main↔atlas
 reconciliation**. So that decision is the true gate; the gateway/offline work above
 can proceed in parallel but only lights up once the browser side lands.
+
+**Recommended start order (indexing side — all unblocked, no §6 dependency):**
+1. **Hard-link expansion + ship** — additive; directly continues Ticket A (the
+   receiver + live-delta prune it needs already exist); gives `POST /api/links` a
+   real-time reconcile effect. Best first pickup.
+2. **Per-hit payload assembly** + **AAT ancestors** + offline **calibration params**
+   (`clustering_params` / `toponym_stoplist`) — additive; this is the fuel the
+   browser scorer will consume.
+3. **Additive param plumbing** — `include_embeddings`, `facet_weights`, `phase_2`,
+   `result_limit`.
+
+**Hold until the whg3 browser side is ready (⚠️ these break the live contract — land
+them WITH the §6 cutover, never ahead):** remove `group_by_cluster` /
+`cluster_threshold`, retire `build_cluster_lookup`, swap the prominence tiebreaker,
+delete the `clusters` index. The browser `clustering.js` itself is gated on §6 and
+is whg3-side work — not this repo.
 
 ### Open questions
 - **`distinct` semantics** — hard split (arch plan §6c) vs strong negative weight
