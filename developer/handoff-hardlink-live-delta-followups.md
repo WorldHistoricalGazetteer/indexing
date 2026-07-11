@@ -34,6 +34,14 @@ path**, and the live-delta is never pruned, so it **grows unbounded**.
    blunt `DELETE FROM hard_link_assertions` is acceptable only if the batch harvest
    provably captured every active row first.
 
+**⚠ File permissions (verified live 2026-07-11).** The gateway (`gazetteer`)
+creates the live-delta as `-rw-r--r--` (owner `gazetteer`, group `ishi`,
+group-**readable** but NOT group-**writable**). So the prune, if run as a different
+user (e.g. `stg135` for the Slurm batch), can READ the file but not DELETE from it.
+Resolve one of: run the prune as `gazetteer`; have the gateway create the file
+group-writable (open it with a group-write umask, or `chmod g+w` on create); or
+otherwise coordinate ownership. Decide this before wiring the prune.
+
 **Cross-refs.** `clustering/harvest/contributor_replay.py`, `gateway/links.py`
 (`LIVE_DB_PATH`), whg3 `api/models.py::ContributorAttestation`, place#93
 (legacy-link governance — the "no bulk migration" principle still holds).
