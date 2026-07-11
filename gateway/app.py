@@ -32,6 +32,7 @@ from .config import (
 )
 from .proxy import proxy_http, proxy_websocket, close_http_client
 from .extend import router as extend_router
+from .links import router as links_router
 from .places import router as places_router
 from .reconcile import router as reconcile_router
 from .reingest import router as reingest_router
@@ -86,6 +87,9 @@ app.include_router(places_router)
 app.include_router(extend_router)
 # Mount re-ingest endpoints (admin-triggered authority refresh)
 app.include_router(reingest_router)
+# Mount contributor hard-link receiver (POST/DELETE /api/links) — must precede
+# the catch-all proxy below (routers registered here match first).
+app.include_router(links_router)
 
 
 # ---- Health Endpoint ----
