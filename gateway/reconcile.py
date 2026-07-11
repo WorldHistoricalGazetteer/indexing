@@ -44,6 +44,7 @@ from pydantic import BaseModel, Field
 
 from . import spatial
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
+from .clustering_payload import assemble_clustering_fields
 from .config import (
     ES_BACKEND,
     CLUSTERS_INDEX,
@@ -137,6 +138,14 @@ class ReconcileRequest(BaseModel):
                     "Fuel for the browser-side scorer/clustering; additive "
                     "(empty when no overlay is present). Off by default.",
     )
+    include_clustering_fields: bool = Field(
+        default=False,
+        description="When True, add per-hit clustering fuel — h3, h3_cover, "
+                    "temporal_range, aat_ids, aat_paths, query_match{name,score} — "
+                    "consumed by the browser-side scorer (s.sp/s.t/s.ty signals). "
+                    "Additive; off by default (responses are byte-identical when "
+                    "unset). Orthogonal to include_hard_links.",
+    )
 
 
 class CandidateName(BaseModel):
@@ -161,6 +170,13 @@ class CandidateHit(BaseModel):
     namespace: str = ""
     geometries: list[CandidateGeometry] = []
     links: list[dict] = []  # authority / Wikipedia links from the place _source (e.g. Wikidata sitelinks)
+    # Per-hit clustering fuel — only populated when include_clustering_fields=True
+    h3: Optional[str] = None
+    h3_cover: list[str] = []
+    temporal_range: Optional[list[int]] = None
+    aat_ids: list[int] = []
+    aat_paths: list[str] = []
+    query_match: Optional[dict] = None
 
 
 class ClusterGroup(BaseModel):
@@ -189,6 +205,8 @@ def _format_candidate(
     src: dict,
     score: float,
     toponyms: list[dict] | None = None,
+    clustering: dict | None = None,
+    query_match: dict | None = None,
 ) -> CandidateHit:
     """Convert an ES places hit _source into a CandidateHit.
 
@@ -198,6 +216,11 @@ def _format_candidate(
         toponyms: Optional list of ``{"label": ..., "lang": ...}`` dicts
             from Step 3 (toponym enrichment).  When provided these are
             used instead of the nested ``toponyms`` in the places index.
+        clustering: Optional per-hit clustering fuel from
+            ``assemble_clustering_fields`` (h3/h3_cover/temporal_range/
+            aat_ids/aat_paths). Attached only when clustering fuel is requested.
+        query_match: Optional ``{"name": ..., "score": ...}`` — the toponym that
+            produced this hit in discovery.
     """
     # Extract names — prefer step-3 enrichment, fall back to nested data
     names: list[CandidateName] = []
@@ -232,6 +255,8 @@ def _format_candidate(
         namespace=src.get("namespace", ""),
         geometries=geometries,
         links=src.get("links") or [],
+        query_match=query_match,
+        **(clustering or {}),
     )
 
 
@@ -292,6 +317,8 @@ async def reconcile_search(req: ReconcileRequest):
 
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
+    # place_id → matching toponym name (only tracked when clustering fuel wanted)
+    match_names: dict[str, str] = {} if req.include_clustering_fields else None
 
     async with httpx.AsyncClient(timeout=30) as client:
         # ------------------------------------------------------------------
@@ -330,7 +357,8 @@ async def reconcile_search(req: ReconcileRequest):
                     )
                     knn_resp.raise_for_status()
                     knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                    _collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
+                    _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
+                                       include_prefixes, match_names)
             else:
                 text_body = _build_toponym_query(req.query, req.mode, size=200)
                 text_resp = await client.post(
@@ -341,7 +369,8 @@ async def reconcile_search(req: ReconcileRequest):
                 )
                 text_resp.raise_for_status()
                 text_hits = text_resp.json().get("hits", {}).get("hits", [])
-                _collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
+                _collect_place_ids(text_hits, place_scores, exclude_prefixes,
+                                   include_prefixes, match_names)
 
             if not place_scores:
                 return ReconcileResponse()
@@ -368,6 +397,7 @@ async def reconcile_search(req: ReconcileRequest):
             namespaces=req.namespaces,
             fclasses=req.fclasses,
             types=req.types,
+            clustering_fields=req.include_clustering_fields,
         )
         places_resp = await client.post(
             f"{ES_BACKEND}/{PLACES_INDEX}/_search",
@@ -441,14 +471,23 @@ async def reconcile_search(req: ReconcileRequest):
 
     candidates = []
     for hit in raw_hits:
-        pid = hit.get("_source", {}).get("place_id", "")
+        src = hit.get("_source", {})
+        pid = src.get("place_id", "")
         raw_score = place_scores.get(pid, 0.0)
         normalised = (raw_score / max_toponym_score * 100) if max_toponym_score > 0 else 0
         # Use step-3 toponyms if available, else _format_candidate falls
         # back to nested toponyms in the places _source.
         toponyms = place_toponyms.get(pid) or None
+
+        clustering = None
+        query_match = None
+        if req.include_clustering_fields:
+            clustering = assemble_clustering_fields(src)
+            matched = match_names.get(pid)
+            query_match = {"name": matched, "score": normalised} if matched else None
+
         candidates.append(
-            _format_candidate(hit.get("_source", {}), normalised, toponyms)
+            _format_candidate(src, normalised, toponyms, clustering, query_match)
         )
 
     # Sort by score descending (ES returned them in filter order, not ranked)

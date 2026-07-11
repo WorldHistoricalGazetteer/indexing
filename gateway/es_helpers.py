@@ -175,6 +175,7 @@ def collect_place_ids(
     place_scores: dict[str, float],
     exclude_prefixes: tuple[str, ...] = (),
     include_prefixes: tuple[str, ...] = (),
+    match_names: dict[str, str] | None = None,
 ) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
@@ -185,9 +186,14 @@ def collect_place_ids(
             one of these prefixes are kept (positive namespace filter).
         exclude_prefixes: Place_ids starting with any of these are dropped
             (negative namespace filter).  Applied after the inclusion check.
+        match_names: When provided, records ``{place_id: toponym_name}`` for the
+            hit that produced each place's *best* score — the ``query_match.name``
+            shipped in the clustering fuel. Updated in lock-step with
+            ``place_scores`` so name and score always agree.
     """
     for hit in hits:
         score = hit.get("_score", 0.0)
+        name = hit.get("_source", {}).get("name", "")
         for pid in hit.get("_source", {}).get("attestations", []):
             if not pid:
                 continue
@@ -198,6 +204,8 @@ def collect_place_ids(
             prev = place_scores.get(pid, 0.0)
             if score > prev:
                 place_scores[pid] = score
+                if match_names is not None:
+                    match_names[pid] = name
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +235,7 @@ def build_places_filter(
     extra_source: list[str] | None = None,
     geom: str = "full",
     region=None,
+    clustering_fields: bool = False,
 ) -> dict:
     """
     Build an ES query that fetches places by ID with optional filters.
@@ -388,6 +397,16 @@ def build_places_filter(
     ]
     if extra_source:
         source_fields.extend(extra_source)
+
+    # Per-hit clustering fuel (opt-in): AAT types + H3 cells + timespans, needed
+    # by ``clustering_payload.assemble_clustering_fields``. Deduped against the
+    # fields already selected above (``types`` may arrive via ``extra_source``;
+    # ``geometries.h3_cover`` may arrive via the region gate).
+    if clustering_fields:
+        from .clustering_payload import CLUSTERING_SOURCE_FIELDS
+        for f in CLUSTERING_SOURCE_FIELDS:
+            if f not in source_fields:
+                source_fields.append(f)
 
     return {
         "size": size,

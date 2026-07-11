@@ -104,10 +104,20 @@ already-built features**, and (4) polish/ops/docs.
 ### Outstanding work
 
 **Gateway (indexing `gateway/`) — retrieve + ship:**
-- [ ] **Per-hit payload assembly** — `h3`, `h3_cover`, `temporal_range` (derive from
-      `timespans`), `aat_ids` + `aat_ancestors` (from `types.aat_paths`),
-      `query_match{name,score}`; optional per-toponym `phon_emb` gated on
-      `include_embeddings`.
+- [x] **Per-hit payload assembly** — **IMPLEMENTED 2026-07-11**
+      (`gateway/clustering_payload.py::assemble_clustering_fields` +
+      `tests/test_clustering_payload.py`; wired into `/api/search` + `/api/reconcile`).
+      Per hit ships `h3` (representative `h3_centroid`), `h3_cover` (bounded union),
+      `temporal_range` (gateway-derived `[min_start,max_end]` from geometry
+      `timespans`), `aat_ids` (leaf ids), `aat_paths` (materialised root→leaf paths —
+      carries the **ancestors + depth**, so it subsumes a flat `aat_ancestors` and
+      supports client-side Wu-Palmer), and `query_match{name,score}` (the matching
+      toponym, captured in discovery via `collect_place_ids`). Opt-in per query via a
+      new **`include_clustering_fields`** flag (default `False` → responses
+      byte-identical when unset; additive; orthogonal to `include_hard_links`).
+      **Remaining (deferred):** optional per-toponym `phon_emb` gated on
+      `include_embeddings` — part of the "Additive param plumbing" item below, not
+      built yet.
 - [x] **Hard-link expansion + ship** — **IMPLEMENTED 2026-07-11**
       (`gateway/hard_link_expansion.py` + `tests/test_hard_link_expansion.py`;
       wired into `/api/search` + `/api/reconcile`). Queries the **union of the batch
@@ -122,8 +132,9 @@ already-built features**, and (4) polish/ops/docs.
       "Ticket B" from `developer/handoff-hardlink-live-delta-followups.md`. Live-delta
       is self-maintaining (Ticket A, 2026-07-11). (Pending contributor assertions are
       merged separately at Django from DO Postgres, scope-filtered — Master Plan
-      Part VII.) **Remaining:** deploy to Pitt + `gw restart`; the browser consumer
-      (whg3 `clustering.js`) that reads `edges[]` is still gated on §6.
+      Part VII.) **Deployed to Pitt + restarted + smoke-tested 2026-07-11** (`edges[]`
+      verified live: 6.43M-row overlay, correct shape/provenance, default byte-identical).
+      The browser consumer (whg3 `clustering.js`) that reads `edges[]` is whg3-side (§6).
 - [ ] **Discovery scope filter** — accept pending `dataset_id` scope tokens; filter
       `dataset_status:published OR dataset_id ∈ scope`; Django merges DO pending
       assertions (Master Plan Part VII).
@@ -158,12 +169,25 @@ already-built features**, and (4) polish/ops/docs.
       `clusters`-index removal — same coordination gate.)*
 
 **Offline (indexing pipeline):**
-- [ ] **Calibration** — produce `clustering_params` (θ_bridge/θ_query/θ_synth/
-      θ_synth_structural/τ_name/τ_link + default weights) + `toponym_stoplist`
-      (small offline job; salvage the deleted `calibration.py` math).
-- [ ] **AAT ancestors** — ensure `aat_ancestors` are emittable per hit (derive from
-      `types.aat_paths` or add a field). `temporal_range` is gateway-derived — no
-      schema change.
+- [x] **Calibration** — **IMPLEMENTED 2026-07-11** (`clustering/calibrate_params.py`
+      + `clustering/signal_features.py` + `tests/test_calibrate_params.py`). Produces
+      `clustering_params.json` (weights name/spatial/temporal/type/link +
+      θ_query/θ_bridge/θ_synth/θ_synth_structural/τ_name/τ_link) and
+      `toponym_stoplist.json`. Three modes: `--defaults` (documented uncalibrated
+      params, **no ES** — committed to `clustering/data/clustering_params.json` so the
+      browser has params immediately); `--stoplist` (ES aggregation of high-frequency
+      names); `--calibrate` (empirical logistic fit — positives = authority hard-links
+      from the overlay, negatives = random cross-namespace pairs; salvaged signal math
+      = haversine/interval-Jaccard/Wu-Palmer/int8-cosine). **Methodology note:** only
+      the **four inferred** signals are fitted; the link weight stays fixed (hard links
+      are *forced* merges at τ_link, and fitting link-presence on link-derived positives
+      is circular). **Remaining (deferred, needs a prod ES run):** run `--calibrate` +
+      `--stoplist` on CRC to replace the defaults with fitted values; wire the gateway
+      to *ship* these files per query (couples to the additive param plumbing).
+- [x] **AAT ancestors** — **DONE** (folded into the per-hit payload above): `aat_paths`
+      (the materialised `types.aat_paths`, ancestors + depth) is emitted per hit — no
+      schema change (the field already exists per-type). `temporal_range` likewise
+      gateway-derived. Client-side Wu-Palmer (`s.ty`) reads `aat_paths` directly.
 - [ ] *(Optional / deferred)* **`baseline_cluster_id` precompute** — connected
       components over overlay `sameAs`/`exactMatch` (+ toponym `s.n ≥ 0.95`) →
       patch onto place docs (`apply_links_patch` pattern). Add the schema field
@@ -196,6 +220,30 @@ already-built features**, and (4) polish/ops/docs.
 >   `s.n`/`s.sp`/`s.t`/`s.ty` signals your scorer computes.
 > - Source of truth for the shape: `gateway/hard_link_expansion.py::HardLinkEdge`
 >   and `tests/test_hard_link_expansion.py` in this repo.
+>
+> **✅ SCOPE — most of the fuel is now LIVE on the gateway (2026-07-11):**
+> - **`s.l` (hard links)** → send `"include_hard_links": true` → `edges[]` (above).
+> - **`s.sp` / `s.t` / `s.ty` + `query_match`** → send **`"include_clustering_fields":
+>   true`** → every hit gains: `h3` (representative H3 cell), `h3_cover` (bounded H3
+>   cell list), `temporal_range` (`[min_start, max_end]` years, or `null`), `aat_ids`
+>   (leaf AAT concept ids), `aat_paths` (materialised `root.…​.leaf` dot-strings —
+>   **use these for Wu-Palmer `s.ty`**: depth = path length, LCA = longest common
+>   prefix), and `query_match` (`{"name","score"}` — the toponym that matched). Both
+>   flags are opt-in and **orthogonal**; send both for the full non-embedding fuel.
+> - **`clustering_params` + `toponym_stoplist`** → offline artefacts in
+>   `indexing/clustering/data/` (`clustering_params.json` = weights + θ/τ thresholds;
+>   default θ_query 0.55). Currently **uncalibrated defaults** (will be replaced by an
+>   empirical fit); the gateway does not yet *ship* them in the response (small
+>   follow-up), so for now read the committed JSON or hard-code the defaults.
+> - ⏳ **Still pending — `s.n` (Symphonym name cosine):** needs the int8 128-d
+>   toponym embeddings. Two paths, your choice: **Atlas** → `include_embeddings=true`
+>   (gateway ships the precomputed vectors — *param not built yet*); **Workbench** →
+>   self-embed in a worker with the `hf/` Symphonym build + int8 quant (already loaded
+>   for private records). Until embeddings arrive, `s.n` falls back to `query_match`.
+> - **Design `clustering.js` to degrade gracefully:** full multi-signal composite when
+>   all fields are present; drop any signal whose field is absent (renormalise the
+>   remaining weights); hard-link-only baseline as the floor. That way it lights up
+>   incrementally and never hard-depends on a not-yet-shipped field.
 
 **Cleanup:**
 - [ ] **Delete the stale `clusters` index** (`clusters_20260325`, dead `cluster_v1.0`

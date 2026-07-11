@@ -1,0 +1,19 @@
+{
+  "version": 0,
+  "calibrated": false,
+  "weights": {
+    "name": 0.35,
+    "spatial": 0.2,
+    "temporal": 0.15,
+    "type": 0.15,
+    "link": 0.15
+  },
+  "thresholds": {
+    "theta_query": 0.55,
+    "theta_bridge": 0.65,
+    "theta_synth": 0.7,
+    "theta_synth_structural": 0.6,
+    "tau_name": 0.75,
+    "tau_link": 1.0
+  }
+}

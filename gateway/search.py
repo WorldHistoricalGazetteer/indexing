@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field
 
 from . import spatial
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
+from .clustering_payload import assemble_clustering_fields
 from .config import (
     ES_BACKEND,
     PLACES_INDEX,
@@ -116,6 +117,14 @@ class SearchRequest(BaseModel):
                     "Fuel for the browser-side scorer/clustering; additive "
                     "(empty when no overlay is present). Off by default.",
     )
+    include_clustering_fields: bool = Field(
+        default=False,
+        description="When True, add per-hit clustering fuel — h3, h3_cover, "
+                    "temporal_range, aat_ids, aat_paths, query_match{name,score} — "
+                    "consumed by the browser-side scorer (s.sp/s.t/s.ty signals). "
+                    "Additive; off by default (responses are byte-identical when "
+                    "unset). Orthogonal to include_hard_links.",
+    )
 
 
 class SearchHit(BaseModel):
@@ -131,6 +140,13 @@ class SearchHit(BaseModel):
     namespace: str = ""
     cluster_id: Optional[str] = None
     cluster_size: int = 1
+    # Per-hit clustering fuel — only populated when include_clustering_fields=True
+    h3: Optional[str] = None                   # representative H3 centroid cell
+    h3_cover: list[str] = []                   # bounded union of H3 cover cells
+    temporal_range: Optional[list[int]] = None  # [min_start, max_end] years, or null
+    aat_ids: list[int] = []                    # leaf AAT concept ids
+    aat_paths: list[str] = []                  # materialised root→leaf AAT paths (ancestors + depth)
+    query_match: Optional[dict] = None         # {"name": ..., "score": ...} — the matching toponym
 
 
 class Facets(BaseModel):
@@ -232,6 +248,8 @@ async def search(req: SearchRequest):
 
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
+    # place_id → matching toponym name (only tracked when clustering fuel wanted)
+    match_names: dict[str, str] = {} if req.include_clustering_fields else None
 
     async with httpx.AsyncClient(timeout=30) as client:
 
@@ -269,7 +287,8 @@ async def search(req: SearchRequest):
                     )
                     knn_resp.raise_for_status()
                     knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                    collect_place_ids(knn_hits, place_scores, exclude_prefixes, include_prefixes)
+                    collect_place_ids(knn_hits, place_scores, exclude_prefixes,
+                                      include_prefixes, match_names)
             else:
                 text_body = build_toponym_query(req.query, req.mode, size=200)
                 text_resp = await client.post(
@@ -278,7 +297,8 @@ async def search(req: SearchRequest):
                 )
                 text_resp.raise_for_status()
                 text_hits = text_resp.json().get("hits", {}).get("hits", [])
-                collect_place_ids(text_hits, place_scores, exclude_prefixes, include_prefixes)
+                collect_place_ids(text_hits, place_scores, exclude_prefixes,
+                                  include_prefixes, match_names)
 
             if not place_scores:
                 return SearchResponse()
@@ -304,6 +324,7 @@ async def search(req: SearchRequest):
             types=req.types,
             extra_source=["types"],  # needed for type facets + hit data
             geom=req.geom,
+            clustering_fields=req.include_clustering_fields,
         )
 
         # Add aggregations for faceted UI
@@ -478,7 +499,7 @@ async def search(req: SearchRequest):
         # Cluster info
         cluster_id, cluster_size = pid_to_cluster.get(pid, (None, 1))
 
-        results.append(SearchHit(
+        hit_kwargs = dict(
             place_id=pid,
             title=src.get("title", "") or "",
             names=names,
@@ -490,7 +511,18 @@ async def search(req: SearchRequest):
             namespace=src.get("namespace", ""),
             cluster_id=cluster_id,
             cluster_size=cluster_size,
-        ))
+        )
+
+        # Per-hit clustering fuel (opt-in) — h3/temporal/aat from _source plus
+        # the query_match captured in discovery.
+        if req.include_clustering_fields:
+            hit_kwargs.update(assemble_clustering_fields(src))
+            matched = match_names.get(pid)
+            hit_kwargs["query_match"] = (
+                {"name": matched, "score": normalised} if matched else None
+            )
+
+        results.append(SearchHit(**hit_kwargs))
 
     # Sort by score descending, then by cluster_size descending as tiebreaker
     results.sort(key=lambda r: (r.score, r.cluster_size), reverse=True)
