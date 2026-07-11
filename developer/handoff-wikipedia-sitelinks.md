@@ -84,16 +84,15 @@ if wiki_links:
 2. Apply the patch (step 2 above) — dry-run reports the row count and a sample before `--execute`.
 3. Query the live index / gateway for a wd place and confirm the `links` come back.
 
-## Companion change (separate task, `website` repo — for whoever picks this up next)
-Populating the index is necessary but not sufficient — the website currently **strips** links from
-reconciliation candidates. To make Wikipedia links show up when WD candidates are returned by
-`/reconcile` (Stephen's actual goal), a follow-up in the **`website` (whg3)** repo must surface them:
-- `api/reconcile_helpers.py` → `make_candidate` (~L204–232) does not read `links`; add the wd `links`
-  (or just the Wikipedia ones) to the candidate payload.
-- The CRC gateway adapter `api/crc_client.py` (~L462–469) drops `links` before `make_candidate` — stop
-  dropping them.
-- `GET /entity/{id}/api` (`api/views_entity.py`) already emits `links`; once the index carries the
-  Wikipedia entries they will appear there automatically.
+## Companion change (`website` repo) — DONE (2026-07-06, whg3 `cc8ec6a3`), awaiting the index data
+The website used to **strip** links from reconciliation candidates. Now surfaced:
+- `api/reconcile_helpers.py` → `make_candidate` emits a **`wikipedia`** field (`[{lang, url}]`) derived
+  from the place's `links` (via a new `wikipedia_links()` helper). Empty until the index carries them.
+- `api/crc_client.py` now **forwards** the gateway hit's `links` into the adapted `_source` (was dropped).
+- `GET /entity/{id}/api` already emits `links` — Wikipedia entries appear there automatically once indexed.
+- Workbench export: "Enrich from WHG" gains a **`whg_wikipedia`** column.
+- Verified live: `/reconcile` returns candidates with `wikipedia: []` (200, no regression); it will
+  populate automatically once this patch's `links` are applied to the index.
 
 Full context and the two-option analysis (this server-side route vs. a browser Wikidata-API fallback)
 is in the website repo at `developer/plan-workbench-wikipedia-enrichment.prompt.md`.
