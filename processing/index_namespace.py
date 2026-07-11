@@ -48,6 +48,7 @@ from elasticsearch import Elasticsearch
 from elasticsearch import helpers as es_helpers
 
 from processing.settings import STAGED_BASE_DIR
+from processing.staged_parquet import strip_hull
 
 try:
     from phonetics.utils.script_detection import detect_script
@@ -108,13 +109,13 @@ def iter_place_docs(path: Path) -> Iterator[dict[str, Any]]:
         for batch in pf.iter_batches(batch_size=500):
             for row in batch.to_pylist():
                 if isinstance(row, dict):
-                    yield row
+                    yield strip_hull(row)
     else:
         with path.open(encoding="utf-8") as fh:
             for line in fh:
                 line = line.strip()
                 if line:
-                    yield json.loads(line)
+                    yield strip_hull(json.loads(line))
 
 
 def _has_uncovered_geometry(doc: dict) -> bool:

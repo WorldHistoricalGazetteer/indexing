@@ -51,6 +51,7 @@ from processing.stage_writers import (
     write_stage_event,
 )
 from processing.staging_contract import is_relations_only
+from processing.staged_parquet import strip_hull
 from processing.staging_orchestrator import (
     load_run_manifest,
     stage_status_with_fallback,
@@ -92,14 +93,14 @@ def _iter_staged_docs(path: Path, batch_size: int = 2000) -> Iterator[dict[str, 
         for batch in parquet.iter_batches(batch_size=batch_size):
             for row in batch.to_pylist():
                 if isinstance(row, dict):
-                    yield row
+                    yield strip_hull(row)
         return
     with path.open("r", encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
-            yield json.loads(line)
+            yield strip_hull(json.loads(line))
 
 
 def _count_staged_docs(path: Path) -> int:

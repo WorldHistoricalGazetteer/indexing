@@ -62,18 +62,33 @@ def normalize_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def strip_hull(doc: dict[str, Any]) -> dict[str, Any]:
+    """Return a copy of ``doc`` with ``geometries[].hull`` removed.
+
+    ``hull`` is a derived convex hull used only as an ingestion intermediate
+    (h3-cover computation, ccode containment); it is never read at query time
+    (the gateway filters on ``repr_point`` / ``h3_cover``). It is dropped from
+    parquet (its variable-depth coordinates break parquet schema inference) and,
+    for index-path consistency, from every doc indexed to ES — so ES never
+    carries ``hull`` regardless of source format (parquet or JSONL).
+    """
+    geometries = doc.get("geometries")
+    if not isinstance(geometries, list) or not any(
+        isinstance(g, dict) and "hull" in g for g in geometries
+    ):
+        return doc  # nothing to strip — return unchanged (no copy on the hot path)
+    stripped = dict(doc)
+    stripped["geometries"] = [
+        {k: v for k, v in g.items() if k != "hull"}
+        if isinstance(g, dict) and "hull" in g else g
+        for g in geometries
+    ]
+    return stripped
+
+
 def strip_hull_for_parquet(doc: dict[str, Any]) -> dict[str, Any]:
     """Drop ``geometries[].hull`` before parquet conversion (see module docstring)."""
-    stripped = dict(doc)
-    geometries = stripped.get("geometries")
-    if isinstance(geometries, list):
-        new_geoms = []
-        for geom in geometries:
-            if isinstance(geom, dict) and "hull" in geom:
-                geom = {k: v for k, v in geom.items() if k != "hull"}
-            new_geoms.append(geom)
-        stripped["geometries"] = new_geoms
-    return stripped
+    return strip_hull(doc)
 
 
 def drop_nulls_for_parquet(obj: Any) -> Any:

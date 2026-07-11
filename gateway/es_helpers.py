@@ -285,11 +285,18 @@ def build_places_filter(
         })
 
     if bounds and _has_geometries(bounds):
-        # Filter on geometries.repr_point (geo_point) rather than the old
-        # geometries.geom geo_shape: post-barrier reindex (2026-05-02)
-        # stores the per-geometry shape as a structured object that is no
-        # longer queryable as a geo_shape, and only `whg` places carry the
-        # alternate `geometries.hull`. repr_point is universally populated.
+        # DEGENERATE FALLBACK ONLY. The PRIMARY `bounds` path resolves the raw
+        # GeoJSON into a containment region (spatial.region_from_geojson) and is
+        # handled by the `region` branch below — an extent-aware `h3_cover`
+        # recall gate plus a precise refine in spatial.apply_containment. This
+        # branch is reached only when that resolution returned None (Shapely
+        # unavailable or malformed/empty `bounds`), in which case the caller
+        # passes the raw `bounds` here. All we can do without Shapely/H3 is a
+        # `repr_point ∈ bounds` centroid test: coarse (it misses polygons whose
+        # representative point lies outside `bounds`), and NOT refined by
+        # apply_containment (region is None), but nothing better is available.
+        # (`geometries.geom` is no longer a queryable geo_shape post-barrier;
+        # `repr_point` is universally populated.)
         filter_clauses.append({
             "nested": {
                 "path": "geometries",
