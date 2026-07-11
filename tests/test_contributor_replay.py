@@ -106,18 +106,87 @@ class TestCloseMatchMapping(unittest.TestCase):
         self.assertIsNone(cr._close_match_to_hard_link(_cm(user_id=None)))
 
 
+def _at(**overrides):
+    """A synthetic ``api_contributorattestation`` row (the live flow)."""
+    base = {
+        "place_a": "gn:2988507",
+        "place_b": "wd:Q90",
+        "relation_type": "sameAs",
+        "user_id": 42,
+        "asserted_at": datetime(2026, 7, 10, 12, 0, tzinfo=timezone.utc),
+        "justification": "curator match",
+        "legacy_v3_2": False,
+    }
+    base.update(overrides)
+    return base
+
+
+class TestAttestationMapping(unittest.TestCase):
+    def test_basic_conversion(self):
+        row = cr._attestation_to_hard_link(_at())
+        self.assertEqual(row["relation_type"], "sameAs")
+        self.assertEqual(row["source_category"], "contributor")
+        # Fresh live row → NO legacy suffix (Ticket A).
+        self.assertEqual(row["source_id"], "contributor:42")
+        self.assertEqual(row["justification"], "curator match")
+        self.assertEqual(row["asserted_at"], "2026-07-10T12:00:00+00:00")
+        self.assertLess(row["place_a"], row["place_b"])
+        self.assertEqual({row["place_a"], row["place_b"]}, {"gn:2988507", "wd:Q90"})
+
+    def test_source_id_matches_django_model(self):
+        # Mirrors whg3 ContributorAttestation.source_id() exactly so a row in
+        # both stores dedups on the identical UNIQUE key.
+        self.assertEqual(cr._attestation_to_hard_link(_at())["source_id"],
+                         "contributor:42")
+        legacy = cr._attestation_to_hard_link(_at(legacy_v3_2=True))
+        self.assertEqual(legacy["source_id"], "contributor:42:legacy_v3_2")
+
+    def test_all_relation_types_accepted(self):
+        for rt in ("sameAs", "exactMatch", "closeMatch", "distinct"):
+            self.assertIsNotNone(cr._attestation_to_hard_link(_at(relation_type=rt)))
+
+    def test_bad_relation_type_rejected(self):
+        self.assertIsNone(cr._attestation_to_hard_link(_at(relation_type="relatedTo")))
+        self.assertIsNone(cr._attestation_to_hard_link(_at(relation_type=None)))
+
+    def test_missing_user_rejected(self):
+        self.assertIsNone(cr._attestation_to_hard_link(_at(user_id=None)))
+
+    def test_self_loop_rejected(self):
+        self.assertIsNone(
+            cr._attestation_to_hard_link(_at(place_a="wd:Q90", place_b="wd:Q90")))
+
+    def test_empty_justification_becomes_none(self):
+        self.assertIsNone(cr._attestation_to_hard_link(_at(justification=""))["justification"])
+        self.assertIsNone(cr._attestation_to_hard_link(_at(justification=None))["justification"])
+
+    def test_non_canonical_input_is_reordered(self):
+        # The model CHECK enforces place_a < place_b, but guard defensively.
+        row = cr._attestation_to_hard_link(_at(place_a="wd:Q90", place_b="gn:2988507"))
+        self.assertLess(row["place_a"], row["place_b"])
+
+
 class TestIterHardLinkRows(unittest.TestCase):
     def test_combines_sources_with_per_source_counts(self):
         pl_rows = [_pl(), _pl(place_b="bare-no-colon")]   # 1 valid, 1 rejected
         cm_rows = [_cm(), _cm(basis="authid"), _cm(user_id=None)]  # 2 valid, 1 rejected
-        rows, counts = cr.iter_hard_link_rows(pl_rows, cm_rows)
-        self.assertEqual(len(rows), 3)
+        at_rows = [_at(), _at(relation_type="bad"), _at(user_id=None)]  # 1 valid, 2 rejected
+        rows, counts = cr.iter_hard_link_rows(pl_rows, cm_rows, at_rows)
+        self.assertEqual(len(rows), 4)
         self.assertEqual(counts, {
             "place_link_input": 2,
             "place_link_converted": 1,
             "close_match_input": 3,
             "close_match_converted": 2,
+            "attestation_input": 3,
+            "attestation_converted": 1,
         })
+
+    def test_attestations_default_empty(self):
+        # Backward-compat: two-arg callers still work.
+        rows, counts = cr.iter_hard_link_rows([_pl()], [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(counts["attestation_input"], 0)
 
 
 class TestSourceIdContract(unittest.TestCase):

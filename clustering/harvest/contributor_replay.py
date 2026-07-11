@@ -1,7 +1,10 @@
-"""Batch 12 — Contributor attestation replay from legacy v3.2 DO PostgreSQL.
+"""Batch 12 — Contributor attestation harvest from DO PostgreSQL.
 
-The legacy v3 schema has **no** ``contributor_attestations`` table. Identity-
-linking acceptance evidence is stored in two durable tables that the
+Two flows feed the batch overlay from DO PG:
+
+**A. Legacy v3.2 replay** (``place_link`` + ``close_matches``). The legacy v3
+schema has **no** ``contributor_attestations`` table. Identity-linking
+acceptance evidence is stored in two durable tables that the
 reconciliation UI writes when a curator accepts a hit:
 
 * **``place_link``** (``places.PlaceLink``) — written by
@@ -25,8 +28,26 @@ This script harvests both tables, maps each row into the canonical
 ``hard_link_assertions`` shape, and inserts into the Pitt-side SQLite
 overlay. Every row from this legacy harvest carries the
 ``:legacy_v3_2`` suffix on ``source_id`` so the gateway can distinguish
-v3 evidence from fresh dynamic-cluster attestations once the new flow
-ships.
+v3 evidence from fresh dynamic-cluster attestations.
+
+**B. Live contributor attestations** (``api_contributorattestation``). This is
+the canonical store for links asserted through the platform since the new flow
+shipped — the same rows the gateway's ``POST /api/links`` receiver lands in the
+Pitt-side *live-delta* SQLite (``gateway/links.py``). Django's ``api/signals.py``
+forwards every ``status='active'`` create/revoke to the gateway; this harvest
+reads the same ``active`` rows straight from PG and folds them into the freshly
+built batch overlay, so the overlay becomes a superset of the live-delta's
+active rows (which is what makes the post-build live-delta prune safe — see
+``clustering.sqlite_overlay.prune_live_delta`` and Ticket A in
+``developer/handoff-hardlink-live-delta-followups.md``).
+
+``source_id`` mirrors ``ContributorAttestation.source_id()`` exactly
+(``contributor:<user_id>`` for fresh rows; ``:legacy_v3_2`` suffix for the rare
+v3.2-inherited row that is *also* active) so a row present in both the batch
+overlay and the live-delta dedups on the identical ``(place_a, place_b,
+relation_type, source_id)`` UNIQUE key. No ``ds_status`` filter is applied — the
+attestation's own ``status='active'`` is the publish gate, matching precisely
+what Django forwards to the live-delta.
 
 Selection rules (per user, 2026-05-02):
 
@@ -62,6 +83,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from clustering.sqlite_overlay import builder, insert_rows
+from processing.staging_contract import HARD_LINK_RELATION_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +147,29 @@ _CLOSE_MATCH_QUERY = """
       AND db.ds_status = ANY($1::text[])
       AND cm.basis IN ('reviewed', 'authid', 'imported')
       AND cm.created_by_id IS NOT NULL
+"""
+
+
+# Live contributor attestations (the new flow). No ``ds_status`` join and no
+# publishable-status filter: the row's own ``status='active'`` is the publish
+# gate, which is *exactly* the subset Django forwards to the gateway live-delta
+# (``api/signals.py``). Reading the same predicate here guarantees the batch
+# overlay is a superset of the live-delta's active rows, so the post-build prune
+# never drops a row that isn't already folded in. ``place_a``/``place_b`` are
+# stored already-namespaced and canonical-ordered (model CHECK constraint), so
+# no id reconstruction is needed. ``legacy_v3_2`` is selected so ``source_id``
+# can carry the same suffix ``ContributorAttestation.source_id()`` would emit.
+_ACTIVE_ATTESTATION_QUERY = """
+    SELECT
+        ca.place_a       AS place_a,
+        ca.place_b       AS place_b,
+        ca.relation_type AS relation_type,
+        ca.user_id       AS user_id,
+        ca.asserted_at   AS asserted_at,
+        ca.justification AS justification,
+        ca.legacy_v3_2   AS legacy_v3_2
+    FROM api_contributorattestation ca
+    WHERE ca.status = 'active'
 """
 
 
@@ -231,12 +276,58 @@ def _close_match_to_hard_link(record: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _build_live_source_id(user_id: Any, *, legacy: bool = False) -> str:
+    """``source_id`` for a live ``api_contributorattestation`` row.
+
+    Mirrors ``whg3 api/models.py::ContributorAttestation.source_id()`` exactly:
+    ``contributor:<user_id>`` for a fresh row, with the ``:legacy_v3_2`` suffix
+    only when the row carries the inherited-from-v3.2 flag. Matching that method
+    byte-for-byte is what lets a row present in both the batch overlay and the
+    gateway live-delta dedup on the ``(place_a, place_b, relation_type,
+    source_id)`` UNIQUE key."""
+    base = f"contributor:{user_id}"
+    return f"{base}:legacy_v3_2" if legacy else base
+
+
+def _attestation_to_hard_link(record: dict[str, Any]) -> dict[str, Any] | None:
+    place_a = record.get("place_a")
+    place_b = record.get("place_b")
+    if not isinstance(place_a, str) or not isinstance(place_b, str):
+        return None
+    if place_a == place_b:
+        return None
+    user_id = record.get("user_id")
+    if user_id is None:
+        return None
+    relation_type = record.get("relation_type")
+    # The model constrains relation_type to the four canonical values, but guard
+    # anyway so a bad direct DB write can't fail the whole batch insert.
+    if relation_type not in HARD_LINK_RELATION_TYPES:
+        return None
+    pa, pb = _canonical_pair(place_a, place_b)
+    justification = record.get("justification")
+    return {
+        "place_a": pa,
+        "place_b": pb,
+        "relation_type": relation_type,
+        "source_category": "contributor",
+        "source_id": _build_live_source_id(
+            user_id, legacy=bool(record.get("legacy_v3_2"))),
+        "asserted_at": _coerce_iso(record.get("asserted_at")),
+        # Preserve the contributor's free-text justification verbatim (may be
+        # None) so the overlay row matches what the live-delta stores.
+        "justification": justification if justification else None,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Async fetch from DO PG via the existing SSH-tunnelled client
 # ---------------------------------------------------------------------------
 
 
-async def _fetch_all_async() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+async def _fetch_all_async() -> tuple[
+    list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
+]:
     # Lazy import: pg_client pulls in asyncpg + sshtunnel which are heavy and
     # not needed for the LOC / staged harvesters.
     from clustering.pg_client import pg_connection  # noqa: WPS433
@@ -245,22 +336,33 @@ async def _fetch_all_async() -> tuple[list[dict[str, Any]], list[dict[str, Any]]
     async with pg_connection() as conn:
         place_link_rows = await conn.fetch(_PLACE_LINK_QUERY, statuses)
         close_match_rows = await conn.fetch(_CLOSE_MATCH_QUERY, statuses)
-    return [dict(r) for r in place_link_rows], [dict(r) for r in close_match_rows]
+        attestation_rows = await conn.fetch(_ACTIVE_ATTESTATION_QUERY)
+    return (
+        [dict(r) for r in place_link_rows],
+        [dict(r) for r in close_match_rows],
+        [dict(r) for r in attestation_rows],
+    )
 
 
-def fetch_all() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Synchronous façade — returns ``(place_link_rows, close_match_rows)``."""
+def fetch_all() -> tuple[
+    list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]
+]:
+    """Synchronous façade — returns
+    ``(place_link_rows, close_match_rows, attestation_rows)``."""
     return asyncio.run(_fetch_all_async())
 
 
 def iter_hard_link_rows(
     place_link_rows: Iterable[dict[str, Any]],
     close_match_rows: Iterable[dict[str, Any]],
+    attestation_rows: Iterable[dict[str, Any]] = (),
 ) -> tuple[list[dict[str, Any]], dict[str, int]]:
     """Map raw PG rows into hard_link_assertions-shaped rows.
 
     Returns ``(rows, per_source_counts)`` where ``per_source_counts`` is a
-    breakdown of converted rows per source for diagnostics.
+    breakdown of converted rows per source for diagnostics. ``attestation_rows``
+    defaults to empty so callers only interested in the legacy replay keep
+    working unchanged.
     """
     out: list[dict[str, Any]] = []
     counts = {
@@ -268,6 +370,8 @@ def iter_hard_link_rows(
         "place_link_converted": 0,
         "close_match_input": 0,
         "close_match_converted": 0,
+        "attestation_input": 0,
+        "attestation_converted": 0,
     }
     for record in place_link_rows:
         counts["place_link_input"] += 1
@@ -280,6 +384,12 @@ def iter_hard_link_rows(
         row = _close_match_to_hard_link(record)
         if row is not None:
             counts["close_match_converted"] += 1
+            out.append(row)
+    for record in attestation_rows:
+        counts["attestation_input"] += 1
+        row = _attestation_to_hard_link(record)
+        if row is not None:
+            counts["attestation_converted"] += 1
             out.append(row)
     return out, counts
 
@@ -294,8 +404,9 @@ def replay(
     db_path: Path,
     batch_size: int = 5_000,
 ) -> dict[str, Any]:
-    place_link_rows, close_match_rows = fetch_all()
-    rows, counts = iter_hard_link_rows(place_link_rows, close_match_rows)
+    place_link_rows, close_match_rows, attestation_rows = fetch_all()
+    rows, counts = iter_hard_link_rows(
+        place_link_rows, close_match_rows, attestation_rows)
     with builder(db_path) as conn:
         stats = insert_rows(conn, rows, batch_size=batch_size)
     stats["db_path"] = str(db_path)
@@ -307,8 +418,9 @@ def replay(
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Replay legacy v3.2 contributor attestations from DO PG (place_link "
-            "+ close_matches) into the SQLite hard-link overlay"
+            "Harvest contributor hard links from DO PG into the SQLite overlay: "
+            "legacy v3.2 replay (place_link + close_matches) plus active "
+            "api_contributorattestation rows (the live-forwarding flow)"
         )
     )
     parser.add_argument("--db-path", required=True, help="SQLite output path")
@@ -319,14 +431,15 @@ def main() -> None:
 
     if args.dry_run:
         try:
-            place_link_rows, close_match_rows = fetch_all()
+            place_link_rows, close_match_rows, attestation_rows = fetch_all()
         except ImportError as exc:
             print(
                 f"ERROR: contributor replay needs asyncpg + sshtunnel installed: {exc}",
                 file=sys.stderr,
             )
             sys.exit(2)
-        rows, counts = iter_hard_link_rows(place_link_rows, close_match_rows)
+        rows, counts = iter_hard_link_rows(
+            place_link_rows, close_match_rows, attestation_rows)
         print(json.dumps({
             "fetched_rows": len(rows),
             "counts": counts,

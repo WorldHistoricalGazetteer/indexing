@@ -16,6 +16,49 @@ follow-up here** (indexing-side, no clustering dependency). Ticket B turned out
 
 ## Ticket A — Batch-side harvest of fresh attestations + live-delta prune
 
+**Status:** ✅ **IMPLEMENTED 2026-07-11** (branch `feat/ticketA-attestation-harvest`).
+Code + tests landed; **operational steps remain** (deploy gateway, prod dry-run,
+wire prod submit args) — see "Remaining / deploy" at the end of this section.
+
+> **What landed**
+> 1. **Harvest (part 1)** — `contributor_replay.py` now also reads **active**
+>    `api_contributorattestation` rows (`_ACTIVE_ATTESTATION_QUERY`, no `ds_status`
+>    filter — the row's own `status='active'` is the publish gate, matching exactly
+>    what Django forwards). `_attestation_to_hard_link` mirrors
+>    `ContributorAttestation.source_id()` byte-for-byte (`contributor:<uid>`, plus
+>    `:legacy_v3_2` only for the rare inherited-and-active row) so a row in both the
+>    batch overlay and the live-delta dedups on the identical UNIQUE key. Confirmed
+>    the model schema against `whg3 api/models.py` + `api/signals.py`.
+> 2. **Prune (part 2)** — `clustering.sqlite_overlay.prune_live_delta` SSHes to Pitt
+>    and `DELETE`s live-delta rows with `asserted_at <= <cutoff>` (leaving NULL /
+>    in-flight rows). The cutoff is captured in the sbatch **before** any harvest
+>    (`HARDLINK_HARVEST_START`, ISO-8601 UTC, Django's format). `submit_hardlinks_slurm.py`
+>    runs it after a successful `ship_to_pitt`, **best-effort** (a prune failure never
+>    blocks the completion marker). New flags: `--pitt-live-db`, `--skip-prune`.
+> 3. **File permissions** — resolved via the lowest-coordination option: the gateway
+>    now creates the live-delta (+ its `-wal`/`-shm`) **group-writable** (umask `0o002`
+>    + a best-effort `g+w` re-assert on every connect in `gateway/links.py::_connect`),
+>    so an `ishi`-group batch user (`stg135`) can prune it. No ownership coordination
+>    needed. (Alternative, if preferred: run the prune as `gazetteer` — pass
+>    `--pitt-user gazetteer`.)
+> 4. **Tests** — `test_contributor_replay.py` (attestation mapping, source_id parity,
+>    relation-type/self-loop/user guards, 3-source counts, back-compat) +
+>    `test_sqlite_overlay.py` (runs the exact `_PRUNE_REMOTE_PY` snippet locally:
+>    cutoff boundary, NULL-keep, in-flight-keep). 37 passed.
+>
+> **Remaining / deploy**
+> - Deploy `gateway/links.py` to Pitt + `gw restart` (as `gazetteer`) so the live-delta
+>   is (re)created group-writable — an already-existing `-rw-r--r--` file is upgraded on
+>   the next gateway write by `_ensure_group_writable`.
+> - **Prod dry-run** of the harvest to confirm the `api_contributorattestation`
+>   column names / active-row counts:
+>   `python -m clustering.harvest.contributor_replay --db-path /tmp/hl.sqlite --dry-run`
+>   (couldn't introspect prod PG from the dev box — auto-mode blocks prod reads — but
+>   the query columns are verified against the whg3 model source).
+> - The prod `submit_hardlinks_slurm` invocation must pass `--pitt-user/--pitt-host/--pitt-dir`
+>   (already required for shipping) so the prune runs; `--pitt-live-db` defaults to
+>   `{IX3_BASE}/hardlinks/hard_links_live.sqlite` (matches `gateway/links.py::LIVE_DB_PATH`).
+
 **Problem.** Today the batch harvest (`clustering/harvest/contributor_replay.py`)
 reads only the **legacy** `place_link` / `close_matches` tables. Fresh
 `ContributorAttestation` rows (the new live flow) reach the batch overlay by **no

@@ -7,12 +7,20 @@ file, then atomically ships it to the Pitt gateway via
 1. ``clustering.harvest.hard_links_staged`` — one pass over every selected
    per-gazetteer namespace's staged final snapshot.
 2. ``clustering.harvest.loc_links`` — LOC NDJSON → transitive pairs.
-3. ``clustering.harvest.contributor_replay`` — DO PG ``status='active'``
-   rows → ``contributor:<user_id>[:legacy_v3_2]`` source.
+3. ``clustering.harvest.contributor_replay`` — DO PG: legacy ``place_link`` /
+   ``close_matches`` replay **and** active ``api_contributorattestation`` rows
+   (the live-forwarding flow) → ``contributor:<user_id>[:legacy_v3_2]`` source.
 
 Then ship the file to Pitt and write
 ``staged/runs/{run_id}.hardlink_ship.json`` as the completion marker that
 ``processing.push_gazetteer_inventory --require-hardlink-marker`` checks.
+
+Finally, **prune the gateway live-delta** (Ticket A): the active attestations it
+holds are now folded into the shipped overlay, so rows asserted at/before this
+job's harvest-start cutoff are deleted from ``{IX3_BASE}/hardlinks/
+hard_links_live.sqlite`` (``clustering.sqlite_overlay.prune_live_delta``). Rows
+asserted during the build survive. Best-effort: a prune failure never blocks the
+ship marker.
 
 This is **Job B** in the post-barrier flow: independent of Batch 11
 (no ES dependency), parallelisable with Batch 9.
@@ -46,10 +54,17 @@ sys.path.insert(0, str(_REPO))
 
 from processing.settings import (  # noqa: E402
     IX1_BASE,
+    IX3_BASE,
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+
+# Where the gateway keeps its read-write live-delta on Pitt. Must match
+# ``gateway/links.py::LIVE_DB_PATH`` (default ``{IX3_BASE}/hardlinks/
+# hard_links_live.sqlite``) so the post-ship prune targets the right file.
+# Override with ``--pitt-live-db`` if the gateway's ``HARD_LINK_LIVE_DB`` is set.
+_DEFAULT_PITT_LIVE_DB = f"{IX3_BASE}/hardlinks/hard_links_live.sqlite"
 from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
 from processing.staging_orchestrator import (  # noqa: E402
     check_global_barrier,
@@ -91,8 +106,10 @@ def _build_sbatch(
     pitt_host: str | None,
     pitt_dir: str | None,
     pitt_filename: str,
+    pitt_live_db: str,
     skip_loc: bool,
     skip_contributors: bool,
+    skip_prune: bool,
     loc_source: str | None,
 ) -> str:
     log_dir = Path(_REPO) / "logs"
@@ -124,6 +141,14 @@ def _build_sbatch(
         "",
         f"DB_PATH={db_path}",
         "mkdir -p \"$(dirname \"$DB_PATH\")\"",
+        "",
+        "# Cutoff for the post-ship live-delta prune (Ticket A): captured BEFORE",
+        "# any harvest so contributor rows asserted DURING this build survive the",
+        "# prune. Matches Django's asserted_at.isoformat() format (UTC +00:00).",
+        "export HARDLINK_HARVEST_START=$("
+        "python -c 'from datetime import datetime, timezone; "
+        "print(datetime.now(timezone.utc).isoformat())')",
+        "echo \"Live-delta prune cutoff (harvest start): $HARDLINK_HARVEST_START\"",
         "",
         "echo '--- Phase 1A: authority hard-links from staged snapshots ---'",
         "python -u -m clustering.harvest.hard_links_staged \\",
@@ -157,7 +182,8 @@ def _build_sbatch(
             "import json, os, sys",
             "from pathlib import Path",
             f"sys.path.insert(0, {str(_REPO)!r})",
-            "from clustering.sqlite_overlay import ship_to_pitt, finalise_local",
+            "from clustering.sqlite_overlay import (",
+            "    ship_to_pitt, finalise_local, prune_live_delta)",
             f"db_path = Path({str(db_path)!r})",
             "row_count = finalise_local(db_path)",
             "result = ship_to_pitt(",
@@ -168,6 +194,26 @@ def _build_sbatch(
             f"    remote_filename={pitt_filename!r},",
             ")",
             "result['row_count'] = row_count",
+            # Prune the gateway live-delta: its active rows are now folded into
+            # the shipped overlay. Best-effort — a prune failure must NOT fail
+            # the job or block the completion marker (the ship already
+            # succeeded); the live-delta just carries over to the next run.
+            f"skip_prune = {skip_prune!r}",
+            "cutoff = os.environ.get('HARDLINK_HARVEST_START')",
+            "if skip_prune or not cutoff:",
+            "    result['prune'] = {'skipped': True, 'cutoff': cutoff}",
+            "else:",
+            "    try:",
+            "        result['prune'] = prune_live_delta(",
+            f"            remote_user={pitt_user!r},",
+            f"            remote_host={pitt_host!r},",
+            f"            live_db_path={pitt_live_db!r},",
+            "            cutoff_iso=cutoff,",
+            "        )",
+            "        print('pruned live-delta:', json.dumps(result['prune']))",
+            "    except Exception as exc:",
+            "        result['prune'] = {'error': str(exc), 'cutoff': cutoff}",
+            "        print('WARNING: live-delta prune failed:', exc, file=sys.stderr)",
             f"marker = Path({str(marker_path)!r})",
             "marker.parent.mkdir(parents=True, exist_ok=True)",
             "marker.write_text(json.dumps(result, indent=2, sort_keys=True))",
@@ -219,8 +265,10 @@ def submit(
     pitt_host: str | None = None,
     pitt_dir: str | None = None,
     pitt_filename: str = "hard_links.sqlite",
+    pitt_live_db: str = _DEFAULT_PITT_LIVE_DB,
     skip_loc: bool = False,
     skip_contributors: bool = False,
+    skip_prune: bool = False,
     loc_source: str | None = None,
     enforce_barrier: bool = True,
     dry_run: bool = False,
@@ -256,8 +304,10 @@ def submit(
         pitt_host=pitt_host,
         pitt_dir=pitt_dir,
         pitt_filename=pitt_filename,
+        pitt_live_db=pitt_live_db,
         skip_loc=skip_loc,
         skip_contributors=skip_contributors,
+        skip_prune=skip_prune,
         loc_source=loc_source,
     )
     sbatch_path = work_dir / "hardlinks.sbatch"
@@ -289,10 +339,15 @@ def main() -> None:
     parser.add_argument("--pitt-host")
     parser.add_argument("--pitt-dir")
     parser.add_argument("--pitt-filename", default="hard_links.sqlite")
+    parser.add_argument("--pitt-live-db", default=_DEFAULT_PITT_LIVE_DB,
+                        help="Gateway live-delta path on Pitt to prune after ship "
+                             f"(default {_DEFAULT_PITT_LIVE_DB})")
     parser.add_argument("--skip-loc", action="store_true",
                         help="Skip the LOC harvest phase")
     parser.add_argument("--skip-contributors", action="store_true",
                         help="Skip the DO PG contributor replay phase")
+    parser.add_argument("--skip-prune", action="store_true",
+                        help="Skip the post-ship live-delta prune")
     parser.add_argument("--loc-source",
                         help="Override LOC NDJSON source (file or directory)")
     parser.add_argument("--no-enforce-barrier", action="store_true")
@@ -321,8 +376,10 @@ def main() -> None:
         pitt_host=args.pitt_host,
         pitt_dir=args.pitt_dir,
         pitt_filename=args.pitt_filename,
+        pitt_live_db=args.pitt_live_db,
         skip_loc=args.skip_loc,
         skip_contributors=args.skip_contributors,
+        skip_prune=args.skip_prune,
         loc_source=args.loc_source,
         enforce_barrier=not args.no_enforce_barrier,
         dry_run=args.dry_run,

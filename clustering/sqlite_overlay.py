@@ -21,6 +21,7 @@ submitter (``processing/submit_hardlinks_slurm.py``).
 from __future__ import annotations
 
 import os
+import shlex
 import shutil
 import sqlite3
 import subprocess
@@ -251,6 +252,87 @@ def ship_to_pitt(
         "remote_path": f"{remote_dir.rstrip('/')}/{remote_filename}",
         "incoming_path": f"{remote_dir.rstrip('/')}/.{remote_filename}.incoming",
     }
+
+
+# ---------------------------------------------------------------------------
+# Live-delta prune (post-build, on Pitt)
+# ---------------------------------------------------------------------------
+
+# Remote snippet: open the gateway's live-delta read-write (WAL-aware, with a
+# busy timeout so it coexists with the running gateway's writer) and delete
+# every row whose ``asserted_at`` is at or before the batch harvest start.
+# Rows with ``asserted_at > cutoff`` OR ``asserted_at IS NULL`` are left in
+# place — they may have been created *during* this build and are not guaranteed
+# to be in the freshly shipped batch overlay, so pruning them would risk a
+# lost write. Prints a one-line JSON result on stdout.
+_PRUNE_REMOTE_PY = (
+    "import json,sqlite3,sys;"
+    "db,cutoff=sys.argv[1],sys.argv[2];"
+    "c=sqlite3.connect(db,timeout=30,isolation_level=None);"
+    "c.execute('PRAGMA busy_timeout=30000');"
+    "n=c.execute("
+    "'DELETE FROM hard_link_assertions "
+    "WHERE asserted_at IS NOT NULL AND asserted_at <= ?',(cutoff,)).rowcount;"
+    "c.close();"
+    "print(json.dumps({'deleted':n,'cutoff':cutoff,'db':db}))"
+)
+
+
+def prune_live_delta(
+    *,
+    remote_user: str,
+    remote_host: str,
+    live_db_path: str,
+    cutoff_iso: str,
+    ssh_options: str | None = None,
+) -> dict[str, str]:
+    """Prune the gateway live-delta on Pitt after a successful batch ship.
+
+    Runs remotely (over SSH, as ``remote_user``) so the DELETE happens on the
+    same host as the gateway that owns the WAL. Deletes every live-delta row
+    with ``asserted_at <= cutoff_iso`` — i.e. every contributor assertion the
+    batch harvest already folded into the freshly shipped overlay. ``cutoff_iso``
+    MUST be captured *before* the batch's ``contributor_replay`` fetch so any
+    row asserted after it (in-flight during the build) survives the prune.
+
+    ``cutoff_iso`` is compared as a string against the stored ISO-8601
+    ``asserted_at`` (both UTC ``+00:00`` — the gateway stores exactly what
+    Django's ``asserted_at.isoformat()`` sends; generate the cutoff the same
+    way, e.g. ``datetime.now(timezone.utc).isoformat()``).
+
+    File permissions: the gateway creates the live-delta group-writable (group
+    ``ishi``; see ``gateway/links.py::_connect``), so an ``ishi``-group
+    ``remote_user`` can DELETE from it. If the live-delta is instead owned such
+    that ``remote_user`` cannot write it, run this step as the gateway user.
+
+    Returns ``{"deleted": <n>, "cutoff": ..., "db": ...}``.
+    """
+    remote_cmd = (
+        "python3 -c "
+        + shlex.quote(_PRUNE_REMOTE_PY)
+        + " "
+        + shlex.quote(str(live_db_path))
+        + " "
+        + shlex.quote(cutoff_iso)
+    )
+    ssh_cmd = ["ssh"]
+    if ssh_options:
+        ssh_cmd.extend(ssh_options.split())
+    ssh_cmd.extend([f"{remote_user}@{remote_host}", remote_cmd])
+
+    result = subprocess.run(ssh_cmd, capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        sys.stderr.write(result.stderr)
+        raise RuntimeError(
+            f"Live-delta prune failed (rc={result.returncode}) on "
+            f"{remote_user}@{remote_host}:{live_db_path}"
+        )
+    import json as _json
+    try:
+        return _json.loads(result.stdout.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        return {"deleted": "?", "cutoff": cutoff_iso, "db": str(live_db_path),
+                "raw": result.stdout.strip()}
 
 
 # ---------------------------------------------------------------------------

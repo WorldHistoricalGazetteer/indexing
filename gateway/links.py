@@ -124,17 +124,54 @@ class LinkKey(BaseModel):
 def _connect() -> sqlite3.Connection:
     """Open the live-delta DB read-write (WAL + busy timeout), creating the file,
     parent dir, and schema on first use. Caller closes. Opened, used, and closed
-    within a single worker thread, so ``check_same_thread`` is satisfied."""
-    LIVE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(
-        str(LIVE_DB_PATH), isolation_level=None,  # autocommit — one row per call
-        timeout=_BUSY_TIMEOUT_MS / 1000.0,
-    )
-    conn.execute("PRAGMA journal_mode=WAL;")
-    conn.execute("PRAGMA synchronous=NORMAL;")
-    conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")
-    initialise_schema(conn)  # idempotent CREATE (tolerates "already exists")
+    within a single worker thread, so ``check_same_thread`` is satisfied.
+
+    The DB (and its ``-wal`` / ``-shm`` sidecars) are created **group-writable**
+    so the batch job — which runs as a different ``ishi``-group user (e.g.
+    ``stg135``) — can prune the live-delta after folding its active rows into a
+    fresh overlay (``clustering.sqlite_overlay.prune_live_delta``; Ticket A in
+    ``developer/handoff-hardlink-live-delta-followups.md``). Without this the
+    prune can read but not DELETE, and the live-delta grows unbounded."""
+    # Force a group-writable creation mask for the parent dir + DB + WAL/SHM
+    # sidecars, all of which may be created below. The group-writable dir lets a
+    # different ishi-group user (the batch prune) recreate the WAL sidecars if
+    # they're ever absent. Restored immediately.
+    prev_umask = os.umask(0o002)
+    try:
+        LIVE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(
+            str(LIVE_DB_PATH), isolation_level=None,  # autocommit — one row per call
+            timeout=_BUSY_TIMEOUT_MS / 1000.0,
+        )
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS};")
+        initialise_schema(conn)  # idempotent CREATE (tolerates "already exists")
+    finally:
+        os.umask(prev_umask)
+    _ensure_group_writable()
     return conn
+
+
+def _ensure_group_writable() -> None:
+    """Best-effort ``g+w`` on the live-delta + its WAL/SHM sidecars.
+
+    ``umask`` only governs files created *while it is set*; a file that already
+    existed (created before this fix shipped, or under a stricter mask) keeps
+    its old mode. Re-assert the mode each connect so an existing ``-rw-r--r--``
+    live-delta becomes group-writable on the next gateway write. Silently skips
+    files we don't own (only the creator can ``chmod``)."""
+    targets = [LIVE_DB_PATH.parent] + [
+        Path(f"{LIVE_DB_PATH}{suffix}") for suffix in ("", "-wal", "-shm")
+    ]
+    for p in targets:
+        try:
+            if p.exists():
+                mode = p.stat().st_mode & 0o777
+                if not mode & 0o020:  # group-write bit missing
+                    os.chmod(p, mode | 0o020)
+        except OSError:
+            pass
 
 
 def _insert_row(row: dict) -> bool:
