@@ -23,7 +23,7 @@ type.** Getting everything typed is a multi-month, source-by-source effort.
 
 | Band | Namespaces (records · AAT coverage) |
 |------|-------------------------------------|
-| **Good (70–100%)** | chgis, hgis, og, ofs, un — 100% · **tgn ~99% (NEW)** · alc 99% · ohm 93% · gn 85% · osm 85% · wd 75% · pl 71% |
+| **Good (70–100%)** | chgis, hgis, og, ofs, un — 100% · **tgn 100% (NEW — 2,991,027/2,991,044)** · alc 99% · ohm 93% · gn 85% · osm 85% · wd 75% · pl 71% |
 | **Zero — has a mappable native vocab** | **tm** (64K, ancient-world types) · **iv** (24K) · **clio** (15.7K, `polity`) · **dgsd** (3.8K, Song-dynasty) · **ukhc** (92, `historic-county` — trivial) |
 | **Zero — little/no native place type** | **gb** (1.17M, transcribed OS map text) · **whg** (14.2K, mixed contributed LPF) · **po** (9K, time periods, not places) · **nl** (4.4K, territories) · **dp** (2.6K, language points) |
 

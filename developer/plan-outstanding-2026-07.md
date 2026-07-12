@@ -441,7 +441,7 @@ Coverage (re-audited **12 Jul 2026**, after the TGN backfill):
 
 | Coverage | Namespaces |
 |----------|-----------|
-| **Good (70–100%)** | chgis, hgis, og, ofs, un (100%); **tgn ~99% (NEW)**; alc 99%; ohm 93%; gn 85%; osm 85%; wd 75%; pl 71% |
+| **Good (70–100%)** | chgis, hgis, og, ofs, un, **tgn (100%, NEW — 2,991,027/2,991,044)**; alc 99%; ohm 93%; gn 85%; osm 85%; wd 75%; pl 71% |
 | **ZERO AAT** | **gb (1.17M!)**, tm (64K), iv (24K), clio (15.7K), whg (14.2K), po (9K), nl (4.4K), dgsd (3.8K), dp (2.6K), ukhc (92) |
 
 Some zero-coverage namespaces legitimately lack meaningful native place types
