@@ -192,8 +192,15 @@ already-built features**, and (4) polish/ops/docs.
       names, "San Francisco", "长城" segments.
     - [x] **Hard-negative sampling built** (`signal_features.py`): balanced mix of
       nearby (~3km, spatially-close negatives) + same-name (shared toponym) + random,
-      de-duped against the **full overlay** (drops true links). Pure merge logic
-      unit-tested (`test_signal_features.py`). `θ_query` computed on the composite scale.
+      de-duped against **transitive coreference components** of the overlay (Union-Find
+      over sameAs/exactMatch/closeMatch; `distinct` not unioned). The transitive check
+      caught **784** coreferent pairs vs 726 for a direct-pair check — 58 false
+      negatives a direct check misses (`a≡c, c≡b ⇒ a≡b`). Pure logic unit-tested
+      (`test_signal_features.py`). `θ_query` computed on the composite scale.
+      **Result:** even with hard negatives + transitive de-dup the weights stay
+      spatial-heavy (name ~0.22 / spatial ~0.46) — confirming the dominance is a
+      property of the *positives* (coordinate-near-duplicate authority links), not
+      negative noise. Defaults retained (below).
     - [ ] **`--calibrate` weight fit — RAN with hard negatives; STILL NOT shipped;
       defaults retained (principled).** Even with hard negatives the fit stays
       spatial-heavy (name ~0.22 / spatial ~0.46). This is a **property of the ground
