@@ -22,6 +22,13 @@ production ``types`` index (place-type concepts) 2026-07-12.
 
 from __future__ import annotations
 
+import re
+
+# A types[] entry whose identifier is already a Getty AAT URI (LPF contributors
+# often supply these, e.g. whg datasets: identifier="aat:300008707"). Any
+# namespace — extract the numeric id directly.
+_AAT_IDENT_RE = re.compile(r"^aat:(\d+)$")
+
 
 # {namespace: {native types[].identifier: [aat_id, …]}}
 MANUAL_AAT_MAPS: dict[str, dict[str, list[int]]] = {
@@ -85,8 +92,54 @@ MANUAL_AAT_MAPS: dict[str, dict[str, list[int]]] = {
 }
 
 
-def manual_aat_ids(namespace: str | None, identifier: str | None) -> list[int] | None:
-    """The curated AAT ids for a ``(namespace, identifier)``, or None."""
-    if not namespace or not identifier:
-        return None
-    return MANUAL_AAT_MAPS.get(namespace, {}).get(identifier)
+# Contributed `whg:` datasets (LPF) mostly carry a free-text place-type in the
+# type entry's `sourceLabel` with an EMPTY identifier (only ~146 supply an
+# `aat:` URI). Map the common free-text labels (case-insensitive) to broad AAT
+# concepts. Ids validated against the prod types index 2026-07-12.
+WHG_SOURCELABEL_AAT: dict[str, list[int]] = {
+    "village": [300008372],                  # villages
+    "settlement": [300008347],               # inhabited places
+    "dwelling": [300005425],                 # dwellings
+    "town": [300008375],                     # towns
+    "city": [300008389],                     # cities
+    "inhabited place": [300008347],          # inhabited places
+    "deserted settlement": [300167671],      # deserted settlements
+    "capital of district": [300387218],      # capitals (seats of government)
+    "capital of department": [300387218],
+    "capital of province": [300387218],
+    "sub regional adm center": [300008415],  # local administrative centers
+    "lake": [300008680],                     # lakes
+    "river": [300008707],                    # rivers
+    "riverine bodies of water": [300132312],
+    "mountain": [300008795],                 # mountains (landforms)
+    "railroad": [300008591],                 # railroads
+    "wetland": [300008899],                  # wetlands
+    "glacier": [300008835],                  # glaciers
+    "island": [300008791],                   # islands (landforms)
+    "bay": [300132316],                      # bays (bodies of water)
+    "cape": [300008850],                     # capes (landforms)
+    "archaeological site": [300000809],      # archaeological sites
+    "point": [300386846],                    # points (locations)
+}
+
+
+def resolve_manual_aat(namespace: str | None, identifier: str | None,
+                       source_label: str | None = None) -> list[int] | None:
+    """Best curated AAT ids for a type entry, in priority order:
+
+    1. ``identifier`` that is already an ``aat:<id>`` URI (any namespace);
+    2. the curated ``MANUAL_AAT_MAPS[namespace][identifier]`` table;
+    3. the ``whg`` free-text ``sourceLabel`` map.
+
+    Returns a list of AAT ids, or None."""
+    if isinstance(identifier, str):
+        m = _AAT_IDENT_RE.match(identifier.strip())
+        if m:
+            return [int(m.group(1))]
+    if namespace and identifier:
+        ids = MANUAL_AAT_MAPS.get(namespace, {}).get(identifier)
+        if ids:
+            return ids
+    if namespace == "whg" and isinstance(source_label, str):
+        return WHG_SOURCELABEL_AAT.get(source_label.strip().lower())
+    return None
