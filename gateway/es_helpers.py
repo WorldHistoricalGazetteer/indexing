@@ -227,6 +227,7 @@ def build_places_filter(
     start_year: int | None,
     end_year: int | None,
     size: int = 50,
+    undated: bool = False,
     exclude_namespaces: list[str] | None = None,
     namespaces: list[str] | None = None,
     fclasses: list[str] | None = None,
@@ -359,7 +360,7 @@ def build_places_filter(
             temporal_conditions.append(
                 {"range": {"toponyms.timespans.start.in": {"lte": end_year}}}
             )
-        filter_clauses.append({
+        temporal_match = {
             "nested": {
                 "path": "toponyms",
                 "query": {
@@ -369,7 +370,30 @@ def build_places_filter(
                     }
                 },
             }
-        })
+        }
+        if undated:
+            # Legacy parity: with `undated`, ALSO admit places carrying no
+            # temporal information at all (a place matches if its timespans
+            # overlap the range OR it has none) — otherwise a date filter
+            # silently drops every undated record.
+            no_timespans = {"bool": {"must_not": {
+                "nested": {
+                    "path": "toponyms",
+                    "query": {"nested": {
+                        "path": "toponyms.timespans",
+                        "query": {"bool": {"should": [
+                            {"exists": {"field": "toponyms.timespans.start.in"}},
+                            {"exists": {"field": "toponyms.timespans.end.in"}},
+                        ]}},
+                    }},
+                }
+            }}}
+            filter_clauses.append({"bool": {
+                "should": [temporal_match, no_timespans],
+                "minimum_should_match": 1,
+            }})
+        else:
+            filter_clauses.append(temporal_match)
 
     bool_query = {"filter": filter_clauses}
     if must_not_clauses:

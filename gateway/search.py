@@ -327,6 +327,7 @@ async def search(req: SearchRequest):
             region=region,
             start_year=req.start_year,
             end_year=req.end_year,
+            undated=req.undated,
             # over-fetch more for pure-spatial (region refine drops candidates)
             size=min(req.size * (8 if pure_spatial else 4), 10000),
             exclude_namespaces=req.exclude_namespaces or None,
