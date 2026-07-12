@@ -108,18 +108,25 @@ def augment_doc(
     doc: dict[str, Any],
     mappings: dict[str, dict[str, list[int]]],
     hierarchy: dict[int, dict[str, Any]],
+    namespace: str | None = None,
 ) -> tuple[dict[str, Any], int, int]:
     """Augment a single doc's ``types[]`` entries.
 
     Returns ``(new_doc, types_seen, types_augmented)``. The doc is shallow-copied
     only when augmentation actually applies; otherwise the original is returned
     so the JSONL stream stays cheap on docs that contribute no AAT mapping.
+
+    ``namespace`` (for the curated manual map) is taken from the argument if
+    given, else derived from the doc's ``namespace`` / ``place_id`` — callers
+    that fetch a trimmed ``_source`` (e.g. ``apply_aat_enrich`` requests only
+    ``types``) must pass it explicitly.
     """
     types = doc.get("types") or []
     if not isinstance(types, list) or not types:
         return doc, 0, 0
 
-    namespace = doc.get("namespace") or (doc.get("place_id", "").split(":", 1)[0] or None)
+    namespace = (namespace or doc.get("namespace")
+                 or (doc.get("place_id", "").split(":", 1)[0] or None))
 
     new_types: list[dict[str, Any]] = []
     types_seen = 0

@@ -74,7 +74,8 @@ def main() -> None:
         )
         for hit in scan:
             src = hit["_source"]
-            new_doc, _seen, n_aug = augment_doc(src, mappings, hierarchy)
+            new_doc, _seen, n_aug = augment_doc(src, mappings, hierarchy,
+                                                namespace=args.namespace)
             if n_aug:
                 yield {"_op_type": "update", "_index": args.index,
                        "_id": hit["_id"], "doc": {"types": new_doc["types"]}}
