@@ -164,9 +164,12 @@ already-built features**, and (4) polish/ops/docs.
       `/search/` page uses the separate legacy `whg` union index (not this gateway);
       grepped whg3 `staging` — no consumer reads `cluster_id`/`cluster_size` and
       `crc_client.py` sends neither flag; SG confirmed no external OpenRefine workflow
-      sends `group_by_cluster`. Reconcile now returns flat ranked candidates. Still to
-      add (additive, not started): `facet_weights` (pass-through), `phase_2`,
-      `result_limit`.
+      sends `group_by_cluster`. Reconcile now returns flat ranked candidates.
+      **`facet_weights` / `phase_2` / `result_limit` are NOT needed (dropped 2026-07-12):**
+      whg3's `crc_search`/`crc_reconcile_search` send none of them (verified), and they
+      have no server role — facet weights are **client-side** sliders, `phase_2` is the
+      **retired** synthetic-edge passes (§16a), and `result_limit` duplicates the
+      existing `size`. Not building dead params.
 - [x] **Prominence ranking — DONE 2026-07-12.** The `cluster_size` tiebreaker is
       replaced by **name-variant count** (`len(hit.names)`) — a cheap, already-fetched
       prominence proxy (well-attested places carry more name forms; matches the search
@@ -399,14 +402,12 @@ just ordinary whg3-side work with no cross-branch decision blocking it. The
 gateway/offline *fuel* below and the browser scorer can now proceed **in parallel**;
 the fuel lights up as `clustering.js` lands on `staging` and flows to `main`.
 
-**Recommended start order (indexing side — all unblocked, no §6 dependency):**
-- ~~**Hard-link expansion + ship**~~ — ✅ **DONE + deployed to prod 2026-07-11** (see
-  item above); gives `POST /api/links` a real-time reconcile effect.
-1. **Per-hit payload assembly** + **AAT ancestors** + offline **calibration params**
-   (`clustering_params` / `toponym_stoplist`) — additive; this is the fuel the
-   browser scorer will consume. **← now the recommended next indexing-side pickup.**
-2. **Additive param plumbing** — `include_embeddings`, `facet_weights`, `phase_2`,
-   `result_limit`.
+**Recommended start order (indexing side):** all of the below **DONE + deployed**:
+- ~~Hard-link expansion + ship~~ ✅; ~~per-hit payload + AAT ancestors + calibration
+  params~~ ✅; ~~`include_embeddings`~~ ✅; ~~cluster retirement + index delete~~ ✅.
+  (`facet_weights`/`phase_2`/`result_limit` dropped as unnecessary — see Params above.)
+  **The gateway/offline clustering fuel is complete.** Remaining §1 items are the
+  Django-coupled discovery scope filter and the optional/deferred `baseline_cluster_id`.
 
 **Hold until the whg3 browser side is ready (⚠️ these break the live contract — land
 them WITH the whg3 side that stops sending/reading the retired fields, never
@@ -513,11 +514,25 @@ The rebuild is done; three tail items remain (all "not blocking"):
       validation gates scattered across Batches 4d/7/9/10/11/12 (row-count /
       toponym-count / tile-reproducibility / referential-integrity checks that
       need a real end-to-end run).
-- [ ] **Batch 14a** — the retention-sweep logic (`processing/retention_sweep.py`)
-      is built; only **scheduling** it (cron / Slurm / Django command) is open.
-- [ ] Batch 12 loose ends: gateway-side periodic re-open / SIGHUP for the SQLite
-      hard-link overlay; periodic DO↔Pitt drift job (cadence undecided);
-      atomic-swap verified against a live Pitt gateway.
+- [~] **Batch 14a** — retention-sweep. **Tool now runnable against prod
+      (2026-07-12):** fixed its ES client to authenticate (it silently couldn't reach
+      the authed prod ES); a prod **dry-run** succeeds and finds **0 pending datasets**
+      (correct — pending submissions aren't ingested yet, §3). **Scheduling is still
+      open and is a deliberate ops decision, NOT auto-installed:** it needs (a) the
+      Django `/api/retention/notify` endpoint + `WHG_API_BASE_URL`/`WHG_RETENTION_NOTIFY_ENDPOINT`
+      so contributors are *warned* at 11 months before the 12-month delete; (b) a host
+      that reaches **both** prod ES *and* DO PG (the `gazetteer` crontab on Pitt is the
+      natural home — confirm the PG tunnel there); (c) SG sign-off on cadence + enabling
+      `--execute`. **Recommended rollout:** weekly `@reboot`/cron **dry-run** first
+      (`python -m processing.retention_sweep --es-host http://localhost:9201`), enable
+      `--execute` only once pending datasets flow (§3) and notify is wired. (Installing
+      a recurring auto-**deletion** of contributor data unilaterally would be unsafe.)
+- [x] Batch 12 loose end — **gateway overlay re-open: NOT NEEDED.** The gateway holds
+      **no long-lived overlay handle** — `hard_link_expansion.expand_hard_links` and
+      `links._connect` open the SQLite **fresh per request** (read-only, `file:…?mode=ro`)
+      and close it, so a `ship_to_pitt` atomic-swap is picked up on the very next query.
+      No periodic re-open / SIGHUP required. *(Remaining Batch 12: the periodic DO↔Pitt
+      drift job — cadence undecided — is separate.)*
 - [ ] Retire `authority-selection.md` as the selection source in favour of the
       Django gazetteer registry (Batch 3 deferred fallback path).
 
@@ -525,12 +540,13 @@ The rebuild is done; three tail items remain (all "not blocking"):
 
 ## 5. Activate already-built features (low effort, high value)
 
-- [ ] **Deploy `query_vector` in the gateway** (`handoff-reconcile-query-vector.md`).
-      The code is present on prod (`/ix1` HEAD is current), but the handoff
-      recorded it as "not yet deployed" on 2026-07-06 — **confirm the gateway
-      *process* was restarted** (`es gateway-restart`) so `/api/reconcile`
-      actually honours a client-supplied 128-int8 vector. Safe any time; whg3
-      already sends it and the gateway ignores it until active.
+- [x] **`query_vector` LIVE — confirmed end-to-end 2026-07-12.** Wired in
+      `reconcile.py` (`build_phonetic_knn(query_vector=…)`) and active after the
+      restart. Proved decisively: a reconcile with a nonsense query string
+      (`"Zxqwvblark"`) + the int8 embedding of *London* returned the top-5 all
+      **London** (the vector drove ranking), whereas the same string with **no**
+      vector returned unrelated places (Salzburg, …). whg3 `crc_reconcile_search`
+      already sends it.
 - [ ] **Prod re-push of citation/licence metadata** (`handoff-citation-metadata.md`).
       Done on dev; prod stores none of the new attribution fields because prod's
       website code predates Phase-4. **Gated on the Phase-4 code + `licensing/0003`
@@ -575,9 +591,12 @@ Consequences for this plan (the earlier "atlas → main promotion" framing is go
 ## 7. Search UX parity gaps (`search-system-architecture.md` §8.3)
 
 - [ ] **Pagination** — `size` defaults to 100; no `search_after`/scroll.
-- [ ] **`undated` handling** — the temporal filter in `build_places_filter()`
-      doesn't wrap the range in a `should` that also matches docs with no
-      timespans (legacy parity).
+- [x] **`undated` handling — DONE 2026-07-12** (`build_places_filter`,
+      `tests/test_build_places_filter.py`). When `undated=True` + a date filter is
+      active, the temporal clause is a `should`-wrapper matching places whose
+      timespans overlap the range **OR** that have no timespans at all (`must_not
+      exists` on `toponyms.timespans.start.in`/`end.in`). Passed through from
+      `search.py`; default behaviour unchanged. *(Activates on the next gateway restart.)*
 - [ ] **`fclasses` → type facets** — replace legacy A/P/S/R/L/T/H checkboxes with
       a faceted type filter driven by server-side aggregations (ties to §2).
 - [ ] **Type-facet labels** — server facets currently return raw `identifier`
@@ -613,14 +632,17 @@ still served alongside only 7 new `whg-<id>` buckets.
 
 ---
 
-## 9. Docs refresh (cheap, prevents future confusion)
+## 9. Docs refresh (cheap, prevents future confusion) — DONE 2026-07-12
 
-- [ ] `search-system-architecture.md` — last updated 4 Apr; still documents the
-      live `clusters` index as an enrichment source. Rewrite for query-time /
-      browser clustering + SQLite hard-link overlay.
-- [ ] `CLAUDE.md` — namespace table omits alc, chgis, dgsd, hgis, tm, clio, og,
-      ofs, po, whg (all now live); still describes the ES `clusters` model.
-- [ ] Any `CLUSTERS.md` / clustering docs — reflect retired static clustering.
+- [x] `search-system-architecture.md` — added a **Status banner** reframing to the
+      client-side model + the live-`/search/` union-index finding; the legacy
+      `clusters` sections (3b/4/6.3) are marked historical. (A full section rewrite is
+      optional; the banner prevents confusion.)
+- [x] `CLAUDE.md` — namespace table now lists all 22 (added alc, chgis, dgsd, hgis,
+      tm, clio, og, ofs, po, whg with sources/counts); `clusters` index +
+      `build_cluster_lookup` marked retired.
+- [x] `CLUSTERS.md` + `CLUSTERING_GUIDE.md` — **SUPERSEDED banners** added (retired
+      static HDBSCAN model; point to client-side clustering + `calibrate_params`).
 
 ---
 

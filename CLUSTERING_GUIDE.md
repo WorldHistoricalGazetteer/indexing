@@ -1,7 +1,15 @@
 # WHG Place Clustering — How It Works and How to Run It
 
+> **⚠️ SUPERSEDED (2026-07-12).** The offline HDBSCAN pipeline + static `clusters`
+> ES index this guide describes are **retired** (indices deleted; gateway join
+> removed). Clustering is now **client-side** in whg3 `clustering.js` (Union-Find
+> over gateway-shipped hard-link edges + per-hit signal fuel, at a user θ). The
+> offline scoring *math* was salvaged into `clustering/calibrate_params.py` (params
+> calibration only). See `developer/plan-outstanding-2026-07.md` §1. Historical
+> reference only.
+
 **Last updated:** 26 March 2026  
-**Status:** Operational — second full run (with HDBSCAN-based calibration) complete  
+**Status:** **SUPERSEDED** — was: Operational (HDBSCAN-based, second full run)
 **Repository:** `WorldHistoricalGazetteer/indexing`
 
 > **V4 note (ArangoDB migration).** This guide describes the current Elasticsearch-based system. In the planned V4 architecture (§4.2), ArangoDB replaces Elasticsearch as the primary data store and pairwise links are stored as graph edges. Under V4:

@@ -321,7 +321,17 @@ Index names use wildcard/alias patterns for dated indices:
 | `dp` | D-PLACE | ~2.6K | Language point data |
 | `iv` | Index Villaris | ~24K | Historical gazetteer |
 | `un` | ISO3166 countries | ~257 | Country entities |
-| `ohm` | OpenHistoricalMap | ~800K | Same tag schema as OSM; excellent temporal coverage (`start_date`/`end_date`) |
+| `ohm` | OpenHistoricalMap | ~905K | Same tag schema as OSM; excellent temporal coverage (`start_date`/`end_date`) |
+| `chgis` | CHGIS (China Historical GIS) | ~81K | CHGIS feature-type names (`identifier`); AAT-mapped |
+| `tm` | Trismegistos | ~64K | Ancient-world place references |
+| `ofs` | Ottoman NFS Gazetteer (Kabadayı et al. 2022) | ~16.3K | ~16.3K mid-19thC populated places from Ottoman population registers (1830–1849) |
+| `clio` | Cliopatria (Seshat) | ~15.7K | Polities (`polity`); no AAT yet |
+| `whg` | Contributed WHG datasets (`authority=True`) | ~14.2K | Mixed LPF; 7 datasets live |
+| `hgis` | HGIS de las Indias | ~14.1K | Spanish-American historical admin units |
+| `po` | PeriodO | ~9.0K | Periods with spatial coverage (`period`); geo-enriched |
+| `og` | Ottoman Gazetteer (ottgaz, Hanley/FSU) | ~6.3K | Ottoman admin units (eyalet/vilayet/sancak/kaza/nahiye) |
+| `dgsd` | Digital Gazetteer of the Song Dynasty | ~3.8K | Song-dynasty (Chinese) places |
+| `alc` | Alcedo / TopUrbi | ~18.2K | Colonial Spanish-American gazetteer |
 
 ---
 

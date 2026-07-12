@@ -1,6 +1,15 @@
 # WHG Place Clusters: Entity Resolution via Elasticsearch
 
-**Status:** Specification draft — March 2026  
+> **⚠️ SUPERSEDED (2026-07-12).** This document describes the **retired** static
+> `clusters` ES index (offline HDBSCAN membership at a fixed threshold). That model
+> is **gone**: the `clusters_20260325`/`clusters_20260321` indices were deleted and
+> the gateway's cluster join removed. **Clustering is now client-side** — the gateway
+> ships hard-link edges + per-hit signal fuel + `clustering_params`, and the browser
+> (`clustering.js`) runs Union-Find at a user-adjustable θ. See
+> `developer/plan-outstanding-2026-07.md` §1 and `developer/search-system-architecture.md`.
+> Kept for historical reference only.
+
+**Status:** Specification draft — March 2026 · **SUPERSEDED** (see above)
 **Context:** Interim measure before v4 graph model migration  
 **Repository:** `WorldHistoricalGazetteer/indexing`  
 **Author:** Stephen Gadd / WHG Technical Direction
