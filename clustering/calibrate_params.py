@@ -198,11 +198,15 @@ def write_defaults() -> dict:
 
 def build_stoplist(es_host: str, *, top_k: int = 500, min_places: int = 50,
                    auth: tuple[str, str] | None = None) -> list[str]:
-    """Build the toponym stoplist: the ``top_k`` most-attested name forms.
+    """Build the toponym stoplist: the ``top_k`` name forms shared by the most
+    places.
 
-    A single ``terms`` aggregation on ``name.keyword`` over the toponyms index;
-    a name attested by ≥ ``min_places`` places carries little co-reference
-    signal on its own. Returns the list and writes ``toponym_stoplist.json``.
+    The ``toponyms`` index is **deduplicated** (one doc per ``name@lang``), so a
+    plain ``doc_count`` measures language variants, not how many *places* share a
+    name. The discriminating signal is the length of each doc's ``attestations``
+    list — so we order a ``name.keyword`` terms aggregation by the **sum of
+    ``attestations`` size** (a script metric), keeping names attested by ≥
+    ``min_places`` places. Returns the list and writes ``toponym_stoplist.json``.
     """
     import httpx  # local import so --defaults never needs it
 
@@ -211,26 +215,24 @@ def build_stoplist(es_host: str, *, top_k: int = 500, min_places: int = 50,
         "aggs": {
             "common_names": {
                 "terms": {"field": "name.keyword", "size": top_k,
+                          "shard_size": top_k * 4,  # accuracy for sub-metric order
                           "order": {"attested": "desc"}},
-                "aggs": {"attested": {"sum": {"field": "attestation_count"}}},
+                "aggs": {"attested": {"sum": {
+                    "script": {"source": "doc['attestations'].size()"}}}},
             }
         },
     }
-    # ``attestation_count`` may not exist; fall back to bucket doc_count ordering.
     url = f"{es_host.rstrip('/')}/toponyms_*/_search"
     try:
-        resp = httpx.post(url, json=body, auth=auth, timeout=120)
-        if resp.status_code == 400:  # no attestation_count field → order by count
-            body["aggs"]["common_names"]["terms"].pop("order", None)
-            body["aggs"]["common_names"]["aggs"].pop("attested", None)
-            resp = httpx.post(url, json=body, auth=auth, timeout=120)
+        resp = httpx.post(url, json=body, auth=auth, timeout=300)
         resp.raise_for_status()
     except Exception as exc:
         logger.error("stoplist aggregation failed: %s", exc)
         raise
 
     buckets = resp.json().get("aggregations", {}).get("common_names", {}).get("buckets", [])
-    stop = [b["key"] for b in buckets if b.get("doc_count", 0) >= 1][:top_k]
+    stop = [b["key"] for b in buckets
+            if b.get("attested", {}).get("value", 0) >= min_places][:top_k]
     _write_json(STOPLIST_FILE,
                 {"version": 1, "top_k": top_k, "min_places": min_places,
                  "stoplist": stop},
