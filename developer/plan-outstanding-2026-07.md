@@ -182,9 +182,23 @@ already-built features**, and (4) polish/ops/docs.
       = haversine/interval-Jaccard/Wu-Palmer/int8-cosine). **Methodology note:** only
       the **four inferred** signals are fitted; the link weight stays fixed (hard links
       are *forced* merges at τ_link, and fitting link-presence on link-derived positives
-      is circular). **Remaining (deferred, needs a prod ES run):** run `--calibrate` +
-      `--stoplist` on CRC to replace the defaults with fitted values; wire the gateway
-      to *ship* these files per query (couples to the additive param plumbing).
+      is circular). **Gateway now *ships* both files** per query when
+      `include_clustering_fields=true` (top-level `clustering_params` + `toponym_stoplist`;
+      cached loaders in `gateway/clustering_payload.py`).
+    - [x] **`--stoplist` run on prod (2026-07-11)** → committed
+      `clustering/data/toponym_stoplist.json` (500 names attested by ≥50 places; ranked
+      by summed `attestations` size, fixing the dedup-index `doc_count` trap). Spot-check
+      looks right: village-words across scripts (вёска/село/деревня), generic creek/river
+      names, "San Francisco", "长城" segments.
+    - [ ] **`--calibrate` weight fit — RAN but NOT shipped; defaults retained.** The
+      empirical fit (8k positives) over-weights spatial (~0.47) and under-weights name
+      (~0.23) vs the domain-sensible defaults (name 0.35 / spatial 0.20), because the
+      **negatives are random cross-namespace pairs** (geographically scattered → spatial
+      looks trivially discriminative). Shipping it risks regressing clustering (merge
+      distinct nearby places; split same-named distant ones). **Fix = hard negatives**
+      (same-name and/or nearby-but-not-coreferent pairs) before trusting the weights.
+      `θ_query` is now computed on the correct composite scale. Until then, the committed
+      **default weights stand.**
 - [x] **AAT ancestors** — **DONE** (folded into the per-hit payload above): `aat_paths`
       (the materialised `types.aat_paths`, ancestors + depth) is emitted per hit — no
       schema change (the field already exists per-type). `temporal_range` likewise
@@ -200,10 +214,24 @@ already-built features**, and (4) polish/ops/docs.
       embedding-source abstraction (payload-decode for Atlas, worker-inference for
       the Workbench).
 
-> **📌 FOR THE whg3 AGENT — the `edges[]` hard-link payload is now live on the
-> gateway (2026-07-11).** The `s.l` hard-link signal your scorer consumes is
-> **already shipped** by the CRC gateway; you do not need any indexing-side work to
-> start on it. To receive it:
+> **📌 FOR THE whg3 AGENT — how to work (read first):**
+> - **Branch:** do all work on **`staging`** (the dev branch) — branch off `staging`,
+>   commit there, and **test on the dev server**. Do **NOT** commit to or push `main`
+>   (production) directly; SG promotes `staging → main` in regular batches (§6). If
+>   `staging` doesn't exist yet locally, create it from the current dev tip and confirm
+>   with SG before the first push.
+> - **This is the whg3 (`website`) repo**, not `indexing`. Everything below is the
+>   *contract* the already-deployed CRC gateway exposes to your `clustering.js`; the
+>   gateway/indexing side is done and live on prod — you consume it, you don't change
+>   it. If you think a gateway change is needed, flag it for the indexing side rather
+>   than working around it.
+> - **Test against the live gateway** via the CRC client (`api/crc_client.py` →
+>   `/api/reconcile` / `/api/search`); send the opt-in flags below to receive the fuel.
+>   Guard behind the staff-only BETA gate so nothing surfaces publicly while you build.
+>
+> **The `edges[]` hard-link payload is live on the gateway (2026-07-11).** The `s.l`
+> hard-link signal your scorer consumes is **already shipped** by the CRC gateway; you
+> do not need any indexing-side work to start on it. To receive it:
 > - Send **`"include_hard_links": true`** in the `POST /api/search` **and/or**
 >   `POST /api/reconcile` body (default is `false`, so it's opt-in — nothing changes
 >   until you ask for it).
@@ -233,10 +261,11 @@ already-built features**, and (4) polish/ops/docs.
 >   flags are opt-in and **orthogonal**; send both for the full non-embedding fuel.
 > - **`clustering_params` + `toponym_stoplist`** → **shipped in the response** when
 >   `include_clustering_fields=true` (top-level `clustering_params` = weights + θ/τ
->   thresholds, default θ_query 0.55; `toponym_stoplist` = high-frequency names).
->   Currently **uncalibrated defaults** (`toponym_stoplist` empty until the CRC
->   `--stoplist` run ships it); values will change after the empirical fit but the
->   shape is stable.
+>   thresholds; `toponym_stoplist` = 500 high-frequency generic names — down-weight
+>   name matches on these). The **stoplist is empirically built**; the **weights are
+>   still the domain-sensible defaults** (the empirical weight fit is deferred — it
+>   needs hard negatives; see §1 Calibration). Treat the weights as tunable defaults
+>   and expose them on your weight sliders; the shape is stable.
 > - **`s.n` (Symphonym name cosine)** → **`include_embeddings=true`** attaches each
 >   candidate name's precomputed int8 128-d `phon_emb` (Atlas path — no client model).
 >   **Workbench** leaves it `false` and self-embeds in a worker with the `hf/`
