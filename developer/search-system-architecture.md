@@ -2,7 +2,33 @@
 
 > **Purpose:** This document describes how the WHG search page (`/search/`) works end-to-end — from the browser UI through JavaScript payload construction, the Django thin proxy, the CRC Gateway (FastAPI), Elasticsearch query execution across the `places`, `toponyms`, and `clusters` indices, and result rendering.  It covers both the legacy UI layer (still in use) and the v3.5+ backend architecture that replaced it.
 >
-> **Last updated:** 4 April 2026
+> **Last updated:** 12 July 2026
+
+```{admonition} Status (2026-07-12) — clustering has moved client-side
+:class: important
+Two things in this document are now **out of date** and are being corrected as the
+clustering re-architecture lands (see `developer/plan-outstanding-2026-07.md` §1):
+
+1. **The `clusters` ES index is legacy and being retired.** Fixed, offline
+   cluster membership (`clusters_20260325`, `doc_type: "membership"`,
+   `cluster_id` / `cluster_size`) is **no longer the clustering model.** All
+   scoring and clustering now runs **client-side** in the browser
+   (`clustering.js` in whg3): the gateway ships *fuel* — result-set **hard-link
+   edges** (`include_hard_links`), per-hit signal fields (`include_clustering_fields`:
+   `h3`, `temporal_range`, `aat_ids`/`aat_paths`, `query_match`), optional
+   per-name Symphonym embeddings (`include_embeddings`), and `clustering_params` +
+   `toponym_stoplist` — and the browser runs Union-Find at a user-adjustable θ. The
+   gateway's own `cluster_id`/`cluster_size` enrichment (`build_cluster_lookup`) is
+   scheduled for retirement; sections 3b / 4 / 6.3 below describe the *legacy*
+   behaviour.
+2. **The live public `/search/` page does NOT use this gateway path.** As of
+   2026-07-12 the production search page POSTs to Django `/search/index/` with
+   `{qstr, idx:"whg", fclasses, …}` and renders `{parameters, suggestions}` from the
+   **legacy `whg` union index** (its "N linked records" is the union index's
+   `linkcount`, *not* `cluster_size`). The gateway's `POST /api/search` +
+   `/api/reconcile` (below) are consumed by reconciliation clients and the new
+   **Atlas** beta (`/atlas/search/`), which does its own client-side clustering.
+```
 
 ---
 

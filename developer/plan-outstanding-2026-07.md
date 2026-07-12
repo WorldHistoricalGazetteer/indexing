@@ -158,11 +158,17 @@ already-built features**, and (4) polish/ops/docs.
       `developer/handoff-api-links-receiver.md`.
 - [ ] **Params** — *(additive, safe now:)* **`include_embeddings` DONE 2026-07-11**
       (attaches per-name int8 `phon_emb`; both endpoints). Still to add:
-      `facet_weights` (pass-through), `phase_2`, `result_limit`. *(⚠️ contract-breaking
-      — sequence WITH the whg3 cutover, not before:)* **remove** `group_by_cluster`
-      **and** `cluster_threshold` (no server clustering), retire `build_cluster_lookup`
-      / the `clusters`-index join. These change the live `/api/search`+`/api/reconcile`
-      response and would break the current UI if it still sends/reads them.
+      `facet_weights` (pass-through), `phase_2`, `result_limit`. *(contract-breaking:)*
+      **remove** `group_by_cluster` **and** `cluster_threshold` (no server clustering),
+      retire `build_cluster_lookup` / the `clusters`-index join.
+      **⚠️→ largely DE-RISKED (browser-verified 2026-07-12):** the live public `/search/`
+      page does **NOT** consume the gateway here — it POSTs Django `/search/index/`
+      `{qstr, idx:"whg", …}` against the **legacy `whg` union index** and reads
+      `{parameters, suggestions}` (its "N linked records" is the union `linkcount`, not
+      `cluster_size`). So retiring `build_cluster_lookup` in **`search.py`** breaks no
+      live reader (Atlas clusters client-side from `edges[]`). The only residual
+      consumer is **`/api/reconcile` `group_by_cluster`** (OpenRefine) — confirm no
+      external OpenRefine workflow still sends it before removing that path.
 - [ ] **Prominence ranking** — the initial (pre-cluster) ranking used the `clusters`
       index's `cluster_size` as a tiebreaker; with the index gone, replace it
       (baseline component size if precomputed, else attestation count / population,
@@ -226,10 +232,90 @@ already-built features**, and (4) polish/ops/docs.
       only if built.
 
 **Browser (whg3 — `staging` dev → `main` prod; see §6):**
-- [ ] `clustering.js` — the full scorer (all facets) + Union-Find + synthetic-edge
-      passes + θ/weight sliders + cluster cards (Master Plan §3–4), with an
-      embedding-source abstraction (payload-decode for Atlas, worker-inference for
-      the Workbench).
+- [ ] `clustering.js` — the full scorer (all facets) + Union-Find + θ/weight
+      sliders + cluster cards (Master Plan §3–4), with an embedding-source
+      abstraction (payload-decode for Atlas, worker-inference for the Workbench).
+      **PARTIAL.** (NB: the Master Plan's *synthetic-edge passes* are **RETIRED** —
+      §16a of the architectural plan: "no longer needed" as discovery + hard-links +
+      toponym-expansion + user-proposals cover the same recovery cases. The client
+      does **not** implement them; `θ_bridge`/`θ_synth`/`θ_synth_structural` in
+      `clustering_params` are therefore vestigial client-side.)
+    - [x] **Phase 1 — scorer + Union-Find CORE** (whg3 `staging` `de94f176f`,
+      2026-07-12). Pure UI-agnostic module `whg/webpack/js/clustering.js`. The five
+      pair signals mirror this repo's `clustering/calibrate_params.py` EXACTLY
+      (haversine; spatial half-life 25 km; interval-Jaccard temporal; Wu-Palmer type
+      over `aat_paths`; int8 cosine name). Weighted composite from
+      `clustering_params.json` defaults (name .35/spatial .20/temporal .15/type
+      .15/link .15) with graceful degradation (an absent signal is dropped and the
+      remaining weights renormalised). Union-Find = forced hard-link merges
+      (sameAs/exactMatch/closeMatch) → `distinct` as cannot-link (**SG confirmed
+      2026-07-12: Option A, hard-split**) → θ_query (.55) threshold merges,
+      highest-composite-first. Embedding-source-agnostic (decode int8 `phon_emb`,
+      else worker-embed). **Testing:** 17 standalone Node-ESM assertions — each
+      signal vs the Python's values (spatial 25 km→0.5, temporal
+      [1000,1100]∩[1050,1200]→0.25, Wu-Palmer siblings→0.667, int8 cosine), forced
+      merge via a `sameAs` edge, threshold merge of near-identical hits, `distinct`
+      blocking a merge, name-only graceful degradation — **all pass**. The module is
+      **inert (not imported/bundled)**, so there is **no live-gateway integration
+      test yet** — that lands with Phase 2.
+    - [~] **Phase 2 — integration (FIRST PASS DONE; refinements open).** whg3
+      `staging`.
+        - [x] **2a — gateway-routed search proxy** (`a94d5b9cc`/`fa7bfe9bc`): new
+          BETA-gated Django view `atlas_search` at **`/atlas/search/`** +
+          `api/crc_client.crc_search()` → CRC gateway `POST /api/search` (via
+          DO/Django, per the Pitt firewall) with `include_hard_links` /
+          `include_clustering_fields` / `include_embeddings` + `geom=full`; returns
+          the full SearchResponse (hits, edges, clustering_params, toponym_stoplist).
+          **Verified live from dev:** "Jerusalem" → total **441**, 20 hits, 2 edges,
+          params present, per-hit `aat_paths`/`h3`/`temporal_range`/`repr_point`.
+          (Also sidesteps the empty dev-ES `/search/index/` path, which returned 0.)
+        - [x] **2b — client clustering UI (first pass):** `atlas.js` routes beta
+          users' search to `/atlas/search/`, feeds `clusterHits()`, renders cluster
+          cards (representative title, member-count badge, namespace chips, member
+          list) in the results panel, plots hits on the hero map, and a **merge-
+          sensitivity (θ) slider** re-clusters the cached response live. Endpoint
+          verified 200 from the browser; build compiles; **cluster-card render not
+          yet visually confirmed** — the Atlas search UI is map-load-gated and the
+          test browser won't complete MapLibre's WebGL load (env limitation; loads
+          fine in real browsers). Needs a real-browser visual pass.
+        - [x] **`s.n` name signal wired** (`8107ad3e2`): the gateway attaches the
+          int8 Symphonym embedding **per-name** (`hit.names[].phon_emb`, 128-d), not
+          on the hit; `clustering.js`'s embedding accessor reads it, preferring the
+          **query-matched** toponym's embedding (verified: a hit titled "Fargo" that
+          matched on its alt-name "Pittsburgh" contributes the "Pittsburgh" vector).
+        - [x] **Map-marker ↔ panel click sync** (`8107ad3e2`): cluster cards/members
+          carry `data-pids`/`data-pid`; clicking a card/member highlights + fits its
+          markers (`setFeatureState({highlight})`), clicking a marker highlights +
+          scrolls to its card. (Live UI still needs a real-browser pass — map-gated.)
+        - [x] **`toponym_stoplist` down-weighting** (`879c6b5a6`, #1): scorePair
+            scales the name signal VALUE by 0.2 when either matched toponym is on the
+            gateway's stoplist (scaling the value not the weight — renormalisation
+            makes weight-scaling a no-op when name is the only present signal).
+            5 assertions pass.
+        - [x] **Facet-weight sliders** (`879c6b5a6`, #2): collapsible per-signal
+            sliders (name/spatial/temporal/type/link) seeded from `clustering_params`,
+            re-cluster the cached response live.
+        - [x] ~~**Synthetic-edge / bridge passes**~~ **RETIRED (§16a)** — SG-confirmed
+            2026-07-12; superseded by discovery + hard-links + toponym-expansion +
+            user-proposals. Scorer stays forced-merge + single-pass threshold-merge;
+            `θ_bridge`/`θ_synth`/`θ_synth_structural` are vestigial client-side.
+        - [x] **Cluster-member deep-links → NEW dynamic Atlas portal** (#4,
+            `55fec2aad`+`361c0a2f1`): the legacy fixed-`cluster_id` portal is
+            incompatible with dynamic client clusters, so — SG-agreed 2026-07-12 —
+            a **new dynamic portal** resolves a place on demand: BETA-gated
+            `/atlas/place/?id=<pid>` (`crc_places` → gateway `/api/places`) enriched
+            with per-namespace registry attribution; an in-Atlas modal shows detail +
+            **live cluster context** (the other members of its current client cluster,
+            reflecting the current θ/weights — no stored id) + map highlight. Backend
+            verified live; modal UI needs a real-browser pass (map-gated).
+        - [x] **Phase 3 — Workbench self-embed** (#5, `2623e6ca5`):
+            `clustering-embed.js::attachSelfEmbeddings()` embeds records' toponyms via
+            the `recon-symphonym` worker (`embedNames` → int8, matches the gateway
+            quant) and attaches `phon_emb`, so the same `clusterHits()` runs on private
+            Workbench records. Inert until a Workbench clustering view imports it
+            (separate Workbench-roadmap UI work).
+      (Workbench self-embed primitive DONE — see #5 above; wiring it into an actual
+      Workbench clustering view is separate Workbench-roadmap UI work.)
 
 > **📌 FOR THE whg3 AGENT — how to work (read first):**
 > - **Branch:** do all work on **`staging`** (the dev branch) — branch off `staging`,
@@ -330,10 +416,10 @@ the same push window to `main`. The browser `clustering.js` itself is whg3-side 
 — not this repo.
 
 ### Open questions
-- **`distinct` semantics** — hard split (arch plan §6c) vs strong negative weight
-  (place#25). It's an *explicit* assertion, so hard-split is likely compatible with
-  #25's objection to *inferred* prevention — but confirm before the Union-Find is
-  written.
+- ~~**`distinct` semantics**~~ **RESOLVED 2026-07-12 (SG): hard split (Option A).**
+  `distinct` is a cannot-link in the browser Union-Find — an *explicit* assertion, so
+  compatible with place#25's objection to *inferred* prevention. Implemented in whg3
+  `clustering.js` Phase 1.
 - **Architectural-plan doc status** — filed `.DEPRECATED.md` but is the backend
   spec; un-deprecate and record these decisions so we build to a matching spec.
 - **Payload optimisation (deferred)** — a hybrid (gateway pre-scores public↔public

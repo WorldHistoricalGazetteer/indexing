@@ -221,7 +221,7 @@ dependency-chained jobs for each step.
 |-------|--------|---------|
 | `places` | `schemas/places.json` | ~47M place records with nested toponyms, geometries, types, relations |
 | `toponyms` | `schemas/toponyms.json` | ~67M deduplicated toponym records with Symphonym embeddings and attestation lists |
-| `clusters` | `schemas/clusters.json` | ~20M pairwise link docs + membership docs |
+| `clusters` | `schemas/clusters.json` | ⚠️ **LEGACY / being retired** — static offline cluster membership (`clusters_20260325`). Superseded by **client-side clustering**: the gateway ships hard-link edges + per-hit signal fuel and the browser (`clustering.js`) runs Union-Find at a user θ. See `developer/plan-outstanding-2026-07.md` §1. |
 | `types` | `schemas/types.json` | AAT place-type hierarchy with cross-vocabulary mappings, fclasses, materialized paths, multilingual labels/notes |
 
 ### Places schema (key fields)
@@ -272,11 +272,13 @@ Both endpoints share the same architecture via `es_helpers.py`:
    - Aggregations on `types.identifier` (nested) and `ccodes` for faceted UI
    - `geom` parameter controls geometry detail: `"full"` or `"repr_point"` only
 
-3. **Enrichment** — fetch full toponym inventory + cluster membership:
-   - `build_toponym_lookup`: `terms` filter on `attestations` for surviving place_ids → full name inventory (label + lang)
-   - `build_cluster_lookup`: membership docs from `clusters` index → `cluster_id` + `cluster_size` for prominence ranking
+3. **Enrichment** — fetch full toponym inventory (+ legacy cluster membership):
+   - `build_toponym_lookup`: `terms` filter on `attestations` for surviving place_ids → full name inventory (label + lang; optional per-name `phon_emb` when `include_embeddings`)
+   - `build_cluster_lookup`: ⚠️ **LEGACY** — membership docs from the `clusters` index → `cluster_id` + `cluster_size`. Scheduled for retirement (client-side clustering replaces it); no current consumer reads these fields (the live `/search/` page uses the separate legacy `whg` union index, and the Atlas beta clusters client-side from shipped edges).
 
-**Response ranking:** Results are sorted by normalised toponym-match score (0–100), with cluster_size as tiebreaker.
+**Clustering fuel (opt-in, additive):** `include_hard_links` → result-set `edges[]`; `include_clustering_fields` → per-hit `h3`/`h3_cover`/`temporal_range`/`aat_ids`/`aat_paths`/`query_match` + top-level `clustering_params`/`toponym_stoplist`; `include_embeddings` → per-name int8 `phon_emb`. The browser (`clustering.js`) computes all pair signals + Union-Find. See `developer/plan-outstanding-2026-07.md` §1.
+
+**Response ranking:** Results are sorted by normalised toponym-match score (0–100), with `cluster_size` as tiebreaker (legacy — to be replaced when `build_cluster_lookup` retires).
 
 ### Search modes
 
