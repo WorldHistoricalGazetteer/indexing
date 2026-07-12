@@ -232,6 +232,7 @@ def build_places_filter(
     namespaces: list[str] | None = None,
     fclasses: list[str] | None = None,
     types: list[str] | None = None,
+    aat_types: list[int] | None = None,
     extra_source: list[str] | None = None,
     geom: str = "full",
     region=None,
@@ -290,6 +291,25 @@ def build_places_filter(
             "nested": {
                 "path": "types",
                 "query": {"terms": {"types.identifier": types}},
+            }
+        })
+
+    # Hierarchical AAT type filter — a place matches if any type's aat_paths
+    # contains the requested concept id (i.e. the concept OR any descendant, since
+    # a descendant's materialised path includes its ancestors). AAT ids are
+    # distinct 9-digit numbers and path segments are dot-delimited, so a substring
+    # wildcard `*<id>*` matches only the exact segment — no false partial matches.
+    if aat_types:
+        filter_clauses.append({
+            "nested": {
+                "path": "types",
+                "query": {"bool": {
+                    "should": [
+                        {"wildcard": {"types.aat_paths": f"*{int(aid)}*"}}
+                        for aid in aat_types
+                    ],
+                    "minimum_should_match": 1,
+                }},
             }
         })
 

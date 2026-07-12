@@ -50,6 +50,35 @@ logger = logging.getLogger("gateway.search")
 
 router = APIRouter(prefix="/api", tags=["Search"])
 
+# The AAT hierarchy index (alias). Holds one doc per AAT concept with `aat_id`
+# + `term` (friendly label) + `path`. Used to label the AAT type facets.
+TYPES_INDEX = "types"
+
+
+async def _resolve_aat_labels(aat_ids: list[int], auth) -> dict[int, str]:
+    """``{aat_id: term}`` friendly labels from the `types` index (best-effort)."""
+    if not aat_ids:
+        return {}
+    body = {
+        "size": len(aat_ids),
+        "query": {"terms": {"aat_id": aat_ids}},
+        "_source": ["aat_id", "term"],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                f"{ES_BACKEND}/{TYPES_INDEX}/_search",
+                json=body, auth=auth, headers=ES_HEADERS,
+            )
+            resp.raise_for_status()
+            return {
+                h["_source"]["aat_id"]: (h["_source"].get("term") or "")
+                for h in resp.json().get("hits", {}).get("hits", [])
+            }
+    except Exception as e:  # non-fatal — facet falls back to bare ids
+        logger.warning("AAT label resolution failed (non-fatal): %s", e)
+        return {}
+
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -88,8 +117,15 @@ class SearchRequest(BaseModel):
     )
     types: Optional[list[str]] = Field(
         None,
-        description="AAT or source-vocabulary type identifiers "
-                    "(e.g. ['aat:300008347']). Filters on nested types.identifier.",
+        description="Source-vocabulary type identifiers (e.g. ['city', 'Q515']). "
+                    "Filters on nested types.identifier (exact source type).",
+    )
+    aat_types: Optional[list[int]] = Field(
+        None,
+        description="AAT concept ids (e.g. [300008347]). HIERARCHICAL: matches "
+                    "places whose type is that concept OR any descendant of it "
+                    "(via types.aat_paths). Use with the aat_types facet for a "
+                    "friendly, cross-source type filter.",
     )
     bounds: Optional[dict] = Field(None, description="GeoJSON geometry for spatial filter (intersects)")
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
@@ -159,7 +195,8 @@ class SearchHit(BaseModel):
 
 class Facets(BaseModel):
     """Aggregation facets returned alongside search hits."""
-    types: list[dict] = []      # [{"identifier": ..., "label": ..., "count": ...}, ...]
+    types: list[dict] = []      # [{"identifier": ..., "label": ..., "count": ...}, ...] (raw source types)
+    aat_types: list[dict] = []  # [{"aat_id": ..., "label": ..., "count": ...}, ...] (AAT, friendly labels)
     countries: list[dict] = []  # [{"code": ..., "count": ...}, ...]
 
 
@@ -334,6 +371,7 @@ async def search(req: SearchRequest):
             namespaces=req.namespaces,
             fclasses=req.fclasses,
             types=req.types,
+            aat_types=req.aat_types,
             extra_source=["types"],  # needed for type facets + hit data
             geom=req.geom,
             clustering_fields=req.include_clustering_fields,
@@ -357,7 +395,14 @@ async def search(req: SearchRequest):
                                 }
                             }
                         }
-                    }
+                    },
+                    # AAT-based type facets — aggregate on the mapped AAT concept
+                    # ids (cross-source, friendly labels resolved from the `types`
+                    # index post-query). Replaces the raw-identifier facets in the
+                    # AAT-aware UI (§7).
+                    "by_aat": {
+                        "terms": {"field": "types.aat_ids", "size": 60},
+                    },
                 }
             },
             "country_facets": {
@@ -541,6 +586,20 @@ async def search(req: SearchRequest):
             "label": label,
             "count": count,
         })
+
+    # AAT type facets — aggregate on the mapped AAT concept ids and resolve
+    # friendly labels from the `types` index (one lookup). Gives the AAT-aware
+    # type filter its human-readable, cross-source facet (§7).
+    aat_buckets = aggs.get("type_facets", {}).get("by_aat", {}).get("buckets", [])
+    if aat_buckets:
+        aat_labels = await _resolve_aat_labels([b["key"] for b in aat_buckets], auth)
+        for bucket in aat_buckets:
+            aid = bucket.get("key")
+            facets.aat_types.append({
+                "aat_id": aid,
+                "label": aat_labels.get(aid, str(aid)),
+                "count": bucket.get("doc_count", 0),
+            })
 
     # Country facets
     country_agg = aggs.get("country_facets", {}).get("buckets", [])
