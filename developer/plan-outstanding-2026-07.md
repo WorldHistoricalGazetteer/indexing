@@ -437,21 +437,20 @@ but the `type_mappings` index, derivation passes, and post-retrieval
 consanguinity engine are unbuilt. A **live audit (10 Jul 2026)** of AAT coverage
 per namespace shows real gaps:
 
-Coverage (re-audited **12 Jul 2026**, after the TGN backfill):
+Coverage (re-audited **12 Jul 2026**, after the TGN + small-vocab backfills):
 
 | Coverage | Namespaces |
 |----------|-----------|
-| **Good (70–100%)** | chgis, hgis, og, ofs, un, **tgn (100%, NEW — 2,991,027/2,991,044)**; alc 99%; ohm 93%; gn 85%; osm 85%; wd 75%; pl 71% |
-| **ZERO AAT** | **gb (1.17M!)**, tm (64K), iv (24K), clio (15.7K), whg (14.2K), po (9K), nl (4.4K), dgsd (3.8K), dp (2.6K), ukhc (92) |
+| **100%** | tgn (NEW), chgis, hgis, og, ofs, un, **iv · clio · po · nl · dgsd · dp · ukhc (all NEW)** |
+| **~92–99%** | alc 99%, **whg 99% (NEW)**, ohm 93%, **tm 92% (NEW — rest is `people`/`kleros`)** |
+| **70–85%** | gn 85%, osm 85%, wd 75%, pl 72% |
+| **ZERO AAT** | **gb (1.17M!)** — the only remaining zero |
 
-Some zero-coverage namespaces legitimately lack meaningful native place types
-(nl territories, whg mixed LPF, dp language points, po periods), while others do
-carry mappable native type vocabularies (tm, iv, clio `polity`, dgsd, ukhc
-`historic-county`). **gb (1.2M)** is the largest remaining zero — GB1900 is
-transcribed OS map text with little reliable native type signal, so it's a harder
-case than TGN was. Full coverage is a **multi-month, source-by-source effort** —
-see the whg3 `/development` "In development" note (drafted 2026-07-12) and the §7
-search overlap (type facets/labels depend on this).
+**Almost everything is now typed** (12 Jul backfills — see below). The lone zero is
+**gb** (GB1900): transcribed OS map text with no native feature type — genuinely hard
+(a future VLM/CV-on-map-typography idea is noted in `authorities/gb1900-places.py`).
+`wd`/`pl` have a residual long tail (specific Wikidata Q-items / non-place Pleiades
+metadata). Details + the whg3 `/development` note in `developer/aat-typing-status.md`.
 
 **Outstanding:**
 - [ ] One-time `aat_enrich` backfill of every namespace whose `final/` snapshot
@@ -465,9 +464,20 @@ search overlap (type facets/labels depend on this).
         `authorities/tgn-places.py` now reads PlaceTypes.nt at ingestion so future
         re-ingests carry real types (emits `aat_ids`; `aat_enrich` path-fill adds
         `aat_paths`, same route as og/ofs).
-  - [ ] GB1900, Index Villaris, Cliopatria (`polity`), PeriodO (`period`),
-        Trismegistos, DGSD, ukhc — decide which get AAT mappings (see the coverage
-        summary + the whg3 `/development` note drafted 2026-07-12).
+  - [x] **iv, clio, po, nl, dp, dgsd, ukhc, tm, whg, pl — DONE 2026-07-12.** Curated
+        `processing/manual_aat_maps.py` ({namespace+identifier→AAT}, an `aat:<id>`
+        identifier extractor, and a whg free-text `sourceLabel` map) wired into
+        `aat_enrich.augment_doc` → drives BOTH the live backfill
+        (`apply_aat_enrich --namespace <ns>`) and future ingestion, no per-script
+        change. Backfilled all live docs (ukhc 92, clio 15.7K, po 9K, iv 24K, nl 4.4K,
+        dp 2.6K, dgsd 3.8K, tm 59.3K, whg 14.1K, pl +top-up). All ids validated
+        against the prod `types` index.
+  - [ ] **GB1900** — the only remaining zero; no native type. VLM/CV map-typography
+        idea documented in `authorities/gb1900-places.py` (not built).
+  - [ ] **wd / pl residual tail** — wd's unmapped 25% is a long tail of specific
+        Wikidata Q-items (needs the aat_mapper **P1014/P279 derivation pass** — the
+        Wikidata API is firewalled from pitt, so run it from a net-connected host);
+        pl's remainder is non-place metadata (`unlocated`/`label`/…), untypeable.
 - [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
       0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
       P1014/P279, label matching, hierarchy propagation.

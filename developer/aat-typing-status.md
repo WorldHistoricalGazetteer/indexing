@@ -19,29 +19,33 @@ work. Two §7 items depend directly on this coverage:
 So **until a source is typed, its records can't be filtered or faceted by place
 type.** Getting everything typed is a multi-month, source-by-source effort.
 
-## Coverage (re-audited 12 Jul 2026, prod `places`)
+## Coverage (re-audited 12 Jul 2026, prod `places`, after the backfills)
 
 | Band | Namespaces (records · AAT coverage) |
 |------|-------------------------------------|
-| **Good (70–100%)** | chgis, hgis, og, ofs, un — 100% · **tgn 100% (NEW — 2,991,027/2,991,044)** · alc 99% · ohm 93% · gn 85% · osm 85% · wd 75% · pl 71% |
-| **Zero — has a mappable native vocab** | **tm** (64K, ancient-world types) · **iv** (24K) · **clio** (15.7K, `polity`) · **dgsd** (3.8K, Song-dynasty) · **ukhc** (92, `historic-county` — trivial) |
-| **Zero — little/no native place type** | **gb** (1.17M, transcribed OS map text) · **whg** (14.2K, mixed contributed LPF) · **po** (9K, time periods, not places) · **nl** (4.4K, territories) · **dp** (2.6K, language points) |
+| **100%** | tgn (NEW, ~3M) · chgis · hgis · og · ofs · un · **iv · clio · po · nl · dgsd · dp · ukhc (all NEW)** |
+| **~92–99%** | alc 99% · **whg 99% (NEW)** · ohm 93% · **tm 92% (NEW; rest = `people`/`kleros`, left untyped)** |
+| **70–85%** | gn 85% · osm 85% · wd 75% · pl 72% |
+| **ZERO** | **gb (1.17M)** — the only remaining zero |
 
-**TGN (~3M)** was the biggest single win and is now typed (see §2 /
-`processing/tgn_aat_backfill.py`). **gb (1.2M)** is the largest remaining zero but
-the hardest — GB1900 is transcribed map labels with little reliable type signal.
+**What got done 2026-07-12:** TGN (`processing/tgn_aat_backfill.py`) + a curated
+`processing/manual_aat_maps.py` (namespace+identifier maps, an `aat:<id>` extractor,
+and a whg free-text `sourceLabel` map) wired into `aat_enrich.augment_doc` — driving
+both the live backfill (`apply_aat_enrich --namespace <ns>`) and future ingestion.
 
-## Suggested order for the rest
+## What remains
 
-1. **Cheap, high-confidence:** `ukhc` (one type), `clio` (`polity` → one AAT), `tm`
-   (ancient-world type vocabulary), `dgsd`.
-2. **Medium:** `iv` (Index Villaris settlement types), a native-type pass for `whg`
-   datasets that carry types.
-3. **Judgement calls:** `gb` (may not be worth it), `po`/`dp`/`nl` (arguably not
-   place-typed — map to a single representative AAT concept, or leave untyped).
-
-Then the cross-cutting §2 build-out: the `type_mappings` index + derivation passes
-+ the post-retrieval consanguinity engine, feeding the §7 type-facet UI.
+- **gb (1.17M)** — no native feature type; genuinely hard. Idea (unbuilt): a VLM/CV
+  reading OS map typography — see `authorities/gb1900-places.py`.
+- **wd residual 25%** — a long tail of specific Wikidata Q-items. The right tool is
+  the aat_mapper **P1014/P279 derivation pass** (bridges Q-item→AAT via Wikidata's
+  Getty-AAT property). The Wikidata API is firewalled from pitt → run it from a
+  net-connected host and rebuild `typesystem/data/wikidata.json`.
+- **pl residual** — mostly non-place metadata (`unlocated`/`label`/`unknown`/`false`),
+  legitimately untypeable.
+- **Cross-cutting (§2/§7):** the `type_mappings` index + post-retrieval consanguinity
+  engine, and the AAT-based type-facet UI (server facets on `aat_ids` with friendly
+  labels + a hierarchical filter) — the visible §7 payoff now that coverage is high.
 
 ---
 
