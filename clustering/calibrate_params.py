@@ -294,7 +294,8 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     logger.info("sampled %d positive pairs", len(positives))
 
     # X columns are the four inferred signals in this fixed order (NO link).
-    X, y = build_feature_matrix(es_host, positives, sample, rng, auth=auth)
+    X, y = build_feature_matrix(es_host, positives, sample, rng, auth=auth,
+                                batch_db=batch_db)
     if len(y) < 1000 or sum(y) < 200:
         raise SystemExit(f"insufficient calibration data (n={len(y)}, pos={sum(y)})")
 
