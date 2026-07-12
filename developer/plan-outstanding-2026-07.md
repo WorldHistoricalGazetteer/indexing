@@ -481,9 +481,14 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
 - [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
       0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
       P1014/P279, label matching, hierarchy propagation.
-- [ ] Build the `type_mappings` ES index + sync/alias-swap; post-retrieval
-      consanguinity search engine; type-facet UI (replaces raw `identifier`
-      facets — see §7).
+- [x] **Type-facet UI backend — DONE 2026-07-12** (AAT facets + friendly labels +
+      hierarchical `aat_types` filter in the gateway; see §7). Uses the existing
+      `types` index for labels — **no separate `type_mappings` index needed for the
+      facet UI**. *(Remaining, larger + separate:)*
+- [ ] Build the `type_mappings` ES index + sync/alias-swap and the **post-retrieval
+      consanguinity search engine** (query-time cross-vocabulary type expansion /
+      Wu-Palmer, `type-mapping-plan.md`). Not required by the facet UI above; it's the
+      deeper "related-types" retrieval feature.
 - [ ] **OSM Tier-2 tag-key expansion** (~3–5M new features): ingest the 11
       additional tag keys inventoried in `osm-types-inventory.md` /
       `ohm-types-inventory.md`.
@@ -621,10 +626,15 @@ Consequences for this plan (the earlier "atlas → main promotion" framing is go
       timespans overlap the range **OR** that have no timespans at all (`must_not
       exists` on `toponyms.timespans.start.in`/`end.in`). Passed through from
       `search.py`; default behaviour unchanged. *(Activates on the next gateway restart.)*
-- [ ] **`fclasses` → type facets** — replace legacy A/P/S/R/L/T/H checkboxes with
-      a faceted type filter driven by server-side aggregations (ties to §2).
-- [ ] **Type-facet labels** — server facets currently return raw `identifier`
-      values; unfriendly until AAT labels are wired (ties to §2).
+- [x] **`fclasses` → type facets + labels — BACKEND DONE 2026-07-12** (`gateway/search.py`,
+      `es_helpers.py`). Now that ~all namespaces carry `aat_ids`/`aat_paths` (§2):
+      `facets.aat_types` aggregates on `types.aat_ids` and resolves **friendly labels**
+      from the `types` index (e.g. `300008389 → "cities"`); a new **`aat_types`**
+      request param gives a **hierarchical** type filter — a place matches a concept
+      OR any descendant via a `types.aat_paths` wildcard (validated: AAT ids are
+      distinct 9-digit segments, so the substring match is exact). Additive; the raw
+      `types` facet/filter still work. *(Activates on the next gateway restart; the
+      whg3 side wires the checkboxes → the `aat_types` facet/param.)*
 - [ ] **PeriodO vs. drawn geometry** — period geometry is mixed with
       user-drawn geometry in `bounds`; no backend way to distinguish them.
 - [x] ~~`bounds` spatial filter uses `repr_point`, not extent~~ — **investigated
