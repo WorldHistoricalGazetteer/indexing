@@ -252,7 +252,7 @@ elevation    integer
 | `config.py` | Loads `.env`; exports `ES_BACKEND` (localhost:9201), `KIBANA_BACKEND` (localhost:5601), index name patterns (`places_*`, `toponyms_*`, `clusters`), Symphonym model dir |
 | `search.py` | `POST /api/search` and `GET /api/suggest` — the main search router |
 | `reconcile.py` | `POST /api/reconcile` — reconciliation search (same 3-step architecture as search) |
-| `es_helpers.py` | Shared ES query builders: `build_toponym_query`, `build_phonetic_knn`, `collect_place_ids`, `build_places_filter`, `build_toponym_lookup`, `build_cluster_lookup`, `build_suggest_query`; geometry extractors `extract_place_geoms`/`extract_repr_point` |
+| `es_helpers.py` | Shared ES query builders: `build_toponym_query`, `build_phonetic_knn`, `collect_place_ids`, `build_places_filter`, `build_toponym_lookup`, `build_suggest_query`; geometry extractors `extract_place_geoms`/`extract_repr_point` |
 | `spatial.py` | Spatial-containment engine (no reindex): `resolve_region` (place_ids → region), `region_from_geojson` (bounds → region), `apply_containment` (fuzzy H3 / exact Shapely). H3 prefilter + Shapely `prep()` refine ported from `processing/ccode_enrichment.py`; exploits `repr_point ∈ geom` guarantee. Used by `search.py` + `reconcile.py` Step 2.5. |
 | `proxy.py` | Async reverse proxy (httpx + websockets) with connection pooling |
 | `symphonym.py` | Lazy-loads Symphonym v7 UniversalEncoder; provides `embed()`, `embed_batch()`, `quantize_to_byte()`, `build_knn_query()` |
@@ -274,7 +274,7 @@ Both endpoints share the same architecture via `es_helpers.py`:
 
 3. **Enrichment** — fetch full toponym inventory (+ legacy cluster membership):
    - `build_toponym_lookup`: `terms` filter on `attestations` for surviving place_ids → full name inventory (label + lang; optional per-name `phon_emb` when `include_embeddings`)
-   - `build_cluster_lookup`: ⚠️ **LEGACY** — membership docs from the `clusters` index → `cluster_id` + `cluster_size`. Scheduled for retirement (client-side clustering replaces it); no current consumer reads these fields (the live `/search/` page uses the separate legacy `whg` union index, and the Atlas beta clusters client-side from shipped edges).
+   - ~~`build_cluster_lookup`~~ **RETIRED 2026-07-12** — the `clusters`-index membership join (`cluster_id`/`cluster_size`) is removed from `search.py` + `reconcile.py` (client-side clustering replaces it; verified no consumer read those fields). Prominence tiebreaker is now name-variant count.
 
 **Clustering fuel (opt-in, additive):** `include_hard_links` → result-set `edges[]`; `include_clustering_fields` → per-hit `h3`/`h3_cover`/`temporal_range`/`aat_ids`/`aat_paths`/`query_match` + top-level `clustering_params`/`toponym_stoplist`; `include_embeddings` → per-name int8 `phon_emb`. The browser (`clustering.js`) computes all pair signals + Union-Find. See `developer/plan-outstanding-2026-07.md` §1.
 

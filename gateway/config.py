@@ -33,7 +33,8 @@ ELASTIC_PASS_FILE = f"{IX1_BASE}/es/config/elastic.password"
 # ES index names (may be dated aliases like toponyms_20260317)
 TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms_*")
 PLACES_INDEX = os.getenv("PLACES_INDEX", "places_*")
-CLUSTERS_INDEX = os.getenv("CLUSTERS_INDEX", "clusters")
+# NB: the legacy `clusters` index enrichment was retired 2026-07-12 (clustering
+# is client-side now — plan §1); CLUSTERS_INDEX is intentionally gone.
 
 # Symphonym model
 SYMPHONYM_MODEL_DIR = os.getenv("SYMPHONYM_MODEL_DIR", "")  # empty = auto-detect

@@ -6,9 +6,10 @@ Search and suggest endpoints for the WHG API gateway.
 Returns deduplicated name strings, no filters, no place lookups.
 
 **POST /api/search** — Full filtered search reusing the proven three-step
-reconcile architecture (Discovery → Filtering → Enrichment) plus a
-lightweight cluster-size lookup for prominence ranking.  Adds ES
-aggregations for server-side type/country facets.
+reconcile architecture (Discovery → Filtering → Enrichment).  Adds ES
+aggregations for server-side type/country facets.  Ranks by toponym-match
+score, tiebroken by name-variant count (the legacy `clusters`-index
+`cluster_size` prominence lookup was retired with client-side clustering).
 """
 
 from __future__ import annotations
@@ -33,7 +34,6 @@ from .config import (
     ES_BACKEND,
     PLACES_INDEX,
     TOPONYMS_INDEX,
-    CLUSTERS_INDEX,
 )
 from .es_helpers import (
     es_auth,
@@ -43,7 +43,6 @@ from .es_helpers import (
     collect_place_ids,
     build_places_filter,
     build_toponym_lookup,
-    build_cluster_lookup,
     build_suggest_query,
 )
 
@@ -149,8 +148,6 @@ class SearchHit(BaseModel):
     geometries: Optional[list[dict]] = None   # Full GeoJSON geoms; only present when geom="full"
     score: float = 0
     namespace: str = ""
-    cluster_id: Optional[str] = None
-    cluster_size: int = 1
     # Per-hit clustering fuel — only populated when include_clustering_fields=True
     h3: Optional[str] = None                   # representative H3 centroid cell
     h3_cover: list[str] = []                   # bounded union of H3 cover cells
@@ -247,8 +244,8 @@ async def search(req: SearchRequest):
       ``places`` with spatial/temporal/country-code filters.  Includes
       aggregations on ``types`` and ``ccodes`` for faceted UI.
 
-      **Step 3 — Enrichment.**  Fetch full toponym inventory for surviving
-      places, plus cluster membership for prominence ranking.
+      **Step 3 — Enrichment.**  Fetch the full toponym inventory for surviving
+      places (optionally with per-name embeddings).
     """
     has_query = bool(req.query and req.query.strip())
     if not has_query and not req.contained_in and not req.bounds:
@@ -429,29 +426,6 @@ async def search(req: SearchRequest):
             except Exception as e:
                 logger.warning(f"Toponym enrichment failed (non-fatal): {e}")
 
-        # ------------------------------------------------------------------
-        # Step 3b: Cluster membership lookup — for prominence ranking
-        # ------------------------------------------------------------------
-
-        pid_to_cluster: dict[str, tuple[str, int]] = {}
-
-        if surviving_pids:
-            cluster_body = build_cluster_lookup(surviving_pids)
-            try:
-                cluster_resp = await client.post(
-                    f"{ES_BACKEND}/{CLUSTERS_INDEX}/_search",
-                    json=cluster_body, auth=auth, headers=ES_HEADERS,
-                )
-                if cluster_resp.status_code == 200:
-                    for ch in cluster_resp.json().get("hits", {}).get("hits", []):
-                        csrc = ch["_source"]
-                        pid_to_cluster[csrc["place_id"]] = (
-                            csrc["cluster_id"],
-                            csrc.get("cluster_size", 1),
-                        )
-            except Exception as e:
-                logger.warning(f"Cluster lookup failed (non-fatal): {e}")
-
     # ------------------------------------------------------------------
     # Step 4: Format response — rank by toponym-match score
     # ------------------------------------------------------------------
@@ -515,9 +489,6 @@ async def search(req: SearchRequest):
                 "sourceLabel": t.get("sourceLabel", ""),
             })
 
-        # Cluster info
-        cluster_id, cluster_size = pid_to_cluster.get(pid, (None, 1))
-
         hit_kwargs = dict(
             place_id=pid,
             title=src.get("title", "") or "",
@@ -528,8 +499,6 @@ async def search(req: SearchRequest):
             geometries=full_geoms if full_geoms else None,
             score=normalised,
             namespace=src.get("namespace", ""),
-            cluster_id=cluster_id,
-            cluster_size=cluster_size,
         )
 
         # Per-hit clustering fuel (opt-in) — h3/temporal/aat from _source plus
@@ -543,8 +512,13 @@ async def search(req: SearchRequest):
 
         results.append(SearchHit(**hit_kwargs))
 
-    # Sort by score descending, then by cluster_size descending as tiebreaker
-    results.sort(key=lambda r: (r.score, r.cluster_size), reverse=True)
+    # Sort by score descending, then by name-variant count as the prominence
+    # tiebreaker. (The legacy `clusters`-index `cluster_size` tiebreaker was
+    # retired 2026-07-12 with client-side clustering — plan §1. Name-variant
+    # count is a cheap, already-available prominence proxy: well-attested places
+    # carry more name forms across languages, which is exactly the "more name
+    # variants rank higher" behaviour the search UI documents.)
+    results.sort(key=lambda r: (r.score, len(r.names)), reverse=True)
     results = results[:req.size]
 
     # ------------------------------------------------------------------

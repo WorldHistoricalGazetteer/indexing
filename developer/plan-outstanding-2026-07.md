@@ -156,24 +156,21 @@ already-built features**, and (4) polish/ops/docs.
       task; it **was** the "Hard-link expansion + ship" item above, now **IMPLEMENTED
       2026-07-11** (`gateway/hard_link_expansion.py`). See
       `developer/handoff-api-links-receiver.md`.
-- [ ] **Params** — *(additive, safe now:)* **`include_embeddings` DONE 2026-07-11**
-      (attaches per-name int8 `phon_emb`; both endpoints). Still to add:
-      `facet_weights` (pass-through), `phase_2`, `result_limit`. *(contract-breaking:)*
-      **remove** `group_by_cluster` **and** `cluster_threshold` (no server clustering),
-      retire `build_cluster_lookup` / the `clusters`-index join.
-      **⚠️→ largely DE-RISKED (browser-verified 2026-07-12):** the live public `/search/`
-      page does **NOT** consume the gateway here — it POSTs Django `/search/index/`
-      `{qstr, idx:"whg", …}` against the **legacy `whg` union index** and reads
-      `{parameters, suggestions}` (its "N linked records" is the union `linkcount`, not
-      `cluster_size`). So retiring `build_cluster_lookup` in **`search.py`** breaks no
-      live reader (Atlas clusters client-side from `edges[]`). The only residual
-      consumer is **`/api/reconcile` `group_by_cluster`** (OpenRefine) — confirm no
-      external OpenRefine workflow still sends it before removing that path.
-- [ ] **Prominence ranking** — the initial (pre-cluster) ranking used the `clusters`
-      index's `cluster_size` as a tiebreaker; with the index gone, replace it
-      (baseline component size if precomputed, else attestation count / population,
-      or drop the tiebreaker). *(⚠️ coupled to the `build_cluster_lookup` retirement /
-      `clusters`-index removal — same coordination gate.)*
+- [x] **Params — cluster retirement DONE 2026-07-12.** **`include_embeddings`**
+      (per-name int8 `phon_emb`) done 2026-07-11. **Removed** `group_by_cluster` +
+      `cluster_threshold`, retired `build_cluster_lookup` / the `clusters`-index join
+      from **both** `search.py` and `reconcile.py` (+ the standalone `/api/cluster/*`
+      endpoints + `ClusterGroup` + `CLUSTERS_INDEX`). Safe: browser-verified the live
+      `/search/` page uses the separate legacy `whg` union index (not this gateway);
+      grepped whg3 `staging` — no consumer reads `cluster_id`/`cluster_size` and
+      `crc_client.py` sends neither flag; SG confirmed no external OpenRefine workflow
+      sends `group_by_cluster`. Reconcile now returns flat ranked candidates. Still to
+      add (additive, not started): `facet_weights` (pass-through), `phase_2`,
+      `result_limit`.
+- [x] **Prominence ranking — DONE 2026-07-12.** The `cluster_size` tiebreaker is
+      replaced by **name-variant count** (`len(hit.names)`) — a cheap, already-fetched
+      prominence proxy (well-attested places carry more name forms; matches the search
+      UI's documented "more name variants rank higher"). No extra ES round-trip.
 
 **Offline (indexing pipeline):**
 - [x] **Calibration** — **IMPLEMENTED 2026-07-11** (`clustering/calibrate_params.py`

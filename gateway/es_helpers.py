@@ -15,7 +15,6 @@ from .config import (
     ES_BACKEND,
     PLACES_INDEX,
     TOPONYMS_INDEX,
-    CLUSTERS_INDEX,
     get_elastic_password,
 )
 
@@ -439,26 +438,6 @@ def build_toponym_lookup(place_ids: list[str], size: int = 2000,
             "terms": {"attestations": place_ids},
         },
         "_source": source,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Cluster helpers
-# ---------------------------------------------------------------------------
-
-def build_cluster_lookup(place_ids: list[str]) -> dict:
-    """Build an ES query to fetch cluster membership for a list of place_ids."""
-    return {
-        "size": len(place_ids),
-        "query": {
-            "bool": {
-                "filter": [
-                    {"term": {"doc_type": "membership"}},
-                    {"terms": {"place_id": place_ids}},
-                ]
-            }
-        },
-        "_source": ["place_id", "cluster_id", "cluster_size"],
     }
 
 
