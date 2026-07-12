@@ -89,6 +89,22 @@ MANUAL_AAT_MAPS: dict[str, dict[str, list[int]]] = {
         "language-location": [300387171],  # cultural groups
         "cultural-location": [300387171],  # cultural groups
     },
+
+    # Pleiades — top-up for real place types the generated pleiades.json didn't
+    # map (the larger gaps — 'unlocated'/'label'/'unknown'/'false' — are metadata,
+    # not place types, and are left untyped by design).
+    "pl": {
+        "station": [300008347],              # inhabited places (road stations / mansiones)
+        "townhouse": [300005433],            # houses
+        "deme-attic": [300391480],           # demes (inhabited places)
+        "urban": [300130893],                # urban areas
+        "tribus": [300387323],               # tribal areas
+        "vicus": [300008372],                # villages
+        "nome-gr": [300000705],              # districts (nomes)
+        "plaza": [300008214],                # plazas (squares)
+        "frontier-system-limes": [300006909],  # forts (frontier fortifications)
+        "mine": [300000390],                 # mines
+    },
 }
 
 

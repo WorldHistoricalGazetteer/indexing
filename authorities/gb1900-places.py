@@ -8,6 +8,25 @@ Output: ``{STAGED_BASE_DIR}/gb/extract/places.jsonl``
 
 ES indexing for this authority happens later via ``index_from_stage`` —
 this script no longer talks to Elasticsearch.
+
+Place types — the hard case (no AAT mapping today)
+--------------------------------------------------
+GB1900 records are *transcribed Ordnance Survey map labels*: a text string and a
+point, with no native feature-type field. So every record gets a generic
+``named-place`` / ``map-label`` type and carries **no AAT place type** (it is the
+one namespace with 0% AAT coverage — see ``developer/aat-typing-status.md``).
+
+**Idea for future typing (not built):** on OS 1:2500/6-inch maps the *typography*
+encodes feature type — font family, weight, case, and slant follow OS conventions
+(e.g. italic/serif for water and physical features, distinct fonts for settlements
+vs. antiquities). A **VLM** (or simpler CV — font/style classification) reading the
+label on the georeferenced source raster could deduce a coarse place type per
+record, which would then map to a broad AAT concept. The record's coordinate is
+believed to mark the **south-west corner of the text label** (not its centroid),
+which — with an estimate of the label's extent from the string length + font
+metrics — gives the label bounding box to crop from the source map tile. This is a
+substantial research task (source-map access, georeferencing, per-label crops,
+model inference at 1.2 M scale) and is deliberately left for later.
 """
 
 import csv
@@ -77,6 +96,8 @@ def parse_gb1900_row(row):
     if nation in ('England', 'Scotland', 'Wales'):
         place_doc['ccodes'] = ['GB']
 
+    # Generic type only — GB1900 has no native feature type. See the module
+    # docstring for the (unbuilt) VLM/CV map-typography idea to deduce real types.
     place_doc['types'] = [{
         'identifier': 'named-place',
         'label': 'gb1900',
