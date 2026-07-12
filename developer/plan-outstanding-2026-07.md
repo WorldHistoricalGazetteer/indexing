@@ -437,23 +437,37 @@ but the `type_mappings` index, derivation passes, and post-retrieval
 consanguinity engine are unbuilt. A **live audit (10 Jul 2026)** of AAT coverage
 per namespace shows real gaps:
 
+Coverage (re-audited **12 Jul 2026**, after the TGN backfill):
+
 | Coverage | Namespaces |
 |----------|-----------|
-| **Good (70–100%)** | chgis, hgis, og, ofs, un (100%); alc 99%; ohm 93%; gn 85%; osm 84%; wd 75%; pl 70% |
-| **ZERO AAT** | **tgn (3.0M!)**, **gb (1.17M!)**, iv (24K), clio (15.7K), whg (14.2K), po (9K), tm (64K), nl (4.4K), dgsd (3.8K), dp (2.6K), ukhc (92) |
+| **Good (70–100%)** | chgis, hgis, og, ofs, un (100%); **tgn ~99% (NEW)**; alc 99%; ohm 93%; gn 85%; osm 85%; wd 75%; pl 71% |
+| **ZERO AAT** | **gb (1.17M!)**, tm (64K), iv (24K), clio (15.7K), whg (14.2K), po (9K), nl (4.4K), dgsd (3.8K), dp (2.6K), ukhc (92) |
 
-Some zero-coverage namespaces legitimately lack meaningful native types
-(gb1900, nl territories, whg mixed LPF, dp language points), but **tgn (3M) and
-gb (1.2M)** are large and worth mapping — tgn currently emits a generic `place`
-type and should carry real AAT IDs.
+Some zero-coverage namespaces legitimately lack meaningful native place types
+(nl territories, whg mixed LPF, dp language points, po periods), while others do
+carry mappable native type vocabularies (tm, iv, clio `polity`, dgsd, ukhc
+`historic-county`). **gb (1.2M)** is the largest remaining zero — GB1900 is
+transcribed OS map text with little reliable native type signal, so it's a harder
+case than TGN was. Full coverage is a **multi-month, source-by-source effort** —
+see the whg3 `/development` "In development" note (drafted 2026-07-12) and the §7
+search overlap (type facets/labels depend on this).
 
 **Outstanding:**
 - [ ] One-time `aat_enrich` backfill of every namespace whose `final/` snapshot
       pre-dates the enrich stage (Batch 2 TODO) — but note several namespaces
       have **no mapping table at all yet**, not merely un-enriched:
-  - [ ] TGN → AAT (biggest opportunity; 3M docs, currently generic `place`).
+  - [x] **TGN → AAT — DONE 2026-07-12.** TGN place types ARE AAT concepts, encoded
+        in Getty's `TGNOut_PlaceTypes.nt` (rel URI `…-placeType-<aat_id>`). New
+        `processing/tgn_aat_backfill.py` (extract → resolve `path`/`term` from the live
+        `types` index → scripted-update patch) typed **~2.99M** live tgn docs
+        (1,045/1,050 distinct AAT ids resolved), replacing the generic `place`.
+        `authorities/tgn-places.py` now reads PlaceTypes.nt at ingestion so future
+        re-ingests carry real types (emits `aat_ids`; `aat_enrich` path-fill adds
+        `aat_paths`, same route as og/ofs).
   - [ ] GB1900, Index Villaris, Cliopatria (`polity`), PeriodO (`period`),
-        Trismegistos, DGSD, ukhc — decide which get AAT mappings.
+        Trismegistos, DGSD, ukhc — decide which get AAT mappings (see the coverage
+        summary + the whg3 `/development` note drafted 2026-07-12).
 - [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
       0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
       P1014/P279, label matching, hierarchy propagation.
