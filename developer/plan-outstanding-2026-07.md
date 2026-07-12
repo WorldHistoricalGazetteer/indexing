@@ -190,15 +190,25 @@ already-built features**, and (4) polish/ops/docs.
       by summed `attestations` size, fixing the dedup-index `doc_count` trap). Spot-check
       looks right: village-words across scripts (вёска/село/деревня), generic creek/river
       names, "San Francisco", "长城" segments.
-    - [ ] **`--calibrate` weight fit — RAN but NOT shipped; defaults retained.** The
-      empirical fit (8k positives) over-weights spatial (~0.47) and under-weights name
-      (~0.23) vs the domain-sensible defaults (name 0.35 / spatial 0.20), because the
-      **negatives are random cross-namespace pairs** (geographically scattered → spatial
-      looks trivially discriminative). Shipping it risks regressing clustering (merge
-      distinct nearby places; split same-named distant ones). **Fix = hard negatives**
-      (same-name and/or nearby-but-not-coreferent pairs) before trusting the weights.
-      `θ_query` is now computed on the correct composite scale. Until then, the committed
-      **default weights stand.**
+    - [x] **Hard-negative sampling built** (`signal_features.py`): balanced mix of
+      nearby (~3km, spatially-close negatives) + same-name (shared toponym) + random,
+      de-duped against the **full overlay** (drops true links). Pure merge logic
+      unit-tested (`test_signal_features.py`). `θ_query` computed on the composite scale.
+    - [ ] **`--calibrate` weight fit — RAN with hard negatives; STILL NOT shipped;
+      defaults retained (principled).** Even with hard negatives the fit stays
+      spatial-heavy (name ~0.22 / spatial ~0.46). This is a **property of the ground
+      truth, not a sampling bug:** authority `sameAs`/`exactMatch` positives are the
+      *same place across gazetteers*, so their coordinates are near-duplicates →
+      spatial is genuinely the strongest separator *for that positive class*. It is
+      **not representative of the browser's broader task** (clustering name-variant
+      places at different coordinates, user records, single-gazetteer cases), and the
+      "representative embedding = first attested toponym" pick understates the name
+      cosine for cross-script pairs. So the name-forward **defaults** (name 0.35 /
+      spatial 0.20) are retained as the shipped slider starting-point. **A trustworthy
+      empirical fit needs better positives** — e.g. contributor attestations once they
+      accumulate, or toponym-cosine-based positives that include different-coordinate
+      corefs — plus a best-of-N representative-embedding pick. Deferred until such
+      positives exist; the machinery is ready to re-run.
 - [x] **AAT ancestors** — **DONE** (folded into the per-hit payload above): `aat_paths`
       (the materialised `types.aat_paths`, ancestors + depth) is emitted per hit — no
       schema change (the field already exists per-type). `temporal_range` likewise
