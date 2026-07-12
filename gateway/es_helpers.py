@@ -419,16 +419,26 @@ def build_places_filter(
 # Step 3 helpers — Toponym enrichment
 # ---------------------------------------------------------------------------
 
-def build_toponym_lookup(place_ids: list[str], size: int = 2000) -> dict:
+def build_toponym_lookup(place_ids: list[str], size: int = 2000,
+                         with_embeddings: bool = False) -> dict:
     """
     Build an ES query to fetch all toponyms attested by the given place_ids.
+
+    Args:
+        with_embeddings: also fetch each toponym's precomputed int8 128-d
+            Symphonym ``embedding`` (for the Atlas ``include_embeddings`` path —
+            the browser's ``s.n`` name-cosine signal). Off by default to keep the
+            enrichment response lightweight.
     """
+    source = ["name", "lang", "attestations"]
+    if with_embeddings:
+        source.append("embedding")
     return {
         "size": size,
         "query": {
             "terms": {"attestations": place_ids},
         },
-        "_source": ["name", "lang", "attestations"],
+        "_source": source,
     }
 
 

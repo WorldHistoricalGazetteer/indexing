@@ -156,11 +156,12 @@ already-built features**, and (4) polish/ops/docs.
       task; it **was** the "Hard-link expansion + ship" item above, now **IMPLEMENTED
       2026-07-11** (`gateway/hard_link_expansion.py`). See
       `developer/handoff-api-links-receiver.md`.
-- [ ] **Params** — *(additive, safe now:)* add `include_embeddings`, `facet_weights`
-      (pass-through), `phase_2`, `result_limit`. *(⚠️ contract-breaking — sequence
-      WITH the whg3 cutover, not before:)* **remove** `group_by_cluster` **and**
-      `cluster_threshold` (no server clustering), retire `build_cluster_lookup` /
-      the `clusters`-index join. These change the live `/api/search`+`/api/reconcile`
+- [ ] **Params** — *(additive, safe now:)* **`include_embeddings` DONE 2026-07-11**
+      (attaches per-name int8 `phon_emb`; both endpoints). Still to add:
+      `facet_weights` (pass-through), `phase_2`, `result_limit`. *(⚠️ contract-breaking
+      — sequence WITH the whg3 cutover, not before:)* **remove** `group_by_cluster`
+      **and** `cluster_threshold` (no server clustering), retire `build_cluster_lookup`
+      / the `clusters`-index join. These change the live `/api/search`+`/api/reconcile`
       response and would break the current UI if it still sends/reads them.
 - [ ] **Prominence ranking** — the initial (pre-cluster) ranking used the `clusters`
       index's `cluster_size` as a tiebreaker; with the index gone, replace it
@@ -230,16 +231,17 @@ already-built features**, and (4) polish/ops/docs.
 >   **use these for Wu-Palmer `s.ty`**: depth = path length, LCA = longest common
 >   prefix), and `query_match` (`{"name","score"}` — the toponym that matched). Both
 >   flags are opt-in and **orthogonal**; send both for the full non-embedding fuel.
-> - **`clustering_params` + `toponym_stoplist`** → offline artefacts in
->   `indexing/clustering/data/` (`clustering_params.json` = weights + θ/τ thresholds;
->   default θ_query 0.55). Currently **uncalibrated defaults** (will be replaced by an
->   empirical fit); the gateway does not yet *ship* them in the response (small
->   follow-up), so for now read the committed JSON or hard-code the defaults.
-> - ⏳ **Still pending — `s.n` (Symphonym name cosine):** needs the int8 128-d
->   toponym embeddings. Two paths, your choice: **Atlas** → `include_embeddings=true`
->   (gateway ships the precomputed vectors — *param not built yet*); **Workbench** →
->   self-embed in a worker with the `hf/` Symphonym build + int8 quant (already loaded
->   for private records). Until embeddings arrive, `s.n` falls back to `query_match`.
+> - **`clustering_params` + `toponym_stoplist`** → **shipped in the response** when
+>   `include_clustering_fields=true` (top-level `clustering_params` = weights + θ/τ
+>   thresholds, default θ_query 0.55; `toponym_stoplist` = high-frequency names).
+>   Currently **uncalibrated defaults** (`toponym_stoplist` empty until the CRC
+>   `--stoplist` run ships it); values will change after the empirical fit but the
+>   shape is stable.
+> - **`s.n` (Symphonym name cosine)** → **`include_embeddings=true`** attaches each
+>   candidate name's precomputed int8 128-d `phon_emb` (Atlas path — no client model).
+>   **Workbench** leaves it `false` and self-embeds in a worker with the `hf/`
+>   Symphonym build + int8 quant (already loaded for private records). `clustering.js`
+>   is embedding-source-agnostic — decode `phon_emb` when present, else worker-embed.
 > - **Design `clustering.js` to degrade gracefully:** full multi-signal composite when
 >   all fields are present; drop any signal whose field is absent (renormalise the
 >   remaining weights); hard-link-only baseline as the floor. That way it lights up

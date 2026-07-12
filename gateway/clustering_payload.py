@@ -29,9 +29,54 @@ All output is deterministic (sorted) so responses are stable across calls.
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+from functools import lru_cache
+from pathlib import Path
 
 logger = logging.getLogger("gateway.clustering_payload")
+
+
+# ---------------------------------------------------------------------------
+# Offline calibration artefacts — shipped once per clustering query so the
+# browser scorer has the composite weights + θ/τ thresholds + toponym stoplist.
+# Produced by ``clustering.calibrate_params``; committed defaults live at
+# ``clustering/data/`` (repo root = this file's grandparent). A gateway restart
+# picks up a freshly calibrated file (paths overridable per-deployment).
+# ---------------------------------------------------------------------------
+_REPO_ROOT = Path(__file__).resolve().parents[1]
+CLUSTERING_PARAMS_FILE = Path(os.getenv(
+    "CLUSTERING_PARAMS_FILE", _REPO_ROOT / "clustering" / "data" / "clustering_params.json"))
+TOPONYM_STOPLIST_FILE = Path(os.getenv(
+    "TOPONYM_STOPLIST_FILE", _REPO_ROOT / "clustering" / "data" / "toponym_stoplist.json"))
+
+
+@lru_cache(maxsize=1)
+def load_clustering_params() -> dict | None:
+    """The calibration params (weights + θ/τ thresholds), or None if absent.
+
+    Cached for the process lifetime — restart the gateway to pick up a
+    recalibrated file (matches the deploy model)."""
+    try:
+        return json.loads(CLUSTERING_PARAMS_FILE.read_text())
+    except (OSError, ValueError) as exc:
+        logger.warning("clustering_params unavailable (%s): %s",
+                       CLUSTERING_PARAMS_FILE, exc)
+        return None
+
+
+@lru_cache(maxsize=1)
+def load_toponym_stoplist() -> list[str]:
+    """The high-frequency toponym stoplist (empty if the file isn't built yet).
+
+    The stoplist file is produced by ``calibrate_params --stoplist`` (needs an ES
+    run) and is *not* committed, so this is empty until that run ships it."""
+    try:
+        data = json.loads(TOPONYM_STOPLIST_FILE.read_text())
+        return data.get("stoplist", []) if isinstance(data, dict) else list(data)
+    except (OSError, ValueError):
+        return []
 
 
 # Cap on the per-hit ``h3_cover`` union. A large polygon can cover many cells;

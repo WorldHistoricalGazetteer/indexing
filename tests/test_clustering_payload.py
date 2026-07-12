@@ -100,5 +100,41 @@ class TestQueryMatchCapture(unittest.TestCase):
         self.assertEqual(scores, {"gn:1": 1.0})
 
 
+class TestParamLoaders(unittest.TestCase):
+    def test_load_clustering_params_from_file(self):
+        import json
+        from pathlib import Path
+        from tempfile import TemporaryDirectory
+        with TemporaryDirectory() as tmp:
+            f = Path(tmp) / "params.json"
+            f.write_text(json.dumps({"weights": {"name": 1.0}}))
+            orig = cp.CLUSTERING_PARAMS_FILE
+            cp.load_clustering_params.cache_clear()
+            cp.CLUSTERING_PARAMS_FILE = f
+            try:
+                self.assertEqual(cp.load_clustering_params()["weights"]["name"], 1.0)
+            finally:
+                cp.CLUSTERING_PARAMS_FILE = orig
+                cp.load_clustering_params.cache_clear()
+
+    def test_stoplist_missing_is_empty(self):
+        from pathlib import Path
+        orig = cp.TOPONYM_STOPLIST_FILE
+        cp.load_toponym_stoplist.cache_clear()
+        cp.TOPONYM_STOPLIST_FILE = Path("/nonexistent/stoplist.json")
+        try:
+            self.assertEqual(cp.load_toponym_stoplist(), [])
+        finally:
+            cp.TOPONYM_STOPLIST_FILE = orig
+            cp.load_toponym_stoplist.cache_clear()
+
+
+class TestToponymLookupEmbeddings(unittest.TestCase):
+    def test_with_embeddings_adds_source_field(self):
+        from gateway.es_helpers import build_toponym_lookup
+        self.assertIn("embedding", build_toponym_lookup(["gn:1"], with_embeddings=True)["_source"])
+        self.assertNotIn("embedding", build_toponym_lookup(["gn:1"])["_source"])
+
+
 if __name__ == "__main__":
     unittest.main()

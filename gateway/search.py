@@ -24,7 +24,11 @@ from pydantic import BaseModel, Field
 
 from . import spatial
 from .hard_link_expansion import HardLinkEdge, expand_hard_links
-from .clustering_payload import assemble_clustering_fields
+from .clustering_payload import (
+    assemble_clustering_fields,
+    load_clustering_params,
+    load_toponym_stoplist,
+)
 from .config import (
     ES_BACKEND,
     PLACES_INDEX,
@@ -125,6 +129,13 @@ class SearchRequest(BaseModel):
                     "Additive; off by default (responses are byte-identical when "
                     "unset). Orthogonal to include_hard_links.",
     )
+    include_embeddings: bool = Field(
+        default=False,
+        description="When True, attach each name's precomputed int8 128-d "
+                    "Symphonym embedding (phon_emb) — the Atlas path for the "
+                    "browser's s.n name-cosine signal (no client model). Heavier "
+                    "payload; off by default.",
+    )
 
 
 class SearchHit(BaseModel):
@@ -161,6 +172,9 @@ class SearchResponse(BaseModel):
     max_score: float = 0
     facets: Facets = Facets()
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
+    # Offline calibration fuel — populated when include_clustering_fields=True
+    clustering_params: Optional[dict] = None
+    toponym_stoplist: list[str] = []
 
 
 class SuggestItem(BaseModel):
@@ -393,6 +407,7 @@ async def search(req: SearchRequest):
             topo_body = build_toponym_lookup(
                 surviving_pids,
                 size=max(len(surviving_pids) * 30, 500),
+                with_embeddings=req.include_embeddings,
             )
             try:
                 topo_resp = await client.post(
@@ -405,11 +420,12 @@ async def search(req: SearchRequest):
                     src = th.get("_source", {})
                     label = src.get("name", "")
                     lang = src.get("lang")
+                    entry = {"label": label, "lang": lang}
+                    if req.include_embeddings and src.get("embedding"):
+                        entry["phon_emb"] = src["embedding"]
                     for pid in src.get("attestations", []):
                         if pid in surviving_set:
-                            place_toponyms[pid].append(
-                                {"label": label, "lang": lang}
-                            )
+                            place_toponyms[pid].append(entry)
             except Exception as e:
                 logger.warning(f"Toponym enrichment failed (non-fatal): {e}")
 
@@ -455,7 +471,10 @@ async def search(req: SearchRequest):
         for t in place_toponyms.get(pid, []):
             label = t.get("label", "")
             if label and label not in seen_labels:
-                names.append({"label": label, "lang": t.get("lang")})
+                entry = {"label": label, "lang": t.get("lang")}
+                if req.include_embeddings and t.get("phon_emb"):
+                    entry["phon_emb"] = t["phon_emb"]
+                names.append(entry)
                 seen_labels.add(label)
 
         # Representative point from first geometry
@@ -582,5 +601,7 @@ async def search(req: SearchRequest):
         max_score=results[0].score if results else 0,
         facets=facets,
         edges=edges,
+        clustering_params=load_clustering_params() if req.include_clustering_fields else None,
+        toponym_stoplist=load_toponym_stoplist() if req.include_clustering_fields else [],
     )
 
