@@ -431,11 +431,13 @@ the same push window to `main`. The browser `clustering.js` itself is whg3-side 
 
 ## 2. AAT / type system + per-namespace coverage backfill  ★ major
 
-The unified AAT type system (`type-mapping-plan.md`) is still largely a **design
-doc** — the ingestion-time file-based `aat_ids`/`aat_paths` enrichment shipped,
-but the `type_mappings` index, derivation passes, and post-retrieval
-consanguinity engine are unbuilt. A **live audit (10 Jul 2026)** of AAT coverage
-per namespace shows real gaps:
+**Largely resolved as of 12 Jul 2026.** AAT `aat_ids`/`aat_paths` enrichment is
+shipped and coverage is near-complete (only `gb` at 0% — see below); the AAT
+**type-facet UI backend** (facets + friendly labels + hierarchical filter) is live
+(§7); and the `type_mappings` index + post-retrieval consanguinity engine are
+**superseded** (delivered via the hierarchical filter + client-side Wu-Palmer — see
+below). What remains: `gb`, the `wd`/`pl` residual tail, the Wikidata derivation
+pass, and OSM Tier-2. The per-namespace audit that drove this:
 
 Coverage (re-audited **12 Jul 2026**, after the TGN + small-vocab backfills):
 
@@ -485,10 +487,20 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
       hierarchical `aat_types` filter in the gateway; see §7). Uses the existing
       `types` index for labels — **no separate `type_mappings` index needed for the
       facet UI**. *(Remaining, larger + separate:)*
-- [ ] Build the `type_mappings` ES index + sync/alias-swap and the **post-retrieval
-      consanguinity search engine** (query-time cross-vocabulary type expansion /
-      Wu-Palmer, `type-mapping-plan.md`). Not required by the facet UI above; it's the
-      deeper "related-types" retrieval feature.
+- [x] **`type_mappings` index + post-retrieval consanguinity engine — SUPERSEDED
+      (SG-confirmed 2026-07-12); will NOT be built.** Its value is delivered by other
+      means we've since shipped: (a) **narrower-term expansion** = the server-side
+      hierarchical `aat_types` filter (concept + descendants via `aat_paths`); (b)
+      **type consanguinity / Wu-Palmer** = client-side in `clustering.js` (`s.ty` over
+      the shipped `aat_paths`) — §1; (c) the design's **`aat_types` index (§5.2) already
+      exists** as the `types` index (`aat_id`/`term`/`path`/`depth`/`gn_fcodes`/`wd_qids`/
+      `osm_tags`); (d) the **`type_mappings` index (§5.3) is explicitly "optional /
+      reverse-lookup"** and redundant (the `types` index carries those reverse fields).
+      The only unbuilt residue — server-side broader/sibling *banding* (§6.3 Tiers 2–3)
+      — partly duplicates client `s.ty` and cuts against the flat-candidates /
+      client-scores architecture, so it's intentionally left out. `type-mapping-plan.md`
+      §5–6 is thus historical; the type UI is served by §7's AAT facets + hierarchical
+      filter + the browser scorer.
 - [ ] **OSM Tier-2 tag-key expansion** (~3–5M new features): ingest the 11
       additional tag keys inventoried in `osm-types-inventory.md` /
       `ohm-types-inventory.md`.
