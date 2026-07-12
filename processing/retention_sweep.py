@@ -65,6 +65,24 @@ _NOTIFY_ENDPOINT = os.environ.get(
     f"{WHG_API_BASE_URL.rstrip('/')}/api/retention/notify",
 )
 
+
+def _es_basic_auth() -> tuple[str, str] | None:
+    """``(elastic, password)`` for the authed prod ES, or None (unauthed staging).
+
+    Reads ``ELASTIC_PASSWORD`` first, then the on-disk password file the gateway
+    uses (``ELASTIC_PASS_FILE`` / ``{IX1_BASE}/es/config/elastic.password``).
+    Prod ES requires HTTP Basic auth, so without this the client cannot connect."""
+    pw = os.environ.get("ELASTIC_PASSWORD")
+    if not pw:
+        pw_file = os.environ.get(
+            "ELASTIC_PASS_FILE",
+            f"{os.environ.get('IX1_BASE', '/ix1/ishi')}/es/config/elastic.password")
+        try:
+            pw = Path(pw_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            pw = None
+    return ("elastic", pw) if pw else None
+
 # Boundaries.
 _NOTIFY_AFTER_DAYS = 11 * 30  # ~11 months
 _DELETE_AFTER_DAYS = 12 * 30  # ~12 months
@@ -449,9 +467,11 @@ def main() -> int:
     if not args.es_host:
         print("ERROR: ES host not configured", file=sys.stderr)
         return 2
-    es = Elasticsearch(args.es_host, request_timeout=120, max_retries=3)
+    es = Elasticsearch(args.es_host, basic_auth=_es_basic_auth(),
+                       request_timeout=120, max_retries=3)
     if not es.ping():
-        print(f"ERROR: cannot connect to ES at {args.es_host}", file=sys.stderr)
+        print(f"ERROR: cannot connect to ES at {args.es_host} "
+              f"(check the elastic password / ELASTIC_PASS_FILE)", file=sys.stderr)
         return 2
 
     if args.as_of:
