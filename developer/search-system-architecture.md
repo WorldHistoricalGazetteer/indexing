@@ -18,9 +18,11 @@ clustering re-architecture lands (see `developer/plan-outstanding-2026-07.md` §
    `h3`, `temporal_range`, `aat_ids`/`aat_paths`, `query_match`), optional
    per-name Symphonym embeddings (`include_embeddings`), and `clustering_params` +
    `toponym_stoplist` — and the browser runs Union-Find at a user-adjustable θ. The
-   gateway's own `cluster_id`/`cluster_size` enrichment (`build_cluster_lookup`) is
-   scheduled for retirement; sections 3b / 4 / 6.3 below describe the *legacy*
-   behaviour.
+   gateway's own `cluster_id`/`cluster_size` enrichment (`build_cluster_lookup`) and
+   server-side cluster grouping (`group_by_cluster`, the `/api/cluster/*` endpoints)
+   were **retired 2026-07-12**, and the `clusters_20260325` index **deleted**;
+   sections 3b / 4 / 6.3 below describe the now-removed *legacy* behaviour (kept for
+   historical reference). Prominence is now tiebroken by name-variant count.
 2. **The live public `/search/` page does NOT use this gateway path.** As of
    2026-07-12 the production search page POSTs to Django `/search/index/` with
    `{qstr, idx:"whg", fclasses, …}` and renders `{parameters, suggestions}` from the

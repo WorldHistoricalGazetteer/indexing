@@ -377,11 +377,16 @@ already-built features**, and (4) polish/ops/docs.
 >   incrementally and never hard-depends on a not-yet-shipped field.
 
 **Cleanup:**
-- [ ] **Delete the stale `clusters` index** (`clusters_20260325`, dead `cluster_v1.0`
-      HDBSCAN) ⚠️ **do LAST** — only after the `build_cluster_lookup` retirement ships
-      (i.e. the gateway no longer reads it). DO-side grep confirmed nothing else does.
-- [ ] Refresh `search-system-architecture.md` + `CLAUDE.md` for the client-side
-      scoring/clustering model.
+- [x] **Deleted the stale `clusters` index** — **DONE 2026-07-12.** `clusters_20260325`
+      (41.0M docs, 3.2 GB) + its `clusters` alias dropped from prod ES after the
+      `build_cluster_lookup` retirement shipped. ⚠️ **One more stale build remains:**
+      `clusters_20260321` (43.7M docs, 3.5 GB, **unaliased**, older dead HDBSCAN build)
+      — same dead artifact, not in the original delete request; safe to delete too
+      (recommend it). The tiny `cluster_state_2026032{1,5}` markers (1 doc each) are
+      left in place.
+- [x] **Refreshed `search-system-architecture.md` + `CLAUDE.md`** — **DONE 2026-07-12**
+      for the client-side scoring/clustering model (status banner + legacy-index /
+      `build_cluster_lookup` retirement notes + the live-`/search/` union-index finding).
 
 ### Consequence for sequencing
 
