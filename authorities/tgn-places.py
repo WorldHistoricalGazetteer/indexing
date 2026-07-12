@@ -78,6 +78,39 @@ def parse_nt(line):
         return None
 
 
+# Getty encodes each place type as a reified relationship whose URI embeds both
+# ids: <…/tgn/rel/<concept_id>-placeType-<aat_id>>. TGN place types ARE AAT
+# concepts, so we read the aat_id straight from the URI (no need to parse the
+# subject/object triples). ``placeTypePreferred`` marks the primary type.
+_PLACETYPE_RE = re.compile(r"/tgn/rel/(\d+)-placeType(?:Preferred)?-(\d+)\b")
+
+
+def load_place_types(zip_path):
+    """``{concept_id: [aat_id_str, …]}`` from TGNOut_PlaceTypes.nt (preferred first).
+
+    TGN's native place types are AAT concept ids, so each becomes a real
+    ``types[]`` entry with ``aat_ids`` set — ``processing.aat_enrich`` then fills
+    ``aat_paths`` from the AAT hierarchy (same path as og/ofs direct-AAT types)."""
+    print("Step 4/4: Loading Place Types (AAT)...")
+    pairs = set()
+    preferred = set()
+    for i, line in enumerate(stream_nt(zip_path, "TGNOut_PlaceTypes.nt"), 1):
+        m = _PLACETYPE_RE.search(line)
+        if m:
+            pairs.add((m.group(1), m.group(2)))
+            if "placeTypePreferred" in line and "predicate" in line:
+                preferred.add((m.group(1), m.group(2)))
+        if i % 5_000_000 == 0:
+            sys.stdout.write(f"\r  {i:,} triples"); sys.stdout.flush()
+    place_types = defaultdict(list)
+    for concept_id, aat_id in pairs:
+        place_types[concept_id].append(aat_id)
+    for concept_id, aats in place_types.items():
+        aats.sort(key=lambda a: (0 if (concept_id, a) in preferred else 1, int(a)))
+    print(f"\n  ✓ {len(place_types):,} concepts typed ({len(pairs):,} place-type links)")
+    return place_types
+
+
 def build_side_index(zip_path):
     print("Building indexes...")
 
@@ -145,7 +178,9 @@ def build_side_index(zip_path):
             sys.stdout.flush()
 
     print(f"\n  ✓ {len(term_literals):,} terms, {len(place_terms):,} concepts linked")
-    return coordinates, place_map, term_literals, place_pref, place_terms
+
+    place_types = load_place_types(zip_path)
+    return coordinates, place_map, term_literals, place_pref, place_terms, place_types
 
 
 def index_tgn(zip_path):
@@ -153,7 +188,7 @@ def index_tgn(zip_path):
     print(f"STAGING TGN (Final Production)")
     print("=" * 60)
 
-    coordinates, place_map, term_literals, place_pref, place_terms = build_side_index(zip_path)
+    coordinates, place_map, term_literals, place_pref, place_terms, place_types = build_side_index(zip_path)
 
     # --- SANITY CHECK ---
     print("\n🔎 RUNNING SANITY CHECK (First 5 records)...")
@@ -220,6 +255,18 @@ def index_tgn(zip_path):
             return None  # truly unnamed — skip
 
         place_id = f"tgn:{tgn_id}"
+        # TGN place types are AAT concept ids (see load_place_types): emit one
+        # types[] entry each with `aat_ids` set — aat_enrich fills `aat_paths`.
+        # Fall back to the generic `place` only for concepts with no place type.
+        aat_type_ids = place_types.get(tgn_id)
+        if aat_type_ids:
+            type_entries = [
+                {"identifier": a, "label": "tgn", "sourceLabel": f"getty-tgn:{a}",
+                 "aat_ids": [int(a)]}
+                for a in aat_type_ids
+            ]
+        else:
+            type_entries = [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
         doc = {
             "place_id": place_id,
             "title": title,
@@ -227,7 +274,7 @@ def index_tgn(zip_path):
             "geometries": [],
             "source": "tgn",
             "namespace": "tgn",
-            "types": [{"identifier": "place", "label": "tgn", "sourceLabel": "getty-tgn"}]
+            "types": type_entries,
         }
 
         if lat is not None and lon is not None:
