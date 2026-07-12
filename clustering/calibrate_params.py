@@ -308,9 +308,11 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     weights = {k: float(w) for k, w in zip(inferred, scaled)}
     weights["link"] = w_link
 
-    # Operating point: θ_query = score separating the classes best (Youden's J).
-    scores = proba(X)
-    theta_query = _best_threshold(list(scores), y)
+    # Operating point on the COMPOSITE scale the browser actually thresholds —
+    # Σ w_i·s_i over the four inferred signals (range [0, 1−w_link]), NOT the
+    # logistic probability. Youden's-J-optimal cut on that composite.
+    composite = np.asarray(X, dtype=float) @ scaled
+    theta_query = _best_threshold(list(composite), y)
 
     params = json.loads(json.dumps(DEFAULT_PARAMS))  # deep copy of the shape
     params.update({"version": DEFAULT_PARAMS["version"] + 1, "calibrated": True,
