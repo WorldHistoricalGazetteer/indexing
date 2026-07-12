@@ -28,8 +28,8 @@ Two levels of use:
    ``clustering/calibration.py`` (the surrounding HDBSCAN pipeline is gone — the
    new model clusters in the browser, so only the *math* is reused).
 
-The heavy numeric deps (``numpy`` / ``scikit-learn``) are imported lazily inside
-the fit path, so ``--defaults`` and this module's import work anywhere.
+``numpy`` is imported lazily inside the fit path (no scikit-learn dependency), so
+``--defaults`` and this module's import work anywhere.
 """
 
 from __future__ import annotations
@@ -48,8 +48,10 @@ from typing import Optional
 logger = logging.getLogger("clustering.calibrate_params")
 
 # Output location (tracked so the defaults ship with the repo; the gateway reads
-# from here, or from a deployed copy pointed at by env — wiring is a follow-up).
-DATA_DIR = Path(__file__).parent / "data"
+# from here). Overridable via ``CALIBRATION_OUT_DIR`` / ``--out-dir`` so an
+# empirical run on a prod host can write to a scratch dir instead of dirtying the
+# tracked file (then the results are committed from the dev checkout).
+DATA_DIR = Path(os.getenv("CALIBRATION_OUT_DIR", Path(__file__).parent / "data"))
 PARAMS_FILE = DATA_DIR / "clustering_params.json"
 STOPLIST_FILE = DATA_DIR / "toponym_stoplist.json"
 
@@ -264,9 +266,8 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
 
     Positives = authority hard-links (overlay); negatives = random
     cross-namespace pairs. Signals computed with the salvaged math above; a
-    logistic regression yields normalised weights, and the operating thresholds
-    are read off the fitted score distribution. Requires ``numpy`` +
-    ``scikit-learn`` (imported here).
+    numpy-only logistic regression yields normalised weights, and the operating
+    thresholds are read off the fitted score distribution. Requires ``numpy``.
 
     **Only the four *inferred* signals — name / spatial / temporal / type — are
     fitted.** The link signal (``s.l``) is deliberately excluded: the positives
@@ -278,11 +279,10 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     """
     try:
         import numpy as np
-        from sklearn.linear_model import LogisticRegression
     except ImportError as exc:  # pragma: no cover - environment dependent
         raise SystemExit(
-            "calibrate needs numpy + scikit-learn; install them or use "
-            f"--defaults for the uncalibrated params ({exc})")
+            "calibrate needs numpy; install it or use --defaults for the "
+            f"uncalibrated params ({exc})")
 
     from .signal_features import build_feature_matrix  # heavy ES joins, lazy
 
@@ -296,8 +296,10 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     if len(y) < 1000 or sum(y) < 200:
         raise SystemExit(f"insufficient calibration data (n={len(y)}, pos={sum(y)})")
 
-    clf = LogisticRegression(max_iter=1000).fit(X, y)
-    raw = np.abs(clf.coef_[0])
+    coef, proba = _fit_logistic(X, y)         # numpy-only; no sklearn dep
+    raw = np.abs(coef)
+    if raw.sum() == 0:
+        raise SystemExit("degenerate fit (all-zero coefficients)")
     inferred = ["name", "spatial", "temporal", "type"]
     w_link = DEFAULT_PARAMS["weights"]["link"]
     scaled = (raw / raw.sum()) * (1.0 - w_link)  # fill the non-link budget
@@ -305,8 +307,8 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     weights["link"] = w_link
 
     # Operating point: θ_query = score separating the classes best (Youden's J).
-    scores = clf.predict_proba(X)[:, 1]
-    theta_query = _best_threshold(scores, y)
+    scores = proba(X)
+    theta_query = _best_threshold(list(scores), y)
 
     params = json.loads(json.dumps(DEFAULT_PARAMS))  # deep copy of the shape
     params.update({"version": DEFAULT_PARAMS["version"] + 1, "calibrated": True,
@@ -318,6 +320,32 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
     params["thresholds"]["theta_synth"] = round(min(0.99, theta_query + 0.15), 3)
     _write_json(PARAMS_FILE, params, label="calibrated clustering_params")
     return params
+
+
+def _fit_logistic(X, y, *, l2: float = 1.0, lr: float = 0.5, iters: int = 3000):
+    """Minimal numpy-only logistic regression (avoids a scikit-learn dependency).
+
+    Batch gradient descent on the L2-regularised logistic loss with an
+    (unpenalised) intercept. Feature columns are the four inferred signals,
+    already on a comparable [0,1] scale, so no standardisation is needed.
+    Returns ``(coef[4], predict_proba(Xn)->prob_of_1)``."""
+    import numpy as np
+    Xa = np.asarray(X, dtype=float)
+    ya = np.asarray(y, dtype=float)
+    n, d = Xa.shape
+    Xb = np.hstack([np.ones((n, 1)), Xa])   # prepend intercept column
+    w = np.zeros(d + 1)
+    for _ in range(iters):
+        p = 1.0 / (1.0 + np.exp(-(Xb @ w)))
+        reg = np.concatenate([[0.0], w[1:]])  # don't penalise the intercept
+        w -= lr * (Xb.T @ (p - ya) / n + l2 * reg / n)
+
+    def proba(Xn):
+        Xn = np.asarray(Xn, dtype=float)
+        Xnb = np.hstack([np.ones((len(Xn), 1)), Xn])
+        return 1.0 / (1.0 + np.exp(-(Xnb @ w)))
+
+    return w[1:], proba
 
 
 def _best_threshold(scores, y) -> float:
@@ -363,10 +391,20 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--batch-db", default=DEFAULT_BATCH_DB)
     p.add_argument("--sample", type=int, default=20_000)
     p.add_argument("--top-k", type=int, default=500)
+    p.add_argument("--out-dir", default=None,
+                   help="write artefacts here instead of clustering/data/ "
+                        "(keeps a prod run from dirtying the tracked file)")
     args = p.parse_args(argv)
 
     if not (args.defaults or args.stoplist or args.calibrate):
         p.error("pick at least one of --defaults / --stoplist / --calibrate")
+
+    if args.out_dir:
+        # Rebind the module-level output paths for this run.
+        global DATA_DIR, PARAMS_FILE, STOPLIST_FILE
+        DATA_DIR = Path(args.out_dir)
+        PARAMS_FILE = DATA_DIR / "clustering_params.json"
+        STOPLIST_FILE = DATA_DIR / "toponym_stoplist.json"
 
     auth = _auth_from_env()
     if args.defaults:
