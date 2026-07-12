@@ -44,6 +44,7 @@ from processing.aat_data_lookup import (
     lookup_key_for_type_entry,
     vocab_for_type_entry,
 )
+from processing.manual_aat_maps import manual_aat_ids
 from processing.settings import (
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -118,6 +119,8 @@ def augment_doc(
     if not isinstance(types, list) or not types:
         return doc, 0, 0
 
+    namespace = doc.get("namespace") or (doc.get("place_id", "").split(":", 1)[0] or None)
+
     new_types: list[dict[str, Any]] = []
     types_seen = 0
     augmented = 0
@@ -128,6 +131,25 @@ def augment_doc(
             new_types.append(entry)
             continue
         types_seen += 1
+        # Curated manual map (namespace + identifier → AAT ids) for authorities
+        # with a small/bespoke type vocabulary (ukhc, clio, tm, dgsd, nl, dp, …;
+        # see processing.manual_aat_maps). Injects aat_ids + paths without a
+        # generated vocab file and without per-authority-script changes.
+        manual = manual_aat_ids(namespace, entry.get("identifier"))
+        if manual and not entry.get("aat_ids"):
+            new_entry = dict(entry)
+            new_entry["aat_ids"] = list(manual)
+            paths = []
+            for a in manual:
+                h = hierarchy.get(int(a))
+                if h and h.get("path"):
+                    paths.append(h["path"])
+            if paths:
+                new_entry["aat_paths"] = paths
+            new_types.append(new_entry)
+            augmented += 1
+            changed = True
+            continue
         # Path-fill: a type that already carries aat_ids but no aat_paths gets its
         # hierarchy paths here. Covers direct-AAT authorities (ofs/og) whose label
         # ('ottnfs'/'ottgaz') isn't a mapped vocab — their aat_ids are intrinsic, set
