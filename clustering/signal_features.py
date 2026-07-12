@@ -266,27 +266,62 @@ def _nearby_negatives(es_host: str, seeds: list[str], n: int,
 # ---------------------------------------------------------------------------
 
 
-def _overlay_links(batch_db: Path, pairs: list[tuple]) -> set[tuple]:
-    """Return the subset of ``pairs`` that ARE present in the batch overlay
-    (any relation) — these must be dropped from the negative set."""
+# Relations that assert (probable) identity — used to build the coreference
+# components for negative de-duplication. ``distinct`` is an explicit *non*-identity
+# assertion, so it is NOT unioned (a distinct pair is a legitimate hard negative).
+_IDENTITY_RELATIONS = ("sameAs", "exactMatch", "closeMatch")
+
+
+def _overlay_components(batch_db: Path) -> dict[str, str]:
+    """Union-Find over the overlay's identity links → ``{place_id: root}``.
+
+    Lets the negative sampler drop **transitively** coreferent pairs — if
+    ``a≡c`` and ``c≡b`` are linked, ``a`` and ``b`` are the same place even
+    though ``(a,b)`` is not a direct edge. Checking components (not just direct
+    pairs) removes those false negatives. Built over
+    ``sameAs``/``exactMatch``/``closeMatch``; ``distinct`` is excluded so
+    explicitly-not-same pairs remain usable as negatives."""
     import sqlite3
-    if not batch_db or not Path(batch_db).exists() or not pairs:
-        return set()
+    if not batch_db or not Path(batch_db).exists():
+        return {}
+    parent: dict[str, str] = {}
+
+    def find(x: str) -> str:
+        root = x
+        while parent.get(root, root) != root:
+            root = parent[root]
+        while parent.get(x, x) != root:  # path compression
+            parent[x], x = root, parent[x]
+        return root
+
+    def union(a: str, b: str) -> None:
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
     conn = sqlite3.connect(f"file:{batch_db}?mode=ro", uri=True)
-    found: set[tuple] = set()
     try:
-        # Chunk to stay under the SQLite bind-variable limit (2 vars/pair).
-        for i in range(0, len(pairs), 400):
-            chunk = pairs[i:i + 400]
-            clause = " OR ".join(["(place_a=? AND place_b=?)"] * len(chunk))
-            args = [v for pair in chunk for v in pair]
-            for row in conn.execute(
-                    f"SELECT place_a, place_b FROM hard_link_assertions WHERE {clause}",
-                    args):
-                found.add((row[0], row[1]))
+        ph = ",".join("?" * len(_IDENTITY_RELATIONS))
+        for a, b in conn.execute(
+                f"SELECT place_a, place_b FROM hard_link_assertions "
+                f"WHERE relation_type IN ({ph})", _IDENTITY_RELATIONS):
+            parent.setdefault(a, a)
+            parent.setdefault(b, b)
+            union(a, b)
     finally:
         conn.close()
-    return found
+    return {p: find(p) for p in parent}
+
+
+def _coreferent_pairs(pairs: list[tuple], components: dict[str, str]) -> set[tuple]:
+    """The subset of ``pairs`` whose endpoints share a coreference component
+    (directly OR transitively linked) — these must be dropped from negatives."""
+    out = set()
+    for a, b in pairs:
+        ca = components.get(a)
+        if ca is not None and ca == components.get(b):
+            out.add((a, b))
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -353,12 +388,17 @@ def build_feature_matrix(es_host: str, positives: list[tuple[str, str]],
         logger.warning("nearby negatives failed (%s); topping up from random", exc)
         nearby_neg = []
 
-    # Drop any candidate negative that is actually a link in the overlay.
+    # Drop any candidate negative whose endpoints are coreferent in the overlay —
+    # directly OR transitively (same connected component). Transitive catches the
+    # false negatives a direct-pair check misses (a≡c, c≡b ⇒ a≡b).
     all_candidates = list({*rand_neg, *same_neg, *nearby_neg})
-    linked = _overlay_links(batch_db, all_candidates) if batch_db else set()
+    components = _overlay_components(batch_db) if batch_db else {}
+    linked = _coreferent_pairs(all_candidates, components)
     exclude |= linked
-    logger.info("negatives: random=%d same_name=%d nearby=%d (dropped %d overlay links)",
-                len(rand_neg), len(same_neg), len(nearby_neg), len(linked))
+    logger.info("negatives: random=%d same_name=%d nearby=%d "
+                "(overlay: %d components, dropped %d coreferent pairs)",
+                len(rand_neg), len(same_neg), len(nearby_neg),
+                len(set(components.values())), len(linked))
 
     negatives = assemble_negatives(rand_neg, same_neg, nearby_neg,
                                    target=n_neg, exclude=exclude, rng=rng)
