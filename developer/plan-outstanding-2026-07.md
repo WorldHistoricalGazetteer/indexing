@@ -709,7 +709,15 @@ Consequences for this plan (the earlier "atlas → main promotion" framing is go
 
 ## 7. Search UX parity gaps (`search-system-architecture.md` §8.3)
 
-- [ ] **Pagination** — `size` defaults to 100; no `search_after`/scroll.
+- [x] **Pagination — DONE 2026-07-13** (`gateway/search.py`). Added an `offset`
+      param (0-based) → returns ranked hits `[offset, offset+size)`. `search_after`
+      does **not** fit: the 3-step pipeline scores + re-ranks *in the gateway* (not an
+      ES sort), so pagination is offset-based on the ranked list. The candidate
+      over-fetch (places filter size + enrichment bound) now covers `offset+size`
+      (capped at ES's 10k), and `total` already reports the full candidate count for
+      page-count math. Practical depth ≈ a few thousand (the over-fetch window).
+      *(Reconcile intentionally unchanged — it returns flat top-N candidates per
+      query by contract. Activates on the next gateway restart.)*
 - [x] **`undated` handling — DONE 2026-07-12** (`build_places_filter`,
       `tests/test_build_places_filter.py`). When `undated=True` + a date filter is
       active, the temporal clause is a `should`-wrapper matching places whose

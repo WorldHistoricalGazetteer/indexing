@@ -132,6 +132,15 @@ class SearchRequest(BaseModel):
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
     undated: bool = Field(False, description="Include places with no timespans when temporal filter is active")
     size: int = Field(100, ge=1, le=500, description="Max results to return")
+    offset: int = Field(
+        0, ge=0, le=10000,
+        description="Pagination offset into the ranked result list (0-based). "
+                    "Returns hits [offset, offset+size). The pipeline scores + "
+                    "re-ranks in the gateway (not an ES sort), so pagination is "
+                    "offset-based rather than search_after; `total` reports the "
+                    "full candidate count for page-count math. Practical depth is "
+                    "bounded by the candidate over-fetch window (~a few thousand).",
+    )
     exclude_namespaces: list[str] = Field(
         default=["gb"],
         description="Namespace prefixes to exclude (e.g. ['gb'] to suppress noisy OS records).",
@@ -365,8 +374,9 @@ async def search(req: SearchRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             undated=req.undated,
-            # over-fetch more for pure-spatial (region refine drops candidates)
-            size=min(req.size * (8 if pure_spatial else 4), 10000),
+            # over-fetch more for pure-spatial (region refine drops candidates);
+            # cover the pagination window (offset+size), capped at ES's 10k.
+            size=min((req.offset + req.size) * (8 if pure_spatial else 4), 10000),
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
@@ -433,7 +443,8 @@ async def search(req: SearchRequest):
             raw_hits = spatial.apply_containment(
                 raw_hits, region, req.containment, req.relation, reader=reader,
             )
-            raw_hits = raw_hits[: req.size * 4]  # keep enrichment bounded
+            # keep enrichment bounded, but cover the pagination window
+            raw_hits = raw_hits[: (req.offset + req.size) * 4]
 
         surviving_pids = [
             h.get("_source", {}).get("place_id", "") for h in raw_hits
@@ -565,7 +576,8 @@ async def search(req: SearchRequest):
     # carry more name forms across languages, which is exactly the "more name
     # variants rank higher" behaviour the search UI documents.)
     results.sort(key=lambda r: (r.score, len(r.names)), reverse=True)
-    results = results[:req.size]
+    # Offset pagination on the ranked list: return the [offset, offset+size) page.
+    results = results[req.offset : req.offset + req.size]
 
     # ------------------------------------------------------------------
     # Step 5: Build facets from aggregations
