@@ -226,10 +226,14 @@ already-built features**, and (4) polish/ops/docs.
       (the materialised `types.aat_paths`, ancestors + depth) is emitted per hit — no
       schema change (the field already exists per-type). `temporal_range` likewise
       gateway-derived. Client-side Wu-Palmer (`s.ty`) reads `aat_paths` directly.
-- [ ] *(Optional / deferred)* **`baseline_cluster_id` precompute** — connected
-      components over overlay `sameAs`/`exactMatch` (+ toponym `s.n ≥ 0.95`) →
-      patch onto place docs (`apply_links_patch` pattern). Add the schema field
-      only if built.
+- [x] ~~**`baseline_cluster_id` precompute**~~ — **REJECTED (SG, 2026-07-13); will NOT
+      be built.** Its two benefits have evaporated: (1) *instant bootstrap* is
+      negligible (the browser computes the local baseline from the shipped hard-link
+      edges in <10 ms); (2) the *cross-query structural signal* fed the synthetic-edge
+      passes, which are **RETIRED** (§16a). So it would cost an offline
+      connected-components job + a patch onto millions of docs (stale on every
+      re-cluster) for ~zero gain. The browser derives any baseline it needs locally
+      from `edges[]`.
 
 **Browser (whg3 — `staging` dev → `main` prod; see §6):**
 - [ ] `clustering.js` — the full scorer (all facets) + Union-Find + θ/weight
@@ -316,6 +320,38 @@ already-built features**, and (4) polish/ops/docs.
             (separate Workbench-roadmap UI work).
       (Workbench self-embed primitive DONE — see #5 above; wiring it into an actual
       Workbench clustering view is separate Workbench-roadmap UI work.)
+
+> **✅✅ WHAT REMAINS ON whg3 (definitive, 2026-07-13) — the indexing/gateway side is
+> DONE.** Every gateway contract the browser needs is live on prod. The outstanding
+> work is entirely whg3-side (`staging` → `main`, §6). In priority order:
+>
+> 1. **Real-browser visual pass of the Atlas clustering UI.** Phases 1–3 are code-
+>    complete but the automated harness can't confirm the *rendered* UI (MapLibre WebGL
+>    won't load in headless). A human/real-browser pass is needed for: the cluster
+>    cards (representative title, member badge, namespace chips), map-marker ↔ card
+>    highlight sync, the **θ (merge-sensitivity) slider** live re-cluster, the per-facet
+>    **weight sliders**, and the dynamic **`/atlas/place/?id=` modal** (live cluster
+>    context). Backends all verified live; only the visuals are unconfirmed.
+> 2. **Wire the §7 AAT type-facet UI** (NEW — gateway shipped 2026-07-13). Replace the
+>    legacy A/P/S/R/L/T/H feature-class checkboxes with an **AAT type filter**:
+>    - read **`facets.aat_types`** from `POST /api/search` → `[{aat_id, label, count}]`
+>      with friendly, cross-source labels (e.g. `300008389 → "cities"`); render as the
+>      type facet.
+>    - send the **`aat_types`** request param (a list of AAT ids) for a **hierarchical**
+>      filter — selecting a concept matches it *and all descendants* (server-side).
+>    - the raw `types` facet/param still exist for source-specific filtering.
+> 3. **Get the Phase-4 / licensing code (citations) to prod `main`** — this is the gate
+>    on §5's citation prod re-push (indexing side is ready to re-run the moment it lands).
+> 4. **(Forward, not yet actionable)** the **discovery scope filter** Django half — pass
+>    the user's owned pending `dataset_id` scope tokens to `/api/search` and merge DO
+>    pending assertions (Master Plan Part VII). Only matters once pending datasets flow
+>    (needs a Django endpoint; the gateway half is a small add when wanted).
+> 5. **Consume the richer fuel as it lands** — e.g. TGN `temporal_range` just became far
+>    more accurate (real source dates, 2026-07-13), improving the browser's `s.t` signal
+>    for TGN; and more `whg:` datasets are being published (§3), so expect more hits.
+>
+> Nothing else on whg3 is blocked on the indexing side. The Workbench clustering *view*
+> (importing the self-embed primitive #5) is separate Workbench-roadmap UI work.
 
 > **📌 FOR THE whg3 AGENT — how to work (read first):**
 > - **Branch:** do all work on **`staging`** (the dev branch) — branch off `staging`,
@@ -697,8 +733,14 @@ still served alongside only 7 new `whg-<id>` buckets.
 
 ## 10. Known-harmless / deferred (track, don't rush)
 
-- [ ] **TGN temporal extent** placeholder `[2025, 2025]` (TGN emits no
-      inception/abolition) — open domain decision, harmless.
+- [~] **TGN temporal extent** — **IN PROGRESS 2026-07-13 (SG: extract it all).**
+      Research (2026-07-13): TGN subjects carry **no** inception/abolition, but the
+      source *does* hold sparse temporal data — ~29,432 **term-level** `estStart`/
+      `estEnd` (name-in-use ranges, → toponym timespans) + ~1,500 places with dated/
+      historic **relations** (`estStart`/`estEnd`/`historicFlag` on broader +
+      associative rels, → place temporal extent). SG: extract ALL of it (patch live +
+      upgrade the ingestion). Replaces the `[2025, 2025]` placeholder where real dates
+      exist (<1% of TGN; the rest stays placeholder).
 - [ ] Dynamic-clustering design threads deferred by their own text: discovery-
       completeness empirical validation, Options B/C (edge/embedding shipping).
 
