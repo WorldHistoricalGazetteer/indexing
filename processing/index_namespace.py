@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -46,6 +47,23 @@ from typing import Any, Iterable, Iterator
 
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as es_helpers
+
+
+def _es_basic_auth() -> tuple[str, str] | None:
+    """``(elastic, password)`` for the authed prod ES (or None for unauthed staging).
+
+    Reads ``ELASTIC_PASSWORD`` then the on-disk password file the gateway uses, so
+    credentials never have to be embedded in ``--es-host``."""
+    pw = os.environ.get("ELASTIC_PASSWORD")
+    if not pw:
+        pw_file = os.environ.get(
+            "ELASTIC_PASS_FILE",
+            f"{os.environ.get('IX1_BASE', '/ix1/ishi')}/es/config/elastic.password")
+        try:
+            pw = Path(pw_file).read_text(encoding="utf-8").strip()
+        except OSError:
+            pw = None
+    return ("elastic", pw) if pw else None
 
 from processing.settings import STAGED_BASE_DIR
 from processing.staged_parquet import strip_hull
@@ -384,7 +402,7 @@ def main() -> None:
                          "phonetics.inference.backfill_embeddings compute")
     args = ap.parse_args()
 
-    es = Elasticsearch(args.es_host, request_timeout=120)
+    es = Elasticsearch(args.es_host, basic_auth=_es_basic_auth(), request_timeout=120)
     info = es.info()
     print(f"ES {info['version']['number']} @ {args.es_host}  "
           f"mode={'EXECUTE' if args.execute else 'DRY-RUN'}  "
