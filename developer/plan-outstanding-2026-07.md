@@ -9,6 +9,54 @@
 
 ---
 
+## ★ SESSION HANDOFF — pick up here (last worked: 13 Jul 2026)
+
+**Done this session (all committed to `main` + deployed to pitt):**
+- **TGN full re-ingest** (§10) — 2.99M places re-indexed, 709K historic toponyms
+  embedded, temporal + AAT types verified live.
+- **§3 whg publication** — all **48 contributed datasets** live: 228,918 places,
+  embeddings backfilled, **47 tilesets serving**, 48 per-dataset registry rows on
+  prod+dev, 173K docs AAT-typed. Bug fixes: `index_namespace` 512-byte `_id` guard;
+  `push_gazetteer_inventory` per-dataset fan-out + 413 fix (per-dataset res-3 h3 +
+  batching); tile-deploy sshd thundering-herd worked around.
+- **§7 pagination** — `offset` param on `/api/search` (offset-based, not
+  search_after — the gateway re-ranks in Python).
+
+**⚠ Needs a gateway restart to activate** (SG does this): pagination `offset`,
+`undated`, `aat_types` facet/filter, clustering-fuel params — all already on prod
+HEAD, inert until restart.
+
+**BLOCKED (external, retry later):**
+- **§2 wd P1014 derivation** — Wikidata Query Service was under an active outage
+  (429, 1 req/min) on 13 Jul; mapped 0/8,065. Rerun `aat_mapper wikidata` from
+  crc0 (reaches WDQS) when it recovers → sync `typesystem/data/wikidata.json`
+  (git-untracked!) crc0→pitt → `apply_aat_enrich --namespace wd`.
+- **§5 citation/licence prod re-push** — gated on whg3 Phase-4 code reaching `main`.
+
+**NEEDS AN SG DECISION (do NOT do autonomously):**
+- **Delete stale pre-rebuild ES indices** — prod ES node `whg-prod-1` is at **93%
+  heap** and was 429'ing (circuit breaker); the burden is ~93 GB of **unaliased,
+  superseded** indices: `places_20260317` (45 GB/413 M), `toponyms_20260317`
+  (42 GB), `wdgn_20240316` (5.6 GB). The gateway uses the `places`/`toponyms`
+  **aliases** (prod `.env` override) → these are NOT queried, pure dead weight.
+  Deleting them frees disk + relieves heap. `clusters_20260321`/`_20260325` are
+  **already gone**; two 8.9 kB `cluster_state_2026032x` indices remain (negligible).
+- **§4 retire `authority-selection.md`** — needs a new Django "list enabled
+  authorities" endpoint (chicken-and-egg: registry is populated post-ingest).
+- **§4 Batch 14** — large end-to-end test-harness scaffolding.
+
+**DO NOT TOUCH (in active use):**
+- **Legacy `datasets-*`/`collections-*` tilesets** (~79) — the **legacy prod UI
+  still serves from them** until it is swapped for Atlas (SG, 13 Jul). Keep.
+- **`whg_2025_11_12` ES index** (1.2 GB) — the live `/search/` union index.
+
+**How to direct the next-session agent:** point it at this handoff block +
+`memory/outstanding_plan_2026_07.md`. Good next moves: retry §2 wd once WDQS is
+up; and/or get SG sign-off then delete the 3 stale pre-rebuild indices (biggest
+health win). The full task detail is in §§1–10 below.
+
+---
+
 ## 0. Where we actually are (the platform IS live)
 
 The decoupled staged-Parquet → Elasticsearch rebuild **completed and cut over to
