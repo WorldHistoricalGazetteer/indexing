@@ -280,7 +280,13 @@ def _whg_per_dataset_h3() -> dict[str, list[str]]:
     by the dataset prefix of each ``place_id`` (``whg:<dataset>:<entity>``)
     and compact per dataset. Returns ``{"whg:<dataset>": [cells…]}``.
     """
-    from processing.gazetteer_h3_coverage import compact_cells
+    import h3 as _h3
+    # Coarsen every cell to res 3 (~69 km hexes): the registry uses coverage
+    # only for a "does this gazetteer have data near here" spatial filter, so
+    # fine resolution is wasted bytes. A globally-spread dataset (e.g. GEBCO
+    # undersea names) would otherwise carry ~234k cells (~4 MB) and trip the
+    # per-request body-size limit even alone.
+    _COARSE_RES = 3
     patch = Path(STAGED_BASE_DIR) / _WHG_NAMESPACE / "h3" / "places.h3.jsonl"
     if not patch.exists():
         return {}
@@ -298,13 +304,23 @@ def _whg_per_dataset_h3() -> dict[str, list[str]]:
             if len(parts) < 3:
                 continue
             ds_id = f"{parts[0]}:{parts[1]}"  # whg:<dataset>
-            cells = by_ds.setdefault(ds_id, set())
+            coarse = by_ds.setdefault(ds_id, set())
             for g in doc.get("geometries") or []:
-                cells.update(g.get("h3_cover") or [])
+                for c in (g.get("h3_cover") or []):
+                    _add_coarse(c, coarse, _COARSE_RES, _h3)
                 cen = g.get("h3_centroid")
                 if cen:
-                    cells.add(cen)
-    return {ds: compact_cells(cells) for ds, cells in by_ds.items()}
+                    _add_coarse(cen, coarse, _COARSE_RES, _h3)
+    return {ds: sorted(cells) for ds, cells in by_ds.items()}
+
+
+def _add_coarse(cell: str, out: set[str], res: int, _h3) -> None:
+    """Add ``cell`` (or its res-``res`` parent if finer) to ``out``."""
+    try:
+        r = _h3.get_resolution(cell)
+        out.add(cell if r <= res else _h3.cell_to_parent(cell, res))
+    except Exception:
+        pass
 
 
 def _expand_whg_dataset_entries(
