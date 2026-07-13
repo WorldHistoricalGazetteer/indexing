@@ -518,6 +518,13 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
         Wikidata Q-items (needs the aat_mapper **P1014/P279 derivation pass** — the
         Wikidata API is firewalled from pitt, so run it from a net-connected host);
         pl's remainder is non-place metadata (`unlocated`/`label`/…), untypeable.
+        **ATTEMPTED 2026-07-13 (crc0 reaches WDQS): BLOCKED — WDQS was under an
+        active outage** ("Aggressively rate-limiting to 1 req/min … active wdqs
+        outage"), so `aat_mapper wikidata` mapped 0/8,065 (batches 30–41 all 429'd).
+        `typesystem/data/wikidata.json` re-saved but content-unchanged + intact
+        (10,308 entries; it is git-**untracked** / build-vocabs-generated, so applying
+        any future result means syncing crc0's copy → pitt then
+        `apply_aat_enrich --namespace wd`). **Retry when WDQS recovers.**
 - [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
       0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
       P1014/P279, label matching, hierarchy propagation.
