@@ -818,13 +818,25 @@ The rebuild is done; three tail items remain (all "not blocking"):
       **London** (the vector drove ranking), whereas the same string with **no**
       vector returned unrelated places (Salzburg, …). whg3 `crc_reconcile_search`
       already sends it.
-- [ ] **Prod re-push of citation/licence metadata** (`handoff-citation-metadata.md`).
+- [~] **Prod re-push of citation/licence metadata** (`handoff-citation-metadata.md`).
       Done on dev; prod stores none of the new attribution fields because prod's
-      website code predates Phase-4. **Gated on the Phase-4 code + `licensing/0003`
-      migration reaching `main` (prod)** via the `staging`→`main` flow (§6); then
-      re-run the identical inventory push incl. the `for ns in ofs og ukhc`
-      single-namespace pushes. Four custom/ND licence keys resolve on dev only
-      until prod parity.
+      website code predates Phase-4. **whg3 side verified + finalised on `staging`
+      2026-07-13** (agent): Phase-4 is already merged on `staging` (License model,
+      migrations `licensing/0001–0003` incl. `0003_extend_licenses` seeding the 4
+      custom/ND keys `CC-BY-NC-ND-3.0/4.0`/`custom-all-rights-reserved`/
+      `custom-academic-use`; registry attribution fields `api/0007`; inventory
+      endpoint resolves `license_spdx`→FK, skips-and-logs unknown, stores
+      `license_url`/`citation_text`). Two bugs found + fixed on `staging` (commit
+      `2d4308a1b`, **not pushed**): `attribution_for()` didn't prefer `citation_text`
+      (returned `description` only); and a stale `licensing` seed-count test
+      (asserted 8, now 15 after 0003) that would break the build. Tests added; not
+      run in-agent (no PostGIS dev DB) — SG runs
+      `manage.py test licensing api.tests_attribution api.tests_inventory_licensing`.
+      **Prod parity now = SG: promote `staging`→`main`, then on prod
+      `manage.py migrate licensing` (0003) + `manage.py migrate api` (0007)** →
+      then re-run the held inventory push incl. the `for ns in ofs og ukhc`
+      single-namespace pushes (unknown SPDX codes are non-fatal, so even a partial
+      vocabulary is safe).
 
 ---
 
