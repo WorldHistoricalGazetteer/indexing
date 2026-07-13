@@ -604,9 +604,11 @@ snapshot (unchanged since 2026-04-22).
       namespace aggregate) + res-3 coarsening + cell-budget batching brought the
       payload from ~430 MB → **0.4 MB** (`beee789`, coarsen commit). Geom-less
       datasets get empty coverage.
-- [ ] **whg AAT typing (§2 follow-up)** — the 41 new datasets were indexed via
-      the h3/ccode chain **without `aat_enrich`**, so they carry native LPF types
-      but no AAT mappings. Run `apply_aat_enrich --namespace whg --execute`.
+- [x] **whg AAT typing — DONE 2026-07-13.** The h3/ccode ingest chain skips
+      `aat_enrich`, so a follow-up `apply_aat_enrich --namespace whg --execute`
+      backfilled AAT mappings live: **173,262 / 228,918 docs** now carry
+      `types.aat_ids` + `aat_paths` (0 errors). *(The ~56k without are toponym-only
+      or untyped LPF records.)*
 - [ ] **Per-dataset registry coverage is res-3 coarsened** (adequate for the
       spatial filter); revisit if finer per-dataset footprints are ever needed.
 - [ ] Handle genuinely **pending/unpublished** submissions — `whg-places.py`
