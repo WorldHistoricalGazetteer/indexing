@@ -754,17 +754,21 @@ still served alongside only 7 new `whg-<id>` buckets.
       only current names, so historic dated names (Stadacona, Hochelaga…) have nothing to
       attach to — a live-index toponym-completeness gap, not an extraction flaw; a full
       TGN re-ingest via the upgraded script applies **all** term dates.
-- [ ] **TGN toponym-completeness gap → FULL RE-INGEST (SG-chosen 2026-07-13).** The
-      live TGN docs are missing historic toponyms (Quebec has 2, should have Stadacona
+- [x] **TGN toponym-completeness gap → FULL RE-INGEST — DONE 2026-07-13.** The
+      live TGN docs were missing historic toponyms (Quebec had 2, should have Stadacona
       etc.). **Root cause: the May build under-extracted — the *current* `tgn-places.py`
       is already complete** (the temporal parse proved the historic names ARE linked to
       the concept via the same `prefLabelGVP`/`altLabel`/`prefLabel` preds the script
-      uses; no script change needed). SG chose a **full TGN re-ingest** to fix it
-      consistently: re-run the (now-complete, typed, temporal) `tgn-places.py` → stage →
-      `index_namespace` (upsert, no delete → no prod gap) → toponym rebuild → **GPU
-      Symphonym embeddings** for the new toponyms. Multi-hour Slurm/GPU batch; no
-      server-side re-cluster (client-side now). *(This subsumes the term-date caveat
-      above — all term dates apply on re-ingest.)*
+      uses; no script change needed). Executed a **full TGN re-ingest** end-to-end:
+      re-staged the (now-complete, typed, temporal) `tgn-places.py` → **2,991,044 places**
+      (98 min) → `index_namespace --replace --emit-new-toponyms` (delete+reindex all
+      `tgn:` places, 0 errors; augmented **3,443,731** toponyms) → **709,337 new
+      toponyms** emitted → **GPU Symphonym backfill** (job 3030669, a100, 34s compute) →
+      `backfill_embeddings index` (709,337 vectors, `embedding_version=7`, 0 errors).
+      **Verified live:** historic Greek/Chinese names present + fuzzy-searchable;
+      Raetia geom timespan `[-15,450]` live; **0** tgn toponyms missing an embedding. No
+      server-side re-cluster (client-side now). *(Subsumed the term-date caveat above —
+      all term + relation dates applied on re-ingest.)*
 - [ ] Dynamic-clustering design threads deferred by their own text: discovery-
       completeness empirical validation, Options B/C (edge/embedding shipping).
 
