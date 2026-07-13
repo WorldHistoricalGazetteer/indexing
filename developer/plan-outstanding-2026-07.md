@@ -573,14 +573,24 @@ snapshot (unchanged since 2026-04-22).
       (41 new + 6 already live). DB write via the crc0 `clustering.pg_client` tunnel to
       DO Postgres `whgv3beta`, table `datasets` (**NB: not `datasets_dataset`**). *(DO
       access also via `ssh whg` → Docker containers.)*
-- [ ] **Re-run `whg-places.py` → staged follow-through** (LPF fetch per dataset →
-      h3/final → `index_namespace` → toponym rebuild → Symphonym embeddings) — **the
-      big ingest batch**, ~multi-hour. *(No server-side re-cluster step — clustering is
-      client-side now.)* `whg-places.py --dataset <id>` targets specific datasets;
-      clear `staged/whg/extract/places.jsonl` before re-staging (writes APPEND).
-- [ ] Generate + deploy `whg-<id>` tiles for the new datasets;
-      `update_tileserver_config`.
+- [x] **Re-run `whg-places.py` → staged follow-through — DONE 2026-07-13
+      (searchable-data core).** Full re-stage of all **48 authority datasets**
+      (**228,918** records, 0 skipped) → h3/final chain (inline on pitt, no Slurm;
+      215,401 geom docs got h3_cover; parquet sidecar skipped on a `timespans.start`
+      type inconsistency, JSONL fallback used) → `index_namespace --source-stage final
+      --replace` (places **228,918 indexed, 0 errors**, deleted old 14,206) → toponyms
+      **207,028 augmented, 0 errors** → GPU Symphonym backfill for the **88,944** new
+      toponyms (job 3030670, 5s) → `index` phase (0 errors, emb v7). **Verified live:**
+      48 datasets present, Madagascar sample has ccodes+h3_cover, **0** whg toponyms
+      missing embeddings. *Fix committed:* `index_namespace` now skips toponyms whose
+      `_id` exceeds ES's 512-byte limit (one whg LPF `name` was a 618-byte comma-joined
+      variant-spelling apparatus that aborted the augment; guarded in
+      `collect_attestations`, commit `db402dd`). *(No server-side re-cluster —
+      client-side now.)*
+- [ ] Generate + deploy `whg-<id>` tiles for the 41 new datasets;
+      `update_tileserver_config`. **(outward-facing — next)**
 - [ ] `push_gazetteer_inventory` to fan out per-dataset registry rows.
+      **(outward-facing — prod Django write; preflight-gated on tiles serving)**
 - [ ] Handle genuinely **pending/unpublished** submissions — `whg-places.py`
       flags them out of scope pending a new Django endpoint (documented gap).
 
