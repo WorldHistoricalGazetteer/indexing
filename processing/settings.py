@@ -74,6 +74,10 @@ GEOSHAPE_LOG_FILE = os.path.join(DATA_DIR, "wikidata", "geoshapes_downloaded.log
 # place-ingest dump scan (authorities/wikidata-places.py) and/or a standalone scan
 # (typesystem/extract_wikidata_p1014.py); consumed by typesystem.aat_mapper wikidata.
 WIKIDATA_P1014_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p1014.jsonl")
+# Wikidata P279 (subclass-of) class graph. Standalone scan
+# (typesystem/extract_wikidata_p279.py); consumed by typesystem.aat_mapper
+# wikidata-p279 (Pass 2 — walk to nearest P1014-mapped ancestor).
+WIKIDATA_P279_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p279.jsonl")
 
 # OSM processing state file
 OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"

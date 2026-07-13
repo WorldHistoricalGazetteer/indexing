@@ -862,6 +862,119 @@ def cmd_wikidata(es=None, crosswalk=None):
     print(f"\nWikidata → AAT bridge: {applied}/{len(unmapped)} types mapped")
 
 
+def _walk_to_mapped_ancestor(qid, parents, targets, max_depth):
+    """BFS up the P279 graph from ``qid`` to the nearest AAT-mapped ancestor.
+
+    ``parents``: ``{qid: [parent_qid, …]}`` (the P279 edge list).
+    ``targets``: ``{qid: aat_id}`` — AAT-mapped concepts (P1014 crosswalk +
+    already-mapped wikidata.json items). Returns ``(aat_id, hops)`` for the
+    nearest mapped ancestor, or ``(None, None)``. Level-order so the *nearest*
+    ancestor wins; ``visited`` guards Wikidata's P279 cycles; ``max_depth``
+    bounds how broad an inherited type may be.
+    """
+    frontier = list(parents.get(qid, ()))
+    visited = {qid}
+    depth = 1
+    while frontier and depth <= max_depth:
+        nxt = []
+        for node in sorted(set(frontier)):   # deterministic tie-break within a level
+            if node in visited:
+                continue
+            visited.add(node)
+            if node in targets:
+                return targets[node], depth
+            nxt.extend(parents.get(node, ()))
+        frontier = nxt
+        depth += 1
+    return None, None
+
+
+def cmd_wikidata_p279(crosswalk=None, p279=None, max_depth=4):
+    """Pass 2 — walk Wikidata P279 (subclass-of) to the nearest P1014-mapped
+    ancestor, offline from the dump-extracted class graph + P1014 crosswalk.
+
+    Assigns the ancestor's AAT id to the unmapped wd type at
+    ``confidence=broad`` (``source=wikidata_p279``). No network.
+    """
+    from processing.settings import WIKIDATA_P1014_FILE, WIKIDATA_P279_FILE
+    crosswalk = crosswalk or WIKIDATA_P1014_FILE
+    p279 = p279 or WIKIDATA_P279_FILE
+
+    try:
+        data = load_data_file("wikidata.json")
+    except FileNotFoundError:
+        print("Error: wikidata.json not found")
+        return
+
+    unmapped = [(q, e) for q, e in iter_values(data, "wikidata")
+                if "aat_mapping" not in e and q.startswith("Q")]
+    if not unmapped:
+        print("No unmapped Wikidata types to process")
+        return
+
+    # Target set: every AAT-mapped concept the walk may terminate on —
+    # the full P1014 crosswalk (all Getty-linked Q-ids, reusable) plus the
+    # Q-items already mapped in wikidata.json (P1014/label/etc.).
+    targets = {}
+    try:
+        with open(crosswalk) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    targets.setdefault(row["qid"], int(row["aat_id"]))
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except FileNotFoundError:
+        print(f"Error: P1014 crosswalk not found at {crosswalk} — run "
+              f"`python -m typesystem.extract_wikidata_p1014` first.")
+        return
+    for q, e in iter_values(data, "wikidata"):
+        m = e.get("aat_mapping")
+        if m and q not in targets:
+            try:
+                targets[q] = int(m["aat_id"])
+            except (KeyError, ValueError, TypeError):
+                pass
+    print(f"  {len(targets):,} AAT-mapped target concepts (P1014 crosswalk + existing)")
+
+    # P279 class graph.
+    parents = {}
+    try:
+        with open(p279) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                    parents[row["qid"]] = row["parents"]
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except FileNotFoundError:
+        print(f"Error: P279 graph not found at {p279} — run "
+              f"`python -m typesystem.extract_wikidata_p279` first.")
+        return
+    print(f"  {len(parents):,} P279 class nodes loaded; walking {len(unmapped):,} "
+          f"unmapped Q-items (max_depth={max_depth}) ...")
+
+    applied = 0
+    hop_hist = {}
+    for qid, entry in unmapped:
+        aat_id, hops = _walk_to_mapped_ancestor(qid, parents, targets, max_depth)
+        if aat_id is not None:
+            set_aat_mapping(entry, aat_id, f"aat:{aat_id}",
+                            "wikidata_p279_broad", "wikidata_p279")
+            applied += 1
+            hop_hist[hops] = hop_hist.get(hops, 0) + 1
+
+    save_data_file("wikidata.json", data)
+    print(f"\nWikidata P279 walk: {applied}/{len(unmapped)} types mapped "
+          f"(broad); hops {dict(sorted(hop_hist.items()))}")
+
+
 def cmd_validate():
     """Validate existing AAT IDs by checking them against the AAT API."""
     print("Validating AAT IDs ...")
@@ -1000,6 +1113,15 @@ def main():
     sp_wd.add_argument("--crosswalk",
         help="P1014 crosswalk JSONL (default: settings.WIKIDATA_P1014_FILE)")
 
+    sp_wd279 = subparsers.add_parser("wikidata-p279",
+        help="Pass 2 — walk Wikidata P279 to the nearest P1014-mapped ancestor (offline)")
+    sp_wd279.add_argument("--crosswalk",
+        help="P1014 crosswalk JSONL (default: settings.WIKIDATA_P1014_FILE)")
+    sp_wd279.add_argument("--p279",
+        help="P279 class-graph JSONL (default: settings.WIKIDATA_P279_FILE)")
+    sp_wd279.add_argument("--max-depth", type=int, default=4,
+        help="Max P279 hops to an AAT-mapped ancestor (default 4)")
+
     subparsers.add_parser("validate", help="Validate existing AAT IDs")
     subparsers.add_parser("report", help="Report mapping coverage")
 
@@ -1018,6 +1140,10 @@ def main():
         cmd_sparql(es=es)
     elif args.command == "wikidata":
         cmd_wikidata(es=es, crosswalk=getattr(args, "crosswalk", None))
+    elif args.command == "wikidata-p279":
+        cmd_wikidata_p279(crosswalk=getattr(args, "crosswalk", None),
+                          p279=getattr(args, "p279", None),
+                          max_depth=args.max_depth)
     elif args.command == "validate":
         cmd_validate()
     elif args.command == "report":
