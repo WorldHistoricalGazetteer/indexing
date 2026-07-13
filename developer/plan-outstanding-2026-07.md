@@ -501,9 +501,12 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
       client-scores architecture, so it's intentionally left out. `type-mapping-plan.md`
       §5–6 is thus historical; the type UI is served by §7's AAT facets + hierarchical
       filter + the browser scorer.
-- [ ] **OSM Tier-2 tag-key expansion** (~3–5M new features): ingest the 11
-      additional tag keys inventoried in `osm-types-inventory.md` /
-      `ohm-types-inventory.md`.
+- [x] ~~**OSM Tier-2 tag-key expansion**~~ — **REJECTED (SG, 2026-07-13).** Ingesting
+      the 11 additional OSM/OHM tag keys (amenity, tourism, leisure, man_made,
+      boundary, military, building, aeroway, railway, geological, power; ~3–5M
+      features) is **not wanted in the foreseeable future.** The current 6 tag keys
+      stand. (`osm-types-inventory.md` / `ohm-types-inventory.md` retained for
+      reference only.)
 
 ---
 
