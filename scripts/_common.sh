@@ -22,6 +22,13 @@ if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 fi
 
+# Per-host overrides (gitignored; e.g. ES_HEAP_SIZE, secrets), layered on top of
+# .env so host-specific values survive `es -update` / repo sync.
+ENV_LOCAL_FILE="${SCRIPT_DIR}/../.env.local"
+if [ -f "$ENV_LOCAL_FILE" ]; then
+    source "$ENV_LOCAL_FILE"
+fi
+
 # --- Conda Environment Setup ---
 # Admins are renaming 'whcdh' to 'ishi'. Fallback for transition period.
 CONDA_SETUP_PATH="/ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh"

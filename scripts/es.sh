@@ -423,8 +423,12 @@ start_prod_es() {
         echo "  No TLS certs - starting WITHOUT security (run es -setup-security after certbot)"
     fi
 
-    # JVM heap: 15g of 32g RAM (leaves ~15g for filesystem cache)
-    export ES_JAVA_OPTS="-Xms15g -Xmx15g"
+    # JVM heap: default 15g; override per host via ES_HEAP_SIZE in .env.local.
+    # This box now has 62g RAM (was 32g) → set ES_HEAP_SIZE=28g, leaving ~34g for
+    # the OS page cache / off-heap mmapped vectors. A larger heap avoids the OOM /
+    # G1 Full-GC death spiral seen during HNSW dense_vector segment merges of the
+    # ~67M-doc toponyms index after heavy indexing (see memory / plan 2026-07-13).
+    export ES_JAVA_OPTS="-Xms${ES_HEAP_SIZE:-15g} -Xmx${ES_HEAP_SIZE:-15g}"
     export ES_TMPDIR="/tmp"
 
     nohup "$ES_HOME/bin/elasticsearch" \
