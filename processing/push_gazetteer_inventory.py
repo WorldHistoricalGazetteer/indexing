@@ -269,17 +269,57 @@ def _whg_datasets_sidecar() -> Path:
     return Path(STAGED_BASE_DIR) / "_aggregates" / _WHG_DATASETS_SIDECAR
 
 
+def _whg_per_dataset_h3() -> dict[str, list[str]]:
+    """Per-dataset H3 coverage for whg, from the staged h3 patch.
+
+    The namespace-level aggregate is shared by every dataset, which both
+    bloats the inventory payload ~48× (a 413 at the registry) and is
+    spatially wrong — each dataset would claim the whole whg footprint,
+    defeating the registry's spatial filter. Instead, group the
+    ``h3_cover`` / ``h3_centroid`` cells of ``staged/whg/h3/places.h3.jsonl``
+    by the dataset prefix of each ``place_id`` (``whg:<dataset>:<entity>``)
+    and compact per dataset. Returns ``{"whg:<dataset>": [cells…]}``.
+    """
+    from processing.gazetteer_h3_coverage import compact_cells
+    patch = Path(STAGED_BASE_DIR) / _WHG_NAMESPACE / "h3" / "places.h3.jsonl"
+    if not patch.exists():
+        return {}
+    by_ds: dict[str, set[str]] = {}
+    with patch.open(encoding="utf-8") as fh:
+        for line in fh:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                doc = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            parts = (doc.get("place_id") or "").split(":")
+            if len(parts) < 3:
+                continue
+            ds_id = f"{parts[0]}:{parts[1]}"  # whg:<dataset>
+            cells = by_ds.setdefault(ds_id, set())
+            for g in doc.get("geometries") or []:
+                cells.update(g.get("h3_cover") or [])
+                cen = g.get("h3_centroid")
+                if cen:
+                    cells.add(cen)
+    return {ds: compact_cells(cells) for ds, cells in by_ds.items()}
+
+
 def _expand_whg_dataset_entries(
     h3_coverage: Any,
     temporal_extent: list[int | None],
+    per_dataset_h3: dict[str, list[str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Read the Batch 4c Phase 4 sidecar (written by ``whg-places.py``) and
     fan out one inventory entry per WHG Dataset/Collection.
 
-    Each entry shares the bulk-namespace ``h3_coverage`` and
-    ``temporal_extent`` aggregates; per-dataset metadata
-    (``id``, ``name``, ``description``, ``owner_user_id``,
-    ``dataset_status``, ``record_count``) comes from the sidecar.
+    Per-dataset metadata (``id``, ``name``, ``description``,
+    ``owner_user_id``, ``dataset_status``, ``record_count``) comes from the
+    sidecar. ``h3_coverage`` is the dataset's own footprint when
+    ``per_dataset_h3`` supplies it (see :func:`_whg_per_dataset_h3`),
+    otherwise the shared namespace aggregate; ``temporal_extent`` is shared.
     """
     sidecar = _whg_datasets_sidecar()
     if not sidecar.exists():
@@ -288,6 +328,7 @@ def _expand_whg_dataset_entries(
         payload = json.loads(sidecar.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return []
+    per_ds = per_dataset_h3 or {}
     out: list[dict[str, Any]] = []
     for ds in payload.get("datasets") or []:
         if not isinstance(ds, dict) or "id" not in ds:
@@ -301,7 +342,7 @@ def _expand_whg_dataset_entries(
             "owner_user_id": ds.get("owner_user_id"),
             "record_count": int(ds.get("record_count") or 0),
             "status": str(ds.get("dataset_status") or "pending"),
-            "h3_coverage": h3_coverage,
+            "h3_coverage": per_ds.get(ds["id"], h3_coverage),
             "temporal_extent": temporal_extent,
         })
     return out
@@ -482,6 +523,30 @@ def assert_ready_to_push(
 # ---------------------------------------------------------------------------
 
 
+def _batch_by_cells(
+    payload: list[dict[str, Any]], *, max_cells: int = 20000
+) -> list[list[dict[str, Any]]]:
+    """Split the inventory payload into batches bounded by total h3 cells, so no
+    single HTTP request exceeds the registry's body-size limit (nginx default
+    ~1 MB). The whg per-dataset fan-out can total hundreds of thousands of
+    cells across all datasets. A single row bigger than the budget still goes
+    out on its own (the endpoint must accept at least one full row)."""
+    batches: list[list[dict[str, Any]]] = []
+    cur: list[dict[str, Any]] = []
+    cur_cells = 0
+    for entry in payload:
+        cov = entry.get("h3_coverage")
+        n = len(cov) if isinstance(cov, list) else 0
+        if cur and cur_cells + n > max_cells:
+            batches.append(cur)
+            cur, cur_cells = [], 0
+        cur.append(entry)
+        cur_cells += n
+    if cur:
+        batches.append(cur)
+    return batches
+
+
 def push_inventory(
     payload: list[dict[str, Any]],
     *,
@@ -605,12 +670,14 @@ def main() -> None:
             bulk = build_single_authority_entry(args.namespace)
             if args.namespace == _WHG_NAMESPACE:
                 # whg fans out into one registry row per contributed dataset
-                # (sidecar written by whg-places.py), sharing the bulk
-                # namespace-level h3_coverage + temporal_extent aggregates.
-                # Mirrors the full-run path (build_inventory_payload) so the
-                # incremental push surfaces the same per-dataset gazetteers.
+                # (sidecar written by whg-places.py). Each row carries its own
+                # per-dataset h3 footprint (not the shared namespace aggregate)
+                # so the registry's spatial filter is accurate and the payload
+                # stays small. temporal_extent is shared. Mirrors the full-run
+                # path (build_inventory_payload).
                 fanned = _expand_whg_dataset_entries(
-                    bulk["h3_coverage"], bulk["temporal_extent"]
+                    bulk["h3_coverage"], bulk["temporal_extent"],
+                    per_dataset_h3=_whg_per_dataset_h3(),
                 )
                 payload = fanned or [bulk]
             else:
@@ -659,6 +726,10 @@ def main() -> None:
     if not args.no_dev_push and args.dev_endpoint:
         targets.append(("dev", args.dev_endpoint, dev_token))
 
+    # Chunk so no single request trips the registry's body-size limit (413).
+    # The upsert is idempotent per id, so a mid-run failure re-syncs on re-run.
+    batches = _batch_by_cells(payload)
+
     failures: list[str] = []
     for label, endpoint, token in targets:
         # An unreachable target is a failure, not a silent skip — keeping
@@ -667,20 +738,27 @@ def main() -> None:
             print(f"{label} {endpoint} → unreachable", file=sys.stderr)
             failures.append(f"{label}: unreachable")
             continue
-        try:
-            status, body = push_inventory(
-                payload,
-                endpoint=endpoint,
-                method=args.method,
-                auth_token=token,
-                timeout=args.timeout,
-            )
-            print(f"{label} {endpoint} → HTTP {status}")
-            if body:
-                print(body[:1000])
-        except RuntimeError as exc:
-            print(f"{label} {endpoint} → FAILED: {exc}", file=sys.stderr)
-            failures.append(f"{label}: {exc}")
+        pushed = 0
+        for i, batch in enumerate(batches, 1):
+            try:
+                status, body = push_inventory(
+                    batch,
+                    endpoint=endpoint,
+                    method=args.method,
+                    auth_token=token,
+                    timeout=args.timeout,
+                )
+                pushed += len(batch)
+                print(f"{label} {endpoint} [batch {i}/{len(batches)}, "
+                      f"{len(batch)} rows] → HTTP {status}")
+                if body:
+                    print(body[:400])
+            except RuntimeError as exc:
+                print(f"{label} {endpoint} [batch {i}/{len(batches)}] "
+                      f"→ FAILED: {exc}", file=sys.stderr)
+                failures.append(f"{label} (batch {i}, {pushed}/{len(payload)} "
+                                f"rows pushed): {exc}")
+                break
 
     if failures:
         print(
