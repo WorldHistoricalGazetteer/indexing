@@ -602,7 +602,19 @@ def main() -> None:
         if args.namespace:
             # Incremental single-namespace push — build the entry from that
             # namespace's aggregates; no full-run inventory / barrier needed.
-            payload = [build_single_authority_entry(args.namespace)]
+            bulk = build_single_authority_entry(args.namespace)
+            if args.namespace == _WHG_NAMESPACE:
+                # whg fans out into one registry row per contributed dataset
+                # (sidecar written by whg-places.py), sharing the bulk
+                # namespace-level h3_coverage + temporal_extent aggregates.
+                # Mirrors the full-run path (build_inventory_payload) so the
+                # incremental push surfaces the same per-dataset gazetteers.
+                fanned = _expand_whg_dataset_entries(
+                    bulk["h3_coverage"], bulk["temporal_extent"]
+                )
+                payload = fanned or [bulk]
+            else:
+                payload = [bulk]
         else:
             inventory_path = assert_ready_to_push(
                 args.run_id,
