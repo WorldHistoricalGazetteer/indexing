@@ -332,14 +332,16 @@ already-built features**, and (4) polish/ops/docs.
 >    highlight sync, the **θ (merge-sensitivity) slider** live re-cluster, the per-facet
 >    **weight sliders**, and the dynamic **`/atlas/place/?id=` modal** (live cluster
 >    context). Backends all verified live; only the visuals are unconfirmed.
-> 2. **Wire the §7 AAT type-facet UI** (NEW — gateway shipped 2026-07-13). Replace the
->    legacy A/P/S/R/L/T/H feature-class checkboxes with an **AAT type filter**:
->    - read **`facets.aat_types`** from `POST /api/search` → `[{aat_id, label, count}]`
->      with friendly, cross-source labels (e.g. `300008389 → "cities"`); render as the
->      type facet.
->    - send the **`aat_types`** request param (a list of AAT ids) for a **hierarchical**
->      filter — selecting a concept matches it *and all descendants* (server-side).
->    - the raw `types` facet/param still exist for source-specific filtering.
+> 2. ~~**Wire the §7 AAT type-facet UI**~~ **DONE 2026-07-13** (whg3 `staging`
+>    `a5a9438ad`). `crc_search` forwards `aat_types` (list of ints) → gateway
+>    hierarchical filter; the Atlas renders `facets.aat_types`
+>    (`[{aat_id,label,count}]`, friendly labels) as clickable chips in the results
+>    panel, toggling re-searches (query + facet selection preserved), with a clear
+>    affordance; the raw `types` param is retained. **Verified live:** "Pittsburgh" →
+>    35 facets (*inhabited places* 54, *villages* 7, …); filtering by aat 300008347
+>    cut 146→71 results (hierarchical). Chip UI deployed; visual pass map-gated (item
+>    1). *(Minor gateway-side: a few facets return the raw aat_id as label —
+>    label-resolution gap in the `types` index, not whg3.)*
 > 3. **Get the Phase-4 / licensing code (citations) to prod `main`** — this is the gate
 >    on §5's citation prod re-push (indexing side is ready to re-run the moment it lands).
 > 4. **(Forward, not yet actionable)** the **discovery scope filter** Django half — pass
@@ -733,14 +735,18 @@ still served alongside only 7 new `whg-<id>` buckets.
 
 ## 10. Known-harmless / deferred (track, don't rush)
 
-- [~] **TGN temporal extent** — **IN PROGRESS 2026-07-13 (SG: extract it all).**
-      Research (2026-07-13): TGN subjects carry **no** inception/abolition, but the
-      source *does* hold sparse temporal data — ~29,432 **term-level** `estStart`/
-      `estEnd` (name-in-use ranges, → toponym timespans) + ~1,500 places with dated/
-      historic **relations** (`estStart`/`estEnd`/`historicFlag` on broader +
-      associative rels, → place temporal extent). SG: extract ALL of it (patch live +
-      upgrade the ingestion). Replaces the `[2025, 2025]` placeholder where real dates
-      exist (<1% of TGN; the rest stays placeholder).
+- [x] **TGN temporal extent — DONE 2026-07-13 (SG: extract it all).** Research
+      confirmed TGN subjects carry no dates, but the source holds sparse temporal data.
+      Extracted **all** of it (`processing/tgn_temporal.py` parsers + `tgn_temporal_backfill.py`
+      + `tgn-places.py` ingestion upgrade): **relation-level** dates (`estStart`/`estEnd`/
+      `historicFlag` on broader+associative rels) → **place/geometry extent** — 1,442
+      places, fully applied and verified (e.g. `tgn:7013254` Raetia → `[-15, 450]`);
+      **term-level** name-in-use dates → **toponym timespans** — applied where the dated
+      name is a live toponym. **Live result: 2,966 tgn docs now carry real timespans**
+      (was the `[2025,2025]` placeholder). *Caveat:* the live TGN nested `toponyms` hold
+      only current names, so historic dated names (Stadacona, Hochelaga…) have nothing to
+      attach to — a live-index toponym-completeness gap, not an extraction flaw; a full
+      TGN re-ingest via the upgraded script applies **all** term dates.
 - [ ] Dynamic-clustering design threads deferred by their own text: discovery-
       completeness empirical validation, Options B/C (edge/embedding shipping).
 
