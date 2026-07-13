@@ -716,11 +716,31 @@ snapshot (unchanged since 2026-04-22).
 
 The rebuild is done; three tail items remain (all "not blocking"):
 
-- [ ] **Batch 13b** — bring the legacy v3.2 reconciliation links into the
-      canonical attestation store. Note (2026-07-10 audit): **no import code exists
-      yet** in either repo — only the `legacy_v3_2` flag + docstrings anticipate it.
-      See §1's "Legacy migration" note: recommend a governed ETL alongside the
-      review workflow, not a bulk dump.
+- [~] **Batch 13b** — legacy v3.2 reconciliation links → canonical attestation store.
+      **⚠ The 2026-07-10 "no import code exists yet" note was WRONG** (corrected
+      2026-07-13): import code **exists and runs in production** —
+      `clustering/harvest/contributor_replay.py` **Flow A** harvests the legacy
+      `place_link` + `close_matches` tables from DO Postgres, maps them to
+      `contributor:<user_id>:legacy_v3_2` hard-link rows, and inserts them into the
+      **runtime overlay** as "Phase 1B" of the shipped harvest job
+      (`processing/submit_hardlinks_slurm.py`). **Verified live 2026-07-13:** the
+      prod overlay (`/ix1/ishi/hardlinks/hard_links.sqlite`, 6.43M rows) contains
+      **26,946 `legacy_v3_2` rows** — in fact *every* contributor row is legacy
+      (sameAs/closeMatch/exactMatch). **So the functional need — legacy links in the
+      clustering graph — is already met.** What is genuinely unbuilt is the *governed
+      migration into the canonical, reviewable Django store* `api_contributorattestation`
+      (durable/editable/revocable + a moderation workflow) — that is **almost entirely
+      a whg3 (Django) task, not this repo**; the plan's "governed ETL, not a bulk dump"
+      is about *that* target. **Two open verification questions** (answerable only
+      outside this repo): **(1) DONE** — Flow A *is* populating the overlay (above);
+      **(2) OPEN — dangling-edge audit:** a sample of legacy endpoints includes the
+      **retired `bnf:` namespace** (Bibliothèque nationale de France) — **not in the
+      current `places` index** — alongside `whg:`, so an unknown fraction of the 26,946
+      point at place_ids that no longer exist (harmless to the browser — it ignores
+      off-result edges — but wasted). A full ES-existence audit was **blocked by prod
+      ES 429/heap pressure on 2026-07-13** (even single `_count` queries circuit-broke;
+      needs an `es es-restart` first). The sharp underlying risk (whg3 LPF `feature['id']`
+      == DB `places.id`, else all `whg:` legacy edges dangle) still needs a whg3-side check.
 - [ ] **Batch 14** — formal integration/test harness: end-to-end staged-first
       run, multi-gazetteer fan-out→barrier, index-load-from-stage w/ ES,
       deselection + artefact cleanup, inventory push, hard-link harvest + atomic
