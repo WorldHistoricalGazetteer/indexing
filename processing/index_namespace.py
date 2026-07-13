@@ -48,6 +48,10 @@ from typing import Any, Iterable, Iterator
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as es_helpers
 
+# Elasticsearch enforces a hard 512-byte limit on document ``_id``. Toponym
+# ids are ``name@lang``; a handful of malformed source names blow past it.
+_MAX_TOPONYM_ID_BYTES = 512
+
 
 def _es_basic_auth() -> tuple[str, str] | None:
     """``(elastic, password)`` for the authed prod ES (or None for unauthed staging).
@@ -185,9 +189,16 @@ def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
     """Return per-toponym attestation records and the place docs (materialised).
 
     Each record: ``{toponym_id, name, lang, lang_variant, script, place_ids}``.
+
+    Toponyms whose canonical ``_id`` exceeds Elasticsearch's hard 512-byte
+    ``_id`` limit are skipped (with a warning) rather than aborting the whole
+    augmentation — these are invariably malformed source names (e.g. a
+    comma-joined variant-spelling apparatus dumped into one LPF ``name``
+    field), not real single toponyms. The count is returned in the meta dict.
     """
     place_docs: list[dict] = []
     by_topid: dict[str, dict] = {}
+    skipped_oversize = 0
     for doc in docs:
         place_docs.append(doc)
         pid = doc.get("place_id")
@@ -200,6 +211,17 @@ def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
             if not parsed:
                 continue
             canonical_id, name, lang, lang_variant, script = parsed
+            if len(canonical_id.encode("utf-8")) > _MAX_TOPONYM_ID_BYTES:
+                skipped_oversize += 1
+                if skipped_oversize <= 3:
+                    print(
+                        f"[toponyms] SKIP oversize _id "
+                        f"({len(canonical_id.encode('utf-8'))}B > "
+                        f"{_MAX_TOPONYM_ID_BYTES}B) from {pid}: "
+                        f"{canonical_id[:60]}…",
+                        file=sys.stderr,
+                    )
+                continue
             rec = by_topid.get(canonical_id)
             if rec is None:
                 rec = {
@@ -209,7 +231,16 @@ def collect_attestations(docs: Iterable[dict]) -> tuple[list[dict], dict]:
                 }
                 by_topid[canonical_id] = rec
             rec["place_ids"].add(pid)
-    return list(by_topid.values()), {"place_docs": place_docs}
+    if skipped_oversize:
+        print(
+            f"[toponyms] skipped {skipped_oversize:,} toponym(s) with _id "
+            f"> {_MAX_TOPONYM_ID_BYTES}B (malformed source names)",
+            file=sys.stderr,
+        )
+    return list(by_topid.values()), {
+        "place_docs": place_docs,
+        "skipped_oversize": skipped_oversize,
+    }
 
 
 # ---------------------------------------------------------------------------
