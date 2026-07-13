@@ -26,12 +26,22 @@
 facet/filter, clustering-fuel params now ACTIVE + verified (faceted search returns
 54 aat_type facets).
 
-**✅ RESOLVED — ES heap incident (13 Jul).** `whg-prod-1` heap had saturated
-(~14.3/14.2 GB breaker) from the day's heavy indexing → aggregation queries
-circuit-broke (429) → faceted `/api/search` 500'd. `es es-restart` cleared it:
-**heap 94%→5% (0.8 GB)**, aggregation queries 200, search recovered. Was transient
-(not structural — 108 GB of live indices does NOT need 14 GB heap), so no `-Xmx`
-bump needed; just restart ES after any heavy indexing session. Also deleted 3 stale
+**✅ RESOLVED — ES heap incident (13 Jul) — ROOT-CAUSED + PERMANENTLY FIXED.** The
+"just restart, no `-Xmx` bump needed / transient" call below was **WRONG** — it
+recurred (search down/intermittent) and a second restart refilled to 15 GB in <4 h.
+**Real root cause (diagnosed 13 Jul):** large concurrent Lucene **HNSW `dense_vector`
+segment merges** of the ~67.5 M-doc `toponyms` index (4 merges / ~36 GB), triggered
+by the day's heavy re-indexing (TGN 709 K new toponyms + embeddings, whg 88 K, …).
+Rebuilding the HNSW graph during merge exhausts heap → G1 Full-GC death spiral (heap
+pinned 15.3/15.4 GB, Full GC frees 0 B) → thread starvation → 429s. (The `/vast`
+"28 s slow disk" FsHealth warning was a *symptom* of GC starvation, not a disk fault.)
+Ruled out: fielddata (8 MB), nested `fixed_bit_set` (179 MB flat), scroll/PIT leaks
+(0). **Fix:** the box was upgraded 32→62 GB RAM but heap stayed hardcoded at 15 GB.
+Made heap configurable — `scripts/es.sh` exports `-Xms/-Xmx ${ES_HEAP_SIZE:-15g}`,
+`_common.sh` now sources `.env.local`, and pitt `.env.local` sets **`ES_HEAP_SIZE=28g`**
+(commit `ae81232`). **Verified live: heap MAX 28 GB, search+nested-agg 200 OK.** See
+`memory/es_heap_hnsw_merge_root_cause.md`. Restart-after-heavy-indexing is no longer
+the mitigation — 28 GB heap absorbs the vector-merge peak. Also deleted 3 stale
 pre-rebuild indices (93 GB disk) — see below.
 
 **✅ Pagination fixed + VERIFIED (13 Jul).** The 40baf95 version overlapped across
