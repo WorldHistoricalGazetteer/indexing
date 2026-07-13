@@ -22,9 +22,19 @@
 - **§7 pagination** — `offset` param on `/api/search` (offset-based, not
   search_after — the gateway re-ranks in Python).
 
-**⚠ Needs a gateway restart to activate** (SG does this): pagination `offset`,
-`undated`, `aat_types` facet/filter, clustering-fuel params — all already on prod
-HEAD, inert until restart.
+**Gateway restarted 13 Jul** (PID 2594891, pulled 40baf95) → pagination `offset`,
+`undated`, `aat_types` facet/filter, clustering-fuel params now ACTIVE.
+
+**🔴 OPEN PROD INCIDENT — ES node heap-saturated (needs an ES restart, SG):**
+`whg-prod-1` heap sits at ~14.3 GB / 14.2 GB parent-breaker (15 GB max). Simple
+queries pass, but **aggregation queries trip the circuit breaker (429)** — so the
+faceted `/api/search` currently **500s** (confirmed: nested type_facets + by_aat +
+ccodes aggs → `<reused_arrays>` circuit-break; a plain match query 200s). This is a
+capacity issue, **not** a code regression (pagination is byte-identical at
+offset=0; predates the index deletion — heap was already 93%). Deleting the 3
+stale indices freed **93 GB disk but not heap** (they were idle). **FIX: restart ES**
+(`es es-restart` / es.sh) to reset the JVM heap; if it recurs after restart, bump
+`-Xmx`. `POST /_cache/clear` only gives seconds of relief (fielddata was already ~0).
 
 **BLOCKED (external, retry later):**
 - **§2 wd P1014 derivation** — Wikidata Query Service was under an active outage
@@ -34,13 +44,15 @@ HEAD, inert until restart.
 - **§5 citation/licence prod re-push** — gated on whg3 Phase-4 code reaching `main`.
 
 **NEEDS AN SG DECISION (do NOT do autonomously):**
-- **Delete stale pre-rebuild ES indices** — prod ES node `whg-prod-1` is at **93%
-  heap** and was 429'ing (circuit breaker); the burden is ~93 GB of **unaliased,
-  superseded** indices: `places_20260317` (45 GB/413 M), `toponyms_20260317`
-  (42 GB), `wdgn_20240316` (5.6 GB). The gateway uses the `places`/`toponyms`
-  **aliases** (prod `.env` override) → these are NOT queried, pure dead weight.
-  Deleting them frees disk + relieves heap. `clusters_20260321`/`_20260325` are
-  **already gone**; two 8.9 kB `cluster_state_2026032x` indices remain (negligible).
+- [x] **Delete stale pre-rebuild ES indices — DONE 2026-07-13 (SG-authorised).**
+  Deleted `places_20260317` (45 GB/413 M), `toponyms_20260317` (42 GB),
+  `wdgn_20240316` (5.6 GB; carried an orphan `wdgn` alias, no code refs) → **~93 GB
+  disk freed**, shard count down. All were unaliased/idle (gateway uses the
+  `places`/`toponyms` aliases). ⚠ **Did NOT relieve heap** — see the OPEN INCIDENT
+  above (idle indices held no heap; needs an ES restart). `clusters_2026032x`
+  already gone; two 8.9 kB `cluster_state_*` indices remain (negligible). Health is
+  yellow only from a stray `zz_ct3` **replica** unassignable on the 1-node cluster
+  (benign, pre-existing).
 - **§4 retire `authority-selection.md`** — needs a new Django "list enabled
   authorities" endpoint (chicken-and-egg: registry is populated post-ingest).
 - **§4 Batch 14** — large end-to-end test-harness scaffolding.
