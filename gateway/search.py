@@ -590,9 +590,14 @@ async def search(req: SearchRequest):
     # count is a cheap, already-available prominence proxy: well-attested places
     # carry more name forms across languages, which is exactly the "more name
     # variants rank higher" behaviour the search UI documents.)
-    # place_id is the final, deterministic tiebreaker so the total order is
-    # stable across requests — required for consistent offset pagination.
-    results.sort(key=lambda r: (r.score, len(r.names), r.place_id), reverse=True)
+    # Sort by (score, place_id) ONLY — this is the exact same total order used to
+    # select the top-K candidate pool, which is what makes offset pagination
+    # consistent (a larger pool is a superset whose leading slice is identical).
+    # NOTE: the old `len(r.names)` prominence tiebreaker was REMOVED — name counts
+    # come from the bounded enrichment step, so they vary with pool size (which
+    # grows with offset), which reordered equal-score places and made pages
+    # overlap/skip. place_id is the deterministic, pool-independent tiebreak.
+    results.sort(key=lambda r: (r.score, r.place_id), reverse=True)
     # Offset pagination on the ranked list: return the [offset, offset+size) page.
     results = results[req.offset : req.offset + req.size]
 
