@@ -333,6 +333,16 @@ def _expand_whg_dataset_entries(
     for ds in payload.get("datasets") or []:
         if not isinstance(ds, dict) or "id" not in ds:
             continue
+        if per_ds:
+            # Per-dataset footprints available: a dataset absent from the map
+            # has no renderable geometry, so its coverage is empty — NOT the
+            # shared namespace aggregate (that would wrongly claim global
+            # extent and re-bloat the payload).
+            coverage = per_ds.get(ds["id"], [])
+        else:
+            # No per-dataset data at all (patch missing) — fall back to the
+            # shared namespace aggregate so the push still surfaces something.
+            coverage = h3_coverage
         out.append({
             "id": ds["id"],                                 # e.g. "whg:1234"
             "name": ds.get("name") or ds["id"],
@@ -342,7 +352,7 @@ def _expand_whg_dataset_entries(
             "owner_user_id": ds.get("owner_user_id"),
             "record_count": int(ds.get("record_count") or 0),
             "status": str(ds.get("dataset_status") or "pending"),
-            "h3_coverage": per_ds.get(ds["id"], h3_coverage),
+            "h3_coverage": coverage,
             "temporal_extent": temporal_extent,
         })
     return out
