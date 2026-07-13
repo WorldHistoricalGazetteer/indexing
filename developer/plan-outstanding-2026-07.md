@@ -611,12 +611,38 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
         reads that crosswalk (WDQS method removed; commit `84fdf2b`). **Only 1,895 /
         10,308 wd type items carry a Getty AAT ID at all**, so the pass adds **8**
         net-new mappings — the rest of the tail genuinely has no P1014. See the handoff
-        block for the full write-up + prod-fold-in note. **Still open:** wd's remaining
-        unmapped tail needs the **P279 derivation / label passes** (below); pl's
-        remainder is non-place metadata (`unlocated`/`label`/…), untypeable.
-- [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
-      0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
-      P1014/P279, label matching, hierarchy propagation.
+        block for the full write-up + prod-fold-in note. wd's remaining tail is
+        recovered by the **P279 walk** (next bullet); pl's remainder is non-place
+        metadata (`unlocated`/`label`/…), untypeable.
+  - [x] **wd P279 walk (Pass 2) — DONE 2026-07-13; wd type coverage 21.8%→98.2%.**
+        Since P1014 is saturated, the specific unmapped wd tail is recovered by
+        walking P279 (subclass-of) up to the nearest P1014-mapped ancestor. New
+        `typesystem/extract_wikidata_p279.py` (htc scan → **4.24M-edge**
+        `/ix1/ishi/data/wikidata/wikidata_p279.jsonl`, 53 min) + `aat_mapper
+        wikidata-p279` BFS walk (commit `5a38228`). **Mapped 7,869/8,057** unmapped
+        types (hops 1:5146 2:2121 3:438 4:164; `confidence=broad`, `source=wikidata_p279`)
+        → `wikidata.json` **2,251→10,120 (98.2%)**; only 188 types still unmapped.
+        **⭐ This flips the prod-apply calculus:** P1014 alone was 8 mappings (not worth
+        an 11.5M-doc reindex), but P1014+P279 → ~98% type coverage likely types a large
+        fraction of the ~2.9M currently-untyped wd docs. So an
+        **`apply_aat_enrich --namespace wd`** pass is now clearly worthwhile — but it's
+        an ~11.5M-doc prod reindex, **heap-sensitive** (see the ES incident 2026-07-13),
+        so run it *after* heap is confirmed stable + on SG sign-off. Enriched
+        `wikidata.json` is staged on `/vast` (git-untracked); the P279 mappings also
+        re-derive automatically on any future wd rebuild (crosswalk + this walk).
+        *Note:* the 602 deep-hop (3–4) mappings are coarser `broad` types — reviewable.
+  - [x] **Label matching (Pass 3) — already built, run as cleanup.** `aat_mapper
+        sparql --es-host <types>` does ES-based label matching (offline). Low recall
+        after P279; run it *last* on the 188-type remainder + review the `inferred`
+        hits. Not a separate build.
+  - [ ] ~~Hierarchy propagation (Pass 4)~~ — **not worth building:** targets the
+        SUPERSEDED reverse `type_mappings`/`aat_types` index and types *zero* new place
+        docs. Skip unless a consumer reappears.
+- [x] **Derivation passes (`type-mapping-plan.md` §Passes 0a–4) — accounted for:**
+      0a Pleiades direct ✓ (`cmd_static`), 0b TGN-bridge → superseded by curated
+      statics + `tgn_aat_backfill` ✓, 0c OSM static ✓ (Tier-2 REJECTED by SG),
+      **1 P1014 ✓ (offline), 2 P279 ✓ (this session)**, 3 label matching = built (run
+      as cleanup), 4 hierarchy propagation = skip (above).
 - [x] **Type-facet UI backend — DONE 2026-07-12** (AAT facets + friendly labels +
       hierarchical `aat_types` filter in the gateway; see §7). Uses the existing
       `types` index for labels — **no separate `type_mappings` index needed for the
