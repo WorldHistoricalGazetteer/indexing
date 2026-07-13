@@ -45,10 +45,27 @@ order used to pick the pool → provably consistent. **Verified live:** page1==f
 page2==full[3:6], page1∩page2=∅. Prominence-by-name-variant is gone (weak proxy).
 
 **BLOCKED (external, retry later):**
-- **§2 wd P1014 derivation** — Wikidata Query Service was under an active outage
-  (429, 1 req/min) on 13 Jul; mapped 0/8,065. Rerun `aat_mapper wikidata` from
-  crc0 (reaches WDQS) when it recovers → sync `typesystem/data/wikidata.json`
-  (git-untracked!) crc0→pitt → `apply_aat_enrich --namespace wd`.
+- **§2 wd P1014 derivation** — STILL blocked 13 Jul (re-checked). WDQS is only
+  *partially* recovered: a trivial single-value probe (`wd:Q515 wdt:P1014`) returns
+  **HTTP 200**, but the mapper's 200-item `VALUES` batches all get **429
+  "Aggressively rate-limiting to 1 req / min — this rule was created during active
+  wdqs outage (797a132)"**. Mapped **0/8,065** again. The emergency rate-limit rule is
+  the blocker, not connectivity. **Resume options when the rule lifts (retest with the
+  single-value probe → if a *batch* query 200s, it's clear):**
+  1. Fast path (limit gone): submit the ready sbatch
+     `/vast/ishi/elastic/logs/aat_wd_map.sbatch` via **`sbatch -M htc`** (runs
+     `python -m typesystem.aat_mapper wikidata`; ~1 min).
+  2. Polite path (limit still 1 req/min but we accept ~30–45 min): a paced driver
+     reusing `aat_mapper.{load_data_file,iter_values,set_aat_mapping,save_data_file}`
+     with the P1014 `VALUES` query at **≥65 s/request** (bump batch size to ~300 →
+     ~27 requests) + early-abort after 3 consecutive 429s. (Was mid-authoring when
+     paused — not built.)
+  Then: `typesystem/data/wikidata.json` is **git-untracked** on crc0's `/vast` repo —
+  sync crc0→pitt → **`apply_aat_enrich --namespace wd`** (also via Slurm/htc, NOT a
+  login node). **⚠ Run the mapper via Slurm on the `htc` cluster (`sbatch -M htc`,
+  `--account=ishi`) — NOT on crc0 the login node** (SG, 13 Jul). See
+  `memory/reference_crc_slurm_htc_submit.md` + `memory/feedback_no_jobs_on_login_nodes.md`.
+  htc compute nodes DO have outbound net (verified WDQS 200 from htc-n66).
 - **§5 citation/licence prod re-push** — gated on whg3 Phase-4 code reaching `main`.
 
 **NEEDS AN SG DECISION (do NOT do autonomously):**
