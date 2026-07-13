@@ -60,6 +60,16 @@ page2==full[3:6], page1∩page2=∅. Prominence-by-name-variant is gone (weak pr
      with the P1014 `VALUES` query at **≥65 s/request** (bump batch size to ~300 →
      ~27 requests) + early-abort after 3 consecutive 429s. (Was mid-authoring when
      paused — not built.)
+  3. **⭐ WDQS-free offline path (PREFERRED — no external dependency, no rate limit).**
+     P1014 is *already in the full Wikidata dump we hold* — the ingest just projects
+     it out (`wikidata-places.py` keeps only geographic entities + a fixed field set;
+     it drops the *type-concept* entities like `Q515` where P1014 lives, and never
+     reads P1014). The dump is on disk: **`/ix1/ishi/data/wikidata/latest-all/latest-all.json.gz`**
+     (148 GB, `DATA_DIR=/ix1/ishi/data`). A one-pass Slurm (htc) scan that
+     `gzip`-streams it and emits `{id, P1014}` for every entity carrying a P1014 claim
+     yields the complete Wikidata→AAT lookup (reusable), then intersect with
+     `wikidata.json`'s ~8k Q-ids in memory + `set_aat_mapping`/`save_data_file`.
+     ~20–60 min single scan, gets ALL of them, and removes the WDQS blocker entirely.
   Then: `typesystem/data/wikidata.json` is **git-untracked** on crc0's `/vast` repo —
   sync crc0→pitt → **`apply_aat_enrich --namespace wd`** (also via Slurm/htc, NOT a
   login node). **⚠ Run the mapper via Slurm on the `htc` cluster (`sbatch -M htc`,
