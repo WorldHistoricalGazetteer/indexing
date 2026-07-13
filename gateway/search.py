@@ -364,7 +364,24 @@ async def search(req: SearchRequest):
         # Step 2: Filtering + Aggregations — fetch places by ID + filters
         # ------------------------------------------------------------------
 
-        fetch_ids = list(place_scores.keys()) if not pure_spatial else None
+        # Candidate pool size — cover the pagination window (offset+size) with a
+        # filter-attrition buffer, capped at ES's 10k.
+        pool_k = min((req.offset + req.size) * (8 if pure_spatial else 4), 10000)
+
+        # Deterministic candidate pool for STABLE pagination + correct ranking:
+        # take the top-K place_ids BY DISCOVERY SCORE (tiebreak place_id), not an
+        # arbitrary doc-order page. This makes a larger offset fetch a consistent
+        # superset (so pages don't overlap/skip), and fixes a latent quality bug
+        # where high-scoring candidates beyond the doc-order fetch window were
+        # silently dropped. (hit.score is a monotonic normalisation of
+        # place_scores, so this pre-fetch order matches the final ranking.)
+        if pure_spatial:
+            fetch_ids = None
+        else:
+            fetch_ids = sorted(
+                place_scores.keys(),
+                key=lambda p: (place_scores[p], p), reverse=True,
+            )[:pool_k]
 
         places_body = build_places_filter(
             place_ids=fetch_ids,
@@ -374,9 +391,7 @@ async def search(req: SearchRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             undated=req.undated,
-            # over-fetch more for pure-spatial (region refine drops candidates);
-            # cover the pagination window (offset+size), capped at ES's 10k.
-            size=min((req.offset + req.size) * (8 if pure_spatial else 4), 10000),
+            size=pool_k,
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
@@ -575,7 +590,9 @@ async def search(req: SearchRequest):
     # count is a cheap, already-available prominence proxy: well-attested places
     # carry more name forms across languages, which is exactly the "more name
     # variants rank higher" behaviour the search UI documents.)
-    results.sort(key=lambda r: (r.score, len(r.names)), reverse=True)
+    # place_id is the final, deterministic tiebreaker so the total order is
+    # stable across requests — required for consistent offset pagination.
+    results.sort(key=lambda r: (r.score, len(r.names), r.place_id), reverse=True)
     # Offset pagination on the ranked list: return the [offset, offset+size) page.
     results = results[req.offset : req.offset + req.size]
 
