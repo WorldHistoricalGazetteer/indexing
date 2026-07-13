@@ -564,13 +564,20 @@ only the `whg` group flag does; the doc's dataset list is a stale bootstrap
 snapshot (unchanged since 2026-04-22).
 
 **Outstanding:**
-- [ ] **Decide which contributed datasets should be published** and flip
-      `authority=True`/`public` on them in the WHG Django DB (the real gate).
-      Alternatively run `whg-places.py --include-pending` to stage pending ones
-      (isolated via `dataset_status="pending"`).
-- [ ] Re-run `whg-places.py` → staged follow-through (h3/final → `index_namespace`
-      → toponym rebuild → Symphonym embeddings → clustering) — or the
-      incremental single-namespace path for a small batch.
+- [x] **Publication set decided + flipped — DONE 2026-07-13 (SG).** Flipped
+      `authority=True` on the **41** `public`+`indexed`+non-`core` contributed datasets
+      (verified `authority` is the real gate — `/reconcile/authority-datasets` filters
+      exactly `Dataset.objects.filter(authority=True)`; there is no other places/toponyms
+      indexing flag). Excluded `ds:2 dplace` (core → already the `dp` namespace) and
+      reverted `ds:1390 depoptest`. Now **47** contributor authority datasets
+      (41 new + 6 already live). DB write via the crc0 `clustering.pg_client` tunnel to
+      DO Postgres `whgv3beta`, table `datasets` (**NB: not `datasets_dataset`**). *(DO
+      access also via `ssh whg` → Docker containers.)*
+- [ ] **Re-run `whg-places.py` → staged follow-through** (LPF fetch per dataset →
+      h3/final → `index_namespace` → toponym rebuild → Symphonym embeddings) — **the
+      big ingest batch**, ~multi-hour. *(No server-side re-cluster step — clustering is
+      client-side now.)* `whg-places.py --dataset <id>` targets specific datasets;
+      clear `staged/whg/extract/places.jsonl` before re-staging (writes APPEND).
 - [ ] Generate + deploy `whg-<id>` tiles for the new datasets;
       `update_tileserver_config`.
 - [ ] `push_gazetteer_inventory` to fan out per-dataset registry rows.
@@ -747,6 +754,17 @@ still served alongside only 7 new `whg-<id>` buckets.
       only current names, so historic dated names (Stadacona, Hochelaga…) have nothing to
       attach to — a live-index toponym-completeness gap, not an extraction flaw; a full
       TGN re-ingest via the upgraded script applies **all** term dates.
+- [ ] **TGN toponym-completeness gap → FULL RE-INGEST (SG-chosen 2026-07-13).** The
+      live TGN docs are missing historic toponyms (Quebec has 2, should have Stadacona
+      etc.). **Root cause: the May build under-extracted — the *current* `tgn-places.py`
+      is already complete** (the temporal parse proved the historic names ARE linked to
+      the concept via the same `prefLabelGVP`/`altLabel`/`prefLabel` preds the script
+      uses; no script change needed). SG chose a **full TGN re-ingest** to fix it
+      consistently: re-run the (now-complete, typed, temporal) `tgn-places.py` → stage →
+      `index_namespace` (upsert, no delete → no prod gap) → toponym rebuild → **GPU
+      Symphonym embeddings** for the new toponyms. Multi-hour Slurm/GPU batch; no
+      server-side re-cluster (client-side now). *(This subsumes the term-date caveat
+      above — all term dates apply on re-ingest.)*
 - [ ] Dynamic-clustering design threads deferred by their own text: discovery-
       completeness empirical validation, Options B/C (edge/embedding shipping).
 
