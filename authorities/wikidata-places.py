@@ -14,7 +14,8 @@ from urllib.parse import quote
 
 import orjson  # Much faster than json
 from processing.helpers import enrich_geometry, write_staged_place_doc
-from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE
+from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE, WIKIDATA_P1014_FILE
+from typesystem.extract_wikidata_p1014 import extract_p1014_ids
 
 # Wikipedia sitelink allow-list. A well-known place can carry 100–300 sitelinks;
 # storing every URL bloats the index, so we keep only these language wikis.
@@ -44,8 +45,11 @@ def stream_wikidata_fast(file_path):
             if line.endswith(b','):
                 line = line[:-1]
 
-            # Quick pre-filter: Skip if no geographic markers at all
-            if b'"P625"' not in line and b'"P3896"' not in line and b'"P31"' not in line:
+            # Quick pre-filter: skip if no geographic markers at all — but KEEP
+            # lines carrying P1014 (Getty AAT ID), which sit on non-geographic
+            # type-concept entities and feed the AAT crosswalk side-output.
+            if (b'"P625"' not in line and b'"P3896"' not in line
+                    and b'"P31"' not in line and b'"P1014"' not in line):
                 continue
 
             try:
@@ -377,27 +381,50 @@ def create_place_doc_fast(entity, entity_bytes):
     return doc, geoshape_ref
 
 
-def stage_wikidata(file_path, geoshape_refs_file):
-    """Process Wikidata dump and stage records to /vast/ishi/staged/wd/extract/."""
+def stage_wikidata(file_path, geoshape_refs_file, p1014_file=WIKIDATA_P1014_FILE):
+    """Process Wikidata dump and stage records to /vast/ishi/staged/wd/extract/.
+
+    Emits two side-outputs during the single (expensive) dump scan:
+      * ``geoshape_refs_file`` — ``{qid, geoshape_ref}`` for P3896 geoshapes.
+      * ``p1014_file`` — the Wikidata→Getty AAT crosswalk (``{qid, aat_id}``),
+        extracted independently of the geographic place filter (the P1014-bearing
+        type-concept entities are not places). Consumed by ``aat_mapper wikidata``.
+    """
     place_count = 0
     processed = 0
     skipped = 0
     geoshape_count = 0
+    p1014_count = 0
 
     print("Starting Wikidata processing (OPTIMIZED with orjson)...")
     print(f"Saving geoshape references to: {geoshape_refs_file}")
+    print(f"Saving P1014 (AAT) crosswalk to: {p1014_file}")
 
     os.makedirs(os.path.dirname(geoshape_refs_file), exist_ok=True)
+    os.makedirs(os.path.dirname(p1014_file), exist_ok=True)
 
-    with open(geoshape_refs_file, 'wb') as refs_f:
+    with open(geoshape_refs_file, 'wb') as refs_f, open(p1014_file, 'wb') as p1014_f:
         for entity in stream_wikidata_fast(file_path):
             processed += 1
 
             if processed % 100000 == 0:
                 sys.stdout.write(
                     f"\rProcessed {processed:,} entities... "
-                    f"(places: {place_count:,}, geoshapes: {geoshape_count:,}, skipped: {skipped:,})")
+                    f"(places: {place_count:,}, geoshapes: {geoshape_count:,}, "
+                    f"p1014: {p1014_count:,}, skipped: {skipped:,})")
                 sys.stdout.flush()
+
+            # AAT crosswalk side-output — BEFORE the place filter, since the
+            # type-concept entities that carry P1014 are non-geographic and get
+            # dropped by create_place_doc_fast.
+            try:
+                qid_e = entity.get('id')
+                if qid_e:
+                    for aat_id in extract_p1014_ids(entity.get('claims', {})):
+                        p1014_f.write(orjson.dumps({'qid': qid_e, 'aat_id': aat_id}) + b'\n')
+                        p1014_count += 1
+            except Exception:
+                pass
 
             try:
                 entity_bytes = orjson.dumps(entity)
@@ -424,6 +451,7 @@ def stage_wikidata(file_path, geoshape_refs_file):
     print(f"Total entities processed: {processed:,}")
     print(f"Places staged: {place_count:,}")
     print(f"Geoshape references saved: {geoshape_count:,}")
+    print(f"P1014 (AAT) crosswalk rows saved: {p1014_count:,}")
     print(f"Skipped (non-geographic): {skipped:,}")
 
 
@@ -431,6 +459,7 @@ if __name__ == "__main__":
     WIKIDATA_FILE = f"{DATA_DIR}/wikidata/latest-all/latest-all.json.gz"
 
     print(f"Starting to stage Wikidata from {WIKIDATA_FILE}")
-    print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}\n")
+    print(f"Saving geoshape references to: {GEOSHAPE_REFS_FILE}")
+    print(f"Saving P1014 (AAT) crosswalk to: {WIKIDATA_P1014_FILE}\n")
 
-    stage_wikidata(WIKIDATA_FILE, GEOSHAPE_REFS_FILE)
+    stage_wikidata(WIKIDATA_FILE, GEOSHAPE_REFS_FILE, WIKIDATA_P1014_FILE)

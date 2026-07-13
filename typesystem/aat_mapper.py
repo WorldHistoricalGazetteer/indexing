@@ -195,29 +195,6 @@ def sparql_exact_match(label):
     return None
 
 
-def sparql_label_by_id(aat_id):
-    """
-    Fetch the preferred English label for an AAT concept by numeric ID.
-    Returns the label string, or None.
-    """
-    query = f"""
-    PREFIX gvp: <http://vocab.getty.edu/ontology#>
-    PREFIX aat: <http://vocab.getty.edu/aat/>
-
-    SELECT ?term WHERE {{
-      aat:{aat_id} gvp:prefLabelGVP/gvp:term ?term .
-    }}
-    LIMIT 1
-    """
-    try:
-        result = sparql_query(query)
-        for binding in result.get("results", {}).get("bindings", []):
-            return binding.get("term", {}).get("value", "")
-    except Exception as e:
-        print(f"    AAT label fetch failed for aat:{aat_id}: {e}")
-    return None
-
-
 # ============================================================================
 # ES types-index lookups (replaces SPARQL for label resolution)
 # ============================================================================
@@ -286,59 +263,33 @@ def es_label_search(es, label, limit=5):
 # Wikidata → AAT bridge
 # ============================================================================
 
-def fetch_wikidata_aat_mappings(qids):
+def load_p1014_crosswalk(path, wanted_qids):
+    """Load the Wikidata → AAT (P1014) crosswalk for a set of Q-items.
+
+    Reads the JSONL crosswalk (``{"qid": "Q515", "aat_id": "300008389"}``)
+    produced by ``typesystem.extract_wikidata_p1014`` — either as a side-output
+    of the place-ingest dump scan or a standalone scan — and returns
+    ``{qid: aat_id (int)}`` restricted to ``wanted_qids`` (first value wins).
+
+    This replaces the retired WDQS/SPARQL P1014 lookup (rate-limited /
+    outage-prone); the crosswalk is derived offline from the Wikidata dump we
+    already ingest.
     """
-    Query Wikidata SPARQL for P1014 (Getty AAT ID) values.
-    Returns dict: qid → aat_id (int).
-    """
-    if not qids:
-        return {}
-
-    # Batch into groups of 200 for VALUES clause
-    results = {}
-    batches = [qids[i:i + 200] for i in range(0, len(qids), 200)]
-
-    print(f"  Querying Wikidata SPARQL for P1014 on {len(qids)} Q-items "
-          f"({len(batches)} batches) ...")
-
-    for i, batch in enumerate(batches):
-        values_str = " ".join(f"wd:{q}" for q in batch)
-        query = f"""
-        PREFIX wd: <http://www.wikidata.org/entity/>
-        PREFIX wdt: <http://www.wikidata.org/prop/direct/>
-
-        SELECT ?item ?aatId WHERE {{
-          VALUES ?item {{ {values_str} }}
-          ?item wdt:P1014 ?aatId .
-        }}
-        """
-        url = "https://query.wikidata.org/sparql"
-        params = urlencode({"query": query, "format": "json"})
-        req = Request(f"{url}?{params}", headers={
-            "User-Agent": "WHG-indexing/1.0 (whgazetteer.org)",
-            "Accept": "application/sparql-results+json",
-        })
-
-        try:
-            with urlopen(req, timeout=60) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-
-            for binding in data.get("results", {}).get("bindings", []):
-                qid = binding["item"]["value"].split("/")[-1]
-                aat_id_str = binding["aatId"]["value"]
-                try:
-                    results[qid] = int(aat_id_str)
-                except ValueError:
-                    pass
-
-        except Exception as e:
-            print(f"    Batch {i + 1} failed: {e}")
-
-        if (i + 1) % 5 == 0:
-            print(f"    ... {i + 1}/{len(batches)} batches done")
-        time.sleep(1)  # Be polite to Wikidata
-
-    return results
+    wanted = set(wanted_qids)
+    result = {}
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                row = json.loads(line)
+                qid = row["qid"]
+                if qid in wanted and qid not in result:
+                    result[qid] = int(row["aat_id"])
+            except (ValueError, KeyError, TypeError):
+                continue
+    return result
 
 
 # ============================================================================
@@ -851,8 +802,16 @@ def cmd_sparql(es=None):
     print(f"\nLabel matching: {matched}/{attempted} entries matched")
 
 
-def cmd_wikidata(es=None):
-    """Bridge Wikidata Q-items → AAT via P1014 property."""
+def cmd_wikidata(es=None, crosswalk=None):
+    """Bridge Wikidata Q-items → AAT via P1014, from the offline dump crosswalk.
+
+    Reads the ``{qid, aat_id}`` crosswalk extracted from the Wikidata dump by
+    ``typesystem.extract_wikidata_p1014`` (default path
+    ``processing.settings.WIKIDATA_P1014_FILE``). No network / WDQS.
+    """
+    from processing.settings import WIKIDATA_P1014_FILE
+    crosswalk = crosswalk or WIKIDATA_P1014_FILE
+
     try:
         data = load_data_file("wikidata.json")
     except FileNotFoundError:
@@ -870,25 +829,25 @@ def cmd_wikidata(es=None):
         return
 
     qids = [q for q, _ in unmapped]
-    aat_map = fetch_wikidata_aat_mappings(qids)
+    try:
+        print(f"  Loading P1014 crosswalk from {crosswalk} ...")
+        aat_map = load_p1014_crosswalk(crosswalk, qids)
+    except FileNotFoundError:
+        print(f"Error: P1014 crosswalk not found at {crosswalk} — build it with "
+              f"`python -m typesystem.extract_wikidata_p1014` (or via a Wikidata "
+              f"re-ingest, which emits it as a side-output).")
+        return
+    print(f"    -> {len(aat_map)} of {len(qids)} unmapped Q-items found in crosswalk")
 
-    # Fetch AAT labels for matched IDs
+    # Resolve friendly AAT labels from the local ES types index when available;
+    # otherwise leave an `aat:<id>` placeholder — `aat_enrich` fills the real
+    # term + path from the AAT hierarchy at apply time, so the term is cosmetic.
     matched_aat_ids = set(aat_map.values())
     aat_labels = {}
-    if matched_aat_ids:
-        if es is not None:
-            print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts from ES ...")
-            aat_labels = es_labels_by_ids(es, list(matched_aat_ids))
-            print(f"    -> {len(aat_labels)} labels found")
-        else:
-            print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts via SPARQL ...")
-            for i, aat_id in enumerate(matched_aat_ids):
-                label = sparql_label_by_id(aat_id)
-                if label:
-                    aat_labels[aat_id] = label
-                if (i + 1) % 50 == 0:
-                    print(f"    ... {i + 1}/{len(matched_aat_ids)} labels fetched")
-                time.sleep(0.3)
+    if matched_aat_ids and es is not None:
+        print(f"  Fetching labels for {len(matched_aat_ids)} AAT concepts from ES ...")
+        aat_labels = es_labels_by_ids(es, list(matched_aat_ids))
+        print(f"    -> {len(aat_labels)} labels found")
 
     # Apply mappings
     applied = 0
@@ -1035,9 +994,11 @@ def main():
         help="ES host with types index (omit to fall back to AAT SPARQL)")
 
     sp_wd = subparsers.add_parser("wikidata",
-        help="Bridge Wikidata → AAT via P1014")
+        help="Bridge Wikidata → AAT via P1014 (offline, from the dump crosswalk)")
     sp_wd.add_argument("--es-host",
-        help="ES host with types index for label lookups (omit for SPARQL)")
+        help="ES host with types index for friendly labels (optional; cosmetic)")
+    sp_wd.add_argument("--crosswalk",
+        help="P1014 crosswalk JSONL (default: settings.WIKIDATA_P1014_FILE)")
 
     subparsers.add_parser("validate", help="Validate existing AAT IDs")
     subparsers.add_parser("report", help="Report mapping coverage")
@@ -1056,7 +1017,7 @@ def main():
     elif args.command == "sparql":
         cmd_sparql(es=es)
     elif args.command == "wikidata":
-        cmd_wikidata(es=es)
+        cmd_wikidata(es=es, crosswalk=getattr(args, "crosswalk", None))
     elif args.command == "validate":
         cmd_validate()
     elif args.command == "report":

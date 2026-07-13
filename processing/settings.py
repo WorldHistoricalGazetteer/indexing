@@ -70,6 +70,10 @@ TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms")
 # Wikidata processing logs
 GEOSHAPE_REFS_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_geoshape_refs.jsonl")
 GEOSHAPE_LOG_FILE = os.path.join(DATA_DIR, "wikidata", "geoshapes_downloaded.log")
+# Wikidata → Getty AAT crosswalk (property P1014). Emitted as a side-output of the
+# place-ingest dump scan (authorities/wikidata-places.py) and/or a standalone scan
+# (typesystem/extract_wikidata_p1014.py); consumed by typesystem.aat_mapper wikidata.
+WIKIDATA_P1014_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p1014.jsonl")
 
 # OSM processing state file
 OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"
