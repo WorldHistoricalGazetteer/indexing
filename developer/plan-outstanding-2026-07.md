@@ -34,13 +34,15 @@ circuit-broke (429) → faceted `/api/search` 500'd. `es es-restart` cleared it:
 bump needed; just restart ES after any heavy indexing session. Also deleted 3 stale
 pre-rebuild indices (93 GB disk) — see below.
 
-**⚠ NEEDS ONE MORE `gw restart`** — pagination shipped in 40baf95 had an
-overlap/skip bug (pool grew with offset → re-ranked; observed page1∩page2). **Fixed
-(commit after 40baf95):** the pool is now the **top-K place_ids by discovery score**
-(deterministic superset) + `place_id` final tiebreaker → stable pages; also fixes a
-latent ranking bug (old arbitrary doc-order pool could drop high-scoring candidates
-beyond the fetch window). Restart the gateway to activate, then re-test page1/page2
-(offset 0 vs 3) return disjoint hits.
+**✅ Pagination fixed + VERIFIED (13 Jul).** The 40baf95 version overlapped across
+pages (pool grew with offset → re-ranked). Two fixes: (1) pool = **top-K place_ids
+by discovery score** (deterministic superset; also fixes a latent ranking bug where
+the old arbitrary doc-order pool dropped high-scoring candidates beyond the fetch
+window); (2) **dropped the `len(names)` sort tiebreaker** — name counts come from
+the bounded enrichment step so they varied with pool size (which grows with offset),
+reordering equal-score places. Final sort is now `(score, place_id)` — the exact
+order used to pick the pool → provably consistent. **Verified live:** page1==full[0:3],
+page2==full[3:6], page1∩page2=∅. Prominence-by-name-variant is gone (weak proxy).
 
 **BLOCKED (external, retry later):**
 - **§2 wd P1014 derivation** — Wikidata Query Service was under an active outage
