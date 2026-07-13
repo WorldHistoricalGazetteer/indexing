@@ -587,10 +587,28 @@ snapshot (unchanged since 2026-04-22).
       variant-spelling apparatus that aborted the augment; guarded in
       `collect_attestations`, commit `db402dd`). *(No server-side re-cluster —
       client-side now.)*
-- [ ] Generate + deploy `whg-<id>` tiles for the 41 new datasets;
-      `update_tileserver_config`. **(outward-facing — next)**
-- [ ] `push_gazetteer_inventory` to fan out per-dataset registry rows.
-      **(outward-facing — prod Django write; preflight-gated on tiles serving)**
+- [x] **Tiles — DONE 2026-07-13.** Generated + deployed `whg-<id>` vector
+      tilesets via `submit_tiles_slurm --only-bucket` (Slurm array → per-bucket
+      tippecanoe + rsync deploy → `afterok` `update_tileserver_config`). **47
+      tilesets serving** (200, public); 2 datasets (`whg-1642`, `whg-1644`) have
+      **zero geometry** → correctly no layer. *Gotcha fixed:* 47 parallel array
+      tasks overran the tileserver sshd (`kex_exchange_identification: Connection
+      reset`), failing 8 pushes → the `afterok` finalize was cancelled. Re-pushed
+      the 8 **sequentially** (`generate_tiles --redeploy-only`), then ran
+      `update_tileserver_config` for the present 47 (116 existing config entries
+      preserved).
+- [x] **Registry — DONE 2026-07-13.** `push_gazetteer_inventory --namespace whg`
+      → **48 per-dataset rows upserted to prod + dev** (HTTP 200, 0 errors).
+      *Fixes committed:* the incremental path now fans whg out per-dataset
+      (`eee6623`); **413 fix** — per-dataset h3 footprints (not the shared 48×
+      namespace aggregate) + res-3 coarsening + cell-budget batching brought the
+      payload from ~430 MB → **0.4 MB** (`beee789`, coarsen commit). Geom-less
+      datasets get empty coverage.
+- [ ] **whg AAT typing (§2 follow-up)** — the 41 new datasets were indexed via
+      the h3/ccode chain **without `aat_enrich`**, so they carry native LPF types
+      but no AAT mappings. Run `apply_aat_enrich --namespace whg --execute`.
+- [ ] **Per-dataset registry coverage is res-3 coarsened** (adequate for the
+      spatial filter); revisit if finer per-dataset footprints are ever needed.
 - [ ] Handle genuinely **pending/unpublished** submissions — `whg-places.py`
       flags them out of scope pending a new Django endpoint (documented gap).
 
