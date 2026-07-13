@@ -20,6 +20,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.tgn_temporal import parse_gyear, parse_relation_dates, timespan
 
 NAMESPACE = "tgn"
 
@@ -145,14 +146,15 @@ def build_side_index(zip_path):
     coordinates = {k: tuple(v) for k, v in coordinates.items() if None not in v}
     print(f"\n  ✓ Loaded {len(coordinates):,} coords")
 
-    # 3. Term Definitions
+    # 3. Term Definitions (+ term-level temporal: estStart/estEnd = name-in-use)
     term_literals = {}
     place_terms = defaultdict(list)
     place_pref = {}
+    term_dates = {}  # term_uri -> [start, end]  (Getty name-in-use dates)
 
     VALID_LABEL_PREDS = ("prefLabelGVP", "altLabel", "prefLabel")
 
-    print("Step 3/3: Loading Terms and Concept-Term Links...")
+    print("Step 3/4: Loading Terms, Concept-Term Links, and Term Dates...")
     for i, line in enumerate(stream_nt(zip_path, "TGNOut_2Terms.nt"), 1):
         parsed = parse_nt(line)
         if not parsed: continue
@@ -173,14 +175,29 @@ def build_side_index(zip_path):
 
             place_terms[tgn_id].append(obj)
 
+        # Term-level temporal: <term_uri> estStart/estEnd "YYYY" → toponym timespan
+        elif pred.endswith("estStart") or pred.endswith("estEnd"):
+            val = obj[0] if isinstance(obj, tuple) else obj
+            y = parse_gyear(val)
+            if y is not None:
+                d = term_dates.setdefault(subj, [None, None])
+                d[0 if pred.endswith("estStart") else 1] = y
+
         if i % 1_000_000 == 0:
             sys.stdout.write(f"\r  {i:,} triples")
             sys.stdout.flush()
 
-    print(f"\n  ✓ {len(term_literals):,} terms, {len(place_terms):,} concepts linked")
+    print(f"\n  ✓ {len(term_literals):,} terms, {len(place_terms):,} concepts linked, "
+          f"{len(term_dates):,} dated terms")
 
     place_types = load_place_types(zip_path)
-    return coordinates, place_map, term_literals, place_pref, place_terms, place_types
+
+    print("Step 4/4: Loading Relation Dates (place temporal extent)...")
+    relation_dates = parse_relation_dates(zip_path)  # {concept_id: (start, end, historic)}
+    print(f"  ✓ {len(relation_dates):,} places with relation dates")
+
+    return (coordinates, place_map, term_literals, place_pref, place_terms,
+            place_types, term_dates, relation_dates)
 
 
 def index_tgn(zip_path):
@@ -188,7 +205,8 @@ def index_tgn(zip_path):
     print(f"STAGING TGN (Final Production)")
     print("=" * 60)
 
-    coordinates, place_map, term_literals, place_pref, place_terms, place_types = build_side_index(zip_path)
+    (coordinates, place_map, term_literals, place_pref, place_terms,
+     place_types, term_dates, relation_dates) = build_side_index(zip_path)
 
     # --- SANITY CHECK ---
     print("\n🔎 RUNNING SANITY CHECK (First 5 records)...")
@@ -233,9 +251,12 @@ def index_tgn(zip_path):
             toponym_id = f"{name}@{lang}"
             if toponym_id in seen_ids:
                 continue
+            # Real name-in-use dates if Getty has them, else the present-day placeholder.
+            td = term_dates.get(term_uri)
             toponyms.append({
                 "toponym_id": toponym_id,
-                "timespans": [{"start": {"in": 2025}, "end": {"in": 2025}}]
+                "timespans": timespan(td[0], td[1]) if td else
+                             [{"start": {"in": 2025}, "end": {"in": 2025}}],
             })
             seen_ids.add(toponym_id)
 
@@ -279,10 +300,11 @@ def index_tgn(zip_path):
 
         if lat is not None and lon is not None:
             point_geom = {"type": "Point", "coordinates": [lon, lat]}
-            geom_entry = enrich_geometry(
-                point_geom,
-                timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
-            )
+            # Real place temporal extent from Getty relation dates if present, else placeholder.
+            rd = relation_dates.get(tgn_id)
+            geom_ts = (timespan(rd[0], rd[1]) if rd and (rd[0] is not None or rd[1] is not None)
+                       else [{"start": {"in": 2025}, "end": {"in": 2025}}])
+            geom_entry = enrich_geometry(point_geom, timespans=geom_ts)
             if geom_entry:
                 doc["geometries"] = [geom_entry]
                 if geom_entry.get('repr_point'):
