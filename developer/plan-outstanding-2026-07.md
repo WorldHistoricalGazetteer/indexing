@@ -44,38 +44,33 @@ reordering equal-score places. Final sort is now `(score, place_id)` — the exa
 order used to pick the pool → provably consistent. **Verified live:** page1==full[0:3],
 page2==full[3:6], page1∩page2=∅. Prominence-by-name-variant is gone (weak proxy).
 
+**✅ RESOLVED — §2 wd P1014 derivation (13 Jul, offline / WDQS-free).** WDQS was *not*
+recovering (single-value probes 200'd but 200-item `VALUES` batches all 429'd at "1
+req/min, active wdqs outage"), so instead of fighting the rate-limit we extracted P1014
+from the **full Wikidata dump we already hold**. P1014 (Getty AAT ID) sits on
+type-concept entities (`Q515`→`300008389`) that the place ingest filters out, so it was
+never in our ES `wd` docs — but it *is* in the 148 GB dump. New code (commit `84fdf2b`):
+- `typesystem/extract_wikidata_p1014.py` — shared extractor + standalone dump scanner.
+- `authorities/wikidata-places.py` — emits the crosswalk as a **side-output of the
+  existing place-ingest scan** (before the geographic filter; `"P1014"` added to the
+  coarse pre-filter), so every future full Wikidata re-ingest regenerates it for free.
+- `aat_mapper wikidata` reads the crosswalk (`load_p1014_crosswalk`); the **deprecated
+  WDQS method (`fetch_wikidata_aat_mappings` + `sparql_label_by_id`) is removed**.
+
+**Run (htc Slurm, `sbatch -M htc`):** scanned the dump in 39 min → **26,420-row**
+`/ix1/ishi/data/wikidata/wikidata_p1014.jsonl`. **Finding — P1014 is saturated:** only
+**1,895 / 10,308** wd type Q-items carry a Getty AAT ID at all, so the pass adds just
+**8** net-new mappings (`wikidata.json` 2,243→2,251). The residual tail genuinely has no
+P1014 — it needs the P279/label passes (§2 body) or is untypeable; a healthy WDQS would
+have returned the same 8.
+
+**Prod status of the 8:** in the `/vast` `wikidata.json` (git-untracked), **not yet on
+prod ES**. A standalone ~11.5M-doc `apply_aat_enrich --namespace wd` for 8 type mappings
+is disproportionate → **fold them into the next wd re-enrich/rebuild** (crosswalk is now a
+free ingest side-output). *SG decision:* run the prod pass now only if the 8 matter
+urgently.
+
 **BLOCKED (external, retry later):**
-- **§2 wd P1014 derivation** — STILL blocked 13 Jul (re-checked). WDQS is only
-  *partially* recovered: a trivial single-value probe (`wd:Q515 wdt:P1014`) returns
-  **HTTP 200**, but the mapper's 200-item `VALUES` batches all get **429
-  "Aggressively rate-limiting to 1 req / min — this rule was created during active
-  wdqs outage (797a132)"**. Mapped **0/8,065** again. The emergency rate-limit rule is
-  the blocker, not connectivity. **Resume options when the rule lifts (retest with the
-  single-value probe → if a *batch* query 200s, it's clear):**
-  1. Fast path (limit gone): submit the ready sbatch
-     `/vast/ishi/elastic/logs/aat_wd_map.sbatch` via **`sbatch -M htc`** (runs
-     `python -m typesystem.aat_mapper wikidata`; ~1 min).
-  2. Polite path (limit still 1 req/min but we accept ~30–45 min): a paced driver
-     reusing `aat_mapper.{load_data_file,iter_values,set_aat_mapping,save_data_file}`
-     with the P1014 `VALUES` query at **≥65 s/request** (bump batch size to ~300 →
-     ~27 requests) + early-abort after 3 consecutive 429s. (Was mid-authoring when
-     paused — not built.)
-  3. **⭐ WDQS-free offline path (PREFERRED — no external dependency, no rate limit).**
-     P1014 is *already in the full Wikidata dump we hold* — the ingest just projects
-     it out (`wikidata-places.py` keeps only geographic entities + a fixed field set;
-     it drops the *type-concept* entities like `Q515` where P1014 lives, and never
-     reads P1014). The dump is on disk: **`/ix1/ishi/data/wikidata/latest-all/latest-all.json.gz`**
-     (148 GB, `DATA_DIR=/ix1/ishi/data`). A one-pass Slurm (htc) scan that
-     `gzip`-streams it and emits `{id, P1014}` for every entity carrying a P1014 claim
-     yields the complete Wikidata→AAT lookup (reusable), then intersect with
-     `wikidata.json`'s ~8k Q-ids in memory + `set_aat_mapping`/`save_data_file`.
-     ~20–60 min single scan, gets ALL of them, and removes the WDQS blocker entirely.
-  Then: `typesystem/data/wikidata.json` is **git-untracked** on crc0's `/vast` repo —
-  sync crc0→pitt → **`apply_aat_enrich --namespace wd`** (also via Slurm/htc, NOT a
-  login node). **⚠ Run the mapper via Slurm on the `htc` cluster (`sbatch -M htc`,
-  `--account=ishi`) — NOT on crc0 the login node** (SG, 13 Jul). See
-  `memory/reference_crc_slurm_htc_submit.md` + `memory/feedback_no_jobs_on_login_nodes.md`.
-  htc compute nodes DO have outbound net (verified WDQS 200 from htc-n66).
 - **§5 citation/licence prod re-push** — gated on whg3 Phase-4 code reaching `main`.
 
 **NEEDS AN SG DECISION (do NOT do autonomously):**
@@ -609,17 +604,16 @@ metadata). Details + the whg3 `/development` note in `developer/aat-typing-statu
         against the prod `types` index.
   - [ ] **GB1900** — the only remaining zero; no native type. VLM/CV map-typography
         idea documented in `authorities/gb1900-places.py` (not built).
-  - [ ] **wd / pl residual tail** — wd's unmapped 25% is a long tail of specific
-        Wikidata Q-items (needs the aat_mapper **P1014/P279 derivation pass** — the
-        Wikidata API is firewalled from pitt, so run it from a net-connected host);
-        pl's remainder is non-place metadata (`unlocated`/`label`/…), untypeable.
-        **ATTEMPTED 2026-07-13 (crc0 reaches WDQS): BLOCKED — WDQS was under an
-        active outage** ("Aggressively rate-limiting to 1 req/min … active wdqs
-        outage"), so `aat_mapper wikidata` mapped 0/8,065 (batches 30–41 all 429'd).
-        `typesystem/data/wikidata.json` re-saved but content-unchanged + intact
-        (10,308 entries; it is git-**untracked** / build-vocabs-generated, so applying
-        any future result means syncing crc0's copy → pitt then
-        `apply_aat_enrich --namespace wd`). **Retry when WDQS recovers.**
+  - [x] **wd P1014 pass — DONE 2026-07-13 (offline, WDQS-free); P1014 saturated.**
+        Extracted P1014 from the 148 GB dump we already hold (new
+        `typesystem/extract_wikidata_p1014.py`; htc scan → 26,420-row
+        `/ix1/ishi/data/wikidata/wikidata_p1014.jsonl`), and `aat_mapper wikidata` now
+        reads that crosswalk (WDQS method removed; commit `84fdf2b`). **Only 1,895 /
+        10,308 wd type items carry a Getty AAT ID at all**, so the pass adds **8**
+        net-new mappings — the rest of the tail genuinely has no P1014. See the handoff
+        block for the full write-up + prod-fold-in note. **Still open:** wd's remaining
+        unmapped tail needs the **P279 derivation / label passes** (below); pl's
+        remainder is non-place metadata (`unlocated`/`label`/…), untypeable.
 - [ ] Build the derivation passes still unstarted (`type-mapping-plan.md` §Passes
       0a–4): Pleiades direct, TGN-bridged GN/WD, OSM static (+Tier-2), Wikidata
       P1014/P279, label matching, hierarchy propagation.
