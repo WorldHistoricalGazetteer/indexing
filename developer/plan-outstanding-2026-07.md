@@ -22,19 +22,25 @@
 - **§7 pagination** — `offset` param on `/api/search` (offset-based, not
   search_after — the gateway re-ranks in Python).
 
-**Gateway restarted 13 Jul** (PID 2594891, pulled 40baf95) → pagination `offset`,
-`undated`, `aat_types` facet/filter, clustering-fuel params now ACTIVE.
+**Gateway restarted 13 Jul** (pulled 40baf95) → `undated`, `aat_types`
+facet/filter, clustering-fuel params now ACTIVE + verified (faceted search returns
+54 aat_type facets).
 
-**🔴 OPEN PROD INCIDENT — ES node heap-saturated (needs an ES restart, SG):**
-`whg-prod-1` heap sits at ~14.3 GB / 14.2 GB parent-breaker (15 GB max). Simple
-queries pass, but **aggregation queries trip the circuit breaker (429)** — so the
-faceted `/api/search` currently **500s** (confirmed: nested type_facets + by_aat +
-ccodes aggs → `<reused_arrays>` circuit-break; a plain match query 200s). This is a
-capacity issue, **not** a code regression (pagination is byte-identical at
-offset=0; predates the index deletion — heap was already 93%). Deleting the 3
-stale indices freed **93 GB disk but not heap** (they were idle). **FIX: restart ES**
-(`es es-restart` / es.sh) to reset the JVM heap; if it recurs after restart, bump
-`-Xmx`. `POST /_cache/clear` only gives seconds of relief (fielddata was already ~0).
+**✅ RESOLVED — ES heap incident (13 Jul).** `whg-prod-1` heap had saturated
+(~14.3/14.2 GB breaker) from the day's heavy indexing → aggregation queries
+circuit-broke (429) → faceted `/api/search` 500'd. `es es-restart` cleared it:
+**heap 94%→5% (0.8 GB)**, aggregation queries 200, search recovered. Was transient
+(not structural — 108 GB of live indices does NOT need 14 GB heap), so no `-Xmx`
+bump needed; just restart ES after any heavy indexing session. Also deleted 3 stale
+pre-rebuild indices (93 GB disk) — see below.
+
+**⚠ NEEDS ONE MORE `gw restart`** — pagination shipped in 40baf95 had an
+overlap/skip bug (pool grew with offset → re-ranked; observed page1∩page2). **Fixed
+(commit after 40baf95):** the pool is now the **top-K place_ids by discovery score**
+(deterministic superset) + `place_id` final tiebreaker → stable pages; also fixes a
+latent ranking bug (old arbitrary doc-order pool could drop high-scoring candidates
+beyond the fetch window). Restart the gateway to activate, then re-test page1/page2
+(offset 0 vs 3) return disjoint hits.
 
 **BLOCKED (external, retry later):**
 - **§2 wd P1014 derivation** — Wikidata Query Service was under an active outage
