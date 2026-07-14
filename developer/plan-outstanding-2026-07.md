@@ -9,9 +9,65 @@
 
 ---
 
-## ★ SESSION HANDOFF — pick up here (last worked: 13–14 Jul 2026)
+## ★ SESSION HANDOFF — pick up here (last worked: 14 Jul 2026 — ccode / UN BNDA session)
 
-**★ Done 14 Jul (latest session) — all committed + PUSHED to `main` (origin at `1507f5d`):**
+**★ Done 14 Jul (ccode / UN BNDA session) — all committed + PUSHED to `main` (origin `6fc5a75`):**
+
+> This work was **not** in this plan — it was surfaced by the Atlas cluster-card UI as
+> data-quality issues, then grew into a country-boundary **source migration**. Recorded
+> here so the handoff is current. See `memory/ccode_country_boundaries_bnda.md`.
+
+- **Country boundaries + ccode source migrated Natural Earth → UN Geospatial BNDA.**
+  Authoritative UN admin boundaries (committed: `processing/data/un_bnda_countries.geojson`):
+  native ISO 3166-1 for every country + dependent territory (no NE `-99` France/Norway/
+  Kosovo dropout), Antarctica included, antimeridian-correct, topological.
+  `ccode_enrichment.UnCountryIndex.from_bnda_geojson` (self-contained STRtree).
+- **`un` authority rebuilt from BNDA** (`authorities/un-countries.py`) — one source of
+  truth for the gazetteer places AND ccode resolution. Re-ingested into prod (247 docs,
+  replacing 258 NE; France=FR, Antarctica=AQ, territories separate; **ongoing temporal**
+  `start.latest=2025`, no end — native BNDA only, per SG).
+- **ccode backfill** (`processing/backfill_ccodes.py`, export→resolve→apply) — 9.87M docs
+  that lacked ccodes resolved from BNDA → **96–100% coverage** over docs-with-geometry
+  (tgn 0→96%, osm 78→99%, wd 80→98.5%); 9,522,590 applied, 0 failures.
+- **Bugs fixed + applied to prod:** (a) **tgn h3 ingestion** — h3 written doc-level not
+  into `geometries[]`, so all 2.97M tgn docs lacked h3 (fixed + backfilled); (b)
+  **antimeridian polyfill** in `helpers._polyfill_adaptive` — dateline-crossing polygon
+  interiors were dropped (US/RU/wd geoshapes); (c) NE `-99`; (d) the long-deferred
+  **`wd_geoshapes` merged** into the geom store (58,611 Wikidata polygons — "prod had 0 wd
+  polygons") + their h3 recomputed point→polygon.
+- **Temporal query support** — `gateway/es_helpers.py` temporal filter now honors
+  `latest`/`earliest` qualifiers AND treats start-with-no-end as **ongoing** (was silently
+  dropping every ongoing feature); schema indexes earliest/latest. Live.
+- **Symphonym backfill** for the 25 new `un` toponyms (French/qualified country names).
+- **Tilesets:** `un.mbtiles` (247 BNDA features) + `wd.mbtiles` (11.46M features,
+  geoshapes now polygons) regenerated + deployed + tileserver restarted — both live.
+  ⚠ **Gotcha:** an incremental `index_namespace --source-stage extract` leaves STALE
+  staged stages (`final/`, `h3_merged/`, `h3/`) that `generate_tiles` and the
+  `gazetteer_*` aggregates silently prefer — the first un regen tiled old NE data. Retire
+  the stale stages after any namespace replacement.
+- **Registry:** `un` relabeled **"ISO 3166 Countries" → "UN Countries"** with UN
+  provenance; aggregates regenerated (record_count 258→247, temporal `[2025, null]`);
+  re-pushed prod + dev.
+- **`apply_aat_enrich --namespace wd` FINISHED** — wd AAT type coverage **98.2%**
+  (11.25M/11.46M typed). SG action-queue item #3 ✅.
+- Gateway restarted via `gw restart` after `git reset --hard origin/main` reconciled the
+  prod clone. **Do NOT scp into the `/ix1` prod clone** — it blocks `gw`'s git pull; commit
+  + push + reset instead.
+
+**📌 FOR THE whg3 AGENT — audit + mark done.** A whg3 agent has been doing substantial
+browser-side work and may already have addressed the whg3-side items in this plan. **Please
+audit these against the current whg3 `main`/prod state and mark anything already shipped as
+✅ DONE**, so this plan reflects reality rather than the 14 Jul snapshot:
+- **§1 — Atlas clustering UI real-browser visual pass** (Phases 1–3 code-complete, was
+  visually unconfirmed) and the `clustering.js` client-side scoring/Union-Find wiring.
+- **§6 — promote whg3 `staging` → `main`** (was the single blocking gate).
+- **whg3 licensing / Phase-4 promotion + prod `licensing`(0003)/`api`(0007) migrations** —
+  the only remaining gate for **§5** (the indexing side re-pushes the citation/licence
+  inventory automatically once prod parity lands).
+
+---
+
+**★ Done 14 Jul (earlier session) — all committed + PUSHED to `main` (origin at `1507f5d`):**
 - **§2 wd typing → ~98% (P279 Pass 2 added).** On top of P1014, added the **P279
   subclass walk**: new `typesystem/extract_wikidata_p279.py` (htc Slurm scan → 4.24M-edge
   class graph) + `aat_mapper wikidata-p279` (BFS from an unmapped wd type to its nearest
@@ -40,10 +96,12 @@
   was found STOPPED and restarted through it + verified (`/api/health` 200). See
   `memory/gaz_relay_service_ops.md`.
 
-**SG's action queue (manual — surfaced on request):** (1) run `es -update` to reconcile
-`/ix1`+`/vast` to `1507f5d`; (2) promote whg3 `staging`→`main` + migrate (unblocks §5
-citation re-push); (3) `apply_aat_enrich --namespace wd` — already RUNNING (started
-14 Jul). See `memory/sg_action_queue_2026_07.md`.
+**SG's action queue (manual — surfaced on request):** (1) ~~run `es -update` to reconcile
+`/ix1`+`/vast`~~ **✅ DONE** — both clones reconciled to `origin/main` via `git reset --hard`
+this session; (2) promote whg3 `staging`→`main` + migrate (unblocks §5 citation re-push) —
+**still open (whg3 side; see the whg3-agent audit note above)**; (3) ~~`apply_aat_enrich
+--namespace wd`~~ **✅ DONE** — finished, wd AAT coverage **98.2%**. See
+`memory/sg_action_queue_2026_07.md`.
 
 ---
 
