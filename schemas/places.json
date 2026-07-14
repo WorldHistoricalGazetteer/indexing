@@ -63,6 +63,12 @@
                 "properties": {
                   "in": {
                     "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
+                    "type": "integer"
                   }
                 }
               },
@@ -70,6 +76,12 @@
                 "type": "object",
                 "properties": {
                   "in": {
+                    "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
                     "type": "integer"
                   }
                 }
@@ -110,6 +122,12 @@
                 "properties": {
                   "in": {
                     "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
+                    "type": "integer"
                   }
                 }
               },
@@ -117,6 +135,12 @@
                 "type": "object",
                 "properties": {
                   "in": {
+                    "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
                     "type": "integer"
                   }
                 }
@@ -174,6 +198,12 @@
                 "properties": {
                   "in": {
                     "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
+                    "type": "integer"
                   }
                 }
               },
@@ -181,6 +211,12 @@
                 "type": "object",
                 "properties": {
                   "in": {
+                    "type": "integer"
+                  },
+                  "earliest": {
+                    "type": "integer"
+                  },
+                  "latest": {
                     "type": "integer"
                   }
                 }

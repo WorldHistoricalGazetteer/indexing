@@ -33,10 +33,18 @@ from processing.helpers import (
 )
 from processing.settings import UN_BNDA_COUNTRIES_FILE
 
-# Feature-status codes (BNDA ``stscod``) that are NOT sovereign/derived land
-# units we want as gazetteer places (e.g. joint/undetermined administration
-# lines). Kept permissive — anything with a valid iso2/iso3 is staged.
-_TS_2025 = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+# Temporal scope of the BNDA boundaries. BNDA_simplified is a present-day
+# snapshot (dataset currency ~2023) and carries NO per-feature dates — the
+# national outline of a country is not dated by the source, and (unlike its
+# subnational SALB admin units) does not change over the dataset's span. So we
+# state only what the data itself supports: the boundary was established at
+# some point up to the present (``start.latest`` = 2025, i.e. before 2026) and
+# is **ongoing** (no ``end`` — the WHG convention for a current feature).
+# Encoded with the LPF ``latest`` qualifier rather than a false exact
+# ``start.in`` year. If a country ever gains dated historical boundary versions,
+# they are added as additional timespanned entries in ``geometries[]``.
+_BOUNDARY_ESTABLISHED_BY = 2025
+_TS_ONGOING = [{'start': {'latest': _BOUNDARY_ESTABLISHED_BY}}]
 
 
 def _load_bnda_features(path):
@@ -78,10 +86,10 @@ def create_country_place_doc(feature):
     seen = set()
     for nm, lang in ((name, 'en'), (name_fr, 'fr'), (label_en, 'en')):
         if nm and (nm, lang) not in seen:
-            toponyms.append({'toponym_id': f"{nm}@{lang}", 'timespans': list(_TS_2025)})
+            toponyms.append({'toponym_id': f"{nm}@{lang}", 'timespans': list(_TS_ONGOING)})
             seen.add((nm, lang))
 
-    geom_entry = enrich_geometry(geometry, timespans=list(_TS_2025),
+    geom_entry = enrich_geometry(geometry, timespans=list(_TS_ONGOING),
                                  geom_key=f"{place_id}_0")
     if not geom_entry:
         return None
