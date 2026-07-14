@@ -507,10 +507,55 @@ class UnCountryIndex:
                 else:
                     geoms.append(shp)
                     ccodes.append(ccode)
+        self._set_geoms(geoms, ccodes)
+
+    def _set_geoms(self, geoms: list[BaseGeometry], ccodes: list[str]) -> None:
+        from shapely.strtree import STRtree
+
         self._geoms = geoms
         self._ccodes = ccodes
         self._prepared = [prep(g) for g in geoms]
         self._tree = STRtree(geoms) if geoms else None
+
+    @classmethod
+    def from_bnda_geojson(cls, path: str, iso_field: str = "iso2cd") -> "UnCountryIndex":
+        """Build the country index from the UN BNDA country-boundary GeoJSON
+        (``processing/data/un_bnda_countries.geojson``) — the authoritative,
+        politically-neutral ISO 3166-1 alpha-2 source. Preferred over the
+        ``un``/Natural-Earth path: native ISO2 for every country (no NE ``-99``
+        France/Norway/Kosovo quirk), dependent territories as separate features,
+        Antarctica included, antimeridian handled, topologically coherent (no
+        border slivers). Self-contained — needs no geom store or ES."""
+        from shapely.geometry import shape
+
+        self = cls.__new__(cls)
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        geoms: list[BaseGeometry] = []
+        ccodes: list[str] = []
+        for feat in data.get("features") or []:
+            props = feat.get("properties") or {}
+            code = props.get(iso_field)
+            if not isinstance(code, str) or len(code) != 2 or not code.isalpha():
+                continue
+            g = feat.get("geometry")
+            if not g:
+                continue
+            try:
+                shp = shape(g)
+            except Exception:
+                continue
+            if shp is None or shp.is_empty:
+                continue
+            # Per-part entries → local STRtree envelopes (fast, and correct for
+            # antimeridian countries whose overall envelope spans the globe).
+            parts = list(shp.geoms) if shp.geom_type == "MultiPolygon" else [shp]
+            for part in parts:
+                if not part.is_empty:
+                    geoms.append(part)
+                    ccodes.append(code.upper())
+        self._set_geoms(geoms, ccodes)
+        return self
 
     def ccodes_for(
         self, place_geom: BaseGeometry, snap_tol_deg: float = 0.0

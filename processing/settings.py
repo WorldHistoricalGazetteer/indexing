@@ -73,6 +73,13 @@ GEOSHAPE_LOG_FILE = os.path.join(DATA_DIR, "wikidata", "geoshapes_downloaded.log
 # Wikidata → Getty AAT crosswalk (property P1014). Emitted as a side-output of the
 # place-ingest dump scan (authorities/wikidata-places.py) and/or a standalone scan
 # (typesystem/extract_wikidata_p1014.py); consumed by typesystem.aat_mapper wikidata.
+# UN BNDA country boundaries (authoritative ISO 3166-1 alpha-2 country polygons)
+# — the ccode reference used by processing.ccode_enrichment.UnCountryIndex.
+# Committed to the repo (small, ~2.4 MB); see the companion README for provenance.
+UN_BNDA_COUNTRIES_FILE = os.path.join(
+    os.path.dirname(__file__), "data", "un_bnda_countries.geojson"
+)
+
 WIKIDATA_P1014_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p1014.jsonl")
 # Wikidata P279 (subclass-of) class graph. Standalone scan
 # (typesystem/extract_wikidata_p279.py); consumed by typesystem.aat_mapper

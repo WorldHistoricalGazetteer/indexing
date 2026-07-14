@@ -153,27 +153,24 @@ def export(args) -> int:
 # ---------------------------------------------------------------------------
 
 def resolve(args) -> int:
-    # Imported here so `export`/`apply` on pitt don't need h3/shapely/UN geoms.
+    # Imported here so `export`/`apply` on pitt don't need shapely/UN geoms.
     from processing.ccode_enrichment import (
-        SOURCE_LABEL,
         UnCountryIndex,
-        _load_un_records,
         resolve_ccodes_for_doc_exact,
     )
-    from processing.geom_store import GeomStoreReader
-    from processing.settings import GEOM_STORE_DIR
+    CCODE_SOURCE = "un-bnda"  # authoritative UN BNDA point-in-country
+    from processing.settings import UN_BNDA_COUNTRIES_FILE
     from processing.helpers import compute_h3_fields
 
-    try:
-        place_reader = GeomStoreReader(GEOM_STORE_DIR)
-    except FileNotFoundError:
-        place_reader = None
-    print("loading UN records + building STRtree country index "
-          "(exact; no h3-prefilter gaps)...", flush=True)
-    un_records = _load_un_records()
-    country_index = UnCountryIndex(un_records, place_reader)
-    print(f"  un_records={len(un_records)} country_geoms={len(country_index._geoms)} "
-          f"geom_store={'yes' if place_reader else 'no'}", flush=True)
+    # Authoritative UN BNDA country boundaries (ISO 3166-1 alpha-2). Self-
+    # contained GeoJSON — no geom store, no ES. Native ISO2 for every country
+    # (no NE -99 quirk), territories separate, Antarctica included, antimeridian
+    # + borders correct.
+    print(f"building STRtree country index from UN BNDA "
+          f"({UN_BNDA_COUNTRIES_FILE})...", flush=True)
+    country_index = UnCountryIndex.from_bnda_geojson(UN_BNDA_COUNTRIES_FILE)
+    print(f"  country_parts={len(country_index._geoms)} "
+          f"distinct_ccodes={len(set(country_index._ccodes))}", flush=True)
 
     patterns = [args.infile] if isinstance(args.infile, str) else list(args.infile)
     out_path = Path(args.out)
@@ -240,7 +237,7 @@ def resolve(args) -> int:
             patch: dict[str, Any] = {"place_id": pid}
             if ccodes:
                 patch["ccodes"] = ccodes
-                patch["source"] = SOURCE_LABEL
+                patch["source"] = CCODE_SOURCE
             if geom_patch:
                 patch["geometries"] = geom_patch
             fh.write(json.dumps(patch, ensure_ascii=True) + "\n")
