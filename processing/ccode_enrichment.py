@@ -379,6 +379,68 @@ def _filter_by_containment(
     return [c for c, _ in matches]
 
 
+def _synth_cells_from_repr_points(doc: dict[str, Any], res: int) -> list[str]:
+    """Synthesise covering H3 cells from each geometry's ``repr_point``.
+
+    Used when a doc's geometries carry no ``h3_cover``/``h3_centroid`` (e.g. a
+    point authority that skipped the H3 stage, such as ``tgn``). The
+    ``repr_point`` is guaranteed to lie within the geometry, so its cell at the
+    prefilter resolution is a valid candidate-country probe.
+    """
+    cells: list[str] = []
+    for geom in doc.get("geometries") or []:
+        if not isinstance(geom, dict):
+            continue
+        rp = geom.get("repr_point")
+        if not rp:
+            continue
+        try:
+            cells.append(_h3.latlng_to_cell(float(rp["lat"]), float(rp["lon"]), res))
+        except (KeyError, TypeError, ValueError):
+            continue
+    return cells
+
+
+def resolve_ccodes_for_doc(
+    doc: dict[str, Any],
+    cell_to_ccodes: dict[str, set[str]],
+    un_cache: "_UnGeometryCache",
+    place_reader: "GeomStoreReader | None",
+    *,
+    synth_res: int | None = None,
+) -> tuple[list[str], str]:
+    """Resolve ISO ccodes for one place doc via the shared UN-overlap engine.
+
+    This is the single seam used by *both* the staged ingestion pass
+    (:func:`run_ccode_enrichment`) and the live-index backfill
+    (``processing.backfill_ccodes``), so containment logic never diverges
+    between the two contexts.
+
+    Returns ``(ccodes, outcome)`` with ``outcome`` one of
+    ``"ok" | "no_geom" | "no_candidate" | "no_match"``.
+
+    ``synth_res`` (e.g. :data:`PREFILTER_RESOLUTION`) makes the resolver robust
+    to docs whose geometries lack ``h3_cover``/``h3_centroid``: a covering cell
+    is synthesised from each geometry's ``repr_point`` at that resolution. Left
+    ``None`` (the default) the staged behaviour is unchanged.
+    """
+    cells = _extract_place_h3_cells(doc)
+    if not cells and synth_res is not None and _H3_AVAILABLE:
+        cells = _synth_cells_from_repr_points(doc, synth_res)
+    if not cells:
+        return [], "no_geom"
+    candidates = candidate_ccodes_for_cells(cells, cell_to_ccodes)
+    if not candidates:
+        return [], "no_candidate"
+    place_geom = _extract_place_geometry(doc, place_reader)
+    if place_geom is None:
+        return [], "no_geom"
+    ccodes = _filter_by_containment(place_geom, candidates, un_cache)
+    if not ccodes:
+        return [], "no_match"
+    return ccodes, "ok"
+
+
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------

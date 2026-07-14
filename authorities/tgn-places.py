@@ -311,8 +311,12 @@ def index_tgn(zip_path):
                     rp = geom_entry['repr_point']
                     h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], point_geom)
                     if h3c:
-                        doc['h3_centroid'] = h3c
-                        doc['h3_cover'] = h3cover
+                        # h3 lives INSIDE the geometry entry — the staged
+                        # pipeline and ES schema read geometries[].h3_*, not
+                        # doc-level. (Previously mis-written to doc[...], which
+                        # silently dropped h3 for all ~3M tgn docs.)
+                        geom_entry['h3_centroid'] = h3c
+                        geom_entry['h3_cover'] = h3cover
 
         return doc
 
