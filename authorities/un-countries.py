@@ -60,19 +60,86 @@ def _is_antarctica(iso2, iso3, name):
         or (name or '').lower() == 'antarctica'
 
 
+def _group_features_by_country(features):
+    """Group BNDA features by country key (ISO3, else name slug), preserving
+    first-seen order."""
+    from collections import OrderedDict
+    groups = OrderedDict()
+    for f in features:
+        props = f.get('properties') or {}
+        iso3 = (props.get('iso3cd') or '').strip()
+        if iso3 and iso3 != '-99':
+            key = iso3.upper()
+        else:
+            key = (props.get('nam_en') or props.get('lbl_en') or '').strip().lower() \
+                or f"obj{props.get('objectid')}"
+        groups.setdefault(key, []).append(f)
+    return groups
+
+
+def _merge_country_features(feats):
+    """Merge a country's BNDA parts into one feature: union all geometries,
+    take properties from the primary part (non-empty name + ``stscod==1``
+    preferred, so a real country name wins over a disputed-zone empty)."""
+    def _rank(f):
+        p = f.get('properties') or {}
+        nm = (p.get('nam_en') or '').strip()
+        return (0 if nm else 1, 0 if p.get('stscod') == 1 else 1)
+
+    primary = sorted(feats, key=_rank)[0]
+    if len(feats) == 1:
+        return primary
+    from shapely.geometry import shape, mapping
+    from shapely.ops import unary_union
+    geoms = [shape(f['geometry']) for f in feats if f.get('geometry')]
+    if not geoms:
+        return primary
+    merged = unary_union(geoms) if len(geoms) > 1 else geoms[0]
+    return {'properties': primary['properties'], 'geometry': mapping(merged)}
+
+
+def _normalize_lons(geom):
+    """Wrap any longitude outside [-180, 180] back into range (BNDA represents
+    the US Aleutians with unwrapped lon up to 191). This turns an unwrapped
+    dateline span into a proper ±180-crossing geometry, which
+    ``helpers._polyfill_adaptive`` then splits correctly for h3_cover; without
+    it, ``geo_to_h3shape`` chokes on lon>180 and the cover collapses to a single
+    centroid cell (USA had h3_cover=1)."""
+    def _wrap(lon):
+        if lon > 180.0:
+            return lon - 360.0
+        if lon < -180.0:
+            return lon + 360.0
+        return lon
+
+    def _walk(node):
+        # shapely.mapping() yields tuples, json.load yields lists — handle both.
+        if isinstance(node, (list, tuple)):
+            if node and isinstance(node[0], (int, float)):
+                return [_wrap(float(node[0]))] + [float(x) for x in node[1:]]
+            return [_walk(x) for x in node]
+        return node
+
+    if not isinstance(geom, dict) or "coordinates" not in geom:
+        return geom
+    out = dict(geom)
+    out["coordinates"] = _walk(geom.get("coordinates"))
+    return out
+
+
 def create_country_place_doc(feature):
     """Build a ``un:`` place doc from one BNDA feature."""
     props = feature.get('properties') or {}
     geometry = feature.get('geometry')
     if not geometry:
         return None
+    geometry = _normalize_lons(geometry)
 
     iso2 = (props.get('iso2cd') or '').strip()
     iso3 = (props.get('iso3cd') or '').strip()
     m49 = (props.get('m49_cd') or '').strip()
     name = (props.get('nam_en') or props.get('lbl_en') or '').strip()
     name_fr = (props.get('name_fr') or '').strip()
-    label_en = (props.get('lbl_en') or '').strip()
     if not name:
         return None
 
@@ -84,7 +151,7 @@ def create_country_place_doc(feature):
 
     toponyms = []
     seen = set()
-    for nm, lang in ((name, 'en'), (name_fr, 'fr'), (label_en, 'en')):
+    for nm, lang in ((name, 'en'), (name_fr, 'fr')):
         if nm and (nm, lang) not in seen:
             toponyms.append({'toponym_id': f"{nm}@{lang}", 'timespans': list(_TS_ONGOING)})
             seen.add((nm, lang))
@@ -110,11 +177,22 @@ def create_country_place_doc(feature):
     }
 
     # h3 lives INSIDE the geometry entry (schema + staged pipeline read
-    # geometries[].h3_*; doc-level is silently dropped).
+    # geometries[].h3_*; doc-level is silently dropped). Polyfill the REAL
+    # (normalized) polygon rather than select_h3_cover_geometry's convex-hull
+    # shortcut: for antimeridian countries (US/RU) the hull is a globe-spanning
+    # degenerate polygon that collapses h3_cover to a single cell, whereas the
+    # real geometry goes through the antimeridian-aware _polyfill_adaptive.
     if geom_entry.get('repr_point'):
         rp = geom_entry['repr_point']
-        h3_geom = select_h3_cover_geometry(geom_entry, geometry)
-        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], h3_geom)
+        h3c, h3cover = compute_h3_fields(rp['lon'], rp['lat'], geometry)
+        # Fall back to the convex hull only when the real geometry collapses —
+        # Antarctica's pole-encircling ring can't be polyfilled directly but its
+        # hull (a polar cap) can. (The reverse of the US/RU antimeridian case.)
+        if len(h3cover or []) <= 1:
+            hull_geom = select_h3_cover_geometry(geom_entry, geometry)
+            h3c2, cover_hull = compute_h3_fields(rp['lon'], rp['lat'], hull_geom)
+            if len(cover_hull or []) > len(h3cover or []):
+                h3c, h3cover = h3c2, cover_hull
         if h3c:
             geom_entry['h3_centroid'] = h3c
             geom_entry['h3_cover'] = h3cover
@@ -162,34 +240,37 @@ def stage_un_countries(**_ignored):
     print("=" * 80 + "\n")
 
     features = _load_bnda_features(UN_BNDA_COUNTRIES_FILE)
-    print(f"\nProcessing {len(features)} features...\n")
 
-    stats = {'processed': 0, 'places_staged': 0, 'no_iso': 0, 'errors': 0}
-    seen_ids = set()
+    # Group features by country (iso3) and MERGE their geometries: several
+    # countries span multiple BNDA features — mainland + offshore parts (Spain +
+    # Canaries, Portugal + Madeira + Azores, Ecuador + Galápagos, USA's two
+    # rows) and disputed/undetermined zones (stscod=99, empty name — Halayeb for
+    # Egypt/Sudan, Abyei for Sudan/S.Sudan). Skipping duplicates would drop that
+    # territory; instead we union all of a country's parts into one geometry.
+    grouped = _group_features_by_country(features)
+    print(f"\n{len(features)} features -> {len(grouped)} countries; staging...\n")
+
+    stats = {'places_staged': 0, 'no_iso': 0, 'errors': 0, 'multipart': 0}
 
     with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "un") as gsw:
         configure_module_writer(gsw)
-        for i, feature in enumerate(features):
+        for i, (key, feats) in enumerate(grouped.items()):
             try:
+                if len(feats) > 1:
+                    stats['multipart'] += 1
+                feature = _merge_country_features(feats)
                 doc = create_country_place_doc(feature)
                 if doc is None:
                     stats['errors'] += 1
                     continue
                 if not doc.get('ccodes'):
                     stats['no_iso'] += 1
-                if doc['place_id'] in seen_ids:
-                    # Defensive: a repeated iso3 would collide on geom_key; skip
-                    # the duplicate rather than overwrite the store.
-                    print(f"  duplicate place_id {doc['place_id']} — skipped")
-                    continue
-                seen_ids.add(doc['place_id'])
                 write_staged_place_doc(namespace='un', doc=doc)
                 stats['places_staged'] += 1
-                stats['processed'] += 1
                 if (i + 1) % 50 == 0:
                     print(f"Processed {i + 1}...")
             except Exception as e:
-                print(f"Error {i}: {e}")
+                print(f"Error {key}: {e}")
                 stats['errors'] += 1
                 continue
         configure_module_writer(None)
@@ -197,8 +278,8 @@ def stage_un_countries(**_ignored):
     print("\n" + "=" * 80)
     print("COMPLETE")
     print("=" * 80)
-    print(f"Processed:     {stats['processed']}")
     print(f"Staged:        {stats['places_staged']}")
+    print(f"Multi-part:    {stats['multipart']}")
     print(f"Without ISO2:  {stats['no_iso']}")
     print(f"Errors:        {stats['errors']}")
     print(f"Geometries in VAST store: {gsw.count:,}")
