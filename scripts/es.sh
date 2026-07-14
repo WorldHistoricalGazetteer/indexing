@@ -596,7 +596,11 @@ start_gateway() {
     mkdir -p "$GATEWAY_LOG_DIR" "$(dirname $GATEWAY_PID)"
 
     cd "$REPO_DIR"
-    nohup python -m gateway \
+    # Use an explicit interpreter so the gateway starts with the right conda env
+    # even when no conda is active in the caller's shell (e.g. the gaz_relay cron,
+    # which has no .bashrc). Set GATEWAY_PYTHON in .env.local to the whg env python
+    # (pitt: /home/gazetteer/miniconda/envs/whg/bin/python); defaults to `python`.
+    nohup "${GATEWAY_PYTHON:-python}" -m gateway \
         > "$GATEWAY_LOG_DIR/nohup.out" 2>&1 &
 
     echo $! > "$GATEWAY_PID"
@@ -616,21 +620,27 @@ start_gateway() {
 }
 
 stop_gateway() {
-    if [ -f "$GATEWAY_PID" ]; then
-        local pid=$(cat "$GATEWAY_PID")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "Stopping Gateway (PID: $pid)..."
-            kill "$pid"
-            sleep 3
-            if kill -0 "$pid" 2>/dev/null; then
-                kill -9 "$pid" 2>/dev/null
-            fi
-        fi
-        rm -f "$GATEWAY_PID"
-        echo "Gateway stopped."
-    else
-        echo "Gateway is not running (no PID file)."
+    local port="${GATEWAY_PORT:-9200}" pid=""
+    [ -f "$GATEWAY_PID" ] && pid=$(cat "$GATEWAY_PID" 2>/dev/null)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        echo "Stopping Gateway (PID: $pid)..."
+        kill "$pid"
+        sleep 3
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
     fi
+    rm -f "$GATEWAY_PID"
+    # Safe fallback for a stale PID file: kill EXACTLY the PID still holding the
+    # gateway port (port-scoped via ss) — never a broad `pkill -f` pattern, which
+    # can over-match and has taken down the restart's own shell before.
+    local lpid
+    lpid=$(ss -ltnHp "sport = :$port" 2>/dev/null | grep -oP "pid=\K[0-9]+" | head -1)
+    if [ -n "$lpid" ] && [ "$lpid" != "$pid" ]; then
+        echo "Reaping stale process on port $port (PID $lpid)..."
+        kill "$lpid" 2>/dev/null
+        sleep 2
+        kill -0 "$lpid" 2>/dev/null && kill -9 "$lpid" 2>/dev/null
+    fi
+    echo "Gateway stopped."
 }
 
 # =============================================================================
