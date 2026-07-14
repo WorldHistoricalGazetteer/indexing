@@ -572,22 +572,32 @@ AUTHORITIES = [
             }
         ],
     },
-    {  # ISO Countries
-        'dataset_name': 'ISO 3166 Countries',
+    {  # UN countries and territories
+        'dataset_name': 'UN Countries',
         'namespace': 'un',  # United Nations countries and territories
-        # Verified 2026-06-06 (naturalearthdata.com/about/terms-of-use): public domain.
-        'citation_text': 'Country boundaries from Natural Earth (naturalearthdata.com).',
-        'license_spdx': 'custom-public-domain',
-        'license_url': 'https://www.naturalearthdata.com/about/terms-of-use/',
-        'rights_holder': 'Natural Earth',
-        'source_url': 'https://www.naturalearthdata.com/',
+        # Adopted 2026-07-14: UN Geospatial BNDA (Boundaries of Administrative
+        # units, "BNDA_simplified"), replacing Natural Earth. The UN's own
+        # authoritative, politically-neutral administrative boundaries, with
+        # native ISO 3166-1 alpha-2 codes for every country and dependent
+        # territory (no NE "-99" dropout). Committed as
+        # processing/data/un_bnda_countries.geojson.
+        'citation_text': 'Country and territory boundaries © United Nations, from UN Geospatial Data (BNDA), 2023.',
+        'license_spdx': 'custom-un-geodata',
+        'license_url': 'https://www.un.org/geospatial/',
+        'rights_holder': 'United Nations',
+        'source_url': 'https://geoportal.un.org/',
         'contributors': [],
         'api_item': '',
-        'citation': 'Natural Earth Data. Public domain. https://www.naturalearthdata.com/',
+        'citation': ('United Nations Geospatial Data (Geodata). The designations '
+                     'employed and the presentation of material on this map do not '
+                     'imply the expression of any opinion whatsoever on the part of '
+                     'the Secretariat of the United Nations concerning the legal '
+                     'status of any country, territory, city or area or of its '
+                     'authorities, or concerning the delimitation of its frontiers '
+                     'or boundaries. https://geoportal.un.org/'),
         'files': [
             {
-                'url': 'https://datahub.io/core/geo-countries/_r/-/data/countries.geojson',
-                # Or maybe "https://naciscdn.org/naturalearth/10m/cultural/ne_10m_admin_0_countries.zip"
+                'url': 'https://geoportal.un.org/arcgis/sharing/rest/content/items/6d6fb235f64d47248a5e3b78ef4b6273/data',
                 'file_type': 'json',
                 'item_path': 'features',
             }
