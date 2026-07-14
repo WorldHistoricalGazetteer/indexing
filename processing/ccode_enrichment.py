@@ -441,6 +441,124 @@ def resolve_ccodes_for_doc(
     return ccodes, "ok"
 
 
+class UnCountryIndex:
+    """Exact point/area → ccode resolver backed by an STRtree over **every** UN
+    country geometry.
+
+    Motivation: the h3 prefilter (:func:`build_un_prefilter` +
+    :func:`candidate_ccodes_for_cells`) relies on UN ``h3_cover``, which has
+    large interior gaps for big countries (the polyfill is truncated /
+    simplified for huge polygons — e.g. the US West Coast is absent from the US
+    cover). Any place in an under-covered region gets *no candidate* and is
+    silently dropped. This index instead queries the country polygons directly
+    (bounding-box candidates via STRtree, then exact containment), so coverage
+    has no gaps. Full country polygons are loaded eagerly, so this is the
+    ~24 GiB-resident path — intended for the Slurm resolve stage.
+    """
+
+    def __init__(
+        self,
+        un_records: list[dict[str, Any]],
+        place_reader: "GeomStoreReader | None" = None,
+    ):
+        from shapely.strtree import STRtree
+
+        geoms: list[BaseGeometry] = []
+        ccodes: list[str] = []
+        for doc in un_records:
+            ccs = doc.get("ccodes") or []
+            if not ccs or not isinstance(ccs[0], str) or not ccs[0]:
+                continue
+            ccode = ccs[0]
+            place_id = doc.get("place_id")
+            for idx, g in enumerate(doc.get("geometries") or []):
+                if not isinstance(g, dict):
+                    continue
+                gi = g.get("geometry_index", idx)
+                shp: BaseGeometry | None = None
+                # Prefer the REAL Natural-Earth polygon from the geom store
+                # (keyed ``{place_id}_{geometry_index}``). The staged UN doc's
+                # ``geom_ref`` is None and its ``hull`` is a convex hull — using
+                # the hull over-assigns at borders (Lisbon∈Spain's hull) and,
+                # for antimeridian countries, spans the globe (US/RU on every
+                # point). The real multipolygon's parts are local, so exact
+                # ``intersects`` is accurate even though its envelope is wide.
+                if place_reader is not None and place_id:
+                    gj = place_reader.get(f"{place_id}_{gi}")
+                    if gj:
+                        shp = geojson_to_shapely(gj)
+                if shp is None:
+                    hull = g.get("hull")
+                    if hull:
+                        shp = geojson_to_shapely(hull)
+                if shp is None or shp.is_empty:
+                    continue
+                geoms.append(shp)
+                ccodes.append(ccode)
+        self._geoms = geoms
+        self._ccodes = ccodes
+        self._prepared = [prep(g) for g in geoms]
+        self._tree = STRtree(geoms) if geoms else None
+
+    def ccodes_for(self, place_geom: BaseGeometry) -> list[str]:
+        """Return the ISO ccodes whose country geometry contains/overlaps the
+        place geometry. Points → all containing countries; areas → every
+        overlapping country ordered by descending overlap area."""
+        if self._tree is None or place_geom is None or place_geom.is_empty:
+            return []
+        is_point = place_geom.geom_type == "Point"
+        matches: list[tuple[str, float]] = []
+        for i in self._tree.query(place_geom):
+            idx = int(i)
+            try:
+                if not self._prepared[idx].intersects(place_geom):
+                    continue
+                if is_point:
+                    matches.append((self._ccodes[idx], 1.0))
+                    continue
+                inter = self._geoms[idx].intersection(place_geom)
+                if inter.is_empty:
+                    continue
+                area = inter.area
+                if area <= 0:
+                    continue
+                matches.append((self._ccodes[idx], area))
+            except Exception:
+                continue
+        if not matches:
+            return []
+        if is_point:
+            return sorted({c for c, _ in matches})
+        matches.sort(key=lambda t: t[1], reverse=True)
+        # de-dup preserving overlap order
+        seen: set[str] = set()
+        out: list[str] = []
+        for c, _ in matches:
+            if c not in seen:
+                seen.add(c)
+                out.append(c)
+        return out
+
+
+def resolve_ccodes_for_doc_exact(
+    doc: dict[str, Any],
+    country_index: "UnCountryIndex",
+    place_reader: "GeomStoreReader | None",
+) -> tuple[list[str], str]:
+    """Gap-free variant of :func:`resolve_ccodes_for_doc` using
+    :class:`UnCountryIndex` (no h3 prefilter). Returns ``(ccodes, outcome)``
+    with outcome ``"ok" | "no_geom" | "no_match"``. ``no_match`` is a *correct*
+    empty result — the place is genuinely outside every country (at sea,
+    Antarctica, disputed)."""
+    place_geom = _extract_place_geometry(doc, place_reader)
+    if place_geom is None:
+        return [], "no_geom"
+    ccodes = country_index.ccodes_for(place_geom)
+    if not ccodes:
+        return [], "no_match"
+    return ccodes, "ok"
+
+
 # ---------------------------------------------------------------------------
 # Main orchestration
 # ---------------------------------------------------------------------------
