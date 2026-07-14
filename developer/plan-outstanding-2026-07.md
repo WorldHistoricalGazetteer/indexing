@@ -86,13 +86,20 @@ urgently.
 **NEEDS AN SG DECISION (do NOT do autonomously):**
 - [x] **Delete stale pre-rebuild ES indices — DONE 2026-07-13 (SG-authorised).**
   Deleted `places_20260317` (45 GB/413 M), `toponyms_20260317` (42 GB),
-  `wdgn_20240316` (5.6 GB; carried an orphan `wdgn` alias, no code refs) → **~93 GB
-  disk freed**, shard count down. All were unaliased/idle (gateway uses the
-  `places`/`toponyms` aliases). ⚠ **Did NOT relieve heap** — see the OPEN INCIDENT
-  above (idle indices held no heap; needs an ES restart). `clusters_2026032x`
-  already gone; two 8.9 kB `cluster_state_*` indices remain (negligible). Health is
-  yellow only from a stray `zz_ct3` **replica** unassignable on the 1-node cluster
-  (benign, pre-existing).
+  `wdgn_20240316` (5.6 GB; `wdgn` alias) → **~93 GB disk freed**, shard count down.
+  ⚠ **Did NOT relieve heap** — see the ES incident (idle indices held no heap; the
+  real cause was HNSW vector merges → fixed via 28g heap). `clusters_2026032x`
+  already gone; two 8.9 kB `cluster_state_*` indices remain (negligible).
+  ⚠️ **CORRECTION — `wdgn_20240316` was NOT unused: the Reconciliation API queried
+  it via the `wdgn` alias** (a consumer OUTSIDE this repo, missed by the "no code
+  refs" grep). Recon broke on the deletion → the API was patched to ignore missing
+  indices, AND **the index was RESTORED 2026-07-14** from snapshot
+  `staging_repo/production_backup_20260318` (state SUCCESS; restored *only*
+  `wdgn_20240316`, NOT the 4 co-snapshotted indices incl. the deliberately-deleted
+  `places_20260317`/`toponyms_20260317`): green, 13,616,287 docs, 5.69 GB, `wdgn`
+  alias auto-recreated from the snapshot. **Lesson: a "no code refs" check inside
+  one repo can miss cross-service consumers (recon API, Django) — grep the whole
+  fleet before deleting an aliased index.**
 - **§4 retire `authority-selection.md`** — needs a new Django "list enabled
   authorities" endpoint (chicken-and-egg: registry is populated post-ingest).
 - **§4 Batch 14** — large end-to-end test-harness scaffolding.
