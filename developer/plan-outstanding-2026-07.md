@@ -54,16 +54,43 @@
   prod clone. **Do NOT scp into the `/ix1` prod clone** — it blocks `gw`'s git pull; commit
   + push + reset instead.
 
-**📌 FOR THE whg3 AGENT — audit + mark done.** A whg3 agent has been doing substantial
-browser-side work and may already have addressed the whg3-side items in this plan. **Please
-audit these against the current whg3 `main`/prod state and mark anything already shipped as
-✅ DONE**, so this plan reflects reality rather than the 14 Jul snapshot:
-- **§1 — Atlas clustering UI real-browser visual pass** (Phases 1–3 code-complete, was
-  visually unconfirmed) and the `clustering.js` client-side scoring/Union-Find wiring.
-- **§6 — promote whg3 `staging` → `main`** (was the single blocking gate).
-- **whg3 licensing / Phase-4 promotion + prod `licensing`(0003)/`api`(0007) migrations** —
-  the only remaining gate for **§5** (the indexing side re-pushes the citation/licence
-  inventory automatically once prod parity lands).
+**📌 FOR THE whg3 AGENT — audit + mark done. ✅ AUDITED 14 Jul 2026 (whg3 agent) — all three
+items confirmed shipped to whg3 prod (prod `main` @ `4ff311c3`):**
+- **§1 — Atlas clustering UI real-browser visual pass ✅ DONE.** Verified live in a real
+  browser (Claude-in-Chrome) across multiple whg3 sessions: cross-gazetteer cluster cards,
+  θ merge-sensitivity + per-signal weight sliders, adaptive-θ auto-fit, temporal filter,
+  AAT type facets, card↔marker↔zoom sync, `/atlas/place` portal. `clustering.js` client-side
+  scoring + Union-Find is live (5 signals + composite mirroring the offline calibration),
+  PLUS new work beyond the plan: contiguous-feature-id desync fix, and a **same-gazetteer
+  repulsion constraint** (≤1 record/namespace per cluster unless the pair clears θ+margin).
+- **§6 — promote whg3 `staging` → `main` ✅ DONE.** Promoted + deployed repeatedly; prod now
+  well past the gate at `4ff311c3` (dozens of Atlas commits since).
+- **whg3 licensing / Phase-4 promotion + prod migrations ✅ DONE.** Commit `2d4308a1b`
+  (attribution_for/citation_text + seed-count-test fixes) is in `origin/main`; on prod
+  `showmigrations` confirms **`licensing 0003_extend_licenses [X]`** and **`api
+  0007_registry_attribution_fields [X]`** both applied. **§5's gate is cleared — the
+  indexing side can now do the citation/licence prod re-push.**
+
+**🆕 NEWLY SURFACED (whg3 Gazetteers panel) — gazetteer-level coverage filtering (INDEXING
+SIDE, still to do).** The Atlas Gazetteers picker (Master Plan §1.4.1) ships two sketch
+"coverage" switches — *"Hide gazetteers outside **Area** filter"* (spatial) and *"Hide
+gazetteers outside **Date Range** filter"* (temporal). On the whg3 side (14 Jul) the temporal
+switch is now relabelled Period→**Date Range** and correctly **disabled+cleared unless a Date
+Range filter is active**; both remain **non-functional stubs** with a note, because the
+client has no per-gazetteer coverage metadata to filter on. **To make them work, the indexing
+side must expose, per authority/source (in the Sources registry / `/suggest` (Gazetteers
+picker) payload):**
+  1. **`h3_coverage`** — the set (or low-res summary) of H3 cells that authority's places
+     occupy, so the client can hide gazetteers whose coverage doesn't intersect the active
+     Area/region polygon. (Per-namespace H3 already exists at doc level post-14-Jul tgn/ohm
+     h3 backfill — this is an **aggregate rollup per authority**.)
+  2. **`temporal_extent`** — each authority's `[earliest, latest]` span (with the same
+     ongoing-null convention as places), so the client can hide gazetteers whose span
+     doesn't overlap the active Date Range. (Registry aggregates already carry a temporal
+     range for `un` = `[2025, null]` — generalise to every authority.)
+Once both land in the Gazetteers-picker payload, the **whg3 follow-up is small**: wire the
+two switches (intersection tests already sketched client-side) and drop the stub note. No
+whg3 blocker until then.
 
 ---
 
@@ -98,8 +125,9 @@ audit these against the current whg3 `main`/prod state and mark anything already
 
 **SG's action queue (manual — surfaced on request):** (1) ~~run `es -update` to reconcile
 `/ix1`+`/vast`~~ **✅ DONE** — both clones reconciled to `origin/main` via `git reset --hard`
-this session; (2) promote whg3 `staging`→`main` + migrate (unblocks §5 citation re-push) —
-**still open (whg3 side; see the whg3-agent audit note above)**; (3) ~~`apply_aat_enrich
+this session; (2) ~~promote whg3 `staging`→`main` + migrate (unblocks §5 citation re-push)~~
+**✅ DONE (whg3 side, 14 Jul) — prod `main` @ `4ff311c3`; `licensing 0003` + `api 0007`
+applied on prod; §5 re-push now unblocked (indexing side)**; (3) ~~`apply_aat_enrich
 --namespace wd`~~ **✅ DONE** — finished, wd AAT coverage **98.2%**. See
 `memory/sg_action_queue_2026_07.md`.
 
@@ -174,12 +202,12 @@ an 11.5M-doc reindex, but the **P279 Pass-2 walk added 7,869 more → ~98% type 
 RUNNING on pitt** to apply it to prod. The crosswalk + P279 graph are free ingest
 side-outputs, so both re-derive on any future wd rebuild.
 
-**BLOCKED (external, retry later):**
-- **§5 citation/licence prod re-push** — whg3 Phase-4 is now **verified + finalised on
-  `staging`** (14 Jul, commit `2d4308a1b`); the only remaining gate is **SG promoting
-  `staging`→`main` + running the `licensing`/`api` migrations on prod**. The indexing
-  side re-runs the inventory push the moment prod parity lands (unknown SPDX codes are
-  non-fatal, so it's safe even before full vocabulary parity). See §5.
+**READY TO RUN (whg3 gate cleared 14 Jul):**
+- **§5 citation/licence prod re-push** — ✅ **whg3 gate cleared:** Phase-4 promoted to
+  `main` (commit `2d4308a1b` in `origin/main`) and prod migrations applied (`licensing
+  0003` + `api 0007`, both `[X]` on prod `web_whgazetteer-org_main` @ `4ff311c3`). **The
+  indexing side can now run the citation/licence inventory re-push** (unknown SPDX codes
+  are non-fatal, so it's safe even before full vocabulary parity). See §5.
 
 **NEEDS AN SG DECISION (do NOT do autonomously):**
 - [x] **Delete stale pre-rebuild ES indices — DONE 2026-07-13 (SG-authorised).**
