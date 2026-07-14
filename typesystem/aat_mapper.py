@@ -301,10 +301,10 @@ def load_p1014_crosswalk(path, wanted_qids):
 OSM_OHM_STATIC_MAPPINGS = {
     # ── place=* ──────────────────────────────────────────────────────────
     # Sorted by descending TagInfo count
-    "place=hamlet": (300008584, "hamlets"),                         # 2,087K
+    "place=hamlet": (300008369, "hamlets"),                         # 2,087K
     # "place=locality": (300008347, "inhabited places"),  ## NB: OSM defines this as "an unpopulated location for which there is no extant feature"            # 1,944K
     "place=village": (300008372, "villages"),                       # 1,741K
-    "place=isolated_dwelling": (300005929, "dwellings"),            # 851K
+    "place=isolated_dwelling": (300005425, "dwellings"),            # 851K
     "place=islet": (300008680, "islands"),                          # 701K
     "place=neighbourhood": (300000745, "suburbs"),                  # 532K  closest AAT
     "place=plot": (300000280, "plots (land)"),                      # 308K
@@ -335,20 +335,20 @@ OSM_OHM_STATIC_MAPPINGS = {
     "natural=peak": (300008795, "peaks (landforms)"),               # 1,094K
     "natural=cliff": (300008773, "cliffs"),                         # 980K
     "natural=heath": (300132294, "natural landscapes"),             # 647K
-    "natural=sand": (300008755, "dunes"),                           # 589K
+    "natural=sand": (300008750, "dunes"),                           # 589K
     "natural=spring": (300008697, "springs (bodies of water)"),     # 277K
-    "natural=ridge": (300008812, "ridges (landforms)"),             # 246K
+    "natural=ridge": (300266640, "ridges (landforms)"),             # 246K
     "natural=beach": (300008816, "beaches"),                        # 242K
     "natural=reef": (300132316, "reefs"),                           # 117K
     "natural=glacier": (300008781, "glaciers"),                     # 115K
     "natural=bay": (300132315, "bays (bodies of water)"),           # 89K
-    "natural=saddle": (300008815, "saddles (landforms)"),           # 78K
+    "natural=saddle": (300386884, "saddles (landforms)"),           # 78K
     "natural=cave_entrance": (300008746, "caves"),                  # 71K
     "natural=valley": (300008861, "valleys"),                       # 62K
-    "natural=cape": (300008775, "capes (landforms)"),               # 56K
+    "natural=cape": (300008850, "capes (landforms)"),               # 56K
     "natural=volcano": (300132325, "volcanoes"),                    # 10K
-    "natural=strait": (300008700, "straits"),                       # 8K
-    "natural=hot_spring": (300008700, "hot springs"),               # 7K
+    "natural=strait": (300266559, "straits"),                       # 8K
+    "natural=hot_spring": (300266559, "hot springs"),               # 7K
     "natural=peninsula": (300008804, "peninsulas"),                 # 5K
 
     # ── water=* ──────────────────────────────────────────────────────────
@@ -359,22 +359,22 @@ OSM_OHM_STATIC_MAPPINGS = {
     "water=canal": (300006075, "canals"),                           # 68K
     "water=stream": (300008699, "streams"),                         # 55K
     "water=oxbow": (300008707, "rivers"),                           # 53K  part of river system
-    "water=ditch": (300006176, "ditches"),                          # 40K
+    "water=ditch": (300006178, "ditches"),                          # 40K
     "water=lagoon": (300132315, "bays (bodies of water)"),          # 13K  approx
-    "water=moat": (300006295, "moats"),                             # 3K
+    "water=moat": (300003716, "moats"),                             # 3K
     "water=harbour": (300008678, "harbors"),                        # 1K
 
     # ── waterway=* ───────────────────────────────────────────────────────
     "waterway=stream": (300008699, "streams"),                      # 28,877K
-    "waterway=ditch": (300006176, "ditches"),                       # 4,581K
+    "waterway=ditch": (300006178, "ditches"),                       # 4,581K
     "waterway=river": (300008707, "rivers"),                        # 2,006K
     "waterway=canal": (300006075, "canals"),                        # 956K
     "waterway=dam": (300006079, "dams"),                            # 264K
     "waterway=waterfall": (300132324, "waterfalls"),                # 86K
-    "waterway=dock": (300120631, "docks"),                          # 7K
+    "waterway=dock": (300120801, "docks"),                          # 7K
 
     # ── historic=* ───────────────────────────────────────────────────────
-    "historic=memorial": (300006780, "memorials"),                  # 481K
+    "historic=memorial": (300006956, "memorials"),                  # 481K
     "historic=archaeological_site": (300000810, "archaeological sites"),  # 223K
     "historic=ruins": (300008057, "ruins"),                         # 178K
     "historic=wayside_shrine": (300007558, "shrines"),              # 163K
@@ -383,14 +383,14 @@ OSM_OHM_STATIC_MAPPINGS = {
     "historic=tomb": (300005926, "tombs"),                          # 71K
     "historic=monument": (300006958, "monuments"),                  # 71K
     "historic=castle": (300006891, "castles (fortifications)"),     # 54K
-    "historic=manor": (300005828, "manor houses"),                  # 19K
-    "historic=mine": (300000195, "mines (extractive industry sites)"),  # 13K
+    "historic=manor": (300005579, "manor houses"),                  # 19K
+    "historic=mine": (300000390, "mines (extractive industry sites)"),  # 13K
     "historic=church": (300007466, "churches"),                     # 12K
     "historic=fort": (300006909, "forts"),                          # 9K
     "historic=city_gate": (300002779, "city gates"),                # 9K
     "historic=milestone": (300006973, "milestones"),                # 9K
-    "historic=wreck": (300188189, "shipwrecks"),                    # 6K
-    "historic=monastery": (300005616, "monasteries"),               # 3K
+    "historic=wreck": (300188746, "shipwrecks"),                    # 6K
+    "historic=monastery": (300443474, "monasteries"),               # 3K
     "historic=farm": (300000206, "farms"),                          # 3K
     "historic=bridge": (300007836, "bridges (built works)"),        # 3K
     "historic=tower": (300004847, "towers (building divisions)"),   # 3K
@@ -403,9 +403,9 @@ OSM_OHM_STATIC_MAPPINGS = {
 
     # ── boundary=* ───────────────────────────────────────────────────────
     "boundary=administrative": (300261086, "political administrative bodies"),  # 2,100K
-    "boundary=protected_area": (300008069, "national parks"),       # 132K  approx
+    "boundary=protected_area": (300008189, "national parks"),       # 132K  approx
     "boundary=historic": (300261086, "political administrative bodies"),  # 14K
-    "boundary=national_park": (300008069, "national parks"),        # 6K
+    "boundary=national_park": (300008189, "national parks"),        # 6K
 
     # ── landuse=* ────────────────────────────────────────────────────────
     "landuse=farmland": (300000206, "farms"),                       # 11,328K
@@ -413,80 +413,80 @@ OSM_OHM_STATIC_MAPPINGS = {
     "landuse=forest": (300132294, "natural landscapes"),            # 5,847K
     "landuse=meadow": (300132294, "natural landscapes"),            # 5,380K
     "landuse=orchard": (300000206, "farms"),                        # 1,835K
-    "landuse=industrial": (300000757, "industrial districts"),      # 1,393K
+    "landuse=industrial": (300000739, "industrial districts"),      # 1,393K
     "landuse=vineyard": (300000206, "farms"),                       # 847K
-    "landuse=cemetery": (300000292, "cemeteries"),                  # 587K
+    "landuse=cemetery": (300266755, "cemeteries"),                  # 587K
     "landuse=commercial": (300000745, "suburbs"),                   # 572K  approx
-    "landuse=quarry": (300000195, "mines (extractive industry sites)"),  # 252K
+    "landuse=quarry": (300000390, "mines (extractive industry sites)"),  # 252K
     "landuse=reservoir": (300006191, "reservoirs"),                 # 197K
     "landuse=recreation_ground": (300008072, "open spaces"),        # 181K
     "landuse=military": (300000810, "archaeological sites"),        # 94K  approx
-    "landuse=port": (300120631, "docks"),                           # approx
-    "landuse=harbour": (300120580, "ports"),                        # 3K
+    "landuse=port": (300120801, "docks"),                           # approx
+    "landuse=harbour": (300120599, "ports"),                        # 3K
 
     # ── amenity=* ────────────────────────────────────────────────────────
     "amenity=place_of_worship": (300007391, "religious buildings"),  # 1,600K
-    "amenity=school": (300007165, "schools (buildings)"),            # 1,435K
-    "amenity=hospital": (300007145, "hospitals"),                    # 217K
+    "amenity=school": (300006495, "schools (buildings)"),            # 1,435K
+    "amenity=hospital": (300451354, "hospitals"),                    # 217K
     "amenity=fountain": (300006203, "fountains"),                   # 196K
-    "amenity=townhall": (300007237, "town halls"),                  # 172K
+    "amenity=townhall": (300006063, "town halls"),                  # 172K
     "amenity=grave_yard": (300000360, "burial grounds"),            # 159K
-    "amenity=library": (300007150, "libraries (institutions)"),     # 111K
-    "amenity=marketplace": (300112348, "marketplaces"),             # 96K
+    "amenity=library": (300312241, "libraries (institutions)"),     # 111K
+    "amenity=marketplace": (300000250, "marketplaces"),             # 96K
     "amenity=college": (300008331, "colleges"),                     # 71K
     "amenity=university": (300007166, "universities (institutions)"),  # 57K
     "amenity=theatre": (300007117, "theaters (buildings)"),         # 52K
-    "amenity=courthouse": (300007425, "courthouses"),               # 31K
+    "amenity=courthouse": (300005969, "courthouses"),               # 31K
     "amenity=monastery": (300000641, "monasteries"),                # 16K
-    "amenity=prison": (300007147, "prisons"),                       # 15K
+    "amenity=prison": (300006460, "prisons"),                       # 15K
 
     # ── tourism=* ────────────────────────────────────────────────────────
     "tourism=hotel": (300007166, "hotels"),                         # 446K
     "tourism=attraction": (300006958, "monuments"),                 # 251K  approx
     "tourism=museum": (300005768, "museums (buildings)"),           # 109K
     "tourism=gallery": (300005768, "galleries (buildings)"),        # 21K
-    "tourism=zoo": (300005581, "zoos"),                             # 9K
+    "tourism=zoo": (300312333, "zoos"),                             # 9K
     "tourism=castle": (300006891, "castles (fortifications)"),      # (overlap w/ historic)
 
     # ── leisure=* ────────────────────────────────────────────────────────
     "leisure=garden": (300008090, "gardens (open spaces)"),         # 1,498K
     "leisure=park": (300008072, "open spaces"),                     # 1,277K
-    "leisure=nature_reserve": (300008069, "national parks"),        # 148K  approx
-    "leisure=stadium": (300007108, "stadiums"),                     # 52K
-    "leisure=marina": (300120471, "marinas"),                       # 31K
+    "leisure=nature_reserve": (300008189, "national parks"),        # 148K  approx
+    "leisure=stadium": (300007271, "stadiums"),                     # 52K
+    "leisure=marina": (300120824, "marinas"),                       # 31K
 
     # ── man_made=* ───────────────────────────────────────────────────────
     "man_made=tower": (300004847, "towers (building divisions)"),   # 449K
     "man_made=water_well": (300006209, "wells"),                    # 344K
     "man_made=bridge": (300007836, "bridges (built works)"),        # 311K
     "man_made=works": (300006232, "factories"),                     # 238K
-    "man_made=water_tower": (300007880, "water towers"),            # 165K
-    "man_made=pier": (300120631, "docks"),                          # 728K  approx
-    "man_made=dyke": (300006177, "dikes"),                          # 36K
+    "man_made=water_tower": (300006204, "water towers"),            # 165K
+    "man_made=pier": (300120801, "docks"),                          # 728K  approx
+    "man_made=dyke": (300170882, "dikes"),                          # 36K
     "man_made=aqueduct": (300006165, "aqueducts"),                  # (historic overlap)
-    "man_made=windmill": (300006281, "windmills"),                  # ~15K
+    "man_made=windmill": (300006273, "windmills"),                  # ~15K
     "man_made=lighthouse": (300007741, "lighthouses"),              # ~15K
-    "man_made=watermill": (300006280, "watermills"),                # ~5K
-    "man_made=observatory": (300007303, "observatories"),           # ~2K
+    "man_made=watermill": (300006270, "watermills"),                # ~5K
+    "man_made=observatory": (300007680, "observatories"),           # ~2K
 
     # ── military=* ───────────────────────────────────────────────────────
-    "military=barracks": (300006871, "barracks"),                   # 16K
-    "military=bunker": (300006926, "bunkers"),                      # 107K
+    "military=barracks": (300005665, "barracks"),                   # 16K
+    "military=bunker": (300006940, "bunkers"),                      # 107K
     "military=base": (300000455, "military installations"),         # 4K
     "military=airfield": (300007027, "airfields"),                  # 2K
     "military=naval_base": (300000888, "naval bases"),              # 526
 
     # ── building=* (allowlist only — significant types) ──────────────────
-    "building=school": (300007165, "schools (buildings)"),           # 1,307K
+    "building=school": (300006495, "schools (buildings)"),           # 1,307K
     "building=church": (300007466, "churches"),                     # 430K
     "building=university": (300007166, "universities (institutions)"),  # 175K
-    "building=hospital": (300007145, "hospitals"),                  # 169K
+    "building=hospital": (300451354, "hospitals"),                  # 169K
     "building=hotel": (300007166, "hotels"),                        # 157K
     "building=chapel": (300004590, "chapels"),                      # 118K
     "building=mosque": (300007544, "mosques"),                      # 107K
     "building=government": (300007429, "government buildings"),     # 32K
     "building=temple": (300007595, "temples"),                      # 31K
-    "building=stadium": (300007180, "stadiums"),                    # 12K
+    "building=stadium": (300007271, "stadiums"),                    # 12K
     "building=tomb": (300005926, "tombs"),                          # 11K
     "building=tower": (300004847, "towers (building divisions)"),   # 7K
     "building=shrine": (300007558, "shrines"),                      # 6K
@@ -497,8 +497,8 @@ OSM_OHM_STATIC_MAPPINGS = {
     "building=museum": (300005768, "museums (buildings)"),          # 2K
     "building=barracks": (300006691, "barracks"),                   # 2K
     "building=prison": (300343479, "prisons"),                      # 2K
-    "building=water_tower": (300007880, "water towers"),            # 2K
-    "building=library": (300007145, "libraries"),                   # 2K
+    "building=water_tower": (300006204, "water towers"),            # 2K
+    "building=library": (300451354, "libraries"),                   # 2K
     "building=synagogue": (300007590, "synagogues"),                # 2K
     "building=train_station": (300007783, "railroad stations"),     # (overlap)
     "building=theatre": (300007117, "theaters (buildings)"),        # 1K
@@ -550,7 +550,7 @@ GEONAMES_STATIC_MAPPINGS = {
     "H.CHNL": (300006075, "canals"),
     "H.FLLSW": (300132324, "waterfalls"),
     "H.FLLS": (300132324, "waterfalls"),
-    "H.STRT": (300008700, "straits"),
+    "H.STRT": (300266559, "straits"),
     "T.MT": (300008795, "peaks (landforms)"),
     "T.MTS": (300008795, "peaks (landforms)"),
     "T.PK": (300008795, "peaks (landforms)"),
@@ -558,38 +558,38 @@ GEONAMES_STATIC_MAPPINGS = {
     "T.ISL": (300008680, "islands"),
     "T.ISLS": (300008680, "islands"),
     "T.PEN": (300008804, "peninsulas"),
-    "T.CAPE": (300008775, "capes (landforms)"),
+    "T.CAPE": (300008850, "capes (landforms)"),
     "T.CLF": (300008773, "cliffs"),
     "T.VAL": (300008861, "valleys"),
-    "T.PLN": (300008831, "plains"),
+    "T.PLN": (300008805, "plains"),
     "T.PLAT": (300008736, "plateaus"),
-    "T.RDG": (300008812, "ridges (landforms)"),
+    "T.RDG": (300266640, "ridges (landforms)"),
     "T.BCH": (300008816, "beaches"),
-    "T.DSRT": (300008764, "deserts"),
-    "T.GRGE": (300008783, "gorges"),
+    "T.DSRT": (300008916, "deserts"),
+    "T.GRGE": (300008767, "gorges"),
     "T.CAVE": (300008746, "caves"),
     "T.GLCR": (300008781, "glaciers"),
     "S.CH": (300007466, "churches"),
     "S.CSTL": (300006891, "castles (fortifications)"),
     "S.FT": (300006909, "forts"),
-    "S.MNST": (300005616, "monasteries"),
+    "S.MNST": (300443474, "monasteries"),
     "S.TMPL": (300007595, "temples"),
-    "S.LIBR": (300007150, "libraries (institutions)"),
+    "S.LIBR": (300312241, "libraries (institutions)"),
     "S.MUS": (300005768, "museums (buildings)"),
-    "S.HSP": (300007145, "hospitals"),
-    "S.SCH": (300007165, "schools (buildings)"),
+    "S.HSP": (300451354, "hospitals"),
+    "S.SCH": (300006495, "schools (buildings)"),
     "S.UNIV": (300007166, "universities (institutions)"),
     "S.LTHSE": (300007741, "lighthouses"),
     "S.BDG": (300007836, "bridges (built works)"),
     "S.RSTN": (300007783, "railroad stations"),
-    "S.AIRP": (300007844, "airports"),
-    "S.CMTY": (300000292, "cemeteries"),
-    "S.MN": (300000195, "mines (extractive industry sites)"),
+    "S.AIRP": (300000681, "airports"),
+    "S.CMTY": (300266755, "cemeteries"),
+    "S.MN": (300000390, "mines (extractive industry sites)"),
     "S.DAM": (300006079, "dams"),
-    "S.PSN": (300007147, "prisons"),
+    "S.PSN": (300006460, "prisons"),
     "L.PRK": (300008072, "open spaces"),
-    "L.RESN": (300008069, "national parks"),
-    "L.RESW": (300008069, "national parks"),
+    "L.RESN": (300008189, "national parks"),
+    "L.RESW": (300008189, "national parks"),
     "L.AREA": (300182722, "geographic regions"),
     "L.RGN": (300182722, "geographic regions"),
     "L.CONT": (300128176, "continents"),
