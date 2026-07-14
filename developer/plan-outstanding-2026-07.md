@@ -9,9 +9,45 @@
 
 ---
 
-## ★ SESSION HANDOFF — pick up here (last worked: 13 Jul 2026)
+## ★ SESSION HANDOFF — pick up here (last worked: 13–14 Jul 2026)
 
-**Done this session (all committed to `main` + deployed to pitt):**
+**★ Done 14 Jul (latest session) — all committed + PUSHED to `main` (origin at `1507f5d`):**
+- **§2 wd typing → ~98% (P279 Pass 2 added).** On top of P1014, added the **P279
+  subclass walk**: new `typesystem/extract_wikidata_p279.py` (htc Slurm scan → 4.24M-edge
+  class graph) + `aat_mapper wikidata-p279` (BFS from an unmapped wd type to its nearest
+  P1014-mapped ancestor; depth-limited, cycle-guarded, `confidence=broad`). wd type
+  coverage in the `/vast` `wikidata.json` went **21.8%→98.2%** (P1014 +8, P279 +7,869).
+  **`apply_aat_enrich --namespace wd` is RUNNING on `pitt`** (applying the 98% mappings to
+  the ~11.5M live wd docs; coverage climbing 76%→~98%; ~1,200 upd/s, 0 err; reads the
+  enriched `/vast` `wikidata.json`).
+- **ES heap incident PERMANENTLY FIXED** (see the RESOLVED block below): 15g→28g via
+  `ES_HEAP_SIZE` in pitt `.env.local`. **Follow-up finding:** the toponyms HNSW merges
+  completed fine under 28g; post-merge a `GC.class_histogram` proved the live set is
+  <1 GB — the scary high idle `heap_used%` was benign G1 garbage, **not a leak**. 28g is
+  correct and sufficient; big writes (e.g. the wd apply) are safe.
+- **`wdgn_20240316` RESTORED** (was deleted 13 Jul as "no code refs", but the
+  **Reconciliation API used it via the `wdgn` alias** — a cross-service consumer). Restored
+  from snapshot `staging_repo/production_backup_20260318`: green, 13.6M docs, `wdgn` alias
+  back. See §4 handoff correction below.
+- **whg3 licensing/Phase-4 VERIFIED + finalised on `staging`** (via a whg3 agent) — the
+  code was already merged on `staging`; found + fixed **2 real bugs** (`attribution_for`
+  ignored `citation_text`; a stale seed-count test that would break the build), commit
+  **`2d4308a1b`** (not pushed). **Prod parity now = SG: promote `staging`→`main`, then on
+  prod `manage.py migrate licensing` (0003) + `manage.py migrate api` (0007)** → unblocks §5.
+- **`gaz_relay` privilege relay** (`scripts/gaz_relay.sh` + `gaz_request.sh`): ES/gateway
+  service ops (restart/health) can now run as `gazetteer` from `stg135` **without `su`**
+  (gazetteer can't be SSH'd in — sshd AllowUsers). 1-min cron + strict allowlist. Gateway
+  was found STOPPED and restarted through it + verified (`/api/health` 200). See
+  `memory/gaz_relay_service_ops.md`.
+
+**SG's action queue (manual — surfaced on request):** (1) run `es -update` to reconcile
+`/ix1`+`/vast` to `1507f5d`; (2) promote whg3 `staging`→`main` + migrate (unblocks §5
+citation re-push); (3) `apply_aat_enrich --namespace wd` — already RUNNING (started
+14 Jul). See `memory/sg_action_queue_2026_07.md`.
+
+---
+
+**Done 13 Jul (previous session — all committed to `main` + deployed to pitt):**
 - **TGN full re-ingest** (§10) — 2.99M places re-indexed, 709K historic toponyms
   embedded, temporal + AAT types verified live.
 - **§3 whg publication** — all **48 contributed datasets** live: 228,918 places,
@@ -74,14 +110,18 @@ never in our ES `wd` docs — but it *is* in the 148 GB dump. New code (commit `
 P1014 — it needs the P279/label passes (§2 body) or is untypeable; a healthy WDQS would
 have returned the same 8.
 
-**Prod status of the 8:** in the `/vast` `wikidata.json` (git-untracked), **not yet on
-prod ES**. A standalone ~11.5M-doc `apply_aat_enrich --namespace wd` for 8 type mappings
-is disproportionate → **fold them into the next wd re-enrich/rebuild** (crosswalk is now a
-free ingest side-output). *SG decision:* run the prod pass now only if the 8 matter
-urgently.
+**SUPERSEDED 14 Jul — P279 changed the calculus.** P1014 alone (8 mappings) wasn't worth
+an 11.5M-doc reindex, but the **P279 Pass-2 walk added 7,869 more → ~98% type coverage**
+(see the "★ Done 14 Jul" block above), and **`apply_aat_enrich --namespace wd` is now
+RUNNING on pitt** to apply it to prod. The crosswalk + P279 graph are free ingest
+side-outputs, so both re-derive on any future wd rebuild.
 
 **BLOCKED (external, retry later):**
-- **§5 citation/licence prod re-push** — gated on whg3 Phase-4 code reaching `main`.
+- **§5 citation/licence prod re-push** — whg3 Phase-4 is now **verified + finalised on
+  `staging`** (14 Jul, commit `2d4308a1b`); the only remaining gate is **SG promoting
+  `staging`→`main` + running the `licensing`/`api` migrations on prod**. The indexing
+  side re-runs the inventory push the moment prod parity lands (unknown SPDX codes are
+  non-fatal, so it's safe even before full vocabulary parity). See §5.
 
 **NEEDS AN SG DECISION (do NOT do autonomously):**
 - [x] **Delete stale pre-rebuild ES indices — DONE 2026-07-13 (SG-authorised).**
@@ -109,10 +149,16 @@ urgently.
   still serves from them** until it is swapped for Atlas (SG, 13 Jul). Keep.
 - **`whg_2025_11_12` ES index** (1.2 GB) — the live `/search/` union index.
 
-**How to direct the next-session agent:** point it at this handoff block +
-`memory/outstanding_plan_2026_07.md`. Good next moves: retry §2 wd once WDQS is
-up; and/or get SG sign-off then delete the 3 stale pre-rebuild indices (biggest
-health win). The full task detail is in §§1–10 below.
+**How to direct the next agent (14 Jul):** the **indexing/gateway side is essentially
+DONE** — the platform is live and every gateway contract the browser needs is on prod.
+The remaining substantive work is **whg3-side** (see §1's "✅✅ WHAT REMAINS ON whg3" +
+"📌 FOR THE whg3 AGENT" callouts, and §6). **The #1 actionable whg3 item is the
+real-browser visual pass of the Atlas clustering UI** — code-complete (Phases 1–3) but
+unconfirmed because the earlier headless agent couldn't load MapLibre WebGL; a whg3 agent
+running in a real PyCharm/browser instance *can* do it. Note the wd type facets are
+strengthening right now (`apply_aat_enrich --namespace wd` landing → ~98%). Indexing-side
+leftovers are all SG-decisions or blocked (Batch 13b governed migration = whg3/Django;
+Batch 14 harness; retention scheduling; legacy-tile retirement — all in §§2,4,8).
 
 ---
 
@@ -449,15 +495,23 @@ already-built features**, and (4) polish/ops/docs.
 >    cut 146→71 results (hierarchical). Chip UI deployed; visual pass map-gated (item
 >    1). *(Minor gateway-side: a few facets return the raw aat_id as label —
 >    label-resolution gap in the `types` index, not whg3.)*
-> 3. **Get the Phase-4 / licensing code (citations) to prod `main`** — this is the gate
->    on §5's citation prod re-push (indexing side is ready to re-run the moment it lands).
+> 3. ~~**Get the Phase-4 / licensing code (citations) to prod `main`**~~ **whg3 side
+>    DONE on `staging` (14 Jul).** A whg3 agent verified Phase-4 was already merged on
+>    `staging` and fixed 2 bugs (`attribution_for` didn't prefer `citation_text`; a stale
+>    `licensing` seed-count test), commit **`2d4308a1b`** (not pushed). **No further whg3
+>    code work** — the gate is now purely **SG: promote `staging`→`main` + `manage.py
+>    migrate licensing` (0003) + `migrate api` (0007)** on prod, which unblocks §5.
 > 4. **(Forward, not yet actionable)** the **discovery scope filter** Django half — pass
 >    the user's owned pending `dataset_id` scope tokens to `/api/search` and merge DO
 >    pending assertions (Master Plan Part VII). Only matters once pending datasets flow
 >    (needs a Django endpoint; the gateway half is a small add when wanted).
-> 5. **Consume the richer fuel as it lands** — e.g. TGN `temporal_range` just became far
->    more accurate (real source dates, 2026-07-13), improving the browser's `s.t` signal
->    for TGN; and more `whg:` datasets are being published (§3), so expect more hits.
+> 5. **Consume the richer fuel** — a whg3 agent confirmed (14 Jul) the currently-live fuel
+>    is **already consumed by existing `staging` code** (TGN `temporal_range` → `s.t`; 48
+>    `whg:` datasets auto-render, no cap; AAT type facets render) — **no code change
+>    needed**. Just track the data-side upside: **wd AAT typing is landing on prod now**
+>    (`apply_aat_enrich --namespace wd`, ~75%→~98%), which strengthens the wd type facets +
+>    the `s.ty` clustering signal automatically as it completes. Do NOT build against wd
+>    typing that isn't live yet.
 >
 > Nothing else on whg3 is blocked on the indexing side. The Workbench clustering *view*
 > (importing the self-embed primitive #5) is separate Workbench-roadmap UI work.
@@ -476,6 +530,19 @@ already-built features**, and (4) polish/ops/docs.
 > - **Test against the live gateway** via the CRC client (`api/crc_client.py` →
 >   `/api/reconcile` / `/api/search`); send the opt-in flags below to receive the fuel.
 >   Guard behind the staff-only BETA gate so nothing surfaces publicly while you build.
+>
+> **🎯 CURRENT FOCUS (14 Jul) — read the "WHAT REMAINS ON whg3" priority list above.**
+> The clustering scorer + Atlas UI (Phases 1–3) and the AAT type-facet UI are all
+> **code-complete on `staging`**, and the licensing/Phase-4 work is **done** (commit
+> `2d4308a1b` — only awaits SG promote+migrate). So the **#1 actionable task is the
+> real-browser visual pass** of the Atlas clustering UI (cluster cards, θ / merge-
+> sensitivity slider, per-facet weight sliders, the `/atlas/place/?id=` modal, map-
+> marker ↔ card highlight sync) — the *backends are all verified live*; only the
+> *rendered* UI is unconfirmed, because the previous (headless) agent couldn't load
+> MapLibre's WebGL. A whg3 agent in a real PyCharm/browser instance **can** confirm it.
+> Fix any rendering/interaction bugs you find on `staging`. (Also live: wd AAT typing is
+> landing on prod now → the wd type facets strengthen automatically; don't build against
+> wd typing that isn't live yet.)
 >
 > **The `edges[]` hard-link payload is live on the gateway (2026-07-11).** The `s.l`
 > hard-link signal your scorer consumes is **already shipped** by the CRC gateway; you
