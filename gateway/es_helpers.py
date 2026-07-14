@@ -371,15 +371,34 @@ def build_places_filter(
         filter_clauses.append({"bool": {"should": should, "minimum_should_match": 1}})
 
     if start_year is not None or end_year is not None:
+        TS = "toponyms.timespans"
         temporal_conditions = []
         if start_year is not None:
-            temporal_conditions.append(
-                {"range": {"toponyms.timespans.end.in": {"gte": start_year}}}
-            )
+            # Place still exists at/after the window start: its end is >= start_year
+            # under ANY qualifier (in/latest/earliest), OR it is *ongoing* — a
+            # timespan with a start but no end (the WHG convention for current
+            # features, e.g. the UN country boundaries). Previously only
+            # `end.in >= start_year` was checked, which silently dropped every
+            # ongoing feature from bounded temporal queries.
+            temporal_conditions.append({"bool": {"should": [
+                {"range": {f"{TS}.end.in": {"gte": start_year}}},
+                {"range": {f"{TS}.end.latest": {"gte": start_year}}},
+                {"range": {f"{TS}.end.earliest": {"gte": start_year}}},
+                {"bool": {"must_not": [
+                    {"exists": {"field": f"{TS}.end.in"}},
+                    {"exists": {"field": f"{TS}.end.latest"}},
+                    {"exists": {"field": f"{TS}.end.earliest"}},
+                ]}},
+            ], "minimum_should_match": 1}})
         if end_year is not None:
-            temporal_conditions.append(
-                {"range": {"toponyms.timespans.start.in": {"lte": end_year}}}
-            )
+            # Place started at/before the window end under ANY start qualifier
+            # (in/earliest/latest). For an ongoing boundary dated only
+            # `start.latest`, this matches queries whose end year is >= that bound.
+            temporal_conditions.append({"bool": {"should": [
+                {"range": {f"{TS}.start.in": {"lte": end_year}}},
+                {"range": {f"{TS}.start.earliest": {"lte": end_year}}},
+                {"range": {f"{TS}.start.latest": {"lte": end_year}}},
+            ], "minimum_should_match": 1}})
         temporal_match = {
             "nested": {
                 "path": "toponyms",
