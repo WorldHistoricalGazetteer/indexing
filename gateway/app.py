@@ -244,8 +244,8 @@ async def phonetic_search(
             entry["langs"].add(src["lang"])
         if src.get("script"):
             entry["scripts"].add(src["script"])
-        entry["namespaces"].update(src.get("namespaces", []))
-        entry["attestations"].update(src.get("attestations", []))
+        entry["namespaces"].update(src.get("namespaces") or [])
+        entry["attestations"].update(src.get("attestations") or [])
 
     # Sort by best score, take top k
     sorted_names = sorted(grouped.items(), key=lambda x: x[1]["score"], reverse=True)[:k]

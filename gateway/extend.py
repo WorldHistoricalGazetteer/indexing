@@ -444,7 +444,7 @@ async def extend(req: ExtendRequest):
                     tsrc = th.get("_source", {})
                     label = tsrc.get("name", "")
                     lang = tsrc.get("lang")
-                    for pid in tsrc.get("attestations", []):
+                    for pid in (tsrc.get("attestations") or []):
                         if pid in found_ids:
                             place_toponyms[pid].append(
                                 {"label": label, "lang": lang}

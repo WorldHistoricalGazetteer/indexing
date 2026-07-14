@@ -492,7 +492,7 @@ async def search(req: SearchRequest):
                     entry = {"label": label, "lang": lang}
                     if req.include_embeddings and src.get("embedding"):
                         entry["phon_emb"] = src["embedding"]
-                    for pid in src.get("attestations", []):
+                    for pid in (src.get("attestations") or []):
                         if pid in surviving_set:
                             place_toponyms[pid].append(entry)
             except Exception as e:
@@ -525,7 +525,7 @@ async def search(req: SearchRequest):
 
         # Representative point from first geometry
         repr_point = None
-        for g in src.get("geometries", []):
+        for g in (src.get("geometries") or []):
             rp = g.get("repr_point")
             if rp:
                 if isinstance(rp, dict):
@@ -537,7 +537,7 @@ async def search(req: SearchRequest):
         # Full geometries — only populated when geom="full"
         full_geoms: list[dict] = []
         if req.geom == "full":
-            for g in src.get("geometries", []):
+            for g in (src.get("geometries") or []):
                 geom_obj = g.get("geom")
                 if isinstance(geom_obj, dict) and geom_obj.get("type") and geom_obj.get("coordinates"):
                     full_geoms.append({
@@ -554,7 +554,7 @@ async def search(req: SearchRequest):
 
         # Types from places index
         types = []
-        for t in src.get("types", []):
+        for t in (src.get("types") or []):
             types.append({
                 "identifier": t.get("identifier", ""),
                 "label": t.get("label", ""),

@@ -225,7 +225,7 @@ def _format_candidate(
     # Extract names — prefer step-3 enrichment, fall back to nested data
     names: list[CandidateName] = []
     seen_labels: set[str] = set()
-    toponym_data = toponyms if toponyms is not None else src.get("toponyms", [])
+    toponym_data = toponyms if toponyms is not None else (src.get("toponyms") or [])
     for t in toponym_data:
         label = t.get("label", "")
         if label and label not in seen_labels:
@@ -236,7 +236,7 @@ def _format_candidate(
     # Extract representative points + the polygon flag from nested geometries. has_geom lets a client
     # tell a polygon (usable as a containment region) from a point/line, which repr_point alone can't.
     geometries = []
-    for g in src.get("geometries", []):
+    for g in (src.get("geometries") or []):
         rp = g.get("repr_point")
         has_geom = bool(g.get("has_geom"))
         point = None
@@ -458,7 +458,7 @@ async def reconcile_search(req: ReconcileRequest):
                     entry = {"label": label, "lang": lang}
                     if req.include_embeddings and src.get("embedding"):
                         entry["phon_emb"] = src["embedding"]
-                    for pid in src.get("attestations", []):
+                    for pid in (src.get("attestations") or []):
                         if pid in surviving_set:
                             place_toponyms[pid].append(entry)
             except Exception as e:

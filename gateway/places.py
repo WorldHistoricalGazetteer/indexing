@@ -264,7 +264,7 @@ def _format_place_detail(
             seen_labels.add(label)
 
     # Geometries
-    raw_geoms = src.get("geometries", [])
+    raw_geoms = src.get("geometries") or []
     geometries = _format_geometries(raw_geoms)
     repr_point = _extract_repr_point(raw_geoms)
 
@@ -275,25 +275,25 @@ def _format_place_detail(
             "label": t.get("label", ""),
             "sourceLabel": t.get("sourceLabel", ""),
         }
-        for t in src.get("types", [])
+        for t in (src.get("types") or [])
     ]
 
     # Links
     links = [
         {"type": lnk.get("type", ""), "identifier": lnk.get("identifier", "")}
-        for lnk in src.get("links", [])
+        for lnk in (src.get("links") or [])
     ]
 
     # Descriptions
     descriptions = [
         {"value": d.get("value", ""), "lang": d.get("lang")}
-        for d in src.get("descriptions", [])
+        for d in (src.get("descriptions") or [])
     ]
 
     # Depictions
     depictions = [
         {"@id": d.get("@id", ""), "title": d.get("title", ""), "license": d.get("license", "")}
-        for d in src.get("depictions", [])
+        for d in (src.get("depictions") or [])
     ]
 
     # Relations — include per-relation timespans when present
@@ -304,7 +304,7 @@ def _format_place_detail(
             "label": r.get("label", ""),
             "timespans": _normalise_timespans(r.get("timespans") or []),
         }
-        for r in src.get("relations", [])
+        for r in (src.get("relations") or [])
     ]
 
     detail = PlaceDetail(
@@ -312,7 +312,7 @@ def _format_place_detail(
         namespace=src.get("namespace", ""),
         title=src.get("title", ""),
         names=names,
-        ccodes=src.get("ccodes", []),
+        ccodes=src.get("ccodes") or [],
         types=types,
         geometries=geometries,
         repr_point=repr_point,
@@ -320,7 +320,7 @@ def _format_place_detail(
         descriptions=descriptions,
         depictions=depictions,
         relations=relations,
-        fclasses=src.get("fclasses", []),
+        fclasses=src.get("fclasses") or [],
         population=src.get("population"),
         elevation=src.get("elevation"),
         boundary=src.get("boundary"),
@@ -421,7 +421,7 @@ async def fetch_places(req: PlacesRequest):
                     src = th.get("_source", {})
                     label = src.get("name", "")
                     lang = src.get("lang")
-                    for pid in src.get("attestations", []):
+                    for pid in (src.get("attestations") or []):
                         if pid in found_ids:
                             place_toponyms[pid].append(
                                 {"label": label, "lang": lang}
