@@ -60,7 +60,7 @@
         "count": 82,
         "fraction": 0.0164,
         "aat_mapping": {
-          "aat_id": 300008584,
+          "aat_id": 300008369,
           "aat_term": "hamlets",
           "confidence": "curated",
           "source": "static_ohm"
@@ -120,7 +120,7 @@
         "count": 2,
         "fraction": 0.0004,
         "aat_mapping": {
-          "aat_id": 300005929,
+          "aat_id": 300005425,
           "aat_term": "dwellings",
           "confidence": "curated",
           "source": "static_ohm"
@@ -199,7 +199,7 @@
         "count": 605,
         "fraction": 0.121,
         "aat_mapping": {
-          "aat_id": 300006780,
+          "aat_id": 300006956,
           "aat_term": "memorials",
           "confidence": "curated",
           "source": "static_ohm"
@@ -254,7 +254,7 @@
         "count": 163,
         "fraction": 0.0326,
         "aat_mapping": {
-          "aat_id": 300005828,
+          "aat_id": 300005579,
           "aat_term": "manor houses",
           "confidence": "curated",
           "source": "static_ohm"
@@ -265,7 +265,7 @@
         "count": 155,
         "fraction": 0.031,
         "aat_mapping": {
-          "aat_id": 300000195,
+          "aat_id": 300000390,
           "aat_term": "mines (extractive industry sites)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -424,7 +424,7 @@
         "count": 12,
         "fraction": 0.0024,
         "aat_mapping": {
-          "aat_id": 300188189,
+          "aat_id": 300188746,
           "aat_term": "shipwrecks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -445,7 +445,7 @@
         "count": 6,
         "fraction": 0.0012,
         "aat_mapping": {
-          "aat_id": 300005616,
+          "aat_id": 300443474,
           "aat_term": "monasteries",
           "confidence": "curated",
           "source": "static_ohm"
@@ -783,7 +783,7 @@
         "count": 236,
         "fraction": 0.0472,
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -804,7 +804,7 @@
         "count": 26,
         "fraction": 0.0052,
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -896,7 +896,7 @@
         "count": 476,
         "fraction": 0.0952,
         "aat_mapping": {
-          "aat_id": 300008775,
+          "aat_id": 300008850,
           "aat_term": "capes (landforms)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -929,7 +929,7 @@
         "count": 165,
         "fraction": 0.033,
         "aat_mapping": {
-          "aat_id": 300008815,
+          "aat_id": 300386884,
           "aat_term": "saddles (landforms)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1042,7 +1042,7 @@
         "count": 9,
         "fraction": 0.0018,
         "aat_mapping": {
-          "aat_id": 300008700,
+          "aat_id": 300266559,
           "aat_term": "straits",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1100,7 +1100,7 @@
         "count": 2,
         "fraction": 0.0004,
         "aat_mapping": {
-          "aat_id": 300008700,
+          "aat_id": 300266559,
           "aat_term": "hot springs",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1255,7 +1255,7 @@
         "count": 18,
         "fraction": 0.0036,
         "aat_mapping": {
-          "aat_id": 300120631,
+          "aat_id": 300120801,
           "aat_term": "docks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1403,7 +1403,7 @@
         "count": 1,
         "fraction": 0.0002,
         "aat_mapping": {
-          "aat_id": 300006176,
+          "aat_id": 300006178,
           "aat_term": "ditches",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1455,7 +1455,7 @@
         "count": 329,
         "fraction": 0.0658,
         "aat_mapping": {
-          "aat_id": 300007165,
+          "aat_id": 300006495,
           "aat_term": "schools (buildings)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1492,7 +1492,7 @@
         "count": 76,
         "fraction": 0.0152,
         "aat_mapping": {
-          "aat_id": 300007145,
+          "aat_id": 300451354,
           "aat_term": "hospitals",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1518,7 +1518,7 @@
         "count": 46,
         "fraction": 0.0092,
         "aat_mapping": {
-          "aat_id": 300007237,
+          "aat_id": 300006063,
           "aat_term": "town halls",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1534,7 +1534,7 @@
         "count": 39,
         "fraction": 0.0078,
         "aat_mapping": {
-          "aat_id": 300007150,
+          "aat_id": 300312241,
           "aat_term": "libraries (institutions)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1555,7 +1555,7 @@
         "count": 29,
         "fraction": 0.0058,
         "aat_mapping": {
-          "aat_id": 300007425,
+          "aat_id": 300005969,
           "aat_term": "courthouses",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1592,7 +1592,7 @@
         "count": 23,
         "fraction": 0.0046,
         "aat_mapping": {
-          "aat_id": 300112348,
+          "aat_id": 300000250,
           "aat_term": "marketplaces",
           "confidence": "curated",
           "source": "static_ohm"
@@ -1608,7 +1608,7 @@
         "count": 21,
         "fraction": 0.0042,
         "aat_mapping": {
-          "aat_id": 300007147,
+          "aat_id": 300006460,
           "aat_term": "prisons",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2087,7 +2087,7 @@
         "count": 4,
         "fraction": 0.0008,
         "aat_mapping": {
-          "aat_id": 300005581,
+          "aat_id": 300312333,
           "aat_term": "zoos",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2154,7 +2154,7 @@
         "count": 483,
         "fraction": 0.0966,
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2181,7 +2181,7 @@
         "count": 205,
         "fraction": 0.041,
         "aat_mapping": {
-          "aat_id": 300007108,
+          "aat_id": 300007271,
           "aat_term": "stadiums",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2207,7 +2207,7 @@
         "count": 82,
         "fraction": 0.0164,
         "aat_mapping": {
-          "aat_id": 300120471,
+          "aat_id": 300120824,
           "aat_term": "marinas",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2466,7 +2466,7 @@
         "count": 250,
         "fraction": 0.05,
         "aat_mapping": {
-          "aat_id": 300120631,
+          "aat_id": 300120801,
           "aat_term": "docks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2477,7 +2477,7 @@
         "count": 172,
         "fraction": 0.0344,
         "aat_mapping": {
-          "aat_id": 300006281,
+          "aat_id": 300006273,
           "aat_term": "windmills",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2488,7 +2488,7 @@
         "count": 152,
         "fraction": 0.0304,
         "aat_mapping": {
-          "aat_id": 300006280,
+          "aat_id": 300006270,
           "aat_term": "watermills",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2546,7 +2546,7 @@
         "count": 36,
         "fraction": 0.0072,
         "aat_mapping": {
-          "aat_id": 300007880,
+          "aat_id": 300006204,
           "aat_term": "water towers",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2557,7 +2557,7 @@
         "count": 33,
         "fraction": 0.0066,
         "aat_mapping": {
-          "aat_id": 300006177,
+          "aat_id": 300170882,
           "aat_term": "dikes",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2588,7 +2588,7 @@
         "count": 23,
         "fraction": 0.0046,
         "aat_mapping": {
-          "aat_id": 300007303,
+          "aat_id": 300007680,
           "aat_term": "observatories",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2924,7 +2924,7 @@
         "count": 150,
         "fraction": 0.1507537688442211,
         "aat_mapping": {
-          "aat_id": 300006871,
+          "aat_id": 300005665,
           "aat_term": "barracks",
           "confidence": "curated",
           "source": "static_ohm"
@@ -2946,7 +2946,7 @@
         "count": 102,
         "fraction": 0.10251256281407035,
         "aat_mapping": {
-          "aat_id": 300006926,
+          "aat_id": 300006940,
           "aat_term": "bunkers",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3146,7 +3146,7 @@
         "count": 442,
         "fraction": 0.0884,
         "aat_mapping": {
-          "aat_id": 300000292,
+          "aat_id": 300266755,
           "aat_term": "cemeteries",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3157,7 +3157,7 @@
         "count": 347,
         "fraction": 0.0694,
         "aat_mapping": {
-          "aat_id": 300000757,
+          "aat_id": 300000739,
           "aat_term": "industrial districts",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3233,7 +3233,7 @@
         "count": 65,
         "fraction": 0.013,
         "aat_mapping": {
-          "aat_id": 300000195,
+          "aat_id": 300000390,
           "aat_term": "mines (extractive industry sites)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3351,7 +3351,7 @@
         "count": 6,
         "fraction": 0.0012,
         "aat_mapping": {
-          "aat_id": 300120580,
+          "aat_id": 300120599,
           "aat_term": "ports",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3667,7 +3667,7 @@
         "count": 52,
         "fraction": 0.0104,
         "aat_mapping": {
-          "aat_id": 300007165,
+          "aat_id": 300006495,
           "aat_term": "schools (buildings)",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3714,7 +3714,7 @@
         "count": 18,
         "fraction": 0.0036,
         "aat_mapping": {
-          "aat_id": 300007145,
+          "aat_id": 300451354,
           "aat_term": "hospitals",
           "confidence": "curated",
           "source": "static_ohm"
@@ -3820,7 +3820,7 @@
         "count": 7,
         "fraction": 0.0014,
         "aat_mapping": {
-          "aat_id": 300007180,
+          "aat_id": 300007271,
           "aat_term": "stadiums",
           "confidence": "curated",
           "source": "static_ohm"

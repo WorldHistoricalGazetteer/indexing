@@ -13,7 +13,7 @@
         "in_wiki": true,
         "description": "A smaller rural community, typically with fewer than 100-200 inhabitants, and little infrastructure.",
         "aat_mapping": {
-          "aat_id": 300008584,
+          "aat_id": 300008369,
           "aat_term": "hamlets",
           "confidence": "curated",
           "source": "static_osm"
@@ -46,7 +46,7 @@
         "in_wiki": true,
         "description": "The smallest kind of settlement (1-2 households).",
         "aat_mapping": {
-          "aat_id": 300005929,
+          "aat_id": 300005425,
           "aat_term": "dwellings",
           "confidence": "curated",
           "source": "static_osm"
@@ -1692,7 +1692,7 @@
         "in_wiki": true,
         "description": "An area covered by sand with no or very little vegetation.",
         "aat_mapping": {
-          "aat_id": 300008755,
+          "aat_id": 300008750,
           "aat_term": "dunes",
           "confidence": "curated",
           "source": "static_osm"
@@ -1732,7 +1732,7 @@
         "in_wiki": true,
         "description": "A mountain landform with a continuous elevated crest or linear hill",
         "aat_mapping": {
-          "aat_id": 300008812,
+          "aat_id": 300266640,
           "aat_term": "ridges (landforms)",
           "confidence": "curated",
           "source": "static_osm"
@@ -1825,7 +1825,7 @@
         "in_wiki": true,
         "description": "The lowest point along a ridge or between two mountain tops.",
         "aat_mapping": {
-          "aat_id": 300008815,
+          "aat_id": 300386884,
           "aat_term": "saddles (landforms)",
           "confidence": "curated",
           "source": "static_osm"
@@ -1878,7 +1878,7 @@
         "in_wiki": true,
         "description": "A piece of elevated land sticking out into the sea or large lake.",
         "aat_mapping": {
-          "aat_id": 300008775,
+          "aat_id": 300008850,
           "aat_term": "capes (landforms)",
           "confidence": "curated",
           "source": "static_osm"
@@ -1967,7 +1967,7 @@
         "in_wiki": true,
         "description": "A narrow area of water surrounded by land on two sides and by water on two other sides.",
         "aat_mapping": {
-          "aat_id": 300008700,
+          "aat_id": 300266559,
           "aat_term": "straits",
           "confidence": "curated",
           "source": "static_osm"
@@ -2008,7 +2008,7 @@
         "in_wiki": true,
         "description": "A spring of geothermally heated groundwater",
         "aat_mapping": {
-          "aat_id": 300008700,
+          "aat_id": 300266559,
           "aat_term": "hot springs",
           "confidence": "curated",
           "source": "static_osm"
@@ -3212,7 +3212,7 @@
         "in_wiki": true,
         "description": "The water covered area of a waterway=ditch - a simple artificial waterway serving as a barrier or for draining surrounding land.",
         "aat_mapping": {
-          "aat_id": 300006176,
+          "aat_id": 300006178,
           "aat_term": "ditches",
           "confidence": "curated",
           "source": "static_osm"
@@ -3287,7 +3287,7 @@
         "in_wiki": true,
         "description": "A deep, wide defensive ditch, normally filled with water, dug to surround a fortified habitation.",
         "aat_mapping": {
-          "aat_id": 300006295,
+          "aat_id": 300003716,
           "aat_term": "moats",
           "confidence": "curated",
           "source": "static_osm"
@@ -4595,7 +4595,7 @@
         "in_wiki": true,
         "description": "A small artificial drainage waterway, usually unlined.",
         "aat_mapping": {
-          "aat_id": 300006176,
+          "aat_id": 300006178,
           "aat_term": "ditches",
           "confidence": "curated",
           "source": "static_osm"
@@ -4744,7 +4744,7 @@
         "in_wiki": true,
         "description": "An enclosed area for ships or boats within which the height of the water can be managed, or a dry dock.",
         "aat_mapping": {
-          "aat_id": 300120631,
+          "aat_id": 300120801,
           "aat_term": "docks",
           "confidence": "curated",
           "source": "static_osm"
@@ -6033,7 +6033,7 @@
         "in_wiki": true,
         "description": "Small memorials, usually remembering special persons, people who lost their lives in the wars, past events or missing places.",
         "aat_mapping": {
-          "aat_id": 300006780,
+          "aat_id": 300006956,
           "aat_term": "memorials",
           "confidence": "curated",
           "source": "static_osm"
@@ -6192,7 +6192,7 @@
         "in_wiki": true,
         "description": "Historic manors/mansions having different use today",
         "aat_mapping": {
-          "aat_id": 300005828,
+          "aat_id": 300005579,
           "aat_term": "manor houses",
           "confidence": "curated",
           "source": "static_osm"
@@ -6219,7 +6219,7 @@
         "in_wiki": true,
         "description": "Location of historic underground mine workings for minerals such as coal or lead.",
         "aat_mapping": {
-          "aat_id": 300000195,
+          "aat_id": 300000390,
           "aat_term": "mines (extractive industry sites)",
           "confidence": "curated",
           "source": "static_osm"
@@ -6319,7 +6319,7 @@
         "in_wiki": true,
         "description": "A nautical craft that has been sunk or destroyed.",
         "aat_mapping": {
-          "aat_id": 300188189,
+          "aat_id": 300188746,
           "aat_term": "shipwrecks",
           "confidence": "curated",
           "source": "static_osm"
@@ -6380,7 +6380,7 @@
         "in_wiki": true,
         "description": "Building/place that is a historically significant monastery.",
         "aat_mapping": {
-          "aat_id": 300005616,
+          "aat_id": 300443474,
           "aat_term": "monasteries",
           "confidence": "curated",
           "source": "static_osm"
@@ -7677,7 +7677,7 @@
         "in_wiki": true,
         "description": "An area with predominantly workshops, factories or warehouses.",
         "aat_mapping": {
-          "aat_id": 300000757,
+          "aat_id": 300000739,
           "aat_term": "industrial districts",
           "confidence": "curated",
           "source": "static_osm"
@@ -7703,7 +7703,7 @@
         "in_wiki": true,
         "description": "A place where people, or sometimes animals are buried that isn't part of a place of worship",
         "aat_mapping": {
-          "aat_id": 300000292,
+          "aat_id": 300266755,
           "aat_term": "cemeteries",
           "confidence": "curated",
           "source": "static_osm"
@@ -7757,7 +7757,7 @@
         "in_wiki": true,
         "description": "An area of land used for surface extraction (open-pit mining).",
         "aat_mapping": {
-          "aat_id": 300000195,
+          "aat_id": 300000390,
           "aat_term": "mines (extractive industry sites)",
           "confidence": "curated",
           "source": "static_osm"
@@ -7998,7 +7998,7 @@
         "in_wiki": true,
         "description": "The harbour land, consisting of queys, wharfs, piers, warehouses, storage areas, stockpiles, service roads, railway tracks, and much more. Often behind a fence with its own access control.",
         "aat_mapping": {
-          "aat_id": 300120580,
+          "aat_id": 300120599,
           "aat_term": "ports",
           "confidence": "curated",
           "source": "static_osm"
@@ -9132,7 +9132,7 @@
         "in_wiki": true,
         "description": "A primary or secondary school (pupils typically aged 6 to 18).",
         "aat_mapping": {
-          "aat_id": 300007165,
+          "aat_id": 300006495,
           "aat_term": "schools (buildings)",
           "confidence": "curated",
           "source": "static_osm"
@@ -9278,7 +9278,7 @@
         "in_wiki": true,
         "description": "A hospital providing in-patient medical treatment.",
         "aat_mapping": {
-          "aat_id": 300007145,
+          "aat_id": 300451354,
           "aat_term": "hospitals",
           "confidence": "curated",
           "source": "static_osm"
@@ -9353,7 +9353,7 @@
         "in_wiki": true,
         "description": "A townhall serves as a community administrative center or meeting place.",
         "aat_mapping": {
-          "aat_id": 300007237,
+          "aat_id": 300006063,
           "aat_term": "town halls",
           "confidence": "curated",
           "source": "static_osm"
@@ -9407,7 +9407,7 @@
         "in_wiki": true,
         "description": "A place to read and/or borrow books.",
         "aat_mapping": {
-          "aat_id": 300007150,
+          "aat_id": 300312241,
           "aat_term": "libraries (institutions)",
           "confidence": "curated",
           "source": "static_osm"
@@ -9420,7 +9420,7 @@
         "in_wiki": true,
         "description": "A marketplace where goods and services are traded daily or weekly.",
         "aat_mapping": {
-          "aat_id": 300112348,
+          "aat_id": 300000250,
           "aat_term": "marketplaces",
           "confidence": "curated",
           "source": "static_osm"
@@ -9633,7 +9633,7 @@
         "in_wiki": true,
         "description": "A building which is home to a court of law, which administers justice according to the rule of law.",
         "aat_mapping": {
-          "aat_id": 300007425,
+          "aat_id": 300005969,
           "aat_term": "courthouses",
           "confidence": "curated",
           "source": "static_osm"
@@ -9722,7 +9722,7 @@
         "in_wiki": true,
         "description": "A prison or jail where people are incarcerated before trial or after conviction",
         "aat_mapping": {
-          "aat_id": 300007147,
+          "aat_id": 300006460,
           "aat_term": "prisons",
           "confidence": "curated",
           "source": "static_osm"
@@ -10748,7 +10748,7 @@
         "in_wiki": true,
         "description": "A zoological garden, where animals are confined for viewing by the public.",
         "aat_mapping": {
-          "aat_id": 300005581,
+          "aat_id": 300312333,
           "aat_term": "zoos",
           "confidence": "curated",
           "source": "static_osm"
@@ -12097,7 +12097,7 @@
         "in_wiki": true,
         "description": "A protected area of importance for wildlife, flora, fauna or features of geological or other special interest.",
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_osm"
@@ -12145,7 +12145,7 @@
         "in_wiki": true,
         "description": "A major sports facility with substantial tiered seating.",
         "aat_mapping": {
-          "aat_id": 300007108,
+          "aat_id": 300007271,
           "aat_term": "stadiums",
           "confidence": "curated",
           "source": "static_osm"
@@ -12179,7 +12179,7 @@
         "in_wiki": true,
         "description": "A facility for mooring leisure yachts and motor boats.",
         "aat_mapping": {
-          "aat_id": 300120471,
+          "aat_id": 300120824,
           "aat_term": "marinas",
           "confidence": "curated",
           "source": "static_osm"
@@ -13475,7 +13475,7 @@
         "in_wiki": true,
         "description": "Raised walkway over water supported by pillars or floating and secured.",
         "aat_mapping": {
-          "aat_id": 300120631,
+          "aat_id": 300120801,
           "aat_term": "docks",
           "confidence": "curated",
           "source": "static_osm"
@@ -13624,7 +13624,7 @@
         "in_wiki": true,
         "description": "Structure with a water tank at an altitude to increase pressure in water network",
         "aat_mapping": {
-          "aat_id": 300007880,
+          "aat_id": 300006204,
           "aat_term": "water towers",
           "confidence": "curated",
           "source": "static_osm"
@@ -13735,7 +13735,7 @@
         "in_wiki": true,
         "description": "An embankment built to restrict the flow of water or other liquids",
         "aat_mapping": {
-          "aat_id": 300006177,
+          "aat_id": 300170882,
           "aat_term": "dikes",
           "confidence": "curated",
           "source": "static_osm"
@@ -13873,7 +13873,7 @@
         "in_wiki": true,
         "description": "A mill driven by water power.",
         "aat_mapping": {
-          "aat_id": 300006280,
+          "aat_id": 300006270,
           "aat_term": "watermills",
           "confidence": "curated",
           "source": "static_osm"
@@ -13893,7 +13893,7 @@
         "in_wiki": true,
         "description": "A traditional windmill, historically used to mill grain with wind power.",
         "aat_mapping": {
-          "aat_id": 300006281,
+          "aat_id": 300006273,
           "aat_term": "windmills",
           "confidence": "curated",
           "source": "static_osm"
@@ -14165,7 +14165,7 @@
         "in_wiki": true,
         "description": "Observatory: a location used for observing terrestrial or celestial events.",
         "aat_mapping": {
-          "aat_id": 300007303,
+          "aat_id": 300007680,
           "aat_term": "observatories",
           "confidence": "curated",
           "source": "static_osm"
@@ -14956,7 +14956,7 @@
         "in_wiki": true,
         "description": "Used to mark boundaries of protected areas including national parks, wilderness, marine protection areas, heritage sites and other, similar areas.",
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_osm"
@@ -15052,7 +15052,7 @@
         "in_wiki": true,
         "description": "The boundary of a national park, an area of natural beauty, set aside for conservation and for recreation",
         "aat_mapping": {
-          "aat_id": 300008069,
+          "aat_id": 300008189,
           "aat_term": "national parks",
           "confidence": "curated",
           "source": "static_osm"
@@ -16376,7 +16376,7 @@
         "in_wiki": true,
         "description": "A military installation capable of withstanding an attack, which is currently used as a bunker.",
         "aat_mapping": {
-          "aat_id": 300006926,
+          "aat_id": 300006940,
           "aat_term": "bunkers",
           "confidence": "curated",
           "source": "static_osm"
@@ -16396,7 +16396,7 @@
         "in_wiki": true,
         "description": "Buildings where military personnel live and sleep.",
         "aat_mapping": {
-          "aat_id": 300006871,
+          "aat_id": 300005665,
           "aat_term": "barracks",
           "confidence": "curated",
           "source": "static_osm"
@@ -22986,7 +22986,7 @@
         "in_wiki": true,
         "description": "A building originally built as a school building.",
         "aat_mapping": {
-          "aat_id": 300007165,
+          "aat_id": 300006495,
           "aat_term": "schools (buildings)",
           "confidence": "curated",
           "source": "static_osm"
@@ -23151,7 +23151,7 @@
         "in_wiki": true,
         "description": "A building which forms part of a hospital.",
         "aat_mapping": {
-          "aat_id": 300007145,
+          "aat_id": 300451354,
           "aat_term": "hospitals",
           "confidence": "curated",
           "source": "static_osm"
@@ -23480,7 +23480,7 @@
         "in_wiki": true,
         "description": "A building which was built as stadium.",
         "aat_mapping": {
-          "aat_id": 300007180,
+          "aat_id": 300007271,
           "aat_term": "stadiums",
           "confidence": "curated",
           "source": "static_osm"
@@ -23966,7 +23966,7 @@
         "in_wiki": true,
         "description": "A watertower",
         "aat_mapping": {
-          "aat_id": 300007880,
+          "aat_id": 300006204,
           "aat_term": "water towers",
           "confidence": "curated",
           "source": "static_osm"
@@ -24265,7 +24265,7 @@
         "in_wiki": true,
         "description": "A building that has been constructed as a library.",
         "aat_mapping": {
-          "aat_id": 300007145,
+          "aat_id": 300451354,
           "aat_term": "libraries",
           "confidence": "curated",
           "source": "static_osm"
