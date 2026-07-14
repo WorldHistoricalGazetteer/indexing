@@ -325,7 +325,7 @@ AUTHORITIES = [
         ],
     },
     {  # 2024: 3m+ places
-        'dataset_name': 'TGN',
+        'dataset_name': 'Getty TGN',
         'namespace': 'tgn',
         # Verified 2026-06-06 against getty.edu/research/tools/vocabularies/obtain.
         'citation_text': 'Getty Thesaurus of Geographic Names (TGN), J. Paul Getty Trust.',
@@ -375,7 +375,7 @@ AUTHORITIES = [
         ],
     },
     {  # 2024: >14.8m named places with multiple toponyms (file includes some unnamed features)
-        'dataset_name': 'OSM',
+        'dataset_name': 'OpenStreetMap',
         'namespace': 'osm',
         # Verified 2026-06-06 against openstreetmap.org/copyright (data is ODbL).
         'citation_text': 'OpenStreetMap, © OpenStreetMap contributors.',
@@ -400,7 +400,7 @@ AUTHORITIES = [
         ],
     },
     {  # ~800K+ historical places with temporal coverage
-        'dataset_name': 'OHM',
+        'dataset_name': 'OpenHistoricalMap',
         'namespace': 'ohm',
         # Verified 2026-06-06: OHM is CC0 (public-domain dedication), NOT ODbL like
         # OSM — wiki.openstreetmap.org/wiki/OpenHistoricalMap/Copyright. Attribution
@@ -425,7 +425,7 @@ AUTHORITIES = [
         ],
     },
     {  # Not useful as source of places or toponyms, but can provide links
-        'dataset_name': 'LOC',
+        'dataset_name': 'Library of Congress',
         'namespace': 'loc',
         'api_item': 'https://www.loc.gov/item/<id>/',
         'citation': 'Library of Congress. https://www.loc.gov/',
@@ -463,7 +463,7 @@ AUTHORITIES = [
         ],
     },
     {
-        'dataset_name': 'NativeLand',
+        'dataset_name': 'Native Land',
         'namespace': 'nl',
         # Verified 2026-06-06: Native Land Digital "Data Sovereignty Treaty" (OCAP®)
         # — bespoke terms, NOT CC0/SPDX: NON-COMMERCIAL only, redistribution by
@@ -501,7 +501,7 @@ AUTHORITIES = [
         ],
     },
     {
-        'dataset_name': 'DPlace',
+        'dataset_name': 'D-PLACE',
         'namespace': 'dp',
         # Verified 2026-06-06 (d-place.org/about): CC-BY-NC-4.0 (NonCommercial),
         # NOT plain CC-BY-4.0. D-PLACE aggregates many upstream ethnographic
@@ -545,7 +545,7 @@ AUTHORITIES = [
         ],
     },
     {  # 24,000 place names
-        'dataset_name': 'IndexVillaris',
+        'dataset_name': 'Index Villaris',
         'namespace': 'iv',
         # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
@@ -566,7 +566,7 @@ AUTHORITIES = [
         ],
     },
     {  # ISO Countries
-        'dataset_name': 'ISO3166',
+        'dataset_name': 'ISO 3166 Countries',
         'namespace': 'un',  # United Nations countries and territories
         # Verified 2026-06-06 (naturalearthdata.com/about/terms-of-use): public domain.
         'citation_text': 'Country boundaries from Natural Earth (naturalearthdata.com).',
@@ -587,7 +587,7 @@ AUTHORITIES = [
         ],
     },
     {  # UK historic counties (92 polygons; regional containment geographies)
-        'dataset_name': 'UKHistoricCounties',
+        'dataset_name': 'UK Historic Counties',
         'namespace': 'ukhc',
         # Verified 2026-06-06 (county-borders.co.uk terms): free for personal/
         # educational/non-commercial AND commercial use, attribution requested
@@ -655,7 +655,7 @@ AUTHORITIES = [
         ],
     },
     {  # ~82K historical Chinese administrative places
-        'dataset_name': 'CHGIS',
+        'dataset_name': 'China Historical GIS (CHGIS)',
         'namespace': 'chgis',
         # Verified 2026-06-06 (chgis.fas.harvard.edu/data/chgis/v6): bespoke
         # "academic research only" terms — NO commercial use, resale, OR
@@ -681,7 +681,7 @@ AUTHORITIES = [
         ],
     },
     {  # ~3.8K Song dynasty administrative entities
-        'dataset_name': 'DGSD',
+        'dataset_name': 'Digital Gazetteer of the Song Dynasty',
         'namespace': 'dgsd',
         # Verified 2026-06-06 via the D-Scholarship record badge: CC-BY-ND-4.0
         # (NoDerivatives) — corrects an earlier CC-BY-NC-SA guess. NOT yet in the WHG
