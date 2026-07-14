@@ -247,8 +247,6 @@ def resolve(args) -> int:
                       f"no_match={no_match} no_geom={no_geom} "
                       f"({seen/max(time.time()-t0,1e-6):.0f}/s)", flush=True)
 
-    if place_reader is not None:
-        place_reader.close()
     print(f"RESOLVE DONE seen={seen} cc_ok={ok_cc} h3_set={ok_h3} "
           f"no_match={no_match} no_geom={no_geom} "
           f"-> {out_path} in {time.time()-t0:.0f}s", flush=True)
