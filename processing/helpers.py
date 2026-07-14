@@ -20,6 +20,7 @@ from shapely.geometry import shape, Point, LineString, Polygon, MultiPoint, Mult
 from shapely.ops import transform
 from shapely.validation import make_valid as shapely_make_valid
 from pyproj import Transformer, CRS
+from typing import Iterable
 import json
 
 try:
@@ -781,8 +782,118 @@ def _pick_polyfill_resolution(bbox_area_deg2: float) -> int:
     return 3  # always at least try r3 as a last resort
 
 
+def _iter_rings(geojson_geom: dict) -> Iterable[list]:
+    """Yield every linear ring (exterior + holes) of a Polygon/MultiPolygon."""
+    gtype = geojson_geom.get("type")
+    coords = geojson_geom.get("coordinates") or []
+    if gtype == "Polygon":
+        for ring in coords:
+            yield ring
+    elif gtype == "MultiPolygon":
+        for poly in coords:
+            for ring in poly:
+                yield ring
+
+
+def _crosses_antimeridian(geojson_geom: dict) -> bool:
+    """True when any ring edge jumps > 180° in longitude — the signature of a
+    polygon straddling ±180° (e.g. US via the Aleutians, RU via Chukotka). Such
+    geometries get a degenerate ~360° bbox, so the standard whole-geometry fill
+    picks the coarsest resolution and mis-fills, dropping the interior."""
+    for ring in _iter_rings(geojson_geom):
+        prev = None
+        for pt in ring:
+            try:
+                lon = float(pt[0])
+            except (TypeError, ValueError, IndexError):
+                prev = None
+                continue
+            if prev is not None and abs(lon - prev) > 180.0:
+                return True
+            prev = lon
+    return False
+
+
+def _split_polygon_at_antimeridian(poly_geojson: dict) -> list[dict]:
+    """Split one dateline-crossing Polygon into pieces valid in [-180, 180].
+
+    Shifts negative longitudes by +360 so the ring is contiguous in [0, 360],
+    clips into the [0,180] and [180,360] half-planes, then translates the
+    eastern clip back by −360. Returns a list of non-crossing GeoJSON Polygons.
+    """
+    from shapely.geometry import box, shape
+    from shapely.affinity import translate
+
+    try:
+        def _shift(ring):
+            out = []
+            for pt in ring:
+                lon, lat = float(pt[0]), float(pt[1])
+                out.append([lon + 360.0 if lon < 0 else lon, lat])
+            return out
+
+        shifted = {
+            "type": "Polygon",
+            "coordinates": [_shift(r) for r in poly_geojson.get("coordinates") or []],
+        }
+        poly = shape(shifted)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        parts: list[dict] = []
+        west = poly.intersection(box(0.0, -90.0, 180.0, 90.0))
+        east = translate(poly.intersection(box(180.0, -90.0, 360.0, 90.0)), xoff=-360.0)
+        for piece in (west, east):
+            if piece.is_empty:
+                continue
+            gj = json.loads(json.dumps(piece.__geo_interface__))
+            if gj.get("type") == "Polygon":
+                parts.append(gj)
+            elif gj.get("type") == "MultiPolygon":
+                for pc in gj.get("coordinates") or []:
+                    parts.append({"type": "Polygon", "coordinates": pc})
+        return parts or [poly_geojson]
+    except Exception:
+        return [poly_geojson]
+
+
 def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
     """Polyfill a GeoJSON polygon with H3 cells at an adaptive resolution.
+
+    Dispatcher that keeps the standard whole-geometry fill for the common
+    (non-crossing) case, but for **dateline-crossing** geometries decomposes to
+    individual polygons — splitting any part that itself crosses ±180 — and
+    fills each piece independently before unioning. Without this, a polygon
+    straddling the antimeridian silently loses its interior (e.g. California /
+    Siberia were absent from the US / RU covers). See :func:`_crosses_antimeridian`.
+    """
+    if not _H3_AVAILABLE:
+        return set()
+
+    gtype = geojson_geom.get("type")
+    if gtype in ("Polygon", "MultiPolygon") and _crosses_antimeridian(geojson_geom):
+        cells: set[str] = set()
+        # Decompose MultiPolygon → its member Polygons (most members do NOT
+        # cross; only the seam-straddling one needs splitting).
+        if gtype == "MultiPolygon":
+            members = [
+                {"type": "Polygon", "coordinates": pc}
+                for pc in geojson_geom.get("coordinates") or []
+            ]
+        else:
+            members = [geojson_geom]
+        for poly in members:
+            if _crosses_antimeridian(poly):
+                for part in _split_polygon_at_antimeridian(poly):
+                    cells |= _polyfill_one_polygon(part)
+            else:
+                cells |= _polyfill_one_polygon(poly)
+        return cells
+
+    return _polyfill_one_polygon(geojson_geom)
+
+
+def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
+    """Fill a single non-crossing Polygon/MultiPolygon at an adaptive resolution.
 
     Starts at the highest resolution whose estimated cell count fits in
     ``H3_POLYFILL_MAX_CELLS``; drops to the next coarser resolution on the
