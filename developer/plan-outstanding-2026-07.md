@@ -71,26 +71,28 @@ items confirmed shipped to whg3 prod (prod `main` @ `4ff311c3`):**
   0007_registry_attribution_fields [X]`** both applied. **§5's gate is cleared — the
   indexing side can now do the citation/licence prod re-push.**
 
-**🆕 NEWLY SURFACED (whg3 Gazetteers panel) — gazetteer-level coverage filtering (INDEXING
-SIDE, still to do).** The Atlas Gazetteers picker (Master Plan §1.4.1) ships two sketch
-"coverage" switches — *"Hide gazetteers outside **Area** filter"* (spatial) and *"Hide
-gazetteers outside **Date Range** filter"* (temporal). On the whg3 side (14 Jul) the temporal
-switch is now relabelled Period→**Date Range** and correctly **disabled+cleared unless a Date
-Range filter is active**; both remain **non-functional stubs** with a note, because the
-client has no per-gazetteer coverage metadata to filter on. **To make them work, the indexing
-side must expose, per authority/source (in the Sources registry / `/suggest` (Gazetteers
-picker) payload):**
-  1. **`h3_coverage`** — the set (or low-res summary) of H3 cells that authority's places
-     occupy, so the client can hide gazetteers whose coverage doesn't intersect the active
-     Area/region polygon. (Per-namespace H3 already exists at doc level post-14-Jul tgn/ohm
-     h3 backfill — this is an **aggregate rollup per authority**.)
-  2. **`temporal_extent`** — each authority's `[earliest, latest]` span (with the same
-     ongoing-null convention as places), so the client can hide gazetteers whose span
-     doesn't overlap the active Date Range. (Registry aggregates already carry a temporal
-     range for `un` = `[2025, null]` — generalise to every authority.)
-Once both land in the Gazetteers-picker payload, the **whg3 follow-up is small**: wire the
-two switches (intersection tests already sketched client-side) and drop the stub note. No
-whg3 blocker until then.
+**🆕 Gazetteer-level coverage filtering — INDEXING SIDE ✅ DONE (2026-07-14); whg3
+exposure + wiring is the remainder.** The Atlas Gazetteers picker (Master Plan §1.4.1)
+ships two "coverage" switches — *"Hide gazetteers outside **Area** filter"* (spatial) and
+*"Hide gazetteers outside **Date Range** filter"* (temporal) — both currently
+non-functional stubs because the client had no per-gazetteer coverage metadata. They need,
+per authority: (1) **`h3_coverage`** — the H3 cell rollup of that authority's places (to
+hide gazetteers whose coverage doesn't intersect the active Area polygon); (2)
+**`temporal_extent`** — `[earliest, latest]` with the ongoing-null convention (to hide
+gazetteers whose span doesn't overlap the active Date Range).
+
+- **✅ Indexing side (done 14 Jul):** `gazetteer_h3_coverage` + `gazetteer_temporal_extent`
+  aggregates now exist for **all 22 authorities** (regenerated the missing `po` temporal),
+  and `push_gazetteer_inventory` ships **both** fields per authority. **Re-pushed to prod
+  AND dev for all 22 (22/22, 0 failures).** So the registry carries current coverage for
+  every gazetteer — e.g. `un` = `[2025, null]` (ongoing), undated authorities like `gn` =
+  `[null, null]`.
+- **▶ Remaining (whg3 / Django, "small" per the whg3 agent):** the gateway has **no**
+  gazetteers-list endpoint — the picker reads the **Django Sources registry**, so the
+  registry **read API** must **expose** `h3_coverage` + `temporal_extent` in the
+  Gazetteers-picker payload, then wire the two switches (client-side intersection tests
+  already sketched). If the picker still shows no coverage metadata, that's a Django
+  serializer exposure gap, **not** an indexing-data gap (the data is pushed).
 
 ---
 
