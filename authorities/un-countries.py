@@ -138,8 +138,20 @@ def create_country_place_doc(feature):
     name_long = props.get('NAME_LONG', name)
     formal_name = props.get('FORMAL_EN', name_long)
 
-    iso_a2 = props.get('ISO_A2', props.get('ISO_A2_EH', ''))
-    iso_a3 = props.get('ISO_A3', props.get('ISO_A3_EH', ''))
+    # Natural Earth sets ISO_A2 / ISO_A3 to the sentinel "-99" for a number of
+    # de-facto sovereign states whose codes it considers politically contested
+    # (France, Norway, Kosovo, …); the actual code lives in the *_EH ("de facto")
+    # field. Without this fallback those countries get NO ccode and drop out of
+    # the country index entirely — so spatial ccode enrichment silently fails
+    # for every place in France, Norway, Kosovo, etc.
+    def _iso(primary, fallback):
+        v = props.get(primary, '')
+        if not v or v == '-99':
+            v = props.get(fallback, '')
+        return v
+
+    iso_a2 = _iso('ISO_A2', 'ISO_A2_EH')
+    iso_a3 = _iso('ISO_A3', 'ISO_A3_EH')
     iso_n3 = props.get('ISO_N3', '')
 
     place_id = f"un:{iso_a3.lower()}" if iso_a3 and iso_a3 != '-99' else f"un:{name.lower().replace(' ', '_')}"
