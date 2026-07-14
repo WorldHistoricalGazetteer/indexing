@@ -104,6 +104,29 @@ def _iter_source_docs(namespace: str) -> Iterable[dict[str, Any]]:
             yield json.loads(line)
 
 
+def keep_resolvable_aat_ids(aat_ids, hierarchy) -> list[int]:
+    """Filter aat_ids down to those RESOLVABLE in the loaded AAT hierarchy (present in
+    the ``types`` index with a preferred term/path).
+
+    This is the guard against crosswalk curation errors: an aat_id that isn't in the
+    hierarchy either doesn't exist in Getty AAT (a bad id — e.g. the hand-typed static
+    maps that rendered as numeric facet labels) or is a real concept not yet loaded
+    into ``types`` (so it couldn't be labelled/filtered anyway). Either way it must not
+    reach place docs. Order-preserving + deduped; returns int ids.
+    """
+    kept: list[int] = []
+    seen: set[int] = set()
+    for a in aat_ids or ():
+        try:
+            ai = int(a)
+        except (TypeError, ValueError):
+            continue
+        if ai in hierarchy and ai not in seen:
+            kept.append(ai)
+            seen.add(ai)
+    return kept
+
+
 def augment_doc(
     doc: dict[str, Any],
     mappings: dict[str, dict[str, list[int]]],
@@ -146,19 +169,18 @@ def augment_doc(
         manual = resolve_manual_aat(namespace, entry.get("identifier"),
                                     entry.get("sourceLabel"))
         if manual and not entry.get("aat_ids"):
-            new_entry = dict(entry)
-            new_entry["aat_ids"] = list(manual)
-            paths = []
-            for a in manual:
-                h = hierarchy.get(int(a))
-                if h and h.get("path"):
-                    paths.append(h["path"])
-            if paths:
-                new_entry["aat_paths"] = paths
-            new_types.append(new_entry)
-            augmented += 1
-            changed = True
-            continue
+            valid = keep_resolvable_aat_ids(manual, hierarchy)
+            if valid:
+                new_entry = dict(entry)
+                new_entry["aat_ids"] = valid
+                paths = [hierarchy[a]["path"] for a in valid
+                         if hierarchy.get(a) and hierarchy[a].get("path")]
+                if paths:
+                    new_entry["aat_paths"] = paths
+                new_types.append(new_entry)
+                augmented += 1
+                changed = True
+                continue
         # Path-fill: a type that already carries aat_ids but no aat_paths gets its
         # hierarchy paths here. Covers direct-AAT authorities (ofs/og) whose label
         # ('ottnfs'/'ottgaz') isn't a mapped vocab — their aat_ids are intrinsic, set
@@ -190,14 +212,13 @@ def augment_doc(
             new_types.append(entry)
             continue
 
-        aat_ids = mappings.get(vocab, {}).get(key)
+        aat_ids = keep_resolvable_aat_ids(mappings.get(vocab, {}).get(key), hierarchy)
         if not aat_ids:
             new_types.append(entry)
             continue
 
-        # Build parallel arrays: paths[] only includes ids that have a
-        # hierarchy entry. `aat_ids` always reflects the full mapping —
-        # so a missing path doesn't hide the id from term-filter searches.
+        # Parallel arrays; every id here is hierarchy-resolvable (validated above),
+        # so it carries a real term/path and never renders as a numeric facet label.
         aat_paths: list[str] = []
         for aid in aat_ids:
             entry_h = hierarchy.get(aid)
@@ -205,7 +226,7 @@ def augment_doc(
                 aat_paths.append(entry_h["path"])
 
         new_entry = dict(entry)
-        new_entry["aat_ids"] = list(aat_ids)
+        new_entry["aat_ids"] = aat_ids
         if aat_paths:
             new_entry["aat_paths"] = aat_paths
         new_types.append(new_entry)
