@@ -493,19 +493,42 @@ class UnCountryIndex:
                         shp = geojson_to_shapely(hull)
                 if shp is None or shp.is_empty:
                     continue
-                geoms.append(shp)
-                ccodes.append(ccode)
+                # Decompose MultiPolygons into their constituent Polygons so
+                # each STRtree entry has a LOCAL envelope. Otherwise the US/RU
+                # multipolygons (whose parts straddle ±180) have a globe-spanning
+                # envelope and get exact-tested against every point on Earth —
+                # ~300 docs/s. Per-part local envelopes let the tree prune, and
+                # the union of parts is identical.
+                if shp.geom_type == "MultiPolygon":
+                    for part in shp.geoms:
+                        if not part.is_empty:
+                            geoms.append(part)
+                            ccodes.append(ccode)
+                else:
+                    geoms.append(shp)
+                    ccodes.append(ccode)
         self._geoms = geoms
         self._ccodes = ccodes
         self._prepared = [prep(g) for g in geoms]
         self._tree = STRtree(geoms) if geoms else None
 
-    def ccodes_for(self, place_geom: BaseGeometry) -> list[str]:
-        """Return the ISO ccodes whose country geometry contains/overlaps the
-        place geometry. Points → all containing countries; areas → every
-        overlapping country ordered by descending overlap area."""
+    def ccodes_for(
+        self, place_geom: BaseGeometry, snap_tol_deg: float = 0.0
+    ) -> tuple[list[str], bool]:
+        """Return ``(ccodes, snapped)`` for a place geometry.
+
+        Points → all containing countries; areas → every overlapping country
+        ordered by descending overlap area.
+
+        ``snap_tol_deg`` > 0 enables an **unambiguous** nearest-country snap for
+        points that fall in no country (Natural Earth's non-topological borders
+        leave sub-km slivers between neighbours). When the point lies within the
+        tolerance of *exactly one* country, that ccode is returned with
+        ``snapped=True``; if two+ countries are that close (a true border) or
+        the nearest is farther, nothing is returned — so a wrong side of a
+        border can never be assigned."""
         if self._tree is None or place_geom is None or place_geom.is_empty:
-            return []
+            return [], False
         is_point = place_geom.geom_type == "Point"
         matches: list[tuple[str, float]] = []
         for i in self._tree.query(place_geom):
@@ -525,38 +548,52 @@ class UnCountryIndex:
                 matches.append((self._ccodes[idx], area))
             except Exception:
                 continue
-        if not matches:
-            return []
-        if is_point:
-            return sorted({c for c, _ in matches})
-        matches.sort(key=lambda t: t[1], reverse=True)
-        # de-dup preserving overlap order
-        seen: set[str] = set()
-        out: list[str] = []
-        for c, _ in matches:
-            if c not in seen:
-                seen.add(c)
-                out.append(c)
-        return out
+        if matches:
+            if is_point:
+                return sorted({c for c, _ in matches}), False
+            matches.sort(key=lambda t: t[1], reverse=True)
+            seen: set[str] = set()
+            out: list[str] = []
+            for c, _ in matches:
+                if c not in seen:
+                    seen.add(c)
+                    out.append(c)
+            return out, False
+
+        # No containment: try the unambiguous nearest-country snap for points.
+        if is_point and snap_tol_deg > 0:
+            near: set[str] = set()
+            try:
+                for i in self._tree.query(place_geom.buffer(snap_tol_deg)):
+                    idx = int(i)
+                    if self._geoms[idx].distance(place_geom) <= snap_tol_deg:
+                        near.add(self._ccodes[idx])
+            except Exception:
+                return [], False
+            if len(near) == 1:
+                return sorted(near), True
+        return [], False
 
 
 def resolve_ccodes_for_doc_exact(
     doc: dict[str, Any],
     country_index: "UnCountryIndex",
     place_reader: "GeomStoreReader | None",
+    snap_tol_deg: float = 0.0,
 ) -> tuple[list[str], str]:
     """Gap-free variant of :func:`resolve_ccodes_for_doc` using
     :class:`UnCountryIndex` (no h3 prefilter). Returns ``(ccodes, outcome)``
-    with outcome ``"ok" | "no_geom" | "no_match"``. ``no_match`` is a *correct*
-    empty result — the place is genuinely outside every country (at sea,
-    Antarctica, disputed)."""
+    with outcome ``"ok" | "snap" | "no_geom" | "no_match"``. ``snap`` marks an
+    unambiguous nearest-country recovery (see :meth:`UnCountryIndex.ccodes_for`);
+    ``no_match`` is a *correct* empty result — the place is genuinely outside
+    every country (at sea, Antarctica, disputed)."""
     place_geom = _extract_place_geometry(doc, place_reader)
     if place_geom is None:
         return [], "no_geom"
-    ccodes = country_index.ccodes_for(place_geom)
+    ccodes, snapped = country_index.ccodes_for(place_geom, snap_tol_deg=snap_tol_deg)
     if not ccodes:
         return [], "no_match"
-    return ccodes, "ok"
+    return ccodes, ("snap" if snapped else "ok")
 
 
 # ---------------------------------------------------------------------------

@@ -129,6 +129,14 @@ def create_doc(osm_id, osm_type, tags, geometry):
     if types:
         doc['types'] = types
 
+    # ISO 3166-1 alpha-2 country code straight from the OSM boundary tags, when
+    # present (admin_level=2 countries + dependent territories, which carry their
+    # own code). OSM borders are topologically noded, so this is authoritative
+    # and gap-free where available — preferred over spatial ccode enrichment.
+    iso2 = tags.get('ISO3166-1:alpha2') or tags.get('ISO3166-1')
+    if isinstance(iso2, str) and len(iso2) == 2 and iso2.isalpha():
+        doc['ccodes'] = [iso2.upper()]
+
     # Relations
     if 'wikidata' in tags:
         doc['relations'] = [{
@@ -175,7 +183,12 @@ def process_tags(tags):
         if tag.k.startswith('name:'):
             result['names'][tag.k[5:]] = tag.v
         elif tag.k in {'place', 'natural', 'water', 'waterway', 'historic', 'landuse', 'boundary', 'admin_level',
-                       'population', 'elevation', 'wikidata'}:
+                       'population', 'elevation', 'wikidata',
+                       # ISO 3166-1 country codes carried by admin_level=2
+                       # country relations AND dependent-territory relations
+                       # (which carry their OWN code, e.g. PR, GU) — the
+                       # topologically-noded source we want for accurate ccodes.
+                       'ISO3166-1', 'ISO3166-1:alpha2'}:
             result[tag.k] = tag.v
 
     return result

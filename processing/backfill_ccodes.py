@@ -155,51 +155,56 @@ def export(args) -> int:
 def resolve(args) -> int:
     # Imported here so `export`/`apply` on pitt don't need h3/shapely/UN geoms.
     from processing.ccode_enrichment import (
-        PREFILTER_RESOLUTION,
         SOURCE_LABEL,
-        _UnGeometryCache,
+        UnCountryIndex,
         _load_un_records,
-        build_un_prefilter,
-        resolve_ccodes_for_doc,
+        resolve_ccodes_for_doc_exact,
     )
     from processing.geom_store import GeomStoreReader
     from processing.settings import GEOM_STORE_DIR
     from processing.helpers import compute_h3_fields
 
-    print("loading UN records + building prefilter...", flush=True)
-    un_records = _load_un_records()
-    cell_to_ccodes, ccode_to_geoms = build_un_prefilter(un_records)
-    un_cache = _UnGeometryCache(ccode_to_geoms)
     try:
         place_reader = GeomStoreReader(GEOM_STORE_DIR)
     except FileNotFoundError:
         place_reader = None
-    print(f"  un_records={len(un_records)} prefilter_cells={len(cell_to_ccodes)} "
+    print("loading UN records + building STRtree country index "
+          "(exact; no h3-prefilter gaps)...", flush=True)
+    un_records = _load_un_records()
+    country_index = UnCountryIndex(un_records, place_reader)
+    print(f"  un_records={len(un_records)} country_geoms={len(country_index._geoms)} "
           f"geom_store={'yes' if place_reader else 'no'}", flush=True)
 
     patterns = [args.infile] if isinstance(args.infile, str) else list(args.infile)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    seen = ok_cc = ok_h3 = no_geom = no_cand = no_match = 0
+    sl, of = args.slice, args.of
+    seen = ok_cc = ok_h3 = no_geom = no_match = 0
+    line_no = -1
     t0 = time.time()
     with out_path.open("w", encoding="utf-8") as fh:
         for rec in _iter_jsonl(patterns):
+            line_no += 1
+            if of > 1 and (line_no % of) != sl:
+                continue
             seen += 1
             pid = rec.get("place_id")
             if not pid:
                 continue
 
-            ccodes, outcome = resolve_ccodes_for_doc(
-                rec, cell_to_ccodes, un_cache, place_reader,
-                synth_res=PREFILTER_RESOLUTION,
+            # Per-doc: resolve against the place's repr_point (guaranteed within
+            # its geometry, so its country IS the place's country). Pass reader
+            # None so we DON'T re-read each polygon from the geom store — that
+            # disk read per doc capped throughput at ~300/s. The country_index
+            # itself was built WITH the reader (real NE country polygons).
+            ccodes, outcome = resolve_ccodes_for_doc_exact(
+                rec, country_index, None, snap_tol_deg=args.snap_deg,
             )
             if outcome == "ok":
                 ok_cc += 1
             elif outcome == "no_geom":
                 no_geom += 1
-            elif outcome == "no_candidate":
-                no_cand += 1
             elif outcome == "no_match":
                 no_match += 1
 
@@ -242,13 +247,13 @@ def resolve(args) -> int:
 
             if seen % 200_000 == 0:
                 print(f"  resolved {seen} cc_ok={ok_cc} h3_set={ok_h3} "
-                      f"no_match={no_match} no_cand={no_cand} no_geom={no_geom} "
+                      f"no_match={no_match} no_geom={no_geom} "
                       f"({seen/max(time.time()-t0,1e-6):.0f}/s)", flush=True)
 
     if place_reader is not None:
         place_reader.close()
     print(f"RESOLVE DONE seen={seen} cc_ok={ok_cc} h3_set={ok_h3} "
-          f"no_match={no_match} no_candidate={no_cand} no_geom={no_geom} "
+          f"no_match={no_match} no_geom={no_geom} "
           f"-> {out_path} in {time.time()-t0:.0f}s", flush=True)
     return 0
 
@@ -371,6 +376,12 @@ def main() -> None:
     r = sub.add_parser("resolve", help="resolve ccodes + h3 (needs UN geoms; Slurm)")
     r.add_argument("--in", dest="infile", required=True, help="export JSONL or glob")
     r.add_argument("--out", required=True)
+    r.add_argument("--slice", type=int, default=0, help="process lines where i%%of==slice")
+    r.add_argument("--of", type=int, default=1)
+    r.add_argument("--snap-deg", dest="snap_deg", type=float, default=0.0,
+                   help="unambiguous nearest-country snap tolerance in degrees "
+                        "(0=off; 0.01≈1km). Recovers border-gap points where "
+                        "exactly one country is within tolerance.")
     r.set_defaults(func=resolve)
 
     a = sub.add_parser("apply", help="throttled scripted update into live ES")
