@@ -1191,18 +1191,22 @@ which sits at `94fa903` — 7 commits BEHIND the coarse commit `87fb01e` — so 
 `h3_coverage_coarse` key → prod kept its default `[]` (dev was pushed from an up-to-date
 checkout, hence populated).** `_coarsen_coverage` derives coarse INLINE from the fine list at
 push time (no `{ns}.h3_coverage_coarse.json` file exists), so whg3's "missing aggregate file"
-guess was a red herring. **Two fixes landed 15 Jul:** (1) hardened `_coarsen_coverage` to
-RAISE instead of silently returning `[]` when `h3` can't be imported (the second latent
-blank-the-field mode); (2) reconciled the `/vast` clone to `origin/main`. **BLOCKED on execution:**
-the WHG API token lives only on `/ix1` (`/ix1/ishi/secrets/whg-api.token` + the `/ix1` clone's
-`.env.local`), and `/ix1` is DOWN (NFS outage — see `place#118`). **Re-push the moment `/ix1`
-returns (or the token is placed on `/vast`), one command from the updated `/vast` clone:**
+guess was a red herring. **Code fix landed 15 Jul (committed + pushed to `origin/main` @ `126fe9f`):** hardened
+`_coarsen_coverage` to RAISE instead of silently returning `[]` when `h3` can't be imported
+(the second latent blank-the-field mode). **`/vast` clone NOT yet reconciled:** it is still at
+`94fa903`; stg135 has no GitHub key on pitt (`git@github.com` SSH → publickey denied), so only
+`es -update` (run as `gazetteer`) can pull it — which requires `/ix1` up anyway. **BLOCKED on
+execution — token + clone both gated on `/ix1`:** the WHG API token lives only on `/ix1`
+(`/ix1/ishi/secrets/whg-api.token` + the `/ix1` clone's `.env.local`), and `/ix1` is DOWN (NFS
+outage — see `place#118`). **When `/ix1` returns:** `es -update` (reconciles both clones to
+`origin/main`, incl. the coarse wiring + this harden fix), then one command:
 ```
 cd /vast/ishi/elastic && /home/gazetteer/miniconda/envs/whg/bin/python \
   -m processing.push_gazetteer_inventory            # prod (default endpoint)
 # then --endpoint "$WHG_DEV_INVENTORY_ENDPOINT" for dev if needed
 ```
 Verify: `GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` non-empty.
+(Placing the token on `/vast` — per `place#118` — would let this run without waiting for `/ix1`.)
 
 **🔁 ORIGINAL ACTION (indexing): RE-PUSH the inventory so `h3_coverage_coarse` populates whg3.**
 The `h3_coverage_coarse` (res-2) field was added to the push (commits 87fb01e/c31eeb3) BEFORE
