@@ -28,7 +28,10 @@ IX1_BASE = os.getenv("IX1_BASE", "/ix1/ishi")
 # Fast flash storage (mirrors processing.settings.IX3_BASE). Prefer this over
 # /ix1 for latency-sensitive gateway-owned files — /ix1 (NFS) can be slow.
 IX3_BASE = os.getenv("IX3_BASE", "/vast/ishi")
-ELASTIC_PASS_FILE = f"{IX1_BASE}/es/config/elastic.password"
+# Prefer the /vast copy (ES relocated off /ix1, 2026-07-15) so the gateway
+# survives an /ix1 outage; fall back to the /ix1 original.
+_vast_pass_file = f"{IX3_BASE}/es/config/elastic.password"
+ELASTIC_PASS_FILE = _vast_pass_file if os.path.exists(_vast_pass_file) else f"{IX1_BASE}/es/config/elastic.password"
 
 # ES index names (may be dated aliases like toponyms_20260317)
 TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms_*")

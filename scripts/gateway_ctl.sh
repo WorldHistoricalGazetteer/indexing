@@ -5,7 +5,8 @@
 # Must be run as the gazetteer user (owner of the gateway process).
 # From an interactive SSH session: gateway_ctl.sh restart
 # The es.sh alias can also be used for ES operations.
-GATEWAY_DIR="/ix1/ishi/elastic"
+# Gateway runs from the /vast clone (ES + gateway relocated off /ix1, 2026-07-15).
+GATEWAY_DIR="/vast/ishi/elastic"
 LOGFILE="/dev/null"
 _find_pid() {
     pgrep -f "python -m gateway" -u gazetteer 2>/dev/null | head -1
