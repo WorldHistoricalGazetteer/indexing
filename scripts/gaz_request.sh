@@ -4,13 +4,13 @@
 #
 #   scripts/gaz_request.sh <token> [timeout_secs]
 #   tokens: health | es-restart | es-start | es-stop | kibana-restart |
-#           gateway-restart | restart-all
+#           gateway-restart | gateway-start | gateway-stop | restart-all
 #
 # Unprivileged: it only drops a request file and polls for the response; the actual
 # op runs as gazetteer via the cron-driven gaz_relay.sh (allowlist enforced there).
 
 set -uo pipefail
-RELAY="/ix1/ishi/elastic/.gaz_relay"
+RELAY="/vast/ishi/elastic/.gaz_relay"
 token="${1:?usage: gaz_request.sh <token> [timeout_secs]}"
 timeout="${2:-240}"
 

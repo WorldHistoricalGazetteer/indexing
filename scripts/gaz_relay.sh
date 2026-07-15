@@ -10,7 +10,7 @@
 #   * This script is the allowlist enforcer, so it MUST be owned by `gazetteer`
 #     and NOT group/world-writable — install a copy into gazetteer's home, do NOT
 #     run it directly from the group-writable repo. Install:
-#         install -m 755 /ix1/ishi/elastic/scripts/gaz_relay.sh ~/gaz_relay.sh
+#         install -m 755 /vast/ishi/elastic/scripts/gaz_relay.sh ~/gaz_relay.sh
 #     and point cron at ~/gaz_relay.sh (see below).
 #   * It only ever runs `es.sh <fixed-arg>` for allowlisted tokens — never a string
 #     taken from the request. The request token is used ONLY as a lookup key.
@@ -19,28 +19,34 @@
 #     relay does not widen the trust boundary beyond what already exists.
 #
 # INSTALL (as gazetteer):
-#   install -m 755 /ix1/ishi/elastic/scripts/gaz_relay.sh ~/gaz_relay.sh
-#   mkdir -p /ix1/ishi/elastic/.gaz_relay && chmod 2775 /ix1/ishi/elastic/.gaz_relay
+#   install -m 755 /vast/ishi/elastic/scripts/gaz_relay.sh ~/gaz_relay.sh
+#   mkdir -p /vast/ishi/elastic/.gaz_relay && chmod 2775 /vast/ishi/elastic/.gaz_relay
 #   ( crontab -l 2>/dev/null | grep -v gaz_relay; \
-#     echo '* * * * * /home/gazetteer/gaz_relay.sh >> /ix1/ishi/elastic/logs/gaz_relay.log 2>&1' ) | crontab -
+#     echo '* * * * * /home/gazetteer/gaz_relay.sh >> /vast/ishi/elastic/logs/gaz_relay.log 2>&1' ) | crontab -
 #
 # A requester submits via scripts/gaz_request.sh (see that file).
 
 set -uo pipefail
 
-REPO="/ix1/ishi/elastic"
+# Runtime relocated to /vast (ES + gateway off /ix1, 2026-07-15).
+REPO="/vast/ishi/elastic"
 RELAY="$REPO/.gaz_relay"
 ES="$REPO/scripts/es.sh"
+GW="$REPO/scripts/gateway_ctl.sh"
 
-# token -> es.sh argument. Add ops here (this is the security allowlist).
+# token -> FULL command (fixed HERE — the request token is only a lookup key, it
+# is NEVER interpolated into the command). Gateway ops go through gateway_ctl.sh
+# (the /vast-aware `gw` script), ES/Kibana ops through es.sh. This is the allowlist.
 declare -A ALLOW=(
-  [health]="-health"
-  [es-restart]="es-restart"
-  [es-start]="es-start"
-  [es-stop]="es-stop"
-  [kibana-restart]="kibana-restart"
-  [gateway-restart]="gateway-restart"
-  [restart-all]="-restart"
+  [health]="$ES -health"
+  [es-restart]="$ES es-restart"
+  [es-start]="$ES es-start"
+  [es-stop]="$ES es-stop"
+  [kibana-restart]="$ES kibana-restart"
+  [gateway-restart]="$GW restart"
+  [gateway-start]="$GW start"
+  [gateway-stop]="$GW stop"
+  [restart-all]="$ES -restart"
 )
 
 mkdir -p "$RELAY" 2>/dev/null
@@ -65,10 +71,10 @@ for req in "$RELAY"/req-*; do
   {
     echo "# gaz_relay $(date '+%F %T') requester=$requester token=[$token]"
     if [[ -n "${ALLOW[$token]:-}" ]]; then
-      arg="${ALLOW[$token]}"
-      echo "# running as $(whoami): es.sh $arg"
+      cmd="${ALLOW[$token]}"
+      echo "# running as $(whoami): $cmd"
       echo "----------------------------------------"
-      bash "$ES" "$arg"
+      bash -c "$cmd"
       echo "----------------------------------------"
       echo "EXIT: $?"
     else

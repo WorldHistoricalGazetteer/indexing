@@ -61,7 +61,9 @@ fi
 
 # 5. ES is ready - start Kibana + Gateway (idempotent; PID-guarded).
 echo "[$(date '+%T')] es kibana-start";  bash "$ESH/es.sh" kibana-start
-echo "[$(date '+%T')] es gateway-start"; bash "$ESH/es.sh" gateway-start
+# Gateway via gateway_ctl.sh (the /vast-aware manager) — es.sh's own gateway-start
+# writes PID/logs under /ix1. `start` is a no-op if already running.
+echo "[$(date '+%T')] gw start"; bash "$ESH/gateway_ctl.sh" start
 sleep 3
 echo "[$(date '+%T')] gateway health: $(curl -s -m 10 http://localhost:9200/api/health 2>/dev/null | head -c 200)"
 echo "================ done $(date '+%F %T') ================"
