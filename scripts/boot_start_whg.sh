@@ -33,9 +33,13 @@ if [ "$ready" -ne 1 ]; then
 fi
 
 # 2. Activate whg conda (gazetteer's LOCAL miniconda; @reboot has no login shell).
+# conda's activate/deactivate hooks reference unbound vars (e.g. CONDA_BACKUP_CXX
+# from the gxx compiler package), which are fatal under `set -u` — relax it here.
 CONDA_SH=/home/gazetteer/miniconda/etc/profile.d/conda.sh
 if [ -f "$CONDA_SH" ]; then
+    set +u
     source "$CONDA_SH" && conda activate whg && echo "[$(date '+%T')] conda whg: $(which python)"
+    set -u
 else
     echo "[$(date '+%T')] WARNING: $CONDA_SH missing - gateway may fail to start."
 fi
