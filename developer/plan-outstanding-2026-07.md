@@ -1182,7 +1182,29 @@ schema change and scripts were reverted and the branch deleted.
 
 ---
 
-**🔁 ACTION (indexing): RE-PUSH the inventory so `h3_coverage_coarse` populates whg3.**
+**✅ DISPUTE RESOLVED (15 Jul, indexing) — whg3 was right; root cause = a STALE `/vast`
+clone.** whg3's round-trip proof stands: prod DB has both columns, migration `0008` applied,
+receiver stores it, dev populated with the same code. My earlier "prod model lacks the field"
+claim was wrong. **The actual cause: the prod inventory push ran from `/vast/ishi/elastic`,
+which sits at `94fa903` — 7 commits BEHIND the coarse commit `87fb01e` — so its
+`push_gazetteer_inventory.py` had no `_coarsen_coverage` at all → the payload carried no
+`h3_coverage_coarse` key → prod kept its default `[]` (dev was pushed from an up-to-date
+checkout, hence populated).** `_coarsen_coverage` derives coarse INLINE from the fine list at
+push time (no `{ns}.h3_coverage_coarse.json` file exists), so whg3's "missing aggregate file"
+guess was a red herring. **Two fixes landed 15 Jul:** (1) hardened `_coarsen_coverage` to
+RAISE instead of silently returning `[]` when `h3` can't be imported (the second latent
+blank-the-field mode); (2) reconciled the `/vast` clone to `origin/main`. **BLOCKED on execution:**
+the WHG API token lives only on `/ix1` (`/ix1/ishi/secrets/whg-api.token` + the `/ix1` clone's
+`.env.local`), and `/ix1` is DOWN (NFS outage — see `place#118`). **Re-push the moment `/ix1`
+returns (or the token is placed on `/vast`), one command from the updated `/vast` clone:**
+```
+cd /vast/ishi/elastic && /home/gazetteer/miniconda/envs/whg/bin/python \
+  -m processing.push_gazetteer_inventory            # prod (default endpoint)
+# then --endpoint "$WHG_DEV_INVENTORY_ENDPOINT" for dev if needed
+```
+Verify: `GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` non-empty.
+
+**🔁 ORIGINAL ACTION (indexing): RE-PUSH the inventory so `h3_coverage_coarse` populates whg3.**
 The `h3_coverage_coarse` (res-2) field was added to the push (commits 87fb01e/c31eeb3) BEFORE
 whg3 had a column to store it, so the whg3 inventory receiver silently discarded it (whg3's
 registry still shows `h3_coverage_coarse == []` for all authorities). whg3 has now shipped

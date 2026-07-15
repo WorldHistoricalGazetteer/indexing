@@ -343,8 +343,18 @@ def _coarsen_coverage(fine: Any) -> Any:
         return []
     try:
         import h3 as _h3
-    except ImportError:
-        return []
+    except ImportError as exc:  # pragma: no cover - environment guard
+        # We reach here only with a non-empty fine cell list to coarsen. Silently
+        # returning [] would blank the registry's h3_coverage_coarse for EVERY
+        # authority while the fine field stays populated -- the exact stale/missing
+        # env failure that left prod empty on 15 Jul 2026. Fail loudly instead of
+        # shipping an empty coarse coverage.
+        raise RuntimeError(
+            "h3 is required to compute h3_coverage_coarse but could not be "
+            "imported; refusing to ship empty coarse coverage (would blank the "
+            "registry field). Install h3 in the push environment (the `whg` conda "
+            "env has it) and re-run."
+        ) from exc
     out: set[str] = set()
     for c in fine:
         _add_coarse(c, out, _COARSE_COVERAGE_RES, _h3)
