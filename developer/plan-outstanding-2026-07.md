@@ -1179,3 +1179,15 @@ The earlier "concrete sketch" here (the `co_references` schema, the
 `coreferences_patch` scripts, "kill the overlay") was the WRONG design and has
 been removed. The correct, confirmed work breakdown now lives in §1 above; the
 schema change and scripts were reverted and the branch deleted.
+
+---
+
+**🔁 ACTION (indexing): RE-PUSH the inventory so `h3_coverage_coarse` populates whg3.**
+The `h3_coverage_coarse` (res-2) field was added to the push (commits 87fb01e/c31eeb3) BEFORE
+whg3 had a column to store it, so the whg3 inventory receiver silently discarded it (whg3's
+registry still shows `h3_coverage_coarse == []` for all authorities). whg3 has now shipped
+the field + receiver + migration `api 0008_gazetteer_h3_coverage_coarse` (staging + main).
+**Please re-run `push_gazetteer_inventory` to dev AND prod** — the Atlas Area coverage filter
+(h3-js client intersection) is wired and waiting on the data. Verify with:
+`GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` (expect a small res-2
+cell list, not []).
