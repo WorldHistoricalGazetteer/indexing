@@ -323,6 +323,34 @@ def _add_coarse(cell: str, out: set[str], res: int, _h3) -> None:
         pass
 
 
+# Resolution for the browser-side `h3_coverage_coarse` field. The fine
+# `h3_coverage` (up to ~426k cells / 6 MB per authority — 130 MB across all 22)
+# is far too large to ship to the Atlas Gazetteers-picker; the Area switch does
+# `h3.polygonToCells(activeArea, res) ∩ authoritySet` client-side against this
+# condensed rollup instead. res 2 (~86k km² hexes) → ~200 KB total across the
+# regional authorities (a ~650× reduction); coarse-but-fine for a hide/show
+# pre-filter. See developer/plan-outstanding-2026-07.md (coverage filtering).
+_COARSE_COVERAGE_RES = 2
+
+
+def _coarsen_coverage(fine: Any) -> Any:
+    """Roll a fine H3 coverage cell list up to :data:`_COARSE_COVERAGE_RES`
+    (deduped, sorted). Passes the ``"global"`` sentinel and empty/None through
+    unchanged."""
+    if fine == H3_COVERAGE_GLOBAL_SENTINEL:
+        return H3_COVERAGE_GLOBAL_SENTINEL
+    if not isinstance(fine, list) or not fine:
+        return []
+    try:
+        import h3 as _h3
+    except ImportError:
+        return []
+    out: set[str] = set()
+    for c in fine:
+        _add_coarse(c, out, _COARSE_COVERAGE_RES, _h3)
+    return sorted(out)
+
+
 def _expand_whg_dataset_entries(
     h3_coverage: Any,
     temporal_extent: list[int | None],
@@ -369,6 +397,7 @@ def _expand_whg_dataset_entries(
             "record_count": int(ds.get("record_count") or 0),
             "status": str(ds.get("dataset_status") or "pending"),
             "h3_coverage": coverage,
+            "h3_coverage_coarse": _coarsen_coverage(coverage),
             "temporal_extent": temporal_extent,
         })
     return out
@@ -411,6 +440,7 @@ def build_inventory_payload(
             "record_count": _read_record_count(ns),
             "status": "published",
             "h3_coverage": h3,
+            "h3_coverage_coarse": _coarsen_coverage(h3),
             "temporal_extent": [start, end],
         }
         entry.update(_attribution_fields(meta))
@@ -453,6 +483,7 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         "record_count": _read_record_count(namespace),
         "status": "published",
         "h3_coverage": _read_h3_coverage(namespace),
+        "h3_coverage_coarse": _coarsen_coverage(_read_h3_coverage(namespace)),
         "temporal_extent": list(_read_temporal_extent(namespace)),
     }
     entry.update(_attribution_fields(meta))
