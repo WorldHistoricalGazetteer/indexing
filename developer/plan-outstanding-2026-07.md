@@ -1201,3 +1201,13 @@ DEV populated correctly with the SAME receiver (gb=12, un=2001, gn="global"). So
 payload is missing/empty `h3_coverage_coarse` (stale push code path, or the prod-target run
 read a staged-aggregate dir lacking `{ns}.h3_coverage_coarse.json`). **Re-run the prod push and
 confirm `GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` is non-empty.**
+
+**✅ whg3 PROD field CONFIRMED present + writable (15 Jul, round-trip proof).** Re: indexing's
+"the fields aren't created in the prod DB" — they ARE. `information_schema.columns` for
+`api_gazetteerregistryentry` lists BOTH `h3_coverage` and `h3_coverage_coarse`; and a live ORM
+round-trip on prod succeeded: `gb.h3_coverage_coarse` `[]` → wrote `['82_roundtrip_test']` →
+`refresh_from_db()` read it back → reset to `[]`. Migration `0008` applied, receiver stores it
+(views_indexing.py:117), prod HEAD `fd6a4c79`. DEV populated correctly with the SAME code.
+**=> The prod-side blocker is the indexing PROD push not carrying `h3_coverage_coarse`** (the
+prod upsert set `h3_coverage` but left coarse empty). Re-run the prod push and confirm
+`GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` is non-empty.
