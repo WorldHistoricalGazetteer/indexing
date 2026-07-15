@@ -1191,3 +1191,13 @@ the field + receiver + migration `api 0008_gazetteer_h3_coverage_coarse` (stagin
 (h3-js client intersection) is wired and waiting on the data. Verify with:
 `GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` (expect a small res-2
 cell list, not []).
+
+**⚠️ PROD coarse push NOT landed (verified 15 Jul 06:47 UTC).** Indexing reported the coarse
+re-push reached prod, but whg3 PROD still shows `h3_coverage_coarse == []` for ALL authorities
+while the FINE `h3_coverage` is populated (gb=6393) and `gb.updated_at`=06:26 UTC (recent — a
+push DID touch the row, but without the coarse field). whg3 prod is READY: receiver stores
+`h3_coverage_coarse` (views_indexing.py:117), migration `0008` applied, prod HEAD `fd6a4c79`;
+DEV populated correctly with the SAME receiver (gb=12, un=2001, gn="global"). So the prod push
+payload is missing/empty `h3_coverage_coarse` (stale push code path, or the prod-target run
+read a staged-aggregate dir lacking `{ns}.h3_coverage_coarse.json`). **Re-run the prod push and
+confirm `GazetteerRegistryEntry.objects.get(namespace='gb').h3_coverage_coarse` is non-empty.**
