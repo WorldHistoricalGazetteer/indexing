@@ -553,11 +553,14 @@ start_kibana() {
         echo "  Run es -setup-security to enable authentication"
     fi
 
+    # Kibana data + logs on /vast (relocated off /ix1, 2026-07-15). Binaries
+    # (KIBANA_HOME) already on /vast; this removes the last /ix1 dependency.
+    mkdir -p "${IX3_BASE}/kibana/data" "${IX3_BASE}/kibana/logs"
     nohup "$KIBANA_HOME/bin/kibana" \
         --server.host="0.0.0.0" \
-        --path.data="${IX1_BASE}/kibana/data" \
+        --path.data="${IX3_BASE}/kibana/data" \
         ${KIBANA_EXTRA_ARGS} \
-        > "${IX1_BASE}/kibana/logs/nohup.out" 2>&1 &
+        > "${IX3_BASE}/kibana/logs/nohup.out" 2>&1 &
 
     echo $! > "$KIBANA_PID"
     echo "Kibana started (PID: $(cat $KIBANA_PID))"
