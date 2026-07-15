@@ -1,7 +1,7 @@
 #!/bin/bash
 # WHG production autostart — invoked from gazetteer's @reboot crontab.
 #
-# Sequence: 1) wait for /ix1 (ES config) to become readable, 2) activate the
+# Sequence: 1) wait for the /vast ES config to become readable, 2) activate the
 # whg conda env, 3) start ES, then POLL until the cluster is ready (a cold-boot
 # shard recovery can exceed es.sh's built-in 180s wait, which would otherwise
 # cause Kibana + Gateway to be skipped), and only THEN start Kibana + Gateway.
@@ -12,20 +12,23 @@
 # at boot (/vast is the resilient NFSv3 mount; /ix1 is NFSv4 and is what failed
 # to mount after the May 2026 maintenance). Logs to /vast/ishi/es.
 set -u
-ESH=/ix1/ishi/elastic/scripts
-PW=/ix1/ishi/es/config/elastic.password
+# ES runtime relocated to /vast (see developer/ix1-to-vast-es-migration-runbook.md):
+# use the /vast clone's es.sh (which reads /vast paths from its .env.local) and the
+# /vast password copy, so boot no longer waits on or depends on /ix1.
+ESH=/vast/ishi/elastic/scripts
+PW=/vast/ishi/es/config/elastic.password
 LOG=/vast/ishi/es/boot_start_whg.log
 exec >>"$LOG" 2>&1
 echo "================ boot_start $(date '+%F %T %Z') ================"
 
-# 1. Wait for /ix1 + config readable (NFS lags at boot; or broken post-maintenance).
+# 1. Wait for the /vast ES config (password copy) to be readable (NFS can lag at boot).
 ready=0
 for i in $(seq 1 90); do                 # up to ~15 min
-    if head -c1 "$PW" >/dev/null 2>&1; then ready=1; echo "[$(date '+%T')] /ix1 ready after ~$((i*10))s"; break; fi
+    if head -c1 "$PW" >/dev/null 2>&1; then ready=1; echo "[$(date '+%T')] /vast config ready after ~$((i*10))s"; break; fi
     sleep 10
 done
 if [ "$ready" -ne 1 ]; then
-    echo "[$(date '+%T')] ERROR: /ix1 not readable after 15 min - NOT starting (CRC mount issue?)."
+    echo "[$(date '+%T')] ERROR: /vast ES config not readable after 15 min - NOT starting (mount issue?)."
     exit 1
 fi
 
