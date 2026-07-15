@@ -8,11 +8,17 @@
 > down intermittently even though `/vast` and the ES **data** were healthy. This
 > runbook makes the ES **serving path** independent of `/ix1`.
 >
-> **Status: PREP COMPLETE (2026-07-15), cutover PENDING.** Everything below the
-> "Cutover" heading requires (a) a **stable `/ix1`** window (to copy the keystore +
-> password files) and (b) **`gazetteer`** privileges (via `gaz_relay`, or an operator).
-> **No root is needed for this migration** — root is only needed for the *separate*
-> `/ix1` remount that fixes the immediate wedged-mount incident.
+> **Status: ✅ COMPLETE (2026-07-15).** Cutover executed and verified: ES runs from
+> `/vast` (binary/config/keystore/logs, `es.sh`-managed, PID via `es -start`), all doc
+> counts identical to baseline, gateway relocated to the `/vast` clone (`gateway_ctl.sh`,
+> `/vast` password), `es`/`gw` aliases + `@reboot` autostart + gaz_relay all on `/vast`,
+> `/vast` clone unshallowed to deep primary (`REPO_DIR=/vast`), secrets (keystore, ES
+> passwords, `WHG_API_TOKEN`) copied to `/vast`, and the `/ix1` code clone retired to
+> `/ix1/ishi/elastic.retired-20260715` (reversible). `/ix1` now holds only data,
+> snapshots, secret originals + `kibana/data` — all off the serving path.
+> **Remaining (optional/soak):** end-to-end reboot test before `rm`-ing the `.retired`
+> clone; move Kibana `path.data` to `/vast` (step 8); fix `es.sh -health`'s gateway/Kibana
+> PID-file checks (cosmetic false "STOPPED" now that `gateway_ctl.sh` manages the gateway).
 
 ## The data is already on `/vast` — this is a RUNTIME relocation, not a data move
 `path.data=/vast/ishi/es/data` is unchanged. We only move binaries, config and logs.
