@@ -323,9 +323,12 @@ health_production() {
         echo "Kibana: STOPPED"
     fi
 
-    # Check if Gateway is running
-    if [ -f "$GATEWAY_PID" ] && kill -0 $(cat "$GATEWAY_PID") 2>/dev/null; then
-        echo "Gateway: RUNNING (PID: $(cat $GATEWAY_PID)) on port ${GATEWAY_PORT:-9200}"
+    # Check if Gateway is running. The gateway is managed by gateway_ctl.sh (the
+    # `gw` script), which is PID-file-less — match its pgrep check rather than the
+    # legacy es.sh GATEWAY_PID file (which start_gateway no longer writes).
+    local gw_pid=$(pgrep -f "python -m gateway" -u gazetteer 2>/dev/null | head -1)
+    if [ -n "$gw_pid" ]; then
+        echo "Gateway: RUNNING (PID: $gw_pid) on port ${GATEWAY_PORT:-9200}"
     else
         echo "Gateway: STOPPED"
     fi
