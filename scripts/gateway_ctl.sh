@@ -41,9 +41,10 @@ do_stop() {
 do_pull() {
     echo "Pulling latest gateway code..."
     # --ff-only: never auto-merge or open an editor on divergence (which would
-    # hang this non-interactive script); fail cleanly instead so do_restart can
-    # abort and leave the running gateway up.
-    cd "$GATEWAY_DIR" && git pull --ff-only origin main
+    # hang this non-interactive script); fail cleanly instead.
+    # -c safe.directory: the /vast clone is owned by stg135 but gw runs as
+    # gazetteer, so git's dubious-ownership guard would otherwise refuse the pull.
+    git -C "$GATEWAY_DIR" -c "safe.directory=$GATEWAY_DIR" pull --ff-only origin main
 }
 do_start() {
     local pid=$(_find_pid)
@@ -65,13 +66,12 @@ do_start() {
 }
 do_restart() {
     # Pull FIRST, while the gateway keeps serving on its old (in-memory) code —
-    # `git pull` doesn't affect a running process. Only take the gateway down,
-    # and only for the restart window (not the possibly-slow network pull), once
-    # the pull has SUCCEEDED. A failed/interrupted pull then leaves the running
-    # gateway untouched (zero outage) instead of stranding it stopped.
+    # `git pull` doesn't affect a running process. The pull is best-effort: since
+    # `--ff-only` is atomic (a failed pull leaves the clone at its previous, working
+    # commit), a pull failure (offline, no git auth, etc.) is NON-fatal — we warn and
+    # restart on the current code rather than strand the operator unable to restart.
     if ! do_pull; then
-        echo "Pull FAILED — gateway left running on current code (no restart, no downtime)." >&2
-        return 1
+        echo "WARNING: pull failed (offline / no git auth / ownership) — restarting on CURRENT code." >&2
     fi
     do_stop
     do_start
