@@ -140,6 +140,34 @@ autostart launches the `/vast` ES (steps 3) rather than the `/ix1` `es -start`, 
 Move `/ix1/ishi/kibana/data` → `/vast` so Kibana also survives `/ix1` outages
 (binaries already on `/vast`). Not on the public serving path.
 
+### 9. Retire the `/ix1` code clone — single clone on `/vast` (ends git-sync to `/ix1`)
+Goal: after the runtime is confirmed healthy on `/vast`, make `/vast/ishi/elastic` the
+**only** working clone so we never again `git pull` into `/ix1` (a hung `/ix1` was what
+blocked `gw restart`'s pull in the past). Do this only **after a soak period** (steps 3–7
+verified stable). This retires **code** only — authority DATA, snapshots and secrets
+originals deliberately stay on `/ix1` (see "What is intentionally LEFT on `/ix1`"); code
+running from `/vast` still *references* them via `IX1_BASE`, but only off the serving path.
+
+```bash
+# 9a. Find everything still pointing at the /ix1 clone (alias, relay, cron, boot scripts):
+grep -RIn '/ix1/ishi/elastic' /home/gazetteer/.bashrc /home/gazetteer/bin \
+     /home/gazetteer/gaz_relay.sh 2>/dev/null; crontab -l | grep -n '/ix1/ishi/elastic'
+```
+- **`es` alias** → re-point at `/vast/ishi/elastic/scripts/es.sh` (edit the alias line, or
+  re-run `es -install` from the `/vast` clone).
+- **`gaz_relay`** → its `ES=`/`es.sh` path + log path → `/vast/ishi/elastic` (log move already
+  done in step 6).
+- **cron / Slurm / ingestion invocations** that `cd /ix1/ishi/elastic` → `/vast/ishi/elastic`.
+- **`@reboot` wrapper** → already repointed in step 7; confirm it sources the `/vast` clone.
+```bash
+# 9b. Stop depending on the /ix1 clone. After the soak, park it (reversible) — do NOT rm yet:
+mv /ix1/ishi/elastic /ix1/ishi/elastic.retired-$(date +%Y%m%d)
+# Watch for anything that breaks; if something still needs it, mv it back. Remove for good
+# only once a full cycle (restart, gateway-restart, an ingest, a reboot) has passed clean.
+```
+> **Reversible:** every 9a change is a one-line revert; 9b is a rename (`mv` back). Nothing
+> is deleted until you're satisfied. `git` thereafter syncs to `/vast` only.
+
 ---
 
 ## Rollback (if the `/vast` ES fails to come up healthy)
