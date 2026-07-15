@@ -87,12 +87,21 @@ gazetteers whose span doesn't overlap the active Date Range).
   AND dev for all 22 (22/22, 0 failures).** So the registry carries current coverage for
   every gazetteer — e.g. `un` = `[2025, null]` (ongoing), undated authorities like `gn` =
   `[null, null]`.
-- **▶ Remaining (whg3 / Django, "small" per the whg3 agent):** the gateway has **no**
-  gazetteers-list endpoint — the picker reads the **Django Sources registry**, so the
-  registry **read API** must **expose** `h3_coverage` + `temporal_extent` in the
-  Gazetteers-picker payload, then wire the two switches (client-side intersection tests
-  already sketched). If the picker still shows no coverage metadata, that's a Django
-  serializer exposure gap, **not** an indexing-data gap (the data is pushed).
+- **▶ Temporal (Date Range) switch — DONE on whg3 dev (`2cbd1a42`, not yet prod).** The
+  Atlas page context now exposes `temporal_extent` per namespace (`gazetteer_temporal`)
+  and the switch hides gazetteers whose `[earliest,latest]` doesn't overlap the active Date
+  Range. Tiny payload, pure client-side. (Promotion held pending in-browser verification.)
+- **▶ Spatial (Area) switch — BLOCKED on an indexing deliverable. ACTION NEEDED (indexing):
+  add a CONDENSED per-authority H3 coverage field to the registry push.** The current
+  `h3_coverage` is FINE-resolution — the whg3 agent sampled **gb 6,393 / un 62,884 / clio
+  425,731 cells** (6+ MB each), far too large to ship to the browser. The agreed design
+  (SG, 15 Jul) is **h3-js in the browser** intersecting a **condensed** set, so please add
+  e.g. `h3_coverage_coarse` at **res-2 (≤842 cells global) or res-3** (`h3.cellToParent`
+  rollup of the fine set, dedup) — keep `"global"` for the core sources. Target: a few KB
+  total across 22 authorities. Once it lands in `push_gazetteer_inventory`, the whg3 side is
+  small: add `h3-js`, ship the condensed sets in the Gazetteers-picker payload, and do
+  `polygonToCells(activeArea, res) ∩ authoritySet` on the Area switch. (whg3 has no h3
+  library server- or client-side yet; adding h3-js client-side is part of the whg3 task.)
 
 ---
 
