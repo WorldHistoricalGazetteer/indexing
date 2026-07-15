@@ -91,17 +91,20 @@ gazetteers whose span doesn't overlap the active Date Range).
   Atlas page context now exposes `temporal_extent` per namespace (`gazetteer_temporal`)
   and the switch hides gazetteers whose `[earliest,latest]` doesn't overlap the active Date
   Range. Tiny payload, pure client-side. (Promotion held pending in-browser verification.)
-- **▶ Spatial (Area) switch — BLOCKED on an indexing deliverable. ACTION NEEDED (indexing):
-  add a CONDENSED per-authority H3 coverage field to the registry push.** The current
-  `h3_coverage` is FINE-resolution — the whg3 agent sampled **gb 6,393 / un 62,884 / clio
-  425,731 cells** (6+ MB each), far too large to ship to the browser. The agreed design
-  (SG, 15 Jul) is **h3-js in the browser** intersecting a **condensed** set, so please add
-  e.g. `h3_coverage_coarse` at **res-2 (≤842 cells global) or res-3** (`h3.cellToParent`
-  rollup of the fine set, dedup) — keep `"global"` for the core sources. Target: a few KB
-  total across 22 authorities. Once it lands in `push_gazetteer_inventory`, the whg3 side is
-  small: add `h3-js`, ship the condensed sets in the Gazetteers-picker payload, and do
-  `polygonToCells(activeArea, res) ∩ authoritySet` on the Area switch. (whg3 has no h3
-  library server- or client-side yet; adding h3-js client-side is part of the whg3 task.)
+- **▶ Spatial (Area) switch — INDEXING DELIVERABLE ✅ DONE (14 Jul); whg3 wiring remains.**
+  Added **`h3_coverage_coarse`** to `push_gazetteer_inventory` — the fine `h3_coverage`
+  rolled up to **res-2** via `cell_to_parent` (deduped), or the `"global"` sentinel for the
+  core global sources (gn/osm/wd/tgn). **Re-pushed to prod AND dev for all 22 authorities
+  (22/22, 0 failures).** Every non-global authority row now carries both `h3_coverage`
+  (fine) and `h3_coverage_coarse`. **Reality note (vs the "few KB" target):** the broad
+  authorities don't condense to a few KB — clio **7.9 MB → 90 KB**, un **1.17 MB → 37 KB**,
+  nl ~25 KB, pl ~9 KB; small/regional ones are tiny (gb 0.2 KB). **Total ≈ 200 KB across
+  the ~16 regional authorities** — a ~650× reduction from the 6+ MB fine sets, and fine for
+  a one-time picker load. (If even smaller is wanted, drop `_COARSE_COVERAGE_RES` to 1 in
+  `push_gazetteer_inventory.py` and re-push.)
+  **▶ whg3 side (small):** add `h3-js`, expose `h3_coverage_coarse` in the Gazetteers-picker
+  payload, and do `h3.polygonToCells(activeArea, 2) ∩ authoritySet` on the Area switch
+  (match the **res-2** the field is stored at). `"global"` authorities always pass.
 
 ---
 
