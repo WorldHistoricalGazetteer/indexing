@@ -86,11 +86,12 @@ WIKIDATA_P1014_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p1014.jsonl")
 # wikidata-p279 (Pass 2 — walk to nearest P1014-mapped ancestor).
 WIKIDATA_P279_FILE = os.path.join(DATA_DIR, "wikidata", "wikidata_p279.jsonl")
 
-# OSM processing state file
-OSM_STATE_FILE = f"{IX1_BASE}/elastic/osm_state.json"
+# OSM/OHM processing state files — on /vast (IX3_BASE) with the clone, since the
+# runtime relocated off /ix1 (2026-07-15). Override via env if needed.
+OSM_STATE_FILE = os.getenv("OSM_STATE_FILE", f"{IX3_BASE}/elastic/osm_state.json")
 
 # OHM processing state file
-OHM_STATE_FILE = f"{IX1_BASE}/elastic/ohm_state.json"
+OHM_STATE_FILE = os.getenv("OHM_STATE_FILE", f"{IX3_BASE}/elastic/ohm_state.json")
 
 # External geometry store (VAST filesystem)
 # Full GeoJSON geometries are stored here instead of in Elasticsearch.

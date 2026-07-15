@@ -329,7 +329,7 @@ do_precompute_phonetics() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
 
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/ishi/elastic"
+        REPO_DIR="/vast/ishi/elastic"
     fi
 
     mkdir -p "$LOG_DIR" "$OUTPUT_DIR"
@@ -687,7 +687,7 @@ do_train_model() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/ishi/elastic"
+        REPO_DIR="/vast/ishi/elastic"
     fi
 
     TRAIN_LOG_DIR="${LOG_DIR}/training_v${DATA_VERSION}"
@@ -1085,7 +1085,7 @@ do_update_embeddings() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/ishi/elastic"
+        REPO_DIR="/vast/ishi/elastic"
     fi
 
     EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"
@@ -1236,7 +1236,7 @@ do_update_embeddings_index() {
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     if [ -z "$REPO_DIR" ]; then
-        REPO_DIR="/ix1/ishi/elastic"
+        REPO_DIR="/vast/ishi/elastic"
     fi
 
     EMBEDDINGS_LOG_DIR="${LOG_DIR}/embeddings_v${DATA_VERSION}"

@@ -31,7 +31,8 @@ set -e
 # --- Configuration ---
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IX1_BASE="/ix1/ishi"
-REPO_DIR="${IX1_BASE}/elastic"
+# Clone-relative so it follows whichever checkout this runs from (/vast now).
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # --- Conda Environment Setup ---
 # Admins are renaming 'whcdh' to 'ishi'. Fallback for transition period.
