@@ -42,10 +42,37 @@ router = APIRouter(prefix="/api", tags=["Places"])
 # either form.
 _ENTITY_PREFIX = "place:"
 
+# Relation types that mark a genuine co-reference (a "Wikidata match"), as
+# opposed to spatial/other bridges (e.g. the ``within`` wikidata bridge from
+# interlink_ottgaz). Only these inherit the matched wd record's Wikipedia links.
+_WD_MATCH_RELATION_TYPES = {"sameAs", "exactMatch", "closeMatch"}
+
 
 def _strip_prefix(raw_id: str) -> str:
     """Strip the ``place:`` entity-type prefix if present."""
     return raw_id[len(_ENTITY_PREFIX):] if raw_id.startswith(_ENTITY_PREFIX) else raw_id
+
+
+def _wd_match_targets(src: dict) -> list[str]:
+    """``wd:Q…`` place_ids this place reconciles to (match relations only)."""
+    out: list[str] = []
+    for r in src.get("relations") or []:
+        rid = r.get("related_place_id") or ""
+        if rid.startswith("wd:") and r.get("relation_type") in _WD_MATCH_RELATION_TYPES:
+            out.append(rid)
+    return out
+
+
+def _wikipedia_links(links: list[dict] | None) -> list[dict]:
+    """Wikipedia ``seeAlso`` links carried by a wd record's ``links[]``."""
+    out: list[dict] = []
+    for lnk in links or []:
+        if not isinstance(lnk, dict):
+            continue
+        ident = lnk.get("identifier") or ""
+        if "wikipedia.org" in ident:
+            out.append({"type": lnk.get("type") or "seeAlso", "identifier": ident})
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -227,6 +254,7 @@ def _format_place_detail(
     src: dict,
     toponyms: list[dict] | None = None,
     requested_fields: set[str] | None = None,
+    extra_links: list[dict] | None = None,
 ) -> PlaceDetail:
     """Convert an ES places _source dict into a PlaceDetail.
 
@@ -234,6 +262,9 @@ def _format_place_detail(
         src: ``_source`` dict from the places index.
         toponyms: Optional enriched name list from the toponyms index.
         requested_fields: If set, only populate these fields.
+        extra_links: Optional links to merge into ``links[]`` (deduped by
+            identifier) — e.g. Wikipedia links inherited from a matched wd
+            record.
     """
     pid = src.get("place_id", "")
 
@@ -278,11 +309,19 @@ def _format_place_detail(
         for t in (src.get("types") or [])
     ]
 
-    # Links
+    # Links — the place's own links plus any inherited from matched wd records
+    # (merged plainly, deduped by identifier).
     links = [
         {"type": lnk.get("type", ""), "identifier": lnk.get("identifier", "")}
         for lnk in (src.get("links") or [])
     ]
+    if extra_links:
+        seen_idents = {lnk["identifier"] for lnk in links}
+        for lnk in extra_links:
+            ident = lnk.get("identifier", "")
+            if ident and ident not in seen_idents:
+                links.append({"type": lnk.get("type", ""), "identifier": ident})
+                seen_idents.add(ident)
 
     # Descriptions
     descriptions = [
@@ -430,6 +469,49 @@ async def fetch_places(req: PlacesRequest):
                 # Non-fatal: places will fall back to nested toponym data
                 logger.warning("Toponym enrichment failed (non-fatal): %s", e)
 
+        # ------------------------------------------------------------------
+        # Step 2.5: Inherit Wikipedia links from matched Wikidata records
+        #
+        # A non-wd place that reconciles to Wikidata carries the match as a
+        # relation (related_place_id="wd:Q…", relation_type sameAs/exactMatch/
+        # closeMatch). The wd doc itself holds the Wikipedia sitelinks as
+        # seeAlso links (added 2026-07-06). We fetch those links for the
+        # matched wd records and merge them into each place's links[] — no
+        # reindex, always in sync with the wd data. Skipped when the caller
+        # filtered links out.
+        # ------------------------------------------------------------------
+        wp_links: dict[str, list[dict]] = {}
+        want_links = requested_fields is None or "links" in requested_fields
+        if found_ids and want_links:
+            wd_targets: set[str] = set()
+            for src in sources.values():
+                wd_targets.update(_wd_match_targets(src))
+            # A matched wd record may already be in this batch — reuse its links.
+            for wid in list(wd_targets):
+                if wid in sources:
+                    wp_links[wid] = _wikipedia_links(sources[wid].get("links"))
+                    wd_targets.discard(wid)
+            if wd_targets:
+                wd_body = _build_places_by_id(
+                    list(wd_targets), ["place_id", "links"])
+                try:
+                    wd_resp = await client.post(
+                        f"{ES_BACKEND}/{PLACES_INDEX}/_search",
+                        json=wd_body,
+                        auth=auth,
+                        headers=ES_HEADERS,
+                    )
+                    wd_resp.raise_for_status()
+                    for wh in wd_resp.json().get("hits", {}).get("hits", []):
+                        wsrc = wh.get("_source", {})
+                        wid = wsrc.get("place_id", "")
+                        if wid:
+                            wp_links[wid] = _wikipedia_links(wsrc.get("links"))
+                except Exception as e:
+                    # Non-fatal: places keep their own links, just no inheritance
+                    logger.warning(
+                        "Wikidata link enrichment failed (non-fatal): %s", e)
+
     # ------------------------------------------------------------------
     # Format response — preserve request order, use caller's original IDs
     # ------------------------------------------------------------------
@@ -438,7 +520,11 @@ async def fetch_places(req: PlacesRequest):
         es_id = raw_to_es[rid]
         if es_id in sources:
             toponyms = place_toponyms.get(es_id) or None
-            detail = _format_place_detail(sources[es_id], toponyms, requested_fields)
+            extra_links: list[dict] = []
+            for wid in _wd_match_targets(sources[es_id]):
+                extra_links.extend(wp_links.get(wid, []))
+            detail = _format_place_detail(
+                sources[es_id], toponyms, requested_fields, extra_links or None)
             # If the caller sent a prefixed ID, echo it back so their
             # lookup dict (keyed on the original ID) finds the entry.
             if rid != es_id:
