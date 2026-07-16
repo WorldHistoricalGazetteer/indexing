@@ -46,6 +46,26 @@ do_pull() {
     # gazetteer, so git's dubious-ownership guard would otherwise refuse the pull.
     git -C "$GATEWAY_DIR" -c "safe.directory=$GATEWAY_DIR" pull --ff-only origin main
 }
+_activate_conda() {
+    # gateway_ctl may be invoked from a bare environment where the whg conda env
+    # is NOT active — notably the cron-driven gaz_relay (which reaches this script
+    # with cron's minimal PATH, so `python` is system python3.9 and `python -m
+    # gateway` dies on import). Interactive `gw` and the @reboot boot script work
+    # only because THEY activate whg first. Activate gazetteer's LOCAL miniconda
+    # here so `do_start` is self-sufficient regardless of caller env. conda's
+    # activate hooks reference unbound vars (e.g. CONDA_BACKUP_CXX), so relax
+    # `set -u` around the source and restore the prior state afterwards.
+    local CONDA_SH=/home/gazetteer/miniconda/etc/profile.d/conda.sh
+    if [[ -f "$CONDA_SH" ]]; then
+        local _had_u=0; [[ $- == *u* ]] && _had_u=1
+        set +u
+        # shellcheck disable=SC1090
+        source "$CONDA_SH" && conda activate whg
+        (( _had_u )) && set -u
+    else
+        echo "WARNING: $CONDA_SH missing — gateway may fail to start." >&2
+    fi
+}
 do_start() {
     local pid=$(_find_pid)
     if [[ -n "$pid" ]]; then
@@ -53,6 +73,7 @@ do_start() {
         return 1
     fi
     echo "Starting gateway..."
+    _activate_conda
     cd "$GATEWAY_DIR"
     nohup python -m gateway > "$LOGFILE" 2>&1 &
     sleep 3
