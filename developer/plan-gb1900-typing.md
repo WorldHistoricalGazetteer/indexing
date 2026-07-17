@@ -1009,6 +1009,27 @@ abbreviated/curved, so an off-the-shelf spotter likely needs light fine-tuning; 
 (models + the OS-six-inch training data) is the place to start. Full-GB pass, incremental on the
 infra now in place (all tiles cached, VLM workers, crops). Prereq: the full-coverage bbox run lands first.
 
+### 12.1 Bootstrap a NATIVE OS-six-inch text detector from our bbox dataset (SG 2026-07-17)
+The full-coverage run is, as a byproduct, producing a **~2.67M text-bbox / ~1.7M-tile, GB-wide,
+OS-six-inch text-DETECTION dataset** — almost certainly the largest for this series (ICDAR-MapText
+training sets are hundreds–thousands of maps, on Rumsey/French maps, *not* OS six-inch). Fine-tuning
+a detector on it should beat any off-the-shelf spotter **on our maps** and gives us the §12 detector
+natively.
+
+**The make-or-break subtlety — partial labels.** Our boxes cover only *transcribed* labels; the
+untranscribed text we want to find is **unlabelled**, i.e. a **false negative** if treated as
+background. Naive supervised training would therefore teach the detector to *reproduce GB1900's
+blind spots* — the opposite of the goal. Handle it as **positive-unlabelled learning** (boxes =
+positives; unlabelled regions = *ignore*, not negative) + an **iterative self-training loop**:
+detector proposes candidate text → **VLM confirms/reads** → confirmed boxes join the training set →
+retrain → detector improves and surfaces more of what GB1900 missed. Each round also **densifies the
+boundary-label seeds** (`plan-gb1900-parish-extraction.md`), so the loop compounds across both projects.
+
+Caveats: VLM bboxes are approximate (fractional *crop* coords → project to tile-pixel + quality-filter
+before training); it's a genuine training project (data prep + detector arch + GPU), but the
+tiles/GPU/VLM infra is already stood up. Net: a **self-improving OS-six-inch text finder**, seeded
+for free by the typing run.
+
 ## Appendix — key files & commands referenced
 
 - Authority: `authorities/gb1900-places.py` (docstring §12–29 has the original
