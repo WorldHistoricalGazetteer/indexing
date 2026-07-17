@@ -7,11 +7,25 @@
 > derivation** — to label each GB-STAMP point with its admin hierarchy, without the
 > licence problems of CAMPOP (safeguarded) or GBHGIS (CC-BY-SA/commercial).
 
+## Scope — ALL of parish, district, borough AND county (our own, co-registered)
+This project extracts the **full admin hierarchy** off the six-inch raster: **civil
+parishes, rural/urban districts, municipal/parliamentary boroughs, AND counties**. We
+want **our own** boundaries for every level — even county, which *is* available
+elsewhere (Historic Counties Trust / `ukhc`) — because a county line traced from the
+**same raster, by the same pipeline** as the parishes and districts it contains is
+**precisely co-registered** with them: parishes nest cleanly inside their district,
+district inside county, with no cross-source sliver/gap artefacts. A borrowed county
+polygon from a different survey/generalisation would not align pixel-for-pixel with our
+extracted sub-units. Co-registration is the point.
+
 ## Why this route
-- **County** is already open (Historic Counties Trust / `ukhc`); **modern** admin is
-  open (OS Boundary-Line, OGL). The gap is **historical (c.1900) sub-county** admin —
-  parishes, rural districts, unions — where the only rich source (**CAMPOP 1851**) is
-  **safeguarded, non-redistributable** (see `markets/geodata/1851/LICENCE.md`).
+- **County** is available open elsewhere (Historic Counties Trust / `ukhc`) and **modern**
+  admin is open (OS Boundary-Line, OGL) — but those are *other people's geometries* on
+  *other* surveys; we want county lines drawn from **our** raster so they nest exactly
+  with our parishes/districts (see Scope). The genuinely un-sourced gap is **historical
+  (c.1900) sub-county** admin — parishes, rural districts, unions — where the only rich
+  source (**CAMPOP 1851**) is **safeguarded, non-redistributable**
+  (see `markets/geodata/1851/LICENCE.md`).
 - The OS six-inch sheets **draw these boundaries and label their type**. Extracting
   them ourselves off the NLS raster (which we're licensed to read for research) yields
   an **openly-publishable** admin layer. CAMPOP is then used only as **internal,
@@ -49,13 +63,17 @@ data itself; the VLM only fills gaps. Mined the 2.67M labels (2026-07-17):
 **Implications:**
 - **District / borough / county boundaries are richly pre-labelled** — these georef'd
   points give us both *where* a boundary runs and *what type* (and, for counties, the
-  pair it divides), bootstrapping detection + classification almost for free.
+  pair it divides), which **bootstraps the CV detection + classification** for those
+  levels. But we still trace the *geometry* ourselves off the raster (the labels are
+  points, not lines) so that district/borough/**county** polygons are **co-registered**
+  with the parishes — see Scope. All three are wanted deliverables, not throwaway.
 - **Civil parishes are barely labelled (57 `C.P.`)** — the six-inch labels the parish
   line sparsely. So parish extraction specifically **cannot lean on the transcriptions**;
   it needs CV line-detection + naming from *enclosed GB-STAMP settlement labels* (and
-  the many parish boundaries that coincide with district/county lines). **This is the
-  essential deliverable and the genuine research part**; the higher admin levels are a
-  near-free by-product of the mining above.
+  the many parish boundaries that coincide with district/county lines). Parishes are
+  **the hardest and most essential** level; districts/boroughs/counties are easier
+  (label-bootstrapped) but equally in-scope, extracted by the same pipeline for exact
+  nesting.
 
   (Hundreds/wapentakes are out of scope — not drawn on the c.1900 six-inch, and not
   relevant to this project.)
