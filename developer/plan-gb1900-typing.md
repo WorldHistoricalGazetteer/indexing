@@ -52,8 +52,8 @@ the prod `types` index, so it becomes filterable/facetable by type
   `/ix1/ishi/data/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip`
   → inner CSV `GB1900_gazetteer_abridged_july_2018/gb1900_abridged.csv`,
   **UTF-16** encoded. This is the *abridged* public release
-  (Vision of Britain / NLS Data Foundry, CC0). Loaded by
-  `authorities/gb1900-places.py` (`stage_gb1900`).
+  (Vision of Britain / NLS Data Foundry, **CC-BY-SA** — *not* CC0; see §2.4
+  licensing). Loaded by `authorities/gb1900-places.py` (`stage_gb1900`).
 
 - **Exact column list (verified by opening the zip on `pitt`):**
   ```
@@ -149,11 +149,44 @@ defensible choice for that goal, `settings.py:536` verified 2026-06-06).
 - Ingestion cost is low: **same schema**, so it's a source-URL swap in
   `settings.py` + `gb1900-places.py` + a re-stage; the type work is *cheaper* per
   record than the abridged set (more of it is trivial-text-typeable).
-- **Complete download URL: TO CONFIRM** — `pastplace.org` was unreachable
-  (HTTP 000, incl. the known-good abridged URL) during this session; the
-  conventional name is `GB1900_gazetteer_complete_july_2018.zip` at the same
-  `pastplace.org/downloads/` path, also mirrored via Vision of Britain / NLS Data
-  Foundry. Confirm before wiring.
+- **Complete download URL — CONFIRMED (downloaded + inspected 2026-07-17):**
+  `https://www.visionofbritain.org.uk/downloads/GB1900_gazetteer_complete_july_2018.zip`
+  (140 MB zip → **703 MB** UTF-16 CSV `gb1900_gazetteer_complete_july_2018.csv`).
+  Its README states **2,552,459 rows** and lists the **identical 10 columns**
+  (`pin_ID, final_text, nation, local_authority, parish, osgb_east, osgb_north,
+  latitude, longitude, notes`) — so the abridgement is purely row removal, as
+  suspected. *(`pastplace.org` was unreachable this session; use the
+  visionofbritain.org.uk host. From the CRC boxes both hosts returned HTTP 000 —
+  the fetch must run from a networked host and be staged onto `/vast`/`/ix1`.)*
+- **Bonus quality gain:** the complete set had **~30,000 points (c. 1.5%)
+  manually checked & corrected against the historical maps** after the crowd-source
+  phase — so overlapping records are also *cleaner*, not just more numerous.
+- **A third release exists — the CC0 "Final Raw Dump"** (four tables, all raw
+  crowd-sourcing data incl. every transcription/confirmation, minus volunteer PII).
+  `.../downloads/GB1900_final_raw_dump_july_2018.zip`. **CC0** (no attribution/
+  share-alike). Useful if per-transcription confidence/vote data ever helps
+  (ambiguity flags), but messier than the reconciled Complete gazetteer.
+
+### 2.5 Licensing & attribution (NOTE — surface when redistributing)
+
+Per SG (2026-07-17), record and surface the GB1900 / Vision of Britain copyright
+terms whenever relevant (esp. before any redistribution). From
+`visionofbritain.org.uk/data/`:
+
+- **Complete AND Abridged gazetteers → CC-BY-SA.** Commercial use allowed, but you
+  **must acknowledge "the Great Britain Historical GIS, the GB1900 partners and
+  volunteers"**, **must not imply endorsement** by the GB1900 project/partners,
+  **must link the licence and note if changes were made**, and — **share-alike** —
+  may **only redistribute under the same CC-BY-SA licence, without additional
+  restrictions.** You **may not** call any derived work "GB1900 Gazetteer" (or
+  similar); only *unmodified* files may carry that name.
+- **Raw Dump → CC0 1.0** (no acknowledgement required; same name restriction).
+- **Implication for WHG:** the SA clause reaches WHG's redistribution surface
+  (API/tiles). This does **not** gate ingestion (cf. `feedback_defer_licensing`;
+  sitewide attribution is being rebuilt separately) — but the attribution +
+  share-alike obligation must be captured in that attribution system, and the CC0
+  raw dump is the SA-free alternative if share-alike proves awkward. See
+  memory `gb1900_visionofbritain_licensing`.
 
 ---
 
