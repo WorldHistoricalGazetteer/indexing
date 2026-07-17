@@ -106,12 +106,42 @@ VLMs hallucinate coordinates, so don't ask a VLM to trace precise polylines. Spl
 - The VLM semantic pass is small (only boundary crops, far fewer than 1M labels).
 - The CV/segmentation is the research unknown → do a **detection probe first**.
 
+## P1 probe result — classical global detection (2026-07-17)
+Ran a CPU classical probe on a stitched z16 tile set (Conwy valley, `parish_probe.png`).
+Artefacts in scratchpad (`detect_v1.py`/`detect_v2.py`, `out_*.png`). Findings:
+- **The boundary cue is real and specific:** a fine **dotted/pecked line + periodic bold
+  `×` mereing-marks + direction arrows (`>`/`^`)**. Field lines, contours and even the
+  *parallel* `H.W.M.O.T` tidal dotted-line carry **no ×** — so the ×/arrow glyph is the
+  discriminative signal, the dotting alone is ambiguous.
+- **But classical GLOBAL detection is a NO-GO at zoom-16.** Density+cross matching fires
+  on every field-corner junction/text/stipple (852 false hits). Stroke-boldness gating
+  can't separate either: at z16 the × arms are only **~1.5px**, so there is **no thickness
+  gap** vs the field-line mesh — gate hard → miss the ×'s (9 hits, mostly estuary
+  stipple); gate soft → drown in junctions (280+). No clean global threshold exists.
+- **MapReader (patch classifier) would fare no better / worse** — the signal is a sparse
+  subtle glyph among look-alikes; a coarse "is there a boundary in this patch" head can't
+  localise it or reject the tidal-dot twin. (User's doubt validated. A quick MapReader
+  baseline can still be run for empirical confirmation if wanted.)
+- **Resolution lever found:** the NLS `os/6inchsecond` tileset serves a **genuine zoom-17**
+  (crisp, real 2× detail; z18 404s). At z17 the × arms ≈3px and the dotting ≈4-5px —
+  **separable**. Cost: z17 quadruples tiles, so fetch it **only along boundary corridors**.
+
+**Verdict → pivot to label-SEEDED local tracing (P1b).** We hold **19k+ georeferenced
+boundary-type label points** (`Union & R.D. By.`, `C.P.`, …). That reframes the task from
+blind global segmentation to: *at each known boundary-label point, fetch z17 locally and
+trace the specific ×-marked pecked line it annotates* — the label fixes location AND type,
+and a VLM can reason "follow the ×-marked line, not the tidal dots" (which neither
+classical CV nor a patch classifier can). This is the approach to build.
+
 ## Phased pilot (start ASAP; schedule GPU around the running GB-STAMP job)
 - **P0 — grounding (DONE):** confirmed boundaries are visible, distinct, type-labelled,
   VLM-legible.
-- **P1 — detection probe (CPU + light GPU):** on a small county tile set, try MapReader
-  (and a classical ×-dot texture baseline) to detect/vectorise boundary lines; measure
-  separability from field lines. Decides the geometry method.
+- **P1 — classical global probe (DONE 2026-07-17):** NO-GO at z16 (see result above);
+  z17 is the native ceiling and makes glyphs separable; pivot to label-seeded tracing.
+- **P1b — label-seeded VLM/CV tracing probe (NEXT, spare GPU):** at a sample of `Union &
+  R.D. By.`/`C.P.` label points, fetch a z17 window and have the VLM emit the boundary
+  polyline / control points, disambiguating the ×-marked line from tidal/field dotting.
+  Optional classical `×`-anchor detector at z17 as a cross-check + a MapReader baseline.
 - **P2 — VLM semantic probe (spare GPU):** on ~a few hundred boundary crops, the VLM
   reads boundary TYPE + name. (Confirms the human-level read scales; runs on spare h200
   *after* / alongside the GB-STAMP run — do NOT contend with it.)
