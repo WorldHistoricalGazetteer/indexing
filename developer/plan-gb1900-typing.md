@@ -864,10 +864,27 @@ source value; layer derivations on top with their evidence:
 - **Naming — MUST differ from "GB1900" / "Great Britain 1900"** (both licences
   forbid naming a derivative "GB1900…"). The CC0 README also *welcomes*
   acknowledgment of the "GB1900 project" — so **credit them in docs** (goodwill,
-  not required). Candidate WHG names *(SG to choose)*: e.g. **"WHG Historical
-  Feature Layer of Britain (c.1900)"**, **"WHG British Map-Label Gazetteer,
-  1888–1914"**, or a short codename. The internal WHG namespace stays `gb`
-  (an identifier, not the published product name).
+  not required). **CHOSEN NAME (SG, 2026-07-17): `GB-STAMP`** — GB **S**ix-inch
+  **T**yped **A**nd **M**apped **P**lacenames (the "Typed" is the distinctive
+  place-typing; nods to OS *stamped* lettering). The internal WHG namespace stays
+  `gb` (an identifier, not the published product name).
+
+### 11.6 Concurrent pipeline (overlap crop+VLM with the tile fetch)
+
+The national tile fetch is a ~day-long polite single fetch (on pitt). To avoid the
+VLM waiting for it, the crop stage overlaps it — **no persistent process runs on a
+login node** (SG rule):
+- **`processing/gb1900_pipeline.py`** — a **cropper loop on pitt** (long processes
+  OK there): finds residual pins whose covering tiles are already cached, crops
+  them, and emits fixed-size **batch manifests** (`batches/batch_NNNN.jsonl`) +
+  a `processed.txt` state file. Grows with the fetch; resumable.
+- **`scripts/gb1900_submit_vlm_batches.sh`** — **one-shot** `sbatch` dispatcher run
+  from a login node at checkpoints (submit-and-poll, not a standing driver):
+  submits an h200 VLM job per un-dispatched batch (`--array=0-0`, per-batch
+  resumable). Idempotent via `.submitted` markers.
+- Reconcile (§11.5) folds the per-batch VLM outputs into the edition at the end.
+This keeps the network (fetch) and GPU (VLM) busy at once, honours the login-node
+rule, and only ever hits NLS through the single throttled fetch.
 
 ### 11.4 Storage
 The provenance records + detected bboxes live in the durable research cache on
