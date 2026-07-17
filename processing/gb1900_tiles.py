@@ -109,33 +109,40 @@ def fetch_tile_retry(z: int, x: int, y: int, client, retries: int = 5) -> str:
 
 
 def cmd_fetch(args) -> None:
+    """Parallel S3 fetch. Scans pins -> unique tile set, then fetches in bounded CHUNKS
+    (fetch_tile_retry skips already-cached tiles in-worker, so no slow upfront stat pass;
+    chunking keeps memory bounded at millions-of-tiles scale)."""
     import httpx  # deferred; network host only
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-    needed: set = set()
+    from concurrent.futures import ThreadPoolExecutor
+    needed: set = set(); n_pins = 0
     for rec in _iter_pins(args.pins):
         needed |= covering_tiles(rec["lat"], rec["lon"], args.zoom, args.pad)
-    todo = [t for t in needed if not tile_path(*t).exists()]
-    print(f"[fetch] {len(needed):,} unique tiles cover the pins; "
-          f"{len(todo):,} to fetch with {args.workers} workers (S3, concurrency-robust)")
-    got = fail = miss = 0
+        n_pins += 1
+        if n_pins % 500000 == 0:
+            print(f"[fetch] scanned {n_pins:,} pins, {len(needed):,} tiles so far", flush=True)
+    needed = list(needed)
+    print(f"[fetch] {len(needed):,} unique tiles cover {n_pins:,} pins; "
+          f"fetching with {args.workers} workers (S3, concurrency-robust)", flush=True)
+    got = fail = miss = skip = 0
     limits = httpx.Limits(max_connections=args.workers * 2,
                           max_keepalive_connections=args.workers)
+    CH = 40000
     with httpx.Client(headers={"User-Agent": "WHG-research/1.0"},
-                      limits=limits, timeout=30) as client:
-        with ThreadPoolExecutor(max_workers=args.workers) as ex:
-            futs = [ex.submit(fetch_tile_retry, z, x, y, client) for (z, x, y) in todo]
-            for i, fut in enumerate(as_completed(futs), 1):
-                res = fut.result()
+                      limits=limits, timeout=30) as client, \
+            ThreadPoolExecutor(max_workers=args.workers) as ex:
+        for i in range(0, len(needed), CH):
+            chunk = needed[i:i + CH]
+            for res in ex.map(lambda t: fetch_tile_retry(t[0], t[1], t[2], client), chunk):
                 if res == "got": got += 1
+                elif res == "skip": skip += 1
                 elif res == "404": miss += 1
-                elif res == "fail": fail += 1
-                if i % 20000 == 0:
-                    print(f"[fetch] {i:,}/{len(todo):,}  got={got:,} 404={miss:,} fail={fail:,}",
-                          flush=True)
+                else: fail += 1
+            print(f"[fetch] {min(i + CH, len(needed)):,}/{len(needed):,}  "
+                  f"got={got:,} cached={skip:,} 404={miss:,} fail={fail:,}", flush=True)
     # NOTE: keep the literal "[fetch] fetched" + "already-cached" tokens — the cropper
     # (gb1900_pipeline._fetch_done) detects completion by scanning for both.
     print(f"[fetch] fetched {got:,} (absent {miss:,}, failed {fail:,}), "
-          f"already-cached {len(needed) - len(todo):,} → {TILE_CACHE}")
+          f"already-cached {skip:,} → {TILE_CACHE}")
 
 
 def _global_px(lat: float, lon: float, z: int) -> tuple[float, float]:
