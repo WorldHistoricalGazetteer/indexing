@@ -45,8 +45,12 @@ SCHEMA = {
 
 PROMPT = (
     "This is a crop from an Ordnance Survey six-inch (1:10560) County Series map, "
-    "2nd edition (c.1900). A small RED RING marks where ONE map label begins (the "
-    "bottom-left of its first letter). Read THAT label — follow it from the ring in "
+    "2nd edition (c.1900). A small RED RING marks approximately where ONE map label "
+    "begins (near the bottom-left of its first letter). The ring is only a GUIDE, "
+    "accurate to within about half a character-width — the label's first letter may "
+    "sit slightly before, behind, or under the ring, so be sure to INCLUDE any letter "
+    "immediately touching the ring (do not drop a leading letter). Read THAT label — "
+    "follow it from the ring in "
     "whatever direction it runs: OS labels may be horizontal, sloped, or curved "
     "(e.g. along a river, coast, or ridge). Read ONLY the single, CONTIGUOUS label "
     "that starts at the ring, and STOP at its end — where its letters stop and a "
