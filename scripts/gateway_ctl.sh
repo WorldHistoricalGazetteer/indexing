@@ -7,9 +7,26 @@
 # The es.sh alias can also be used for ES operations.
 # Gateway runs from the /vast clone (ES + gateway relocated off /ix1, 2026-07-15).
 GATEWAY_DIR="/vast/ishi/elastic"
-LOGFILE="/dev/null"
+LOGDIR="${GATEWAY_DIR}/logs"
+LOGFILE="${LOGDIR}/gateway.log"
+LOG_KEEP=5           # generations retained (gateway.log, .1 … .4)
 _find_pid() {
     pgrep -f "python -m gateway" -u gazetteer 2>/dev/null | head -1
+}
+_rotate_log() {
+    # Generational rotation on each (re)start. The gateway is low-volume
+    # (uvicorn startup banner + occasional warnings/tracebacks), so rotating
+    # when a new process takes over — and keeping the last $LOG_KEEP files —
+    # bounds disk without a logrotate dependency and keeps each run's output
+    # (esp. a startup crash) in its own file. Was /dev/null, which left real
+    # failures untraceable.
+    mkdir -p "$LOGDIR" 2>/dev/null || true
+    [[ -f "$LOGFILE" ]] || return 0
+    local i
+    for (( i=LOG_KEEP-1; i>=1; i-- )); do
+        [[ -f "$LOGFILE.$i" ]] && mv -f "$LOGFILE.$i" "$LOGFILE.$((i+1))"
+    done
+    mv -f "$LOGFILE" "$LOGFILE.1"
 }
 do_status() {
     local pid=$(_find_pid)
@@ -74,8 +91,10 @@ do_start() {
     fi
     echo "Starting gateway..."
     _activate_conda
+    _rotate_log
     cd "$GATEWAY_DIR"
-    nohup python -m gateway > "$LOGFILE" 2>&1 &
+    echo "Logging to $LOGFILE"
+    nohup python -m gateway >> "$LOGFILE" 2>&1 &
     sleep 3
     pid=$(_find_pid)
     if [[ -n "$pid" ]]; then
