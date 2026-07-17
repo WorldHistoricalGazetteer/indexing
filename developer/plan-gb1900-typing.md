@@ -50,6 +50,21 @@
 >   (abbrevs are Tier-0's domain), via `crops --untyped-only`; (2) crops tightened
 >   (was 170px min width → neighbour bleed). Both implemented; residual-only re-run
 >   is the confirming step. Pipeline proven end-to-end on real data.
+> - **PILOT VALIDATED (2026-07-17, after iteration).** VLM reliability solved by
+>   matching GOTW's recipe (h200 `gpu:1` TP=1, per-job cache isolation, `--host
+>   127.0.0.1`; a poisoned shared `~/.cache/vllm` was the root cause). Crop redesign:
+>   **marker-in-context** (red ring on the anchor; VLM reads the ring-marked label in
+>   ANY direction — handles sloped/curved labels + neighbour-disambiguation) sized as
+>   an **orientation-agnostic radius square** (caps-aware length estimate). Reading
+>   fixed by passing the **crowd transcription as an error-flagged HINT** (locate +
+>   correct) and demanding **VERBATIM** output (preserve OS abbreviations — `Ws`→`Ws`,
+>   not "Wells"). Final residual run (127 crops): ~110/127 confirm the crowd text,
+>   real corrections happen (`Little Dark Hat` clean; `broad lane`→`Broad Lane`),
+>   `os_style`→type sensible (`RYDE`→RC→settlement, named→RP, pits→Stump). Residual
+>   tail = a few early-stops / dropped-leading-char cases — handled by §11.5, not more
+>   prompt-tuning. Pipeline files: `gb1900_tiles.py` (fetch+marker crops),
+>   `gb1900_vlm.sbatch` + `gb1900_vlm_infer.py` (h200 VLM), `gb1900_os_lettering.json`
+>   (`style_to_type_token` crosswalk).
 >
 > **DECISIONS (SG, 2026-07-17):**
 > - **Ingest scope = COMPLETE / everything** — all ~2.67M pins ingested (incl.
@@ -858,6 +873,32 @@ source value; layer derivations on top with their evidence:
 The provenance records + detected bboxes live in the durable research cache on
 `/vast` alongside the tile cache (§5.3) — `${IX3_BASE}/gb1900/edition/` — so every
 edition, edit log, and detected bbox is retained for re-use and audit.
+
+### 11.5 Hint ↔ VLM text reconciliation (the residual-tail policy)
+
+The pilot showed the VLM read is faithful in the large majority but has a small
+tail (early-stops, dropped leading chars, occasional over/under-read). The fix is
+**not** more prompt-tuning (whack-a-mole) but a reconciliation rule that keeps
+**both** readings with provenance and picks a final text conservatively —
+defaulting to the **crowd transcription** (verified, often 3+ agreement) and
+accepting the VLM only when it is a confident, plausible correction:
+
+`processing/gb1900_reconcile.py :: reconcile(hint, vlm_text)` →
+`(final_text, source, rule)`:
+- **empty VLM** → hint (`vlm-empty`).
+- **letters agree** (case-insensitive) → **hint** text (crowd casing is steadier
+  than the VLM's; the VLM inconsistently upper-cases) (`agree`).
+- **VLM ⊂ hint** (VLM dropped part) → hint, more complete (`vlm-truncated`).
+- **hint ⊂ VLM** (VLM read more) → hint, avoid neighbour over-read (`vlm-overread`).
+- **small edit distance** (≤2 and length diff ≤2) → **VLM** — a confident fix
+  (`correction`).
+- **otherwise** (large divergence) → hint, and **flag for QA** (`divergent`).
+
+Both `hint` and `vlm_text` are always retained under `text` provenance (§11.1) with
+the chosen `source` + `rule`, so nothing is lost and a later human/QA pass (or a
+better model) can revisit. `os_style`/type always come from the VLM regardless of
+which text wins. A cheap code tweak (nudge the anchor ring so it never obscures the
+first glyph) should further cut the dropped-leading-char cases at scale.
 
 ---
 
