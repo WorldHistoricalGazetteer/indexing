@@ -72,7 +72,9 @@ def run(a):
     prep = [prepared.prep(g) for g in geoms]
     print(f"[county] loaded {len(geoms)} HCT counties")
     out = open(a.out, "w", encoding="utf-8")
-    stats = {"total": 0, "assigned": 0, "no_county": 0, "bbox": 0, "offset": 0}
+    # near-border labels -> work-list for VLM TRUE bounding-box finding (precise centre -> county)
+    unc = open(a.uncertain_out, "w", encoding="utf-8") if a.uncertain_out else None
+    stats = {"total": 0, "assigned": 0, "no_county": 0, "bbox": 0, "offset": 0, "uncertain": 0}
     for line in open(a.records, encoding="utf-8"):
         try:
             rec = json.loads(line)
@@ -84,19 +86,35 @@ def run(a):
             continue
         stats["bbox" if (rec.get("bbox") or (rec.get("crop") or {}).get("bbox")) else "offset"] += 1
         pt = Point(*c)
-        code = None
+        code = None; ci = None
         for i in tree.query(pt):                   # bbox candidates
             if prep[i].contains(pt):
-                code = codes[i]; break
+                code = codes[i]; ci = i; break
         pid = rec.get("place_id") or f"gb:{rec.get('pin_id')}"
         if code:
             stats["assigned"] += 1
-            out.write(json.dumps({"place_id": pid, "hc_county": code}, ensure_ascii=False) + "\n")
+            # uncertainty: point within `uncertain_m` of the county boundary -> the pin/centre
+            # offset (or the c.1900-vs-HCT geometry) could flip the county. Flag it.
+            dist_m = geoms[ci].boundary.distance(pt) * 111000.0
+            uncertain = dist_m < a.uncertain_m
+            rec_out = {"place_id": pid, "hc_county": code}
+            if uncertain:
+                rec_out["hc_county_uncertain"] = True
+                rec_out["hc_county_border_m"] = round(dist_m)
+                stats["uncertain"] += 1
+                if unc is not None and not (rec.get("bbox") or (rec.get("crop") or {}).get("bbox")):
+                    # no true bbox yet -> send to VLM for precise bbox (then recompute county)
+                    unc.write(json.dumps({"place_id": pid, "lon": rec.get("lon"),
+                                          "lat": rec.get("lat"), "text": _text(rec),
+                                          "border_m": round(dist_m)}, ensure_ascii=False) + "\n")
+            out.write(json.dumps(rec_out, ensure_ascii=False) + "\n")
         else:
             stats["no_county"] += 1
         if stats["total"] % 200000 == 0:
             print(f"[county] {stats['total']:,} processed, {stats['assigned']:,} assigned")
     out.close()
+    if unc is not None:
+        unc.close()
     print("[county]", json.dumps(stats))
     return stats
 
@@ -105,7 +123,11 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--records", required=True, help="GB-STAMP records JSONL (lon/lat + text[/bbox])")
     p.add_argument("--hct", required=True, help="HCT UKDefinitionA shapefile (.shp)")
-    p.add_argument("--out", required=True, help="output JSONL: {place_id, hc_county}")
+    p.add_argument("--out", required=True, help="output JSONL: {place_id, hc_county[, hc_county_uncertain]}")
+    p.add_argument("--uncertain-m", type=float, default=100.0,
+                   help="flag hc_county_uncertain when the test point is within this many metres of the border")
+    p.add_argument("--uncertain-out",
+                   help="work-list JSONL of near-border labels (no bbox yet) to send to the VLM for true-bbox finding")
     run(p.parse_args(argv))
     return 0
 
