@@ -4,9 +4,36 @@
 > staged plan requested off `plan-outstanding-2026-07.md` §2 and
 > `developer/aat-typing-status.md`.
 > **Author aid:** Claude (research pass, 2026-07-17).
-> **Scope:** derive a coarse **place type** for each of the ~1.17M `gb:` records
-> so they can be AAT-mapped like every other authority. GB1900 is the **only WHG
-> source with 0% AAT coverage.**
+> **Scope:** derive a coarse **place type** for each `gb:` record so they can be
+> AAT-mapped like every other authority. GB1900 is the **only WHG source with 0%
+> AAT coverage.**
+>
+> **SOURCE DECISION (SG, 2026-07-17): use the CC0 "Final Raw Dump"** (not the
+> CC-BY-SA gazetteers) — CC0 avoids share-alike contaminating WHG's whole
+> redistribution surface. Working source =
+> `gb1900_locations.csv` (**2,666,341 pins**) inside
+> `GB1900_final_raw_dump_july_2018.zip`. Trade-offs vs the curated gazetteer: it
+> carries only `first_transcription` (the *unreconciled* initial text, not the
+> majority-agreed `final_text`) and EWKB-hex coords — both handled (§2.4). We forgo
+> the curated set's ~30k manual corrections, but **make our own via VLM readings**
+> (§4.2/§4.3) and **record the VLM/OCR-detected bounding boxes** as durable data
+> (§4.3, §10) since the source records none.
+>
+> **ULTIMATE AIM (SG, 2026-07-17): publish WHG's own place-typed EDITION** — a
+> standalone, openly-published derived dataset in which **every edit is recorded and
+> traceable**, **versioned**, and **re-runnable as user feedback accrues**. Built on
+> the **CC0** raw dump, so WHG may license/publish it freely — but it **must NOT be
+> named "GB1900" / "Great Britain 1900"**; it needs its own WHG name. Provenance,
+> versioning, feedback loop, naming, and edition mechanics: **§11**.
+>
+> **BUILT SO FAR (2026-07-17, autonomous):**
+> - **P0.5 DONE** — OS lettering scheme transcribed from OS 404 →
+>   `typesystem/data/gb1900_os_lettering.json`.
+> - **P0 DONE (Tier-0 text typing)** — `processing/gb1900_text_types.py` +
+>   `typesystem/data/gb1900_os_abbrev.json`; run on the full **2.67M** pins:
+>   **1,614,003 typed (60.5%)** zero-GPU, 1.5% illegible dropped, 4.5% ALLCAPS +
+>   33.5% residual routed to Tier-1. Residual is dominated by proper settlement
+>   names (Welsh/Gaelic) — exactly Tier-1's target.
 
 ---
 
@@ -659,6 +686,74 @@ richest there) so both settlement and physical-feature type styles are exercised
    injects `aat_ids`/`aat_paths` on the live docs (`processing/aat_enrich.py`).
 4. Re-run after any future `gb` rebuild — the same table drives ingestion's
    `aat_enrich` stage automatically.
+
+---
+
+## 11. Published WHG edition — provenance, versioning, feedback & naming
+
+The end goal is not just to enrich the live `gb:` docs, but to **publish a
+standalone, openly-licensed, fully-traceable WHG place-typed edition** of the
+British ~1900 map labels, re-derivable and improvable over time. Requirements
+(SG, 2026-07-17):
+
+### 11.1 Full provenance — every edit recorded & traceable
+Each record is an **append-only, provenance-carrying** object. Never overwrite a
+source value; layer derivations on top with their evidence:
+
+```jsonc
+{
+  "place_id": "gb:<pin_id>",
+  "pin_id": "...",
+  "source": {"dataset": "gb1900_final_raw_dump_2018", "licence": "CC0",
+             "first_transcription": "F.P.", "g_point_wgs": "<ewkb>",
+             "classification_count": 3},
+  "lon": .., "lat": ..,                     // decoded from source EWKB
+  "text": {"value": "F.P.", "source": "raw|vlm|user", "confidence": .., "version": ".."},
+  "type": {"token": "footpath", "aat": [300008337],
+           "method": "tier0-abbrev|tier1-vlm|user", "rule": "abbrev:F.P.",
+           "confidence": .., "version": "gbtype-v1"},
+  "bbox": {"px": [...], "geo": [...], "method": "surya-ocr|vlm", "version": ".."},
+  "os_style": {"value": "Stump", "method": "tier1-vlm", "confidence": .., "version": ".."},
+  "edits": [ {"field": "type", "from": null, "to": "footpath",
+              "method": "tier0-abbrev", "version": "gbtype-v1", "ts": "<stamped>"} ]
+}
+```
+- `text` keeps the **original** raw transcription untouched under `source`; any VLM
+  or user correction is a *new* layer with its method, so every change is auditable.
+- Every derived field (`type`, `bbox`, `os_style`, corrected `text`) records
+  **method + confidence + version**; the `edits[]` log is the human-readable trail.
+- **Corrections we make (VLM/OCR text reads, §4.2/§4.3) are first-class recorded
+  edits**, standing in for the curated set's ~30k manual fixes we forwent.
+
+### 11.2 Versioning — re-runnable as feedback accrues
+- **Classification version** (`gbtype-vN`): every full re-derivation bumps it.
+  Records carry the version that produced each field, so an edition is a snapshot
+  and successive editions are **diffable** (what changed, why).
+- **Reproducibility:** Tier-0 is deterministic (dict + rules, both versioned in
+  `typesystem/data/`); Tier-1 pins the **VLM model + prompt/schema hash** so a
+  re-run is repeatable and a model change is a visible version bump.
+- **Feedback loop:** user corrections from the WHG UI (wrong type / wrong text)
+  are captured as **high-priority ground truth** with their own provenance
+  (anonymised who/when), stored durably, and **override lower-confidence auto-types**
+  on the next re-run — never silently lost. Periodic re-runs fold in accumulated
+  feedback + dict improvements + better tiles/models.
+
+### 11.3 Publication & naming
+- **Licence:** built on **CC0** source, so WHG may publish the derived edition
+  under its own choice (recommend an open licence, e.g. CC-BY or CC0). **Not**
+  encumbered by CC-BY-SA share-alike (the reason we chose the raw dump).
+- **Naming — MUST differ from "GB1900" / "Great Britain 1900"** (both licences
+  forbid naming a derivative "GB1900…"). The CC0 README also *welcomes*
+  acknowledgment of the "GB1900 project" — so **credit them in docs** (goodwill,
+  not required). Candidate WHG names *(SG to choose)*: e.g. **"WHG Historical
+  Feature Layer of Britain (c.1900)"**, **"WHG British Map-Label Gazetteer,
+  1888–1914"**, or a short codename. The internal WHG namespace stays `gb`
+  (an identifier, not the published product name).
+
+### 11.4 Storage
+The provenance records + detected bboxes live in the durable research cache on
+`/vast` alongside the tile cache (§5.3) — `${IX3_BASE}/gb1900/edition/` — so every
+edition, edit log, and detected bbox is retained for re-use and audit.
 
 ---
 

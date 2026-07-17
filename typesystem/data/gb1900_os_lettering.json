@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "purpose": "OS six-inch writing-style -> feature-class ground truth for GB1900 Tier-1 typography typing.",
+    "source": "OS 404 'Character of Writing for Ordnance Survey Plans' (June 1914), per-feature writing table (1/10560 & 6-inch column), pp.9-11; antiquities row p.9. See developer/plan-gb1900-typing.md sec 4.2.0.",
+    "usage": "Tier-1: VLM emits os_style; look up expected feature classes here. A 'Stump' verdict = undifferentiated, defer to Tier-0 text.",
+    "created": "2026-07-17"
+  },
+  "style_legend": {
+    "RP": "Roman Print (serif, mixed-case)",
+    "RC": "Roman Capitals",
+    "IC": "Italic Capitals",
+    "EC": "Egyptian Capitals (slab sans-serif)",
+    "OEC": "Open Egyptian Capitals",
+    "ORC": "Open Roman Capitals",
+    "OIC": "Open Italic Capitals",
+    "OldEnglish": "black-letter (pre-historic/Saxon antiquities)",
+    "GermanText": "black-letter (Norman+ antiquities)",
+    "Ornamental": "decorative (counties, county boroughs)",
+    "Stump": "standard stamped hand; the DEFAULT for undifferentiated minor features"
+  },
+  "style_to_features": {
+    "RC": ["cathedral", "county-borough", "barracks", "fort", "forest", "cattle-market", "cemetery", "college", "court-of-law", "harbour", "haven", "headland-large", "hill-range", "hospital", "hotel", "bay-large", "beach-large"],
+    "RP": ["church", "chapel", "town-hall", "dispensary", "drill-hall", "dock-building", "named-building"],
+    "IC": ["canal", "canal-basin", "dock", "navigable-river-cut", "public-garden", "deer-park", "water-feature"],
+    "EC": ["antiquity-roman", "parliamentary-county-division", "court-and-alley"],
+    "OldEnglish": ["antiquity-prehistoric", "antiquity-saxon", "ancient-almshouse"],
+    "GermanText": ["antiquity-norman", "antiquity-medieval"],
+    "Ornamental": ["county", "county-borough"],
+    "Stump": ["farm", "brook", "ford", "ferry", "footbridge", "footpath", "dwelling-house", "colliery", "coal-pit", "filter-bed", "cattle-pen", "cave", "drying-ground", "guide-post", "recreation-ground", "graveyard", "minor-feature"]
+  },
+  "antiquities_by_period": {
+    "roman": "EC",
+    "prehistoric": "OldEnglish",
+    "saxon": "OldEnglish",
+    "norman": "GermanText",
+    "medieval": "GermanText",
+    "note": "Ancient localities: same as other antiquities by period, but with finer lines (OS 404 p.9)."
+  },
+  "case_size_hierarchy": {
+    "note": "Within caps styles, size + tracking split the settlement/admin hierarchy.",
+    "large_caps": "city / large town",
+    "medium_caps": "town",
+    "small_caps": "village / small settlement",
+    "wide_spaced_caps": "parish / boundary / administrative division / extended physical area"
+  },
+  "caveat": "On the SIX-INCH, ~half of feature classes fall to 'Stump' (undifferentiated). Typography reliably separates only: prominent settlement/admin (RC/Ornamental/size), water (IC), antiquities by period (EC/OldEnglish/GermanText), named buildings (RP). The Stump mass must be typed from text (Tier 0)."
+}
