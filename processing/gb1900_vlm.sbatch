@@ -18,8 +18,11 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=96G
-#SBATCH --time=04:00:00
+#SBATCH --time=08:00:00
 #SBATCH --requeue
+# Walltime is generous (QOS allows up to 3 days); the real limit is SHARD SIZE.
+# At ~1-2 crops/sec on h200, keep shards to ~15-20k crops (~1.5-2.5h). Per-shard
+# output is resumable (infer skips done pin_ids), so an overrun just resumes.
 #SBATCH --output=/vast/ishi/gb1900/logs/vlm-%A_%a.out
 # Submit from crc0 (has Slurm; pitt/gateway VM does not): sbatch -M gpu ...
 # h200 (141GB) holds Qwen2.5-VL-72B-AWQ on ONE GPU → TP=1, no multi-GPU fragility.
