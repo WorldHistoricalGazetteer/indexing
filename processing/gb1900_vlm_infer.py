@@ -48,9 +48,14 @@ PROMPT = (
     "2nd edition (c.1900). A small RED RING marks where ONE map label begins (the "
     "bottom-left of its first letter). Read THAT label — follow it from the ring in "
     "whatever direction it runs: OS labels may be horizontal, sloped, or curved "
-    "(e.g. along a river, coast, or ridge). Transcribe exactly what the ring-marked "
-    "label says, and IGNORE every other label in the crop. Then classify the "
-    "ring-marked label's typography using Ordnance Survey conventions:\n"
+    "(e.g. along a river, coast, or ridge). IGNORE every other label in the crop.\n"
+    "Transcribe it VERBATIM — the exact characters printed on the map. PRESERVE "
+    "Ordnance Survey abbreviations and punctuation exactly: e.g. give 'W', 'F.P.', "
+    "'Ch.', 'B.M.', 'P' literally — do NOT expand them to 'Well', 'Foot Path', "
+    "'Church', etc. Keep the printed hyphens and capitalisation. Report only what is "
+    "actually inked, not your interpretation of it.\n"
+    "Then classify the ring-marked label's typography using Ordnance Survey "
+    "conventions:\n"
     "- RP = Roman Print (serif, mixed-case) — named buildings\n"
     "- RC = Roman Capitals — prominent settlements/administrative places\n"
     "- IC = Italic Capitals — water & designed-water features\n"
@@ -88,9 +93,10 @@ def infer_one(client: httpx.Client, endpoint: str, model: str, rec: dict) -> dic
         prompt = PROMPT + (
             f"\nHINT (a GUIDE ONLY — it MAY CONTAIN ERRORS): a crowd volunteer "
             f"transcribed the ring-marked label as \"{hint}\". It can be misspelt, "
-            f"wrong, or partial, so do not just copy it — use it to help locate the "
-            f"label, then read the label yourself from the map and give the CORRECT "
-            f"text in vlm_text even if it differs from the hint.")
+            f"wrong, or partial, so do not blindly copy it — use it to help locate the "
+            f"label, then read the label yourself. Fix genuine mis-transcriptions "
+            f"(wrong or missing letters), but give the VERBATIM printed text: do NOT "
+            f"expand abbreviations or otherwise change what is actually inked.")
     body = {
         "model": model, "temperature": 0, "max_tokens": 300,
         "messages": [{"role": "user", "content": [
