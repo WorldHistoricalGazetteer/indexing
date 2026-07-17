@@ -122,8 +122,9 @@ residual.** Do the cheap deterministic thing first, measure the gap, then spend
 GPU only where it pays.
 
 ```
-Tier 0  text-only heuristics (ALLCAPS + OS-abbreviation dict + gazetteer)   → majority
-   │        (deterministic, no imagery, no GPU)
+Tier 0  text-only heuristics (OS-abbreviation dict + keyword gazetteer)     → majority
+   │        (deterministic, no imagery, no GPU; ALLCAPS is only a routing
+   │         flag into Tier 1 — never a type on its own, see §4.1.2)
    ▼
 Tier 1  typography signature via NLS map raster + VLM/CV, then CLUSTER      → residual
    │        (GPU Slurm; per-label crop → font-style descriptor → embedding)
@@ -202,7 +203,51 @@ shortlisting and may donate an abbreviation/label→AAT seed list.
 
 For records Tier 0 can't confidently type (and as a *cross-check* on a sample of
 those it can): read the label off the georeferenced OS raster and characterize its
-**typography**, because OS renders feature classes in distinct type styles:
+**typography**, because OS rendered feature classes in distinct, **documented**
+type styles.
+
+#### 4.2.0 This is grounded in the OS lettering specification — NOT guesswork
+
+The core premise (type style ⇒ feature class) is **not** an assumption; OS
+published formal lettering specifications and the style→feature scheme is
+documented in primary sources (verified 2026-07-17):
+
+- **"Character of Writing for Ordnance Survey Plans" (OS 404), 1881 & 1914
+  editions** — the OS's *dedicated* lettering spec (digitised at NLS). The 1914
+  edition is contemporaneous with GB1900's survey window.
+- **"Conventional Signs and Writing Used on the Six Inch Maps of the Ordnance
+  Survey" (Plate IV)**, in *A description of the large scale maps of Great Britain*
+  (1920) — the six-inch writing plate (NLS `maps.nls.uk/view/128076894`).
+- **"Notes on Archaeology for Guidance in the Field" (1921, O.G.S. Crawford)** —
+  antiquities are lettered by font **by period**: pre-Roman, Roman, post-Roman
+  (Saxon/medieval) each get a distinct style.
+- **"Notes on Boundaries" (1914)** — boundary/mereing labelling.
+- **Richard Oliver, "A few notes on map lettering", *Sheetlines* 95, pp. 33-36**
+  (Charles Close Society; PDF read 2026-07-17) — secondary synthesis, with the
+  OS's own style **names** (below), citing *Ordnance Survey alphabets* (OS, 1934)
+  + internal type-specimen manuals.
+
+**What the sources actually say (the documented OS style names):**
+
+| OS style name (Oliver / OS alphabets) | how it looks | documented use |
+|---|---|---|
+| **Roman** (serif, upright) | serifed upright | **settlement / village names** (the default) |
+| **Copperplate italic** | serifed sloped | **water & physical features** (rivers, streams), minor detail |
+| **Egyptian** (slab sans-serif) | heavy slab, no/blunt serifs | **Roman antiquities** |
+| **Old English / black-letter** | gothic | **non-Roman antiquities** (used for "antiquities" from the early 1830s) |
+
+Plus the case/size hierarchy of the writing plate (large caps = towns; small caps
+/ lower case = smaller places; spaced caps = extended admin/physical areas).
+**Process note (dating):** from **1882** the six-inch was photo-lithographed with
+**stamped** lettering, standardised across the map by the **1890s** — so GB1900's
+1888–1914 sheets use a *consistent, stamped* style set, which is exactly what
+makes cluster-by-typography viable.
+
+**Consequence for the plan:** the table below is now a **source-grounded working
+scheme**, not a guess — but its authoritative form is the OS 404 / six-inch
+Conventional Signs plate itself. **P0.5 (new milestone, §8) digitises that plate
+into a reference table** and uses it to (a) fix the VLM label set to the *real* OS
+style names, and (b) validate that discovered clusters map onto documented styles.
 
 | OS type style (case × family × size × spacing) | typical feature class |
 |---|---|
@@ -239,10 +284,15 @@ which is exactly why ALLCAPS must be resolved *here*, not pre-judged in Tier 0.
    `final_text` is what's actually there (era/sheet-mismatch guard).
 4. **Characterize typography.** Two interchangeable back-ends:
    - **VLM (primary):** send the tight crop to a self-hosted Qwen2.5-VL with a
-     strict JSON schema — `{case: lower|title|caps|smallcaps,
-     family: roman|antique_italic|gothic, weight: light|bold,
-     size_band: small|medium|large|extra_large,
+     strict JSON schema using the **documented OS style names** (§4.2.0) —
+     `{case: lower|title|caps|smallcaps,
+     family: roman|copperplate_italic|egyptian_slab|old_english_blackletter,
+     weight: light|bold, size_band: small|medium|large|extra_large,
      tracking: tight|normal|wide, is_water_or_antiquity: bool, legible: bool}`.
+     Grounding `family` in the real OS categories (Roman=settlement,
+     copperplate-italic=water/physical, Egyptian=Roman antiquity,
+     Old-English=other antiquity) means the VLM classifies into the *actual*
+     scheme, so clusters map to feature classes by construction rather than by hope.
      **`case`, `size_band` and `tracking` are separate fields precisely so an
      ALLCAPS label is decomposed** (caps + family + size + spacing jointly pick the
      type) rather than flattened to one label. `tracking` (letter-spacing) is the
@@ -428,6 +478,7 @@ battle-tested CRC VLM pattern** we should copy rather than reinvent.
 | Phase | Deliverable | Gate |
 |---|---|---|
 | **P0 — Tier 0 ship** | `gb1900_text_types.py` + OS-abbreviation dict + coverage report on the full 1.17M. Fold high-confidence tokens into `manual_aat_maps["gb"]`; patch live `types[]`; `apply_aat_enrich`. | GB moves from **0% → majority** typed with **zero GPU**. Biggest bang; do first. |
+| **P0.5 — Typography ground-truth** | Digitise the OS lettering scheme (§4.2.0) into `typesystem/data/gb1900_os_lettering.json` from the primary sources — **OS 404 "Character of Writing" (1914)**, the **six-inch "Conventional Signs and Writing" plate**, and **Notes on Archaeology (1921)** — a `{style → feature-class}` table (Roman/copperplate-italic/Egyptian/Old-English + case/size/tracking rules). | The VLM label set + cluster→type mapping are fixed to the **documented** scheme before any GPU spend, so Tier 1 isn't reverse-engineering conventions that are already published. |
 | **P1 — NLS tile recon** | Confirm the exact 1888–1915 six-inch **XYZ template + max zoom** from the NLS georef viewer; verify licensing note; fetch a **one-county** tile cache to `/vast`. | Tiles fetchable + legible typography at chosen zoom. |
 | **P2 — Crop pilot (one county, ~N=2–5k labels)** | `gb1900_make_crops.py` end-to-end on one county: lat/lon→pixel, over-crop, OCR-refine. Manual eyeball of crop accuracy. | Crops reliably contain the right label despite no box extent. |
 | **P3 — VLM + cluster pilot (same county)** | `submit_gb1900_vlm_slurm.py` (GOTW copy) → typography descriptors → cluster → contact sheets → human assigns the county's clusters. | Clusters are tight & few; human assignment is fast; typing agrees with Tier 0 where they overlap. |
@@ -473,10 +524,16 @@ richest there) so both settlement and physical-feature type styles are exercised
   places` guess. Where a residual genuinely can't be resolved beyond "prominent
   place", coarse-but-correct is acceptable (the AAT hierarchy path-fill still makes
   it facetable) — but that is the fallback, not the ALLCAPS rule.
-- **Does typography actually separate types cleanly?** Core hypothesis. P3 pilot
-  is explicitly the go/no-go test: if clusters don't align to type, fall back to
-  "Tier 0 + a smaller VLM *content* classifier (what is this thing?) rather than a
-  typography classifier."
+- **Does typography actually separate types cleanly?** No longer an open
+  hypothesis in principle — OS *documented* the style→feature scheme (§4.2.0: OS
+  404, the six-inch Conventional Signs plate, Notes on Archaeology 1921), and from
+  the 1890s the six-inch used a **standardised stamped** style set, so the signal
+  is real and consistent for GB1900's era. The residual risks are **legibility**
+  (faint/overprinted engraving) and **the VLM/CV reliably recovering** the
+  documented style — both empirical, tested at P3. If style recovery proves too
+  noisy, fall back to a VLM *content* classifier (what is this thing?) rather than
+  a typography classifier — but the ground truth (P0.5) exists to grade against
+  either way.
 
 ---
 
@@ -516,6 +573,14 @@ richest there) so both settlement and physical-feature type styles are exercised
   `VLLM_ENV=/vast/ishi/envs/vllm`, `HF_CACHE=/vast/ishi/hf_cache`,
   `VLM_MODEL=Qwen/Qwen2.5-VL-72B-Instruct-AWQ`), `process/aat_resolve.py` /
   `process/build_aat_shortlist.py` (string→AAT seed).
+- **OS lettering ground-truth (§4.2.0):** OS 404 "Character of Writing for
+  Ordnance Survey Plans" (1881 & 1914 eds, digitised at NLS); "Conventional Signs
+  and Writing Used on the Six Inch Maps" Plate IV in *A description of the large
+  scale maps of Great Britain* (1920), NLS `maps.nls.uk/view/128076894`; "Notes on
+  Archaeology for Guidance in the Field" (1921, O.G.S. Crawford); "Notes on
+  Boundaries" (1914); Richard Oliver, "A few notes on map lettering", *Sheetlines*
+  95, 33-36 (Charles Close Society); *Ordnance Survey alphabets* (OS, 1934). NLS
+  Characteristic Sheets index: `maps.nls.uk/os/characteristic-sheets/info.html`.
 - NLS: layer `uk-osgb10k1888` (six-inch 2nd ed. 1888–1915, EPSG:3857);
   MapTiler template `https://api.maptiler.com/tiles/uk-osgb10k1888/{z}/{x}/{y}.jpg?key=…`;
   confirm the NLS direct XYZ + max zoom from `maps.nls.uk/geo/explore/`; six-inch
