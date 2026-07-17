@@ -133,6 +133,34 @@ trace the specific ×-marked pecked line it annotates* — the label fixes locat
 and a VLM can reason "follow the ×-marked line, not the tidal dots" (which neither
 classical CV nor a patch classifier can). This is the approach to build.
 
+## P1b probe results — three methods compared (2026-07-17)
+Artefacts under `/vast/ishi/gb1900/probe/` + scratchpad. All at z16 (Conwy valley).
+
+**(A) MapReader patch classifier — coarse ROI only, NO localisation.** resnet18 on 1200
+label-seeded patches: **92% held-out patch accuracy** (bnd precision 0.975 / recall 0.856)
+— so it reliably says "a boundary passes *near here*". But the sliding-window P(boundary)
+heatmap is a **~180 m-wide band** over the whole river/railway corridor, and fires as hard
+on the **L&NWR railway**, rivers, and woodland stipple (`Coed Maenan`) as on the boundary.
+Verdict: useful only as a region-of-interest proposer; cannot resolve the line. **User's
+doubt validated.**
+
+**(B) RF pixel classifier on SELF-LABELLED synthetic data (the Ilastik-style approach) —
+real per-pixel signal, blob-confounded.** Composite training data = real boundary-free
+crops + procedurally rendered mereing dots/×'s with free pixel masks; skimage multiscale
+features (σ=1..8) → RandomForest; **zero manual labelling**. On the real sheet the boundary
+×-dot line *does* light up — markedly better than hand-crafted detectors — but so do
+buildings, text, field-corner ticks and tree stipple, because a per-pixel classifier keys
+on "compact dark glyph" and can't see that the boundary is a **linear chain** while
+buildings/text are **blobs**. Fixable: realistic glyph scale/sparsity + hard negatives
+(buildings/text). **Confirms the two-stage need.**
+
+**(C) Verdict → two-stage, as the user's road experiments found:** stage-1 pixel/patch
+signal (B, or A as ROI) + **stage-2 structural model** that enforces line-continuity and
+rejects blobs (SegFormer/U-Net on the same synthetic data, now runnable on a100), then chain
+the surviving line via the ×-anchors **seeded by our 25.9k boundary-label points**. Since the
+glyphs are OS-standardised (unlike roads, which defeated this approach), the synthetic-data
+route should generalise nationally far better than it did for roads.
+
 ## Phased pilot (start ASAP; schedule GPU around the running GB-STAMP job)
 - **P0 — grounding (DONE):** confirmed boundaries are visible, distinct, type-labelled,
   VLM-legible.
