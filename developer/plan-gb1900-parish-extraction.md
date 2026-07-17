@@ -161,6 +161,26 @@ the surviving line via the ×-anchors **seeded by our 25.9k boundary-label point
 glyphs are OS-standardised (unlike roads, which defeated this approach), the synthetic-data
 route should generalise nationally far better than it did for roads.
 
+## Stage-1@z17 + Stage-2 results (2026-07-17, cont.) — see `gb1900-boundary-probe/`
+Redid the pipeline at **z17** (the user's suggestion — correct): the resolution lever is
+decisive.
+- **Stage-1 RF @ z17:** the boundary dotted-line is now cleanly & continuously traced
+  (vs lost-in-the-mesh at z16). Residual confounds = text, field drainage-arrows, a few
+  buildings — all *blob/cluster* artefacts for Stage-2 to reject.
+- **Stage-2 U-Net (structural line-enforcer):** target = the continuous boundary
+  *corridor* (path as a thick line), so the net connects discrete mereing marks into a
+  line. **In-domain perfect (0.93 vs 0.01); first real-transfer = 0.01 EVERYWHERE
+  (total domain collapse).** Root cause: cv2 **hard-edged** synthetic glyphs on soft real
+  scan → net keys on edge-sharpness. **Fix — blur the ink layer + domain randomisation**
+  (dot size/spacing/darkness, mere-along-a-line, gamma/blur) → transfer restored (real
+  max 0.01 → 0.996). This is the exact synthetic-to-real wall the road experiments hit;
+  soft-edge realism is the lever.
+- **Remaining challenge (well-defined):** Stage-2 now detects mereing-*style* lines but
+  confuses the admin boundary with other dotted/dashed lines (hedgerows, drainage). Two
+  discriminators, both in hand: **(a) the × mereing-marks** (boundary-only) and **(b)
+  label-seeding** from the 25.9k georeferenced boundary labels (which dotted line IS the
+  boundary). Label-seeded inference dissolves the ambiguity — this is the next step.
+
 ## Phased pilot (start ASAP; schedule GPU around the running GB-STAMP job)
 - **P0 — grounding (DONE):** confirmed boundaries are visible, distinct, type-labelled,
   VLM-legible.
