@@ -511,7 +511,16 @@ review pages), or a Jupyter notebook. No live service needed.
   (NLS: "not published for all areas" / not offered as a seamless MapTiler layer)
   → use it only opportunistically where available; six-inch is the workhorse.
 
-### 5.2 Tile URL scheme
+### 5.2 Tile URL scheme — CONFIRMED (2026-07-17)
+
+**NLS six-inch 2nd edition (1888–1915) direct XYZ:**
+`https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/{z}/{x}/{y}.png`
+(EPSG:3857, 256px PNG; verified serving real tiles over a GB1900 pin at **z15 &
+z16**; **max zoom ≥ 16**, z16 legible for typography). CRC reaches this S3 host
+directly (no key, unlike MapTiler). Wired as the default in `gb1900_tiles.py`.
+Historical detail below retained.
+
+
 
 - **MapTiler (verified template):**
   `https://api.maptiler.com/tiles/uk-osgb10k1888/{z}/{x}/{y}.jpg?key=YOUR_KEY`

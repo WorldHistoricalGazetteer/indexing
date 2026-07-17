@@ -26,12 +26,13 @@ import os
 import time
 from pathlib import Path
 
-# --- NLS layer config (CONFIRM at P1) ---------------------------------------
-# OS Six-inch 2nd ed. 1888-1915 seamless, EPSG:3857. Placeholder template — the
-# exact layer path + max zoom must be read off the NLS georef viewer's XYZ box.
+# --- NLS layer config (CONFIRMED 2026-07-17) --------------------------------
+# OS Six-inch 2nd ed. 1888-1915 seamless, EPSG:3857 — GB1900's source era. Layer
+# path verified by fetching real PNGs over a GB1900 pin at z15 & z16 (CRC reaches
+# this S3 host). Max zoom >= 16 (z16 legible for typography).
 NLS_TILE_URL = os.getenv(
     "GB1900_NLS_TILE_URL",
-    "https://mapseries-tilesets.s3.amazonaws.com/os_6inch_gb_1900/{z}/{x}/{y}.png",
+    "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/{z}/{x}/{y}.png",
 )
 NLS_MAX_Z = int(os.getenv("GB1900_NLS_MAX_Z", "16"))
 TILE_CACHE = Path(os.getenv("GB1900_TILE_CACHE", "/vast/ishi/gb1900/tiles"))
