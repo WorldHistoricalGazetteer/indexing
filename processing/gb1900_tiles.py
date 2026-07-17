@@ -85,21 +85,54 @@ def _iter_pins(path: str):
                 yield rec
 
 
+def fetch_tile_retry(z: int, x: int, y: int, client, retries: int = 5) -> str:
+    """Fetch one tile with retry+backoff. Returns 'got'|'skip'|'404'|'fail'.
+    S3 (mapseries-tilesets.s3.amazonaws.com) is concurrency-robust; the transient
+    'Server disconnected' resets are handled per-tile so the whole fetch never dies."""
+    p = tile_path(z, x, y)
+    if p.exists() and p.stat().st_size > 0:
+        return "skip"
+    url = NLS_TILE_URL.format(z=z, x=x, y=y)
+    for attempt in range(retries):
+        try:
+            r = client.get(url, timeout=30)
+            if r.status_code == 200 and r.content:
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(r.content)
+                return "got"
+            if r.status_code == 404:
+                return "404"                     # genuinely absent (ocean / out of coverage)
+        except Exception:
+            pass
+        time.sleep(min(2 ** attempt * 0.5, 8))   # backoff
+    return "fail"
+
+
 def cmd_fetch(args) -> None:
     import httpx  # deferred; network host only
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     needed: set = set()
     for rec in _iter_pins(args.pins):
         needed |= covering_tiles(rec["lat"], rec["lon"], args.zoom, args.pad)
-    print(f"[fetch] {len(needed):,} unique tiles cover the pins (dedup from labels)")
-    got = skipped = 0
-    with httpx.Client(headers={"User-Agent": "WHG-research/1.0"}) as s:
-        for z, x, y in sorted(needed):
-            if tile_path(z, x, y).exists():
-                skipped += 1
-                continue
-            if fetch_tile(z, x, y, s, args.rps):
-                got += 1
-    print(f"[fetch] fetched {got:,}, already-cached {skipped:,} → {TILE_CACHE}")
+    todo = [t for t in needed if not tile_path(*t).exists()]
+    print(f"[fetch] {len(needed):,} unique tiles cover the pins; "
+          f"{len(todo):,} to fetch with {args.workers} workers (S3, concurrency-robust)")
+    got = fail = miss = 0
+    limits = httpx.Limits(max_connections=args.workers * 2,
+                          max_keepalive_connections=args.workers)
+    with httpx.Client(headers={"User-Agent": "WHG-research/1.0"},
+                      limits=limits, timeout=30) as client:
+        with ThreadPoolExecutor(max_workers=args.workers) as ex:
+            futs = [ex.submit(fetch_tile_retry, z, x, y, client) for (z, x, y) in todo]
+            for i, fut in enumerate(as_completed(futs), 1):
+                res = fut.result()
+                if res == "got": got += 1
+                elif res == "404": miss += 1
+                elif res == "fail": fail += 1
+                if i % 20000 == 0:
+                    print(f"[fetch] {i:,}/{len(todo):,}  got={got:,} 404={miss:,} fail={fail:,}",
+                          flush=True)
+    print(f"[fetch] done: fetched {got:,}, absent(404) {miss:,}, failed {fail:,} → {TILE_CACHE}")
 
 
 def _global_px(lat: float, lon: float, z: int) -> tuple[float, float]:
@@ -223,7 +256,9 @@ def main(argv=None) -> int:
         sp.add_argument("--pins", required=True, help="typed JSONL from gb1900_text_types")
         sp.add_argument("--zoom", type=int, default=NLS_MAX_Z)
         sp.add_argument("--pad", type=int, default=1, help="tile padding around anchor")
-    f.add_argument("--rps", type=float, default=5.0, help="fetch rate limit")
+    f.add_argument("--rps", type=float, default=5.0, help="(legacy; unused by parallel fetch)")
+    f.add_argument("--workers", type=int, default=12,
+                   help="concurrent fetch workers against S3 (concurrency-robust)")
     c.add_argument("--out", default="/vast/ishi/gb1900/crops")
     c.add_argument("--manifest", help="write crop manifest JSONL (feeds VLM step)")
     c.add_argument("--untyped-only", action="store_true",

@@ -556,6 +556,16 @@ z16**; **max zoom ≥ 16**, z16 legible for typography). CRC reaches this S3 hos
 directly (no key, unlike MapTiler). Wired as the default in `gb1900_tiles.py`.
 Historical detail below retained.
 
+**Host note (tested 2026-07-17):** the `nls-N.tileserver.com` shards mentioned below are
+**DEPRECATED** — they now serve a *"maps upgraded → maptiler.com"* placeholder image
+(~7 KB) instead of real tiles, so they are useless for bulk fetch. **S3
+(`mapseries-tilesets.s3.amazonaws.com`) is the sole free real host** (MapTiler is the paid
+alternative, needs a key). S3 is **concurrency-robust** (Amazon-scale, thousands req/s), so
+the fetch is **parallelised** — `gb1900_tiles fetch --workers N` runs N concurrent fetchers
+with per-tile retry+backoff; the intermittent `Server disconnected` resets are transient and
+handled per-tile (they previously killed the single-threaded fetch → stalled the run). This
+turns the national fetch from ~days to ~hours and lets full-label VLM coverage be fed.
+
 
 
 - **MapTiler (verified template):**

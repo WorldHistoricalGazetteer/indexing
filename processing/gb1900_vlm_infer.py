@@ -29,7 +29,7 @@ _STYLES = ["RP", "RC", "IC", "EC", "OldEnglish", "GermanText", "Stump",
 
 SCHEMA = {
     "type": "object", "additionalProperties": False,
-    "required": ["vlm_text", "os_style", "case", "size_band", "tracking", "legible"],
+    "required": ["vlm_text", "os_style", "case", "size_band", "tracking", "legible", "bbox"],
     "properties": {
         "vlm_text": {"type": "string",
                      "description": "the label's text as printed on the map"},
@@ -40,6 +40,9 @@ SCHEMA = {
         "tracking": {"type": "string", "enum": ["tight", "normal", "wide"]},
         "is_water_or_antiquity": {"type": "boolean"},
         "legible": {"type": "boolean"},
+        "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4,
+                 "description": "tight bounding box [x0,y0,x1,y1] of the ring-marked label's "
+                                "text, in FRACTIONS of the crop (0=left/top .. 1=right/bottom)"},
     },
 }
 
@@ -73,7 +76,10 @@ PROMPT = (
     "- Ornamental = decorative — counties/county boroughs\n"
     "- Stump = the plain standard stamped hand — everything else (minor features)\n"
     "Also give case, size_band, letter-spacing (tracking), whether it is a water/"
-    "antiquity label, and whether it is legible. Return JSON per the schema."
+    "antiquity label, and whether it is legible.\n"
+    "Finally give bbox = the TIGHT bounding box enclosing ONLY the ring-marked label's "
+    "text (not neighbours), as [x0,y0,x1,y1] in FRACTIONS of the crop width/height "
+    "(0,0 = top-left, 1,1 = bottom-right). Return JSON per the schema."
 )
 
 
