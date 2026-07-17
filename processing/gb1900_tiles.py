@@ -133,11 +133,16 @@ def stitch_crop(lat: float, lon: float, text: str, z: int):
     from PIL import Image, ImageDraw
     gpx, gpy = _global_px(lat, lon, z)
     n = max(len(text), 3)
-    # Context window: generous in all directions so a sloped/curved label fits;
-    # width scales mildly with text length. Anchor placed left-of-centre so a
-    # rightward label has room, with vertical headroom for slope either way.
-    cw = min(460, max(240, int(n * 15)))
-    ch = 220
+    # Context window: generous in all directions so a sloped/curved label fits.
+    # Size the guess from the transcription length AND case — ALLCAPS labels have
+    # much wider glyphs (and OS sets prominent CAPS names larger), so they need a
+    # wider window. Anchor left-of-centre so a rightward label has room, with
+    # vertical headroom for slope either way.
+    letters = [c for c in text if c.isalpha()]
+    allcaps = bool(letters) and all(c.isupper() for c in letters)
+    per_char = 22 if allcaps else 14                    # px/char @ z16
+    cw = min(520, max(230, int(n * per_char)))
+    ch = 240 if allcaps else 210                        # caps run taller too
     ax_frac, ay_frac = 0.28, 0.50            # anchor position within the window
     bl = int(gpx - cw * ax_frac)
     bt = int(gpy - ch * ay_frac)

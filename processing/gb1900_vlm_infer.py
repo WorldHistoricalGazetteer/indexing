@@ -79,10 +79,22 @@ def infer_one(client: httpx.Client, endpoint: str, model: str, rec: dict) -> dic
         b64 = base64.b64encode(Path(rec["crop_path"]).read_bytes()).decode()
     except Exception:
         return None
+    # Pass the crowd transcription as a HINT: it helps the VLM locate the ring-marked
+    # label and anchors the reading, while we still ask for an independent correction.
+    txt = rec.get("text")
+    hint = txt.get("value") if isinstance(txt, dict) else txt
+    prompt = PROMPT
+    if hint:
+        prompt = PROMPT + (
+            f"\nHINT (a GUIDE ONLY — it MAY CONTAIN ERRORS): a crowd volunteer "
+            f"transcribed the ring-marked label as \"{hint}\". It can be misspelt, "
+            f"wrong, or partial, so do not just copy it — use it to help locate the "
+            f"label, then read the label yourself from the map and give the CORRECT "
+            f"text in vlm_text even if it differs from the hint.")
     body = {
         "model": model, "temperature": 0, "max_tokens": 300,
         "messages": [{"role": "user", "content": [
-            {"type": "text", "text": PROMPT},
+            {"type": "text", "text": prompt},
             {"type": "image_url",
              "image_url": {"url": f"data:image/png;base64,{b64}"}},
         ]}],
