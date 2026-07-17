@@ -66,7 +66,8 @@ def run(args) -> None:
             return
         n_batch += 1
         man = batch_dir / f"batch_{n_batch:04d}.jsonl"
-        with open(man, "w", encoding="utf-8") as mf, open(state, "a") as sf:
+        man_tmp = batch_dir / f"batch_{n_batch:04d}.jsonl.tmp"   # rename in atomically
+        with open(man_tmp, "w", encoding="utf-8") as mf, open(state, "a") as sf:
             saved = 0
             for rec in pins:
                 img, meta = stitch_crop(
@@ -86,6 +87,7 @@ def run(args) -> None:
                     "place_id": rec.get("place_id", f"gb:{pid}"), "pin_id": pid,
                     "text": rec.get("text"), "lon": rec["lon"], "lat": rec["lat"],
                     "crop_path": str(cp), "crop": meta}, ensure_ascii=False) + "\n")
+        man_tmp.replace(man)   # atomic: workers only ever see a complete manifest
         print(f"[pipeline] wrote {man.name}: {saved:,} crops "
               f"({len(processed):,}/{len(residual):,} residual done)")
 

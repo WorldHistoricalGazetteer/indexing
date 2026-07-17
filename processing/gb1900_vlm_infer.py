@@ -139,6 +139,7 @@ def run(args) -> None:
     print(f"[vlm] shard {args.shard}/{args.nshards}: {len(recs):,} crops "
           f"({len(done):,} already done)")
 
+    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     out = open(args.out, "a", encoding="utf-8")
     with httpx.Client() as client:
         with ThreadPoolExecutor(max_workers=args.workers) as ex:
