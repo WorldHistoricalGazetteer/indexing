@@ -105,10 +105,12 @@ def run(args) -> None:
             emit(ready); ready = []
         remaining = sum(1 for rec in residual if rec["pin_id"] not in processed)
         if remaining == 0:
-            print("[pipeline] all residual cropped — done."); break
+            print("[pipeline] all residual cropped — done.")
+            (batch_dir / "DONE").write_text("all cropped\n"); break
         if done:
             # fetch finished but some pins never got tiles (missing upstream) — stop.
-            print(f"[pipeline] fetch done; {remaining:,} pins had no tiles (skipped)."); break
+            print(f"[pipeline] fetch done; {remaining:,} pins had no tiles (skipped).")
+            (batch_dir / "DONE").write_text(f"fetch done; {remaining} unfetchable\n"); break
         print(f"[pipeline] {remaining:,} residual pending tiles; sleeping {args.poll}s")
         time.sleep(args.poll)
 
