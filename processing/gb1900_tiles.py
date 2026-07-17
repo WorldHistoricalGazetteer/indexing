@@ -125,8 +125,11 @@ def stitch_crop(lat: float, lon: float, text: str, z: int):
     label bbox inside. meta lets a detected pixel bbox back-project to geo."""
     from PIL import Image
     gpx, gpy = _global_px(lat, lon, z)
-    n = max(len(text), 3)
-    left_m, right_w, up, down = 14, max(170, n * 17), 30, 18   # px @ z16
+    n = max(len(text), 2)
+    # Tight sizing (pilot 2026-07-17): the old 170px min width let the VLM latch
+    # onto larger neighbouring labels for short strings. Scale to the text and keep
+    # short labels tight so the target dominates the crop.
+    left_m, right_w, up, down = 8, min(560, max(52, n * 13)), 22, 12   # px @ z16
     bl, bt = int(gpx - left_m), int(gpy - up)
     br, bb = int(gpx + right_w), int(gpy + down)
     cw, ch = br - bl, bb - bt
@@ -158,6 +161,11 @@ def cmd_crops(args) -> None:
     man = open(args.manifest, "w", encoding="utf-8") if args.manifest else None
     n = saved = skipped = 0
     for rec in _iter_pins(args.pins):
+        # VLM runs on the RESIDUAL only — Tier-0 already types abbreviations with
+        # high confidence, and the VLM mis-reads tiny abbrevs (neighbour-hijack,
+        # pilot 2026-07-17). --untyped-only crops just the Tier-0-untyped pins.
+        if args.untyped_only and (rec.get("type") is not None):
+            continue
         n += 1
         img, meta = stitch_crop(rec["lat"], rec["lon"], rec.get("text", {}).get("value", "")
                                 if isinstance(rec.get("text"), dict) else (rec.get("text") or ""),
@@ -199,6 +207,8 @@ def main(argv=None) -> int:
     f.add_argument("--rps", type=float, default=5.0, help="fetch rate limit")
     c.add_argument("--out", default="/vast/ishi/gb1900/crops")
     c.add_argument("--manifest", help="write crop manifest JSONL (feeds VLM step)")
+    c.add_argument("--untyped-only", action="store_true",
+                   help="crop only Tier-0-untyped (residual) pins — the VLM's domain")
     c.add_argument("--limit", type=int, default=None, help="stop after N crops")
     args = p.parse_args(argv)
     return args.fn(args) or 0

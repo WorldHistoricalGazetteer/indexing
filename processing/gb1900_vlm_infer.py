@@ -57,8 +57,11 @@ PROMPT = (
     "- Ornamental = decorative — counties/county boroughs\n"
     "- Stump = the plain standard stamped hand — everything else (minor features)\n"
     "Also give case, size_band, letter-spacing (tracking), whether it is a water/"
-    "antiquity label, and whether it is legible. Focus ONLY on the left-anchored "
-    "label, not neighbouring text. Return JSON per the schema."
+    "antiquity label, and whether it is legible.\n"
+    "CRITICAL: read ONLY the ONE label whose first letter touches the LEFT edge of "
+    "the crop. IGNORE any larger or more prominent labels elsewhere in the crop — "
+    "the target is often a small label and may be partly clipped on the right; "
+    "transcribe exactly what you see of it. Return JSON per the schema."
 )
 
 

@@ -39,8 +39,17 @@
 >   deg2num validated) + `processing/gb1900_vlm.sbatch` (GOTW-adapted GPU array).
 >   **Feasibility confirmed (2026-07-17):** CRC *can* reach the NLS tile hosts
 >   (`mapseries-tilesets.s3` HTTP 200) though not Vision of Britain; vLLM env
->   (`/vast/ishi/envs/vllm`) + HF cache present. **Gating item: confirm the exact
->   NLS six-inch XYZ template + max zoom** (P1), then a one-county pilot.
+>   (`/vast/ishi/envs/vllm`) + HF cache present. NLS template confirmed
+>   (`os/6inchsecond`, §5.2).
+> - **Hampshire VLM PILOT RUN (2026-07-17)** — 500 crops → Qwen2.5-VL-72B-AWQ on
+>   2×A100 (7.5 min, 500/500 legible; `gb1900_vlm.sbatch` job 3254599). **Verdict:
+>   typography recovery is REAL** — `Tumuli`→OldEnglish (blackletter antiquity) ✓,
+>   `Spring`→IC (water) ✓, named houses/places→RP ✓. **But two fixes found:** (1)
+>   the VLM mis-reads *tiny abbreviation* labels (`P`→"ROAD", `W`→"WATERLOO") by
+>   latching onto larger neighbours — so **run the VLM on the Tier-0 RESIDUAL only**
+>   (abbrevs are Tier-0's domain), via `crops --untyped-only`; (2) crops tightened
+>   (was 170px min width → neighbour bleed). Both implemented; residual-only re-run
+>   is the confirming step. Pipeline proven end-to-end on real data.
 >
 > **DECISIONS (SG, 2026-07-17):**
 > - **Ingest scope = COMPLETE / everything** — all ~2.67M pins ingested (incl.
