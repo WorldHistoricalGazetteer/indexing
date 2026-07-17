@@ -808,7 +808,21 @@ Qwen2.5-VL-72B-AWQ). Realistically ~4–5/sec with concurrency 32 + batching (GO
 
 ---
 
-## 10b. FOLLOW-UP — per-label SHEET-PRECISE dating (SG, 2026-07-17)
+## 10b. Per-label SHEET-PRECISE dating — BUILT + TESTED + WIRED (2026-07-17)
+
+**DONE.** `processing/gb1900_dating.py` joins each label to its OS six-inch 2nd-ed
+sheet (point-in-polygon, STRtree) and emits a per-label `timespan`
+(survey-start..publication-end, year precision) + full sheet provenance
+(surveyed{start,end}, published{start,end}, sheet id, `ambiguous` seam flag). NLS
+sheet index staged: **`/vast/ishi/gb1900/sheets/os_6inch_2nd_GB_4326.geojson`**
+(16,450 GB ed-2 sheets, WGS84, per-sheet dates from the `nls:OS_6inch_all_find`
+WFS; fields `SHEET`/`SUR_STA`-`SUR_END`/`PUB_STA`-`PUB_END`; CC-BY, attribute NLS).
+**Validated on the real Hampshire pilot edition: 500/500 dated, 77 seam-ambiguous**
+(e.g. `Parkhill` → Hants LXXII.NW surveyed 1895-96 published 1898). Runs
+autonomously via a **date-watcher on pitt** that waits for `gb-stamp_edition.jsonl`
+and produces `gb-stamp_edition.dated.jsonl`. Original approach + rationale below.
+
+
 
 Instead of the dataset-level 1888–1914 span, date each label by the **publication
 date of the OS six-inch 2nd-ed sheet it falls on** (the County Series was published
