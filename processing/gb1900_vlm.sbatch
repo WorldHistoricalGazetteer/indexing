@@ -14,14 +14,16 @@
 #
 #SBATCH --job-name=gb1900-vlm
 #SBATCH --account=ishi
-#SBATCH --partition=a100
-#SBATCH --gres=gpu:2
-#SBATCH --cpus-per-task=12
-#SBATCH --mem=120G
+#SBATCH --partition=h200
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=96G
 #SBATCH --time=04:00:00
 #SBATCH --requeue
 #SBATCH --output=/vast/ishi/gb1900/logs/vlm-%A_%a.out
 # Submit from crc0 (has Slurm; pitt/gateway VM does not): sbatch -M gpu ...
+# h200 (141GB) holds Qwen2.5-VL-72B-AWQ on ONE GPU → TP=1, no multi-GPU fragility.
+# This matches GOTW's proven recipe (process/submit_vlm_slurm.py).
 
 set -uo pipefail
 MANIFEST="${1:?usage: sbatch gb1900_vlm.sbatch <crop_manifest.jsonl> <out_dir>}"
@@ -54,8 +56,9 @@ NGPU=$(echo "${SLURM_GPUS_ON_NODE:-2}")
 
 # 1) serve. --host 127.0.0.1 forces IPv4 (GOTW does this) — without it vLLM binds
 # the node hostname (IPv6) → the c10d "Address family not supported" error.
+# gpu:1 on h200 → tensor-parallel-size 1 (NGPU=1), no multiproc TP path.
 vllm serve "$MODEL" --host 127.0.0.1 --port "$PORT" --tensor-parallel-size "$NGPU" \
-  --max-model-len 16384 --gpu-memory-utilization 0.92 \
+  --max-model-len 16384 --gpu-memory-utilization 0.92 --served-model-name "$MODEL" \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
 # wait for startup
