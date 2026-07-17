@@ -979,6 +979,36 @@ first glyph) should further cut the dropped-leading-char cases at scale.
 
 ---
 
+## 12. FOLLOW-UP — untranscribed-text discovery via bbox masking (proposed, SG 2026-07-17)
+
+Once the full-coverage VLM run records a **bounding box per transcribed label** (§4.3 bbox),
+we can find the map text GB1900 volunteers **never transcribed** (GB1900 is crowd-sourced and
+patchy): for each tile, run a **text DETECTOR**, subtract every known-label bbox, and whatever
+text remains is an **untranscribed label** → VLM-read it → a new gazetteer record.
+
+**Why it matters twice:**
+1. **Coverage** — extends the gazetteer beyond what volunteers happened to key in.
+2. **Boundary-seed densification** — the boundary extraction (`plan-gb1900-parish-extraction.md`)
+   stalled because the `Union & R.D. By.`/`C.P.` annotations were *never transcribed* (0 boundary
+   labels in the test region). This pass would surface exactly those, giving the dense boundary
+   label-seeds that were missing — partly rescuing that dead-end.
+
+**Pipeline:** text-detector over tiles → project known VLM bboxes (fractional *crop* coords →
+tile/geo) → subtract → residual text regions → VLM-read → new labels (namespaced distinctly
+from `gb:` since they are *our* additions, not GB1900 transcriptions).
+
+**Hard part = detection, not reading — but it's largely solved for OUR maps.** We already have a
+strong reader (the VLM); the piece to add is *localising* text on a dense sheet (text vs
+linework/hachures/contours). This is the historical-map **text-spotting** problem, and there is
+proven prior art *on this exact series*: **MapReader** (Living with Machines / maps-as-data) has
+integrated a text-spotting pipeline and was applied to **OS six-inch 2nd edition (1887–1949)**,
+and **mapKurator** (USC-ISI → UMN) ran text-spotting over **60k+ David Rumsey maps → 100M+ text
+labels**. So the detector is *leverage-existing*, not build-from-scratch — and we need only the
+**detection** half (recognition is the VLM's job). Caveat: OS six-inch is dense and its text is
+abbreviated/curved, so an off-the-shelf spotter likely needs light fine-tuning; the LwM lineage
+(models + the OS-six-inch training data) is the place to start. Full-GB pass, incremental on the
+infra now in place (all tiles cached, VLM workers, crops). Prereq: the full-coverage bbox run lands first.
+
 ## Appendix — key files & commands referenced
 
 - Authority: `authorities/gb1900-places.py` (docstring §12–29 has the original
