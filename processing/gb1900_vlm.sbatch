@@ -40,17 +40,22 @@ conda activate /vast/ishi/envs/vllm
 set -u
 module load cuda/12.8.0 2>/dev/null || true
 export HF_HOME=/vast/ishi/hf_cache
+# Per-job cache isolation (GOTW pattern, process/submit_vlm_slurm.py). A SHARED
+# ~/.cache/vllm poisoned by an earlier run broke every subsequent EngineCore
+# load_model (root cause, 2026-07-17). Fresh per-job dirs for TMPDIR / XDG cache /
+# vLLM compile cache prevent that; the node's /tmp is wiped after the job.
+RUN=/tmp/gb1900vlm_${SLURM_JOB_ID}_${SLURM_ARRAY_TASK_ID:-0}
+mkdir -p "$RUN"
+export TMPDIR="$RUN" XDG_CACHE_HOME="$RUN" VLLM_CACHE_ROOT="$RUN"
 
 MODEL="Qwen/Qwen2.5-VL-72B-Instruct-AWQ"
 PORT=$((18900 + (SLURM_ARRAY_JOB_ID % 700) + SLURM_ARRAY_TASK_ID))
 NGPU=$(echo "${SLURM_GPUS_ON_NODE:-2}")
 
-# 1) serve (tensor-parallel across the allocated A100s for the 72B AWQ model).
-# --disable-custom-all-reduce stabilises multi-GPU init on the shared A100 nodes
-# (intermittent multiproc/NCCL WorkerProc crashes seen 2026-07-17).
-vllm serve "$MODEL" --port "$PORT" --tensor-parallel-size "$NGPU" \
-  --max-model-len 8192 --gpu-memory-utilization 0.92 --disable-custom-all-reduce \
-  --enforce-eager \
+# 1) serve. --host 127.0.0.1 forces IPv4 (GOTW does this) — without it vLLM binds
+# the node hostname (IPv6) → the c10d "Address family not supported" error.
+vllm serve "$MODEL" --host 127.0.0.1 --port "$PORT" --tensor-parallel-size "$NGPU" \
+  --max-model-len 16384 --gpu-memory-utilization 0.92 \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
 # wait for startup
