@@ -14,24 +14,28 @@
 #
 #SBATCH --job-name=gb1900-vlm
 #SBATCH --account=ishi
-#SBATCH --partition=gpu
-#SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=80G
+#SBATCH --partition=a100
+#SBATCH --gres=gpu:2
+#SBATCH --cpus-per-task=12
+#SBATCH --mem=120G
 #SBATCH --time=04:00:00
 #SBATCH --requeue
 #SBATCH --output=/vast/ishi/gb1900/logs/vlm-%A_%a.out
+# Submit from crc0 (has Slurm; pitt/gateway VM does not): sbatch -M gpu ...
 
 set -uo pipefail
 MANIFEST="${1:?usage: sbatch gb1900_vlm.sbatch <crop_manifest.jsonl> <out_dir>}"
 OUT_DIR="${2:?}"
 mkdir -p "$OUT_DIR" /vast/ishi/gb1900/logs
 
-# Env — gazetteer-independent; use the GOTW-provisioned vLLM env + HF cache on /vast
-# (verified present 2026-07-17). Activate conda BEFORE any set -u tightening.
+# Env — GOTW-provisioned vLLM env + HF cache on /vast (verified present 2026-07-17).
+# Activate conda BEFORE set -u; try CRC-compute and VM conda locations in turn.
 set +u
-source /home/gazetteer/miniconda/etc/profile.d/conda.sh 2>/dev/null || \
-  source "$(dirname "$(command -v conda)")/../etc/profile.d/conda.sh"
+for CS in /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh \
+          /ihome/whcdh/stg135/miniconda3/etc/profile.d/conda.sh \
+          /home/gazetteer/miniconda/etc/profile.d/conda.sh; do
+  [ -f "$CS" ] && { source "$CS"; break; }
+done
 conda activate /vast/ishi/envs/vllm
 set -u
 module load cuda/12.8.0 2>/dev/null || true
@@ -39,9 +43,11 @@ export HF_HOME=/vast/ishi/hf_cache
 
 MODEL="Qwen/Qwen2.5-VL-72B-Instruct-AWQ"
 PORT=$((18900 + (SLURM_ARRAY_JOB_ID % 700) + SLURM_ARRAY_TASK_ID))
+NGPU=$(echo "${SLURM_GPUS_ON_NODE:-2}")
 
-# 1) serve
-vllm serve "$MODEL" --port "$PORT" --max-model-len 8192 --gpu-memory-utilization 0.92 \
+# 1) serve (tensor-parallel across the allocated A100s for the 72B AWQ model)
+vllm serve "$MODEL" --port "$PORT" --tensor-parallel-size "$NGPU" \
+  --max-model-len 8192 --gpu-memory-utilization 0.92 --limit-mm-per-prompt image=1 \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
 # wait for startup
