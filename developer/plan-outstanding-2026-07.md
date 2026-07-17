@@ -34,7 +34,7 @@ open (genuinely not done, or intentional won't-do/deferred). Verdicts:
 | § / line | Item | Verdict (17 Jul) |
 |---|---|---|
 | §1 ~391 | Discovery scope filter (gateway) | **NOT DONE** — no `dataset_status`/`dataset_id`/scope filter in gateway; schema fields exist, query-side unwired |
-| §1 ~463 | `--calibrate` weight fit | **being RUN now** (17 Jul) on the assumption user-reconciliation hard links are reliable positives; re-run later for fine-tuning |
+| §1 ~463 | `--calibrate` weight fit | **SHIPPED** (17 Jul) — contributor-positives fit (name 0.31 / spatial 0.39, θ_query 0.22; 1,067 positives) written to tracked params, live on next gateway restart; re-run for fine-tuning |
 | §1 ~492 | `clustering.js` full scorer | **PARTIAL** — Atlas scorer+Union-Find **live in whg3 prod**; Workbench worker-inference abstraction remains |
 | §2 ~770 | `aat_enrich` backfill (parent) | effectively **DONE except GB1900** — every child done; parent open only for 789 |
 | §2 ~789 | GB1900 types | **NOT DONE** — no native type; VLM idea not built |
@@ -502,8 +502,8 @@ already-built features**, and (4) polish/ops/docs.
       spatial-heavy (name ~0.22 / spatial ~0.46) — confirming the dominance is a
       property of the *positives* (coordinate-near-duplicate authority links), not
       negative noise. Defaults retained (below).
-    - [~] **`--calibrate` weight fit — contributor-positives run 17 Jul; SHIP
-      DECISION PENDING.** Added a positive-source selector
+    - [x] **`--calibrate` weight fit — contributor-positives fit SHIPPED 17 Jul (SG).**
+      Added a positive-source selector
       (`--positives {authority,contributor,both}`, commit `896a63b`) and ran the fit on
       the **user-reconciliation** positives (SG: treat them as reliable).
       **Result (17 Jul):** of 20,000 sampled contributor `closeMatch` links, **1,067**
@@ -515,9 +515,11 @@ already-built features**, and (4) polish/ops/docs.
       toward name and off spatial — but spatial still narrowly edges name (0.39 > 0.31),
       and it is *less* name-forward than the shipped **defaults** (name 0.35 / spatial
       0.20). n_positive=1,067 is modest + a biased subset (only included datasets).
-      Scratch output: `/vast/ishi/elastic/tmp_calib_contrib/`. **Not yet written to the
-      tracked `clustering/data/clustering_params.json`** (would ship live to the browser
-      on the next gateway restart) — awaiting SG go/no-go.
+      Scratch output: `/vast/ishi/elastic/tmp_calib_contrib/`. **SHIPPED — written to the
+      tracked `clustering/data/clustering_params.json`** (SG go, 17 Jul); goes live to the
+      browser on the **next gateway restart** (the gateway ships these params per query via
+      `gateway/clustering_payload.py`). NB the operating point moved with the weights:
+      θ_query 0.55→**0.22** (now the Youden-J cut on the true composite Σw·s scale).
       **▶ RE-RUN for fine-tuning** once (a) more whg datasets are ingested so more
       contributor endpoints resolve, (b) fresh contributor attestations accumulate, and
       (c) a best-of-N representative-embedding pick is added (the "first attested

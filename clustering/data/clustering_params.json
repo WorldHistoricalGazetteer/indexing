@@ -1,19 +1,22 @@
 {
-  "version": 0,
-  "calibrated": false,
+  "version": 1,
+  "calibrated": true,
   "weights": {
-    "name": 0.35,
-    "spatial": 0.2,
-    "temporal": 0.15,
-    "type": 0.15,
+    "name": 0.3128544475540239,
+    "spatial": 0.3923004213146069,
+    "temporal": 0.10792245302062402,
+    "type": 0.0369226781107452,
     "link": 0.15
   },
   "thresholds": {
-    "theta_query": 0.55,
-    "theta_bridge": 0.65,
-    "theta_synth": 0.7,
+    "theta_query": 0.22,
+    "theta_bridge": 0.32,
+    "theta_synth": 0.37,
     "theta_synth_structural": 0.6,
     "tau_name": 0.75,
     "tau_link": 1.0
-  }
+  },
+  "n_pairs": 17098,
+  "n_positive": 1067,
+  "positives_source": "contributor"
 }
