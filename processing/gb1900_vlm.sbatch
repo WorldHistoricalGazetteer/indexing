@@ -23,7 +23,7 @@
 #SBATCH --output=/vast/ishi/gb1900/logs/vlm-%A_%a.out
 
 set -uo pipefail
-CROPS_DIR="${1:?usage: sbatch gb1900_vlm.sbatch <crops_dir> <out_dir>}"
+MANIFEST="${1:?usage: sbatch gb1900_vlm.sbatch <crop_manifest.jsonl> <out_dir>}"
 OUT_DIR="${2:?}"
 mkdir -p "$OUT_DIR" /vast/ishi/gb1900/logs
 
@@ -54,7 +54,7 @@ done
 #    /v1/chat/completions, response_format json_schema strict, temperature 0,
 #    ThreadPoolExecutor(32), base64 crops, regex salvage; keyed on gb:<pin_id>.)
 python -m processing.gb1900_vlm_infer \
-  --crops "$CROPS_DIR" --shard "$SLURM_ARRAY_TASK_ID" --nshards "$SLURM_ARRAY_TASK_COUNT" \
+  --crops "$MANIFEST" --shard "$SLURM_ARRAY_TASK_ID" --nshards "${SLURM_ARRAY_TASK_COUNT:-1}" \
   --endpoint "http://localhost:${PORT}/v1" --model "$MODEL" \
   --out "${OUT_DIR}/shard-${SLURM_ARRAY_TASK_ID}.jsonl"
 

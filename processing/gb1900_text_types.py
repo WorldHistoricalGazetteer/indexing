@@ -121,12 +121,19 @@ def run(args) -> None:
     reader = csv.DictReader(_open_locations(args))
     out = open(args.out, "w", encoding="utf-8") if args.out else None
 
+    bbox = None
+    if args.bbox:
+        bbox = tuple(float(x) for x in args.bbox.split(","))  # W,S,E,N
     n = typed = illegible = allcaps_routed = residual = 0
     tokens = Counter()
     rules = Counter()
     residual_sample: list[str] = []
 
     for row in reader:
+        if bbox is not None:
+            lon, lat = ewkb_to_lonlat(row.get("g_point_wgs") or "")
+            if lon is None or not (bbox[0] <= lon <= bbox[2] and bbox[1] <= lat <= bbox[3]):
+                continue
         n += 1
         text = row.get("first_transcription") or ""
         token, rule, allcaps = classify(text, D)
@@ -204,6 +211,7 @@ def main(argv=None) -> int:
     p.add_argument("--version", default="gbtype-v1",
                    help="classification version stamped on each derived field "
                         "(plan §11.2)")
+    p.add_argument("--bbox", help="W,S,E,N lon/lat filter (e.g. Hampshire pilot)")
     p.add_argument("--limit", type=int, default=None, help="stop after N rows")
     return run(p.parse_args(argv)) or 0
 

@@ -102,19 +102,88 @@ def cmd_fetch(args) -> None:
     print(f"[fetch] fetched {got:,}, already-cached {skipped:,} → {TILE_CACHE}")
 
 
+def _global_px(lat: float, lon: float, z: int) -> tuple[float, float]:
+    xt, yt, px, py = deg2num(lat, lon, z)
+    return xt * TILE_PX + px, yt * TILE_PX + py
+
+
+def _load_tile(z: int, x: int, y: int):
+    from PIL import Image
+    p = tile_path(z, x, y)
+    if p.exists() and p.stat().st_size > 0:
+        try:
+            return Image.open(p).convert("RGB")
+        except Exception:
+            return None
+    return None
+
+
+def stitch_crop(lat: float, lon: float, text: str, z: int):
+    """Over-sized crop around the label's baseline-left anchor, stitched from the
+    /vast tile cache. Returns (PIL.Image | None, meta). We have no true extent, so
+    over-crop rightward (reading direction) + margins; the VLM re-detects the tight
+    label bbox inside. meta lets a detected pixel bbox back-project to geo."""
+    from PIL import Image
+    gpx, gpy = _global_px(lat, lon, z)
+    n = max(len(text), 3)
+    left_m, right_w, up, down = 14, max(170, n * 17), 30, 18   # px @ z16
+    bl, bt = int(gpx - left_m), int(gpy - up)
+    br, bb = int(gpx + right_w), int(gpy + down)
+    cw, ch = br - bl, bb - bt
+    canvas = Image.new("RGB", (cw, ch), (240, 240, 235))
+    tx0, tx1 = bl // TILE_PX, (br - 1) // TILE_PX
+    ty0, ty1 = bt // TILE_PX, (bb - 1) // TILE_PX
+    xt0, yt0, _, _ = deg2num(lat, lon, z)  # for tile z reference only
+    missing = 0
+    for tx in range(tx0, tx1 + 1):
+        for ty in range(ty0, ty1 + 1):
+            im = _load_tile(z, tx, ty)
+            if im is None:
+                missing += 1
+                continue
+            canvas.paste(im, (tx * TILE_PX - bl, ty * TILE_PX - bt))
+    meta = {"z": z, "origin_gpx": bl, "origin_gpy": bt, "w": cw, "h": ch,
+            "anchor_gpx": gpx, "anchor_gpy": gpy, "missing_tiles": missing}
+    return (None if missing == (tx1 - tx0 + 1) * (ty1 - ty0 + 1) else canvas), meta
+
+
 def cmd_crops(args) -> None:
-    """Crop an over-sized window per label (OCR-refine happens in the VLM step)."""
-    from PIL import Image  # scaffolding: real stitch/crop
+    """Crop an over-sized window per label from the cached tiles → PNG + manifest.
+
+    The manifest (one JSON line per crop) feeds the VLM step; it carries the crop's
+    geo-referencing so the VLM's detected pixel bbox can be back-projected (plan
+    §11.1: record detected bboxes)."""
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    n = 0
+    man = open(args.manifest, "w", encoding="utf-8") if args.manifest else None
+    n = saved = skipped = 0
     for rec in _iter_pins(args.pins):
-        # anchor pixel = baseline-left of the first glyph (source convention).
-        # Over-crop rightward + margin; label re-detected inside by the VLM/OCR.
-        # (Stitch the covering tiles, crop [px-8 : px+W, py-H/2 : py+H/2].)
-        n += 1  # TODO: implement stitch+crop against the /vast tile cache
-    print(f"[crops] {n:,} pins queued; writes crop PNG + provisional bbox to {out}")
-    print("[crops] NB record detected bbox into the edition record (plan §11.1).")
+        n += 1
+        img, meta = stitch_crop(rec["lat"], rec["lon"], rec.get("text", {}).get("value", "")
+                                if isinstance(rec.get("text"), dict) else (rec.get("text") or ""),
+                                args.zoom)
+        if img is None:
+            skipped += 1
+            continue
+        pid = rec["pin_id"]
+        crop_path = out / f"gb_{pid}.png"
+        img.save(crop_path)
+        saved += 1
+        if man is not None:
+            man.write(json.dumps({
+                "place_id": rec.get("place_id", f"gb:{pid}"), "pin_id": pid,
+                "text": rec.get("text"), "token": (rec.get("type") or {}).get("token")
+                if isinstance(rec.get("type"), dict) else rec.get("token"),
+                "lon": rec["lon"], "lat": rec["lat"],
+                "crop_path": str(crop_path), "crop": meta,
+            }, ensure_ascii=False) + "\n")
+        if args.limit and saved >= args.limit:
+            break
+    if man is not None:
+        man.close()
+    print(f"[crops] pins {n:,}; crops saved {saved:,}; skipped(no tiles) {skipped:,} → {out}")
+    if args.manifest:
+        print(f"[crops] manifest → {args.manifest}")
 
 
 def main(argv=None) -> int:
@@ -129,6 +198,8 @@ def main(argv=None) -> int:
         sp.add_argument("--pad", type=int, default=1, help="tile padding around anchor")
     f.add_argument("--rps", type=float, default=5.0, help="fetch rate limit")
     c.add_argument("--out", default="/vast/ishi/gb1900/crops")
+    c.add_argument("--manifest", help="write crop manifest JSONL (feeds VLM step)")
+    c.add_argument("--limit", type=int, default=None, help="stop after N crops")
     args = p.parse_args(argv)
     return args.fn(args) or 0
 
