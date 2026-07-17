@@ -47,10 +47,16 @@ def smooth_path(P, rng, n=6):
 
 
 def render_boundary(P, path, rng, ink=None, comp=None):
-    """Render a mereing boundary (dots + tangent-aligned x's + arrows) onto ink/comp layers."""
+    """Render a mereing boundary (dots + tangent-aligned x's + arrows) onto ink/comp layers.
+
+    x's and arrows sit OFFSET to one side of the line (the mere side), along the local
+    normal — matching the real sheets (they are not drawn on the line itself).
+    """
     if ink is None: ink = np.zeros((P, P), np.float32)
     if comp is None: comp = np.zeros((P, P), np.uint8)
     d_pitch = rng.uniform(10, 22); x_pitch = rng.uniform(50, 120); ar_pitch = rng.uniform(70, 160)
+    side = rng.choice([-1.0, 1.0])                        # mere side, consistent along the boundary
+    x_off = rng.uniform(7, 15); ar_off = rng.uniform(4, 12)
     acc = 0.0; xa = rng.uniform(0, 40); ara = rng.uniform(0, 80)
     for i in range(1, len(path)):
         p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
@@ -60,9 +66,9 @@ def render_boundary(P, path, rng, ink=None, comp=None):
             cv2.circle(ink, tuple(c), r, 1.0, -1); cv2.circle(comp, tuple(c), r, 1, -1)
         if xa >= x_pitch:
             xa = 0; x_pitch = rng.uniform(50, 120)
-            c = p1 + rng.integers(-4, 5, 2)
+            c = p1 + side * x_off * n + rng.uniform(-2, 2, 2)      # offset to the mere side
             draw_cross(ink, comp, c, t, n, int(rng.integers(6, 9)), int(rng.integers(2, 4)), rng)
         if ara >= ar_pitch and rng.random() < 0.7:
             ara = 0; ar_pitch = rng.uniform(70, 160)
-            draw_arrow(ink, comp, p1 + rng.integers(-3, 4, 2), t, n, int(rng.integers(6, 9)), rng)
+            draw_arrow(ink, comp, p1 + side * ar_off * n, t, n, int(rng.integers(6, 9)), rng)
     return ink, comp
