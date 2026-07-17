@@ -86,4 +86,16 @@ while true; do
   fi
   idle=$((idle+1)); sleep 60
 done
+
+# The LAST worker out builds the GB-STAMP edition inline (whoever wins the lock),
+# so no separate reconcile job / no idle node / no cross-cluster dependency.
+ED=/vast/ishi/gb1900/edition
+if mkdir "$OUT_DIR/reconcile.lock" 2>/dev/null; then
+  echo "[worker ${SLURM_ARRAY_TASK_ID}] running final reconcile → GB-STAMP edition"
+  cat "$OUT_DIR"/batch_*/shard-0.jsonl > "$ED/national_vlm.jsonl" 2>/dev/null || true
+  echo "merged VLM records: $(wc -l < $ED/national_vlm.jsonl 2>/dev/null || echo 0)"
+  python3 -m processing.gb1900_reconcile --tier0 "$ED/national_typed.jsonl" \
+    --vlm "$ED/national_vlm.jsonl" --out "$ED/gb-stamp_edition.jsonl" --version gbtype-v1
+  echo "[worker] GB-STAMP edition → $ED/gb-stamp_edition.jsonl"
+fi
 kill "$VLLM_PID" 2>/dev/null || true
