@@ -31,9 +31,41 @@
 >   `typesystem/data/gb1900_os_lettering.json`.
 > - **P0 DONE (Tier-0 text typing)** — `processing/gb1900_text_types.py` +
 >   `typesystem/data/gb1900_os_abbrev.json`; run on the full **2.67M** pins:
->   **1,614,003 typed (60.5%)** zero-GPU, 1.5% illegible dropped, 4.5% ALLCAPS +
->   33.5% residual routed to Tier-1. Residual is dominated by proper settlement
->   names (Welsh/Gaelic) — exactly Tier-1's target.
+>   **1,663,981 typed (62.4%)** zero-GPU (after numeric + keyword lift), 1.5%
+>   illegible dropped, 4.5% ALLCAPS + 31.6% residual routed to Tier-1. Residual is
+>   dominated by proper settlement names (Welsh/Gaelic) — exactly Tier-1's target.
+> - **Tier-1 infra staged/scaffolded** — raw dump staged to
+>   `/vast/ishi/gb1900/raw/`; `processing/gb1900_tiles.py` (NLS fetch + crop,
+>   deg2num validated) + `processing/gb1900_vlm.sbatch` (GOTW-adapted GPU array).
+>   **Feasibility confirmed (2026-07-17):** CRC *can* reach the NLS tile hosts
+>   (`mapseries-tilesets.s3` HTTP 200) though not Vision of Britain; vLLM env
+>   (`/vast/ishi/envs/vllm`) + HF cache present. **Gating item: confirm the exact
+>   NLS six-inch XYZ template + max zoom** (P1), then a one-county pilot.
+>
+> **DECISIONS (SG, 2026-07-17):**
+> - **Ingest scope = COMPLETE / everything** — all ~2.67M pins ingested (incl.
+>   footpaths/wells/pumps); downstream users customise their own filtering. (So the
+>   §2.4 "default-exclude generic features" option is dropped — index it all, typed.)
+> - **PRESERVE `gb:<pin_id>` identifiers** — they are already interlinked to other
+>   gazetteers (e.g. `IV-GB1900-OSM-WD.lp.json`; prod `gb:` ids are `gb:<24hex>` =
+>   raw-dump `pin_id`, verified). The raw dump is a **superset** of the current
+>   abridged pin_ids, so existing links stay valid and coverage roughly doubles.
+> - **No human cluster→type gate (old Tier-2 removed).** Because the OS
+>   style→feature scheme is *documented* (`gb1900_os_lettering.json`), the VLM emits
+>   the `os_style` code and the type is a **table lookup** — no upfront human font
+>   labelling. Human effort = QA sampling + the downstream user-feedback loop (§11.2).
+> - **Curated ~30k "manual fixes" investigated:** only **170** are `notes`-flagged
+>   (the "1.5%" is mostly *silent* reconciliation). The broad `first_transcription`
+>   vs curated `final_text` divergence (24.6%) is **overwhelmingly cosmetic**
+>   abbreviation spacing (`F.P.`→`F. P.`) which Tier-0 normalisation already
+>   neutralises. The genuine errors (garbles/misreadings/accents/truncations) are
+>   exactly what a **VLM map-read corrects** — and the curated `final_text` for
+>   noted rows is itself often garbled (`GEORGE`→`GEOR`), so **raw + our VLM
+>   corrections may beat the curated CC-BY-SA set.** Design validated.
+> - **Edition name (pick one; must NOT be "GB1900"):** e.g. **"WHG Historical
+>   Feature Layer of Britain, c.1900"**, **"WHG British Map-Label Gazetteer,
+>   1888–1914"**, **"Cartonym: WHG Typed Map Labels of Britain (c.1900)"**,
+>   **"WHG Ordnance Label Gazetteer (Britain, 1888–1914)"**. Namespace stays `gb`.
 
 ---
 
@@ -434,7 +466,19 @@ which is exactly why ALLCAPS must be resolved *here*, not pre-judged in Tier 0.
    is that *type style is nearly discrete* on OS maps, so clusters should be
    tight and few.
 
-### 4.3 Tier 2 — human cluster → type assignment, then propagate
+### 4.3 Tier 2 — type = documented lookup (no human cluster gate)
+
+**SUPERSEDED (SG, 2026-07-17):** the human cluster→type assignment below is **no
+longer a gate.** Since the OS style→feature scheme is *documented*
+(`gb1900_os_lettering.json`), the VLM emits an `os_style` code and the type is a
+**direct table lookup** — plus `vlm_text` as a recorded correction (§11.1). Human
+effort collapses to **QA sampling** (spot-check a sample per `os_style`) + the
+**downstream user-feedback loop** (§11.2). Clustering is now optional QA (outlier
+detection), not a labelling step. The original cluster-review design is retained
+below only as the fallback if the VLM can't reliably recover the documented styles
+(the P3 pilot decides).
+
+<details><summary>Original Tier-2 (human cluster review) — fallback only</summary>
 
 - Surface each cluster to a human as **a contact sheet of ~25 example crops +
   their `final_text` values + the modal VLM descriptor**.
@@ -449,6 +493,8 @@ which is exactly why ALLCAPS must be resolved *here*, not pre-judged in Tier 0.
 **Review surface:** a static HTML contact-sheet generator (mirrors GOTW's
 `process/review_ui.py` / `export_reader.py` approach — GOTW already builds static
 review pages), or a Jupyter notebook. No live service needed.
+
+</details>
 
 ---
 
