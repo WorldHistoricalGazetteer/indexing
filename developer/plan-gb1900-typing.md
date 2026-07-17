@@ -753,6 +753,46 @@ richest there) so both settlement and physical-feature type styles are exercised
 
 ---
 
+## 10a. FOLLOW-UP — cost of running the VLM (font + transcription) on ALL entries
+
+**Question (SG, 2026-07-17):** rather than VLM-on-residual, run the VLM over
+**every** label — independent typography (`os_style`) **and** transcription
+(`vlm_text`) for all ~2.67M pins — giving a fully VLM-verified edition (catches
+transcription errors in the 62% Tier-0-typed too, not just the residual). Cost:
+
+**Measured throughput (pilot):** ~**2 crops/sec on 2×A100** (concurrency 16,
+Qwen2.5-VL-72B-AWQ). Realistically ~4–5/sec with concurrency 32 + batching (GOTW).
+
+**Estimated cost for ALL 2.67M pins:**
+- **VLM compute: ~300–600 A100-GPU-hours** (2×A100 @ 2/sec = ~590 A100-hr worst
+  case; concurrency-32 @ ~5/sec ≈ ~300). Wall time ~**10–37 h** across a 16–32-way
+  GPU array. (Residual-only ≈ 38% of pins ≈ ~110–220 A100-hr.)
+- **Tile fetch (one-time, cached forever on `/vast`): ~1–2M unique z16 tiles**
+  (pilot: 500 spread pins → 1,671 tiles; dense areas share heavily) → **~40–80 GB**,
+  **~30–40 h** throttled at a polite ~10–15 rps to NLS (resumable). This is the same
+  fetch residual-only needs — it doesn't scale with VLM scope.
+- **Crops:** CPU, cheap (~a few CPU-hours). **Storage:** tiles + ~2.67M crops
+  (~15 KB each ≈ 40 GB) + edition records — all on `/vast`, fine.
+- **$**: CRC is the `ishi` academic allocation (fair-share, not $-billed); ~300–600
+  A100-hr is a sizeable but feasible ask (GOTW ran comparable).
+
+**Assessment / recommendation:**
+- **Feasible.** The dominant cost is ~300–600 A100-hr; the tile fetch is one-time.
+- **Marginal value over residual-only is modest for the abbreviation majority:**
+  Tier-0 already types those with reliable text (`F.P.`/`W`/`P`), and the VLM
+  *neighbour-hijacks* tiny abbreviations (pilot) — so full-ALL both costs ~2.6× more
+  and is where the VLM is weakest, **unless** the tight-crop fix reliably isolates
+  short labels (needs validation).
+- **Recommended path:** (1) VLM on the **residual** first (proper names, its strength);
+  (2) run a **stratified QA sample** of Tier-0-typed pins through the VLM to *measure*
+  the Tier-0 transcription/type error rate; (3) escalate to **full-ALL only if** that
+  error rate justifies the 2.6× cost — full-ALL is the ideal end-state for a fully
+  provenance-complete, independently-verified edition (§11), cost-justified, but gate
+  it on (a) multi-GPU vLLM reliability solved (TP=1 or requeue), (b) short-label crop
+  isolation validated. **Note this as the scale-up decision.**
+
+---
+
 ## 11. Published WHG edition — provenance, versioning, feedback & naming
 
 The end goal is not just to enrich the live `gb:` docs, but to **publish a
