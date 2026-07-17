@@ -227,39 +227,59 @@ documented in primary sources (verified 2026-07-17):
   OS's own style **names** (below), citing *Ordnance Survey alphabets* (OS, 1934)
   + internal type-specimen manuals.
 
-**What the sources actually say (the documented OS style names):**
+**What the source actually says — TRANSCRIBED FROM OS 404 (June 1914), the
+per-feature writing table (read 2026-07-17).** OS 404 lists the writing character
+for *every* feature class, in two scale columns; **for GB1900 we read the
+"1/10560 and 6-inch scales" column.** Its style abbreviations:
 
-| OS style name (Oliver / OS alphabets) | how it looks | documented use |
-|---|---|---|
-| **Roman** (serif, upright) | serifed upright | **settlement / village names** (the default) |
-| **Copperplate italic** | serifed sloped | **water & physical features** (rivers, streams), minor detail |
-| **Egyptian** (slab sans-serif) | heavy slab, no/blunt serifs | **Roman antiquities** |
-| **Old English / black-letter** | gothic | **non-Roman antiquities** (used for "antiquities" from the early 1830s) |
+| Abbrev | Style | | Abbrev | Style |
+|---|---|---|---|---|
+| **R.P.** | Roman Print (serif, mixed-case) | | **E.C.** | Egyptian Capitals (slab sans) |
+| **R.C.** | Roman Capitals | | **O.E.C.** | Open Egyptian Capitals |
+| **I.C.** | Italic Capitals | | **O.R.C./O.I.C.** | Open Roman/Italic Capitals |
+| **Stump** | the standard stamped hand (the *default*) | | **Old English / German Text** | black-letter (antiquities) |
+| **Ornamental** | decorative (counties, county boroughs) | | | |
 
-Plus the case/size hierarchy of the writing plate (large caps = towns; small caps
-/ lower case = smaller places; spaced caps = extended admin/physical areas).
-**Process note (dating):** from **1882** the six-inch was photo-lithographed with
-**stamped** lettering, standardised across the map by the **1890s** — so GB1900's
-1888–1914 sheets use a *consistent, stamped* style set, which is exactly what
-makes cluster-by-typography viable.
+**Documented six-inch feature → style (selected, from OS 404 pp. 9–11):**
 
-**Consequence for the plan:** the table below is now a **source-grounded working
-scheme**, not a guess — but its authoritative form is the OS 404 / six-inch
-Conventional Signs plate itself. **P0.5 (new milestone, §8) digitises that plate
-into a reference table** and uses it to (a) fix the VLM label set to the *real* OS
-style names, and (b) validate that discovered clusters map onto documented styles.
-
-| OS type style (case × family × size × spacing) | typical feature class |
+| Style (6-inch column) | Feature classes OS assigns it |
 |---|---|
-| upright roman, small, lower-case | buildings, minor settlements, generic labels |
-| upright roman **CAPS**, large | cities / large towns |
-| upright roman **CAPS**, medium | towns |
-| upright roman **SMALL CAPS** | villages / small settlements |
-| **CAPS**, wide letter-spacing (tracked) | parishes, boundaries, administrative divisions, counties |
-| *italic / antique*, mixed-case | **water & physical features** (rivers, streams, springs) |
-| *italic / antique* **CAPS**, wide-spaced | **seas, mountain ranges, regions**, large physical extents |
-| *italic / antique*, small | **antiquities** (Roman/prehistoric), relief/natural features |
-| gothic / black-letter | some antiquities & parish-church names |
+| **R.C.** (Roman Capitals) | cathedrals, county boroughs, barracks (large), forts, forests, cattle markets, cemeteries, colleges, courts of law (principal), harbours, havens, headlands (large), **hill ranges**, hospitals, hotels, large bays/beaches |
+| **R.P.** (Roman Print) | churches, chapels, town halls, dispensaries, drill halls, dock buildings |
+| **I.C.** (Italic Capitals) | **canals, canal basins, docks, "cuts" in navigable rivers, public gardens, deer parks** — i.e. **water & designed-water features** |
+| **E.C.** (Egyptian Capitals) | **Roman** antiquities; parliamentary county divisions; courts & alleys |
+| **Old English** | **pre-historic / Saxon** antiquities (+ ancient almshouses) |
+| **German Text** | **Norman or subsequent (medieval)** antiquities |
+| **Ornamental** | counties, county boroughs |
+| **Stump** (default) | farms, brooks, fords, ferries, foot bridges/paths, single dwelling houses, collieries, coal pits, filter beds, cattle pens, caves, drying grounds, guide posts, recreation grounds, grave yards … (the **bulk** of minor features) |
+
+Antiquities are thus lettered **by period** (Roman = E.C.; pre-historic/Saxon =
+Old English; Norman+ = German Text), confirming the antiquity-font premise
+precisely. **Process note (dating):** from **1882** the six-inch was
+photo-lithographed with **stamped** lettering, standardised across the map by the
+**1890s** — so GB1900's 1888–1914 sheets use a *consistent, stamped* style set,
+which is what makes cluster-by-typography viable.
+
+**⚠ CRITICAL CAVEAT — the six-inch differentiates FEWER classes than 1/2500.**
+Note how many feature classes fall to **"Stump"** in the 6-inch column that carry
+a *distinct* style at 1/2500 (e.g. banks: 1/2500 R.P. → 6-inch **Stump**; churches
+stay R.P. but farms/ferries/fords are Stump at both). **So on the six-inch,
+typography reliably separates only a *subset* of types:** prominent
+settlements/administrative units (R.C. / Ornamental / caps size-hierarchy), **water
+features (I.C.)**, and **antiquities by period (E.C. / Old English / German Text)** —
+while the large mass of minor rural features is **undifferentiated Stump** and
+**cannot** be told apart by font. Those must be typed from **text** (Tier 0
+abbreviations), which is exactly Tier 0's strength. **This is the key finding: Tier
+0 (text) and Tier 1 (typography) are complementary, not redundant — typography adds
+water/antiquity/prominence that text often can't, and text resolves the Stump mass
+that typography can't.**
+
+**Consequence for the plan:** the scheme above is transcribed from the primary
+source (P0.5 substantially DONE), so the VLM label set = the OS style names
+(R.P./R.C./I.C./E.C./Old-English/German-Text/Stump/Ornamental) and clusters grade
+directly against documented feature classes. What remains of P0.5 is transcribing
+the full ~300-row OS 404 table into `typesystem/data/gb1900_os_lettering.json`
+(feature → 6-inch style) so Tier 1's cluster→type step is a table lookup.
 
 **Note the CAPS rows:** ALLCAPS spans at least five of these classes — the
 discriminator is **family (roman vs antique/italic) + size band + letter-spacing**,
@@ -284,15 +304,18 @@ which is exactly why ALLCAPS must be resolved *here*, not pre-judged in Tier 0.
    `final_text` is what's actually there (era/sheet-mismatch guard).
 4. **Characterize typography.** Two interchangeable back-ends:
    - **VLM (primary):** send the tight crop to a self-hosted Qwen2.5-VL with a
-     strict JSON schema using the **documented OS style names** (§4.2.0) —
-     `{case: lower|title|caps|smallcaps,
-     family: roman|copperplate_italic|egyptian_slab|old_english_blackletter,
-     weight: light|bold, size_band: small|medium|large|extra_large,
-     tracking: tight|normal|wide, is_water_or_antiquity: bool, legible: bool}`.
-     Grounding `family` in the real OS categories (Roman=settlement,
-     copperplate-italic=water/physical, Egyptian=Roman antiquity,
-     Old-English=other antiquity) means the VLM classifies into the *actual*
-     scheme, so clusters map to feature classes by construction rather than by hope.
+     strict JSON schema whose **primary field is the documented OS style code**
+     (§4.2.0) — `{os_style: RP|RC|IC|EC|OldEnglish|GermanText|Stump|Ornamental,
+     case: lower|title|caps|smallcaps, size_band: small|medium|large|extra_large,
+     tracking: tight|normal|wide, legible: bool}`. `os_style` maps *directly* to a
+     feature class via the OS 404 table (RC/Ornamental→prominent settlement/admin,
+     IC→water, EC/OldEnglish/GermanText→antiquity by period, RP→named building),
+     so clusters resolve to types by table lookup, not hope. `case`/`size_band`/
+     `tracking` corroborate `os_style` and split the size hierarchy *within* caps
+     (large RC = town/city vs small = village). **Because ~half of six-inch classes
+     are `Stump` (§4.2.0 caveat), a `Stump` verdict means "typography can't tell —
+     defer to Tier 0 text"**, not a type; the VLM's value is concentrated on the
+     RC/IC/EC/OldEnglish/GermanText minority it *can* separate.
      **`case`, `size_band` and `tracking` are separate fields precisely so an
      ALLCAPS label is decomposed** (caps + family + size + spacing jointly pick the
      type) rather than flattened to one label. `tracking` (letter-spacing) is the
@@ -363,10 +386,19 @@ review pages), or a Jupyter notebook. No live service needed.
   link to our website."* WHG is NEH-funded, non-commercial → fits.
 - **The six-inch and 25-inch layers are "restricted for commercial purposes"**
   (third-party digitisation contracts). **We must not redistribute the tiles** —
-  we fetch, crop, run inference, and **cache crops for our own processing only**,
-  not re-serve the imagery. Per the project convention this is a *processing*
-  input, not a published asset (cf. `feedback_defer_licensing` — don't gate on
-  licence, but **do** respect no-redistribution).
+  we fetch, run inference, and use the imagery for our own research processing
+  only, not re-serve it. Per the project convention this is a *processing* input,
+  not a published asset (cf. `feedback_defer_licensing` — don't gate on licence,
+  but **do** respect no-redistribution).
+- **Cache policy (SG, 2026-07-17): keep EVERY fetched tile permanently on `/vast`**
+  — not just the transient per-label crops. Once a tile is fetched it is retained
+  in a durable tile cache (`${IX3_BASE}/gb1900/tiles/`, i.e. `/vast/ishi/gb1900/…`)
+  for **potential future research re-use**, so no NLS tile is ever fetched twice
+  across this or any later project. This is an **internal research cache**, fully
+  compatible with the no-redistribution term (the tiles are never re-served, only
+  used for WHG research). Crops derived from tiles are cached alongside. Practical
+  upside: the second pass (25-inch opportunistic reads, re-runs, other analyses)
+  costs zero NLS traffic.
 - **Rate limits / bulk fetch:** no published hard rate limit, but bulk-scraping
   ~1.2M label crops = many tile GETs. **Mitigations:** (a) Tier 0 first slashes
   how many labels need imagery; (b) **tile-level caching** — many labels share a
@@ -478,7 +510,7 @@ battle-tested CRC VLM pattern** we should copy rather than reinvent.
 | Phase | Deliverable | Gate |
 |---|---|---|
 | **P0 — Tier 0 ship** | `gb1900_text_types.py` + OS-abbreviation dict + coverage report on the full 1.17M. Fold high-confidence tokens into `manual_aat_maps["gb"]`; patch live `types[]`; `apply_aat_enrich`. | GB moves from **0% → majority** typed with **zero GPU**. Biggest bang; do first. |
-| **P0.5 — Typography ground-truth** | Digitise the OS lettering scheme (§4.2.0) into `typesystem/data/gb1900_os_lettering.json` from the primary sources — **OS 404 "Character of Writing" (1914)**, the **six-inch "Conventional Signs and Writing" plate**, and **Notes on Archaeology (1921)** — a `{style → feature-class}` table (Roman/copperplate-italic/Egyptian/Old-English + case/size/tracking rules). | The VLM label set + cluster→type mapping are fixed to the **documented** scheme before any GPU spend, so Tier 1 isn't reverse-engineering conventions that are already published. |
+| **P0.5 — Typography ground-truth** *(substantially DONE 2026-07-17)* | The OS scheme is transcribed from the primary source into §4.2.0 (OS 404 1914 per-feature table + antiquity-by-period + the six-inch Stump caveat). Remaining: capture the full ~300-row OS 404 "1/10560 & 6-inch" column into `typesystem/data/gb1900_os_lettering.json` as `{feature → os_style}` and its inverse `{os_style → [feature classes]}`. | The VLM label set (`os_style`) + cluster→type lookup are fixed to the **documented** scheme before any GPU spend; Tier 1 isn't reverse-engineering published conventions. |
 | **P1 — NLS tile recon** | Confirm the exact 1888–1915 six-inch **XYZ template + max zoom** from the NLS georef viewer; verify licensing note; fetch a **one-county** tile cache to `/vast`. | Tiles fetchable + legible typography at chosen zoom. |
 | **P2 — Crop pilot (one county, ~N=2–5k labels)** | `gb1900_make_crops.py` end-to-end on one county: lat/lon→pixel, over-crop, OCR-refine. Manual eyeball of crop accuracy. | Crops reliably contain the right label despite no box extent. |
 | **P3 — VLM + cluster pilot (same county)** | `submit_gb1900_vlm_slurm.py` (GOTW copy) → typography descriptors → cluster → contact sheets → human assigns the county's clusters. | Clusters are tight & few; human assignment is fast; typing agrees with Tier 0 where they overlap. |
