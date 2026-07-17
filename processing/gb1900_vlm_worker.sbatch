@@ -42,7 +42,7 @@ export HF_HOME=/vast/ishi/hf_cache TMPDIR="$RUN" XDG_CACHE_HOME="$RUN" VLLM_CACH
 
 MODEL="Qwen/Qwen2.5-VL-72B-Instruct-AWQ"
 PORT=$((18900 + (SLURM_ARRAY_JOB_ID % 700) + SLURM_ARRAY_TASK_ID))
-vllm serve "$MODEL" --host 127.0.0.1 --port "$PORT" --tensor-parallel-size 1 \
+vllm serve "$MODEL" --host 127.0.0.1 --port "$PORT" --tensor-parallel-size "${TP:-1}" \
   --max-model-len 16384 --gpu-memory-utilization 0.92 --served-model-name "$MODEL" \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
