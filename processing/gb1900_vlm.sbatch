@@ -45,15 +45,26 @@ MODEL="Qwen/Qwen2.5-VL-72B-Instruct-AWQ"
 PORT=$((18900 + (SLURM_ARRAY_JOB_ID % 700) + SLURM_ARRAY_TASK_ID))
 NGPU=$(echo "${SLURM_GPUS_ON_NODE:-2}")
 
-# 1) serve (tensor-parallel across the allocated A100s for the 72B AWQ model)
+# 1) serve (tensor-parallel across the allocated A100s for the 72B AWQ model).
+# --disable-custom-all-reduce stabilises multi-GPU init on the shared A100 nodes
+# (intermittent multiproc/NCCL WorkerProc crashes seen 2026-07-17).
 vllm serve "$MODEL" --port "$PORT" --tensor-parallel-size "$NGPU" \
-  --max-model-len 8192 --gpu-memory-utilization 0.92 \
+  --max-model-len 8192 --gpu-memory-utilization 0.92 --disable-custom-all-reduce \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
 # wait for startup
 for _ in $(seq 1 120); do
-  curl -s "http://localhost:${PORT}/v1/models" >/dev/null 2>&1 && break; sleep 5
+  curl -s "http://localhost:${PORT}/v1/models" >/dev/null 2>&1 && break
+  kill -0 "$VLLM_PID" 2>/dev/null || break   # server died — stop waiting
+  sleep 5
 done
+# HEALTH GATE: if vLLM never came up, exit non-zero so --requeue retries (a fresh
+# attempt usually gets a clean multiproc init) instead of silently writing nothing.
+if ! curl -s "http://localhost:${PORT}/v1/models" >/dev/null 2>&1; then
+  echo "FATAL: vLLM engine did not start (see vllm log) — exiting 1 to requeue" >&2
+  kill "$VLLM_PID" 2>/dev/null || true
+  exit 1
+fi
 
 # 2) infer over this array task's crop-shard → per-shard JSONL (resumable).
 #    (Python inference client mirrors GOTW triage_pages.py: OpenAI-compatible
