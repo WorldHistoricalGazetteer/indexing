@@ -9,7 +9,49 @@
 
 ---
 
-## ★ SESSION HANDOFF — pick up here (last worked: 14 Jul 2026 — ccode / UN BNDA session)
+## ★ SESSION HANDOFF — pick up here (last worked: 17 Jul 2026 — gateway ops + unchecked-item audit)
+
+**★ Done 17 Jul (gateway ops + audit session) — committed + PUSHED to `main`:**
+
+- **Gateway `/api/places` inherits Wikipedia links from matched wd records** (commit
+  `c17439f`). A non-wd place with a `sameAs`/`exactMatch`/`closeMatch` relation to a
+  `wd:Q…` now gets that wd doc's Wikipedia `seeAlso` links merged into its own `links[]`
+  at detail-fetch time (batched local ES join, no reindex, always in sync). Verified
+  live (`osm:m49_central_asia` → 20 Wikipedia links from `wd:Q27275`). Detail-endpoint
+  only; not in `/api/search`/`/api/reconcile`.
+- **`gateway_ctl.sh` hardened** — (a) `do_start` now self-activates gazetteer's local
+  conda (`bb3d056`): the cron-driven `gaz_relay` reached it with a bare env, so
+  `python -m gateway` ran system python3.9 and died on import → "FAILED to start". (b)
+  Logs now go to a **rotating** `/vast/ishi/elastic/logs/gateway.log` (`28709a8`, keep 5)
+  instead of `/dev/null`, which had left startup crashes untraceable. ⚠ The log change is
+  pushed + pulled to the /vast clone but **needs a `gw gateway-restart` to load** (the
+  relay cron stalled again mid-session — see [[gaz_relay_service_ops]]).
+
+**★ Audit 17 Jul — every remaining `[ ]` checkbox verified against code/prod/whg3.**
+Hypothesis "some unchecked items are secretly done" → mostly **NO**; they are correctly
+open (genuinely not done, or intentional won't-do/deferred). Verdicts:
+
+| § / line | Item | Verdict (17 Jul) |
+|---|---|---|
+| §1 ~391 | Discovery scope filter (gateway) | **NOT DONE** — no `dataset_status`/`dataset_id`/scope filter in gateway; schema fields exist, query-side unwired |
+| §1 ~463 | `--calibrate` weight fit | **being RUN now** (17 Jul) on the assumption user-reconciliation hard links are reliable positives; re-run later for fine-tuning |
+| §1 ~492 | `clustering.js` full scorer | **PARTIAL** — Atlas scorer+Union-Find **live in whg3 prod**; Workbench worker-inference abstraction remains |
+| §2 ~770 | `aat_enrich` backfill (parent) | effectively **DONE except GB1900** — every child done; parent open only for 789 |
+| §2 ~789 | GB1900 types | **NOT DONE** — no native type; VLM idea not built |
+| §2 ~822 | Hierarchy propagation Pass 4 | **WON'T DO** (struck through) |
+| §3 ~918 | Per-dataset coverage res-3 coarsened | **DONE** (was a done-state note, now checked) |
+| §3 ~920 | Pending/unpublished submissions | **NOT DONE** — `whg-places.py` flags pending out-of-scope; needs Django endpoint |
+| §4 ~954 | Batch 14 test harness | **PARTIAL** — new `integration_harness.py` + e2e test cover the staged happy-path; 5/9 spec bullets absent (ES load, deselection, atomic-swap, scope-leakage, OSM/OHM perf) |
+| §4 ~981 | Retire `authority-selection.md` | **NOT DONE** — still referenced in 4 modules |
+| §7 ~1074 | PeriodO vs drawn geometry | **NOT DONE** — genuine backend gap |
+| §8 ~1099 | Migrate legacy dataset tiles | **PARTIAL** — 7→**47** `whg-*` live; 53 datasets un-migrated + 24 redundant twins. **Twins MUST REMAIN until the legacy web UIs are retired** (see §8) |
+| §10 ~1148 | Dynamic-clustering design threads | **DEFERRED** by own text |
+
+> Interlock: 391 (scope filter) → 954 (scope-leakage test) → 920 (pending submissions) are
+> one chain — the gateway scope filter was never built, so the dependent test can't exist
+> and pending submissions stay out of scope.
+
+## ★ Earlier handoff (last worked: 14 Jul 2026 — ccode / UN BNDA session)
 
 **★ Done 14 Jul (ccode / UN BNDA session) — all committed + PUSHED to `main` (origin `6fc5a75`):**
 
@@ -460,21 +502,31 @@ already-built features**, and (4) polish/ops/docs.
       spatial-heavy (name ~0.22 / spatial ~0.46) — confirming the dominance is a
       property of the *positives* (coordinate-near-duplicate authority links), not
       negative noise. Defaults retained (below).
-    - [ ] **`--calibrate` weight fit — RAN with hard negatives; STILL NOT shipped;
-      defaults retained (principled).** Even with hard negatives the fit stays
-      spatial-heavy (name ~0.22 / spatial ~0.46). This is a **property of the ground
-      truth, not a sampling bug:** authority `sameAs`/`exactMatch` positives are the
-      *same place across gazetteers*, so their coordinates are near-duplicates →
-      spatial is genuinely the strongest separator *for that positive class*. It is
-      **not representative of the browser's broader task** (clustering name-variant
-      places at different coordinates, user records, single-gazetteer cases), and the
-      "representative embedding = first attested toponym" pick understates the name
-      cosine for cross-script pairs. So the name-forward **defaults** (name 0.35 /
-      spatial 0.20) are retained as the shipped slider starting-point. **A trustworthy
-      empirical fit needs better positives** — e.g. contributor attestations once they
-      accumulate, or toponym-cosine-based positives that include different-coordinate
-      corefs — plus a best-of-N representative-embedding pick. Deferred until such
-      positives exist; the machinery is ready to re-run.
+    - [~] **`--calibrate` weight fit — contributor-positives run 17 Jul; SHIP
+      DECISION PENDING.** Added a positive-source selector
+      (`--positives {authority,contributor,both}`, commit `896a63b`) and ran the fit on
+      the **user-reconciliation** positives (SG: treat them as reliable).
+      **Result (17 Jul):** of 20,000 sampled contributor `closeMatch` links, **1,067**
+      survived the in-index feature build — only **~16%** of legacy `whg:` endpoints
+      resolve (most reference whg datasets never ingested; the Batch 13b dangling risk,
+      now measured). Fitted weights (link fixed 0.15): **name 0.31 / spatial 0.39 /
+      temporal 0.11 / type 0.04**, θ_query 0.22. **Interpretation:** vs the authority
+      fit (name 0.22 / spatial 0.46) the user-reconciliation positives DO pull weight
+      toward name and off spatial — but spatial still narrowly edges name (0.39 > 0.31),
+      and it is *less* name-forward than the shipped **defaults** (name 0.35 / spatial
+      0.20). n_positive=1,067 is modest + a biased subset (only included datasets).
+      Scratch output: `/vast/ishi/elastic/tmp_calib_contrib/`. **Not yet written to the
+      tracked `clustering/data/clustering_params.json`** (would ship live to the browser
+      on the next gateway restart) — awaiting SG go/no-go.
+      **▶ RE-RUN for fine-tuning** once (a) more whg datasets are ingested so more
+      contributor endpoints resolve, (b) fresh contributor attestations accumulate, and
+      (c) a best-of-N representative-embedding pick is added (the "first attested
+      toponym" pick understates cross-script name cosine).
+      *(Historical — authority-positives fit:* even with hard negatives it stayed
+      spatial-heavy (name ~0.22 / spatial ~0.46), a property of the ground truth —
+      authority `sameAs` positives are the *same place across gazetteers* so their
+      coordinates are near-duplicates. That is why the name-forward defaults were
+      retained; the contributor run above is the "better positives" follow-up.)
 - [x] **AAT ancestors** — **DONE** (folded into the per-hit payload above): `aat_paths`
       (the materialised `types.aat_paths`, ancestors + depth) is emitted per hit — no
       schema change (the field already exists per-type). `temporal_range` likewise
@@ -489,10 +541,14 @@ already-built features**, and (4) polish/ops/docs.
       from `edges[]`.
 
 **Browser (whg3 — `staging` dev → `main` prod; see §6):**
-- [ ] `clustering.js` — the full scorer (all facets) + Union-Find + θ/weight
+- [~] `clustering.js` — the full scorer (all facets) + Union-Find + θ/weight
       sliders + cluster cards (Master Plan §3–4), with an embedding-source
       abstraction (payload-decode for Atlas, worker-inference for the Workbench).
-      **PARTIAL.** (NB: the Master Plan's *synthetic-edge passes* are **RETIRED** —
+      **PARTIAL — Atlas ✅ / Workbench pending.** The Atlas path (payload-decode
+      scorer + Union-Find + θ/weight sliders + cluster cards) is **live in whg3
+      prod** (confirmed by the 14 Jul whg3-agent audit at the top of this doc; core
+      landed whg3 `staging` `de94f176f`). What remains is the **Workbench**
+      worker-inference embedding-source branch of the abstraction. (NB: the Master Plan's *synthetic-edge passes* are **RETIRED** —
       §16a of the architectural plan: "no longer needed" as discovery + hard-links +
       toponym-expansion + user-proposals cover the same recovery cases. The client
       does **not** implement them; `θ_bridge`/`θ_synth`/`θ_synth_structural` in
@@ -915,8 +971,9 @@ snapshot (unchanged since 2026-04-22).
       backfilled AAT mappings live: **173,262 / 228,918 docs** now carry
       `types.aat_ids` + `aat_paths` (0 errors). *(The ~56k without are toponym-only
       or untyped LPF records.)*
-- [ ] **Per-dataset registry coverage is res-3 coarsened** (adequate for the
-      spatial filter); revisit if finer per-dataset footprints are ever needed.
+- [x] **Per-dataset registry coverage is res-3 coarsened** — DONE / done-state note,
+      not outstanding work (adequate for the spatial filter). Revisit only if finer
+      per-dataset footprints are ever needed.
 - [ ] Handle genuinely **pending/unpublished** submissions — `whg-places.py`
       flags them out of scope pending a new Django endpoint (documented gap).
 
@@ -1091,14 +1148,23 @@ Consequences for this plan (the earlier "atlas → main promotion" framing is go
 
 ## 8. Tileserver — migrate legacy contributed-dataset tiles
 
-The tileserver serves **116 tilesets**. All 22 authority namespaces have tiles
-(+ context overlays: `gn_capitals`, `osm_misc`, basemap layers), but **~79
-legacy `datasets-NNN` / `collections-NNN` tilesets** from the old v3 portal are
-still served alongside only 7 new `whg-<id>` buckets.
+The tileserver serves **155 tilesets** (live audit 17 Jul; was 116 on 14 Jul). All 22
+authority namespaces have tiles (+ context overlays: `gn_capitals`, `osm_misc`, basemap
+layers). Legacy portal tilesets: **77 `datasets-NNN` + 2 `collections-NNN`** still served,
+now alongside **47 `whg-<id>` buckets** (up from 7 on 14 Jul). Of the 77 `datasets-*`:
+**24 already have a `whg-<same-id>` twin** and **53 have no `whg-*` twin yet** (un-migrated).
 
-- [ ] Migrate the remaining legacy contributed datasets onto `whg-*` buckets
-      (couples to §3's dataset publication decisions), then retire the stale
-      `datasets-*`/`collections-*` entries.
+**▶ EXAMINE NEXT (SG, 17 Jul):**
+- [ ] **Every WHG gazetteer marked for inclusion MUST have a live tileset.** Audit the
+      inclusion list against the served `whg-*` buckets and generate + deploy tiles for
+      any marked-for-inclusion dataset that is still missing a `whg-*` bucket (the 53
+      un-migrated `datasets-*` are the first place to look; couples to §3's publication
+      decisions).
+- [ ] **Do NOT retire the legacy `datasets-*`/`collections-*` twins yet.** The 24
+      redundant twins (and the rest) **MUST REMAIN served until the legacy web-site UIs
+      are retired** — the old v3 portal front-ends still request them by `datasets-NNN` /
+      `collections-NNN` id. Retire the stale entries only *after* those UIs are
+      decommissioned, not as part of the `whg-*` migration.
 
 ---
 
