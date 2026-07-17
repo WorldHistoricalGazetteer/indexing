@@ -54,21 +54,41 @@ def render_boundary(P, path, rng, ink=None, comp=None):
     """
     if ink is None: ink = np.zeros((P, P), np.float32)
     if comp is None: comp = np.zeros((P, P), np.uint8)
-    d_pitch = rng.uniform(10, 22); x_pitch = rng.uniform(50, 120); ar_pitch = rng.uniform(70, 160)
+    # dots DOMINATE: big, round, regularly spaced. x's + arrows are RARE punctuation.
+    d_pitch = rng.uniform(18, 26); dr = int(rng.choice([2, 3]))          # regular pitch, consistent size
+    x_pitch = rng.uniform(180, 340); ar_pitch = rng.uniform(180, 340)
     side = rng.choice([-1.0, 1.0])                        # mere side, consistent along the boundary
     x_off = rng.uniform(12, 40); ar_off = rng.uniform(4, 14)   # x's often sit well off the line
-    acc = 0.0; xa = rng.uniform(0, 40); ara = rng.uniform(0, 80)
+    acc = 0.0; xa = rng.uniform(0, 200); ara = rng.uniform(0, 200)
     for i in range(1, len(path)):
         p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
         seg = np.hypot(*(p1-p0)); acc += seg; xa += seg; ara += seg
         if acc >= d_pitch:
-            acc = 0; c = p1.astype(int); r = int(rng.choice([2, 2, 3]))
-            cv2.circle(ink, tuple(c), r, 1.0, -1); cv2.circle(comp, tuple(c), r, 1, -1)
+            acc = 0; c = p1.astype(int)
+            cv2.circle(ink, tuple(c), dr, 1.0, -1); cv2.circle(comp, tuple(c), dr, 1, -1)
         if xa >= x_pitch:
-            xa = 0; x_pitch = rng.uniform(50, 120)
-            c = p1 + side * x_off * rng.uniform(0.7, 1.3) * n + rng.uniform(-2, 2, 2)   # mere-side offset, per-x variation
+            xa = 0; x_pitch = rng.uniform(180, 340)
+            c = p1 + side * x_off * rng.uniform(0.7, 1.3) * n + rng.uniform(-2, 2, 2)   # mere-side offset
             draw_cross(ink, comp, c, t, n, int(rng.integers(6, 9)), int(rng.integers(2, 4)), rng)
-        if ara >= ar_pitch and rng.random() < 0.7:
-            ara = 0; ar_pitch = rng.uniform(70, 160)
+        if ara >= ar_pitch and rng.random() < 0.5:
+            ara = 0; ar_pitch = rng.uniform(180, 340)
             draw_arrow(ink, comp, p1 + side * ar_off * n, t, n, int(rng.integers(6, 9)), rng)
+    return ink, comp
+
+
+def render_footpath(P, path, rng, ink, comp):
+    """Footpath = DOUBLE parallel dashed ('double-pecked') line. A key NEGATIVE: it must
+    not be confused with the dotted boundary. comp class 2 (dash)."""
+    gap = rng.uniform(2.5, 5.0)                            # half-separation of the two dashed rails
+    dash_len = rng.uniform(3, 6); dash_pitch = rng.uniform(8, 15)
+    for s in (-1.0, 1.0):
+        acc = 0.0
+        for i in range(1, len(path)):
+            p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
+            seg = np.hypot(*(p1-p0)); acc += seg
+            if acc >= dash_pitch:
+                acc = 0
+                a = p1 + s*gap*n - t*dash_len/2; b = p1 + s*gap*n + t*dash_len/2
+                cv2.line(ink, tuple(a.astype(int)), tuple(b.astype(int)), 1.0, 2)
+                cv2.line(comp, tuple(a.astype(int)), tuple(b.astype(int)), 2, 2)
     return ink, comp

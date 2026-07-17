@@ -1,9 +1,21 @@
 # Plan — GB1900 place typing (map-typography → AAT)
 
-> **Status:** Design / research. Nothing built. This document is the concrete,
-> staged plan requested off `plan-outstanding-2026-07.md` §2 and
-> `developer/aat-typing-status.md`.
+> **Status (2026-07-17):** BUILT & RUNNING. Tier-0 typing done on all 2.67M pins;
+> the **national GB-STAMP VLM run is in progress** on CRC (h200 + a100, 6 workers —
+> see `crc_gpu_routing_a100_l40s` memory); per-label sheet-precise dating built+tested
+> (§10b); the published edition (provenance/versioning/reconciliation) is designed (§11).
+> This document is the concrete staged plan (off `plan-outstanding-2026-07.md` §2 and
+> `developer/aat-typing-status.md`).
 > **Author aid:** Claude (research pass, 2026-07-17).
+>
+> **RELATED SUB-PROJECT — admin/parish BOUNDARY extraction from the same OS raster:**
+> A distinct but sibling effort mines the **admin boundaries** (parish/district/borough/
+> county) off the same NLS six-inch z17 tiles via a two-stage CV/ML pipeline
+> (self-labelled synthetic data → RF component classifier → U-Net line-enforcer),
+> seeded by the 25.9k georeferenced GB1900 boundary labels. Fully documented in
+> **`developer/plan-gb1900-parish-extraction.md`** + code in
+> **`developer/gb1900-boundary-probe/`**. It shares this project's tile cache, VLM infra
+> and CRC a100 env.
 > **Scope:** derive a coarse **place type** for each `gb:` record so they can be
 > AAT-mapped like every other authority. GB1900 is the **only WHG source with 0%
 > AAT coverage.**

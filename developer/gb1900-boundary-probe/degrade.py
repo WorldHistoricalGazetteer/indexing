@@ -29,6 +29,10 @@ def degrade(bg, ink, dark, rng):
         bleed = cv2.dilate(ink_e, np.ones((3, 3), np.uint8)) * rng.uniform(0.1, 0.3)
         ink_e = np.clip(np.maximum(ink_e, bleed), 0, 1)
     ink_e = cv2.GaussianBlur(ink_e, (0, 0), rng.uniform(0.6, 1.4))          # soft edges
+    # MATCH the crop's existing ink darkness: overlay ink must be as dark as the real
+    # field lines already in this bg (else the synthetic glyphs read too light).
+    ink_tone = float(np.percentile(bg, 2))                                   # ~darkest existing ink
+    dark = min(dark, ink_tone + rng.uniform(0, 18))
     darkf = dark * (0.7 + 0.6 * _lowfreq((h, w), rng, rng.integers(8, 20)))  # ink tone varies
     img = bg * (1 - ink_e) + darkf * ink_e
     # 4. foxing / paper blemishes: scattered soft dark spots on paper

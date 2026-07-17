@@ -207,3 +207,70 @@ and GBHGIS are used **only as internal validation ground truth**, never redistri
 The GB-STAMP typing run currently owns the h200 workers. P1 (CV/MapReader detection) is
 independent of that GPU and can start now; the P2 VLM probe should wait for spare h200
 capacity (or run after the typing run finishes) so it doesn't slow GB-STAMP.
+
+---
+
+# IMPLEMENTATION (built 2026-07-17) — `developer/gb1900-boundary-probe/`
+
+The two-stage CV/ML pipeline that came out of P1b. All code in
+`developer/gb1900-boundary-probe/`; runs on the CRC **a100** cluster
+(env `/vast/ishi/envs/boundary`, torch cu124 — cu13 was too new for the 12.9 driver).
+
+## Architecture (two stages, chained)
+```
+z17 tile → preprocess → Stage-1 (multi-class RF) → {dot,cross,arrow} evidence
+        → Stage-2 (U-Net line-enforcer) → boundary corridor → (seed w/ 25.9k labels)
+```
+- **Preprocess** (`boundary_pipeline.preprocess`): background-flatten (divide by a
+  morphological paper estimate) + CLAHE → consistent ink contrast across faded/uneven scans.
+- **Stage-1 — multi-class RF** (`stage1_multiclass.py` / `boundary_pipeline.train_stage1`):
+  skimage multiscale features (Ilastik-style) → RandomForest classifying each pixel into
+  **{bg, dot, dash, cross, arrow, solid}**. The component classes disambiguate feature
+  types (hedge=dash, road=solid, footpath=double-dash, **boundary = dot+cross+arrow**).
+- **Stage-2 — U-Net line-enforcer** (`boundary_pipeline.UNet`): consumes Stage-1's
+  {dot,cross,arrow} evidence and emits the continuous boundary **corridor**, trained on
+  **Stage-1's actual outputs** over synthetic images (faithful chain) with distractors
+  (dot-only footpaths, text-crosses, stipple) so it requires the mereing signature and
+  rejects look-alikes. Wide receptive field needed (×'s sit up to ~50px off the line).
+- **Chaining**: the Stage-1 component labels **mask** the image so Stage-2 only sees
+  boundary-relevant components (user's Ilastik-mask → refinement flow).
+
+## Self-labelled synthetic data (the labelling answer)
+`synth_glyphs.py` + `degrade.py`. Composite **real boundary-free crops** (realistic
+negatives) + **procedurally rendered mereing glyphs** with **free pixel masks** — zero
+manual labelling. Glyph geometry **grounded against the real z17 raster** (SG corrections):
+- **Dots dominate**: big (r 2–3), round, **regularly** spaced (~18–26px pitch).
+- **× marks**: base **parallel to the local boundary tangent** (rotate with the line,
+  appearing as × on horizontal runs and + on 45° runs); scale ~6–8px half-arm; **offset
+  12–40px to one consistent mere side** (not on the line); **rare** (~1 per 180–340px).
+- **Arrows**: tangent-oriented, rare.
+- **Footpaths**: **double parallel dashed** lines — a key *negative* (very numerous).
+- **Print/scan degradation** (`degrade.py`): soft (blurred) edges — *essential*, hard
+  cv2 edges caused total domain collapse (0.01 everywhere); uneven ink density, broken
+  strokes, ink bleed, foxing, speckle, variable blur; **overlay ink darkness matched to
+  the crop's existing ink** (else glyphs read too light).
+- **Colour**: our `os/6inchsecond` sheets are monochrome sepia; *some* regionally-localised
+  sheets are coloured (blue water / red buildings) — add colour features opportunistically
+  later, greyscale is the baseline.
+
+## Metric-driven tuning
+`boundary_pipeline.py --sweep`. Hand-traced **boundary GT** on the z17 test stitch
+(`gt_boundary.npy`, verified by overlay) → **boundary-F1** (predicted corridor vs GT line
+within τ px, best threshold). First sweep varies RF (trees/leaf/feature-σ) and U-Net
+(depth/base) — incl. a deeper U-Net for the far-offset ×'s. Slurm: `sweep.sbatch` on a100.
+This replaces eyeballing with numbers, per SG's request to tune efficiently.
+
+## Method comparison (P1b, z16→z17)
+| Method | Verdict |
+|---|---|
+| Classical hand-crafted (density/bold-×) | NO-GO (no thickness gap at z16) |
+| MapReader patch classifier | 92% patch acc but coarse ~180m corridor, no localisation |
+| **RF multi-class @ z17** | separates boundary dots from hachures; text→cross residual |
+| **U-Net line-enforcer** | connects mereing marks; needs seed/×-anchor vs hedge-dashes |
+
+## Status / next
+- Env + assets on CRC a100; first sweep running (`sweep.out`). **Synthetic geometry
+  iterated with SG through grounding** (dots, tangent-× , mere-side offset, rarity,
+  footpaths, matched ink density). **TODO**: cap ×-per-tile + ease foxing; find a genuine
+  double-dashed footpath to calibrate; then re-sweep with corrected synth; label-seeded
+  inference (25.9k boundary labels) to disambiguate boundary vs other dotted lines.
