@@ -113,6 +113,48 @@ hard-coded in `authorities/gb1900-places.py:70`. This **matches the NLS "OS
 Six-inch 2nd edition, 1888–1915" seamless layer** (see §5.1) — a clean era match,
 which is the key to fetching the *right* map raster.
 
+### 2.4 Abridged vs COMPLETE source — the abridgement dropped ~1.38M **rows**, not columns
+
+WHG currently ingests the **abridged** GB1900 release
+(`GB1900_gazetteer_abridged_july_2018.zip`, **1,174,450 rows**;
+`processing/settings.py:536,549`). A **complete** release exists
+(**2,552,460 rows**). **The two share the same columns** — the abridgement removed
+**~1,378,010 rows**, being the commonest repeating feature labels:
+
+| Removed label | Meaning | Count (complete) |
+|---|---|---|
+| `F.P.` | footpath | 306,583 |
+| `W` | well | 190,979 |
+| `P` | pump | 115,877 |
+| … | other common OS-abbreviation features | remainder to ~1.38M |
+
+**Why this matters *specifically for typing*:** the dropped rows are the ones Tier 0
+types with **near-100% confidence** — they *are* pure OS abbreviations
+(`F.P.`→footpath, `W`→well, `P`→pump). The abridgement threw away exactly the
+low-hanging fruit for a *feature*-typing project (it was curated for a *place-name*
+gazetteer, where a footpath crossing / well / pump isn't a "place" — a deliberate,
+defensible choice for that goal, `settings.py:536` verified 2026-06-06).
+
+**Consequences / options (a scope decision for SG):**
+- **Fetch the complete set regardless.** Even if not all of it is ingested as
+  searchable places, it is a **free, massive, self-labelling ground-truth** for
+  Tier 0 (every `F.P.` is a labelled footpath, every `W` a well) and — with map
+  crops — for validating the Tier 1 VLM typography classifier against known types.
+  High value, ~zero cost, no product commitment.
+- **Whether to *ingest* the extra ~1.38M as searchable places is a product call.**
+  Options: (a) ingest all, with types, and **default-exclude** the generic-feature
+  classes (footpath/well/pump) from search so they don't swamp GB results; (b)
+  ingest them as a **separate feature layer / down-ranked**; (c) keep the abridged
+  set for the gazetteer and use the complete set **only** as typing ground-truth.
+- Ingestion cost is low: **same schema**, so it's a source-URL swap in
+  `settings.py` + `gb1900-places.py` + a re-stage; the type work is *cheaper* per
+  record than the abridged set (more of it is trivial-text-typeable).
+- **Complete download URL: TO CONFIRM** — `pastplace.org` was unreachable
+  (HTTP 000, incl. the known-good abridged URL) during this session; the
+  conventional name is `GB1900_gazetteer_complete_july_2018.zip` at the same
+  `pastplace.org/downloads/` path, also mirrored via Vision of Britain / NLS Data
+  Foundry. Confirm before wiring.
+
 ---
 
 ## 3. Approach — a three-tier pipeline
