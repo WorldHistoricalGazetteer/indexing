@@ -39,6 +39,13 @@ def _lev(a: str, b: str) -> int:
     return prev[-1]
 
 
+def _is_illegible(s: str) -> bool:
+    """Crowd placeholder for text they couldn't read (XXXX / ??? / ---- / ...)."""
+    u = s.strip().upper()
+    return bool(u) and (set(u) <= {"X"} or set(u) <= {"?"} or set(u) <= {"-"}
+                        or set(u) <= {"."})
+
+
 def reconcile(hint: str | None, vlm_text: str | None) -> tuple[str, str, str]:
     """Return (final_text, source, rule). Conservative: crowd hint wins unless the
     VLM is a confident small correction. Both readings are retained by the caller."""
@@ -48,6 +55,8 @@ def reconcile(hint: str | None, vlm_text: str | None) -> tuple[str, str, str]:
         return h, "hint", "vlm-empty"
     if not h:
         return v, "vlm", "no-hint"
+    if _is_illegible(h):
+        return v, "vlm", "resolved-illegible"    # crowd couldn't read it; VLM did
     hl, vl = h.lower(), v.lower()
     if hl == vl:
         return h, "agree", "match"            # keep crowd casing (steadier)
