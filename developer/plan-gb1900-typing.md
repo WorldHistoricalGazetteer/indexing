@@ -1,0 +1,524 @@
+# Plan — GB1900 place typing (map-typography → AAT)
+
+> **Status:** Design / research. Nothing built. This document is the concrete,
+> staged plan requested off `plan-outstanding-2026-07.md` §2 and
+> `developer/aat-typing-status.md`.
+> **Author aid:** Claude (research pass, 2026-07-17).
+> **Scope:** derive a coarse **place type** for each of the ~1.17M `gb:` records
+> so they can be AAT-mapped like every other authority. GB1900 is the **only WHG
+> source with 0% AAT coverage.**
+
+---
+
+## 1. Summary / goal / success criteria
+
+**Goal.** Give every GB1900 label a `types[].identifier` drawn from a small
+controlled vocabulary of OS feature kinds (e.g. `church`, `public-house`, `farm`,
+`well`, `railway-station`, `parish-boundary`, `city`, `village`, `hill`, `river`,
+`wood`…), then map that vocabulary to Getty AAT — reusing the **exact same
+enrichment path every other small authority already uses**:
+
+- Add a `"gb": { <token>: [<aat_id>, …], … }` block to
+  `processing/manual_aat_maps.py` (`MANUAL_AAT_MAPS`).
+- Re-index the `types[]` field on the live `gb:` docs (per-record token).
+- Run `python -m processing.apply_aat_enrich --namespace gb --es-host … --execute`.
+  `aat_enrich.augment_doc` reads `MANUAL_AAT_MAPS["gb"][identifier]`, injects
+  `aat_ids`, and the AAT-hierarchy path-fill attaches `aat_paths`
+  (`processing/aat_enrich.py:130-231`). No authority-script change is needed for
+  the AAT step — the same table drives future ingestion too.
+
+**What "typed" means here:** a record carries at least one AAT id resolvable in
+the prod `types` index, so it becomes filterable/facetable by type
+(`aat-typing-status.md` §"Why this matters").
+
+**Success criteria (tiered — we do NOT need 100%):**
+- **Tier 0 (text-only), target ≥ 55–70% of records typed** at a coarse level,
+  zero imagery. Cheap, deterministic, shippable on its own.
+- **Tier 1+2 (typography), target ≥ 90% typed** after the VLM/clustering pass +
+  human cluster→type assignment on the residual.
+- Every emitted token maps to a **validated** AAT id (validated against the prod
+  `types` index, per the `manual_aat_maps` convention comment).
+- Reversible: typing is a metadata overlay on existing docs; a bad batch can be
+  re-patched (idempotent, like `wikipedia_sitelinks` was — see
+  `developer/handoff-wikipedia-sitelinks.md`).
+
+---
+
+## 2. Data reality (VERIFIED)
+
+### 2.1 The raw source
+
+- **File (on CRC):**
+  `/ix1/ishi/data/gb1900/GB1900_gazetteer_abridged_july_2018/GB1900_gazetteer_abridged_july_2018.zip`
+  → inner CSV `GB1900_gazetteer_abridged_july_2018/gb1900_abridged.csv`,
+  **UTF-16** encoded. This is the *abridged* public release
+  (Vision of Britain / NLS Data Foundry, CC0). Loaded by
+  `authorities/gb1900-places.py` (`stage_gb1900`).
+
+- **Exact column list (verified by opening the zip on `pitt`):**
+  ```
+  pin_id, final_text, nation, local_authority, parish,
+  osgb_east, osgb_north, latitude, longitude, notes
+  ```
+
+- **Geometry recorded = a single anchor point only.** There is
+  **`osgb_east`/`osgb_north`** (British National Grid, EPSG:27700) **and**
+  `latitude`/`longitude` (WGS84) for **one point per label**. **There is NO
+  bounding box: no width, no height, no other corner, no text angle, no font
+  metadata.** `authorities/gb1900-places.py:76` builds a `Point` from
+  `[lon, lat]` and keeps nothing else. → **The "single anchor point, no box
+  extent" hypothesis is CONFIRMED by the data.**
+
+- **Which point is the anchor — CONFIRMED and refined.** The GB1900 / NLS
+  project documentation states each name was tagged with the coordinates of
+  *"the **bottom-left of the first letter of its first word**."* (NLS OS1900 /
+  GB1900 gazetteer docs, corroborated by the GB1900 Wikipedia entry). So it is
+  **not** the box centroid and **not** even the box corner — it is the
+  **baseline-left of the first glyph**. The docstring in
+  `authorities/gb1900-places.py:25` ("south-west corner of the text label") is
+  *approximately* right but should be corrected to "bottom-left of the first
+  letter."
+
+  **Implication for cropping (Tier 1):** we know where the label *starts*
+  (baseline-left) and the reading direction is *rightward and slightly up/down*,
+  but we know neither the text length in map units nor the font size nor the
+  rotation. The crop window must be **estimated and over-sized**, then the label
+  re-detected inside it (see §4.2).
+
+### 2.2 Text signal already in hand
+
+- **`final_text`** is the transcribed label string — our richest free signal.
+- **ALLCAPS fraction ≈ 24.9%** (measured over a 200k-row sample of `final_text`
+  on `pitt`). **ALLCAPS is NOT a standalone type prior.** On OS County Series maps
+  ALLCAPS is a *case* that appears across many feature classes, and the actual
+  type is carried by the **font family, size band, and letter-spacing** the caps
+  are set in — e.g. large upright roman caps = town/city; small caps =
+  village/parish; **wide-spaced antique/italic caps = seas, mountain ranges,
+  regions, and antiquities**; boundary/administrative labels in yet another face.
+  So ALLCAPS is best treated as a **routing signal into the typography pass**
+  (§4.2), decisive on its own only when the text content also tells us the type.
+- Abbreviations are pervasive and follow the **OS abbreviations convention**
+  (sample rows: `"Parly. & Munl Boro. By."`, `"F.P."`, `"P.H."`, `"Ch."`,
+  `"Sch."`, `"Sta."`, `"Well"`, `"Fm."`, `"Ho."`). These are near-deterministic
+  type tells (see §4.1).
+- `nation` ∈ {England, Scotland, Wales} → drives `ccodes=['GB']` today; also
+  tells us which NLS coverage/edition applies.
+- `parish` / `local_authority` are modern admin context (useful for sheet/era
+  disambiguation, not typing).
+
+### 2.3 Era
+
+Survey period **1888–1914** (2nd-edition County Series 1:10,560 "six-inch"),
+hard-coded in `authorities/gb1900-places.py:70`. This **matches the NLS "OS
+Six-inch 2nd edition, 1888–1915" seamless layer** (see §5.1) — a clean era match,
+which is the key to fetching the *right* map raster.
+
+---
+
+## 3. Approach — a three-tier pipeline
+
+The insight: **most records can be typed from text alone; imagery is only for the
+residual.** Do the cheap deterministic thing first, measure the gap, then spend
+GPU only where it pays.
+
+```
+Tier 0  text-only heuristics (ALLCAPS + OS-abbreviation dict + gazetteer)   → majority
+   │        (deterministic, no imagery, no GPU)
+   ▼
+Tier 1  typography signature via NLS map raster + VLM/CV, then CLUSTER      → residual
+   │        (GPU Slurm; per-label crop → font-style descriptor → embedding)
+   ▼
+Tier 2  HUMAN assigns each font/typography cluster → one type token (once)  → propagate
+            (a few hundred clusters, reviewed in a small notebook/UI)
+```
+
+All three tiers converge on the **same output**: a per-record type **token** from
+one controlled vocabulary → `manual_aat_maps["gb"]` → AAT.
+
+---
+
+## 4. Tier detail
+
+### 4.1 Tier 0 — text-only typing (do this first; ship independently)
+
+Pure-Python, deterministic, runs on any host (no GPU, no imagery). Three signals,
+highest-confidence first:
+
+1. **OS-abbreviation dictionary.** Build `typesystem/data/gb1900_os_abbrev.json`
+   mapping OS County Series abbreviations → type token. These are standard and
+   published (NLS "OS map abbreviations" guide; Charles Close Society sheetlines).
+   Examples:
+   | abbrev / token in `final_text` | type token | AAT concept (to validate) |
+   |---|---|---|
+   | `Ch.`, `Chy.` | `church` | 300007466 churches |
+   | `P.H.` | `public-house` | 300005141 public houses / inns |
+   | `Sch.`, `Schl.` | `school` | 300005526 schools |
+   | `P.O.` | `post-office` | 300005982 post offices |
+   | `Sta.`, `Ry. Sta.` | `railway-station` | 300005815 railroad stations |
+   | `F.P.`, `F.B.` | `footpath` / `footbridge` | 300055977 / 300007836 bridges |
+   | `Well`, `Spr.` | `well` / `spring` | 300006860 / 300008698 |
+   | `Fm.`, `Farm` | `farm` | 300000206 farms |
+   | `Ho.`, `Hall` | `house` / `hall` | 300005425 houses |
+   | `Sml.`, `Mill` | `mill` | 300004396 mills |
+   | `Quy.`, `Bdy`, `Boro. By.` | `quarry` / `boundary` | 300000275 / 300387473 |
+   | `Inn`, `Hotel` | `inn` | 300005141 |
+   | `Br.`, `Bri.` | `bridge` | 300007836 bridges |
+   Longest-match / word-boundary matching; a small ordered rule list, not ML.
+
+2. **ALLCAPS — a router, not a type.** ≈25% of rows are all-caps, but caps alone
+   is **ambiguous**: OS uses it for towns, villages, parishes, boundaries, seas,
+   ranges, regions and antiquities, distinguished only by **font family / size /
+   letter-spacing** (see §2.2, §4.2). So Tier 0 must **not** collapse ALLCAPS to a
+   single "prominent place" token. Handle it in three ways, in order:
+   - **Decisive text content wins:** an ALLCAPS label whose words are a type tell
+     still types from §4.1.1/§4.1.3 (e.g. `... PARISH`, `... BORO`, `... DIVISION`,
+     `CO. ...` → administrative; a caps river/range name → physical). Case doesn't
+     override an explicit textual tell — it just co-occurs.
+   - **Otherwise defer:** an ALLCAPS label with no textual tell is **routed to the
+     Tier 1 typography pass** (family + size band + tracking resolve it), NOT
+     assigned a coarse type here. Emit it as `residual` with an `allcaps=true`
+     feature so Tier 1 prioritises it.
+   - Record the ALLCAPS flag as a **feature**, never as a final answer, so the
+     downstream clustering can combine it with the typographic descriptor.
+
+3. **Gazetteer / keyword heuristics.** Suffix/keyword table on the descriptive
+   words that OS uses in full: `Wood`, `Plantation`, `Common`, `Moor`, `Hill`,
+   `Down`, `Fell`, `Point`, `Head`, `Bay`, `River`, `Brook`, `Burn`, `Lough`,
+   `Reservoir`, `Colliery`, `Works`, `Quarry`, `Cottage`, `Cottages`, `Bridge`,
+   `Wharf`, `Pier`, `Chapel`, `Cemetery`, `Castle` (antiquity), `Tumulus`,
+   `Camp`, `Fort` (antiquities). Each → a token.
+
+**Deliverable of Tier 0:** a script `processing/gb1900_text_types.py` that reads
+`final_text` and emits `(place_id, token, confidence, rule)`; a coverage report
+(what % typed, histogram over tokens, residual list). **This alone likely types
+the majority** — the biggest single win, and it de-risks the whole project before
+any GPU spend.
+
+**Also cross-check against GOTW's `build_aat_shortlist.py` / `aat_resolve.py`**
+(`/home/stephen/PycharmProjects/GOTW/process/`) — they already do string→AAT
+shortlisting and may donate an abbreviation/label→AAT seed list.
+
+### 4.2 Tier 1 — typography signature from the map raster
+
+For records Tier 0 can't confidently type (and as a *cross-check* on a sample of
+those it can): read the label off the georeferenced OS raster and characterize its
+**typography**, because OS renders feature classes in distinct type styles:
+
+| OS type style (case × family × size × spacing) | typical feature class |
+|---|---|
+| upright roman, small, lower-case | buildings, minor settlements, generic labels |
+| upright roman **CAPS**, large | cities / large towns |
+| upright roman **CAPS**, medium | towns |
+| upright roman **SMALL CAPS** | villages / small settlements |
+| **CAPS**, wide letter-spacing (tracked) | parishes, boundaries, administrative divisions, counties |
+| *italic / antique*, mixed-case | **water & physical features** (rivers, streams, springs) |
+| *italic / antique* **CAPS**, wide-spaced | **seas, mountain ranges, regions**, large physical extents |
+| *italic / antique*, small | **antiquities** (Roman/prehistoric), relief/natural features |
+| gothic / black-letter | some antiquities & parish-church names |
+
+**Note the CAPS rows:** ALLCAPS spans at least five of these classes — the
+discriminator is **family (roman vs antique/italic) + size band + letter-spacing**,
+which is exactly why ALLCAPS must be resolved *here*, not pre-judged in Tier 0.
+
+**Per-label steps:**
+1. **lat/lon → tile + pixel.** Standard slippy-map math (Web Mercator, EPSG:3857):
+   `n = 2^z; xtile = (lon+180)/360·n; ytile = (1 - ln(tan φ + sec φ)/π)/2·n`;
+   pixel offset = fractional part × 256. Reuse a tiny `deg2num` helper (no such
+   helper exists in `processing/helpers.py` today — add one; `h3` is imported
+   there but that's a different grid). Choose **z ≈ 16–17** on the NLS six-inch
+   layer so glyphs are legible.
+2. **Crop an over-sized window** anchored at the label's baseline-left pixel,
+   extending **rightward** (reading direction) and a generous margin up/down —
+   sized from `len(final_text) × assumed_glyph_width` with a comfortable safety
+   factor (we have no true extent, so **over-crop deliberately**). Fetch the 1–4
+   covering tiles, stitch, crop.
+3. **Re-detect the actual text inside the crop** (so we're not characterizing
+   whitespace): a light OCR/text-detector (e.g. Surya — already in the `whg`
+   conda env per GOTW `run_pipeline.sh`, or PaddleOCR) gives the tight glyph
+   bbox + angle. This *also* yields a confidence that the transcribed
+   `final_text` is what's actually there (era/sheet-mismatch guard).
+4. **Characterize typography.** Two interchangeable back-ends:
+   - **VLM (primary):** send the tight crop to a self-hosted Qwen2.5-VL with a
+     strict JSON schema — `{case: lower|title|caps|smallcaps,
+     family: roman|antique_italic|gothic, weight: light|bold,
+     size_band: small|medium|large|extra_large,
+     tracking: tight|normal|wide, is_water_or_antiquity: bool, legible: bool}`.
+     **`case`, `size_band` and `tracking` are separate fields precisely so an
+     ALLCAPS label is decomposed** (caps + family + size + spacing jointly pick the
+     type) rather than flattened to one label. `tracking` (letter-spacing) is the
+     tell for extended-area features — OS sets seas/ranges/regions in **wide-spaced
+     caps**. This mirrors the GOTW schema'd-JSON pattern (§6), with fields chosen
+     for OS typography.
+   - **Classical CV (cheap alt / ensemble):** slant angle (skew), stroke
+     contrast, x-height, cap-ratio, serif detection → a fixed-length feature
+     vector. Much cheaper than a VLM at 1.2M scale; can pre-filter so the VLM
+     only sees ambiguous crops.
+5. **Embed & cluster.** Turn each label's typographic descriptor (VLM fields
+   one-hot + CV features, or a small image-encoder embedding of the crop) into a
+   vector; **cluster** (HDBSCAN / k-means) into a few hundred groups. The claim
+   is that *type style is nearly discrete* on OS maps, so clusters should be
+   tight and few.
+
+### 4.3 Tier 2 — human cluster → type assignment, then propagate
+
+- Surface each cluster to a human as **a contact sheet of ~25 example crops +
+  their `final_text` values + the modal VLM descriptor**.
+- Human picks **one type token** for the cluster (or "mixed → split / send back").
+- Propagate the token to **every** record in the cluster. This is the whole
+  point: **one human decision types thousands of records.**
+- Realistically **a few hundred clusters** → a day or two of review, not 1.2M
+  decisions.
+- Map each chosen token → AAT id(s) in `manual_aat_maps["gb"]` (validate each id
+  against the prod `types` index first).
+
+**Review surface:** a static HTML contact-sheet generator (mirrors GOTW's
+`process/review_ui.py` / `export_reader.py` approach — GOTW already builds static
+review pages), or a Jupyter notebook. No live service needed.
+
+---
+
+## 5. NLS map tiles (research findings)
+
+### 5.1 The right layer (era match)
+
+- **Use: OS Six-inch to the mile, 2nd edition, 1888–1915** (1:10,560), seamless,
+  GB-wide (England & Wales page: `maps.nls.uk/os/6inch-england-and-wales/`;
+  Scotland has its own six-inch coverage). This is *the* GB1900 source era.
+- MapTiler exposes it as layer id **`uk-osgb10k1888`** (and a seamless "~1900"
+  composite `uk-osgb1888`). Projection **EPSG:3857 Web Mercator**, 256px tiles.
+- The more legible **25-inch (1:2,500)** exists but is **not seamless GB-wide**
+  (NLS: "not published for all areas" / not offered as a seamless MapTiler layer)
+  → use it only opportunistically where available; six-inch is the workhorse.
+
+### 5.2 Tile URL scheme
+
+- **MapTiler (verified template):**
+  `https://api.maptiler.com/tiles/uk-osgb10k1888/{z}/{x}/{y}.jpg?key=YOUR_KEY`
+  (requires a MapTiler key; Web Mercator; JPG).
+- **NLS direct (to confirm from the georeferenced viewer's "XYZ" box):** NLS
+  serves georeferenced seamless layers as XYZ/TMS from S3
+  (`https://mapseries-tilesets.s3.amazonaws.com/<layer>/{z}/{x}/{y}.png`, and
+  older `nls-N.tileserver.com` hosts). **Action for the pilot:** open the
+  1888–1915 six-inch seamless layer in `maps.nls.uk/geo/explore/`, click **XYZ**,
+  and record the exact template + max zoom. (Prefer the direct NLS XYZ over
+  MapTiler for bulk if terms allow — one fewer dependency/key.)
+- **Max zoom:** NLS six-inch seamless typically maxes around z16; the 25-inch
+  around z18. Confirm per layer at pilot time — typography legibility drives the
+  zoom choice.
+
+### 5.3 Licensing & rate constraints (IMPORTANT)
+
+- **Non-commercial / research reuse is permitted with attribution**: *"you must
+  display an attribution to the National Library of Scotland, together with a
+  link to our website."* WHG is NEH-funded, non-commercial → fits.
+- **The six-inch and 25-inch layers are "restricted for commercial purposes"**
+  (third-party digitisation contracts). **We must not redistribute the tiles** —
+  we fetch, crop, run inference, and **cache crops for our own processing only**,
+  not re-serve the imagery. Per the project convention this is a *processing*
+  input, not a published asset (cf. `feedback_defer_licensing` — don't gate on
+  licence, but **do** respect no-redistribution).
+- **Rate limits / bulk fetch:** no published hard rate limit, but bulk-scraping
+  ~1.2M label crops = many tile GETs. **Mitigations:** (a) Tier 0 first slashes
+  how many labels need imagery; (b) **tile-level caching** — many labels share a
+  tile (six-inch, z16), so dedupe requests to the covering-tile set and cache to
+  `/vast`; (c) polite concurrency + backoff; (d) contact NLS for a bulk
+  arrangement or, ideally, **fetch tiles once to a local cache** for the counties
+  in scope. **Do NOT hammer from many Slurm array tasks in parallel** — stage the
+  tile cache first (network fetch), then run GPU inference against the local
+  cache (GPU nodes shouldn't be the ones fetching from NLS anyway).
+
+---
+
+## 6. Compute plan (adapting the GOTW VLM pattern)
+
+The GOTW clone at `/home/stephen/PycharmProjects/GOTW` has a **working,
+battle-tested CRC VLM pattern** we should copy rather than reinvent.
+
+### 6.1 The reusable GOTW pattern (cited)
+
+- **Model:** `Qwen/Qwen2.5-VL-72B-Instruct-AWQ`, served by **vLLM**
+  (`process/submit_vlm_slurm.py:17`, `process/run_pipeline.sh` `stage_vlm`).
+- **Serving pattern (`submit_vlm_slurm.py`):** a **GPU Slurm array**; each array
+  task starts its **own** `vllm serve` on a unique port
+  (`PORT=$((18900 + JOB%700 + T))`), waits for `"Application startup complete"`,
+  then runs inference over its **image-index shard** → a **per-shard JSONL**
+  (resumable — re-runs skip done work). Header:
+  ```
+  #SBATCH -M gpu  -p h200  --gres=gpu:1  --cpus-per-task=8  --mem=80G
+  #SBATCH --time=04:00:00  --requeue  --array=0-<n_shards-1>
+  source /ihome/ishi/stg135/miniconda3/etc/profile.d/conda.sh
+  conda activate /vast/ishi/envs/vllm      # vLLM env (NOT the whg env)
+  module load cuda/12.8.0
+  export HF_HOME=/vast/ishi/hf_cache
+  ```
+- **Inference call (`triage_pages.py`):** OpenAI-compatible
+  `POST {VL_BASE}/chat/completions` with a **strict JSON schema**
+  (`response_format: json_schema, strict:true` from a pydantic model),
+  `temperature:0`, small `max_tokens`, image as base64 `data:image/jpeg` URL,
+  **`ThreadPoolExecutor(concurrency≈32)`** (vLLM batches in-flight requests),
+  low-res thumbnails (`maxpx≈1024`) for speed, plus a **regex `_salvage()`** for
+  Qwen's truncated/whitespace-loop outputs. DB/JSONL is the **resume state**.
+- **Orchestration (`run_pipeline.sh`):** submit-and-poll from a login node/tmux
+  (`sacct` polling only — no heavy compute on login nodes); each stage is its own
+  Slurm job.
+
+### 6.2 Adaptation to THIS repo's conventions
+
+- **GPU submission.** GOTW uses `-M gpu -p h200`. This repo's memory notes say
+  htc/a100 needs `sbatch -M htc --account=ishi` and GPU work goes to a100/gpu —
+  **use `--account=ishi`** and pick the partition that's actually schedulable
+  (`gpu`/`h200` or `htc`/a100). **Never run inference on a CRC login node**
+  (`feedback_no_jobs_on_login_nodes`); submit-and-poll only, from `crc0`
+  (fall back `crc1/2/3`). Activate conda **before** any `set -u`
+  (`reference_crc_slurm_htc_submit`).
+- **Paths.** Repo root `/vast/ishi/elastic`; put the tile cache, crops, VLM env,
+  and HF cache on **`/vast`** (small-file I/O — the whole reason `/ix1` is
+  avoided; see CLAUDE.md). Reuse `/vast/ishi/envs/vllm` and `/vast/ishi/hf_cache`
+  that GOTW already provisioned.
+- **New scripts (mirror GOTW names):**
+  - `processing/gb1900_text_types.py` — Tier 0 (CPU, any host).
+  - `processing/gb1900_fetch_tiles.py` — **network** tile fetch → `/vast` cache
+    (run on `pitt`/CRC login is OK for *network-bound* fetch per
+    `feedback_long_running_hosts`, but throttle for NLS; better as an `htc` CPU
+    job). Dedupe to covering-tile set.
+  - `processing/gb1900_make_crops.py` — lat/lon→tile/pixel, stitch, over-crop,
+    OCR-refine → per-label crop PNG on `/vast` (CPU array; `whg` env has Surya/PIL).
+  - `processing/submit_gb1900_vlm_slurm.py` — **copy `submit_vlm_slurm.py`**;
+    swap the schema/prompt to the *typography descriptor*; input = crop shards →
+    per-shard JSONL.
+  - `processing/gb1900_cluster_types.py` — embed descriptors + HDBSCAN → clusters
+    + contact sheets.
+  - `processing/gb1900_apply_types.py` — write per-record `types[].identifier`
+    to the live `gb:` docs (idempotent update-by-query patch, following
+    `wikipedia_links_patch.py` / `apply_links_patch.py` — see
+    `handoff-wikipedia-sitelinks.md`), then hand off to `apply_aat_enrich`.
+
+### 6.3 Rough scale & cost (order-of-magnitude)
+
+- **1.17M labels.** After Tier 0 (say ~60% typed) → **~470k need imagery.**
+- **Tiles:** at six-inch z16, one 256px tile covers a sizeable ground area;
+  labels cluster densely per sheet → the covering-tile set is **far** smaller
+  than the label count (plausibly low hundreds of thousands of unique tiles,
+  many shared). Tile fetch is the network bottleneck, not the GPU.
+- **VLM:** GOTW ran Qwen2.5-VL-72B-AWQ on single-GPU array tasks at ~hundreds of
+  images/task/hour with concurrency 32. ~470k crops across, say, 8–16 concurrent
+  GPU array tasks is on the order of **a few GPU-days** — tractable, and the
+  classical-CV pre-filter (§4.2) can cut the VLM share sharply.
+- **De-risk with a pilot** before committing (see §8).
+
+---
+
+## 7. Human-in-the-loop
+
+- **Only Tier 2 needs a human**, and only **once per cluster** (~hundreds of
+  decisions, not millions).
+- Surface: static contact-sheet HTML (per cluster: sample crops + `final_text` +
+  modal descriptor) generated on CRC, viewed locally — reuse GOTW's static-review
+  approach (`process/review_ui.py`, `export_reader.py`). No server/DB service.
+- Output of review: a `gb1900_cluster_types.json` mapping `cluster_id → token`,
+  and each `token → [aat_id…]` folded into `manual_aat_maps["gb"]`.
+- **AAT mapping** is the same curated step every small authority used
+  (`manual_aat_maps.py`): validate each id against the prod `types` index, then
+  `apply_aat_enrich --namespace gb --execute`.
+
+---
+
+## 8. Phased milestones
+
+| Phase | Deliverable | Gate |
+|---|---|---|
+| **P0 — Tier 0 ship** | `gb1900_text_types.py` + OS-abbreviation dict + coverage report on the full 1.17M. Fold high-confidence tokens into `manual_aat_maps["gb"]`; patch live `types[]`; `apply_aat_enrich`. | GB moves from **0% → majority** typed with **zero GPU**. Biggest bang; do first. |
+| **P1 — NLS tile recon** | Confirm the exact 1888–1915 six-inch **XYZ template + max zoom** from the NLS georef viewer; verify licensing note; fetch a **one-county** tile cache to `/vast`. | Tiles fetchable + legible typography at chosen zoom. |
+| **P2 — Crop pilot (one county, ~N=2–5k labels)** | `gb1900_make_crops.py` end-to-end on one county: lat/lon→pixel, over-crop, OCR-refine. Manual eyeball of crop accuracy. | Crops reliably contain the right label despite no box extent. |
+| **P3 — VLM + cluster pilot (same county)** | `submit_gb1900_vlm_slurm.py` (GOTW copy) → typography descriptors → cluster → contact sheets → human assigns the county's clusters. | Clusters are tight & few; human assignment is fast; typing agrees with Tier 0 where they overlap. |
+| **P4 — Scale-out** | Run tile-fetch → crop → VLM → cluster across all counties (residual only). Global human review of clusters. | ≥90% typed. |
+| **P5 — Land** | `gb1900_apply_types.py` patches live `gb:` docs; `manual_aat_maps["gb"]` complete; `apply_aat_enrich --namespace gb --execute`; update `aat-typing-status.md` (drop "the only remaining zero"). | GB has AAT coverage; type facets/filter work for GB. |
+
+**Pilot county suggestion:** somewhere with dense, varied features and good NLS
+six-inch coverage (e.g. a Welsh or Scottish county — the project's origin data is
+richest there) so both settlement and physical-feature type styles are exercised.
+
+---
+
+## 9. Risks / open questions
+
+- **Crop accuracy without box extent (biggest risk).** We only have the
+  baseline-left of the first glyph and no length/size/angle. Mitigation:
+  deliberate over-crop + OCR re-detection inside the crop. Curved/rotated labels
+  (rivers, coastlines) and very long labels are the hard cases; the OCR-refine
+  step must handle rotation.
+- **Era / sheet matching.** GB1900 pins came from a specific edition/sheet; the
+  NLS seamless "1888–1915" layer is a mosaic of sheets of *slightly* different
+  revision dates. Usually fine (both are 2nd-edition six-inch), but a label near
+  a sheet seam or from a re-revised area could land on the wrong-vintage raster.
+  The OCR-vs-`final_text` agreement check flags these.
+- **NLS rate limits / licensing.** No hard published limit but bulk fetch is
+  heavy and tiles are **non-redistributable** (commercial restriction). Cache
+  crops for processing only; consider contacting NLS for a bulk arrangement;
+  throttle. Prefer a one-time county tile cache over live fetching in inference
+  jobs.
+- **VLM reliability on faint historical type.** 1888–1915 engraving is fine and
+  sometimes faint/overprinted; low contrast italic vs roman is exactly the
+  distinction we lean on. Mitigations: pick a high-enough zoom; ensemble the VLM
+  with classical CV slant/serif features; the human cluster review is the safety
+  net (a bad-signal cluster gets caught and split/dropped).
+- **Multi-line / overlapping / shared labels.** OS maps stack labels; a crop may
+  contain a neighbour's text. OCR-refine + "which glyphs start at the anchor
+  pixel" disambiguation.
+- **Type granularity vs AAT.** Some tokens map cleanly (church→300007466);
+  others are coarse. **Do not shortcut ALLCAPS to one broad token** — as noted in
+  §2.2/§4.1.2/§4.2, caps resolves to town / village / parish / boundary / sea /
+  range / region / antiquity depending on family+size+tracking, so an
+  ALLCAPS-without-a-text-tell label is a Tier-1 case, not a coarse `inhabited
+  places` guess. Where a residual genuinely can't be resolved beyond "prominent
+  place", coarse-but-correct is acceptable (the AAT hierarchy path-fill still makes
+  it facetable) — but that is the fallback, not the ALLCAPS rule.
+- **Does typography actually separate types cleanly?** Core hypothesis. P3 pilot
+  is explicitly the go/no-go test: if clusters don't align to type, fall back to
+  "Tier 0 + a smaller VLM *content* classifier (what is this thing?) rather than a
+  typography classifier."
+
+---
+
+## 10. Output contract (how GB typing lands, precisely)
+
+1. Each `gb:` doc's `types[]` becomes
+   `[{identifier: <token>, label: "gb1900", sourceLabel: <rule/cluster tag>}]`
+   (replacing today's single generic `{identifier:"named-place", …}` at
+   `authorities/gb1900-places.py:101`). Update both the **authority script**
+   (future ingests) and the **live index** (a `gb1900_apply_types.py` patch,
+   idempotent, mirroring the Wikipedia-sitelinks patch flow).
+2. `MANUAL_AAT_MAPS["gb"] = { <token>: [<aat_id>, …], … }` added to
+   `processing/manual_aat_maps.py` (all ids validated against the prod `types`
+   index).
+3. `python -m processing.apply_aat_enrich --namespace gb --es-host <URL> --execute`
+   injects `aat_ids`/`aat_paths` on the live docs (`processing/aat_enrich.py`).
+4. Re-run after any future `gb` rebuild — the same table drives ingestion's
+   `aat_enrich` stage automatically.
+
+---
+
+## Appendix — key files & commands referenced
+
+- Authority: `authorities/gb1900-places.py` (docstring §12–29 has the original
+  VLM idea; line 25 "SW corner" → correct to "bottom-left of first letter").
+- AAT path: `processing/manual_aat_maps.py`, `processing/aat_enrich.py`
+  (`augment_doc`), `processing/apply_aat_enrich.py`
+  (`--namespace gb --es-host … --execute`).
+- Status docs: `developer/aat-typing-status.md` ("ZERO: gb 1.17M"),
+  `developer/plan-outstanding-2026-07.md` §2.
+- Idempotent live-patch precedent: `developer/handoff-wikipedia-sitelinks.md`
+  (`wikipedia_links_patch.py` → `apply_links_patch.py`).
+- **GOTW VLM pattern (copy this):** `/home/stephen/PycharmProjects/GOTW/`
+  → `process/submit_vlm_slurm.py` (GPU array + per-shard vLLM serve),
+  `process/triage_pages.py` (schema'd JSON inference, concurrency, salvage),
+  `process/run_pipeline.sh` (submit-and-poll orchestration; env vars
+  `VLLM_ENV=/vast/ishi/envs/vllm`, `HF_CACHE=/vast/ishi/hf_cache`,
+  `VLM_MODEL=Qwen/Qwen2.5-VL-72B-Instruct-AWQ`), `process/aat_resolve.py` /
+  `process/build_aat_shortlist.py` (string→AAT seed).
+- NLS: layer `uk-osgb10k1888` (six-inch 2nd ed. 1888–1915, EPSG:3857);
+  MapTiler template `https://api.maptiler.com/tiles/uk-osgb10k1888/{z}/{x}/{y}.jpg?key=…`;
+  confirm the NLS direct XYZ + max zoom from `maps.nls.uk/geo/explore/`; six-inch
+  is non-commercial-only + non-redistributable, attribution required.
+- CRC conventions: `sbatch -M htc --account=ishi` (or `-M gpu`), conda before
+  `set -u`, no jobs on login nodes, everything on `/vast`.
