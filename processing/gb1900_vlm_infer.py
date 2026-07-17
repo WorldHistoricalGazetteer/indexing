@@ -45,9 +45,12 @@ SCHEMA = {
 
 PROMPT = (
     "This is a crop from an Ordnance Survey six-inch (1:10560) County Series map, "
-    "2nd edition (c.1900). One map label of interest STARTS near the LEFT edge of "
-    "the crop (its baseline-left anchor) and reads rightward. Read that label and "
-    "classify ITS typography using Ordnance Survey conventions:\n"
+    "2nd edition (c.1900). A small RED RING marks where ONE map label begins (the "
+    "bottom-left of its first letter). Read THAT label — follow it from the ring in "
+    "whatever direction it runs: OS labels may be horizontal, sloped, or curved "
+    "(e.g. along a river, coast, or ridge). Transcribe exactly what the ring-marked "
+    "label says, and IGNORE every other label in the crop. Then classify the "
+    "ring-marked label's typography using Ordnance Survey conventions:\n"
     "- RP = Roman Print (serif, mixed-case) — named buildings\n"
     "- RC = Roman Capitals — prominent settlements/administrative places\n"
     "- IC = Italic Capitals — water & designed-water features\n"
@@ -57,16 +60,16 @@ PROMPT = (
     "- Ornamental = decorative — counties/county boroughs\n"
     "- Stump = the plain standard stamped hand — everything else (minor features)\n"
     "Also give case, size_band, letter-spacing (tracking), whether it is a water/"
-    "antiquity label, and whether it is legible.\n"
-    "CRITICAL: read ONLY the ONE label whose first letter touches the LEFT edge of "
-    "the crop. IGNORE any larger or more prominent labels elsewhere in the crop — "
-    "the target is often a small label and may be partly clipped on the right; "
-    "transcribe exactly what you see of it. Return JSON per the schema."
+    "antiquity label, and whether it is legible. Return JSON per the schema."
 )
 
 
 def load_style_map(lettering_path: Path) -> dict:
+    """os_style -> coarse feature token (the curated crosswalk, not list[0])."""
     d = json.loads(lettering_path.read_text(encoding="utf-8"))
+    s2t = d.get("style_to_type_token")
+    if s2t:
+        return {k: v for k, v in s2t.items() if not k.startswith("_")}
     s2f = d.get("style_to_features", {})
     return {k: (v[0] if v else None) for k, v in s2f.items()}
 

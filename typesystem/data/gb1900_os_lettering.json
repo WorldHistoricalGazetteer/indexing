@@ -28,6 +28,18 @@
     "Ornamental": ["county", "county-borough"],
     "Stump": ["farm", "brook", "ford", "ferry", "footbridge", "footpath", "dwelling-house", "colliery", "coal-pit", "filter-bed", "cattle-pen", "cave", "drying-ground", "guide-post", "recreation-ground", "graveyard", "minor-feature"]
   },
+  "style_to_type_token": {
+    "_note": "Coarse single feature-token per OS style, for the Tier-1 os_style->type step. RC/Ornamental = prominent settlement/admin; RP = named place/building; IC = water; EC/OldEnglish/GermanText = antiquity (by period); Stump = defer to Tier-0 text.",
+    "RC": "settlement-major",
+    "RP": "named-place",
+    "IC": "water-feature",
+    "EC": "antiquity",
+    "OldEnglish": "antiquity",
+    "GermanText": "antiquity",
+    "Ornamental": "administrative-area",
+    "Stump": "minor-feature",
+    "illegible": null
+  },
   "antiquities_by_period": {
     "roman": "EC",
     "prehistoric": "OldEnglish",

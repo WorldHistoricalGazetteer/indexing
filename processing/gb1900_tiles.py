@@ -119,24 +119,32 @@ def _load_tile(z: int, x: int, y: int):
 
 
 def stitch_crop(lat: float, lon: float, text: str, z: int):
-    """Over-sized crop around the label's baseline-left anchor, stitched from the
-    /vast tile cache. Returns (PIL.Image | None, meta). We have no true extent, so
-    over-crop rightward (reading direction) + margins; the VLM re-detects the tight
-    label bbox inside. meta lets a detected pixel bbox back-project to geo."""
-    from PIL import Image
+    """Marker-in-context crop, stitched from the /vast tile cache. Returns
+    (PIL.Image | None, meta).
+
+    Rationale (2026-07-17): a rigid rightward box fails two ways — it clips
+    non-horizontal labels (OS sets river/coast/range names sloped or curved) and,
+    when widened, grabs neighbours. Instead we stitch a *generous context window*
+    and draw a small red ring at the label's baseline-left anchor. The VLM reads
+    the RING-marked label following it in ANY direction and ignores others — so
+    orientation and neighbour-disambiguation are handled by the model, not by
+    guessing a box. meta lets a detected pixel bbox back-project to geo.
+    """
+    from PIL import Image, ImageDraw
     gpx, gpy = _global_px(lat, lon, z)
-    n = max(len(text), 2)
-    # Tight sizing (pilot 2026-07-17): the old 170px min width let the VLM latch
-    # onto larger neighbouring labels for short strings. Scale to the text and keep
-    # short labels tight so the target dominates the crop.
-    left_m, right_w, up, down = 8, min(560, max(52, n * 13)), 22, 12   # px @ z16
-    bl, bt = int(gpx - left_m), int(gpy - up)
-    br, bb = int(gpx + right_w), int(gpy + down)
-    cw, ch = br - bl, bb - bt
+    n = max(len(text), 3)
+    # Context window: generous in all directions so a sloped/curved label fits;
+    # width scales mildly with text length. Anchor placed left-of-centre so a
+    # rightward label has room, with vertical headroom for slope either way.
+    cw = min(460, max(240, int(n * 15)))
+    ch = 220
+    ax_frac, ay_frac = 0.28, 0.50            # anchor position within the window
+    bl = int(gpx - cw * ax_frac)
+    bt = int(gpy - ch * ay_frac)
+    br, bb = bl + cw, bt + ch
     canvas = Image.new("RGB", (cw, ch), (240, 240, 235))
     tx0, tx1 = bl // TILE_PX, (br - 1) // TILE_PX
     ty0, ty1 = bt // TILE_PX, (bb - 1) // TILE_PX
-    xt0, yt0, _, _ = deg2num(lat, lon, z)  # for tile z reference only
     missing = 0
     for tx in range(tx0, tx1 + 1):
         for ty in range(ty0, ty1 + 1):
@@ -145,8 +153,13 @@ def stitch_crop(lat: float, lon: float, text: str, z: int):
                 missing += 1
                 continue
             canvas.paste(im, (tx * TILE_PX - bl, ty * TILE_PX - bt))
+    ax, ay = int(gpx - bl), int(gpy - bt)    # anchor pixel within the crop
+    # Hollow ring so it points at the first glyph's base without covering it.
+    dr = ImageDraw.Draw(canvas)
+    dr.ellipse([ax - 6, ay - 6, ax + 6, ay + 6], outline=(230, 0, 0), width=2)
     meta = {"z": z, "origin_gpx": bl, "origin_gpy": bt, "w": cw, "h": ch,
-            "anchor_gpx": gpx, "anchor_gpy": gpy, "missing_tiles": missing}
+            "anchor_gpx": gpx, "anchor_gpy": gpy, "anchor_px": [ax, ay],
+            "missing_tiles": missing}
     return (None if missing == (tx1 - tx0 + 1) * (ty1 - ty0 + 1) else canvas), meta
 
 
