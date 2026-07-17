@@ -59,6 +59,8 @@ def render_boundary(P, path, rng, ink=None, comp=None):
     x_pitch = rng.uniform(180, 340); ar_pitch = rng.uniform(180, 340)
     side = rng.choice([-1.0, 1.0])                        # mere side, consistent along the boundary
     x_off = rng.uniform(12, 40); ar_off = rng.uniform(4, 14)   # x's often sit well off the line
+    x_cap = int(rng.choice([0, 1, 1, 1, 2])); ar_cap = int(rng.choice([0, 0, 1, 1]))  # rare per tile
+    nx = na = 0
     acc = 0.0; xa = rng.uniform(0, 200); ara = rng.uniform(0, 200)
     for i in range(1, len(path)):
         p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
@@ -66,26 +68,39 @@ def render_boundary(P, path, rng, ink=None, comp=None):
         if acc >= d_pitch:
             acc = 0; c = p1.astype(int)
             cv2.circle(ink, tuple(c), dr, 1.0, -1); cv2.circle(comp, tuple(c), dr, 1, -1)
-        if xa >= x_pitch:
-            xa = 0; x_pitch = rng.uniform(180, 340)
+        if xa >= x_pitch and nx < x_cap:
+            xa = 0; x_pitch = rng.uniform(180, 340); nx += 1
             c = p1 + side * x_off * rng.uniform(0.7, 1.3) * n + rng.uniform(-2, 2, 2)   # mere-side offset
             draw_cross(ink, comp, c, t, n, int(rng.integers(6, 9)), int(rng.integers(2, 4)), rng)
-        if ara >= ar_pitch and rng.random() < 0.5:
-            ara = 0; ar_pitch = rng.uniform(180, 340)
+        if ara >= ar_pitch and na < ar_cap:
+            ara = 0; ar_pitch = rng.uniform(180, 340); na += 1
             draw_arrow(ink, comp, p1 + side * ar_off * n, t, n, int(rng.integers(6, 9)), rng)
     return ink, comp
 
 
 def render_footpath(P, path, rng, ink, comp):
-    """Footpath = DOUBLE parallel dashed ('double-pecked') line. A key NEGATIVE: it must
-    not be confused with the dotted boundary. comp class 2 (dash)."""
-    gap = rng.uniform(2.5, 5.0)                            # half-separation of the two dashed rails
-    dash_len = rng.uniform(3, 6); dash_pitch = rng.uniform(8, 15)
-    for s in (-1.0, 1.0):
-        acc = 0.0
+    """Footpath. Normally DOUBLE parallel dashed ('double-pecked'). BUT when it runs
+    parallel to a solid-lined feature (wall/road), it is delimited by a SINGLE dashed
+    rail on the open side + the solid line on the other. A key NEGATIVE (not the dotted
+    boundary). comp: dash=2, solid=5.  Calibrated to a real Bakewell F.P. (z17)."""
+    gap = rng.uniform(2.5, 4.0)                            # half-separation of the rails
+    dash_len = rng.uniform(4, 8); dash_pitch = rng.uniform(9, 14)
+    alongside = rng.random() < 0.4
+    if alongside:
+        solid_side = rng.choice([-1.0, 1.0]); rails = [-solid_side]   # solid one side, dashes other
+        th = int(rng.integers(1, 3))
+        for i in range(1, len(path)):
+            p0, p1 = path[i-1], path[i]; _, n = tangent_normal(p0, p1)
+            a = p0 + solid_side*gap*n; b = p1 + solid_side*gap*n
+            cv2.line(ink, tuple(a.astype(int)), tuple(b.astype(int)), 1.0, th)
+            cv2.line(comp, tuple(a.astype(int)), tuple(b.astype(int)), 5, th)
+    else:
+        rails = [-1.0, 1.0]
+    for s in rails:
+        acc = 0.0 if s < 0 else dash_pitch/2               # stagger the two rails
         for i in range(1, len(path)):
             p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
-            seg = np.hypot(*(p1-p0)); acc += seg
+            acc += np.hypot(*(p1-p0))
             if acc >= dash_pitch:
                 acc = 0
                 a = p1 + s*gap*n - t*dash_len/2; b = p1 + s*gap*n + t*dash_len/2

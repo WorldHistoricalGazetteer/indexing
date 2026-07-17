@@ -18,7 +18,7 @@ import argparse, json, itertools, time, numpy as np, cv2, torch, torch.nn as nn
 from PIL import Image
 from skimage.feature import multiscale_basic_features
 from sklearn.ensemble import RandomForestClassifier
-from synth_glyphs import render_boundary, smooth_path
+from synth_glyphs import render_boundary, render_footpath, smooth_path
 from degrade import degrade
 
 DEV = "cuda" if torch.cuda.is_available() else "cpu"
@@ -58,12 +58,14 @@ def synth_s1(env, rng):
     bg = env.sample_bg(rng).astype(np.float32)
     ink = np.zeros((P, P), np.float32); lab = np.zeros((P, P), np.uint8)
     for _ in range(rng.integers(1, 4)):
-        typ = rng.choice(["boundary", "dash", "solid", "dotline"])
+        typ = rng.choice(["boundary", "dash", "solid", "dotline", "footpath"])
         ik = np.zeros((P, P), np.float32); cp = np.zeros((P, P), np.uint8)
         path = smooth_path(P, rng)
         if typ == "boundary":
             render_boundary(P, path, rng, ik, cp)                 # dot=1 cross=3 arrow=4 (offset)
-        elif typ == "dotline":                                    # footpath: dots only
+        elif typ == "footpath":                                   # double parallel dashed -> class 2
+            render_footpath(P, path, rng, ik, cp)
+        elif typ == "dotline":                                    # single dotted (e.g. path): dots only
             acc = 0; pit = rng.uniform(8, 18)
             for i in range(1, len(path)):
                 acc += np.hypot(*(path[i]-path[i-1]))

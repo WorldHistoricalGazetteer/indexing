@@ -35,12 +35,12 @@ def degrade(bg, ink, dark, rng):
     dark = min(dark, ink_tone + rng.uniform(0, 18))
     darkf = dark * (0.7 + 0.6 * _lowfreq((h, w), rng, rng.integers(8, 20)))  # ink tone varies
     img = bg * (1 - ink_e) + darkf * ink_e
-    # 4. foxing / paper blemishes: scattered soft dark spots on paper
-    for _ in range(rng.integers(0, 8)):
-        c = (int(rng.integers(0, w)), int(rng.integers(0, h))); r = int(rng.integers(2, 7))
+    # 4. foxing / paper blemishes: a FEW faint soft spots on paper (eased — was too cluttered)
+    for _ in range(rng.integers(0, 3)):
+        c = (int(rng.integers(0, w)), int(rng.integers(0, h))); r = int(rng.integers(2, 6))
         spot = np.zeros((h, w), np.float32); cv2.circle(spot, c, r, 1.0, -1)
-        spot = cv2.GaussianBlur(spot, (0, 0), rng.uniform(1, 3)) * rng.uniform(0.1, 0.35)
-        img = img * (1 - spot) + rng.uniform(90, 170) * spot
+        spot = cv2.GaussianBlur(spot, (0, 0), rng.uniform(1.5, 3)) * rng.uniform(0.06, 0.2)
+        img = img * (1 - spot) + rng.uniform(110, 180) * spot
     # 5. global blur (sometimes heavy) + gamma
     if rng.random() < 0.7: img = cv2.GaussianBlur(img, (0, 0), rng.uniform(0.4, 1.6))
     g = rng.uniform(0.8, 1.3); img = 255.0 * (np.clip(img, 0, 255) / 255.0) ** g
