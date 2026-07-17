@@ -32,6 +32,41 @@ Stitched OS six-inch near Dolgarrog (Conwy valley). Direct observations:
   labels directly (confirmed by human view). The hard part is **precise geometry**, not
   recognition.
 
+## Capitalise on the GB1900 transcriptions we ALREADY have (big shortcut)
+
+The volunteers already transcribed the **boundary labels**, georeferenced to points —
+so the *semantic* half (boundary TYPE + which units) is largely free from GB-STAMP
+data itself; the VLM only fills gaps. Mined the 2.67M labels (2026-07-17):
+
+| Boundary type | GB1900 labels | example |
+|---|---|---|
+| Rural/Urban **District** (`R.D./U.D. By.`) | **19,038** | `U.D. By.`, `Union & R.D. By.` |
+| **Borough** (`Munl./Parly. Boro. By.`) | **4,401** | `Parly. Boro. By.` |
+| **County** (`Parly. Co. By.`) | **710** | `Parly. Co. By. (Carn.) (Denb.)` ← names *both* counties |
+| **Detached** parts (`(Det.)`) | 321 | `DOLGARROG (Det.)` |
+| **Civil parish** (`C.P.`) | **only 57** | `C.P.` |
+
+**Implications:**
+- **District / borough / county boundaries are richly pre-labelled** — these georef'd
+  points give us both *where* a boundary runs and *what type* (and, for counties, the
+  pair it divides), bootstrapping detection + classification almost for free.
+- **Civil parishes are barely labelled (57 `C.P.`)** — the six-inch labels the parish
+  line sparsely. So parish extraction specifically **cannot lean on the transcriptions**;
+  it needs CV line-detection + naming from *enclosed GB-STAMP settlement labels* (and
+  the many parish boundaries that coincide with district/county lines). This is the
+  genuine research part; the higher admin levels are the easy win.
+
+## Hundreds & wapentakes — NOT extractable from the GB1900-era raster
+
+The `Hundred`/`Wapentake` hits in GB1900 are all **place-names** (`Hundred House`,
+`Wapentake Lane`), never boundary labels — because hundreds/wapentakes were
+**administratively obsolete by c.1900** (superseded by rural/urban districts in the
+1894 Local Government Act) and so are **not drawn on the OS six-inch 2nd edition**.
+To get them you need either the **1st-edition six-inch (c.1840s–80s)** — a different
+raster, VLM-extractable in principle but a separate effort — or CAMPOP's **1831
+hundreds** (SN-852938, *internal-only*). Note this is exactly the layer the public
+ArcGIS web map (Rye 2022, Univ. York) surfaces from CAMPOP/GBHGIS — see licence note.
+
 ## Method — HYBRID (CV geometry + VLM semantics)
 VLMs hallucinate coordinates, so don't ask a VLM to trace precise polylines. Split:
 
