@@ -99,22 +99,30 @@ def _fallback_years(props: dict) -> list[int]:
 
 def sheet_timespan(props: dict, args) -> dict:
     """Build a per-label timespan + sheet provenance from a sheet's properties.
-    Prefers survey year for 'start' (when features were current) and publication
-    year for 'end'/imprint; falls back to any 4-digit years found."""
-    survey = _year(props, args.survey_field)
-    revision = _year(props, args.revision_field)
-    pub = _year(props, args.pub_field)
-    if survey is None and revision is None and pub is None:
+
+    The label is attested from when its sheet was SURVEYED through when it was
+    PUBLISHED, so the timespan spans survey-start .. publication-end (year
+    precision). Both the survey period and the publication period are also kept in
+    provenance so downstream can use whichever it prefers. Falls back to any
+    4-digit years found if the named fields are absent."""
+    sur_sta = _year(props, args.survey_start_field)
+    sur_end = _year(props, args.survey_end_field) or sur_sta
+    pub_sta = _year(props, args.pub_start_field)
+    pub_end = _year(props, args.pub_end_field) or pub_sta
+    if not any((sur_sta, pub_sta)):
         ys = _fallback_years(props)
-        survey = ys[0] if ys else None
-        pub = ys[-1] if ys else None
-    start = survey or revision or pub
-    end = pub or revision or survey
+        if ys:
+            sur_sta = sur_end = ys[0]
+            pub_sta = pub_end = ys[-1]
+    start = sur_sta or pub_sta
+    end = pub_end or pub_sta or sur_end or sur_sta
     sheet_id = props.get(args.sheet_id_field) if args.sheet_id_field else None
     return {
         "timespan": {"start": start, "end": end},
-        "sheet": {"id": sheet_id, "surveyed": survey, "revised": revision,
-                  "published": pub, "source": "nls-os-6inch-2nd"},
+        "sheet": {"id": sheet_id,
+                  "surveyed": {"start": sur_sta, "end": sur_end},
+                  "published": {"start": pub_sta, "end": pub_end},
+                  "source": "nls-os-6inch-2nd"},
     }
 
 
@@ -143,7 +151,7 @@ def date_edition(args) -> dict:
         if len(hits) > 1:
             stats["multi_sheet"] += 1
             # prefer the sheet with the latest publication (the current imprint)
-            hits.sort(key=lambda i: (_year(props[i], args.pub_field) or 0), reverse=True)
+            hits.sort(key=lambda i: (_year(props[i], args.pub_start_field) or 0), reverse=True)
         dat = sheet_timespan(props[hits[0]], args)
         rec["timespan"] = dat["timespan"]
         rec.setdefault("edits", []).append(
@@ -166,10 +174,11 @@ def main(argv=None) -> int:
     p.add_argument("--out", required=True)
     p.add_argument("--src-epsg", type=int, default=4326,
                    help="CRS of the sheet index (4326 default; e.g. 27700 for OSGB)")
-    p.add_argument("--sheet-id-field", help="property field for the sheet id")
-    p.add_argument("--survey-field", help="property field for the survey date")
-    p.add_argument("--revision-field", help="property field for the revision date")
-    p.add_argument("--pub-field", help="property field for the publication date")
+    p.add_argument("--sheet-id-field", default="SHEET", help="property field for the sheet id")
+    p.add_argument("--survey-start-field", default="SUR_STA", help="survey-start year field")
+    p.add_argument("--survey-end-field", default="SUR_END", help="survey-end year field")
+    p.add_argument("--pub-start-field", default="PUB_STA", help="publication-start year field")
+    p.add_argument("--pub-end-field", default="PUB_END", help="publication-end year field")
     args = p.parse_args(argv)
     stats = date_edition(args)
     print(json.dumps(stats, indent=2))
