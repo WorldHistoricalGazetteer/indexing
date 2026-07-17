@@ -56,7 +56,7 @@ def render_boundary(P, path, rng, ink=None, comp=None):
     if comp is None: comp = np.zeros((P, P), np.uint8)
     d_pitch = rng.uniform(10, 22); x_pitch = rng.uniform(50, 120); ar_pitch = rng.uniform(70, 160)
     side = rng.choice([-1.0, 1.0])                        # mere side, consistent along the boundary
-    x_off = rng.uniform(7, 15); ar_off = rng.uniform(4, 12)
+    x_off = rng.uniform(12, 40); ar_off = rng.uniform(4, 14)   # x's often sit well off the line
     acc = 0.0; xa = rng.uniform(0, 40); ara = rng.uniform(0, 80)
     for i in range(1, len(path)):
         p0, p1 = path[i-1], path[i]; t, n = tangent_normal(p0, p1)
@@ -66,7 +66,7 @@ def render_boundary(P, path, rng, ink=None, comp=None):
             cv2.circle(ink, tuple(c), r, 1.0, -1); cv2.circle(comp, tuple(c), r, 1, -1)
         if xa >= x_pitch:
             xa = 0; x_pitch = rng.uniform(50, 120)
-            c = p1 + side * x_off * n + rng.uniform(-2, 2, 2)      # offset to the mere side
+            c = p1 + side * x_off * rng.uniform(0.7, 1.3) * n + rng.uniform(-2, 2, 2)   # mere-side offset, per-x variation
             draw_cross(ink, comp, c, t, n, int(rng.integers(6, 9)), int(rng.integers(2, 4)), rng)
         if ara >= ar_pitch and rng.random() < 0.7:
             ara = 0; ar_pitch = rng.uniform(70, 160)
