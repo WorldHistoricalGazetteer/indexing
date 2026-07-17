@@ -245,16 +245,44 @@ def build_stoplist(es_host: str, *, top_k: int = 500, min_places: int = 50,
 # ---------------------------------------------------------------------------
 
 
-def _load_positive_pairs(batch_db: Path, *, limit: int, rng: random.Random) -> list[tuple[str, str]]:
-    """Sample authority ``sameAs``/``exactMatch`` pairs from the batch overlay."""
+# Positive-source SQL. ``authority`` = cross-gazetteer authority co-references
+# (coordinate near-duplicates → spatially separable, the class that made earlier
+# fits spatial-heavy). ``contributor`` = user-reconciliation hard links (the
+# legacy v3.2 links harvested into the overlay) — these link a contributed record
+# to authority records at *different* coordinates, so they are the name-forward,
+# cross-coordinate positives the browser's broader task actually resembles. Their
+# reliability was the original deferral reason; run with ``contributor`` on the
+# assumption they are reliable (re-run for fine-tuning as more accumulate).
+_POSITIVE_SQL = {
+    "authority": ("relation_type IN ('sameAs','exactMatch') "
+                  "AND source_category='authority'"),
+    "contributor": "source_category='contributor'",
+    "both": ("(source_category='contributor') OR "
+             "(relation_type IN ('sameAs','exactMatch') "
+             "AND source_category='authority')"),
+}
+
+
+def _load_positive_pairs(batch_db: Path, *, limit: int, rng: random.Random,
+                         source: str = "authority") -> list[tuple[str, str]]:
+    """Sample ground-truth positive pairs from the batch overlay.
+
+    ``source`` selects the positive class — see ``_POSITIVE_SQL``. Pairs whose
+    endpoints are not in the live index are dropped downstream by
+    ``build_feature_matrix`` (missing-endpoint skip), so a dangling-heavy source
+    (e.g. legacy contributor links to un-ingested whg datasets) still yields a
+    clean, in-index subset.
+    """
     if not batch_db.exists():
         raise FileNotFoundError(f"batch overlay not found: {batch_db}")
+    where = _POSITIVE_SQL.get(source)
+    if where is None:
+        raise ValueError(f"unknown positives source {source!r}; "
+                         f"pick one of {sorted(_POSITIVE_SQL)}")
     conn = sqlite3.connect(f"file:{batch_db}?mode=ro", uri=True)
     try:
         rows = conn.execute(
-            "SELECT place_a, place_b FROM hard_link_assertions "
-            "WHERE relation_type IN ('sameAs','exactMatch') "
-            "AND source_category='authority'"
+            f"SELECT place_a, place_b FROM hard_link_assertions WHERE {where}"
         ).fetchall()
     finally:
         conn.close()
@@ -263,7 +291,8 @@ def _load_positive_pairs(batch_db: Path, *, limit: int, rng: random.Random) -> l
 
 
 def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
-              seed: int = 13, auth: tuple[str, str] | None = None) -> dict:
+              seed: int = 13, auth: tuple[str, str] | None = None,
+              positives_source: str = "authority") -> dict:
     """Empirically fit weights + thresholds and write ``clustering_params.json``.
 
     Positives = authority hard-links (overlay); negatives = random
@@ -290,8 +319,10 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
 
     rng = random.Random(seed)
     batch_db = batch_db or Path(DEFAULT_BATCH_DB)
-    positives = _load_positive_pairs(batch_db, limit=sample, rng=rng)
-    logger.info("sampled %d positive pairs", len(positives))
+    positives = _load_positive_pairs(batch_db, limit=sample, rng=rng,
+                                     source=positives_source)
+    logger.info("sampled %d positive pairs (source=%s)", len(positives),
+                positives_source)
 
     # X columns are the four inferred signals in this fixed order (NO link).
     X, y = build_feature_matrix(es_host, positives, sample, rng, auth=auth,
@@ -317,7 +348,8 @@ def calibrate(es_host: str, *, batch_db: Path = None, sample: int = 20_000,
 
     params = json.loads(json.dumps(DEFAULT_PARAMS))  # deep copy of the shape
     params.update({"version": DEFAULT_PARAMS["version"] + 1, "calibrated": True,
-                   "n_pairs": len(y), "n_positive": int(sum(y))})
+                   "n_pairs": len(y), "n_positive": int(sum(y)),
+                   "positives_source": positives_source})
     params["weights"] = weights
     params["thresholds"]["theta_query"] = round(theta_query, 3)
     # Keep the synthetic/bridge thresholds relative to the fitted operating point.
@@ -395,6 +427,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--es-host", default=os.getenv("PROD_ES_URL", "http://localhost:9201"))
     p.add_argument("--batch-db", default=DEFAULT_BATCH_DB)
     p.add_argument("--sample", type=int, default=20_000)
+    p.add_argument("--positives", choices=("authority", "contributor", "both"),
+                   default="authority",
+                   help="ground-truth positive class for --calibrate "
+                        "(default: authority co-references)")
     p.add_argument("--top-k", type=int, default=500)
     p.add_argument("--out-dir", default=None,
                    help="write artefacts here instead of clustering/data/ "
@@ -418,7 +454,8 @@ def main(argv: list[str] | None = None) -> int:
         build_stoplist(args.es_host, top_k=args.top_k, auth=auth)
     if args.calibrate:
         calibrate(args.es_host, batch_db=Path(args.batch_db),
-                  sample=args.sample, auth=auth)
+                  sample=args.sample, auth=auth,
+                  positives_source=args.positives)
     return 0
 
 
