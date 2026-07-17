@@ -997,6 +997,18 @@ text remains is an **untranscribed label** → VLM-read it → a new gazetteer r
 tile/geo) → subtract → residual text regions → VLM-read → new labels (namespaced distinctly
 from `gb:` since they are *our* additions, not GB1900 transcriptions).
 
+**TESTED 2026-07-18** (`/vast/ishi/gb1900/probe/mapreader_text/`): MapReader text-spotting
+(MapTextPipeline + Rumsey-finetuned ViTAEv2-S weights) **installs + works on OS six-inch, CPU-only**,
+reading real labels at high fidelity (incl. Welsh/diacritics) on 4 disparate tiles (town/rural/
+coast/moor). Two findings baked in above: (1) **mask by BBOX OVERLAP, not string-match** — the
+spotter emits per-*word* tokens while GB1900 stores whole labels, so a naive text diff hugely
+inflates "untranscribed" with fragments (`Bridge`←"Greyfriars Bridge", `Severn`←"Severn Hill
+House", adjudicated visually); spatial overlap with a GB1900 bbox = already transcribed. (2) The
+spotter and GB1900 are **complementary** — spotter wins on named places, GB1900 wins on tiny
+abbreviations (`B.M.`, `F.P.`) and letter-spaced titles (`KINGSLAND`) the spotter misses — so the
+detector *augments* GB1900, it doesn't replace it. Genuine untranscribed residual ≈ spot-heights +
+some feature labels + boundary annotations.
+
 **Hard part = detection, not reading — but it's largely solved for OUR maps.** We already have a
 strong reader (the VLM); the piece to add is *localising* text on a dense sheet (text vs
 linework/hachures/contours). This is the historical-map **text-spotting** problem, and there is
