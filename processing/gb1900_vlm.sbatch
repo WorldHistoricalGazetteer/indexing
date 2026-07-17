@@ -50,6 +50,7 @@ NGPU=$(echo "${SLURM_GPUS_ON_NODE:-2}")
 # (intermittent multiproc/NCCL WorkerProc crashes seen 2026-07-17).
 vllm serve "$MODEL" --port "$PORT" --tensor-parallel-size "$NGPU" \
   --max-model-len 8192 --gpu-memory-utilization 0.92 --disable-custom-all-reduce \
+  --enforce-eager \
   > "/vast/ishi/gb1900/logs/vllm-${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.log" 2>&1 &
 VLLM_PID=$!
 # wait for startup
