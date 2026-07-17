@@ -808,6 +808,30 @@ Qwen2.5-VL-72B-AWQ). Realistically ~4–5/sec with concurrency 32 + batching (GO
 
 ---
 
+## 10b. FOLLOW-UP — per-label SHEET-PRECISE dating (SG, 2026-07-17)
+
+Instead of the dataset-level 1888–1914 span, date each label by the **publication
+date of the OS six-inch 2nd-ed sheet it falls on** (the County Series was published
+sheet-by-sheet, each with its own survey/revision/publication date). **Confirmed
+feasible:** NLS publishes **downloadable GeoJSON metadata for its georeferenced
+layers** — sheet polygons + per-sheet dates — (`maps.nls.uk/guides/datasets/`,
+Historic Maps API `maps.nls.uk/projects/api/`, `github.com/NationalLibraryOfScotland`).
+
+Path:
+1. Fetch the OS six-inch 2nd-ed **sheet index GeoJSON + dates** from NLS.
+2. **Point-in-polygon** each label's coord → its sheet (`shapely`/`pyshp`).
+3. Emit a per-label `timespan` at year precision — capture **both survey and
+   publication** dates where available (survey = when the features were current;
+   publication = the map's imprint), with provenance.
+
+**Caveat:** the sheet date describes the **NLS raster** we read (`os/6inchsecond`);
+for the small fraction of labels near a re-surveyed sheet seam, GB1900's exact
+source sheet could differ slightly — flag those (the same era/sheet-match caveat as
+§9). Layers cleanly onto the edition: it upgrades each record's `timespan` from
+dataset-level to sheet-precise without touching the type/text pipeline.
+
+---
+
 ## 11. Published WHG edition — provenance, versioning, feedback & naming
 
 The end goal is not just to enrich the live `gb:` docs, but to **publish a
