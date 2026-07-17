@@ -203,6 +203,30 @@ Extracted boundaries are **our derivation off the NLS raster** → openly publis
 (CC0/CC-BY, attribute NLS for the source imagery, per §5.3 of the typing plan). CAMPOP
 and GBHGIS are used **only as internal validation ground truth**, never redistributed.
 
+### Priors — open-only, verified + scoped (2026-07-17) — `priors.py`
+Ethics gate (SG): a licence-bound boundary may **shape the output only if it's open** —
+else hinting from it launders restricted data into a nominally-open layer (breach + defeats
+the project's purpose). Policy:
+- **CAMPOP / GBHGIS (safeguarded): validation-ONLY.** Never a prior / seed / training label.
+  A model trained on them encodes them → contaminates every output.
+- **HCT / `ukhc` historic counties: OPEN** — *verified* (county-borders.co.uk / Historic
+  Counties Trust: free for personal/educational/non-commercial **and commercial** use,
+  attribution requested; already WHG-vetted + ingested as `ukhc`). Usable as a prior **with
+  attribution**. Correct period for counties.
+- **OS Boundary-Line parishes (OGL): open** — usable as a *weak* prior, but modern civil
+  parishes drifted substantially from c.1900 (1930s reviews, 1974 reorg, urban absorption),
+  concentrated in populated areas → prior only, never output; **log hint↔raster divergence**.
+- A prior only **reweights** the raster-traced probability (`apply_prior`) and logs
+  disagreement (`divergence`); the published geometry stays the independent raster tracing.
+
+**Scope reality (verified on the test region):** HCT priors help at the **county** level
+only. The Conwy test boundary is `Union & R.D. By.` — a **sub-county** line **fully inside
+Caernarfonshire** (county border 1.57 km away). Worse, **no open source maps to a 1900
+Union/R.D. boundary** (Unions abolished 1930, RDs 1974; modern civil parishes ≠ that
+geography). So for sub-county levels there is **no open prior at all** → they rest on the
+**intrinsic mereing signature (CV)** + CAMPOP validation-only. Open priors are a genuine
+help only where the target *is* a county (or ~persistent parish) line.
+
 ## Practical note
 The GB-STAMP typing run currently owns the h200 workers. P1 (CV/MapReader detection) is
 independent of that GPU and can start now; the P2 VLM probe should wait for spare h200
