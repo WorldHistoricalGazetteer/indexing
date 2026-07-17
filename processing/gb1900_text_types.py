@@ -45,6 +45,7 @@ _DATA = Path(__file__).resolve().parent.parent / "typesystem" / "data" / "gb1900
 _LOC_MEMBER = "GB1900_final_raw_dump_july_2018/gb1900_locations.csv"
 
 _WS = re.compile(r"\s+")
+_NUMERIC = re.compile(r"^\d{1,4}(\.\d+)?$")  # spot heights / BM values
 
 
 def _norm(s: str) -> str:
@@ -98,7 +99,10 @@ def classify(text: str, D: dict) -> tuple[str | None, str, bool]:
     for rx, val in D["kw"]:
         if rx.search(t):
             return val["token"], "keyword", allcaps
-    # 4. ALLCAPS with no text tell → route to Tier-1
+    # 4. purely numeric label → spot height / bench-mark value (elevation annotation)
+    if _NUMERIC.match(t):
+        return "spot-height", "numeric", allcaps
+    # 5. ALLCAPS with no text tell → route to Tier-1
     if allcaps:
         return None, "allcaps-router", allcaps
     return None, "residual", allcaps

@@ -75,7 +75,12 @@
     "Co. By.":   {"token": "county-boundary",  "aat": 300387473},
     "Par. By.":  {"token": "parish-boundary",  "aat": 300387473},
     "Bdy.":  {"token": "boundary",          "aat": 300387473},
-    "Bdy":   {"token": "boundary",          "aat": 300387473}
+    "Bdy":   {"token": "boundary",          "aat": 300387473},
+    "Smy.":  {"token": "smithy",            "aat": 300004917},
+    "Rec.":  {"token": "rectory",           "aat": 300005395},
+    "Vic.":  {"token": "vicarage",          "aat": 300005395},
+    "V.":    {"token": "vicarage",          "aat": 300005395},
+    "F.Sta.":{"token": "fire-station",      "aat": 300007123}
   },
   "keywords": {
     "Well":       {"token": "well",         "aat": 300006860},
@@ -137,6 +142,26 @@
     "Lodge":      {"token": "lodge",        "aat": 300005425},
     "Cottage (The)": {"token": "cottage",   "aat": 300005426},
     "Stone":      {"token": "standing-stone","aat": 300008920},
-    "Stones":     {"token": "standing-stone","aat": 300008920}
+    "Stones":     {"token": "standing-stone","aat": 300008920},
+    "Rectory":    {"token": "rectory",      "aat": 300005395},
+    "Vicarage":   {"token": "vicarage",     "aat": 300005395},
+    "Manse":      {"token": "manse",        "aat": 300005395},
+    "Waterfall":  {"token": "waterfall",    "aat": 300008705},
+    "Cascade":    {"token": "waterfall",    "aat": 300008705},
+    "Mound":      {"token": "mound",        "aat": 300000957},
+    "Mounds":     {"token": "mound",        "aat": 300000957},
+    "Cromlech":   {"token": "chambered-tomb","aat": 300000957},
+    "Cist":       {"token": "chambered-tomb","aat": 300000957},
+    "Mine":       {"token": "mine",         "aat": 300000420},
+    "Shaft":      {"token": "mine-shaft",   "aat": 300000420},
+    "Beacon":     {"token": "beacon",       "aat": 300006404},
+    "Ffynnon":    {"token": "spring",       "aat": 300008698},
+    "Pistyll":    {"token": "waterfall",    "aat": 300008705},
+    "Rhaeadr":    {"token": "waterfall",    "aat": 300008705},
+    "Rhaiadr":    {"token": "waterfall",    "aat": 300008705},
+    "Sgwd":       {"token": "waterfall",    "aat": 300008705},
+    "Scwd":       {"token": "waterfall",    "aat": 300008705},
+    "Carnedd":    {"token": "cairn",        "aat": 300005919},
+    "Tomen":      {"token": "mound",        "aat": 300000957}
   }
 }
