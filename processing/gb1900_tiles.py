@@ -132,7 +132,10 @@ def cmd_fetch(args) -> None:
                 if i % 20000 == 0:
                     print(f"[fetch] {i:,}/{len(todo):,}  got={got:,} 404={miss:,} fail={fail:,}",
                           flush=True)
-    print(f"[fetch] done: fetched {got:,}, absent(404) {miss:,}, failed {fail:,} → {TILE_CACHE}")
+    # NOTE: keep the literal "[fetch] fetched" + "already-cached" tokens — the cropper
+    # (gb1900_pipeline._fetch_done) detects completion by scanning for both.
+    print(f"[fetch] fetched {got:,} (absent {miss:,}, failed {fail:,}), "
+          f"already-cached {len(needed) - len(todo):,} → {TILE_CACHE}")
 
 
 def _global_px(lat: float, lon: float, z: int) -> tuple[float, float]:
