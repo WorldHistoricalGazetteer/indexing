@@ -23,3 +23,6 @@ authorities/dgsd/*.db
 # LPF data artifacts (large; generated/staged for ingestion, not source)
 *.lpf
 authorities/hgis/*.lpf
+
+# GB1900 HITL generated artifacts (manifest + built review HTML; regenerable)
+processing/gb1900/hitl/

@@ -216,6 +216,27 @@ the *identification/classification* isn't reliable enough to ship:
 - **HITL UIs live IN THE REPO** (`font_hitl_review.html` + `hitl_build.py`; build locally, open via
   `file://`), **not** as claude.ai artifacts.
 
+**Working store: DuckDB (DECISION SG 2026-07-18).** Retire the loose-JSONL-per-stage +
+`reconcile.py` join model. The consolidated dataset is **one DuckDB file** keyed on `pin_id`:
+```
+pins(pin_id PK, lon, lat, spotter_text, os_style, type_aat,
+     admin_nation, admin_district, admin_parish, hc_county,
+     date_start, date_end, is_named, ...)          -- resolved per-pin state
+spotter(pin_id, box_idx, x0,y0,x1,y1, text, conf)  -- 0..N MapReader boxes/pin (the box authority)
+```
+- **Why (over Parquet-join-on-read):** the pipeline is idempotent-per-`pin_id`-patch / never-re-run,
+  so *resume/residual* ("which pins still lack a spotter box / a read?") and *HITL corrections* must
+  be one-line SQL against a materialized table, not an anti-join across accumulating per-stage
+  Parquet + dedup-by-latest. Also cleanest ES hand-off (`SELECT * FROM pins` → bulk `gb:` docs) and
+  a one-table substrate for the HITL viewer.
+- **Parallel-write-safe flow (matches Slurm arrays):** workers write per-shard **Parquet** (no lock
+  contention) → a **single serial merge** does `INSERT … ON CONFLICT(pin_id) DO UPDATE` → exports
+  the next stage's inputs as **shard-partitioned Parquet** so VLM/spotter workers **never open the
+  DB** (they read their Parquet partition, write result shards). The serial upsert (few M rows from
+  columnar Parquet, seconds–minutes) runs *between* stages, off the workers' critical path — not a
+  bottleneck at 2.7 M pins. DuckDB is already a project dependency.
+- **Crop windows = `spotter` box coordinates** (no image fragments) → realises coords-not-fragments.
+
 **Typing-signal policy (SG 2026-07-18):** typography is the primary type signal; **do NOT lean
 more on text-based typing** — restrict text-based typing to cases where a *checked* transcription
 is an unambiguous OS abbreviation (`F.P.`, `B.M.`, `W`, `P`, `Ch.`…). Proper names carry no type,
