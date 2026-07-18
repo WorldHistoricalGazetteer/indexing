@@ -1323,6 +1323,29 @@ REAL data, whose labels are free: **every MapReader crop already carries its tra
   short-mark split) now regardless; B′ is the funded attempt to make fine font-style usable. See
   [[gbstamp_font_typing_pivot]].
 
+### 12.4 RESULT — B' region proof (2026-07-18, gpu job 3277297)
+Real-domain CRNN trained on 8,076 region (crop,transcript) pairs (val exact-word ~27%+ climbing — a
+working OS-six-inch OCR as a byproduct). Encoder-embedding vs synthetic StyleEncoder, LOO on 275 anchors:
+
+| variant | overall | serif_italic | serif_upright | road_caps |
+|---|---|---|---|---|
+| synth_only | .410 | .159 | .083 | .30 |
+| synth_fusion | .451 | .273 | .167 | .30 |
+| crnn_only | .451 | .273 | .167 | **.40** |
+| crnn_fusion | **.459** | **.318** | .083 | **.40** |
+
+**Real-domain DID help** — `crnn_only` matches `synth_fusion`, `crnn_fusion` is best, serif_italic
+roughly doubled (.16→.32). Validates the domain-gap thesis. **But the core hard axis stays weak:**
+upright-vs-italic serif WITHIN a size band (2-class, chance .5) = crnn .58 (small) / .63 (medium) /
+.60 (all) — size-control helps a little, but ~.6 on a 2-class task is not usable. **Verdict:** even
+the best bet (real-domain, root-cause) gives only a MODEST lift on a region-scale uncurated proof; the
+fine upright/italic distinction is approaching a ceiling, not shattering it. Pushing further =
+wider multi-region harvest + coverage curation + z17 = real infrastructure for incremental gain.
+**Net recommendation: SHIP A** (51.5% high-confidence typing, validated); **use `crnn_fusion` as a
+confidence-gated STYLE ENRICHMENT** (best style signal we have — serif_italic .32 usable for
+water/feature); the **CRNN OCR is independently valuable** (feeds §12 untranscribed-discovery + §12.3
+roads-GIS). Invest in the fine-axis levers only if that distinction is genuinely required.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
