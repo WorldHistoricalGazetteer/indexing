@@ -1393,6 +1393,19 @@ text but CORRELATED WITH SIZE (village labels run larger). So the serif recipe =
 lexicon -> italic (large coverage, .86), (2) SIZE for settlement-rank on proper names, (3) glyph-level
 visual as tiebreaker. Expand the descriptive lexicon + more z17 -> more coverage. See [[gbstamp_font_typing_pivot]].
 
+### 12.7 Road-caps is FONT-detected (SG concern answered) + serif plateau (2026-07-18)
+**road_caps font-only** (visual embedding, NO text features): recall .80 / precision .80; of 34 pool
+predictions, **28 have NO road word** — genuine road/railway labels (ALFRED, WATLING, CITY, CASTLE,
+RAILWAY, JOINT, LOOP, TRAMWAY) caught by STYLE, not the transcription hint (montage confirmed). So the
+text suffix is a *separate* high-confidence path; the font detector generalises to road labels without
+an obvious road name. **Serif upright/italic PLATEAU** (5 experiments): ~.65–.73; word-semantics is the
+best single signal (.71), settlement-name + size help where they apply but coverage is region-dependent
+(farm-heavy test region: only 15/68 serif anchors are settlement names). The settlement-vs-farm serif
+split is the one genuinely hard axis — usable as a soft/size-fused signal, not a .95 classifier.
+**Overall state: most OS lettering types now classify well** (antiquities .96, spaced/parish .98, road
+font-detected, abbrev/numeral, water/descriptive-serif via word-rule .86); serif settlement-vs-farm the
+sole soft spot. Finish line = integrate into type_assign v2 (style × size × case, over the tier-0 base).
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
