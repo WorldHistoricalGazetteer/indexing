@@ -1376,6 +1376,18 @@ word-level **.559** — comparing the SAME letter across fonts (content-controll
 +.17 (best letters o .64 / t .60 / r .59). Every lever paid off. Remaining work: batch-3 HITL for the
 still-unanchored slab/slab_italic/outline/engraved/sans, and fold glyph-level aggregation into typing.
 
+### 12.6 SERIF-axis push — word-semantics is the key (SG's Coppice insight, 2026-07-18)
+The upright/italic serif split tracks a SEMANTIC distinction visible in the human labels: named
+places/woods (Coppice 4/4, Plantation, Nursery, Wood -> **upright**) vs descriptive/water feature
+labels (House, Pond, Lodge, Grange, Ford, Weir, Spring -> **italic**). So SG's "Coppice ≈ serif_upright"
+generalises: a word->style LEXICON (VALIDATED on z17 — auto-labels match the real font) both
+mass-produces free serif anchors AND gives a semantic feature. Result (serif_push.py, train=lexicon-auto
+/ test=HUMAN): **word_semantic_only .706 > crnn_emb_only .647**; the word beats the pixels. (Naive
+concat drowned the 4-d word feature in the 512-d embedding -> .647.) With glyph-level at .728 (LOO),
+the production serif logic is a **routing ensemble**: word-semantic style where the word is a known
+lexicon/keyword (most labels), glyph-level visual for novel proper names. Lexicon coverage limited by
+z17 fetch (agri blocks added); more z17 -> more free serif anchors. See [[gbstamp_font_typing_pivot]].
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
