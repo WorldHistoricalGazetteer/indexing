@@ -1497,3 +1497,19 @@ settlement (upright); merged into gb_stamp_types.jsonl (flagged `font_refined`).
 is the z17 blocks only (~0.2% of residual); full-corpus font-refinement needs crops at scale (z16 full-GB
 available, but the serif signal is soft ~0.71 and z16-mismatched) — a targeted follow-up, not a blocker.
 Minor remaining v2 gaps: Vicarage/Rectory as full words, "(P.H.)" in parentheses, bare "Stone(s)".
+
+### 14. z17 full-corpus campaign + OS Characteristic Sheet typology (2026-07-18)
+Authoritative OS 1897 Characteristic Sheet (NLS, CC-BY, view/128076792) captured as the font->feature-type
+ground truth (reference/cs_*.jpg) and the full category list -> AAT-crosswalk source
+(reference/os_categories.json). It CONFIRMS our reverse-engineered mappings (water=italic, antiquities=
+Gothic, admin=caps). Two spec facts to honour:
+- **1879 character change** (categories marked †: Hundreds, Parishes, Divisions/Subdivisions of Townships,
+  Divisions of Counties, Cities w/wo MPs, Market/Other Towns, Extra-Parochial, Turnpike Trusts) — the
+  style→type mapping is EDITION-DEPENDENT → key on each sheet's publication year (needs a sheet-date lookup).
+- **Size is FIXED per category** except Bogs/Moors/Forests and Ranges-of-Hills (the only * size-variable
+  groups) → for everything else, canonical per-category size makes SIZE a RELIABLE discriminator (not the
+  soft ~0.71 crude cap-height suggested; measure size cleanly + use a per-category size table).
+z17 campaign plan (§ this file above): ~25-30 geographic batches; per-batch fetch z17 -> crop+CRNN
+classify (+type_assign) -> emit -> tar to /ix1 -> drop from /vast; additive (rescan finds more, never drop);
+resumable. Decisions (confirmed): classify-only pass 1 (spotter rescan = pass 2); retrain CRNN on a wider
+z17 sample first. AAT crosswalk (os_categories.json aat_id) is the publishing prerequisite (option c).
