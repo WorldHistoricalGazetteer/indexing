@@ -1,0 +1,1652 @@
+[
+ {
+  "id": "c-1_708",
+  "label": "serif_italic",
+  "text": "Fish",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_2001",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_684",
+  "label": "numeral",
+  "text": "205",
+  "cluster": "1"
+ },
+ {
+  "id": "c0_659",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_2153",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_138",
+  "label": "serif_upright",
+  "text": "Church",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_159",
+  "label": "abbrev",
+  "text": "R.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_844",
+  "label": "abbrev",
+  "text": ".",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_2423",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_694",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_2037",
+  "label": "serif_italic",
+  "text": "Criftin",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1765",
+  "label": "numeral",
+  "text": "268.5",
+  "cluster": "1"
+ },
+ {
+  "id": "c1_788",
+  "label": "numeral",
+  "text": "263.3",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_1047",
+  "label": "abbrev",
+  "text": "Sch.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1301",
+  "label": "serif_italic",
+  "text": "Isle",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1608",
+  "label": "numeral",
+  "text": "272",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_2096",
+  "label": "numeral",
+  "text": "349",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1923",
+  "label": "numeral",
+  "text": "5",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1718",
+  "label": "serif_italic",
+  "text": "Cottages",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_2202",
+  "label": "serif_italic",
+  "text": "Barge",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_785",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_324",
+  "label": "numeral",
+  "text": "233",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_1968",
+  "label": "abbrev",
+  "text": "S",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_77",
+  "label": "numeral",
+  "text": "379",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_130",
+  "label": "serif_italic",
+  "text": "Shrewsbury",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_123",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_2252",
+  "label": "abbrev",
+  "text": "W.",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1484",
+  "label": "abbrev",
+  "text": "G.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1886",
+  "label": "numeral",
+  "text": "325",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_1551",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_1233",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_570",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_662",
+  "label": "serif_italic",
+  "text": "Luciefelde",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_542",
+  "label": "abbrev",
+  "text": "W.",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_665",
+  "label": "numeral",
+  "text": "227",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_429",
+  "label": "serif_italic",
+  "text": "Marl",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_410",
+  "label": "serif_italic",
+  "text": "Cound",
+  "cluster": "1"
+ },
+ {
+  "id": "c1_1612",
+  "label": "numeral",
+  "text": "290.7",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_434",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_308",
+  "label": "abbrev",
+  "text": "B",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_1699",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1736",
+  "label": "numeral",
+  "text": "5",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_1099",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_1996",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_245",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_1588",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1809",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_546",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_53",
+  "label": "serif_upright",
+  "text": "Parly",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1672",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_1302",
+  "label": "abbrev",
+  "text": "FP.",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_1853",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_2009",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_1285",
+  "label": "serif_italic",
+  "text": "Rad",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_1486",
+  "label": "numeral",
+  "text": "232",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_1559",
+  "label": "serif_italic",
+  "text": "House",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_135",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_2337",
+  "label": "serif_italic",
+  "text": "Towin###",
+  "cluster": "1"
+ },
+ {
+  "id": "c0_1147",
+  "label": "road_caps",
+  "text": "ROAD",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_1620",
+  "label": "serif_italic",
+  "text": "Adcote",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_2121",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_2467",
+  "label": "slab",
+  "text": "GTON",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_611",
+  "label": "serif_italic",
+  "text": "Pit",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_210",
+  "label": "road_caps",
+  "text": "BETTON",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_2152",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_1728",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_880",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_1508",
+  "label": "serif_italic",
+  "text": "Ford",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1438",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_65",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_383",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_912",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_624",
+  "label": "numeral",
+  "text": "308",
+  "cluster": "1"
+ },
+ {
+  "id": "c1_1773",
+  "label": "serif_upright",
+  "text": "Coppice",
+  "cluster": "1"
+ },
+ {
+  "id": "c0_2426",
+  "label": "road_caps",
+  "text": "RAILWY",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1794",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_1165",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_1122",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c1_1244",
+  "label": "numeral",
+  "text": "3639",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_1545",
+  "label": "abbrev",
+  "text": "L",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_351",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_254",
+  "label": "abbrev",
+  "text": "FP.",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_943",
+  "label": "road_caps",
+  "text": "LOOP",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1558",
+  "label": "abbrev",
+  "text": "L.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_698",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_1770",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1319",
+  "label": "numeral",
+  "text": "2238",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_2182",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_711",
+  "label": "abbrev",
+  "text": "P..",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_587",
+  "label": "abbrev",
+  "text": "FP.",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_2051",
+  "label": "serif_italic",
+  "text": "CANAL###",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_178",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_693",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_387",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_119",
+  "label": "abbrev",
+  "text": "FP",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_1261",
+  "label": "serif_upright",
+  "text": "Works",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1172",
+  "label": "serif_upright",
+  "text": "Plantation",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1523",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_2307",
+  "label": "abbrev",
+  "text": "S",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_153",
+  "label": "numeral",
+  "text": "306",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_2247",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "1"
+ },
+ {
+  "id": "c2_2420",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_284",
+  "label": "serif_italic",
+  "text": "Smy",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_374",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_2128",
+  "label": "numeral",
+  "text": "15",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_1206",
+  "label": "road_caps",
+  "text": "JOINT",
+  "cluster": "0"
+ },
+ {
+  "id": "c2_2418",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c2_1025",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "2"
+ },
+ {
+  "id": "c-1_468",
+  "label": "numeral",
+  "text": "188-7",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_941",
+  "label": "serif_italic",
+  "text": "(Pumping)",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1504",
+  "label": "abbrev",
+  "text": "FP",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_2391",
+  "label": "serif_upright",
+  "text": "Magna",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1831",
+  "label": "numeral",
+  "text": "382.0",
+  "cluster": "1"
+ },
+ {
+  "id": "c0_1463",
+  "label": "serif_italic",
+  "text": "Recreation",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_121",
+  "label": "road_caps",
+  "text": "VALLEY",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_1567",
+  "label": "slab",
+  "text": "The",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_2476",
+  "label": "numeral",
+  "text": "3156",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_842",
+  "label": "serif_italic",
+  "text": "Hill",
+  "cluster": "noise"
+ },
+ {
+  "id": "c2_1254",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "2"
+ },
+ {
+  "id": "c0_1569",
+  "label": "serif_italic",
+  "text": "Course",
+  "cluster": "0"
+ },
+ {
+  "id": "c1_1432",
+  "label": "numeral",
+  "text": "266",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_2433",
+  "label": "abbrev",
+  "text": "B",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_1205",
+  "label": "serif_italic",
+  "text": "Grange",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_1193",
+  "label": "abbrev",
+  "text": "W",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1026",
+  "label": "serif_italic",
+  "text": "Hill",
+  "cluster": "noise"
+ },
+ {
+  "id": "c0_1628",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_2230",
+  "label": "abbrev",
+  "text": "D.",
+  "cluster": "0"
+ },
+ {
+  "id": "c0_1185",
+  "label": "road_caps",
+  "text": "CASTLE",
+  "cluster": "0"
+ },
+ {
+  "id": "c-1_2224",
+  "label": "numeral",
+  "text": "9",
+  "cluster": "noise"
+ },
+ {
+  "id": "c1_94",
+  "label": "serif_upright",
+  "text": "Parly.",
+  "cluster": "1"
+ },
+ {
+  "id": "c-1_2351",
+  "label": "abbrev",
+  "text": "B",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_897",
+  "label": "serif_italic",
+  "text": "Lodge",
+  "cluster": "noise"
+ },
+ {
+  "id": "c-1_1924",
+  "label": "serif_italic",
+  "text": "###ath",
+  "cluster": "noise"
+ },
+ {
+  "id": "c_1245",
+  "label": "serif_upright",
+  "text": "Coppice",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_450",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_963",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2208",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_690",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1243",
+  "label": "numeral",
+  "text": "332",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1089",
+  "label": "serif_italic",
+  "text": "###dley",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_1209",
+  "label": "numeral",
+  "text": "3.0",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_498",
+  "label": "serif_italic",
+  "text": "Corn",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_778",
+  "label": "serif_upright",
+  "text": "Black",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_392",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2443",
+  "label": "numeral",
+  "text": "395",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_1181",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_675",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2278",
+  "label": "abbrev",
+  "text": "Ch",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1928",
+  "label": "abbrev",
+  "text": "W",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1198",
+  "label": "numeral",
+  "text": "398",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_2091",
+  "label": "numeral",
+  "text": "28#",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_1495",
+  "label": "serif_upright",
+  "text": "The",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_1023",
+  "label": "blackletter",
+  "text": "Camp",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1537",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2439",
+  "label": "numeral",
+  "text": "280",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_714",
+  "label": "numeral",
+  "text": "292",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1956",
+  "label": "serif_italic",
+  "text": "Grove",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_730",
+  "label": "slab_italic",
+  "text": "GREAT",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1846",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2198",
+  "label": "serif_italic",
+  "text": "Boat",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_1715",
+  "label": "numeral",
+  "text": "20",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_113",
+  "label": "serif_upright",
+  "text": "Hole",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1437",
+  "label": "serif_upright",
+  "text": "Battlefield",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1068",
+  "label": "numeral",
+  "text": "1944",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_176",
+  "label": "serif_italic",
+  "text": "House",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_282",
+  "label": "serif_upright",
+  "text": "Ternaice",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_2249",
+  "label": "serif_italic",
+  "text": "Stone",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_1978",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1526",
+  "label": "slab_italic",
+  "text": "AND",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1128",
+  "label": "numeral",
+  "text": "91",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_386",
+  "label": "serif_italic",
+  "text": "Sand",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_360",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2131",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_1370",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_408",
+  "label": "ambiguous",
+  "text": "V.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_440",
+  "label": "numeral",
+  "text": "322.9",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_794",
+  "label": "ambiguous",
+  "text": "&",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_572",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_1428",
+  "label": "serif_italic",
+  "text": "Smithy",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1943",
+  "label": "slab_italic",
+  "text": "Acres",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1810",
+  "label": "serif_italic",
+  "text": "River",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_59",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_476",
+  "label": "serif_upright",
+  "text": "Munl.",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_179",
+  "label": "numeral",
+  "text": "215",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_134",
+  "label": "serif_italic",
+  "text": "Tree",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_2392",
+  "label": "numeral",
+  "text": "262",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_2493",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_85",
+  "label": "numeral",
+  "text": "450",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1251",
+  "label": "numeral",
+  "text": "162.",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_913",
+  "label": "serif_italic",
+  "text": "Sharpstone",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_482",
+  "label": "serif_italic",
+  "text": "Exfordsgre",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1071",
+  "label": "serif_upright",
+  "text": "Nurseries",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_831",
+  "label": "caps_outline",
+  "text": "##RINGTON",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_719",
+  "label": "abbrev",
+  "text": "B",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1076",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_18",
+  "label": "serif_upright",
+  "text": "The",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1821",
+  "label": "road_caps",
+  "text": "STRT",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_922",
+  "label": "ambiguous",
+  "text": "P.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2322",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_378",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2226",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1035",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2408",
+  "label": "serif_italic",
+  "text": "The",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_1682",
+  "label": "numeral",
+  "text": "2057",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1494",
+  "label": "abbrev",
+  "text": "BS",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_517",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1220",
+  "label": "numeral",
+  "text": "178.2",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_715",
+  "label": "serif_italic",
+  "text": "Sch.",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1806",
+  "label": "abbrev",
+  "text": "N.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2145",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1045",
+  "label": "abbrev",
+  "text": "P</sup>.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1336",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_64",
+  "label": "numeral",
+  "text": "169",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_330",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_2446",
+  "label": "serif_upright",
+  "text": "Holywell",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_2063",
+  "label": "numeral",
+  "text": "365.0",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1762",
+  "label": "caps_spaced",
+  "text": "Upton",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_88",
+  "label": "numeral",
+  "text": "280",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_2048",
+  "label": "serif_upright",
+  "text": "Coppice",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_2434",
+  "label": "serif_upright",
+  "text": "Nursery",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_2231",
+  "label": "serif_upright",
+  "text": "Dovaston",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_2284",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1022",
+  "label": "numeral",
+  "text": "490",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_1796",
+  "label": "ambiguous",
+  "text": "4",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2363",
+  "label": "ambiguous",
+  "text": "&",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_530",
+  "label": "abbrev",
+  "text": "SW",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_579",
+  "label": "numeral",
+  "text": "279",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_295",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2288",
+  "label": "numeral",
+  "text": "400",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1600",
+  "label": "abbrev",
+  "text": "M.",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_2331",
+  "label": "numeral",
+  "text": "264",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1488",
+  "label": "numeral",
+  "text": "V.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2321",
+  "label": "numeral",
+  "text": "287",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_895",
+  "label": "numeral",
+  "text": "200",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1292",
+  "label": "numeral",
+  "text": "7",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2086",
+  "label": "abbrev",
+  "text": "&",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2016",
+  "label": "numeral",
+  "text": "222",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1435",
+  "label": "numeral",
+  "text": "40",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1702",
+  "label": "abbrev",
+  "text": "G.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_2266",
+  "label": "abbrev",
+  "text": "P",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2064",
+  "label": "serif_upright",
+  "text": "Pool",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_509",
+  "label": "serif_italic",
+  "text": "###e",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_2065",
+  "label": "road_caps",
+  "text": "RAILWAY",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_217",
+  "label": "serif_upright",
+  "text": "By.",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_691",
+  "label": "numeral",
+  "text": "239",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_727",
+  "label": "numeral",
+  "text": "305",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_61",
+  "label": "numeral",
+  "text": "156",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_2444",
+  "label": "numeral",
+  "text": "70.9",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_1759",
+  "label": "ambiguous",
+  "text": "P",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_1159",
+  "label": "ambiguous",
+  "text": "V.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_161",
+  "label": "numeral",
+  "text": "300",
+  "cluster": "~road_caps"
+ },
+ {
+  "id": "c_1554",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_250",
+  "label": "serif_italic",
+  "text": "Schools",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_706",
+  "label": "numeral",
+  "text": "5",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_5",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_987",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1868",
+  "label": "serif_upright",
+  "text": "Bdgs",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_982",
+  "label": "abbrev",
+  "text": "P.",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_1638",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_686",
+  "label": "abbrev",
+  "text": "W>s</sup>",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_783",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1327",
+  "label": "serif_italic",
+  "text": "Poynton",
+  "cluster": "~serif_italic"
+ },
+ {
+  "id": "c_1506",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_160",
+  "label": "abbrev",
+  "text": "Ch.",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_2075",
+  "label": "abbrev",
+  "text": "By.",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_1441",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_50",
+  "label": "abbrev",
+  "text": "F.",
+  "cluster": "~blackletter"
+ },
+ {
+  "id": "c_787",
+  "label": "numeral",
+  "text": "358",
+  "cluster": "~caps_outline"
+ },
+ {
+  "id": "c_2385",
+  "label": "road_caps",
+  "text": "ROMAN",
+  "cluster": "~caps_spaced"
+ },
+ {
+  "id": "c_859",
+  "label": "serif_italic",
+  "text": "Shrewsbury",
+  "cluster": "~engraved_caps"
+ },
+ {
+  "id": "c_806",
+  "label": "serif_upright",
+  "text": "Plantation",
+  "cluster": "~serif_upright"
+ },
+ {
+  "id": "c_1357",
+  "label": "abbrev",
+  "text": "B.",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_222",
+  "label": "slab",
+  "text": "Lower",
+  "cluster": "~slab"
+ },
+ {
+  "id": "c_435",
+  "label": "serif_italic",
+  "text": "(Shrewsbury",
+  "cluster": "~sans"
+ },
+ {
+  "id": "c_1452",
+  "label": "blackletter",
+  "text": "##t",
+  "cluster": "~blackletter"
+ }
+]

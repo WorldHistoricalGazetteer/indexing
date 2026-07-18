@@ -11,6 +11,7 @@ All are redistributable; each renders one or more OS-axis treatments.
 | NimbusRoman-Regular/-Italic.otf | URW base35 (system: `fonts-urw-base35`) | AGPL / URW | Times-like serif (RP) |
 | NimbusSans-Regular.otf | URW base35 | AGPL / URW | Helvetica-like sans |
 | RobotoSlab.ttf | Google Fonts `apache/robotoslab` | Apache-2.0 | **slab / Egyptian (EC)** |
+| ZillaSlab-Italic.ttf / -MediumItalic | Google Fonts `ofl/zillaslab` | OFL-1.1 | **italic slab** (SG-flagged; larger features) |
 | Cinzel.ttf | Google Fonts `ofl/cinzel` | OFL-1.1 | inscriptional / engraved caps |
 | PirataOne.ttf | Google Fonts `ofl/pirataone` | OFL-1.1 | **blackletter (GermanText)** |
 | UnifrakturCook.ttf | Google Fonts `ofl/unifrakturcook` | OFL-1.1 | blackletter |

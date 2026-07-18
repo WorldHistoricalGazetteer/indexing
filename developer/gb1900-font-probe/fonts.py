@@ -27,6 +27,7 @@ CLASSES = {
     "serif_upright":  dict(fonts=["FreeSerif.ttf", "DejaVuSerif.ttf", "NimbusRoman-Regular.otf"], case="any",   fill="solid",   track=0.0),
     "serif_italic":   dict(fonts=["FreeSerifItalic.ttf", "DejaVuSerif-Italic.ttf", "NimbusRoman-Italic.otf"],   case="mixed", fill="solid", track=0.0),
     "slab":           dict(fonts=["RobotoSlab.ttf"],                                              case="any",   fill="solid",   track=0.0),
+    "slab_italic":    dict(fonts=["ZillaSlab-Italic.ttf", "ZillaSlab-MediumItalic.ttf"],          case="any",   fill="solid",   track=0.0),  # italic Egyptian (larger features)
     "sans":           dict(fonts=["FreeSans.ttf", "NimbusSans-Regular.otf"],                      case="any",   fill="solid",   track=0.0),
     "caps_spaced":    dict(fonts=["FreeSerif.ttf", "NimbusRoman-Regular.otf", "FreeSans.ttf"],    case="caps",  fill="solid",   track=0.55),
     "road_caps":      dict(fonts=["FreeSans.ttf", "NimbusSans-Regular.otf", "NimbusRoman-Regular.otf"], case="caps", fill="solid", track=0.18),  # small solid caps: road/street names

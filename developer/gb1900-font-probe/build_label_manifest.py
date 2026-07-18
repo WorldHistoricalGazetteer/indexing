@@ -18,6 +18,7 @@ CLASS_DESC = {
     "serif_upright": "Upright serif, mixed-case — general place names",
     "serif_italic":  "Italic serif — water features, some names",
     "slab":          "Slab / Egyptian (uniform thick strokes)",
+    "slab_italic":   "Italic slab / Egyptian (italic uniform strokes) - larger features",
     "sans":          "Sans-serif",
     "caps_spaced":   "WIDE letter-spaced capitals — parish / township names",
     "road_caps":     "Small solid capitals BETWEEN road casing lines — road/street names",
@@ -27,7 +28,7 @@ CLASS_DESC = {
 }
 REF_WORDS = {
     "serif_upright": ["Coppice", "Woodhall"], "serif_italic": ["Grange", "Meadow"],
-    "slab": ["Whitton", "Bank"], "sans": ["Stanley", "Newmill"],
+    "slab": ["Whitton", "Bank"], "slab_italic": ["Acres", "Great"], "sans": ["Stanley", "Newmill"],
     "caps_spaced": ["LONGMOOR", "PENFIELD"], "road_caps": ["HIGH STREET", "MILL ROAD"],
     "caps_outline": ["COTON", "REDMERE"], "blackletter": ["Priory", "Abbey"],
     "engraved_caps": ["UPTON", "GREAT"],

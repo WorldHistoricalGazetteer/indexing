@@ -1,0 +1,854 @@
+[
+  {
+    "id": "c_1245",
+    "label": "serif_upright",
+    "text": "Coppice",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_450",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_963",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2208",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_690",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1243",
+    "label": "numeral",
+    "text": "332",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1089",
+    "label": "serif_italic",
+    "text": "###dley",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_1209",
+    "label": "numeral",
+    "text": "3.0",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_498",
+    "label": "serif_italic",
+    "text": "Corn",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_778",
+    "label": "serif_upright",
+    "text": "Black",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_392",
+    "label": "numeral",
+    "text": "300",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2443",
+    "label": "numeral",
+    "text": "395",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_1181",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_675",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2278",
+    "label": "abbrev",
+    "text": "Ch",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1928",
+    "label": "abbrev",
+    "text": "W",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1198",
+    "label": "numeral",
+    "text": "398",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_2091",
+    "label": "numeral",
+    "text": "28#",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_1495",
+    "label": "serif_upright",
+    "text": "The",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_1023",
+    "label": "blackletter",
+    "text": "Camp",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1537",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2439",
+    "label": "numeral",
+    "text": "280",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_714",
+    "label": "numeral",
+    "text": "292",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1956",
+    "label": "serif_italic",
+    "text": "Grove",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_730",
+    "label": "ambiguous",
+    "text": "GREAT",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1846",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2198",
+    "label": "serif_italic",
+    "text": "Boat",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_1715",
+    "label": "numeral",
+    "text": "20",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_113",
+    "label": "serif_upright",
+    "text": "Hole",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1437",
+    "label": "serif_upright",
+    "text": "Battlefield",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1068",
+    "label": "numeral",
+    "text": "1944",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_176",
+    "label": "serif_italic",
+    "text": "House",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_282",
+    "label": "serif_upright",
+    "text": "Ternaice",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_2249",
+    "label": "serif_italic",
+    "text": "Stone",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_1978",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1526",
+    "label": "ambiguous",
+    "text": "AND",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1128",
+    "label": "numeral",
+    "text": "91",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_386",
+    "label": "serif_italic",
+    "text": "Sand",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_360",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2131",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_1370",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_408",
+    "label": "ambiguous",
+    "text": "V.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_440",
+    "label": "numeral",
+    "text": "322.9",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_794",
+    "label": "ambiguous",
+    "text": "&",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_572",
+    "label": "numeral",
+    "text": "300",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_1428",
+    "label": "serif_italic",
+    "text": "Smithy",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1943",
+    "label": "ambiguous",
+    "text": "Acres",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1810",
+    "label": "serif_italic",
+    "text": "River",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_59",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_476",
+    "label": "serif_upright",
+    "text": "Munl.",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_179",
+    "label": "numeral",
+    "text": "215",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_134",
+    "label": "serif_italic",
+    "text": "Tree",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_2392",
+    "label": "numeral",
+    "text": "262",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_2493",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_85",
+    "label": "numeral",
+    "text": "450",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1251",
+    "label": "numeral",
+    "text": "162.",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_913",
+    "label": "serif_italic",
+    "text": "Sharpstone",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_482",
+    "label": "serif_italic",
+    "text": "Exfordsgre",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1071",
+    "label": "serif_upright",
+    "text": "Nurseries",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_831",
+    "label": "caps_outline",
+    "text": "##RINGTON",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_719",
+    "label": "abbrev",
+    "text": "B",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1076",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_18",
+    "label": "serif_upright",
+    "text": "The",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1821",
+    "label": "road_caps",
+    "text": "STRT",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_922",
+    "label": "ambiguous",
+    "text": "P.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2322",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_378",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2226",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1035",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2408",
+    "label": "serif_italic",
+    "text": "The",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_1682",
+    "label": "numeral",
+    "text": "2057",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1494",
+    "label": "abbrev",
+    "text": "BS",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_517",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1220",
+    "label": "numeral",
+    "text": "178.2",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_715",
+    "label": "serif_italic",
+    "text": "Sch.",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1806",
+    "label": "abbrev",
+    "text": "N.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2145",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1045",
+    "label": "abbrev",
+    "text": "P</sup>.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1336",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_64",
+    "label": "numeral",
+    "text": "169",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_330",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_2446",
+    "label": "serif_upright",
+    "text": "Holywell",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_2063",
+    "label": "numeral",
+    "text": "365.0",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1762",
+    "label": "caps_spaced",
+    "text": "Upton",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_88",
+    "label": "numeral",
+    "text": "280",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_2048",
+    "label": "serif_upright",
+    "text": "Coppice",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_2434",
+    "label": "serif_upright",
+    "text": "Nursery",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_2231",
+    "label": "serif_upright",
+    "text": "Dovaston",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_2284",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1022",
+    "label": "numeral",
+    "text": "490",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_1796",
+    "label": "ambiguous",
+    "text": "4",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2363",
+    "label": "ambiguous",
+    "text": "&",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_530",
+    "label": "abbrev",
+    "text": "SW",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_579",
+    "label": "numeral",
+    "text": "279",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_295",
+    "label": "numeral",
+    "text": "300",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2288",
+    "label": "numeral",
+    "text": "400",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1600",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_2331",
+    "label": "numeral",
+    "text": "264",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1488",
+    "label": "numeral",
+    "text": "V.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2321",
+    "label": "numeral",
+    "text": "287",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_895",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1292",
+    "label": "numeral",
+    "text": "7",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2086",
+    "label": "abbrev",
+    "text": "&",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2016",
+    "label": "numeral",
+    "text": "222",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1435",
+    "label": "numeral",
+    "text": "40",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1702",
+    "label": "abbrev",
+    "text": "G.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_2266",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2064",
+    "label": "serif_upright",
+    "text": "Pool",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_509",
+    "label": "serif_italic",
+    "text": "###e",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_2065",
+    "label": "road_caps",
+    "text": "RAILWAY",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_217",
+    "label": "serif_upright",
+    "text": "By.",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_691",
+    "label": "numeral",
+    "text": "239",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_727",
+    "label": "numeral",
+    "text": "305",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_61",
+    "label": "numeral",
+    "text": "156",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_2444",
+    "label": "numeral",
+    "text": "70.9",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_1759",
+    "label": "ambiguous",
+    "text": "P",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_1159",
+    "label": "ambiguous",
+    "text": "V.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_161",
+    "label": "numeral",
+    "text": "300",
+    "cluster": "~road_caps"
+  },
+  {
+    "id": "c_1554",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_250",
+    "label": "serif_italic",
+    "text": "Schools",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_706",
+    "label": "numeral",
+    "text": "5",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_5",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_987",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1868",
+    "label": "serif_upright",
+    "text": "Bdgs",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_982",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_1638",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_686",
+    "label": "abbrev",
+    "text": "W>s</sup>",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_783",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1327",
+    "label": "serif_italic",
+    "text": "Poynton",
+    "cluster": "~serif_italic"
+  },
+  {
+    "id": "c_1506",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_160",
+    "label": "abbrev",
+    "text": "Ch.",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_2075",
+    "label": "abbrev",
+    "text": "By.",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_1441",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_50",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "~blackletter"
+  },
+  {
+    "id": "c_787",
+    "label": "numeral",
+    "text": "358",
+    "cluster": "~caps_outline"
+  },
+  {
+    "id": "c_2385",
+    "label": "road_caps",
+    "text": "ROMAN",
+    "cluster": "~caps_spaced"
+  },
+  {
+    "id": "c_859",
+    "label": "serif_italic",
+    "text": "Shrewsbury",
+    "cluster": "~engraved_caps"
+  },
+  {
+    "id": "c_806",
+    "label": "serif_upright",
+    "text": "Plantation",
+    "cluster": "~serif_upright"
+  },
+  {
+    "id": "c_1357",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_222",
+    "label": "slab",
+    "text": "Lower",
+    "cluster": "~slab"
+  },
+  {
+    "id": "c_435",
+    "label": "serif_italic",
+    "text": "(Shrewsbury",
+    "cluster": "~sans"
+  },
+  {
+    "id": "c_1452",
+    "label": "blackletter",
+    "text": "##t",
+    "cluster": "~blackletter"
+  }
+]
