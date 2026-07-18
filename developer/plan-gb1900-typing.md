@@ -1360,6 +1360,18 @@ SG: style+size discriminate across many type classes — worth the full push. Le
 7. **Stronger real-domain CRNN at z17** (higher input res) + size-fused, anchor-rebalanced, per-size-band eval.
 Goal: break the upright/italic + rare-font ceiling that the region-scale z16 proof (§12.4) approached.
 
+### 12.5 RESULT — THE PUSH cracked the rare fonts (2026-07-18, gpu job 3277299)
+z17 + antiquity/urban targeting + auto-labels + real-domain CRNN, LOO on z17 anchors:
+overall **0.653** (z16 was .459). Rare fonts that were impossible are now nailed:
+**blackletter .963** (n=82; was 2 anchors — antiquity targeting on Salisbury Plain/Yorks Wolds +
+z17 resolves the Gothic hand), **caps_spaced .980** (n=51; urban targeting), road_caps .60, abbrev
+.72, numeral .49. serif_upright up to .25. **SG was right — style+size discriminate many type classes.**
+Blackletter→antiquities, spaced-caps→parish/township, etc. now type cleanly. **The ONE holdout:
+upright-vs-italic SERIF place-names ~0.63 within-size-band (2-class) — z17 didn't crack this fine axis.**
+Auto-label haul: blackletter 227 / caps_spaced 897 / road_caps 1219 z17 crowd crops (free).
+Next: anchors for slab/slab_italic/outline/engraved/sans (n≤3); the serif upright/italic axis needs the
+per-glyph same-letter route (`crnn.per_glyph`) — the letter-level approach SG favoured.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
