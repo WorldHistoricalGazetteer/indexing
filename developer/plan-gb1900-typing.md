@@ -1425,6 +1425,19 @@ soft axis. STOP serif method-probing (8 experiments converge).** Everything else
 (antiquities .96, spaced .98, road font-detected .80, water/descriptive-serif .86, abbrev/numeral).
 FINISH LINE = integrate into type_assign v2.
 
+### 13. DELIVERABLE — full-corpus GB-STAMP typing (type_assign v2, 2026-07-18)
+`processing/gb1900/type_assign.py` v2 + `run_typing.py` -> **`/vast/ishi/gb1900/edition/gb_stamp_types.jsonl`
+(all 2,666,341 labels, 417 MB)**. Each record: `{place_id, pin_id, text, types:[[type,prob],...]}` — top-3
+descending, a normalised distribution so consumers pick `types[0]`. Signals (grounded in the font R&D
+§12): checked abbreviations, numerals, road suffix (+ font-detected road_caps .80), antiquity terms
+(blackletter font .96), water/descriptive/named-place head-noun word-semantics (serif axis .71-.86),
+allcaps-multiword->admin/parish (spaced-caps font .98), settlement-name gazetteer. ~61% type to specific
+feature classes; ~39% "settlement" = genuine proper-name places (the ~0.71 settlement-vs-farm residual),
+flagged low-confidence (.45) with alternatives. Top types: settlement 1.04M, footpath 266k, well 184k,
+building 163k, water 147k, road 119k, pump 113k, named_landcover 89k, farm 63k, quarry 44k, admin 43k,
+antiquity 36k, mill/benchmark/church/school/bridge/... Ran in 94s. Refinement path: font-style on the
+settlement residual where crops exist (~0.71). See [[gbstamp_font_typing_pivot]].
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
