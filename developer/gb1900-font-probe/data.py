@@ -63,9 +63,21 @@ def load_tile(tx, ty, tile_dirs):
         _tc[k] = im
     return im
 
-def crop_box(gpoly, tile_dirs, pad=0.12, do_flatten=True):
+def crop_point(lon, lat, tile_dirs, W=280, H=96, zoom=17, do_flatten=True):
+    """Window crop centred on a crowd lon/lat (no box) — for antiquity/urban crowd labels at z17."""
+    import math
+    n = 2 ** zoom
+    xp = (lon + 180) / 360 * n * 256
+    yp = (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * n * 256
+    poly = [(xp - W / 2, yp - H / 2), (xp + W / 2, yp - H / 2), (xp + W / 2, yp + H / 2), (xp - W / 2, yp + H / 2)]
+    return crop_box(poly, tile_dirs, pad=0.0, do_flatten=do_flatten)
+
+def crop_box(gpoly, tile_dirs, pad=0.12, do_flatten=True, scale=1):
     """Assemble covering tiles, (optionally FLATTEN the canvas, tile-scale), crop the box -> 0..1 array.
-    do_flatten=True for the model (canonical paper); False for human-display crops (natural look)."""
+    do_flatten=True for the model (canonical paper); False for human-display crops (natural look).
+    scale=2 maps z16 gpoly coords to z17 tiles (tiles17)."""
+    if scale != 1:
+        gpoly = [(x * scale, y * scale) for x, y in gpoly]
     xs = [p[0] for p in gpoly]; ys = [p[1] for p in gpoly]
     minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
     bw, bh = maxx - minx, maxy - miny
@@ -98,9 +110,10 @@ def to_fixed01(a01):
 def norm1(a01):
     return ((a01 - a01.mean()) / (a01.std() + 1e-5)).astype(np.float32)
 
-def load_real_and_kept(boxes_glob, tile_dirs, n, rng):
+def load_real_and_kept(boxes_glob, tile_dirs, n, rng, scale=1):
     """crop up to n real spotter boxes -> (pool[flattened 0..1 64x192], kept_boxes) ALIGNED by index.
-    Deterministic (seeded shuffle + crop-success skip) so label ids c{cl}_{i} map to pool[i]/kept[i]."""
+    Deterministic (seeded shuffle + crop-success skip) so label ids c{cl}_{i} map to pool[i]/kept[i].
+    scale=2 crops the z16 boxes from z17 tiles (same shuffle order -> ids still map)."""
     import json
     boxes = []
     for f in glob.glob(boxes_glob):
@@ -111,7 +124,7 @@ def load_real_and_kept(boxes_glob, tile_dirs, n, rng):
     pool, kept = [], []
     for b in boxes:
         if len(pool) >= n: break
-        c = crop_box(b["gpoly"], tile_dirs)
+        c = crop_box(b["gpoly"], tile_dirs, scale=scale)
         if c is not None:
             pool.append(to_fixed01(c)); kept.append(b)
     return pool, kept
