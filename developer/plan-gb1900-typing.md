@@ -1183,6 +1183,36 @@ before training); it's a genuine training project (data prep + detector arch + G
 tiles/GPU/VLM infra is already stood up. Net: a **self-improving OS-six-inch text finder**, seeded
 for free by the typing run.
 
+### 12.2 Spotter ↔ crowd transcript reconciliation (SG 2026-07-18)
+Two gaps between MapReader-spotter transcripts and GB1900-crowd transcripts, each a distinct fix.
+Diagnostic first (measure before building): `processing/gb1900/spotter/gap_diagnostic.py` on the
+region set → `gap_report.json` (recall-vs-radius, multiword recovery, text-agreement, spotter-only).
+
+**A. NUMBER gap.**
+- *Crowd-only omissions* (~30% of crowd pins had no matching spotter box under strict
+  point-in-polygon): partly a **detection miss**, partly a **match-radius artifact** — the crowd pin
+  sits at the label *anchor*, offset from the glyphs. Fix: match **nearest box within a radius**
+  (recall-vs-radius quantifies artifact vs genuine miss). Genuine misses keep the crowd pin (no
+  box/style → typed only via checked abbreviations).
+- *Broken multi-word labels*: the spotter emits **one box per word** ("Old","Hall") where the crowd
+  has one label ("Old Hall"). Fix: **merge adjacent spotter boxes** by baseline alignment + inter-word
+  spacing + consistent height/style, then compare the merged string. (The diagnostic estimates how
+  many multiword crowd labels are recoverable by a ≥2-box merge.)
+- *Spotter-only*: new labels the crowd never captured (the ~902 word-labels) → new pins, distinct
+  namespace from `gb:` (our additions, not GB1900 transcriptions).
+
+**B. TEXT-string gap.** For matched pairs, reconcile by fuzzy similarity → exact / minor-variant /
+divergent. **Crowd text authoritative for matched known labels**; spotter+VLM for new labels;
+divergences flagged for HITL. Feeds the DuckDB store: `pins.crowd_text`, `pins.spotter_text` (merged),
+match_status, text_agreement.
+
+**C. Sheet-edge duplicates (later tidying pass, SG 2026-07-18).** OS sheets overlap at their margins,
+so a label near a sheet edge can be detected **twice** (once per adjacent sheet). Detect near-duplicates
+by *matching normalised text + proximity within a sheet-overlap tolerance* and **merge into one label,
+retaining BOTH coordinate sets** as provenance. Same machinery as the multiword merge. Severity depends
+on whether the NLS tileset is a seamless mosaic (each ground point once) or per-sheet with overlap —
+**check the tileset first**; this is a cleanup pass after A/B, not a blocker.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
