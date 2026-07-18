@@ -33,6 +33,14 @@ REF_WORDS = {
     "engraved_caps": ["UPTON", "GREAT"],
 }
 
+def cap_height_m(gpoly):
+    """box height in ground metres (z16 px x ~res(lat)) — the size axis, orthogonal to style."""
+    import math
+    ys = [p[1] for p in gpoly]
+    yy = (min(ys) + max(ys)) / 2 / 256.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * yy / (2**16)))))
+    return (max(ys) - min(ys)) * 40075016.686 * math.cos(math.radians(lat)) / (2**24)
+
 def to_datauri(a01, h=52):
     a = np.clip(a01, 0, 1)
     if a.shape[0] != h:
@@ -94,7 +102,8 @@ def main():
             raw = DATA.crop_box(kept[i]["gpoly"], a.tiles, do_flatten=False)   # natural, for display
             if raw is None: continue
             samples.append(dict(id=f"c{cl}_{i}", text=kept[i].get("text", ""),
-                                cluster=("noise" if cl == -1 else str(cl)), crop=to_datauri(raw)))
+                                cluster=("noise" if cl == -1 else str(cl)),
+                                cap_h_m=round(cap_height_m(kept[i]["gpoly"]), 1), crop=to_datauri(raw)))
     rng.shuffle(samples)  # avoid the labeller anchoring on cluster order (cluster still shown as hint)
 
     refs = {c: [clean_render(w, c, np.random.RandomState(k)) for k, w in enumerate(REF_WORDS[c])]

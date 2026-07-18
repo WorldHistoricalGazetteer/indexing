@@ -219,13 +219,20 @@ the *identification/classification* isn't reliable enough to ship:
 **Working store: DuckDB (DECISION SG 2026-07-18).** Retire the loose-JSONL-per-stage +
 `reconcile.py` join model. The consolidated dataset is **one DuckDB file** keyed on `pin_id`:
 ```
-pins(pin_id PK, lon, lat, spotter_text, os_style, type_aat,
+pins(pin_id PK, lon, lat, spotter_text, os_style, size_band, os_case, type_aat,
      admin_nation, admin_district, admin_parish, hc_county,
      date_start, date_end, is_named, tile_id, ...)  -- resolved per-pin state
-spotter(pin_id, box_idx, x0,y0,x1,y1, text, conf)  -- 0..N MapReader boxes/pin (the box authority)
+spotter(pin_id, box_idx, x0,y0,x1,y1, text, conf, cap_height_m)  -- 0..N MapReader boxes/pin (box authority)
 tiles(tile_id PK, tile_x, tile_y, paper_level, grad_x, grad_y,
       is_colour, sheet_id, edition, ...)            -- per-tile/sheet imagery metadata
 ```
+- **OS type = STYLE × SIZE × CASE — three orthogonal, independently-measured axes (SG 2026-07-18).**
+  *style* ← the font embedding (size-blind by height-normalisation; label style only, size needs no
+  human labelling); *size* ← `spotter.cap_height_m`, the box height in **ground metres** (z16 px ×
+  ~1.45 m/px), banded into `size_band` (small/med/large — natural gaps in the data, e.g. serif_italic
+  splits ~21–28 m standard vs 58–102 m large); *case* ← `allcaps`/rendering. Verified on the first
+  HITL batch: within one style, cap-height is clearly multi-modal (the "###ath" large-italic that has
+  the same style but a bigger size). Size also aids disambiguation (large caps → road/parish).
 - **`tiles` = imagery-metadata / calibration layer (different grain from `pins`).** Holds the
   per-sheet/tile **paper-tone flat-field parameters** (compact: paper level + linear/low-order gradient,
   NOT rasters — *params-not-fragments*), computed once in a preprocessing pass and read-many by the
