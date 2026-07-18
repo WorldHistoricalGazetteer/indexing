@@ -13,8 +13,16 @@ refinement where crops exist.
 as a normalised distribution so consumers can pick types[0] as the best guess.
 """
 from __future__ import annotations
-import re
+import re, json, os
 from collections import defaultdict
+
+# authoritative OS abbreviations (Richard Oliver / NLS), normalised key -> [(type, weight), ...]
+# — ambiguity preserved as a weighted distribution (BR = benchmark/bridle_road/bridge/brow; P = pump/post/pole).
+try:
+    OS_ABBREV = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "os_abbrev_types.json")))
+except Exception:
+    OS_ABBREV = {}
+ABBREV_BASE = 0.85   # mass for "this is a (checked) OS abbreviation", split by the meaning weights
 
 # checked abbreviations, matched on a NORMALISED form (dots/spaces/case/trailing-plural stripped)
 # so "F.P", "F.P.", "FP", "F.Ps" all match. -> (type, confidence).
@@ -30,8 +38,8 @@ ABBREV_N = {
     "TP": ("signpost", .6), "GPO": ("guidepost", .7), "WS": ("well", .8), "PS": ("pump", .8),
     "VIC": ("vicarage", .85), "FS": ("flagstaff", .6), "SPR": ("spring", .8),
 }
-BOUNDARY = re.compile(r"\b(By\.?|Bdy|Boundary|Bound\.|Co\. ?Div|Div\.|R\.D\.|U\.D\.|C\.?P\.?|Par\.? ?Bdy|Ward Bdy|"
-                      r"Detached|Union|Wapentake|Hundred|Liberty|Twp)\b")
+BOUNDARY = re.compile(r"(\bBy\.|\bBdy\b|Boundary|Bound\.|Co\.? ?Div|\bDiv\.|R\.D\.|U\.D\.|\bC\.P\.|"
+                      r"Par\.? ?Bdy|Ward Bdy|Detached|Union &|Wapentake|Hundred|Liberty)", re.I)
 TIDAL = re.compile(r"\b(H\.?W\.?M|L\.?W\.?M|High Water|Low Water|Mean High|Ordinary Tides|Saltings|Foreshore|Mud|Sand)\b", re.I)
 ABBREV = {}  # legacy name kept; see ABBREV_N
 KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
@@ -85,10 +93,12 @@ NAMED_PLACE = {"coppice", "plantation", "nursery", "nurseries", "firs", "covert"
                "spinney", "wood", "grove", "common", "moor", "heath", "park"}
 
 def _abbrev_lookup(t):
-    x = re.sub(r"[.\s]", "", t).upper()
-    if x in ABBREV_N: return ABBREV_N[x]                 # full form first (BS=boundary_stone, MS=milestone)
-    if len(x) > 2 and x.endswith("S") and x[:-1] in ABBREV_N:  # then plural (FPs->FP)
-        return ABBREV_N[x[:-1]]
+    """-> weighted [(type, weight), ...] from the authoritative OS list, or None. Matches the
+    normalised mark (dots/spaces/slashes stripped, uppercase) with a plural fallback (FPs->FP)."""
+    x = re.sub(r"[.\s/]", "", t).upper()
+    if x in OS_ABBREV: return OS_ABBREV[x]
+    if len(x) > 2 and x.endswith("S") and x[:-1] in OS_ABBREV: return OS_ABBREV[x[:-1]]
+    if x in ABBREV_N: return [[ABBREV_N[x][0], 1.0]]     # hand fallback (unlikely needed)
     return None
 
 def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
@@ -101,7 +111,9 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
         s["spot_height_or_value"] += .92
     if len(al) <= 4:                                   # short marks only (avoid matching words)
         hit = _abbrev_lookup(t)
-        if hit: s[hit[0]] += hit[1]
+        if hit:
+            for ty, w in hit:                          # ambiguous marks -> weighted distribution
+                s[ty] += w * ABBREV_BASE
     if TIDAL.search(t): s["tidal_coastal"] += .85
     if BOUNDARY.search(t) and not ROAD.search(t): s["boundary"] += .82
     if ROAD.search(t):
