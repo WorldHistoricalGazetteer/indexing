@@ -1484,3 +1484,16 @@ settlement residual where crops exist (~0.71). See [[gbstamp_font_typing_pivot]]
   is non-commercial-only + non-redistributable, attribution required.
 - CRC conventions: `sbatch -M htc --account=ishi` (or `-M gpu`), conda before
   `set -u`, no jobs on login nodes, everything on `/vast`.
+
+### 13a. Font-style refinement of the settlement residual + abbrev-lexicon fix (2026-07-18)
+Reviewing the v2 output exposed that the "settlement" residual was mostly MISSED abbreviations +
+punctuation/plural variants (F.B.=footbridge 63k, S.P/G.P sign/guidepost, F.P no-trailing-dot bug losing
+17k footpaths, M.S/B.S/M.P, boundary "U.D. By.", tidal H.W.M., Waterfall/Springs/Tank, quarries/shafts).
+Fixed type_assign v2 with abbrev NORMALISATION (dots/plurals) + missing marks + boundary/tidal/
+quarry_or_mine/expanded-water: settlement residual **49%→25%** (~75% now specific feature classes),
+full-corpus, high-confidence. Then font-style refinement (refine_settlement.py) on the CLEAN residual in
+the z17-covered blocks: 1,352 refined, **198 flipped italic→building** (farm/house), 1,154 confirmed
+settlement (upright); merged into gb_stamp_types.jsonl (flagged `font_refined`). Font-refinement coverage
+is the z17 blocks only (~0.2% of residual); full-corpus font-refinement needs crops at scale (z16 full-GB
+available, but the serif signal is soft ~0.71 and z16-mismatched) — a targeted follow-up, not a blocker.
+Minor remaining v2 gaps: Vicarage/Rectory as full words, "(P.H.)" in parentheses, bare "Stone(s)".
