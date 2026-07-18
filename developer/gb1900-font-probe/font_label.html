@@ -1,3 +1,4 @@
+<meta charset="utf-8">
 <title>GB1900 font-style labelling</title>
 <style>
   :root{--bg:#f4f2ec;--fg:#22201b;--mut:#7a756a;--card:#fff;--line:#d9d4c8;--accent:#8a3324;--done:#2e6b3e}
@@ -27,7 +28,7 @@
 </style>
 <div id="key"><h2>Reference key</h2><div id="refs"></div>
   <h2 style="margin-top:14px">Keys</h2>
-  <div class="hint">Click a crop (or ←/→) to select it, then press the key for its style. Auto-advances.
+  <div class="hint">Click a crop (or &larr;/&rarr;) to select it, then press the key for its style. Auto-advances.
   Click a reference row to label the selected crop.</div>
 </div>
 <main>
@@ -35,7 +36,7 @@
     <span id="prog">0 / 0</span>
     <label>show <select id="filter"><option value="all">all</option><option value="todo">unlabelled</option></select></label>
     <label>cluster <select id="cfilter"></select></label>
-    <label>bulk unlabelled in cluster → <select id="bulk"></select></label>
+    <label>bulk unlabelled in cluster &rarr; <select id="bulk"></select></label>
     <button id="applybulk">apply</button>
     <button id="export">Export JSON</button>
     <label style="cursor:pointer">Import <input id="import" type="file" accept=".json" style="display:none"></label>
@@ -67,7 +68,7 @@ M.classes.forEach((c,i)=>{
 const clusters=[...new Set(M.samples.map(s=>s.cluster))].sort();
 const cf=document.getElementById('cfilter'), bk=document.getElementById('bulk');
 cf.innerHTML='<option value="all">all</option>'+clusters.map(c=>`<option>${c}</option>`).join('');
-bk.innerHTML='<option value="">— cluster —</option>'+clusters.map(c=>`<option>${c}</option>`).join('');
+bk.innerHTML='<option value="">&mdash; cluster &mdash;</option>'+clusters.map(c=>`<option>${c}</option>`).join('');
 const bulkClass=document.createElement('select');
 bulkClass.innerHTML=M.classes.map(c=>`<option>${c}</option>`).join('');
 document.getElementById('applybulk').before(bulkClass);
@@ -83,7 +84,7 @@ function render(){
     const lb=labels[s.id];
     const d=document.createElement('div');
     d.className='card'+(lb?' done':'')+(vi===active?' active':'');
-    d.innerHTML=`<img src="${s.crop}"><div class="t"><span>${s.text||'·'}</span><span>${s.cluster}</span></div>
+    d.innerHTML=`<img src="${s.crop}"><div class="t"><span>${s.text||'-'}</span><span>${s.cluster}</span></div>
       <div class="lb" style="color:${lb?COL[lb]||'':''}">${lb||''}</div>`;
     d.onclick=()=>{active=vi;render();};
     g.appendChild(d);
@@ -112,7 +113,7 @@ document.getElementById('applybulk').onclick=()=>{
   const c=bk.value, cls=bulkClass.value; if(!c)return;
   M.samples.filter(s=>s.cluster===c&&!labels[s.id]).forEach(s=>labels[s.id]=cls);
   localStorage.setItem(LS,JSON.stringify(labels));
-  document.getElementById('msg').textContent=`bulk-labelled cluster ${c} → ${cls}`;render();
+  document.getElementById('msg').textContent=`bulk-labelled cluster ${c} -> ${cls}`;render();
 };
 document.getElementById('export').onclick=()=>{
   const out=M.samples.filter(s=>labels[s.id]).map(s=>({id:s.id,label:labels[s.id],text:s.text,cluster:s.cluster}));
