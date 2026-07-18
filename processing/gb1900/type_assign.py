@@ -16,14 +16,23 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 
-# checked abbreviations -> (type, confidence). Only fire when the transcription matches exactly.
-ABBREV = {
-    "F.P.": ("footpath", .95), "B.M.": ("benchmark", .95), "S.P.": ("signpost", .9),
-    "P.O.": ("post_office", .9), "P.H.": ("public_house", .9), "Ch.": ("church", .85),
-    "Sch.": ("school", .9), "Sp.": ("spring", .85), "Fm.": ("farm", .85), "Ho.": ("house", .8),
-    "Mon.": ("monument", .85), "W": ("well", .8), "P": ("pump", .8), "Sm.": ("smithy", .8),
-    "Rectory": ("rectory", .85), "Vicarage": ("vicarage", .85),
+# checked abbreviations, matched on a NORMALISED form (dots/spaces/case/trailing-plural stripped)
+# so "F.P", "F.P.", "FP", "F.Ps" all match. -> (type, confidence).
+ABBREV_N = {
+    "FP": ("footpath", .95), "FB": ("footbridge", .95), "BM": ("benchmark", .95),
+    "SP": ("signpost", .9), "GP": ("guidepost", .9), "BS": ("boundary_stone", .9),
+    "MS": ("milestone", .9), "MP": ("milepost", .9), "BP": ("boundary_post", .85),
+    "LB": ("letter_box", .85), "PO": ("post_office", .9), "PH": ("public_house", .9),
+    "PC": ("post_office", .6), "PP": ("pump", .7), "SB": ("signal_box", .6),
+    "W": ("well", .85), "P": ("pump", .8), "CH": ("church", .8), "CHAP": ("chapel", .85),
+    "SCH": ("school", .9), "SMY": ("smithy", .85), "SM": ("smithy", .8), "MON": ("monument", .85),
+    "FM": ("farm", .85), "HO": ("house", .8), "STA": ("station", .7), "SPRS": ("spring", .8),
+    "TP": ("signpost", .6), "GPO": ("guidepost", .7),
 }
+BOUNDARY = re.compile(r"\b(By\.?|Bdy|Boundary|Bound\.|Co\. ?Div|Div\.|R\.D\.|U\.D\.|C\.?P\.?|Par\.? ?Bdy|Ward Bdy|"
+                      r"Detached|Union|Wapentake|Hundred|Liberty|Twp)\b")
+TIDAL = re.compile(r"\b(H\.?W\.?M|L\.?W\.?M|High Water|Low Water|Mean High|Ordinary Tides|Saltings|Foreshore|Mud|Sand)\b", re.I)
+ABBREV = {}  # legacy name kept; see ABBREV_N
 KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
     "church": ("church", .88), "chapel": ("chapel", .85), "school": ("school", .88),
     "mill": ("mill", .82), "farm": ("farm", .82), "bridge": ("bridge", .85), "quarry": ("quarry", .85),
@@ -38,15 +47,22 @@ ANTIQ = re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Ba
                    r"Standing Stone|Stone Circle|Hut Circle|Hut Circles|Stone Row|Kistvaen|Fort \(|"
                    r"\(Site of\)|\(Remains of\)|Battlefield|Moat|Antiquities|Sepulchral)\b", re.I)
 ROAD = re.compile(r"\b(ROAD|STREET|LANE|TERRACE|AVENUE|WAY|WALK|ROW)\b", re.I)
-WATER = {"well", "spring", "ford", "weir", "brook", "pond", "pool", "marsh", "moss", "river",
-         "canal", "reservoir", "drain", "sluice", "lake", "mere", "burn", "beck", "dam"}
+WATER = {"well", "spring", "springs", "ford", "weir", "brook", "pond", "ponds", "pool", "marsh", "moss",
+         "river", "canal", "reservoir", "drain", "sluice", "lake", "mere", "burn", "beck", "dam",
+         "waterfall", "tank", "sinks", "rises", "issues", "culvert", "fountain", "trough", "lock"}
+MINE = {"quarry", "quarries", "shaft", "shafts", "pit", "pits", "spoil", "level", "adit", "mine",
+        "mines", "colliery", "gravel", "clay", "sandpit"}
 DESCRIPTIVE = {"house", "cottage", "cottages", "hall", "lodge", "grange", "barn", "villa", "pit",
                "shaft", "works", "smithy", "brewery", "kiln", "forge", "foundry", "yard", "green"}
 NAMED_PLACE = {"coppice", "plantation", "nursery", "nurseries", "firs", "covert", "gorse", "belt",
                "spinney", "wood", "grove", "common", "moor", "heath", "park"}
 
-def _norm_abbrev(t):
-    return t.strip()
+def _abbrev_lookup(t):
+    x = re.sub(r"[.\s]", "", t).upper()
+    if x in ABBREV_N: return ABBREV_N[x]                 # full form first (BS=boundary_stone, MS=milestone)
+    if len(x) > 2 and x.endswith("S") and x[:-1] in ABBREV_N:  # then plural (FPs->FP)
+        return ABBREV_N[x[:-1]]
+    return None
 
 def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
     t = (text or "").strip(); low = t.lower(); al = [c for c in t if c.isalpha()]
@@ -56,8 +72,11 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
         return [("illegible", 1.0)]
     if tier0_rule == "numeric" or (t and re.fullmatch(r"[\d.,\-]+", t)):
         s["spot_height_or_value"] += .92
-    if _norm_abbrev(t) in ABBREV:
-        ty, c = ABBREV[_norm_abbrev(t)]; s[ty] += c
+    if len(al) <= 4:                                   # short marks only (avoid matching words)
+        hit = _abbrev_lookup(t)
+        if hit: s[hit[0]] += hit[1]
+    if TIDAL.search(t): s["tidal_coastal"] += .85
+    if BOUNDARY.search(t) and not ROAD.search(t): s["boundary"] += .82
     if ROAD.search(t):
         s["road"] += .9
     if ANTIQ.search(t) and not ROAD.search(t):
@@ -67,6 +86,8 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
     words = re.findall(r"[a-z]+", low); head = words[-1] if words else ""   # head noun = last word
     if head in WATER: s["water_feature"] += .8
     elif any(w in WATER for w in words): s["water_feature"] += .6
+    if head in MINE: s["quarry_or_mine"] += .82
+    elif any(w in MINE for w in words): s["quarry_or_mine"] += .6
     if head in DESCRIPTIVE: s["building_or_feature"] += .72                 # "Bankfield House" -> house
     elif any(w in DESCRIPTIVE for w in words): s["building_or_feature"] += .58
     if head in NAMED_PLACE: s["named_landcover"] += .72                     # "Oak Coppice" -> coppice
