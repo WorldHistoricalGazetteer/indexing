@@ -1346,6 +1346,20 @@ confidence-gated STYLE ENRICHMENT** (best style signal we have — serif_italic 
 water/feature); the **CRNN OCR is independently valuable** (feeds §12 untranscribed-discovery + §12.3
 roads-GIS). Invest in the fine-axis levers only if that distinction is genuinely required.
 
+### 12.5 THE PUSH — full-lever font-style+size drive (SG 2026-07-18, autonomous)
+SG: style+size discriminate across many type classes — worth the full push. Levers, all deployed:
+1. **z17** (native ceiling; ~0.7 m/px) — real serif/stroke detail, not upscaled. z17 CONFIRMED on NLS S3.
+2. **Target rare-font areas by crowd transcript** — 50,099 antiquity labels (Tumulus/Cairn/Camp/
+   Earthwork/Cross/Castle/"Site of" — the Gothic antiquities hand); densest 8×8 z16 blocks (top:
+   4083,2619 ≈ N.Yorks Wolds) → fetch z17 there (`tiles17/`). Crowd gives coords+text for free →
+   crop at those points (no spotter needed) = auto-labelled rare-font candidates.
+3. **Wider multi-region harvest** across the targeted blocks + the original region.
+4. **Coverage curation** — letter×font×size matrix; per-glyph exemplars (`crnn.per_glyph`).
+5. **Auto-labels** — road/numeral/abbrev from text + antiquity-keyword → blackletter weak-label.
+6. **Targeted HITL** for the rare fonts once surfaced (prep batch for SG's return).
+7. **Stronger real-domain CRNN at z17** (higher input res) + size-fused, anchor-rebalanced, per-size-band eval.
+Goal: break the upright/italic + rare-font ceiling that the region-scale z16 proof (§12.4) approached.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
