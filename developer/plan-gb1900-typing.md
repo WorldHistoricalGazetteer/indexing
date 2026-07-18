@@ -221,9 +221,17 @@ the *identification/classification* isn't reliable enough to ship:
 ```
 pins(pin_id PK, lon, lat, spotter_text, os_style, type_aat,
      admin_nation, admin_district, admin_parish, hc_county,
-     date_start, date_end, is_named, ...)          -- resolved per-pin state
+     date_start, date_end, is_named, tile_id, ...)  -- resolved per-pin state
 spotter(pin_id, box_idx, x0,y0,x1,y1, text, conf)  -- 0..N MapReader boxes/pin (the box authority)
+tiles(tile_id PK, tile_x, tile_y, paper_level, grad_x, grad_y,
+      is_colour, sheet_id, edition, ...)            -- per-tile/sheet imagery metadata
 ```
+- **`tiles` = imagery-metadata / calibration layer (different grain from `pins`).** Holds the
+  per-sheet/tile **paper-tone flat-field parameters** (compact: paper level + linear/low-order gradient,
+  NOT rasters — *params-not-fragments*), computed once in a preprocessing pass and read-many by the
+  font-embedding stage / HITL crop builder / any re-cropping. `pins`/`spotter` carry `tile_id` and
+  **join** to it at extraction time to divide out illumination. Same table later carries colour-vs-mono,
+  sheet edition/date, and the sheet-overlap extents for the §12.2C edge-duplicate merge.
 - **Why (over Parquet-join-on-read):** the pipeline is idempotent-per-`pin_id`-patch / never-re-run,
   so *resume/residual* ("which pins still lack a spotter box / a read?") and *HITL corrections* must
   be one-line SQL against a materialized table, not an anti-join across accumulating per-stage
