@@ -55,14 +55,24 @@ KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
     "flag staff": ("flagstaff", .82), "flagstaff": ("flagstaff", .85), "boat house": ("boathouse", .82),
     "lifeboat": ("lifeboat_station", .85), "coastguard": ("coastguard", .85),
     "liable to flood": ("flood_land", .8), "waterfall": ("water_feature", .82),
+    "jetty": ("jetty", .85), "breakwater": ("breakwater", .85), "landing stage": ("landing_stage", .85),
+    "ferry": ("ferry", .82), "filter bed": ("waterworks", .82), "hydraulic ram": ("waterworks", .82),
+    "gasometer": ("gasworks", .85), "gas works": ("gasworks", .85), "malthouse": ("works", .8),
+    "malt house": ("works", .8), "brick field": ("brickworks", .82), "brickworks": ("brickworks", .85),
+    "brick works": ("brickworks", .85), "reading room": ("reading_room", .82), "pound": ("pound", .72),
+    "boat ho": ("boathouse", .82), "shake hole": ("natural_feature", .8), "swallow hole": ("natural_feature", .82),
+    "golf": ("recreation_ground", .82), "football": ("recreation_ground", .82), "beacon": ("beacon", .78),
+    "sunday sch": ("school", .85), "sun. sch": ("school", .85), "board sch": ("school", .85),
+    "gravel pit": ("quarry_or_mine", .85), "sand pit": ("quarry_or_mine", .85),
 }
 TREE = {"oak", "ash", "elm", "beech", "yew", "tree", "trees", "poplar", "sycamore", "chestnut", "thorn"}
 STONE = {"stone", "stones"}
 ANTIQ = re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Barrow|Barrows|Motte|"
                    r"Cist|Enclosure|Entrenchment|Cross|Castle|Abbey|Priory|Roman|British|Saxon|Cromlech|"
                    r"Dolmen|Menhir|Cromlechs|Rath|Dun|Fogou|Souterrain|Hillfort|Chambered|Tumular|"
-                   r"Standing Stone|Stone Circle|Hut Circle|Hut Circles|Stone Row|Kistvaen|Fort \(|"
-                   r"\(Site of\)|\(Remains of\)|Battlefield|Moat|Antiquities|Sepulchral)\b", re.I)
+                   r"Standing Stone|Stone Circle|Hut Circle|Hut Circles|Stone Row|Kistvaen|Fort|Forts|"
+                   r"\(Site of\)|\(Remains of\)|Battlefield|Moat|Antiquities|Sepulchral|Currick|Beacon Hill|"
+                   r"Old Church|Chambered Cairn|Long Barrow|Round Barrow|Cup Marked|Inscribed Stone)\b", re.I)
 ROAD = re.compile(r"\b(ROAD|STREET|LANE|TERRACE|AVENUE|WAY|WALK|ROW)\b", re.I)
 WATER = {"well", "spring", "springs", "ford", "weir", "brook", "pond", "ponds", "pool", "marsh", "moss",
          "river", "canal", "reservoir", "drain", "sluice", "lake", "mere", "burn", "beck", "dam",
@@ -101,16 +111,18 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
     for kw, (ty, c) in KEYWORD.items():
         if kw in low: s[ty] += c
     words = re.findall(r"[a-z]+", low); head = words[-1] if words else ""   # head noun = last word
-    if head in WATER: s["water_feature"] += .8
+    def hn(S):   # plural-aware head-noun membership (fords->ford, weirs->weir, lodges->lodge)
+        return head in S or (len(head) > 3 and head.endswith("s") and head[:-1] in S)
+    if hn(WATER): s["water_feature"] += .8
     elif any(w in WATER for w in words): s["water_feature"] += .6
-    if head in MINE: s["quarry_or_mine"] += .82
+    if hn(MINE): s["quarry_or_mine"] += .82
     elif any(w in MINE for w in words): s["quarry_or_mine"] += .6
-    if head in DESCRIPTIVE: s["building_or_feature"] += .72                 # "Bankfield House" -> house
+    if hn(DESCRIPTIVE): s["building_or_feature"] += .72                     # "Bankfield House" -> house
     elif any(w in DESCRIPTIVE for w in words): s["building_or_feature"] += .58
-    if head in NAMED_PLACE: s["named_landcover"] += .72                     # "Oak Coppice" -> coppice
+    if hn(NAMED_PLACE): s["named_landcover"] += .72                         # "Oak Coppice" -> coppice
     elif any(w in NAMED_PLACE for w in words): s["named_landcover"] += .58
-    if head in TREE and len(words) <= 2: s["tree"] += .7                    # "Oak", "Ash Tree"
-    if head in STONE: s["stone_marker"] += .62                              # Stone/Stones (boundary/mile/standing)
+    if hn(TREE) and len(words) <= 2: s["tree"] += .7                        # "Oak", "Ash Tree", "Oaks"
+    if hn(STONE): s["stone_marker"] += .62                                  # Stone/Stones
     if head in ("post", "posts"): s["signpost"] += .6
     if head in ("mound", "mounds", "moat"): s["antiquity"] += .7
     if allcaps and " " in t and len(al) >= 4 and not ROAD.search(t): s["admin_or_parish"] += .78  # spaced caps (font .98)
