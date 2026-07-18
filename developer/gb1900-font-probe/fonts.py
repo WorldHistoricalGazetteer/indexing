@@ -29,6 +29,7 @@ CLASSES = {
     "slab":           dict(fonts=["RobotoSlab.ttf"],                                              case="any",   fill="solid",   track=0.0),
     "sans":           dict(fonts=["FreeSans.ttf", "NimbusSans-Regular.otf"],                      case="any",   fill="solid",   track=0.0),
     "caps_spaced":    dict(fonts=["FreeSerif.ttf", "NimbusRoman-Regular.otf", "FreeSans.ttf"],    case="caps",  fill="solid",   track=0.55),
+    "road_caps":      dict(fonts=["FreeSans.ttf", "NimbusSans-Regular.otf", "NimbusRoman-Regular.otf"], case="caps", fill="solid", track=0.18),  # small solid caps: road/street names
     "caps_outline":   dict(fonts=["FreeSerif.ttf", "NimbusRoman-Regular.otf"],                    case="caps",  fill="outline", track=0.15),
     "blackletter":    dict(fonts=["PirataOne.ttf", "UnifrakturCook.ttf"],                         case="mixed", fill="solid",   track=0.0),
     "engraved_caps":  dict(fonts=["Cinzel.ttf"],                                                  case="caps",  fill="solid",   track=0.10),

@@ -40,8 +40,27 @@ def _add_linework(out, rng):
                     out[y, x] = min(out[y, x], dark)
     return out
 
-def composite(ink, bg, rng):
-    """ink: HxW alpha (0..1); bg: pre-flattened grayscale (~1=paper). -> 64xW grayscale."""
+def _add_road_casing(out, oy, ih, rng):
+    """Two roughly-parallel lines flanking the text band = the road casing a road name sits in.
+    A strong contextual cue for road-name labels (small solid caps)."""
+    H, W = out.shape
+    dark = rng.uniform(0.12, 0.38); w = rng.uniform(0.5, 1.3)
+    A = rng.uniform(0, 0.04) * H; period = rng.uniform(W, 2.2 * W); ph = rng.uniform(0, 6.283)
+    slope = rng.uniform(-0.08, 0.08)
+    curve = slope * (np.arange(W) - W / 2) + A * np.sin(2 * np.pi * np.arange(W) / period + ph)
+    for base in (oy - rng.uniform(1, 4), oy + ih + rng.uniform(1, 4)):   # above + below the text
+        ys = base + curve
+        for x in range(W):
+            y0 = int(ys[x])
+            for dy in range(-int(w), int(w) + 1):
+                y = y0 + dy
+                if 0 <= y < H:
+                    out[y, x] = min(out[y, x], dark)
+    return out
+
+def composite(ink, bg, rng, road=False):
+    """ink: HxW alpha (0..1); bg: pre-flattened grayscale (~1=paper). -> 64xW grayscale.
+    road=True adds the parallel road-casing lines a road name sits between (context cue)."""
     if rng.random() < 0.8:
         ink = _rot(ink, rng.uniform(-4, 4))
     ih = max(1, ink.shape[0])
@@ -57,14 +76,17 @@ def composite(ink, bg, rng):
 
     H, W = TARGET_H, ink.shape[1]
     canvas = _bg_patch(bg, H, W + 8, rng)
-    oy = rng.randint(0, max(1, H - ink.shape[0])); ox = 4
+    ink_h = ink.shape[0]
+    oy = rng.randint(0, max(1, H - ink_h)); ox = 4
     a = np.zeros((H, canvas.shape[1]), np.float32)
-    a[oy:oy + ink.shape[0], ox:ox + W] = np.clip(ink, 0, 1)
+    a[oy:oy + ink_h, ox:ox + W] = np.clip(ink, 0, 1)
 
     ink_val = rng.uniform(0.08, 0.32)                                # ink darkness (never pure black)
     a = a * rng.uniform(0.60, 0.95)
     out = canvas * (1 - a) + ink_val * a
-    if rng.random() < 0.6:
+    if road:                                                         # road-name casing (context)
+        out = _add_road_casing(out, oy, ink_h, rng)
+    elif rng.random() < 0.6:
         out = _add_linework(out, rng)
     out = out + rng.normal(0, rng.uniform(0.005, 0.03), out.shape)   # fine speckle
     return np.clip(out, 0, 1).astype(np.float32)

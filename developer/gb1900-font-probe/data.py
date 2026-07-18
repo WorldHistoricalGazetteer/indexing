@@ -33,7 +33,8 @@ def load_bg_pool(tile_dirs, limit=400, rng=None):
 def make_sample(rng, bg_pool):
     cls = F.CLASS_NAMES[rng.randint(len(F.CLASS_NAMES))]
     ink = F.render_ink(F.random_text(rng), F.CLASSES[cls], rng)
-    gray = D.to_fixed(D.composite(ink, bg_pool[rng.randint(len(bg_pool))], rng), 192)
+    road = (cls == "road_caps") and (rng.random() < 0.85)   # road names sit between casing lines
+    gray = D.to_fixed(D.composite(ink, bg_pool[rng.randint(len(bg_pool))], rng, road=road), 192)
     return gray, F.CLASS_IDX[cls]
 
 def _norm_batch(xs):

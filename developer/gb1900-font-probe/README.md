@@ -8,8 +8,9 @@ spaced caps, blackletter)? If yes, we retire the VLM for typing and cluster the 
 ## Method
 
 1. **Synthetic supervised-contrastive pretrain** (`fonts.py` → `degrade.py` → `data.py` → `train.py`).
-   Eight rendering recipes span the OS axes (serif upright/italic, slab, sans, spaced caps, outline
-   caps, blackletter, engraved caps). **Every class is rendered with many random words/abbreviations**,
+   Nine rendering recipes span the OS axes (serif upright/italic, slab, sans, spaced caps, **road caps**
+   — small solid caps rendered *between parallel road-casing lines*, the real OS road-name context —
+   outline caps, blackletter, engraved caps). **Every class is rendered with many random words/abbrev**,
    so the contrastive label is *style, never content* — this is what forces the encoder to encode the
    typographic "hand" and ignore which characters are present. Ink is composited onto **real cached OS
    tiles** with soft edges, variable opacity, broken strokes and foxing (the boundary-probe domain-gap
