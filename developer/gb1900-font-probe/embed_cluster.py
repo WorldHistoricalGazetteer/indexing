@@ -20,42 +20,7 @@ from sklearn.metrics import silhouette_score
 import data as DATA, fonts as F
 from model import StyleEncoder
 
-# ---- crop real spotter boxes from cached tiles (gpoly = global z16 pixels) ----
-_tc = {}
-def load_tile(tx, ty, tile_dirs):
-    k = (tx, ty)
-    if k in _tc:
-        return _tc[k]
-    im = None
-    for base in tile_dirs:
-        p = os.path.join(base, str(tx), str(ty) + ".png")
-        if os.path.exists(p):
-            try: im = Image.open(p).convert("L"); break
-            except Exception: im = None
-    if len(_tc) < 800:
-        _tc[k] = im
-    return im
-
-def crop_box(gpoly, tile_dirs, pad=0.12):
-    xs = [p[0] for p in gpoly]; ys = [p[1] for p in gpoly]
-    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
-    bw, bh = maxx - minx, maxy - miny
-    minx -= bw * pad; maxx += bw * pad; miny -= bh * pad; maxy += bh * pad
-    tx0, tx1 = int(minx // 256), int(maxx // 256)
-    ty0, ty1 = int(miny // 256), int(maxy // 256)
-    W, H = (tx1 - tx0 + 1) * 256, (ty1 - ty0 + 1) * 256
-    canvas = Image.new("L", (W, H), 255); ok = False
-    for tx in range(tx0, tx1 + 1):
-        for ty in range(ty0, ty1 + 1):
-            t = load_tile(tx, ty, tile_dirs)
-            if t is not None:
-                canvas.paste(t, ((tx - tx0) * 256, (ty - ty0) * 256)); ok = True
-    if not ok: return None
-    ox, oy = tx0 * 256, ty0 * 256
-    L, U = max(0, int(minx - ox)), max(0, int(miny - oy))
-    R, D = min(W, int(maxx - ox)), min(H, int(maxy - oy))
-    if R - L < 6 or D - U < 6: return None
-    return canvas.crop((L, U, R, D))
+# real spotter boxes are cropped + paper-flattened by data.crop_box (shared with train.py)
 
 def montage(crops, texts, path, title, per_row_w=1500):
     LH = 64; rows = [[]]; rw = 0
@@ -119,7 +84,7 @@ def main():
     crops, texts, X = [], [], []
     for b in boxes:
         if len(X) >= a.nmax: break
-        c = crop_box(b["gpoly"], a.tiles)
+        c = DATA.crop_box(b["gpoly"], a.tiles)      # flattened 0..1 array (or None)
         if c is None: continue
         crops.append(c); texts.append(b.get("text", ""))
         X.append(DATA.crop_to_fixed(c))

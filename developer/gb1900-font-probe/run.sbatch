@@ -19,8 +19,9 @@ OUT=$PROBE/out
 mkdir -p $OUT /vast/ishi/gb1900/logs
 cd $PROBE
 
-echo "=== TRAIN ==="; nvidia-smi -L 2>/dev/null | head -1
-$PY train.py --tiles $MR/region/tiles /vast/ishi/gb1900/tiles/16 --out $OUT --steps 4000 || exit 1
+echo "=== TRAIN (iter2: flat-field + real-bg + real-consistency) ==="; nvidia-smi -L 2>/dev/null | head -1
+$PY train.py --tiles $MR/region/tiles /vast/ishi/gb1900/tiles/16 \
+    --boxes "$MR/region/boxes/worker*.jsonl" --out $OUT --steps 4000 --lam 0.5 || exit 1
 
 echo "=== EMBED + CLUSTER ==="
 $PY embed_cluster.py --enc $OUT/encoder.pt \

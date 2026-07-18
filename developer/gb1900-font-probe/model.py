@@ -32,3 +32,13 @@ def supcon_loss(z, y, temp=0.1):
     logp = sim - torch.log(exp.sum(1, keepdim=True) + 1e-9)
     denom = same.sum(1).clamp(min=1)
     return -((logp * same).sum(1) / denom).mean()
+
+def nt_xent(z1, z2, temp=0.2):
+    """SimCLR NT-Xent: two L2-normed views (N,d) of the same N items; positives are v1_i<->v2_i.
+    Unsupervised — used on REAL crops to shape the encoder's real-feature manifold (lever c)."""
+    N = z1.shape[0]
+    z = torch.cat([z1, z2], 0)                       # (2N,d)
+    sim = z @ z.t() / temp
+    sim.fill_diagonal_(-1e9)
+    pos = torch.cat([torch.arange(N, 2 * N), torch.arange(0, N)]).to(z.device)
+    return Fn.cross_entropy(sim, pos)
