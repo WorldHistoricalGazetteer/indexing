@@ -13,7 +13,7 @@ untagged point takes the facet of the region it falls in = its nearest labelled 
 k-NN majority (robust form of the dissolve-and-contain) and flag confidence: `interp` when the
 k neighbours agree, `interp_maj` on a majority. Provenance recorded per facet.
 
-  python -m processing.gb1900_admin_join \
+  python -m processing.gb1900.admin_join \
       --gazetteer /vast/…/gb1900_gazetteer_complete.csv \
       --records   /vast/ishi/gb1900/edition/national_typed.jsonl \
       --out       /vast/ishi/gb1900/edition/gb_admin.jsonl

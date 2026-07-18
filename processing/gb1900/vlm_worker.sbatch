@@ -6,7 +6,7 @@
 # (not once per batch). Correctness from idempotent infer (skips done pin_ids), so
 # the mkdir-lock is only an efficiency hint; on drain, workers steal orphans.
 #
-#   sbatch -M gpu --array=0-5 processing/gb1900_vlm_worker.sbatch \
+#   sbatch -M gpu --array=0-5 processing/gb1900/vlm_worker.sbatch \
 #          /vast/ishi/gb1900/edition/batches /vast/ishi/gb1900/edition/vlm
 #
 #SBATCH --job-name=gbstamp-vlm
@@ -57,7 +57,7 @@ fi
 ENDPOINT="http://localhost:${PORT}/v1"
 
 infer() {   # $1 = manifest, $2 = name
-  python -m processing.gb1900_vlm_infer --crops "$1" \
+  python -m processing.gb1900.vlm_infer --crops "$1" \
     --endpoint "$ENDPOINT" --model "$MODEL" --out "$OUT_DIR/$2/shard-0.jsonl" \
     && touch "$OUT_DIR/$2.done"
 }
@@ -94,7 +94,7 @@ if mkdir "$OUT_DIR/reconcile.lock" 2>/dev/null; then
   echo "[worker ${SLURM_ARRAY_TASK_ID}] running final reconcile → GB-STAMP edition"
   cat "$OUT_DIR"/batch_*/shard-0.jsonl > "$ED/national_vlm.jsonl" 2>/dev/null || true
   echo "merged VLM records: $(wc -l < $ED/national_vlm.jsonl 2>/dev/null || echo 0)"
-  python3 -m processing.gb1900_reconcile --tier0 "$ED/national_typed.jsonl" \
+  python3 -m processing.gb1900.reconcile --tier0 "$ED/national_typed.jsonl" \
     --vlm "$ED/national_vlm.jsonl" --out "$ED/gb-stamp_edition.jsonl" --version gbtype-v1
   echo "[worker] GB-STAMP edition → $ED/gb-stamp_edition.jsonl"
 fi

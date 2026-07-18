@@ -84,7 +84,7 @@ dots dominate; footpaths double-dashed).
   cell-vote fusion; anchor at the 33k boundary labels; assemble cells → polylines → score vs
   GT and (internally) vs CAMPOP; test on a cleaner inland boundary too.
 - **County layer now**: HCT county attribution already built
-  (`processing/gb1900_county_attribution.py`) — assigns each GB-STAMP label its HCS 3-char
+  (`processing/gb1900/county_attribution.py`) — assigns each GB-STAMP label its HCS 3-char
   code by point-in-polygon of the label centre, with a near-border **uncertainty flag** whose
   work-list feeds the VLM for true-bbox refinement.
 - Keep CV as a **candidate proposer** feeding the VLM (recall) rather than the final decider.
@@ -93,4 +93,4 @@ dots dominate; footpaths double-dashed).
 Code in `developer/gb1900-boundary-probe/` (`synth_glyphs.py`, `degrade.py`,
 `stage1_multiclass.py`, `boundary_pipeline.py` [+`--sweep`], `priors.py`, `vlm_trace_infer.py`);
 CRC env `/vast/ishi/envs/boundary`; GT `gt_boundary.npy`; sweep + VLM results under
-`/vast/ishi/gb1900/probe/boundary/`. County attribution: `processing/gb1900_county_attribution.py`.
+`/vast/ishi/gb1900/probe/boundary/`. County attribution: `processing/gb1900/county_attribution.py`.

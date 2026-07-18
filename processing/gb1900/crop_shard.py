@@ -11,7 +11,7 @@ the VLM workers' ``batch_*.jsonl`` glob; no collision with the VM cropper's ``ba
 Coordination-free: shards are disjoint by pin_id, dedup via crop-file existence, no shared
 state. Idempotent + resumable (re-run skips existing crops).
 
-  python -m processing.gb1900_crop_shard --pins /vast/…/national_typed.jsonl \
+  python -m processing.gb1900.crop_shard --pins /vast/…/national_typed.jsonl \
       --batch-dir /vast/…/batches --crops /vast/…/crops/national \
       --shard $SLURM_ARRAY_TASK_ID --nshards 12 --batch-size 4000 --zoom 16
 """
@@ -19,7 +19,7 @@ from __future__ import annotations
 import argparse, json, sys
 from pathlib import Path
 
-from processing.gb1900_tiles import stitch_crop
+from processing.gb1900.tiles import stitch_crop
 
 
 def _text(rec) -> str:

@@ -10,7 +10,7 @@
 # recorded as a provenance edit, plan §11.1). Preserves gb:<pin_id>.
 #
 # Submit (from crc0; fall back crc1/2/3), NEVER a login-node run:
-#   sbatch -M gpu --account=ishi --array=0-<N-1> processing/gb1900_vlm.sbatch <crops_dir> <out_dir>
+#   sbatch -M gpu --account=ishi --array=0-<N-1> processing/gb1900/vlm.sbatch <crops_dir> <out_dir>
 #
 #SBATCH --job-name=gb1900-vlm
 #SBATCH --account=ishi
@@ -82,7 +82,7 @@ fi
 #    (Python inference client mirrors GOTW triage_pages.py: OpenAI-compatible
 #    /v1/chat/completions, response_format json_schema strict, temperature 0,
 #    ThreadPoolExecutor(32), base64 crops, regex salvage; keyed on gb:<pin_id>.)
-python -m processing.gb1900_vlm_infer \
+python -m processing.gb1900.vlm_infer \
   --crops "$MANIFEST" --shard "$SLURM_ARRAY_TASK_ID" --nshards "${SLURM_ARRAY_TASK_COUNT:-1}" \
   --endpoint "http://localhost:${PORT}/v1" --model "$MODEL" \
   --out "${OUT_DIR}/shard-${SLURM_ARRAY_TASK_ID}.jsonl"

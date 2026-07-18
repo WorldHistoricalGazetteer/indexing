@@ -14,8 +14,8 @@ NLS georeferenced-maps viewer (`maps.nls.uk/geo/explore/` → "XYZ"). CRC CAN re
 CRC node. Runs network-bound (throttled) — NOT on a GPU node.
 
 Usage (pilot, one county / a pins subset):
-  python -m processing.gb1900_tiles fetch  --pins pins.jsonl --zoom 16 [--rps 5]
-  python -m processing.gb1900_tiles crops  --pins pins.jsonl --zoom 16 --out crops/
+  python -m processing.gb1900.tiles fetch  --pins pins.jsonl --zoom 16 [--rps 5]
+  python -m processing.gb1900.tiles crops  --pins pins.jsonl --zoom 16 --out crops/
 """
 from __future__ import annotations
 

@@ -7,7 +7,7 @@ label (the VLM bbox is fractional coords within the marker-crop). Emits a self-c
 `manifest.json`: per sample the base64 tight crop + the current `os_style → type-token`
 mapping, for a human to validate/correct → crosswalk edits (never-re-run patch).
 
-  python -m processing.gb1900_font_hitl_sample \
+  python -m processing.gb1900.font_hitl_sample \
       --vlm-glob '/vast/ishi/gb1900/edition/vlm/*/shard-0.jsonl' \
       --crops /vast/ishi/gb1900/crops/national \
       --lettering typesystem/data/gb1900_os_lettering.json \

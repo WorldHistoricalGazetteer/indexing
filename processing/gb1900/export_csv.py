@@ -7,7 +7,7 @@ text + os_style + type where the residual has been processed), and adding the hi
 county (HCT HCS 3-char code) by point-in-polygon of the label CENTRE, with the near-border
 uncertainty flag (see gb1900_county_attribution).
 
-  python -m processing.gb1900_export_csv \
+  python -m processing.gb1900.export_csv \
       --records /vast/ishi/gb1900/edition/national_typed.jsonl \
       --vlm-glob '/vast/ishi/gb1900/edition/vlm/batch_*/shard-0.jsonl' \
       --hct /vast/ishi/gb1900/probe/boundary/UKDefinitionA.shp \
@@ -15,7 +15,7 @@ uncertainty flag (see gb1900_county_attribution).
 """
 from __future__ import annotations
 import argparse, csv, glob, json, sys
-from processing.gb1900_county_attribution import label_centre, load_hct
+from processing.gb1900.county_attribution import label_centre, load_hct
 
 
 def load_vlm(pattern):

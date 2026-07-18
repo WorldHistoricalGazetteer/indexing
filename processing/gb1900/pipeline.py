@@ -10,7 +10,7 @@ Runs entirely on pitt (long processes OK there). It never submits Slurm — VLM
 batches are submitted separately by one-shot `sbatch` at checkpoints (never a
 standing driver on a login node). Resumable via a processed-state file.
 
-  python -m processing.gb1900_pipeline \
+  python -m processing.gb1900.pipeline \
       --residual /vast/ishi/gb1900/edition/national_residual.jsonl \
       --batch-dir /vast/ishi/gb1900/edition/batches \
       --crops /vast/ishi/gb1900/crops/national \
@@ -24,7 +24,7 @@ import json
 import time
 from pathlib import Path
 
-from processing.gb1900_tiles import covering_tiles, tile_path, stitch_crop
+from processing.gb1900.tiles import covering_tiles, tile_path, stitch_crop
 
 
 def _all_tiles_cached(lat: float, lon: float, z: int, pad: int = 1) -> bool:

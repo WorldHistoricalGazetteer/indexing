@@ -42,14 +42,14 @@
 > **BUILT SO FAR (2026-07-17, autonomous):**
 > - **P0.5 DONE** — OS lettering scheme transcribed from OS 404 →
 >   `typesystem/data/gb1900_os_lettering.json`.
-> - **P0 DONE (Tier-0 text typing)** — `processing/gb1900_text_types.py` +
+> - **P0 DONE (Tier-0 text typing)** — `processing/gb1900/text_types.py` +
 >   `typesystem/data/gb1900_os_abbrev.json`; run on the full **2.67M** pins:
 >   **1,663,981 typed (62.4%)** zero-GPU (after numeric + keyword lift), 1.5%
 >   illegible dropped, 4.5% ALLCAPS + 31.6% residual routed to Tier-1. Residual is
 >   dominated by proper settlement names (Welsh/Gaelic) — exactly Tier-1's target.
 > - **Tier-1 infra staged/scaffolded** — raw dump staged to
->   `/vast/ishi/gb1900/raw/`; `processing/gb1900_tiles.py` (NLS fetch + crop,
->   deg2num validated) + `processing/gb1900_vlm.sbatch` (GOTW-adapted GPU array).
+>   `/vast/ishi/gb1900/raw/`; `processing/gb1900/tiles.py` (NLS fetch + crop,
+>   deg2num validated) + `processing/gb1900/vlm.sbatch` (GOTW-adapted GPU array).
 >   **Feasibility confirmed (2026-07-17):** CRC *can* reach the NLS tile hosts
 >   (`mapseries-tilesets.s3` HTTP 200) though not Vision of Britain; vLLM env
 >   (`/vast/ishi/envs/vllm`) + HF cache present. NLS template confirmed
@@ -139,7 +139,7 @@ as the cheap deterministic layer; the VLM read supersedes it where processed.
    (882 absent sea/edge 404s). The old single-thread fetch (~days, and it *died* on a transient
    `Server disconnected`) is retired. Host note: the `nls-N.tileserver.com` shards are dead
    placeholders now — S3 is the sole free host (§5.2).
-2. **Sharded Slurm cropper** — `processing/gb1900_crop_shard.py` on **htc** (`gbcrop`, 12-way
+2. **Sharded Slurm cropper** — `processing/gb1900/crop_shard.py` on **htc** (`gbcrop`, 12-way
    array). Once tiles are cached, cropping is embarrassingly parallel: shard k crops pins with
    `int(pin_id,16)%nshards==k` whose crop doesn't already exist, writing `batch_s{k}_NNNN.jsonl`.
    Replaced the single-VM cropper (`gb1900_pipeline.py`), which had become the throughput
@@ -153,7 +153,7 @@ as the cheap deterministic layer; the VLM read supersedes it where processed.
    (sheet-precise, §10b) → the published edition (§11).
 
 **Admin tags.** Two open sources, no restricted boundaries needed:
-- **Historic county** — `processing/gb1900_county_attribution.py`: point-in-polygon of each
+- **Historic county** — `processing/gb1900/county_attribution.py`: point-in-polygon of each
   label's **centre** (bbox-centre where detected, else best-guess offset from the pin anchor)
   against the OPEN **HCT/`ukhc`** polygons → `hc_county` = HCS 3-char code (e.g. `CRN`). Near-border
   labels get `hc_county_uncertain` + a work-list for VLM true-bbox refinement.
@@ -197,8 +197,24 @@ the *identification/classification* isn't reliable enough to ship:
 - KEEP (clean, independent, reusable): **tiles** (full GB, 0-fail fetch), **`national_typed.jsonl`**
   (Tier-0 text+coords), **`gb_admin.jsonl`** (gazetteer nation/district/parish), gazetteer CSV.
 - QUARANTINE / clear before re-run: **`vlm/` shards** (bad bbox + suspect `os_style`; text
-  re-derivable) and the **marker-crops** (ring baked in). Not deleted yet.
+  re-derivable) and the **marker-crops** (ring baked in). **DELETED 2026-07-18** — the ~40 G of
+  marker-crop PNGs on `/vast/ishi/gb1900/crops/` had filled the shared `/vast` volume to 100%
+  and tripped ES's flood-stage read-only block on prod indices (see below).
 - New pipeline starts from **tiles + national_typed + gb_admin** only.
+
+**Storage principles (SG 2026-07-18, learned the hard way — see `vast_capacity_and_crop_fragments`):**
+- `/vast` is a **1 TB volume shared with production Elasticsearch** → capacity-critical. Never
+  persist millions of throwaway image fragments there.
+- **Store crop COORDINATES, not image fragments.** Crops are cheap to re-extract from the cached
+  tiles and discard. The re-worked cropper (`crop_shard.py`) must emit a manifest of
+  `{pin_id, tile refs, window/bbox}`; VLM/spotter/HITL extract crops **in-memory on demand** and
+  discard. Tiles become the one durable input; everything downstream is ephemeral.
+- **Tile lifecycle:** durable backup = a single tar on `/ix1` (`/ix1/ishi/gb1900_tiles.tar`, 20 G;
+  no small-file NFS penalty at rest). For a crop campaign, keep/untar the loose tiles on **`/vast`**
+  (shared flash — all Slurm-array shards read one copy; fast). Never crop from loose tiles on
+  `/ix1` (that random small-file NFS read pattern is exactly what drove the /ix1→/vast migration).
+- **HITL UIs live IN THE REPO** (`font_hitl_review.html` + `hitl_build.py`; build locally, open via
+  `file://`), **not** as claude.ai artifacts.
 
 **Typing-signal policy (SG 2026-07-18):** typography is the primary type signal; **do NOT lean
 more on text-based typing** — restrict text-based typing to cases where a *checked* transcription
@@ -463,7 +479,7 @@ highest-confidence first:
    `Wharf`, `Pier`, `Chapel`, `Cemetery`, `Castle` (antiquity), `Tumulus`,
    `Camp`, `Fort` (antiquities). Each → a token.
 
-**Deliverable of Tier 0:** a script `processing/gb1900_text_types.py` that reads
+**Deliverable of Tier 0:** a script `processing/gb1900/text_types.py` that reads
 `final_text` and emits `(place_id, token, confidence, rule)`; a coverage report
 (what % typed, histogram over tokens, residual list). **This alone likely types
 the majority** — the biggest single win, and it de-risks the whole project before
@@ -765,19 +781,19 @@ battle-tested CRC VLM pattern** we should copy rather than reinvent.
   avoided; see CLAUDE.md). Reuse `/vast/ishi/envs/vllm` and `/vast/ishi/hf_cache`
   that GOTW already provisioned.
 - **New scripts (mirror GOTW names):**
-  - `processing/gb1900_text_types.py` — Tier 0 (CPU, any host).
-  - `processing/gb1900_fetch_tiles.py` — **network** tile fetch → `/vast` cache
+  - `processing/gb1900/text_types.py` — Tier 0 (CPU, any host).
+  - `processing/gb1900/fetch_tiles.py` — **network** tile fetch → `/vast` cache
     (run on `pitt`/CRC login is OK for *network-bound* fetch per
     `feedback_long_running_hosts`, but throttle for NLS; better as an `htc` CPU
     job). Dedupe to covering-tile set.
-  - `processing/gb1900_make_crops.py` — lat/lon→tile/pixel, stitch, over-crop,
+  - `processing/gb1900/make_crops.py` — lat/lon→tile/pixel, stitch, over-crop,
     OCR-refine → per-label crop PNG on `/vast` (CPU array; `whg` env has Surya/PIL).
   - `processing/submit_gb1900_vlm_slurm.py` — **copy `submit_vlm_slurm.py`**;
     swap the schema/prompt to the *typography descriptor*; input = crop shards →
     per-shard JSONL.
-  - `processing/gb1900_cluster_types.py` — embed descriptors + HDBSCAN → clusters
+  - `processing/gb1900/cluster_types.py` — embed descriptors + HDBSCAN → clusters
     + contact sheets.
-  - `processing/gb1900_apply_types.py` — write per-record `types[].identifier`
+  - `processing/gb1900/apply_types.py` — write per-record `types[].identifier`
     to the live `gb:` docs (idempotent update-by-query patch, following
     `wikipedia_links_patch.py` / `apply_links_patch.py` — see
     `handoff-wikipedia-sitelinks.md`), then hand off to `apply_aat_enrich`.
@@ -936,7 +952,7 @@ Qwen2.5-VL-72B-AWQ). Realistically ~4–5/sec with concurrency 32 + batching (GO
 
 ## 10b. Per-label SHEET-PRECISE dating — BUILT + TESTED + WIRED (2026-07-17)
 
-**DONE.** `processing/gb1900_dating.py` joins each label to its OS six-inch 2nd-ed
+**DONE.** `processing/gb1900/dating.py` joins each label to its OS six-inch 2nd-ed
 sheet (point-in-polygon, STRtree) and emits a per-label `timespan`
 (survey-start..publication-end, year precision) + full sheet provenance
 (surveyed{start,end}, published{start,end}, sheet id, `ambiguous` seam flag). NLS
@@ -1038,7 +1054,7 @@ source value; layer derivations on top with their evidence:
 The national tile fetch is a ~day-long polite single fetch (on pitt). To avoid the
 VLM waiting for it, the crop stage overlaps it — **no persistent process runs on a
 login node** (SG rule):
-- **`processing/gb1900_pipeline.py`** — a **cropper loop on pitt** (long processes
+- **`processing/gb1900/pipeline.py`** — a **cropper loop on pitt** (long processes
   OK there): finds residual pins whose covering tiles are already cached, crops
   them, and emits fixed-size **batch manifests** (`batches/batch_NNNN.jsonl`) +
   a `processed.txt` state file. Grows with the fetch; resumable.
@@ -1064,7 +1080,7 @@ tail (early-stops, dropped leading chars, occasional over/under-read). The fix i
 defaulting to the **crowd transcription** (verified, often 3+ agreement) and
 accepting the VLM only when it is a confident, plausible correction:
 
-`processing/gb1900_reconcile.py :: reconcile(hint, vlm_text)` →
+`processing/gb1900/reconcile.py :: reconcile(hint, vlm_text)` →
 `(final_text, source, rule)`:
 - **empty VLM** → hint (`vlm-empty`).
 - **letters agree** (case-insensitive) → **hint** text (crowd casing is steadier
@@ -1149,16 +1165,16 @@ for free by the typing run.
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
-  - Fetch: `processing/gb1900_tiles.py fetch --pins national_typed.jsonl --zoom 16 --workers 16`
+  - Fetch: `processing/gb1900/tiles.py fetch --pins national_typed.jsonl --zoom 16 --workers 16`
     (parallel S3, chunked + retry), run in a shell retry-loop on the pitt VM.
-  - Crop (Slurm): `processing/gb1900_crop_shard.py` via `gbcrop.sbatch`
+  - Crop (Slurm): `processing/gb1900/crop_shard.py` via `gbcrop.sbatch`
     (`sbatch -M htc --array=0-11 …` `--nshards 12`) — supersedes the single-VM
-    `processing/gb1900_pipeline.py`.
-  - VLM: `processing/gb1900_vlm_worker.sbatch` (`-M gpu`; a100 `--gres=gpu:2 --export=ALL,TP=2`,
-    h200 default TP=1) + `processing/gb1900_vlm_infer.py` (schema now includes **`bbox`**).
-  - Reconcile/date: `processing/gb1900_reconcile.py`, `processing/gb1900_dating.py`.
-  - County: `processing/gb1900_county_attribution.py` (HCT `hc_county` + uncertainty work-list).
-  - CSV export: `processing/gb1900_export_csv.py`.
+    `processing/gb1900/pipeline.py`.
+  - VLM: `processing/gb1900/vlm_worker.sbatch` (`-M gpu`; a100 `--gres=gpu:2 --export=ALL,TP=2`,
+    h200 default TP=1) + `processing/gb1900/vlm_infer.py` (schema now includes **`bbox`**).
+  - Reconcile/date: `processing/gb1900/reconcile.py`, `processing/gb1900/dating.py`.
+  - County: `processing/gb1900/county_attribution.py` (HCT `hc_county` + uncertainty work-list).
+  - CSV export: `processing/gb1900/export_csv.py`.
   - Data on `/vast/ishi/gb1900/`: `edition/national_typed.jsonl` (2.67M tier0), `tiles/16/…`,
     `crops/national/gb_<pin>.png`, `edition/batches/batch_*`, `edition/vlm/<batch>/shard-0.jsonl`.
   - Memory: `crc_gpu_routing_a100_l40s`, `gb1900_tile_fetch_fragility`.

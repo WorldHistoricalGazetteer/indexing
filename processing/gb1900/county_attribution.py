@@ -13,7 +13,7 @@ detected (VLM stage) we use its centre; otherwise a **best-guess offset** from t
 small vs county size — it only matters within ~100 m of a border — but we honour it for
 those edge cases.
 
-  python -m processing.gb1900_county_attribution \
+  python -m processing.gb1900.county_attribution \
       --records /vast/ishi/gb1900/edition/national_typed.jsonl \
       --hct     /ix1/ishi/data/authorities/ukhc/UKDefinitionA.shp \
       --out     /vast/ishi/gb1900/edition/gb_hc_county.jsonl

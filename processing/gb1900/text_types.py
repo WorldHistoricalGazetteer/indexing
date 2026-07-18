@@ -24,9 +24,9 @@ lon/lat. The output record reserves fields for the later imagery tiers
 (``bbox``, ``vlm_text``, ``os_style``) so Tier-1 can enrich in place.
 
 Usage:
-  python -m processing.gb1900_text_types --zip /path/GB1900_final_raw_dump_july_2018.zip \
+  python -m processing.gb1900.text_types --zip /path/GB1900_final_raw_dump_july_2018.zip \
       [--out typed.jsonl] [--limit N]
-  python -m processing.gb1900_text_types --csv /path/gb1900_locations.csv --out typed.jsonl
+  python -m processing.gb1900.text_types --csv /path/gb1900_locations.csv --out typed.jsonl
 """
 from __future__ import annotations
 

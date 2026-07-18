@@ -16,7 +16,7 @@ confirmed separately; if a date field isn't given, a fallback scans all properti
 for 4-digit years. CRS is auto-handled (assumes WGS84 per GeoJSON spec unless
 `--src-epsg` says otherwise; sheets are reprojected to WGS84 once at load).
 
-  python -m processing.gb1900_dating \
+  python -m processing.gb1900.dating \
       --edition  /vast/ishi/gb1900/edition/gb-stamp_edition.jsonl \
       --sheets   /vast/ishi/gb1900/sheets/os_6inch_2nd_sheets.geojson \
       --out      /vast/ishi/gb1900/edition/gb-stamp_edition.dated.jsonl \
