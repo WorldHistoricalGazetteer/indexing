@@ -1,0 +1,1052 @@
+[
+  {
+    "id": "x_antiquity_40",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_785",
+    "label": "numeral",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_693",
+    "label": "numeral",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1561",
+    "label": "numeral",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2472",
+    "label": "numeral",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_20",
+    "label": "road_caps",
+    "text": "GROSVENOR STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_27",
+    "label": "road_caps",
+    "text": "SPRINGFIELD",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_587",
+    "label": "numeral",
+    "text": "FP.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2362",
+    "label": "serif_italic",
+    "text": "Edgebold",
+    "cluster": "region"
+  },
+  {
+    "id": "c_287",
+    "label": "serif_upright",
+    "text": "Shawb###",
+    "cluster": "region"
+  },
+  {
+    "id": "c_107",
+    "label": "numeral",
+    "text": "74",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_8",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_3",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2363",
+    "label": "numeral",
+    "text": "308",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_38",
+    "label": "road_caps",
+    "text": "William Street",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_610",
+    "label": "numeral",
+    "text": "248",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_16",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_18",
+    "label": "road_caps",
+    "text": "ROSAMOND ST. EAST",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_2",
+    "label": "road_caps",
+    "text": "Pall Mall",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_642",
+    "label": "numeral",
+    "text": "283",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_1",
+    "label": "road_caps",
+    "text": "FOUNTAIN STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_2240",
+    "label": "abbrev",
+    "text": "B",
+    "cluster": "region"
+  },
+  {
+    "id": "c_280",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1281",
+    "label": "serif_upright",
+    "text": "Betton",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_31",
+    "label": "serif_italic",
+    "text": "Recreation Gd.",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_37",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_20",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1307",
+    "label": "numeral",
+    "text": "4",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_42",
+    "label": "blackletter",
+    "text": "Earthwork",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_679",
+    "label": "abbrev",
+    "text": "G.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_19",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_438",
+    "label": "abbrev",
+    "text": "S",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2410",
+    "label": "serif_italic",
+    "text": "Arscott",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_9",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_22",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_7",
+    "label": "serif_upright",
+    "text": "Ch.",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_10",
+    "label": "serif_italic",
+    "text": "BANK",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_205",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_41",
+    "label": "road_caps",
+    "text": "BEECH MOUNT",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_898",
+    "label": "abbrev",
+    "text": "W",
+    "cluster": "region"
+  },
+  {
+    "id": "c_4",
+    "label": "serif_upright",
+    "text": "Coppice",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1436",
+    "label": "abbrev",
+    "text": "FP.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1430",
+    "label": "serif_italic",
+    "text": "Mascott",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_8",
+    "label": "road_caps",
+    "text": "MOSLEY STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_6",
+    "label": "road_caps",
+    "text": "Alfred Street",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_4",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1452",
+    "label": "serif_italic",
+    "text": "Old",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_44",
+    "label": "serif_italic",
+    "text": "Fire Engine Station",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_23",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_748",
+    "label": "abbrev",
+    "text": "W",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_42",
+    "label": "serif_italic",
+    "text": "School",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_44",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1976",
+    "label": "serif_italic",
+    "text": "Brewery",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_9",
+    "label": "road_caps",
+    "text": "GEORGE STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_16",
+    "label": "road_caps",
+    "text": "CLIFFORD STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_2297",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_37",
+    "label": "serif_italic",
+    "text": "Reservoirs",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_468",
+    "label": "numeral",
+    "text": "188-7",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_4",
+    "label": "road_caps",
+    "text": "Mary Street",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_535",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1217",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_12",
+    "label": "road_caps",
+    "text": "BOUNDARY STREET WEST",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_442",
+    "label": "serif_italic",
+    "text": "Pond",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_11",
+    "label": "road_caps",
+    "text": "MARKET STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_736",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_13",
+    "label": "road_caps",
+    "text": "HIGHER CAMBRIDGE STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1265",
+    "label": "serif_upright",
+    "text": "All",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_31",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_40",
+    "label": "road_caps",
+    "text": "Oak Bank",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_15",
+    "label": "road_caps",
+    "text": "JENKINSON STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_28",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_13",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1813",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_34",
+    "label": "serif_italic",
+    "text": "Woodlands",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1672",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_29",
+    "label": "serif_italic",
+    "text": "Co-operative Works",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1071",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_32",
+    "label": "serif_upright",
+    "text": "Mount Pleasant",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_35",
+    "label": "serif_italic",
+    "text": "Woodlands Cottage",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_2499",
+    "label": "numeral",
+    "text": "290",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_1",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_0",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_26",
+    "label": "road_caps",
+    "text": "CHURCH ROAD",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_613",
+    "label": "numeral",
+    "text": "7",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1094",
+    "label": "road_caps",
+    "text": "STREET",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_35",
+    "label": "blackletter",
+    "text": "Earthworks",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_39",
+    "label": "road_caps",
+    "text": "Church Street",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_21",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_6",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_14",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1036",
+    "label": "serif_italic",
+    "text": "Hall",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_25",
+    "label": "serif_italic",
+    "text": "Clarkesville",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_19",
+    "label": "road_caps",
+    "text": "RUSHOLME ROAD",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_24",
+    "label": "road_caps",
+    "text": "BACK GEORGE STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1680",
+    "label": "numeral",
+    "text": "262",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1037",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_3",
+    "label": "serif_upright",
+    "text": "Ch.",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_2287",
+    "label": "numeral",
+    "text": "152",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_21",
+    "label": "road_caps",
+    "text": "CAVENDISH STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_urban_5",
+    "label": "road_caps",
+    "text": "Westbourne Grove",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_2262",
+    "label": "numeral",
+    "text": "266.0",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_11",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2368",
+    "label": "numeral",
+    "text": "324",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_14",
+    "label": "road_caps",
+    "text": "ROSAMOND STREET WEST",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1276",
+    "label": "serif_italic",
+    "text": "Shrewsbury",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_43",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2005",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1325",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2056",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_36",
+    "label": "serif_italic",
+    "text": "Highfield House",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_26",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_33",
+    "label": "abbrev",
+    "text": "B.P",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_756",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_703",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1128",
+    "label": "numeral",
+    "text": "259.3",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1703",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1821",
+    "label": "numeral",
+    "text": "1873.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1164",
+    "label": "serif_upright",
+    "text": "###tation",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_2",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2228",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_203",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_36",
+    "label": "blackletter",
+    "text": "wilsford group [tumuli]",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_195",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_102",
+    "label": "numeral",
+    "text": "163.7",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_22",
+    "label": "road_caps",
+    "text": "HIGHER ORMOND STREET",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_561",
+    "label": "abbrev",
+    "text": "F.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_27",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_33",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1323",
+    "label": "numeral",
+    "text": "186",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1193",
+    "label": "abbrev",
+    "text": "W",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1365",
+    "label": "numeral",
+    "text": "1936",
+    "cluster": "region"
+  },
+  {
+    "id": "c_540",
+    "label": "numeral",
+    "text": "316.8",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1767",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_30",
+    "label": "serif_italic",
+    "text": "Reservoirs",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_41",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_34",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_0",
+    "label": "road_caps",
+    "text": "LONG MILLGATE",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_32",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_30",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_18",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_38",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_antiquity_39",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_1576",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_28",
+    "label": "serif_italic",
+    "text": "Swan Inn",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_1549",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "c_297",
+    "label": "numeral",
+    "text": "275",
+    "cluster": "region"
+  },
+  {
+    "id": "c_439",
+    "label": "abbrev",
+    "text": "H.)",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_25",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2020",
+    "label": "numeral",
+    "text": "200",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2280",
+    "label": "numeral",
+    "text": "2346",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_17",
+    "label": "road_caps",
+    "text": "HENRY ST.",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_464",
+    "label": "abbrev",
+    "text": "B.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_553",
+    "label": "serif_italic",
+    "text": "Pearhill###",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_10",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "x_urban_23",
+    "label": "road_caps",
+    "text": "HIGHER YORK ST.",
+    "cluster": "urban"
+  },
+  {
+    "id": "x_antiquity_7",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_993",
+    "label": "numeral",
+    "text": "1670",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_29",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_589",
+    "label": "serif_upright",
+    "text": "Nursery",
+    "cluster": "region"
+  },
+  {
+    "id": "c_2009",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_767",
+    "label": "serif_italic",
+    "text": "###dley",
+    "cluster": "region"
+  },
+  {
+    "id": "c_655",
+    "label": "serif_italic",
+    "text": "Ston##",
+    "cluster": "region"
+  },
+  {
+    "id": "c_821",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1406",
+    "label": "serif_upright",
+    "text": "Dinthill",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1519",
+    "label": "numeral",
+    "text": "273.",
+    "cluster": "region"
+  },
+  {
+    "id": "c_851",
+    "label": "abbrev",
+    "text": "P.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_15",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_2153",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_17",
+    "label": "blackletter",
+    "text": "Tumulus",
+    "cluster": "antiquity"
+  },
+  {
+    "id": "c_171",
+    "label": "abbrev",
+    "text": "P",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1587",
+    "label": "abbrev",
+    "text": "M.",
+    "cluster": "region"
+  },
+  {
+    "id": "x_urban_43",
+    "label": "serif_italic",
+    "text": "Harpurhey Hall (special school)",
+    "cluster": "urban"
+  },
+  {
+    "id": "c_177",
+    "label": "road_caps",
+    "text": "Lane",
+    "cluster": "region"
+  },
+  {
+    "id": "c_1494",
+    "label": "numeral",
+    "text": "327.3",
+    "cluster": "region"
+  },
+  {
+    "id": "x_antiquity_24",
+    "label": "blackletter",
+    "text": "Tumuli",
+    "cluster": "antiquity"
+  }
+]
