@@ -1371,6 +1371,10 @@ upright-vs-italic SERIF place-names ~0.63 within-size-band (2-class) — z17 did
 Auto-label haul: blackletter 227 / caps_spaced 897 / road_caps 1219 z17 crowd crops (free).
 Next: anchors for slab/slab_italic/outline/engraved/sans (n≤3); the serif upright/italic axis needs the
 per-glyph same-letter route (`crnn.per_glyph`) — the letter-level approach SG favoured.
+**PER-GLYPH RESULT (job 3277309, SG instinct CONFIRMED):** glyph-level upright/italic = **.728** vs
+word-level **.559** — comparing the SAME letter across fonts (content-controlled) lifts the holdout axis
++.17 (best letters o .64 / t .60 / r .59). Every lever paid off. Remaining work: batch-3 HITL for the
+still-unanchored slab/slab_italic/outline/engraved/sans, and fold glyph-level aggregation into typing.
 
 ## Appendix — key files & commands referenced
 
