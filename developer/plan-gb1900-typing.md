@@ -181,6 +181,34 @@ by bbox overlap, NOT string, and it *augments* GB1900); §12.1 bootstrap a **nat
 text detector** from our ~2.67M-box dataset (positive-unlabelled + self-training). Both densify
 the boundary-label seeds for `plan-gb1900-parish-extraction.md`.
 
+## 0b. STOP & TUNE (2026-07-18) — VLM run paused; typography signal not yet good enough
+
+The full-coverage VLM run was **stopped** (all gpu + htc jobs cancelled) after inspection showed
+the *identification/classification* isn't reliable enough to ship:
+- **VLM bbox = unreliable** (visual-grounding weakness): format is fine but placement is
+  mis-located — boxes on blank ground / clipping labels / disagreeing with the anchor
+  (`scratchpad/bbox_overlay.png`). **Deprecated. The text-SPOTTER (MapReader/MapTextPipeline,
+  tested) is the box authority.** New split: **spotter → boxes; VLM → reading + `os_style`**.
+- **`os_style` = suspect** (e.g. `B.M.`→`EC`); coherence unjudgeable while crops were bad.
+- **Cropper = OK** (14/14 sampled marker-crops contained the target label at the ring anchor)
+  but crops are loose + have the **red ring baked in** → VLM-marker-specific, not neutral inputs.
+
+**Keep / discard (don't pollute the new pipeline):**
+- KEEP (clean, independent, reusable): **tiles** (full GB, 0-fail fetch), **`national_typed.jsonl`**
+  (Tier-0 text+coords), **`gb_admin.jsonl`** (gazetteer nation/district/parish), gazetteer CSV.
+- QUARANTINE / clear before re-run: **`vlm/` shards** (bad bbox + suspect `os_style`; text
+  re-derivable) and the **marker-crops** (ring baked in). Not deleted yet.
+- New pipeline starts from **tiles + national_typed + gb_admin** only.
+
+**Typing-signal policy (SG 2026-07-18):** typography is the primary type signal; **do NOT lean
+more on text-based typing** — restrict text-based typing to cases where a *checked* transcription
+is an unambiguous OS abbreviation (`F.P.`, `B.M.`, `W`, `P`, `Ch.`…). Proper names carry no type,
+so the font classification must be made reliable (the tuning goal).
+
+**Tuning agenda:** (1) spotter → clean tight crops (no ring) from tiles; (2) re-assess `os_style`
+coherence on clean crops → salvage via prompt-tuning, or pivot to **font-embedding clustering**;
+(3) rebuild the HITL on clean crops. §12.0/§12.1 already updated (spotter is the box authority).
+
 ## 1. Summary / goal / success criteria
 
 **Goal.** Give every GB1900 label a `types[].identifier` drawn from a small
@@ -1098,8 +1126,8 @@ abbreviated/curved, so an off-the-shelf spotter likely needs light fine-tuning; 
 infra now in place (all tiles cached, VLM workers, crops). Prereq: the full-coverage bbox run lands first.
 
 ### 12.1 Bootstrap a NATIVE OS-six-inch text detector from our bbox dataset (SG 2026-07-17)
-The full-coverage run is, as a byproduct, producing a **~2.67M text-bbox / ~1.7M-tile, GB-wide,
-OS-six-inch text-DETECTION dataset** — almost certainly the largest for this series (ICDAR-MapText
+The full-coverage run is, as a byproduct, producing a large **GB-wide OS-six-inch text-DETECTION dataset** (boxes from the SPOTTER,
+NOT the unreliable VLM bbox — see §12.0) — almost certainly the largest for this series (ICDAR-MapText
 training sets are hundreds–thousands of maps, on Rumsey/French maps, *not* OS six-inch). Fine-tuning
 a detector on it should beat any off-the-shelf spotter **on our maps** and gives us the §12 detector
 natively.
