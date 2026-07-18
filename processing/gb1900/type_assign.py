@@ -33,7 +33,10 @@ KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
     "hospital": ("hospital", .85), "barracks": ("barracks", .88), "wharf": ("wharf", .82),
 }
 ANTIQ = re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Barrow|Barrows|Motte|"
-                   r"Cist|Enclosure|Entrenchment|Cross|Castle|Abbey|Priory|Roman|British|Saxon)\b", re.I)
+                   r"Cist|Enclosure|Entrenchment|Cross|Castle|Abbey|Priory|Roman|British|Saxon|Cromlech|"
+                   r"Dolmen|Menhir|Cromlechs|Rath|Dun|Fogou|Souterrain|Hillfort|Chambered|Tumular|"
+                   r"Standing Stone|Stone Circle|Hut Circle|Hut Circles|Stone Row|Kistvaen|Fort \(|"
+                   r"\(Site of\)|\(Remains of\)|Battlefield|Moat|Antiquities|Sepulchral)\b", re.I)
 ROAD = re.compile(r"\b(ROAD|STREET|LANE|TERRACE|AVENUE|WAY|WALK|ROW)\b", re.I)
 WATER = {"well", "spring", "ford", "weir", "brook", "pond", "pool", "marsh", "moss", "river",
          "canal", "reservoir", "drain", "sluice", "lake", "mere", "burn", "beck", "dam"}
@@ -61,9 +64,13 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
         s["antiquity"] += .88
     for kw, (ty, c) in KEYWORD.items():
         if kw in low: s[ty] += c
-    if low in WATER: s["water_feature"] += .8
-    if low in DESCRIPTIVE: s["building_or_feature"] += .68
-    if low in NAMED_PLACE: s["named_landcover"] += .68
+    words = re.findall(r"[a-z]+", low); head = words[-1] if words else ""   # head noun = last word
+    if head in WATER: s["water_feature"] += .8
+    elif any(w in WATER for w in words): s["water_feature"] += .6
+    if head in DESCRIPTIVE: s["building_or_feature"] += .72                 # "Bankfield House" -> house
+    elif any(w in DESCRIPTIVE for w in words): s["building_or_feature"] += .58
+    if head in NAMED_PLACE: s["named_landcover"] += .72                     # "Oak Coppice" -> coppice
+    elif any(w in NAMED_PLACE for w in words): s["named_landcover"] += .58
     if allcaps and " " in t and len(al) >= 4 and not ROAD.search(t): s["admin_or_parish"] += .78  # spaced caps (font .98)
     elif allcaps and len(al) >= 3: s["settlement"] += .55
     if settlement_names and low in settlement_names:
