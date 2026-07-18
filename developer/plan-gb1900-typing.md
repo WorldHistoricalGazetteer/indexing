@@ -142,11 +142,23 @@ as the cheap deterministic layer; the VLM read supersedes it where processed.
 4. **Reconcile + dating** — `gb1900_reconcile.py` (hint↔VLM policy, §11.5) → `gb1900_dating.py`
    (sheet-precise, §10b) → the published edition (§11).
 
-**Historic-county attribution** — `processing/gb1900_county_attribution.py`: point-in-polygon of
-each label's **centre** (bbox-centre where detected, else best-guess offset from the pin anchor)
-against the OPEN **HCT/`ukhc`** polygons → `hc_county` = HCS 3-char code (e.g. `CRN`). Near-border
-labels get `hc_county_uncertain` + a work-list for VLM true-bbox refinement. Incremental patch
-(no re-run), like the Wikipedia-links / ccode backfills. CSV export: `gb1900_export_csv.py`.
+**Admin tags.** Two open sources, no restricted boundaries needed:
+- **Historic county** — `processing/gb1900_county_attribution.py`: point-in-polygon of each
+  label's **centre** (bbox-centre where detected, else best-guess offset from the pin anchor)
+  against the OPEN **HCT/`ukhc`** polygons → `hc_county` = HCS 3-char code (e.g. `CRN`). Near-border
+  labels get `hc_county_uncertain` + a work-list for VLM true-bbox refinement.
+- **Nation / district / parish — via a `pin_id` JOIN to the GB1900 gazetteer** (2026-07-18
+  decision). The complete/abridged GB1900 gazetteer carries `nation, local_authority (district),
+  parish` per pin — VoB's own point-in-polygon result, **published CC-BY-SA** (fill: nation 100%,
+  district 100%, parish 95%). Our `gb:<pin_id>` = the gazetteer pin_id, so the join is direct and
+  gives openly-usable parish/district tags **without** any boundary geometry. This is why we
+  DON'T need CAMPOP/GBHGIS (both restricted — see `plan-gb1900-parish-extraction.md` Licensing).
+  Licence note: CC-BY-SA (attribution + share-alike, not CC0) → **segment the edition** (CC0 core
+  + CC-BY-SA admin fields) or accept CC-BY-SA on those fields. Covers the ~2.55M complete-gazetteer
+  subset (~95% of our 2.67M); fetch the *complete* gazetteer for full coverage.
+
+Both are **incremental patches** (no re-run), like the Wikipedia-links / ccode backfills. CSV
+export: `gb1900_export_csv.py`.
 
 **Never re-run.** Every improvement lands as an **idempotent patch keyed on `gb:<pin_id>`**
 (county, bbox top-up of pre-bbox records, future feedback re-typing) — no full rebuild. The

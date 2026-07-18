@@ -219,6 +219,27 @@ the project's purpose). Policy:
 - A prior only **reweights** the raster-traced probability (`apply_prior`) and logs
   disagreement (`divergence`); the published geometry stays the independent raster tracing.
 
+### Admin tags without the boundaries — SOLVED via the GB1900 gazetteer (2026-07-18)
+Re-examined CAMPOP for deriving admin *tags* (not geometry) for GB-STAMP: still not open for a
+*published* edition (UKDS safeguarded EUL = non-commercial + database-right "substantial part" +
+dense per-point tags reconstruct the boundaries). Checked **GBHGIS parishes** as the open
+alternative — they are **NOT open**: historical *parish boundaries* are Vision of Britain's main
+**commercial** product (non-commercial only by request to gbhgis@port.ac.uk); "all boundary data
+on UKDS **except parish boundaries, limited commercial use**". So neither CAMPOP nor GBHGIS is
+open for published parish tags.
+
+**BUT the GB1900 gazetteer already carries the tags, published CC-BY-SA.** The complete/abridged
+GB1900 gazetteer columns are `pin_id, final_text, nation, local_authority, parish, …` — VoB ran
+the point-in-polygon against their (commercial) boundaries and **released the DERIVED per-pin tags
+under CC-BY-SA**. Fill (400k sample): **nation 100%, local_authority 100%, parish 95%**. So a
+trivial **`pin_id` join** (our `gb:<pin_id>` = raw-dump/gazetteer pin_id) gives GB-STAMP its
+nation/district/parish tags **openly (CC-BY-SA)** — no geometry, no CAMPOP, no GBHGIS-commercial.
+Caveats: CC-BY-SA (attribution + share-alike to GB1900/VoB, not CC0 → segment the edition or accept
+CC-BY-SA on those fields); covers the ~2.55M complete-gazetteer subset of our 2.67M (~95%); we hold
+the *abridged* (1.17M) locally — fetch the *complete* (CC-BY-SA, visionofbritain.org.uk) for full
+coverage. This **removes the need to extract parish geometry ourselves for TAGGING** (boundary
+extraction now only matters if we want the polygons themselves). See `plan-gb1900-typing.md` §0a.
+
 **Scope reality (verified on the test region):** HCT priors help at the **county** level
 only. The Conwy test boundary is `Union & R.D. By.` — a **sub-county** line **fully inside
 Caernarfonshire** (county border 1.57 km away). Worse, **no open source maps to a 1900
