@@ -1414,6 +1414,17 @@ vs ~4deg spread) -> slant-only .647. So italic is distinguished by LETTERFORM (g
 experiments at ~.70; lexicon windowed crops don't transfer to spotter-box crops (train-lex/test-human
 .35). BREAK IT via abundant clean anchors (spotter on more regions) or more human labels — a DATA effort.
 
+### 12.9 DEFINITIVE serif result — ~0.71 ceiling is INTRINSIC (2026-07-18)
+serif_final.py: trained on 447 CLEAN spotter-box lexicon anchors (up from 68), tested on human.
+Plateaued at the SAME ~0.71 -> the ceiling is NOT anchor-quantity. Best = interpretable
+slant+word-sem+size (.706); the deep CRNN embedding DRAGS it down (full .618 < .706). Root cause:
+upright/italic encodes a SEMANTIC ROLE (settlement name vs descriptive feature) not fully in the
+isolated crop — context-dependent even for a human. **CONCLUSION: type serif with the interpretable
+slant+word-sem+size signal (~.71 soft) — do NOT use the deep embedding for this axis; accept it as one
+soft axis. STOP serif method-probing (8 experiments converge).** Everything else types well
+(antiquities .96, spaced .98, road font-detected .80, water/descriptive-serif .86, abbrev/numeral).
+FINISH LINE = integrate into type_assign v2.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
