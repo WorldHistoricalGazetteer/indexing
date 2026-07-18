@@ -1,12 +1,13 @@
 # Plan — GB1900 place typing (map-typography → AAT)
 
-> **Status (2026-07-17):** BUILT & RUNNING. Tier-0 typing done on all 2.67M pins;
-> the **national GB-STAMP VLM run is in progress** on CRC (h200 + a100, 6 workers —
-> see `crc_gpu_routing_a100_l40s` memory); per-label sheet-precise dating built+tested
-> (§10b); the published edition (provenance/versioning/reconciliation) is designed (§11).
-> This document is the concrete staged plan (off `plan-outstanding-2026-07.md` §2 and
-> `developer/aat-typing-status.md`).
-> **Author aid:** Claude (research pass, 2026-07-17).
+> **Status (2026-07-18):** FULL-COVERAGE NATIONAL RUN IN PROGRESS. The VLM now runs on
+> **ALL 2.67M labels** (not just the Tier-0 residual — see §0a), reading text + typography
+> **and recording a bounding box per label**. As-built pipeline: **parallel S3 tile fetch
+> (COMPLETE, 0 failures) → 12-way sharded Slurm cropper → VLM workers (bbox) → reconcile →
+> dated edition**. Historic-county attribution (`hc_county` HCS code) built. Details + the
+> evolutions since the pilot: **§0a**. This document is the concrete staged plan (off
+> `plan-outstanding-2026-07.md` §2 and `developer/aat-typing-status.md`).
+> **Author aid:** Claude (2026-07-17/18).
 >
 > **RELATED SUB-PROJECT — admin/parish BOUNDARY extraction from the same OS raster:**
 > A distinct but sibling effort mines the **admin boundaries** (parish/district/borough/
@@ -59,7 +60,8 @@
 >   `Spring`→IC (water) ✓, named houses/places→RP ✓. **But two fixes found:** (1)
 >   the VLM mis-reads *tiny abbreviation* labels (`P`→"ROAD", `W`→"WATERLOO") by
 >   latching onto larger neighbours — so **run the VLM on the Tier-0 RESIDUAL only**
->   (abbrevs are Tier-0's domain), via `crops --untyped-only`; (2) crops tightened
+>   *(SUPERSEDED 2026-07-18 → FULL COVERAGE, §0a: the neighbour-latching was fixed by the
+>   marker-crop + verbatim hint, and bboxes require reading every label)*; (2) crops tightened
 >   (was 170px min width → neighbour bleed). Both implemented; residual-only re-run
 >   is the confirming step. Pipeline proven end-to-end on real data.
 > - **PILOT VALIDATED (2026-07-17, after iteration).** VLM reliability solved by
@@ -78,7 +80,11 @@
 >   `gb1900_vlm.sbatch` + `gb1900_vlm_infer.py` (h200 VLM), `gb1900_os_lettering.json`
 >   (`style_to_type_token` crosswalk).
 >
-> **DECISIONS (SG, 2026-07-17):**
+> **DECISIONS (SG, 2026-07-17/18):**
+> - **NEWER decisions (2026-07-18) — see §0a:** VLM on **ALL 2.67M labels** (full coverage,
+>   not residual-only); **record a bbox per label**; **historic-county** attribution
+>   (HCS codes); parallel S3 fetch + **sharded Slurm cropper**; everything as **idempotent
+>   per-`pin_id` patches (never re-run)**.
 > - **Ingest scope = COMPLETE / everything** — all ~2.67M pins ingested (incl.
 >   footpaths/wells/pumps); downstream users customise their own filtering. (So the
 >   §2.4 "default-exclude generic features" option is dropped — index it all, typed.)
@@ -104,6 +110,54 @@
 >   **"WHG Ordnance Label Gazetteer (Britain, 1888–1914)"**. Namespace stays `gb`.
 
 ---
+
+## 0a. AS-BUILT production pipeline (2026-07-18) — supersedes the pilot narrative above
+
+The pilot-era text above ("run the VLM on the Tier-0 residual only", single-VM fetch/crop) is
+kept for history but **superseded** by the decisions and infra below. Current reality:
+
+**Full-coverage decision (SG, 2026-07-17/18).** The VLM runs on **all 2.67M labels**, not just
+the ~1M Tier-0 residual. Rationale: uniform map-grounded typing/text for *every* label, a
+recorded **bbox for every label** (→ precise county + the durable bbox dataset, §12.1), and
+"do it once, never re-run". Cost is the fetch (see below), not GPU. Tier-0 typing still ships
+as the cheap deterministic layer; the VLM read supersedes it where processed.
+
+**The pipeline, end to end (all state on `/vast`, keyed on `gb:<pin_id>`):**
+1. **Parallel S3 tile fetch** — `gb1900_tiles fetch --workers N` (ThreadPoolExecutor, chunked,
+   per-tile retry/backoff). S3 (`mapseries-tilesets.s3`) is concurrency-robust, so this is
+   safe and fast: **the full-GB z16 set — 1,725,842 tiles — fetched in ~2–3 h with 0 failures**
+   (882 absent sea/edge 404s). The old single-thread fetch (~days, and it *died* on a transient
+   `Server disconnected`) is retired. Host note: the `nls-N.tileserver.com` shards are dead
+   placeholders now — S3 is the sole free host (§5.2).
+2. **Sharded Slurm cropper** — `processing/gb1900_crop_shard.py` on **htc** (`gbcrop`, 12-way
+   array). Once tiles are cached, cropping is embarrassingly parallel: shard k crops pins with
+   `int(pin_id,16)%nshards==k` whose crop doesn't already exist, writing `batch_s{k}_NNNN.jsonl`.
+   Replaced the single-VM cropper (`gb1900_pipeline.py`), which had become the throughput
+   bottleneck (the 6 VLM workers were out-pacing it and idling).
+3. **VLM workers** — `gb1900_vlm_worker.sbatch` (autonomous pool; `TP` env → a100 uses TP=2).
+   Scaled to the account cap: **4 a100 (8 GPUs) + 2 h200 = 6 workers**. `gb1900_vlm_infer.py`
+   now emits **`bbox`** (tight box, fractional crop coords) alongside `vlm_text`/`os_style`. Each
+   worker pulls `batch_*.jsonl` (glob matches both `batch_NNNN` and `batch_s{k}_NNNN`), infers,
+   writes `vlm/<batch>/shard-0.jsonl`; the last worker out runs the inline reconcile → edition.
+4. **Reconcile + dating** — `gb1900_reconcile.py` (hint↔VLM policy, §11.5) → `gb1900_dating.py`
+   (sheet-precise, §10b) → the published edition (§11).
+
+**Historic-county attribution** — `processing/gb1900_county_attribution.py`: point-in-polygon of
+each label's **centre** (bbox-centre where detected, else best-guess offset from the pin anchor)
+against the OPEN **HCT/`ukhc`** polygons → `hc_county` = HCS 3-char code (e.g. `CRN`). Near-border
+labels get `hc_county_uncertain` + a work-list for VLM true-bbox refinement. Incremental patch
+(no re-run), like the Wikipedia-links / ccode backfills. CSV export: `gb1900_export_csv.py`.
+
+**Never re-run.** Every improvement lands as an **idempotent patch keyed on `gb:<pin_id>`**
+(county, bbox top-up of pre-bbox records, future feedback re-typing) — no full rebuild. The
+workers re-invoke the infer script per batch, so a schema change (e.g. adding `bbox`) flows to
+the remaining batches in place.
+
+**Follow-ups (post-run):** §12 untranscribed-text discovery via **bbox-overlap masking** of a
+map text-spotter (MapReader/MapTextPipeline **tested & works** on OS six-inch, 2026-07-18 — mask
+by bbox overlap, NOT string, and it *augments* GB1900); §12.1 bootstrap a **native OS-six-inch
+text detector** from our ~2.67M-box dataset (positive-unlabelled + self-training). Both densify
+the boundary-label seeds for `plan-gb1900-parish-extraction.md`.
 
 ## 1. Summary / goal / success criteria
 
@@ -1044,6 +1098,20 @@ for free by the typing run.
 
 ## Appendix — key files & commands referenced
 
+- **Production run (as-built, §0a):**
+  - Fetch: `processing/gb1900_tiles.py fetch --pins national_typed.jsonl --zoom 16 --workers 16`
+    (parallel S3, chunked + retry), run in a shell retry-loop on the pitt VM.
+  - Crop (Slurm): `processing/gb1900_crop_shard.py` via `gbcrop.sbatch`
+    (`sbatch -M htc --array=0-11 …` `--nshards 12`) — supersedes the single-VM
+    `processing/gb1900_pipeline.py`.
+  - VLM: `processing/gb1900_vlm_worker.sbatch` (`-M gpu`; a100 `--gres=gpu:2 --export=ALL,TP=2`,
+    h200 default TP=1) + `processing/gb1900_vlm_infer.py` (schema now includes **`bbox`**).
+  - Reconcile/date: `processing/gb1900_reconcile.py`, `processing/gb1900_dating.py`.
+  - County: `processing/gb1900_county_attribution.py` (HCT `hc_county` + uncertainty work-list).
+  - CSV export: `processing/gb1900_export_csv.py`.
+  - Data on `/vast/ishi/gb1900/`: `edition/national_typed.jsonl` (2.67M tier0), `tiles/16/…`,
+    `crops/national/gb_<pin>.png`, `edition/batches/batch_*`, `edition/vlm/<batch>/shard-0.jsonl`.
+  - Memory: `crc_gpu_routing_a100_l40s`, `gb1900_tile_fetch_fragility`.
 - Authority: `authorities/gb1900-places.py` (docstring §12–29 has the original
   VLM idea; line 25 "SW corner" → correct to "bottom-left of first letter").
 - AAT path: `processing/manual_aat_maps.py`, `processing/aat_enrich.py`
