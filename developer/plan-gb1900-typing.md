@@ -1385,8 +1385,13 @@ mass-produces free serif anchors AND gives a semantic feature. Result (serif_pus
 / test=HUMAN): **word_semantic_only .706 > crnn_emb_only .647**; the word beats the pixels. (Naive
 concat drowned the 4-d word feature in the 512-d embedding -> .647.) With glyph-level at .728 (LOO),
 the production serif logic is a **routing ensemble**: word-semantic style where the word is a known
-lexicon/keyword (most labels), glyph-level visual for novel proper names. Lexicon coverage limited by
-z17 fetch (agri blocks added); more z17 -> more free serif anchors. See [[gbstamp_font_typing_pivot]].
+lexicon/keyword (most labels), glyph-level visual for novel proper names. Routing-ensemble LOO (serif_ensemble.py): **word-rule .857 where the word is known** (descriptive/
+water feature words -> italic) but only 21% coverage; glyph word-vote .574 on novel names -> ensemble
+.618. KEY residual insight: proper names ALSO split — township/village names -> upright (Betton,
+Dinthill), farm/house names -> italic (Adcote, Arscott) — a settlement-RANK distinction not in the word
+text but CORRELATED WITH SIZE (village labels run larger). So the serif recipe = (1) descriptive-word
+lexicon -> italic (large coverage, .86), (2) SIZE for settlement-rank on proper names, (3) glyph-level
+visual as tiebreaker. Expand the descriptive lexicon + more z17 -> more coverage. See [[gbstamp_font_typing_pivot]].
 
 ## Appendix — key files & commands referenced
 
