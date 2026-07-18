@@ -1,70 +1,85 @@
-"""GB-STAMP typing from the RELIABLE signals (option A — see developer/plan-gb1900-typing.md §0b).
+"""GB-STAMP typing v2 — probabilistic top-3 type assignment per label.
 
-Fine font-style typing plateaued (~0.25 on the upright/italic axis), so we type from the signals
-that DO work, at an honest confidence tier:
-  1. tier-0 text rules (abbrev / keyword / numeric) already type ~59% -> high confidence.
-  2. residual proper-names -> coarse type from SIZE x CASE x (confident) style, medium/low confidence.
-  3. font-style is a LOW-CONFIDENCE enrichment, applied only when the classifier is confident.
+Combines the signals proven in the font-typing R&D (developer/plan-gb1900-typing.md §12):
+ - tier-0 checked abbreviations (F.P.->footpath, B.M.->benchmark, ...) — high confidence;
+ - numerals (spot-heights); road suffixes; antiquity terms (validated blackletter font, .96);
+ - water / descriptive / named-place word-semantics (the serif upright/italic axis, .71-.86);
+ - allcaps multiword -> admin/parish (spaced-caps font, .98); settlement-name gazetteer match.
+Size/font-style are NOT available full-corpus (no bbox; crops only for sampled regions), so v2 types
+from text + tier0_rule + case — the font work validated these mappings and is layered in as a targeted
+refinement where crops exist.
 
-`assign_type(rec)` returns {os_kind, size_band, confidence, source} for a label record carrying
-{tier0_rule, text, cap_height_m, allcaps, style?, style_conf?}. os_kind is a coarse OS lettering
-kind (mapped to AAT downstream); it is NOT a claim of fine font identity.
+`assign_types(text, tier0_rule, allcaps, settlement_names) -> [(type, prob), ...]` top-3, descending,
+as a normalised distribution so consumers can pick types[0] as the best guess.
 """
 from __future__ import annotations
+import re
+from collections import defaultdict
 
-# size bands (ground cap-height, metres) — natural gaps seen in the HITL data (§0b)
-SIZE_BANDS = [(0, 30, "small"), (30, 55, "medium"), (55, 1e9, "large")]
-
-# OS abbreviations that are unambiguous type signals (checked-transcription route only)
-ABBREV_KIND = {
-    "F.P.": "footpath", "B.M.": "benchmark", "S.P.": "signpost", "W": "well", "P": "pump",
-    "Ch.": "church", "Sch.": "school", "P.O.": "post-office", "Sp.": "spring", "Fm.": "farm",
-    "Ho.": "house", "Mon.": "monument", "P.H.": "public-house",
+# checked abbreviations -> (type, confidence). Only fire when the transcription matches exactly.
+ABBREV = {
+    "F.P.": ("footpath", .95), "B.M.": ("benchmark", .95), "S.P.": ("signpost", .9),
+    "P.O.": ("post_office", .9), "P.H.": ("public_house", .9), "Ch.": ("church", .85),
+    "Sch.": ("school", .9), "Sp.": ("spring", .85), "Fm.": ("farm", .85), "Ho.": ("house", .8),
+    "Mon.": ("monument", .85), "W": ("well", .8), "P": ("pump", .8), "Sm.": ("smithy", .8),
+    "Rectory": ("rectory", .85), "Vicarage": ("vicarage", .85),
 }
-
-def size_band(cap_h_m):
-    if cap_h_m is None:
-        return None
-    for lo, hi, name in SIZE_BANDS:
-        if lo <= cap_h_m < hi:
-            return name
-    return None
+KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
+    "church": ("church", .88), "chapel": ("chapel", .85), "school": ("school", .88),
+    "mill": ("mill", .82), "farm": ("farm", .82), "bridge": ("bridge", .85), "quarry": ("quarry", .85),
+    "colliery": ("colliery", .88), "works": ("works", .78), "smithy": ("smithy", .82),
+    "brewery": ("brewery", .85), "inn": ("public_house", .8), "hotel": ("hotel", .82),
+    "station": ("station", .8), "reservoir": ("water_feature", .82), "cemetery": ("cemetery", .88),
+    "hospital": ("hospital", .85), "barracks": ("barracks", .88), "wharf": ("wharf", .82),
+}
+ANTIQ = re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Barrow|Barrows|Motte|"
+                   r"Cist|Enclosure|Entrenchment|Cross|Castle|Abbey|Priory|Roman|British|Saxon)\b", re.I)
+ROAD = re.compile(r"\b(ROAD|STREET|LANE|TERRACE|AVENUE|WAY|WALK|ROW)\b", re.I)
+WATER = {"well", "spring", "ford", "weir", "brook", "pond", "pool", "marsh", "moss", "river",
+         "canal", "reservoir", "drain", "sluice", "lake", "mere", "burn", "beck", "dam"}
+DESCRIPTIVE = {"house", "cottage", "cottages", "hall", "lodge", "grange", "barn", "villa", "pit",
+               "shaft", "works", "smithy", "brewery", "kiln", "forge", "foundry", "yard", "green"}
+NAMED_PLACE = {"coppice", "plantation", "nursery", "nurseries", "firs", "covert", "gorse", "belt",
+               "spinney", "wood", "grove", "common", "moor", "heath", "park"}
 
 def _norm_abbrev(t):
-    return (t or "").strip().rstrip(".").upper()
+    return t.strip()
 
-def assign_type(rec, style_conf_min=0.75):
-    """rec: {tier0_rule, text, cap_height_m, allcaps, style?, style_conf?} -> dict."""
-    text = (rec.get("text") or "").strip()
-    rule = rec.get("tier0_rule")
-    band = size_band(rec.get("cap_height_m"))
-    style, sconf = rec.get("style"), rec.get("style_conf", 0.0)
+def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
+    t = (text or "").strip(); low = t.lower(); al = [c for c in t if c.isalpha()]
+    s = defaultdict(float)
 
-    # 1. checked-abbreviation route (highest confidence)
-    key = None
-    for k in ABBREV_KIND:
-        if _norm_abbrev(text) == _norm_abbrev(k):
-            key = k; break
-    if rule == "abbrev" and key:
-        return dict(os_kind=ABBREV_KIND[key], size_band=band, confidence="high", source="abbrev-rule")
-    if rule == "numeric" or (text and text.replace(".", "").replace(",", "").isdigit()):
-        return dict(os_kind="numeric", size_band=band, confidence="high", source="numeric")
-    if rule == "keyword":
-        return dict(os_kind="keyword-typed", size_band=band, confidence="high", source="keyword-rule")
+    if not t or tier0_rule == "illegible":
+        return [("illegible", 1.0)]
+    if tier0_rule == "numeric" or (t and re.fullmatch(r"[\d.,\-]+", t)):
+        s["spot_height_or_value"] += .92
+    if _norm_abbrev(t) in ABBREV:
+        ty, c = ABBREV[_norm_abbrev(t)]; s[ty] += c
+    if ROAD.search(t):
+        s["road"] += .9
+    if ANTIQ.search(t) and not ROAD.search(t):
+        s["antiquity"] += .88
+    for kw, (ty, c) in KEYWORD.items():
+        if kw in low: s[ty] += c
+    if low in WATER: s["water_feature"] += .8
+    if low in DESCRIPTIVE: s["building_or_feature"] += .68
+    if low in NAMED_PLACE: s["named_landcover"] += .68
+    if allcaps and " " in t and len(al) >= 4 and not ROAD.search(t): s["admin_or_parish"] += .78  # spaced caps (font .98)
+    elif allcaps and len(al) >= 3: s["settlement"] += .55
+    if settlement_names and low in settlement_names:
+        s["settlement"] += .6
 
-    # 2. road/street by text suffix (text is decisive for roads)
-    up = text.upper()
-    if any(up.endswith(s) or (" " + s) in (" " + up) for s in ("ROAD", "STREET", "LANE", "TERRACE", "AVENUE")):
-        return dict(os_kind="road", size_band=band, confidence="high", source="road-suffix")
+    if not s:                                          # proper name, no keyword -> serif residual (~.71)
+        if al and t[:1].isupper():
+            s["settlement"] += .45; s["building_or_feature"] += .35
+        else:
+            s["unknown"] += .7
 
-    # 3. residual proper-name -> coarse from confident style + size/case
-    if style and sconf >= style_conf_min and style in ("serif_italic", "slab_italic"):
-        # italic serif/slab on OS six-inch = water / physical features
-        return dict(os_kind="water-or-feature", size_band=band, confidence="medium",
-                    source=f"style:{style}", style_conf=round(sconf, 2))
-    if rec.get("allcaps") and band in ("large", "medium"):
-        return dict(os_kind="admin-or-place-caps", size_band=band, confidence="low", source="case+size")
-
-    # 4. unresolved residual — carry size/case for later
-    return dict(os_kind="settlement-or-unknown", size_band=band, confidence="low",
-                source="residual", allcaps=bool(rec.get("allcaps")))
+    tot = sum(s.values())
+    if tot > 1.0:                                      # renormalise co-firing signals
+        s = {k: v / tot for k, v in s.items()}; tot = 1.0
+    resid = max(0.0, 1.0 - tot)
+    if resid > 1e-6:
+        s["unknown"] = s.get("unknown", 0.0) + resid
+    ranked = sorted(s.items(), key=lambda kv: -kv[1])
+    return [(k, round(v, 3)) for k, v in ranked[:3]]
