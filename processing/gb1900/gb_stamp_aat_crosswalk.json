@@ -1,0 +1,3863 @@
+{
+ "admin_or_parish": {
+  "best": {
+   "aat_id": 300387092,
+   "aat_term": "parishes",
+   "is_place_type": true,
+   "score": 87.7,
+   "matched": "parishes"
+  },
+  "candidates": [
+   {
+    "aat_id": 300387092,
+    "aat_term": "parishes",
+    "is_place_type": true,
+    "score": 87.7,
+    "matched": "parishes"
+   },
+   {
+    "aat_id": 300000773,
+    "aat_term": "parishes (religious divisions)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "parishes"
+   },
+   {
+    "aat_id": 300387092,
+    "aat_term": "parishes",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "civil parishes"
+   },
+   {
+    "aat_id": 300068783,
+    "aat_term": "civil rights",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "civil parishes"
+   },
+   {
+    "aat_id": 300239060,
+    "aat_term": "civil districts",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "civil parishes"
+   }
+  ],
+  "search_terms": [
+   "civil parishes",
+   "parishes"
+  ]
+ },
+ "almshouses": {
+  "best": {
+   "aat_id": 300006745,
+   "aat_term": "almshouses (buildings)",
+   "is_place_type": true,
+   "score": 61.9,
+   "matched": "almshouses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006745,
+    "aat_term": "almshouses (buildings)",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "almshouses"
+   },
+   {
+    "aat_id": 300343487,
+    "aat_term": "almshouses (institutions)",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "almshouses"
+   }
+  ],
+  "search_terms": [
+   "almshouses"
+  ]
+ },
+ "antiquity": {
+  "best": {
+   "aat_id": 300000810,
+   "aat_term": "archaeological sites",
+   "is_place_type": true,
+   "score": 106.8,
+   "matched": "archaeological sites"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000810,
+    "aat_term": "archaeological sites",
+    "is_place_type": true,
+    "score": 106.8,
+    "matched": "archaeological sites"
+   },
+   {
+    "aat_id": 300111990,
+    "aat_term": "leys (archaeological sites)",
+    "is_place_type": true,
+    "score": 80.4,
+    "matched": "archaeological sites"
+   },
+   {
+    "aat_id": 300387535,
+    "aat_term": "underwater archaeological sites",
+    "is_place_type": true,
+    "score": 80.4,
+    "matched": "archaeological sites"
+   },
+   {
+    "aat_id": 300379361,
+    "aat_term": "archaeological parks",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "archaeological sites"
+   }
+  ],
+  "search_terms": [
+   "archaeological sites"
+  ]
+ },
+ "aqueduct": {
+  "best": {
+   "aat_id": 300006165,
+   "aat_term": "aqueducts",
+   "is_place_type": true,
+   "score": 13.5,
+   "matched": "aqueducts (bridges)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006165,
+    "aat_term": "aqueducts",
+    "is_place_type": true,
+    "score": 13.5,
+    "matched": "aqueducts (bridges)"
+   },
+   {
+    "aat_id": 300386855,
+    "aat_term": "land bridges",
+    "is_place_type": true,
+    "score": 7.2,
+    "matched": "aqueducts (bridges)"
+   },
+   {
+    "aat_id": 300387658,
+    "aat_term": "natural bridges",
+    "is_place_type": true,
+    "score": 7.2,
+    "matched": "aqueducts (bridges)"
+   },
+   {
+    "aat_id": 300007838,
+    "aat_term": "arch bridges",
+    "is_place_type": true,
+    "score": 7.2,
+    "matched": "aqueducts (bridges)"
+   }
+  ],
+  "search_terms": [
+   "aqueducts (bridges)"
+  ]
+ },
+ "barracks": {
+  "best": {
+   "aat_id": 300005665,
+   "aat_term": "barracks",
+   "is_place_type": true,
+   "score": 87.7,
+   "matched": "barracks"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005665,
+    "aat_term": "barracks",
+    "is_place_type": true,
+    "score": 87.7,
+    "matched": "barracks"
+   },
+   {
+    "aat_id": 300411451,
+    "aat_term": "hay barracks",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "barracks"
+   }
+  ],
+  "search_terms": [
+   "barracks"
+  ]
+ },
+ "bays_harbours": {
+  "best": {
+   "aat_id": 300008678,
+   "aat_term": "harbors",
+   "is_place_type": true,
+   "score": 87.7,
+   "matched": "harbors"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008678,
+    "aat_term": "harbors",
+    "is_place_type": true,
+    "score": 87.7,
+    "matched": "harbors"
+   },
+   {
+    "aat_id": 300443610,
+    "aat_term": "sections of harbors",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "harbors"
+   }
+  ],
+  "search_terms": [
+   "harbors"
+  ]
+ },
+ "beacon": {
+  "best": {
+   "aat_id": 300007739,
+   "aat_term": "beacons",
+   "is_place_type": true,
+   "score": 78.3,
+   "matched": "beacons"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007739,
+    "aat_term": "beacons",
+    "is_place_type": true,
+    "score": 78.3,
+    "matched": "beacons"
+   },
+   {
+    "aat_id": 300181617,
+    "aat_term": "airport beacons",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "beacons"
+   },
+   {
+    "aat_id": 300181651,
+    "aat_term": "airway beacons",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "beacons"
+   },
+   {
+    "aat_id": 300181680,
+    "aat_term": "landmark beacons",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "beacons"
+   }
+  ],
+  "search_terms": [
+   "beacons"
+  ]
+ },
+ "benchmark": {
+  "best": {
+   "aat_id": 300434155,
+   "aat_term": "survey markers",
+   "is_place_type": true,
+   "score": 18.2,
+   "matched": "benchmarks (survey markers)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300434155,
+    "aat_term": "survey markers",
+    "is_place_type": true,
+    "score": 18.2,
+    "matched": "benchmarks (survey markers)"
+   },
+   {
+    "aat_id": 300434156,
+    "aat_term": "survey stakes",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "benchmarks (survey markers)"
+   },
+   {
+    "aat_id": 300434157,
+    "aat_term": "survey vessels",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "benchmarks (survey markers)"
+   },
+   {
+    "aat_id": 300432729,
+    "aat_term": "site markers",
+    "is_place_type": true,
+    "score": 8.2,
+    "matched": "benchmarks (survey markers)"
+   }
+  ],
+  "search_terms": [
+   "benchmarks (survey markers)"
+  ]
+ },
+ "boathouse": {
+  "best": {
+   "aat_id": 300007829,
+   "aat_term": "boathouses",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "boathouses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007829,
+    "aat_term": "boathouses",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "boathouses"
+   }
+  ],
+  "search_terms": [
+   "boathouses"
+  ]
+ },
+ "bogs_moors_forests": {
+  "best": {
+   "aat_id": 300386886,
+   "aat_term": "moors (landforms)",
+   "is_place_type": true,
+   "score": 65.1,
+   "matched": "moors"
+  },
+  "candidates": [
+   {
+    "aat_id": 300386886,
+    "aat_term": "moors (landforms)",
+    "is_place_type": true,
+    "score": 65.1,
+    "matched": "moors"
+   }
+  ],
+  "search_terms": [
+   "moors"
+  ]
+ },
+ "borough": {
+  "best": {
+   "aat_id": 300000778,
+   "aat_term": "boroughs",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "boroughs"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000778,
+    "aat_term": "boroughs",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "boroughs"
+   }
+  ],
+  "search_terms": [
+   "boroughs"
+  ]
+ },
+ "boundary": {
+  "best": {
+   "aat_id": 300055590,
+   "aat_term": "boundaries",
+   "is_place_type": true,
+   "score": 12.9,
+   "matched": "boundaries (legal concept)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300055590,
+    "aat_term": "boundaries",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300055586,
+    "aat_term": "partnership (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300417694,
+    "aat_term": "laws (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300417696,
+    "aat_term": "rights (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   }
+  ],
+  "search_terms": [
+   "boundaries (legal concept)"
+  ]
+ },
+ "boundary_feature": {
+  "best": {
+   "aat_id": 300055590,
+   "aat_term": "boundaries",
+   "is_place_type": true,
+   "score": 12.9,
+   "matched": "boundaries (legal concept)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300055590,
+    "aat_term": "boundaries",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300055586,
+    "aat_term": "partnership (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300417694,
+    "aat_term": "laws (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   },
+   {
+    "aat_id": 300417696,
+    "aat_term": "rights (legal concept)",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "boundaries (legal concept)"
+   }
+  ],
+  "search_terms": [
+   "boundaries (legal concept)"
+  ]
+ },
+ "boundary_post": {
+  "best": {
+   "aat_id": 300420986,
+   "aat_term": "boundary markers",
+   "is_place_type": true,
+   "score": 117.0,
+   "matched": "boundary markers"
+  },
+  "candidates": [
+   {
+    "aat_id": 300420986,
+    "aat_term": "boundary markers",
+    "is_place_type": true,
+    "score": 117.0,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300100558,
+    "aat_term": "boundary walls",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300181728,
+    "aat_term": "boundary lights",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300411600,
+    "aat_term": "boundary posts",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   }
+  ],
+  "search_terms": [
+   "boundary markers"
+  ]
+ },
+ "boundary_stone": {
+  "best": {
+   "aat_id": 300420986,
+   "aat_term": "boundary markers",
+   "is_place_type": true,
+   "score": 117.0,
+   "matched": "boundary markers"
+  },
+  "candidates": [
+   {
+    "aat_id": 300420986,
+    "aat_term": "boundary markers",
+    "is_place_type": true,
+    "score": 117.0,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300006962,
+    "aat_term": "boundary stones",
+    "is_place_type": true,
+    "score": 114.4,
+    "matched": "boundary stones"
+   },
+   {
+    "aat_id": 300100558,
+    "aat_term": "boundary walls",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300181728,
+    "aat_term": "boundary lights",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   },
+   {
+    "aat_id": 300411600,
+    "aat_term": "boundary posts",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "boundary markers"
+   }
+  ],
+  "search_terms": [
+   "boundary markers",
+   "boundary stones"
+  ]
+ },
+ "breakwater": {
+  "best": {
+   "aat_id": 300006137,
+   "aat_term": "breakwaters",
+   "is_place_type": true,
+   "score": 85.1,
+   "matched": "breakwaters"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006137,
+    "aat_term": "breakwaters",
+    "is_place_type": true,
+    "score": 85.1,
+    "matched": "breakwaters"
+   },
+   {
+    "aat_id": 300006139,
+    "aat_term": "blockwork breakwaters",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "breakwaters"
+   },
+   {
+    "aat_id": 300006142,
+    "aat_term": "mound breakwaters",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "breakwaters"
+   }
+  ],
+  "search_terms": [
+   "breakwaters"
+  ]
+ },
+ "brewery": {
+  "best": {
+   "aat_id": 300006341,
+   "aat_term": "breweries",
+   "is_place_type": true,
+   "score": 13.5,
+   "matched": "breweries (buildings)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006341,
+    "aat_term": "breweries",
+    "is_place_type": true,
+    "score": 13.5,
+    "matched": "breweries (buildings)"
+   },
+   {
+    "aat_id": 300008059,
+    "aat_term": "public buildings (governmental buildings)",
+    "is_place_type": true,
+    "score": 5.6,
+    "matched": "breweries (buildings)"
+   },
+   {
+    "aat_id": 300411418,
+    "aat_term": "electrification buildings (transportation buildings)",
+    "is_place_type": true,
+    "score": 5.6,
+    "matched": "breweries (buildings)"
+   },
+   {
+    "aat_id": 300448940,
+    "aat_term": "quadrangles (buildings)",
+    "is_place_type": true,
+    "score": 5.2,
+    "matched": "breweries (buildings)"
+   }
+  ],
+  "search_terms": [
+   "breweries (buildings)"
+  ]
+ },
+ "brickworks": {
+  "best": null,
+  "candidates": [],
+  "search_terms": [
+   "brickyards"
+  ]
+ },
+ "bridge": {
+  "best": {
+   "aat_id": 300007836,
+   "aat_term": "bridges (built works)",
+   "is_place_type": true,
+   "score": 104.4,
+   "matched": "bridges (built works)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007836,
+    "aat_term": "bridges (built works)",
+    "is_place_type": true,
+    "score": 104.4,
+    "matched": "bridges (built works)"
+   },
+   {
+    "aat_id": 300265418,
+    "aat_term": "built works",
+    "is_place_type": true,
+    "score": 11.5,
+    "matched": "bridges (built works)"
+   },
+   {
+    "aat_id": 300443970,
+    "aat_term": "centers (built works)",
+    "is_place_type": true,
+    "score": 9.6,
+    "matched": "bridges (built works)"
+   },
+   {
+    "aat_id": 300005610,
+    "aat_term": "condominiums (built works)",
+    "is_place_type": true,
+    "score": 9.6,
+    "matched": "bridges (built works)"
+   }
+  ],
+  "search_terms": [
+   "bridges (built works)"
+  ]
+ },
+ "bridle_road": {
+  "best": {
+   "aat_id": 300008322,
+   "aat_term": "bridle paths",
+   "is_place_type": true,
+   "score": 128.8,
+   "matched": "bridle paths"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008322,
+    "aat_term": "bridle paths",
+    "is_place_type": true,
+    "score": 128.8,
+    "matched": "bridle paths"
+   },
+   {
+    "aat_id": 300008321,
+    "aat_term": "paths",
+    "is_place_type": true,
+    "score": 12.4,
+    "matched": "bridle paths"
+   },
+   {
+    "aat_id": 300008324,
+    "aat_term": "bicycle paths",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "bridle paths"
+   },
+   {
+    "aat_id": 300421127,
+    "aat_term": "bridle ornaments",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "bridle paths"
+   }
+  ],
+  "search_terms": [
+   "bridle paths"
+  ]
+ },
+ "building_or_feature": {
+  "best": {
+   "aat_id": 300004792,
+   "aat_term": "buildings (structures)",
+   "is_place_type": true,
+   "score": 79.1,
+   "matched": "buildings (structures)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300004792,
+    "aat_term": "buildings (structures)",
+    "is_place_type": true,
+    "score": 79.1,
+    "matched": "buildings (structures)"
+   },
+   {
+    "aat_id": 300428664,
+    "aat_term": "other structures",
+    "is_place_type": true,
+    "score": 6.2,
+    "matched": "buildings (structures)"
+   },
+   {
+    "aat_id": 300432020,
+    "aat_term": "utility structures",
+    "is_place_type": true,
+    "score": 6.2,
+    "matched": "buildings (structures)"
+   },
+   {
+    "aat_id": 300004895,
+    "aat_term": "agricultural structures",
+    "is_place_type": true,
+    "score": 6.2,
+    "matched": "buildings (structures)"
+   }
+  ],
+  "search_terms": [
+   "buildings (structures)"
+  ]
+ },
+ "cave": {
+  "best": {
+   "aat_id": 300008746,
+   "aat_term": "caves",
+   "is_place_type": true,
+   "score": 83.2,
+   "matched": "caves"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008746,
+    "aat_term": "caves",
+    "is_place_type": true,
+    "score": 83.2,
+    "matched": "caves"
+   },
+   {
+    "aat_id": 300387008,
+    "aat_term": "burial caves",
+    "is_place_type": true,
+    "score": 58.3,
+    "matched": "caves"
+   },
+   {
+    "aat_id": 300400631,
+    "aat_term": "sepulchral caves",
+    "is_place_type": true,
+    "score": 58.3,
+    "matched": "caves"
+   },
+   {
+    "aat_id": 300444968,
+    "aat_term": "rock-cut caves",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "caves"
+   }
+  ],
+  "search_terms": [
+   "caves"
+  ]
+ },
+ "cemetery": {
+  "best": {
+   "aat_id": 300266755,
+   "aat_term": "cemeteries",
+   "is_place_type": true,
+   "score": 75.4,
+   "matched": "cemeteries"
+  },
+  "candidates": [
+   {
+    "aat_id": 300266755,
+    "aat_term": "cemeteries",
+    "is_place_type": true,
+    "score": 75.4,
+    "matched": "cemeteries"
+   },
+   {
+    "aat_id": 300266758,
+    "aat_term": "military cemeteries (veteran cemeteries)",
+    "is_place_type": true,
+    "score": 55.9,
+    "matched": "cemeteries"
+   },
+   {
+    "aat_id": 300000370,
+    "aat_term": "columbaria (cemeteries)",
+    "is_place_type": true,
+    "score": 52.0,
+    "matched": "cemeteries"
+   },
+   {
+    "aat_id": 300266757,
+    "aat_term": "lawn cemeteries",
+    "is_place_type": true,
+    "score": 52.0,
+    "matched": "cemeteries"
+   }
+  ],
+  "search_terms": [
+   "cemeteries"
+  ]
+ },
+ "chapel": {
+  "best": {
+   "aat_id": 300004590,
+   "aat_term": "chapels (rooms or structures)",
+   "is_place_type": true,
+   "score": 118.9,
+   "matched": "chapels (rooms or structures)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300004590,
+    "aat_term": "chapels (rooms or structures)",
+    "is_place_type": true,
+    "score": 118.9,
+    "matched": "chapels (rooms or structures)"
+   },
+   {
+    "aat_id": 300082254,
+    "aat_term": "funeral chapels",
+    "is_place_type": true,
+    "score": 8.2,
+    "matched": "chapels (rooms or structures)"
+   },
+   {
+    "aat_id": 300403946,
+    "aat_term": "tomb chapels",
+    "is_place_type": true,
+    "score": 8.2,
+    "matched": "chapels (rooms or structures)"
+   },
+   {
+    "aat_id": 300007454,
+    "aat_term": "sepulchral chapels",
+    "is_place_type": true,
+    "score": 8.2,
+    "matched": "chapels (rooms or structures)"
+   }
+  ],
+  "search_terms": [
+   "chapels (rooms or structures)"
+  ]
+ },
+ "church": {
+  "best": {
+   "aat_id": 300007466,
+   "aat_term": "churches (buildings)",
+   "is_place_type": true,
+   "score": 88.6,
+   "matched": "churches (buildings)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007466,
+    "aat_term": "churches (buildings)",
+    "is_place_type": true,
+    "score": 88.6,
+    "matched": "churches (buildings)"
+   },
+   {
+    "aat_id": 300007493,
+    "aat_term": "pilgrimage churches (buildings)",
+    "is_place_type": true,
+    "score": 65.2,
+    "matched": "churches (buildings)"
+   },
+   {
+    "aat_id": 300452137,
+    "aat_term": "galleried churches (buildings)",
+    "is_place_type": true,
+    "score": 65.2,
+    "matched": "churches (buildings)"
+   },
+   {
+    "aat_id": 300452112,
+    "aat_term": "auxiliary churches (buildings)",
+    "is_place_type": true,
+    "score": 65.2,
+    "matched": "churches (buildings)"
+   }
+  ],
+  "search_terms": [
+   "churches (buildings)"
+  ]
+ },
+ "city": {
+  "best": {
+   "aat_id": 300008389,
+   "aat_term": "cities",
+   "is_place_type": true,
+   "score": 70.9,
+   "matched": "cities"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008389,
+    "aat_term": "cities",
+    "is_place_type": true,
+    "score": 70.9,
+    "matched": "cities"
+   },
+   {
+    "aat_id": 300008492,
+    "aat_term": "model cities",
+    "is_place_type": true,
+    "score": 48.4,
+    "matched": "cities"
+   },
+   {
+    "aat_id": 300008496,
+    "aat_term": "future cities",
+    "is_place_type": true,
+    "score": 48.4,
+    "matched": "cities"
+   },
+   {
+    "aat_id": 300008498,
+    "aat_term": "ideal cities",
+    "is_place_type": true,
+    "score": 48.4,
+    "matched": "cities"
+   }
+  ],
+  "search_terms": [
+   "cities"
+  ]
+ },
+ "clergy_house": {
+  "best": {
+   "aat_id": 300005639,
+   "aat_term": "clergy houses",
+   "is_place_type": true,
+   "score": 97.0,
+   "matched": "clergy houses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005639,
+    "aat_term": "clergy houses",
+    "is_place_type": true,
+    "score": 97.0,
+    "matched": "clergy houses"
+   },
+   {
+    "aat_id": 300025747,
+    "aat_term": "clergy",
+    "is_place_type": true,
+    "score": 10.4,
+    "matched": "clergy houses"
+   },
+   {
+    "aat_id": 300025774,
+    "aat_term": "priests (clergy)",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "clergy houses"
+   },
+   {
+    "aat_id": 300239152,
+    "aat_term": "Christian clergy",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "clergy houses"
+   }
+  ],
+  "search_terms": [
+   "clergy houses"
+  ]
+ },
+ "coastguard": {
+  "best": {
+   "aat_id": 300423367,
+   "aat_term": "coast guard cutters",
+   "is_place_type": true,
+   "score": 15.2,
+   "matched": "coast guard stations"
+  },
+  "candidates": [
+   {
+    "aat_id": 300423367,
+    "aat_term": "coast guard cutters",
+    "is_place_type": true,
+    "score": 15.2,
+    "matched": "coast guard stations"
+   },
+   {
+    "aat_id": 300448922,
+    "aat_term": "guard booths",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "coast guard stations"
+   },
+   {
+    "aat_id": 300265671,
+    "aat_term": "guard sheets",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "coast guard stations"
+   },
+   {
+    "aat_id": 300312135,
+    "aat_term": "Gold Coast",
+    "is_place_type": true,
+    "score": 8.2,
+    "matched": "coast guard stations"
+   }
+  ],
+  "search_terms": [
+   "coast guard stations"
+  ]
+ },
+ "college": {
+  "best": {
+   "aat_id": 300448929,
+   "aat_term": "college buildings",
+   "is_place_type": true,
+   "score": 97.1,
+   "matched": "college buildings"
+  },
+  "candidates": [
+   {
+    "aat_id": 300448929,
+    "aat_term": "college buildings",
+    "is_place_type": true,
+    "score": 97.1,
+    "matched": "college buildings"
+   },
+   {
+    "aat_id": 300451030,
+    "aat_term": "college centers (buildings)",
+    "is_place_type": true,
+    "score": 12.0,
+    "matched": "college buildings"
+   },
+   {
+    "aat_id": 300008430,
+    "aat_term": "college towns",
+    "is_place_type": true,
+    "score": 9.2,
+    "matched": "college buildings"
+   },
+   {
+    "aat_id": 300458820,
+    "aat_term": "college presidents",
+    "is_place_type": true,
+    "score": 9.2,
+    "matched": "college buildings"
+   }
+  ],
+  "search_terms": [
+   "college buildings"
+  ]
+ },
+ "colliery": {
+  "best": {
+   "aat_id": 300000396,
+   "aat_term": "coal mines",
+   "is_place_type": true,
+   "score": 106.9,
+   "matched": "coal mines"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000396,
+    "aat_term": "coal mines",
+    "is_place_type": true,
+    "score": 106.9,
+    "matched": "coal mines"
+   },
+   {
+    "aat_id": 300015149,
+    "aat_term": "coal",
+    "is_place_type": true,
+    "score": 9.9,
+    "matched": "coal mines"
+   },
+   {
+    "aat_id": 300000398,
+    "aat_term": "copper mines",
+    "is_place_type": true,
+    "score": 8.1,
+    "matched": "coal mines"
+   },
+   {
+    "aat_id": 300000399,
+    "aat_term": "iron mines",
+    "is_place_type": true,
+    "score": 8.1,
+    "matched": "coal mines"
+   }
+  ],
+  "search_terms": [
+   "coal mines"
+  ]
+ },
+ "county_admin": {
+  "best": {
+   "aat_id": 300000771,
+   "aat_term": "counties",
+   "is_place_type": true,
+   "score": 12.9,
+   "matched": "counties (political divisions)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000771,
+    "aat_term": "counties",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "counties (political divisions)"
+   },
+   {
+    "aat_id": 300236157,
+    "aat_term": "political divisions",
+    "is_place_type": true,
+    "score": 14.8,
+    "matched": "counties (political divisions)"
+   },
+   {
+    "aat_id": 300000772,
+    "aat_term": "departments (political divisions)",
+    "is_place_type": true,
+    "score": 12.4,
+    "matched": "counties (political divisions)"
+   },
+   {
+    "aat_id": 300000776,
+    "aat_term": "states (political divisions)",
+    "is_place_type": true,
+    "score": 12.4,
+    "matched": "counties (political divisions)"
+   }
+  ],
+  "search_terms": [
+   "counties (political divisions)"
+  ]
+ },
+ "farm": {
+  "best": {
+   "aat_id": 300000206,
+   "aat_term": "farms",
+   "is_place_type": true,
+   "score": 72.8,
+   "matched": "farms"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000206,
+    "aat_term": "farms",
+    "is_place_type": true,
+    "score": 72.8,
+    "matched": "farms"
+   },
+   {
+    "aat_id": 300000676,
+    "aat_term": "tank farms",
+    "is_place_type": true,
+    "score": 50.0,
+    "matched": "farms"
+   },
+   {
+    "aat_id": 300000222,
+    "aat_term": "historic farms",
+    "is_place_type": true,
+    "score": 50.0,
+    "matched": "farms"
+   },
+   {
+    "aat_id": 300248842,
+    "aat_term": "model farms",
+    "is_place_type": true,
+    "score": 50.0,
+    "matched": "farms"
+   }
+  ],
+  "search_terms": [
+   "farms"
+  ]
+ },
+ "ferry": {
+  "best": {
+   "aat_id": 300178870,
+   "aat_term": "ferries (vessels)",
+   "is_place_type": true,
+   "score": 10.0,
+   "matched": "ferries (facilities)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300178870,
+    "aat_term": "ferries (vessels)",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "ferries (facilities)"
+   },
+   {
+    "aat_id": 300232791,
+    "aat_term": "car ferries",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "ferries (facilities)"
+   },
+   {
+    "aat_id": 300417355,
+    "aat_term": "train ferries",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "ferries (facilities)"
+   },
+   {
+    "aat_id": 300387027,
+    "aat_term": "scientific facilities",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "ferries (facilities)"
+   }
+  ],
+  "search_terms": [
+   "ferries (facilities)"
+  ]
+ },
+ "fire_hydrant": {
+  "best": {
+   "aat_id": 300112086,
+   "aat_term": "fire hydrants",
+   "is_place_type": true,
+   "score": 115.6,
+   "matched": "fire hydrants"
+  },
+  "candidates": [
+   {
+    "aat_id": 300112086,
+    "aat_term": "fire hydrants",
+    "is_place_type": true,
+    "score": 115.6,
+    "matched": "fire hydrants"
+   },
+   {
+    "aat_id": 300006044,
+    "aat_term": "fire stations",
+    "is_place_type": true,
+    "score": 6.7,
+    "matched": "fire hydrants"
+   },
+   {
+    "aat_id": 300007631,
+    "aat_term": "fire altars",
+    "is_place_type": true,
+    "score": 6.7,
+    "matched": "fire hydrants"
+   },
+   {
+    "aat_id": 300007611,
+    "aat_term": "fire temples",
+    "is_place_type": true,
+    "score": 6.7,
+    "matched": "fire hydrants"
+   }
+  ],
+  "search_terms": [
+   "fire hydrants"
+  ]
+ },
+ "flagstaff": {
+  "best": {
+   "aat_id": 300082991,
+   "aat_term": "flagpoles",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "flagpoles"
+  },
+  "candidates": [
+   {
+    "aat_id": 300082991,
+    "aat_term": "flagpoles",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "flagpoles"
+   }
+  ],
+  "search_terms": [
+   "flagpoles"
+  ]
+ },
+ "flood_land": {
+  "best": {
+   "aat_id": 300008899,
+   "aat_term": "wetlands",
+   "matched": "manual_fix",
+   "source": "curated"
+  },
+  "candidates": [],
+  "search_terms": [
+   "floodplains"
+  ]
+ },
+ "fold": {
+  "best": {
+   "aat_id": 300430998,
+   "aat_term": "pyrography pens",
+   "is_place_type": true,
+   "score": 8.3,
+   "matched": "animal pens"
+  },
+  "candidates": [
+   {
+    "aat_id": 300430998,
+    "aat_term": "pyrography pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300168310,
+    "aat_term": "light pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300022455,
+    "aat_term": "fountain pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300022456,
+    "aat_term": "lettering pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   }
+  ],
+  "search_terms": [
+   "animal pens"
+  ]
+ },
+ "footbridge": {
+  "best": {
+   "aat_id": 300007883,
+   "aat_term": "footbridges",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "footbridges"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007883,
+    "aat_term": "footbridges",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "footbridges"
+   },
+   {
+    "aat_id": 300008176,
+    "aat_term": "pedestrian malls",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "pedestrian bridges"
+   },
+   {
+    "aat_id": 300008268,
+    "aat_term": "pedestrian streets",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "pedestrian bridges"
+   },
+   {
+    "aat_id": 300187775,
+    "aat_term": "pedestrian facilities",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "pedestrian bridges"
+   },
+   {
+    "aat_id": 300229600,
+    "aat_term": "skates (pedestrian vehicles)",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "pedestrian bridges"
+   }
+  ],
+  "search_terms": [
+   "footbridges",
+   "pedestrian bridges"
+  ]
+ },
+ "footpath": {
+  "best": {
+   "aat_id": 300008328,
+   "aat_term": "footpaths",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "footpaths"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008328,
+    "aat_term": "footpaths",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "footpaths"
+   }
+  ],
+  "search_terms": [
+   "footpaths"
+  ]
+ },
+ "gasworks": {
+  "best": {
+   "aat_id": 300000386,
+   "aat_term": "gasworks",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "gasworks"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000386,
+    "aat_term": "gasworks",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "gasworks"
+   }
+  ],
+  "search_terms": [
+   "gasworks"
+  ]
+ },
+ "gate": {
+  "best": {
+   "aat_id": 300078051,
+   "aat_term": "structural assemblies",
+   "is_place_type": true,
+   "score": 10.0,
+   "matched": "gates (door assemblies)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300078051,
+    "aat_term": "structural assemblies",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "gates (door assemblies)"
+   },
+   {
+    "aat_id": 300002580,
+    "aat_term": "arcades (structural assemblies)",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "gates (door assemblies)"
+   },
+   {
+    "aat_id": 300264325,
+    "aat_term": "Assemblies of God",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "gates (door assemblies)"
+   },
+   {
+    "aat_id": 300005080,
+    "aat_term": "city gates",
+    "is_place_type": true,
+    "score": 8.0,
+    "matched": "gates (door assemblies)"
+   }
+  ],
+  "search_terms": [
+   "gates (door assemblies)"
+  ]
+ },
+ "gentlemens_seat": {
+  "best": {
+   "aat_id": 300005567,
+   "aat_term": "country houses",
+   "is_place_type": true,
+   "score": 99.5,
+   "matched": "country houses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005567,
+    "aat_term": "country houses",
+    "is_place_type": true,
+    "score": 99.5,
+    "matched": "country houses"
+   },
+   {
+    "aat_id": 300417368,
+    "aat_term": "great houses (European country houses)",
+    "is_place_type": true,
+    "score": 58.0,
+    "matched": "country houses"
+   },
+   {
+    "aat_id": 300000545,
+    "aat_term": "country clubs",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "country houses"
+   },
+   {
+    "aat_id": 300443493,
+    "aat_term": "country parks",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "country houses"
+   }
+  ],
+  "search_terms": [
+   "country houses"
+  ]
+ },
+ "guidepost": {
+  "best": {
+   "aat_id": 300003909,
+   "aat_term": "guideposts",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "guideposts"
+  },
+  "candidates": [
+   {
+    "aat_id": 300003909,
+    "aat_term": "guideposts",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "guideposts"
+   }
+  ],
+  "search_terms": [
+   "guideposts"
+  ]
+ },
+ "hills": {
+  "best": {
+   "aat_id": 300008777,
+   "aat_term": "hills (landforms)",
+   "is_place_type": true,
+   "score": 59.9,
+   "matched": "hills"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008777,
+    "aat_term": "hills (landforms)",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "hills"
+   },
+   {
+    "aat_id": 300386906,
+    "aat_term": "undersea hills",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "hills"
+   },
+   {
+    "aat_id": 300375100,
+    "aat_term": "hummocks (hills)",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "hills"
+   }
+  ],
+  "search_terms": [
+   "hills"
+  ]
+ },
+ "hospital": {
+  "best": {
+   "aat_id": 300006733,
+   "aat_term": "psychiatric hospitals",
+   "is_place_type": true,
+   "score": 48.7,
+   "matched": "hospitals"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006733,
+    "aat_term": "psychiatric hospitals",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "hospitals"
+   },
+   {
+    "aat_id": 300006678,
+    "aat_term": "cottage hospitals",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "hospitals"
+   },
+   {
+    "aat_id": 300006679,
+    "aat_term": "mobile hospitals",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "hospitals"
+   },
+   {
+    "aat_id": 300006681,
+    "aat_term": "aural hospitals",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "hospitals"
+   }
+  ],
+  "search_terms": [
+   "hospitals"
+  ]
+ },
+ "hotel": {
+  "best": {
+   "aat_id": 300007168,
+   "aat_term": "floating hotels",
+   "is_place_type": true,
+   "score": 53.7,
+   "matched": "hotels"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007168,
+    "aat_term": "floating hotels",
+    "is_place_type": true,
+    "score": 53.7,
+    "matched": "hotels"
+   },
+   {
+    "aat_id": 300007169,
+    "aat_term": "pensions (hotels)",
+    "is_place_type": true,
+    "score": 53.7,
+    "matched": "hotels"
+   },
+   {
+    "aat_id": 300108395,
+    "aat_term": "railway hotels",
+    "is_place_type": true,
+    "score": 53.7,
+    "matched": "hotels"
+   },
+   {
+    "aat_id": 300252194,
+    "aat_term": "grand hotels",
+    "is_place_type": true,
+    "score": 53.7,
+    "matched": "hotels"
+   }
+  ],
+  "search_terms": [
+   "hotels"
+  ]
+ },
+ "icehouse": {
+  "best": {
+   "aat_id": 300005433,
+   "aat_term": "houses",
+   "is_place_type": true,
+   "score": 7.6,
+   "matched": "ice houses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005433,
+    "aat_term": "houses",
+    "is_place_type": true,
+    "score": 7.6,
+    "matched": "ice houses"
+   },
+   {
+    "aat_id": 300132320,
+    "aat_term": "pack ice",
+    "is_place_type": true,
+    "score": 6.9,
+    "matched": "ice houses"
+   },
+   {
+    "aat_id": 300387059,
+    "aat_term": "ice sheets",
+    "is_place_type": true,
+    "score": 6.9,
+    "matched": "ice houses"
+   },
+   {
+    "aat_id": 300387063,
+    "aat_term": "ice tongues",
+    "is_place_type": true,
+    "score": 6.9,
+    "matched": "ice houses"
+   }
+  ],
+  "search_terms": [
+   "ice houses"
+  ]
+ },
+ "jetty": {
+  "best": {
+   "aat_id": 300105679,
+   "aat_term": "jetties (building divisions)",
+   "is_place_type": true,
+   "score": 51.7,
+   "matched": "jetties"
+  },
+  "candidates": [
+   {
+    "aat_id": 300105679,
+    "aat_term": "jetties (building divisions)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "jetties"
+   },
+   {
+    "aat_id": 300006155,
+    "aat_term": "jetties (erosion protection works)",
+    "is_place_type": true,
+    "score": 44.4,
+    "matched": "jetties"
+   }
+  ],
+  "search_terms": [
+   "jetties"
+  ]
+ },
+ "kennels": {
+  "best": {
+   "aat_id": 300004993,
+   "aat_term": "kennels (animal housing)",
+   "is_place_type": true,
+   "score": 54.4,
+   "matched": "kennels"
+  },
+  "candidates": [
+   {
+    "aat_id": 300004993,
+    "aat_term": "kennels (animal housing)",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "kennels"
+   }
+  ],
+  "search_terms": [
+   "kennels"
+  ]
+ },
+ "landform": {
+  "best": {
+   "aat_id": 300266060,
+   "aat_term": "landforms (terrestrial)",
+   "is_place_type": true,
+   "score": 43.2,
+   "matched": "landforms"
+  },
+  "candidates": [
+   {
+    "aat_id": 300266060,
+    "aat_term": "landforms (terrestrial)",
+    "is_place_type": true,
+    "score": 43.2,
+    "matched": "landforms"
+   },
+   {
+    "aat_id": 300387581,
+    "aat_term": "undersea landforms",
+    "is_place_type": true,
+    "score": 43.2,
+    "matched": "landforms"
+   },
+   {
+    "aat_id": 300008832,
+    "aat_term": "glacial landforms",
+    "is_place_type": true,
+    "score": 43.2,
+    "matched": "landforms"
+   },
+   {
+    "aat_id": 300132328,
+    "aat_term": "fluvial landforms",
+    "is_place_type": true,
+    "score": 43.2,
+    "matched": "landforms"
+   }
+  ],
+  "search_terms": [
+   "landforms"
+  ]
+ },
+ "landing_stage": {
+  "best": {
+   "aat_id": 300120782,
+   "aat_term": "quays",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "quays"
+  },
+  "candidates": [
+   {
+    "aat_id": 300120782,
+    "aat_term": "quays",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "quays"
+   }
+  ],
+  "search_terms": [
+   "quays"
+  ]
+ },
+ "letter_box": {
+  "best": {
+   "aat_id": 300003853,
+   "aat_term": "mailboxes",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "mailboxes"
+  },
+  "candidates": [
+   {
+    "aat_id": 300003853,
+    "aat_term": "mailboxes",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "mailboxes"
+   }
+  ],
+  "search_terms": [
+   "mailboxes"
+  ]
+ },
+ "lifeboat_station": {
+  "best": {
+   "aat_id": 300387250,
+   "aat_term": "fur stations",
+   "is_place_type": true,
+   "score": 7.1,
+   "matched": "lifeboat stations"
+  },
+  "candidates": [
+   {
+    "aat_id": 300387250,
+    "aat_term": "fur stations",
+    "is_place_type": true,
+    "score": 7.1,
+    "matched": "lifeboat stations"
+   },
+   {
+    "aat_id": 300257640,
+    "aat_term": "whaling stations",
+    "is_place_type": true,
+    "score": 7.1,
+    "matched": "lifeboat stations"
+   },
+   {
+    "aat_id": 300259534,
+    "aat_term": "transfer stations",
+    "is_place_type": true,
+    "score": 7.1,
+    "matched": "lifeboat stations"
+   },
+   {
+    "aat_id": 300264040,
+    "aat_term": "hill stations",
+    "is_place_type": true,
+    "score": 7.1,
+    "matched": "lifeboat stations"
+   }
+  ],
+  "search_terms": [
+   "lifeboat stations"
+  ]
+ },
+ "limekiln": {
+  "best": {
+   "aat_id": 300006404,
+   "aat_term": "lime kilns",
+   "is_place_type": true,
+   "score": 111.8,
+   "matched": "lime kilns"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006404,
+    "aat_term": "lime kilns",
+    "is_place_type": true,
+    "score": 111.8,
+    "matched": "lime kilns"
+   },
+   {
+    "aat_id": 300022798,
+    "aat_term": "kilns",
+    "is_place_type": true,
+    "score": 10.7,
+    "matched": "lime kilns"
+   },
+   {
+    "aat_id": 300006399,
+    "aat_term": "rotary kilns",
+    "is_place_type": true,
+    "score": 8.6,
+    "matched": "lime kilns"
+   },
+   {
+    "aat_id": 300006401,
+    "aat_term": "tunnel kilns",
+    "is_place_type": true,
+    "score": 8.6,
+    "matched": "lime kilns"
+   }
+  ],
+  "search_terms": [
+   "lime kilns"
+  ]
+ },
+ "market_town": {
+  "best": {
+   "aat_id": 300008423,
+   "aat_term": "market towns",
+   "is_place_type": true,
+   "score": 108.6,
+   "matched": "market towns"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008423,
+    "aat_term": "market towns",
+    "is_place_type": true,
+    "score": 108.6,
+    "matched": "market towns"
+   },
+   {
+    "aat_id": 300263210,
+    "aat_term": "bourgs (market towns)",
+    "is_place_type": true,
+    "score": 81.8,
+    "matched": "market towns"
+   },
+   {
+    "aat_id": 300008375,
+    "aat_term": "towns",
+    "is_place_type": true,
+    "score": 9.9,
+    "matched": "market towns"
+   },
+   {
+    "aat_id": 300387668,
+    "aat_term": "market hamlets",
+    "is_place_type": true,
+    "score": 8.4,
+    "matched": "market towns"
+   }
+  ],
+  "search_terms": [
+   "market towns"
+  ]
+ },
+ "milepost": {
+  "best": {
+   "aat_id": 300006973,
+   "aat_term": "milestones [milepost not in AAT — curate]",
+   "matched": "manual_fix",
+   "source": "curated"
+  },
+  "candidates": [],
+  "search_terms": [
+   "mileposts"
+  ]
+ },
+ "milestone": {
+  "best": {
+   "aat_id": 300006973,
+   "aat_term": "milestones",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "milestones"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006973,
+    "aat_term": "milestones",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "milestones"
+   }
+  ],
+  "search_terms": [
+   "milestones"
+  ]
+ },
+ "mill": {
+  "best": {
+   "aat_id": 300053090,
+   "aat_term": "grinding",
+   "is_place_type": true,
+   "score": 10.5,
+   "matched": "mills (grinding facilities)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300053090,
+    "aat_term": "grinding",
+    "is_place_type": true,
+    "score": 10.5,
+    "matched": "mills (grinding facilities)"
+   },
+   {
+    "aat_id": 300263933,
+    "aat_term": "grinding stones",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "mills (grinding facilities)"
+   },
+   {
+    "aat_id": 300426745,
+    "aat_term": "grinding slabs",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "mills (grinding facilities)"
+   },
+   {
+    "aat_id": 300024718,
+    "aat_term": "grinding wheels",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "mills (grinding facilities)"
+   }
+  ],
+  "search_terms": [
+   "mills (grinding facilities)"
+  ]
+ },
+ "monument": {
+  "best": {
+   "aat_id": 300006958,
+   "aat_term": "monuments",
+   "is_place_type": true,
+   "score": 71.6,
+   "matched": "monuments"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006958,
+    "aat_term": "monuments",
+    "is_place_type": true,
+    "score": 71.6,
+    "matched": "monuments"
+   },
+   {
+    "aat_id": 300006961,
+    "aat_term": "markers (monuments)",
+    "is_place_type": true,
+    "score": 49.0,
+    "matched": "monuments"
+   },
+   {
+    "aat_id": 300006983,
+    "aat_term": "megalithic monuments",
+    "is_place_type": true,
+    "score": 49.0,
+    "matched": "monuments"
+   },
+   {
+    "aat_id": 300005909,
+    "aat_term": "sepulchral monuments",
+    "is_place_type": true,
+    "score": 49.0,
+    "matched": "monuments"
+   }
+  ],
+  "search_terms": [
+   "monuments"
+  ]
+ },
+ "mooring_post": {
+  "best": {
+   "aat_id": 300001993,
+   "aat_term": "bollards",
+   "is_place_type": true,
+   "score": 85.1,
+   "matched": "bollards"
+  },
+  "candidates": [
+   {
+    "aat_id": 300001993,
+    "aat_term": "bollards",
+    "is_place_type": true,
+    "score": 85.1,
+    "matched": "bollards"
+   },
+   {
+    "aat_id": 300430040,
+    "aat_term": "road bollards",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "bollards"
+   },
+   {
+    "aat_id": 300411501,
+    "aat_term": "traffic bollards",
+    "is_place_type": true,
+    "score": 59.9,
+    "matched": "bollards"
+   }
+  ],
+  "search_terms": [
+   "bollards"
+  ]
+ },
+ "named_landcover": {
+  "best": {
+   "aat_id": 300438447,
+   "aat_term": "Woodlands School",
+   "is_place_type": true,
+   "score": 61.9,
+   "matched": "woodlands"
+  },
+  "candidates": [
+   {
+    "aat_id": 300438447,
+    "aat_term": "Woodlands School",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "woodlands"
+   },
+   {
+    "aat_id": 300157169,
+    "aat_term": "woodlands (plant communities)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "woodlands"
+   }
+  ],
+  "search_terms": [
+   "woodlands"
+  ]
+ },
+ "natural_feature": {
+  "best": {
+   "aat_id": 300132294,
+   "aat_term": "natural landscapes",
+   "is_place_type": true,
+   "score": 101.6,
+   "matched": "natural landscapes"
+  },
+  "candidates": [
+   {
+    "aat_id": 300132294,
+    "aat_term": "natural landscapes",
+    "is_place_type": true,
+    "score": 101.6,
+    "matched": "natural landscapes"
+   },
+   {
+    "aat_id": 300219527,
+    "aat_term": "natural",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "natural landscapes"
+   },
+   {
+    "aat_id": 300008626,
+    "aat_term": "landscapes (environments)",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "natural landscapes"
+   },
+   {
+    "aat_id": 300008932,
+    "aat_term": "cultural landscapes",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "natural landscapes"
+   }
+  ],
+  "search_terms": [
+   "natural landscapes"
+  ]
+ },
+ "parks_demesnes": {
+  "best": {
+   "aat_id": 300159932,
+   "aat_term": "educational parks",
+   "is_place_type": true,
+   "score": 45.0,
+   "matched": "parks"
+  },
+  "candidates": [
+   {
+    "aat_id": 300159932,
+    "aat_term": "educational parks",
+    "is_place_type": true,
+    "score": 45.0,
+    "matched": "parks"
+   },
+   {
+    "aat_id": 300000411,
+    "aat_term": "industrial parks",
+    "is_place_type": true,
+    "score": 45.0,
+    "matched": "parks"
+   },
+   {
+    "aat_id": 300000491,
+    "aat_term": "office parks",
+    "is_place_type": true,
+    "score": 45.0,
+    "matched": "parks"
+   },
+   {
+    "aat_id": 300253567,
+    "aat_term": "retail parks",
+    "is_place_type": true,
+    "score": 45.0,
+    "matched": "parks"
+   }
+  ],
+  "search_terms": [
+   "parks"
+  ]
+ },
+ "pavilion": {
+  "best": {
+   "aat_id": 300006819,
+   "aat_term": "garden pavilions",
+   "is_place_type": true,
+   "score": 16.0,
+   "matched": "pavilions (garden structures)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006819,
+    "aat_term": "garden pavilions",
+    "is_place_type": true,
+    "score": 16.0,
+    "matched": "pavilions (garden structures)"
+   },
+   {
+    "aat_id": 300006822,
+    "aat_term": "garden structures",
+    "is_place_type": true,
+    "score": 13.5,
+    "matched": "pavilions (garden structures)"
+   },
+   {
+    "aat_id": 300006809,
+    "aat_term": "nymphaea (garden structures)",
+    "is_place_type": true,
+    "score": 11.3,
+    "matched": "pavilions (garden structures)"
+   },
+   {
+    "aat_id": 300256434,
+    "aat_term": "summerhouses (garden structures)",
+    "is_place_type": true,
+    "score": 11.3,
+    "matched": "pavilions (garden structures)"
+   }
+  ],
+  "search_terms": [
+   "pavilions (garden structures)"
+  ]
+ },
+ "pheasantry": {
+  "best": {
+   "aat_id": 300000206,
+   "aat_term": "farms",
+   "is_place_type": true,
+   "score": 10.4,
+   "matched": "game farms"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000206,
+    "aat_term": "farms",
+    "is_place_type": true,
+    "score": 10.4,
+    "matched": "game farms"
+   },
+   {
+    "aat_id": 300000676,
+    "aat_term": "tank farms",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "game farms"
+   },
+   {
+    "aat_id": 300000222,
+    "aat_term": "historic farms",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "game farms"
+   },
+   {
+    "aat_id": 300248842,
+    "aat_term": "model farms",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "game farms"
+   }
+  ],
+  "search_terms": [
+   "game farms"
+  ]
+ },
+ "pier": {
+  "best": {
+   "aat_id": 300434117,
+   "aat_term": "supporting piers",
+   "is_place_type": true,
+   "score": 53.1,
+   "matched": "piers"
+  },
+  "candidates": [
+   {
+    "aat_id": 300434117,
+    "aat_term": "supporting piers",
+    "is_place_type": true,
+    "score": 53.1,
+    "matched": "piers"
+   },
+   {
+    "aat_id": 300000958,
+    "aat_term": "compound piers",
+    "is_place_type": true,
+    "score": 53.1,
+    "matched": "piers"
+   },
+   {
+    "aat_id": 300000967,
+    "aat_term": "buttress piers",
+    "is_place_type": true,
+    "score": 53.1,
+    "matched": "piers"
+   },
+   {
+    "aat_id": 300000968,
+    "aat_term": "wall piers",
+    "is_place_type": true,
+    "score": 53.1,
+    "matched": "piers"
+   }
+  ],
+  "search_terms": [
+   "piers"
+  ]
+ },
+ "pole": {
+  "best": {
+   "aat_id": 300078048,
+   "aat_term": "structural elements",
+   "is_place_type": true,
+   "score": 13.4,
+   "matched": "poles (structural elements)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300078048,
+    "aat_term": "structural elements",
+    "is_place_type": true,
+    "score": 13.4,
+    "matched": "poles (structural elements)"
+   },
+   {
+    "aat_id": 300000992,
+    "aat_term": "structures (structural elements)",
+    "is_place_type": true,
+    "score": 11.2,
+    "matched": "poles (structural elements)"
+   },
+   {
+    "aat_id": 300078050,
+    "aat_term": "enclosing structural elements",
+    "is_place_type": true,
+    "score": 11.2,
+    "matched": "poles (structural elements)"
+   },
+   {
+    "aat_id": 300000919,
+    "aat_term": "foundations (structural elements)",
+    "is_place_type": true,
+    "score": 11.2,
+    "matched": "poles (structural elements)"
+   }
+  ],
+  "search_terms": [
+   "poles (structural elements)"
+  ]
+ },
+ "post_office": {
+  "best": {
+   "aat_id": 300006036,
+   "aat_term": "post offices",
+   "is_place_type": true,
+   "score": 105.7,
+   "matched": "post offices"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006036,
+    "aat_term": "post offices",
+    "is_place_type": true,
+    "score": 105.7,
+    "matched": "post offices"
+   },
+   {
+    "aat_id": 300431137,
+    "aat_term": "railway post offices",
+    "is_place_type": true,
+    "score": 79.4,
+    "matched": "post offices"
+   },
+   {
+    "aat_id": 300005413,
+    "aat_term": "telegraph offices",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "post offices"
+   },
+   {
+    "aat_id": 300248257,
+    "aat_term": "box offices",
+    "is_place_type": true,
+    "score": 8.5,
+    "matched": "post offices"
+   }
+  ],
+  "search_terms": [
+   "post offices"
+  ]
+ },
+ "pound": {
+  "best": {
+   "aat_id": 300430998,
+   "aat_term": "pyrography pens",
+   "is_place_type": true,
+   "score": 8.3,
+   "matched": "animal pens"
+  },
+  "candidates": [
+   {
+    "aat_id": 300430998,
+    "aat_term": "pyrography pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300168310,
+    "aat_term": "light pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300022455,
+    "aat_term": "fountain pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   },
+   {
+    "aat_id": 300022456,
+    "aat_term": "lettering pens",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "animal pens"
+   }
+  ],
+  "search_terms": [
+   "animal pens"
+  ]
+ },
+ "public_house": {
+  "best": {
+   "aat_id": 300005207,
+   "aat_term": "taverns",
+   "is_place_type": true,
+   "score": 12.9,
+   "matched": "public houses (taverns)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005207,
+    "aat_term": "taverns",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "public houses (taverns)"
+   },
+   {
+    "aat_id": 300005207,
+    "aat_term": "taverns",
+    "is_place_type": true,
+    "score": 12.9,
+    "matched": "taverns (public accommodations)"
+   },
+   {
+    "aat_id": 300164125,
+    "aat_term": "public accommodations",
+    "is_place_type": true,
+    "score": 16.9,
+    "matched": "taverns (public accommodations)"
+   },
+   {
+    "aat_id": 300007173,
+    "aat_term": "lodges (public accommodations)",
+    "is_place_type": true,
+    "score": 14.1,
+    "matched": "taverns (public accommodations)"
+   },
+   {
+    "aat_id": 300007166,
+    "aat_term": "hotels (built public accommodations)",
+    "is_place_type": true,
+    "score": 12.1,
+    "matched": "taverns (public accommodations)"
+   }
+  ],
+  "search_terms": [
+   "public houses (taverns)",
+   "taverns (public accommodations)"
+  ]
+ },
+ "pump": {
+  "best": {
+   "aat_id": 300432664,
+   "aat_term": "water pumps",
+   "is_place_type": true,
+   "score": 93.0,
+   "matched": "water pumps"
+  },
+  "candidates": [
+   {
+    "aat_id": 300432664,
+    "aat_term": "water pumps",
+    "is_place_type": true,
+    "score": 93.0,
+    "matched": "water pumps"
+   },
+   {
+    "aat_id": 300430512,
+    "aat_term": "plumbing pumps",
+    "is_place_type": true,
+    "score": 47.0,
+    "matched": "pumps"
+   },
+   {
+    "aat_id": 300052185,
+    "aat_term": "heat pumps",
+    "is_place_type": true,
+    "score": 47.0,
+    "matched": "pumps"
+   },
+   {
+    "aat_id": 300420565,
+    "aat_term": "backpack pumps",
+    "is_place_type": true,
+    "score": 47.0,
+    "matched": "pumps"
+   },
+   {
+    "aat_id": 300434771,
+    "aat_term": "tire pumps",
+    "is_place_type": true,
+    "score": 47.0,
+    "matched": "pumps"
+   }
+  ],
+  "search_terms": [
+   "water pumps",
+   "pumps"
+  ]
+ },
+ "quarry": {
+  "best": {
+   "aat_id": 300000402,
+   "aat_term": "quarries (extracting complexes)",
+   "is_place_type": true,
+   "score": 51.7,
+   "matched": "quarries"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000402,
+    "aat_term": "quarries (extracting complexes)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "quarries"
+   },
+   {
+    "aat_id": 300003134,
+    "aat_term": "quarries (glass lights)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "quarries"
+   }
+  ],
+  "search_terms": [
+   "quarries"
+  ]
+ },
+ "quarry_or_mine": {
+  "best": {
+   "aat_id": 300000402,
+   "aat_term": "quarries (extracting complexes)",
+   "is_place_type": true,
+   "score": 51.7,
+   "matched": "quarries"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000402,
+    "aat_term": "quarries (extracting complexes)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "quarries"
+   },
+   {
+    "aat_id": 300003134,
+    "aat_term": "quarries (glass lights)",
+    "is_place_type": true,
+    "score": 51.7,
+    "matched": "quarries"
+   },
+   {
+    "aat_id": 300425302,
+    "aat_term": "extraction tools",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "mines (extraction sites)"
+   },
+   {
+    "aat_id": 300451649,
+    "aat_term": "extraction tools",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "mines (extraction sites)"
+   },
+   {
+    "aat_id": 300417879,
+    "aat_term": "pole extraction pliers",
+    "is_place_type": true,
+    "score": 8.1,
+    "matched": "mines (extraction sites)"
+   }
+  ],
+  "search_terms": [
+   "quarries",
+   "mines (extraction sites)"
+  ]
+ },
+ "railway": {
+  "best": {
+   "aat_id": 300386657,
+   "aat_term": "railroads (administrative)",
+   "is_place_type": true,
+   "score": 55.2,
+   "matched": "railroads"
+  },
+  "candidates": [
+   {
+    "aat_id": 300386657,
+    "aat_term": "railroads (administrative)",
+    "is_place_type": true,
+    "score": 55.2,
+    "matched": "railroads"
+   },
+   {
+    "aat_id": 300008591,
+    "aat_term": "railroads (infrastructure)",
+    "is_place_type": true,
+    "score": 55.2,
+    "matched": "railroads"
+   },
+   {
+    "aat_id": 300008573,
+    "aat_term": "elevated railroads",
+    "is_place_type": true,
+    "score": 55.2,
+    "matched": "railroads"
+   },
+   {
+    "aat_id": 300156045,
+    "aat_term": "commuter railroads",
+    "is_place_type": true,
+    "score": 55.2,
+    "matched": "railroads"
+   }
+  ],
+  "search_terms": [
+   "railroads"
+  ]
+ },
+ "railway_building": {
+  "best": {
+   "aat_id": 300387230,
+   "aat_term": "railroad camps",
+   "is_place_type": true,
+   "score": 7.9,
+   "matched": "railroad buildings"
+  },
+  "candidates": [
+   {
+    "aat_id": 300387230,
+    "aat_term": "railroad camps",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad buildings"
+   },
+   {
+    "aat_id": 300431123,
+    "aat_term": "railroad depots",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad buildings"
+   },
+   {
+    "aat_id": 300431132,
+    "aat_term": "railroad turntables",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad buildings"
+   },
+   {
+    "aat_id": 300007904,
+    "aat_term": "railroad tunnels",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad buildings"
+   }
+  ],
+  "search_terms": [
+   "railroad buildings"
+  ]
+ },
+ "reading_room": {
+  "best": {
+   "aat_id": 300004434,
+   "aat_term": "reading rooms",
+   "is_place_type": true,
+   "score": 101.6,
+   "matched": "reading rooms"
+  },
+  "candidates": [
+   {
+    "aat_id": 300004434,
+    "aat_term": "reading rooms",
+    "is_place_type": true,
+    "score": 101.6,
+    "matched": "reading rooms"
+   },
+   {
+    "aat_id": 300248178,
+    "aat_term": "reading (activity)",
+    "is_place_type": true,
+    "score": 8.7,
+    "matched": "reading rooms"
+   },
+   {
+    "aat_id": 300411614,
+    "aat_term": "reading culture",
+    "is_place_type": true,
+    "score": 8.7,
+    "matched": "reading rooms"
+   },
+   {
+    "aat_id": 300449084,
+    "aat_term": "reading boards",
+    "is_place_type": true,
+    "score": 8.7,
+    "matched": "reading rooms"
+   }
+  ],
+  "search_terms": [
+   "reading rooms"
+  ]
+ },
+ "recreation_ground": {
+  "best": {
+   "aat_id": 300211294,
+   "aat_term": "playing cards",
+   "is_place_type": true,
+   "score": 9.3,
+   "matched": "playing fields"
+  },
+  "candidates": [
+   {
+    "aat_id": 300211294,
+    "aat_term": "playing cards",
+    "is_place_type": true,
+    "score": 9.3,
+    "matched": "playing fields"
+   },
+   {
+    "aat_id": 300000577,
+    "aat_term": "hockey fields (athletic fields)",
+    "is_place_type": true,
+    "score": 8.7,
+    "matched": "playing fields"
+   },
+   {
+    "aat_id": 300411424,
+    "aat_term": "gallows fields",
+    "is_place_type": true,
+    "score": 8.1,
+    "matched": "playing fields"
+   },
+   {
+    "aat_id": 300386865,
+    "aat_term": "boulder fields",
+    "is_place_type": true,
+    "score": 8.1,
+    "matched": "playing fields"
+   }
+  ],
+  "search_terms": [
+   "playing fields"
+  ]
+ },
+ "rectory": {
+  "best": {
+   "aat_id": 300005649,
+   "aat_term": "rectories",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "rectories"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005649,
+    "aat_term": "rectories",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "rectories"
+   }
+  ],
+  "search_terms": [
+   "rectories"
+  ]
+ },
+ "rifle_range": {
+  "best": {
+   "aat_id": 300000620,
+   "aat_term": "rifle ranges",
+   "is_place_type": true,
+   "score": 123.0,
+   "matched": "rifle ranges"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000620,
+    "aat_term": "rifle ranges",
+    "is_place_type": true,
+    "score": 123.0,
+    "matched": "rifle ranges"
+   },
+   {
+    "aat_id": 300221682,
+    "aat_term": "rifle grenades",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "rifle ranges"
+   },
+   {
+    "aat_id": 300391057,
+    "aat_term": "rifle busbies",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "rifle ranges"
+   },
+   {
+    "aat_id": 300000617,
+    "aat_term": "ranges (complexes)",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "rifle ranges"
+   }
+  ],
+  "search_terms": [
+   "rifle ranges"
+  ]
+ },
+ "road": {
+  "best": {
+   "aat_id": 300008217,
+   "aat_term": "roads",
+   "is_place_type": true,
+   "score": 70.6,
+   "matched": "roads"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008217,
+    "aat_term": "roads",
+    "is_place_type": true,
+    "score": 70.6,
+    "matched": "roads"
+   },
+   {
+    "aat_id": 300008233,
+    "aat_term": "bypass roads",
+    "is_place_type": true,
+    "score": 48.2,
+    "matched": "roads"
+   },
+   {
+    "aat_id": 300008281,
+    "aat_term": "military roads",
+    "is_place_type": true,
+    "score": 48.2,
+    "matched": "roads"
+   },
+   {
+    "aat_id": 300008282,
+    "aat_term": "post roads",
+    "is_place_type": true,
+    "score": 48.2,
+    "matched": "roads"
+   }
+  ],
+  "search_terms": [
+   "roads"
+  ]
+ },
+ "school": {
+  "best": {
+   "aat_id": 300006495,
+   "aat_term": "schools (buildings)",
+   "is_place_type": true,
+   "score": 81.7,
+   "matched": "schools (buildings)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006495,
+    "aat_term": "schools (buildings)",
+    "is_place_type": true,
+    "score": 81.7,
+    "matched": "schools (buildings)"
+   },
+   {
+    "aat_id": 300006503,
+    "aat_term": "free schools (buildings)",
+    "is_place_type": true,
+    "score": 59.4,
+    "matched": "schools (buildings)"
+   },
+   {
+    "aat_id": 300006505,
+    "aat_term": "boarding schools (buildings)",
+    "is_place_type": true,
+    "score": 59.4,
+    "matched": "schools (buildings)"
+   },
+   {
+    "aat_id": 300006509,
+    "aat_term": "day schools (buildings)",
+    "is_place_type": true,
+    "score": 59.4,
+    "matched": "schools (buildings)"
+   }
+  ],
+  "search_terms": [
+   "schools (buildings)"
+  ]
+ },
+ "settlement": {
+  "best": {
+   "aat_id": 300008347,
+   "aat_term": "inhabited places",
+   "matched": "manual_fix",
+   "source": "curated"
+  },
+  "candidates": [
+   {
+    "aat_id": 300000635,
+    "aat_term": "convents (built complexes)",
+    "is_place_type": true,
+    "score": 11.1,
+    "matched": "settlements (built complexes)"
+   },
+   {
+    "aat_id": 300000348,
+    "aat_term": "zoos (built complexes)",
+    "is_place_type": true,
+    "score": 11.1,
+    "matched": "settlements (built complexes)"
+   },
+   {
+    "aat_id": 300000641,
+    "aat_term": "monasteries (built complexes)",
+    "is_place_type": true,
+    "score": 11.1,
+    "matched": "settlements (built complexes)"
+   },
+   {
+    "aat_id": 300000632,
+    "aat_term": "religious communities (built complexes)",
+    "is_place_type": true,
+    "score": 9.5,
+    "matched": "settlements (built complexes)"
+   }
+  ],
+  "search_terms": [
+   "settlements (built complexes)"
+  ]
+ },
+ "sewage": {
+  "best": {
+   "aat_id": 300055243,
+   "aat_term": "sewage disposal",
+   "is_place_type": true,
+   "score": 10.0,
+   "matched": "sewage systems"
+  },
+  "candidates": [
+   {
+    "aat_id": 300055243,
+    "aat_term": "sewage disposal",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "sewage systems"
+   },
+   {
+    "aat_id": 300191687,
+    "aat_term": "sewage treatment",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "sewage systems"
+   },
+   {
+    "aat_id": 300006218,
+    "aat_term": "sewage treatment plants",
+    "is_place_type": true,
+    "score": 8.3,
+    "matched": "sewage systems"
+   },
+   {
+    "aat_id": 300386832,
+    "aat_term": "mountain systems",
+    "is_place_type": true,
+    "score": 6.3,
+    "matched": "sewage systems"
+   }
+  ],
+  "search_terms": [
+   "sewage systems"
+  ]
+ },
+ "signal_box": {
+  "best": {
+   "aat_id": 300312190,
+   "aat_term": "signal towers (elevated structures)",
+   "is_place_type": true,
+   "score": 15.9,
+   "matched": "signal towers (railroad structures)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300312190,
+    "aat_term": "signal towers (elevated structures)",
+    "is_place_type": true,
+    "score": 15.9,
+    "matched": "signal towers (railroad structures)"
+   },
+   {
+    "aat_id": 300005421,
+    "aat_term": "railroad signal towers",
+    "is_place_type": true,
+    "score": 19.9,
+    "matched": "signal towers (railroad structures)"
+   },
+   {
+    "aat_id": 300411445,
+    "aat_term": "railroad signal houses",
+    "is_place_type": true,
+    "score": 13.8,
+    "matched": "signal towers (railroad structures)"
+   },
+   {
+    "aat_id": 300004857,
+    "aat_term": "clock towers (towers)",
+    "is_place_type": true,
+    "score": 8.8,
+    "matched": "signal towers (railroad structures)"
+   }
+  ],
+  "search_terms": [
+   "signal towers (railroad structures)"
+  ]
+ },
+ "signpost": {
+  "best": {
+   "aat_id": 300003909,
+   "aat_term": "guideposts",
+   "matched": "manual_fix",
+   "source": "curated"
+  },
+  "candidates": [],
+  "search_terms": [
+   "signposts"
+  ]
+ },
+ "smithy": {
+  "best": {
+   "aat_id": 300005253,
+   "aat_term": "beauty shops",
+   "is_place_type": true,
+   "score": 7.9,
+   "matched": "blacksmith shops"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005253,
+    "aat_term": "beauty shops",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "blacksmith shops"
+   },
+   {
+    "aat_id": 300421375,
+    "aat_term": "cabinetmaking shops",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "blacksmith shops"
+   },
+   {
+    "aat_id": 300432974,
+    "aat_term": "wheelwright shops",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "blacksmith shops"
+   },
+   {
+    "aat_id": 300005187,
+    "aat_term": "coffee shops",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "blacksmith shops"
+   }
+  ],
+  "search_terms": [
+   "blacksmith shops"
+  ]
+ },
+ "spot_height_or_value": {
+  "best": {
+   "aat_id": 300449133,
+   "aat_term": "elevation dimensioning",
+   "is_place_type": true,
+   "score": 10.0,
+   "matched": "elevation (spatial attribute)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300449133,
+    "aat_term": "elevation dimensioning",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "elevation (spatial attribute)"
+   },
+   {
+    "aat_id": 300452109,
+    "aat_term": "closures (spatial)",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "elevation (spatial attribute)"
+   },
+   {
+    "aat_id": 300223990,
+    "aat_term": "spatial analysis",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "elevation (spatial attribute)"
+   },
+   {
+    "aat_id": 300055171,
+    "aat_term": "spatial behavior",
+    "is_place_type": true,
+    "score": 10.0,
+    "matched": "elevation (spatial attribute)"
+   }
+  ],
+  "search_terms": [
+   "elevation (spatial attribute)"
+  ]
+ },
+ "spring": {
+  "best": {
+   "aat_id": 300008697,
+   "aat_term": "springs (bodies of water)",
+   "is_place_type": true,
+   "score": 124.8,
+   "matched": "springs (bodies of water)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300008697,
+    "aat_term": "springs (bodies of water)",
+    "is_place_type": true,
+    "score": 124.8,
+    "matched": "springs (bodies of water)"
+   },
+   {
+    "aat_id": 300387217,
+    "aat_term": "passages (bodies of water)",
+    "is_place_type": true,
+    "score": 12.8,
+    "matched": "springs (bodies of water)"
+   },
+   {
+    "aat_id": 300387274,
+    "aat_term": "guts (bodies of water)",
+    "is_place_type": true,
+    "score": 12.8,
+    "matched": "springs (bodies of water)"
+   },
+   {
+    "aat_id": 300387626,
+    "aat_term": "marine bodies of water",
+    "is_place_type": true,
+    "score": 12.8,
+    "matched": "springs (bodies of water)"
+   }
+  ],
+  "search_terms": [
+   "springs (bodies of water)"
+  ]
+ },
+ "station": {
+  "best": {
+   "aat_id": 300007783,
+   "aat_term": "railroad stations",
+   "is_place_type": true,
+   "score": 100.9,
+   "matched": "railroad stations"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007783,
+    "aat_term": "railroad stations",
+    "is_place_type": true,
+    "score": 100.9,
+    "matched": "railroad stations"
+   },
+   {
+    "aat_id": 300387230,
+    "aat_term": "railroad camps",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad stations"
+   },
+   {
+    "aat_id": 300431123,
+    "aat_term": "railroad depots",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad stations"
+   },
+   {
+    "aat_id": 300431132,
+    "aat_term": "railroad turntables",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "railroad stations"
+   }
+  ],
+  "search_terms": [
+   "railroad stations"
+  ]
+ },
+ "stile": {
+  "best": {
+   "aat_id": 300003266,
+   "aat_term": "stiles (stairs)",
+   "is_place_type": true,
+   "score": 58.3,
+   "matched": "stiles"
+  },
+  "candidates": [
+   {
+    "aat_id": 300003266,
+    "aat_term": "stiles (stairs)",
+    "is_place_type": true,
+    "score": 58.3,
+    "matched": "stiles"
+   },
+   {
+    "aat_id": 300069078,
+    "aat_term": "stiles (surface components)",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "stiles"
+   },
+   {
+    "aat_id": 300002904,
+    "aat_term": "hanging stiles",
+    "is_place_type": true,
+    "score": 58.3,
+    "matched": "stiles"
+   },
+   {
+    "aat_id": 300002907,
+    "aat_term": "lock stiles",
+    "is_place_type": true,
+    "score": 58.3,
+    "matched": "stiles"
+   }
+  ],
+  "search_terms": [
+   "stiles"
+  ]
+ },
+ "stone_marker": {
+  "best": {
+   "aat_id": 300117127,
+   "aat_term": "artifacts (object genre)",
+   "is_place_type": true,
+   "score": 10.7,
+   "matched": "markers (object genre)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300117127,
+    "aat_term": "artifacts (object genre)",
+    "is_place_type": true,
+    "score": 10.7,
+    "matched": "markers (object genre)"
+   },
+   {
+    "aat_id": 300263552,
+    "aat_term": "architecture (object genre)",
+    "is_place_type": true,
+    "score": 10.7,
+    "matched": "markers (object genre)"
+   },
+   {
+    "aat_id": 300264387,
+    "aat_term": "images (object genre)",
+    "is_place_type": true,
+    "score": 10.7,
+    "matched": "markers (object genre)"
+   },
+   {
+    "aat_id": 300264388,
+    "aat_term": "pictures (object genre)",
+    "is_place_type": true,
+    "score": 10.7,
+    "matched": "markers (object genre)"
+   }
+  ],
+  "search_terms": [
+   "markers (object genre)"
+  ]
+ },
+ "telephone": {
+  "best": {
+   "aat_id": 300005422,
+   "aat_term": "telephone booths",
+   "is_place_type": true,
+   "score": 115.0,
+   "matched": "telephone booths"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005422,
+    "aat_term": "telephone booths",
+    "is_place_type": true,
+    "score": 115.0,
+    "matched": "telephone booths"
+   },
+   {
+    "aat_id": 300004086,
+    "aat_term": "booths",
+    "is_place_type": true,
+    "score": 11.2,
+    "matched": "telephone booths"
+   },
+   {
+    "aat_id": 300448922,
+    "aat_term": "guard booths",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "telephone booths"
+   },
+   {
+    "aat_id": 300250966,
+    "aat_term": "projection booths",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "telephone booths"
+   }
+  ],
+  "search_terms": [
+   "telephone booths"
+  ]
+ },
+ "tidal_coastal": {
+  "best": {
+   "aat_id": 300391533,
+   "aat_term": "tidal islands",
+   "is_place_type": true,
+   "score": 9.7,
+   "matched": "tidal flats"
+  },
+  "candidates": [
+   {
+    "aat_id": 300391533,
+    "aat_term": "tidal islands",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "tidal flats"
+   },
+   {
+    "aat_id": 300387084,
+    "aat_term": "tidal watercourses",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "tidal flats"
+   },
+   {
+    "aat_id": 300054733,
+    "aat_term": "tidal waves",
+    "is_place_type": true,
+    "score": 9.7,
+    "matched": "tidal flats"
+   },
+   {
+    "aat_id": 300132351,
+    "aat_term": "salt flats",
+    "is_place_type": true,
+    "score": 9.1,
+    "matched": "tidal flats"
+   }
+  ],
+  "search_terms": [
+   "tidal flats"
+  ]
+ },
+ "tramway": {
+  "best": {
+   "aat_id": 300155943,
+   "aat_term": "streetcar systems",
+   "is_place_type": true,
+   "score": 10.8,
+   "matched": "streetcar lines"
+  },
+  "candidates": [
+   {
+    "aat_id": 300155943,
+    "aat_term": "streetcar systems",
+    "is_place_type": true,
+    "score": 10.8,
+    "matched": "streetcar lines"
+   },
+   {
+    "aat_id": 300411460,
+    "aat_term": "inundation lines",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "streetcar lines"
+   },
+   {
+    "aat_id": 300265415,
+    "aat_term": "Nazca lines",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "streetcar lines"
+   },
+   {
+    "aat_id": 300193856,
+    "aat_term": "lazy lines",
+    "is_place_type": true,
+    "score": 7.9,
+    "matched": "streetcar lines"
+   }
+  ],
+  "search_terms": [
+   "streetcar lines"
+  ]
+ },
+ "tree": {
+  "best": {
+   "aat_id": 300132413,
+   "aat_term": "deciduous trees",
+   "is_place_type": true,
+   "score": 48.7,
+   "matched": "trees"
+  },
+  "candidates": [
+   {
+    "aat_id": 300132413,
+    "aat_term": "deciduous trees",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "trees"
+   },
+   {
+    "aat_id": 300132421,
+    "aat_term": "canopy trees",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "trees"
+   },
+   {
+    "aat_id": 300132422,
+    "aat_term": "understory trees",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "trees"
+   },
+   {
+    "aat_id": 300390526,
+    "aat_term": "hedgerow trees",
+    "is_place_type": true,
+    "score": 48.7,
+    "matched": "trees"
+   }
+  ],
+  "search_terms": [
+   "trees"
+  ]
+ },
+ "tunnel": {
+  "best": {
+   "aat_id": 300007899,
+   "aat_term": "tunnels",
+   "is_place_type": true,
+   "score": 78.3,
+   "matched": "tunnels"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007899,
+    "aat_term": "tunnels",
+    "is_place_type": true,
+    "score": 78.3,
+    "matched": "tunnels"
+   },
+   {
+    "aat_id": 300386839,
+    "aat_term": "natural tunnels",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "tunnels"
+   },
+   {
+    "aat_id": 300420113,
+    "aat_term": "amusement tunnels",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "tunnels"
+   },
+   {
+    "aat_id": 300007907,
+    "aat_term": "water tunnels",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "tunnels"
+   }
+  ],
+  "search_terms": [
+   "tunnels"
+  ]
+ },
+ "viaduct": {
+  "best": {
+   "aat_id": 300007890,
+   "aat_term": "viaducts",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "viaducts"
+  },
+  "candidates": [
+   {
+    "aat_id": 300007890,
+    "aat_term": "viaducts",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "viaducts"
+   }
+  ],
+  "search_terms": [
+   "viaducts"
+  ]
+ },
+ "vicarage": {
+  "best": {
+   "aat_id": 300005650,
+   "aat_term": "vicarages",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "vicarages"
+  },
+  "candidates": [
+   {
+    "aat_id": 300005650,
+    "aat_term": "vicarages",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "vicarages"
+   }
+  ],
+  "search_terms": [
+   "vicarages"
+  ]
+ },
+ "water_feature": {
+  "best": {
+   "aat_id": 300008699,
+   "aat_term": "streams (bodies of water) [catch-all — curate]",
+   "matched": "manual_fix",
+   "source": "curated"
+  },
+  "candidates": [
+   {
+    "aat_id": 300387217,
+    "aat_term": "passages (bodies of water)",
+    "is_place_type": true,
+    "score": 76.9,
+    "matched": "bodies of water"
+   },
+   {
+    "aat_id": 300387274,
+    "aat_term": "guts (bodies of water)",
+    "is_place_type": true,
+    "score": 76.9,
+    "matched": "bodies of water"
+   },
+   {
+    "aat_id": 300387626,
+    "aat_term": "marine bodies of water",
+    "is_place_type": true,
+    "score": 76.9,
+    "matched": "bodies of water"
+   },
+   {
+    "aat_id": 300387018,
+    "aat_term": "former bodies of water",
+    "is_place_type": true,
+    "score": 76.9,
+    "matched": "bodies of water"
+   }
+  ],
+  "search_terms": [
+   "bodies of water"
+  ]
+ },
+ "water_tap": {
+  "best": {
+   "aat_id": 300079037,
+   "aat_term": "faucets (finish hardware)",
+   "is_place_type": true,
+   "score": 54.4,
+   "matched": "faucets"
+  },
+  "candidates": [
+   {
+    "aat_id": 300079037,
+    "aat_term": "faucets (finish hardware)",
+    "is_place_type": true,
+    "score": 54.4,
+    "matched": "faucets"
+   }
+  ],
+  "search_terms": [
+   "faucets"
+  ]
+ },
+ "waterworks": {
+  "best": {
+   "aat_id": 300006215,
+   "aat_term": "waterworks",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "waterworks"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006215,
+    "aat_term": "waterworks",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "waterworks"
+   }
+  ],
+  "search_terms": [
+   "waterworks"
+  ]
+ },
+ "well": {
+  "best": {
+   "aat_id": 300152327,
+   "aat_term": "water wells",
+   "is_place_type": true,
+   "score": 14.4,
+   "matched": "wells (water sources)"
+  },
+  "candidates": [
+   {
+    "aat_id": 300152327,
+    "aat_term": "water wells",
+    "is_place_type": true,
+    "score": 14.4,
+    "matched": "wells (water sources)"
+   },
+   {
+    "aat_id": 300163404,
+    "aat_term": "reference sources",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "wells (water sources)"
+   },
+   {
+    "aat_id": 300311936,
+    "aat_term": "primary sources",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "wells (water sources)"
+   },
+   {
+    "aat_id": 300448977,
+    "aat_term": "secondary sources",
+    "is_place_type": true,
+    "score": 9.0,
+    "matched": "wells (water sources)"
+   }
+  ],
+  "search_terms": [
+   "wells (water sources)"
+  ]
+ },
+ "wharf": {
+  "best": {
+   "aat_id": 300120786,
+   "aat_term": "wharves",
+   "is_place_type": true,
+   "score": 91.6,
+   "matched": "wharves"
+  },
+  "candidates": [
+   {
+    "aat_id": 300120786,
+    "aat_term": "wharves",
+    "is_place_type": true,
+    "score": 91.6,
+    "matched": "wharves"
+   }
+  ],
+  "search_terms": [
+   "wharves"
+  ]
+ },
+ "workhouse": {
+  "best": {
+   "aat_id": 300006490,
+   "aat_term": "workhouses (buildings)",
+   "is_place_type": true,
+   "score": 61.9,
+   "matched": "workhouses"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006490,
+    "aat_term": "workhouses (buildings)",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "workhouses"
+   },
+   {
+    "aat_id": 300343481,
+    "aat_term": "workhouses (institutions)",
+    "is_place_type": true,
+    "score": 61.9,
+    "matched": "workhouses"
+   }
+  ],
+  "search_terms": [
+   "workhouses"
+  ]
+ },
+ "works": {
+  "best": {
+   "aat_id": 300006232,
+   "aat_term": "factories (structures)",
+   "is_place_type": true,
+   "score": 50.7,
+   "matched": "factories"
+  },
+  "candidates": [
+   {
+    "aat_id": 300006232,
+    "aat_term": "factories (structures)",
+    "is_place_type": true,
+    "score": 50.7,
+    "matched": "factories"
+   },
+   {
+    "aat_id": 300427421,
+    "aat_term": "metal factories",
+    "is_place_type": true,
+    "score": 50.7,
+    "matched": "factories"
+   },
+   {
+    "aat_id": 300006278,
+    "aat_term": "brickworks (factories)",
+    "is_place_type": true,
+    "score": 50.7,
+    "matched": "factories"
+   },
+   {
+    "aat_id": 300006296,
+    "aat_term": "ironworks (factories)",
+    "is_place_type": true,
+    "score": 50.7,
+    "matched": "factories"
+   }
+  ],
+  "search_terms": [
+   "factories"
+  ]
+ },
+ "_meta": {
+  "note": "CANDIDATE AAT crosswalk (auto from prod ES types index + a few manual fixes) — REQUIRES CURATION before publishing types[] on live records",
+  "unmatched_need_curation": [
+   "brickworks"
+  ]
+ }
+}
