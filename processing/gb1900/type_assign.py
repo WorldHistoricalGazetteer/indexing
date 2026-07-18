@@ -27,20 +27,37 @@ ABBREV_N = {
     "W": ("well", .85), "P": ("pump", .8), "CH": ("church", .8), "CHAP": ("chapel", .85),
     "SCH": ("school", .9), "SMY": ("smithy", .85), "SM": ("smithy", .8), "MON": ("monument", .85),
     "FM": ("farm", .85), "HO": ("house", .8), "STA": ("station", .7), "SPRS": ("spring", .8),
-    "TP": ("signpost", .6), "GPO": ("guidepost", .7),
+    "TP": ("signpost", .6), "GPO": ("guidepost", .7), "WS": ("well", .8), "PS": ("pump", .8),
+    "VIC": ("vicarage", .85), "FS": ("flagstaff", .6), "SPR": ("spring", .8),
 }
 BOUNDARY = re.compile(r"\b(By\.?|Bdy|Boundary|Bound\.|Co\. ?Div|Div\.|R\.D\.|U\.D\.|C\.?P\.?|Par\.? ?Bdy|Ward Bdy|"
                       r"Detached|Union|Wapentake|Hundred|Liberty|Twp)\b")
 TIDAL = re.compile(r"\b(H\.?W\.?M|L\.?W\.?M|High Water|Low Water|Mean High|Ordinary Tides|Saltings|Foreshore|Mud|Sand)\b", re.I)
 ABBREV = {}  # legacy name kept; see ABBREV_N
 KEYWORD = {  # substring keyword (tier0 keyword rule) -> (type, conf)
-    "church": ("church", .88), "chapel": ("chapel", .85), "school": ("school", .88),
+    "church": ("church", .88), "chapel": ("chapel", .85), "chap.": ("chapel", .82),
+    "mission": ("chapel", .78), "school": ("school", .88),
     "mill": ("mill", .82), "farm": ("farm", .82), "bridge": ("bridge", .85), "quarry": ("quarry", .85),
     "colliery": ("colliery", .88), "works": ("works", .78), "smithy": ("smithy", .82),
     "brewery": ("brewery", .85), "inn": ("public_house", .8), "hotel": ("hotel", .82),
     "station": ("station", .8), "reservoir": ("water_feature", .82), "cemetery": ("cemetery", .88),
     "hospital": ("hospital", .85), "barracks": ("barracks", .88), "wharf": ("wharf", .82),
+    "vicarage": ("vicarage", .88), "rectory": ("rectory", .88), "manse": ("clergy_house", .82),
+    "parsonage": ("clergy_house", .85), "sheepfold": ("fold", .85), "tramway": ("tramway", .85),
+    "kennel": ("kennels", .82), "limekiln": ("limekiln", .85), "lime kiln": ("limekiln", .85),
+    "ice house": ("icehouse", .82), "icehouse": ("icehouse", .85), "cistern": ("water_feature", .8),
+    "windpump": ("water_feature", .8), "aqueduct": ("aqueduct", .85), "viaduct": ("viaduct", .88),
+    "tunnel": ("tunnel", .85), "pier": ("pier", .82), "cave": ("cave", .85), "pavilion": ("pavilion", .8),
+    "rifle range": ("rifle_range", .88), "cricket": ("recreation_ground", .8),
+    "recreation": ("recreation_ground", .82), "pheasantry": ("pheasantry", .85),
+    "almshouse": ("almshouses", .85), "goods shed": ("railway_building", .82),
+    "towing path": ("towpath", .88), "tow path": ("towpath", .88), "stepping stones": ("ford", .82),
+    "flag staff": ("flagstaff", .82), "flagstaff": ("flagstaff", .85), "boat house": ("boathouse", .82),
+    "lifeboat": ("lifeboat_station", .85), "coastguard": ("coastguard", .85),
+    "liable to flood": ("flood_land", .8), "waterfall": ("water_feature", .82),
 }
+TREE = {"oak", "ash", "elm", "beech", "yew", "tree", "trees", "poplar", "sycamore", "chestnut", "thorn"}
+STONE = {"stone", "stones"}
 ANTIQ = re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Barrow|Barrows|Motte|"
                    r"Cist|Enclosure|Entrenchment|Cross|Castle|Abbey|Priory|Roman|British|Saxon|Cromlech|"
                    r"Dolmen|Menhir|Cromlechs|Rath|Dun|Fogou|Souterrain|Hillfort|Chambered|Tumular|"
@@ -92,6 +109,10 @@ def assign_types(text, tier0_rule=None, allcaps=False, settlement_names=None):
     elif any(w in DESCRIPTIVE for w in words): s["building_or_feature"] += .58
     if head in NAMED_PLACE: s["named_landcover"] += .72                     # "Oak Coppice" -> coppice
     elif any(w in NAMED_PLACE for w in words): s["named_landcover"] += .58
+    if head in TREE and len(words) <= 2: s["tree"] += .7                    # "Oak", "Ash Tree"
+    if head in STONE: s["stone_marker"] += .62                              # Stone/Stones (boundary/mile/standing)
+    if head in ("post", "posts"): s["signpost"] += .6
+    if head in ("mound", "mounds", "moat"): s["antiquity"] += .7
     if allcaps and " " in t and len(al) >= 4 and not ROAD.search(t): s["admin_or_parish"] += .78  # spaced caps (font .98)
     elif allcaps and len(al) >= 3: s["settlement"] += .55
     if settlement_names and low in settlement_names:
