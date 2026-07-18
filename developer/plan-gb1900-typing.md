@@ -271,6 +271,18 @@ real supervision — anchor/fine-tune on the HITL-labelled crops (few-shot metri
 unsupervised photometric-consistency term on real crops (doubles as domain adaptation); (d) stronger
 backbone / higher input res / glyph-level embedding. Gate iteration-2 on the same synth+real montages.
 
+**Iteration-2 RESULT (2026-07-18, gpu job 3276528; +road_caps → 9 classes).** Synthetic gate held
+(**knn 0.925** @ 1/9 chance). Real clustering **broke out of the iter-1 collapse**: HDBSCAN found 4
+coherent clusters (+1880 noise) — 00 (136) **road/path context** (spaced caps STREET/ROAD/WATLING/ROMAN
++ F.P. + busy bg — validates the road_caps/casing signal), 01 (298) serif place-names + numerals, 02
+(121) italic single-letter marks, 03 (65) pure italic "M.". **Verdict: domain gap PARTIALLY closed** —
+structure emerged where iter-1 had none, but (a) 75% still noise, (b) clusters partly content-driven
+(03=all "M.", 02=single letters), (c) the upright-vs-italic serif place-name axis still not cleanly
+split. **Iteration-3 lead lever: a little REAL supervision** — few-shot metric learning anchored on the
+HITL-labelled real crops (classify by nearest labelled exemplar per OS style), which should sharpen the
+fine place-name axes clustering blurred; plus glyph-level/content-hardening. Short marks (M./P/B.)
+cluster by content — fine, they're typed via the checked-abbreviation route, not style.
+
 ## 1. Summary / goal / success criteria
 
 **Goal.** Give every GB1900 label a `types[].identifier` drawn from a small
