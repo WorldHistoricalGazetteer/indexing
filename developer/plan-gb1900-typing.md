@@ -1513,3 +1513,52 @@ z17 campaign plan (§ this file above): ~25-30 geographic batches; per-batch fet
 classify (+type_assign) -> emit -> tar to /ix1 -> drop from /vast; additive (rescan finds more, never drop);
 resumable. Decisions (confirmed): classify-only pass 1 (spotter rescan = pass 2); retrain CRNN on a wider
 z17 sample first. AAT crosswalk (os_categories.json aat_id) is the publishing prerequisite (option c).
+
+### 15. RE-GROUNDING the font classifier on the Characteristic Sheet (SG prompt, 2026-07-19)
+SG: "do we need to rethink on the basis of having the OS style sheets now?" — YES, and it reshapes
+the supervision + taxonomy without discarding the CRNN. The old classifier was BOTTOM-UP: 275
+hand-labelled ad-hoc anchors (serif_upright/italic, blackletter, caps_spaced, road_caps, slab…) under
+leave-one-out — starved, and it collapsed serif (italic .14 / upright .25). The sheet is the OS's OWN
+TOP-DOWN generative model of the type, so:
+1. **Taxonomy = the sheet's categories, not my guesses.** Recast the visual classes to the coarse
+   partition the pixels can actually separate, each mapped to the sheet's meaning:
+   italic→WATER (rivers/canals/brooks; railway-mineral also italic, split by TEXT), blackletter→ANTIQUITY
+   (era split is TEXTUAL), caps→ADMIN/town (level via SIZE+TEXT), upright→SETTLEMENT (default), numeral.
+   Font gives the coarse STYLE; text+size refine to AAT. Over-splitting is what collapsed serif before.
+2. **Sheet + crowd text = abundant, correctly-labelled data.** `font_ground.py` auto-labels ~2000
+   exemplars/style nationwide from high-precision text lexicons (water head-nouns; antiquity terms;
+   allcaps admin-gazetteer names; ordinary mixed-case = upright; pure digits = numeral), fetches their
+   z17 crops, CRNN-embeds, and refits the fusion MLP under 5-fold CV. Replaces 275 anchors with ~10k.
+3. **KEY TEST:** does `italic` (trained on strongly-italic WATER labels) separate from `upright`
+   (settlement)? The old serif_italic .14 was italic-vs-upright WITHIN settlements (~3° slant); water
+   italic is a proper cursive italic and should be far more separable — a real chance to promote
+   water-italic to a reliable production signal.
+Honest limit: pixels don't move — settlement-upright vs farm-upright stays hard; re-grounding aims to
+ADD reliable classes (water-italic, antiquity-by-era, admin-by-size), not rescue slantless serif.
+Production wiring: `font_type.py` (FontTyper + merge) loads crnn_z17.pt + the sheet-grounded
+`font_clf.joblib`; only classes clearing a precision bar inject an ADDITIVE, capped vote into the text
+top-3 (font enriches, never overrides). Sequenced BEFORE the 20-band campaign so we don't burn
+multi-day compute on the weak 2-class classifier.
+
+### 15 RESULT — re-grounding improves the CV but font-merge FAILS at production scale (2026-07-19)
+`font_ground.py` (5-fold CV, ~10k auto-labelled crops): overall **0.826** (was 0.653). Clean classes
+caps **0.96**, numeral **0.998**; the re-grounding HYPOTHESIS CONFIRMED — water-italic **0.72** vs the
+old settlement-italic 0.14 (a proper cursive italic IS separable). blackletter genuinely ~0.9 (CV 0.72
+depressed by auto-label noise); upright stays weak, as predicted.
+**BUT the on-band validation is a definitive NEGATIVE result. Do NOT merge font on crowd-point crops.**
+Two real bands (`z17_batch --force` into types_z17_smoke):
+- Highland 19603_19610 (806 pins): 20%→15% "antiquity", 36%→35% "water" after base-rate correction;
+  ~59% of labels font-merged. Examples: `Eilean Dubh` (island)→antiquity, `LOCH NAM BRAC`→admin.
+- English 21200_21206 (8922 pins): "admin_or_parish" **14%**, "antiquity" **7%** (true rates ~1.5%);
+  55% of labels merged. -> failure is UNIVERSAL, not a Celtic-script artefact.
+ROOT CAUSE: base-rate + crop-localization + domain shift. The classifier is fit balanced (0.20/class)
+and, worse, on ARBITRARY crowd-point windows the label is off-centre amid surrounding map ink -> the CRNN
+embedding is dominated by non-label ink -> ordinary labels scatter into blackletter/italic/caps with high
+(wrong) confidence, so base-rate correction (reweight by prior_true/0.20; PRIORS upright .82/italic .07/
+caps .05/numeral .04/blackletter .02) is INSUFFICIENT — it needs a rare class rated 41x upright, which the
+OOD crops still satisfy. The clean 0.96/0.98 anchor numbers were on CURATED, well-centred crops.
+CONCLUSION: reliable font-typing needs CLEAN LOCALIZED crops = the spotter (MapReader) boxes (pass-2),
+NOT crowd points (pass-1). The text-only edition (gb_stamp_types.jsonl, 0.3% unknown, sane distribution)
+stands as the deliverable. z17_batch keeps font OFF by default going forward; the z17 TILE ARCHIVE remains
+a reusable foundation for pass-2 (spotter rescan -> boxes -> reliable font). Kit retained for pass-2:
+font_ground.py, font_type.py (+base-rate correction), font_clf.joblib, out_z17/crnn_z17.pt.
