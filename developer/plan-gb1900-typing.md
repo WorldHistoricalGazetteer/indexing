@@ -1406,6 +1406,14 @@ split is the one genuinely hard axis — usable as a soft/size-fused signal, not
 font-detected, abbrev/numeral, water/descriptive-serif via word-rule .86); serif settlement-vs-farm the
 sole soft spot. Finish line = integrate into type_assign v2 (style × size × case, over the tier-0 base).
 
+### 12.8 Slant (SG OpenCV idea) + serif plateau diagnosis (2026-07-18)
+cv2 gradient-orientation slant (deskew + linework removal): upright ~1.9deg, italic ~5.3deg — CORRECTLY
+centred (v1 shear-projection gave a noisy 8deg). But OS italic is only MILDLY slanted (~3deg over upright
+vs ~4deg spread) -> slant-only .647. So italic is distinguished by LETTERFORM (glyph .73) + SEMANTICS
+(.71) + SIZE, not slant. Real bottleneck: CLEAN ANCHOR QUANTITY — 68 human anchors cap all 6 serif
+experiments at ~.70; lexicon windowed crops don't transfer to spotter-box crops (train-lex/test-human
+.35). BREAK IT via abundant clean anchors (spotter on more regions) or more human labels — a DATA effort.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
