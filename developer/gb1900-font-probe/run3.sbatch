@@ -29,4 +29,10 @@ $PY embed_cluster.py --enc $OUT/encoder.pt \
     --boxes "$MR/region/boxes/worker*.jsonl" \
     --tiles $MR/region/tiles /vast/ishi/gb1900/tiles/16 \
     --hitl $MR/hitl/manifest_clean.json --out $OUT --nmax 2500 || exit 1
-echo "=== DONE ==="; cat $OUT/synth_val.json
+
+echo "=== ANCHOR-kNN CLASSIFY (proper iter3 eval) ==="
+$PY classify_real.py --enc $OUT/encoder.pt \
+    --boxes "$MR/region/boxes/worker*.jsonl" \
+    --tiles $MR/region/tiles /vast/ishi/gb1900/tiles/16 \
+    --labels $PROBE/font_labels.json --out $OUT --nmax 2500 || exit 1
+echo "=== DONE ==="; cat $OUT/synth_val.json; echo; cat $OUT/classify_report.json
