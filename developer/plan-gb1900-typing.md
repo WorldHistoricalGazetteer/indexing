@@ -1289,6 +1289,34 @@ The spotter + font + flat-field infrastructure produces, almost as byproducts, t
 Net: font-typing, boundary extraction, and a roads GIS are three deliverables off one imagery+spotter+
 flat-field stack. This is a recorded direction, not scheduled work.
 
+### 12.4 B′ — REAL-domain recogniser for font-style (the funded next lever, SG 2026-07-18)
+Every synthetic approach (VLM→embedding→few-shot→fusion, §0b) plateaued at ~0.17–0.25 on the fine
+upright/italic serif axis **because of a domain gap**. B′ removes the gap at its root by training on
+REAL data, whose labels are free: **every MapReader crop already carries its transcription.**
+
+- **Data harvest (free, abundant):** `(crop, transcript)` pairs from spotter boxes — region has 8081,
+  GB-wide millions. Each crop carries its box → `cap_height_m` (size) + `allcaps` (case). Optionally
+  fetch **z17** crops (native ceiling; ~0.7 m/px vs z16's 1.45) so serif/stroke detail is *resolved*,
+  not upscaled. **Auto-label** the text-identifiable classes for free: text ends ROAD/STREET/LANE/…→
+  `road_caps`; digits→`numeral`; known OS abbreviations→`abbrev`.
+- **Model:** a real word-level recogniser (CRNN + CTC) on `(crop→text)`. Real-domain, no synthetic gap.
+  Height-normalised input ⇒ the encoder is size-BLIND by construction (as any OCR must be).
+- **Size-aware fusion (SG):** size is NOT learned by the encoder — it stays a separate measured axis.
+  `type = real-style-embedding × size_band(cap_height_m) × case`. Because every harvested example is
+  auto size-tagged, build references as **letter × style × size-band**, and — key — **test style
+  separability WITHIN a size band** (size has been a confound; controlling for it may itself lift the
+  ceiling).
+- **Falls out for free:** (a) a real-domain **font-style embedding** (the encoder) — the thing synthetic
+  couldn't give; (b) a better **OS-six-inch OCR** (sharper on abbreviations); (c) the **per-letter
+  alphabet** via CTC/attention alignment (SG's "assemble a full alphabet"); (d) feeds the §12.1 native
+  detector and §12.3 roads-GIS lettering-erasure.
+- **Eval:** same anchor-kNN / per-class on real crops, now with the real-domain encoder + size fusion;
+  the test is whether upright/italic serif finally breaks past the ~0.25 ceiling (esp. within-size-band).
+- **Cost:** data pairing is already there (cheap); CRNN training is a GPU sub-project; z17 = 4× tile
+  fetch (do a region first). Decision A-vs-B′: bank the reliable signals (tier-0 rules + size + case +
+  short-mark split) now regardless; B′ is the funded attempt to make fine font-style usable. See
+  [[gbstamp_font_typing_pivot]].
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
