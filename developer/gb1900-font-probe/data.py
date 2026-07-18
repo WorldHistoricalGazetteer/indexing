@@ -98,8 +98,9 @@ def to_fixed01(a01):
 def norm1(a01):
     return ((a01 - a01.mean()) / (a01.std() + 1e-5)).astype(np.float32)
 
-def load_real_pool(boxes_glob, tile_dirs, n, rng):
-    """crop up to n real spotter boxes -> list of flattened 0..1 64x192 arrays (unlabelled)."""
+def load_real_and_kept(boxes_glob, tile_dirs, n, rng):
+    """crop up to n real spotter boxes -> (pool[flattened 0..1 64x192], kept_boxes) ALIGNED by index.
+    Deterministic (seeded shuffle + crop-success skip) so label ids c{cl}_{i} map to pool[i]/kept[i]."""
     import json
     boxes = []
     for f in glob.glob(boxes_glob):
@@ -107,13 +108,31 @@ def load_real_pool(boxes_glob, tile_dirs, n, rng):
             line = line.strip()
             if line: boxes.append(json.loads(line))
     rng.shuffle(boxes)
-    pool = []
+    pool, kept = [], []
     for b in boxes:
         if len(pool) >= n: break
         c = crop_box(b["gpoly"], tile_dirs)
         if c is not None:
-            pool.append(to_fixed01(c))
-    return pool
+            pool.append(to_fixed01(c)); kept.append(b)
+    return pool, kept
+
+def load_real_pool(boxes_glob, tile_dirs, n, rng):
+    return load_real_and_kept(boxes_glob, tile_dirs, n, rng)[0]
+
+def load_anchors(labels_path, pool, extra=("numeral", "abbrev")):
+    """map human labels (id c{cl}_{i}) -> pool[i] flattened crop; return (X[N,1,64,192], y_names).
+    pool must be the load_real_and_kept pool built with the SAME seed the manifest used."""
+    import json
+    labels = json.load(open(labels_path))
+    valid = set(F.CLASS_NAMES) | set(extra)
+    X, y = [], []
+    for r in labels:
+        if r["label"] not in valid:
+            continue
+        i = int(r["id"].split("_")[-1])
+        if i < len(pool):
+            X.append(norm1(pool[i])); y.append(r["label"])
+    return (np.stack(X)[:, None].astype(np.float32) if X else np.zeros((0, 1, D.TARGET_H, 192), np.float32)), y
 
 def aug_view(a01, rng):
     """one augmented view of a flattened 0..1 crop (photometric + mild geometric)."""
