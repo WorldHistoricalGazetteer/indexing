@@ -83,8 +83,18 @@
 > **DECISIONS (SG, 2026-07-17/18):**
 > - **NEWER decisions (2026-07-18) — see §0a:** VLM on **ALL 2.67M labels** (full coverage,
 >   not residual-only); **record a bbox per label**; **historic-county** attribution
->   (HCS codes); parallel S3 fetch + **sharded Slurm cropper**; everything as **idempotent
->   per-`pin_id` patches (never re-run)**.
+>   (HCS codes); **admin tags (nation/district/parish) via a GB1900-gazetteer join** (CC-BY-SA,
+>   Voronoi-containment fallback) — no restricted boundaries; parallel S3 fetch + **sharded
+>   Slurm cropper**; everything as **idempotent per-`pin_id` patches (never re-run)**.
+> - **DATA MODEL — include everything; TYPING is the guard (SG 2026-07-18):** keep all label
+>   kinds — named places, **unnamed point-features** (`W` well, `P` pump, unnamed P.H. — a place
+>   with `title`=type and **empty `toponyms[]`**), and **non-place annotations** (`F.P.` footpath,
+>   `B.M.` bench-mark, spot-heights). Justification: each is an **attestation** that clustering
+>   can later name/link across sources (a nameless `W` clusters spatially+by-type with a named
+>   well elsewhere). Guard for UIs = a cheap derived **`is_named`** flag (`toponyms[]` non-empty):
+>   default views / typeahead / name-search gate on `is_named`; nameless features + annotations
+>   are reachable only via **type or spatial queries**. "GB-STAMP" stays (gloss: *typed map
+>   labels*) — the type + `is_named` make the non-place minority explicit, not hidden.
 > - **Ingest scope = COMPLETE / everything** — all ~2.67M pins ingested (incl.
 >   footpaths/wells/pumps); downstream users customise their own filtering. (So the
 >   §2.4 "default-exclude generic features" option is dropped — index it all, typed.)
