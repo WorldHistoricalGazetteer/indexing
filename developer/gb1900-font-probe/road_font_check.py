@@ -11,7 +11,8 @@ from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import cross_val_predict, LeaveOneOut
 import data as DATA, crnn_data as CD
 from crnn import CRNN
-from crnn_eval import crnn_embed, montage
+from crnn_eval import crnn_embed
+from embed_cluster import montage
 
 TILES16 = ["/vast/ishi/gb1900/probe/mapreader_text/region/tiles", "/vast/ishi/gb1900/tiles/16"]
 TILES17 = ["/vast/ishi/gb1900/tiles17"]
