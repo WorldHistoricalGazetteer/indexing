@@ -44,8 +44,10 @@ def harvest(boxes_glob, tile_dirs, nmax=100000, min_len=1, max_len=24, rng=None,
     return out
 
 import math as _math, re as _re
-_ANTIQ = _re.compile(r"\b(Tumulus|Tumuli|Cairn|Camp|Earthwork|Barrow|Cross|Castle|Fort|Abbey|Priory|"
-                     r"Motte|Cist|Site of|Remains of|Roman|British|Saxon|Danish|Chapel|Church|Monastery)\b", _re.I)
+# high-precision blackletter antiquity terms (verified overwhelmingly blackletter in the z17 montage);
+# deliberately excludes Church/Castle/Roman/Cross/Abbey (mixed serif/road) to keep the auto-label clean
+_ANTIQ = _re.compile(r"\b(Tumulus|Tumuli|Cairn|Cairns|Camp|Earthwork|Earthworks|Barrow|Barrows|"
+                     r"Motte|Cist|Enclosure|Entrenchment)\b", _re.I)
 def _z16blk(lon, lat):
     x = int((lon + 180) / 360 * (2**16))
     y = int((1 - _math.log(_math.tan(_math.radians(lat)) + 1 / _math.cos(_math.radians(lat))) / _math.pi) / 2 * (2**16))
@@ -53,10 +55,10 @@ def _z16blk(lon, lat):
 
 def auto_style(text):
     up = text.upper(); al = [c for c in text if c.isalpha()]
-    if _ANTIQ.search(text): return "blackletter"
-    if any(up.endswith(s) or (" " + s) in (" " + up) for s in ("ROAD", "STREET", "LANE", "TERRACE", "AVENUE")):
-        return "road_caps"
     if text.replace(".", "").replace(",", "").isdigit(): return "numeral"
+    if any(up.endswith(s) or (" " + s) in (" " + up) for s in ("ROAD", "STREET", "LANE", "TERRACE", "AVENUE")):
+        return "road_caps"                                    # road wins over antiquity ("ROMAN ROAD")
+    if _ANTIQ.search(text): return "blackletter"
     if up == text and len(al) >= 4 and " " in text.strip(): return "caps_spaced"
     return None
 
