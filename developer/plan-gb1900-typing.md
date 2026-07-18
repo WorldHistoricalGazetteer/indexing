@@ -246,6 +246,23 @@ so the font classification must be made reliable (the tuning goal).
 coherence on clean crops → salvage via prompt-tuning, or pivot to **font-embedding clustering**;
 (3) rebuild the HITL on clean crops. §12.0/§12.1 already updated (spotter is the box authority).
 
+**Font-embedding feasibility probe — RESULT (2026-07-18, gpu job 3275512, `developer/gb1900-font-probe/`).**
+The VLM `os_style` is confirmed incoherent (montages: italic/upright lumped in RP; Stump≈EC; outline
+"COTON" + mixed-case "Redhill" both RC), so we pivoted to a learned style embedding. A synthetic
+supervised-contrastive encoder (8 OS-axis classes; ink composited on real tiles + degradation)
+scored **knn 0.99 / silhouette 0.78 on synthetic** — the axes are strongly learnable — but on the
+2500 real spotter crops it **collapsed**: HDBSCAN gave 1 coherent cluster (66 clean serif place-names)
++ 1 heterogeneous blob (2145, italic+numerals+abbrev+serif mixed) + 289 noise; no VLM-label alignment.
+**Verdict: DOMAIN GAP, not a weak signal** (opposite of the boundary probe) — capacity is proven, the
+work is synthetic→real transfer. Partial transfer already occurred (the serif-placename cluster).
+**Iteration-2 levers, prioritised:** (a) **paper-tone alignment** — per-sheet/tile cached flat-field
+(illumination) correction applied to both synthetic + real so paper is canonical and only ink varies
+(SG idea; now the lead lever) — preserve ink weight, don't binarize; (b) degradation realism — real
+backgrounds with linework crossing text, measured ink/paper profiles, curved baselines; (c) a little
+real supervision — anchor/fine-tune on the HITL-labelled crops (few-shot metric learning) and/or an
+unsupervised photometric-consistency term on real crops (doubles as domain adaptation); (d) stronger
+backbone / higher input res / glyph-level embedding. Gate iteration-2 on the same synth+real montages.
+
 ## 1. Summary / goal / success criteria
 
 **Goal.** Give every GB1900 label a `types[].identifier` drawn from a small
