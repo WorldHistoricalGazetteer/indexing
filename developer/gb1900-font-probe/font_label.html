@@ -1,0 +1,127 @@
+<title>GB1900 font-style labelling</title>
+<style>
+  :root{--bg:#f4f2ec;--fg:#22201b;--mut:#7a756a;--card:#fff;--line:#d9d4c8;--accent:#8a3324;--done:#2e6b3e}
+  @media(prefers-color-scheme:dark){:root{--bg:#1a1917;--fg:#e9e5db;--mut:#9a9484;--card:#26241f;--line:#3a372f;--accent:#d98a5a;--done:#6bbf7e}}
+  *{box-sizing:border-box}
+  body{margin:0;font:14px/1.4 system-ui,sans-serif;background:var(--bg);color:var(--fg);display:flex}
+  #key{width:250px;min-width:250px;position:sticky;top:0;height:100vh;overflow:auto;padding:12px;border-right:1px solid var(--line);background:var(--card)}
+  #key h2{font-size:13px;margin:.2em 0 .6em;text-transform:uppercase;letter-spacing:.05em;color:var(--mut)}
+  .ref{display:flex;gap:8px;align-items:center;padding:6px;border-radius:6px;cursor:pointer;border:1px solid transparent}
+  .ref:hover{border-color:var(--line);background:var(--bg)}
+  .ref .k{font-weight:700;color:var(--accent);width:14px;text-align:center}
+  .ref .imgs{display:flex;flex-direction:column;gap:2px}
+  .ref img{height:26px;background:#fff;border:1px solid var(--line);border-radius:3px}
+  .ref .nm{font-weight:600}.ref .ds{font-size:11px;color:var(--mut)}
+  main{flex:1;padding:12px 16px}
+  #bar{position:sticky;top:0;background:var(--bg);padding:8px 0;display:flex;gap:14px;align-items:center;flex-wrap:wrap;border-bottom:1px solid var(--line);z-index:5}
+  #bar select,#bar button{font:13px system-ui;padding:5px 9px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--fg);cursor:pointer}
+  #prog{font-weight:700}
+  #grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:6px;width:210px;cursor:pointer}
+  .card.active{outline:3px solid var(--accent)}
+  .card img{width:100%;height:64px;object-fit:contain;background:#fff;border-radius:4px}
+  .card .t{font-size:12px;color:var(--mut);margin-top:3px;display:flex;justify-content:space-between}
+  .card .lb{margin-top:4px;font-weight:700;font-size:12px;min-height:1.2em}
+  .card.done{border-color:var(--done)}.card.done .lb{color:var(--done)}
+  .hint{color:var(--mut);font-size:12px}
+</style>
+<div id="key"><h2>Reference key</h2><div id="refs"></div>
+  <h2 style="margin-top:14px">Keys</h2>
+  <div class="hint">Click a crop (or ←/→) to select it, then press the key for its style. Auto-advances.
+  Click a reference row to label the selected crop.</div>
+</div>
+<main>
+  <div id="bar">
+    <span id="prog">0 / 0</span>
+    <label>show <select id="filter"><option value="all">all</option><option value="todo">unlabelled</option></select></label>
+    <label>cluster <select id="cfilter"></select></label>
+    <label>bulk unlabelled in cluster → <select id="bulk"></select></label>
+    <button id="applybulk">apply</button>
+    <button id="export">Export JSON</button>
+    <label style="cursor:pointer">Import <input id="import" type="file" accept=".json" style="display:none"></label>
+    <span class="hint" id="msg"></span>
+  </div>
+  <div id="grid"></div>
+</main>
+<script id="manifest" type="application/json">__MANIFEST__</script>
+<script>
+const M = JSON.parse(document.getElementById('manifest').textContent);
+const KEYS = ['1','2','3','4','5','6','7','8','9','0','a','x'];   // maps to M.classes in order
+const COL = {}; M.classes.forEach((c,i)=>COL[c]=`hsl(${i*30},55%,50%)`);
+const LS='gb1900_font_labels';
+let labels = JSON.parse(localStorage.getItem(LS)||'{}');
+let active = 0;
+
+// reference key
+const refs=document.getElementById('refs');
+M.classes.forEach((c,i)=>{
+  const imgs=(M.references&&M.references[c])||[];
+  const el=document.createElement('div');el.className='ref';
+  el.innerHTML=`<span class="k">${KEYS[i]}</span><div class="imgs">${imgs.map(u=>`<img src="${u}">`).join('')}</div>
+    <div><div class="nm" style="color:${COL[c]}">${c}</div><div class="ds">${(M.class_desc&&M.class_desc[c])||''}</div></div>`;
+  el.onclick=()=>assign(c);
+  refs.appendChild(el);
+});
+
+// cluster filters
+const clusters=[...new Set(M.samples.map(s=>s.cluster))].sort();
+const cf=document.getElementById('cfilter'), bk=document.getElementById('bulk');
+cf.innerHTML='<option value="all">all</option>'+clusters.map(c=>`<option>${c}</option>`).join('');
+bk.innerHTML='<option value="">— cluster —</option>'+clusters.map(c=>`<option>${c}</option>`).join('');
+const bulkClass=document.createElement('select');
+bulkClass.innerHTML=M.classes.map(c=>`<option>${c}</option>`).join('');
+document.getElementById('applybulk').before(bulkClass);
+
+function visible(){
+  const f=document.getElementById('filter').value, cfl=cf.value;
+  return M.samples.filter(s=>(f==='all'||!labels[s.id])&&(cfl==='all'||s.cluster===cfl));
+}
+function render(){
+  const g=document.getElementById('grid'); g.innerHTML='';
+  const vis=visible();
+  vis.forEach((s,vi)=>{
+    const lb=labels[s.id];
+    const d=document.createElement('div');
+    d.className='card'+(lb?' done':'')+(vi===active?' active':'');
+    d.innerHTML=`<img src="${s.crop}"><div class="t"><span>${s.text||'·'}</span><span>${s.cluster}</span></div>
+      <div class="lb" style="color:${lb?COL[lb]||'':''}">${lb||''}</div>`;
+    d.onclick=()=>{active=vi;render();};
+    g.appendChild(d);
+  });
+  document.getElementById('prog').textContent=`${Object.keys(labels).length} / ${M.samples.length} labelled`;
+  const cards=g.querySelectorAll('.card'); if(cards[active]) cards[active].scrollIntoView({block:'nearest'});
+}
+function assign(cls){
+  const vis=visible(); if(!vis.length) return;
+  const s=vis[Math.min(active,vis.length-1)];
+  labels[s.id]=cls; localStorage.setItem(LS,JSON.stringify(labels));
+  if(document.getElementById('filter').value==='todo'){ render(); }        // item leaves the list
+  else { active=Math.min(active+1,vis.length-1); render(); }
+}
+document.addEventListener('keydown',e=>{
+  if(e.target.tagName==='SELECT'||e.target.tagName==='INPUT')return;
+  const i=KEYS.indexOf(e.key.toLowerCase());
+  if(i>=0&&i<M.classes.length){assign(M.classes[i]);e.preventDefault();return;}
+  const vis=visible();
+  if(e.key==='ArrowRight'){active=Math.min(active+1,vis.length-1);render();}
+  if(e.key==='ArrowLeft'){active=Math.max(active-1,0);render();}
+});
+document.getElementById('filter').onchange=()=>{active=0;render();};
+cf.onchange=()=>{active=0;render();};
+document.getElementById('applybulk').onclick=()=>{
+  const c=bk.value, cls=bulkClass.value; if(!c)return;
+  M.samples.filter(s=>s.cluster===c&&!labels[s.id]).forEach(s=>labels[s.id]=cls);
+  localStorage.setItem(LS,JSON.stringify(labels));
+  document.getElementById('msg').textContent=`bulk-labelled cluster ${c} → ${cls}`;render();
+};
+document.getElementById('export').onclick=()=>{
+  const out=M.samples.filter(s=>labels[s.id]).map(s=>({id:s.id,label:labels[s.id],text:s.text,cluster:s.cluster}));
+  const b=new Blob([JSON.stringify(out,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='font_labels.json';a.click();
+};
+document.getElementById('import').onchange=e=>{
+  const fr=new FileReader();fr.onload=()=>{JSON.parse(fr.result).forEach(r=>labels[r.id]=r.label);
+    localStorage.setItem(LS,JSON.stringify(labels));render();};fr.readAsText(e.target.files[0]);
+};
+render();
+</script>

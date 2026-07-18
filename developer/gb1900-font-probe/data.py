@@ -63,8 +63,9 @@ def load_tile(tx, ty, tile_dirs):
         _tc[k] = im
     return im
 
-def crop_box(gpoly, tile_dirs, pad=0.12):
-    """Assemble covering tiles, FLATTEN the canvas (tile-scale), crop the box -> 0..1 array."""
+def crop_box(gpoly, tile_dirs, pad=0.12, do_flatten=True):
+    """Assemble covering tiles, (optionally FLATTEN the canvas, tile-scale), crop the box -> 0..1 array.
+    do_flatten=True for the model (canonical paper); False for human-display crops (natural look)."""
     xs = [p[0] for p in gpoly]; ys = [p[1] for p in gpoly]
     minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
     bw, bh = maxx - minx, maxy - miny
