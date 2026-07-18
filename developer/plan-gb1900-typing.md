@@ -290,6 +290,22 @@ HITL-labelled real crops (classify by nearest labelled exemplar per OS style), w
 fine place-name axes clustering blurred; plus glyph-level/content-hardening. Short marks (M./P/B.)
 cluster by content — fine, they're typed via the checked-abbreviation route, not style.
 
+**Iteration-3 + FUSION RESULT (2026-07-18) — CONCLUSION of the font-typing exploration.**
+275 HITL anchors (2 batches; +`slab_italic` = 10 classes). Coverage reality: the rare treatments are
+GENUINELY SCARCE in the test region — serif_italic 44 / serif_upright 24 / road_caps 10 solid, rest ≤3
+(sans/engraved 0). iter-3 few-shot anchor-kNN: synth held (knn 0.877) but real style classification
+weak; serif_italic montage decent, serif_upright a real upright/italic mix. **Fusion head** (SG idea —
+embedding + size + case + text, since tier-0 `os_style` is EMPTY): lifts *every* style class over
+embedding-only (serif_italic .16→.25, serif_upright .08→.17, numeral .45→.53; overall .41→.45) —
+architecture validated — **but the absolute ceiling on the fine upright/italic serif axis stays ~0.17–0.25.**
+**Verdict:** across VLM→embedding(iter1-3)→few-shot→fusion, fine font-style typing on real OS crops does
+NOT reach usable accuracy. What DOES work reliably: **tier-0 TEXT rules** (`tier0_rule`: abbrev+keyword+
+numeric already type ~59%; `residual` 33% is the target tail), the **SIZE axis** (`cap_height_m`, clean +
+free), **CASE** (`allcaps`), and **short-mark/word separation**. Recommendation: bank those for typing;
+treat fine font-style as a **low-confidence enrichment** (apply only where confident, e.g. strong
+italic-serif→water); reopen deep embedding R&D only for a big lever (pretrained backbone + glyph-level +
+wider multi-region anchors). See [[gbstamp_font_typing_pivot]].
+
 ## 1. Summary / goal / success criteria
 
 **Goal.** Give every GB1900 label a `types[].identifier` drawn from a small
