@@ -26,3 +26,8 @@ authorities/hgis/*.lpf
 
 # GB1900 HITL generated artifacts (manifest + built review HTML; regenerable)
 processing/gb1900/hitl/
+
+# GB1900 font-probe: font binaries (mixed licenses, see SOURCES.md) + outputs
+developer/gb1900-font-probe/fonts/*.ttf
+developer/gb1900-font-probe/fonts/*.otf
+developer/gb1900-font-probe/out/
