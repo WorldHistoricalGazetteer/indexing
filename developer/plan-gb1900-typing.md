@@ -1312,6 +1312,12 @@ REAL data, whose labels are free: **every MapReader crop already carries its tra
   detector and §12.3 roads-GIS lettering-erasure.
 - **Eval:** same anchor-kNN / per-class on real crops, now with the real-domain encoder + size fusion;
   the test is whether upright/italic serif finally breaks past the ~0.25 ceiling (esp. within-size-band).
+- **Coverage curation (SG) — for the full alphabet, once the proof is positive.** The proof trains on
+  the NATURAL region distribution (uncurated), so common letters/fonts dominate and rare fonts are
+  absent. Font is the unknown, so stratify only where font is known (auto-labels road/numeral/abbrev,
+  HITL anchors, embedding buckets); rare fonts need the WIDER multi-region harvest to appear at all.
+  Then build a **letter × font × size coverage matrix**, oversample to fill gaps, and pull per-letter
+  exemplars via `crnn.per_glyph` (CTC alignment) → a curated alphabet complete across letter×font×size.
 - **Cost:** data pairing is already there (cheap); CRNN training is a GPU sub-project; z17 = 4× tile
   fetch (do a region first). Decision A-vs-B′: bank the reliable signals (tier-0 rules + size + case +
   short-mark split) now regardless; B′ is the funded attempt to make fine font-style usable. See
