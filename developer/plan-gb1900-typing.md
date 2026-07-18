@@ -1238,6 +1238,22 @@ retaining BOTH coordinate sets** as provenance. Same machinery as the multiword 
 on whether the NLS tileset is a seamless mosaic (each ground point once) or per-sheet with overlap —
 **check the tileset first**; this is a cleanup pass after A/B, not a blocker.
 
+### 12.3 Spin-off: GB c.1900 roads GIS (SG note for follow-up, 2026-07-18)
+The spotter + font + flat-field infrastructure produces, almost as byproducts, the seed assets for a
+**vector road network of Britain c.1900** — a separate deliverable that reuses everything here:
+- **Road-name lettering as a road-signal seed.** In built-up areas pure linework tracing fails (roads,
+  plots, buildings all similar). But **road names** (the `road_caps` class: small solid caps *between
+  parallel casing lines*) unambiguously mark roads and give **location + orientation** (text baseline =
+  road direction) + local **width/edges** (the flanking casing). So the road-name detector we're
+  building for typing doubles as a **road-seed detector** exactly where tracing is hardest.
+- **Erasing lettering ink.** The spotter/detector boxes + flat-field ink/paper separation let us **mask
+  and inpaint lettering** out of the sheet → a de-lettered map whose linework is far cleaner for
+  centreline/edge extraction (and this also de-noises the boundary extraction, `plan-gb1900-parish-extraction.md`).
+- **Casing-line tracing.** We are already modelling road casing synthetically (§ font probe); a casing
+  detector + the de-lettered map + road-name seeds → traced, **named** road centrelines.
+Net: font-typing, boundary extraction, and a roads GIS are three deliverables off one imagery+spotter+
+flat-field stack. This is a recorded direction, not scheduled work.
+
 ## Appendix — key files & commands referenced
 
 - **Production run (as-built, §0a):**
