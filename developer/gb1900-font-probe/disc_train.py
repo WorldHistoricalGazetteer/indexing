@@ -16,6 +16,8 @@ from make_font_testset_v2 import derotate
 
 DEC = "/vast/ishi/gb1900/probe/font/font_testset_decisions_1.json"
 BOXES = "/vast/ishi/gb1900/edition/spot/font_testset_v2_boxes.json"   # frozen sample (pool-independent)
+VOC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+def lidx(c): return VOC.find(c.upper()) if c.upper() in VOC else 36
 STYLES = ["italic", "blackletter", "upright"]; SI = {s: i for i, s in enumerate(STYLES)}
 G = 40   # glyph canvas
 
@@ -49,7 +51,7 @@ def gray_glyphs(patch, text):
     bounds = [0] + sorted(cuts) + [Wd]; out = []
     for i in range(len(bounds) - 1):
         g = fit(patch[:, a + bounds[i]:a + bounds[i + 1]])
-        if g is not None: out.append(g)
+        if g is not None: out.append((letters[i].upper(), g))    # (letter, glyph) for letter-conditioning
     return out
 
 class Net(nn.Module):
@@ -59,8 +61,9 @@ class Net(nn.Module):
             nn.Conv2d(1, 16, 3, padding=1), nn.BatchNorm2d(16), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(16, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.AdaptiveAvgPool2d(1))
-        self.f = nn.Sequential(nn.Dropout(0.4), nn.Linear(64, 3))
-    def forward(self, x): return self.f(self.c(x).flatten(1))
+        self.emb = nn.Embedding(37, 16)                          # letter -> content control
+        self.f = nn.Sequential(nn.Dropout(0.4), nn.Linear(64 + 16, 3))
+    def forward(self, x, l): return self.f(torch.cat([self.c(x).flatten(1), self.emb(l)], 1))
 
 def augment(x):
     """style-preserving aug: tiny rotate/translate/scale + weight jitter + noise. NO shear (that IS the signal)."""
@@ -95,24 +98,25 @@ def main():
     for fi, test_ix in enumerate(folds):
         tr = [words[j] for j in idx if j not in set(test_ix.tolist())]
         te = [words[j] for j in test_ix]
-        Xtr = []; ytr = []
+        Xtr = []; Ltr = []; ytr = []
         for f, gs in tr:
-            for g in gs: Xtr.append(g); ytr.append(SI[f])
+            for L, g in gs: Xtr.append(g); Ltr.append(lidx(L)); ytr.append(SI[f])
         net = Net(); opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4)
         lossf = nn.CrossEntropyLoss(); net.train()
-        Xtr = np.array(Xtr); ytr = np.array(ytr)
+        Xtr = np.array(Xtr); Ltr = np.array(Ltr); ytr = np.array(ytr)
         for ep in range(60):
             p = np.random.permutation(len(Xtr))
             for k in range(0, len(p), 64):
                 bi = p[k:k + 64]
                 xb = np.stack([augment(Xtr[j]) for j in bi]).astype(np.float32)[:, None] / 255.0
-                xb = torch.tensor((xb - 0.8) / 0.3); yb = torch.tensor(ytr[bi])
-                opt.zero_grad(); loss = lossf(net(xb), yb); loss.backward(); opt.step()
+                xb = torch.tensor((xb - 0.8) / 0.3); yb = torch.tensor(ytr[bi]); lb = torch.tensor(Ltr[bi])
+                opt.zero_grad(); loss = lossf(net(xb, lb), yb); loss.backward(); opt.step()
         net.eval()
         with torch.no_grad():
             for f, gs in te:
-                xb = torch.tensor((np.stack([fit(g) if g.shape != (G, G) else g for g in gs]).astype(np.float32)[:, None] / 255.0 - 0.8) / 0.3)
-                prob = torch.softmax(net(xb), 1).mean(0).numpy()
+                xb = torch.tensor((np.stack([g for _, g in gs]).astype(np.float32)[:, None] / 255.0 - 0.8) / 0.3)
+                lb = torch.tensor([lidx(L) for L, _ in gs])
+                prob = torch.softmax(net(xb, lb), 1).mean(0).numpy()
                 pred = STYLES[int(prob.argmax())]
                 conf[(f, pred)] += 1; tot[f] += 1
         print(f"  fold {fi+1}/5 done", flush=True)
