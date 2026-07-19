@@ -6,13 +6,17 @@ labelled contact sheet to verify the crops before assembling the verification ta
 Outputs reference/ex_<key>.jpg for each, plus reference/ex_contact.jpg (grid montage with labels).
     python fetch_exemplars.py
 """
-import os, io, math, urllib.request, numpy as np
+import os, io, math, json, urllib.request, numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from scipy import ndimage as ndi
 
 HERE = os.path.dirname(os.path.abspath(__file__)); REF = os.path.join(HERE, "reference")
 I1897 = "12807%2F128076792"; I1923 = "12807%2F128076894"
+ID = {I1897: "12807/128076792", I1923: "12807/128076894"}   # decoded ids for the manifest/modal
 IIIF = "https://map-view.nls.uk/iiif/{id}/{x},{y},{w},{h}/{sw},/0/native.jpg"
+# native (x,y,w,h) of the pre-cropped block images (all 1897 sheet)
+BLOCK = {"cs_settlement.jpg": (1860, 1500, 1000, 520), "cs_water.jpg": (1500, 2180, 1300, 360),
+         "cs_antiq.jpg": (2430, 2660, 900, 300)}
 
 def fetch(x, y, w, h, sw=None, sheet=I1897):
     sw = sw or w
@@ -21,33 +25,34 @@ def fetch(x, y, w, h, sw=None, sheet=I1897):
     return Image.open(io.BytesIO(urllib.request.urlopen(req, timeout=30).read())).convert("RGB")
 
 def autocrop(im, pad=11, thr_frac=0.07):
-    """Tighten to the ink bounding box. A LOW density threshold keeps faint serif tops/tails so the FULL
-    glyph height survives (needed for cap-height measurement); it still drops the sparse dotted leaders."""
+    """Tighten to the ink bounding box. Returns (cropped_im, box) where box=(l,t,r,b) in im pixels.
+    A LOW density threshold keeps faint serif tops/tails so the FULL glyph height survives."""
     g = np.asarray(im.convert("L"), np.float32); ink = g < 125
-    if ink.sum() < 15: return im
+    if ink.sum() < 15: return im, (0, 0, im.width, im.height)
     cols = ink.sum(0).astype(float); rows = ink.sum(1).astype(float)
     cthr = max(2.0, thr_frac * cols.max()); rthr = max(2.0, thr_frac * rows.max())
     cx = np.where(cols >= cthr)[0]; ry = np.where(rows >= rthr)[0]
-    if len(cx) == 0 or len(ry) == 0: return im
+    if len(cx) == 0 or len(ry) == 0: return im, (0, 0, im.width, im.height)
     H, W = ink.shape
-    return im.crop((max(0, int(cx[0]) - pad), max(0, int(ry[0]) - pad),
-                    min(W, int(cx[-1]) + pad + 1), min(H, int(ry[-1]) + pad + 1)))
+    box = (max(0, int(cx[0]) - pad), max(0, int(ry[0]) - pad),
+           min(W, int(cx[-1]) + pad + 1), min(H, int(ry[-1]) + pad + 1))
+    return im.crop(box), box
 
-def crop_letter(im, pad_frac=0.16, thr=128, close=5):
-    """For a single boundary-mark LETTER: take the LARGEST connected ink blob (glyph strokes joined by a
-    morphological close), crop to its exact bbox + a margin proportional to glyph height. Gives the FULL
-    letter (never clipped) with NO separate stray symbol / leader dots / adjacent-line fragment."""
+def crop_letter(im, pad_frac=0.26, thr=128, close=7):
+    """For a single boundary-mark LETTER: LARGEST connected ink blob (strokes joined by a close), crop to
+    its bbox + generous margin. Returns (cropped_im, box). Full letter, no stray symbol / leaders."""
     g = np.asarray(im.convert("L"), np.float32); ink = g < thr
-    if ink.sum() < 20: return im
+    if ink.sum() < 20: return im, (0, 0, im.width, im.height)
     ink = ndi.binary_closing(ink, structure=np.ones((close, close)))
     lbl, n = ndi.label(ink)
-    if n == 0: return im
+    if n == 0: return im, (0, 0, im.width, im.height)
     sizes = ndi.sum(np.ones_like(lbl, np.float32), lbl, index=range(1, n + 1))
     big = int(np.argmax(sizes)) + 1
     ys, xs = np.where(lbl == big)
     y0, y1, x0, x1 = int(ys.min()), int(ys.max()), int(xs.min()), int(xs.max())
     pad = int(pad_frac * (y1 - y0 + 1)) + 3; H, W = ink.shape
-    return im.crop((max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad + 1), min(H, y1 + pad + 1)))
+    box = (max(0, x0 - pad), max(0, y0 - pad), min(W, x1 + pad + 1), min(H, y1 + pad + 1))
+    return im.crop(box), box
 
 # ---- ADMIN single-letter exemplars: native crop boxes (generous, native res) ----
 # key, transcribed label, letter, (x,y,w,h), style, caps_only, date_regime, note
@@ -124,32 +129,46 @@ PEND = [
 ]
 
 def slice_block(block, yb, xb):
-    im = Image.open(os.path.join(REF, block)).convert("RGB")
-    W, H = im.size
-    return im.crop((int(xb[0]*W), int(yb[0]*H), int(xb[1]*W), int(yb[1]*H)))
+    im = Image.open(os.path.join(REF, block)).convert("RGB"); W, H = im.size
+    l, t, r, b = int(xb[0] * W), int(yb[0] * H), int(xb[1] * W), int(yb[1] * H)
+    bnx, bny, bnw, bnh = BLOCK[block]; sx, sy = bnw / W, bnh / H
+    return im.crop((l, t, r, b)), (bnx + l * sx, bny + t * sy, (r - l) * sx, (b - t) * sy)
+
+def native_of(src, img_size, box):
+    """src=(nx,ny,nw,nh) native region of `im`; box=(l,t,r,b) crop in im px -> native [x,y,w,h]."""
+    nx, ny, nw, nh = src; W, H = img_size; sx, sy = nw / W, nh / H
+    return [round(nx + box[0] * sx), round(ny + box[1] * sy), round((box[2] - box[0]) * sx), round((box[3] - box[1]) * sy)]
 
 def main():
-    saved = []
+    saved = []; manifest = {}
+    def record(key, sheet, src, img_size, box):
+        x, y, w, h = native_of(src, img_size, box)
+        manifest[f"ex_{key}"] = {"id": ID[sheet], "x": x, "y": y, "w": w, "h": h}
     for key, label, letter, box, *_ in ADMIN:
         try:
-            im = crop_letter(fetch(*box)); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label + f"  [{letter}]"))
+            img = fetch(*box); crop, cb = crop_letter(img); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            record(key, I1897, box, img.size, cb); saved.append((key, label + f"  [{letter}]"))
         except Exception as e:
             print("ADMIN ERR", key, e)
     for key, label, block, yb, xb, *_ in TEXT:
         try:
-            im = autocrop(slice_block(block, yb, xb), pad=6); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
+            sub, snat = slice_block(block, yb, xb); crop, cb = autocrop(sub, pad=6); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            record(key, I1897, snat, sub.size, cb); saved.append((key, label))
         except Exception as e:
             print("TEXT ERR", key, e)
     for key, label, box, sw, *_ in EXTRA:
         try:
-            im = autocrop(fetch(*box, sw=sw), pad=8); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
+            img = fetch(*box, sw=sw); crop, cb = autocrop(img, pad=8); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            record(key, I1897, box, img.size, cb); saved.append((key, label))
         except Exception as e:
             print("EXTRA ERR", key, e)
     for key, box, sw, sheet, pad in PEND:
         try:
-            im = autocrop(fetch(*box, sw=sw, sheet=sheet), pad=pad); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, key))
+            img = fetch(*box, sw=sw, sheet=sheet); crop, cb = autocrop(img, pad=pad); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            record(key, sheet, box, img.size, cb); saved.append((key, key))
         except Exception as e:
             print("PEND ERR", key, e)
+    json.dump(manifest, open(os.path.join(REF, "ex_manifest.json"), "w"), indent=1)
 
     # contact sheet: grid of all exemplars, each scaled to a cell with its label
     cols = 5; cw, ch = 300, 150; pad = 6; lab_h = 26
@@ -168,5 +187,32 @@ def main():
     sheet.save(os.path.join(REF, "ex_contact.jpg"))
     print(f"saved {len(saved)} exemplars; contact sheet reference/ex_contact.jpg ({sheet.size})")
 
+def regen_from(path):
+    """Regenerate the exemplars the human ADJUSTED in the crop modal (cs_decisions.json). Each adjusted
+    box is re-fetched and AUTO-TRIMMED to the ink (SG: leave a loose margin, we trim for exactness).
+    Updates reference/ex_manifest.json in place so the table + modal reflect the new bounds."""
+    data = json.load(open(path)); rowsd = data.get("decisions", data) if isinstance(data, dict) else data
+    mpath = os.path.join(REF, "ex_manifest.json")
+    manifest = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    nreg = 0
+    for row in rowsd:
+        for cr in (row.get("crops") or []):
+            if not cr.get("adjusted"): continue
+            key = cr["key"]; enc = cr["id"].replace("/", "%2F")
+            x, y, w, h = int(cr["x"]), int(cr["y"]), int(cr["w"]), int(cr["h"])
+            sw = min(w, int((250000.0 * w / max(1, h)) ** 0.5)) or w
+            img = fetch(x, y, w, h, sw=sw, sheet=enc)
+            crop, cb = autocrop(img, pad=3)                 # trim the white margin to the ink
+            crop.save(os.path.join(REF, f"{key}.jpg"))
+            nx, ny, nw, nh = native_of((x, y, w, h), img.size, cb)
+            manifest[key] = {"id": cr["id"], "x": nx, "y": ny, "w": nw, "h": nh}; nreg += 1
+    json.dump(manifest, open(mpath, "w"), indent=1)
+    print(f"regenerated {nreg} adjusted exemplars (auto-trimmed to ink); updated ex_manifest.json")
+
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--from-decisions", help="cs_decisions.json with adjusted crops -> regenerate those (trimmed)")
+    a = ap.parse_args()
+    if a.from_decisions: regen_from(a.from_decisions)
+    else: main()

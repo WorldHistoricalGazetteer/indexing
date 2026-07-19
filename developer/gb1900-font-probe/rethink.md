@@ -21,6 +21,21 @@ separate fusion step maps (style × text × size × date-regime) → feature-typ
   difficulty disambiguating the middle two (Prehistoric-Saxon vs Norman). Capture all four exemplars.
 - There is no separate type specified for road names: the font is the same as Antiquities>Roman. (This is
   exactly why the classifier must emit *style*, and text/context disambiguate road vs Roman-antiquity.)
+- **Per-exemplar attributes to record (SG):** letterform STYLE (upright/italic/blackletter/numeral) ·
+  CASE (caps flag) · **DECOR** (serif / plain / **fancy** — the ornate engraved initials) · **HATCHING**
+  (none / horizontal / diagonal engraved shading, if present) · size-variable · date-regime. The verification
+  table carries first-pass values for decor/hatching; the human corrects them in the crop-modal JSON export.
+- **PAPER-TONE normalization (SG — critical, ties to the domain-gap finding):** the Characteristic-Sheet
+  scan and the OS map tiles sit in DIFFERENT photometric spaces. Apply the SAME flat-field / paper-tone
+  correction to the Char-Sheet ANCHOR crops as to the map-tile crops (paper canonical, only ink varies) —
+  otherwise we reintroduce the synthetic→real gap that sank the first classifier. This is the iteration-2
+  lever from the earlier R&D; it must run on anchors + production crops alike before training/inference.
+- **Yorks/Lancs regional exception (SG):** the bracketed rubric on Poor Law Unions / Urban Sanitary Districts
+  ("Applied on old maps of Yorkshire & Lancashire to Registrars Districts") applies ONLY to those two counties
+  and ONLY on OLD maps. The R *font* is identical; only the mark→MEANING differs. So: EXCLUDE old Yorks/Lancs
+  sheets from the PRIMARY mark-meaning tuning, and route them to a separate tuned interpretation (R→Registrars
+  Districts) using the WFS county+date per sheet. (Clarify: two additional models = Yorks + Lancs, or the two
+  affected marks? — confirm with SG; the WFS makes the routing mechanical either way.)
 - Tabulate, per type: caps-only (where only a single letter is given), size-variable vs fixed, and
   date-regime validity. **The two regimes are <1897 and >=1897, and BOTH are on the 1897 sheet**: the
   †-marked categories give the pre-1897 letterform, the "on the more recent maps" entries give the >=1897

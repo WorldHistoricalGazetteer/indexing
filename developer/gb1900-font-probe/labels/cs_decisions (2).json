@@ -1,0 +1,482 @@
+[
+ {
+  "key": "ex_county_names",
+  "label": "County Names",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "top just about ok, other edges severely clipped"
+ },
+ {
+  "key": "ex_hundreds",
+  "label": "Hundreds",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "clipped left"
+ },
+ {
+  "key": "ex_liberties",
+  "label": "Liberties",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_parishes_ancient",
+  "label": "Parishes (Mother or Ancient)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "clipped left"
+ },
+ {
+  "key": "ex_civil_parishes",
+  "label": "Civil Parishes or Townships",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_div_townships",
+  "label": "Divisions of Townships",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_subdiv_townships",
+  "label": "Subdivisions of Do.",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_boroughs_parl",
+  "label": "Boroughs (Parliamentary)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_boroughs_munic",
+  "label": "Boroughs (Municipal)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_towns_generally",
+  "label": "Towns, generally",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_town_districts",
+  "label": "Town Districts",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_div_counties",
+  "label": "Divisions of Counties (Ridings)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "clipped bottom"
+ },
+ {
+  "key": "ex_poor_law_unions",
+  "label": "Poor Law Unions",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_urban_sanitary",
+  "label": "Urban Sanitary Districts",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "clipped top and right"
+ },
+ {
+  "key": "ex_cities_mp",
+  "label": "Cities returning Members",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_cities_nomp",
+  "label": "Cities not returning Members",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "clipped on right"
+ },
+ {
+  "key": "ex_wards",
+  "label": "Wards",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_market_towns",
+  "label": "Market Towns",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_other_towns",
+  "label": "Other Towns",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_parl_div_counties",
+  "label": "Parliamentary Division of Counties",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_county_boroughs",
+  "label": "County Boroughs",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_extra_parochial",
+  "label": "Extra Parochial",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_turnpike_trusts",
+  "label": "Turnpike Trusts",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "stray gap and ink on right"
+ },
+ {
+  "key": "ex_parish_churches",
+  "label": "Parish Churches & Villages",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_chapelries",
+  "label": "Chapelries. Other Churches",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_other_villages",
+  "label": "Other Villages",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "Parks and Demesnes",
+  "label": "Parks and Demesnes",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_gentlemens_seats",
+  "label": "Gentlemens Seats",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_manufactories",
+  "label": "Manufactories. Mines. Farms. Locks",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_workhouses",
+  "label": "Workhouses",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "clipped bottom"
+ },
+ {
+  "key": "ex_county_bridges_word",
+  "label": "County Bridges",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "clipped top and right"
+ },
+ {
+  "key": "ex_trust_bridges_word",
+  "label": "Trust Bridges & Others",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "clipped on right"
+ },
+ {
+  "key": "ex_isolated_houses_word",
+  "label": "Isolated Houses",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "Bays and Harbours",
+  "label": "Bays and Harbours",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "Navigable Rivers and Canals",
+  "label": "Navigable Rivers and Canals",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_small_rivers",
+  "label": "Small Rivers & Brooks",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "Bogs, Moors and Forests",
+  "label": "Bogs, Moors and Forests",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": true,
+  "regime": "pre1879",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_woods_copses",
+  "label": "Woods and Copses",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_ranges_hills",
+  "label": "Ranges of Hills",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": true,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_antiq_roman",
+  "label": "Antiquities: Roman",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "\"R\" clipped on left"
+ },
+ {
+  "key": "ex_antiq_saxon",
+  "label": "Antiquities: Pre-historic or Saxon",
+  "style": "blackletter",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_antiq_norman",
+  "label": "Antiquities: Norman",
+  "style": "blackletter",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_antiq_subsequent",
+  "label": "Antiquities: Subsequent",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_railways_passenger",
+  "label": "Railways (Passenger)",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_railways_mineral",
+  "label": "Railways (Mineral)",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "still a stray gap and text fragment on right"
+ },
+ {
+  "key": "ex_principal_stations",
+  "label": "Principal Stations",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_other_stations",
+  "label": "Other Stations",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "ex_contour_numeral",
+  "label": "Contour altitudes (200) · spot heights (317·) · Bench Mark (B.M.)",
+  "style": "numeral",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ }
+]

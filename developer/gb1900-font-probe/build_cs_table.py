@@ -22,6 +22,19 @@ def b64(fn):
 COL = {"upright": "#3f6fa8", "italic": "#c07a2b", "blackletter": "#8a4fa0", "numeral": "#777"}
 def letterform(style):   # data still tags all-caps rows "caps"; map to their letterform (all are upright)
     return "upright" if style == "caps" else style
+# DECOR (SG): serif / plain / fancy — an orthogonal axis. First-pass: the ornate engraved initials are
+# "fancy"; everything else defaults "serif" (human to verify/correct in the modal-export JSON).
+FANCY = {"ex_county_names", "ex_county_boroughs", "ex_div_counties", "ex_cities_mp"}
+def decor_of(keys):
+    return "fancy" if any(k in FANCY for k in keys) else "serif"
+# HATCHING (SG): engraved shading direction, if present — none / horizontal / diagonal. First-pass guess
+# on the shaded ornate initials (human to verify direction in the modal-export JSON).
+HATCH = {"ex_county_names": "diagonal", "ex_div_counties": "diagonal", "ex_county_boroughs": "diagonal",
+         "ex_cities_mp": "diagonal", "ex_parl_div_counties": "diagonal"}
+def hatch_of(keys):
+    for k in keys:
+        if k in HATCH: return HATCH[k]
+    return "none"
 
 # section, then rows: (exemplar_key, transcribed label, letterform-mark, style, caps_only, size_var, regime, note)
 SECTIONS = [
@@ -38,8 +51,8 @@ SECTIONS = [
   ("ex_towns_generally","Towns, generally","B","italic",True,False,"any",""),
   ("ex_town_districts","Town Districts","D","italic",True,False,"recent",""),
   ("ex_div_counties","Divisions of Counties (Ridings)","R","caps",True,False,"pre1879",""),
-  ("ex_poor_law_unions","Poor Law Unions","R","caps",True,False,"any","old Yorks/Lancs maps = Registrars Districts"),
-  ("ex_urban_sanitary","Urban Sanitary Districts","R","caps",True,False,"any",""),
+  ("ex_poor_law_unions","Poor Law Unions","R","caps",True,False,"any","R mark. EXCEPTION: on OLD maps of Yorks & Lancs ONLY, R = Registrars Districts"),
+  ("ex_urban_sanitary","Urban Sanitary Districts","R","caps",True,False,"any","R mark. Same Yorks/Lancs old-map → Registrars-Districts exception"),
   ("ex_cities_mp","Cities returning Members","C","caps",True,False,"pre1879","bold mark"),
   ("ex_cities_nomp","Cities not returning Members","C","caps",True,False,"pre1879",""),
   ("ex_wards","Wards","W","caps",True,False,"any",""),
@@ -108,20 +121,28 @@ BOUNDARY_ADMIN = [("Parly. Div. Bdy.","Parliamentary (County) Division Boundary"
 MISC_ABBR = [("M.S","Mile Stone (c.1923; single period — treat as weighted)"),("B.M.","Bench Mark")]
 
 def main():
+    mpath = os.path.join(REF, "ex_manifest.json")
+    manifest = json.load(open(mpath)) if os.path.exists(mpath) else {}
+    crops_json = json.dumps(manifest)
     n = 0; body = ""
     for title, rows in SECTIONS:
         body += f'<tr class="sec"><td colspan="6">{html.escape(title)}</td></tr>'
         for key, label, mark, style, caps_only, size_var, regime, note in rows:
             n += 1; lf = letterform(style)
             keys = key if isinstance(key, list) else [key]
-            imgs = "".join(f'<img src="{b64(k + ".jpg")}" alt="{html.escape(label)}">'
-                           for k in keys if k and b64(k + ".jpg"))
+            row_keys = [k for k in keys if k and b64(k + ".jpg")]
+            imgs = "".join(f'<img class="ex-img" data-exkey="{k}" src="{b64(k + ".jpg")}" '
+                           f'alt="{html.escape(label)}" title="click to adjust crop">' for k in row_keys)
             img = imgs or '<span class="pending">crop pending</span>'
+            exkeys_attr = html.escape(json.dumps(row_keys))
             dkey = (key if isinstance(key, str) and key else label)
             mk = f'<b class="lf">{html.escape(mark)}</b>' if mark else ''
+            decor = decor_of(row_keys); hatch = hatch_of(row_keys)
             flags = ('<span class="fl caps">CAPS</span>' if caps_only else '') + \
-                    ('<span class="fl sz">size*</span>' if size_var else '')
-            body += f"""<tr data-key="{html.escape(dkey)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}">
+                    ('<span class="fl sz">size*</span>' if size_var else '') + \
+                    f'<span class="fl decor">{decor}</span>' + \
+                    (f'<span class="fl hatch">hatch:{hatch}</span>' if hatch != "none" else '')
+            body += f"""<tr data-key="{html.escape(dkey)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}" data-decor="{decor}" data-hatch="{hatch}" data-exkeys='{exkeys_attr}'>
               <td class="num">{n}</td>
               <td class="crop">{img}</td>
               <td class="cat"><b>{html.escape(label)}</b> {mk}<div class="note">{html.escape(note)}</div></td>
@@ -169,6 +190,7 @@ def main():
  .flags {{ margin-top:5px; }}
  .fl {{ font-size:10.5px; border-radius:4px; padding:1px 5px; margin-right:3px; border:1px solid var(--line); }}
  .fl.caps {{ background:color-mix(in srgb,#4f8a5b 26%,transparent); }} .fl.sz {{ background:color-mix(in srgb,#c07a2b 26%,transparent); }}
+ .fl.decor {{ background:color-mix(in srgb,#8a4fa0 22%,transparent); }} .fl.hatch {{ background:color-mix(in srgb,#3f6fa8 22%,transparent); }}
  .rg {{ font-size:11.5px; }} .rg.pre {{ color:#b8532b; }} .rg.rec {{ color:#2b7ab8; }} .rg.any {{ color:var(--mut); }}
  .verify {{ width:150px; }}
  tr.done {{ background:color-mix(in srgb,#4f8a5b 8%,transparent); }}
@@ -179,6 +201,23 @@ def main():
  .btable {{ width:auto; margin:0 30px; border-collapse:collapse; }} .btable td {{ font-size:13px; border:1px solid var(--line); padding:6px 10px; }}
  figure {{ margin:9px 30px; }} figure img {{ max-width:100%; border:1px solid var(--line); border-radius:4px; background:#fff; }}
  figcaption {{ font-size:11.5px; color:var(--mut); }}
+ .ex-img {{ cursor:zoom-in; }} .ex-img.adjusted {{ outline:2px solid #e33; outline-offset:1px; }}
+ .modal {{ position:fixed; inset:0; background:rgba(0,0,0,.62); z-index:50; display:flex; align-items:center; justify-content:center; }}
+ .modal[hidden] {{ display:none; }}
+ .modal-box {{ background:var(--card); border-radius:10px; padding:14px; max-width:95vw; max-height:94vh; overflow:auto; box-shadow:0 12px 44px rgba(0,0,0,.45); }}
+ .modal-bar {{ display:flex; gap:8px; align-items:center; margin-bottom:10px; }}
+ .modal-bar button {{ font:600 13px sans-serif; padding:6px 12px; border-radius:6px; border:1px solid var(--accent); background:var(--accent); color:#fff; cursor:pointer; }}
+ .modal-bar button.sec {{ background:transparent; color:var(--accent); }}
+ .m-coords {{ font:12px ui-monospace,monospace; color:var(--mut); }}
+ .m-stage {{ position:relative; display:inline-block; line-height:0; background:#fff; border:1px solid var(--line); touch-action:none; }}
+ .m-stage img {{ display:block; max-width:90vw; user-select:none; -webkit-user-drag:none; }}
+ .m-rect {{ position:absolute; border:2px solid #e33; box-shadow:0 0 0 9999px rgba(0,0,0,.30); cursor:move; box-sizing:border-box; }}
+ .m-rect .h {{ position:absolute; width:13px; height:13px; background:#fff; border:2px solid #e33; border-radius:2px; }}
+ .m-rect .h.nw {{ left:-7px; top:-7px; cursor:nwse-resize; }} .m-rect .h.n {{ left:50%; top:-7px; margin-left:-7px; cursor:ns-resize; }}
+ .m-rect .h.ne {{ right:-7px; top:-7px; cursor:nesw-resize; }} .m-rect .h.w {{ left:-7px; top:50%; margin-top:-7px; cursor:ew-resize; }}
+ .m-rect .h.e {{ right:-7px; top:50%; margin-top:-7px; cursor:ew-resize; }} .m-rect .h.sw {{ left:-7px; bottom:-7px; cursor:nesw-resize; }}
+ .m-rect .h.s {{ left:50%; bottom:-7px; margin-left:-7px; cursor:ns-resize; }} .m-rect .h.se {{ right:-7px; bottom:-7px; cursor:nwse-resize; }}
+ .m-help {{ font-size:12px; color:var(--mut); margin-top:8px; max-width:60em; }}
 </style></head><body>
 <header>
  <h1>OS Characteristic Sheet → GB-STAMP font taxonomy <span style="font-weight:400;color:var(--mut)">(human verification)</span></h1>
@@ -214,30 +253,88 @@ def main():
 <h2>Provenance strips (full-sheet context)</h2>
 {strips}
 
+<div id="modal" class="modal" hidden>
+ <div class="modal-box">
+  <div class="modal-bar"><b id="m-title"></b><span id="m-coords" class="m-coords"></span><span style="flex:1"></span>
+   <button class="sec" onclick="mReset()">Reset</button><button onclick="mApply()">Apply</button><button class="sec" onclick="mClose()">Close</button></div>
+  <div id="m-stage" class="m-stage"><img id="m-img" alt="sheet region">
+   <div id="m-rect" class="m-rect"><i class="h nw"></i><i class="h n"></i><i class="h ne"></i><i class="h w"></i><i class="h e"></i><i class="h sw"></i><i class="h s"></i><i class="h se"></i></div></div>
+  <div class="m-help">Drag inside the box to move · drag a handle to resize · <b>Apply</b> saves it (updates the thumbnail + JSON export). You can leave a loose white margin — final crops are <b>auto-trimmed to the ink</b> on regeneration. Loads the sheet from NLS — needs internet.</div>
+ </div>
+</div>
 <script>
 const KEYK="gbstamp_cs_decisions_v1";
+const CROPS={crops_json};      // default native crop per exemplar key
+const ADJ={{}};                // user-adjusted crops per exemplar key
+let M=null;
 function rows(){{ return [...document.querySelectorAll('#tbl tr[data-key]')]; }}
-function collect(){{ return rows().map(r=>({{
-  key:r.dataset.key, label:r.dataset.label, style:r.dataset.style,
-  caps_only:r.dataset.caps==='1', size_variable:r.dataset.size==='1', regime:r.dataset.regime,
-  verified:r.querySelector('.ok').checked, note:r.querySelector('.note-in').value.trim()
-}})); }}
+function iiif(c,dw){{ return `https://map-view.nls.uk/iiif/${{encodeURIComponent(c.id)}}/${{c.x}},${{c.y}},${{c.w}},${{c.h}}/${{dw}},/0/native.jpg`; }}
+function collect(){{ return rows().map(r=>{{
+  const eks=JSON.parse(r.dataset.exkeys||'[]');
+  const crops=eks.map(k=>{{ const c=ADJ[k]||CROPS[k]; return c?{{key:k,id:c.id,x:c.x,y:c.y,w:c.w,h:c.h,adjusted:!!ADJ[k]}}:null; }}).filter(Boolean);
+  return {{ key:r.dataset.key, label:r.dataset.label, style:r.dataset.style, decor:r.dataset.decor, hatching:r.dataset.hatch,
+    caps_only:r.dataset.caps==='1', size_variable:r.dataset.size==='1', regime:r.dataset.regime,
+    verified:r.querySelector('.ok').checked, note:r.querySelector('.note-in').value.trim(), crops }};
+}}); }}
 function markRow(r){{ r.classList.toggle('done', r.querySelector('.ok').checked); }}
 function persist(){{ localStorage.setItem(KEYK, JSON.stringify(collect())); status(); }}
-function status(){{ const c=collect(); const v=c.filter(x=>x.verified).length; const n=c.filter(x=>x.note).length;
-  document.getElementById('stat').textContent=`${{v}}/${{c.length}} ticked · ${{n}} notes · autosaved`; }}
+function status(){{ const c=collect(); const v=c.filter(x=>x.verified).length; const nt=c.filter(x=>x.note).length;
+  const na=Object.keys(ADJ).length;
+  document.getElementById('stat').textContent=`${{v}}/${{c.length}} ticked · ${{nt}} notes · ${{na}} crops adjusted · autosaved`; }}
+function setThumb(k,c){{ const w=Math.min(320,Math.max(60,c.w)); document.querySelectorAll(`img.ex-img[data-exkey="${{k}}"]`).forEach(t=>{{ t.src=iiif(c,w); t.classList.add('adjusted'); }}); }}
 function apply(data){{ const m=Object.fromEntries(data.map(d=>[d.key,d])); rows().forEach(r=>{{
   const d=m[r.dataset.key]; if(!d) return; r.querySelector('.ok').checked=!!d.verified;
-  r.querySelector('.note-in').value=d.note||''; markRow(r); }}); status(); }}
+  r.querySelector('.note-in').value=d.note||''; markRow(r);
+  (d.crops||[]).forEach(cr=>{{ if(cr.adjusted){{ ADJ[cr.key]={{id:cr.id,x:cr.x,y:cr.y,w:cr.w,h:cr.h}}; setThumb(cr.key,ADJ[cr.key]); }} }});
+ }}); status(); }}
 function dl(){{ const blob=new Blob([JSON.stringify(collect(),null,1)],{{type:'application/json'}});
-  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='cs_decisions.json'; a.click(); }}
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='cs_decisions.json'; a.click(); }}
 function up(){{ document.getElementById('fin').click(); }}
-function clr(){{ if(!confirm('Clear all ticks and notes?'))return; localStorage.removeItem(KEYK);
+function clr(){{ if(!confirm('Clear all ticks, notes and crop adjustments?'))return; localStorage.removeItem(KEYK);
+  Object.keys(ADJ).forEach(k=>delete ADJ[k]);
   rows().forEach(r=>{{r.querySelector('.ok').checked=false; r.querySelector('.note-in').value=''; markRow(r);}}); status(); }}
 document.getElementById('fin').addEventListener('change',e=>{{ const f=e.target.files[0]; if(!f)return;
   const rd=new FileReader(); rd.onload=()=>{{ try{{apply(JSON.parse(rd.result)); persist();}}catch(err){{alert('Bad JSON: '+err);}} }}; rd.readAsText(f); }});
 document.addEventListener('input',e=>{{ if(e.target.closest('#tbl tr[data-key]')){{ markRow(e.target.closest('tr')); persist(); }} }});
+
+/* ---- crop-adjust modal ---- */
+function openModal(k){{ const c=ADJ[k]||CROPS[k]; if(!c){{return;}}
+  const mx=Math.max(50,Math.round(c.w*0.7)), my=Math.max(45,Math.round(c.h*0.9));
+  const cx=Math.max(0,c.x-mx), cy=Math.max(0,c.y-my), cw=c.w+2*mx, ch=c.h+2*my;
+  const dw=Math.min(1000,Math.floor(Math.sqrt(230000*cw/ch))), dh=Math.round(dw*ch/cw);
+  M={{k, id:c.id, cx, cy, cw, ch, dw, dh}};
+  document.getElementById('m-title').textContent=k;
+  const img=document.getElementById('m-img'); img.style.width=dw+'px';
+  img.onload=()=>placeRect(c); img.src=iiif({{id:c.id,x:cx,y:cy,w:cw,h:ch}},dw);
+  document.getElementById('modal').hidden=false; }}
+function placeRect(c){{ const r=document.getElementById('m-rect');
+  r.style.left=((c.x-M.cx)/M.cw*M.dw)+'px'; r.style.top=((c.y-M.cy)/M.ch*M.dh)+'px';
+  r.style.width=(c.w/M.cw*M.dw)+'px'; r.style.height=(c.h/M.ch*M.dh)+'px'; updateCoords(); }}
+function rectNative(){{ const r=document.getElementById('m-rect');
+  const L=parseFloat(r.style.left),T=parseFloat(r.style.top),W=parseFloat(r.style.width),H=parseFloat(r.style.height);
+  return {{ id:M.id, x:Math.round(M.cx+L/M.dw*M.cw), y:Math.round(M.cy+T/M.dh*M.ch), w:Math.round(W/M.dw*M.cw), h:Math.round(H/M.dh*M.ch) }}; }}
+function updateCoords(){{ const n=rectNative(); document.getElementById('m-coords').textContent=`x=${{n.x}} y=${{n.y}} w=${{n.w}} h=${{n.h}}`; }}
+function mApply(){{ if(!M)return; const n=rectNative(); ADJ[M.k]=n; setThumb(M.k,n); persist(); mClose(); }}
+function mReset(){{ if(!M)return; delete ADJ[M.k]; placeRect(CROPS[M.k]); const c=CROPS[M.k]; setThumb(M.k,c); status(); }}
+function mClose(){{ document.getElementById('modal').hidden=true; M=null; }}
+(function(){{ let mode=null,sx,sy,L,T,W,H;
+  document.addEventListener('pointerdown',e=>{{ if(document.getElementById('modal').hidden||!M)return;
+    const r=document.getElementById('m-rect');
+    if(e.target.classList.contains('h')) mode='r:'+[...e.target.classList].filter(x=>x!=='h')[0];
+    else if(e.target===r) mode='move'; else return;
+    e.preventDefault(); sx=e.clientX; sy=e.clientY;
+    L=parseFloat(r.style.left);T=parseFloat(r.style.top);W=parseFloat(r.style.width);H=parseFloat(r.style.height); }});
+  document.addEventListener('pointermove',e=>{{ if(!mode)return; const r=document.getElementById('m-rect');
+    let dx=e.clientX-sx, dy=e.clientY-sy, nL=L,nT=T,nW=W,nH=H;
+    if(mode==='move'){{ nL=L+dx; nT=T+dy; }} else {{ const d=mode.slice(2);
+      if(d.includes('e'))nW=W+dx; if(d.includes('s'))nH=H+dy;
+      if(d.includes('w')){{nL=L+dx;nW=W-dx;}} if(d.includes('n')){{nT=T+dy;nH=H-dy;}} }}
+    nW=Math.max(8,nW); nH=Math.max(8,nH); nL=Math.max(0,Math.min(nL,M.dw-nW)); nT=Math.max(0,Math.min(nT,M.dh-nH));
+    r.style.left=nL+'px';r.style.top=nT+'px';r.style.width=nW+'px';r.style.height=nH+'px'; updateCoords(); }});
+  document.addEventListener('pointerup',()=>{{ mode=null; }}); }})();
+document.addEventListener('click',e=>{{ const im=e.target.closest('.ex-img'); if(im) openModal(im.dataset.exkey); }});
+document.getElementById('modal').addEventListener('click',e=>{{ if(e.target.id==='modal') mClose(); }});
+document.addEventListener('keydown',e=>{{ if(e.key==='Escape') mClose(); }});
 try{{ const s=localStorage.getItem(KEYK); if(s) apply(JSON.parse(s)); else status(); }}catch(e){{ status(); }}
 </script>
 </body></html>"""
