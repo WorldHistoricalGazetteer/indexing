@@ -1,0 +1,730 @@
+[
+ {
+  "key": "ex_county_names",
+  "cap_h_native_px": 233.0,
+  "crop_ch_px": 233,
+  "crop_size": [
+   231,
+   252
+  ],
+  "native_wh": [
+   231,
+   252
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_div_counties",
+  "cap_h_native_px": 191.0,
+  "crop_ch_px": 191,
+  "crop_size": [
+   206,
+   199
+  ],
+  "native_wh": [
+   206,
+   199
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_hundreds",
+  "cap_h_native_px": 130.0,
+  "crop_ch_px": 130,
+  "crop_size": [
+   149,
+   139
+  ],
+  "native_wh": [
+   149,
+   139
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_parishes_ancient",
+  "cap_h_native_px": 101.0,
+  "crop_ch_px": 101,
+  "crop_size": [
+   97,
+   109
+  ],
+  "native_wh": [
+   97,
+   109
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_liberties",
+  "cap_h_native_px": 99.0,
+  "crop_ch_px": 99,
+  "crop_size": [
+   123,
+   109
+  ],
+  "native_wh": [
+   123,
+   109
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_county_boroughs",
+  "cap_h_native_px": 98.0,
+  "crop_ch_px": 98,
+  "crop_size": [
+   94,
+   108
+  ],
+  "native_wh": [
+   94,
+   108
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_poor_law_unions",
+  "cap_h_native_px": 96.0,
+  "crop_ch_px": 96,
+  "crop_size": [
+   84,
+   103
+  ],
+  "native_wh": [
+   84,
+   103
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_urban_sanitary",
+  "cap_h_native_px": 85.0,
+  "crop_ch_px": 85,
+  "crop_size": [
+   80,
+   92
+  ],
+  "native_wh": [
+   80,
+   92
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_civil_parishes",
+  "cap_h_native_px": 77.0,
+  "crop_ch_px": 77,
+  "crop_size": [
+   100,
+   86
+  ],
+  "native_wh": [
+   100,
+   86
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_div_townships",
+  "cap_h_native_px": 63.0,
+  "crop_ch_px": 63,
+  "crop_size": [
+   83,
+   71
+  ],
+  "native_wh": [
+   83,
+   71
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_cities_nomp",
+  "cap_h_native_px": 62.0,
+  "crop_ch_px": 62,
+  "crop_size": [
+   64,
+   67
+  ],
+  "native_wh": [
+   64,
+   67
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_cities_mp",
+  "cap_h_native_px": 61.0,
+  "crop_ch_px": 61,
+  "crop_size": [
+   61,
+   67
+  ],
+  "native_wh": [
+   61,
+   67
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_parl_div_counties",
+  "cap_h_native_px": 61.0,
+  "crop_ch_px": 61,
+  "crop_size": [
+   82,
+   124
+  ],
+  "native_wh": [
+   82,
+   124
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_boroughs_munic",
+  "cap_h_native_px": 54.0,
+  "crop_ch_px": 54,
+  "crop_size": [
+   66,
+   62
+  ],
+  "native_wh": [
+   66,
+   62
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_boroughs_parl",
+  "cap_h_native_px": 50.0,
+  "crop_ch_px": 50,
+  "crop_size": [
+   54,
+   58
+  ],
+  "native_wh": [
+   54,
+   58
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_subdiv_townships",
+  "cap_h_native_px": 49.0,
+  "crop_ch_px": 49,
+  "crop_size": [
+   71,
+   56
+  ],
+  "native_wh": [
+   71,
+   56
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_towns_generally",
+  "cap_h_native_px": 45.0,
+  "crop_ch_px": 45,
+  "crop_size": [
+   60,
+   53
+  ],
+  "native_wh": [
+   60,
+   53
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_chapelries",
+  "cap_h_native_px": 43.0,
+  "crop_ch_px": 43,
+  "crop_size": [
+   650,
+   50
+  ],
+  "native_wh": [
+   650,
+   50
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_parish_churches",
+  "cap_h_native_px": 42.0,
+  "crop_ch_px": 42,
+  "crop_size": [
+   736,
+   59
+  ],
+  "native_wh": [
+   736,
+   59
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_bays_word",
+  "cap_h_native_px": 42.0,
+  "crop_ch_px": 42,
+  "crop_size": [
+   204,
+   60
+  ],
+  "native_wh": [
+   204,
+   60
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_principal_stations",
+  "cap_h_native_px": 42.0,
+  "crop_ch_px": 42,
+  "crop_size": [
+   588,
+   73
+  ],
+  "native_wh": [
+   588,
+   73
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_harbours_word",
+  "cap_h_native_px": 41.0,
+  "crop_ch_px": 41,
+  "crop_size": [
+   445,
+   60
+  ],
+  "native_wh": [
+   445,
+   60
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_market_towns",
+  "cap_h_native_px": 39.0,
+  "crop_ch_px": 39,
+  "crop_size": [
+   57,
+   46
+  ],
+  "native_wh": [
+   57,
+   46
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_wards",
+  "cap_h_native_px": 38.0,
+  "crop_ch_px": 38,
+  "crop_size": [
+   49,
+   44
+  ],
+  "native_wh": [
+   49,
+   44
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_other_towns",
+  "cap_h_native_px": 37.0,
+  "crop_ch_px": 37,
+  "crop_size": [
+   56,
+   45
+  ],
+  "native_wh": [
+   56,
+   45
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_other_villages",
+  "cap_h_native_px": 37.0,
+  "crop_ch_px": 37,
+  "crop_size": [
+   363,
+   47
+  ],
+  "native_wh": [
+   363,
+   47
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_turnpike_trusts",
+  "cap_h_native_px": 37.0,
+  "crop_ch_px": 37,
+  "crop_size": [
+   607,
+   47
+  ],
+  "native_wh": [
+   607,
+   47
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_navigable_rivers_word",
+  "cap_h_native_px": 36.0,
+  "crop_ch_px": 36,
+  "crop_size": [
+   671,
+   49
+  ],
+  "native_wh": [
+   671,
+   49
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_bogs_moors_word",
+  "cap_h_native_px": 36.0,
+  "crop_ch_px": 36,
+  "crop_size": [
+   404,
+   52
+  ],
+  "native_wh": [
+   404,
+   52
+  ],
+  "size_variable": true
+ },
+ {
+  "key": "ex_woods_copses",
+  "cap_h_native_px": 36.0,
+  "crop_ch_px": 36,
+  "crop_size": [
+   471,
+   53
+  ],
+  "native_wh": [
+   471,
+   53
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_county_bridges_word",
+  "cap_h_native_px": 36.0,
+  "crop_ch_px": 36,
+  "crop_size": [
+   339,
+   66
+  ],
+  "native_wh": [
+   339,
+   66
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_extra_parochial",
+  "cap_h_native_px": 35.0,
+  "crop_ch_px": 35,
+  "crop_size": [
+   588,
+   43
+  ],
+  "native_wh": [
+   588,
+   43
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_workhouses",
+  "cap_h_native_px": 34.0,
+  "crop_ch_px": 34,
+  "crop_size": [
+   279,
+   40
+  ],
+  "native_wh": [
+   279,
+   40
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_forests_word",
+  "cap_h_native_px": 34.0,
+  "crop_ch_px": 34,
+  "crop_size": [
+   289,
+   52
+  ],
+  "native_wh": [
+   289,
+   52
+  ],
+  "size_variable": true
+ },
+ {
+  "key": "ex_railways_passenger",
+  "cap_h_native_px": 34.0,
+  "crop_ch_px": 34,
+  "crop_size": [
+   250,
+   40
+  ],
+  "native_wh": [
+   250,
+   40
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_railways_mineral",
+  "cap_h_native_px": 34.0,
+  "crop_ch_px": 34,
+  "crop_size": [
+   287,
+   41
+  ],
+  "native_wh": [
+   287,
+   41
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_town_districts",
+  "cap_h_native_px": 33.0,
+  "crop_ch_px": 33,
+  "crop_size": [
+   55,
+   39
+  ],
+  "native_wh": [
+   55,
+   39
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_antiq_norman",
+  "cap_h_native_px": 33.0,
+  "crop_ch_px": 33,
+  "crop_size": [
+   151,
+   47
+  ],
+  "native_wh": [
+   151,
+   47
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_trust_bridges_word",
+  "cap_h_native_px": 33.0,
+  "crop_ch_px": 33,
+  "crop_size": [
+   572,
+   69
+  ],
+  "native_wh": [
+   572,
+   69
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_manufactories",
+  "cap_h_native_px": 32.0,
+  "crop_ch_px": 32,
+  "crop_size": [
+   655,
+   42
+  ],
+  "native_wh": [
+   655,
+   42
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_demesnes_word",
+  "cap_h_native_px": 31.0,
+  "crop_ch_px": 31,
+  "crop_size": [
+   293,
+   40
+  ],
+  "native_wh": [
+   293,
+   40
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_antiq_saxon",
+  "cap_h_native_px": 31.0,
+  "crop_ch_px": 31,
+  "crop_size": [
+   367,
+   55
+  ],
+  "native_wh": [
+   367,
+   55
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_canals_word",
+  "cap_h_native_px": 31.0,
+  "crop_ch_px": 31,
+  "crop_size": [
+   260,
+   38
+  ],
+  "native_wh": [
+   260,
+   38
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_parks_word",
+  "cap_h_native_px": 30.0,
+  "crop_ch_px": 30,
+  "crop_size": [
+   173,
+   52
+  ],
+  "native_wh": [
+   173,
+   52
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_isolated_houses_word",
+  "cap_h_native_px": 30.0,
+  "crop_ch_px": 30,
+  "crop_size": [
+   324,
+   46
+  ],
+  "native_wh": [
+   324,
+   46
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_other_stations",
+  "cap_h_native_px": 29.0,
+  "crop_ch_px": 29,
+  "crop_size": [
+   348,
+   56
+  ],
+  "native_wh": [
+   348,
+   56
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_gentlemens_seats",
+  "cap_h_native_px": 28.0,
+  "crop_ch_px": 28,
+  "crop_size": [
+   323,
+   40
+  ],
+  "native_wh": [
+   323,
+   40
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_small_rivers",
+  "cap_h_native_px": 28.0,
+  "crop_ch_px": 28,
+  "crop_size": [
+   496,
+   36
+  ],
+  "native_wh": [
+   496,
+   36
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_ranges_hills",
+  "cap_h_native_px": 25.0,
+  "crop_ch_px": 25,
+  "crop_size": [
+   353,
+   35
+  ],
+  "native_wh": [
+   353,
+   35
+  ],
+  "size_variable": true
+ },
+ {
+  "key": "ex_contour_numeral",
+  "cap_h_native_px": 23.0,
+  "crop_ch_px": 23,
+  "crop_size": [
+   97,
+   33
+  ],
+  "native_wh": [
+   97,
+   33
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_antiq_roman",
+  "cap_h_native_px": 21.0,
+  "crop_ch_px": 21,
+  "crop_size": [
+   151,
+   30
+  ],
+  "native_wh": [
+   151,
+   30
+  ],
+  "size_variable": false
+ },
+ {
+  "key": "ex_antiq_subsequent",
+  "cap_h_native_px": 20.0,
+  "crop_ch_px": 20,
+  "crop_size": [
+   165,
+   25
+  ],
+  "native_wh": [
+   165,
+   25
+  ],
+  "size_variable": false
+ }
+]
