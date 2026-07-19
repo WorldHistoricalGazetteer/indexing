@@ -18,7 +18,7 @@ NUM = re.compile(r"^[\d\s.,]+$")
 
 # category -> representative CS-px exemplar (its cap-height on the Characteristic Sheet)
 ANCHOR = {"bm": "ex_contour_numeral", "numeral": "ex_contour_numeral", "water": "ex_small_rivers",
-          "settlement": "ex_other_villages", "antiquity": "ex_antiq_saxon"}
+          "settlement": "ex_other_villages", "antiquity": "ex_antiq_saxon", "town": "ex_towns_generally"}
 
 def categorise(t):
     t = (t or "").strip()
@@ -28,6 +28,7 @@ def categorise(t):
     if ANTIQ.search(t): return "antiquity"
     if WATER.search(t): return "water"
     al = [c for c in t if c.isalpha()]
+    if len(al) >= 4 and t == t.upper(): return "town"                            # ALL-CAPS = town/large place
     if len(al) >= 4 and t[:1].isupper() and t != t.upper(): return "settlement"   # title-case proper name
     return None
 
@@ -44,7 +45,7 @@ def main():
         if c: by.setdefault(c, []).append(L)
     print(f"\n{'category':12s} {'N':>5s} {'cap-h px':>18s} {'ground-m':>20s} {'paper-mm':>10s}")
     pts = []
-    for cat in ["numeral", "bm", "water", "antiquity", "settlement"]:
+    for cat in ["numeral", "bm", "water", "antiquity", "settlement", "town"]:
         v = by.get(cat, [])
         if len(v) < 8: print(f"{cat:12s} {len(v):>5d}  (too few)"); continue
         px = np.array([L["caph"] for L in v]); gm = np.array([L["ground_m"] for L in v]); mm = gm / 10.56
@@ -53,13 +54,13 @@ def main():
         cs = CS.get(ANCHOR[cat])
         if cs: pts.append((cat, cs, float(np.median(gm))))
 
-    # LARGE labels (size-based) — the big fonts the discovery captured; shows the true size RANGE on the map
-    large = sorted([L for L in matched if L["caph"] > 42], key=lambda L: -L["caph"])
+    # LARGE labels (size-based, ALL incl. unmatched, genuine multi-char) — the true size RANGE / big-font end
+    large = sorted([L for L in labels if L["caph"] > 42 and L["nchar"] >= 4], key=lambda L: -L["caph"])
     if large:
         gm = np.array([L["ground_m"] for L in large])
-        print(f"\nLARGE (cap-h>42px) N={len(large)}: ground-m median={np.median(gm):.1f} "
+        print(f"\nLARGE (cap-h>42px, nchar>=4, incl. unmatched) N={len(large)}: ground-m median={np.median(gm):.1f} "
               f"IQR=[{np.percentile(gm,25):.0f},{np.percentile(gm,75):.0f}] max={gm.max():.0f}")
-        print("  biggest 14 texts:", [str(L['crowd'])[:18] for L in large[:14]])
+        print("  biggest 16 (text | crowd | caph):", [(str(L.get('crowd'))[:16], L['caph']) for L in large[:16]])
 
     # regression: ground-m = slope * CS_px (+ intercept)
     if len(pts) >= 3:

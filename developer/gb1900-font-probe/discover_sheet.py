@@ -76,7 +76,10 @@ def group_lines(chars):
     return runs
 
 def cap_height(run):
-    bots = [c["bot"] for c in run]; tops = [c["top"] for c in run]
+    # drop mis-grouped outlier chars (a tall symbol / merged blob) so one bad component can't inflate it
+    hs = np.array([c["h"] for c in run], float); med = np.median(hs)
+    core = [c for c in run if 0.55 * med <= c["h"] <= 1.8 * med] or run
+    bots = [c["bot"] for c in core]; tops = [c["top"] for c in core]
     cnt = Counter(round(b / 2) * 2 for b in bots)
     base = max(cnt, key=lambda k: (cnt[k], k)); base = max(base, int(np.percentile(bots, 60)))
     return base - min(tops), base
