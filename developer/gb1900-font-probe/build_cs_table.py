@@ -58,7 +58,9 @@ SECTIONS = [
   ("ex_gentlemens_seats","Gentlemens Seats","","italic",False,False,"any","title-case"),
   ("ex_manufactories","Manufactories. Mines. Farms. Locks","","italic",False,False,"any","title-case"),
   ("ex_workhouses","Workhouses","","upright",False,False,"any","title-case"),
-  ("ex_county_bridges","County Bridges. Trust Bridges & Others. Isolated Houses","","upright",False,False,"any","upright + italic mix (2 lines)"),
+  ("ex_county_bridges_word","County Bridges","","upright",False,False,"any","bridges (upright)"),
+  ("ex_trust_bridges_word","Trust Bridges & Others","","italic",False,False,"any","bridges (italic)"),
+  ("ex_isolated_houses_word","Isolated Houses","","italic",False,False,"any","buildings (italic)"),
  ]),
  ("Water — three DISTINCT classes (not all italic)", [
   (["ex_bays_word","ex_harbours_word"],"Bays and Harbours","","caps",True,False,"any","UPRIGHT caps — NOT italic; split BAYS | HARBOURS"),
@@ -83,8 +85,7 @@ SECTIONS = [
   ("ex_other_stations","Other Stations","","italic",False,False,"any","italic (SG)"),
  ]),
  ("Heights & bench marks (c.1923 sheet)", [
-  ("ex_contour_numeral","Contour altitudes (200) / spot heights (317·)","","numeral",False,False,"any","upright serif numeral — text typer handles"),
-  (["ex_contour_numeral"],"Bench Mark (B.M. on buildings, walls, milestones)","","upright",True,False,"any","same upright numeral/abbrev font; B.M. is also a map symbol → lexicon"),
+  ("ex_contour_numeral","Contour altitudes (200) · spot heights (317·) · Bench Mark (B.M.)","","numeral",False,False,"any","one upright serif numeral/abbrev font for all three (SG: contour ≡ B.M.); text typer handles digits, B.M. → lexicon"),
  ]),
 ]
 
