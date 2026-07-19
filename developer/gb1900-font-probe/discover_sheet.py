@@ -106,12 +106,16 @@ def main():
 
     chars = find_chars(canvas)
     runs = group_lines(chars)
-    # keep TEXT-LIKE runs: >=2 chars of consistent height (drops contour/symbol fragments)
+    # keep TEXT-LIKE runs: >=2 chars of consistent height, and NOT the over-regular signature of hatching
     kept = []
     for run in runs:
         if len(run) < 2: continue
-        hs = np.array([c["h"] for c in run], float)
-        if hs.std() / max(1., hs.mean()) > 0.45: continue
+        hs = np.array([c["h"] for c in run], float); ws = np.array([c["w"] for c in run], float)
+        if hs.std() / max(1., hs.mean()) > 0.45: continue          # inconsistent height = not text
+        if len(run) >= 4:
+            gaps = np.array([run[i + 1]["x"] - (run[i]["x"] + run[i]["w"]) for i in range(len(run) - 1)], float)
+            wcv = ws.std() / max(1., ws.mean()); gcv = gaps.std() / (abs(gaps.mean()) + 1.)
+            if wcv < 0.17 and gcv < 0.45: continue                 # too regular width+spacing = hatching, not text
         kept.append(run)
     print(f"chars={len(chars)} runs={len(runs)} text-like-runs={len(kept)}", flush=True)
     runs = kept
