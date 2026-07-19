@@ -30,7 +30,7 @@ SECTIONS = [
   ("ex_hundreds","Hundreds","H","caps",True,False,"pre1879",""),
   ("ex_liberties","Liberties","L","italic",True,False,"any",""),
   ("ex_parishes_ancient","Parishes (Mother or Ancient)","P","caps",True,False,"pre1879",""),
-  ("ex_civil_parishes","Civil Parishes or Townships","T","caps",True,False,"any",""),
+  ("ex_civil_parishes","Civil Parishes or Townships","T","italic",True,False,"any","italic mark (SG)"),
   ("ex_div_townships","Divisions of Townships","T","italic",True,False,"pre1879","bold italic mark"),
   ("ex_subdiv_townships","Subdivisions of Do.","T","italic",True,False,"pre1879",""),
   ("ex_boroughs_parl","Boroughs (Parliamentary)","B","caps",True,False,"any",""),
@@ -52,22 +52,22 @@ SECTIONS = [
  ]),
  ("Settlement & buildings", [
   ("ex_parish_churches","Parish Churches & Villages","","upright",False,False,"any",""),
-  ("ex_chapelries","Chapelries. Other Churches","","italic",False,False,"pre1879",""),
-  ("ex_other_villages","Other Villages","","italic",False,False,"any",""),
-  ("ex_parks_demesnes","Parks and Demesnes","","caps",True,False,"any","bold ('and' l/c)"),
-  ("ex_gentlemens_seats","Gentlemens Seats","","italic",False,False,"any",""),
-  ("ex_manufactories","Manufactories. Mines. Farms. Locks","","italic",False,False,"any",""),
-  ("ex_workhouses","Workhouses","","upright",False,False,"any",""),
-  ("","County Bridges. Trust Bridges & Others. Isolated Houses","","upright",False,False,"any","crop pending"),
+  ("ex_chapelries","Chapelries. Other Churches","","italic",False,False,"pre1879","title-case (small † still shown)"),
+  ("ex_other_villages","Other Villages","","italic",False,False,"any","title-case"),
+  (["ex_parks_word","ex_demesnes_word"],"Parks and Demesnes","","caps",True,False,"any","split PARKS | DEMESNES (excl. l/c 'and')"),
+  ("ex_gentlemens_seats","Gentlemens Seats","","italic",False,False,"any","title-case"),
+  ("ex_manufactories","Manufactories. Mines. Farms. Locks","","italic",False,False,"any","title-case"),
+  ("ex_workhouses","Workhouses","","upright",False,False,"any","title-case"),
+  ("ex_county_bridges","County Bridges. Trust Bridges & Others. Isolated Houses","","upright",False,False,"any","upright + italic mix (2 lines)"),
  ]),
  ("Water — three DISTINCT classes (not all italic)", [
-  ("ex_bays_harbours","Bays and Harbours","","caps",True,False,"any","UPRIGHT caps — NOT italic"),
-  ("ex_navigable_rivers","Navigable Rivers and Canals","","italic",True,False,"any","italic CAPS"),
-  ("ex_small_rivers","Small Rivers & Brooks","","italic",False,False,"any","italic lower-case"),
+  (["ex_bays_word","ex_harbours_word"],"Bays and Harbours","","caps",True,False,"any","UPRIGHT caps — NOT italic; split BAYS | HARBOURS"),
+  (["ex_navigable_rivers_word","ex_canals_word"],"Navigable Rivers and Canals","","italic",True,False,"any","italic CAPS; split NAVIGABLE RIVERS | CANALS"),
+  ("ex_small_rivers","Small Rivers & Brooks","","italic",False,False,"any","italic title-case"),
  ]),
  ("Land & relief", [
-  ("ex_bogs_moors","Bogs, Moors and Forests","","caps",True,True,"pre1879","* size varies with extent"),
-  ("ex_woods_copses","Woods and Copses","","upright",False,False,"any",""),
+  (["ex_bogs_moors_word","ex_forests_word"],"Bogs, Moors and Forests","","caps",True,True,"pre1879","* size varies; split BOGS,MOORS | FORESTS (excl. 'and')"),
+  ("ex_woods_copses","Woods and Copses","","upright",False,False,"any","title-case"),
   ("ex_ranges_hills","Ranges of Hills","","caps",True,True,"any","* size varies with extent"),
  ]),
  ("Antiquities — FOUR distinct fonts (middle two hard to separate)", [
@@ -80,11 +80,11 @@ SECTIONS = [
   ("ex_railways_passenger","Railways (Passenger)","","upright",False,False,"any",""),
   ("ex_railways_mineral","Railways (Mineral)","","italic",False,False,"any","shares the water italic"),
   ("ex_principal_stations","Principal Stations","","upright",False,False,"any",""),
-  ("ex_other_stations","Other Stations","","upright",False,False,"any",""),
+  ("ex_other_stations","Other Stations","","italic",False,False,"any","italic (SG)"),
  ]),
  ("Heights & bench marks (c.1923 sheet)", [
-  ("","Contour altitudes (…200) / spot heights (7·)","","numeral",False,False,"any","numeral font — text typer handles"),
-  ("","Bench Mark (B.M. on buildings, walls, milestones)","","upright",True,False,"any","→ abbreviation lexicon"),
+  ("ex_contour_numeral","Contour altitudes (200) / spot heights (317·)","","numeral",False,False,"any","upright serif numeral — text typer handles"),
+  (["ex_contour_numeral"],"Bench Mark (B.M. on buildings, walls, milestones)","","upright",True,False,"any","same upright numeral/abbrev font; B.M. is also a map symbol → lexicon"),
  ]),
 ]
 
@@ -112,12 +112,15 @@ def main():
         body += f'<tr class="sec"><td colspan="6">{html.escape(title)}</td></tr>'
         for key, label, mark, style, caps_only, size_var, regime, note in rows:
             n += 1; lf = letterform(style)
-            d = b64(key + ".jpg") if key else None
-            img = f'<img src="{d}" alt="{html.escape(label)}">' if d else '<span class="pending">crop pending</span>'
+            keys = key if isinstance(key, list) else [key]
+            imgs = "".join(f'<img src="{b64(k + ".jpg")}" alt="{html.escape(label)}">'
+                           for k in keys if k and b64(k + ".jpg"))
+            img = imgs or '<span class="pending">crop pending</span>'
+            dkey = (key if isinstance(key, str) and key else label)
             mk = f'<b class="lf">{html.escape(mark)}</b>' if mark else ''
             flags = ('<span class="fl caps">CAPS</span>' if caps_only else '') + \
                     ('<span class="fl sz">size*</span>' if size_var else '')
-            body += f"""<tr data-key="{html.escape(key or label)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}">
+            body += f"""<tr data-key="{html.escape(dkey)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}">
               <td class="num">{n}</td>
               <td class="crop">{img}</td>
               <td class="cat"><b>{html.escape(label)}</b> {mk}<div class="note">{html.escape(note)}</div></td>

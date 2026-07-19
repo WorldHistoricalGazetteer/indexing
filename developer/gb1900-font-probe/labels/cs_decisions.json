@@ -1,0 +1,472 @@
+[
+ {
+  "key": "ex_county_names",
+  "label": "County Names",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop is too tight, loses much of the character so height cannot be measured"
+ },
+ {
+  "key": "ex_hundreds",
+  "label": "Hundreds",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Crop too tight on left and bottom"
+ },
+ {
+  "key": "ex_liberties",
+  "label": "Liberties",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop just about OK, but tight"
+ },
+ {
+  "key": "ex_parishes_ancient",
+  "label": "Parishes (Mother or Ancient)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_civil_parishes",
+  "label": "Civil Parishes or Townships",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "italic"
+ },
+ {
+  "key": "ex_div_townships",
+  "label": "Divisions of Townships",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_subdiv_townships",
+  "label": "Subdivisions of Do.",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_boroughs_parl",
+  "label": "Boroughs (Parliamentary)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "crop too loose on bottom, captures stray ink from next line"
+ },
+ {
+  "key": "ex_boroughs_munic",
+  "label": "Boroughs (Municipal)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "crop too loose on bottom, captures stray ink from next line"
+ },
+ {
+  "key": "ex_towns_generally",
+  "label": "Towns, generally",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_town_districts",
+  "label": "Town Districts",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_div_counties",
+  "label": "Divisions of Counties (Ridings)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Crop is too tight on left and bottom, loses much of the character so height cannot be measured"
+ },
+ {
+  "key": "ex_poor_law_unions",
+  "label": "Poor Law Unions",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop is too tight on top, loses much of the character so height cannot be measured. Also stray ink on right."
+ },
+ {
+  "key": "ex_urban_sanitary",
+  "label": "Urban Sanitary Districts",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Stray ink on right"
+ },
+ {
+  "key": "ex_cities_mp",
+  "label": "Cities returning Members",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": "Note that we could verify these (or select samples) using other sources of Parliamentary representation"
+ },
+ {
+  "key": "ex_cities_nomp",
+  "label": "Cities not returning Members",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": "Note that we could verify these (or select samples) using other sources of Parliamentary representation"
+ },
+ {
+  "key": "ex_wards",
+  "label": "Wards",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": ""
+ },
+ {
+  "key": "ex_market_towns",
+  "label": "Market Towns",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": true,
+  "note": "Could use market town data to help with selection of sample crowd texts"
+ },
+ {
+  "key": "ex_other_towns",
+  "label": "Other Towns",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Could use market town data to help with selection of sample crowd texts. Crop too loose on bottom so stray ink from next line"
+ },
+ {
+  "key": "ex_parl_div_counties",
+  "label": "Parliamentary Division of Counties",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": false,
+  "note": "Top overcropped, right too loose and so stray ink"
+ },
+ {
+  "key": "ex_county_boroughs",
+  "label": "County Boroughs",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "recent",
+  "verified": false,
+  "note": "Crop on right too loose - stray ink"
+ },
+ {
+  "key": "ex_extra_parochial",
+  "label": "Extra Parochial",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Crop needs to exclude † symbol; too loose on right and co captures next font type too"
+ },
+ {
+  "key": "ex_turnpike_trusts",
+  "label": "Turnpike Trusts",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "too loose on right and co captures next font type too"
+ },
+ {
+  "key": "ex_parish_churches",
+  "label": "Parish Churches & Villages",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": "title-case"
+ },
+ {
+  "key": "ex_chapelries",
+  "label": "Chapelries. Other Churches",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Crop needs to exclude † symbol. title-case"
+ },
+ {
+  "key": "ex_other_villages",
+  "label": "Other Villages",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": "title-case"
+ },
+ {
+  "key": "ex_parks_demesnes",
+  "label": "Parks and Demesnes",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Italic. Split \"PARKS\" and \"DEMESNES\" as separate exemplars excluding the lower case \"and\""
+ },
+ {
+  "key": "ex_gentlemens_seats",
+  "label": "Gentlemens Seats",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": "title-case"
+ },
+ {
+  "key": "ex_manufactories",
+  "label": "Manufactories. Mines. Farms. Locks",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": true,
+  "note": "title-case"
+ },
+ {
+  "key": "ex_workhouses",
+  "label": "Workhouses",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop very slightly too tight on bottom"
+ },
+ {
+  "key": "County Bridges. Trust Bridges & Others. Isolated Houses",
+  "label": "County Bridges. Trust Bridges & Others. Isolated Houses",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "why \"crop pending\"?"
+ },
+ {
+  "key": "ex_bays_harbours",
+  "label": "Bays and Harbours",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Split \"BAYS\" and \"HARBOURS\" as separate exemplars excluding the lower case \"and\". Crop too loose on left"
+ },
+ {
+  "key": "ex_navigable_rivers",
+  "label": "Navigable Rivers and Canals",
+  "style": "italic",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Split \"NAVIGABLE RIVERS\" and \"CANALS\" as separate exemplars excluding the smaller \"AND\". Crop too loose on left"
+ },
+ {
+  "key": "ex_small_rivers",
+  "label": "Small Rivers & Brooks",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Not lower-case but title-case"
+ },
+ {
+  "key": "ex_bogs_moors",
+  "label": "Bogs, Moors and Forests",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": true,
+  "regime": "pre1879",
+  "verified": false,
+  "note": "Split \"BOGS, MOORS\" and \"FORESTS\" as separate exemplars excluding the lower case \"and\". Crop too loose on left and wrongly captures symbol"
+ },
+ {
+  "key": "ex_woods_copses",
+  "label": "Woods and Copses",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "title-case. Crop too loose on left"
+ },
+ {
+  "key": "ex_ranges_hills",
+  "label": "Ranges of Hills",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": true,
+  "regime": "any",
+  "verified": false,
+  "note": "Terrible cropping"
+ },
+ {
+  "key": "ex_antiq_roman",
+  "label": "Antiquities: Roman",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop too loose except on top"
+ },
+ {
+  "key": "ex_antiq_saxon",
+  "label": "Antiquities: Pre-historic or Saxon",
+  "style": "blackletter",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop too tight on top, too loose left and bottom"
+ },
+ {
+  "key": "ex_antiq_norman",
+  "label": "Antiquities: Norman",
+  "style": "blackletter",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "crop too tight on top and should exclude \"or\" on the right"
+ },
+ {
+  "key": "ex_antiq_subsequent",
+  "label": "Antiquities: Subsequent",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "crop too tight on top and should exclude end of \"or\" on the left"
+ },
+ {
+  "key": "ex_railways_passenger",
+  "label": "Railways (Passenger)",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop too loose on right. RAILWAYS is indeed upright but note all-caps, but followed by \"(Passenger)\" italic title-case"
+ },
+ {
+  "key": "ex_railways_mineral",
+  "label": "Railways (Mineral)",
+  "style": "italic",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop too loose on right. RAILWAYS is indeed italic but note all-caps, but followed by \"(Mineral)\" italic title-case"
+ },
+ {
+  "key": "ex_principal_stations",
+  "label": "Principal Stations",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Crop too tight on right"
+ },
+ {
+  "key": "ex_other_stations",
+  "label": "Other Stations",
+  "style": "upright",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": "Italic"
+ },
+ {
+  "key": "Contour altitudes (…200) / spot heights (7·)",
+  "label": "Contour altitudes (…200) / spot heights (7·)",
+  "style": "numeral",
+  "caps_only": false,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ },
+ {
+  "key": "Bench Mark (B.M. on buildings, walls, milestones)",
+  "label": "Bench Mark (B.M. on buildings, walls, milestones)",
+  "style": "upright",
+  "caps_only": true,
+  "size_variable": false,
+  "regime": "any",
+  "verified": false,
+  "note": ""
+ }
+]
