@@ -77,11 +77,11 @@ def make_crop(r):
     patch = derotate(r)
     if patch is None or patch.size < 80: return None
     im = Image.fromarray(patch).convert("L")
-    th = 54                                        # normalise display height (enough to read the font)
+    th = 220                                       # large — letterform must be very clearly readable
     sc = th / max(1, im.height)
     im = im.resize((max(1, int(im.width * sc)), th), Image.LANCZOS)
-    if im.width > 520: im = im.resize((520, th), Image.LANCZOS)
-    buf = io.BytesIO(); im.save(buf, "JPEG", quality=82)
+    if im.width > 2000: im = im.resize((2000, th), Image.LANCZOS)
+    buf = io.BytesIO(); im.save(buf, "JPEG", quality=90)
     return dict(text=r["text"], img=base64.b64encode(buf.getvalue()).decode())
 
 def main():
@@ -92,7 +92,11 @@ def main():
         for c in ex.map(make_crop, samp):
             if c: crops.append(c)
     print(f"cropped: {len(crops)}", flush=True)
-    open(OUT, "w").write(HTML.replace("data:image/png", "data:image/jpeg").format(crops=json.dumps(crops)))
+    html = (HTML.replace("data:image/png", "data:image/jpeg")
+                .replace("minmax(230px,1fr)", "minmax(560px,1fr)")
+                .replace("min-height:70px", "min-height:250px")
+                .replace(".imgwrap img{{image-rendering:auto;max-width:100%}}", ".imgwrap img{{image-rendering:auto}}"))
+    open(OUT, "w").write(html.format(crops=json.dumps(crops)))
     print(f"wrote {OUT} ({os.path.getsize(OUT)//1024} KB)", flush=True)
 
 if __name__ == "__main__":
