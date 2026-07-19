@@ -6,7 +6,7 @@ labelled contact sheet to verify the crops before assembling the verification ta
 Outputs reference/ex_<key>.jpg for each, plus reference/ex_contact.jpg (grid montage with labels).
     python fetch_exemplars.py
 """
-import os, io, math, urllib.request
+import os, io, math, urllib.request, numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(os.path.abspath(__file__)); REF = os.path.join(HERE, "reference")
@@ -18,6 +18,19 @@ def fetch(x, y, w, h, sw=None):
     url = IIIF.format(id=I1897, x=x, y=y, w=w, h=h, sw=sw)
     req = urllib.request.Request(url, headers={"User-Agent": "whg-cs"})
     return Image.open(io.BytesIO(urllib.request.urlopen(req, timeout=30).read())).convert("RGB")
+
+def autocrop(im, pad=10, thr_frac=0.14):
+    """Tighten to the ink bounding box. Density thresholds (fraction of peak row/col ink) drop the
+    sparse dotted leader lines + surrounding whitespace, centring the exemplar on its glyphs."""
+    g = np.asarray(im.convert("L"), np.float32); ink = g < 125
+    if ink.sum() < 15: return im
+    cols = ink.sum(0).astype(float); rows = ink.sum(1).astype(float)
+    cthr = max(2.0, thr_frac * cols.max()); rthr = max(2.0, thr_frac * rows.max())
+    cx = np.where(cols >= cthr)[0]; ry = np.where(rows >= rthr)[0]
+    if len(cx) == 0 or len(ry) == 0: return im
+    H, W = ink.shape
+    return im.crop((max(0, int(cx[0]) - pad), max(0, int(ry[0]) - pad),
+                    min(W, int(cx[-1]) + pad + 1), min(H, int(ry[-1]) + pad + 1)))
 
 # ---- ADMIN single-letter exemplars: native crop boxes (generous, native res) ----
 # key, transcribed label, letter, (x,y,w,h), style, caps_only, date_regime, note
@@ -60,7 +73,7 @@ TEXT = [
  ("workhouses","Workhouses","cs_settlement.jpg",(0.85,1.0),(0,1),"upright",False,"both",""),
  ("bays_harbours","Bays and Harbours","cs_water.jpg",(0.08,0.34),(0,1),"caps",True,"both","UPRIGHT caps (NOT italic)"),
  ("navigable_rivers","Navigable Rivers and Canals","cs_water.jpg",(0.34,0.58),(0,1),"italic",True,"both","italic CAPS"),
- ("small_rivers","Small Rivers & Brooks","cs_water.jpg",(0.58,0.78),(0,1),"italic",False,"both","italic lower-case"),
+ ("small_rivers","Small Rivers & Brooks","cs_water.jpg",(0.58,0.80),(0.16,0.98),"italic",False,"both","italic lower-case"),
  ("antiq_roman","Antiquities: Roman","cs_antiq.jpg",(0.05,0.27),(0.26,0.74),"caps",True,"both","SAME face as road names"),
  ("antiq_saxon","Antiquities: Pre-historic or Saxon","cs_antiq.jpg",(0.28,0.45),(0.26,0.80),"blackletter",False,"both",""),
  ("antiq_norman","Antiquities: Norman","cs_antiq.jpg",(0.45,0.64),(0.26,0.52),"blackletter",False,"both","Old-English blackletter"),
@@ -71,12 +84,12 @@ TEXT = [
 # key,label,(x,y,w,h),sw,style,caps_only,date_regime,note
 EXTRA = [
  ("bogs_moors","Bogs, Moors and Forests",(1550,2530,1270,95),640,"caps",True,"pre1879","* SIZE-VARIABLE"),
- ("woods_copses","Woods and Copses",(1680,2618,1000,68),600,"upright",False,"both",""),
- ("ranges_hills","Ranges of Hills",(1360,2688,760,110),560,"caps",True,"both","* SIZE-VARIABLE"),
+ ("woods_copses","Woods and Copses",(1690,2620,980,58),600,"upright",False,"both",""),
+ ("ranges_hills","Ranges of Hills",(1355,2676,650,82),560,"caps",True,"both","* SIZE-VARIABLE"),
  ("extra_parochial","Extra Parochial",(1710,2842,880,92),580,"caps",True,"pre1879",""),
- ("turnpike_trusts","Turnpike Trusts",(2490,2842,1000,92),620,"italic",True,"pre1879","bold italic caps"),
+ ("turnpike_trusts","Turnpike Trusts",(2435,2842,1010,92),620,"italic",True,"pre1879","bold italic caps"),
  ("railways_passenger","Railways (Passenger)",(1720,2946,850,92),560,"upright",False,"both",""),
- ("railways_mineral","Railways (Mineral)",(2530,2946,940,92),600,"italic",False,"both","shares water italic"),
+ ("railways_mineral","Railways (Mineral)",(2465,2946,950,92),600,"italic",False,"both","shares water italic"),
  ("principal_stations","Principal Stations",(1500,3065,810,95),540,"upright",False,"both",""),
  ("other_stations","Other Stations",(2560,3065,760,95),520,"upright",False,"both",""),
 ]
@@ -90,17 +103,17 @@ def main():
     saved = []
     for key, label, letter, box, *_ in ADMIN:
         try:
-            im = fetch(*box); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label + f"  [{letter}]"))
+            im = autocrop(fetch(*box), pad=8); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label + f"  [{letter}]"))
         except Exception as e:
             print("ADMIN ERR", key, e)
     for key, label, block, yb, xb, *_ in TEXT:
         try:
-            im = slice_block(block, yb, xb); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
+            im = autocrop(slice_block(block, yb, xb), pad=6); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
         except Exception as e:
             print("TEXT ERR", key, e)
     for key, label, box, sw, *_ in EXTRA:
         try:
-            im = fetch(*box, sw=sw); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
+            im = autocrop(fetch(*box, sw=sw), pad=8); im.save(os.path.join(REF, f"ex_{key}.jpg")); saved.append((key, label))
         except Exception as e:
             print("EXTRA ERR", key, e)
 
