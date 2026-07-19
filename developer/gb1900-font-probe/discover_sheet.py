@@ -126,8 +126,8 @@ def main():
         x0 = min(c["x"] for c in run); x1 = max(c["x"] + c["w"] for c in run); y0 = min(c["top"] for c in run)
         gcx = (x0 + x1) / 2 + ox; gcy = base + oy
         lon, lat = px_to_lonlat(gcx, gcy)
-        labels.append(dict(box=(x0, y0, x1, base), nchar=len(run), caph=ch,
-                           ground_m=ch * mpp(lat), lon=round(lon, 6), lat=round(lat, 6)))
+        labels.append(dict(box=(x0, y0, x1, base), box_g=[int(x0 + ox), int(y0 + oy), int(x1 + ox), int(base + oy)],
+                           nchar=len(run), caph=ch, ground_m=ch * mpp(lat), lon=round(lon, 6), lat=round(lat, 6)))
     print(f"chars={len(chars)} label-lines={len(labels)} ({time.time()-t0:.0f}s)", flush=True)
 
     # match to crowd points in the bbox
