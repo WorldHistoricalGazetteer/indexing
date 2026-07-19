@@ -1,22 +1,20 @@
-"""Phase C — CO-OCCURRENCE BFS alphabet builder (SG's fan-out; validated by same_letter_test @ 0.91).
+"""Phase C — PURE SPOT-AND-FAN alphabet builder (SG's method; validated by same_letter_test @ 0.91).
 
-A GB1900 label is one uniform font, and the crowd transcript tells us which glyph is which letter. So once
-ONE letter of a label is known-font, the label's OTHER letters are the same font — co-occurrence propagates
-font-identity, and iterating fans out over the whole alphabet (BFS: every letter attested in a font
-co-occurs, in some label, with a letter already known in that font, so it is reached).
+Font is NEVER inferred from a label's text-category (that would bake a semantic assumption into the ground
+truth — poisonous if a river name were ever set upright). Font comes SOLELY from the OS Characteristic-Sheet
+letter, matched VISUALLY, then fanned by co-occurrence. The crowd transcript is used ONLY for letter-identity
+(which glyph is a "C") — never to imply font.
 
-  SEED       assign font to labels the TEXT alone pins (italic<-watercourses, upright<-churches,
-             blackletter<-antiquity descriptors) — this is the CS category->font map applied wholesale, i.e.
-             many CS-grounded seed letters at once. Harvest all their glyphs as REAL-domain templates
-             (crossing the CS->real gap only here, corroborated by text).
-  PROPAGATE  type every remaining label by SAME-LETTER match to the current alphabet; assign its font only
-             when >=2 known letters CONCUR (corroboration) and no strong internal disagreement (mixed-font
-             guard: appended Ch./B.M. qualifiers); optional text category-prior as extra corroboration.
-             Harvest the assigned label's glyphs -> grows the alphabet to NEW letters. Iterate to convergence.
-  REPORT     coverage matrix: independently-attested (letter,case,font) cells vs filled; per-font A-Z reach;
-             SEED leave-one-out each round to watch for drift.
+  SEED   spot the CS style-sheet capitals (italic<-"NAVIGABLE RIVERS", upright<-"BAYS", blackletter<-"Norman"
+         /"Saxon") in real glyphs by SAME-LETTER visual match (crowd text gives the letter). Keep the most
+         confident spots per font -> assign those labels that font, harvest their glyphs as REAL-domain
+         templates. This crosses the CS->real gap once, at the seed (HITL-verifiable montage emitted).
+  FAN    type every remaining label by SAME-LETTER match to the current REAL alphabet; assign its font only
+         when >=2 known letters CONCUR and there's no strong internal disagreement (mixed-font guard for
+         appended Ch./B.M. qualifiers). Harvest -> grows to NEW letters. Iterate to convergence.
+  REPORT per-font A-Z reach; typeable letters; convergence. NO text-category anywhere.
 
-Saves alphabet.npz. Matching bucketed by (letter,case). Aligned glyphs cached to aligned_cache.pkl.
+Saves alphabet.npz + seed_montage.png. Matching bucketed by (letter,case). Aligned glyphs cached.
 
     /vast/ishi/envs/boundary/bin/python build_alphabet.py
 """
@@ -24,9 +22,10 @@ import os, re, glob, json, math, pickle, numpy as np, cv2
 import concurrent.futures as cf
 from collections import Counter, defaultdict
 from PIL import Image
-from discrim_test import norm_glyph, sims_row, crop_box, H, W
-from same_letter_test import glyphs_pos, style_of
+from discrim_test import norm_glyph, sims_row, crop_box, glyphs_of, H, W
+from same_letter_test import glyphs_pos
 
+HERE = os.path.dirname(os.path.abspath(__file__)); REF = os.path.join(HERE, "reference")
 DISC = "/vast/ishi/gb1900/edition/discover"; OUT = f"{DISC}/alphabet.npz"; CACHE = f"{DISC}/aligned_cache.pkl"
 STYLES = ["italic", "blackletter", "upright"]
 HIGH = 0.45            # label confidence to assign
@@ -34,9 +33,53 @@ CAP = 80              # max templates per (letter,case,style)
 GLYPH_MIN = 0.40       # per-glyph match score to count as a voter
 MIN_GLYPHS = 4         # a label needs this many aligned glyphs to propagate from
 MAX_ROUNDS = 8
+SEED_PER_FONT = 45     # keep the N most-confident CS spots per font as seeds
+SEED_MARGIN = 0.03     # a CS spot must prefer its font over the next by this margin
 
-# text category-prior font (corroboration only) — extends style_of a little
-def font_prior(t): return style_of(t)
+# CS style-sheet specimens -> (exemplar, its text, font). Short all-caps words segment most reliably.
+CS_SRC = [("ex_canals_word", "CANALS", "italic"),
+          ("ex_navigable_rivers_word", "NAVIGABLE RIVERS", "italic"),
+          ("ex_bays_word", "BAYS", "upright"),
+          ("ex_harbours_word", "HARBOURS", "upright"),
+          ("ex_antiq_norman", "Norman", "blackletter"),
+          ("ex_antiq_saxon", "Prehistoric or Saxon", "blackletter")]
+
+def force_split(gray, K):
+    """split a CLEAN specimen into EXACTLY K letter blocks by cutting at the K-1 deepest, well-separated
+    column-ink valleys (robust where letters over-split on serifs or touch in blackletter). -> K rasters."""
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    prof = (ink > 0).sum(0).astype(float)
+    nz = np.where(prof > prof.max() * 0.02)[0]
+    if len(nz) < K: return []
+    a, b = int(nz[0]), int(nz[-1]); seg_prof = prof[a:b + 1]; Wd = len(seg_prof)
+    sm = np.convolve(seg_prof, np.ones(3) / 3, "same")
+    minsep = max(3, int(Wd / K * 0.40))
+    cand = sorted([x for x in range(1, Wd - 1) if sm[x] <= sm[x - 1] and sm[x] <= sm[x + 1]], key=lambda x: sm[x])
+    cuts = []
+    for x in cand:
+        if all(abs(x - c) >= minsep for c in cuts): cuts.append(x)
+        if len(cuts) == K - 1: break
+    bounds = [0] + sorted(cuts) + [Wd]
+    out = []
+    for i in range(len(bounds) - 1):
+        g = norm_glyph(ink[:, a + bounds[i]:a + bounds[i + 1]] > 0)
+        if g is not None: out.append(g)
+    return out
+
+def cs_seed_templates():
+    """extract letter-labelled glyphs from the CS specimens -> {(letter,cap): {font: [glyph,...]}}."""
+    bank = defaultdict(lambda: defaultdict(list)); report = []
+    for key, text, font in CS_SRC:
+        p = f"{REF}/{key}.jpg"
+        if not os.path.exists(p): continue
+        gray = np.asarray(Image.open(p).convert("L"), np.uint8)
+        letters = [c for c in text if c.isalpha()]
+        gs = force_split(gray, len(letters))
+        report.append(f"{key}: {len(gs)} blocks vs {len(letters)} letters")
+        if len(gs) != len(letters): continue
+        for i, g in enumerate(gs):
+            bank[(letters[i].upper(), letters[i].isupper())][font].append(g)
+    return bank, report
 
 # ---------- alignment ----------
 def aligned_glyphs(crop, text):
@@ -121,7 +164,6 @@ def main():
     data = load_and_align()
     print(f"clean-aligned labels: {len(data)}", flush=True)
     alpha = []; cap_ct = Counter(); assigned = {}     # label_idx -> font
-    attested_indep = set()                            # (L,cap,font) attested via text category alone
 
     def harvest(idx, font, gen):
         added = 0
@@ -131,20 +173,48 @@ def main():
                 alpha.append(dict(L=L, cap=cap, style=font, glyph=g, gen=gen)); cap_ct[k] += 1; added += 1
         return added
 
-    # SEED — labels the text alone pins
+    # SEED — spot the CS style-sheet capitals in real glyphs (same-letter, visual). Font ONLY from the CS.
+    csb, csrep = cs_seed_templates()
+    print("CS specimen segmentation:", csrep, flush=True)
+    csmat = {}
+    for (L, cap), fonts in csb.items():
+        rows, fl = [], []
+        for f, gs in fonts.items():
+            for g in gs: rows.append(g.astype(np.float32).ravel()); fl.append(f)
+        M = np.array(rows, np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
+        csmat[(L, cap)] = (np.array(fl), M)
+    cand = []                                          # (confidence, label_idx, font, score)
     for i, (text, gl) in enumerate(data):
-        f = font_prior(text)
-        if not f: continue
-        assigned[i] = f
-        for L, cap, g in gl: attested_indep.add((L, cap, f))
-        harvest(i, f, 0)
-    acc, N, rec = loo_seed(alpha)
-    print(f"SEED: {len(assigned)} labels -> {len(alpha)} glyphs; cells={len({(t['L'],t['cap']) for t in alpha})}; "
-          f"LOO acc={acc:.3f} (N={N}) {rec}", flush=True)
+        for L, cap, g in gl:
+            if not cap or (L, cap) not in csmat: continue
+            fl, M = csmat[(L, cap)]
+            r = sims_row(g, M); best = {f: float(r[fl == f].max()) for f in set(fl.tolist())}
+            rk = sorted(best.items(), key=lambda kv: -kv[1])
+            margin = rk[0][1] - (rk[1][1] if len(rk) > 1 else 0.0)
+            if len(rk) >= 2 and margin < SEED_MARGIN: continue     # ambiguous across fonts -> not a seed
+            cand.append(((margin if len(rk) >= 2 else rk[0][1]), i, rk[0][0], rk[0][1]))
+    seed_ct = defaultdict(int)
+    for font in STYLES:
+        for conf, i, f, score in sorted([c for c in cand if c[2] == font], key=lambda c: -c[0])[:SEED_PER_FONT]:
+            if i in assigned: continue
+            assigned[i] = f; harvest(i, f, 0); seed_ct[f] += 1
+    print(f"SEED (CS-spot): {len(assigned)} labels -> {len(alpha)} glyphs; "
+          f"per-font {{ {', '.join(f'{f}:{seed_ct[f]}' for f in STYLES)} }}", flush=True)
+    # HITL montage: the capital glyphs harvested as each font's seed
+    for font in STYLES:
+        gl_caps = [g for i, f in assigned.items() if f == font for (L, cap, g) in data[i][1] if cap][:60]
+        if not gl_caps: continue
+        cols = 12; rows_ = (len(gl_caps) + cols - 1) // cols
+        canvas = np.full((rows_ * (H + 2), cols * (W + 2)), 240, np.uint8)
+        for j, g in enumerate(gl_caps):
+            r0, c0 = (j // cols) * (H + 2), (j % cols) * (W + 2)
+            canvas[r0:r0 + H, c0:c0 + W] = (1 - g.astype(np.uint8)) * 255
+        Image.fromarray(canvas).save(f"{DISC}/seed_{font}.png")
+    print(f"seed montages -> {DISC}/seed_{{italic,blackletter,upright}}.png (HITL verify)", flush=True)
 
     # PROPAGATE — co-occurrence BFS to convergence
     for rnd in range(1, MAX_ROUNDS + 1):
-        B = build_buckets(alpha); new_assign = 0; new_glyphs = 0; mixed = 0; conflict = 0
+        B = build_buckets(alpha); new_assign = 0; new_glyphs = 0; mixed = 0
         for i, (text, gl) in enumerate(data):
             if i in assigned or len(gl) < MIN_GLYPHS: continue
             winner, conf, voters = type_label(gl, B)
@@ -153,13 +223,10 @@ def main():
             for s, sc, m in voters: vw[s] += sc * m
             second = max((s for s in vw if s != winner), key=lambda s: vw[s], default=None)
             if second and vc[second] >= 2 and vw[second] > 0.55 * vw[winner]: mixed += 1; continue   # mixed-font guard
-            if vc[winner] < 2: continue                                                              # need corroboration
-            pr = font_prior(text)
-            if pr and pr != winner: conflict += 1; continue                                          # category veto
+            if vc[winner] < 2: continue                                                              # need >=2 known letters to concur
             assigned[i] = winner; new_assign += 1; new_glyphs += harvest(i, winner, rnd)
-        acc, N, rec = loo_seed(alpha)
-        print(f"round {rnd}: +{new_assign} labels (+{new_glyphs} glyphs; {mixed} mixed, {conflict} conflict); "
-              f"alphabet={len(alpha)}; cells={len({(t['L'],t['cap']) for t in alpha})}; LOO acc={acc:.3f} {rec}", flush=True)
+        print(f"round {rnd}: +{new_assign} labels (+{new_glyphs} glyphs; {mixed} mixed); "
+              f"alphabet={len(alpha)}; cells={len({(t['L'],t['cap']) for t in alpha})}", flush=True)
         if new_assign == 0: break
 
     # SAVE
@@ -167,12 +234,8 @@ def main():
                         letter=np.array([t["L"] for t in alpha]), cap=np.array([t["cap"] for t in alpha]),
                         style=np.array([t["style"] for t in alpha]), gen=np.array([t["gen"] for t in alpha]))
     # COVERAGE REPORT
-    filled = {(t["L"], t["cap"], t["style"]) for t in alpha}
     print(f"\nsaved {OUT}: {len(alpha)} glyphs, {len(assigned)}/{len(data)} labels assigned "
           f"({len(assigned)/len(data)*100:.0f}%)")
-    print(f"independently-attested cells (text category): {len(attested_indep)}; of those filled: "
-          f"{len(attested_indep & filled)} ({len(attested_indep & filled)/max(1,len(attested_indep))*100:.0f}%)")
-    print(f"cells reached BEYOND text-attestation (via BFS propagation): {len(filled - attested_indep)}")
     print("per-font alphabet reach (distinct CAPITAL letters, /26):")
     for f in STYLES:
         caps = sorted({t["L"] for t in alpha if t["style"] == f and t["cap"] and t["L"].isalpha()})
