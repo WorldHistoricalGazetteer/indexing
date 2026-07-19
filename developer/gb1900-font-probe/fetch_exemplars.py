@@ -38,6 +38,35 @@ def autocrop(im, pad=11, thr_frac=0.07):
            min(W, int(cx[-1]) + pad + 1), min(H, int(ry[-1]) + pad + 1))
     return im.crop(box), box
 
+def mask_leaders(im, dot_frac=0.42, gap_mult=2.4, min_run=4):
+    """Paint out DOTTED LEADER lines (the '.....' joining a label to its letter). A leader is a run of
+    >=min_run small ink blobs at a common y with small, regular x-gaps — distinct from text periods
+    (few, word-spaced) and from glyph strokes (large). Safe to run on every exemplar."""
+    g = np.asarray(im.convert("L"), np.float32); ink = g < 128
+    lbl, n = ndi.label(ink)
+    if n < min_run: return im
+    comps = []
+    for i, s in enumerate(ndi.find_objects(lbl)):
+        if not s: continue
+        h = s[0].stop - s[0].start; w = s[1].stop - s[1].start
+        comps.append((i + 1, h, w, (s[0].start + s[0].stop) / 2.0, (s[1].start + s[1].stop) / 2.0))
+    if not comps: return im
+    maxh = max(c[1] for c in comps)
+    small = [c for c in comps if c[1] <= dot_frac * maxh and c[2] <= dot_frac * maxh]
+    remove = set()
+    for c in small:                                    # dots sharing c's y-band, left-to-right
+        band = sorted((d for d in small if abs(d[3] - c[3]) <= 0.35 * maxh), key=lambda d: d[4])
+        run = [band[0]]
+        for d in band[1:]:
+            if d[4] - run[-1][4] <= gap_mult * max(2, run[-1][2]): run.append(d)
+            else:
+                if len(run) >= min_run: remove.update(x[0] for x in run)
+                run = [d]
+        if len(run) >= min_run: remove.update(x[0] for x in run)
+    if not remove: return im
+    arr = np.array(im.convert("RGB")); arr[np.isin(lbl, list(remove))] = 255
+    return Image.fromarray(arr)
+
 def crop_letter(im, pad_frac=0.26, thr=128, close=7):
     """For a single boundary-mark LETTER: LARGEST connected ink blob (strokes joined by a close), crop to
     its bbox + generous margin. Returns (cropped_im, box). Full letter, no stray symbol / leaders."""
@@ -146,25 +175,25 @@ def main():
         manifest[f"ex_{key}"] = {"id": ID[sheet], "x": x, "y": y, "w": w, "h": h}
     for key, label, letter, box, *_ in ADMIN:
         try:
-            img = fetch(*box); crop, cb = crop_letter(img); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            img = mask_leaders(fetch(*box)); crop, cb = crop_letter(img); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
             record(key, I1897, box, img.size, cb); saved.append((key, label + f"  [{letter}]"))
         except Exception as e:
             print("ADMIN ERR", key, e)
     for key, label, block, yb, xb, *_ in TEXT:
         try:
-            sub, snat = slice_block(block, yb, xb); crop, cb = autocrop(sub, pad=6); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
-            record(key, I1897, snat, sub.size, cb); saved.append((key, label))
+            sub, snat = slice_block(block, yb, xb); sub = mask_leaders(sub); crop, cb = autocrop(sub, pad=6)
+            crop.save(os.path.join(REF, f"ex_{key}.jpg")); record(key, I1897, snat, sub.size, cb); saved.append((key, label))
         except Exception as e:
             print("TEXT ERR", key, e)
     for key, label, box, sw, *_ in EXTRA:
         try:
-            img = fetch(*box, sw=sw); crop, cb = autocrop(img, pad=8); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            img = mask_leaders(fetch(*box, sw=sw)); crop, cb = autocrop(img, pad=8); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
             record(key, I1897, box, img.size, cb); saved.append((key, label))
         except Exception as e:
             print("EXTRA ERR", key, e)
     for key, box, sw, sheet, pad in PEND:
         try:
-            img = fetch(*box, sw=sw, sheet=sheet); crop, cb = autocrop(img, pad=pad); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
+            img = mask_leaders(fetch(*box, sw=sw, sheet=sheet)); crop, cb = autocrop(img, pad=pad); crop.save(os.path.join(REF, f"ex_{key}.jpg"))
             record(key, sheet, box, img.size, cb); saved.append((key, key))
         except Exception as e:
             print("PEND ERR", key, e)
@@ -201,18 +230,36 @@ def regen_from(path):
             key = cr["key"]; enc = cr["id"].replace("/", "%2F")
             x, y, w, h = int(cr["x"]), int(cr["y"]), int(cr["w"]), int(cr["h"])
             sw = min(w, int((250000.0 * w / max(1, h)) ** 0.5)) or w
-            img = fetch(x, y, w, h, sw=sw, sheet=enc)
-            crop, cb = autocrop(img, pad=3)                 # trim the white margin to the ink
+            img = mask_leaders(fetch(x, y, w, h, sw=sw, sheet=enc))
+            crop, cb = autocrop(img, pad=3)                 # mask leaders + trim the white margin to the ink
             crop.save(os.path.join(REF, f"{key}.jpg"))
             nx, ny, nw, nh = native_of((x, y, w, h), img.size, cb)
             manifest[key] = {"id": cr["id"], "x": nx, "y": ny, "w": nw, "h": nh}; nreg += 1
     json.dump(manifest, open(mpath, "w"), indent=1)
     print(f"regenerated {nreg} adjusted exemplars (auto-trimmed to ink); updated ex_manifest.json")
 
+def remask_files():
+    """Mask dotted leaders on the EXISTING exemplar files IN PLACE (no re-fetch, so user crop adjustments
+    are preserved), re-trim, and update ex_manifest.json bounds."""
+    mpath = os.path.join(REF, "ex_manifest.json"); manifest = json.load(open(mpath)); nchg = 0
+    for key, c in list(manifest.items()):
+        p = os.path.join(REF, f"{key}.jpg")
+        if not os.path.exists(p): continue
+        im = Image.open(p).convert("RGB"); masked = mask_leaders(im)
+        if masked is im: continue                              # no leader run found
+        crop, cb = autocrop(masked, pad=3); crop.save(p)
+        W, H = im.size; sx, sy = c["w"] / W, c["h"] / H
+        manifest[key] = {"id": c["id"], "x": round(c["x"] + cb[0] * sx), "y": round(c["y"] + cb[1] * sy),
+                         "w": round((cb[2] - cb[0]) * sx), "h": round((cb[3] - cb[1]) * sy)}; nchg += 1
+    json.dump(manifest, open(mpath, "w"), indent=1)
+    print(f"masked leaders on {nchg} exemplars (in place); updated ex_manifest.json")
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--from-decisions", help="cs_decisions.json with adjusted crops -> regenerate those (trimmed)")
+    ap.add_argument("--remask", action="store_true", help="mask dotted leaders on existing files in place")
     a = ap.parse_args()
     if a.from_decisions: regen_from(a.from_decisions)
+    elif a.remask: remask_files()
     else: main()

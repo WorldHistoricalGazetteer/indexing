@@ -36,6 +36,10 @@ separate fusion step maps (style × text × size × date-regime) → feature-typ
   sheets from the PRIMARY mark-meaning tuning, and route them to a separate tuned interpretation (R→Registrars
   Districts) using the WFS county+date per sheet. (Clarify: two additional models = Yorks + Lancs, or the two
   affected marks? — confirm with SG; the WFS makes the routing mechanical either way.)
+- **Ridings typeface is Yorkshire-specific (SG):** the "Divisions of Counties (Ridings)" R font only occurs in
+  Yorkshire (North/East/West Ridings). HOLD IT OUT of the primary classifier's training set (it would be a
+  never-seen class everywhere else), and include it ONLY in the Yorkshire+Lancashire regional samples/model.
+  Same pattern as the Registrars-Districts exception — a regional font/mark handled by a held-out regional tune.
 - Tabulate, per type: caps-only (where only a single letter is given), size-variable vs fixed, and
   date-regime validity. **The two regimes are <1897 and >=1897, and BOTH are on the 1897 sheet**: the
   †-marked categories give the pre-1897 letterform, the "on the more recent maps" entries give the >=1897

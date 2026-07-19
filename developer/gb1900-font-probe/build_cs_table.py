@@ -22,19 +22,21 @@ def b64(fn):
 COL = {"upright": "#3f6fa8", "italic": "#c07a2b", "blackletter": "#8a4fa0", "numeral": "#777"}
 def letterform(style):   # data still tags all-caps rows "caps"; map to their letterform (all are upright)
     return "upright" if style == "caps" else style
-# DECOR (SG): serif / plain / fancy — an orthogonal axis. First-pass: the ornate engraved initials are
-# "fancy"; everything else defaults "serif" (human to verify/correct in the modal-export JSON).
-FANCY = {"ex_county_names", "ex_county_boroughs", "ex_div_counties", "ex_cities_mp"}
+# DECOR (SG): serif / plain / fancy. Values are SG's from the verification pass; editable per-row dropdown.
+DECOR = {"ex_county_names": "fancy", "ex_poor_law_unions": "plain", "ex_urban_sanitary": "plain",
+ "ex_wards": "plain", "ex_parl_div_counties": "plain", "ex_county_boroughs": "fancy", "ex_antiq_roman": "plain",
+ "ex_antiq_saxon": "fancy", "ex_antiq_norman": "fancy", "ex_railways_passenger": "plain",
+ "ex_railways_mineral": "plain", "ex_contour_numeral": "plain"}
 def decor_of(keys):
-    return "fancy" if any(k in FANCY for k in keys) else "serif"
+    for k in keys:
+        if k in DECOR: return DECOR[k]
+    return "serif"
 # FILL (SG): glyph fill — solid / none (outline) / horizontal / diagonal (hatched). Values are SG's own
 # from the verification pass; editable per-row via the dropdown.
 FILL = {"ex_county_names": "none", "ex_hundreds": "diagonal", "ex_liberties": "diagonal", "ex_parishes_ancient": "none",
- "ex_civil_parishes": "solid", "ex_div_townships": "horizontal", "ex_subdiv_townships": "none", "ex_boroughs_parl": "solid",
- "ex_boroughs_munic": "horizontal", "ex_towns_generally": "solid", "ex_town_districts": "none", "ex_div_counties": "horizontal",
- "ex_poor_law_unions": "diagonal", "ex_urban_sanitary": "none", "ex_cities_mp": "solid", "ex_cities_nomp": "diagonal",
- "ex_wards": "solid", "ex_market_towns": "solid", "ex_other_towns": "horizontal", "ex_parl_div_counties": "solid",
- "ex_county_boroughs": "solid", "ex_extra_parochial": "solid", "ex_turnpike_trusts": "solid"}
+ "ex_div_townships": "horizontal", "ex_subdiv_townships": "none", "ex_boroughs_munic": "horizontal",
+ "ex_town_districts": "none", "ex_div_counties": "horizontal", "ex_poor_law_unions": "diagonal",
+ "ex_urban_sanitary": "none", "ex_cities_nomp": "diagonal", "ex_other_towns": "horizontal", "ex_workhouses": "none"}
 def fill_of(keys):
     for k in keys:
         if k in FILL: return FILL[k]
@@ -71,7 +73,7 @@ SECTIONS = [
   ("ex_parish_churches","Parish Churches & Villages","","upright",False,False,"any",""),
   ("ex_chapelries","Chapelries. Other Churches","","italic",False,False,"pre1879","title-case (small † still shown)"),
   ("ex_other_villages","Other Villages","","italic",False,False,"any","title-case"),
-  (["ex_parks_word","ex_demesnes_word"],"Parks and Demesnes","","caps",True,False,"any","split PARKS | DEMESNES (excl. l/c 'and')"),
+  (["ex_parks_word","ex_demesnes_word"],"Parks and Demesnes","","italic",True,False,"any","ITALIC caps (SG); split PARKS | DEMESNES (excl. l/c 'and')"),
   ("ex_gentlemens_seats","Gentlemens Seats","","italic",False,False,"any","title-case"),
   ("ex_manufactories","Manufactories. Mines. Farms. Locks","","italic",False,False,"any","title-case"),
   ("ex_workhouses","Workhouses","","upright",False,False,"any","title-case"),
