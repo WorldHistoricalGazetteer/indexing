@@ -31,3 +31,4 @@ processing/gb1900/hitl/
 developer/gb1900-font-probe/fonts/*.ttf
 developer/gb1900-font-probe/fonts/*.otf
 developer/gb1900-font-probe/out/
+developer/gb1900-font-probe/font_testset.html
