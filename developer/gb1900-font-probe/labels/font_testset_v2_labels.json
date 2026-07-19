@@ -1,0 +1,1127 @@
+[
+ {
+  "i": 0,
+  "text": "Hospital",
+  "font": "upright"
+ },
+ {
+  "i": 1,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 2,
+  "text": "Sch.",
+  "font": "italic"
+ },
+ {
+  "i": 3,
+  "text": "QUEEN",
+  "font": "upright"
+ },
+ {
+  "i": 4,
+  "text": "Bs</sup",
+  "font": "italic"
+ },
+ {
+  "i": 5,
+  "text": "CROSS",
+  "font": "upright"
+ },
+ {
+  "i": 6,
+  "text": "BROOK",
+  "font": "upright"
+ },
+ {
+  "i": 7,
+  "text": "FRANCES",
+  "font": "upright"
+ },
+ {
+  "i": 8,
+  "text": "Stone",
+  "font": "blackletter"
+ },
+ {
+  "i": 9,
+  "text": "Munl.",
+  "font": "upright"
+ },
+ {
+  "i": 10,
+  "text": "CROMWELL",
+  "font": "upright"
+ },
+ {
+  "i": 11,
+  "text": "MILFORD",
+  "font": "upright"
+ },
+ {
+  "i": 12,
+  "text": "Tower",
+  "font": "blackletter"
+ },
+ {
+  "i": 13,
+  "text": "Breakwater",
+  "font": "italic"
+ },
+ {
+  "i": 14,
+  "text": "Stinsford",
+  "font": "upright"
+ },
+ {
+  "i": 15,
+  "text": "River",
+  "font": "italic"
+ },
+ {
+  "i": 16,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 17,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 18,
+  "text": "Acres",
+  "font": "italic"
+ },
+ {
+  "i": 19,
+  "text": "Barrows",
+  "font": "blackletter"
+ },
+ {
+  "i": 20,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 21,
+  "text": "27.9",
+  "font": "numeral"
+ },
+ {
+  "i": 22,
+  "text": "Tyburn",
+  "font": "italic"
+ },
+ {
+  "i": 23,
+  "text": "2339",
+  "font": "numeral"
+ },
+ {
+  "i": 24,
+  "text": "Supposed",
+  "font": "unclear"
+ },
+ {
+  "i": 25,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 26,
+  "text": "MOUNT",
+  "font": "upright"
+ },
+ {
+  "i": 27,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 28,
+  "text": "Fair",
+  "font": "italic"
+ },
+ {
+  "i": 29,
+  "text": "Stone",
+  "font": "blackletter"
+ },
+ {
+  "i": 30,
+  "text": "Bách",
+  "font": "upright"
+ },
+ {
+  "i": 31,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 32,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 33,
+  "text": "RIVER",
+  "font": "upright"
+ },
+ {
+  "i": 34,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 35,
+  "text": "Castle",
+  "font": "blackletter"
+ },
+ {
+  "i": 36,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 37,
+  "text": "Abbey",
+  "font": "italic"
+ },
+ {
+  "i": 38,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 39,
+  "text": "(Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 40,
+  "text": "Troedrkiw-fronfreh",
+  "font": "italic"
+ },
+ {
+  "i": 41,
+  "text": "Fulford",
+  "font": "italic"
+ },
+ {
+  "i": 42,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 43,
+  "text": "Barrow",
+  "font": "blackletter"
+ },
+ {
+  "i": 44,
+  "text": "ROAD",
+  "font": "upright"
+ },
+ {
+  "i": 45,
+  "text": "Boro.",
+  "font": "upright"
+ },
+ {
+  "i": 46,
+  "text": "Well",
+  "font": "upright"
+ },
+ {
+  "i": 47,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 48,
+  "text": "BERESFORD",
+  "font": "unclear"
+ },
+ {
+  "i": 49,
+  "text": "Tycran",
+  "font": "italic"
+ },
+ {
+  "i": 50,
+  "text": "RIVER",
+  "font": "italic"
+ },
+ {
+  "i": 51,
+  "text": "Old",
+  "font": "italic"
+ },
+ {
+  "i": 52,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 53,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 54,
+  "text": "###cres",
+  "font": "italic"
+ },
+ {
+  "i": 55,
+  "text": "BLAKE",
+  "font": "upright"
+ },
+ {
+  "i": 56,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 57,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 58,
+  "text": "Ford",
+  "font": "italic"
+ },
+ {
+  "i": 59,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 60,
+  "text": "Campleshon",
+  "font": "italic"
+ },
+ {
+  "i": 61,
+  "text": "TOWER",
+  "font": "upright"
+ },
+ {
+  "i": 62,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 63,
+  "text": "BECK",
+  "font": "unclear"
+ },
+ {
+  "i": 64,
+  "text": "Fuy",
+  "font": "unclear"
+ },
+ {
+  "i": 65,
+  "text": "Blind",
+  "font": "italic"
+ },
+ {
+  "i": 66,
+  "text": "Camp",
+  "font": "blackletter"
+ },
+ {
+  "i": 67,
+  "text": "Stinsford",
+  "font": "italic"
+ },
+ {
+  "i": 68,
+  "text": "Kilburn",
+  "font": "italic"
+ },
+ {
+  "i": 69,
+  "text": "CRES.",
+  "font": "upright"
+ },
+ {
+  "i": 70,
+  "text": "Old",
+  "font": "italic"
+ },
+ {
+  "i": 71,
+  "text": "Stinsford",
+  "font": "italic"
+ },
+ {
+  "i": 72,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 73,
+  "text": "235.9",
+  "font": "numeral"
+ },
+ {
+  "i": 74,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 75,
+  "text": "CARADOC",
+  "font": "upright"
+ },
+ {
+  "i": 76,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 77,
+  "text": "300",
+  "font": "numeral"
+ },
+ {
+  "i": 78,
+  "text": "Herringstone",
+  "font": "italic"
+ },
+ {
+  "i": 79,
+  "text": "CitY",
+  "font": "blackletter"
+ },
+ {
+  "i": 80,
+  "text": "CEMEVERY",
+  "font": "upright"
+ },
+ {
+  "i": 81,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 82,
+  "text": "207",
+  "font": "numeral"
+ },
+ {
+  "i": 83,
+  "text": "RHEIDL",
+  "font": "italic"
+ },
+ {
+  "i": 84,
+  "text": "Vicarage",
+  "font": "italic"
+ },
+ {
+  "i": 85,
+  "text": "Breakwater",
+  "font": "italic"
+ },
+ {
+  "i": 86,
+  "text": "Totterdown",
+  "font": "upright"
+ },
+ {
+  "i": 87,
+  "text": "25.8",
+  "font": "numeral"
+ },
+ {
+  "i": 88,
+  "text": "Liable",
+  "font": "italic"
+ },
+ {
+  "i": 89,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 90,
+  "text": "Burnholme",
+  "font": "italic"
+ },
+ {
+  "i": 91,
+  "text": "1766",
+  "font": "numeral"
+ },
+ {
+  "i": 92,
+  "text": "Stinsford",
+  "font": "italic"
+ },
+ {
+  "i": 93,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 94,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 95,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 96,
+  "text": "###CROMWELL",
+  "font": "upright"
+ },
+ {
+  "i": 97,
+  "text": "Blandford",
+  "font": "italic"
+ },
+ {
+  "i": 98,
+  "text": "Farm",
+  "font": "italic"
+ },
+ {
+  "i": 99,
+  "text": "Frome",
+  "font": "italic"
+ },
+ {
+  "i": 100,
+  "text": "RAILWAY",
+  "font": "upright"
+ },
+ {
+  "i": 101,
+  "text": "237-9",
+  "font": "numeral"
+ },
+ {
+  "i": 102,
+  "text": "(Sien)",
+  "font": "unclear"
+ },
+ {
+  "i": 103,
+  "text": "Ford",
+  "font": "italic"
+ },
+ {
+  "i": 104,
+  "text": "OXFORD",
+  "font": "unclear"
+ },
+ {
+  "i": 105,
+  "text": "Cottage",
+  "font": "italic"
+ },
+ {
+  "i": 106,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 107,
+  "text": "PRIORY",
+  "font": "upright"
+ },
+ {
+  "i": 108,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 109,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 110,
+  "text": "Fulford",
+  "font": "italic"
+ },
+ {
+  "i": 111,
+  "text": "Tunnel",
+  "font": "italic"
+ },
+ {
+  "i": 112,
+  "text": "Bulford",
+  "font": "italic"
+ },
+ {
+  "i": 113,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 114,
+  "text": "200",
+  "font": "numeral"
+ },
+ {
+  "i": 115,
+  "text": "Camp",
+  "font": "blackletter"
+ },
+ {
+  "i": 116,
+  "text": "Kilburn",
+  "font": "italic"
+ },
+ {
+  "i": 117,
+  "text": "ROMAN",
+  "font": "unclear"
+ },
+ {
+  "i": 118,
+  "text": "Fulfor###",
+  "font": "italic"
+ },
+ {
+  "i": 119,
+  "text": "191",
+  "font": "numeral"
+ },
+ {
+  "i": 120,
+  "text": "AFON",
+  "font": "italic"
+ },
+ {
+  "i": 121,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 122,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 123,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 124,
+  "text": "Bradford",
+  "font": "italic"
+ },
+ {
+  "i": 125,
+  "text": "STONE##",
+  "font": "unclear"
+ },
+ {
+  "i": 126,
+  "text": "1842)",
+  "font": "italic"
+ },
+ {
+  "i": 127,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 128,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 129,
+  "text": "Vicarage",
+  "font": "italic"
+ },
+ {
+  "i": 130,
+  "text": "ANDREW",
+  "font": "upright"
+ },
+ {
+  "i": 131,
+  "text": "###adford",
+  "font": "italic"
+ },
+ {
+  "i": 132,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 133,
+  "text": "Abbey",
+  "font": "blackletter"
+ },
+ {
+  "i": 134,
+  "text": "GARDEN",
+  "font": "unclear"
+ },
+ {
+  "i": 135,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 136,
+  "text": "INFIRMARY",
+  "font": "upright"
+ },
+ {
+  "i": 137,
+  "text": "RIVER",
+  "font": "italic"
+ },
+ {
+  "i": 138,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 139,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 140,
+  "text": "Peter's",
+  "font": "italic"
+ },
+ {
+  "i": 141,
+  "text": "Breakwaters",
+  "font": "italic"
+ },
+ {
+  "i": 142,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 143,
+  "text": "200",
+  "font": "numeral"
+ },
+ {
+  "i": 144,
+  "text": "OVEDEN",
+  "font": "unclear"
+ },
+ {
+  "i": 145,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 146,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 147,
+  "text": "217.8",
+  "font": "numeral"
+ },
+ {
+  "i": 148,
+  "text": "Tower",
+  "font": "blackletter"
+ },
+ {
+  "i": 149,
+  "text": "TOWER",
+  "font": "upright"
+ },
+ {
+  "i": 150,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 151,
+  "text": "278",
+  "font": "numeral"
+ },
+ {
+  "i": 152,
+  "text": "Nich###",
+  "font": "italic"
+ },
+ {
+  "i": 153,
+  "text": "TELFORD",
+  "font": null
+ },
+ {
+  "i": 154,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 155,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 156,
+  "text": "Tumulus###",
+  "font": "blackletter"
+ },
+ {
+  "i": 157,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 158,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 159,
+  "text": "Bulford",
+  "font": "upright"
+ },
+ {
+  "i": 160,
+  "text": "New",
+  "font": "italic"
+ },
+ {
+  "i": 161,
+  "text": "Boro.",
+  "font": "upright"
+ },
+ {
+  "i": 162,
+  "text": "Sunday",
+  "font": "italic"
+ },
+ {
+  "i": 163,
+  "text": "35.8",
+  "font": "numeral"
+ },
+ {
+  "i": 164,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 165,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 166,
+  "text": "Llanbadarn",
+  "font": "upright"
+ },
+ {
+  "i": 167,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 168,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 169,
+  "text": "Pen-y-nant",
+  "font": "italic"
+ },
+ {
+  "i": 170,
+  "text": "Craig",
+  "font": "italic"
+ },
+ {
+  "i": 171,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 172,
+  "text": "Fulford",
+  "font": "italic"
+ },
+ {
+  "i": 173,
+  "text": "###gon",
+  "font": "italic"
+ },
+ {
+  "i": 174,
+  "text": "Div.",
+  "font": "upright"
+ },
+ {
+  "i": 175,
+  "text": "EAT",
+  "font": "unclear"
+ },
+ {
+  "i": 176,
+  "text": "Roman",
+  "font": "italic"
+ },
+ {
+  "i": 177,
+  "text": "Afon",
+  "font": "italic"
+ },
+ {
+  "i": 178,
+  "text": "###ulford",
+  "font": "italic"
+ },
+ {
+  "i": 179,
+  "text": "Rec.",
+  "font": "italic"
+ },
+ {
+  "i": 180,
+  "text": "Fulford",
+  "font": "italic"
+ },
+ {
+  "i": 181,
+  "text": "Camp",
+  "font": "blackletter"
+ },
+ {
+  "i": 182,
+  "text": "CRONWELLE",
+  "font": "unclear"
+ },
+ {
+  "i": 183,
+  "text": "TELFORD",
+  "font": "upright"
+ },
+ {
+  "i": 184,
+  "text": "STONESGA###",
+  "font": "upright"
+ },
+ {
+  "i": 185,
+  "text": "Covert",
+  "font": "upright"
+ },
+ {
+  "i": 186,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 187,
+  "text": "FORDINGTON",
+  "font": "italic"
+ },
+ {
+  "i": 188,
+  "text": "Chap.",
+  "font": "italic"
+ },
+ {
+  "i": 189,
+  "text": "MICKLEGATE",
+  "font": "upright"
+ },
+ {
+  "i": 190,
+  "text": "JUNOR",
+  "font": "unclear"
+ },
+ {
+  "i": 191,
+  "text": "House",
+  "font": "italic"
+ },
+ {
+  "i": 192,
+  "text": "Breakwater",
+  "font": "italic"
+ },
+ {
+  "i": 193,
+  "text": "29.1",
+  "font": "numeral"
+ },
+ {
+  "i": 194,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 195,
+  "text": "Water",
+  "font": "upright"
+ },
+ {
+  "i": 196,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 197,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 198,
+  "text": "River",
+  "font": "italic"
+ },
+ {
+  "i": 199,
+  "text": "354",
+  "font": "numeral"
+ },
+ {
+  "i": 200,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 201,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 202,
+  "text": "TER",
+  "font": "upright"
+ },
+ {
+  "i": 203,
+  "text": "Chalk",
+  "font": "italic"
+ },
+ {
+  "i": 204,
+  "text": "44.6",
+  "font": "numeral"
+ },
+ {
+  "i": 205,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 206,
+  "text": "GRAYST",
+  "font": "upright"
+ },
+ {
+  "i": 207,
+  "text": "HAY",
+  "font": "upright"
+ },
+ {
+  "i": 208,
+  "text": "River",
+  "font": "italic"
+ },
+ {
+  "i": 209,
+  "text": "Bulford",
+  "font": "italic"
+ },
+ {
+  "i": 210,
+  "text": "Heslington",
+  "font": "italic"
+ },
+ {
+  "i": 211,
+  "text": "Floods",
+  "font": "unclear"
+ },
+ {
+  "i": 212,
+  "text": "River",
+  "font": "italic"
+ },
+ {
+  "i": 213,
+  "text": "280",
+  "font": "numeral"
+ },
+ {
+  "i": 214,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 215,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 216,
+  "text": "Damer's",
+  "font": "italic"
+ },
+ {
+  "i": 217,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 218,
+  "text": "Water",
+  "font": "italic"
+ },
+ {
+  "i": 219,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 220,
+  "text": "Breakwater",
+  "font": "italic"
+ },
+ {
+  "i": 221,
+  "text": "Road",
+  "font": "italic"
+ },
+ {
+  "i": 222,
+  "text": "Riding",
+  "font": "italic"
+ },
+ {
+  "i": 223,
+  "text": "Pleasant",
+  "font": "italic"
+ },
+ {
+  "i": 224,
+  "text": "Old",
+  "font": "italic"
+ }
+]
