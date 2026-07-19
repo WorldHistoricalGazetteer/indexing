@@ -1,0 +1,1152 @@
+[
+ {
+  "i": 0,
+  "text": "castle hill",
+  "font": "upright"
+ },
+ {
+  "i": 1,
+  "text": "castle street",
+  "font": "upright"
+ },
+ {
+  "i": 2,
+  "text": "XXXX",
+  "font": null
+ },
+ {
+  "i": 3,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 4,
+  "text": "ROMAN BRIDGE (Supposed Site of)",
+  "font": "italic"
+ },
+ {
+  "i": 5,
+  "text": "R.C. Ch.",
+  "font": "upright"
+ },
+ {
+  "i": 6,
+  "text": "Red Burn",
+  "font": "italic"
+ },
+ {
+  "i": 7,
+  "text": "Priory (Site of)",
+  "font": "unclear"
+ },
+ {
+  "i": 8,
+  "text": "Castle Station",
+  "font": "upright"
+ },
+ {
+  "i": 9,
+  "text": "Fish Pond (Site of)",
+  "font": "blackletter"
+ },
+ {
+  "i": 10,
+  "text": "Priory (Site of)",
+  "font": "blackletter"
+ },
+ {
+  "i": 11,
+  "text": "Old Canal",
+  "font": "unclear"
+ },
+ {
+  "i": 12,
+  "text": "Castle Mills",
+  "font": "unclear"
+ },
+ {
+  "i": 13,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 14,
+  "text": "Ratfyn Barrow (Tumulus)",
+  "font": "unclear"
+ },
+ {
+  "i": 15,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 16,
+  "text": "R.C. Chapel",
+  "font": "italic"
+ },
+ {
+  "i": 17,
+  "text": "Brook House",
+  "font": "unclear"
+ },
+ {
+  "i": 18,
+  "text": "widemarsh brook",
+  "font": "italic"
+ },
+ {
+  "i": 19,
+  "text": "Camp",
+  "font": "unclear"
+ },
+ {
+  "i": 20,
+  "text": "ST. SAVIOURGATE",
+  "font": "upright"
+ },
+ {
+  "i": 21,
+  "text": "River Severn",
+  "font": "italic"
+ },
+ {
+  "i": 22,
+  "text": "Pen-glais Cottage",
+  "font": "unclear"
+ },
+ {
+  "i": 23,
+  "text": "Castle (Remains of)",
+  "font": "italic"
+ },
+ {
+  "i": 24,
+  "text": "Nant Lwyd",
+  "font": "unclear"
+ },
+ {
+  "i": 25,
+  "text": "brock st.",
+  "font": "upright"
+ },
+ {
+  "i": 26,
+  "text": "York Castle",
+  "font": "numeral"
+ },
+ {
+  "i": 27,
+  "text": "York Castle",
+  "font": "blackletter"
+ },
+ {
+  "i": 28,
+  "text": "Lucy brook",
+  "font": "italic"
+ },
+ {
+  "i": 29,
+  "text": "Marsh Barton On Site of St. Mary's Priory (Austin Canons)",
+  "font": "italic"
+ },
+ {
+  "i": 30,
+  "text": "Percy Villa",
+  "font": "italic"
+ },
+ {
+  "i": 31,
+  "text": "QUAY",
+  "font": "upright"
+ },
+ {
+  "i": 32,
+  "text": "Roman Road (Track of)",
+  "font": "unclear"
+ },
+ {
+  "i": 33,
+  "text": "Spring",
+  "font": "unclear"
+ },
+ {
+  "i": 34,
+  "text": "RIVER TOWY",
+  "font": "italic"
+ },
+ {
+  "i": 35,
+  "text": "Quarryhouse Lane",
+  "font": "italic"
+ },
+ {
+  "i": 36,
+  "text": "Moat",
+  "font": "unclear"
+ },
+ {
+  "i": 37,
+  "text": "Gadley Lane",
+  "font": "italic"
+ },
+ {
+  "i": 38,
+  "text": "Rose Cottage",
+  "font": "italic"
+ },
+ {
+  "i": 39,
+  "text": "Castle Green",
+  "font": "unclear"
+ },
+ {
+  "i": 40,
+  "text": "Red Burn",
+  "font": "unclear"
+ },
+ {
+  "i": 41,
+  "text": "Meth. Chap.",
+  "font": "italic"
+ },
+ {
+  "i": 42,
+  "text": "BROOK STREET",
+  "font": "numeral"
+ },
+ {
+  "i": 43,
+  "text": "Brook House",
+  "font": "unclear"
+ },
+ {
+  "i": 44,
+  "text": "Sud Brook",
+  "font": "italic"
+ },
+ {
+  "i": 45,
+  "text": "B.M. 142.9",
+  "font": "italic"
+ },
+ {
+  "i": 46,
+  "text": "Herdsman's Cottage",
+  "font": "unclear"
+ },
+ {
+  "i": 47,
+  "text": "Cross (Site of)",
+  "font": "unclear"
+ },
+ {
+  "i": 48,
+  "text": "Brick Works",
+  "font": "italic"
+ },
+ {
+  "i": 49,
+  "text": "Old Canal",
+  "font": "unclear"
+ },
+ {
+  "i": 50,
+  "text": "Castle Fields",
+  "font": "unclear"
+ },
+ {
+  "i": 51,
+  "text": "XXXX",
+  "font": "unclear"
+ },
+ {
+  "i": 52,
+  "text": "Liable to Floods",
+  "font": "italic"
+ },
+ {
+  "i": 53,
+  "text": "Ffrwdgrêch",
+  "font": "unclear"
+ },
+ {
+  "i": 54,
+  "text": "River's Vale",
+  "font": "italic"
+ },
+ {
+  "i": 55,
+  "text": "Miniature rifle range",
+  "font": "unclear"
+ },
+ {
+  "i": 56,
+  "text": "River Twyver (Dockham Ditch)",
+  "font": "italic"
+ },
+ {
+  "i": 57,
+  "text": "R.C. Chap.",
+  "font": "unclear"
+ },
+ {
+  "i": 58,
+  "text": "Priory Well",
+  "font": "blackletter"
+ },
+ {
+  "i": 59,
+  "text": "Fox Hill Grove",
+  "font": "italic"
+ },
+ {
+  "i": 60,
+  "text": "reservoir (bath corporation water works)",
+  "font": "upright"
+ },
+ {
+  "i": 61,
+  "text": "Abbey Cemetery",
+  "font": "upright"
+ },
+ {
+  "i": 62,
+  "text": "Earthwork",
+  "font": "unclear"
+ },
+ {
+  "i": 63,
+  "text": "Priory Road",
+  "font": "upright"
+ },
+ {
+  "i": 64,
+  "text": "Old Canal",
+  "font": "unclear"
+ },
+ {
+  "i": 65,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 66,
+  "text": "The Poplars",
+  "font": "italic"
+ },
+ {
+  "i": 67,
+  "text": "Tang Hall Beck",
+  "font": "unclear"
+ },
+ {
+  "i": 68,
+  "text": "Frankland Lane",
+  "font": "unclear"
+ },
+ {
+  "i": 69,
+  "text": "Recreation Ground",
+  "font": "italic"
+ },
+ {
+  "i": 70,
+  "text": "Chapel (Site of)",
+  "font": "unclear"
+ },
+ {
+  "i": 71,
+  "text": "Afon Seiont",
+  "font": "italic"
+ },
+ {
+  "i": 72,
+  "text": "Hospital (Site of)",
+  "font": "unclear"
+ },
+ {
+  "i": 73,
+  "text": "R.C. Chap",
+  "font": "unclear"
+ },
+ {
+  "i": 74,
+  "text": "River Exe",
+  "font": "italic"
+ },
+ {
+  "i": 75,
+  "text": "RIVER WITHAM",
+  "font": "unclear"
+ },
+ {
+  "i": 76,
+  "text": "Tang Hall Beck",
+  "font": "italic"
+ },
+ {
+  "i": 77,
+  "text": "Cuckoo Tors",
+  "font": "unclear"
+ },
+ {
+  "i": 78,
+  "text": "Road House",
+  "font": "unclear"
+ },
+ {
+  "i": 79,
+  "text": "The Lake",
+  "font": "unclear"
+ },
+ {
+  "i": 80,
+  "text": "Chapel (Site of)",
+  "font": "unclear"
+ },
+ {
+  "i": 81,
+  "text": "St. Agnes's Chap.",
+  "font": "upright"
+ },
+ {
+  "i": 82,
+  "text": "Sand Pit",
+  "font": "italic"
+ },
+ {
+  "i": 83,
+  "text": "Llain-bupyr",
+  "font": "italic"
+ },
+ {
+  "i": 84,
+  "text": "Target Wood",
+  "font": "upright"
+ },
+ {
+  "i": 85,
+  "text": "R.C. Chap.",
+  "font": "italic"
+ },
+ {
+  "i": 86,
+  "text": "ROBERTSON ROAD",
+  "font": "upright"
+ },
+ {
+  "i": 87,
+  "text": "Lucy brook",
+  "font": "italic"
+ },
+ {
+  "i": 88,
+  "text": "Gallows (Site of)",
+  "font": "blackletter"
+ },
+ {
+  "i": 89,
+  "text": "Monastery (Site of)",
+  "font": "blackletter"
+ },
+ {
+  "i": 90,
+  "text": "Rad Brook",
+  "font": "italic"
+ },
+ {
+  "i": 91,
+  "text": "SIBTHORP STREET",
+  "font": "upright"
+ },
+ {
+  "i": 92,
+  "text": "MARGERY LANE",
+  "font": "upright"
+ },
+ {
+  "i": 93,
+  "text": "Moat",
+  "font": "blackletter"
+ },
+ {
+  "i": 94,
+  "text": "Rock & Castle",
+  "font": null
+ },
+ {
+  "i": 95,
+  "text": "Bull Meadow Road",
+  "font": null
+ },
+ {
+  "i": 96,
+  "text": "XXXX",
+  "font": null
+ },
+ {
+  "i": 97,
+  "text": "West Dart River",
+  "font": null
+ },
+ {
+  "i": 98,
+  "text": "CASTLE ST.",
+  "font": null
+ },
+ {
+  "i": 99,
+  "text": "Co. & Parly. Boro. By.",
+  "font": null
+ },
+ {
+  "i": 100,
+  "text": "River Avon",
+  "font": null
+ },
+ {
+  "i": 101,
+  "text": "Nant Gwdi",
+  "font": null
+ },
+ {
+  "i": 102,
+  "text": "conquer barrow (tumulus)",
+  "font": null
+ },
+ {
+  "i": 103,
+  "text": "R.C. Chap",
+  "font": null
+ },
+ {
+  "i": 104,
+  "text": "Rhyd-y-gors",
+  "font": null
+ },
+ {
+  "i": 105,
+  "text": "Filter Bed",
+  "font": null
+ },
+ {
+  "i": 106,
+  "text": "Chap.",
+  "font": null
+ },
+ {
+  "i": 107,
+  "text": "Afon Ystwyth",
+  "font": null
+ },
+ {
+  "i": 108,
+  "text": "River Wye",
+  "font": null
+ },
+ {
+  "i": 109,
+  "text": "Spring",
+  "font": null
+ },
+ {
+  "i": 110,
+  "text": "Stock Beck",
+  "font": null
+ },
+ {
+  "i": 111,
+  "text": "Tumulus",
+  "font": null
+ },
+ {
+  "i": 112,
+  "text": "Marl Cottage",
+  "font": null
+ },
+ {
+  "i": 113,
+  "text": "River Mint",
+  "font": null
+ },
+ {
+  "i": 114,
+  "text": "Russia Mere",
+  "font": null
+ },
+ {
+  "i": 115,
+  "text": "River Teme",
+  "font": null
+ },
+ {
+  "i": 116,
+  "text": "Keep (Site of)",
+  "font": null
+ },
+ {
+  "i": 117,
+  "text": "Castle (In Ruins)",
+  "font": null
+ },
+ {
+  "i": 118,
+  "text": "Old Canal",
+  "font": null
+ },
+ {
+  "i": 119,
+  "text": "Pen-sarn",
+  "font": null
+ },
+ {
+  "i": 120,
+  "text": "B.M.132.1",
+  "font": null
+ },
+ {
+  "i": 121,
+  "text": "Nazareth house",
+  "font": null
+ },
+ {
+  "i": 122,
+  "text": "Lancaster Canal",
+  "font": null
+ },
+ {
+  "i": 123,
+  "text": "Shincliffe Bridge (Site of)",
+  "font": null
+ },
+ {
+  "i": 124,
+  "text": "river frome",
+  "font": null
+ },
+ {
+  "i": 125,
+  "text": "Priory Well",
+  "font": null
+ },
+ {
+  "i": 126,
+  "text": "fiesole",
+  "font": null
+ },
+ {
+  "i": 127,
+  "text": "newton beck",
+  "font": null
+ },
+ {
+  "i": 128,
+  "text": "Camp",
+  "font": null
+ },
+ {
+  "i": 129,
+  "text": "HEWORTH GREEN",
+  "font": null
+ },
+ {
+  "i": 130,
+  "text": "Castle Green",
+  "font": null
+ },
+ {
+  "i": 131,
+  "text": "Fish Ponds",
+  "font": null
+ },
+ {
+  "i": 132,
+  "text": "ROMAN WALL",
+  "font": null
+ },
+ {
+  "i": 133,
+  "text": "River Wensum",
+  "font": null
+ },
+ {
+  "i": 134,
+  "text": "barr's court junction",
+  "font": null
+ },
+ {
+  "i": 135,
+  "text": "CURL BROOK",
+  "font": null
+ },
+ {
+  "i": 136,
+  "text": "Job's Well Cottages",
+  "font": null
+ },
+ {
+  "i": 137,
+  "text": "Lodge",
+  "font": null
+ },
+ {
+  "i": 138,
+  "text": "Earthwork",
+  "font": null
+ },
+ {
+  "i": 139,
+  "text": "conquer barrow (tumulus)",
+  "font": null
+ },
+ {
+  "i": 140,
+  "text": "TRURO RIVER",
+  "font": null
+ },
+ {
+  "i": 141,
+  "text": "Conway Castle",
+  "font": null
+ },
+ {
+  "i": 142,
+  "text": "The Castle",
+  "font": null
+ },
+ {
+  "i": 143,
+  "text": "Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 144,
+  "text": "Afon Cadnant",
+  "font": null
+ },
+ {
+  "i": 145,
+  "text": "Old Canal",
+  "font": null
+ },
+ {
+  "i": 146,
+  "text": "LANCASTER CASTLE (H.M.Prison)",
+  "font": null
+ },
+ {
+  "i": 147,
+  "text": "Priory Grove",
+  "font": null
+ },
+ {
+  "i": 148,
+  "text": "Ffynnon Ffrîdd-arw",
+  "font": null
+ },
+ {
+  "i": 149,
+  "text": "Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 150,
+  "text": "conquer barrow (tumulus)",
+  "font": null
+ },
+ {
+  "i": 151,
+  "text": "S.Ps",
+  "font": null
+ },
+ {
+  "i": 152,
+  "text": "River Twyver (Dockham Ditch)",
+  "font": null
+ },
+ {
+  "i": 153,
+  "text": "(ROMAN ROAD)",
+  "font": null
+ },
+ {
+  "i": 154,
+  "text": "Polwhele Castle (Site of)",
+  "font": null
+ },
+ {
+  "i": 155,
+  "text": "Sch.",
+  "font": null
+ },
+ {
+  "i": 156,
+  "text": "Mill Stream",
+  "font": null
+ },
+ {
+  "i": 157,
+  "text": "Fish Pond",
+  "font": null
+ },
+ {
+  "i": 158,
+  "text": "L. & N.W.R. OXFORD & BLATCHLEY BRANCH",
+  "font": null
+ },
+ {
+  "i": 159,
+  "text": "LANCASTER CASTLE (H.M.Prison)",
+  "font": null
+ },
+ {
+  "i": 160,
+  "text": "Abbey Cemetery",
+  "font": null
+ },
+ {
+  "i": 161,
+  "text": "Marsh Barton On Site of St. Mary's Priory (Austin Canons)",
+  "font": null
+ },
+ {
+  "i": 162,
+  "text": "S.Ps",
+  "font": null
+ },
+ {
+  "i": 163,
+  "text": "Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 164,
+  "text": "Workhouse (Oxford Incorporation)",
+  "font": null
+ },
+ {
+  "i": 165,
+  "text": "Broomclose Cottage",
+  "font": null
+ },
+ {
+  "i": 166,
+  "text": "truro union workhouse",
+  "font": null
+ },
+ {
+  "i": 167,
+  "text": "Castle Villa",
+  "font": null
+ },
+ {
+  "i": 168,
+  "text": "Bridge Farm",
+  "font": null
+ },
+ {
+  "i": 169,
+  "text": "River Lune",
+  "font": null
+ },
+ {
+  "i": 170,
+  "text": "PARK ROAD",
+  "font": null
+ },
+ {
+  "i": 171,
+  "text": "The Wilderness",
+  "font": null
+ },
+ {
+  "i": 172,
+  "text": "River Twyver (Dockham Ditch)",
+  "font": null
+ },
+ {
+  "i": 173,
+  "text": "Red Burn",
+  "font": null
+ },
+ {
+  "i": 174,
+  "text": "439",
+  "font": null
+ },
+ {
+  "i": 175,
+  "text": "Cliff Railway",
+  "font": null
+ },
+ {
+  "i": 176,
+  "text": "River Twyver (Dockham Ditch)",
+  "font": null
+ },
+ {
+  "i": 177,
+  "text": "Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 178,
+  "text": "River Mint",
+  "font": null
+ },
+ {
+  "i": 179,
+  "text": "ROMAN ROAD (Site of)",
+  "font": null
+ },
+ {
+  "i": 180,
+  "text": "River Tyne",
+  "font": null
+ },
+ {
+  "i": 181,
+  "text": "City Sta.",
+  "font": null
+ },
+ {
+  "i": 182,
+  "text": "Mill Pond",
+  "font": null
+ },
+ {
+  "i": 183,
+  "text": "Lodge",
+  "font": null
+ },
+ {
+  "i": 184,
+  "text": "Ing Beck",
+  "font": null
+ },
+ {
+  "i": 185,
+  "text": "RIVER YARE",
+  "font": null
+ },
+ {
+  "i": 186,
+  "text": "Munl. Boro. By.",
+  "font": null
+ },
+ {
+  "i": 187,
+  "text": "MILL ST.",
+  "font": null
+ },
+ {
+  "i": 188,
+  "text": "Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 189,
+  "text": "Tyddyn-llwydyn",
+  "font": null
+ },
+ {
+  "i": 190,
+  "text": "Carr house farm",
+  "font": null
+ },
+ {
+  "i": 191,
+  "text": "pavilion",
+  "font": null
+ },
+ {
+  "i": 192,
+  "text": "Nant Gwdi",
+  "font": null
+ },
+ {
+  "i": 193,
+  "text": "Camp",
+  "font": null
+ },
+ {
+  "i": 194,
+  "text": "camp",
+  "font": null
+ },
+ {
+  "i": 195,
+  "text": "Alphin Brook",
+  "font": null
+ },
+ {
+  "i": 196,
+  "text": "Afon Seiont",
+  "font": null
+ },
+ {
+  "i": 197,
+  "text": "South View",
+  "font": null
+ },
+ {
+  "i": 198,
+  "text": "ROYAL CRESCENT",
+  "font": null
+ },
+ {
+  "i": 199,
+  "text": "St. Barnabas' Church",
+  "font": null
+ },
+ {
+  "i": 200,
+  "text": "Tumulus (Human Remains, Pottery, & Flint Flakes found)",
+  "font": null
+ },
+ {
+  "i": 201,
+  "text": "Reservoir",
+  "font": null
+ },
+ {
+  "i": 202,
+  "text": "R.C. Chap",
+  "font": null
+ },
+ {
+  "i": 203,
+  "text": "Abbey Wall",
+  "font": null
+ },
+ {
+  "i": 204,
+  "text": "R.C. Chap.",
+  "font": null
+ },
+ {
+  "i": 205,
+  "text": "conquer barrow (tumulus)",
+  "font": null
+ },
+ {
+  "i": 206,
+  "text": "Pelaw Wood Beck",
+  "font": null
+ },
+ {
+  "i": 207,
+  "text": "R.C. Chapel",
+  "font": null
+ },
+ {
+  "i": 208,
+  "text": "Old Canal",
+  "font": null
+ },
+ {
+  "i": 209,
+  "text": "Wotton House",
+  "font": null
+ },
+ {
+  "i": 210,
+  "text": "Cross (Site of)",
+  "font": null
+ },
+ {
+  "i": 211,
+  "text": "St. Elyned's Chapel (Site of)",
+  "font": null
+ },
+ {
+  "i": 212,
+  "text": "ROMAN CAMP",
+  "font": null
+ },
+ {
+  "i": 213,
+  "text": "Russia Mere",
+  "font": null
+ },
+ {
+  "i": 214,
+  "text": "Church",
+  "font": null
+ },
+ {
+  "i": 215,
+  "text": "Weir",
+  "font": null
+ },
+ {
+  "i": 216,
+  "text": "Nant Gwdi",
+  "font": null
+ },
+ {
+  "i": 217,
+  "text": "Goods Station",
+  "font": null
+ },
+ {
+  "i": 218,
+  "text": "Pelaw Wood Beck",
+  "font": null
+ },
+ {
+  "i": 219,
+  "text": "West Dart River",
+  "font": null
+ },
+ {
+  "i": 220,
+  "text": "Castle Inn Ph. (In Brecon U.D.)",
+  "font": null
+ },
+ {
+  "i": 221,
+  "text": "Marcus Street",
+  "font": null
+ },
+ {
+  "i": 222,
+  "text": "H.W.M.O.T.",
+  "font": null
+ },
+ {
+  "i": 223,
+  "text": "Lodge",
+  "font": null
+ },
+ {
+  "i": 224,
+  "text": "Fountain Villa",
+  "font": null
+ },
+ {
+  "i": 225,
+  "text": "conquer barrow (tumulus)",
+  "font": null
+ },
+ {
+  "i": 226,
+  "text": "Lodge",
+  "font": null
+ },
+ {
+  "i": 227,
+  "text": "Roman Coins found (A.D. 1842)",
+  "font": null
+ },
+ {
+  "i": 228,
+  "text": "Tumuli",
+  "font": null
+ },
+ {
+  "i": 229,
+  "text": "Windmill (Disused)",
+  "font": null
+ }
+]
