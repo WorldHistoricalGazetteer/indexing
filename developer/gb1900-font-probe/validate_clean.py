@@ -50,23 +50,51 @@ def main():
     fonts = np.array([c[2] for c in caps]); boxid = np.array([c[4] for c in caps])
     M = np.array([c[3].astype(np.float32).ravel() for c in caps], np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
 
-    conf = Counter(); tot = Counter()
+    records = []                                       # (true_font, pred_font, confidence)
     for bi, glyphs in per_box.items():
-        true_f = glyphs[0][3]; votes = Counter()
+        true_f = glyphs[0][3]; wvote = defaultdict(float); nvote = 0
         for L, cap, g, _ in glyphs:
             same = (letters == L) & (caparr == cap) & (boxid != bi)
             if len(set(fonts[same])) < 2: continue
             r = np.where(same, sims_row(g, M), -2.0)
-            best = {f: float(r[(fonts == f) & same].max()) for f in set(fonts[same])}
-            votes[max(best, key=best.get)] += 1
-        if not votes: continue
-        pred = votes.most_common(1)[0][0]; conf[(true_f, pred)] += 1; tot[true_f] += 1
-    N = sum(tot.values()); acc = sum(conf[(s, s)] for s in STYLES) / max(1, N)
-    print(f"\n=== LEAVE-ONE-BOX-OUT same-letter font typing (clean spotter boxes, human labels) ===")
-    print(f"overall accuracy: {acc:.3f}  (N={N} boxes typed)")
-    print(f"{'true':12s}" + "".join(f"{s[:5]:>8s}" for s in STYLES) + "   recall")
-    for s in STYLES:
-        print(f"  {s:10s}" + "".join(f"{conf[(s,d)]:>8d}" for d in STYLES) + f"   {conf[(s,s)]/max(1,tot[s]):.2f}")
+            best = sorted(((f, float(r[(fonts == f) & same].max())) for f in set(fonts[same])), key=lambda kv: -kv[1])
+            margin = best[0][1] - best[1][1]           # this glyph's confidence in its font
+            wvote[best[0][0]] += margin; nvote += 1
+        if not wvote: continue
+        pred = max(wvote, key=wvote.get)
+        conf = wvote[pred] / (sum(wvote.values()) + 1e-9)     # margin-weighted agreement in [0,1]
+        records.append((true_f, pred, conf))
+
+    def confusion(recs, tag, N_all):
+        c = Counter(); t = Counter()
+        for tf, pf, _ in recs: c[(tf, pf)] += 1; t[tf] += 1
+        N = sum(t.values()); acc = sum(c[(s, s)] for s in STYLES) / max(1, N)
+        print(f"\n=== {tag}: acc={acc:.3f}  N={N}  coverage={N/max(1,N_all)*100:.0f}% ===")
+        print(f"{'true':12s}" + "".join(f"{s[:5]:>8s}" for s in STYLES) + "   recall")
+        for s in STYLES:
+            print(f"  {s:10s}" + "".join(f"{c[(s,d)]:>8d}" for d in STYLES) + f"   {c[(s,s)]/max(1,t[s]):.2f}")
+        return acc
+
+    Nall = len(records)
+    confusion(records, "UNGATED leave-one-box-out", Nall)
+    # CONFIDENCE-GATING sweep: precision vs coverage
+    print("\n=== confidence gating (precision vs coverage) ===")
+    print(f"{'threshold':>10s}{'coverage':>10s}{'accuracy':>10s}")
+    for tau in [0.0, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95, 1.0]:
+        kept = [r for r in records if r[2] >= tau]
+        if not kept: continue
+        acc = sum(1 for tf, pf, _ in kept if tf == pf) / len(kept)
+        print(f"{tau:>10.2f}{len(kept)/Nall*100:>9.0f}%{acc:>10.3f}")
+    # operating points: coverage at target precision
+    print("\ncoverage achievable at target precision:")
+    order = sorted(records, key=lambda r: -r[2])
+    for target in [0.95, 0.90, 0.85]:
+        best_cov = 0
+        for k in range(1, len(order) + 1):
+            sub = order[:k]; acc = sum(1 for tf, pf, _ in sub if tf == pf) / k
+            if acc >= target: best_cov = k
+        print(f"  precision>={target}: coverage {best_cov/Nall*100:.0f}% ({best_cov}/{Nall} boxes)")
+    confusion([r for r in records if r[2] >= 0.7], "GATED tau>=0.70", Nall)
     # italic-vs-upright only
     iu = [b for b in per_box if per_box[b][0][3] in ("italic", "upright")]
     c2 = Counter(); t2 = Counter()
