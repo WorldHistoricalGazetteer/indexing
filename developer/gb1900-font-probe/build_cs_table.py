@@ -27,14 +27,18 @@ def letterform(style):   # data still tags all-caps rows "caps"; map to their le
 FANCY = {"ex_county_names", "ex_county_boroughs", "ex_div_counties", "ex_cities_mp"}
 def decor_of(keys):
     return "fancy" if any(k in FANCY for k in keys) else "serif"
-# HATCHING (SG): engraved shading direction, if present — none / horizontal / diagonal. First-pass guess
-# on the shaded ornate initials (human to verify direction in the modal-export JSON).
-HATCH = {"ex_county_names": "diagonal", "ex_div_counties": "diagonal", "ex_county_boroughs": "diagonal",
-         "ex_cities_mp": "diagonal", "ex_parl_div_counties": "diagonal"}
-def hatch_of(keys):
+# FILL (SG): glyph fill — solid / none (outline) / horizontal / diagonal (hatched). Values are SG's own
+# from the verification pass; editable per-row via the dropdown.
+FILL = {"ex_county_names": "none", "ex_hundreds": "diagonal", "ex_liberties": "diagonal", "ex_parishes_ancient": "none",
+ "ex_civil_parishes": "solid", "ex_div_townships": "horizontal", "ex_subdiv_townships": "none", "ex_boroughs_parl": "solid",
+ "ex_boroughs_munic": "horizontal", "ex_towns_generally": "solid", "ex_town_districts": "none", "ex_div_counties": "horizontal",
+ "ex_poor_law_unions": "diagonal", "ex_urban_sanitary": "none", "ex_cities_mp": "solid", "ex_cities_nomp": "diagonal",
+ "ex_wards": "solid", "ex_market_towns": "solid", "ex_other_towns": "horizontal", "ex_parl_div_counties": "solid",
+ "ex_county_boroughs": "solid", "ex_extra_parochial": "solid", "ex_turnpike_trusts": "solid"}
+def fill_of(keys):
     for k in keys:
-        if k in HATCH: return HATCH[k]
-    return "none"
+        if k in FILL: return FILL[k]
+    return "solid"
 
 # section, then rows: (exemplar_key, transcribed label, letterform-mark, style, caps_only, size_var, regime, note)
 SECTIONS = [
@@ -137,16 +141,18 @@ def main():
             exkeys_attr = html.escape(json.dumps(row_keys))
             dkey = (key if isinstance(key, str) and key else label)
             mk = f'<b class="lf">{html.escape(mark)}</b>' if mark else ''
-            decor = decor_of(row_keys); hatch = hatch_of(row_keys)
+            decor = decor_of(row_keys); fill = fill_of(row_keys)
             flags = ('<span class="fl caps">CAPS</span>' if caps_only else '') + \
-                    ('<span class="fl sz">size*</span>' if size_var else '') + \
-                    f'<span class="fl decor">{decor}</span>' + \
-                    (f'<span class="fl hatch">hatch:{hatch}</span>' if hatch != "none" else '')
-            body += f"""<tr data-key="{html.escape(dkey)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}" data-decor="{decor}" data-hatch="{hatch}" data-exkeys='{exkeys_attr}'>
+                    ('<span class="fl sz">size*</span>' if size_var else '')
+            dsel = "".join(f'<option{" selected" if v == decor else ""}>{v}</option>' for v in ("serif", "plain", "fancy"))
+            fsel = "".join(f'<option{" selected" if v == fill else ""}>{v}</option>' for v in ("solid", "none", "horizontal", "diagonal"))
+            body += f"""<tr data-key="{html.escape(dkey)}" data-label="{html.escape(label)}" data-style="{lf}" data-caps="{int(caps_only)}" data-size="{int(size_var)}" data-regime="{regime}" data-exkeys='{exkeys_attr}'>
               <td class="num">{n}</td>
               <td class="crop">{img}</td>
               <td class="cat"><b>{html.escape(label)}</b> {mk}<div class="note">{html.escape(note)}</div></td>
-              <td><span class="pill" style="background:{COL[lf]}">{lf}</span><div class="flags">{flags}</div></td>
+              <td><span class="pill" style="background:{COL[lf]}">{lf}</span><div class="flags">{flags}</div>
+                  <div class="axes"><label>decor <select class="decor-in">{dsel}</select></label>
+                  <label>fill <select class="fill-in">{fsel}</select></label></div></td>
               <td class="reg">{REGIME[regime]}</td>
               <td class="verify"><label><input type="checkbox" class="ok"> ok</label><textarea class="note-in" placeholder="correction"></textarea></td>
             </tr>"""
@@ -190,7 +196,9 @@ def main():
  .flags {{ margin-top:5px; }}
  .fl {{ font-size:10.5px; border-radius:4px; padding:1px 5px; margin-right:3px; border:1px solid var(--line); }}
  .fl.caps {{ background:color-mix(in srgb,#4f8a5b 26%,transparent); }} .fl.sz {{ background:color-mix(in srgb,#c07a2b 26%,transparent); }}
- .fl.decor {{ background:color-mix(in srgb,#8a4fa0 22%,transparent); }} .fl.hatch {{ background:color-mix(in srgb,#3f6fa8 22%,transparent); }}
+ .axes {{ margin-top:6px; display:flex; gap:8px; flex-wrap:wrap; }}
+ .axes label {{ font-size:10.5px; color:var(--mut); display:flex; align-items:center; gap:3px; }}
+ .axes select {{ font-size:11px; padding:1px 3px; border:1px solid var(--line); border-radius:4px; background:var(--bg); color:var(--fg); }}
  .rg {{ font-size:11.5px; }} .rg.pre {{ color:#b8532b; }} .rg.rec {{ color:#2b7ab8; }} .rg.any {{ color:var(--mut); }}
  .verify {{ width:150px; }}
  tr.done {{ background:color-mix(in srgb,#4f8a5b 8%,transparent); }}
@@ -272,7 +280,9 @@ function iiif(c,dw){{ return `https://map-view.nls.uk/iiif/${{encodeURIComponent
 function collect(){{ return rows().map(r=>{{
   const eks=JSON.parse(r.dataset.exkeys||'[]');
   const crops=eks.map(k=>{{ const c=ADJ[k]||CROPS[k]; return c?{{key:k,id:c.id,x:c.x,y:c.y,w:c.w,h:c.h,adjusted:!!ADJ[k]}}:null; }}).filter(Boolean);
-  return {{ key:r.dataset.key, label:r.dataset.label, style:r.dataset.style, decor:r.dataset.decor, hatching:r.dataset.hatch,
+  const ds=r.querySelector('.decor-in'), fs=r.querySelector('.fill-in');
+  return {{ key:r.dataset.key, label:r.dataset.label, style:r.dataset.style,
+    decor:ds?ds.value:null, fill:fs?fs.value:null,
     caps_only:r.dataset.caps==='1', size_variable:r.dataset.size==='1', regime:r.dataset.regime,
     verified:r.querySelector('.ok').checked, note:r.querySelector('.note-in').value.trim(), crops }};
 }}); }}
@@ -285,6 +295,8 @@ function setThumb(k,c){{ const w=Math.min(320,Math.max(60,c.w)); document.queryS
 function apply(data){{ const m=Object.fromEntries(data.map(d=>[d.key,d])); rows().forEach(r=>{{
   const d=m[r.dataset.key]; if(!d) return; r.querySelector('.ok').checked=!!d.verified;
   r.querySelector('.note-in').value=d.note||''; markRow(r);
+  const ds=r.querySelector('.decor-in'), fs=r.querySelector('.fill-in');
+  if(ds&&d.decor) ds.value=d.decor; if(fs&&(d.fill||d.hatching)) fs.value=d.fill||d.hatching;
   (d.crops||[]).forEach(cr=>{{ if(cr.adjusted){{ ADJ[cr.key]={{id:cr.id,x:cr.x,y:cr.y,w:cr.w,h:cr.h}}; setThumb(cr.key,ADJ[cr.key]); }} }});
  }}); status(); }}
 function dl(){{ const blob=new Blob([JSON.stringify(collect(),null,1)],{{type:'application/json'}});
