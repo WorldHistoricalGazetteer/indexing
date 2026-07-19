@@ -61,37 +61,64 @@ def window(lon, lat, W=460, H=170):
     L, U = x0 - tx0 * 256, y0 - ty0 * 256
     return canvas[U:U + H, L:L + W], (W / 2, H / 2)
 
-def localize(crop, cx, cy, text):
-    """Pure-CV crowd-guided localizer. Otsu ink -> character-sized connected components -> the run of same-
-    line characters through the crowd point (within-word gaps) = the label box. The crowd POINT anchors it;
-    the crowd TEXT length sanity-checks it. Returns (x0,y0,x1,y1) or None. No OCR, no external binaries."""
+from collections import Counter
+def find_chars(crop):
+    """Otsu ink -> character-sized connected components (drop contours/rules/specks)."""
     _, ink = cv2.threshold(crop, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     n, lbl, st, cen = cv2.connectedComponentsWithStats(ink, 8)
-    chars = []
+    out = []
     for i in range(1, n):
         x, y, w, h, area = st[i]
-        if h < 5 or h > 95: continue                      # plausible glyph height at z17
-        if w > 4.5 * h and w > 45: continue               # drop long thin runs (contours/rules/roads)
+        if h < 5 or h > 95: continue
+        if w > 4.5 * h and w > 45: continue               # long thin = contour/rule/road
         if area < 8 or area > 6 * w * h: continue
-        chars.append([x, y, w, h, x + w / 2.0, y + h / 2.0])
-    if not chars: return None
-    seed = min(chars, key=lambda c: (c[4] - cx) ** 2 + (c[5] - cy) ** 2)
-    if math.hypot(seed[4] - cx, seed[5] - cy) > 75: return None   # no glyph near the crowd point
-    band = [c for c in sorted(chars, key=lambda c: c[4]) if abs(c[5] - seed[5]) <= 0.7 * max(seed[3], 10)]
-    # grow a contiguous run around the seed: neighbours whose gap < ~1.7x local glyph height
+        out.append(dict(x=int(x), y=int(y), w=int(w), h=int(h), cx=x + w / 2., cy=y + h / 2., top=int(y), bot=int(y + h)))
+    return out
+
+def grow_run(seed, chars):
+    """Same-line contiguous run of chars around `seed` (within-word/label gaps)."""
+    band = sorted([c for c in chars if abs(c["cy"] - seed["cy"]) <= 0.6 * max(seed["h"], 10)], key=lambda c: c["x"])
+    if seed not in band: return [seed]
     si = band.index(seed); run = [seed]
     for c in band[si + 1:]:
-        if c[0] - (run[-1][0] + run[-1][2]) <= 1.7 * max(run[-1][3], c[3]): run.append(c)
+        if c["x"] - (run[-1]["x"] + run[-1]["w"]) <= 1.7 * max(run[-1]["h"], c["h"]): run.append(c)
         else: break
     for c in reversed(band[:si]):
-        if run[0][0] - (c[0] + c[2]) <= 1.7 * max(run[0][3], c[3]): run.insert(0, c)
+        if run[0]["x"] - (c["x"] + c["w"]) <= 1.7 * max(run[0]["h"], c["h"]): run.insert(0, c)
         else: break
-    x0 = min(c[0] for c in run); y0 = min(c[1] for c in run)
-    x1 = max(c[0] + c[2] for c in run); y1 = max(c[1] + c[3] for c in run)
-    # length sanity: run char-count should be within 2.5x of the crowd text's alnum count
+    return run
+
+def localize(crop, cx, cy, text):
+    """Offset-tolerant crowd-guided localizer with a confidence + true CAP-HEIGHT. Considers every char
+    within a generous radius as a run seed, scores each candidate run by (proximity to the crowd point,
+    length agreement with the crowd text, glyph-height consistency), keeps the best, and returns a
+    confidence so callers can REJECT weak hits. Cap-height = baseline (modal char-bottom, excl. descenders)
+    -> topmost ink, measured inside the clean box. Returns dict or None."""
+    chars = find_chars(crop)
+    if not chars: return None
     nalnum = sum(ch.isalnum() for ch in text)
-    if nalnum >= 2 and not (0.35 * nalnum <= len(run) <= 3.0 * nalnum + 2): return None
-    return (int(x0), int(y0), int(x1), int(y1))
+    seeds = [c for c in chars if math.hypot(c["cx"] - cx, c["cy"] - cy) <= 120]   # offset tolerance
+    if not seeds: return None
+    best, best_cost, seen = None, 1e9, set()
+    for s in seeds:
+        run = grow_run(s, chars)
+        key = (min(c["x"] for c in run), round(run[0]["cy"] / 4))
+        if key in seen: continue
+        seen.add(key)
+        rcx = sum(c["cx"] for c in run) / len(run); rcy = sum(c["cy"] for c in run) / len(run)
+        dist = math.hypot(rcx - cx, rcy - cy)
+        lenmis = abs(len(run) - nalnum) / max(2, nalnum) if nalnum >= 2 else 0.3
+        hs = np.array([c["h"] for c in run], float); textness = hs.std() / max(1., hs.mean())
+        cost = dist / 55 + lenmis * 2.0 + textness * 3.0 + (2 if len(run) < 2 else 0)
+        if cost < best_cost: best_cost, best = cost, run
+    if best is None: return None
+    conf = max(0.0, min(1.0, 1.0 - best_cost / 4.5))
+    bots = [c["bot"] for c in best]; tops = [c["top"] for c in best]
+    cnt = Counter(round(b / 2) * 2 for b in bots)
+    base = max(cnt, key=lambda k: (cnt[k], k)); base = max(base, int(np.percentile(bots, 60)))
+    caph = base - min(tops)
+    x0 = min(c["x"] for c in best); x1 = max(c["x"] + c["w"] for c in best)
+    return dict(box=(int(x0), int(min(tops)), int(x1), int(base)), caph=int(caph), conf=round(conf, 2), nchar=len(best))
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--per", type=int, default=60); ap.add_argument("--workers", type=int, default=40)
@@ -115,31 +142,31 @@ def main():
     print("sampled:", {k: min(len(v), a.per) for k, v in buckets.items()}, flush=True)
     t0 = time.time(); results = defaultdict(list); vis = defaultdict(list)
 
+    CONF = 0.45                                        # reject weak hits below this confidence
     def one(item):
         cat, (lon, lat, tv) = item
         crop, ctr = window(lon, lat)
         if crop is None: return None
-        box = localize(crop, ctr[0], ctr[1], tv)
-        if box is None: return (cat, None, None, None)
-        ch_px = box[3] - box[1]                     # box height (px) ~ text height; cap-height refinement later
-        return (cat, ch_px, ch_px * mpp(lat), (crop, box, tv))
+        r = localize(crop, ctr[0], ctr[1], tv)
+        if r is None or r["conf"] < CONF: return (cat, None, None, None)
+        return (cat, r["caph"], r["caph"] * mpp(lat), (crop, r["box"], f"{tv}  c={r['conf']}"))
     with cf.ThreadPoolExecutor(max_workers=a.workers) as ex:
         for i, r in enumerate(ex.map(one, sample)):
             if r is None: continue
-            cat, ch_px, gm, v = r
-            if ch_px is None: results[cat + "_MISS"].append(1); continue
-            results[cat].append((ch_px, gm))
+            cat, caph, gm, v = r
+            if caph is None: results[cat + "_REJ"].append(1); continue
+            results[cat].append((caph, gm))
             if len(vis[cat]) < 6 and v: vis[cat].append(v)
             if i % 100 == 0: print(f"  {i}/{len(sample)} ({time.time()-t0:.0f}s)", flush=True)
 
-    print("\n=== localizer validation (z17) ===")
+    print(f"\n=== localizer validation (z17, cap-height, reject conf<{CONF}) ===")
     for cat in ["county", "admin", "settlement", "bm"]:
-        vals = results.get(cat, []); miss = len(results.get(cat + "_MISS", []))
-        if not vals: print(f"  {cat:11s} localized=0 miss={miss}"); continue
+        vals = results.get(cat, []); rej = len(results.get(cat + "_REJ", []))
+        if not vals: print(f"  {cat:11s} kept=0 rejected={rej}"); continue
         px = np.array([v[0] for v in vals]); gm = np.array([v[1] for v in vals])
         rel = (np.percentile(px, 75) - np.percentile(px, 25)) / max(1, np.median(px)) * 100
-        hit = len(vals); print(f"  {cat:11s} localized={hit} miss={miss} ({hit/(hit+miss)*100:.0f}% hit)  "
-              f"box-h px median={np.median(px):.1f} IQR=[{np.percentile(px,25):.0f},{np.percentile(px,75):.0f}] rel={rel:.0f}%  "
+        keep = len(vals); print(f"  {cat:11s} kept={keep} rejected={rej} ({keep/(keep+rej)*100:.0f}% keep)  "
+              f"cap-h px median={np.median(px):.1f} IQR=[{np.percentile(px,25):.0f},{np.percentile(px,75):.0f}] rel={rel:.0f}%  "
               f"ground-m median={np.median(gm):.2f}")
     # visualization montages
     for cat, items in vis.items():
