@@ -62,9 +62,12 @@ def main():
         for bi, (r, gl) in enumerate(chunk):
             w = per.get(bi)
             if not w: continue
-            pred = max(w, key=w.get); conf = w[pred] / (sum(w.values()) + 1e-9)
+            tot = sum(w.values()) + 1e-9
+            ranked = sorted(((fnt, round(float(sc / tot), 3)) for fnt, sc in w.items()), key=lambda kv: -kv[1])[:3]
+            pred, conf = ranked[0]                          # winner; `fonts` keeps the full ranked shortlist
             fout.write(json.dumps(dict(lon=r["lon"], lat=r["lat"], gcx=r["gcx"], gcy=r["gcy"],
-                       text=r["text"], font=pred, conf=round(float(conf), 3), nchar=len(gl))) + "\n")
+                       text=r["text"], font=pred, conf=conf, fonts=ranked, nchar=len(gl),
+                       score=r.get("score"), gpoly=r.get("gpoly"))) + "\n")     # keep detection score + full outline
             n += 1; dist[pred] += 1
         if i % 4096 == 0: print(f"  {i}/{len(prepped)} classified={n}", flush=True)
     fout.close()

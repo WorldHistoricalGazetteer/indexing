@@ -119,6 +119,7 @@ def main():
         tv = d.get("text"); text = tv.get("value") if isinstance(tv, dict) else tv
         fb = nearest_font(lon, lat) if lon is not None else None
         font_style = fb["font"] if fb else None; font_conf = fb["conf"] if fb else None
+        font_top3 = fb.get("fonts") if fb else None      # full ranked shortlist [[font, certainty], …]
         # CLEAN typing: OS single-letter abbreviation (any-font, may STAMP canonical style) first, then the
         # HITL whole-label rule (isolation), then font-CONDITIONED term, the font-unconditional lexicon, and
         # finally the font-class fallback.
@@ -149,7 +150,7 @@ def main():
         if tok: ntyped += 1; tsrc[src] += 1
         rec = dict(place_id=d.get("place_id"), text=text, lon=lon, lat=lat,
                    type=tok, type_source=src, font_style=font_style, font_conf=font_conf,
-                   aat_id=aid, aat_term=aterm)
+                   font_top3=font_top3, aat_id=aid, aat_term=aterm)
         fout.write(json.dumps(rec, ensure_ascii=False) + "\n"); n += 1
         if n % 500000 == 0: print(f"  {n} written; font {nfont}; typed {ntyped}", flush=True)
     fout.close()
