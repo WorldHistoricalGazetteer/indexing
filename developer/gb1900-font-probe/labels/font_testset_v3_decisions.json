@@ -1,0 +1,1302 @@
+[
+ {
+  "i": 0,
+  "text": "Head",
+  "font": "upright"
+ },
+ {
+  "i": 1,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 2,
+  "text": "Wood",
+  "font": "upright"
+ },
+ {
+  "i": 3,
+  "text": "CHURCH",
+  "font": "upright"
+ },
+ {
+  "i": 4,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 5,
+  "text": "HERTFORD",
+  "font": "upright"
+ },
+ {
+  "i": 6,
+  "text": "###RADFORD",
+  "font": "italic"
+ },
+ {
+  "i": 7,
+  "text": "EASTERN",
+  "font": "upright"
+ },
+ {
+  "i": 8,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 9,
+  "text": "MILL",
+  "font": "upright"
+ },
+ {
+  "i": 10,
+  "text": "Liable",
+  "font": "italic"
+ },
+ {
+  "i": 11,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 12,
+  "text": "CROSSS",
+  "font": "upright"
+ },
+ {
+  "i": 13,
+  "text": "Dxford)",
+  "font": "italic"
+ },
+ {
+  "i": 14,
+  "text": "Millhill",
+  "font": "italic"
+ },
+ {
+  "i": 15,
+  "text": "TOWER",
+  "font": "upright"
+ },
+ {
+  "i": 16,
+  "text": "STATION",
+  "font": "upright"
+ },
+ {
+  "i": 17,
+  "text": "CLEVELAND",
+  "font": "upright"
+ },
+ {
+  "i": 18,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 19,
+  "text": "Tyddyn--",
+  "font": "upright"
+ },
+ {
+  "i": 20,
+  "text": "BSKELTON",
+  "font": "upright"
+ },
+ {
+  "i": 21,
+  "text": "CASTLE",
+  "font": "unclear"
+ },
+ {
+  "i": 22,
+  "text": "Burn",
+  "font": "italic"
+ },
+ {
+  "i": 23,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 24,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 25,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 26,
+  "text": "Crossing",
+  "font": "italic"
+ },
+ {
+  "i": 27,
+  "text": "WILSON",
+  "font": "upright"
+ },
+ {
+  "i": 28,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 29,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 30,
+  "text": "Hill",
+  "font": "italic"
+ },
+ {
+  "i": 31,
+  "text": "BROOK",
+  "font": "upright"
+ },
+ {
+  "i": 32,
+  "text": "BECKHAMPTON",
+  "font": "unclear"
+ },
+ {
+  "i": 33,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 34,
+  "text": "Abbey",
+  "font": "blackletter"
+ },
+ {
+  "i": 35,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 36,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 37,
+  "text": "Priory",
+  "font": "blackletter"
+ },
+ {
+  "i": 38,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 39,
+  "text": "Stonecross",
+  "font": "italic"
+ },
+ {
+  "i": 40,
+  "text": "GUEEN",
+  "font": "upright"
+ },
+ {
+  "i": 41,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 42,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 43,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 44,
+  "text": "Christchurch",
+  "font": "italic"
+ },
+ {
+  "i": 45,
+  "text": "Westburn",
+  "font": "italic"
+ },
+ {
+  "i": 46,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 47,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 48,
+  "text": "College",
+  "font": "italic"
+ },
+ {
+  "i": 49,
+  "text": "Priory",
+  "font": "italic"
+ },
+ {
+  "i": 50,
+  "text": "###ark",
+  "font": "italic"
+ },
+ {
+  "i": 51,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 52,
+  "text": "COLLEGE",
+  "font": "upright"
+ },
+ {
+  "i": 53,
+  "text": "Springwell",
+  "font": "italic"
+ },
+ {
+  "i": 54,
+  "text": "CHURCH",
+  "font": "upright"
+ },
+ {
+  "i": 55,
+  "text": "Stone",
+  "font": "unclear"
+ },
+ {
+  "i": 56,
+  "text": "Church",
+  "font": "italic"
+ },
+ {
+  "i": 57,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 58,
+  "text": "Church",
+  "font": "italic"
+ },
+ {
+  "i": 59,
+  "text": "Oxford",
+  "font": "italic"
+ },
+ {
+  "i": 60,
+  "text": "FRAMWELLGATE",
+  "font": "italic"
+ },
+ {
+  "i": 61,
+  "text": "COLLEGE",
+  "font": "upright"
+ },
+ {
+  "i": 62,
+  "text": "Hereford",
+  "font": "upright"
+ },
+ {
+  "i": 63,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 64,
+  "text": "Cwm-oernant",
+  "font": "upright"
+ },
+ {
+  "i": 65,
+  "text": "College",
+  "font": "italic"
+ },
+ {
+  "i": 66,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 67,
+  "text": "Wood",
+  "font": "upright"
+ },
+ {
+  "i": 68,
+  "text": "Barton",
+  "font": "italic"
+ },
+ {
+  "i": 69,
+  "text": "(Siteo",
+  "font": "italic"
+ },
+ {
+  "i": 70,
+  "text": "Eastburn",
+  "font": "italic"
+ },
+ {
+  "i": 71,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 72,
+  "text": "Ceunant",
+  "font": "upright"
+ },
+ {
+  "i": 73,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 74,
+  "text": "Stream",
+  "font": "italic"
+ },
+ {
+  "i": 75,
+  "text": "Castle",
+  "font": "upright"
+ },
+ {
+  "i": 76,
+  "text": "Station",
+  "font": "upright"
+ },
+ {
+  "i": 77,
+  "text": "AFON",
+  "font": "italic"
+ },
+ {
+  "i": 78,
+  "text": "Wellington",
+  "font": "italic"
+ },
+ {
+  "i": 79,
+  "text": "Priory",
+  "font": "blackletter"
+ },
+ {
+  "i": 80,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 81,
+  "text": "Chap.",
+  "font": "italic"
+ },
+ {
+  "i": 82,
+  "text": "Roman",
+  "font": "italic"
+ },
+ {
+  "i": 83,
+  "text": "Birklands",
+  "font": "upright"
+ },
+ {
+  "i": 84,
+  "text": "Hawkwell",
+  "font": "italic"
+ },
+ {
+  "i": 85,
+  "text": "View",
+  "font": "italic"
+ },
+ {
+  "i": 86,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 87,
+  "text": "Wood",
+  "font": "upright"
+ },
+ {
+  "i": 88,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 89,
+  "text": "Stone",
+  "font": "upright"
+ },
+ {
+  "i": 90,
+  "text": "100",
+  "font": "numeral"
+ },
+ {
+  "i": 91,
+  "text": "CROSS",
+  "font": "upright"
+ },
+ {
+  "i": 92,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 93,
+  "text": "Milestone",
+  "font": "italic"
+ },
+ {
+  "i": 94,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 95,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 96,
+  "text": "Allen",
+  "font": "italic"
+ },
+ {
+  "i": 97,
+  "text": "PRIORY",
+  "font": "italic"
+ },
+ {
+  "i": 98,
+  "text": "Well",
+  "font": "italic"
+ },
+ {
+  "i": 99,
+  "text": "CHUTE",
+  "font": "upright"
+ },
+ {
+  "i": 100,
+  "text": "Woodbing",
+  "font": "italic"
+ },
+ {
+  "i": 101,
+  "text": "SEWELL'S",
+  "font": "upright"
+ },
+ {
+  "i": 102,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 103,
+  "text": "FIRST",
+  "font": "upright"
+ },
+ {
+  "i": 104,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 105,
+  "text": "HOLYWELL",
+  "font": "italic"
+ },
+ {
+  "i": 106,
+  "text": "Schools",
+  "font": "italic"
+ },
+ {
+  "i": 107,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 108,
+  "text": "Castle",
+  "font": "upright"
+ },
+ {
+  "i": 109,
+  "text": "Harrow",
+  "font": "italic"
+ },
+ {
+  "i": 110,
+  "text": "Longbarrow",
+  "font": "upright"
+ },
+ {
+  "i": 111,
+  "text": "Castlegreen",
+  "font": "italic"
+ },
+ {
+  "i": 112,
+  "text": "Gravel",
+  "font": "italic"
+ },
+ {
+  "i": 113,
+  "text": "DERESFORD",
+  "font": "upright"
+ },
+ {
+  "i": 114,
+  "text": "STONE###",
+  "font": "unclear"
+ },
+ {
+  "i": 115,
+  "text": "Ford",
+  "font": "italic"
+ },
+ {
+  "i": 116,
+  "text": "MATFORD",
+  "font": "upright"
+ },
+ {
+  "i": 117,
+  "text": "Schools",
+  "font": "italic"
+ },
+ {
+  "i": 118,
+  "text": "PRIORY",
+  "font": "unclear"
+ },
+ {
+  "i": 119,
+  "text": "Tumulus",
+  "font": "blackletter"
+ },
+ {
+  "i": 120,
+  "text": "Pool",
+  "font": "italic"
+ },
+ {
+  "i": 121,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 122,
+  "text": "POTHOUSE",
+  "font": "upright"
+ },
+ {
+  "i": 123,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 124,
+  "text": "Mills",
+  "font": "italic"
+ },
+ {
+  "i": 125,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 126,
+  "text": "Cross",
+  "font": "italic"
+ },
+ {
+  "i": 127,
+  "text": "Lodge",
+  "font": "italic"
+ },
+ {
+  "i": 128,
+  "text": "Chapel",
+  "font": "italic"
+ },
+ {
+  "i": 129,
+  "text": "250",
+  "font": "numeral"
+ },
+ {
+  "i": 130,
+  "text": "Greaves",
+  "font": "italic"
+ },
+ {
+  "i": 131,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 132,
+  "text": "Mills",
+  "font": "italic"
+ },
+ {
+  "i": 133,
+  "text": "EGD",
+  "font": "unclear"
+ },
+ {
+  "i": 134,
+  "text": "Mills",
+  "font": "italic"
+ },
+ {
+  "i": 135,
+  "text": "Nursery",
+  "font": "upright"
+ },
+ {
+  "i": 136,
+  "text": "STATION",
+  "font": "upright"
+ },
+ {
+  "i": 137,
+  "text": "Union",
+  "font": "upright"
+ },
+ {
+  "i": 138,
+  "text": "STATION",
+  "font": "upright"
+ },
+ {
+  "i": 139,
+  "text": "Stone",
+  "font": "unclear"
+ },
+ {
+  "i": 140,
+  "text": "Chapel",
+  "font": "italic"
+ },
+ {
+  "i": 141,
+  "text": "Nant-yr-arian",
+  "font": "italic"
+ },
+ {
+  "i": 142,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 143,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 144,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 145,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 146,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 147,
+  "text": "67.0",
+  "font": "numeral"
+ },
+ {
+  "i": 148,
+  "text": "28.8",
+  "font": "numeral"
+ },
+ {
+  "i": 149,
+  "text": "Parly.",
+  "font": "upright"
+ },
+ {
+  "i": 150,
+  "text": "Wood",
+  "font": "upright"
+ },
+ {
+  "i": 151,
+  "text": "Wood",
+  "font": "upright"
+ },
+ {
+  "i": 152,
+  "text": "Underwood",
+  "font": "italic"
+ },
+ {
+  "i": 153,
+  "text": "COLLEGE",
+  "font": "upright"
+ },
+ {
+  "i": 154,
+  "text": "Fordfield",
+  "font": "italic"
+ },
+ {
+  "i": 155,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 156,
+  "text": "Roman",
+  "font": "italic"
+ },
+ {
+  "i": 157,
+  "text": "Cross",
+  "font": "blackletter"
+ },
+ {
+  "i": 158,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 159,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 160,
+  "text": "Crossway",
+  "font": "italic"
+ },
+ {
+  "i": 161,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 162,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 163,
+  "text": "Milbrook",
+  "font": "italic"
+ },
+ {
+  "i": 164,
+  "text": "STATION",
+  "font": "unclear"
+ },
+ {
+  "i": 165,
+  "text": "PRIORY",
+  "font": "upright"
+ },
+ {
+  "i": 166,
+  "text": "Llinmedygon",
+  "font": "italic"
+ },
+ {
+  "i": 167,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 168,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 169,
+  "text": "Farm",
+  "font": "italic"
+ },
+ {
+  "i": 170,
+  "text": "Cross",
+  "font": "blackletter"
+ },
+ {
+  "i": 171,
+  "text": "Priorypark",
+  "font": "italic"
+ },
+ {
+  "i": 172,
+  "text": "Tower",
+  "font": "unclear"
+ },
+ {
+  "i": 173,
+  "text": "(Site",
+  "font": "italic"
+ },
+ {
+  "i": 174,
+  "text": "Russian",
+  "font": "italic"
+ },
+ {
+  "i": 175,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 176,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 177,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 178,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 179,
+  "text": "Hereford",
+  "font": "italic"
+ },
+ {
+  "i": 180,
+  "text": "CROSS",
+  "font": "upright"
+ },
+ {
+  "i": 181,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 182,
+  "text": "Cum-oernant",
+  "font": "italic"
+ },
+ {
+  "i": 183,
+  "text": "Trecastle",
+  "font": "italic"
+ },
+ {
+  "i": 184,
+  "text": "Barrow",
+  "font": "blackletter"
+ },
+ {
+  "i": 185,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 186,
+  "text": "Nant-y-ceiliog",
+  "font": "upright"
+ },
+ {
+  "i": 187,
+  "text": "Stonecross",
+  "font": "italic"
+ },
+ {
+  "i": 188,
+  "text": "OXFORD",
+  "font": "upright"
+ },
+ {
+  "i": 189,
+  "text": "REGFORD",
+  "font": "upright"
+ },
+ {
+  "i": 190,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 191,
+  "text": "Church",
+  "font": "italic"
+ },
+ {
+  "i": 192,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 193,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 194,
+  "text": "WINDERMERE",
+  "font": "upright"
+ },
+ {
+  "i": 195,
+  "text": "Tumuli",
+  "font": "blackletter"
+ },
+ {
+  "i": 196,
+  "text": "Colleges",
+  "font": "italic"
+ },
+ {
+  "i": 197,
+  "text": "Post",
+  "font": "italic"
+ },
+ {
+  "i": 198,
+  "text": "31.3",
+  "font": "numeral"
+ },
+ {
+  "i": 199,
+  "text": "NORTH",
+  "font": "upright"
+ },
+ {
+  "i": 200,
+  "text": "Springwell",
+  "font": "italic"
+ },
+ {
+  "i": 201,
+  "text": "Cross",
+  "font": "italic"
+ },
+ {
+  "i": 202,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 203,
+  "text": "Bank",
+  "font": "italic"
+ },
+ {
+  "i": 204,
+  "text": "Union",
+  "font": "upright"
+ },
+ {
+  "i": 205,
+  "text": "Schools",
+  "font": "italic"
+ },
+ {
+  "i": 206,
+  "text": "ACKBOY",
+  "font": "upright"
+ },
+ {
+  "i": 207,
+  "text": "425",
+  "font": "numeral"
+ },
+ {
+  "i": 208,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 209,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 210,
+  "text": "First",
+  "font": "italic"
+ },
+ {
+  "i": 211,
+  "text": "Chapel",
+  "font": "upright"
+ },
+ {
+  "i": 212,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 213,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 214,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 215,
+  "text": "Station",
+  "font": "upright"
+ },
+ {
+  "i": 216,
+  "text": "CASTLE",
+  "font": "upright"
+ },
+ {
+  "i": 217,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 218,
+  "text": "Cross",
+  "font": "italic"
+ },
+ {
+  "i": 219,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 220,
+  "text": "KEASTCLIFF",
+  "font": "upright"
+ },
+ {
+  "i": 221,
+  "text": "VINDERMERE",
+  "font": "upright"
+ },
+ {
+  "i": 222,
+  "text": "House",
+  "font": "italic"
+ },
+ {
+  "i": 223,
+  "text": "Newicastle",
+  "font": "italic"
+ },
+ {
+  "i": 224,
+  "text": "Cross",
+  "font": "blackletter"
+ },
+ {
+  "i": 225,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 226,
+  "text": "Roman",
+  "font": "italic"
+ },
+ {
+  "i": 227,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 228,
+  "text": "Nant-y-las###",
+  "font": "italic"
+ },
+ {
+  "i": 229,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 230,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 231,
+  "text": "BEDFORD",
+  "font": "upright"
+ },
+ {
+  "i": 232,
+  "text": "Works",
+  "font": "italic"
+ },
+ {
+  "i": 233,
+  "text": "Mill",
+  "font": "italic"
+ },
+ {
+  "i": 234,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 235,
+  "text": "Well",
+  "font": "blackletter"
+ },
+ {
+  "i": 236,
+  "text": "(Camp)",
+  "font": "blackletter"
+ },
+ {
+  "i": 237,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 238,
+  "text": "ROMAN",
+  "font": "upright"
+ },
+ {
+  "i": 239,
+  "text": "Castle",
+  "font": "blackletter"
+ },
+ {
+  "i": 240,
+  "text": "BEAUFORT",
+  "font": "upright"
+ },
+ {
+  "i": 241,
+  "text": "Priory",
+  "font": "blackletter"
+ },
+ {
+  "i": 242,
+  "text": "600",
+  "font": "numeral"
+ },
+ {
+  "i": 243,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 244,
+  "text": "Stone",
+  "font": "italic"
+ },
+ {
+  "i": 245,
+  "text": "Royal",
+  "font": "italic"
+ },
+ {
+  "i": 246,
+  "text": "Oxford",
+  "font": "italic"
+ },
+ {
+  "i": 247,
+  "text": "Castle",
+  "font": "blackletter"
+ },
+ {
+  "i": 248,
+  "text": "Crossgate",
+  "font": "italic"
+ },
+ {
+  "i": 249,
+  "text": "Dryburn",
+  "font": "italic"
+ },
+ {
+  "i": 250,
+  "text": "Mawr",
+  "font": "italic"
+ },
+ {
+  "i": 251,
+  "text": "Stones",
+  "font": "italic"
+ },
+ {
+  "i": 252,
+  "text": "Hartwell",
+  "font": "italic"
+ },
+ {
+  "i": 253,
+  "text": "Beck",
+  "font": "italic"
+ },
+ {
+  "i": 254,
+  "text": "Site",
+  "font": "italic"
+ },
+ {
+  "i": 255,
+  "text": "Castle",
+  "font": "italic"
+ },
+ {
+  "i": 256,
+  "text": "Church",
+  "font": "upright"
+ },
+ {
+  "i": 257,
+  "text": "Abbey",
+  "font": "blackletter"
+ },
+ {
+  "i": 258,
+  "text": "School",
+  "font": "italic"
+ },
+ {
+  "i": 259,
+  "text": "Abbey",
+  "font": "blackletter"
+ }
+]
