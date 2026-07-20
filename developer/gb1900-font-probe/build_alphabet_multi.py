@@ -1,0 +1,191 @@
+"""44-class SPOT-AND-FAN over the full OS Characteristic Sheet taxonomy (font_taxonomy.json).
+
+SEED  each font from its exemplar — word-split then letter-split (single-letter admin marks handled directly;
+      punctuation blobs dropped) — seeding that font's alphabet at its (letter,cap) slots.
+FAN   over the real spotter boxes (glyphs re-cropped from the /ix1 tile archive / fetched on miss): same-letter
+      match to the current alphabet, assign a box its font only when >=2 known letters CONCUR, harvest its
+      glyphs, iterate to convergence — growing every face's real-map alphabet.
+SEPARABILITY comes FROM the fan: leave-one-out over the grown alphabet gives a font x font confusion matrix.
+      Faces the fan cannot keep apart (mutual confusion high) are the INSEPARABLE ones — flagged with a
+      side-by-side exemplar montage for a HUMAN to confirm 'same OS face' (merge) vs 'distinct-but-hard'.
+
+    FCTILES=/vast/ishi/gb1900/fc_tiles /vast/ishi/envs/mapreader/bin/python build_alphabet_multi.py
+"""
+import sys; sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
+import os, json, numpy as np, cv2
+import concurrent.futures as cf
+from collections import Counter, defaultdict
+from PIL import Image, ImageDraw
+from build_alphabet import force_split, build_buckets, type_label, CAP, HIGH, GLYPH_MIN, MIN_GLYPHS, MAX_ROUNDS
+from make_font_testset_v2 import load, derotate
+from discrim_test import H, W, norm_glyph, sims_row
+
+HERE = "/vast/ishi/gb1900/probe/font"; TAX = f"{HERE}/font_taxonomy.json"
+OUT = "/vast/ishi/gb1900/edition/discover"; os.makedirs(OUT, exist_ok=True)
+SEED_PER_FONT = 50; SEED_MARGIN = 0.02; IDENT = 0.90
+
+def one_glyph(gray):
+    _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+    return norm_glyph(ink > 0)
+
+def word_split(gray):
+    ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1] > 0
+    prof = ink.sum(0); cols = np.where(prof > prof.max() * 0.02)[0]
+    if len(cols) == 0: return []
+    GAPW = max(6, gray.shape[0] // 3); groups = []; start = prev = cols[0]
+    for c in cols[1:]:
+        if c - prev >= GAPW: groups.append((start, prev)); start = c
+        prev = c
+    groups.append((start, prev))
+    minw = gray.shape[0] * 0.18                      # drop narrow blobs: '.', boundary ticks
+    return [gray[:, a:b + 1] for a, b in groups if (b - a) >= minw]
+
+def seed_glyphs(gray, text):
+    words_txt = [w for w in text.split() if any(c.isalnum() for c in w)]
+    wimgs = word_split(gray); out = []
+    def emit(img, wt):
+        letters = [c for c in wt if c.isalnum()]
+        if len(letters) == 1:
+            g = one_glyph(img)
+            return [(letters[0].upper(), letters[0].isupper(), g)] if g is not None else []
+        gs = force_split(img, len(letters))
+        if len(gs) != len(letters): return []
+        return [(letters[i].upper(), letters[i].isupper(), gs[i]) for i in range(len(letters))]
+    if len(wimgs) == len(words_txt):
+        for wi, wt in zip(wimgs, words_txt): out += emit(wi, wt)
+    else:                                            # counts disagree -> whole crop by total letters
+        out += emit(gray, "".join(words_txt))
+    return out
+
+def cs_seed_multi():
+    tax = [x for x in json.load(open(TAX)) if x.get("exemplar") and x.get("seed_text")]
+    bank = defaultdict(lambda: defaultdict(list)); rep = []
+    for x in tax:
+        p = f"{HERE}/{x['exemplar']}"
+        if not os.path.exists(p): continue
+        gl = seed_glyphs(np.asarray(Image.open(p).convert("L"), np.uint8), x["seed_text"])
+        for L, cap, g in gl: bank[(L, cap)][x["key"]].append(g)
+        rep.append(f"{x['key']:<22} {len(gl)}/{x['seed_letters']}")
+    return bank, rep, {x["key"]: x for x in tax}
+
+# ---- box glyphs (real map) ----
+def box_align(r):
+    patch = derotate(r)
+    if patch is None: return None
+    letters = [c for c in r["text"] if c.isalnum()]
+    if len(letters) < 2: return None
+    gs = force_split(patch, len(letters))
+    if len(gs) != len(letters): return None
+    return (r["text"], [(letters[i].upper(), letters[i].isupper(), gs[i]) for i in range(len(letters))])
+
+def main():
+    bank, rep, tk = cs_seed_multi()
+    fonts = sorted({f for d in bank.values() for f in d})
+    print(f"SEED segmentation ({len(fonts)} fonts seeded):\n  " + "\n  ".join(rep), flush=True)
+
+    import glob as _glob
+    SPOT = "/vast/ishi/gb1900/edition/spot"; boxes = []
+    for f in _glob.glob(f"{SPOT}/boxes_gb_*.jsonl"):          # full-coverage grind regions only
+        for line in open(f):
+            r = json.loads(line)
+            if r.get("score", 0) >= 0.55 and len([c for c in r["text"] if c.isalnum()]) >= 3 and r.get("gpoly"):
+                boxes.append(r)
+    print(f"spotter boxes: {len(boxes)}", flush=True)
+    data = []
+    with cf.ThreadPoolExecutor(max_workers=16) as ex:
+        for r in ex.map(box_align, boxes):
+            if r: data.append(r)
+    print(f"aligned box-labels: {len(data)}", flush=True)
+
+    alpha = []; cap_ct = Counter(); assigned = {}
+    def harvest(idx, font, gen):
+        for L, cap, g in data[idx][1]:
+            if cap_ct[(L, cap, font)] < CAP:
+                alpha.append(dict(L=L, cap=cap, style=font, glyph=g, gen=gen)); cap_ct[(L, cap, font)] += 1
+
+    # SEED: match real cap glyphs to the CS seed bank
+    csmat = {}
+    for (L, cap), fd in bank.items():
+        rows, fl = [], []
+        for f, gs in fd.items():
+            for g in gs: rows.append(g.astype(np.float32).ravel()); fl.append(f)
+        M = np.array(rows, np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
+        csmat[(L, cap)] = (np.array(fl), M)
+    cand = []
+    for i, (text, gl) in enumerate(data):
+        for L, cap, g in gl:
+            if (L, cap) not in csmat: continue
+            fl, M = csmat[(L, cap)]; r = sims_row(g, M)
+            best = {f: float(r[fl == f].max()) for f in set(fl.tolist())}
+            rk = sorted(best.items(), key=lambda kv: -kv[1])
+            margin = rk[0][1] - (rk[1][1] if len(rk) > 1 else 0.0)
+            if len(rk) >= 2 and margin < SEED_MARGIN: continue
+            cand.append(((margin if len(rk) >= 2 else rk[0][1]), i, rk[0][0]))
+    for font in fonts:
+        for conf, i, f in sorted([c for c in cand if c[2] == font], key=lambda c: -c[0])[:SEED_PER_FONT]:
+            if i in assigned: continue
+            assigned[i] = f; harvest(i, f, 0)
+    print(f"SEED: {len(assigned)} labels -> {len(alpha)} glyphs", flush=True)
+
+    # FAN
+    for rnd in range(1, MAX_ROUNDS + 1):
+        B = build_buckets(alpha); new = 0
+        for i, (text, gl) in enumerate(data):
+            if i in assigned or len(gl) < MIN_GLYPHS: continue
+            winner, conf, voters = type_label(gl, B)
+            if not winner or conf < HIGH: continue
+            vc = Counter(s for s, _, _ in voters)
+            if vc[winner] < 2: continue
+            assigned[i] = winner; harvest(i, winner, rnd); new += 1
+        print(f"round {rnd}: +{new} labels; alphabet={len(alpha)}", flush=True)
+        if new == 0: break
+
+    # SEPARABILITY from the fanned alphabet: leave-one-out same-letter confusion between fonts
+    conf = np.zeros((len(fonts), len(fonts))); tot = np.zeros(len(fonts))
+    fi = {f: i for i, f in enumerate(fonts)}
+    by = defaultdict(list)
+    for t in alpha: by[(t["L"], t["cap"])].append(t)
+    for key, items in by.items():
+        styles = np.array([t["style"] for t in items])
+        if len(set(styles)) < 2: continue
+        M = np.array([t["glyph"].astype(np.float32).ravel() for t in items], np.float32)
+        M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
+        for i in range(len(items)):
+            r = np.where(np.arange(len(items)) != i, sims_row(items[i]["glyph"], M), -2.0)
+            pred = styles[int(np.argmax(r))]
+            conf[fi[items[i]["style"]], fi[pred]] += 1; tot[fi[items[i]["style"]]] += 1
+    # candidate-inseparable font pairs: each mostly predicted AS the other
+    pairs = []
+    for a in range(len(fonts)):
+        for b in range(a + 1, len(fonts)):
+            na, nb = tot[a], tot[b]
+            if na < 5 or nb < 5: continue
+            cross = (conf[a, b] / na + conf[b, a] / nb) / 2       # mean mutual mis-ID rate
+            if cross >= 0.35: pairs.append((round(float(cross), 2), int(na), int(nb), fonts[a], fonts[b]))
+    pairs.sort(reverse=True)
+    acc = {fonts[i]: round(float(conf[i, i] / tot[i]), 2) for i in range(len(fonts)) if tot[i] >= 5}
+    json.dump({"fonts": fonts, "confusion": conf.tolist(), "support": tot.tolist(),
+               "self_acc": acc, "candidate_inseparable": pairs},
+              open(f"{OUT}/separability.json", "w"))
+    print(f"\nper-font LOO self-accuracy (support>=5): {acc}", flush=True)
+    print("candidate-INSEPARABLE pairs (mean mutual mis-ID >=0.35) — HUMAN VERIFY same face:", flush=True)
+    for cr, na, nb, fa, fb in pairs: print(f"  {cr}  ({na}/{nb})  {fa}  <->  {fb}", flush=True)
+
+    if pairs:
+        rowh = 150; canvas = Image.new("RGB", (300, rowh * len(pairs)), "white"); d = ImageDraw.Draw(canvas)
+        for i, (cr, na, nb, fa, fb) in enumerate(pairs):
+            for j, f in enumerate((fa, fb)):
+                try:
+                    im = Image.open(f"{HERE}/{tk[f]['exemplar']}").convert("L"); im.thumbnail((120, 120))
+                    canvas.paste(im.convert("RGB"), (10 + j * 140, i * rowh + 10))
+                except Exception: pass
+            d.text((10, i * rowh + rowh - 20), f"{fa} <{cr}> {fb}", fill=(150, 40, 30))
+        canvas.save(f"{OUT}/confusable_pairs.png"); print(f"confusable_pairs.png -> {OUT}/confusable_pairs.png", flush=True)
+    np.savez_compressed(f"{OUT}/alphabet_multi.npz",
+                        glyphs=np.array([t["glyph"] for t in alpha], np.uint8),
+                        letter=np.array([t["L"] for t in alpha]), cap=np.array([t["cap"] for t in alpha]),
+                        style=np.array([t["style"] for t in alpha]), gen=np.array([t["gen"] for t in alpha]))
+    print(f"saved alphabet_multi.npz: {len(alpha)} glyphs, {len(assigned)}/{len(data)} labels assigned", flush=True)
+
+if __name__ == "__main__":
+    main()
