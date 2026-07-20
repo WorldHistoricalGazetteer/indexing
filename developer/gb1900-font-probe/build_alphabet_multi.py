@@ -28,6 +28,27 @@ def one_glyph(gray):
     _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     return norm_glyph(ink > 0)
 
+PHRASE_FILE = f"{HERE}/labels/phrase_seeds.json"
+PHRASE = {e["key"]: e for e in json.load(open(PHRASE_FILE))} if os.path.exists(PHRASE_FILE) else {}
+
+def seed_from_cuts(gray, text, angle, cuts):
+    """HITL seeds: de-slant by `angle`, cut at the human `cuts` (one segment per CHARACTER of `text`,
+    including spaces/punctuation), keep the alnum segments as letter glyphs."""
+    H0, W0 = gray.shape; t = math.tan(math.radians(angle or 0))
+    if t:
+        off = max(0.0, -t * H0); newW = int(math.ceil(W0 + abs(t) * H0))
+        gray = cv2.warpAffine(gray, np.float32([[1, t, off], [0, 1, 0]]), (newW, H0), borderValue=255)
+        cutpx = [c * W0 + t * (H0 / 2) + off for c in cuts]; Wt = newW
+    else:
+        cutpx = [c * W0 for c in cuts]; Wt = W0
+    bounds = [0] + [int(round(x)) for x in cutpx] + [Wt]; chars = list(text); out = []
+    if len(bounds) - 1 != len(chars): return out            # cut count must match text length
+    for i, ch in enumerate(chars):
+        if not ch.isalnum(): continue
+        g = one_glyph(gray[:, max(0, bounds[i]):bounds[i + 1]])
+        if g is not None: out.append((ch.upper(), ch.isupper(), g))
+    return out
+
 def word_split(gray):
     ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1] > 0
     prof = ink.sum(0); cols = np.where(prof > prof.max() * 0.02)[0]
@@ -63,9 +84,13 @@ def cs_seed_multi():
     for x in tax:
         p = f"{HERE}/{x['exemplar']}"
         if not os.path.exists(p): continue
-        gl = seed_glyphs(np.asarray(Image.open(p).convert("L"), np.uint8), x["seed_text"])
+        gray = np.asarray(Image.open(p).convert("L"), np.uint8)
+        if x["key"] in PHRASE:                                # HITL-curated cuts (word/phrase specimens)
+            e = PHRASE[x["key"]]; gl = seed_from_cuts(gray, e["text"], e.get("angle", 0), e["cuts"])
+        else:                                                # single-letter admin marks
+            gl = seed_glyphs(gray, x["seed_text"])
         for L, cap, g in gl: bank[(L, cap)][x["key"]].append(g)
-        rep.append(f"{x['key']:<22} {len(gl)}/{x['seed_letters']}")
+        rep.append(f"{x['key']:<22} {len(gl)}/{x['seed_letters']}{' [HITL]' if x['key'] in PHRASE else ''}")
     return bank, rep, {x["key"]: x for x in tax}
 
 # ---- box glyphs (real map) ----
@@ -154,33 +179,65 @@ def main():
             r = np.where(np.arange(len(items)) != i, sims_row(items[i]["glyph"], M), -2.0)
             pred = styles[int(np.argmax(r))]
             conf[fi[items[i]["style"]], fi[pred]] += 1; tot[fi[items[i]["style"]]] += 1
-    # candidate-inseparable font pairs: each mostly predicted AS the other
-    pairs = []
+    # SSL-embedding separability (pure visual, encoder-based) — compared head-to-head with raw-pixel
+    ssl_acc = {}
+    if os.environ.get("USE_SSL", "1") == "1":
+        try:
+            import torch
+            from ssl_pretrain import Enc
+            net = Enc(); net.load_state_dict(torch.load(f"{OUT.rsplit('/',1)[0]}/spot/encoder_full.pt", map_location="cpu")); net.eval()
+            def emb(gs):
+                X = np.stack(gs).astype(np.float32)[:, None]; X = (X * 255 if X.max() <= 1.0 else X) / 255.0
+                with torch.no_grad(): return net(torch.tensor((X - 0.8) / 0.3)).numpy()
+            cS = np.zeros((len(fonts), len(fonts))); tS = np.zeros(len(fonts))
+            for key, items in by.items():
+                styles = [t["style"] for t in items]
+                if len(set(styles)) < 2: continue
+                Z = emb([t["glyph"] for t in items]); Z /= (np.linalg.norm(Z, axis=1, keepdims=True) + 1e-6)
+                for i in range(len(items)):
+                    r = np.where(np.arange(len(items)) != i, Z @ Z[i], -2.0)
+                    cS[fi[styles[i]], fi[styles[int(np.argmax(r))]]] += 1; tS[fi[styles[i]]] += 1
+            ssl_acc = {fonts[i]: round(float(cS[i, i] / tS[i]), 2) for i in range(len(fonts)) if tS[i] >= 5}
+            print(f"[SSL] embedding self-accuracy: {ssl_acc}", flush=True)
+        except Exception as e:
+            print(f"[SSL] skipped: {e}", flush=True)
+
+    # cluster the confusion into MERGE-GROUPS: union-find over mutual mis-ID >= THETA (confusion SPREADS across
+    # similar faces, so a flat pairwise bar misses them — clustering groups the faces the fan can't separate).
+    THETA = 0.20; par = list(range(len(fonts)))
+    def find(a):
+        while par[a] != a: par[a] = par[par[a]]; a = par[a]
+        return a
+    edges = []
     for a in range(len(fonts)):
         for b in range(a + 1, len(fonts)):
             na, nb = tot[a], tot[b]
             if na < 5 or nb < 5: continue
-            cross = (conf[a, b] / na + conf[b, a] / nb) / 2       # mean mutual mis-ID rate
-            if cross >= 0.35: pairs.append((round(float(cross), 2), int(na), int(nb), fonts[a], fonts[b]))
-    pairs.sort(reverse=True)
+            cross = (conf[a, b] / na + conf[b, a] / nb) / 2
+            if cross >= THETA: edges.append((round(float(cross), 2), fonts[a], fonts[b])); par[find(a)] = find(b)
+    grp = defaultdict(list)
+    for i, f in enumerate(fonts): grp[find(i)].append(f)
+    merge = sorted((sorted(g) for g in grp.values() if len(g) > 1), key=lambda g: -len(g))
+    edges.sort(reverse=True)
     acc = {fonts[i]: round(float(conf[i, i] / tot[i]), 2) for i in range(len(fonts)) if tot[i] >= 5}
-    json.dump({"fonts": fonts, "confusion": conf.tolist(), "support": tot.tolist(),
-               "self_acc": acc, "candidate_inseparable": pairs},
+    json.dump({"fonts": fonts, "confusion": conf.tolist(), "support": tot.tolist(), "self_acc": acc,
+               "ssl_self_acc": ssl_acc, "merge_groups": merge, "edges": edges, "theta": THETA},
               open(f"{OUT}/separability.json", "w"))
     print(f"\nper-font LOO self-accuracy (support>=5): {acc}", flush=True)
-    print("candidate-INSEPARABLE pairs (mean mutual mis-ID >=0.35) — HUMAN VERIFY same face:", flush=True)
-    for cr, na, nb, fa, fb in pairs: print(f"  {cr}  ({na}/{nb})  {fa}  <->  {fb}", flush=True)
-
-    if pairs:
-        rowh = 150; canvas = Image.new("RGB", (300, rowh * len(pairs)), "white"); d = ImageDraw.Draw(canvas)
-        for i, (cr, na, nb, fa, fb) in enumerate(pairs):
-            for j, f in enumerate((fa, fb)):
+    print(f"MERGE-GROUPS (mutual mis-ID >= {THETA}) — HUMAN VERIFY same OS face:", flush=True)
+    for g in merge: print("  { " + " , ".join(g) + " }", flush=True)
+    print(f"top confusion edges: {[(c, a, b) for c, a, b in edges[:15]]}", flush=True)
+    if merge:
+        maxn = max(len(g) for g in merge); rowh = 150
+        canvas = Image.new("RGB", (140 * maxn + 10, rowh * len(merge)), "white"); d = ImageDraw.Draw(canvas)
+        for i, g in enumerate(merge):
+            for j, f in enumerate(g):
                 try:
                     im = Image.open(f"{HERE}/{tk[f]['exemplar']}").convert("L"); im.thumbnail((120, 120))
                     canvas.paste(im.convert("RGB"), (10 + j * 140, i * rowh + 10))
                 except Exception: pass
-            d.text((10, i * rowh + rowh - 20), f"{fa} <{cr}> {fb}", fill=(150, 40, 30))
-        canvas.save(f"{OUT}/confusable_pairs.png"); print(f"confusable_pairs.png -> {OUT}/confusable_pairs.png", flush=True)
+            d.text((10, i * rowh + rowh - 18), " | ".join(g)[:72], fill=(150, 40, 30))
+        canvas.save(f"{OUT}/merge_groups.png"); print(f"merge_groups.png -> {OUT}/merge_groups.png", flush=True)
     np.savez_compressed(f"{OUT}/alphabet_multi.npz",
                         glyphs=np.array([t["glyph"] for t in alpha], np.uint8),
                         letter=np.array([t["L"] for t in alpha]), cap=np.array([t["cap"] for t in alpha]),
