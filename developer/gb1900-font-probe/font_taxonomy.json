@@ -9,7 +9,10 @@
   "cap_h_px": 233.0,
   "regime": "any",
   "external": "admin:county",
-  "exemplar": "reference/exemplars/county_names.jpg"
+  "exemplar": "reference/exemplars/county_names.jpg",
+  "seed_text": "C",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 2,
@@ -21,7 +24,10 @@
   "cap_h_px": 130.0,
   "regime": "pre1879",
   "external": "admin:hundred",
-  "exemplar": "reference/exemplars/hundreds.jpg"
+  "exemplar": "reference/exemplars/hundreds.jpg",
+  "seed_text": "H",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 3,
@@ -33,7 +39,10 @@
   "cap_h_px": 99.0,
   "regime": "any",
   "external": "admin:liberty",
-  "exemplar": "reference/exemplars/liberties.jpg"
+  "exemplar": "reference/exemplars/liberties.jpg",
+  "seed_text": "L",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 4,
@@ -45,7 +54,10 @@
   "cap_h_px": 101.0,
   "regime": "pre1879",
   "external": "admin:ancient_parish",
-  "exemplar": "reference/exemplars/parishes_ancient.jpg"
+  "exemplar": "reference/exemplars/parishes_ancient.jpg",
+  "seed_text": "P",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 5,
@@ -57,7 +69,10 @@
   "cap_h_px": 77.0,
   "regime": "any",
   "external": "admin:civil_parish_or_township",
-  "exemplar": "reference/exemplars/civil_parishes.jpg"
+  "exemplar": "reference/exemplars/civil_parishes.jpg",
+  "seed_text": "T",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 6,
@@ -69,7 +84,10 @@
   "cap_h_px": 63.0,
   "regime": "pre1879",
   "external": "admin:township_division",
-  "exemplar": "reference/exemplars/div_townships.jpg"
+  "exemplar": "reference/exemplars/div_townships.jpg",
+  "seed_text": "T",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 7,
@@ -81,7 +99,10 @@
   "cap_h_px": 49.0,
   "regime": "pre1879",
   "external": "admin:township_subdivision",
-  "exemplar": "reference/exemplars/subdiv_townships.jpg"
+  "exemplar": "reference/exemplars/subdiv_townships.jpg",
+  "seed_text": "T",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 8,
@@ -93,7 +114,10 @@
   "cap_h_px": 50.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/boroughs_parl.jpg"
+  "exemplar": "reference/exemplars/boroughs_parl.jpg",
+  "seed_text": "B",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 9,
@@ -105,7 +129,10 @@
   "cap_h_px": 54.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/boroughs_munic.jpg"
+  "exemplar": "reference/exemplars/boroughs_munic.jpg",
+  "seed_text": "B",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 10,
@@ -117,7 +144,10 @@
   "cap_h_px": 45.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/towns_generally.jpg"
+  "exemplar": "reference/exemplars/towns_generally.jpg",
+  "seed_text": "B",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 11,
@@ -129,7 +159,10 @@
   "cap_h_px": 33.0,
   "regime": "recent",
   "external": "admin:town_district",
-  "exemplar": "reference/exemplars/town_districts.jpg"
+  "exemplar": "reference/exemplars/town_districts.jpg",
+  "seed_text": "D",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 12,
@@ -141,7 +174,10 @@
   "cap_h_px": 191.0,
   "regime": "pre1879",
   "external": "admin:county_division",
-  "exemplar": "reference/exemplars/div_counties.jpg"
+  "exemplar": "reference/exemplars/div_counties.jpg",
+  "seed_text": "R",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 13,
@@ -153,7 +189,10 @@
   "cap_h_px": 96.0,
   "regime": "any",
   "external": "admin:poor_law_union",
-  "exemplar": "reference/exemplars/poor_law_unions.jpg"
+  "exemplar": "reference/exemplars/poor_law_unions.jpg",
+  "seed_text": "R",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 14,
@@ -165,7 +204,10 @@
   "cap_h_px": 85.0,
   "regime": "any",
   "external": "admin:urban_sanitary_district",
-  "exemplar": "reference/exemplars/urban_sanitary.jpg"
+  "exemplar": "reference/exemplars/urban_sanitary.jpg",
+  "seed_text": "R",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 15,
@@ -177,7 +219,10 @@
   "cap_h_px": 61.0,
   "regime": "pre1879",
   "external": null,
-  "exemplar": "reference/exemplars/cities_mp.jpg"
+  "exemplar": "reference/exemplars/cities_mp.jpg",
+  "seed_text": "C",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 16,
@@ -189,7 +234,10 @@
   "cap_h_px": 62.0,
   "regime": "pre1879",
   "external": null,
-  "exemplar": "reference/exemplars/cities_nomp.jpg"
+  "exemplar": "reference/exemplars/cities_nomp.jpg",
+  "seed_text": "C",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 17,
@@ -201,7 +249,10 @@
   "cap_h_px": 38.0,
   "regime": "any",
   "external": "admin:ward",
-  "exemplar": "reference/exemplars/wards.jpg"
+  "exemplar": "reference/exemplars/wards.jpg",
+  "seed_text": "W",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 18,
@@ -213,7 +264,10 @@
   "cap_h_px": 39.0,
   "regime": "pre1879",
   "external": "civic:market_town",
-  "exemplar": "reference/exemplars/market_towns.jpg"
+  "exemplar": "reference/exemplars/market_towns.jpg",
+  "seed_text": "B",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 19,
@@ -225,7 +279,10 @@
   "cap_h_px": 37.0,
   "regime": "pre1879",
   "external": "settlement:town",
-  "exemplar": "reference/exemplars/other_towns.jpg"
+  "exemplar": "reference/exemplars/other_towns.jpg",
+  "seed_text": "B",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 20,
@@ -237,7 +294,10 @@
   "cap_h_px": 61.0,
   "regime": "recent",
   "external": null,
-  "exemplar": "reference/exemplars/parl_div_counties.jpg"
+  "exemplar": "reference/exemplars/parl_div_counties.jpg",
+  "seed_text": "P",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 21,
@@ -249,7 +309,10 @@
   "cap_h_px": 98.0,
   "regime": "recent",
   "external": "civic:county_borough",
-  "exemplar": "reference/exemplars/county_boroughs.jpg"
+  "exemplar": "reference/exemplars/county_boroughs.jpg",
+  "seed_text": "E",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 22,
@@ -261,7 +324,10 @@
   "cap_h_px": 35.0,
   "regime": "pre1879",
   "external": "admin:extra_parochial",
-  "exemplar": "reference/exemplars/extra_parochial.jpg"
+  "exemplar": "reference/exemplars/extra_parochial.jpg",
+  "seed_text": "EXTRA",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 23,
@@ -273,7 +339,10 @@
   "cap_h_px": 37.0,
   "regime": "pre1879",
   "external": "infra:turnpike_trust",
-  "exemplar": "reference/exemplars/turnpike_trusts.jpg"
+  "exemplar": "reference/exemplars/turnpike_trusts.jpg",
+  "seed_text": "TURNPIKE",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 24,
@@ -285,7 +354,10 @@
   "cap_h_px": 42.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/parish_churches.jpg"
+  "exemplar": "reference/exemplars/parish_churches.jpg",
+  "seed_text": "Villages",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 25,
@@ -297,7 +369,10 @@
   "cap_h_px": 43.0,
   "regime": "pre1879",
   "external": "religion:chapelry",
-  "exemplar": "reference/exemplars/chapelries.jpg"
+  "exemplar": "reference/exemplars/chapelries.jpg",
+  "seed_text": "Chapelries",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 26,
@@ -309,7 +384,10 @@
   "cap_h_px": 37.0,
   "regime": "any",
   "external": "settlement:village",
-  "exemplar": "reference/exemplars/other_villages.jpg"
+  "exemplar": "reference/exemplars/other_villages.jpg",
+  "seed_text": "Villages",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 27,
@@ -321,7 +399,10 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null
+  "exemplar": null,
+  "seed_text": null,
+  "seed_ready": false,
+  "needs_recrop": false
  },
  {
   "id": 28,
@@ -333,7 +414,10 @@
   "cap_h_px": 28.0,
   "regime": "any",
   "external": "estate:seat",
-  "exemplar": "reference/exemplars/gentlemens_seats.jpg"
+  "exemplar": "reference/exemplars/gentlemens_seats.jpg",
+  "seed_text": "Seat",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 29,
@@ -345,7 +429,10 @@
   "cap_h_px": 32.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/manufactories.jpg"
+  "exemplar": "reference/exemplars/manufactories.jpg",
+  "seed_text": "Mines",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 30,
@@ -357,7 +444,10 @@
   "cap_h_px": 34.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/workhouses.jpg"
+  "exemplar": "reference/exemplars/workhouses.jpg",
+  "seed_text": "Workhouses",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 31,
@@ -369,7 +459,10 @@
   "cap_h_px": 36.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/county_bridges_word.jpg"
+  "exemplar": "reference/exemplars/county_bridges_word.jpg",
+  "seed_text": "Bridges",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 32,
@@ -381,7 +474,10 @@
   "cap_h_px": 33.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/trust_bridges_word.jpg"
+  "exemplar": "reference/exemplars/trust_bridges_word.jpg",
+  "seed_text": "Trust",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 33,
@@ -393,7 +489,10 @@
   "cap_h_px": 30.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/isolated_houses_word.jpg"
+  "exemplar": "reference/exemplars/isolated_houses_word.jpg",
+  "seed_text": "Houses",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 34,
@@ -405,7 +504,10 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null
+  "exemplar": null,
+  "seed_text": null,
+  "seed_ready": false,
+  "needs_recrop": false
  },
  {
   "id": 35,
@@ -417,7 +519,10 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null
+  "exemplar": null,
+  "seed_text": null,
+  "seed_ready": false,
+  "needs_recrop": false
  },
  {
   "id": 36,
@@ -429,7 +534,10 @@
   "cap_h_px": 28.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/small_rivers.jpg"
+  "exemplar": "reference/exemplars/small_rivers.jpg",
+  "seed_text": "Rivers",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 37,
@@ -441,7 +549,10 @@
   "cap_h_px": null,
   "regime": "pre1879",
   "external": null,
-  "exemplar": null
+  "exemplar": null,
+  "seed_text": null,
+  "seed_ready": false,
+  "needs_recrop": false
  },
  {
   "id": 38,
@@ -453,7 +564,10 @@
   "cap_h_px": 36.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/woods_copses.jpg"
+  "exemplar": "reference/exemplars/woods_copses.jpg",
+  "seed_text": "Woods",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 39,
@@ -465,7 +579,10 @@
   "cap_h_px": 25.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/ranges_hills.jpg"
+  "exemplar": "reference/exemplars/ranges_hills.jpg",
+  "seed_text": "HILLS",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 40,
@@ -477,7 +594,10 @@
   "cap_h_px": 21.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/antiq_roman.jpg"
+  "exemplar": "reference/exemplars/antiq_roman.jpg",
+  "seed_text": "ROMAN",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 41,
@@ -489,7 +609,10 @@
   "cap_h_px": 31.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/antiq_saxon.jpg"
+  "exemplar": "reference/exemplars/antiq_saxon.jpg",
+  "seed_text": "Saxon",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 42,
@@ -501,7 +624,10 @@
   "cap_h_px": 33.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/antiq_norman.jpg"
+  "exemplar": "reference/exemplars/antiq_norman.jpg",
+  "seed_text": "Norman",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 43,
@@ -513,7 +639,10 @@
   "cap_h_px": 20.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/antiq_subsequent.jpg"
+  "exemplar": "reference/exemplars/antiq_subsequent.jpg",
+  "seed_text": "Subsequent",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 44,
@@ -525,7 +654,10 @@
   "cap_h_px": 34.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/railways_passenger.jpg"
+  "exemplar": "reference/exemplars/railways_passenger.jpg",
+  "seed_text": "RAILWAYS",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 45,
@@ -537,7 +669,10 @@
   "cap_h_px": 34.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/railways_mineral.jpg"
+  "exemplar": "reference/exemplars/railways_mineral.jpg",
+  "seed_text": "RAILWAYS",
+  "seed_ready": true,
+  "needs_recrop": false
  },
  {
   "id": 46,
@@ -549,7 +684,10 @@
   "cap_h_px": 42.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/principal_stations.jpg"
+  "exemplar": "reference/exemplars/principal_stations.jpg",
+  "seed_text": "Stations",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 47,
@@ -561,7 +699,10 @@
   "cap_h_px": 29.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/other_stations.jpg"
+  "exemplar": "reference/exemplars/other_stations.jpg",
+  "seed_text": "Stations",
+  "seed_ready": false,
+  "needs_recrop": true
  },
  {
   "id": 48,
@@ -573,6 +714,9 @@
   "cap_h_px": 23.0,
   "regime": "any",
   "external": null,
-  "exemplar": "reference/exemplars/contour_numeral.jpg"
+  "exemplar": "reference/exemplars/contour_numeral.jpg",
+  "seed_text": "200",
+  "seed_ready": true,
+  "needs_recrop": false
  }
 ]
