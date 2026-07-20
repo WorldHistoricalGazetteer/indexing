@@ -1,8 +1,9 @@
 """HITL UI to check/adjust the letter segmentation of the multi-letter Characteristic-Sheet specimens (the
-word/phrase crops), the counterpart to the single-capital review. For each crop you see it enlarged with its
-letter-boundary cuts overlaid; click to add a cut, click a cut to remove it, and correct the letters. Export
-phrase_seeds.json = [{key, text, cuts:[normalised x]}] which build_alphabet_multi uses instead of the
-auto force_split for those fonts.
+word/phrase crops), the counterpart to the single-capital review. For each crop you see it enlarged (padded
+so descenders aren't clipped) with its letter-boundary cuts overlaid; click to add a cut, click a cut to
+remove, and correct the letters. Italic faces get SLANTED cuts with a per-font angle control so the
+separators follow the letter slope. Export phrase_seeds.json = [{key, text, angle, cuts:[normalised x]}] which
+build_alphabet_multi uses (shear by -angle, then cut) instead of the auto force_split.
 
     python make_phrase_ui.py   # -> phrase_ui.html  (open locally)
 """
@@ -17,10 +18,10 @@ for x in tax:
     p = f"{HERE}/{x['exemplar']}"
     if not os.path.exists(p): continue
     b64 = base64.b64encode(open(p, "rb").read()).decode()
-    letters = "".join(c for c in (x.get("seed_text") or "") if c.isalnum())
-    cards.append(dict(key=x["key"], label=x["label"], text=x.get("seed_text", ""), nlet=len(letters),
+    italic = "italic" in (x.get("base_style") or "")
+    cards.append(dict(key=x["key"], label=x["label"], text=x.get("seed_text", ""),
                       style=f"{x['base_style']}{'CAPS' if x['caps'] else ''}", img=b64,
-                      failed=x["key"] in FAILED))
+                      italic=italic, angle=(14 if italic else 0), failed=x["key"] in FAILED))
 
 HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — phrase seed segmentation</title>
 <style>
@@ -35,9 +36,10 @@ HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — phrase seed seg
  canvas{border:1px solid #bbb;cursor:crosshair;display:block;background:#fff;max-width:100%}
  .row{display:flex;align-items:center;gap:10px;margin-top:8px;flex-wrap:wrap}
  input[type=text]{font-size:15px;padding:4px 8px;font-family:ui-monospace,monospace;width:340px}
+ input[type=range]{width:150px} .ang{font-variant-numeric:tabular-nums;width:38px;display:inline-block}
  .seg{font-variant-numeric:tabular-nums} .ok{color:#2a7d2a} .bad{color:#c0392b}
 </style>
-<h1>Phrase seed segmentation <span class=muted>— click to add a letter cut · click a cut to remove · drag to nudge</span></h1>
+<h1>Phrase seed segmentation <span class=muted>— click to add a letter cut · click a cut to remove · italic faces get a slant control</span></h1>
 <div class=bar>
  <button onclick=save()>Save</button><button onclick=dl()>Download phrase_seeds.json</button>
  <span class=muted id=prog></span>
@@ -46,24 +48,20 @@ HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — phrase seed seg
 <script>
 const DATA=__DATA__;
 let S=JSON.parse(localStorage.getItem("gbstamp_phrase")||"{}");
-const SCALE=3, HIT=6;
+const SCALE=3, HIT=7, PADF=0.35;
 function letters(t){return (t||"").split("").filter(c=>/[A-Za-z0-9]/.test(c));}
+function st(d){if(!S[d.key])S[d.key]={cuts:[],text:d.text,angle:d.angle};if(S[d.key].angle==null)S[d.key].angle=d.angle;return S[d.key];}
+function geom(cv,d){const padTop=d._ih*SCALE*PADF;return {W:cv.width,padTop,yc:padTop+d._ih*SCALE/2,tan:Math.tan((st(d).angle||0)*Math.PI/180)};}
+function xAt(cv,d,xnorm,y){const g=geom(cv,d);return xnorm*g.W+g.tan*(g.yc-y);}
 function draw(cv,d){
- const ctx=cv.getContext("2d"); ctx.clearRect(0,0,cv.width,cv.height);
- ctx.drawImage(d._img,0,0,cv.width,cv.height);
- const cuts=(S[d.key]&&S[d.key].cuts)||[];
- ctx.strokeStyle="#d33"; ctx.lineWidth=1.5;
- cuts.forEach(x=>{const px=x*cv.width;ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,cv.height);ctx.stroke();});
+ const ctx=cv.getContext("2d");ctx.clearRect(0,0,cv.width,cv.height);
+ const g=geom(cv,d);ctx.drawImage(d._img,0,g.padTop,cv.width,d._ih*SCALE);
+ ctx.strokeStyle="#d33";ctx.lineWidth=1.5;
+ (st(d).cuts||[]).forEach(x=>{ctx.beginPath();ctx.moveTo(xAt(cv,d,x,0),0);ctx.lineTo(xAt(cv,d,x,cv.height),cv.height);ctx.stroke();});
 }
-function segInfo(d){
- const cuts=(S[d.key]&&S[d.key].cuts)||[]; const txt=(S[d.key]&&S[d.key].text!=null)?S[d.key].text:d.text;
- const nseg=cuts.length+1, nl=letters(txt).length;
- return {nseg,nl,ok:nseg===nl};
-}
-function prog(){
- let done=0; DATA.forEach(d=>{if(segInfo(d).ok&&((S[d.key]&&S[d.key].cuts)||[]).length>0)done++;});
- document.getElementById("prog").textContent=done+" / "+DATA.length+" fonts segmented";
-}
+function segInfo(d){const s=st(d);return {nseg:(s.cuts||[]).length+1,nl:letters(s.text).length};}
+function prog(){let done=0;DATA.forEach(d=>{const s=segInfo(d);if(s.nseg===s.nl&&(st(d).cuts||[]).length>0)done++;});
+ document.getElementById("prog").textContent=done+" / "+DATA.length+" fonts segmented";}
 function save(){localStorage.setItem("gbstamp_phrase",JSON.stringify(S));prog();}
 function render(){
  const g=document.getElementById("grid");g.innerHTML="";
@@ -73,38 +71,38 @@ function render(){
   card.innerHTML=`<div class=hd><b>${d.key}</b> <span class=muted>${d.label}</span> <span class=badge>${d.style}</span>${d.failed?' <span class=bad>auto-split FAILED</span>':''}</div>`;
   const cv=document.createElement("canvas");card.appendChild(cv);
   const row=document.createElement("div");row.className="row";
-  const inp=document.createElement("input");inp.type="text";
-  inp.value=(S[d.key]&&S[d.key].text!=null)?S[d.key].text:d.text;
+  const inp=document.createElement("input");inp.type="text";inp.value=st(d).text;
   const seg=document.createElement("span");seg.className="seg";
+  const slant=document.createElement("span");
+  slant.innerHTML=`slant <input type=range min=-30 max=30 value=${st(d).angle}> <span class=ang>${st(d).angle}\\u00b0</span>`;
+  const rng=slant.querySelector("input"),angv=slant.querySelector(".ang");
   const rst=document.createElement("button");rst.textContent="clear cuts";
-  row.appendChild(document.createTextNode("letters:"));row.appendChild(inp);row.appendChild(seg);row.appendChild(rst);
+  row.append(Object.assign(document.createElement("span"),{textContent:"letters:"}),inp,seg,slant,rst);
   card.appendChild(row);g.appendChild(card);
+  function upd(){const s=segInfo(d);seg.innerHTML=`segments <b class=${s.nseg===s.nl?'ok':'bad'}>${s.nseg}</b> vs letters <b>${s.nl}</b>`;prog();}
   img.onload=()=>{
-   cv.width=img.naturalWidth*SCALE; cv.height=img.naturalHeight*SCALE;
-   if(!S[d.key])S[d.key]={cuts:[],text:d.text};
-   // seed with even cuts if none yet
-   if(!S[d.key].cuts||!S[d.key].cuts.length){
-     const nl=letters(inp.value).length; const c=[];
-     for(let i=1;i<nl;i++)c.push(i/nl); S[d.key].cuts=c;
-   }
-   draw(cv,d); upd();
+   d._ih=img.naturalHeight;cv.width=img.naturalWidth*SCALE;cv.height=img.naturalHeight*SCALE*(1+2*PADF);
+   if(!st(d).cuts||!st(d).cuts.length){const nl=letters(inp.value).length,c=[];for(let i=1;i<nl;i++)c.push(i/nl);st(d).cuts=c;}
+   draw(cv,d);upd();
   };
   img.src="data:image/jpeg;base64,"+d.img;
-  function upd(){const s=segInfo(d);seg.innerHTML=`segments <b class=${s.ok?'ok':'bad'}>${s.nseg}</b> vs letters <b>${s.nl}</b>`;prog();}
   cv.addEventListener("click",e=>{
-   const r=cv.getBoundingClientRect();const x=(e.clientX-r.left)/r.width;
-   const cuts=S[d.key].cuts;const near=cuts.findIndex(c=>Math.abs(c-x)*cv.width<HIT*2);
-   if(near>=0)cuts.splice(near,1);else cuts.push(x);cuts.sort((a,b)=>a-b);
-   S[d.key].cuts=cuts;draw(cv,d);upd();save();
+   const r=cv.getBoundingClientRect(),sx=cv.width/r.width,sy=cv.height/r.height;
+   const cx=(e.clientX-r.left)*sx,cy=(e.clientY-r.top)*sy;const cuts=st(d).cuts;
+   const near=cuts.findIndex(x=>Math.abs(cx-xAt(cv,d,x,cy))<HIT*2);
+   if(near>=0)cuts.splice(near,1);
+   else{const gg=geom(cv,d);cuts.push((cx-gg.tan*(gg.yc-cy))/gg.W);}
+   cuts.sort((a,b)=>a-b);st(d).cuts=cuts;draw(cv,d);upd();save();
   });
-  inp.addEventListener("input",()=>{S[d.key]=S[d.key]||{cuts:[]};S[d.key].text=inp.value;upd();save();});
-  rst.addEventListener("click",()=>{S[d.key].cuts=[];draw(cv,d);upd();save();});
+  inp.addEventListener("input",()=>{st(d).text=inp.value;upd();save();});
+  rng.addEventListener("input",()=>{st(d).angle=+rng.value;angv.textContent=rng.value+"\\u00b0";draw(cv,d);save();});
+  rst.addEventListener("click",()=>{st(d).cuts=[];draw(cv,d);upd();save();});
  });
  prog();
 }
 function dl(){
- const out=DATA.map(d=>({key:d.key,text:(S[d.key]&&S[d.key].text!=null)?S[d.key].text:d.text,
-   cuts:((S[d.key]&&S[d.key].cuts)||[]).map(x=>+x.toFixed(4))}));
+ const out=DATA.map(d=>({key:d.key,text:st(d).text,angle:st(d).angle||0,
+   cuts:(st(d).cuts||[]).map(x=>+x.toFixed(4))}));
  const b=new Blob([JSON.stringify(out,null,1)],{type:"application/json"});
  const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="phrase_seeds.json";a.click();
 }
@@ -112,4 +110,4 @@ render();
 </script>"""
 out = f"{HERE}/phrase_ui.html"
 open(out, "w").write(HTML.replace("__DATA__", json.dumps(cards)))
-print(f"wrote {out} with {len(cards)} phrase crops ({sum(c['failed'] for c in cards)} flagged as auto-split failures)")
+print(f"wrote {out} with {len(cards)} phrase crops ({sum(c['italic'] for c in cards)} italic w/ slant control)")
