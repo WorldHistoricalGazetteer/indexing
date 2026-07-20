@@ -51,11 +51,12 @@ class Enc(nn.Module):
             nn.Conv2d(1, 32, 3, padding=1), nn.BatchNorm2d(32), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(32, 64, 3, padding=1), nn.BatchNorm2d(64), nn.ReLU(), nn.MaxPool2d(2),
             nn.Conv2d(64, 128, 3, padding=1), nn.BatchNorm2d(128), nn.ReLU(), nn.AdaptiveAvgPool2d(1))
+        self.drop = nn.Dropout(float(os.environ.get("DROPOUT", "0")))
         self.f = nn.Linear(128, d)
     def forward(self, x):
-        z = self.f(self.c(x).flatten(1)); return z / (z.norm(dim=1, keepdim=True) + 1e-8)
+        z = self.f(self.drop(self.c(x).flatten(1))); return z / (z.norm(dim=1, keepdim=True) + 1e-8)
 
-def supcon(z, lab, temp=0.1):
+def supcon(z, lab, temp=float(os.environ.get("TEMP", "0.1"))):
     N = len(z); sim = (z @ z.T) / temp
     eye = torch.eye(N, dtype=torch.bool, device=z.device)
     sim = sim.masked_fill(eye, -1e9)

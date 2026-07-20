@@ -59,20 +59,36 @@ def lexicon_token(text):
 RULES_FILE = "/vast/ishi/gb1900/probe/font/font_hint_rules.json"
 
 def load_rules():
-    """HITL font-conditioned rules -> {(norm_whole_label, font): (token, aat_id, aat_term)}. Applied ONLY
-    when the label equals the term (isolation) — a rule for 'stone' never fires inside 'Standing Stone'."""
-    if not os.path.exists(RULES_FILE): return {}
-    out = {}
+    """HITL font-conditioned rules. Match modes:
+      exact  (default) — fires only when the WHOLE label == term (isolation; 'stone' never fires in 'Standing Stone')
+      suffix           — fires when the label ends with the term ('...Street' -> road), for generic terminfiers
+    Font handling:
+      font: italic|upright|blackletter|numeral — rule keyed on the DETECTED style (font-conditioned)
+      font: "any"                              — fires on the label alone, regardless of detected style; used for
+                                                 OS single-letter abbreviations the spotter can't classify
+                                                 (standalone italic 'W' = Well). An optional `style` then STAMPS
+                                                 the canonical OS lettering onto the label (overriding a noisy /
+                                                 absent detection), per the OS's own typographic convention.
+    Returns (exact {(label,font):(tok,aid,aterm)}, suffix [(term,font,tok,aid,aterm)],
+             anyfont [(term,match,tok,aid,aterm,style)])."""
+    if not os.path.exists(RULES_FILE): return {}, [], []
+    exact = {}; suffix = []; anyfont = []
     for r in json.load(open(RULES_FILE)):
         lab = re.sub(r"\s+", " ", (r.get("label") or r.get("term") or "").strip()).lower()
-        f = r.get("font"); tok = r.get("type") or r.get("aat_term")
-        if lab and f and tok: out[(lab, f)] = (tok, r.get("aat_id"), r.get("aat_term"))
-    return out
+        f = r.get("font"); tok = r.get("type") or r.get("aat_term"); mt = r.get("match", "exact")
+        if not (lab and f and tok): continue
+        if f == "any":
+            anyfont.append((lab, mt, tok, r.get("aat_id"), r.get("aat_term"), r.get("style")))
+        elif mt == "suffix": suffix.append((lab, f, tok, r.get("aat_id"), r.get("aat_term")))
+        else: exact[(lab, f)] = (tok, r.get("aat_id"), r.get("aat_term"))
+    suffix.sort(key=lambda x: -len(x[0])); anyfont.sort(key=lambda x: -len(x[0]))   # longest match wins
+    return exact, suffix, anyfont
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--gate", type=float, default=0.8); a = ap.parse_args()
     xwalk = json.load(open(XWALK)) if os.path.exists(XWALK) else {}
-    rules = load_rules(); print(f"HITL rules: {len(rules)}", flush=True)
+    rules, suffix_rules, anyfont_rules = load_rules()
+    print(f"HITL rules: {len(rules)} exact + {len(suffix_rules)} suffix + {len(anyfont_rules)} any-font", flush=True)
     def aat(tok):
         e = xwalk.get(tok, {}).get("best") if tok else None
         return (e["aat_id"], e["aat_term"]) if e and e.get("aat_id") else (None, None)
@@ -103,12 +119,24 @@ def main():
         tv = d.get("text"); text = tv.get("value") if isinstance(tv, dict) else tv
         fb = nearest_font(lon, lat) if lon is not None else None
         font_style = fb["font"] if fb else None; font_conf = fb["conf"] if fb else None
-        if font_style: nfont += 1; fdist[font_style] += 1
-        # CLEAN typing: HITL whole-label rule (isolation) first, then font-CONDITIONED term, then the
-        # font-unconditional lexicon, then font-class fallback.
+        # CLEAN typing: OS single-letter abbreviation (any-font, may STAMP canonical style) first, then the
+        # HITL whole-label rule (isolation), then font-CONDITIONED term, the font-unconditional lexicon, and
+        # finally the font-class fallback.
         aid = aterm = None
         nl = re.sub(r"\s+", " ", (text or "").strip()).lower()
-        rule = rules.get((nl, font_style))
+        rule = None
+        for term, mt, tk, ai, at, style in anyfont_rules:
+            if (nl == term) or (mt == "suffix" and nl.endswith(" " + term)):
+                rule = (tk, ai, at)
+                if style:                            # OS convention overrides a noisy/absent detection
+                    if font_style != style or font_conf is None: font_conf = 1.0
+                    font_style = style
+                break
+        if not rule: rule = rules.get((nl, font_style))
+        if not rule and font_style:                  # suffix rules (e.g. '...Street' -> road)
+            for term, f, tk, ai, at in suffix_rules:
+                if f == font_style and (nl == term or nl.endswith(" " + term)): rule = (tk, ai, at); break
+        if font_style: nfont += 1; fdist[font_style] += 1
         if rule:
             tok, aid, aterm = rule; src = "rule"
             if not aid: aid, aterm = aat(tok)

@@ -3,7 +3,7 @@ label is exactly 'Stone'; multi-word tags like 'Chalk Pit' are their own rules),
 lettering style. Each spotter word-box is joined back to its GB1900 pin to recover the full label; groups
 are ranked, isolated (single-word) vs phrase (multi-word) flagged, with per-style example crops (de-rotated
 full label) + counts. Type entry is an AAT SEARCH backed by the resolved vocabulary. Exports
-font_hint_rules.json: [{label, isolated, font, aat_id, aat_term}].
+font_hint_rules.json: [{label, isolated, font, match(exact|suffix), aat_id, aat_term}].
 
     /vast/ishi/envs/boundary/bin/python make_hint_ui.py
 """
@@ -143,18 +143,19 @@ const TERM2ID={}; VOCAB.forEach(v=>TERM2ID[v.term.toLowerCase()]=v.id);
 document.getElementById("aat").innerHTML=VOCAB.map(v=>`<option value="${v.term}">`).join("");
 let R=JSON.parse(localStorage.getItem("gbstamp_hints2")||"{}");
 function save(){localStorage.setItem("gbstamp_hints2",JSON.stringify(R));prog()}
-function prog(){document.getElementById("prog").textContent=Object.values(R).reduce((a,o)=>a+Object.values(o).filter(Boolean).length,0)}
-function set(lab,st,v){R[lab]=R[lab]||{}; if(v)R[lab][st]=v; else delete R[lab][st]; save()}
+function prog(){document.getElementById("prog").textContent=Object.values(R).reduce((a,o)=>a+Object.values(o).filter(rc=>rc&&rc.t).length,0)}
+function set(lab,st,f,v){R[lab]=R[lab]||{}; R[lab][st]=R[lab][st]||{}; R[lab][st][f]=v; if(f=='t'&&!v)delete R[lab][st]; save()}
 function render(){
  const iso=document.getElementById("fiso").checked, phr=document.getElementById("fphr").checked;
  const g=document.getElementById("grid");g.innerHTML="";
  DATA.filter(d=>d.isolated?iso:phr).forEach(d=>{
   const cols=Object.entries(d.styles).map(([st,info])=>{
-   const cur=(R[d.label]||{})[st]||"";
+   const rc=(R[d.label]||{})[st]||{}; const cur=rc.t||""; const cm=rc.m||"exact"; const L=d.label.replace(/'/g,"\\'");
    const crops=(info.crops||[]).map(b=>`<img src="data:image/jpeg;base64,${b}">`).join("");
+   const msel=`<select onchange="set('${L}','${st}','m',this.value)"><option value=exact ${cm=='exact'?'selected':''}>whole label (isolation)</option><option value=suffix ${cm=='suffix'?'selected':''}>as suffix (…${d.disp})</option></select>`;
    return `<div class=st><div class=stname><span class=dot style="background:${COL[st]}"></span>${st} <span class=muted>×${info.n}</span></div>
      <div class=crops>${crops}</div><input type=text list=aat placeholder="AAT type…" value="${cur.replace(/"/g,'&quot;')}"
-       oninput="set('${d.label.replace(/'/g,"\\'")}','${st}',this.value)"></div>`;
+       oninput="set('${L}','${st}','t',this.value)">${msel}</div>`;
   }).join("");
   const el=document.createElement("div");el.className="card";
   el.innerHTML=`<span class=term>${(d.disp||"").replace(/</g,"&lt;")}</span>`+
@@ -163,10 +164,10 @@ function render(){
   g.appendChild(el);
  });
 }
-function dl(){const out=[];for(const[lab,o]of Object.entries(R))for(const[st,ty]of Object.entries(o))if(ty){
-   out.push({label:lab,isolated:!lab.includes(" "),font:st,aat_term:ty,aat_id:TERM2ID[ty.toLowerCase()]||null});}
+function dl(){const out=[];for(const[lab,o]of Object.entries(R))for(const[st,rc]of Object.entries(o))if(rc&&rc.t){
+   out.push({label:lab,isolated:!lab.includes(" "),font:st,match:rc.m||"exact",aat_term:rc.t,aat_id:TERM2ID[rc.t.toLowerCase()]||null});}
  const b=new Blob([JSON.stringify(out,null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="font_hint_rules.json";a.click();}
-function imp(e){const r=new FileReader();r.onload=()=>{R={};JSON.parse(r.result).forEach(x=>{const l=x.label||x.term;R[l]=R[l]||{};R[l][x.font]=x.aat_term||x.type});save();render()};r.readAsText(e.target.files[0])}
+function imp(e){const r=new FileReader();r.onload=()=>{R={};JSON.parse(r.result).forEach(x=>{const l=x.label||x.term;R[l]=R[l]||{};R[l][x.font]={t:x.aat_term||x.type,m:x.match||"exact"}});save();render()};r.readAsText(e.target.files[0])}
 document.getElementById("grid").addEventListener("click",e=>{if(e.target.tagName==="IMG"){document.getElementById("lbimg").src=e.target.src;document.getElementById("lb").style.display="flex";}});
 document.getElementById("fiso").addEventListener("change",render);
 document.getElementById("fphr").addEventListener("change",render);

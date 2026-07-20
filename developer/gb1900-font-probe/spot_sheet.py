@@ -55,6 +55,7 @@ def main():
     ap.add_argument("--lon", type=float, required=True); ap.add_argument("--lat", type=float, required=True)
     ap.add_argument("--tag", required=True); ap.add_argument("--r", type=int, default=8, help="tile radius")
     ap.add_argument("--mos", type=int, default=8); ap.add_argument("--overlap", type=int, default=1)
+    ap.add_argument("--cleanup", action="store_true", help="delete this region's z17 tiles after spotting")
     a = ap.parse_args(); t0 = time.time()
     cxp, cyp = lonlat_to_px(a.lon, a.lat); ctx, cty = int(cxp // 256), int(cyp // 256)
     tx0, ty0 = ctx - a.r, cty - a.r; side = 2 * a.r + 1
@@ -93,6 +94,17 @@ def main():
     outp = f"{OUT}/boxes_{a.tag}.jsonl"
     with open(outp, "w") as f:
         for rec in boxes.values(): f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    try: os.rmdir(mdir)
+    except OSError: pass
+    if a.cleanup:                                  # reclaim /vast: drop this region's z17 tiles
+        dead = 0
+        for tx in range(tx0, tx0 + side):
+            for ty in range(ty0, ty0 + side):
+                try: os.remove(f"{TILES}/{tx}/{ty}.png"); dead += 1
+                except OSError: pass
+            try: os.rmdir(f"{TILES}/{tx}")
+            except OSError: pass
+        print(f"[{a.tag}] cleaned {dead} tiles", flush=True)
     print(f"[{a.tag}] DONE {len(boxes)} boxes -> {outp} ({time.time()-t0:.0f}s)", flush=True)
 
 if __name__ == "__main__":
