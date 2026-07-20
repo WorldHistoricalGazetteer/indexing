@@ -62,15 +62,20 @@ def main():
     origins = [(tx0 + i, ty0 + j) for i in range(0, side, step) for j in range(0, side, step)]
     print(f"{a.tag}: region {side}x{side} tiles, {len(origins)} mosaics of {a.mos*256}px", flush=True)
 
+    import torch
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    print(f"{a.tag}: spotter device={dev}", flush=True)
     runner = MapTextRunner(pd.DataFrame(),
         cfg_file=f"{INST}/MapTextPipeline/configs/ViTAEv2_S/rumsey/final_rumsey.yaml",
-        weights_file=f"{INST}/weights/rumsey-finetune.pth", device="cpu")
+        weights_file=f"{INST}/weights/rumsey-finetune.pth", device=dev)
     mdir = f"{OUT}/mosaics_{a.tag}"; os.makedirs(mdir, exist_ok=True)
     boxes = {}                                     # dedup key -> record
     for k, (mx0, my0) in enumerate(origins):
         img, miss = mosaic(mx0, my0, a.mos)
         mf = f"{mdir}/m_{mx0}_{my0}.png"; img.save(mf); gx0, gy0 = mx0 * 256, my0 * 256
         df = runner.run_on_image(mf, return_dataframe=True)
+        if df is None or len(df) == 0 or "score" not in df.columns:   # blank/uncached mosaic -> 0 boxes
+            os.remove(mf); print(f"  [{a.tag}] mosaic {k+1}/{len(origins)} empty (miss={miss})", flush=True); continue
         df = df[df["image_id"].astype(str) == os.path.basename(mf)].reset_index(drop=True)
         df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0.0)
         df = df[df["score"] >= SCORE_MIN]
