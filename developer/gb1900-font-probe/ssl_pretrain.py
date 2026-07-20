@@ -57,7 +57,7 @@ class Enc(nn.Module):
 
 def supcon(z, lab, temp=0.1):
     N = len(z); sim = (z @ z.T) / temp
-    eye = torch.eye(N, dtype=torch.bool)
+    eye = torch.eye(N, dtype=torch.bool, device=z.device)
     sim = sim.masked_fill(eye, -1e9)
     logp = sim - torch.logsumexp(sim, 1, keepdim=True)
     pos = (lab[:, None] == lab[None, :]) & ~eye
@@ -74,6 +74,10 @@ def augment(x):
 
 def main():
     torch.manual_seed(0); np.random.seed(0)
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    epochs = int(os.environ.get("EPOCHS", "12")); wpb = int(os.environ.get("WORDS_PER_BATCH", "48"))
+    enc_out = os.environ.get("ENC", ENC)
+    print(f"device={dev} epochs={epochs} words/batch={wpb} -> {enc_out}", flush=True)
     glyphs, letters, wid = extract()
     # keep only words with >=2 glyphs (need positives)
     from collections import Counter
@@ -83,20 +87,19 @@ def main():
     by = {w: np.where(wid == w)[0] for w in words}
     print(f"training glyphs {len(glyphs)} across {len(words)} words (>=2 glyphs)", flush=True)
 
-    net = Enc(); opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4); net.train()
-    WORDS_PER_BATCH = 48; EPOCHS = 12
-    for ep in range(EPOCHS):
+    net = Enc().to(dev); opt = torch.optim.Adam(net.parameters(), lr=1e-3, weight_decay=1e-4); net.train()
+    for ep in range(epochs):
         np.random.shuffle(words); losses = []
-        for b in range(0, len(words), WORDS_PER_BATCH):
-            wb = words[b:b + WORDS_PER_BATCH]
+        for b in range(0, len(words), wpb):
+            wb = words[b:b + wpb]
             idx = np.concatenate([by[w] for w in wb]); lab = np.concatenate([[w] * len(by[w]) for w in wb])
             xb = np.stack([augment(glyphs[j]) for j in idx]).astype(np.float32)[:, None] / 255.0
-            xb = torch.tensor((xb - 0.8) / 0.3); lb = torch.tensor(lab)
+            xb = torch.tensor((xb - 0.8) / 0.3).to(dev); lb = torch.tensor(lab).to(dev)
             opt.zero_grad(); loss = supcon(net(xb), lb); loss.backward(); opt.step()
             losses.append(float(loss))
-        print(f"epoch {ep+1}/{EPOCHS} supcon={np.mean(losses):.4f}", flush=True)
-    torch.save(net.state_dict(), ENC)
-    print(f"saved encoder -> {ENC}", flush=True)
+        print(f"epoch {ep+1}/{epochs} supcon={np.mean(losses):.4f}", flush=True)
+    torch.save(net.state_dict(), enc_out)
+    print(f"saved encoder -> {enc_out}", flush=True)
 
 if __name__ == "__main__":
     main()

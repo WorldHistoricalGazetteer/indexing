@@ -8,11 +8,12 @@ instead of raw rasters. If the SSL features beat raw pixels, this is the first l
     /vast/ishi/envs/boundary/bin/python ssl_eval.py
 """
 import sys; sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
-import json, numpy as np, cv2, torch
+import os, json, numpy as np, cv2, torch
 from collections import Counter, defaultdict
 from disc_train import fit
 from make_font_testset_v2 import derotate
-from ssl_pretrain import Enc, G, ENC
+from ssl_pretrain import Enc, G, ENC as ENC_DEFAULT
+ENC = os.environ.get("ENC", ENC_DEFAULT)
 
 SPOT = "/vast/ishi/gb1900/edition/spot"; FD = "/vast/ishi/gb1900/probe/font"
 SETS = [(f"{SPOT}/font_testset_v2_boxes.json", f"{FD}/font_testset_decisions_1.json"),
