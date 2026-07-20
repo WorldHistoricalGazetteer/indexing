@@ -46,8 +46,8 @@ def main():
         if not gp: return None
         patch = derotate({"gpoly": gp, "lat": r["lat"]})
         if patch is None or patch.size < 60: return None
-        im = Image.fromarray(patch).convert("L"); h = 40; im = im.resize((max(1, int(im.width * h / im.height)), h), Image.LANCZOS)
-        b = io.BytesIO(); im.save(b, "JPEG", quality=82); return base64.b64encode(b.getvalue()).decode()
+        im = Image.fromarray(patch).convert("L"); h = 200; im = im.resize((max(1, int(im.width * h / im.height)), h), Image.LANCZOS)
+        b = io.BytesIO(); im.save(b, "JPEG", quality=90); return base64.b64encode(b.getvalue()).decode()
 
     cards = []
     jobs = []
@@ -78,10 +78,14 @@ HTML = r"""<!doctype html><html><head><meta charset=utf-8><title>GB-STAMP — te
  .styles{display:flex;flex-wrap:wrap;gap:14px;margin-top:8px}
  .st{border:1px solid #e7e0d0;border-radius:6px;padding:8px;min-width:210px}
  .stname{font-weight:600;font-size:13px;margin-bottom:4px}
- .crops img{height:36px;margin:2px;background:#fbfaf5;border:1px solid #eee;border-radius:3px}
- select{font-size:13px;padding:3px;margin-top:5px;width:100%}
+ .crops{display:flex;flex-wrap:wrap;gap:5px}
+ .crops img{height:64px;background:#fbfaf5;border:1px solid #ddd;border-radius:3px;cursor:zoom-in}
+ select{font-size:13px;padding:4px;margin-top:6px;width:100%}
  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
+ #lb{position:fixed;inset:0;background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;z-index:50;cursor:zoom-out}
+ #lb img{max-width:94vw;max-height:90vh;image-rendering:auto;background:#fbfaf5;border:4px solid #fff;border-radius:4px}
 </style></head><body>
+<div id=lb onclick="this.style.display='none'"><img id=lbimg></div>
 <header><h1>GB-STAMP — text-hint review: what does each word mean <em>in each lettering style</em>?</h1>
 <div><span id=prog>0</span> rules set · <button onclick=dl()>Download rules JSON</button>
  <label style="cursor:pointer">Import<input type=file style=display:none onchange=imp(event)></label>
@@ -112,6 +116,8 @@ function render(){
 function dl(){const out=[];for(const[k,o]of Object.entries(R))for(const[st,ty]of Object.entries(o))if(ty)out.push({term:k,font:st,type:ty});
  const b=new Blob([JSON.stringify(out,null,1)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(b);a.download="font_hint_rules.json";a.click();}
 function imp(e){const r=new FileReader();r.onload=()=>{R={};JSON.parse(r.result).forEach(x=>{R[x.term]=R[x.term]||{};R[x.term][x.font]=x.type});save();render()};r.readAsText(e.target.files[0])}
+document.getElementById("grid").addEventListener("click",e=>{
+  if(e.target.tagName==="IMG"){document.getElementById("lbimg").src=e.target.src;document.getElementById("lb").style.display="flex";}});
 render();prog();
 </script></body></html>"""
 
