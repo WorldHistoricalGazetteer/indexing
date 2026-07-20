@@ -32,6 +32,8 @@ def main():
             else:
                 props = {"t": r.get("text"), "ty": ty, "aat": r.get("aat_term"),
                          "fs": r.get("font_style"), "src": r.get("type_source")}
+                ft = r.get("font_top3")           # ranked shortlist -> "font conf|font conf|…" for the map pie
+                if ft: props["ft"] = "|".join(f"{f} {c}" for f, c in ft)
             cnt[ty] += 1; n += 1
             f.write(json.dumps({"type": "Feature",
                                 "geometry": {"type": "Point", "coordinates": [round(r["lon"], 6), round(r["lat"], 6)]},

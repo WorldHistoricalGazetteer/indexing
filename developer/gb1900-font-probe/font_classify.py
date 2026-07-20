@@ -1,6 +1,13 @@
-"""Classify the font of every spotter box (the validated hybrid: SSL encoder + same-letter kNN vs the
-human reference), writing boxes_font.jsonl {lon,lat,gcx,gcy,text,font,conf,nchar}. Feeds the GB-STAMP
-fusion. Confidence is the margin-weighted per-box agreement; downstream keeps only conf>=gate."""
+"""Classify the font of spotter boxes (the validated hybrid: SSL encoder + same-letter kNN vs the human
+reference). Emits {lon,lat,gcx,gcy,text,font,conf,fonts,nchar,score,gpoly} — `fonts` is the full ranked
+top-3 [font,certainty] shortlist. Feeds the GB-STAMP fusion (downstream keeps only conf>=gate).
+
+Two entry points:
+  classify_boxes(boxes)  — in-process, model loaded once and cached; called by spot_sheet.py --classify so a
+                           region is classified WHILE its tiles are still on /vast (no reload).
+  python font_classify.py — batch/backfill CLI over boxes_*.jsonl (uses fetch-on-miss in make_font_testset_v2
+                           when tiles have already been cleaned; set FCTILES to an isolated cache).
+"""
 import sys; sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
 import os, glob, json, numpy as np, torch
 import concurrent.futures as cf
@@ -11,27 +18,27 @@ from make_font_testset_v2 import derotate
 
 SPOT = "/vast/ishi/gb1900/edition/spot"
 ENC = os.environ.get("ENC", f"{SPOT}/encoder_full.pt")
-OUT = f"{SPOT}/boxes_font.jsonl"
 
-def main():
+_CLF = None
+def load_classifier():
+    """Load the SSL encoder + embed the human-reference glyphs once; cached for the process lifetime."""
+    global _CLF
+    if _CLF is not None: return _CLF
     net = Enc(); net.load_state_dict(torch.load(ENC, map_location="cpu")); net.eval()
-    # reference: human-labelled glyphs -> embeddings
     ref = []
-    for bf, df in SETS: ref += harvest(bf, df)                 # [(font, [(L,cap,glyph)])]
+    for bf, df in SETS: ref += harvest(bf, df)
     rg = [(L, cap, g, f) for f, gl in ref for (L, cap, g) in gl]
     rl = np.array([c[0] for c in rg]); rc = np.array([c[1] for c in rg]); rf = np.array([c[3] for c in rg])
     with torch.no_grad():
         RX = np.stack([c[2] for c in rg]).astype(np.float32)[:, None] / 255.0
         RZ = net(torch.tensor((RX - 0.8) / 0.3)).numpy()
-    print(f"reference glyphs: {len(rg)} fonts {dict(Counter(rf.tolist()))}", flush=True)
+    _CLF = (net, rl, rc, rf, RZ)
+    return _CLF
 
-    boxes = []
-    for f in glob.glob(f"{SPOT}/boxes_*.jsonl"):
-        for line in open(f):
-            r = json.loads(line)
-            if r.get("score", 0) >= 0.55 and len([c for c in r["text"] if c.isalnum()]) >= 2: boxes.append(r)
-    print(f"boxes to classify: {len(boxes)}", flush=True)
-
+def classify_boxes(boxes, clf=None):
+    """Return a font record per classifiable box. `boxes` is any iterable of spotter-box dicts."""
+    net, rl, rc, rf, RZ = clf or load_classifier()
+    boxes = [r for r in boxes if r.get("score", 0) >= 0.55 and len([c for c in r["text"] if c.isalnum()]) >= 2]
     def prep(r):
         patch = derotate(r)
         if patch is None: return None
@@ -41,10 +48,7 @@ def main():
     with cf.ThreadPoolExecutor(max_workers=16) as ex:
         for res in ex.map(prep, boxes):
             if res: prepped.append(res)
-    print(f"prepped (glyphs extracted): {len(prepped)}", flush=True)
-
-    fout = open(OUT, "w"); n = 0; dist = Counter()
-    B = 512
+    out = []; B = 512
     for i in range(0, len(prepped), B):
         chunk = prepped[i:i + B]
         allg = [(bi, L, cap, g) for bi, (r, gl) in enumerate(chunk) for (L, cap, g) in gl]
@@ -65,13 +69,25 @@ def main():
             tot = sum(w.values()) + 1e-9
             ranked = sorted(((fnt, round(float(sc / tot), 3)) for fnt, sc in w.items()), key=lambda kv: -kv[1])[:3]
             pred, conf = ranked[0]                          # winner; `fonts` keeps the full ranked shortlist
-            fout.write(json.dumps(dict(lon=r["lon"], lat=r["lat"], gcx=r["gcx"], gcy=r["gcy"],
-                       text=r["text"], font=pred, conf=conf, fonts=ranked, nchar=len(gl),
-                       score=r.get("score"), gpoly=r.get("gpoly"))) + "\n")     # keep detection score + full outline
-            n += 1; dist[pred] += 1
-        if i % 4096 == 0: print(f"  {i}/{len(prepped)} classified={n}", flush=True)
-    fout.close()
-    print(f"FONTCLASSIFYDONE wrote {n} -> {OUT}; font dist {dict(dist)}", flush=True)
+            out.append(dict(lon=r["lon"], lat=r["lat"], gcx=r["gcx"], gcy=r["gcy"], text=r["text"],
+                            font=pred, conf=conf, fonts=ranked, nchar=len(gl),
+                            score=r.get("score"), gpoly=r.get("gpoly")))
+    return out
+
+def main():
+    OUT = os.environ.get("FONT_OUT", f"{SPOT}/boxes_font.jsonl")
+    clf = load_classifier()
+    print(f"reference glyphs: {len(clf[1])} fonts {dict(Counter(clf[3].tolist()))}", flush=True)
+    boxes = []
+    for f in glob.glob(f"{SPOT}/boxes_*.jsonl"):
+        if os.path.basename(f).startswith("boxes_font"): continue    # never re-read our own output
+        for line in open(f):
+            boxes.append(json.loads(line))
+    print(f"boxes to classify: {len(boxes)}", flush=True)
+    recs = classify_boxes(boxes, clf)
+    with open(OUT, "w") as fout:
+        for r in recs: fout.write(json.dumps(r) + "\n")
+    print(f"FONTCLASSIFYDONE wrote {len(recs)} -> {OUT}; font dist {dict(Counter(r['font'] for r in recs))}", flush=True)
 
 if __name__ == "__main__":
     main()

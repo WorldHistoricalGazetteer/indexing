@@ -11,9 +11,11 @@
 #SBATCH --array=0-15
 #SBATCH -o /vast/ishi/gb1900/probe/font/cov/full_%a.log
 # FULL-COVERAGE spotting, driver-free. GPU nodes have outbound network (verified 2026-07-20), so spot_sheet
-# fetches z17 tiles on-demand and --cleanup deletes each region's tiles once its boxes are written, so /vast
-# never accumulates tiles. 16 array tasks each take 1/16 of centres_all.txt (NR%16). Resumable: a region
-# whose boxes_<tag>.jsonl exists (even empty) is skipped, so re-submitting continues where it left off.
+# fetches z17 tiles on-demand and --cleanup ARCHIVES each region's tiles to /ix1 once its boxes are written,
+# so /vast never accumulates tiles AND the tiles survive for a later font-classify pass (font_classify reads
+# /ix1, no NLS re-fetch). Font classification is a SEPARATE pass (not inline: loading the CPU encoder inside
+# the CUDA spot process is unreliable). 16 array tasks each take 1/16 of centres_all.txt (NR%16). Resumable:
+# a region whose boxes_<tag>.jsonl exists (even empty) is skipped, so re-submitting continues.
 set -u
 cd /vast/ishi/gb1900/probe/font
 MRPY=/vast/ishi/envs/mapreader/bin/python

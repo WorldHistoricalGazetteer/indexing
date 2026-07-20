@@ -8,7 +8,7 @@ within the discipline of [[vast_capacity_and_crop_fragments]]).
 import argparse, os, io, math, urllib.request
 import concurrent.futures as cf
 
-N17 = 2 ** 17; TILES = "/vast/ishi/gb1900/tiles17"
+N17 = 2 ** 17; TILES = os.environ.get("FCTILES") or "/vast/ishi/gb1900/tiles17"
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 
 def lonlat_to_px(lon, lat):

@@ -6,12 +6,12 @@ No legacy types are read or fused. Output: gb_stamp.jsonl.
 
     python fuse_edition.py --gate 0.8
 """
-import argparse, json, math, os, re
+import argparse, glob, json, math, os, re
 from collections import Counter, defaultdict
 
 BASE = "/vast/ishi/gb1900/edition"
 NT = f"{BASE}/national_typed.jsonl"           # used ONLY for raw text + lon/lat (CC0 raw dump)
-FONT = f"{BASE}/spot/boxes_font.jsonl"
+FONT = f"{BASE}/spot/boxes_font*.jsonl"        # batch backfill + per-region inline (boxes_font_<tag>.jsonl)
 XWALK = "/vast/ishi/gb1900/probe/font/gb_stamp_aat_crosswalk.json"
 OUT = f"{BASE}/gb_stamp.jsonl"
 
@@ -94,8 +94,8 @@ def main():
         return (e["aat_id"], e["aat_term"]) if e and e.get("aat_id") else (None, None)
 
     grid = defaultdict(list); nf = 0
-    if os.path.exists(FONT):
-        for line in open(FONT):
+    for fp in glob.glob(FONT):
+        for line in open(fp):
             r = json.loads(line)
             if r["conf"] < a.gate: continue
             grid[(round(r["lon"], 3), round(r["lat"], 3))].append(r); nf += 1

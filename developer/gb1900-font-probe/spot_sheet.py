@@ -6,13 +6,13 @@ font test-set and the same-letter alphabet.
 
     /home/stg135/.conda/envs/mapreader/bin/python spot_sheet.py --lon -1.78 --lat 51.18 --tag amesbury --r 8
 """
-import argparse, os, io, math, json, time, urllib.request, numpy as np
+import argparse, os, io, math, json, time, shutil, urllib.request, numpy as np
 import pandas as pd
 from shapely import wkt
 from PIL import Image
 from mapreader import MapTextRunner
 
-N17 = 2 ** 17; TILES = "/vast/ishi/gb1900/tiles17"
+N17 = 2 ** 17; TILES = "/vast/ishi/gb1900/tiles17"; IX1 = "/ix1/ishi/gb1900/tiles17"
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"
 OUT = "/vast/ishi/gb1900/edition/spot"; os.makedirs(OUT, exist_ok=True)
@@ -56,6 +56,7 @@ def main():
     ap.add_argument("--tag", required=True); ap.add_argument("--r", type=int, default=8, help="tile radius")
     ap.add_argument("--mos", type=int, default=8); ap.add_argument("--overlap", type=int, default=1)
     ap.add_argument("--cleanup", action="store_true", help="delete this region's z17 tiles after spotting")
+    ap.add_argument("--classify", action="store_true", help="font-classify this region's boxes before cleanup (tiles still hot)")
     a = ap.parse_args(); t0 = time.time()
     cxp, cyp = lonlat_to_px(a.lon, a.lat); ctx, cty = int(cxp // 256), int(cyp // 256)
     tx0, ty0 = ctx - a.r, cty - a.r; side = 2 * a.r + 1
@@ -96,15 +97,32 @@ def main():
         for rec in boxes.values(): f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     try: os.rmdir(mdir)
     except OSError: pass
-    if a.cleanup:                                  # reclaim /vast: drop this region's z17 tiles
-        dead = 0
+    if a.classify:                                 # classify WHILE tiles are still hot (no reload later)
+        try:
+            from font_classify import classify_boxes
+            recs = classify_boxes(list(boxes.values()))
+            with open(f"{OUT}/boxes_font_{a.tag}.jsonl", "w") as cf_:
+                for rec in recs: cf_.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            print(f"[{a.tag}] classified {len(recs)} boxes", flush=True)
+        except Exception as e:
+            print(f"[{a.tag}] classify FAILED: {e}", flush=True)
+    if a.cleanup:                                  # free /vast by ARCHIVING this region's tiles to /ix1
+        moved = 0
         for tx in range(tx0, tx0 + side):
             for ty in range(ty0, ty0 + side):
-                try: os.remove(f"{TILES}/{tx}/{ty}.png"); dead += 1
-                except OSError: pass
+                src = f"{TILES}/{tx}/{ty}.png"
+                if not os.path.exists(src): continue
+                dst = f"{IX1}/{tx}/{ty}.png"
+                try:
+                    if os.path.exists(dst): os.remove(src)          # already archived by a neighbour
+                    else: os.makedirs(f"{IX1}/{tx}", exist_ok=True); shutil.move(src, dst)
+                    moved += 1
+                except OSError:
+                    try: os.remove(src)
+                    except OSError: pass
             try: os.rmdir(f"{TILES}/{tx}")
             except OSError: pass
-        print(f"[{a.tag}] cleaned {dead} tiles", flush=True)
+        print(f"[{a.tag}] archived {moved} tiles to /ix1", flush=True)
     print(f"[{a.tag}] DONE {len(boxes)} boxes -> {outp} ({time.time()-t0:.0f}s)", flush=True)
 
 if __name__ == "__main__":
