@@ -53,7 +53,10 @@ def main():
     html = (HTML.replace("data:image/png", "data:image/jpeg")
                 .replace("minmax(230px,1fr)", "minmax(560px,1fr)")
                 .replace("min-height:70px", "min-height:250px")
-                .replace(".imgwrap img{{image-rendering:auto;max-width:100%}}", ".imgwrap img{{image-rendering:auto}}"))
+                .replace(".imgwrap img{{image-rendering:auto;max-width:100%}}", ".imgwrap img{{image-rendering:auto}}")
+                .replace('localStorage.getItem("font_testset")', 'localStorage.getItem("font_testset_v3")')
+                .replace('localStorage.setItem("font_testset"', 'localStorage.setItem("font_testset_v3"')
+                .replace("font_testset_decisions.json", "font_testset_v3_decisions.json"))
     open(OUT, "w").write(html.format(crops=json.dumps(crops)))
     print(f"cropped: {len(crops)}; wrote {OUT} ({os.path.getsize(OUT)//1024} KB) + froze {BOXES_OUT}", flush=True)
 
