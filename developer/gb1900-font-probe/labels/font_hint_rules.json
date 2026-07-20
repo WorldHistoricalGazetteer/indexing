@@ -1,0 +1,37 @@
+[
+ {
+  "term": "street",
+  "font": "upright",
+  "type": "road"
+ },
+ {
+  "term": "road",
+  "font": "upright",
+  "type": "road"
+ },
+ {
+  "term": "spring",
+  "font": "italic",
+  "type": "spring"
+ },
+ {
+  "term": "lane",
+  "font": "upright",
+  "type": "road"
+ },
+ {
+  "term": "quarry",
+  "font": "italic",
+  "type": "quarry"
+ },
+ {
+  "term": "church",
+  "font": "upright",
+  "type": "church"
+ },
+ {
+  "term": "chapel",
+  "font": "italic",
+  "type": "church"
+ }
+]

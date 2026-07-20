@@ -56,9 +56,23 @@ def lexicon_token(text):
         if rx.search(text or ""): return tok
     return None
 
+RULES_FILE = "/vast/ishi/gb1900/probe/font/font_hint_rules.json"
+
+def load_rules():
+    """HITL font-conditioned rules -> {(norm_whole_label, font): (token, aat_id, aat_term)}. Applied ONLY
+    when the label equals the term (isolation) — a rule for 'stone' never fires inside 'Standing Stone'."""
+    if not os.path.exists(RULES_FILE): return {}
+    out = {}
+    for r in json.load(open(RULES_FILE)):
+        lab = re.sub(r"\s+", " ", (r.get("label") or r.get("term") or "").strip()).lower()
+        f = r.get("font"); tok = r.get("type") or r.get("aat_term")
+        if lab and f and tok: out[(lab, f)] = (tok, r.get("aat_id"), r.get("aat_term"))
+    return out
+
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--gate", type=float, default=0.8); a = ap.parse_args()
     xwalk = json.load(open(XWALK)) if os.path.exists(XWALK) else {}
+    rules = load_rules(); print(f"HITL rules: {len(rules)}", flush=True)
     def aat(tok):
         e = xwalk.get(tok, {}).get("best") if tok else None
         return (e["aat_id"], e["aat_term"]) if e and e.get("aat_id") else (None, None)
@@ -90,14 +104,21 @@ def main():
         fb = nearest_font(lon, lat) if lon is not None else None
         font_style = fb["font"] if fb else None; font_conf = fb["conf"] if fb else None
         if font_style: nfont += 1; fdist[font_style] += 1
-        # CLEAN typing: font-CONDITIONED term first (the GB-STAMP disambiguation), then font-unconditional
-        # lexicon, then font-class fallback.
-        tok = font_cond_token(text, font_style); src = "font_conditioned" if tok else None
-        if not tok:
-            tok = lexicon_token(text); src = "lexicon" if tok else None
-        if not tok and font_style in FONT_CLASS: tok, src = FONT_CLASS[font_style], "font"
+        # CLEAN typing: HITL whole-label rule (isolation) first, then font-CONDITIONED term, then the
+        # font-unconditional lexicon, then font-class fallback.
+        aid = aterm = None
+        nl = re.sub(r"\s+", " ", (text or "").strip()).lower()
+        rule = rules.get((nl, font_style))
+        if rule:
+            tok, aid, aterm = rule; src = "rule"
+            if not aid: aid, aterm = aat(tok)
+        else:
+            tok = font_cond_token(text, font_style); src = "font_conditioned" if tok else None
+            if not tok:
+                tok = lexicon_token(text); src = "lexicon" if tok else None
+            if not tok and font_style in FONT_CLASS: tok, src = FONT_CLASS[font_style], "font"
+            aid, aterm = aat(tok)
         if tok: ntyped += 1; tsrc[src] += 1
-        aid, aterm = aat(tok)
         rec = dict(place_id=d.get("place_id"), text=text, lon=lon, lat=lat,
                    type=tok, type_source=src, font_style=font_style, font_conf=font_conf,
                    aat_id=aid, aat_term=aterm)
