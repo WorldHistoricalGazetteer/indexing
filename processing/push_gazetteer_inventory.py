@@ -161,6 +161,8 @@ def _authority_meta(namespace: str) -> dict[str, Any]:
                 "license_url": auth.get("license_url"),
                 "rights_holder": auth.get("rights_holder"),
                 "source_url": auth.get("source_url"),
+                # Per-place link template to the source's own web page (place#121).
+                "web_item": auth.get("web_item"),
                 "image": auth.get("image"),
                 "contributors": auth.get("contributors") or [],
             }
@@ -188,7 +190,7 @@ def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
     """
     out: dict[str, Any] = {}
     for k in ("citation_text", "license_spdx", "license_url",
-              "rights_holder", "source_url", "image"):
+              "rights_holder", "source_url", "web_item", "image"):
         if meta.get(k):
             out[k] = meta[k]
     if meta.get("contributors"):
@@ -409,6 +411,8 @@ def _expand_whg_dataset_entries(
             "h3_coverage": coverage,
             "h3_coverage_coarse": _coarsen_coverage(coverage),
             "temporal_extent": temporal_extent,
+            # Per-place source-link template supplied by the dataset owner (place#121).
+            **({"web_item": ds["web_item"]} if ds.get("web_item") else {}),
         })
     return out
 

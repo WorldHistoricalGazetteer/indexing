@@ -487,6 +487,9 @@ def stage_all_authority_datasets(
         metrics["description"] = ds.get("description")
         metrics["dataset_status"] = ds_status
         metrics["owner_user_id"] = ds.get("owner_id")
+        # Owner-supplied per-place source-link template (place#121), carried
+        # through to the inventory push so the registry (and Atlas popups) get it.
+        metrics["web_item"] = ds.get("web_item")
         per_dataset[str(ds_id)] = metrics
         for k in ("features_seen", "docs_written", "docs_skipped"):
             totals[k] += int(metrics.get(k) or 0)
@@ -517,6 +520,7 @@ def stage_all_authority_datasets(
                     "dataset_status": meta.get("dataset_status") or "pending",
                     "owner_user_id": meta.get("owner_user_id"),
                     "record_count": int(meta.get("docs_written") or 0),
+                    **({"web_item": meta["web_item"]} if meta.get("web_item") else {}),
                 }
                 for ds_id, meta in per_dataset.items()
             ],

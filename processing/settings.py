@@ -284,6 +284,7 @@ AUTHORITIES = [
         'source_url': 'https://pleiades.stoa.org/',
         'contributors': [],
         'api_item': 'https://pleiades.stoa.org/places/<id>/json',
+        'web_item': 'https://pleiades.stoa.org/places/<id>',  # place#121: source human page
         'citation': 'Pleiades: A community-built gazetteer and graph of ancient places. Copyright © Institute for the Study of the Ancient World. Sharing and remixing permitted under terms of the Creative Commons Attribution 3.0 License (cc-by). https://pleiades.stoa.org/',
         'files': [
             {
@@ -304,6 +305,7 @@ AUTHORITIES = [
         'source_url': 'https://www.geonames.org/',
         'contributors': [],
         'api_item': 'http://api.geonames.org/getJSON?formatted=true&geonameId=<id>&username=<username>&style=full',
+        'web_item': 'https://www.geonames.org/<id>',  # place#121: source human page
         'citation': 'GeoNames geographical database. https://www.geonames.org/',
         'files': [
             {
@@ -343,6 +345,7 @@ AUTHORITIES = [
         'source_url': 'https://www.getty.edu/research/tools/vocabularies/tgn/',
         'contributors': [],
         'api_item': 'https://vocab.getty.edu/tgn/<id>.jsonld',
+        'web_item': 'https://vocab.getty.edu/tgn/<id>',  # place#121: source human page
         'citation': 'The Getty Thesaurus of Geographic Names® (TGN) is provided by the J. Paul Getty Trust under the Open Data Commons Attribution License (ODC-By) 1.0. https://www.getty.edu/research/tools/vocabularies/tgn/',
         'files': [
             {
@@ -369,6 +372,7 @@ AUTHORITIES = [
         'source_url': 'https://www.wikidata.org/',
         'contributors': [],
         'api_item': 'https://www.wikidata.org/wiki/Special:EntityData/<id>.json',
+        'web_item': 'https://www.wikidata.org/wiki/<id>',  # place#121: source human page
         'citation': 'Wikidata is a free and open knowledge base that can be read and edited by both humans and machines. https://www.wikidata.org/',
         'files': [
             {
@@ -436,6 +440,7 @@ AUTHORITIES = [
         'dataset_name': 'Library of Congress',
         'namespace': 'loc',
         'api_item': 'https://www.loc.gov/item/<id>/',
+        'web_item': 'https://www.loc.gov/item/<id>/',  # place#121: source human page
         'citation': 'Library of Congress. https://www.loc.gov/',
         'files': [
             {
@@ -739,6 +744,7 @@ AUTHORITIES = [
         'source_url': 'https://www.trismegistos.org/',
         'contributors': [],
         'api_item': 'https://www.trismegistos.org/place/<id>',
+        'web_item': 'https://www.trismegistos.org/place/<id>',  # place#121: source human page
         'citation': 'Trismegistos: An interdisciplinary portal of the ancient world. https://www.trismegistos.org/',
         'files': [
             {
@@ -875,6 +881,7 @@ AUTHORITIES = [
         'source_url': 'https://ottgaz.org/',
         'contributors': [],
         'api_item': 'https://ottgaz.org/wiki/Item:<id>',
+        'web_item': 'https://ottgaz.org/wiki/Item:<id>',  # place#121: source human page
         # Licence: CC-BY-NC 4.0. Will Hanley (FSU), transformed from Tahir Sezen,
         # Osmanlı Yer Adları. No native coordinates — WHG computes convex-hull
         # geometry from ofs member points (source='ofs') or pulls points from
