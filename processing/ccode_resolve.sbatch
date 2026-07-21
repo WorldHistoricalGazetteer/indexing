@@ -6,7 +6,7 @@
 #SBATCH --output=/ix1/ishi/logs/ccode_resolve_%A_%a.log
 #SBATCH --error=/ix1/ishi/logs/ccode_resolve_%A_%a.err
 #SBATCH --time=03:00:00
-#SBATCH --mem=8G
+#SBATCH --mem=32G
 #SBATCH --cpus-per-task=2
 #SBATCH --array=0-15%16
 
@@ -16,6 +16,9 @@
 # MUST run on CRC Slurm compute, NEVER on the pitt VM: this stage is CPU + /vast
 # IO heavy and running it 8-wide on pitt on 2026-07-21 OOM-thrashed the VM and
 # took prod ES down for ~1h. See developer/plan-ccode-corpus-rerun.md §5.
+#
+# NOTE: area-heavy slices cache many geom-store polygons (LRU 4096) — 8G OOMs;
+# 32G is required (measured 2026-07-21: 7/16 tasks OOM-killed at 8G).
 #
 # Reads (no ES access):
 #   - /vast/ishi/ccodefix2/targets.*.jsonl   (exported on pitt, carries current ccodes)
