@@ -129,7 +129,13 @@ def main():
 
     import glob as _glob
     SPOT = "/vast/ishi/gb1900/edition/spot"; boxes = []
+    repr_tags = None                                          # REPR_TAGS=<centres file> -> only those regions
+    rt = os.environ.get("REPR_TAGS")
+    if rt and os.path.exists(rt):
+        repr_tags = {p[2] for p in (l.split() for l in open(rt)) if len(p) >= 3}
+        print(f"restricting to {len(repr_tags)} representative regions", flush=True)
     for f in _glob.glob(f"{SPOT}/boxes_gb_*.jsonl"):          # full-coverage grind regions only
+        if repr_tags is not None and os.path.basename(f)[6:-6] not in repr_tags: continue
         for line in open(f):
             r = json.loads(line)
             if r.get("score", 0) >= 0.55 and len([c for c in r["text"] if c.isalnum()]) >= 3 and r.get("gpoly"):
