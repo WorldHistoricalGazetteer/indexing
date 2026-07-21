@@ -41,7 +41,7 @@ COUNTIES = {c.replace(" ", "") for c in (
     "Flint Glamorgan Merioneth Montgomery Pembroke Radnor Aberdeen Argyll Ayr Banff Berwick Bute Caithness "
     "Clackmannan Dumfries Dunbarton Edinburgh Elgin Fife Forfar Haddington Inverness Kincardine Kinross "
     "Kirkcudbright Lanark Linlithgow Nairn Orkney Peebles Perth Renfrew Ross Roxburgh Selkirk Stirling "
-    "Sutherland Wigtown Zetland Shetland").split())
+    "Sutherland Wigtown Zetland Shetland").split()}
 
 def one_glyph(gray):
     _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
