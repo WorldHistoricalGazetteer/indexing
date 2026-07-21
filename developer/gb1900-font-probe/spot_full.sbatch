@@ -20,7 +20,8 @@ set -u
 cd /vast/ishi/gb1900/probe/font
 MRPY=/vast/ishi/envs/mapreader/bin/python
 S=$SLURM_ARRAY_TASK_ID
-awk "NR%16==$S" centres_all.txt | while read lon lat tag; do
+CENTRES=${CENTRES:-centres_all.txt}
+awk "NR%16==$S" "$CENTRES" | while read lon lat tag; do
   [ -z "$lon" ] && continue
   bf=/vast/ishi/gb1900/edition/spot/boxes_$tag.jsonl
   [ -f "$bf" ] && continue

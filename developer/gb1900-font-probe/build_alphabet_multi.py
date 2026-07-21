@@ -16,13 +16,32 @@ import os, json, math, numpy as np, cv2
 import concurrent.futures as cf
 from collections import Counter, defaultdict
 from PIL import Image, ImageDraw
-from build_alphabet import force_split, build_buckets, type_label, CAP, HIGH, GLYPH_MIN, MIN_GLYPHS, MAX_ROUNDS
+from build_alphabet import force_split, build_buckets, type_label, match_glyph, CAP, HIGH, GLYPH_MIN, MIN_GLYPHS, MAX_ROUNDS
 from make_font_testset_v2 import load, derotate
 from discrim_test import H, W, norm_glyph, sims_row
 
 HERE = "/vast/ishi/gb1900/probe/font"; TAX = f"{HERE}/font_taxonomy.json"
 OUT = "/vast/ishi/gb1900/edition/discover"; os.makedirs(OUT, exist_ok=True)
 SEED_PER_FONT = 50; SEED_MARGIN = 0.02; IDENT = 0.90
+
+# ALLCAPS faces (admin hierarchy etc.) can ONLY be all-caps labels; title-case faces can only be non-allcaps.
+# This alone removes the mixed-case letter-attraction noise (a title-case 'Clock' is never a CAPS admin face).
+_TX = {x["key"]: x for x in json.load(open(TAX))}
+CAPS_OF = {k: bool(v.get("caps")) for k, v in _TX.items()}
+def is_allcaps(text):
+    a = [c for c in text if c.isalpha()]
+    return bool(a) and all(c.isupper() for c in a)
+# County names are a finite, known list -> seed the county face by LOOKING THEM UP (all-caps labels whose text
+# is a county), giving genuine county-face examples instead of relying on a single ornate mark-letter.
+COUNTIES = {c.replace(" ", "") for c in (
+    "Bedford Berks Bucks Cambridge Chester Cornwall Cumberland Derby Devon Dorset Durham Essex Gloucester "
+    "Hereford Hertford Huntingdon Kent Lancaster Leicester Lincoln Middlesex Monmouth Norfolk Northampton "
+    "Northumberland Nottingham Oxford Rutland Salop Shropshire Somerset Stafford Suffolk Surrey Sussex Warwick "
+    "Westmorland Wilts Worcester York Yorkshire Anglesey Brecon Cardigan Carmarthen Carnarvon Caernarvon Denbigh "
+    "Flint Glamorgan Merioneth Montgomery Pembroke Radnor Aberdeen Argyll Ayr Banff Berwick Bute Caithness "
+    "Clackmannan Dumfries Dunbarton Edinburgh Elgin Fife Forfar Haddington Inverness Kincardine Kinross "
+    "Kirkcudbright Lanark Linlithgow Nairn Orkney Peebles Perth Renfrew Ross Roxburgh Selkirk Stirling "
+    "Sutherland Wigtown Zetland Shetland").split())
 
 def one_glyph(gray):
     _, ink = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -137,12 +156,23 @@ def main():
             for g in gs: rows.append(g.astype(np.float32).ravel()); fl.append(f)
         M = np.array(rows, np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
         csmat[(L, cap)] = (np.array(fl), M)
+    # LOOKUP SEED: county names are known -> genuine county-face examples (all-caps labels whose text is a county)
+    CU = {c.upper() for c in COUNTIES}; nlook = 0
+    for i, (text, gl, _p) in enumerate(data):
+        if is_allcaps(text) and "".join(c for c in text if c.isalpha()).upper() in CU:
+            assigned[i] = "county_names"; seed_info[i] = ("lookup", 1.0); harvest(i, "county_names", 0); nlook += 1
+    print(f"LOOKUP SEED: {nlook} county-name labels -> county_names", flush=True)
+
+    # VISUAL SEED: match real cap glyphs to the CS bank, CASE-CONSISTENT (a CAPS face only matches an all-caps label)
     cand = []
     for i, (text, gl, _p) in enumerate(data):
+        if i in assigned: continue
+        ac = is_allcaps(text)
         for L, cap, g in gl:
             if (L, cap) not in csmat: continue
             fl, M = csmat[(L, cap)]; r = sims_row(g, M)
-            best = {f: float(r[fl == f].max()) for f in set(fl.tolist())}
+            best = {f: float(r[fl == f].max()) for f in set(fl.tolist()) if CAPS_OF.get(f, False) == ac}
+            if not best: continue
             rk = sorted(best.items(), key=lambda kv: -kv[1])
             margin = rk[0][1] - (rk[1][1] if len(rk) > 1 else 0.0)
             if len(rk) >= 2 and margin < SEED_MARGIN: continue
@@ -158,10 +188,16 @@ def main():
         B = build_buckets(alpha); new = 0
         for i, (text, gl, _p) in enumerate(data):
             if i in assigned or len(gl) < MIN_GLYPHS: continue
-            winner, conf, voters = type_label(gl, B)
-            if not winner or conf < HIGH: continue
-            vc = Counter(s for s, _, _ in voters)
-            if vc[winner] < 2: continue
+            ac = is_allcaps(text); voters = []
+            for L, cap, g in gl:
+                s, sc, m = match_glyph(g, L, cap, B)
+                if s and sc >= GLYPH_MIN and m > 0 and CAPS_OF.get(s, False) == ac: voters.append((s, sc, m))
+            if not voters: continue
+            w = defaultdict(float)
+            for s, sc, m in voters: w[s] += sc * m
+            winner = max(w, key=w.get)
+            conf = (w[winner] / (sum(w.values()) + 1e-9)) * float(np.mean([sc for s, sc, m in voters if s == winner]))
+            if conf < HIGH or sum(1 for s, _, _ in voters if s == winner) < 2: continue
             assigned[i] = winner; harvest(i, winner, rnd); new += 1
         print(f"round {rnd}: +{new} labels; alphabet={len(alpha)}", flush=True)
         if new == 0: break
