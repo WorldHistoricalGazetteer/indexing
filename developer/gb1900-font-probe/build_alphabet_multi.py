@@ -12,7 +12,7 @@ SEPARABILITY comes FROM the fan: leave-one-out over the grown alphabet gives a f
     FCTILES=/vast/ishi/gb1900/fc_tiles /vast/ishi/envs/mapreader/bin/python build_alphabet_multi.py
 """
 import sys; sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
-import os, json, numpy as np, cv2
+import os, json, math, numpy as np, cv2
 import concurrent.futures as cf
 from collections import Counter, defaultdict
 from PIL import Image, ImageDraw
@@ -101,7 +101,7 @@ def box_align(r):
     if len(letters) < 2: return None
     gs = force_split(patch, len(letters))
     if len(gs) != len(letters): return None
-    return (r["text"], [(letters[i].upper(), letters[i].isupper(), gs[i]) for i in range(len(letters))])
+    return (r["text"], [(letters[i].upper(), letters[i].isupper(), gs[i]) for i in range(len(letters))], patch)
 
 def main():
     bank, rep, tk = cs_seed_multi()
@@ -122,8 +122,9 @@ def main():
             if r: data.append(r)
     print(f"aligned box-labels: {len(data)}", flush=True)
 
-    alpha = []; cap_ct = Counter(); assigned = {}
+    alpha = []; cap_ct = Counter(); assigned = {}; assign_meta = {}; seed_info = {}
     def harvest(idx, font, gen):
+        assign_meta[idx] = (font, gen)
         for L, cap, g in data[idx][1]:
             if cap_ct[(L, cap, font)] < CAP:
                 alpha.append(dict(L=L, cap=cap, style=font, glyph=g, gen=gen)); cap_ct[(L, cap, font)] += 1
@@ -137,7 +138,7 @@ def main():
         M = np.array(rows, np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
         csmat[(L, cap)] = (np.array(fl), M)
     cand = []
-    for i, (text, gl) in enumerate(data):
+    for i, (text, gl, _p) in enumerate(data):
         for L, cap, g in gl:
             if (L, cap) not in csmat: continue
             fl, M = csmat[(L, cap)]; r = sims_row(g, M)
@@ -145,17 +146,17 @@ def main():
             rk = sorted(best.items(), key=lambda kv: -kv[1])
             margin = rk[0][1] - (rk[1][1] if len(rk) > 1 else 0.0)
             if len(rk) >= 2 and margin < SEED_MARGIN: continue
-            cand.append(((margin if len(rk) >= 2 else rk[0][1]), i, rk[0][0]))
+            cand.append(((margin if len(rk) >= 2 else rk[0][1]), i, rk[0][0], L, round(float(rk[0][1]), 3)))
     for font in fonts:
-        for conf, i, f in sorted([c for c in cand if c[2] == font], key=lambda c: -c[0])[:SEED_PER_FONT]:
+        for conf, i, f, L, sc in sorted([c for c in cand if c[2] == font], key=lambda c: -c[0])[:SEED_PER_FONT]:
             if i in assigned: continue
-            assigned[i] = f; harvest(i, f, 0)
+            assigned[i] = f; seed_info[i] = (L, sc); harvest(i, f, 0)
     print(f"SEED: {len(assigned)} labels -> {len(alpha)} glyphs", flush=True)
 
     # FAN
     for rnd in range(1, MAX_ROUNDS + 1):
         B = build_buckets(alpha); new = 0
-        for i, (text, gl) in enumerate(data):
+        for i, (text, gl, _p) in enumerate(data):
             if i in assigned or len(gl) < MIN_GLYPHS: continue
             winner, conf, voters = type_label(gl, B)
             if not winner or conf < HIGH: continue
@@ -164,6 +165,20 @@ def main():
             assigned[i] = winner; harvest(i, winner, rnd); new += 1
         print(f"round {rnd}: +{new} labels; alphabet={len(alpha)}", flush=True)
         if new == 0: break
+
+    if os.environ.get("DUMP_ASSIGN"):                    # per-label assignments + crops for the inspection UI
+        import base64, io
+        def b64p(patch):
+            im = Image.fromarray(patch).convert("L"); h = 90
+            im = im.resize((max(1, int(im.width * h / max(1, im.height))), h))
+            bio = io.BytesIO(); im.save(bio, "PNG"); return base64.b64encode(bio.getvalue()).decode()
+        with open(f"{OUT}/assignments.jsonl", "w") as fo:
+            for i, (font, gen) in assign_meta.items():
+                si = seed_info.get(i)
+                fo.write(json.dumps({"font": font, "text": data[i][0], "gen": int(gen),
+                                     "seed_letter": si[0] if si else None, "seed_score": si[1] if si else None,
+                                     "crop": b64p(data[i][2])}) + "\n")
+        print(f"wrote assignments.jsonl ({len(assign_meta)} assigned labels)", flush=True)
 
     # SEPARABILITY from the fanned alphabet: leave-one-out same-letter confusion between fonts
     conf = np.zeros((len(fonts), len(fonts))); tot = np.zeros(len(fonts))

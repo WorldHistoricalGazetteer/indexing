@@ -28,21 +28,22 @@ def main():
     ap.add_argument("--src", default=NT); ap.add_argument("--out", default="centres_all.txt")
     ap.add_argument("--step", type=int, default=15, help="block size in z17 tiles (region side 17 -> 2-tile overlap)")
     a = ap.parse_args()
-    blocks = set(); n = 0; nc = 0
+    from collections import Counter
+    blocks = Counter(); n = 0; nc = 0
     for line in open(a.src):
         try: d = json.loads(line)
         except Exception: continue
         n += 1; lon, lat = d.get("lon"), d.get("lat")
         if lon is None or lat is None: continue
         nc += 1; tx, ty = lonlat_to_tile(lon, lat)
-        blocks.add((tx // a.step, ty // a.step))
+        blocks[(tx // a.step, ty // a.step)] += 1
     print(f"labels {n}; with coords {nc}; populated blocks {len(blocks)}", flush=True)
     off = a.step // 2                             # block-centre tile within the block
     with open(a.out, "w") as f:
         for by, bx in sorted((by, bx) for bx, by in blocks):     # row-major for batch locality
             ctx, cty = bx * a.step + off, by * a.step + off
             lon, lat = tile_to_lonlat(ctx, cty)
-            f.write(f"{lon:.5f} {lat:.5f} gb_{bx}_{by}\n")
+            f.write(f"{lon:.5f} {lat:.5f} gb_{bx}_{by} {blocks[(bx, by)]}\n")   # 4th col = crowd-label count (ignored by prefetch/spot)
     print(f"wrote {len(blocks)} centres -> {a.out}", flush=True)
 
 if __name__ == "__main__":
