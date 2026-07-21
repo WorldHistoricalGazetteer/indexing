@@ -177,6 +177,14 @@ proven at ~9.87 M docs). New work = an **overwrite/re-resolve mode**.
 - Sliceable via existing `--slice/--of` PIT scroll. Output to `/vast/ishi/
   ccodefix2/targets.*.jsonl`.
 
+> ⚠️ **INCIDENT 2026-07-21 — do NOT run resolve on pitt.** A first attempt ran
+> resolve as **8 parallel processes on the pitt VM**; they exhausted RAM →
+> swap-thrash → the VM was SSH-unresponsive for ~1h and prod **ES was
+> OOM-killed** (recovered via console `es -restart`, no data loss — `apply`
+> never ran). Resolve is CPU + `/vast`-IO heavy and MUST go to **CRC Slurm**, as
+> written below. Only `export` and `apply` run on pitt (they need prod ES), and
+> even those single-stream. See [[feedback_no_heavy_compute_on_pitt_vm]].
+
 ### Phase 2 — `resolve` (Slurm `htc` array, `--mem=8G`)
 - Build `UnCountryIndex.from_bnda_geojson(UN_BNDA_COUNTRIES_FILE)` once.
 - Per doc: `resolve_ccodes_for_doc_exact(rec, country_index, None,
