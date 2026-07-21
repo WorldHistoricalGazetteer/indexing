@@ -31,7 +31,7 @@ def vote(glyphs):
     return w, nv
 
 def b64(patch):
-    im = Image.fromarray(patch).convert("L"); h = 40
+    im = Image.fromarray(patch).convert("L"); h = 90               # encode larger so click-to-enlarge stays crisp
     im = im.resize((max(1, int(im.width * h / max(1, im.height))), h))
     bio = io.BytesIO(); im.save(bio, "PNG"); return base64.b64encode(bio.getvalue()).decode()
 
@@ -93,10 +93,12 @@ HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — font assignment
  .font{background:#fff;border:1px solid #dcd6c8;border-radius:8px;padding:8px 10px;margin:8px 0}
  .fh{display:flex;align-items:center;gap:10px;margin-bottom:5px}
  .fh b{font-size:14px} .fh img{height:34px;background:#fff;border:1px solid #eee}
- .snips{display:flex;flex-wrap:wrap;gap:8px}
- .s{border:1px solid #e6e0d2;border-radius:4px;padding:3px;background:#fff;text-align:center}
- .s img{display:block;height:38px;background:#fff} .s .t{font-size:10px;color:#555;max-width:120px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
- .s .c{font-size:9px;color:#999}
+ .snips{display:flex;flex-wrap:wrap;gap:10px}
+ .s{border:1px solid #e6e0d2;border-radius:4px;padding:4px;background:#fff;text-align:center}
+ .s img{display:block;height:62px;background:#fff;cursor:zoom-in} .s .t{font-size:12px;color:#444;max-width:200px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+ .s .c{font-size:10px;color:#999}
+ #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.82);z-index:100;align-items:center;justify-content:center;cursor:zoom-out}
+ #lb img{max-width:94vw;max-height:86vh;background:#fff;padding:10px;image-rendering:auto}
  .pair{background:#fff;border:1px solid #d9b3ae;border-radius:8px;padding:10px;margin:10px 0}
  .pair .hd{display:flex;align-items:center;gap:14px;margin-bottom:6px}
  .pair .hd .side{display:flex;align-items:center;gap:6px} .pair .hd img{height:40px;border:1px solid #eee}
@@ -110,8 +112,10 @@ HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — font assignment
  <span class=muted id=stat></span>
 </div>
 <div id=A></div><div id=B class=hidden></div>
+<div id=lb onclick="this.style.display='none'"><img id=lbi></div>
 <script>
 const D=__DATA__;
+document.body.addEventListener('click',e=>{if(e.target.tagName==='IMG'&&e.target.closest('.s')){document.getElementById('lbi').src=e.target.src;document.getElementById('lb').style.display='flex';}});
 function grid(snips){return '<div class=snips>'+snips.map(s=>`<div class=s><img src="data:image/png;base64,${s.img}"><div class=t title="${(s.text||'').replace(/"/g,'&quot;')}">${(s.text||'').replace(/</g,'&lt;')}</div><div class=c>${s.conf}${s.top2?' vs '+s.top2:''}</div></div>`).join('')+'</div>';}
 function renderA(){
  let h=''; const fs=Object.keys(D.fonts).sort((a,b)=>D.fonts[b].length-D.fonts[a].length);
