@@ -156,12 +156,25 @@ def main():
             for g in gs: rows.append(g.astype(np.float32).ravel()); fl.append(f)
         M = np.array(rows, np.float32); M /= (np.linalg.norm(M, axis=1, keepdims=True) + 1e-6)
         csmat[(L, cap)] = (np.array(fl), M)
-    # LOOKUP SEED: county names are known -> genuine county-face examples (all-caps labels whose text is a county)
-    CU = {c.upper() for c in COUNTIES}; nlook = 0
+    # LOOKUP SEED: seed admin faces from name gazetteers — genuine examples, not a single mark-letter. Only the
+    # CLEAN, non-overlapping gazetteers (hardcoded counties + Wikidata civil parishes + cities); a name matching
+    # more than one face is skipped as ambiguous. Only ALL-CAPS labels (admin names are set in caps).
+    name2face = {}
+    def addgaz(names, face):
+        for nm in names:
+            k = "".join(c for c in nm if c.isalpha()).upper()
+            if len(k) >= 3: name2face.setdefault(k, set()).add(face)
+    addgaz(COUNTIES, "county_names")
+    gaz = json.load(open(f"{HERE}/labels/admin_names.json")) if os.path.exists(f"{HERE}/labels/admin_names.json") else {}
+    addgaz(gaz.get("civil_parishes", []), "civil_parishes")
+    addgaz(gaz.get("cities_nomp", []), "cities_nomp")
+    nlook = Counter()
     for i, (text, gl, _p) in enumerate(data):
-        if is_allcaps(text) and "".join(c for c in text if c.isalpha()).upper() in CU:
-            assigned[i] = "county_names"; seed_info[i] = ("lookup", 1.0); harvest(i, "county_names", 0); nlook += 1
-    print(f"LOOKUP SEED: {nlook} county-name labels -> county_names", flush=True)
+        if not is_allcaps(text): continue
+        f = name2face.get("".join(c for c in text if c.isalpha()).upper())
+        if f and len(f) == 1:
+            face = next(iter(f)); assigned[i] = face; seed_info[i] = ("lookup", 1.0); harvest(i, face, 0); nlook[face] += 1
+    print(f"LOOKUP SEED: {sum(nlook.values())} labels -> {dict(nlook)}", flush=True)
 
     # VISUAL SEED: match real cap glyphs to the CS bank, CASE-CONSISTENT (a CAPS face only matches an all-caps label)
     cand = []
