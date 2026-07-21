@@ -81,6 +81,7 @@ from processing.recompute_h3_index import (  # noqa: E402
 
 _SOURCE_FIELDS = [
     "place_id",
+    "ccodes",
     "geometries.geometry_index",
     "geometries.repr_point",
     "geometries.h3_cover",
@@ -119,10 +120,35 @@ def _target_query(namespaces: list[str]) -> dict:
     }
 
 
+def _target_query_all() -> dict:
+    """Every doc that HAS geometry (``repr_point``), regardless of ccodes.
+
+    Used by the full-corpus re-derivation (``--all``): unlike ``_target_query``
+    it does *not* require ``must_not exists ccodes`` — it re-resolves the whole
+    corpus so stale/wrong ccodes get overwritten. ``un:`` is excluded (it
+    self-asserts its own ISO code; re-resolving it is circular)."""
+    return {
+        "bool": {
+            "filter": [
+                {
+                    "nested": {
+                        "path": "geometries",
+                        "query": {"exists": {"field": "geometries.repr_point"}},
+                    }
+                },
+            ],
+            "must_not": [{"prefix": {"place_id": "un:"}}],
+        }
+    }
+
+
 def export(args) -> int:
     sess = _session()
-    namespaces = [n.strip() for n in args.namespaces.split(",") if n.strip()]
-    query = _target_query(namespaces)
+    if getattr(args, "all", False):
+        query = _target_query_all()
+    else:
+        namespaces = [n.strip() for n in args.namespaces.split(",") if n.strip()]
+        query = _target_query(namespaces)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -137,8 +163,13 @@ def export(args) -> int:
             geoms = src.get("geometries") or []
             if not pid or not geoms:
                 continue
-            fh.write(json.dumps({"place_id": pid, "geometries": geoms},
-                                ensure_ascii=True) + "\n")
+            rec = {"place_id": pid, "geometries": geoms}
+            # Carry current ccodes so `resolve --overwrite` can diff and emit a
+            # patch only when the spatial result actually differs (minimises
+            # writes → protects the live index during apply).
+            if "ccodes" in src:
+                rec["ccodes"] = src.get("ccodes")
+            fh.write(json.dumps(rec, ensure_ascii=True) + "\n")
             n += 1
             if n % 200_000 == 0:
                 print(f"  exported {n} (rate={n/max(time.time()-t0,1e-6):.0f}/s)",
@@ -151,6 +182,76 @@ def export(args) -> int:
 # ---------------------------------------------------------------------------
 # Phase 2 — resolve (Slurm/htc, needs UN geoms)
 # ---------------------------------------------------------------------------
+
+def _resolve_overwrite(args, country_index, patterns, out_path) -> int:
+    """Full-corpus re-derivation. See `resolve --overwrite`.
+
+    Opens a real geom-store reader so AREA docs resolve against their full
+    polygon (all overlapping countries, ordered by descending overlap). Diffs
+    the fresh result against the doc's current ccodes (carried in the export)
+    and writes ``{place_id, ccodes}`` — including ``ccodes: []`` (clear) — ONLY
+    when changed. ``un:`` was already excluded at export, but is re-guarded here.
+    """
+    from processing.ccode_enrichment import resolve_ccodes_for_doc_exact
+    from processing.geom_store import GeomStoreReader
+    from processing.settings import GEOM_STORE_DIR
+    CCODE_SOURCE = "un-bnda"
+
+    try:
+        place_reader = GeomStoreReader(GEOM_STORE_DIR)
+    except FileNotFoundError:
+        place_reader = None
+        print(f"WARNING: geom store not found at {GEOM_STORE_DIR}; areas will "
+              "fall back to repr_point (single-country only)", flush=True)
+
+    sl, of = args.slice, args.of
+    seen = changed = cleared = unchanged = no_geom = snapped = 0
+    line_no = -1
+    t0 = time.time()
+    with out_path.open("w", encoding="utf-8") as fh:
+        for rec in _iter_jsonl(patterns):
+            line_no += 1
+            if of > 1 and (line_no % of) != sl:
+                continue
+            pid = rec.get("place_id")
+            if not pid or pid.startswith("un:"):
+                continue
+            seen += 1
+
+            new_ccodes, outcome = resolve_ccodes_for_doc_exact(
+                rec, country_index, place_reader, snap_tol_deg=args.snap_deg,
+            )
+            if outcome == "no_geom":
+                no_geom += 1
+                continue  # no repr_point/geom at all — never blank these
+            if outcome == "snap":
+                snapped += 1
+
+            cur = rec.get("ccodes") or []
+            if sorted(new_ccodes) == sorted(cur):
+                unchanged += 1
+                continue
+
+            if not new_ccodes:
+                cleared += 1
+            else:
+                changed += 1
+            patch: dict[str, Any] = {"place_id": pid, "ccodes": new_ccodes,
+                                     "source": CCODE_SOURCE}
+            fh.write(json.dumps(patch, ensure_ascii=True) + "\n")
+
+            if seen % 200_000 == 0:
+                print(f"  resolved {seen} changed={changed} cleared={cleared} "
+                      f"unchanged={unchanged} snap={snapped} no_geom={no_geom} "
+                      f"({seen/max(time.time()-t0,1e-6):.0f}/s)", flush=True)
+
+    if place_reader is not None:
+        place_reader.close()
+    print(f"RESOLVE(overwrite) DONE seen={seen} changed={changed} "
+          f"cleared={cleared} unchanged={unchanged} snap={snapped} "
+          f"no_geom={no_geom} -> {out_path} in {time.time()-t0:.0f}s", flush=True)
+    return 0
+
 
 def resolve(args) -> int:
     # Imported here so `export`/`apply` on pitt don't need shapely/UN geoms.
@@ -175,6 +276,14 @@ def resolve(args) -> int:
     patterns = [args.infile] if isinstance(args.infile, str) else list(args.infile)
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Full-corpus overwrite mode (--overwrite): re-derive ccodes for EVERY doc
+    # and emit a patch only when the result differs from the doc's current
+    # ccodes. Areas resolve against their FULL geom-store polygon (multi-country
+    # preserved); points resolve against repr_point (geom_ref is None for points,
+    # so _extract_place_geometry short-circuits — no per-point disk read).
+    if getattr(args, "overwrite", False):
+        return _resolve_overwrite(args, country_index, patterns, out_path)
 
     sl, of = args.slice, args.of
     seen = ok_cc = ok_h3 = no_geom = no_match = 0
@@ -275,6 +384,15 @@ _UPDATE_SCRIPT = (
     "}"
 )
 
+# Overwrite variant (full-corpus re-derivation): ccodes is authoritative.
+# A non-empty list REPLACES; an empty list CLEARS the field. Never touches h3.
+_OVERWRITE_SCRIPT = (
+    "if (params.ccodes != null) { "
+    "  if (params.ccodes.length == 0) { ctx._source.remove('ccodes'); } "
+    "  else { ctx._source.ccodes = params.ccodes; } "
+    "}"
+)
+
 
 def _iter_jsonl(patterns: list[str]) -> Iterable[dict]:
     for pattern in patterns:
@@ -329,9 +447,25 @@ def apply(args) -> int:
             print(f"  applied sent={sent} ok={ok} failed={failed} "
                   f"rate={sent/max(time.time()-t0,1e-6):.0f}/s", flush=True)
 
+    overwrite = getattr(args, "overwrite", False)
+    script_src = _OVERWRITE_SCRIPT if overwrite else _UPDATE_SCRIPT
     for rec in _iter_jsonl(patterns):
         pid = rec.get("place_id")
         if not pid:
+            continue
+        if overwrite:
+            # ccodes is authoritative here; an explicit [] means "clear". The
+            # resolve(overwrite) phase only emits a record when something
+            # changed, so every patch line is a real write. No h3 in this mode.
+            if "ccodes" not in rec:
+                continue
+            batch_lines.append(json.dumps({"update": {"_id": pid}}))
+            batch_lines.append(json.dumps({
+                "script": {"source": script_src, "lang": "painless",
+                           "params": {"ccodes": rec["ccodes"]}}
+            }))
+            if len(batch_lines) >= args.batch * 2:
+                flush()
             continue
         ccodes = rec.get("ccodes") or None
         h3 = {
@@ -343,7 +477,7 @@ def apply(args) -> int:
             continue
         batch_lines.append(json.dumps({"update": {"_id": pid}}))
         batch_lines.append(json.dumps({
-            "script": {"source": _UPDATE_SCRIPT, "lang": "painless",
+            "script": {"source": script_src, "lang": "painless",
                        "params": {"ccodes": ccodes, "h3": h3}}
         }))
         if len(batch_lines) >= args.batch * 2:
@@ -360,8 +494,13 @@ def main() -> None:
     sub = p.add_subparsers(dest="cmd", required=True)
 
     e = sub.add_parser("export", help="scroll target docs from live ES (read-only)")
-    e.add_argument("--namespaces", required=True,
-                   help="comma-separated namespaces (e.g. tgn,osm,ohm,wd)")
+    e.add_argument("--namespaces", default="",
+                   help="comma-separated namespaces (e.g. tgn,osm,ohm,wd); "
+                        "ignored when --all is set")
+    e.add_argument("--all", action="store_true",
+                   help="full-corpus re-derivation: export EVERY doc with a "
+                        "repr_point (regardless of ccodes), carrying current "
+                        "ccodes for the resolve diff. Excludes un:.")
     e.add_argument("--out", required=True)
     e.add_argument("--slice", type=int, default=0)
     e.add_argument("--of", type=int, default=1)
@@ -377,12 +516,21 @@ def main() -> None:
                    help="unambiguous nearest-country snap tolerance in degrees "
                         "(0=off; 0.01≈1km). Recovers border-gap points where "
                         "exactly one country is within tolerance.")
+    r.add_argument("--overwrite", action="store_true",
+                   help="full-corpus mode: re-derive ccodes for every doc "
+                        "(areas via full geom-store polygon, points via "
+                        "repr_point+snap) and emit a patch ONLY when the result "
+                        "differs from current ccodes (empty list = clear).")
     r.set_defaults(func=resolve)
 
     a = sub.add_parser("apply", help="throttled scripted update into live ES")
     a.add_argument("--patch", required=True, help="patch file or glob")
     a.add_argument("--rps", type=int, default=1500)
     a.add_argument("--batch", type=int, default=500)
+    a.add_argument("--overwrite", action="store_true",
+                   help="apply patches from resolve --overwrite: REPLACE ccodes "
+                        "(non-empty) or CLEAR them (empty list). Without this, "
+                        "the fill-only script sets ccodes only when absent.")
     a.set_defaults(func=apply)
 
     args = p.parse_args()
