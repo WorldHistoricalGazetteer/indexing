@@ -7,6 +7,12 @@
 > **Goal:** Re-derive `places.ccodes` for the entire corpus from the clean UN
 > BNDA boundaries, correcting several million stale errors, **in place, with
 > zero ES downtime, within Slurm memory limits.**
+>
+> **✅ STATUS — DONE (applied to prod 2026-07-21).** 9,347,721 in-place updates,
+> 0 failures (8.6M re-coded + 746,509 blanked). Verified: `iv` NL 310→0;
+> NL-in-GB-bbox 36,627→3; total NL 1.38M→506k (real NL retained); Kashmir→[IN,PK];
+> St Kilda blanked. Snap fixed at **0.075°**; resolve ran on **CRC Slurm at
+> `--mem=32G`** (8G OOMs on area-heavy slices). Issue place#126 closed.
 
 ---
 
