@@ -113,7 +113,22 @@ def build_toponym_query(query: str, mode: str, size: int = 200) -> dict:
             }
         }
     elif mode == "in":
-        text_query = {"wildcard": {"name.raw": {"value": f"*{query.lower()}*"}}}
+        # True infix ("contains") via the 2-3 char n-gram subfields, queried
+        # with match_phrase so the query's n-grams must appear *consecutively*
+        # — correct substring semantics for any query length, and fast (a normal
+        # inverted-index lookup) instead of the old O(N) leading-wildcard on
+        # name.raw. REQUIRES the `name.ngram` / `name_romanized.ngram` subfields
+        # (toponyms schema); deploy this only against a toponyms index that has
+        # them, else `in` returns nothing.
+        text_query = {
+            "bool": {
+                "should": [
+                    {"match_phrase": {"name.ngram": {"query": query}}},
+                    {"match_phrase": {"name_romanized.ngram": {"query": query}}},
+                ],
+                "minimum_should_match": 1,
+            }
+        }
     else:
         # "fuzzy" (default) — best-fields multi-match with fuzziness
         text_query = {

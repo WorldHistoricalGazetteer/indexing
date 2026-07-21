@@ -24,6 +24,10 @@
         "edge_ngram_analyzer": {
           "tokenizer": "edge_ngram_tokenizer",
           "filter": ["lowercase", "asciifolding"]
+        },
+        "ngram_analyzer": {
+          "tokenizer": "ngram_tokenizer",
+          "filter": ["lowercase", "asciifolding"]
         }
       },
       "tokenizer": {
@@ -31,6 +35,12 @@
           "type": "edge_ngram",
           "min_gram": 2,
           "max_gram": 20,
+          "token_chars": ["letter", "digit"]
+        },
+        "ngram_tokenizer": {
+          "type": "ngram",
+          "min_gram": 2,
+          "max_gram": 3,
           "token_chars": ["letter", "digit"]
         }
       }
@@ -52,6 +62,10 @@
             "type": "text",
             "analyzer": "edge_ngram_analyzer",
             "search_analyzer": "standard"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "ngram_analyzer"
           }
         }
       },
@@ -64,6 +78,10 @@
             "type": "text",
             "analyzer": "edge_ngram_analyzer",
             "search_analyzer": "standard"
+          },
+          "ngram": {
+            "type": "text",
+            "analyzer": "ngram_analyzer"
           }
         }
       },
