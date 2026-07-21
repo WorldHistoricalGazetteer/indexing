@@ -215,6 +215,7 @@ class Facets(BaseModel):
     """Aggregation facets returned alongside search hits."""
     types: list[dict] = []      # [{"identifier": ..., "label": ..., "count": ...}, ...] (raw source types)
     aat_types: list[dict] = []  # [{"aat_id": ..., "label": ..., "count": ...}, ...] (AAT, friendly labels)
+    custom_types: list[dict] = []  # [{"identifier": ..., "label": ..., "count": ...}, ...] (source types w/ NO AAT mapping)
     countries: list[dict] = []  # [{"code": ..., "count": ...}, ...]
 
 
@@ -451,6 +452,26 @@ async def search(req: SearchRequest):
                     "by_aat": {
                         "terms": {"field": "types.aat_ids", "size": 60},
                     },
+                    # Custom (non-AAT) type facet — source types that carry NO AAT
+                    # mapping (place#122). Same shape as by_identifier but filtered
+                    # to unmapped types, so the Atlas UI can surface + filter custom
+                    # types from authority or contributed gazetteers without the
+                    # (unreliable) client-side guess at which source types are AAT.
+                    "by_custom": {
+                        "filter": {"bool": {"must_not": {
+                            "exists": {"field": "types.aat_ids"}
+                        }}},
+                        "aggs": {
+                            "by_identifier": {
+                                "terms": {"field": "types.identifier", "size": 50},
+                                "aggs": {
+                                    "label": {
+                                        "terms": {"field": "types.sourceLabel", "size": 1},
+                                    }
+                                }
+                            }
+                        }
+                    },
                 }
             },
             "country_facets": {
@@ -660,6 +681,18 @@ async def search(req: SearchRequest):
                 "label": aat_labels.get(aid, str(aid)),
                 "count": bucket.get("doc_count", 0),
             })
+
+    # Custom (non-AAT) type facets (place#122) — source types with no AAT mapping,
+    # keyed by source identifier with the source's own sourceLabel.
+    custom_agg = (aggs.get("type_facets", {}).get("by_custom", {})
+                  .get("by_identifier", {}).get("buckets", []))
+    for bucket in custom_agg:
+        label_buckets = bucket.get("label", {}).get("buckets", [])
+        facets.custom_types.append({
+            "identifier": bucket.get("key", ""),
+            "label": label_buckets[0]["key"] if label_buckets else "",
+            "count": bucket.get("doc_count", 0),
+        })
 
     # Country facets
     country_agg = aggs.get("country_facets", {}).get("buckets", [])

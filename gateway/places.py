@@ -299,12 +299,14 @@ def _format_place_detail(
     geometries = _format_geometries(raw_geoms)
     repr_point = _extract_repr_point(raw_geoms)
 
-    # Types
+    # Types — carry the resolved AAT concept ids (place#122) so the Atlas popup
+    # can link/annotate a type chip with its AAT identifier + scope-note tooltip.
     types = [
         {
             "identifier": t.get("identifier", ""),
             "label": t.get("label", ""),
             "sourceLabel": t.get("sourceLabel", ""),
+            "aat_ids": t.get("aat_ids") or [],
         }
         for t in (src.get("types") or [])
     ]
