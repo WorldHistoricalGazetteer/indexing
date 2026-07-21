@@ -29,13 +29,15 @@
 set -e
 
 # --- Load environment configuration ---
-# Use absolute path since SCRIPT_DIR doesn't work reliably in Slurm
-ENV_FILE="/ix1/ishi/elastic/.env"
+# Use absolute path since SCRIPT_DIR doesn't work reliably in Slurm.
+# Repo relocated /ix1→/vast on 2026-05-01; default to /vast, allow override.
+ENV_FILE="${WHG_ENV_FILE:-/vast/ishi/elastic/.env}"
+[ -f "$ENV_FILE" ] || ENV_FILE="/ix1/ishi/elastic/.env"  # legacy fallback
 
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 else
-    echo "ERROR: .env file not found at $ENV_FILE"
+    echo "ERROR: .env file not found at $ENV_FILE (tried /vast and /ix1)"
     exit 1
 fi
 
