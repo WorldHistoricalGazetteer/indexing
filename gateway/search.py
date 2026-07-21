@@ -150,6 +150,15 @@ class SearchRequest(BaseModel):
         description="When set, only return results from these namespaces "
                     "(e.g. ['gn', 'tgn']). Overrides exclude_namespaces.",
     )
+    browse: bool = Field(
+        False,
+        description="Browse mode. With no query text, return a namespace- (and "
+                    "optionally ccode/type/temporal-) filtered match-all, ordered "
+                    "alphabetically by title, with a REAL `total` (track_total_hits) "
+                    "and ES-level `offset` pagination. Lets a client enumerate a "
+                    "whole gazetteer without supplying a query or bounds — the "
+                    "Atlas 'Place List' panel. Ignored when a query is present.",
+    )
     geom: str = Field(
         "full",
         description=(
@@ -294,7 +303,10 @@ async def search(req: SearchRequest):
       places (optionally with per-name embeddings).
     """
     has_query = bool(req.query and req.query.strip())
-    if not has_query and not req.contained_in and not req.bounds:
+    # Browse mode only applies when there is no query — a query always takes the
+    # ranked toponym-discovery path (browse is a no-query enumeration).
+    browse = req.browse and not has_query
+    if not has_query and not req.contained_in and not req.bounds and not browse:
         return SearchResponse()
     pure_spatial = not has_query
 
@@ -326,7 +338,7 @@ async def search(req: SearchRequest):
         elif req.bounds:
             region = spatial.region_from_geojson(req.bounds)
 
-        if pure_spatial and region is None and not req.bounds:
+        if pure_spatial and region is None and not req.bounds and not browse:
             return SearchResponse()
 
         # ------------------------------------------------------------------
@@ -401,6 +413,17 @@ async def search(req: SearchRequest):
             geom=req.geom,
             clustering_fields=req.include_clustering_fields,
         )
+
+        # Browse: there are no discovery scores to rank on, so page + order the
+        # match-all directly in ES — alphabetically by title, tiebroken on the
+        # stable place_id — and ask ES for the exact total so the client can show
+        # a real gazetteer count and paginate deterministically. The Python
+        # re-rank/re-slice below is skipped for browse (the ES page is final).
+        if browse:
+            places_body["from"] = req.offset
+            places_body["size"] = req.size
+            places_body["sort"] = [{"title.keyword": "asc"}, {"place_id": "asc"}]
+            places_body["track_total_hits"] = True
 
         # Add aggregations for faceted UI
         places_body["aggs"] = {
@@ -597,9 +620,12 @@ async def search(req: SearchRequest):
     # come from the bounded enrichment step, so they vary with pool size (which
     # grows with offset), which reordered equal-score places and made pages
     # overlap/skip. place_id is the deterministic, pool-independent tiebreak.
-    results.sort(key=lambda r: (r.score, r.place_id), reverse=True)
-    # Offset pagination on the ranked list: return the [offset, offset+size) page.
-    results = results[req.offset : req.offset + req.size]
+    # Browse already paged + ordered (alphabetically) in ES — keep that order and
+    # page as-is. The ranked path re-ranks by score here and slices the window.
+    if not browse:
+        results.sort(key=lambda r: (r.score, r.place_id), reverse=True)
+        # Offset pagination on the ranked list: return the [offset, offset+size) page.
+        results = results[req.offset : req.offset + req.size]
 
     # ------------------------------------------------------------------
     # Step 5: Build facets from aggregations
