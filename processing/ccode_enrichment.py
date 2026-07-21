@@ -74,6 +74,20 @@ PREFILTER_RESOLUTION = 4
 SOURCE_LABEL = "un-h3-overlap"
 UN_NAMESPACE = "un"
 
+# BNDA marks disputed / special territories with a LOWERCASE ``iso2cd`` whose
+# naive upper-casing would be bogus or *collide* with a real ISO code — e.g.
+# ``xk`` (Jammu and Kashmir) upper-cases to ``XK``, which every ISO consumer
+# reads as **Kosovo**. Map each to its claimant ISO 3166-1 alpha-2 countries so
+# places there attest to *all* claimants (politically neutral, and consistent
+# with the pre-existing multi-tagging). Any lowercase code NOT listed here is
+# skipped rather than emitting a non-ISO ccode.
+BNDA_DISPUTED_CLAIMANTS: dict[str, list[str]] = {
+    "xk": ["IN", "PK"],   # Jammu and Kashmir  (India / Pakistan)
+    "xc": ["CN", "IN"],   # Aksai Chin         (China-administered, India-claimed)
+    "xp": ["IN", "CN"],   # Arunachal Pradesh / South Tibet (India-admin, China-claimed)
+    "xr": ["RU", "JP"],   # Kuril Islands      (Russia-administered, Japan-claimed)
+}
+
 
 # ---------------------------------------------------------------------------
 # IO helpers
@@ -538,6 +552,17 @@ class UnCountryIndex:
             code = props.get(iso_field)
             if not isinstance(code, str) or len(code) != 2 or not code.isalpha():
                 continue
+            # Resolve the ISO code(s) this feature contributes. BNDA disputed
+            # territories carry a lowercase code → expand to claimant ISO codes;
+            # normal countries are uppercase → use as-is; any other lowercase/
+            # mixed code is skipped (never emit a bogus/colliding ccode).
+            low = code.lower()
+            if low in BNDA_DISPUTED_CLAIMANTS:
+                target_codes = BNDA_DISPUTED_CLAIMANTS[low]
+            elif code.isupper():
+                target_codes = [code]
+            else:
+                continue
             g = feat.get("geometry")
             if not g:
                 continue
@@ -552,8 +577,9 @@ class UnCountryIndex:
             parts = list(shp.geoms) if shp.geom_type == "MultiPolygon" else [shp]
             for part in parts:
                 if not part.is_empty:
-                    geoms.append(part)
-                    ccodes.append(code.upper())
+                    for tc in target_codes:
+                        geoms.append(part)
+                        ccodes.append(tc)
         self._set_geoms(geoms, ccodes)
         return self
 
