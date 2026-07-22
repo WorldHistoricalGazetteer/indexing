@@ -279,13 +279,15 @@ TILESERVER_SERVICES     = os.getenv(
 # (``processing.push_gazetteer_inventory._download_fields``):
 #
 #   1. LEGALITY — the per-authority ``redistributable`` key below. Licence
-#      permission is often implicit in ``license_spdx`` (CC0/CC-BY/CC-BY-SA all
-#      allow redistribution; UKDS End User Licence / bespoke non-redistribution
-#      terms do not), but it is recorded EXPLICITLY here so the determination is
-#      auditable rather than inferred. Unset ⇒ treated as True (the open default;
-#      set it to ``False`` for any licence that forbids re-hosting). Known
-#      restricted cases still on the default pending review: ``ukhc`` (no-
-#      redistribution clause) and ``og`` (redistribution by permission).
+#      permission is often implicit in ``license_spdx`` (CC0/CC-BY/CC-BY-SA/CC-BY-NC
+#      and ODbL/ODC-By all allow redistribution — NC only non-commercially; UKDS
+#      End User Licence / bespoke academic or data-sovereignty terms do not), but
+#      it is recorded EXPLICITLY per authority so the determination is auditable
+#      rather than inferred. Every authority sets it (unset ⇒ True downstream as a
+#      safety default). Audited 2026-07-22: the only ``False`` cases are
+#      ``chgis`` (Harvard academic — no redistribution), ``nl`` (Native Land
+#      data-sovereignty — redistribution by permission) and ``kain_par`` (UKDS
+#      EULA). ``dgsd`` is CC-BY-ND but True because its PI endorses WHG re-use.
 #   2. VOLUME — a guard so a legally-redistributable but very large authority is
 #      not offered as a bulk download that could overburden the server. An
 #      authority whose ``record_count`` exceeds ``DOWNLOAD_MAX_RECORDS`` is not
@@ -301,6 +303,7 @@ AUTHORITIES = [
     {  # 2024: 37k+ places
         'dataset_name': 'Pleiades',
         'namespace': 'pl',
+        'redistributable': True,  # CC-BY-3.0
         # Structured attribution (verified 2026-06-06 against pleiades.stoa.org/credits).
         'citation_text': 'Pleiades: A Gazetteer of Past Places, edited by the Institute for the Study of the Ancient World and the Ancient World Mapping Center.',
         'license_spdx': 'CC-BY-3.0',  # still 3.0 (confirmed — NOT 4.0)
@@ -322,6 +325,7 @@ AUTHORITIES = [
     {  # 2024: 12m+ places
         'dataset_name': 'GeoNames',
         'namespace': 'gn',
+        'redistributable': True,  # CC-BY-4.0
         # Verified 2026-06-06 against geonames.org/about.html.
         'citation_text': 'GeoNames geographical database, Unxos GmbH.',
         'license_spdx': 'CC-BY-4.0',
@@ -362,6 +366,7 @@ AUTHORITIES = [
     {  # 2024: 3m+ places
         'dataset_name': 'Getty TGN',
         'namespace': 'tgn',
+        'redistributable': True,  # ODC-By-1.0 (attribution)
         # Verified 2026-06-06 against getty.edu/research/tools/vocabularies/obtain.
         'citation_text': 'Getty Thesaurus of Geographic Names (TGN), J. Paul Getty Trust.',
         'license_spdx': 'ODC-By-1.0',
@@ -389,6 +394,7 @@ AUTHORITIES = [
     {  # 2024: 8m+ items classified as places with geometry
         'dataset_name': 'Wikidata',
         'namespace': 'wd',
+        'redistributable': True,  # CC0
         # Verified 2026-06-06 against wikidata.org/wiki/Wikidata:Licensing (data is CC0).
         'citation_text': 'Wikidata, Wikimedia Foundation.',
         'license_spdx': 'CC0-1.0',
@@ -414,6 +420,7 @@ AUTHORITIES = [
     {  # 2024: >14.8m named places with multiple toponyms (file includes some unnamed features)
         'dataset_name': 'OpenStreetMap',
         'namespace': 'osm',
+        'redistributable': True,  # ODbL (share-alike)
         # Verified 2026-06-06 against openstreetmap.org/copyright (data is ODbL).
         'citation_text': 'OpenStreetMap, © OpenStreetMap contributors.',
         'license_spdx': 'ODbL-1.0',
@@ -439,6 +446,7 @@ AUTHORITIES = [
     {  # ~800K+ historical places with temporal coverage
         'dataset_name': 'OpenHistoricalMap',
         'namespace': 'ohm',
+        'redistributable': True,  # CC0
         # Verified 2026-06-06: OHM is CC0 (public-domain dedication), NOT ODbL like
         # OSM — wiki.openstreetmap.org/wiki/OpenHistoricalMap/Copyright. Attribution
         # encouraged but not required.
@@ -464,6 +472,7 @@ AUTHORITIES = [
     {  # Not useful as source of places or toponyms, but can provide links
         'dataset_name': 'Library of Congress',
         'namespace': 'loc',
+        'redistributable': True,  # relations-only — no data to redistribute
         'api_item': 'https://www.loc.gov/item/<id>/',
         'web_item': 'https://www.loc.gov/item/<id>/',  # place#121: source human page
         'citation': 'Library of Congress. https://www.loc.gov/',
@@ -503,6 +512,7 @@ AUTHORITIES = [
     {
         'dataset_name': 'Native Land',
         'namespace': 'nl',
+        'redistributable': False,  # Native Land data-sovereignty: redistribution by explicit permission
         # Verified 2026-06-06: Native Land Digital "Data Sovereignty Treaty" (OCAP®)
         # — bespoke terms, NOT CC0/SPDX: NON-COMMERCIAL only, redistribution by
         # explicit permission, mandatory attribution + acknowledgement of Indigenous
@@ -541,6 +551,7 @@ AUTHORITIES = [
     {
         'dataset_name': 'D-PLACE',
         'namespace': 'dp',
+        'redistributable': True,  # CC-BY-NC: non-commercial redistribution permitted
         # Verified 2026-06-06 (d-place.org/about): CC-BY-NC-4.0 (NonCommercial),
         # NOT plain CC-BY-4.0. D-PLACE aggregates many upstream ethnographic
         # datasets, each with its own citation, in addition to Kirby et al. 2016.
@@ -563,6 +574,7 @@ AUTHORITIES = [
     {
         'dataset_name': 'GB1900',
         'namespace': 'gb',
+        'redistributable': True,  # CC-BY-SA-4.0
         # Verified 2026-06-06: WHG ingests the *abridged* GB1900 gazetteer
         # (~1.17M rows, matching our count) = CC-BY-SA; only the raw dump is CC0.
         # Share-alike + attribution required (visionofbritain.org.uk/data).
@@ -585,6 +597,7 @@ AUTHORITIES = [
     {  # 24,000 place names
         'dataset_name': 'Index Villaris',
         'namespace': 'iv',
+        'redistributable': True,  # CC-BY-SA-4.0
         # Verified 2026-06-06 via the repo LICENSE (GitHub licence API: CC-BY-SA-4.0).
         # The 1680 source (John Adams) is public domain; the digitised dataset is the
         # licensed layer. Share-alike + attribution to the digital editors required.
@@ -606,6 +619,7 @@ AUTHORITIES = [
     {  # UN countries and territories
         'dataset_name': 'UN Countries',
         'namespace': 'un',  # United Nations countries and territories
+        'redistributable': True,  # UN geodata — already committed as reference geometry
         # Adopted 2026-07-14: UN Geospatial BNDA (Boundaries of Administrative
         # units, "BNDA_simplified"), replacing Natural Earth. The UN's own
         # authoritative, politically-neutral administrative boundaries, with
@@ -637,6 +651,7 @@ AUTHORITIES = [
     {  # UK historic counties (92 polygons; regional containment geographies)
         'dataset_name': 'UK Historic Counties',
         'namespace': 'ukhc',
+        'redistributable': True,  # county-borders.co.uk: free for all use, attribution requested
         # Verified 2026-06-06 (county-borders.co.uk terms): free for personal/
         # educational/non-commercial AND commercial use, attribution requested
         # ("would appreciate"). Bound to WHG custom License 'custom-historic-counties'
@@ -800,6 +815,7 @@ AUTHORITIES = [
     {  # PeriodO temporal periods with spatial coverage
         'dataset_name': 'PeriodO',
         'namespace': 'po',
+        'redistributable': True,  # CC0
         # Verified 2026-06-06 (perio.do/license): CC0 public-domain dedication.
         'citation_text': 'PeriodO: A Gazetteer of Period Definitions for Linking and Visualizing Data, PeriodO contributors.',
         'license_spdx': 'CC0-1.0',
@@ -820,6 +836,7 @@ AUTHORITIES = [
     {  # Cliopatria historical polity boundaries
         'dataset_name': 'Cliopatria',
         'namespace': 'clio',
+        'redistributable': True,  # CC-BY-4.0
         # Verified 2026-06-06 via repo LICENSE.md (CC-BY-4.0).
         'citation_text': 'Cliopatria: A Modular GIS-Ready Dataset of Historical Polity Boundaries, Seshat: Global History Databank.',
         'license_spdx': 'CC-BY-4.0',
@@ -841,6 +858,7 @@ AUTHORITIES = [
     {  # ~82K historical Chinese administrative places
         'dataset_name': 'China Historical GIS (CHGIS)',
         'namespace': 'chgis',
+        'redistributable': False,  # Harvard academic-only: NO resale OR redistribution
         # Verified 2026-06-06 (chgis.fas.harvard.edu/data/chgis/v6): bespoke
         # "academic research only" terms — NO commercial use, resale, OR
         # redistribution (stricter than any CC licence). Bound to WHG custom License
@@ -867,6 +885,7 @@ AUTHORITIES = [
     {  # ~3.8K Song dynasty administrative entities
         'dataset_name': 'Digital Gazetteer of the Song Dynasty',
         'namespace': 'dgsd',
+        'redistributable': True,  # CC-BY-ND, but PI (Mostern) endorses WHG use incl. redistribution
         # Verified 2026-06-06 via the D-Scholarship record badge: CC-BY-ND-4.0
         # (NoDerivatives) — corrects an earlier CC-BY-NC-SA guess. NOT yet in the WHG
         # seeded SPDX set (WHG skips+logs until seeded → seed CC-BY-ND-4.0). The ND
@@ -895,6 +914,7 @@ AUTHORITIES = [
     {  # ~24K ancient/historical places with coordinates
         'dataset_name': 'Trismegistos',
         'namespace': 'tm',
+        'redistributable': True,  # CC-BY-SA-4.0
         # Verified 2026-06-06 (trismegistos.org/dataservices): CC-BY-SA-4.0 (NOT
         # non-commercial, contrary to common assumption). Share-alike applies to
         # derivative datasets; registration only needed for premium features.
@@ -920,6 +940,7 @@ AUTHORITIES = [
     {  # HGIS de las Indias — Bourbon Spanish America 1701-1808 (lugares + territorios)
         'dataset_name': 'HGIS de las Indias',
         'namespace': 'hgis',
+        'redistributable': True,  # CC-BY-SA-4.0
         'api_item': '',
         # Werner Stangl, HGIS de las Indias (University of Graz, FWF-funded
         # 2015-2017): lugares (settlements, points) + territorios (administrative,
@@ -953,6 +974,7 @@ AUTHORITIES = [
     {  # ~17.5K places from Alcedo's 1786-89 Diccionario (ANR TopUrbi digitisation)
         'dataset_name': 'Alcedo',
         'namespace': 'alc',
+        'redistributable': True,  # CC-BY-NC: non-commercial redistribution permitted
         'api_item': '',
         # Antonio de Alcedo, Diccionario geográfico-histórico de las Indias
         # Occidentales ó América (1786-89); TEI digital edition by Werner Stangl
@@ -1004,6 +1026,7 @@ AUTHORITIES = [
     {  # ~16.3K Ottoman populated places from 19th-c. population registers (NFS.d.)
         'dataset_name': 'Ottoman NFS Gazetteer',
         'namespace': 'ofs',
+        'redistributable': True,  # CC-BY-4.0
         # Verified 2026-06-06 (Zenodo record 7351936 Rights field): CC-BY-4.0.
         'citation_text': 'Kabadayı, M. Erdem, Akın Sefer, Grigor Boykov & Piet Gerrits (2022). Ottoman NFS Gazetteer. Zenodo. https://doi.org/10.5281/zenodo.7351936.',
         'license_spdx': 'CC-BY-4.0',
@@ -1034,6 +1057,7 @@ AUTHORITIES = [
     {  # ~6.3K Ottoman administrative units (eyalet/vilayet/sancak/kaza/nahiye)
         'dataset_name': 'Ottoman Gazetteer (ottgaz)',
         'namespace': 'og',
+        'redistributable': True,  # CC-BY-NC: non-commercial redistribution permitted
         # Verified 2026-06-06 via repo LICENSE + README badge: CC-BY-NC-4.0.
         'citation_text': 'Hanley, Will (2021). Ottoman Gazetteer (ottgaz.org), transformed from Tahir Sezen, Osmanlı Yer Adları.',
         'license_spdx': 'CC-BY-NC-4.0',
