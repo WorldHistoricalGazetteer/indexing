@@ -393,26 +393,24 @@ def generate_tileset(
             '--cluster-maxzoom', '8',
             '--cluster-densest-as-needed',
         ]
-        # Carry the per-feature temporal range + AAT set onto the surviving
-        # cluster point (place#131) so low-zoom clusters filter too, not just
-        # individual features. ``start:min``/``end:max`` widen to the union of
-        # members' spans (a cluster shows if *any* member overlaps the window);
-        # ``aat:concat`` unions the ``;``-delimited type sets. Without these,
-        # clustering drops the attributes and low-zoom points can't be filtered.
+        # Carry the per-feature temporal range onto the surviving cluster point
+        # (place#131) so low-zoom clusters date-filter too, not just individual
+        # features. ``start:min``/``end:max`` widen to the union of members'
+        # spans (a cluster shows if *any* member overlaps the window).
         cmd += [
             '--accumulate-attribute', 'start:min',
             '--accumulate-attribute', 'end:max',
-            '--accumulate-attribute', 'aat:concat',
         ]
-        # ``concat`` doesn't collapse repeats, so a dense cluster's ``aat`` grows
-        # with member count. A tiny jq postfilter dedupes it in the same pass
-        # (no extra stage). Correctness doesn't depend on it — skip cleanly when
-        # jq is unavailable (cluster ``aat`` just keeps duplicate ids).
-        if shutil.which('jq') and AAT_POSTFILTER_SCRIPT.exists():
-            cmd += ['--postfilter', str(AAT_POSTFILTER_SCRIPT)]
-        else:
-            print("  ⚠ jq / aat postfilter unavailable — cluster 'aat' will "
-                  "contain duplicate ids (filtering still correct)")
+        # NOTE: AAT is deliberately NOT accumulated onto cluster points.
+        # ``aat:concat`` builds an *unbounded* string (every member's paths
+        # concatenated) BEFORE any dedupe, and a dense bucket (kain_par: 23k
+        # parishes) overflows tippecanoe's per-feature attribute budget →
+        # tiling fails. The jq ``--postfilter`` dedupes only AFTER the tile is
+        # assembled, too late to prevent the blow-up. Type-filtering therefore
+        # applies to *individual* features (higher zoom, where it's meaningful);
+        # low-zoom cluster points are not type-filtered — acceptable, since a
+        # dense cluster spans many types anyway. ``tilegen_aat_postfilter.sh``
+        # is kept for a future bounded-accumulation approach.
     cmd.append(str(geojsonl_path))
 
     start = time.time()
