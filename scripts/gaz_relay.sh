@@ -23,6 +23,8 @@
 #   mkdir -p /vast/ishi/elastic/.gaz_relay && chmod 2775 /vast/ishi/elastic/.gaz_relay
 #   ( crontab -l 2>/dev/null | grep -v gaz_relay; \
 #     echo '* * * * * /home/gazetteer/gaz_relay.sh >> /vast/ishi/elastic/logs/gaz_relay.log 2>&1' ) | crontab -
+#   # NB: after pulling an updated repo, RE-RUN the `install …` line to refresh the
+#   #     running copy — cron uses ~/gaz_relay.sh, not the repo copy.
 #
 # A requester submits via scripts/gaz_request.sh (see that file).
 
@@ -33,6 +35,14 @@ REPO="/vast/ishi/elastic"
 RELAY="$REPO/.gaz_relay"
 ES="$REPO/scripts/es.sh"
 GW="$REPO/scripts/gateway_ctl.sh"
+
+# Max wall-time for ONE service op. Without this, a hung restart holds the flock
+# and wedges the relay forever (every later tick fails `flock -n` and exits) — the
+# #129 failure mode. ES cold-start can take ~60s, so keep comfortably above that.
+OP_TIMEOUT="${GAZ_RELAY_OP_TIMEOUT:-240}"
+# Emit an "alive" heartbeat to the log at most this often (seconds) when idle, so
+# the log confirms the cron is firing without a line every single minute.
+HEARTBEAT_EVERY="${GAZ_RELAY_HEARTBEAT_EVERY:-900}"
 
 # token -> FULL command (fixed HERE — the request token is only a lookup key, it
 # is NEVER interpolated into the command). Gateway ops go through gateway_ctl.sh
@@ -49,35 +59,65 @@ declare -A ALLOW=(
   [restart-all]="$ES -restart"
 )
 
+log() { echo "$(date '+%F %T') gaz_relay: $*"; }
+
 mkdir -p "$RELAY" 2>/dev/null
 chmod 2775 "$RELAY" 2>/dev/null || true   # setgid: req/resp inherit group ishi
 
-# single-instance lock — a restart can exceed the 1-min cron interval.
-exec 9>"$RELAY/.lock" 2>/dev/null || exit 0
-flock -n 9 || exit 0
+# single-instance lock — a restart can exceed the 1-min cron interval. flock is
+# tied to the open fd, so it auto-releases if the holder dies (a stale .lock FILE
+# is harmless); only a genuinely-hung op holds it — which OP_TIMEOUT now bounds.
+exec 9>"$RELAY/.lock" 2>/dev/null || { log "cannot open lock file — skipping tick"; exit 0; }
+if ! flock -n 9; then
+  # Another run is still active (e.g. a slow restart). Log it so lag is visible.
+  log "busy: previous relay run still holds the lock; skipping this tick"
+  exit 0
+fi
 
 # tidy stale artefacts (>60 min) from timed-out / abandoned requests.
 find "$RELAY" -maxdepth 1 -type f \( -name 'resp-*' -o -name 'req-*' -o -name '.processing-*' \) -mmin +60 -delete 2>/dev/null || true
 
 shopt -s nullglob
-for req in "$RELAY"/req-*; do
-  case "$req" in *.tmp) continue;; esac
+pending=()
+for r in "$RELAY"/req-*; do
+  case "$r" in *.tmp) continue;; esac
+  pending+=("$r")
+done
+
+if ((${#pending[@]} == 0)); then
+  # Rate-limited heartbeat: confirms the cron is alive without spamming the log.
+  hb="$RELAY/.heartbeat"
+  now=$(date +%s)
+  last=$(stat -c %Y "$hb" 2>/dev/null || echo 0)
+  if (( now - last >= HEARTBEAT_EVERY )); then
+    log "alive (no pending requests)"
+    : > "$hb" 2>/dev/null || true
+  fi
+  exit 0
+fi
+
+for req in "${pending[@]}"; do
   id="${req##*/req-}"
   resp="$RELAY/resp-$id"
   proc="$RELAY/.processing-$id"
   requester="$(stat -c %U "$req" 2>/dev/null)"
   token="$(head -n1 "$req" 2>/dev/null | tr -cd 'A-Za-z0-9._-')"
   mv -f "$req" "$proc" 2>/dev/null || continue   # claim it
+  log "processing id=$id requester=$requester token=[$token]"
+  rc=0
   {
     echo "# gaz_relay $(date '+%F %T') requester=$requester token=[$token]"
     if [[ -n "${ALLOW[$token]:-}" ]]; then
       cmd="${ALLOW[$token]}"
-      echo "# running as $(whoami): $cmd"
+      echo "# running as $(whoami) (timeout ${OP_TIMEOUT}s): $cmd"
       echo "----------------------------------------"
-      bash -c "$cmd"
+      timeout "$OP_TIMEOUT" bash -c "$cmd"
+      rc=$?
       echo "----------------------------------------"
-      echo "EXIT: $?"
+      [[ $rc -eq 124 ]] && echo "TIMED OUT after ${OP_TIMEOUT}s (op still running or killed)"
+      echo "EXIT: $rc"
     else
+      rc=126
       echo "REJECTED: token not in allowlist. Allowed: ${!ALLOW[*]}"
       echo "EXIT: 126"
     fi
@@ -85,4 +125,5 @@ for req in "$RELAY"/req-*; do
   mv -f "$resp.tmp" "$resp"
   chmod 664 "$resp" 2>/dev/null || true
   rm -f "$proc"
+  log "done id=$id token=[$token] exit=$rc"
 done
