@@ -105,6 +105,28 @@ MANUAL_AAT_MAPS: dict[str, dict[str, list[int]]] = {
         "frontier-system-limes": [300006909],  # forts (frontier fortifications)
         "mine": [300000390],                 # mines
     },
+
+    # Vision of Britain / GB Historical GIS boundary levels (place#135). The
+    # county tiers map to AAT "counties" (as ukhc/dgsd already do); the district
+    # tiers to AAT "districts" — registration districts / poor-law unions and
+    # local-government districts are administrative/statistical districts.
+    "vob_rc":  {"registration-county":       [300000771]},  # counties
+    "vob_cty": {"administrative-county":      [300000771]},  # counties
+    "vob_rd":  {"registration-district":      [300000705]},  # districts
+    "vob_lgd": {"local-government-district":  [300000705]},  # districts
+
+    # Kain & Oliver ancient parishes (place#135) — CAT-derived native types.
+    # ``extra-parochial-place`` is intentionally left untyped (by definition it
+    # lies OUTSIDE parishes; no clean AAT). The ambiguous CAT fallback
+    # (``ancient-parish``) takes the generic "parishes" concept.
+    "kain_par": {
+        "parish":         [300387092],  # parishes
+        "township":       [300000792],  # townships
+        "chapelry":       [300000773],  # parishes (religious divisions)
+        "hamlet":         [300008369],  # hamlets
+        "borough":        [300000778],  # boroughs
+        "ancient-parish": [300387092],  # parishes (generic fallback)
+    },
 }
 
 
