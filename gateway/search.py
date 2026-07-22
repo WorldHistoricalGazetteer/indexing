@@ -313,8 +313,18 @@ async def search(req: SearchRequest):
 
     auth = es_auth()
 
-    exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
     include_prefixes = tuple(f"{ns}:" for ns in req.namespaces) if req.namespaces else ()
+    # An explicit `namespaces` (positive filter) OVERRIDES `exclude_namespaces`
+    # (as its field doc states). Otherwise a request for a default-excluded
+    # namespace — exclude_namespaces defaults to ["gb"] — is silently dropped by
+    # collect_place_ids' exclude even though the caller asked for it. Only apply
+    # the exclusion when no explicit include set was given.
+    exclude_prefixes = (
+        ()
+        if req.namespaces
+        else tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces
+        else ()
+    )
 
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}

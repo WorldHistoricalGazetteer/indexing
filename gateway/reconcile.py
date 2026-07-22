@@ -310,11 +310,19 @@ async def reconcile_search(req: ReconcileRequest):
 
     auth = _es_auth()
 
-    # Build exclusion prefixes from requested namespaces (e.g. ["gb"] → ("gb:",))
-    exclude_prefixes = tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces else ()
-
     # Build inclusion prefixes when a positive namespace filter is given
     include_prefixes = tuple(f"{ns}:" for ns in req.namespaces) if req.namespaces else ()
+
+    # An explicit `namespaces` OVERRIDES `exclude_namespaces` (per its field doc):
+    # apply the exclusion only when no positive include set was given, else a
+    # request for a default-excluded namespace (exclude_namespaces defaults to
+    # ["gb"]) is silently dropped despite being explicitly requested.
+    exclude_prefixes = (
+        ()
+        if req.namespaces
+        else tuple(f"{ns}:" for ns in req.exclude_namespaces) if req.exclude_namespaces
+        else ()
+    )
 
     # place_id → best toponym-match score
     place_scores: dict[str, float] = {}
