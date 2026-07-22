@@ -33,9 +33,12 @@ IX3_BASE = os.getenv("IX3_BASE", "/vast/ishi")
 _vast_pass_file = f"{IX3_BASE}/es/config/elastic.password"
 ELASTIC_PASS_FILE = _vast_pass_file if os.path.exists(_vast_pass_file) else f"{IX1_BASE}/es/config/elastic.password"
 
-# ES index names (may be dated aliases like toponyms_20260317)
-TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms_*")
-PLACES_INDEX = os.getenv("PLACES_INDEX", "places_*")
+# ES access is ALWAYS via the stable aliases `toponyms` / `places` (never the
+# dated concrete index or a `*` wildcard). This lets index cutovers (rebuilds,
+# the #127 ngram reindex, etc.) be a single atomic, reversible alias re-point
+# with no gateway change — and avoids a wildcard matching two indices mid-swap.
+TOPONYMS_INDEX = os.getenv("TOPONYMS_INDEX", "toponyms")
+PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 # NB: the legacy `clusters` index enrichment was retired 2026-07-12 (clustering
 # is client-side now — plan §1); CLUSTERS_INDEX is intentionally gone.
 
