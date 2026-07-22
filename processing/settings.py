@@ -271,6 +271,31 @@ TILESERVER_SERVICES     = os.getenv(
 ).split()
 
 
+# ── Authority download / redistribution gating ─────────────────────────────
+# Whether WHG may offer an authority as a **downloadable copy** (re-hosting /
+# redistribution — distinct from indexing it for search & reconciliation, which
+# every authority permits) is governed by TWO factors, combined into the
+# ``downloadable`` flag the inventory push sends to the registry
+# (``processing.push_gazetteer_inventory._download_fields``):
+#
+#   1. LEGALITY — the per-authority ``redistributable`` key below. Licence
+#      permission is often implicit in ``license_spdx`` (CC0/CC-BY/CC-BY-SA all
+#      allow redistribution; UKDS End User Licence / bespoke non-redistribution
+#      terms do not), but it is recorded EXPLICITLY here so the determination is
+#      auditable rather than inferred. Unset ⇒ treated as True (the open default;
+#      set it to ``False`` for any licence that forbids re-hosting). Known
+#      restricted cases still on the default pending review: ``ukhc`` (no-
+#      redistribution clause) and ``og`` (redistribution by permission).
+#   2. VOLUME — a guard so a legally-redistributable but very large authority is
+#      not offered as a bulk download that could overburden the server. An
+#      authority whose ``record_count`` exceeds ``DOWNLOAD_MAX_RECORDS`` is not
+#      marked downloadable regardless of licence (the mega crawled sources —
+#      gn/osm/wd/ohm/gb — are excluded this way; curated historical gazetteers
+#      sit well under the cap). Coarse by design (record count, not bytes);
+#      raise/refine if a genuine need appears.
+DOWNLOAD_MAX_RECORDS = 250_000
+
+
 # Remote Dataset Configurations
 AUTHORITIES = [
     {  # 2024: 37k+ places
@@ -635,6 +660,142 @@ AUTHORITIES = [
                 'file_type': 'shapefile-zip',
             }
         ],
+    },
+    # ─── Vision of Britain / GB Historical GIS boundary levels (place#135) ───
+    # Four separate UKDS studies, each OPEN + CC-BY-SA-4.0 (attribution +
+    # share-alike; commercial use AND redistribution permitted). Per-census-year
+    # OSGB (EPSG:27700) shapefiles, modelled as one multi-snapshot place per
+    # stable G_UNIT (see authorities/vob_common.py). The download is a one-shot
+    # session link, so the .zip is placed manually in the namespace data dir
+    # (files:[] → fetch_authorities is a no-op; the authority script globs it).
+    # Parishes are the deliberate restricted exception — NOT here (see #135).
+    {  # Registration districts (== poor-law unions; coterminous PR_DIST)
+        'dataset_name': 'GBHGIS Registration Districts of England & Wales, 1851–1911',
+        'namespace': 'vob_rd',
+        'description': ('Registration districts (also the coterminous poor-law '
+                        'unions) of England & Wales at each census 1851–1911, as '
+                        'boundary polygons — historic containment geographies for '
+                        'reconciliation. Great Britain Historical GIS Project.'),
+        'citation_text': ('Great Britain Historical GIS Project (2023). Digital '
+                          'Boundaries for Registration Districts of England and Wales, '
+                          '1851–1911. University of Portsmouth. UK Data Service SN 9032, '
+                          'CC BY-SA 4.0.'),
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Great Britain Historical GIS Project, University of Portsmouth',
+        'source_url': 'https://doi.org/10.5255/UKDA-SN-9032-1',
+        'redistributable': True,  # CC-BY-SA-4.0 permits re-hosting
+        'contributors': [],
+        'api_item': '',
+        'citation': ('Southall, H.R., University of Portsmouth (2023). Great Britain '
+                     'Historical Database: Digital Boundaries for Registration Districts '
+                     'of England and Wales, 1851–1911. UK Data Service. SN 9032, '
+                     'http://doi.org/10.5255/UKDA-SN-9032-1'),
+        'files': [],  # manual placement — see note above
+    },
+    {  # Registration counties
+        'dataset_name': 'GBHGIS Registration Counties of England & Wales, 1851–1911',
+        'namespace': 'vob_rc',
+        'description': ('Registration counties of England & Wales at each census '
+                        '1851–1911, as boundary polygons. Great Britain Historical '
+                        'GIS Project.'),
+        'citation_text': ('Great Britain Historical GIS Project. Digital Boundaries for '
+                          'Registration Counties of England and Wales, 1851–1911. '
+                          'University of Portsmouth. UK Data Service SN 9033, '
+                          'CC BY-SA 4.0.'),
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Great Britain Historical GIS Project, University of Portsmouth',
+        'source_url': 'https://doi.org/10.5255/UKDA-SN-9033-1',
+        'redistributable': True,  # CC-BY-SA-4.0 permits re-hosting
+        'contributors': [],
+        'api_item': '',
+        'citation': ('Great Britain Historical Database: Digital Boundaries for '
+                     'Registration Counties of England and Wales, 1851–1911. UK Data '
+                     'Service. SN 9033, http://doi.org/10.5255/UKDA-SN-9033-1'),
+        'files': [],  # manual placement
+    },
+    {  # Administrative counties
+        'dataset_name': 'GBHGIS Administrative Counties of England & Wales, 1911–1971',
+        'namespace': 'vob_cty',
+        'description': ('Administrative counties of England & Wales at each census '
+                        '1911–1971, as boundary polygons. Great Britain Historical '
+                        'GIS Project.'),
+        'citation_text': ('Great Britain Historical GIS Project (2024). Digital '
+                          'Boundaries for the Administrative Counties of England and '
+                          'Wales, 1911–1971. University of Portsmouth. UK Data Service '
+                          'SN 9179, CC BY-SA 4.0.'),
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Great Britain Historical GIS Project, University of Portsmouth',
+        'source_url': 'https://doi.org/10.5255/UKDA-SN-9179-1',
+        'redistributable': True,  # CC-BY-SA-4.0 permits re-hosting
+        'contributors': [],
+        'api_item': '',
+        'citation': ('Southall, H.R. (2024). Great Britain Historical Database: Digital '
+                     'Boundaries for the Administrative Counties of England and Wales, '
+                     '1911–1971. UK Data Service. SN 9179, '
+                     'http://doi.org/10.5255/UKDA-SN-9179-1'),
+        'files': [],  # manual placement
+    },
+    {  # Local-government districts
+        'dataset_name': 'GBHGIS Local Government Districts of England & Wales, 1911–1971',
+        'namespace': 'vob_lgd',
+        'description': ('Local-government districts (rural/urban districts, municipal '
+                        '& county boroughs, London boroughs) of England & Wales at each '
+                        'census 1911–1971, as boundary polygons. Great Britain '
+                        'Historical GIS Project.'),
+        'citation_text': ('Great Britain Historical GIS Project. Digital Boundaries for '
+                          'Local Government Districts of England and Wales, 1911–1971. '
+                          'University of Portsmouth. UK Data Service SN 9321, '
+                          'CC BY-SA 4.0.'),
+        'license_spdx': 'CC-BY-SA-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by-sa/4.0/',
+        'rights_holder': 'Great Britain Historical GIS Project, University of Portsmouth',
+        'source_url': 'https://doi.org/10.5255/UKDA-SN-9321-1',
+        'redistributable': True,  # CC-BY-SA-4.0 permits re-hosting
+        'contributors': [],
+        'api_item': '',
+        'citation': ('Great Britain Historical Database: Digital Boundaries for Local '
+                     'Government Districts of England and Wales, 1911–1971. UK Data '
+                     'Service. SN 9321, http://doi.org/10.5255/UKDA-SN-9321-1'),
+        'files': [],  # manual placement
+    },
+    {  # Ancient parishes & places of England & Wales, pre-1850 (place#135)
+        # Kain & Oliver's historic-parish boundaries (SN 4348, 2001), converted
+        # to a single ~28k-polygon GIS by Burton et al. (SN 4828, 2004) and
+        # error-corrected + census-attributed by Satchell et al. (SN 852232 /
+        # ReShare, 2023) — the version indexed here. RESTRICTED: obtained under
+        # the UK Data Service End User Licence (registration-gated); NOT
+        # redistributable (index-in-place only — no WHG-download) and commercial
+        # use is prohibited. Hence redistributable=False (see DOWNLOAD_MAX_RECORDS
+        # note above). No SPDX licence — the EUL is bespoke. Placed manually
+        # (safeguarded, not auto-fetchable).
+        'dataset_name': 'Ancient Parishes & Places of England & Wales (pre-1850)',
+        'namespace': 'kain_par',
+        'description': ('Boundaries of the ancient parishes, townships and places '
+                        'of England & Wales before 1850 (~23k polygons), aligned to '
+                        'the 1851 census. Kain & Oliver, via the Cambridge Group '
+                        '(CAMPOP) enhanced GIS. Historic containment geographies for '
+                        'reconciliation.'),
+        'citation_text': ('Satchell, A.E.M, Kitson, P.K, Newton, G.H, Shaw-Taylor, L. '
+                          'and Wrigley, E.A (2023). 1851 England and Wales census '
+                          'parishes, townships and places. UK Data Service SN 852232. '
+                          'Derived from Kain, R.J.P. & Oliver, R.R., Historic Parishes '
+                          'of England and Wales (2001).'),
+        'license_spdx': '',  # UK Data Service End User Licence (bespoke, non-SPDX)
+        'license_url': 'https://ukdataservice.ac.uk/app/uploads/cd137-enduserlicence.pdf',
+        'rights_holder': ('The Cambridge Group for the History of Population and Social '
+                          'Structure; R.J.P. Kain & R.R. Oliver'),
+        'source_url': 'https://doi.org/10.5255/UKDA-SN-852232',
+        'redistributable': False,  # UKDS EULA — index-in-place only, no re-hosting
+        'contributors': [],
+        'api_item': '',
+        'citation': ('Satchell, A.E.M et al. (2023). 1851 England and Wales census '
+                     'parishes, townships and places. [Data Collection]. UK Data '
+                     'Service. SN 852232, http://doi.org/10.5255/UKDA-SN-852232. '
+                     'Underlying boundaries: Kain, R.J.P. & Oliver, R.R. (2001), SN 4348.'),
+        'files': [],  # manual placement (safeguarded, EULA-gated)
     },
     {  # PeriodO temporal periods with spatial coverage
         'dataset_name': 'PeriodO',

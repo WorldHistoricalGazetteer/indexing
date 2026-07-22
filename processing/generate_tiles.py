@@ -64,6 +64,7 @@ from processing.osm_boundary_geometry import (
     is_admin_boundary_value,
     is_misc_boundary_value,
 )
+from processing.gazetteer_temporal_extent import doc_temporal_range
 from processing.settings import (
     DATA_DIR,
     GEOM_STORE_DIR,
@@ -74,6 +75,30 @@ from processing.settings import (
 
 
 TILES_OUTPUT_DIR = Path(DATA_DIR) / 'tiles'
+
+# Per-feature temporal sentinels for the Atlas client-side date filter
+# (place#131). The whg3 map filter is interval-overlap:
+#   ['all', ['has','start'], ['<=',['get','start'],toYear], ['>=',['get','end'],fromYear]]
+# It reads *both* ``start`` and ``end`` on every dated feature, so open-ended
+# spans can't leave a bound absent (a missing ``end`` would wrongly hide every
+# still-current place). We therefore emit a sentinel for the open side:
+#   ongoing  (start, no end)  -> end   = TILE_OPEN_END_YEAR   (always >= fromYear)
+#   open-start (end, no start)-> start = TILE_OPEN_START_YEAR (always <= toYear)
+#   undated  (no start/end)   -> omit both; the client admits these only in
+#                               "+ undated" mode via ['!',['has','start']].
+# This mirrors the gateway's temporal-overlap + ``undated`` semantics
+# (``gateway/es_helpers.py``). Fixed (not build-year) so tiles stay
+# reproducible; the values only need to fall outside any real query window.
+TILE_OPEN_END_YEAR = 9999
+TILE_OPEN_START_YEAR = -9999
+
+# tippecanoe ``--postfilter`` that dedupes the ``;``-delimited ``aat`` string on
+# clustered points (``--accumulate-attribute=aat:concat`` concatenates member
+# strings without collapsing repeats). Committed alongside this module; jq-based
+# and stdin-streaming so it adds negligible per-tile cost. Dedup is a size
+# optimisation only — the ANY-of ``['in',';id;',['get','aat']]`` filter is
+# already correct on the un-deduped concatenation.
+AAT_POSTFILTER_SCRIPT = Path(__file__).with_name('tilegen_aat_postfilter.sh')
 
 # Stage preference order when locating the input snapshot for a namespace.
 # The first existing directory wins; tile generation does not require ccode
@@ -143,6 +168,10 @@ _FIXED_BUCKETS: dict[str, tuple[str, ...]] = {
 _PER_NAMESPACE_BUCKETS: tuple[str, ...] = (
     "alc", "chgis", "hgis", "clio", "dgsd", "dp", "gb", "gn", "iv", "nl",
     "ofs", "og", "pl", "po", "tgn", "tm", "ukhc", "un", "wd",
+    # Vision of Britain / GB Historical GIS boundary levels (place#135)
+    "vob_rd", "vob_rc", "vob_cty", "vob_lgd",
+    # Kain & Oliver ancient parishes (place#135)
+    "kain_par",
 )
 
 # Prefix used by per-WHG-dataset buckets. The full bucket name is
@@ -364,6 +393,26 @@ def generate_tileset(
             '--cluster-maxzoom', '8',
             '--cluster-densest-as-needed',
         ]
+        # Carry the per-feature temporal range + AAT set onto the surviving
+        # cluster point (place#131) so low-zoom clusters filter too, not just
+        # individual features. ``start:min``/``end:max`` widen to the union of
+        # members' spans (a cluster shows if *any* member overlaps the window);
+        # ``aat:concat`` unions the ``;``-delimited type sets. Without these,
+        # clustering drops the attributes and low-zoom points can't be filtered.
+        cmd += [
+            '--accumulate-attribute', 'start:min',
+            '--accumulate-attribute', 'end:max',
+            '--accumulate-attribute', 'aat:concat',
+        ]
+        # ``concat`` doesn't collapse repeats, so a dense cluster's ``aat`` grows
+        # with member count. A tiny jq postfilter dedupes it in the same pass
+        # (no extra stage). Correctness doesn't depend on it — skip cleanly when
+        # jq is unavailable (cluster ``aat`` just keeps duplicate ids).
+        if shutil.which('jq') and AAT_POSTFILTER_SCRIPT.exists():
+            cmd += ['--postfilter', str(AAT_POSTFILTER_SCRIPT)]
+        else:
+            print("  ⚠ jq / aat postfilter unavailable — cluster 'aat' will "
+                  "contain duplicate ids (filtering still correct)")
     cmd.append(str(geojsonl_path))
 
     start = time.time()
@@ -779,6 +828,53 @@ def _has_renderable_geometry(geom_entry: Any) -> bool:
     return False
 
 
+def _temporal_props(doc: dict[str, Any], namespace: str) -> dict[str, int]:
+    """Per-feature ``start``/``end`` props for the Atlas date filter (place#131).
+
+    Uses the shared :func:`doc_temporal_range` so the map's per-feature filter
+    and the registry ``temporal_extent`` derive from identical logic. Returns an
+    empty dict for undated features (both bounds omitted → client shows them
+    only in "+ undated" mode); otherwise fills the open side with a sentinel so
+    both ``start`` and ``end`` are always present on a dated feature. See
+    ``TILE_OPEN_END_YEAR`` / ``TILE_OPEN_START_YEAR``.
+    """
+    start, end = doc_temporal_range(doc, namespace)
+    if start is None and end is None:
+        return {}
+    return {
+        "start": start if start is not None else TILE_OPEN_START_YEAR,
+        "end": end if end is not None else TILE_OPEN_END_YEAR,
+    }
+
+
+def _aat_prop(doc: dict[str, Any]) -> str | None:
+    """A ``;``-bracketed union of every AAT path *segment* id on the doc's types
+    (place#131 §2), e.g. ``";300008347;300387179;300000810;"``.
+
+    Every id in every ``types[].aat_paths`` materialised path (root→leaf) is
+    included, so selecting a parent AAT concept on the client matches all its
+    descendants — the ancestor id is present in every descendant's path. The
+    ``;``-bracketing lets the client filter be a pure substring test
+    (``['in', ';<id>;', ['get','aat']]``) with no false-boundary hits, and keeps
+    ``--accumulate-attribute=aat:concat`` correct on clustered points. Returns
+    ``None`` when the doc carries no AAT-mapped type.
+    """
+    segments: set[str] = set()
+    for t in doc.get("types") or []:
+        if not isinstance(t, dict):
+            continue
+        for path in t.get("aat_paths") or []:
+            if not isinstance(path, str):
+                continue
+            for seg in path.split("/"):
+                seg = seg.strip()
+                if seg:
+                    segments.add(seg)
+    if not segments:
+        return None
+    return ";" + ";".join(sorted(segments)) + ";"
+
+
 def _build_staged_feature(
     doc: dict[str, Any],
     namespace: str,
@@ -871,6 +967,15 @@ def _build_staged_feature(
     for lang in DISPLAY_LANGUAGES:
         if lang in names_by_lang:
             props[f"name_{lang}"] = names_by_lang[lang]
+
+    # Per-feature temporal range (place#131 §1) and AAT type set (§2) so the
+    # Atlas map can be date- and type-filtered client-side, in sync with the
+    # gateway-filtered Explore list. Undated features carry no start/end;
+    # untyped features carry no aat.
+    props.update(_temporal_props(doc, namespace))
+    aat = _aat_prop(doc)
+    if aat is not None:
+        props["aat"] = aat
 
     ccodes = doc.get("ccodes") or []
     if ccodes:

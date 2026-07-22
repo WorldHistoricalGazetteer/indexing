@@ -69,6 +69,7 @@ from urllib import error as urlerror, request as urlrequest
 
 from processing.settings import (
     AUTHORITIES,
+    DOWNLOAD_MAX_RECORDS,
     STAGED_BASE_DIR,
     STAGED_RUNS_DIR,
     WHG_API_TOKEN,
@@ -165,6 +166,9 @@ def _authority_meta(namespace: str) -> dict[str, Any]:
                 "web_item": auth.get("web_item"),
                 "image": auth.get("image"),
                 "contributors": auth.get("contributors") or [],
+                # Explicit legal permission to re-host/redistribute (place#135).
+                # None ⇒ unset ⇒ treated as the open default (True) downstream.
+                "redistributable": auth.get("redistributable"),
             }
     return {"name": namespace.upper(), "description": None}
 
@@ -196,6 +200,44 @@ def _attribution_fields(meta: dict[str, Any]) -> dict[str, Any]:
     if meta.get("contributors"):
         out["contributors"] = meta["contributors"]
     return out
+
+
+def _download_fields(meta: dict[str, Any], record_count: int | None) -> dict[str, Any]:
+    """Whether WHG may offer this authority as a downloadable copy (place#135).
+
+    Gated on BOTH legality and volume (see ``settings.DOWNLOAD_MAX_RECORDS``):
+
+    * ``redistributable`` — the explicit per-authority legal determination
+      (``settings.AUTHORITIES[...]['redistributable']``). Unset ⇒ open default
+      (``True``); set ``False`` for EUL / non-redistribution licences.
+    * ``downloadable`` — the effective flag the registry/UI acts on:
+      ``redistributable AND record_count <= DOWNLOAD_MAX_RECORDS``. The volume
+      guard keeps a legally-open but very large authority from being served as a
+      bulk download that could overburden the server.
+    * ``download_blocked_reason`` — ``"licence-restricted"`` /
+      ``"volume-exceeds-cap"`` when not downloadable (omitted when it is).
+
+    All three are always sent (booleans included — ``False`` is a real fact the
+    endpoint must record, so they bypass the falsy-filter in
+    :func:`_attribution_fields`).
+    """
+    redistributable = meta.get("redistributable")
+    if redistributable is None:
+        redistributable = True  # open default; restricted sources set it False
+    redistributable = bool(redistributable)
+
+    over_cap = isinstance(record_count, int) and record_count > DOWNLOAD_MAX_RECORDS
+    downloadable = redistributable and not over_cap
+
+    fields: dict[str, Any] = {
+        "redistributable": redistributable,
+        "downloadable": downloadable,
+    }
+    if not downloadable:
+        fields["download_blocked_reason"] = (
+            "licence-restricted" if not redistributable else "volume-exceeds-cap"
+        )
+    return fields
 
 
 # ---------------------------------------------------------------------------
@@ -458,6 +500,7 @@ def build_inventory_payload(
             "temporal_extent": [start, end],
         }
         entry.update(_attribution_fields(meta))
+        entry.update(_download_fields(meta, entry["record_count"]))
         lm = _last_modified(ns)
         if lm:
             entry["last_modified"] = lm
@@ -501,6 +544,7 @@ def build_single_authority_entry(namespace: str) -> dict[str, Any]:
         "temporal_extent": list(_read_temporal_extent(namespace)),
     }
     entry.update(_attribution_fields(meta))
+    entry.update(_download_fields(meta, entry["record_count"]))
     lm = _last_modified(namespace)
     if lm:
         entry["last_modified"] = lm

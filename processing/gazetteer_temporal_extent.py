@@ -203,6 +203,31 @@ def _collect_extent_for_doc(
     return min_start, max_end, rejected
 
 
+def doc_temporal_range(
+    doc: dict[str, Any], namespace: str
+) -> tuple[int | None, int | None]:
+    """Return ``(start_year, end_year)`` for a single staged place doc.
+
+    A thin, side-effect-free wrapper around :func:`_collect_extent_for_doc`
+    exposing the *per-document* temporal span (widest ``[min(start), max(end)]``
+    across the doc's geometry/toponym/relation timespans, with the same
+    per-namespace outlier clamp as the namespace aggregate). Shared by the
+    :mod:`processing.gazetteer_temporal_extent` aggregate and the vector-tile
+    builder (``processing.generate_tiles``) so the Atlas map's per-feature date
+    filter and the registry's ``temporal_extent`` use identical semantics.
+
+    Either bound may be ``None``: ``(None, None)`` means undated (no parseable
+    in-range year on either endpoint); ``(start, None)`` means an *ongoing*
+    feature (a start but no end — the WHG convention for still-current
+    features); ``(None, end)`` means an open-started feature.
+    """
+    clamp_min, clamp_max = clamp_range_for(namespace)
+    min_start, max_end, _ = _collect_extent_for_doc(
+        doc, clamp_min=clamp_min, clamp_max=clamp_max
+    )
+    return min_start, max_end
+
+
 def compute_temporal_extent(
     namespace: str,
     *,
