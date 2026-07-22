@@ -111,7 +111,15 @@ for req in "${pending[@]}"; do
       cmd="${ALLOW[$token]}"
       echo "# running as $(whoami) (timeout ${OP_TIMEOUT}s): $cmd"
       echo "----------------------------------------"
-      timeout "$OP_TIMEOUT" bash -c "$cmd"
+      # CLOSE THE LOCK FD (9) FOR THE OP (`9>&-`). Restart ops (es-restart /
+      # gateway-restart) spawn a LONG-LIVED daemon; without this the daemon
+      # INHERITS fd 9 and holds the flock forever after this script exits → every
+      # later tick fails `flock -n 9` and the relay wedges. This is the #129
+      # failure mode resurfacing via fd INHERITANCE, not a hung op — OP_TIMEOUT
+      # can't catch it because the op *succeeds* (the daemon it starts is what
+      # holds the lock). Closing fd 9 for the subprocess keeps the lock held for
+      # the duration of THIS tick only, then released when the relay exits.
+      timeout "$OP_TIMEOUT" bash -c "$cmd" 9>&-
       rc=$?
       echo "----------------------------------------"
       [[ $rc -eq 124 ]] && echo "TIMED OUT after ${OP_TIMEOUT}s (op still running or killed)"
