@@ -124,7 +124,7 @@ class TestDocBelongsToBucket(unittest.TestCase):
             "place_id": "osm:r123",
             "geometries": [{"geom_ref": "osm:r123_0"}],
         }
-        matches, _ = generate_tiles._doc_belongs_to_bucket(doc, "osm_admin", "osm")
+        matches, _ = generate_tiles._doc_belongs_to_bucket(doc, "osm", "osm")
         self.assertFalse(matches)
 
     def test_fixed_admin_admin_level(self):
@@ -133,7 +133,7 @@ class TestDocBelongsToBucket(unittest.TestCase):
             "boundary": "4",
             "geometries": [{"geom_ref": "osm:r123_0"}],
         }
-        matches, _ = generate_tiles._doc_belongs_to_bucket(doc, "osm_admin", "osm")
+        matches, _ = generate_tiles._doc_belongs_to_bucket(doc, "osm", "osm")
         self.assertTrue(matches)
 
 
@@ -181,6 +181,124 @@ class TestBuildStagedFeature(unittest.TestCase):
         self.assertEqual(feature["geometry"], polygon)
 
 
+class TestCentroidHeatmapPoints(unittest.TestCase):
+    """place#140 — polygon gazetteers additionally emit low-zoom heatmap points."""
+
+    _POLY = {"type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]}
+
+    def _poly_feature(self, **props):
+        base = {"place_id": "kain_par:1", "namespace": "kain_par"}
+        base.update(props)
+        return {"type": "Feature", "id": 1, "properties": base, "geometry": self._POLY}
+
+    def test_centroid_uses_repr_point_when_present(self):
+        feat = self._poly_feature()
+        geom_entry = {"repr_point": {"lon": 1.25, "lat": 0.75}}
+        pt = generate_tiles._centroid_point_feature(feat, geom_entry)
+        self.assertIsNotNone(pt)
+        self.assertEqual(pt["geometry"], {"type": "Point", "coordinates": [1.25, 0.75]})
+        # Capped below whg3 POINT_MINZOOM (8) so it never leaks into circles/labels.
+        self.assertEqual(pt["properties"]["tippecanoe:maxzoom"], generate_tiles._HEATMAP_POINT_MAXZOOM)
+        self.assertLess(pt["properties"]["tippecanoe:maxzoom"], 8)
+        self.assertEqual(pt["properties"]["namespace"], "kain_par")
+
+    def test_centroid_shapely_fallback_is_on_surface(self):
+        # No repr_point → Shapely representative_point, guaranteed inside.
+        feat = self._poly_feature()
+        pt = generate_tiles._centroid_point_feature(feat, geom_entry={})
+        self.assertIsNotNone(pt)
+        x, y = pt["geometry"]["coordinates"]
+        self.assertTrue(0 <= x <= 2 and 0 <= y <= 2)
+
+    def test_centroid_carries_temporal_only(self):
+        feat = self._poly_feature(start=1500, end=1974, name="Parish", aat=";300000771;")
+        pt = generate_tiles._centroid_point_feature(feat, {"repr_point": {"lon": 1, "lat": 1}})
+        self.assertEqual(pt["properties"]["start"], 1500)
+        self.assertEqual(pt["properties"]["end"], 1974)
+        # name/aat deliberately omitted — the point never reaches those layers.
+        self.assertNotIn("name", pt["properties"])
+        self.assertNotIn("aat", pt["properties"])
+        # No feature id — must not collide with the polygon's feature id.
+        self.assertNotIn("id", pt)
+
+    def test_centroid_none_for_point_geometry(self):
+        feat = {
+            "type": "Feature", "id": 2,
+            "properties": {"namespace": "gn"},
+            "geometry": {"type": "Point", "coordinates": [1, 1]},
+        }
+        self.assertIsNone(generate_tiles._centroid_point_feature(feat, {}))
+
+    def test_centroid_multipolygon(self):
+        feat = {
+            "type": "Feature", "id": 3, "properties": {"namespace": "vob_rd"},
+            "geometry": {
+                "type": "MultiPolygon",
+                "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]],
+            },
+        }
+        pt = generate_tiles._centroid_point_feature(feat, {})
+        self.assertIsNotNone(pt)
+        self.assertEqual(pt["geometry"]["type"], "Point")
+
+    def test_stream_bucket_emits_companion_points(self):
+        with TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            # One polygon doc + one point-only doc in the same per-namespace bucket.
+            src = tmp / "kain_par" / "final"
+            src.mkdir(parents=True)
+            docs = [
+                {"place_id": "kain_par:1", "title": "Parish A",
+                 "geometries": [{"geom_ref": "kain_par:1_0",
+                                 "repr_point": {"lon": 1.0, "lat": 1.0}}]},
+                {"place_id": "kain_par:2", "title": "Point B",
+                 "geometries": [{"repr_point": {"lon": 5.0, "lat": 5.0}}]},
+            ]
+            with (src / "places.jsonl").open("w") as fh:
+                for d in docs:
+                    fh.write(json.dumps(d) + "\n")
+
+            reader = _FakeReader({"kain_par:1_0": self._POLY})
+            out = tmp / "kain_par.geojsonl"
+            with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
+                counts = generate_tiles._stream_bucket(
+                    "kain_par", reader, geojsonl_path=out, emit_centroids=True,
+                )
+            # Counts track only real features (2), not the companion point.
+            self.assertEqual(counts, {"kain_par": 2})
+            features = [json.loads(l) for l in out.read_text().splitlines()]
+            geom_types = [f["geometry"]["type"] for f in features]
+            # polygon + its companion point + the standalone point = 3 features.
+            self.assertEqual(len(features), 3)
+            self.assertEqual(geom_types.count("Polygon"), 1)
+            self.assertEqual(geom_types.count("Point"), 2)
+            companions = [f for f in features
+                          if f["geometry"]["type"] == "Point"
+                          and "tippecanoe:maxzoom" in f["properties"]]
+            self.assertEqual(len(companions), 1)
+            self.assertEqual(companions[0]["geometry"]["coordinates"], [1.0, 1.0])
+
+    def test_stream_bucket_no_companions_when_disabled(self):
+        with TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            src = tmp / "kain_par" / "final"
+            src.mkdir(parents=True)
+            with (src / "places.jsonl").open("w") as fh:
+                fh.write(json.dumps({
+                    "place_id": "kain_par:1", "title": "Parish A",
+                    "geometries": [{"geom_ref": "kain_par:1_0"}],
+                }) + "\n")
+            reader = _FakeReader({"kain_par:1_0": self._POLY})
+            out = tmp / "kain_par.geojsonl"
+            with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
+                generate_tiles._stream_bucket(
+                    "kain_par", reader, geojsonl_path=out, emit_centroids=False,
+                )
+            features = [json.loads(l) for l in out.read_text().splitlines()]
+            self.assertEqual(len(features), 1)
+            self.assertEqual(features[0]["geometry"]["type"], "Polygon")
+
+
 class TestResolveBuckets(unittest.TestCase):
     def test_fixed_first_then_per_namespace_then_whg(self):
         with TemporaryDirectory() as tmp:
@@ -199,7 +317,7 @@ class TestResolveBuckets(unittest.TestCase):
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", tmp):
                 buckets = generate_tiles.resolve_buckets()
         # Fixed first
-        self.assertEqual(buckets[:3], ["osm_admin", "ohm_admin", "osm_misc"])
+        self.assertEqual(buckets[:3], ["osm", "ohm", "osm_misc"])
         # Per-namespace next
         for ns in generate_tiles._PER_NAMESPACE_BUCKETS:
             self.assertIn(ns, buckets)

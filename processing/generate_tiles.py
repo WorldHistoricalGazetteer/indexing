@@ -92,6 +92,27 @@ TILES_OUTPUT_DIR = Path(DATA_DIR) / 'tiles'
 TILE_OPEN_END_YEAR = 9999
 TILE_OPEN_START_YEAR = -9999
 
+# Low-zoom density heatmap for polygon gazetteers (place#140). The Atlas
+# gazetteer style's ``_heat`` layer only consumes *Point* geometry, so a
+# polygon-only gazetteer renders a deceptively sparse scatter of tiny fills at
+# low zoom even when it has tens of thousands of features. For every
+# Polygon/MultiPolygon feature we therefore *additionally* emit a representative
+# POINT (point-on-surface) into the SAME source-layer the polygons already use.
+# tippecanoe's point clustering (``--cluster-maxzoom 8``, enabled on the
+# non-banded clustered buckets) then accumulates those points into weighted
+# cluster representatives carrying ``point_count`` / ``sqrt_point_count`` — which
+# is exactly what the existing whg3 ``_heat`` layer reads. No whg3 style change
+# is required (the ``_heat`` layer already filters ``geometry-type == Point`` and
+# weights by ``sqrt_point_count`` off the same source-layer).
+#
+# The centroid points are capped at ``_HEATMAP_POINT_MAXZOOM`` — one zoom BELOW
+# the whg3 ``POINT_MINZOOM`` (=8, where the ``_circle`` / label / click layers
+# switch on) — so they never leak into those layers as stray red dots. They
+# exist only across the low zooms where the heatmap is active (whg3 heatmap
+# ``maxzoom`` 9, fading out by then). See
+# ``whg/webpack/js/whg_maplibre.js::loadGazetteerStyle``.
+_HEATMAP_POINT_MAXZOOM = 7
+
 # tippecanoe ``--postfilter`` that dedupes the ``;``-delimited ``aat`` string on
 # clustered points (``--accumulate-attribute=aat:concat`` concatenates member
 # strings without collapsing repeats). Committed alongside this module; jq-based
@@ -1024,6 +1045,73 @@ def _build_staged_feature(
     }
 
 
+def _representative_point(
+    geom: dict[str, Any], geom_entry: dict[str, Any] | None = None
+) -> list[float] | None:
+    """A point *on the surface* of ``geom`` for the low-zoom heatmap (place#140).
+
+    Prefers the doc's pre-computed ``repr_point`` (guaranteed *within* the
+    geometry at ingestion time, and consistent with the h3 fields), falling back
+    to Shapely's ``representative_point()`` — which, unlike a bbox centroid,
+    always lands inside concave or multipart shapes. Coordinates are rounded to
+    the corpus-wide 6-dp precision. Returns ``None`` if no point can be derived.
+    """
+    if isinstance(geom_entry, dict):
+        rp = geom_entry.get("repr_point")
+        if isinstance(rp, dict) and "lon" in rp and "lat" in rp:
+            try:
+                return [round(float(rp["lon"]), 6), round(float(rp["lat"]), 6)]
+            except (TypeError, ValueError):
+                pass
+    try:
+        from shapely.geometry import shape
+        pt = shape(geom).representative_point()
+        return [round(pt.x, 6), round(pt.y, 6)]
+    except Exception:
+        return None
+
+
+def _centroid_point_feature(
+    feature: dict[str, Any], geom_entry: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Companion POINT feature for a polygon ``feature`` (place#140).
+
+    Given a built polygon/multipolygon feature, returns a lightweight Point
+    feature at the polygon's point-on-surface, capped at
+    ``_HEATMAP_POINT_MAXZOOM`` so it feeds the low-zoom density heatmap without
+    ever surfacing in the ``_circle`` / label layers (whg3 ``POINT_MINZOOM`` 8).
+
+    Point/line features return ``None`` (nothing to synthesise). Only the props
+    the heatmap and the Atlas date filter need are carried — ``namespace`` and
+    the per-feature ``start``/``end`` temporal range (place#131) — to keep the
+    added tiles tiny. ``name``/``aat``/labels are deliberately omitted; the
+    companion never reaches the layers that read them.
+    """
+    geom = feature.get("geometry")
+    if not isinstance(geom, dict):
+        return None
+    if geom.get("type") not in ("Polygon", "MultiPolygon", "GeometryCollection"):
+        return None
+    coords = _representative_point(geom, geom_entry)
+    if coords is None:
+        return None
+
+    src_props = feature.get("properties") or {}
+    props: dict[str, Any] = {"tippecanoe:maxzoom": _HEATMAP_POINT_MAXZOOM}
+    ns = src_props.get("namespace")
+    if ns:
+        props["namespace"] = ns
+    for key in ("start", "end"):
+        if key in src_props:
+            props[key] = src_props[key]
+
+    return {
+        "type": "Feature",
+        "properties": props,
+        "geometry": {"type": "Point", "coordinates": coords},
+    }
+
+
 def _doc_belongs_to_bucket(
     doc: dict[str, Any], bucket: str, namespace: str
 ) -> tuple[bool, bool]:
@@ -1094,11 +1182,18 @@ def _stream_bucket(
     reader: GeomStoreReader,
     *,
     geojsonl_path: Path,
+    emit_centroids: bool = False,
 ) -> dict[str, int]:
     """Stream every contributing namespace's docs into one bucket output file.
 
     Truncates the output file once at the start so reruns are clean. Returns a
     breakdown of feature counts per contributing namespace.
+
+    When ``emit_centroids`` is set, every Polygon/MultiPolygon feature also gets
+    a companion low-zoom heatmap POINT (place#140) written to the same file — see
+    ``_centroid_point_feature``. Companions are NOT included in the returned
+    per-namespace counts (which track real features for metrics/wall-time
+    sizing); their total is logged separately.
     """
     contributors = _bucket_contributors(bucket)
     if not contributors:
@@ -1107,6 +1202,7 @@ def _stream_bucket(
     require_boundary = bucket in _FIXED_BUCKETS
     geojsonl_path.write_bytes(b"")
     written: dict[str, int] = defaultdict(int)
+    centroids = 0
 
     with open(geojsonl_path, "ab") as fh:
         for namespace in contributors:
@@ -1132,7 +1228,16 @@ def _stream_bucket(
                 fh.write(orjson.dumps(feature))
                 fh.write(b"\n")
                 written[ns] += 1
+                if emit_centroids:
+                    geom_entry = (doc.get("geometries") or [None])[0]
+                    centroid = _centroid_point_feature(feature, geom_entry)
+                    if centroid is not None:
+                        fh.write(orjson.dumps(centroid))
+                        fh.write(b"\n")
+                        centroids += 1
 
+    if centroids:
+        print(f"  + {centroids:,} low-zoom heatmap centroid points (place#140)")
     return dict(written)
 
 
@@ -1155,6 +1260,12 @@ def _stream_bucket_banded(
 
     Features that match no band are dropped (logged via the "unmatched"
     counter, not a separate file).
+
+    Note: the banded path intentionally does NOT emit the place#140 low-zoom
+    heatmap centroid points. It serves only the fixed admin buckets
+    (``osm``/``ohm``/``osm_misc``), which are polygon-only and tiled WITHOUT
+    point clustering, so a synthesised point would gain no ``sqrt_point_count``
+    for the heatmap to weight. Centroid emission lives in ``_stream_bucket``.
     """
     from processing.tilegen_bands import assign_band
 
@@ -1398,8 +1509,20 @@ def generate_tiles_from_staged(
                 bucket_uses_bands[bucket] = False
                 geojsonl_path = out_dir / f"{bucket}.geojsonl"
                 bucket_geojsonl[bucket] = geojsonl_path
+                # Emit low-zoom heatmap centroid points for polygon features on
+                # every bucket that is tiled with point clustering (place#140).
+                # That is exactly the non-banded, non-context-overlay set here:
+                # the context-overlay buckets are point-only capitals tiled
+                # WITHOUT clustering (so a synthesised point would never gain a
+                # ``sqrt_point_count`` and would just clutter), and the banded
+                # fixed admin buckets (osm/ohm/osm_misc) go through
+                # ``_stream_bucket_banded`` and are polygon-only by design.
+                emit_centroids = bucket not in _CONTEXT_OVERLAY_BUCKETS
                 print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
-                written = _stream_bucket(bucket, reader, geojsonl_path=geojsonl_path)
+                written = _stream_bucket(
+                    bucket, reader, geojsonl_path=geojsonl_path,
+                    emit_centroids=emit_centroids,
+                )
                 bucket_counts[bucket] = sum(written.values())
                 for ns, n in written.items():
                     per_namespace_totals[ns] += n
