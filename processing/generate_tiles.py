@@ -866,7 +866,10 @@ def _aat_prop(doc: dict[str, Any]) -> str | None:
         for path in t.get("aat_paths") or []:
             if not isinstance(path, str):
                 continue
-            for seg in path.split("/"):
+            # aat_paths are materialised ancestor paths. The AAT hierarchy stores
+            # them dot-delimited (e.g. "300264550.300000201.300000705"); tolerate
+            # a slash-delimited variant too. Every segment is a numeric AAT id.
+            for seg in path.replace("/", ".").split("."):
                 seg = seg.strip()
                 if seg:
                     segments.add(seg)

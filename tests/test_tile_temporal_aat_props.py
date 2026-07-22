@@ -93,16 +93,21 @@ class TestTemporalProps(unittest.TestCase):
 
 
 class TestAatProp(unittest.TestCase):
-    def test_bracketed_deduped_sorted_union(self):
+    def test_bracketed_deduped_sorted_union_dot_delimited(self):
+        # Real AAT hierarchy paths are dot-delimited.
         doc = {"types": [
-            {"aat_paths": ["/300000000/300264092/300008347",
-                           "/300000000/300387179"]},
-            {"aat_paths": ["/300000000/300008347"]},  # dup 300008347 + 300000000
+            {"aat_paths": ["300000000.300264092.300008347",
+                           "300000000.300387179"]},
+            {"aat_paths": ["300000000.300008347"]},  # dup 300008347 + 300000000
         ]}
         self.assertEqual(
             gt._aat_prop(doc),
             ";300000000;300008347;300264092;300387179;",
         )
+
+    def test_slash_delimited_also_supported(self):
+        doc = {"types": [{"aat_paths": ["/300000000/300008347"]}]}
+        self.assertEqual(gt._aat_prop(doc), ";300000000;300008347;")
 
     def test_none_when_no_types(self):
         self.assertIsNone(gt._aat_prop({"types": []}))
