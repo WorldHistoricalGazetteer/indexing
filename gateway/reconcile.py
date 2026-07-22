@@ -361,7 +361,9 @@ async def reconcile_search(req: ReconcileRequest):
                     _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
                                        include_prefixes, match_names)
             else:
-                text_body = _build_toponym_query(req.query, req.mode, size=200)
+                text_body = _build_toponym_query(
+                    req.query, req.mode, size=200, namespaces=req.namespaces or None
+                )
                 text_resp = await client.post(
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                     json=text_body,

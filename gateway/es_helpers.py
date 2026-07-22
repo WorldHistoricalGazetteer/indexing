@@ -94,12 +94,20 @@ def extract_repr_point(src: dict) -> list[float] | None:
 # Step 1 helpers — Toponym discovery
 # ---------------------------------------------------------------------------
 
-def build_toponym_query(query: str, mode: str, size: int = 200) -> dict:
+def build_toponym_query(
+    query: str, mode: str, size: int = 200, namespaces: list[str] | None = None
+) -> dict:
     """
     Build an ES query for the toponyms index based on mode.
 
     Returns an ES search body dict.  The ``_source`` always includes
     ``attestations`` so the caller can collect place_ids directly.
+
+    ``namespaces`` (namespace *codes*, e.g. ``["iv"]``) pushes a
+    ``terms`` filter on the toponym ``namespaces`` field INTO discovery, so the
+    top-``size`` window is drawn only from the requested namespaces. Without it,
+    a narrow namespace's matches for a common substring get squeezed out of the
+    global top-``size`` and post-filtering yields nothing (the #127 symptom).
     """
     if mode == "exact":
         text_query = {"term": {"name.keyword": query}}
@@ -113,7 +121,22 @@ def build_toponym_query(query: str, mode: str, size: int = 200) -> dict:
             }
         }
     elif mode == "in":
-        text_query = {"wildcard": {"name.raw": {"value": f"*{query.lower()}*"}}}
+        # True infix ("contains") via the 2-3 char n-gram subfields, queried
+        # with match_phrase so the query's n-grams must appear *consecutively*
+        # — correct substring semantics for any query length, and fast (a normal
+        # inverted-index lookup) instead of the old O(N) leading-wildcard on
+        # name.raw. REQUIRES the `name.ngram` / `name_romanized.ngram` subfields
+        # (toponyms schema); deploy this only against a toponyms index that has
+        # them, else `in` returns nothing.
+        text_query = {
+            "bool": {
+                "should": [
+                    {"match_phrase": {"name.ngram": {"query": query}}},
+                    {"match_phrase": {"name_romanized.ngram": {"query": query}}},
+                ],
+                "minimum_should_match": 1,
+            }
+        }
     else:
         # "fuzzy" (default) — best-fields multi-match with fuzziness
         text_query = {
@@ -131,6 +154,16 @@ def build_toponym_query(query: str, mode: str, size: int = 200) -> dict:
                     # Exact keyword boost
                     {"term": {"name.raw": {"value": query.lower(), "boost": 5}}},
                 ]
+            }
+        }
+
+    if namespaces:
+        # Scope discovery to the requested namespaces so the top-`size` window
+        # isn't dominated by large namespaces (fixes narrow-namespace `in`).
+        text_query = {
+            "bool": {
+                "must": [text_query],
+                "filter": [{"terms": {"namespaces": namespaces}}],
             }
         }
 
