@@ -241,7 +241,7 @@ class TestCentroidHeatmapPoints(unittest.TestCase):
         self.assertIsNotNone(pt)
         self.assertEqual(pt["geometry"]["type"], "Point")
 
-    def test_stream_bucket_emits_companion_points(self):
+    def test_stream_bucket_writes_centroids_to_separate_heat_file(self):
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             # One polygon doc + one point-only doc in the same per-namespace bucket.
@@ -260,25 +260,29 @@ class TestCentroidHeatmapPoints(unittest.TestCase):
 
             reader = _FakeReader({"kain_par:1_0": self._POLY})
             out = tmp / "kain_par.geojsonl"
+            heat = tmp / "kain_par.heat.geojsonl"
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
                 counts = generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, emit_centroids=True,
+                    "kain_par", reader, geojsonl_path=out, heat_geojsonl_path=heat,
                 )
-            # Counts track only real features (2), not the companion point.
+            # Counts track only real features (2), not the centroid companion.
             self.assertEqual(counts, {"kain_par": 2})
-            features = [json.loads(l) for l in out.read_text().splitlines()]
-            geom_types = [f["geometry"]["type"] for f in features]
-            # polygon + its companion point + the standalone point = 3 features.
-            self.assertEqual(len(features), 3)
-            self.assertEqual(geom_types.count("Polygon"), 1)
-            self.assertEqual(geom_types.count("Point"), 2)
-            companions = [f for f in features
-                          if f["geometry"]["type"] == "Point"
-                          and "tippecanoe:maxzoom" in f["properties"]]
-            self.assertEqual(len(companions), 1)
-            self.assertEqual(companions[0]["geometry"]["coordinates"], [1.0, 1.0])
+            # Main file: the polygon + the standalone point (NO centroid here).
+            main = [json.loads(l) for l in out.read_text().splitlines()]
+            self.assertEqual(len(main), 2)
+            self.assertEqual(
+                sorted(f["geometry"]["type"] for f in main), ["Point", "Polygon"])
+            self.assertFalse(any("tippecanoe:maxzoom" in f["properties"] for f in main))
+            # Heat file: exactly one centroid point, capped and on-surface.
+            heat_feats = [json.loads(l) for l in heat.read_text().splitlines()]
+            self.assertEqual(len(heat_feats), 1)
+            self.assertEqual(heat_feats[0]["geometry"]["type"], "Point")
+            self.assertEqual(heat_feats[0]["geometry"]["coordinates"], [1.0, 1.0])
+            self.assertEqual(
+                heat_feats[0]["properties"]["tippecanoe:maxzoom"],
+                generate_tiles._HEATMAP_POINT_MAXZOOM)
 
-    def test_stream_bucket_no_companions_when_disabled(self):
+    def test_stream_bucket_no_heat_file_when_disabled(self):
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             src = tmp / "kain_par" / "final"
@@ -292,7 +296,7 @@ class TestCentroidHeatmapPoints(unittest.TestCase):
             out = tmp / "kain_par.geojsonl"
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
                 generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, emit_centroids=False,
+                    "kain_par", reader, geojsonl_path=out, heat_geojsonl_path=None,
                 )
             features = [json.loads(l) for l in out.read_text().splitlines()]
             self.assertEqual(len(features), 1)

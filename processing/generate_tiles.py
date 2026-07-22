@@ -1182,18 +1182,23 @@ def _stream_bucket(
     reader: GeomStoreReader,
     *,
     geojsonl_path: Path,
-    emit_centroids: bool = False,
+    heat_geojsonl_path: Path | None = None,
 ) -> dict[str, int]:
     """Stream every contributing namespace's docs into one bucket output file.
 
-    Truncates the output file once at the start so reruns are clean. Returns a
+    Truncates the output file(s) once at the start so reruns are clean. Returns a
     breakdown of feature counts per contributing namespace.
 
-    When ``emit_centroids`` is set, every Polygon/MultiPolygon feature also gets
-    a companion low-zoom heatmap POINT (place#140) written to the same file — see
-    ``_centroid_point_feature``. Companions are NOT included in the returned
-    per-namespace counts (which track real features for metrics/wall-time
-    sizing); their total is logged separately.
+    When ``heat_geojsonl_path`` is given, every Polygon/MultiPolygon feature also
+    gets a companion low-zoom heatmap POINT (place#140) written to *that separate*
+    file — see ``_centroid_point_feature``. It is kept out of the main geojsonl on
+    purpose: the two are tiled in **separate** tippecanoe passes and ``tile-join``ed
+    into one source-layer, because tippecanoe's point clustering, when a single
+    layer mixes geometries, keeps the *polygon* as the cluster representative and
+    discards the point — starving the heatmap. Tiling the centroid points on their
+    own lets them cluster into weighted (``sqrt_point_count``) representatives.
+    Companions are NOT included in the returned per-namespace counts (which track
+    real features for metrics / wall-time sizing); their total is logged separately.
     """
     contributors = _bucket_contributors(bucket)
     if not contributors:
@@ -1201,43 +1206,50 @@ def _stream_bucket(
 
     require_boundary = bucket in _FIXED_BUCKETS
     geojsonl_path.write_bytes(b"")
+    if heat_geojsonl_path is not None:
+        heat_geojsonl_path.write_bytes(b"")
     written: dict[str, int] = defaultdict(int)
     centroids = 0
 
-    with open(geojsonl_path, "ab") as fh:
-        for namespace in contributors:
-            src = _staged_namespace_source(namespace)
-            if src is None:
-                continue
-            for doc in _iter_staged_docs(src):
-                place_id = doc.get("place_id") or ""
-                ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
-                # Trust place_id over file location: cross-namespace docs in
-                # the same snapshot (e.g. synthetic osm: rows from
-                # un-geoscheme-boundaries) are still classified correctly.
-                matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
-                if not matches:
+    heat_fh = open(heat_geojsonl_path, "ab") if heat_geojsonl_path is not None else None
+    try:
+        with open(geojsonl_path, "ab") as fh:
+            for namespace in contributors:
+                src = _staged_namespace_source(namespace)
+                if src is None:
                     continue
-                feature = _build_staged_feature(
-                    doc, ns, reader,
-                    misc=is_misc,
-                    require_boundary=require_boundary,
-                )
-                if feature is None:
-                    continue
-                fh.write(orjson.dumps(feature))
-                fh.write(b"\n")
-                written[ns] += 1
-                if emit_centroids:
-                    geom_entry = (doc.get("geometries") or [None])[0]
-                    centroid = _centroid_point_feature(feature, geom_entry)
-                    if centroid is not None:
-                        fh.write(orjson.dumps(centroid))
-                        fh.write(b"\n")
-                        centroids += 1
+                for doc in _iter_staged_docs(src):
+                    place_id = doc.get("place_id") or ""
+                    ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
+                    # Trust place_id over file location: cross-namespace docs in
+                    # the same snapshot (e.g. synthetic osm: rows from
+                    # un-geoscheme-boundaries) are still classified correctly.
+                    matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
+                    if not matches:
+                        continue
+                    feature = _build_staged_feature(
+                        doc, ns, reader,
+                        misc=is_misc,
+                        require_boundary=require_boundary,
+                    )
+                    if feature is None:
+                        continue
+                    fh.write(orjson.dumps(feature))
+                    fh.write(b"\n")
+                    written[ns] += 1
+                    if heat_fh is not None:
+                        geom_entry = (doc.get("geometries") or [None])[0]
+                        centroid = _centroid_point_feature(feature, geom_entry)
+                        if centroid is not None:
+                            heat_fh.write(orjson.dumps(centroid))
+                            heat_fh.write(b"\n")
+                            centroids += 1
+    finally:
+        if heat_fh is not None:
+            heat_fh.close()
 
     if centroids:
-        print(f"  + {centroids:,} low-zoom heatmap centroid points (place#140)")
+        print(f"  + {centroids:,} low-zoom heatmap centroid points (place#140, separate pass)")
     return dict(written)
 
 
@@ -1480,6 +1492,7 @@ def generate_tiles_from_staged(
     per_namespace_totals: dict[str, int] = defaultdict(int)
     bucket_band_paths: dict[str, dict[str, Path]] = {}   # bucket → {band_name: geojsonl}
     bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
+    bucket_heat_geojsonl: dict[str, Path] = {}            # place#140 centroid-point pass
     bucket_uses_bands: dict[str, bool] = {}
 
     started = datetime.now(timezone.utc)
@@ -1517,11 +1530,17 @@ def generate_tiles_from_staged(
                 # ``sqrt_point_count`` and would just clutter), and the banded
                 # fixed admin buckets (osm/ohm/osm_misc) go through
                 # ``_stream_bucket_banded`` and are polygon-only by design.
-                emit_centroids = bucket not in _CONTEXT_OVERLAY_BUCKETS
+                # The centroids stream to a SEPARATE geojsonl so they can be
+                # tiled in their own clustering pass and tile-join'd back into
+                # the single bucket source-layer (see the tippecanoe stage).
+                heat_path: Path | None = None
+                if bucket not in _CONTEXT_OVERLAY_BUCKETS:
+                    heat_path = out_dir / f"{bucket}.heat.geojsonl"
+                    bucket_heat_geojsonl[bucket] = heat_path
                 print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
                 written = _stream_bucket(
                     bucket, reader, geojsonl_path=geojsonl_path,
-                    emit_centroids=emit_centroids,
+                    heat_geojsonl_path=heat_path,
                 )
                 bucket_counts[bucket] = sum(written.values())
                 for ns, n in written.items():
@@ -1577,6 +1596,7 @@ def generate_tiles_from_staged(
                     bucket_failures.append(bucket)
             else:
                 geojsonl = bucket_geojsonl[bucket]
+                heat_geojsonl = bucket_heat_geojsonl.get(bucket)
                 # Non-banded buckets are per-namespace (gn, wd, tgn, …) or
                 # per-WHG-dataset (whg-<id>) — both can carry point
                 # features, so enable point clustering. ``minzoom=0`` is
@@ -1601,24 +1621,62 @@ def generate_tiles_from_staged(
                     tile_maxzoom = 10
                     tile_cluster = True
                     tile_description = description
+
+                # place#140: when this bucket produced centroid heatmap points
+                # (polygon-bearing buckets only), tile the polygons/points to a
+                # BASE mbtiles, tile the centroid points to their OWN mbtiles
+                # (points-only clustering, so they gain point_count /
+                # sqrt_point_count instead of being swallowed by polygon
+                # cluster-representatives), then ``tile-join`` the two into the
+                # single bucket source-layer. Everything stays in one tileset.
+                has_heat = bool(
+                    heat_geojsonl and heat_geojsonl.exists()
+                    and heat_geojsonl.stat().st_size > 0
+                )
+                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if has_heat else mbtiles
+
                 if generate_tileset(
-                    geojsonl, mbtiles, bucket, tile_description,
+                    geojsonl, base_mbtiles, bucket, tile_description,
                     minzoom=tile_minzoom,
                     maxzoom=tile_maxzoom,
                     cluster_points=tile_cluster,
                 ):
-                    tilesets_generated.append(mbtiles)
-                    # Per-bucket auto-push to the tileserver. Routes via the
-                    # Pitt VM proxy because CRC compute nodes have no SSH key
-                    # for the tileserver. Push failure is non-fatal here —
-                    # the .mbtiles is still on /ix1 for a later catch-up
-                    # push and the pipeline can continue. The eventual
-                    # tileserver service restart is the user's manual step
-                    # and gates on every bucket having pushed (see
-                    # ``push_failures`` below).
-                    if deploy:
-                        if not push_mbtiles_to_tileserver(mbtiles):
+                    built = True
+                    if has_heat:
+                        heat_mbtiles = out_dir / f"{bucket}.heat.mbtiles"
+                        # Points-only, clustered; per-feature tippecanoe:maxzoom
+                        # (=_HEATMAP_POINT_MAXZOOM) already caps them below the
+                        # whg3 circle/label minzoom, so nothing survives past z7.
+                        if generate_tileset(
+                            heat_geojsonl, heat_mbtiles, bucket, tile_description,
+                            minzoom=0, maxzoom=_HEATMAP_POINT_MAXZOOM,
+                            cluster_points=True,
+                        ):
+                            built = tile_join(
+                                [base_mbtiles, heat_mbtiles], mbtiles,
+                                layer_name=bucket,
+                            )
+                        else:
+                            # Heat pass produced nothing tileable — keep the
+                            # polygons; the join with one input just renames.
+                            print(f"  ⚠ {bucket}: heat pass empty/failed — "
+                                  "deploying polygons without density points")
+                            built = tile_join([base_mbtiles], mbtiles, layer_name=bucket)
+
+                    if built:
+                        tilesets_generated.append(mbtiles)
+                        # Per-bucket auto-push to the tileserver. Routes via the
+                        # Pitt VM proxy because CRC compute nodes have no SSH key
+                        # for the tileserver. Push failure is non-fatal here —
+                        # the .mbtiles is still on /ix1 for a later catch-up
+                        # push and the pipeline can continue. The eventual
+                        # tileserver service restart is the user's manual step
+                        # and gates on every bucket having pushed (see
+                        # ``push_failures`` below).
+                        if deploy and not push_mbtiles_to_tileserver(mbtiles):
                             push_failures.append(bucket)
+                    else:
+                        bucket_failures.append(bucket)
                 else:
                     # Empty GeoJSONL ("nothing to tile") is benign;
                     # tippecanoe exiting non-zero on a non-empty input is
