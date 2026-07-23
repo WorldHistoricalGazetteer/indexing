@@ -181,108 +181,79 @@ class TestBuildStagedFeature(unittest.TestCase):
         self.assertEqual(feature["geometry"], polygon)
 
 
-class TestCentroidHeatmapPoints(unittest.TestCase):
-    """place#140 — polygon gazetteers additionally emit low-zoom heatmap points."""
+class TestCoverageFootprint(unittest.TestCase):
+    """place#140 — polygon gazetteers emit a dissolved low-zoom coverage footprint,
+    with real boundaries pinned to the z8 crossover."""
 
-    _POLY = {"type": "Polygon", "coordinates": [[[0, 0], [2, 0], [2, 2], [0, 2], [0, 0]]]}
+    # Two adjacent unit squares → union is a 2×1 rectangle.
+    _POLY_A = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]}
+    _POLY_B = {"type": "Polygon", "coordinates": [[[1, 0], [2, 0], [2, 1], [1, 1], [1, 0]]]}
 
-    def _poly_feature(self, **props):
-        base = {"place_id": "kain_par:1", "namespace": "kain_par"}
-        base.update(props)
-        return {"type": "Feature", "id": 1, "properties": base, "geometry": self._POLY}
+    def test_coverage_feature_dissolves_and_tags(self):
+        from shapely.geometry import shape
+        geoms = [shape(self._POLY_A), shape(self._POLY_B)]
+        feat = generate_tiles._coverage_feature(geoms, "kain_par")
+        self.assertIsNotNone(feat)
+        self.assertEqual(feat["properties"]["coverage"], 1)
+        self.assertEqual(feat["properties"]["namespace"], "kain_par")
+        self.assertEqual(feat["properties"]["tippecanoe:maxzoom"],
+                         generate_tiles._COVERAGE_MAXZOOM)
+        # synthetic → never clickable
+        self.assertNotIn("place_id", feat["properties"])
+        self.assertNotIn("id", feat)
+        # dissolved: the shared edge is gone → single Polygon of area ~2
+        self.assertIn(feat["geometry"]["type"], ("Polygon", "MultiPolygon"))
+        self.assertAlmostEqual(shape(feat["geometry"]).area, 2.0, places=6)
 
-    def test_centroid_uses_repr_point_when_present(self):
-        feat = self._poly_feature()
-        geom_entry = {"repr_point": {"lon": 1.25, "lat": 0.75}}
-        pt = generate_tiles._centroid_point_feature(feat, geom_entry)
-        self.assertIsNotNone(pt)
-        self.assertEqual(pt["geometry"], {"type": "Point", "coordinates": [1.25, 0.75]})
-        # Capped below whg3 POINT_MINZOOM (8) so it never leaks into circles/labels.
-        self.assertEqual(pt["properties"]["tippecanoe:maxzoom"], generate_tiles._HEATMAP_POINT_MAXZOOM)
-        self.assertLess(pt["properties"]["tippecanoe:maxzoom"], 8)
-        self.assertEqual(pt["properties"]["namespace"], "kain_par")
+    def test_coverage_maxzoom_below_boundary_minzoom(self):
+        # exactly one clean hand-off zoom, no overlap
+        self.assertEqual(generate_tiles._COVERAGE_MAXZOOM + 1,
+                         generate_tiles._BOUNDARY_MINZOOM)
 
-    def test_centroid_shapely_fallback_is_on_surface(self):
-        # No repr_point → Shapely representative_point, guaranteed inside.
-        feat = self._poly_feature()
-        pt = generate_tiles._centroid_point_feature(feat, geom_entry={})
-        self.assertIsNotNone(pt)
-        x, y = pt["geometry"]["coordinates"]
-        self.assertTrue(0 <= x <= 2 and 0 <= y <= 2)
+    def test_coverage_feature_none_without_polygons(self):
+        self.assertIsNone(generate_tiles._coverage_feature([], "kain_par"))
 
-    def test_centroid_carries_temporal_only(self):
-        feat = self._poly_feature(start=1500, end=1974, name="Parish", aat=";300000771;")
-        pt = generate_tiles._centroid_point_feature(feat, {"repr_point": {"lon": 1, "lat": 1}})
-        self.assertEqual(pt["properties"]["start"], 1500)
-        self.assertEqual(pt["properties"]["end"], 1974)
-        # name/aat deliberately omitted — the point never reaches those layers.
-        self.assertNotIn("name", pt["properties"])
-        self.assertNotIn("aat", pt["properties"])
-        # No feature id — must not collide with the polygon's feature id.
-        self.assertNotIn("id", pt)
+    def test_accumulate_coverage_repairs_and_skips_points(self):
+        sink = []
+        generate_tiles._accumulate_coverage(self._POLY_A, sink)
+        generate_tiles._accumulate_coverage({"type": "Point", "coordinates": [0, 0]}, sink)
+        self.assertEqual(len(sink), 1)  # point contributes nothing
 
-    def test_centroid_none_for_point_geometry(self):
-        feat = {
-            "type": "Feature", "id": 2,
-            "properties": {"namespace": "gn"},
-            "geometry": {"type": "Point", "coordinates": [1, 1]},
-        }
-        self.assertIsNone(generate_tiles._centroid_point_feature(feat, {}))
-
-    def test_centroid_multipolygon(self):
-        feat = {
-            "type": "Feature", "id": 3, "properties": {"namespace": "vob_rd"},
-            "geometry": {
-                "type": "MultiPolygon",
-                "coordinates": [[[[0, 0], [1, 0], [1, 1], [0, 1], [0, 0]]]],
-            },
-        }
-        pt = generate_tiles._centroid_point_feature(feat, {})
-        self.assertIsNotNone(pt)
-        self.assertEqual(pt["geometry"]["type"], "Point")
-
-    def test_stream_bucket_writes_centroids_to_separate_heat_file(self):
+    def test_stream_bucket_pins_polygons_and_collects_coverage(self):
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            # One polygon doc + one point-only doc in the same per-namespace bucket.
             src = tmp / "kain_par" / "final"
             src.mkdir(parents=True)
             docs = [
                 {"place_id": "kain_par:1", "title": "Parish A",
-                 "geometries": [{"geom_ref": "kain_par:1_0",
-                                 "repr_point": {"lon": 1.0, "lat": 1.0}}]},
-                {"place_id": "kain_par:2", "title": "Point B",
+                 "geometries": [{"geom_ref": "kain_par:1_0"}]},
+                {"place_id": "kain_par:2", "title": "Parish B",
+                 "geometries": [{"geom_ref": "kain_par:2_0"}]},
+                {"place_id": "kain_par:3", "title": "Point C",
                  "geometries": [{"repr_point": {"lon": 5.0, "lat": 5.0}}]},
             ]
             with (src / "places.jsonl").open("w") as fh:
                 for d in docs:
                     fh.write(json.dumps(d) + "\n")
-
-            reader = _FakeReader({"kain_par:1_0": self._POLY})
+            reader = _FakeReader({"kain_par:1_0": self._POLY_A, "kain_par:2_0": self._POLY_B})
             out = tmp / "kain_par.geojsonl"
-            heat = tmp / "kain_par.heat.geojsonl"
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
-                counts = generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, heat_geojsonl_path=heat,
-                )
-            # Counts track only real features (2), not the centroid companion.
-            self.assertEqual(counts, {"kain_par": 2})
-            # Main file: the polygon + the standalone point (NO centroid here).
-            main = [json.loads(l) for l in out.read_text().splitlines()]
-            self.assertEqual(len(main), 2)
-            self.assertEqual(
-                sorted(f["geometry"]["type"] for f in main), ["Point", "Polygon"])
-            self.assertFalse(any("tippecanoe:maxzoom" in f["properties"] for f in main))
-            # Heat file: exactly one centroid point, capped and on-surface.
-            heat_feats = [json.loads(l) for l in heat.read_text().splitlines()]
-            self.assertEqual(len(heat_feats), 1)
-            self.assertEqual(heat_feats[0]["geometry"]["type"], "Point")
-            self.assertEqual(heat_feats[0]["geometry"]["coordinates"], [1.0, 1.0])
-            self.assertEqual(
-                heat_feats[0]["properties"]["tippecanoe:maxzoom"],
-                generate_tiles._HEATMAP_POINT_MAXZOOM)
+                written, counts, cov_geoms = generate_tiles._stream_bucket(
+                    "kain_par", reader, geojsonl_path=out, collect_coverage=True)
+            self.assertEqual(written, {"kain_par": 3})
+            self.assertEqual(counts, {"polygon": 2, "point": 1})
+            self.assertEqual(len(cov_geoms), 2)  # two polygons accumulated
+            feats = [json.loads(l) for l in out.read_text().splitlines()]
+            # polygons pinned to the boundary crossover; the point is NOT pinned
+            polys = [f for f in feats if f["geometry"]["type"] == "Polygon"]
+            pts = [f for f in feats if f["geometry"]["type"] == "Point"]
+            self.assertEqual(len(polys), 2)
+            self.assertTrue(all(
+                f["properties"]["tippecanoe:minzoom"] == generate_tiles._BOUNDARY_MINZOOM
+                for f in polys))
+            self.assertFalse(any("tippecanoe:minzoom" in f["properties"] for f in pts))
 
-    def test_stream_bucket_no_heat_file_when_disabled(self):
+    def test_stream_bucket_no_coverage_collection_when_disabled(self):
         with TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             src = tmp / "kain_par" / "final"
@@ -292,15 +263,17 @@ class TestCentroidHeatmapPoints(unittest.TestCase):
                     "place_id": "kain_par:1", "title": "Parish A",
                     "geometries": [{"geom_ref": "kain_par:1_0"}],
                 }) + "\n")
-            reader = _FakeReader({"kain_par:1_0": self._POLY})
+            reader = _FakeReader({"kain_par:1_0": self._POLY_A})
             out = tmp / "kain_par.geojsonl"
             with mock.patch.object(generate_tiles, "STAGED_BASE_DIR", str(tmp)):
-                generate_tiles._stream_bucket(
-                    "kain_par", reader, geojsonl_path=out, heat_geojsonl_path=None,
-                )
-            features = [json.loads(l) for l in out.read_text().splitlines()]
-            self.assertEqual(len(features), 1)
-            self.assertEqual(features[0]["geometry"]["type"], "Polygon")
+                written, counts, cov_geoms = generate_tiles._stream_bucket(
+                    "kain_par", reader, geojsonl_path=out, collect_coverage=False)
+            self.assertEqual(counts, {"polygon": 1, "point": 0})
+            self.assertEqual(cov_geoms, [])  # not collected
+            # polygon still pinned to the crossover regardless
+            feat = json.loads(out.read_text().splitlines()[0])
+            self.assertEqual(feat["properties"]["tippecanoe:minzoom"],
+                             generate_tiles._BOUNDARY_MINZOOM)
 
 
 class TestResolveBuckets(unittest.TestCase):

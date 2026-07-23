@@ -92,26 +92,28 @@ TILES_OUTPUT_DIR = Path(DATA_DIR) / 'tiles'
 TILE_OPEN_END_YEAR = 9999
 TILE_OPEN_START_YEAR = -9999
 
-# Low-zoom density heatmap for polygon gazetteers (place#140). The Atlas
-# gazetteer style's ``_heat`` layer only consumes *Point* geometry, so a
-# polygon-only gazetteer renders a deceptively sparse scatter of tiny fills at
-# low zoom even when it has tens of thousands of features. For every
-# Polygon/MultiPolygon feature we therefore *additionally* emit a representative
-# POINT (point-on-surface) into the SAME source-layer the polygons already use.
-# tippecanoe's point clustering (``--cluster-maxzoom 8``, enabled on the
-# non-banded clustered buckets) then accumulates those points into weighted
-# cluster representatives carrying ``point_count`` / ``sqrt_point_count`` — which
-# is exactly what the existing whg3 ``_heat`` layer reads. No whg3 style change
-# is required (the ``_heat`` layer already filters ``geometry-type == Point`` and
-# weights by ``sqrt_point_count`` off the same source-layer).
+# Low-zoom COVERAGE FOOTPRINT for polygon gazetteers (place#140). A polygon-only
+# gazetteer renders a deceptively sparse scatter of tiny fills at low zoom even
+# when it has tens of thousands of features. (An earlier cut fed the Atlas
+# ``_heat`` layer with polygon centroid points, but that reads as a misleading
+# sparse dot field — see the reopened #140.) Instead, for polygon-*dominant*
+# buckets we emit ONE **dissolved** (unary_union) footprint polygon, tagged
+# ``coverage: 1`` and capped at ``_COVERAGE_MAXZOOM``, so the Atlas can style it
+# as a solid "this gazetteer covers this region" fill at low zoom; the real
+# boundaries are pinned to ``_BOUNDARY_MINZOOM`` and take over on zoom-in. The two
+# passes are tiled separately and ``tile-join``'d into the single source-layer
+# (see ``developer/place140-coverage-design/`` for the model + whg3 styling).
 #
-# The centroid points are capped at ``_HEATMAP_POINT_MAXZOOM`` — one zoom BELOW
-# the whg3 ``POINT_MINZOOM`` (=8, where the ``_circle`` / label / click layers
-# switch on) — so they never leak into those layers as stray red dots. They
-# exist only across the low zooms where the heatmap is active (whg3 heatmap
-# ``maxzoom`` 9, fading out by then). See
-# ``whg/webpack/js/whg_maplibre.js::loadGazetteerStyle``.
-_HEATMAP_POINT_MAXZOOM = 7
+# ``_COVERAGE_MAXZOOM`` (footprint present z0..this) is one below
+# ``_BOUNDARY_MINZOOM`` (boundaries present from here up) so there is exactly one
+# clean hand-off zoom and the two never overlap.
+_COVERAGE_MAXZOOM = 7
+_BOUNDARY_MINZOOM = 8
+
+# Simplification tolerance (degrees) applied to the dissolved footprint before
+# tiling. ~0.008° (~900 m) keeps the outline light (footprints are ~0.2 MB even
+# for the 23k-parish kain_par) while staying visually faithful at z0-7.
+_COVERAGE_SIMPLIFY_DEG = 0.008
 
 # tippecanoe ``--postfilter`` that dedupes the ``;``-delimited ``aat`` string on
 # clustered points (``--accumulate-attribute=aat:concat`` concatenates member
@@ -349,8 +351,16 @@ def generate_tileset(
     minzoom: int = 2,
     maxzoom: int = 10,
     cluster_points: bool = False,
+    preserve_all: bool = False,
 ):
     """Generate .mbtiles from GeoJSON Lines file using tippecanoe.
+
+    ``preserve_all`` (place#140 boundary pass) guarantees **every** feature
+    survives at every zoom in its ``tippecanoe:minzoom``..maxzoom range: it drops
+    ``--coalesce-densest-as-needed`` (which sheds features to fit tile budgets)
+    and adds ``--no-tiny-polygon-reduction --no-feature-limit --no-tile-size-limit``.
+    Used for the pinned real-boundary pass so that no non-degenerate polygon is
+    missing at/above the z8 crossover. Mutually exclusive with ``cluster_points``.
 
     ``minzoom`` defaults to 2 because at z0/z1 a single tile must hold
     the entire world's boundary geometry, which forces tippecanoe into
@@ -391,7 +401,6 @@ def generate_tileset(
         '--maximum-zoom', str(maxzoom),
         '--simplification', '10',
         '--detect-shared-borders',
-        '--coalesce-densest-as-needed',
         # NOTE: ``--extend-zooms-if-still-dropping`` was tried and removed.
         # On dense corpora tippecanoe kept extending past z10 into z12+ in
         # a futile attempt to fit every feature, blowing past 24 h Slurm
@@ -402,6 +411,16 @@ def generate_tileset(
         '--no-tile-compression',
         '--read-parallel',
     ]
+    if preserve_all:
+        # place#140: keep every feature at every zoom in its min..max range —
+        # no coalesce-dropping, no tiny-polygon reduction, no size/feature caps.
+        cmd += [
+            '--no-tiny-polygon-reduction',
+            '--no-feature-limit',
+            '--no-tile-size-limit',
+        ]
+    else:
+        cmd += ['--coalesce-densest-as-needed']
     if cluster_points:
         # Cluster point features at zooms <= 8 within 10 px. Tippecanoe
         # auto-attaches a ``point_count`` attribute to each surviving
@@ -1045,71 +1064,70 @@ def _build_staged_feature(
     }
 
 
-def _representative_point(
-    geom: dict[str, Any], geom_entry: dict[str, Any] | None = None
-) -> list[float] | None:
-    """A point *on the surface* of ``geom`` for the low-zoom heatmap (place#140).
+def _polygonal_parts(geom):
+    """Yield the Polygon/MultiPolygon parts of a shapely geometry (incl. the
+    polygonal members of a GeometryCollection); non-polygonal parts are skipped."""
+    t = geom.geom_type
+    if t in ("Polygon", "MultiPolygon"):
+        if not geom.is_empty:
+            yield geom
+    elif t == "GeometryCollection":
+        for g in geom.geoms:
+            yield from _polygonal_parts(g)
 
-    Prefers the doc's pre-computed ``repr_point`` (guaranteed *within* the
-    geometry at ingestion time, and consistent with the h3 fields), falling back
-    to Shapely's ``representative_point()`` — which, unlike a bbox centroid,
-    always lands inside concave or multipart shapes. Coordinates are rounded to
-    the corpus-wide 6-dp precision. Returns ``None`` if no point can be derived.
+
+def _accumulate_coverage(geom_json, sink: list) -> None:
+    """Add a feature geometry's polygonal parts to the coverage-union ``sink``.
+
+    ``sink`` is a list of shapely polygons later dissolved via ``unary_union``.
+    Invalid rings are repaired with ``make_valid`` so the union can't choke on a
+    self-intersecting source polygon. Non-polygon geometries contribute nothing.
     """
-    if isinstance(geom_entry, dict):
-        rp = geom_entry.get("repr_point")
-        if isinstance(rp, dict) and "lon" in rp and "lat" in rp:
-            try:
-                return [round(float(rp["lon"]), 6), round(float(rp["lat"]), 6)]
-            except (TypeError, ValueError):
-                pass
+    if not isinstance(geom_json, dict):
+        return
+    if geom_json.get("type") not in ("Polygon", "MultiPolygon", "GeometryCollection"):
+        return
     try:
         from shapely.geometry import shape
-        pt = shape(geom).representative_point()
-        return [round(pt.x, 6), round(pt.y, 6)]
+        from shapely.validation import make_valid
+        g = shape(geom_json)
+        if not g.is_valid:
+            g = make_valid(g)
+        sink.extend(_polygonal_parts(g))
     except Exception:
-        return None
+        pass
 
 
-def _centroid_point_feature(
-    feature: dict[str, Any], geom_entry: dict[str, Any] | None = None
-) -> dict[str, Any] | None:
-    """Companion POINT feature for a polygon ``feature`` (place#140).
+def _coverage_feature(poly_geoms: list, namespace: str) -> dict[str, Any] | None:
+    """Build the single dissolved COVERAGE FOOTPRINT feature (place#140).
 
-    Given a built polygon/multipolygon feature, returns a lightweight Point
-    feature at the polygon's point-on-surface, capped at
-    ``_HEATMAP_POINT_MAXZOOM`` so it feeds the low-zoom density heatmap without
-    ever surfacing in the ``_circle`` / label layers (whg3 ``POINT_MINZOOM`` 8).
-
-    Point/line features return ``None`` (nothing to synthesise). Only the props
-    the heatmap and the Atlas date filter need are carried — ``namespace`` and
-    the per-feature ``start``/``end`` temporal range (place#131) — to keep the
-    added tiles tiny. ``name``/``aat``/labels are deliberately omitted; the
-    companion never reaches the layers that read them.
+    ``unary_union`` of every polygon in the bucket → simplify → one feature
+    tagged ``coverage: 1`` (no ``place_id`` — it is synthetic and must never be
+    clickable) and capped at ``_COVERAGE_MAXZOOM``. Returns ``None`` when the
+    bucket has no polygons or the union is empty.
     """
-    geom = feature.get("geometry")
-    if not isinstance(geom, dict):
+    if not poly_geoms:
         return None
-    if geom.get("type") not in ("Polygon", "MultiPolygon", "GeometryCollection"):
+    try:
+        from shapely.ops import unary_union
+        merged = unary_union(poly_geoms)
+        if merged.is_empty:
+            return None
+        merged = merged.simplify(_COVERAGE_SIMPLIFY_DEG, preserve_topology=True)
+        if merged.is_empty:
+            return None
+        return {
+            "type": "Feature",
+            "properties": {
+                "coverage": 1,
+                "namespace": namespace,
+                "tippecanoe:maxzoom": _COVERAGE_MAXZOOM,
+            },
+            "geometry": merged.__geo_interface__,
+        }
+    except Exception as exc:  # pragma: no cover - defensive
+        print(f"  ⚠ coverage union failed for {namespace}: {exc}")
         return None
-    coords = _representative_point(geom, geom_entry)
-    if coords is None:
-        return None
-
-    src_props = feature.get("properties") or {}
-    props: dict[str, Any] = {"tippecanoe:maxzoom": _HEATMAP_POINT_MAXZOOM}
-    ns = src_props.get("namespace")
-    if ns:
-        props["namespace"] = ns
-    for key in ("start", "end"):
-        if key in src_props:
-            props[key] = src_props[key]
-
-    return {
-        "type": "Feature",
-        "properties": props,
-        "geometry": {"type": "Point", "coordinates": coords},
-    }
 
 
 def _doc_belongs_to_bucket(
@@ -1182,75 +1200,71 @@ def _stream_bucket(
     reader: GeomStoreReader,
     *,
     geojsonl_path: Path,
-    heat_geojsonl_path: Path | None = None,
-) -> dict[str, int]:
+    collect_coverage: bool = False,
+) -> tuple[dict[str, int], dict[str, int], list]:
     """Stream every contributing namespace's docs into one bucket output file.
 
-    Truncates the output file(s) once at the start so reruns are clean. Returns a
-    breakdown of feature counts per contributing namespace.
+    Truncates the output file once at the start so reruns are clean. Returns
+    ``(written, geom_counts, coverage_geoms)``:
 
-    When ``heat_geojsonl_path`` is given, every Polygon/MultiPolygon feature also
-    gets a companion low-zoom heatmap POINT (place#140) written to *that separate*
-    file — see ``_centroid_point_feature``. It is kept out of the main geojsonl on
-    purpose: the two are tiled in **separate** tippecanoe passes and ``tile-join``ed
-    into one source-layer, because tippecanoe's point clustering, when a single
-    layer mixes geometries, keeps the *polygon* as the cluster representative and
-    discards the point — starving the heatmap. Tiling the centroid points on their
-    own lets them cluster into weighted (``sqrt_point_count``) representatives.
-    Companions are NOT included in the returned per-namespace counts (which track
-    real features for metrics / wall-time sizing); their total is logged separately.
+    * ``written`` — ``{namespace: real-feature count}`` (metrics / wall-time).
+    * ``geom_counts`` — ``{"polygon": n, "point": n}`` used by the caller to pick
+      the tiling mode (polygon-dominant → coverage footprint, else point heatmap).
+    * ``coverage_geoms`` — shapely polygons accumulated for the dissolved footprint
+      when ``collect_coverage`` is set (place#140), else empty.
+
+    Every Polygon/MultiPolygon feature is pinned to ``tippecanoe:minzoom =
+    _BOUNDARY_MINZOOM`` so real boundaries appear only from the crossover up; the
+    low zooms are owned by the dissolved coverage footprint (a separate pass). This
+    pin is harmless for point-dominant buckets (their few polygons simply start at
+    z8, and no footprint is emitted for them).
     """
     contributors = _bucket_contributors(bucket)
     if not contributors:
-        return {}
+        return {}, {"polygon": 0, "point": 0}, []
 
     require_boundary = bucket in _FIXED_BUCKETS
     geojsonl_path.write_bytes(b"")
-    if heat_geojsonl_path is not None:
-        heat_geojsonl_path.write_bytes(b"")
     written: dict[str, int] = defaultdict(int)
-    centroids = 0
+    counts = {"polygon": 0, "point": 0}
+    coverage_geoms: list = []
 
-    heat_fh = open(heat_geojsonl_path, "ab") if heat_geojsonl_path is not None else None
-    try:
-        with open(geojsonl_path, "ab") as fh:
-            for namespace in contributors:
-                src = _staged_namespace_source(namespace)
-                if src is None:
+    with open(geojsonl_path, "ab") as fh:
+        for namespace in contributors:
+            src = _staged_namespace_source(namespace)
+            if src is None:
+                continue
+            for doc in _iter_staged_docs(src):
+                place_id = doc.get("place_id") or ""
+                ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
+                # Trust place_id over file location: cross-namespace docs in
+                # the same snapshot (e.g. synthetic osm: rows from
+                # un-geoscheme-boundaries) are still classified correctly.
+                matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
+                if not matches:
                     continue
-                for doc in _iter_staged_docs(src):
-                    place_id = doc.get("place_id") or ""
-                    ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
-                    # Trust place_id over file location: cross-namespace docs in
-                    # the same snapshot (e.g. synthetic osm: rows from
-                    # un-geoscheme-boundaries) are still classified correctly.
-                    matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
-                    if not matches:
-                        continue
-                    feature = _build_staged_feature(
-                        doc, ns, reader,
-                        misc=is_misc,
-                        require_boundary=require_boundary,
-                    )
-                    if feature is None:
-                        continue
-                    fh.write(orjson.dumps(feature))
-                    fh.write(b"\n")
-                    written[ns] += 1
-                    if heat_fh is not None:
-                        geom_entry = (doc.get("geometries") or [None])[0]
-                        centroid = _centroid_point_feature(feature, geom_entry)
-                        if centroid is not None:
-                            heat_fh.write(orjson.dumps(centroid))
-                            heat_fh.write(b"\n")
-                            centroids += 1
-    finally:
-        if heat_fh is not None:
-            heat_fh.close()
+                feature = _build_staged_feature(
+                    doc, ns, reader,
+                    misc=is_misc,
+                    require_boundary=require_boundary,
+                )
+                if feature is None:
+                    continue
+                geom = feature.get("geometry") or {}
+                is_poly = geom.get("type") in ("Polygon", "MultiPolygon", "GeometryCollection")
+                if is_poly:
+                    counts["polygon"] += 1
+                    # Pin boundaries above the crossover; footprint owns z0-7.
+                    feature["properties"]["tippecanoe:minzoom"] = _BOUNDARY_MINZOOM
+                    if collect_coverage:
+                        _accumulate_coverage(geom, coverage_geoms)
+                else:
+                    counts["point"] += 1
+                fh.write(orjson.dumps(feature))
+                fh.write(b"\n")
+                written[ns] += 1
 
-    if centroids:
-        print(f"  + {centroids:,} low-zoom heatmap centroid points (place#140, separate pass)")
-    return dict(written)
+    return dict(written), counts, coverage_geoms
 
 
 def _stream_bucket_banded(
@@ -1273,11 +1287,10 @@ def _stream_bucket_banded(
     Features that match no band are dropped (logged via the "unmatched"
     counter, not a separate file).
 
-    Note: the banded path intentionally does NOT emit the place#140 low-zoom
-    heatmap centroid points. It serves only the fixed admin buckets
-    (``osm``/``ohm``/``osm_misc``), which are polygon-only and tiled WITHOUT
-    point clustering, so a synthesised point would gain no ``sqrt_point_count``
-    for the heatmap to weight. Centroid emission lives in ``_stream_bucket``.
+    Note: the banded path intentionally does NOT emit the place#140 coverage
+    footprint. It serves only the fixed admin buckets (``osm``/``ohm``/
+    ``osm_misc``); a global admin footprint is meaningless, and these keep their
+    per-band minzooms. The footprint pass lives in ``_stream_bucket``.
     """
     from processing.tilegen_bands import assign_band
 
@@ -1492,7 +1505,7 @@ def generate_tiles_from_staged(
     per_namespace_totals: dict[str, int] = defaultdict(int)
     bucket_band_paths: dict[str, dict[str, Path]] = {}   # bucket → {band_name: geojsonl}
     bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
-    bucket_heat_geojsonl: dict[str, Path] = {}            # place#140 centroid-point pass
+    bucket_coverage_geojsonl: dict[str, Path] = {}        # place#140 dissolved footprint
     bucket_uses_bands: dict[str, bool] = {}
 
     started = datetime.now(timezone.utc)
@@ -1522,30 +1535,35 @@ def generate_tiles_from_staged(
                 bucket_uses_bands[bucket] = False
                 geojsonl_path = out_dir / f"{bucket}.geojsonl"
                 bucket_geojsonl[bucket] = geojsonl_path
-                # Emit low-zoom heatmap centroid points for polygon features on
-                # every bucket that is tiled with point clustering (place#140).
-                # That is exactly the non-banded, non-context-overlay set here:
-                # the context-overlay buckets are point-only capitals tiled
-                # WITHOUT clustering (so a synthesised point would never gain a
-                # ``sqrt_point_count`` and would just clutter), and the banded
-                # fixed admin buckets (osm/ohm/osm_misc) go through
-                # ``_stream_bucket_banded`` and are polygon-only by design.
-                # The centroids stream to a SEPARATE geojsonl so they can be
-                # tiled in their own clustering pass and tile-join'd back into
-                # the single bucket source-layer (see the tippecanoe stage).
-                heat_path: Path | None = None
-                if bucket not in _CONTEXT_OVERLAY_BUCKETS:
-                    heat_path = out_dir / f"{bucket}.heat.geojsonl"
-                    bucket_heat_geojsonl[bucket] = heat_path
+                # place#140: for polygon-bearing buckets we accumulate a dissolved
+                # low-zoom COVERAGE FOOTPRINT (a separate pass, tile-join'd back
+                # into the one source-layer). Context-overlay buckets (point-only
+                # capitals) and the banded fixed admin buckets are excluded — the
+                # latter go through ``_stream_bucket_banded``. Whether a footprint
+                # is actually emitted is decided AFTER streaming, from the
+                # polygon/point mix (see the tippecanoe stage).
+                collect_cov = bucket not in _CONTEXT_OVERLAY_BUCKETS
                 print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
-                written = _stream_bucket(
+                written, geom_counts, cov_geoms = _stream_bucket(
                     bucket, reader, geojsonl_path=geojsonl_path,
-                    heat_geojsonl_path=heat_path,
+                    collect_coverage=collect_cov,
                 )
                 bucket_counts[bucket] = sum(written.values())
                 for ns, n in written.items():
                     per_namespace_totals[ns] += n
-                    print(f"  {ns} → {bucket}: {n:,} features")
+                    print(f"  {ns} → {bucket}: {n:,} features "
+                          f"(poly={geom_counts['polygon']:,} point={geom_counts['point']:,})")
+                # Polygon-dominant → emit the dissolved coverage footprint.
+                if (collect_cov and cov_geoms
+                        and geom_counts["polygon"] > geom_counts["point"]):
+                    ns0 = _bucket_contributors(bucket)[0] if _bucket_contributors(bucket) else bucket
+                    cov_feature = _coverage_feature(cov_geoms, ns0)
+                    if cov_feature is not None:
+                        cov_path = out_dir / f"{bucket}.coverage.geojsonl"
+                        cov_path.write_bytes(orjson.dumps(cov_feature) + b"\n")
+                        bucket_coverage_geojsonl[bucket] = cov_path
+                        print(f"  + dissolved coverage footprint (place#140) "
+                              f"from {geom_counts['polygon']:,} polygons")
     finally:
         try:
             reader.close()
@@ -1596,20 +1614,14 @@ def generate_tiles_from_staged(
                     bucket_failures.append(bucket)
             else:
                 geojsonl = bucket_geojsonl[bucket]
-                heat_geojsonl = bucket_heat_geojsonl.get(bucket)
-                # Non-banded buckets are per-namespace (gn, wd, tgn, …) or
-                # per-WHG-dataset (whg-<id>) — both can carry point
-                # features, so enable point clustering. ``minzoom=0`` is
-                # safe here because the active ``--cluster-densest-as-needed``
-                # (points) and ``--coalesce-densest-as-needed`` (polygons)
-                # flags let tippecanoe sparsify dense low-zoom tiles. The
-                # banded path keeps its own per-band minzooms.
-                #
-                # Context-overlay buckets carry their own per-bucket
-                # config (zoom range, no clustering) — they are pre-
-                # filtered to a small subset (e.g. world capitals) and
-                # don't need or want the density-driven coalescing that
-                # would drop their important features.
+                coverage_geojsonl = bucket_coverage_geojsonl.get(bucket)
+                has_coverage = bool(
+                    coverage_geojsonl and coverage_geojsonl.exists()
+                    and coverage_geojsonl.stat().st_size > 0
+                )
+                # Context-overlay buckets carry their own per-bucket config (zoom
+                # range, no clustering) — pre-filtered small subsets (e.g. world
+                # capitals) that don't want density coalescing.
                 ctx_cfg = _CONTEXT_OVERLAY_BUCKETS.get(bucket)
                 if ctx_cfg is not None:
                     tile_minzoom = ctx_cfg["minzoom"]
@@ -1619,48 +1631,45 @@ def generate_tiles_from_staged(
                 else:
                     tile_minzoom = 0
                     tile_maxzoom = 10
-                    tile_cluster = True
+                    # Point-dominant buckets keep the point heatmap (clustering);
+                    # polygon-dominant buckets (a coverage footprint was emitted)
+                    # instead use the no-drop BASE pass so every pinned boundary
+                    # survives from z8 up (place#140).
+                    tile_cluster = not has_coverage
                     tile_description = description
 
-                # place#140: when this bucket produced centroid heatmap points
-                # (polygon-bearing buckets only), tile the polygons/points to a
-                # BASE mbtiles, tile the centroid points to their OWN mbtiles
-                # (points-only clustering, so they gain point_count /
-                # sqrt_point_count instead of being swallowed by polygon
-                # cluster-representatives), then ``tile-join`` the two into the
-                # single bucket source-layer. Everything stays in one tileset.
-                has_heat = bool(
-                    heat_geojsonl and heat_geojsonl.exists()
-                    and heat_geojsonl.stat().st_size > 0
-                )
-                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if has_heat else mbtiles
+                # place#140: polygon-dominant bucket → tile the pinned real
+                # features to a BASE mbtiles (no-drop) and the dissolved footprint
+                # to its OWN mbtiles (maxzoom 7), then ``tile-join`` both into the
+                # single bucket source-layer. Point buckets skip this entirely.
+                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if has_coverage else mbtiles
 
                 if generate_tileset(
                     geojsonl, base_mbtiles, bucket, tile_description,
                     minzoom=tile_minzoom,
                     maxzoom=tile_maxzoom,
                     cluster_points=tile_cluster,
+                    preserve_all=has_coverage,
                 ):
                     built = True
-                    if has_heat:
-                        heat_mbtiles = out_dir / f"{bucket}.heat.mbtiles"
-                        # Points-only, clustered; per-feature tippecanoe:maxzoom
-                        # (=_HEATMAP_POINT_MAXZOOM) already caps them below the
-                        # whg3 circle/label minzoom, so nothing survives past z7.
+                    if has_coverage:
+                        cov_mbtiles = out_dir / f"{bucket}.coverage.mbtiles"
+                        # Single dissolved polygon, capped at z7 by its per-feature
+                        # tippecanoe:maxzoom; render it down to z0.
                         if generate_tileset(
-                            heat_geojsonl, heat_mbtiles, bucket, tile_description,
-                            minzoom=0, maxzoom=_HEATMAP_POINT_MAXZOOM,
-                            cluster_points=True,
+                            coverage_geojsonl, cov_mbtiles, bucket, tile_description,
+                            minzoom=0, maxzoom=_COVERAGE_MAXZOOM,
+                            cluster_points=False,
                         ):
                             built = tile_join(
-                                [base_mbtiles, heat_mbtiles], mbtiles,
+                                [base_mbtiles, cov_mbtiles], mbtiles,
                                 layer_name=bucket,
                             )
                         else:
-                            # Heat pass produced nothing tileable — keep the
-                            # polygons; the join with one input just renames.
-                            print(f"  ⚠ {bucket}: heat pass empty/failed — "
-                                  "deploying polygons without density points")
+                            # Footprint failed — keep the boundaries; the single-
+                            # input join just renames base → final.
+                            print(f"  ⚠ {bucket}: coverage pass failed — "
+                                  "deploying boundaries without footprint")
                             built = tile_join([base_mbtiles], mbtiles, layer_name=bucket)
 
                     if built:
