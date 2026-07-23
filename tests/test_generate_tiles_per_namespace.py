@@ -196,8 +196,6 @@ class TestCoverageFootprint(unittest.TestCase):
         self.assertIsNotNone(feat)
         self.assertEqual(feat["properties"]["coverage"], 1)
         self.assertEqual(feat["properties"]["namespace"], "kain_par")
-        self.assertEqual(feat["properties"]["tippecanoe:maxzoom"],
-                         generate_tiles._COVERAGE_MAXZOOM)
         # synthetic → never clickable
         self.assertNotIn("place_id", feat["properties"])
         self.assertNotIn("id", feat)
@@ -244,14 +242,12 @@ class TestCoverageFootprint(unittest.TestCase):
             self.assertEqual(counts, {"polygon": 2, "point": 1})
             self.assertEqual(len(cov_geoms), 2)  # two polygons accumulated
             feats = [json.loads(l) for l in out.read_text().splitlines()]
-            # polygons pinned to the boundary crossover; the point is NOT pinned
             polys = [f for f in feats if f["geometry"]["type"] == "Polygon"]
             pts = [f for f in feats if f["geometry"]["type"] == "Point"]
             self.assertEqual(len(polys), 2)
-            self.assertTrue(all(
-                f["properties"]["tippecanoe:minzoom"] == generate_tiles._BOUNDARY_MINZOOM
-                for f in polys))
-            self.assertFalse(any("tippecanoe:minzoom" in f["properties"] for f in pts))
+            self.assertEqual(len(pts), 1)
+            # boundary z8 gating is done by the base tile PASS (--minimum-zoom),
+            # not a per-feature property (tippecanoe ignores properties minzoom).
 
     def test_stream_bucket_no_coverage_collection_when_disabled(self):
         with TemporaryDirectory() as tmp:
@@ -270,10 +266,8 @@ class TestCoverageFootprint(unittest.TestCase):
                     "kain_par", reader, geojsonl_path=out, collect_coverage=False)
             self.assertEqual(counts, {"polygon": 1, "point": 0})
             self.assertEqual(cov_geoms, [])  # not collected
-            # polygon still pinned to the crossover regardless
             feat = json.loads(out.read_text().splitlines()[0])
-            self.assertEqual(feat["properties"]["tippecanoe:minzoom"],
-                             generate_tiles._BOUNDARY_MINZOOM)
+            self.assertEqual(feat["geometry"]["type"], "Polygon")
 
 
 class TestResolveBuckets(unittest.TestCase):

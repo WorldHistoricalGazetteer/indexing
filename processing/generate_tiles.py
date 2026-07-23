@@ -1121,7 +1121,6 @@ def _coverage_feature(poly_geoms: list, namespace: str) -> dict[str, Any] | None
             "properties": {
                 "coverage": 1,
                 "namespace": namespace,
-                "tippecanoe:maxzoom": _COVERAGE_MAXZOOM,
             },
             "geometry": merged.__geo_interface__,
         }
@@ -1213,11 +1212,10 @@ def _stream_bucket(
     * ``coverage_geoms`` — shapely polygons accumulated for the dissolved footprint
       when ``collect_coverage`` is set (place#140), else empty.
 
-    Every Polygon/MultiPolygon feature is pinned to ``tippecanoe:minzoom =
-    _BOUNDARY_MINZOOM`` so real boundaries appear only from the crossover up; the
-    low zooms are owned by the dissolved coverage footprint (a separate pass). This
-    pin is harmless for point-dominant buckets (their few polygons simply start at
-    z8, and no footprint is emitted for them).
+    The real-boundary features are pinned above the crossover by tiling the BASE
+    pass at ``--minimum-zoom _BOUNDARY_MINZOOM`` (per-feature ``tippecanoe:minzoom``
+    in ``properties`` is NOT honoured by the current tippecanoe), so the low zooms
+    are owned by the dissolved coverage footprint (a separate pass).
     """
     contributors = _bucket_contributors(bucket)
     if not contributors:
@@ -1254,8 +1252,6 @@ def _stream_bucket(
                 is_poly = geom.get("type") in ("Polygon", "MultiPolygon", "GeometryCollection")
                 if is_poly:
                     counts["polygon"] += 1
-                    # Pin boundaries above the crossover; footprint owns z0-7.
-                    feature["properties"]["tippecanoe:minzoom"] = _BOUNDARY_MINZOOM
                     if collect_coverage:
                         _accumulate_coverage(geom, coverage_geoms)
                 else:
@@ -1629,12 +1625,14 @@ def generate_tiles_from_staged(
                     tile_cluster = ctx_cfg["cluster_points"]
                     tile_description = ctx_cfg.get("description") or description
                 else:
-                    tile_minzoom = 0
+                    # Polygon-dominant buckets (a coverage footprint was emitted)
+                    # gate the real boundaries to the crossover: the BASE pass
+                    # starts at _BOUNDARY_MINZOOM so nothing renders below z8 (the
+                    # footprint owns z0-7), and uses the no-drop preserve_all pass
+                    # so every boundary survives from z8 up. Point-dominant buckets
+                    # keep the full-zoom point heatmap (clustering). (place#140)
+                    tile_minzoom = _BOUNDARY_MINZOOM if has_coverage else 0
                     tile_maxzoom = 10
-                    # Point-dominant buckets keep the point heatmap (clustering);
-                    # polygon-dominant buckets (a coverage footprint was emitted)
-                    # instead use the no-drop BASE pass so every pinned boundary
-                    # survives from z8 up (place#140).
                     tile_cluster = not has_coverage
                     tile_description = description
 
