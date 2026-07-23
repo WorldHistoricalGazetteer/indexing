@@ -174,9 +174,15 @@ def compute(args) -> int:
                 geoms += 1
                 gi = g.get("geometry_index", idx)
                 # Sub-cell features keep their (correct) centroid cover — skip
-                # the geom-store read + polyfill entirely.
+                # the geom-store read + polyfill entirely. The exception is a
+                # geometry with NO cover at all (place#145: the wd geoshape
+                # merge indexed polygons without ever running the h3 stage):
+                # "absent" is not "correct centroid cover", and a doc with no
+                # h3_cover is invisible to every h3 gate regardless of size.
                 md = bbox_maxdim_deg(g.get("bounds"))
-                if md is not None and md < H3_SUBCELL_BBOX_DEG:
+                missing_cover = not g.get("h3_cover")
+                if (md is not None and md < H3_SUBCELL_BBOX_DEG
+                        and not (args.fill_missing and missing_cover)):
                     skipped += 1
                     continue
                 ll = _repr_lonlat(g)
@@ -324,6 +330,11 @@ def main() -> None:
     c.add_argument("--slice", type=int, default=0)
     c.add_argument("--of", type=int, default=1)
     c.add_argument("--batch", type=int, default=1000)
+    c.add_argument("--fill-missing", action="store_true",
+                   help="also compute a cover for sub-cell geometries that have "
+                        "NO h3_cover at all (otherwise they are skipped as "
+                        "'already correct'). Use after an ingest that wrote "
+                        "polygons without running the h3 stage — place#145.")
     c.set_defaults(func=compute)
 
     a = sub.add_parser("apply", help="apply the patch in place (throttled)")
