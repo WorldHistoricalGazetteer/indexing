@@ -1,0 +1,99 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Coverage footprint — B locked, both basemaps</title>
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  body { margin:0; font-family: system-ui, sans-serif; background:#e9edf0; }
+  h1 { font-size:14px; margin:6px 12px 1px; }
+  p.sub { font-size:11px; color:#555; margin:0 12px 6px; }
+  .grid { display:grid; grid-template-columns: 130px repeat(5, 1fr); gap:4px; padding:4px; }
+  .zh { font-size:12px; font-weight:700; color:#333; display:flex; align-items:center; justify-content:center; }
+  .rh { font-size:11px; font-weight:700; color:#1f2937; display:flex; align-items:center; padding:0 6px; }
+  .cell { position:relative; height:225px; border:1px solid #cbd2d9; background:#ccc; }
+  .map { position:absolute; inset:0; }
+</style>
+</head>
+<body>
+<h1>Candidate B — locked recipe — across z0–z8 on both basemaps</h1>
+<p class="sub">B: soft-blob mottle R-big r24 (0.45) / O-mid r16 (0.5) / Y-small r10 (0.6), seeded scatter, solid red border. whg-context ×1.0, OSM ×0.7. Footprint z0–7 → discrete red borders at z8.</p>
+<div class="grid" id="grid"></div>
+<script>
+const RED=[224,64,64], ORANGE=[253,141,60], YELLOW=[255,237,160];
+const rgba=(c,a)=>`rgba(${c[0]},${c[1]},${c[2]},${a})`;
+const CENTER=[-2.6,53.0], TILE=72, ZOOMS=[0,3,5,7,8];
+const CTX='https://tiles.whgazetteer.org/styles/whg-context/style.json';
+const OSM='https://tiles.whgazetteer.org/styles/OSM/style.json';
+
+// deterministic PRNG (LCG) so the scatter is reproducible / bakeable
+function rng(seed){ let s=seed>>>0; return ()=>{ s=(s*1664525+1013904223)>>>0; return s/4294967296; }; }
+function jitterPts(g,jit,seed){ const R=rng(seed), p=[], cell=TILE/g;
+  for(let i=0;i<g;i++)for(let j=0;j<g;j++)
+    p.push([(i+0.5)*cell+(R()*2-1)*jit,(j+0.5)*cell+(R()*2-1)*jit]); return p; }
+function sprite(color,pts,radius){
+  const c=document.createElement('canvas');c.width=c.height=TILE;const x=c.getContext('2d');
+  pts.forEach(([px,py])=>{for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){
+    const cx=px+dx*TILE,cy=py+dy*TILE;const g=x.createRadialGradient(cx,cy,0,cx,cy,radius);
+    g.addColorStop(0,rgba(color,1));g.addColorStop(1,rgba(color,0));
+    x.fillStyle=g;x.beginPath();x.arc(cx,cy,radius,0,7);x.fill();}});
+  return x.getImageData(0,0,TILE,TILE);
+}
+// B: [color, radius, grid, jitter, opacity, seed]
+const SPECS=[[RED,24,3,9,0.45,101],[ORANGE,16,4,7,0.5,202],[YELLOW,10,6,5,0.6,303]];
+const IMGS=SPECS.map(([c,r,g,j,,seed])=>sprite(c,jitterPts(g,j,seed),r));
+
+const footOp=(base)=>['interpolate',['linear'],['zoom'],7,base,7.9,0];   // hold then fade before z8
+const lineOp=['interpolate',['linear'],['zoom'],7,0.8,7.9,0];
+const discFill=['interpolate',['linear'],['zoom'],7.5,0,8,0.10];
+const discLine=['interpolate',['linear'],['zoom'],7.5,0,8,0.95];
+
+const ROWS=[
+  {key:'ctx',label:'whg-context ×1.0', url:CTX, overall:1.0, strip:true},
+  {key:'osm',label:'OSM ×0.7',         url:OSM, overall:0.7, strip:false},
+];
+
+(async ()=>{
+  const [ctxStyle, osmStyle, fp, disc] = await Promise.all([
+    fetch(CTX).then(r=>r.json()), fetch(OSM).then(r=>r.json()),
+    fetch('vob_rc.footprint.json').then(r=>r.json()),
+    fetch('vob_rc.discrete.json').then(r=>r.json()),
+  ]);
+  const styles={ctx:ctxStyle, osm:osmStyle};
+  // strip terrain from whg-context
+  delete ctxStyle.terrain;
+  for(const k of Object.keys(ctxStyle.sources)) if(k.startsWith('terrarium')) delete ctxStyle.sources[k];
+  ctxStyle.layers=ctxStyle.layers.filter(l=>l.type!=='hillshade'&&!String(l.source||'').startsWith('terrarium'));
+
+  const grid=document.getElementById('grid'); let done=0, total=ROWS.length*ZOOMS.length;
+  grid.append(Object.assign(document.createElement('div'),{className:'zh'}));
+  ZOOMS.forEach(z=>grid.append(Object.assign(document.createElement('div'),{className:'zh',textContent:'z'+z})));
+  ROWS.forEach(R=>{
+    const st=styles[R.key];
+    const firstSymbol=(st.layers.find(l=>l.type==='symbol')||{}).id;
+    grid.append(Object.assign(document.createElement('div'),{className:'rh',textContent:R.label}));
+    ZOOMS.forEach(z=>{
+      const cell=document.createElement('div');cell.className='cell';
+      const md=document.createElement('div');md.className='map';md.id=`m-${R.key}-${z}`;
+      cell.append(md);grid.append(cell);
+      const map=new maplibregl.Map({container:md.id,center:CENTER,zoom:z,attributionControl:false,style:structuredClone(st)});
+      map.on('load',()=>{
+        map.addSource('fp',{type:'geojson',data:fp});
+        map.addSource('disc',{type:'geojson',data:disc});
+        map.addLayer({id:'f0',type:'fill',source:'fp',maxzoom:8,paint:{'fill-color':rgba(YELLOW,1),'fill-opacity':footOp(0.05*R.overall)}},firstSymbol);
+        IMGS.forEach((img,k)=>{ const n='s'+k; map.addImage(n,img,{pixelRatio:2});
+          map.addLayer({id:'f'+k,type:'fill',source:'fp',maxzoom:8,paint:{'fill-pattern':n,'fill-opacity':footOp(SPECS[k][4]*R.overall)}},firstSymbol); });
+        map.addLayer({id:'ln',type:'line',source:'fp',maxzoom:8,paint:{'line-color':rgba(RED,1),'line-width':1.5,'line-opacity':lineOp}},firstSymbol);
+        map.addLayer({id:'df',type:'fill',source:'disc',minzoom:7.5,paint:{'fill-color':rgba(ORANGE,1),'fill-opacity':discFill}},firstSymbol);
+        map.addLayer({id:'dl',type:'line',source:'disc',minzoom:7.5,paint:{'line-color':rgba(RED,1),'line-width':0.8,'line-opacity':discLine}},firstSymbol);
+        map.dragRotate.disable();
+      });
+      map.on('idle',()=>{ if(!md.dataset.d){md.dataset.d=1;done++;window.__done=done;} });
+    });
+  });
+  window.__total=total; window.__ready=true;
+})();
+</script>
+</body>
+</html>
