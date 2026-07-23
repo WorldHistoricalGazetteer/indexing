@@ -23,7 +23,7 @@ import sys
 import time
 from pathlib import Path
 
-from processing.helpers import write_staged_place_doc
+from processing.helpers import enrich_geometry, write_staged_place_doc
 
 NAMESPACE = "tm"
 DIR = Path(__file__).resolve().parent
@@ -378,15 +378,16 @@ def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict:
     # ---- Geometry (optional) ----
     if coords:
         lon, lat = coords
-        geometry = {
-            "type": "Point",
-            "coordinates": [lon, lat],
-        }
-        repr_point = {"lon": lon, "lat": lat}
-        geom_entry: dict = {"geom": geometry, "repr_point": repr_point}
-        if timespans:
-            geom_entry["timespans"] = timespans
-        doc["geometries"] = [geom_entry]
+        # Build the entry via enrich_geometry like every other authority: it is
+        # what rounds the coordinates, and what writes `bounds` and `has_geom`.
+        # Hand-rolling the dict here left all 24,538 tm geometries without a
+        # `bounds` (place#145) — the field the gateway's region builder uses for
+        # its bbox gate, and the one recompute_h3_index reads to decide whether a
+        # feature is sub-cell. h3 fields are added later by `h3_stage`.
+        geom_entry = enrich_geometry({"type": "Point", "coordinates": [lon, lat]},
+                                     timespans=timespans or None)
+        if geom_entry:
+            doc["geometries"] = [geom_entry]
 
     # ---- Country codes ----
     ccode = country_to_ccode(row["country"])

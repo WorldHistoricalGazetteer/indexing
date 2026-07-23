@@ -34,6 +34,7 @@ from pathlib import Path
 from elasticsearch import Elasticsearch
 from elasticsearch import helpers as es_helpers
 
+from processing.helpers import COORDINATE_PRECISION, compute_h3_fields
 from processing.settings import STAGED_BASE_DIR
 
 DEFAULT_ES_PASSWORD_FILE = "/ix1/ishi/es/config/elastic.password"
@@ -239,18 +240,53 @@ def cmd_wd_geometry(args):
                     "geom_ref": g.get("geom_ref") or (
                         f'{pid_wd}_{g.get("geometry_index", 0)}' if has else None),
                     "hull": g.get("hull"),
+                    # Carry the wd geometry's DERIVED fields across too — it is
+                    # literally the same geometry, and an entry synthesised
+                    # without them is invisible to every h3 gate (place#145).
+                    "h3_centroid": g.get("h3_centroid"),
+                    "h3_cover": g.get("h3_cover"),
+                    "bounds": g.get("bounds"),
                 }
+
+    def _derived(wg, entry):
+        """Attach h3_centroid / h3_cover / bounds to a synthesised entry.
+
+        Copied from the wd record when it has them (same geometry), else
+        computed from the repr_point with point semantics — the same values
+        ``enrich_geometry`` + ``h3_stage`` would have produced. Without this the
+        entry reaches ES with no h3 at all and no bbox (place#145: 214 og
+        geometries were indexed that way).
+        """
+        rp = wg.get("repr_point") or {}
+        lon, lat = rp.get("lon"), rp.get("lat")
+        for field in ("h3_centroid", "h3_cover", "bounds"):
+            if wg.get(field):
+                entry[field] = wg[field]
+        if lon is None or lat is None:
+            return entry
+        if not entry.get("h3_centroid") or not entry.get("h3_cover"):
+            centroid, cover = compute_h3_fields(lon=lon, lat=lat,
+                                                geojson_geom=wg.get("hull"))
+            entry.setdefault("h3_centroid", centroid)
+            if cover:
+                entry.setdefault("h3_cover", list(cover))
+        if not entry.get("bounds"):
+            entry["bounds"] = [round(v, COORDINATE_PRECISION)
+                               for v in (lon, lat, lon, lat)]
+        return entry
 
     def _build(wg):
         """wd polygon > ofs hull > wd point — return the og geom_entry or None."""
         if not wg or not wg.get("repr_point"):
             return None
         if wg["has_geom"]:  # wd has a polygon → reference it (overrides ofs hull)
-            return {"has_geom": True, "geom_ref": wg["geom_ref"], "repr_point": wg["repr_point"],
-                    "hull": wg.get("hull"), "source": "wd", "approximation": "exact",
-                    "timespans": []}
-        return {"has_geom": False, "repr_point": wg["repr_point"], "source": "wd",
-                "approximation": "centroid", "timespans": []}  # wd point only
+            return _derived(wg, {
+                "has_geom": True, "geom_ref": wg["geom_ref"],
+                "repr_point": wg["repr_point"], "hull": wg.get("hull"),
+                "source": "wd", "approximation": "exact", "timespans": []})
+        return _derived(wg, {  # wd point only
+            "has_geom": False, "repr_point": wg["repr_point"], "source": "wd",
+            "approximation": "centroid", "timespans": []})
 
     upgrades = []  # (pid, geom_entry)
     polys = 0

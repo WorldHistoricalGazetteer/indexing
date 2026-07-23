@@ -141,9 +141,22 @@ def iter_place_docs(path: Path) -> Iterator[dict[str, Any]]:
 
 
 def _has_uncovered_geometry(doc: dict) -> bool:
-    """True if any has_geom geometry lacks an h3_cover (i.e. h3 stage not merged)."""
+    """True if any geometry is missing the fields the h3 stage should have added.
+
+    Checks EVERY located geometry, not just ``has_geom`` ones. The narrower test
+    (has_geom + no h3_cover) let point-only namespaces through with no h3 at all
+    — which is how chgis/og/tm reached prod unindexed for containment
+    (place#145). A geometry with a ``repr_point`` must carry an ``h3_centroid``
+    and an ``h3_cover``; ``bounds`` comes from ``enrich_geometry`` and its
+    absence means the geometry entry was hand-built rather than enriched.
+    """
     for g in doc.get("geometries") or []:
-        if isinstance(g, dict) and g.get("has_geom") and not g.get("h3_cover"):
+        if not isinstance(g, dict):
+            continue
+        if g.get("has_geom") and not g.get("h3_cover"):
+            return True
+        if g.get("repr_point") and not (
+                g.get("h3_centroid") and g.get("h3_cover") and g.get("bounds")):
             return True
     return False
 
@@ -278,9 +291,10 @@ def plan_and_index_places(es, index, namespace, place_docs, *, replace, execute,
     print(f"\n[places] target index: {index}")
     print(f"[places] docs to index: {len(place_docs):,}")
     if uncovered:
-        msg = (f"[places] WARNING: {uncovered:,} docs have has_geom geometries with "
-               f"NO h3_cover — source is not the enriched 'final' stage. Such docs "
-               f"will not work as fuzzy containment regions.")
+        msg = (f"[places] WARNING: {uncovered:,} docs have geometries missing "
+               f"h3_centroid / h3_cover / bounds — source is not the enriched "
+               f"'final' stage. Such docs will not work as fuzzy containment "
+               f"regions, and points are affected as well as polygons.")
         if not allow_missing_h3 and execute:
             raise SystemExit(msg + "\nRefusing to index; run the h3 stage first or "
                                    "pass --allow-missing-h3 to override.")
