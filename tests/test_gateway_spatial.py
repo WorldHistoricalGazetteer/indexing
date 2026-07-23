@@ -186,18 +186,81 @@ class TestResolveRegion(unittest.TestCase):
         self.assertIs(region, region2)
         self.assertEqual(client.calls, 1)
 
-    def test_point_only_container_returns_none(self):
-        # A point-only container (has_geom=False) has an h3_cover of a single
-        # centroid cell — it must be DROPPED, not used as a degraded region.
+    def test_point_only_container_without_a_co_referent_returns_none(self):
+        # place#144: a point-only container (has_geom=False) has an h3_cover of a
+        # single centroid cell — useless as a region. No geometry is invented, so
+        # resolve_region returns None and the ENDPOINT must fail closed rather
+        # than run the query unconstrained.
         hits = [{"_source": {
             "place_id": "wd:Q60576135",
             "geometries": [{"h3_cover": [h3.latlng_to_cell(51.0, -1.3, 7)],
+                            "h3_centroid": h3.latlng_to_cell(51.0, -1.3, 7),
+                            "repr_point": {"lon": -1.3, "lat": 51.0},
                             "bounds": [-1.3, 51.0, -1.3, 51.0],
                             "geometry_index": 0, "has_geom": False}],
         }}]
-        client = _StubClient(hits)
-        region = asyncio.run(spatial.resolve_region(["wd:Q60576135"], client, None))
+        region = asyncio.run(spatial.resolve_region(
+            ["wd:Q60576135"], _StubClient(hits), None, link_fallback=False))
         self.assertIsNone(region)
+
+    def test_point_only_container_borrows_a_co_referent_polygon(self):
+        # The real shape of the gap: gn:3017382 (France) is point-only, its
+        # sameAs twin wd:Q142 carries the boundary. Following the identity edge
+        # beats buffering the point.
+        cover = _cover_for(_square(0, 0, 3, 3))
+        by_id = {
+            "gn:3017382": {"_source": {"place_id": "gn:3017382", "geometries": [
+                {"repr_point": {"lon": 2.0, "lat": 47.0},
+                 "geometry_index": 0, "has_geom": False}]}},
+            "wd:Q142": {"_source": {"place_id": "wd:Q142", "geometries": [
+                {"h3_cover": cover, "bounds": [0, 0, 3, 3],
+                 "geometry_index": 0, "has_geom": True}]}},
+        }
+
+        class _ByIdClient:
+            def __init__(self):
+                self.calls = 0
+
+            async def post(self, url, json=None, auth=None, headers=None):
+                self.calls += 1
+                ids = json["query"]["terms"]["place_id"]
+                return _StubResp({"hits": {"hits": [by_id[i] for i in ids if i in by_id]}})
+
+        class _Edge:
+            def __init__(self, a, b, rel):
+                self.a, self.b, self.relation_type = a, b, rel
+
+        edges = [_Edge("gn:3017382", "wd:Q142", "sameAs"),
+                 _Edge("gn:3017382", "whg:1:2", "closeMatch")]  # weaker — must be ignored
+        real_expand = spatial._linked_container_ids
+
+        async def _fake_linked(ids):
+            return [e.b for e in edges
+                    if e.a in ids and e.relation_type in spatial._GEOM_LENDING_RELATIONS]
+
+        spatial._linked_container_ids = _fake_linked
+        try:
+            region = asyncio.run(
+                spatial.resolve_region(["gn:3017382"], _ByIdClient(), None))
+        finally:
+            spatial._linked_container_ids = real_expand
+
+        self.assertIsNotNone(region)
+        self.assertEqual(region.source, "linked-polygon")
+        self.assertEqual(region.linked_ids, ("wd:Q142",))
+        self.assertEqual(region.point_ids, ("gn:3017382",))
+        # The borrowed boundary now scopes candidates for real.
+        self.assertTrue(spatial.hit_matches(
+            _hit(rp=[1.5, 1.5])["_source"], region, "fuzzy", "within"))
+        self.assertFalse(spatial.hit_matches(
+            _hit(rp=[40, 40])["_source"], region, "fuzzy", "within"))
+
+    def test_no_geometry_at_all_returns_none(self):
+        # Nothing to seed a buffer from → still None, and the endpoint must then
+        # refuse to answer with an unscoped result set.
+        hits = [{"_source": {"place_id": "x:1", "geometries": [{}]}}]
+        client = _StubClient(hits)
+        self.assertIsNone(asyncio.run(spatial.resolve_region(["x:1"], client, None)))
 
     def test_polygon_plus_point_only_uses_only_polygon(self):
         # One polygon container + one point-only container → region built from
@@ -217,6 +280,10 @@ class TestResolveRegion(unittest.TestCase):
             spatial.resolve_region(["ukhc:CMB", "wd:Q60576135"], client, None))
         self.assertIsNotNone(region)
         self.assertEqual(region.geom_keys, ("ukhc:CMB_0",))
+        self.assertEqual(region.area_ids, ("ukhc:CMB",))
+        # ...but the ignored point-only container is reported, so the endpoint
+        # can tell the client its scope was only partly honoured.
+        self.assertEqual(region.point_ids, ("wd:Q60576135",))
 
     def test_no_coverage_returns_none(self):
         # Resolved place with no geometries → no usable container → unconstrained.

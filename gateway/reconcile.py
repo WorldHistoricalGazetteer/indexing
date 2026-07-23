@@ -57,6 +57,7 @@ from .config import (
 from .es_helpers import (
     es_auth as _es_auth,
     ES_HEADERS,
+    _has_geometries,
     build_toponym_query as _build_toponym_query,
     build_phonetic_knn as _build_phonetic_knn,
     collect_place_ids as _collect_place_ids,
@@ -68,6 +69,14 @@ logger = logging.getLogger("gateway.reconcile")
 
 router = APIRouter(prefix="/api", tags=["Reconciliation"])
 
+# Max name variants honoured per request — bounds discovery fan-out (one extra
+# KNN round trip per variant in phonetic modes; one extra should-clause in text
+# modes). Anything beyond this is dropped and reported in the response.
+MAX_VARIANTS = 10
+# Variant matches are worth marginally less than an equally good match on the
+# primary query: the primary is the value the user actually supplied.
+VARIANT_SCORE_WEIGHT = 0.9
+
 
 # ---------------------------------------------------------------------------
 # Request / Response models
@@ -77,6 +86,20 @@ class ReconcileRequest(BaseModel):
     """Query shape sent by the WHG Django app."""
 
     query: Optional[str] = Field(None, description="Query toponym string")
+    variants: Optional[list[str]] = Field(
+        None,
+        description="Alternative name forms to ALSO try during discovery (the "
+                    "Map-your-Data `alt_names` column). Candidates matching the "
+                    "primary query OR any variant are unioned, each place keeping "
+                    "its best match; variant matches are scored slightly below an "
+                    f"equally good primary match. At most {MAX_VARIANTS} are honoured.",
+    )
+    variant_vectors: Optional[list[list[int]]] = Field(
+        None,
+        description="Optional client-computed int8 (128-d) Symphonym embeddings "
+                    "for `variants`, positionally aligned. Any variant without a "
+                    "vector is embedded server-side (fuzzy/phonetic modes only).",
+    )
     mode: str = Field("fuzzy", description="Search mode: exact | starts | in | fuzzy | phonetic")
     ccodes: Optional[list[str]] = Field(None, description="ISO-3166 country code filter")
     fclasses: Optional[list[str]] = Field(
@@ -185,8 +208,34 @@ class CandidateHit(BaseModel):
     query_match: Optional[dict] = None
 
 
+class ScopeInfo(BaseModel):
+    """How the requested geographic scope was actually applied.
+
+    Present whenever ``contained_in`` / ``bounds`` was sent, so the client can
+    warn the user instead of trusting a scope the gateway could not honour
+    verbatim (place#144). ``applied=False`` means **no** spatial constraint could
+    be built — the request is failed closed (no hits) rather than answered with
+    an unscoped result set.
+    """
+    requested: bool = False
+    applied: bool = False
+    mode: str = "none"                     # polygon | linked-polygon | geojson
+                                           # | bbox | none
+    approximate: bool = False              # True when the constraint is coarser
+                                           # than the geometry that was asked for
+    containers_polygon: list[str] = []     # containers that contributed a real polygon
+    containers_linked: list[str] = []      # co-referent (sameAs) places whose polygon was
+                                           # borrowed because the container had none
+    containers_approximated: list[str] = []  # point-only containers (buffered, or ignored
+                                             # when a polygon container was also given)
+    containers_unresolved: list[str] = []  # requested ids with no usable geometry at all
+    message: Optional[str] = None
+
+
 class ReconcileResponse(BaseModel):
     hits: list[CandidateHit] = []  # flat ranked candidates (clustering is client-side)
+    scope: Optional[ScopeInfo] = None  # geographic-scope diagnostics (when scope requested)
+    variants_used: list[str] = []  # name variants actually queried in discovery (post-cap)
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     # Offline calibration fuel — populated when include_clustering_fields=True
     clustering_params: Optional[dict] = None
@@ -199,6 +248,101 @@ class ReconcileResponse(BaseModel):
 # Internal helpers (reconcile-specific)
 # ---------------------------------------------------------------------------
 
+
+def _normalise_variants(
+    req: "ReconcileRequest",
+) -> tuple[list[str], list[Optional[list[int]]]]:
+    """Clean the requested name variants: strip blanks, drop forms that repeat
+    the primary query or an earlier variant (case-insensitively), cap the count,
+    and carry each surviving variant's client-supplied embedding (if any).
+
+    Returns ``(variants, vectors)`` — positionally aligned, ``vectors[i]`` None
+    when that form must be embedded server-side.
+    """
+    variants: list[str] = []
+    vectors: list[Optional[list[int]]] = []
+    if not req.variants:
+        return variants, vectors
+    seen = {(req.query or "").strip().lower()}
+    for i, raw in enumerate(req.variants):
+        if not isinstance(raw, str):
+            continue
+        form = raw.strip()
+        if not form or form.lower() in seen:
+            continue
+        seen.add(form.lower())
+        variants.append(form)
+        vectors.append(
+            req.variant_vectors[i]
+            if req.variant_vectors and i < len(req.variant_vectors)
+            else None
+        )
+        if len(variants) >= MAX_VARIANTS:
+            break
+    return variants, vectors
+
+
+def _scope_message(region) -> Optional[str]:
+    """Human-readable note on any way the region departs from what was asked."""
+    if region.source == "linked-polygon":
+        return (
+            "No container has its own polygon; scope taken from the boundary of "
+            f"{', '.join(region.linked_ids) or 'a co-referent place'} "
+            "(sameAs/exactMatch)."
+        )
+    if region.point_ids:
+        return (f"{len(region.point_ids)} point-only container(s) ignored — the "
+                f"scope is the union of the polygon containers.")
+    return None
+
+
+def _build_scope_info(req: "ReconcileRequest", region) -> Optional["ScopeInfo"]:
+    """Describe how the requested geographic scope was applied.
+
+    Returns ``None`` when no scope was requested (response is then byte-identical
+    to the pre-place#144 shape). Otherwise the caller MUST honour
+    ``applied=False`` by refusing to answer with unscoped results.
+    """
+    if not req.contained_in and not req.bounds:
+        return None
+
+    if region is not None:
+        return ScopeInfo(
+            requested=True,
+            applied=True,
+            mode=region.source,
+            containers_polygon=list(region.area_ids),
+            containers_linked=list(region.linked_ids),
+            containers_approximated=list(region.point_ids),
+            containers_unresolved=list(region.unresolved_ids),
+            message=_scope_message(region),
+        )
+
+    if req.bounds and _has_geometries(req.bounds):
+        # region_from_geojson failed (Shapely unavailable / unsupported shape) but
+        # build_places_filter still applies its degenerate `repr_point ∈ bounds`
+        # gate, so the query IS constrained — just coarsely and without a refine.
+        return ScopeInfo(
+            requested=True, applied=True, mode="bbox", approximate=True,
+            message="Bounds could not be resolved into a containment region; "
+                    "applied a coarse repr_point-in-bounds filter instead.",
+        )
+
+    return ScopeInfo(
+        requested=True,
+        applied=False,
+        mode="none",
+        containers_unresolved=[
+            spatial._strip_place_prefix(p) for p in (req.contained_in or []) if p],
+        message=(
+            "None of the containment place_ids resolved to a usable geometry "
+            "(not even a representative point), so the requested scope could not "
+            "be applied. No results are returned rather than unscoped ones."
+            if req.contained_in else
+            "The supplied bounds contained no usable geometry, so the requested "
+            "scope could not be applied."
+        ),
+    )
 
 
 def _format_candidate(
@@ -279,6 +423,9 @@ async def reconcile_search(req: ReconcileRequest):
       search instead.  Each hit carries ``attestations`` — the place_ids
       of every place that uses that name form.  We accumulate a scored
       set of candidate place_ids, keeping the best score per place.
+      Any ``variants`` (alternative name forms, e.g. a Map-your-Data
+      ``alt_names`` column) are tried **alongside** ``query`` and unioned
+      into the same candidate set, at a slight score discount.
 
       **Step 2 — Filtering.**  Fetch the candidate places from the
       ``places`` index using a ``terms`` filter on ``place_id``.  Optional
@@ -299,6 +446,13 @@ async def reconcile_search(req: ReconcileRequest):
     ``contained_in`` containment region.  Point/line-only candidates report
     ``has_geom=False``; use this to pick valid parents for hierarchical /
     containment-scoped reconciliation.
+
+    **Geographic scope is never silently dropped** (place#144).  When
+    ``contained_in`` names a container with no polygon, the scope is applied as
+    an approximate buffer around the container's indexed point instead of being
+    ignored; when no constraint at all can be built the request is **failed
+    closed** (no hits).  Either way ``scope`` in the response records exactly
+    what was applied, so the client can warn the user.
     """
     import httpx
     from collections import defaultdict
@@ -307,6 +461,8 @@ async def reconcile_search(req: ReconcileRequest):
     if not has_query and not req.contained_in and not req.bounds:
         return ReconcileResponse()
     pure_spatial = not has_query
+
+    variants, variant_vectors = _normalise_variants(req) if has_query else ([], [])
 
     auth = _es_auth()
 
@@ -337,17 +493,28 @@ async def reconcile_search(req: ReconcileRequest):
         region = None
         if req.contained_in:
             try:
-                # resolve_region returns None when no id yields a usable AREA
-                # geometry (point-only / unresolvable) — the query then runs
-                # unconstrained, exactly as if contained_in were omitted.
+                # A container with no polygon no longer drops the scope:
+                # resolve_region falls back to an APPROXIMATE buffered-point
+                # region (flagged approximate=True). None now means "not even a
+                # seed point" — a scope we genuinely cannot apply.
                 region = await spatial.resolve_region(req.contained_in, client, auth)
             except spatial.RegionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
         elif req.bounds:
             region = spatial.region_from_geojson(req.bounds)
 
+        scope = _build_scope_info(req, region)
+
+        if scope is not None and not scope.applied:
+            # FAIL CLOSED. A scope was explicitly requested but no spatial
+            # constraint of any kind could be built, so answering with the
+            # unconstrained result set would silently ignore it (place#144).
+            # Return nothing plus the reason, and let the client warn the user.
+            logger.info("reconcile: scope requested but not applied — %s", scope.message)
+            return ReconcileResponse(scope=scope, variants_used=variants)
+
         if pure_spatial and region is None and not req.bounds:
-            return ReconcileResponse()
+            return ReconcileResponse(scope=scope, variants_used=variants)
 
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -356,21 +523,48 @@ async def reconcile_search(req: ReconcileRequest):
 
         if not pure_spatial:
             if req.mode in ("fuzzy", "phonetic"):
-                knn_body = _build_phonetic_knn(req.query, k=200, similarity=0.7, query_vector=req.query_vector)
-                if knn_body:
-                    knn_resp = await client.post(
-                        f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                        json=knn_body,
-                        auth=auth,
-                        headers=ES_HEADERS,
-                    )
-                    knn_resp.raise_for_status()
-                    knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                    _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
-                                       include_prefixes, match_names)
+                # One KNN pass per name form. The embedding space differs per
+                # form, so (unlike the text path) these cannot be OR-ed into a
+                # single query — but they are independent, so run them together
+                # and union the results, each place keeping its best score.
+                passes: list[tuple[str, Optional[list[int]], float]] = [
+                    (req.query, req.query_vector, 1.0)
+                ]
+                passes += [
+                    (form, vec, VARIANT_SCORE_WEIGHT)
+                    for form, vec in zip(variants, variant_vectors)
+                ]
+                bodies = [
+                    (_build_phonetic_knn(form, k=200, similarity=0.7, query_vector=vec), weight)
+                    for form, vec, weight in passes
+                ]
+                bodies = [(b, w) for b, w in bodies if b]
+                if bodies:
+                    responses = await asyncio.gather(*[
+                        client.post(
+                            f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                            json=body,
+                            auth=auth,
+                            headers=ES_HEADERS,
+                        )
+                        for body, _ in bodies
+                    ])
+                    for (_, weight), knn_resp in zip(bodies, responses):
+                        knn_resp.raise_for_status()
+                        knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
+                        _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
+                                           include_prefixes, match_names,
+                                           score_scale=weight)
             else:
+                # Text modes OR the variants into ONE request (dis_max keeps the
+                # best single-form score per toponym rather than summing).
                 text_body = _build_toponym_query(
-                    req.query, req.mode, size=200, namespaces=req.namespaces or None
+                    req.query, req.mode,
+                    # Widen the discovery window so the extra forms don't squeeze
+                    # each other out of a fixed top-200 (cf. the #127 symptom).
+                    size=min(200 * (1 + len(variants)), 800),
+                    namespaces=req.namespaces or None,
+                    variants=variants or None, variant_weight=VARIANT_SCORE_WEIGHT,
                 )
                 text_resp = await client.post(
                     f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
@@ -384,7 +578,7 @@ async def reconcile_search(req: ReconcileRequest):
                                    include_prefixes, match_names)
 
             if not place_scores:
-                return ReconcileResponse()
+                return ReconcileResponse(scope=scope, variants_used=variants)
 
         # ------------------------------------------------------------------
         # Step 2: Filtering — fetch places by ID + spatial/temporal/ccode
@@ -523,6 +717,8 @@ async def reconcile_search(req: ReconcileRequest):
 
     return ReconcileResponse(
         hits=candidates,
+        scope=scope,
+        variants_used=variants,
         edges=edges,
         clustering_params=load_clustering_params() if req.include_clustering_fields else None,
         toponym_stoplist=load_toponym_stoplist() if req.include_clustering_fields else [],

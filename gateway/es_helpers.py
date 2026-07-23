@@ -94,20 +94,11 @@ def extract_repr_point(src: dict) -> list[float] | None:
 # Step 1 helpers — Toponym discovery
 # ---------------------------------------------------------------------------
 
-def build_toponym_query(
-    query: str, mode: str, size: int = 200, namespaces: list[str] | None = None
-) -> dict:
-    """
-    Build an ES query for the toponyms index based on mode.
+def build_toponym_text_clause(query: str, mode: str) -> dict:
+    """Return the bare ES query clause for one toponym string in one mode.
 
-    Returns an ES search body dict.  The ``_source`` always includes
-    ``attestations`` so the caller can collect place_ids directly.
-
-    ``namespaces`` (namespace *codes*, e.g. ``["iv"]``) pushes a
-    ``terms`` filter on the toponym ``namespaces`` field INTO discovery, so the
-    top-``size`` window is drawn only from the requested namespaces. Without it,
-    a narrow namespace's matches for a common substring get squeezed out of the
-    global top-``size`` and post-filtering yields nothing (the #127 symptom).
+    Split out of ``build_toponym_query`` so several name forms (a primary query
+    plus its variants) can be OR-ed into a single discovery request.
     """
     if mode == "exact":
         text_query = {"term": {"name.keyword": query}}
@@ -156,6 +147,43 @@ def build_toponym_query(
                 ]
             }
         }
+
+    return text_query
+
+
+def build_toponym_query(
+    query: str, mode: str, size: int = 200, namespaces: list[str] | None = None,
+    variants: list[str] | None = None, variant_weight: float = 0.9,
+) -> dict:
+    """
+    Build an ES query for the toponyms index based on mode.
+
+    Returns an ES search body dict.  The ``_source`` always includes
+    ``attestations`` so the caller can collect place_ids directly.
+
+    ``namespaces`` (namespace *codes*, e.g. ``["iv"]``) pushes a
+    ``terms`` filter on the toponym ``namespaces`` field INTO discovery, so the
+    top-``size`` window is drawn only from the requested namespaces. Without it,
+    a narrow namespace's matches for a common substring get squeezed out of the
+    global top-``size`` and post-filtering yields nothing (the #127 symptom).
+
+    ``variants`` are alternative name forms tried alongside ``query`` (issue
+    place#144 / website #143 item 4). They are combined with ``dis_max`` +
+    ``tie_breaker: 0`` so a toponym's score is its *best* single match rather
+    than a sum over the forms it happens to resemble — matching the "keep the
+    best score per place" accumulation in ``collect_place_ids``. Variant clauses
+    carry ``variant_weight`` (< 1) so an equally good primary match still wins.
+    """
+    text_query = build_toponym_text_clause(query, mode)
+
+    if variants:
+        clauses = [text_query]
+        for variant in variants:
+            clauses.append({"bool": {
+                "must": [build_toponym_text_clause(variant, mode)],
+                "boost": variant_weight,
+            }})
+        text_query = {"dis_max": {"queries": clauses, "tie_breaker": 0.0}}
 
     if namespaces:
         # Scope discovery to the requested namespaces so the top-`size` window
@@ -208,6 +236,7 @@ def collect_place_ids(
     exclude_prefixes: tuple[str, ...] = (),
     include_prefixes: tuple[str, ...] = (),
     match_names: dict[str, str] | None = None,
+    score_scale: float = 1.0,
 ) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
@@ -222,9 +251,13 @@ def collect_place_ids(
             hit that produced each place's *best* score — the ``query_match.name``
             shipped in the clustering fuel. Updated in lock-step with
             ``place_scores`` so name and score always agree.
+        score_scale: Multiplier applied to each hit's score before it competes
+            for the per-place best. Folds in *separate* discovery passes — e.g.
+            the per-variant KNN searches — at a slight discount to the primary
+            query, mirroring the ``variant_weight`` boost of the text path.
     """
     for hit in hits:
-        score = hit.get("_score", 0.0)
+        score = (hit.get("_score") or 0.0) * score_scale
         name = hit.get("_source", {}).get("name", "")
         for pid in hit.get("_source", {}).get("attestations", []):
             if not pid:

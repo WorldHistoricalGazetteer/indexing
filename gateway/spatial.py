@@ -62,7 +62,6 @@ _H3_HEX_AREA_DEG2 = {
 _ES_H3_TERMS_CAP = 4000
 _REGION_CACHE_MAX = 128
 
-
 class RegionError(ValueError):
     """A containment region could not be built (e.g. no usable geometry)."""
 
@@ -180,6 +179,13 @@ class ResolvedRegion:
     geom_keys: tuple[str, ...] = ()        # "{pid}_{idx}" keys for lazy exact load
     union: Any = None                      # shapely region (exact; lazy)
     prepared: Any = None                   # prep(union) (exact; lazy)
+    # --- provenance (place#144): lets the endpoint tell the client HOW the
+    #     scope was applied instead of silently widening or dropping it ---
+    source: str = "polygon"                # polygon | linked-polygon | geojson
+    area_ids: tuple[str, ...] = ()         # containers that contributed a polygon
+    linked_ids: tuple[str, ...] = ()       # co-referents whose polygon was borrowed
+    point_ids: tuple[str, ...] = ()        # containers that contributed only a point
+    unresolved_ids: tuple[str, ...] = ()   # requested ids with no usable geometry
     _geom_loaded: bool = False
 
     @property
@@ -296,10 +302,69 @@ def region_from_geojson(bounds: dict) -> Optional[ResolvedRegion]:
         h3_terms=_es_h3_terms(cover),
         union=union,
         prepared=_prep(union),
+        source="geojson",
         _geom_loaded=True,
     )
     _cache_put(key, region)
     return region
+
+
+def _is_located(g: dict) -> bool:
+    """True if a non-area geometry is at least locatable, from indexed fields
+    only — ``repr_point``, ``h3_centroid`` (r7) or ``bounds``. No geom-store
+    read. Distinguishes "container resolved but has only a point" from
+    "container carries no geometry at all"."""
+    rp = g.get("repr_point")
+    if isinstance(rp, dict) and rp.get("lon") is not None and rp.get("lat") is not None:
+        return True
+    if isinstance(rp, (list, tuple)) and len(rp) == 2:
+        return True
+    if isinstance(g.get("h3_centroid"), str) and g["h3_centroid"]:
+        return True
+    b = g.get("bounds")
+    return isinstance(b, list) and len(b) == 4 and all(
+        isinstance(v, (int, float)) for v in b)
+
+
+# ---------------------------------------------------------------------------
+# Hard-link container upgrade — borrow a co-referent's polygon
+# ---------------------------------------------------------------------------
+
+# Only *identity* assertions may lend their geometry. closeMatch is explicitly
+# weaker than identity (it is what the legacy contributor replay emits), and
+# `distinct` is a negative assertion.
+_GEOM_LENDING_RELATIONS = ("sameAs", "exactMatch")
+_MAX_LINKED_CONTAINERS = 50
+
+
+async def _linked_container_ids(ids: list[str]) -> list[str]:
+    """Co-referent place_ids of ``ids`` per the hard-link stores.
+
+    Polygon coverage is namespace-shaped, not place-shaped: GeoNames and (mostly)
+    Wikidata carry a point for exactly the admin units users pick as a scope
+    region, while the co-referent record in another gazetteer has the boundary —
+    e.g. ``gn:3017382`` (France, point) ``sameAs`` ``wd:Q142`` (France, polygon).
+    Following the identity edge gives the user the boundary they meant, without
+    inventing one. Best-effort: a missing/locked store just yields no upgrade.
+    """
+    import asyncio
+
+    try:
+        from .hard_link_expansion import expand_hard_links
+        edges = await asyncio.to_thread(expand_hard_links, ids, one_hop=True)
+    except Exception as exc:  # pragma: no cover — enrichment, never fatal
+        logger.debug("hard-link container upgrade unavailable: %s", exc)
+        return []
+
+    wanted = set(ids)
+    linked: list[str] = []
+    for edge in edges:
+        if edge.relation_type not in _GEOM_LENDING_RELATIONS:
+            continue
+        for near, far in ((edge.a, edge.b), (edge.b, edge.a)):
+            if near in wanted and far not in wanted and far not in linked:
+                linked.append(far)
+    return sorted(linked)[:_MAX_LINKED_CONTAINERS]
 
 
 def _strip_place_prefix(pid: str) -> str:
@@ -311,18 +376,115 @@ def _strip_place_prefix(pid: str) -> str:
     return pid
 
 
-async def resolve_region(place_ids: list[str], client, auth) -> Optional[ResolvedRegion]:
+_CONTAINER_SOURCE = [
+    "place_id",
+    "geometries.h3_cover",
+    "geometries.h3_centroid",
+    "geometries.geometry_index",
+    "geometries.bounds",
+    "geometries.repr_point",
+    "geometries.has_geom",
+]
+
+
+async def _fetch_containers(ids: list[str], client, auth) -> list[dict]:
+    """Fetch the container places' geometry attributes from ES ``_source``."""
+    resp = await client.post(
+        f"{ES_BACKEND}/{PLACES_INDEX}/_search",
+        json={"size": len(ids), "query": {"terms": {"place_id": ids}},
+              "_source": _CONTAINER_SOURCE},
+        auth=auth, headers=ES_HEADERS,
+    )
+    resp.raise_for_status()
+    return resp.json().get("hits", {}).get("hits", [])
+
+
+@dataclass
+class _ContainerGeoms:
+    """What a set of container hits offers: exact area cover, or seed points."""
+    cells: set[str] = field(default_factory=set)
+    bounds: list[list[float]] = field(default_factory=list)
+    geom_keys: list[str] = field(default_factory=list)
+    area_ids: list[str] = field(default_factory=list)
+    point_ids: list[str] = field(default_factory=list)
+
+
+def _collect_containers(hits: list[dict]) -> _ContainerGeoms:
+    out = _ContainerGeoms()
+    for h in hits:
+        src = h.get("_source", {})
+        pid = src.get("place_id")
+        for idx, g in enumerate(src.get("geometries", []) or []):
+            if not isinstance(g, dict):
+                continue
+            cover = g.get("h3_cover")
+            cells: set[str] = set()
+            if isinstance(cover, list):
+                cells = {c for c in cover if isinstance(c, str)}
+            elif isinstance(cover, str) and cover:
+                cells = {cover}
+            # Only area geometries (a full polygon written to the geom-store)
+            # define the region EXACTLY. A point-only geometry (has_geom=false)
+            # carries an h3_cover of a single centroid cell, which as a region
+            # would be a degraded, container-independent filter — keep it aside
+            # as a seed for the fallbacks instead.
+            if g.get("has_geom") and cells:
+                out.cells.update(cells)
+                b = g.get("bounds")
+                if isinstance(b, list) and len(b) == 4:
+                    out.bounds.append(b)
+                if pid is not None:
+                    out.geom_keys.append(f"{pid}_{g.get('geometry_index', idx)}")
+                    if pid not in out.area_ids:
+                        out.area_ids.append(pid)
+                continue
+            # Located, but not an area — it cannot define a region itself. It is
+            # still recorded so the endpoint can report which containers were
+            # only partly honoured, and it seeds the co-referent lookup.
+            if _is_located(g) and pid is not None and pid not in out.point_ids:
+                out.point_ids.append(pid)
+    return out
+
+
+def _region_from_area(found: _ContainerGeoms, **provenance) -> Optional[ResolvedRegion]:
+    cover_by_res = _group_by_res(found.cells)
+    if not cover_by_res:
+        return None
+    bbox = _bbox_geojson_from_bounds(found.bounds) or _bbox_from_cells(found.cells)
+    return ResolvedRegion(
+        cover_by_res=cover_by_res,
+        resolutions=tuple(sorted(cover_by_res.keys())),
+        bbox_geojson=bbox,
+        h3_terms=_es_h3_terms(cover_by_res),
+        geom_keys=tuple(found.geom_keys),
+        **provenance,
+    )
+
+
+async def resolve_region(
+    place_ids: list[str],
+    client,
+    auth,
+    link_fallback: bool = True,
+) -> Optional[ResolvedRegion]:
     """Resolve a region from place_ids using only ES ``_source``: the region's
     H3 cover (fuzzy) + bbox + the geom-store keys for lazy exact loading.
 
-    Only geometries that carry a usable **area** geometry (``has_geom = true`` —
-    polygon/multipolygon) contribute to the region. Ids that are point-only,
-    unresolvable, or malformed are silently **dropped** from the containment set.
+    Geometries carrying a usable **area** cover (``has_geom = true`` with an
+    ``h3_cover``) define the region exactly, as before.
 
-    Returns ``None`` when no id resolves to a usable area geometry — the caller
-    should then run the query **without spatial containment** (identical to
-    omitting ``contained_in``). Raises ``RegionError`` only for a gateway
-    misconfiguration (H3 unavailable).
+    When **no** container yields an area cover — every id is point-only or
+    unresolvable — ``link_fallback`` borrows the boundary from a
+    ``sameAs``/``exactMatch`` **co-referent** of the container
+    (``source="linked-polygon"``). Polygon coverage is namespace-shaped: the
+    GeoNames record for a country is a point while its Wikidata twin carries the
+    boundary. That is still an exact region, just sourced from a different
+    gazetteer's record of the same place — no geometry is invented here.
+
+    Returns ``None`` when no real boundary can be found. Callers **must** treat
+    that as "the requested scope could not be applied" — NOT as "no scope
+    requested"; running the query unconstrained is the place#144 bug. Raises
+    ``RegionError`` only for a gateway misconfiguration (H3 unavailable).
     """
     if not _H3_AVAILABLE:
         raise RegionError("h3 unavailable in the gateway")
@@ -330,76 +492,42 @@ async def resolve_region(place_ids: list[str], client, auth) -> Optional[Resolve
     ids = [i for i in ids if i]
     if not ids:
         return None
-    key = "ids:" + "|".join(ids)
+    key = f"ids:{'|'.join(ids)}#lf={int(bool(link_fallback))}"
     cached = _cache_get(key)
     if cached is not None:
         return cached
 
-    body = {
-        "size": len(ids),
-        "query": {"terms": {"place_id": ids}},
-        "_source": [
-            "place_id",
-            "geometries.h3_cover",
-            "geometries.geometry_index",
-            "geometries.bounds",
-            "geometries.repr_point",
-            "geometries.has_geom",
-        ],
-    }
-    resp = await client.post(
-        f"{ES_BACKEND}/{PLACES_INDEX}/_search",
-        json=body, auth=auth, headers=ES_HEADERS,
-    )
-    resp.raise_for_status()
-    hits = resp.json().get("hits", {}).get("hits", [])
+    hits = await _fetch_containers(ids, client, auth)
     if not hits:
-        # No id resolved to a place at all → no usable container → unconstrained.
+        # No id resolved to a place at all → nothing to build a region from.
         return None
+    found = _collect_containers(hits)
 
-    all_cells: set[str] = set()
-    bounds_list: list[list[float]] = []
-    geom_keys: list[str] = []
-    for h in hits:
-        src = h.get("_source", {})
-        pid = src.get("place_id")
-        for idx, g in enumerate(src.get("geometries", []) or []):
-            if not isinstance(g, dict):
-                continue
-            # Only area geometries (a full polygon written to the geom-store)
-            # define a usable container. Point-only geometries (has_geom=false)
-            # carry an h3_cover of a single centroid cell, which would otherwise
-            # produce a degraded, container-independent filter — drop them.
-            if not g.get("has_geom"):
-                continue
-            cover = g.get("h3_cover")
-            if isinstance(cover, list):
-                all_cells.update(c for c in cover if isinstance(c, str))
-            elif isinstance(cover, str) and cover:
-                all_cells.add(cover)
-            b = g.get("bounds")
-            if isinstance(b, list) and len(b) == 4:
-                bounds_list.append(b)
-            if pid is not None:
-                geom_keys.append(f"{pid}_{g.get('geometry_index', idx)}")
-
-    cover_by_res = _group_by_res(all_cells)
-    if not cover_by_res:
-        # Every resolved id was point-only / non-area → no usable container.
-        return None
-
-    bbox = _bbox_geojson_from_bounds(bounds_list)
-    if bbox is None:
-        # Derive a bbox from the region cover cells as a fallback.
-        bbox = _bbox_from_cells(all_cells)
-
-    region = ResolvedRegion(
-        cover_by_res=cover_by_res,
-        resolutions=tuple(sorted(cover_by_res.keys())),
-        bbox_geojson=bbox,
-        h3_terms=_es_h3_terms(cover_by_res),
-        geom_keys=tuple(geom_keys),
+    region = _region_from_area(
+        found,
+        area_ids=tuple(found.area_ids),
+        point_ids=tuple(p for p in found.point_ids if p not in found.area_ids),
+        unresolved_ids=tuple(
+            i for i in ids
+            if i not in found.area_ids and i not in found.point_ids),
     )
+
+    if region is None and link_fallback:
+        # Every container is point-only — try their co-referents' boundaries.
+        linked = await _linked_container_ids(ids)
+        if linked:
+            linked_found = _collect_containers(
+                await _fetch_containers(linked, client, auth))
+            region = _region_from_area(
+                linked_found,
+                source="linked-polygon",
+                linked_ids=tuple(linked_found.area_ids),
+                point_ids=tuple(found.point_ids),
+                unresolved_ids=tuple(i for i in ids if i not in found.point_ids),
+            )
+
+    if region is None:
+        return None
     _cache_put(key, region)
     return region
 
