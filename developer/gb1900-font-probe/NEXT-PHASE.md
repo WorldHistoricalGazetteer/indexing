@@ -110,6 +110,27 @@ small-n artefact: **upright-vs-italic within the serif family is the discriminat
 balanced set must prioritise `upright·solid·serif` and `numeral·solid·plain`, and the headline number should
 not be quoted without this table. Only 6 of the 16 signatures appear in the anchors at all.
 
+### 1.4 GB1900 has no numerals — so numerals leave the target set
+
+`weak_label_report.py` over the first 21 sampled regions (10,680 detections): 18.0% carry a type word and are
+weakly labelled, the rest are bare place names and are correctly left unlabelled. Supply for the two failing
+signatures of §1.3 could not be more different:
+
+- `upright·solid·serif` — **606 candidates from 21 regions** (~3,500 extrapolated to the full sample), from
+  `parish_churches` / `woods_copses` / `ranges_hills` / `Bogs, Moors and Forests`, all of which resolve to it.
+  The weak axis is well supplied; Phase C can fix it.
+- `numeral·solid·plain` — **zero. Not scarce: absent.** GB1900 asked volunteers to transcribe *names*, so spot
+  heights, bench-mark values and contour numbers were never pinned. This is visible in the Oxford overlay too:
+  `B.M. 203·` carries a MapReader box and no pin.
+
+This is the inherited-gap risk landing, for exactly one category. The resolution is scope, not effort: the
+classifier only ever has to type things GB1900 pinned, and GB1900 has no numeral entries, so
+**`numeral·solid·plain` is out of scope for the pin-prompted corpus.** (Its 0.000 in §1.3 came from 5 anchors
+that were MapReader boxes, never GB1900 pins.) If numerals are ever wanted — a height-model or contour study —
+they need the AMG sweep, not this pipeline.
+
+That leaves **`upright·solid·serif` as the single weak axis Phase C must fix**, and it is well supplied.
+
 **DEAD ENDS — do not retry** (all measured and rejected):
 - Unsupervised clustering of the spot pool → fails (segmentation noise, near-chance).
 - ROI-align / map-context pooling of the backbone → hurts (0.42→lower).
@@ -148,9 +169,16 @@ not be quoted without this table. Only 6 of the 16 signatures appear in the anch
 per-signature table: `upright·solid·serif` collapses to 0.071 against the 47% `italic·solid·serif` majority.
 
 **Phase C — weak-label bootstrap, then a balanced verified set.**
-- **Priority is set by §1.3, not by category size:** the balanced set must fix `upright·solid·serif` (upright
-  vs italic *within* the serif family) and `numeral·solid·plain` first. Ten more antiquities anchors would not
-  move the number; ten upright serifs would.
+- **Priority is set by §1.3/§1.4, not by category size:** the balanced set must fix `upright·solid·serif`
+  (upright vs italic *within* the serif family). Ten more antiquities anchors would not move the number; ten
+  upright serifs would. Numerals are out of scope (§1.4).
+- **Pipeline in place:** `extract_descriptors_pins.py` builds the Hi-SAM-convention descriptor bank over the
+  pin detections (same field names as the legacy bank, so `build_label_ui.load_bank` needs only a path change),
+  carrying the weak signature per row. `weak_sig.py` is the one shared lexicon; `weak_label_report.py` tracks
+  supply per signature as the sample fills.
+- **The circularity rule, non-negotiable:** the hypothesis under test is that TYPOGRAPHY carries feature type,
+  so a weak label derived from WORD CONTENT is not evidence about the font. Weak labels may only choose which
+  crops a human sees and pre-fill the answer they correct. Every reported number comes from verified labels.
 - Target **~30–50 verified per distinguishable signature** (~8–10 of the 16 in practice) → ~300–500 verified
   labels. Empirically blackletter went 0/5 → 0.85 at ~13 anchors, big classes were stable at 30–88, and
   *balance mattered more than raw count* (the 0.47 skew hurt).
