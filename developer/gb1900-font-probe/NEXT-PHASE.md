@@ -150,7 +150,12 @@ That leaves **`upright·solid·serif` as the single weak axis Phase C must fix**
 
 ## 2. The build (remaining phases)
 
-**Phase A — pin-prompted localisation over a stratified sample. RUNNING.**
+**Phase A — pin-prompted localisation over a stratified sample. DONE.**
+- **122 region files, 40,694 detections, zero failures** — essentially 100% of the 40,321 predicted entries.
+- Descriptor bank rebuilt on Hi-SAM LINE crops: **39,001 descriptors, 12 tile misses (0.03%)** versus ~32% on
+  the legacy bank, because the tiles are still hot from localisation.
+- Weak labels at full scale: **7,986 (19.6%)**; `upright·solid·serif` **2,575**, `numeral·solid·plain` **0**
+  (§1.4 confirmed at scale).
 - Sample chosen by `build_sample.py`: **121 regions, 40,321 entries, 58 distinct 100 km cells**, every weak
   category above its 600-entry floor (roads 8412 … stations 600). Written to
   `probe/font/centres_sample.txt` in the same `lon lat tag count` format as `centres_all.txt`.
@@ -179,6 +184,27 @@ per-signature table: `upright·solid·serif` collapses to 0.071 against the 47% 
 - **The circularity rule, non-negotiable:** the hypothesis under test is that TYPOGRAPHY carries feature type,
   so a weak label derived from WORD CONTENT is not evidence about the font. Weak labels may only choose which
   crops a human sees and pre-fill the answer they correct. Every reported number comes from verified labels.
+- **The first round is built and waiting on a human:** `label_ui/label_ui_upright_serif.html` (240 cards, drawn
+  from the 2,574 `upright·solid·serif` weak candidates, farthest-point-diversified). Export to
+  `probe/font/labels/pool_labels_hisam.json` — a NEW pool file, because the existing `pool_labels.json` is
+  MapReader-convention. Regenerate with:
+
+  ```
+  python build_label_ui.py --mode weak --weak-sig "upright·solid·serif" --n 240 --min-score 0 \
+    --bank "/vast/ishi/gb1900/edition/pins/desc/shard_*.npz" \
+    --boxes "/vast/ishi/gb1900/edition/pins/pins_*.jsonl" --poly-field line_gpoly \
+    --pool /vast/ishi/gb1900/probe/font/labels/pool_labels_hisam.json \
+    --anchors-npz /vast/ishi/gb1900/edition/spot/anchor_desc_hisam.npz
+  ```
+
+  `--mode weak` exists because `grow` is a recorded dead end: growing a rare signature by nearest neighbours
+  returns near-duplicates of what is already labelled, whereas the lexicon supplies varied words from the whole
+  country. Each card shows the lexicon's proposal *and* the descriptor's own nearest-anchor opinion.
+- **Expect disagreement, and do not read it as a bug:** the descriptor contradicts the lexicon on **228/240**
+  cards, which is what a class scoring 0.14 kNN5 while being absorbed by the italic majority looks like. This
+  round exists precisely to adjudicate it — and if the human finds the OS actually set these features in
+  italic, then the *lexicon* was wrong, which is a real finding and exactly why weak labels never count as
+  ground truth.
 - Target **~30–50 verified per distinguishable signature** (~8–10 of the 16 in practice) → ~300–500 verified
   labels. Empirically blackletter went 0/5 → 0.85 at ~13 anchors, big classes were stable at 30–88, and
   *balance mattered more than raw count* (the 0.47 skew hurt).
@@ -223,6 +249,11 @@ pin pipeline runs in this one env.
   SAM encoding = `amg.features` after `amg.set_image`.
 - **Do not use `AutoMaskGenerator.predict` for pin prompts** — it score-thresholds and NMSes the prompt set,
   silently breaking the 1:1 pin↔detection correspondence the whole design rests on. Call `forward_hi_decoder`.
+- **`score` is field-compatible in name but NOT in scale.** MapReader's is a detection confidence, thresholded
+  at 0.55 all over this codebase; the pin corpus's is Hi-SAM's predicted mask IoU, which tops out near 0.42.
+  Any inherited `>= 0.55` filter silently empties the corpus (it emptied the labelling UI's candidate pool —
+  hence `--min-score`). There is no detection decision to be confident about when you prompted at a known
+  label; filter on `on_ink` / mask area instead.
 
 **MapReader env** `/vast/ishi/envs/mapreader`: MapTextPipeline. cfg
 `.../mapreader_text/install/MapTextPipeline/configs/ViTAEv2_S/rumsey/final_rumsey.yaml`, weights
@@ -254,9 +285,13 @@ fill it (store descriptors/coords, not crop pixels). `find` over `/ix1` hangs (h
   of 35,514 centres; the paused full-coverage run is no longer on the critical path).
 - **Hi-SAM feasibility:** `edition/spot/hisam_test/` — mosaics + AMG overlays (Oxford/Shetland).
 
+- **Descriptor bank (Hi-SAM convention):** `edition/pins/desc/shard_*.npz` — 39,001 × 896-d, carrying
+  `pin_id`, `text`, `score`, `weak_sig`, `weak_rule`. **Never mix with the legacy `edition/spot/desc/` bank.**
 - **Phase B outputs:** `edition/spot/anchor_crops_hisam.npz` (188 anchors × {mr, word, line} crops),
-  `edition/spot/anchor_desc_hisam.npz` (896-d descriptors per column + sigs).
+  `edition/spot/anchor_desc_hisam.npz` (896-d descriptors per column + sigs — doubles as the anchor set for
+  the labelling UI, since the anchors' own regions are not in the sample).
 - **Sample:** `probe/font/centres_sample.txt` + `centres_sample.json` (selection provenance).
+- **Weak-label supply:** `edition/pins/weak_label_report.json`.
 
 **In the repo (`developer/gb1900-font-probe/`), current path:** `build_pin_index.py` + `pin_index.sbatch`,
 `hisam_pins.py` + `hisam_pins.sbatch`, `validate_pins.py`, `pin_category_coverage.py` + `coverage.sbatch`,

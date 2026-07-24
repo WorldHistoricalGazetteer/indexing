@@ -19,6 +19,11 @@ needs the AMG sweep and is a separate question.
 Output is one record per pin, deliberately field-compatible with the MapReader `boxes_*.jsonl` records
 (`text`/`score`/`gpoly`/`gcx`/`gcy`/`lon`/`lat`) so the existing crop + descriptor tooling reads it unchanged.
 
+CAUTION on `score`: it is field-compatible in NAME but not in SCALE. MapReader's is a detection confidence
+(thresholded at 0.55 across this codebase); this is Hi-SAM's predicted mask IoU, which tops out near 0.42 and
+answers a different question — we prompted at a known label, so there was no detection decision to be
+confident about. Any inherited `>= 0.55` filter silently empties the corpus. Filter on `on_ink` / mask area.
+
     python hisam_pins.py --tag gb_4338_2896 --lon -1.25931 --lat 51.74149 --r 8
 """
 import argparse, io, json, math, os, sys, time, urllib.request
