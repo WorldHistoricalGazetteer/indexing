@@ -77,6 +77,55 @@ def keys_for(namespace):
     return _OHM_KEYS if namespace == "ohm" else _OSM_KEYS
 
 
+def geom_class_of(geojson):
+    """Coarse geometry class ∈ {'point','line','area'} for a GeoJSON dict.
+
+    This is the *shape* discriminator that downstream logic should use for
+    "is it areal / can it contain" — distinct from ``has_geom`` (which records
+    whether the full geometry is retrievable from the store). Multi- variants
+    collapse to their base class (no consumer needs the distinction). A
+    ``GeometryCollection`` is resolved once, here, by its members — any polygon
+    makes it an area, else any line makes it a line — so no consumer ever has to
+    re-open the geometry to classify it. Returns None for an unknown type.
+    """
+    t = (geojson or {}).get("type")
+    if t in ("Polygon", "MultiPolygon"):
+        return "area"
+    if t in ("LineString", "MultiLineString"):
+        return "line"
+    if t in ("Point", "MultiPoint"):
+        return "point"
+    if t == "GeometryCollection":
+        classes = {geom_class_of(g) for g in geojson.get("geometries", [])}
+        if "area" in classes:
+            return "area"
+        if "line" in classes:
+            return "line"
+        return "point"
+    return None
+
+
+def _finalize_geom_entry(geom_entry, raw_geom):
+    """Bring a ``geom_entry`` to the canonical ES doc shape, in place.
+
+    Two corrections over the raw ``enrich_geometry`` output:
+
+    * **h3 nested, not top-level.** The schema and the gateway containment path
+      read ``geometries[].h3_cover`` / ``.h3_centroid`` (nested). We set them on
+      the entry itself — computed BEFORE stripping hull, since
+      ``select_h3_cover_geometry`` prefers the hull for a cheaper polyfill.
+    * **hull stripped.** ``hull`` is an ingestion intermediate deliberately kept
+      OUT of ES (removed 2026-07-11, ``staged_parquet.strip_hull``); the way
+      pass bypasses that stage, so drop it explicitly here.
+    """
+    h3_fields = build_h3_fields_for_geom_entry(geom_entry, raw_geom)
+    if h3_fields:
+        geom_entry["h3_centroid"] = h3_fields["h3_centroid"]
+        geom_entry["h3_cover"] = h3_fields["h3_cover"]
+    geom_entry.pop("hull", None)
+    return geom_entry
+
+
 def process_way_tags(tags, keys):
     """Tag gate for a named way — mirrors the authority script's process_tags.
 
@@ -176,14 +225,13 @@ class WayAreaPassProcessor:
             # geom_ref. Set them so the patched doc is shape-identical.
             geom_entry["geometry_index"] = 0
             geom_entry["geom_ref"] = f"{place_id}_0"
+            geom_entry["geom_class"] = geom_class_of(raw_geom)  # "area" (shape, not storage)
+            _finalize_geom_entry(geom_entry, raw_geom)
 
             # Replace the geometry entry outright — the way's single geometry IS
             # this polygon; the point entry left behind by the linestring collapse
             # is exactly what we are correcting.
             update_doc = {"geometries": [geom_entry]}
-            h3_fields = build_h3_fields_for_geom_entry(geom_entry, raw_geom)
-            if h3_fields:
-                update_doc.update(h3_fields)
 
             self.buffer_callback(place_id, update_doc)
             self.done_ids.add(way_id)
@@ -246,10 +294,9 @@ class WayLinearPassProcessor:
                 return
             geom_entry["geometry_index"] = 0
             geom_entry["geom_ref"] = f"{place_id}_0"
+            geom_entry["geom_class"] = geom_class_of(raw_geom)  # "line" (shape, not storage)
+            _finalize_geom_entry(geom_entry, raw_geom)
             update_doc = {"geometries": [geom_entry]}
-            h3_fields = build_h3_fields_for_geom_entry(geom_entry, raw_geom)
-            if h3_fields:
-                update_doc.update(h3_fields)
             self.buffer_callback(place_id, update_doc)
             self.extracted += 1
         except Exception as exc:

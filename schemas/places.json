@@ -96,6 +96,15 @@
           "has_geom": {
             "type": "boolean"
           },
+          "geom_class": {
+            "type": "keyword"
+          },
+          "geom_ref": {
+            "type": "keyword"
+          },
+          "geometry_index": {
+            "type": "integer"
+          },
           "source": {
             "type": "keyword"
           },

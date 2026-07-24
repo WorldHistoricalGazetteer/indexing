@@ -640,6 +640,14 @@ the gitignored **`.env.local`**, never the tracked `.env`.
   `bounds`, and `h3_cover` / `h3_centroid` — the latter computed from the real
   geom-store polygon (incl. GeometryCollections; large polygons are simplified
   before polyfill) by `h3_stage` / `helpers.compute_h3_fields`.
+- Two orthogonal geometry flags (see `schemas/field-notes.md`): **`has_geom`** =
+  *retrievability* (is the full geom in the `/vast` store right now?) — the
+  original "is the point the full picture?" flag; **`geom_class`** ∈
+  `{point,line,area}` = *shape* (computed once at ingest, GeometryCollections
+  resolved by members). Key "is it areal / usable as a `contained_in` scope
+  region" off `geom_class == "area"`, NOT `has_geom` (a LineString is
+  `has_geom:true` but not areal). `geom_class ∈ {area,line} AND NOT has_geom` is
+  a standing incomplete-ingestion defect predicate.
 - All coordinates are rounded to **6 decimal places** (~0.11 m) at ingestion
   time per RFC 7946, via `round_coordinates()` / `enrich_geometry()` in
   `processing/helpers.py`.  This mitigates storage bloat from pseudo-precision

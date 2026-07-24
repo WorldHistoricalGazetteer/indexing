@@ -89,3 +89,32 @@ class TestSourceSpecificGate(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGeomClassOf(unittest.TestCase):
+    from processing.osm_way_area_geometry import geom_class_of as _gc
+
+    def test_base_and_multi_collapse(self):
+        gc = self._gc.__func__
+        self.assertEqual(gc({"type": "Polygon"}), "area")
+        self.assertEqual(gc({"type": "MultiPolygon"}), "area")
+        self.assertEqual(gc({"type": "LineString"}), "line")
+        self.assertEqual(gc({"type": "MultiLineString"}), "line")
+        self.assertEqual(gc({"type": "Point"}), "point")
+        self.assertEqual(gc({"type": "MultiPoint"}), "point")
+
+    def test_geometry_collection_resolved_by_dominant_member(self):
+        gc = self._gc.__func__
+        # any polygon → area (antimeridian-split polygons land here)
+        self.assertEqual(gc({"type": "GeometryCollection", "geometries": [
+            {"type": "LineString"}, {"type": "Polygon"}]}), "area")
+        # else any line → line
+        self.assertEqual(gc({"type": "GeometryCollection", "geometries": [
+            {"type": "Point"}, {"type": "LineString"}]}), "line")
+        # else point
+        self.assertEqual(gc({"type": "GeometryCollection", "geometries": [
+            {"type": "Point"}]}), "point")
+
+    def test_unknown_is_none(self):
+        self.assertIsNone(self._gc.__func__({"type": "Nonsense"}))
+        self.assertIsNone(self._gc.__func__({}))
