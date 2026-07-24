@@ -15,7 +15,7 @@ carry the fuller story; this doc is the build plan + hard-won tacit knowledge.
 |---|---|---|
 | **Localise** each label | **Hi-SAM prompted at its GB1900 pin** | 408/408 Oxford pins returned a mask; 89% of detections ≥80% covered by MapReader's boxes. See §1.1. |
 | **Transcript** | **GB1900 gazetteer** — attached by construction | The prompt IS the gazetteer entry, so there is no join, no match radius, no ambiguity. MapReader's recog head is font-invariant anyway. |
-| **Discriminate** font | **MapReader ViTAEv2 backbone**, on the *original* crop | Hook `detection_transformer.backbone.0.backbone`; feed 512² grayscale→3ch crop; concat stage3/4/5 mean-pool (896-d). Imbalance-robust maxsim-LOO **0.63** on 189 anchors — but see §1.2: that number is now legacy. |
+| **Discriminate** font | **MapReader ViTAEv2 backbone**, on the *original* crop | Hook `detection_transformer.backbone.0.backbone`; feed 512² grayscale→3ch crop; concat stage3/4/5 mean-pool (896-d). Imbalance-robust maxsim-LOO **0.596** on Hi-SAM line crops (§1.3). |
 
 **Key insight:** the instrument (backbone) always worked; the bottleneck was DATA — the distinctive-font
 categories (admin/antiquities/water), where typography beats content, were absent from the MapReader pool
@@ -75,6 +75,41 @@ So: single authority, Hi-SAM. The 189 anchors, the 113k descriptor bank and the 
 MapReader-crop numbers**; re-derive the anchors on Hi-SAM line masks under the fixed convention and re-measure.
 Cost is one job.
 
+### 1.3 The discriminator survives the box change — and the imbalance is the real problem
+
+Phase B re-cropped the 189 anchors from Hi-SAM masks and re-measured (`anchor_recrop.py` →
+`anchor_recrop_readout.py`). All three columns pass through the *same* `derotate` geometry, so the only
+variable is which polygon it is handed — any difference is attributable to the box, not to a reimplementation.
+188/189 anchors survived (one had no Hi-SAM mask); line masks on all 188.
+
+| crop convention | maxsim-LOO | kNN5 |
+|---|---|---|
+| MapReader box (control) | **0.622** | 0.585 |
+| Hi-SAM word mask | 0.596 | 0.638 |
+| **Hi-SAM LINE mask** (production) | **0.596** | 0.628 |
+
+The control reproduces the legacy 0.63, so the comparison is sound. Switching box authority costs ~0.026 on
+maxsim-LOO and *gains* ~0.04 on kNN5 — five anchors either way at n=188, i.e. no real change. **The box switch
+is free.** The pipeline's number is now **0.596 maxsim-LOO / 0.628 kNN5**.
+
+The per-signature breakdown is the finding that actually matters:
+
+| signature | n | maxsim-LOO |
+|---|---|---|
+| blackletter·solid·fancy | 14 | 0.786 |
+| upright·solid·plain | 37 | 0.703 |
+| italic·solid·plain | 30 | 0.700 |
+| italic·solid·serif | 88 | 0.602 |
+| **upright·solid·serif** | **14** | **0.071** |
+| **numeral·solid·plain** | **5** | **0.000** |
+
+Two classes are collapsing, and only one of them is excusable by size. `upright·solid·serif` at n=14 scores
+0.071 — it is being swallowed by `italic·solid·serif`, the 47% majority class, which is exactly the imbalance
+pathology the last measurement warned about. Blackletter at the same n=14 scores 0.786, so this is not a
+small-n artefact: **upright-vs-italic within the serif family is the discriminator's actual weak axis.** Phase C's
+balanced set must prioritise `upright·solid·serif` and `numeral·solid·plain`, and the headline number should
+not be quoted without this table. Only 6 of the 16 signatures appear in the anchors at all.
+
 **DEAD ENDS — do not retry** (all measured and rejected):
 - Unsupervised clustering of the spot pool → fails (segmentation noise, near-chance).
 - ROI-align / map-context pooling of the backbone → hurts (0.42→lower).
@@ -94,22 +129,28 @@ Cost is one job.
 
 ## 2. The build (remaining phases)
 
-**Phase A — pin-prompted localisation over a stratified sample. DONE as an instrument; needs scaling.**
-- `hisam_pins.py` works and is validated. What remains is choosing the sample and running it.
-- **Scope is a stratified sample, not full GB.** Full-corpus typing is deployment, not the paper: size the
-  sample for per-signature error bars across signature/feature categories plus geographic and temporal spread
-  — order 10–50k entries. At the measured 0.42 s/window this is hours, and tile fetch is a targeted prefetch
-  rather than a full-GB crawl. Reserve the 2.55M-pin run for a later deployment pass once the number is locked.
-- Sampling knobs already in hand: `pin_category_coverage.py` gives per-category counts and ~10 km-cell spread;
-  the NLS sheet-index WFS (memory `os_sheet_index_wfs`) gives per-sheet survey/publication dates for the
-  temporal axis.
+**Phase A — pin-prompted localisation over a stratified sample. RUNNING.**
+- Sample chosen by `build_sample.py`: **121 regions, 40,321 entries, 58 distinct 100 km cells**, every weak
+  category above its 600-entry floor (roads 8412 … stations 600). Written to
+  `probe/font/centres_sample.txt` in the same `lon lat tag count` format as `centres_all.txt`.
+- Selection is **cluster-stratified**: sampling regions rather than scattered pins keeps windows dense so z17
+  tiles amortise across many labels (~44k tiles total, versus ~10M for the old full-GB MapReader pass), and
+  greedy-on-category-deficit with a per-100 km-cell diminishing return stops the sample from being all city
+  centre — which would over-represent roads and starve antiquities.
+- `pins_array.sbatch` runs it: 8-way resumable Slurm array, skips any region with a non-empty
+  `pins_<tag>.jsonl`, `--fetch` on (GPU nodes have outbound net), each region wrapped in `timeout 1800`
+  because S3 sockets hang past urlopen's timeout. **Tile-fetch bound, not GPU bound** — keep the array narrow.
+- Temporal axis is deliberately not stratified: 95.6% of GB1900's sheets published ≥1897 (memory
+  `os_sheet_index_wfs`), so the 1879 font-change regime is effectively absent and one classifier suffices.
+- Full corpus (2.55M pins) stays a later deployment pass, once the method's number is locked.
 
-**Phase B — re-derive the anchors and re-measure the discriminator.**
-- Re-crop the 189 existing sig-anchors from Hi-SAM **line** masks under the fixed convention, re-extract the
-  896-d backbone descriptor, re-run imbalance-robust maxsim-LOO. This replaces 0.63 with the pipeline's own
-  number. Note the two models live in separate envs — stay two-stage (npz intermediates).
+**Phase B — DONE, see §1.3.** The box switch is free (0.596 vs 0.622 control) and the real finding is the
+per-signature table: `upright·solid·serif` collapses to 0.071 against the 47% `italic·solid·serif` majority.
 
 **Phase C — weak-label bootstrap, then a balanced verified set.**
+- **Priority is set by §1.3, not by category size:** the balanced set must fix `upright·solid·serif` (upright
+  vs italic *within* the serif family) and `numeral·solid·plain` first. Ten more antiquities anchors would not
+  move the number; ten upright serifs would.
 - Target **~30–50 verified per distinguishable signature** (~8–10 of the 16 in practice) → ~300–500 verified
   labels. Empirically blackletter went 0/5 → 0.85 at ~13 anchors, big classes were stable at 30–88, and
   *balance mattered more than raw count* (the 0.47 skew hurt).
@@ -185,9 +226,16 @@ fill it (store descriptors/coords, not crop pixels). `find` over `/ix1` hangs (h
   of 35,514 centres; the paused full-coverage run is no longer on the critical path).
 - **Hi-SAM feasibility:** `edition/spot/hisam_test/` — mosaics + AMG overlays (Oxford/Shetland).
 
+- **Phase B outputs:** `edition/spot/anchor_crops_hisam.npz` (188 anchors × {mr, word, line} crops),
+  `edition/spot/anchor_desc_hisam.npz` (896-d descriptors per column + sigs).
+- **Sample:** `probe/font/centres_sample.txt` + `centres_sample.json` (selection provenance).
+
 **In the repo (`developer/gb1900-font-probe/`), current path:** `build_pin_index.py` + `pin_index.sbatch`,
-`hisam_pins.py` + `hisam_pins.sbatch`, `validate_pins.py`, `pin_category_coverage.py` + `coverage.sbatch`.
-Deploy target is `/vast/ishi/gb1900/probe/hisam/` (scp; the pitt git-deploy is broken).
+`hisam_pins.py` + `hisam_pins.sbatch`, `validate_pins.py`, `pin_category_coverage.py` + `coverage.sbatch`,
+`build_sample.py` + `sample.sbatch`, `pins_array.sbatch`, `anchor_recrop.py` + `anchor_recrop_readout.py` +
+`anchor_recrop.sbatch`. Deploy target is `/vast/ishi/gb1900/probe/hisam/` (scp; the pitt git-deploy is broken).
+**Do not put `set -u` in a script that activates the mapreader env** — its activate hook dereferences
+`SYS_SYSROOT` unset and the job dies after the GPU work is already done.
 **Legacy/still-useful:** `mapreader_backbone_probe.py`, `extract_descriptors.py`, `build_label_ui.py`,
 `train_readout.py`, `hisam_font_probe.py`, `run_hisam.py` (AMG sweep — keep for the recall limitation study),
 `prepare_mosaics.py`. **Taxonomy:** `font_taxonomy.json` (49 faces → 16 signatures base_style·fill·decor);
