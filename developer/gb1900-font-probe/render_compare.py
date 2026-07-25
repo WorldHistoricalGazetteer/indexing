@@ -56,6 +56,7 @@ def main():
     ap.add_argument("--pins", default="/vast/ishi/gb1900/pins_z17.npz")
     ap.add_argument("--mr-file", default=None, help="MapReader boxes jsonl (default: boxes_<tag>.jsonl)")
     ap.add_argument("--pins-file", default=None, help="Hi-SAM detections jsonl (default: pins_<tag>.jsonl)")
+    ap.add_argument("--amg-file", default=None, help="Hi-SAM AUTOMATIC-mode detections jsonl (4th layer)")
     ap.add_argument("--out-dir", default=PINS)
     ap.add_argument("--fetch", action="store_true", help="pull uncached tiles rather than leaving holes")
     ap.add_argument("--jpeg", type=int, default=0, metavar="Q", help="write JPEG at quality Q instead of PNG")
@@ -118,6 +119,17 @@ def main():
             if p:
                 n_hs += poly(p, (220, 30, 30), 2)
 
+    # AMG under the others: it is the densest layer and would otherwise bury them.
+    n_amg = 0
+    if a.amg_file and os.path.exists(a.amg_file):
+        for line in open(a.amg_file):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            if r.get("gpoly"):
+                n_amg += poly(r["gpoly"], (170, 40, 190), 2)
+
     # GB1900 last, so the transcripts stay readable over the boxes.
     P = load_pins(a.pins)
     idx = pins_in_box(P, ox, oy, ox + W, oy + H)
@@ -129,10 +141,14 @@ def main():
         d.text((x + 8, y - 8), t, fill=(20, 60, 230), font=f,
                stroke_width=3, stroke_fill=(255, 255, 255))
 
-    key = ["GB1900 pin + transcript (blue)", "MapReader word box (green)", "Hi-SAM line mask (red)"]
+    key = [("GB1900 pin + transcript (blue)", (20, 60, 230)),
+           ("MapReader word box (green)", (0, 158, 60)),
+           ("Hi-SAM pin-prompted line mask (red)", (220, 30, 30))]
+    if n_amg:
+        key.append(("Hi-SAM automatic / AMG (purple)", (170, 40, 190)))
     fk = font(26)
-    d.rectangle([8, 8, 620, 8 + 34 * len(key) + 12], fill=(255, 255, 255), outline=(0, 0, 0))
-    for i, (txt, col) in enumerate(zip(key, [(20, 60, 230), (0, 158, 60), (220, 30, 30)])):
+    d.rectangle([8, 8, 700, 8 + 34 * len(key) + 12], fill=(255, 255, 255), outline=(0, 0, 0))
+    for i, (txt, col) in enumerate(key):
         d.text((20, 16 + 34 * i), txt, fill=col, font=fk)
 
     if a.jpeg:
