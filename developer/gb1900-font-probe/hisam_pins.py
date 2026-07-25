@@ -203,9 +203,12 @@ def mask_poly(mask, scale=1.0, ox=0.0, oy=0.0):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", required=True)
-    ap.add_argument("--lon", type=float, required=True)
-    ap.add_argument("--lat", type=float, required=True)
+    ap.add_argument("--lon", type=float, help="region centre (with --r)")
+    ap.add_argument("--lat", type=float)
     ap.add_argument("--r", type=int, default=8, help="region radius in z17 tiles (side = 2r+1)")
+    ap.add_argument("--bbox", type=float, nargs=4, metavar=("W", "S", "E", "N"),
+                    help="cover an arbitrary rectangle instead of a square region — e.g. a real OS sheet, "
+                         "whose extent is not square and does not centre on anything in particular")
     ap.add_argument("--win", type=int, default=4, help="window side in tiles (4 = 1024px = Hi-SAM native)")
     ap.add_argument("--margin", type=int, default=1, help="context tiles kept outside the window's pin core")
     ap.add_argument("--weight", default="/vast/ishi/gb1900/probe/hisam/weights/hi_sam_l.pth")
@@ -223,13 +226,24 @@ def main():
     t0 = time.time()
 
     P = load_pins(a.pins)
-    cxp = (a.lon + 180.0) / 360.0 * N17 * 256
-    cyp = (1 - math.log(math.tan(math.radians(a.lat)) + 1 / math.cos(math.radians(a.lat))) / math.pi) / 2 * N17 * 256
-    ctx, cty = int(cxp // 256), int(cyp // 256)
-    tx0, ty0 = ctx - a.r, cty - a.r
-    side = 2 * a.r + 1
-    region = pins_in_box(P, tx0 * 256, ty0 * 256, (tx0 + side) * 256, (ty0 + side) * 256)
-    print(f"{a.tag}: region {side}x{side} tiles, {len(region)} GB1900 pins", flush=True)
+
+    def lat_px(lat):
+        return (1 - math.log(math.tan(math.radians(lat)) + 1 / math.cos(math.radians(lat))) / math.pi) / 2 * N17 * 256
+
+    if a.bbox:
+        w, s, e, n = a.bbox
+        tx0 = int(((w + 180.0) / 360.0 * N17 * 256) // 256)
+        tx1 = int(((e + 180.0) / 360.0 * N17 * 256) // 256)
+        ty0, ty1 = int(lat_px(n) // 256), int(lat_px(s) // 256)
+        nx, ny = tx1 - tx0 + 1, ty1 - ty0 + 1
+    elif a.lon is not None and a.lat is not None:
+        ctx, cty = int(((a.lon + 180.0) / 360.0 * N17 * 256) // 256), int(lat_px(a.lat) // 256)
+        tx0, ty0 = ctx - a.r, cty - a.r
+        nx = ny = 2 * a.r + 1
+    else:
+        raise SystemExit("need --bbox or --lon/--lat")
+    region = pins_in_box(P, tx0 * 256, ty0 * 256, (tx0 + nx) * 256, (ty0 + ny) * 256)
+    print(f"{a.tag}: {nx}x{ny} tiles ({nx*ny}), {len(region)} GB1900 pins", flush=True)
     if len(region) == 0:
         open(outp, "w").close()
         print(f"[{a.tag}] DONE 0 pins -> {outp}", flush=True)
@@ -245,10 +259,10 @@ def main():
     done = set()
     nwin = nempty = nmoved = 0
     recs = []
-    for i in range(0, side, core):
-        for j in range(0, side, core):
+    for i in range(0, nx, core):
+        for j in range(0, ny, core):
             cx0, cy0 = tx0 + i, ty0 + j
-            cx1, cy1 = min(cx0 + core, tx0 + side), min(cy0 + core, ty0 + side)
+            cx1, cy1 = min(cx0 + core, tx0 + nx), min(cy0 + core, ty0 + ny)
             sel = pins_in_box(P, cx0 * 256, cy0 * 256, cx1 * 256, cy1 * 256)
             sel = np.array([k for k in sel if k not in done], np.int64)
             if len(sel) == 0:
