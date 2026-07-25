@@ -52,6 +52,8 @@ def main():
     ap.add_argument("--radius", type=float, default=48.0,
                     help="px slack around a detection when matching a pin; GB1900 pins sit at the label's "
                          "start and often just off the ink, so exact containment under-counts")
+    ap.add_argument("--extents", default=None,
+                    help="pin detections jsonl (line_gpoly) giving each label's EXTENT, to measure fragmentation")
     ap.add_argument("--out", default=None)
     ap.add_argument("--allow-circular", action="store_true",
                     help="score a file whose text came FROM GB1900 (pin-prompted output). Refused by default")
@@ -138,6 +140,46 @@ def main():
             matched_pairs.append(dict(pin_id=str(P["pin_id"][k]), text=truth,
                                       det_text=dets[c][1], gpoly=dets[c][2].get("gpoly")))
 
+    # FRAGMENTATION — the thing cleaning was actually meant to fix, and which recall cannot show. MapReader is
+    # a WORD spotter, so a k-token label should ideally yield k boxes; more than that means it broke the label
+    # into pieces. Label extent comes from the pin-prompted line masks, since GB1900 gives a point, not a box.
+    frag = None
+    if a.extents and os.path.exists(a.extents):
+        per_label, per_token = [], []
+        for line in open(a.extents):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            poly = r.get("line_gpoly") or r.get("gpoly")
+            if not poly:
+                continue
+            try:
+                g = Polygon(poly).buffer(0)
+            except Exception:
+                continue
+            if g.is_empty or g.area <= 0:
+                continue
+            n_in = 0
+            for c in tree.query(g):
+                d = dets[int(c)][0]
+                if d.is_empty:
+                    continue
+                if g.contains(d.centroid):
+                    n_in += 1
+            if n_in:
+                per_label.append(n_in)
+                t = max(1, len(tokens(r.get("text", ""))))
+                per_token.append(n_in / t)
+        if per_label:
+            frag = dict(labels=len(per_label),
+                        boxes_per_label=round(float(np.mean(per_label)), 3),
+                        boxes_per_token=round(float(np.mean(per_token)), 3),
+                        labels_over_split=round(float(np.mean(np.array(per_token) > 1.5)), 3))
+            print(f"  fragmentation: {frag['boxes_per_label']} boxes/label, "
+                  f"{frag['boxes_per_token']} boxes/token "
+                  f"({frag['labels_over_split']:.0%} of labels split >1.5x their token count)", flush=True)
+
     unmatched = len(dets) - len(hit_det)
     res = dict(
         name=name, detections=len(dets), pins=len(idx), det_with_text=round(has_text, 3),
@@ -148,6 +190,7 @@ def main():
         verified_pairs=len(matched_pairs),
         detections_with_no_pin=unmatched,
         detections_with_no_pin_frac=round(unmatched / len(dets), 3),
+        fragmentation=frag,
     )
     print(f"  recall on pinned labels   {res['recall_on_pinned']:.3f}  ({covered}/{len(idx)})", flush=True)
     if has_text:
