@@ -1,0 +1,95 @@
+{
+ "_comment": "Face inventory: every permutation of Style-Fill-Decor, whether or not a sample has been found. `os` holds the OS Characteristic-Sheet designations for that typeface, pipe-delimited — one typeface commonly serves several CS categories at different sizes, which is exactly why the inventory is keyed by signature and not by CS category. Empty means not yet identified.",
+ "_axes": {
+  "style": [
+   "Upright",
+   "Italic"
+  ],
+  "fill": [
+   "Solid",
+   "Outline",
+   "Horizontal",
+   "Diagonal"
+  ],
+  "decor": [
+   "Plain",
+   "Serif",
+   "Ornate"
+  ]
+ },
+ "_order": "style outermost, then fill, then decor — each ordered plainest to most elaborate",
+ "faces": {
+  "Upright-Solid-Plain": {
+   "os": ""
+  },
+  "Upright-Solid-Serif": {
+   "os": ""
+  },
+  "Upright-Solid-Ornate": {
+   "os": "County Boroughs"
+  },
+  "Upright-Outline-Plain": {
+   "os": ""
+  },
+  "Upright-Outline-Serif": {
+   "os": "Parishes (Mother or Ancient)"
+  },
+  "Upright-Outline-Ornate": {
+   "os": "County Names"
+  },
+  "Upright-Horizontal-Plain": {
+   "os": ""
+  },
+  "Upright-Horizontal-Serif": {
+   "os": "Boroughs (Municipal)"
+  },
+  "Upright-Horizontal-Ornate": {
+   "os": ""
+  },
+  "Upright-Diagonal-Plain": {
+   "os": "Poor Law Unions"
+  },
+  "Upright-Diagonal-Serif": {
+   "os": ""
+  },
+  "Upright-Diagonal-Ornate": {
+   "os": ""
+  },
+  "Italic-Solid-Plain": {
+   "os": ""
+  },
+  "Italic-Solid-Serif": {
+   "os": ""
+  },
+  "Italic-Solid-Ornate": {
+   "os": ""
+  },
+  "Italic-Outline-Plain": {
+   "os": ""
+  },
+  "Italic-Outline-Serif": {
+   "os": ""
+  },
+  "Italic-Outline-Ornate": {
+   "os": ""
+  },
+  "Italic-Horizontal-Plain": {
+   "os": ""
+  },
+  "Italic-Horizontal-Serif": {
+   "os": "Other Towns"
+  },
+  "Italic-Horizontal-Ornate": {
+   "os": ""
+  },
+  "Italic-Diagonal-Plain": {
+   "os": ""
+  },
+  "Italic-Diagonal-Serif": {
+   "os": ""
+  },
+  "Italic-Diagonal-Ornate": {
+   "os": ""
+  }
+ }
+}

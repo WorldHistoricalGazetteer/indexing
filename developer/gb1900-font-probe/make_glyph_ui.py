@@ -33,7 +33,7 @@ def png_b64(g, scale=3):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--npz", default="labels/alphabet_glyphs.npz")
-    ap.add_argument("--taxonomy", default="font_taxonomy.json")
+    ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--out", default="admin_probe/glyph_ui.html")
     ap.add_argument("--scale", type=int, default=3)
     a = ap.parse_args()
@@ -46,38 +46,41 @@ def main():
     words = d["word"] if "word" in d.files else np.zeros(len(chars), int)
     angles = d["angle"] if "angle" in d.files else np.zeros(len(chars))
 
-    tax = {}
-    if os.path.exists(a.taxonomy):
-        for f in json.load(open(a.taxonomy)):
-            tax[f["key"]] = f
+    inv, order = {}, []
+    if os.path.exists(a.inventory):
+        inv = json.load(open(a.inventory)).get("faces", {})
+        order = list(inv)
 
     items = []
     for i in range(len(glyphs)):
-        t = tax.get(faces[i], {})
         items.append(dict(
             # `i` is the index in THIS npz; `oid` is the index in the ORIGINAL library, which is what the
             # curation spec addresses. Deleting from a curated view must name the original glyph, or the
             # deletion would silently point at a different sample next time the spec is re-applied.
             i=int(i), oid=int(oids[i]), ch=chars[i], face=faces[i], word=int(words[i]),
             angle=round(float(angles[i]), 1),
-            sig="·".join(str(t.get(k)) for k in ("base_style", "fill", "decor")) if t else "",
-            caph=t.get("cap_h_px"),
             img=png_b64(glyphs[i], a.scale),
         ))
 
-    per_face = {}
+    # Every inventory face appears, sample or not: a face nobody has spotted yet is still a face the matcher
+    # must account for, and showing it empty is what makes the gap visible.
+    per_face = {f: {"letters": set(), "upper": set(), "lower": set(), "n": 0} for f in order}
     for it in items:
-        per_face.setdefault(it["face"], {"letters": set(), "n": 0, "sig": it["sig"], "caph": it["caph"]})
-        per_face[it["face"]]["letters"].add(it["ch"])
-        per_face[it["face"]]["n"] += 1
-    summary = {f: dict(n=v["n"], letters=len(v["letters"]), sig=v["sig"], caph=v["caph"])
-               for f, v in per_face.items()}
+        v = per_face.setdefault(it["face"], {"letters": set(), "upper": set(), "lower": set(), "n": 0})
+        v["letters"].add(it["ch"])
+        v["upper" if it["ch"].isupper() else "lower"].add(it["ch"])
+        v["n"] += 1
+    seq = order + [f for f in per_face if f not in order]
+    summary = {f: dict(n=per_face[f]["n"], letters=len(per_face[f]["letters"]),
+                       upper=len(per_face[f]["upper"]), lower=len(per_face[f]["lower"]),
+                       os=inv.get(f, {}).get("os", ""), known=f in inv)
+               for f in seq}
 
-    print(f"{len(items)} glyphs, {len(summary)} faces, {len(set(chars))} distinct characters")
-    thin = [f for f, v in summary.items() if v["letters"] < 5]
-    print(f"  {len(thin)} faces hold fewer than 5 distinct letters: {', '.join(sorted(thin))}")
+    withs = [f for f, v in summary.items() if v["n"]]
+    print(f"{len(items)} glyphs, {len(withs)}/{len(summary)} inventory faces have samples, "
+          f"{len(set(chars))} distinct characters")
 
-    data = json.dumps(dict(items=items, summary=summary))
+    data = json.dumps(dict(items=items, summary=summary, order=seq))
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     open(a.out, "w").write(HTML.replace("__DATA__", data))
     print(f"wrote {a.out} ({os.path.getsize(a.out)/1e6:.2f} MB)")
@@ -105,7 +108,8 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
  .grp{display:inline-block;margin:0 12px 10px 0;padding:4px 6px;border:1px solid #eee;border-radius:5px;
       vertical-align:top}
  .grp .fn{font-size:10px;color:#444;max-width:150px;word-break:break-word}
- .merge{margin-top:6px} .merge input{font:12px system-ui;padding:3px 5px;width:230px}
+ .merge{margin-top:6px} .merge input{font:12px system-ui;padding:3px 5px;width:420px}
+ .face.empty{background:#faf8f5;border-style:dashed}
  .warn{color:#a15;font-size:11px}
 </style>
 <header>
@@ -113,7 +117,8 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
  <button id=bf class=on onclick="setView('face')">by face</button>
  <button id=bl onclick="setView('letter')">by letter (compare faces)</button>
  <label>size <input type=range id=zoom min=1 max=5 value=3></label>
- <button class=alt onclick=exportMerge()>Export merge map</button>
+ <label><input type=checkbox id=he onchange=render()> hide empty faces</label>
+ <button class=alt onclick=exportDesignations()>Export inventory</button>
  <button class=alt onclick=exportDeletes()>Export deletions</button>
  <span id=dstat style="opacity:.8"></span>
  <span id=stat></span>
@@ -122,10 +127,10 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
 <script>
 const D=__DATA__; let view='face';
 const del=new Set();          // original-library ids marked for deletion
-const merge={};
-Object.keys(D.summary).forEach(f=>merge[f]=f);
+const des={};
+Object.keys(D.summary).forEach(f=>des[f]=D.summary[f].os||'');
 document.getElementById('stat').textContent =
-  `${D.items.length} glyphs · ${Object.keys(D.summary).length} faces · `+
+  `${D.items.length} glyphs · ${Object.keys(D.summary).length} inventory faces · `+
   `${new Set(D.items.map(i=>i.ch)).size} characters`;
 
 function cell(it){
@@ -141,19 +146,22 @@ function toggle(oid){ del.has(oid)?del.delete(oid):del.add(oid); render(); }
 function zoomPx(){ return 22*(+document.getElementById('zoom').value); }
 
 function byFace(){
-  const faces=Object.keys(D.summary).sort();
-  return faces.map(f=>{
+  return D.order.filter(f=>D.summary[f] && (!hideEmpty() || D.summary[f].n)).map(f=>{
     const s=D.summary[f];
     const its=D.items.filter(i=>i.face==f).sort((a,b)=>a.ch.localeCompare(b.ch)||a.word-b.word);
-    const thin = s.letters<5 ? `<span class=warn>only ${s.letters} letters — too thin to match on</span>` : '';
-    return `<div class=face><h3><span class=k>${f}</span>
-      <span class=m>${s.n} glyphs · ${s.letters} letters · ${s.sig||''} ${s.caph?'· cap '+s.caph+'px':''}</span>
-      ${thin}</h3>
+    let note='';
+    if(!s.n) note=`<span class=warn>no samples yet</span>`;
+    else if(Math.max(s.upper,s.lower)<5) note=`<span class=warn>thin in both cases</span>`;
+    return `<div class="face${s.n?'':' empty'}"><h3><span class=k>${f}</span>
+      <span class=m>${s.n} glyphs · ${s.upper} UPPER · ${s.lower} lower</span> ${note}</h3>
       <div class=row>${its.map(cell).join('')}</div>
-      <div class=merge>generic face:
-        <input value="${merge[f]}" oninput="merge['${f}']=this.value"></div></div>`;
+      <div class=merge>OS designations (pipe-delimited):
+        <input class=os value="${(des[f]||'').replace(/"/g,'&quot;')}"
+               oninput="des['${f}']=this.value" placeholder="e.g. Parishes (Mother or Ancient)|..."></div>
+      </div>`;
   }).join('');
 }
+function hideEmpty(){ return document.getElementById('he').checked; }
 function byLetter(){
   const chars=[...new Set(D.items.map(i=>i.ch))].sort();
   return chars.map(c=>{
@@ -184,10 +192,11 @@ function setView(v){ view=v;
   document.getElementById('bl').className = v=='letter'?'on':'';
   render(); }
 document.getElementById('zoom').oninput=render;
-function exportMerge(){
-  const blob=new Blob([JSON.stringify(merge,null,1)],{type:'application/json'});
+function exportDesignations(){
+  const faces={}; D.order.forEach(f=>faces[f]={os:(des[f]||'').trim()});
+  const blob=new Blob([JSON.stringify({faces},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='face_merge_map.json'; a.click();
+  a.download='face_inventory.json'; a.click();
 }
 render();
 </script>

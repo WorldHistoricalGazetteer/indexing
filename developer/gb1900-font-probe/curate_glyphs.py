@@ -24,6 +24,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--npz", default="labels/alphabet_glyphs.npz")
     ap.add_argument("--spec", default="labels/face_curation.json")
+    ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--out", default="labels/alphabet_glyphs_curated.npz")
     a = ap.parse_args()
 
@@ -33,8 +34,14 @@ def main():
     merge = spec.get("merge", {})
     rename = spec.get("rename", {})
     dele = {int(k) for k in spec.get("delete_glyph_ids", {})}
-    declare = spec.get("declare", {})
     repop = spec.get("repopulate", {})
+    # The inventory is the authority on which faces EXIST, including permutations no sample has been found
+    # for yet. Keeping it separate from the curation spec matters: the spec describes operations on the glyphs
+    # we have, the inventory describes the typefaces we are trying to tell apart, and those are not the same
+    # list — a face with no samples is still a face the matcher must eventually account for.
+    inv = {}
+    if os.path.exists(a.inventory):
+        inv = json.load(open(a.inventory)).get("faces", {})
 
     d = np.load(a.npz, allow_pickle=True)
     faces = d["faces"].astype(str)
@@ -86,15 +93,19 @@ def main():
     per = defaultdict(lambda: defaultdict(set))
     for f, c in zip(fc, ch):
         per[f]["upper" if c.isupper() else "lower" if c.islower() else "other"].add(c)
-    allfaces = sorted(set(fc) | set(declare))
+    order = {n: i for i, n in enumerate(inv)}          # inventory order is semantic, not alphabetical
+    allfaces = sorted(set(fc) | set(inv), key=lambda f: (order.get(f, 10**6), f))
+    stray = sorted(set(fc) - set(inv))
+    if stray:
+        print(f"\n  NOTE: {len(stray)} face(s) hold glyphs but are not in the inventory: {stray}")
     print(f"\ncurated: {len(fc)} glyphs, {len(set(fc))} faces with samples, "
           f"{len(allfaces)} in the inventory\n")
     print(f"  {'face':26s} {'glyphs':>6} {'UPPER':>6} {'lower':>6}   letters")
     for f in allfaces:
         n = int((fc == f).sum())
         up, lo = per[f]["upper"], per[f]["lower"]
-        if f in declare and n == 0:
-            flag = "  << declared, no samples yet"
+        if n == 0:
+            flag = "  << no samples yet" + (f"  [{inv[f]['os']}]" if inv.get(f, {}).get("os") else "")
         elif f in repop:
             flag = "  << repopulate"
         elif max(len(up), len(lo)) < 5:

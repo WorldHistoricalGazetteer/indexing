@@ -1,6 +1,5 @@
 {
   "_comment": "Curation of the OS Characteristic-Sheet face inventory into distinct TYPEFACES, from eyeballing admin_probe/glyph_ui.html. The CS names categories, not faces: several are one typeface at a different size, and size is normalised out of these glyphs. Every operation is declared against the ORIGINAL labels/alphabet_glyphs.npz and applied from scratch, so the spec stays reproducible however many rounds it accumulates. Face names follow the signature convention Style-Fill-Decor.",
-
   "drop": {
     "Bogs, Moors and Forests": "samples are garbage",
     "Navigable Rivers and Canals": "samples are garbage",
@@ -9,39 +8,36 @@
     "antiq_norman": "no decent samples — cleared, awaiting repopulation",
     "antiq_saxon": "no decent samples — cleared, awaiting repopulation"
   },
-
   "replace_glyphs": {
     "antiq_roman": "railways_passenger"
   },
   "_replace_notes": "antiq_roman's own samples are unusable, but the railways_passenger set is the SAME typeface and is clean, so it becomes the sample set for that face and railways_passenger is retired as a separate name.",
-
   "merge": {
     "Parks and Demesnes": "Italic-Solid-Serif",
     "civil_parishes": "Italic-Solid-Serif",
     "Bays and Harbours": "Italic-Solid-Serif",
     "woods_copses": "Upright-Solid-Serif",
     "extra_parochial": "Upright-Solid-Serif",
-    "county_boroughs": "county_names"
+    "county_boroughs": "county_names",
+    "other_stations": "Italic-Solid-Serif"
   },
-
   "rename": {
     "antiq_roman": "Upright-Solid-Plain",
     "town_districts": "Italic-Outline-Serif",
     "urban_sanitary": "Upright-Outline-Plain",
-    "cities_nomp": "Upright-Diagonal-Serif"
+    "cities_nomp": "Upright-Diagonal-Serif",
+    "county_names": "Upright-Solid-Ornate"
   },
-
   "delete_glyph_ids": {
     "84": "second P of Upright-Solid-Serif (woods_copses, word 11, 8.4 deg)"
   },
-
-  "declare": {
-    "Italic-Solid-Plain": "no examples yet — the italic counterpart of Upright-Solid-Plain"
-  },
-
   "repopulate": {
     "antiq_norman": "cleared; needs fresh samples",
-    "antiq_saxon": "cleared; needs fresh samples",
-    "Italic-Solid-Plain": "declared but empty"
-  }
+    "antiq_saxon": "cleared; needs fresh samples"
+  },
+  "_notes": {
+    "Italic-Solid-Serif": "generic italic serif; other_stations folded in as the same face",
+    "Upright-Solid-Ornate": "County Boroughs in OS style"
+  },
+  "_inventory": "The full face inventory, including permutations not yet spotted, lives in labels/face_inventory.json. Provenance back to OS category keys is NOT maintained: once a face is named by its signature, new samples are labelled with that name directly."
 }
