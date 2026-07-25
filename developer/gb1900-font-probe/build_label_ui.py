@@ -16,7 +16,49 @@ import sys; sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
 import os, glob, json, base64, io, argparse, numpy as np
 from collections import defaultdict, Counter
 from PIL import Image, ImageDraw
-from make_font_testset_v2 import derotate
+from make_font_testset_v2 import derotate, assemble
+import cv2
+
+
+def crop_context(poly, ctx=1.2, minpad=28):
+    """De-rotated crop WITH surrounding map context; returns (patch, extent box within the patch).
+
+    A tight crop is unlabellable in two situations a human reported, and it hides both:
+      * the mask captured only part of the label — with no margin, a truncated crop looks like a whole label;
+      * the label is a generic word ("Chapel", "Plantation") and there is nothing to say WHICH one it is.
+    Context fixes both, because the label visibly continues past the box when the mask was short, and the
+    surrounding map identifies the instance. The red box is drawn at the DETECTED EXTENT rather than at the
+    image border, so the human can see exactly what the descriptor measured — a tight crop with a border box
+    conveys no such thing.
+
+    Display only: the descriptor still uses the tight crop (the convention Phase B measured). The human is
+    judging the same label, with more information about it.
+    """
+    p = np.array(poly, np.float32)
+    bb = [int(p[:, 0].min()), int(p[:, 1].min()), int(p[:, 0].max()), int(p[:, 1].max())]
+    (_, _), (w0, h0), _ = cv2.minAreaRect(p)
+    if w0 < h0:
+        w0, h0 = h0, w0
+    padx = max(minpad, ctx * h0)
+    pady = max(minpad * 0.6, 0.7 * h0)
+    # Assemble enough tiles that the rotated, padded rect still lands inside the canvas.
+    need = int(np.hypot(w0, h0) / 2 + max(padx, pady) + 16)
+    canvas, ox, oy = assemble(bb, pad=need)
+    if canvas is None:
+        return None, None
+    # assemble() can hand back numpy ints, which promote float32 - int64 to float64; minAreaRect only accepts
+    # CV_32F/CV_32S and fails with a bare assertion, so pin the dtype rather than relying on the promotion rule.
+    local = np.asarray(p - [ox, oy], np.float32)
+    (cx, cy), (w, h), ang = cv2.minAreaRect(local)
+    if w < h:
+        ang += 90
+        w, h = h, w
+    if w < 6 or h < 6:
+        return None, None
+    M = cv2.getRotationMatrix2D((cx, cy), ang, 1.0)
+    rot = cv2.warpAffine(canvas, M, (canvas.shape[1], canvas.shape[0]), borderValue=255)
+    patch = cv2.getRectSubPix(rot, (int(w + 2 * padx), int(h + 2 * pady)), (cx, cy))
+    return patch, (int(padx), int(pady), int(padx + w), int(pady + h))
 
 HERE = "/vast/ishi/gb1900/probe/font"; SPOT = "/vast/ishi/gb1900/edition/spot"
 TAX = json.load(open(f"{HERE}/font_taxonomy.json"))
@@ -82,7 +124,12 @@ def main():
                          "novelty = words FARTHEST from all anchors (discovery); "
                          "weak = transcript-seeded, the bootstrap round — see --weak-sig")
     ap.add_argument("--weak-sig", default=None,
-                    help="restrict `weak` mode to one signature, e.g. 'upright·solid·serif' (the weak axis)")
+                    help="restrict `weak` mode to one signature, e.g. 'upright·solid·serif' (the weak axis); "
+                         "omit to draw across ALL weakly-labelled categories, which is what a representative "
+                         "verified set needs — a round confined to one category measures only its own slice")
+    ap.add_argument("--redo", default=None, metavar="LABELS.json",
+                    help="re-present the cards a labeller left unmarked in a previous export (they were "
+                         "unlabellable because the crop lacked context — see --context)")
     ap.add_argument("--target", type=int, default=20, help="grow rare sigs up to this many anchors")
     ap.add_argument("--out", default=f"{SPOT}/label_ui.html")
     # Crop-convention switches. Defaults keep the legacy MapReader-box path working unchanged; point them at
@@ -97,6 +144,8 @@ def main():
     # was no detection decision to be confident about). Pass 0 for the pin bank — quality control there comes
     # from the on_ink / mask-area flags, not from this number.
     ap.add_argument("--min-score", type=float, default=0.55)
+    ap.add_argument("--context", type=float, default=1.2, metavar="MULT",
+                    help="map context around the crop, in multiples of text height (0 = old tight crop)")
     ap.add_argument("--anchors-npz", default=None,
                     help="descriptors+sigs to use as anchors directly (e.g. anchor_desc_hisam.npz), for when "
                          "the labelled anchors live outside the sampled regions and so aren't in the bank")
@@ -136,6 +185,15 @@ def main():
     score = meta["score"].astype(float)
     cand = [i for i in range(N) if score[i] >= a.min_score and key(meta["gcx"][i], meta["gcy"][i]) not in done]
     props_for = {}; selu = {}
+    redo_keys = set()
+    if a.redo and os.path.exists(a.redo):
+        redo = [x for x in json.load(open(a.redo)) if not x.get("sig")]
+        redo_keys = {key(x["gcx"], x["gcy"]) for x in redo}
+        done -= redo_keys                                # they were shown but never answered — not "done"
+        cand = [i for i in range(N) if score[i] >= a.min_score
+                and key(meta["gcx"][i], meta["gcy"][i]) not in done]
+        print(f"REDO: re-presenting {len(redo_keys)} previously-unlabellable cards", flush=True)
+
     if a.mode == "weak":
         # THE BOOTSTRAP ROUND. Candidates are chosen by what the TRANSCRIPT implies, not by where they sit in
         # descriptor space — which is the whole point: `grow` mode picks a rare signature's nearest neighbours
@@ -147,7 +205,29 @@ def main():
         if not pool:
             raise SystemExit(f"no weakly-labelled candidates{' for ' + a.weak_sig if a.weak_sig else ''} — "
                              f"is this the pin bank? (--bank)")
-        sel = fps(X, pool, a.n, int(pool[0]))            # spread across descriptor space, not the top-N nearest
+        n_new = max(0, a.n - len(redo_keys))
+        if a.weak_sig:
+            sel = fps(X, pool, n_new, int(pool[0])) if n_new else []
+        else:
+            # Even QUOTA per signature, not proportional sampling. Supply is wildly uneven (italic serif
+            # outnumbers upright plain ~100:1), and balance is what the last measurement was short of —
+            # a proportional draw would just re-buy the majority class.
+            by = defaultdict(list)
+            for i in pool:
+                by[weak[i]].append(i)
+            sel = []
+            order = sorted(by, key=lambda z: len(by[z]))            # scarcest first: it can't absorb a big share
+            for n_left, s in enumerate(order):
+                quota = max(1, (n_new - len(sel)) // (len(order) - n_left))   # re-spread what scarce sigs left
+                take = min(quota, len(by[s]))
+                sel += fps(X, by[s], take, int(by[s][0]))
+            sel = sel[:n_new]
+            print(f"  even quota across {len(by)} weakly-labelled signatures: "
+                  f"{dict(Counter(weak[i] for i in sel))}", flush=True)
+        if redo_keys:                                    # redo cards go first, so they get answered
+            sel = [i for i in range(N) if key(meta["gcx"][i], meta["gcy"][i]) in redo_keys] + \
+                  [i for i in sel if key(meta["gcx"][i], meta["gcy"][i]) not in redo_keys]
+            weak = np.where(weak == "", "?", weak)       # a redo card may carry no weak label at all
         props_for = {i: [weak[i]] for i in sel}
         selu = {i: 0.0 for i in sel}
         if have:
@@ -218,11 +298,16 @@ def main():
     for i in sel:
         k = key(meta["gcx"][i], meta["gcy"][i]); r = rec.get(k)
         if r is None: continue
-        poly = r.get(a.poly_field) or r.get("gpoly")     # crop the SAME extent the descriptor was taken from
-        patch = derotate({"gpoly": poly}) if poly else None
+        poly = r.get(a.poly_field) or r.get("gpoly")     # the SAME extent the descriptor was taken from
+        ext = None
+        if poly and a.context > 0:
+            patch, ext = crop_context(poly, ctx=a.context)
+        else:
+            patch = derotate({"gpoly": poly}) if poly else None
         if patch is None or patch.size < 80: continue
         H, W = patch.shape[:2]; im = Image.fromarray(patch).convert("RGB")
-        ImageDraw.Draw(im).rectangle([4, 4, W - 5, H - 5], outline=(214, 40, 40), width=1)
+        box = list(ext) if ext else [4, 4, W - 5, H - 5]
+        ImageDraw.Draw(im).rectangle(box, outline=(214, 40, 40), width=2)
         if max(H, W) < 240: im = im.resize((W * 2, H * 2), Image.NEAREST)
         buf = io.BytesIO(); im.save(buf, "PNG")
         cards.append(dict(gcx=float(meta["gcx"][i]), gcy=float(meta["gcy"][i]), text=str(meta["text"][i]),
