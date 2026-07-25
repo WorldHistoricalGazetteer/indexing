@@ -23,8 +23,8 @@ from build_pin_index import load_pins, pins_in_box
 from sheet_clean import stitch, flat_field, lat_px
 
 CLASSES = [
-    ("paper", "#ffffff", "blank paper / background"),
-    ("text", "#1e3cff", "lettering of any size or face"),
+    ("paper", "#ffffff", "blank paper — sweep over EMPTY ground (the ink under a paper stroke is ignored)"),
+    ("text", "#1e3cff", "lettering — sweep across whole words like a highlighter; only the ink is taken"),
     ("line", "#00a000", "roads, contours, boundaries, railway casings, streams"),
     ("hatch", "#ff9800", "the parallel ruling that fills buildings"),
     ("solid", "#d02020", "solid black fill"),
@@ -69,10 +69,12 @@ def main():
     pin_idx = pins_in_box(P, tx0 * 256, ty0 * 256, (tx0 + nx) * 256, (ty0 + ny) * 256)
 
     picks = []
-    # densest, sparsest-with-ink, and pin-centred — so every class is paintable somewhere
-    picks += cands[: max(1, a.n // 3)]
+    # Weighted towards PIN-CENTRED crops. The first painting round produced 255 text pixels against 21,535
+    # solid, because most crops were chosen for ink density and simply had little lettering on them — and the
+    # classifier duly erased the text. A crop centred on a GB1900 pin is guaranteed to contain a label.
+    picks += cands[: max(1, a.n // 5)]
     inked = [c for c in cands if c[2] > 0.02]
-    picks += inked[-max(1, a.n // 3):]
+    picks += inked[-max(1, a.n // 5):]
     for k in pin_idx[:: max(1, len(pin_idx) // max(1, a.n - len(picks)))][: a.n - len(picks)]:
         x = int(float(P["gx"][k]) - tx0 * 256) - S // 2
         y = int(float(P["gy"][k]) - ty0 * 256) - S // 2
@@ -131,6 +133,7 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · paint linework 
   <button class=alt onclick=clearAll()>Clear all</button>
   <button onclick=exportJSON()>Export labels</button>
   <span id=hint></span>
+  <span style="opacity:.7;font-size:11px">highlight freely — the trainer keeps only the ink under your stroke</span>
 </header>
 <div id=wrap></div>
 <script>

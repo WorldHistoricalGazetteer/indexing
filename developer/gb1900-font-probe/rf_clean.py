@@ -74,12 +74,25 @@ def cmd_train(a):
         patch = gray[y0:y0 + S, x0:x0 + S]
         F = features(patch)
         m = L < len(CLASSES)                                   # 255 = unpainted
+        # HIGHLIGHT, don't trace. At this scale nobody can brush along a 2 px letter stroke, so the brush is
+        # meant to be swept across whole labels and blocks — and the ink under it is extracted here. Every
+        # class except `paper` keeps only its INK pixels; `paper` keeps only its NON-ink pixels. This costs
+        # nothing at apply time either, since only ink is ever erased, and it means a sloppy stroke over a
+        # word contributes exactly the letter pixels and none of the paper between them.
+        _, cbw = cv2.threshold(patch, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        cink = cbw > 0
+        paper_i = CLASSES.index("paper")
+        before = int(m.sum())
+        m &= np.where(L == paper_i, ~cink, cink)
+        if before and not m.any():
+            print(f"  crop {cr['id']}: {before} painted px, none survived the ink filter", flush=True)
+            continue
         if not m.any():
             continue
         X.append(F[m])
         y.append(L[m])
         grp.append(np.full(int(m.sum()), cr["id"]))
-        print(f"  crop {cr['id']}: {int(m.sum())} painted px "
+        print(f"  crop {cr['id']}: {int(m.sum())} ink px (of {before} painted) "
               f"{{{', '.join(f'{CLASSES[c]}:{int((L[m]==c).sum())}' for c in np.unique(L[m]))}}}", flush=True)
     if not X:
         raise SystemExit("no painted pixels found on this sheet")
@@ -91,24 +104,37 @@ def cmd_train(a):
     for c in np.unique(y):
         print(f"  {CLASSES[c]:6s} {int((y==c).sum()):>8d}", flush=True)
 
-    # Hold out whole CROPS. A random pixel split would put neighbouring pixels of the same brush stroke on
-    # both sides and report an accuracy that says nothing about an unseen sheet.
+    # LEAVE ONE CROP OUT. Holding out a random quarter of the crops is worthless at this scale: with 8 crops
+    # the draw can easily be two that were painted with a single class, and the resulting "overall 1.000"
+    # measures nothing (it happened). LOCO uses every crop as test exactly once, and a class is scored only
+    # over the crops where it was actually painted — so a class painted on two crops gets a number based on
+    # two crops, and says so, instead of hiding behind an average.
     crops = np.unique(grp)
-    rng = np.random.RandomState(0)
-    rng.shuffle(crops)
-    ncut = max(1, len(crops) // 4)
-    test_crops = set(crops[:ncut].tolist())
-    te = np.isin(grp, list(test_crops))
-    clf = RandomForestClassifier(n_estimators=a.trees, max_depth=a.depth, n_jobs=-1,
-                                 class_weight="balanced", random_state=0)
-    clf.fit(X[~te], y[~te])
-    if te.any():
-        pred = clf.predict(X[te])
-        print(f"\nheld-out crops {sorted(test_crops)} — {int(te.sum())} px", flush=True)
+    hit = {c: [0, 0] for c in np.unique(y)}
+    crops_with = {c: 0 for c in np.unique(y)}
+    for held in crops:
+        te = grp == held
+        if not (~te).any():
+            continue
+        f = RandomForestClassifier(n_estimators=a.trees, max_depth=a.depth, n_jobs=-1,
+                                   class_weight="balanced", random_state=0)
+        f.fit(X[~te], y[~te])
+        pred = f.predict(X[te])
         for c in np.unique(y[te]):
             m = y[te] == c
-            print(f"  {CLASSES[c]:6s} recall {float((pred[m]==c).mean()):.3f}  (n={int(m.sum())})", flush=True)
-        print(f"  overall {float((pred==y[te]).mean()):.3f}", flush=True)
+            hit[c][0] += int((pred[m] == c).sum())
+            hit[c][1] += int(m.sum())
+            crops_with[c] += 1
+    print(f"\nleave-one-crop-out over {len(crops)} crops:", flush=True)
+    for c in sorted(hit, key=lambda z: -hit[z][1]):
+        ok, n = hit[c]
+        if not n:
+            continue
+        warn = "   << only 1 crop: not a generalisation test" if crops_with[c] < 2 else ""
+        print(f"  {CLASSES[c]:6s} recall {ok/n:.3f}  (n={n} px over {crops_with[c]} crops){warn}", flush=True)
+
+    clf = RandomForestClassifier(n_estimators=a.trees, max_depth=a.depth, n_jobs=-1,
+                                 class_weight="balanced", random_state=0)
 
     clf.fit(X, y)                                              # refit on everything for the applied model
     joblib.dump(dict(clf=clf, classes=CLASSES, sigmas=SIGMAS, flatten=a.flatten), a.model)
