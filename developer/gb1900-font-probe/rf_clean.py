@@ -24,6 +24,12 @@ from hisam_pins import N17
 from sheet_clean import stitch, flat_field, lat_px
 
 CLASSES = ["paper", "text", "dash", "dotline", "line", "rail", "hatch", "stipple", "solid"]
+# Painting rounds specialise BY SHEET as well as by class — one sheet is easier to label for text, another
+# for linework — so a round carries its own `tag` and the trainer loads whichever sheet that names.
+SHEETS = {
+    "sheet_ENG_218_NW": (-1.58750, 53.78230, -1.51400, 53.81150),
+    "sheet_SCO_039_NW": (-4.53060, 54.93480, -4.45510, 54.96390),
+}
 KEEP = {"paper", "text"}                       # everything else is noise to be erased
 SIGMAS = (1, 2, 4, 8, 16)
 
@@ -47,9 +53,22 @@ def sheet_bbox(bbox):
     return tx0, ty0, tx1 - tx0 + 1, ty1 - ty0 + 1
 
 
-def load_sheet(bbox, flatten=True):
+def load_sheet(bbox, flatten=True, tiles_dir=None):
     tx0, ty0, nx, ny = sheet_bbox(bbox)
-    rgb, hit = stitch(tx0, ty0, nx, ny)
+    if tiles_dir:
+        import glob as _g
+        rgb = np.full((ny * 256, nx * 256, 3), 255, np.uint8)
+        hit = 0
+        for i in range(nx):
+            for j in range(ny):
+                fp = f"{tiles_dir}/{tx0+i}/{ty0+j}.png"
+                if os.path.exists(fp):
+                    t = cv2.cvtColor(cv2.imread(fp), cv2.COLOR_BGR2RGB)
+                    if t is not None:
+                        rgb[j * 256:(j + 1) * 256, i * 256:(i + 1) * 256] = t
+                        hit += 1
+    else:
+        rgb, hit = stitch(tx0, ty0, nx, ny)
     if flatten:
         rgb = flat_field(rgb)
     return cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY), (tx0, ty0, nx, ny), hit
@@ -67,21 +86,42 @@ def cmd_train(a):
     drop = set(a.drop or [])
     if drop:
         print(f"dropping classes {sorted(drop)} from all rounds", flush=True)
-    gray, (tx0, ty0, nx, ny), hit = load_sheet(a.bbox, a.flatten)
-    print(f"sheet {gray.shape[1]}x{gray.shape[0]} ({hit} tiles); "
-          f"{sum(len(r['crops']) for r in rounds)} painted crops from {len(rounds)} file(s)", flush=True)
 
-    X, y, grp = [], [], []
+    sheets = {}                                            # tag -> (gray, origin), loaded once each
+
+    def sheet_for(r):
+        tag = r.get("tag")
+        if tag not in sheets:
+            bbox = SHEETS.get(tag) or a.bbox
+            if bbox is None:
+                raise SystemExit(f"round tagged {tag!r} is not in SHEETS and no --bbox was given")
+            g, org, hit = load_sheet(bbox, a.flatten)
+            sheets[tag] = (g, org)
+            print(f"  sheet {tag}: {g.shape[1]}x{g.shape[0]} ({hit} tiles)", flush=True)
+        return sheets[tag]
+
+    print(f"{sum(len(r['crops']) for r in rounds)} painted crops from {len(rounds)} file(s)", flush=True)
+
+    X, y, grp, _warned = [], [], [], set()
     allcrops = [(fi, cr) for fi, r in enumerate(rounds) for cr in r["crops"]]
     for fi, cr in allcrops:
+        gray, (tx0, ty0, nx, ny) = sheet_for(rounds[fi])
         S = cr["size"]
         L = np.frombuffer(base64.b64decode(cr["labels"]), np.uint8).reshape(S, S).copy()
         # Remap by NAME, not index. Rounds painted under an older class list would otherwise silently shift:
         # index 2 meant `line` then and means `dash` now, which would poison the very class being fixed.
         names = rounds[fi].get("classes") or CLASSES
+        # A round painted before `line` was split into dash/dotline/line/rail used it for ALL of them. That
+        # meaning no longer exists, and keeping it would teach the new `line` class to accept dashes and
+        # railways — the exact confusion the split was made to remove. Detect the old scheme by its own class
+        # list rather than by asking the caller to remember which file is which.
+        legacy_line = ("dash" not in names) and ("line" in names)
+        if legacy_line and fi not in _warned:
+            print(f"  r{fi}: pre-split class list — its `line` is the old conflated class, dropped", flush=True)
+            _warned.add(fi)
         remap = np.full(256, 255, np.uint8)
         for i, nm in enumerate(names):
-            if nm in drop:
+            if nm in drop or (legacy_line and nm == "line"):
                 continue
             if nm in CLASSES:
                 remap[i] = CLASSES.index(nm)
@@ -147,6 +187,7 @@ def cmd_train(a):
     hit = {c: [0, 0] for c in np.unique(y)}
     crops_with = {c: 0 for c in np.unique(y)}
     binhit = {"keep": [0, 0], "erase": [0, 0]}
+    probs = []
     for held in crops:
         te = grp == held
         if not (~te).any():
@@ -160,6 +201,10 @@ def cmd_train(a):
             hit[c][0] += int((pred[m] == c).sum())
             hit[c][1] += int(m.sum())
             crops_with[c] += 1
+        kk = [f.classes_.tolist().index(CLASSES.index(c)) for c in KEEP
+              if CLASSES.index(c) in f.classes_.tolist()]
+        if kk:
+            probs.append((f.predict_proba(X[te])[:, kk].sum(1), np.isin(y[te], [CLASSES.index(c) for c in KEEP])))
         kset = {CLASSES.index(c) for c in KEEP}
         yk = np.isin(y[te], list(kset))
         pk = np.isin(pred, list(kset))
@@ -179,7 +224,16 @@ def cmd_train(a):
     ek, en = binhit["erase"]
     print(f"  --- keep/erase, the decision actually made ---", flush=True)
     print(f"  KEEP  (paper+text) kept    {tk/max(1,tn):.3f}  (n={tn})", flush=True)
-    print(f"  ERASE (line+hatch+solid)   {ek/max(1,en):.3f}  (n={en})", flush=True)
+    print(f"  ERASE (everything else)    {ek/max(1,en):.3f}  (n={en})", flush=True)
+    if probs:
+        pk = np.concatenate([p for p, _ in probs])
+        yk = np.concatenate([q for _, q in probs])
+        print("  --- confidence sweep: erase only where P(not-keep) >= t ---", flush=True)
+        print(f"  {'t':>6} {'text/paper kept':>16} {'non-text erased':>16}", flush=True)
+        for t in (0.50, 0.70, 0.80, 0.90, 0.95, 0.99):
+            er = (1.0 - pk) >= t
+            print(f"  {t:>6.2f} {float((~er[yk]).mean()):>16.4f} {(float(er[~yk].mean()) if (~yk).any() else 0.0):>16.4f}",
+                  flush=True)
 
     clf = RandomForestClassifier(n_estimators=a.trees, max_depth=a.depth, n_jobs=-1,
                                  class_weight="balanced", random_state=0)
@@ -193,7 +247,7 @@ def cmd_apply(a):
     import joblib
     bundle = joblib.load(a.model)
     clf = bundle["clf"]
-    gray, (tx0, ty0, nx, ny), hit = load_sheet(a.bbox, bundle.get("flatten", True))
+    gray, (tx0, ty0, nx, ny), hit = load_sheet(a.bbox, bundle.get("flatten", True), a.tiles_dir)
     H, W = gray.shape
     print(f"{a.tag}: {W}x{H} ({hit} tiles)", flush=True)
     t0 = time.time()
@@ -202,23 +256,31 @@ def cmd_apply(a):
     # classified from a truncated neighbourhood and show as a seam.
     B, M = a.block, 4 * SIGMAS[-1]
     lab = np.zeros((H, W), np.uint8)
+    era = np.zeros((H, W), bool)
     for y0 in range(0, H, B):
         for x0 in range(0, W, B):
             ya, yb = max(0, y0 - M), min(H, y0 + B + M)
             xa, xb = max(0, x0 - M), min(W, x0 + B + M)
             F = features(gray[ya:yb, xa:xb])
-            p = clf.predict(F.reshape(-1, F.shape[-1])).reshape(yb - ya, xb - xa)
-            lab[y0:min(H, y0 + B), x0:min(W, x0 + B)] = \
-                p[y0 - ya:min(H, y0 + B) - ya, x0 - xa:min(W, x0 + B) - xa]
+            pr = clf.predict_proba(F.reshape(-1, F.shape[-1]))
+            # ASYMMETRIC BY DESIGN. Erasing a letter destroys the thing we are trying to read; leaving a hatch
+            # stroke merely leaves noise the spotter already copes with. So the decision is not argmax — which
+            # would treat those two errors as equal — but "erase only if the model puts at least `confidence`
+            # on the not-text classes". Any reasonable doubt leaves the ink in place. A by-product is that the
+            # weak classes stop being dangerous: a pixel the model cannot confidently place simply survives.
+            keep_ids = [clf.classes_.tolist().index(CLASSES.index(c))
+                        for c in KEEP if CLASSES.index(c) in clf.classes_.tolist()]
+            pk = pr[:, keep_ids].sum(1) if keep_ids else np.zeros(len(pr))
+            e = ((1.0 - pk) >= a.confidence).reshape(yb - ya, xb - xa)
+            am = clf.classes_[pr.argmax(1)].reshape(yb - ya, xb - xa)
+            sy, sx = slice(y0 - ya, min(H, y0 + B) - ya), slice(x0 - xa, min(W, x0 + B) - xa)
+            lab[y0:min(H, y0 + B), x0:min(W, x0 + B)] = am[sy, sx]
+            era[y0:min(H, y0 + B), x0:min(W, x0 + B)] = e[sy, sx]
         print(f"  row {y0}/{H} ({time.time()-t0:.0f}s)", flush=True)
 
     _, bw = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
     ink = bw > 0
-    drop = np.zeros((H, W), bool)
-    for i, c in enumerate(CLASSES):
-        if c not in KEEP:
-            drop |= (lab == i)
-    drop &= ink
+    drop = era & ink
     print(f"  removing {drop.sum()/max(1,ink.sum()):.1%} of ink", flush=True)
     for i, c in enumerate(CLASSES):
         print(f"    {c:6s} {(((lab==i)&ink).sum())/max(1,ink.sum()):.1%} of ink", flush=True)
@@ -256,7 +318,7 @@ def main():
     sub = ap.add_subparsers(dest="cmd", required=True)
     for name in ("train", "apply"):
         p = sub.add_parser(name)
-        p.add_argument("--bbox", type=float, nargs=4, required=True, metavar=("W", "S", "E", "N"))
+        p.add_argument("--bbox", type=float, nargs=4, default=None, metavar=("W", "S", "E", "N"))
         p.add_argument("--model", required=True)
         p.add_argument("--no-flatten", dest="flatten", action="store_false")
         if name == "train":
@@ -274,6 +336,10 @@ def main():
             p.add_argument("--diag", default=None)
             p.add_argument("--clean-png", default=None)
             p.add_argument("--block", type=int, default=1024)
+            p.add_argument("--tiles-dir", default=None,
+                           help="classify a PROCESSED tile cache (e.g. one already spot-masked)")
+            p.add_argument("--confidence", type=float, default=0.90,
+                           help="erase only where P(not text/paper) reaches this. Higher = more cautious")
     a = ap.parse_args()
     (cmd_train if a.cmd == "train" else cmd_apply)(a)
 
