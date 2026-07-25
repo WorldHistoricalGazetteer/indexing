@@ -131,6 +131,47 @@ they need the AMG sweep, not this pipeline.
 
 That leaves **`upright·solid·serif` as the single weak axis Phase C must fix**, and it is well supplied.
 
+### 1.5 First verified round: the weak axis moves, and a crop defect surfaces
+
+A labelling round on `upright·solid·serif` returned **231 verified signatures and 9 cards the labeller could
+not judge**. Three results, in order of importance:
+
+**Weak labels are ~48% precise.** Of 240 cards the lexicon proposed as `upright·solid·serif`, the human
+confirmed 116; 73 were `italic·solid·serif` and 39 `upright·solid·plain`. Exactly why weak labels seed
+sampling and never supply a number (§2).
+
+**The weak axis improves 5× with data but is still the binding constraint:** `upright·solid·serif` goes
+**0.071 (n=14) → 0.382 (n=131)**. The imbalance diagnosis was right, but 131 examples is no longer starvation,
+so upright-vs-italic *within* the serif family is a real limit of the descriptor. Note the verified set is
+**not a random sample** — it is concentrated in one confusable neighbourhood by construction, so its 0.517 is
+a hard-case number, not the pipeline's expected accuracy. Future rounds draw across all categories with an
+even per-signature quota (`build_label_ui --mode weak` without `--weak-sig`).
+
+**Slant fusion is refuted.** The obvious explanation — that mean-pooling discards the lean a human reads —
+fails at the first diagnostic: shear median `upright·solid·serif` **+0.005** vs `italic·solid·serif` **−0.026**,
+IQRs almost entirely overlapping. Slant alone scores 0.377 (below the 0.50 majority) and fusing it *lowers*
+the descriptor from 0.515 to 0.472. This re-confirms in the new convention what `gbstamp_size_angle_signals`
+already recorded — check that memory before re-running it a third time.
+
+**A crop defect the automated pipeline never noticed.** Re-presenting the 9 unclear cards with context showed
+several masks sitting on blank ground or building hatching, with the transcript's label nowhere inside the
+crop, and one (`HEATH TOWN`) cropped upside down — `minAreaRect` is 180°-ambiguous and nothing resolves it.
+Those descriptors carry no font information while being indexed under a real GB1900 transcript, so they are
+worse than missing. **The human was the only detector that caught this.** Two attempts to automate it both
+fall short, and are recorded so nobody re-runs them expecting better:
+
+| measure | result |
+|---|---|
+| Otsu ink fraction / contrast (`crop_qc.py`) | **no signal at all** — 0% flagged corpus-wide; hatching and road casing have the same ink statistics as lettering |
+| Hi-SAM text-foreground fraction (`crop_qc_text.py`) | **weak and confounded** — unclear median 0.018 vs labelled 0.024, and three cards the human read fine score exactly 0.000. Small crops are upscaled ~30× to the model's 1024 input, far out of distribution |
+| aspect-per-character (`crop_audit.py`) | **best available proxy** — unclear median 0.224 vs clear 0.521, corpus 0.528 |
+
+So: do **not** filter the bank on either QC measure — the false-positive rate on `crop_qc_text` alone would
+discard good data. The rate of no-label crops corpus-wide is **not yet known**, which is a live caveat on
+every number in §1.3 and this section, since such crops sit in the bank unflagged. Getting it needs either a
+text-detector run at native crop scale (no upscaling) or a small human audit of a random sample — the latter
+is cheap, unambiguous, and the only method so far demonstrated to work.
+
 **DEAD ENDS — do not retry** (all measured and rejected):
 - Unsupervised clustering of the spot pool → fails (segmentation noise, near-chance).
 - ROI-align / map-context pooling of the backbone → hurts (0.42→lower).
