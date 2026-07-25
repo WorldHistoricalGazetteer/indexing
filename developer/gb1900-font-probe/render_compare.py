@@ -17,13 +17,26 @@ from build_pin_index import load_pins, pins_in_box
 from hisam_pins import read_tile, N17
 
 
-def window_image_rect(tx0, ty0, nx, ny, fetch=False):
-    """Stitch a RECTANGULAR tile extent — an OS sheet is 3:2, not square."""
+def window_image_rect(tx0, ty0, nx, ny, fetch=False, tiles_dir=None):
+    """Stitch a RECTANGULAR tile extent — an OS sheet is 3:2, not square.
+
+    `tiles_dir` reads a PROCESSED cache (masked / de-noised) with no fallback to the original imagery, so a
+    missing processed tile shows as blank rather than silently reverting to the untouched sheet.
+    """
     canvas = np.full((ny * 256, nx * 256, 3), 255, np.uint8)
     hit = 0
     for i in range(nx):
         for j in range(ny):
-            t = read_tile(tx0 + i, ty0 + j, fetch)
+            if tiles_dir:
+                p = f"{tiles_dir}/{tx0+i}/{ty0+j}.png"
+                t = None
+                if os.path.exists(p):
+                    try:
+                        t = np.asarray(Image.open(p).convert("RGB"), np.uint8)
+                    except Exception:
+                        t = None
+            else:
+                t = read_tile(tx0 + i, ty0 + j, fetch)
             if t is not None:
                 canvas[j * 256:(j + 1) * 256, i * 256:(i + 1) * 256] = t
                 hit += 1
@@ -59,6 +72,8 @@ def main():
     ap.add_argument("--amg-file", default=None, help="Hi-SAM AUTOMATIC-mode detections jsonl (4th layer)")
     ap.add_argument("--out-dir", default=PINS)
     ap.add_argument("--fetch", action="store_true", help="pull uncached tiles rather than leaving holes")
+    ap.add_argument("--tiles-dir", default=None,
+                    help="stitch a PROCESSED tile cache (masked / de-noised) instead of the original imagery")
     ap.add_argument("--jpeg", type=int, default=0, metavar="Q", help="write JPEG at quality Q instead of PNG")
     ap.add_argument("--fade", type=float, default=0.45, help="how much to wash out the map under the ink")
     a = ap.parse_args()
@@ -79,7 +94,7 @@ def main():
         nx = ny = 2 * a.r + 1
     ox, oy = tx0 * 256, ty0 * 256
 
-    img, hit = window_image_rect(tx0, ty0, nx, ny, a.fetch)
+    img, hit = window_image_rect(tx0, ty0, nx, ny, a.fetch, a.tiles_dir)
     print(f"{a.tag}: {nx}x{ny} tiles, {hit}/{nx*ny} present ({img.shape[1]}x{img.shape[0]} px)", flush=True)
     if hit == 0:
         raise SystemExit("no tiles for this extent")

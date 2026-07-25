@@ -12,7 +12,12 @@ from shapely import wkt
 from PIL import Image
 from mapreader import MapTextRunner
 
-N17 = 2 ** 17; TILES = "/vast/ishi/gb1900/tiles17"; IX1 = "/ix1/ishi/gb1900/tiles17"
+N17 = 2 ** 17
+# SPOT_TILES points the spotter at an alternate tile cache (e.g. a masked/de-noised copy of a sheet built by
+# clean_sheet.py) without touching this script. When set, the /ix1 archive fallback is dropped too — otherwise
+# a missing processed tile would silently fall back to the ORIGINAL imagery and quietly contaminate the run.
+TILES = os.environ.get("SPOT_TILES") or "/vast/ishi/gb1900/tiles17"
+IX1 = "" if os.environ.get("SPOT_TILES") else "/ix1/ishi/gb1900/tiles17"
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"
 OUT = "/vast/ishi/gb1900/edition/spot"; os.makedirs(OUT, exist_ok=True)
@@ -32,13 +37,26 @@ def get_tile(tx, ty):
     if os.path.exists(p) and os.path.getsize(p) > 500:
         try: return Image.open(p).convert("RGB")
         except Exception: pass
+    ap = f"{IX1}/{tx}/{ty}.png"                          # /ix1 archive (populated by --cleanup); avoids S3 re-fetch
+    if os.path.exists(ap) and os.path.getsize(ap) > 500:
+        try: return Image.open(ap).convert("RGB")
+        except Exception: pass
+    if os.environ.get("SPOT_TILES"):
+        return None          # processed-tile mode: a miss is a miss. Fetching would pull the ORIGINAL tile
+                             # into the processed cache and silently un-do the masking for that tile.
     os.makedirs(f"{TILES}/{tx}", exist_ok=True)
-    try:
-        with urllib.request.urlopen(urllib.request.Request(S3.format(x=tx, y=ty), headers={"User-Agent": "whg-spot"}), timeout=30) as r:
-            data = r.read()
-        if len(data) > 400:
-            open(p, "wb").write(data); return Image.open(io.BytesIO(data)).convert("RGB")
-    except Exception: pass
+    # Retry with backoff: S3 returns 503 SlowDown under concurrent load (8 GPU tasks × ~289 tiles/region),
+    # and the old no-retry get_tile dropped the WHOLE region to 0 boxes on a throttle burst (1018/1200 empties).
+    for attempt in range(5):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(S3.format(x=tx, y=ty), headers={"User-Agent": "whg-spot"}), timeout=30) as r:
+                data = r.read()
+            if len(data) > 400:
+                open(p, "wb").write(data); return Image.open(io.BytesIO(data)).convert("RGB")
+            return None                                  # small/absent object (ocean tile) — legitimately empty, no retry
+        except Exception as e:
+            if getattr(e, "code", None) in (403, 404): return None   # genuinely absent — don't retry
+            time.sleep(1.5 * (attempt + 1))              # 1.5→6s backoff before next attempt (throttle/timeout)
     return None
 
 def mosaic(mx0, my0, M):
