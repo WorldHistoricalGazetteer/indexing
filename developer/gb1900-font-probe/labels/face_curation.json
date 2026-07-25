@@ -6,20 +6,20 @@
     "isolated_houses_word": "samples are garbage",
     "small_rivers": "samples are garbage",
     "antiq_norman": "no decent samples — cleared, awaiting repopulation",
-    "antiq_saxon": "no decent samples — cleared, awaiting repopulation"
+    "antiq_saxon": "no decent samples — cleared, awaiting repopulation",
+    "Parks and Demesnes": "fed the mixed Italic-Solid-Serif set — discarded pending a clean re-seed",
+    "civil_parishes": "fed the mixed Italic-Solid-Serif set — discarded pending a clean re-seed",
+    "Bays and Harbours": "fed the mixed Italic-Solid-Serif set — discarded pending a clean re-seed",
+    "other_stations": "fed the mixed Italic-Solid-Serif set — discarded pending a clean re-seed"
   },
   "replace_glyphs": {
     "antiq_roman": "railways_passenger"
   },
   "_replace_notes": "antiq_roman's own samples are unusable, but the railways_passenger set is the SAME typeface and is clean, so it becomes the sample set for that face and railways_passenger is retired as a separate name.",
   "merge": {
-    "Parks and Demesnes": "Italic-Solid-Serif",
-    "civil_parishes": "Italic-Solid-Serif",
-    "Bays and Harbours": "Italic-Solid-Serif",
     "woods_copses": "Upright-Solid-Serif",
     "extra_parochial": "Upright-Solid-Serif",
-    "county_boroughs": "county_names",
-    "other_stations": "Italic-Solid-Serif"
+    "county_boroughs": "county_names"
   },
   "rename": {
     "antiq_roman": "Upright-Solid-Plain",
@@ -36,8 +36,8 @@
     "antiq_saxon": "cleared; needs fresh samples"
   },
   "_notes": {
-    "Italic-Solid-Serif": "generic italic serif; other_stations folded in as the same face",
-    "Upright-Solid-Ornate": "County Boroughs in OS style"
+    "Upright-Solid-Ornate": "County Boroughs in OS style",
+    "Italic-Solid-Serif": "cleared: its samples mixed two weights, now split into Italic-Solid-Serif and Italic-Solid-Serif-Light"
   },
   "_inventory": "The full face inventory, including permutations not yet spotted, lives in labels/face_inventory.json. Provenance back to OS category keys is NOT maintained: once a face is named by its signature, new samples are labelled with that name directly."
 }

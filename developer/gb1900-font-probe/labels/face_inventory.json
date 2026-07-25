@@ -1,9 +1,63 @@
 {
- "_comment": "Face inventory: every permutation of Style-Fill-Decor, whether or not a sample has been found. `os` holds the OS Characteristic-Sheet designations for that typeface, pipe-delimited — one typeface commonly serves several CS categories at different sizes, which is exactly why the inventory is keyed by signature and not by CS category. Empty means not yet identified.",
+ "faces": {
+  "Upright-Solid-Plain": {
+   "os": "Antiquities (Roman)|Road Names|Railways (Passenger)|Wards|Parliamentary Divisions of Counties"
+  },
+  "Upright-Solid-Serif": {
+   "os": "Boroughs (Parliamentary)|Parish Churches, & Villages|County Bridges|Bays and Harbours|Bogs, Moors and Forests|Woods and Copses|Ranges of Hills|Extra Parochial|Cities returning Members"
+  },
+  "Upright-Solid-Ornate": {
+   "os": "County Boroughs"
+  },
+  "Upright-Outline-Plain": {
+   "os": "Urban Sanitary Districts"
+  },
+  "Upright-Outline-Serif": {
+   "os": "Parishes (Mother or Ancient)|Workhouses"
+  },
+  "Upright-Outline-Ornate": {
+   "os": "County Names"
+  },
+  "Upright-Horizontal-Serif": {
+   "os": "Boroughs (Municipal)|Divisions of Counties (Ridings)"
+  },
+  "Upright-Diagonal-Plain": {
+   "os": "Poor Law Unions"
+  },
+  "Upright-Diagonal-Serif": {
+   "os": "Hundreds|Cities not returning Members"
+  },
+  "Italic-Solid-Plain": {
+   "os": "Railways (Mineral)"
+  },
+  "Italic-Solid-Serif": {
+   "os": "Civil Parishes or Townships|Towns, generally|Chapelries. Other Churches|Parks and Demesnes|Navigable Rivers and Canals|Turnpike Trusts|Market Towns"
+  },
+  "Italic-Solid-Serif-Light": {
+   "os": "Other Villages|Gentlemens Seats|Manufactories. Mines. Farms. Locks.|Trust Bridges and Others|Isolated Houses|Small Rivers & Brooks|Hills (single features)|Antiquities (post-Norman)",
+   "note": "a lighter weight of the same italic serif — split out because the two were mixed in one sample set"
+  },
+  "Italic-Outline-Serif": {
+   "os": "Subdivisions of Townships|Town Districts"
+  },
+  "Italic-Horizontal-Serif": {
+   "os": "Divisions of Townships|Other Towns"
+  },
+  "Italic-Diagonal-Serif": {
+   "os": "Liberties"
+  },
+  "Blackletter-PHS": {
+   "os": "Antiquities (Pre-historic or Saxon)"
+  },
+  "Blackletter-N": {
+   "os": "Antiquities (Norman)"
+  }
+ },
  "_axes": {
   "style": [
    "Upright",
-   "Italic"
+   "Italic",
+   "Blackletter"
   ],
   "fill": [
    "Solid",
@@ -15,81 +69,11 @@
    "Plain",
    "Serif",
    "Ornate"
+  ],
+  "weight": [
+   "(default)",
+   "Light"
   ]
  },
- "_order": "style outermost, then fill, then decor — each ordered plainest to most elaborate",
- "faces": {
-  "Upright-Solid-Plain": {
-   "os": ""
-  },
-  "Upright-Solid-Serif": {
-   "os": ""
-  },
-  "Upright-Solid-Ornate": {
-   "os": "County Boroughs"
-  },
-  "Upright-Outline-Plain": {
-   "os": ""
-  },
-  "Upright-Outline-Serif": {
-   "os": "Parishes (Mother or Ancient)"
-  },
-  "Upright-Outline-Ornate": {
-   "os": "County Names"
-  },
-  "Upright-Horizontal-Plain": {
-   "os": ""
-  },
-  "Upright-Horizontal-Serif": {
-   "os": "Boroughs (Municipal)"
-  },
-  "Upright-Horizontal-Ornate": {
-   "os": ""
-  },
-  "Upright-Diagonal-Plain": {
-   "os": "Poor Law Unions"
-  },
-  "Upright-Diagonal-Serif": {
-   "os": ""
-  },
-  "Upright-Diagonal-Ornate": {
-   "os": ""
-  },
-  "Italic-Solid-Plain": {
-   "os": ""
-  },
-  "Italic-Solid-Serif": {
-   "os": ""
-  },
-  "Italic-Solid-Ornate": {
-   "os": ""
-  },
-  "Italic-Outline-Plain": {
-   "os": ""
-  },
-  "Italic-Outline-Serif": {
-   "os": ""
-  },
-  "Italic-Outline-Ornate": {
-   "os": ""
-  },
-  "Italic-Horizontal-Plain": {
-   "os": ""
-  },
-  "Italic-Horizontal-Serif": {
-   "os": "Other Towns"
-  },
-  "Italic-Horizontal-Ornate": {
-   "os": ""
-  },
-  "Italic-Diagonal-Plain": {
-   "os": ""
-  },
-  "Italic-Diagonal-Serif": {
-   "os": ""
-  },
-  "Italic-Diagonal-Ornate": {
-   "os": ""
-  }
- }
+ "_comment": "Face inventory keyed by signature, not by OS Characteristic-Sheet category: one typeface commonly serves several CS categories at different sizes, so `os` lists them pipe-delimited. Only faces with at least one designation are kept — a permutation nobody has ever drawn is not a face. Blackletter is a letterform family rather than a slant, so it does not decompose into the fill/decor axes and its two faces are named for their OS categories."
 }
