@@ -1,0 +1,31 @@
+{
+  "_comment": "Curation of the OS Characteristic-Sheet face inventory into distinct TYPEFACES, from eyeballing admin_probe/glyph_ui.html. The CS names categories, not faces: several of its categories are one typeface at different sizes, so they merge under a generic name. Faces whose held samples are unusable are dropped outright rather than left to poison a match.",
+
+  "drop": {
+    "Bogs, Moors and Forests": "samples are garbage",
+    "Navigable Rivers and Canals": "samples are garbage",
+    "isolated_houses_word": "samples are garbage",
+    "small_rivers": "samples are garbage"
+  },
+
+  "merge": {
+    "Parks and Demesnes": "Italic-Solid-Serif",
+    "civil_parishes": "Italic-Solid-Serif",
+    "Bays and Harbours": "Italic-Solid-Serif",
+    "woods_copses": "Upright-Solid-Serif",
+    "extra_parochial": "Upright-Solid-Serif",
+    "county_boroughs": "county_names"
+  },
+
+  "_merge_notes": {
+    "Italic-Solid-Serif": "the generic italic serif that carries the bulk of descriptive labels",
+    "Upright-Solid-Serif": "the generic upright serif counterpart",
+    "county_names": "county_boroughs holds no true county-borough samples — its glyphs are county_names characters, so they fold in under that name rather than being discarded"
+  },
+
+  "repopulate": {
+    "antiq_roman": "no decent samples; populate from ROAD-NAME labels, which use the same face and are abundant",
+    "antiq_saxon": "no decent samples",
+    "antiq_norman": "no decent samples"
+  }
+}
