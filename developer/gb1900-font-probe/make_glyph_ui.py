@@ -32,7 +32,7 @@ def png_b64(g, scale=3):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--npz", default="labels/alphabet_glyphs.npz")
+    ap.add_argument("--npz", default="labels/alphabet_glyphs_seeded.npz")
     ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--out", default="admin_probe/glyph_ui.html")
     ap.add_argument("--scale", type=int, default=3)
@@ -44,6 +44,7 @@ def main():
     chars = d["chars"].astype(str)
     faces = d["faces"].astype(str)
     words = d["word"] if "word" in d.files else np.zeros(len(chars), int)
+    source = d["source"].astype(str) if "source" in d.files else np.array(["map"] * len(chars))
     angles = d["angle"] if "angle" in d.files else np.zeros(len(chars))
 
     inv, order = {}, []
@@ -58,20 +59,23 @@ def main():
             # curation spec addresses. Deleting from a curated view must name the original glyph, or the
             # deletion would silently point at a different sample next time the spec is re-applied.
             i=int(i), oid=int(oids[i]), ch=chars[i], face=faces[i], word=int(words[i]),
-            angle=round(float(angles[i]), 1),
+            angle=round(float(angles[i]), 1), src=source[i],
             img=png_b64(glyphs[i], a.scale),
         ))
 
     # Every inventory face appears, sample or not: a face nobody has spotted yet is still a face the matcher
     # must account for, and showing it empty is what makes the gap visible.
-    per_face = {f: {"letters": set(), "upper": set(), "lower": set(), "n": 0} for f in order}
+    blank = lambda: {"letters": set(), "upper": set(), "lower": set(), "n": 0, "map": 0, "CS": 0}
+    per_face = {f: blank() for f in order}
     for it in items:
-        v = per_face.setdefault(it["face"], {"letters": set(), "upper": set(), "lower": set(), "n": 0})
+        v = per_face.setdefault(it["face"], blank())
         v["letters"].add(it["ch"])
         v["upper" if it["ch"].isupper() else "lower"].add(it["ch"])
         v["n"] += 1
+        v[it["src"]] = v.get(it["src"], 0) + 1
     seq = order + [f for f in per_face if f not in order]
     summary = {f: dict(n=per_face[f]["n"], letters=len(per_face[f]["letters"]),
+                       nmap=per_face[f].get("map", 0), ncs=per_face[f].get("CS", 0),
                        upper=len(per_face[f]["upper"]), lower=len(per_face[f]["lower"]),
                        os=inv.get(f, {}).get("os", ""), known=f in inv)
                for f in seq}
@@ -100,6 +104,8 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
  .row{display:flex;flex-wrap:wrap;gap:10px}
  .cell{text-align:center} .cell img{image-rendering:pixelated;background:#fff;border:1px solid #e2e2e2}
  .cell{cursor:pointer} .cell.gone{opacity:.28}
+ .cell.cs img{border-color:#8a6d3b;background:#fffdf6}
+ .cell.cs .w{color:#8a6d3b;font-weight:600}
  .cell.gone img{outline:2px solid #c00}
  .cell .c{font-size:11px;color:#555;font-weight:600}
  .cell .w{font-size:9px;color:#aaa}
@@ -137,10 +143,13 @@ function cell(it){
   // Click to mark/unmark. The id shown and exported is the ORIGINAL library index, not this view's index,
   // so a deletion decided in a curated view still names the right sample when the spec is re-applied.
   const gone = del.has(it.oid);
-  return `<div class="cell${gone?' gone':''}" onclick="toggle(${it.oid})" title="click to delete / restore">
+  // CS-seeded glyphs are ENGRAVED, map-sampled ones printed-and-scanned. Marking which is which matters:
+  // if a face later behaves oddly against real spots, provenance is the first thing to check.
+  return `<div class="cell${gone?' gone':''} ${it.src=='CS'?'cs':'map'}"
+               onclick="toggle(${it.oid})" title="${it.src}-sourced · click to delete / restore">
           <img src="data:image/png;base64,${it.img}" style="height:${zoomPx()}px">
           <div class=c>${it.ch}${gone?' &#10007;':''}</div>
-          <div class=w>#${it.oid} w${it.word} ${it.angle}&deg;</div></div>`;
+          <div class=w>${it.src=='CS'?'CS':'w'+it.word} ${it.angle}&deg;</div></div>`;
 }
 function toggle(oid){ del.has(oid)?del.delete(oid):del.add(oid); render(); }
 function zoomPx(){ return 22*(+document.getElementById('zoom').value); }
@@ -153,7 +162,8 @@ function byFace(){
     if(!s.n) note=`<span class=warn>no samples yet</span>`;
     else if(Math.max(s.upper,s.lower)<5) note=`<span class=warn>thin in both cases</span>`;
     return `<div class="face${s.n?'':' empty'}"><h3><span class=k>${f}</span>
-      <span class=m>${s.n} glyphs · ${s.upper} UPPER · ${s.lower} lower</span> ${note}</h3>
+      <span class=m>${s.n} glyphs (${s.nmap} map, ${s.ncs} CS) · ${s.upper} UPPER · ${s.lower} lower</span>
+      ${note}</h3>
       <div class=row>${its.map(cell).join('')}</div>
       <div class=merge>OS designations (pipe-delimited):
         <input class=os value="${(des[f]||'').replace(/"/g,'&quot;')}"
