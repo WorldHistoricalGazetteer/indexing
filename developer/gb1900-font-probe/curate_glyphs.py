@@ -1,12 +1,17 @@
-"""Apply the face-curation spec to the glyph library: drop unusable faces, merge duplicate typefaces.
+"""Apply the face-curation spec to the glyph library: drop, clear, re-source, merge, rename, delete.
 
 The Characteristic Sheet names CATEGORIES, not typefaces — several of its categories are the same face at a
 different size, and size is already normalised out of these glyphs. So the inventory has to be collapsed
-before any matcher is built, or it will be asked to separate faces that are not actually different.
+before any matcher is built, or it will be asked to separate faces that are not actually different. Face names
+follow the signature convention Style-Fill-Decor (Italic-Solid-Serif, Upright-Outline-Plain, ...).
 
-Reports coverage PER CASE as well as per face. That distinction decides what a per-letter matcher can do: an
-upright serif holding ten capitals and seven lowercase is not a face with seventeen letters, it is two thin
-alphabets, and a lowercase spot can only ever be matched against the lowercase half.
+Every operation is declared against the ORIGINAL npz and applied from scratch, so the spec remains a complete,
+reproducible description of the curation however many rounds it accumulates — rather than a pile of edits
+whose order matters. Individual glyphs are addressed by their original index, which is therefore stable.
+
+Operation order is fixed and deliberate: delete individual glyphs, drop whole faces, RE-SOURCE a face's
+samples from another face, then merge, then rename. Re-sourcing has to precede merge/rename so that a face
+can be re-sourced and renamed in the same pass.
 
     python curate_glyphs.py --spec labels/face_curation.json
 """
@@ -24,25 +29,56 @@ def main():
 
     spec = json.load(open(a.spec))
     drop = set(spec.get("drop", {}))
+    replace = spec.get("replace_glyphs", {})
     merge = spec.get("merge", {})
+    rename = spec.get("rename", {})
+    dele = {int(k) for k in spec.get("delete_glyph_ids", {})}
+    declare = spec.get("declare", {})
     repop = spec.get("repopulate", {})
 
     d = np.load(a.npz, allow_pickle=True)
     faces = d["faces"].astype(str)
-    unknown = (drop | set(merge)) - set(faces)
+    named = set(drop) | set(merge) | set(rename) | set(replace) | set(replace.values())
+    unknown = named - set(faces)
     if unknown:
         raise SystemExit(f"spec names faces not in the library: {sorted(unknown)}")
+    bad = [i for i in dele if i >= len(faces)]
+    if bad:
+        raise SystemExit(f"delete_glyph_ids out of range: {bad}")
 
-    keep = np.array([f not in drop for f in faces])
-    newface = np.array([merge.get(f, f) for f in faces])
     print(f"{len(faces)} glyphs, {len(set(faces))} faces")
+    keep = np.ones(len(faces), bool)
+
+    for i in sorted(dele):
+        print(f"  DELETE glyph #{i:<4d} {faces[i]} '{d['chars'].astype(str)[i]}'")
+        keep[i] = False
+
     for f in sorted(drop):
-        print(f"  DROP  {f:32s} {int((faces == f).sum()):>3d} glyphs")
+        n = int(((faces == f) & keep).sum())
+        print(f"  DROP     {f:30s} {n:>3d} glyphs")
+        keep &= faces != f
+
+    newface = faces.copy()
+    for tgt, src in replace.items():
+        n_old = int(((faces == tgt) & keep).sum())
+        n_new = int(((faces == src) & keep).sum())
+        print(f"  RESOURCE {tgt:30s} {n_old:>3d} own glyphs discarded, "
+              f"{n_new:>3d} taken from {src}")
+        keep &= faces != tgt                      # the face keeps its NAME but loses its own samples
+        newface = np.where(faces == src, tgt, newface)
+
     for src in sorted(merge):
-        print(f"  MERGE {src:32s} {int((faces == src).sum()):>3d} glyphs -> {merge[src]}")
+        print(f"  MERGE    {src:30s} {int(((faces == src) & keep).sum()):>3d} glyphs -> {merge[src]}")
+        newface = np.where(newface == src, merge[src], newface)
+
+    for src in sorted(rename):
+        print(f"  RENAME   {src:30s} -> {rename[src]}")
+        newface = np.where(newface == src, rename[src], newface)
 
     out = {k: d[k][keep] for k in d.files if k != "faces"}
     out["faces"] = newface[keep]
+    # Carry the ORIGINAL index through, so a deletion marked in the curated view names the original glyph.
+    out["oid"] = (d["oid"] if "oid" in d.files else np.arange(len(faces)))[keep]
     np.savez_compressed(a.out, **out)
 
     fc = out["faces"]
@@ -50,20 +86,24 @@ def main():
     per = defaultdict(lambda: defaultdict(set))
     for f, c in zip(fc, ch):
         per[f]["upper" if c.isupper() else "lower" if c.islower() else "other"].add(c)
-    print(f"\ncurated: {len(fc)} glyphs, {len(set(fc))} faces\n")
-    print(f"  {'face':30s} {'glyphs':>6} {'UPPER':>6} {'lower':>6}   letters")
-    for f in sorted(set(fc)):
+    allfaces = sorted(set(fc) | set(declare))
+    print(f"\ncurated: {len(fc)} glyphs, {len(set(fc))} faces with samples, "
+          f"{len(allfaces)} in the inventory\n")
+    print(f"  {'face':26s} {'glyphs':>6} {'UPPER':>6} {'lower':>6}   letters")
+    for f in allfaces:
         n = int((fc == f).sum())
         up, lo = per[f]["upper"], per[f]["lower"]
-        flag = ""
-        if f in repop:
-            flag = "  << repopulate: " + repop[f]
+        if f in declare and n == 0:
+            flag = "  << declared, no samples yet"
+        elif f in repop:
+            flag = "  << repopulate"
         elif max(len(up), len(lo)) < 5:
             flag = "  << thin in BOTH cases"
-        print(f"  {f:30s} {n:>6d} {len(up):>6d} {len(lo):>6d}   "
+        else:
+            flag = ""
+        print(f"  {f:26s} {n:>6d} {len(up):>6d} {len(lo):>6d}   "
               f"{''.join(sorted(up))}{'/' if up and lo else ''}{''.join(sorted(lo))}{flag}")
 
-    # Which letters can actually discriminate: those held by two or more faces, counted per case.
     byc = defaultdict(set)
     for f, c in zip(fc, ch):
         byc[c].add(f)

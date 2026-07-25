@@ -40,6 +40,7 @@ def main():
 
     d = np.load(a.npz, allow_pickle=True)
     glyphs = d["glyphs"]
+    oids = d["oid"] if "oid" in d.files else np.arange(len(glyphs))
     chars = d["chars"].astype(str)
     faces = d["faces"].astype(str)
     words = d["word"] if "word" in d.files else np.zeros(len(chars), int)
@@ -54,7 +55,11 @@ def main():
     for i in range(len(glyphs)):
         t = tax.get(faces[i], {})
         items.append(dict(
-            i=int(i), ch=chars[i], face=faces[i], word=int(words[i]), angle=round(float(angles[i]), 1),
+            # `i` is the index in THIS npz; `oid` is the index in the ORIGINAL library, which is what the
+            # curation spec addresses. Deleting from a curated view must name the original glyph, or the
+            # deletion would silently point at a different sample next time the spec is re-applied.
+            i=int(i), oid=int(oids[i]), ch=chars[i], face=faces[i], word=int(words[i]),
+            angle=round(float(angles[i]), 1),
             sig="·".join(str(t.get(k)) for k in ("base_style", "fill", "decor")) if t else "",
             caph=t.get("cap_h_px"),
             img=png_b64(glyphs[i], a.scale),
@@ -91,6 +96,8 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
  .face h3 .k{font-weight:700} .face h3 .m{color:#777;font-weight:400;font-size:11px}
  .row{display:flex;flex-wrap:wrap;gap:10px}
  .cell{text-align:center} .cell img{image-rendering:pixelated;background:#fff;border:1px solid #e2e2e2}
+ .cell{cursor:pointer} .cell.gone{opacity:.28}
+ .cell.gone img{outline:2px solid #c00}
  .cell .c{font-size:11px;color:#555;font-weight:600}
  .cell .w{font-size:9px;color:#aaa}
  .lt{background:#fff;border:1px solid #ddd;border-radius:6px;margin-bottom:10px;padding:8px 10px}
@@ -107,11 +114,14 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · glyph library</
  <button id=bl onclick="setView('letter')">by letter (compare faces)</button>
  <label>size <input type=range id=zoom min=1 max=5 value=3></label>
  <button class=alt onclick=exportMerge()>Export merge map</button>
+ <button class=alt onclick=exportDeletes()>Export deletions</button>
+ <span id=dstat style="opacity:.8"></span>
  <span id=stat></span>
 </header>
 <div id=wrap></div>
 <script>
 const D=__DATA__; let view='face';
+const del=new Set();          // original-library ids marked for deletion
 const merge={};
 Object.keys(D.summary).forEach(f=>merge[f]=f);
 document.getElementById('stat').textContent =
@@ -119,9 +129,15 @@ document.getElementById('stat').textContent =
   `${new Set(D.items.map(i=>i.ch)).size} characters`;
 
 function cell(it){
-  return `<div class=cell><img src="data:image/png;base64,${it.img}" style="height:${zoomPx()}px">
-          <div class=c>${it.ch}</div><div class=w>w${it.word} ${it.angle}&deg;</div></div>`;
+  // Click to mark/unmark. The id shown and exported is the ORIGINAL library index, not this view's index,
+  // so a deletion decided in a curated view still names the right sample when the spec is re-applied.
+  const gone = del.has(it.oid);
+  return `<div class="cell${gone?' gone':''}" onclick="toggle(${it.oid})" title="click to delete / restore">
+          <img src="data:image/png;base64,${it.img}" style="height:${zoomPx()}px">
+          <div class=c>${it.ch}${gone?' &#10007;':''}</div>
+          <div class=w>#${it.oid} w${it.word} ${it.angle}&deg;</div></div>`;
 }
+function toggle(oid){ del.has(oid)?del.delete(oid):del.add(oid); render(); }
 function zoomPx(){ return 22*(+document.getElementById('zoom').value); }
 
 function byFace(){
@@ -149,7 +165,20 @@ function byLetter(){
         <div class=fn>${f}</div></div>`).join('')}</div>`;
   }).join('');
 }
-function render(){ document.getElementById('wrap').innerHTML = view=='face'?byFace():byLetter(); }
+function render(){
+  document.getElementById('wrap').innerHTML = view=='face'?byFace():byLetter();
+  document.getElementById('dstat').textContent = del.size?`${del.size} marked for deletion`:'';
+}
+function exportDeletes(){
+  if(!del.size){alert('No glyphs marked. Click a glyph to mark it.');return;}
+  const out={}; [...del].sort((a,b)=>a-b).forEach(o=>{
+    const it=D.items.find(x=>x.oid==o);
+    out[o]=it?`${it.face} '${it.ch}' (word ${it.word})`:'';
+  });
+  const blob=new Blob([JSON.stringify(out,null,1)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='glyph_deletions.json'; a.click();
+}
 function setView(v){ view=v;
   document.getElementById('bf').className = v=='face'?'on':'';
   document.getElementById('bl').className = v=='letter'?'on':'';
