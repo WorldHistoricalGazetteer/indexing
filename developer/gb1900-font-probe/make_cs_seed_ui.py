@@ -141,117 +141,128 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · seed letters fr
         display:flex;gap:14px;align-items:center;flex-wrap:wrap}
  header b{font-size:15px}
  button{background:#2a7;color:#fff;border:0;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:13px}
- button.alt{background:#555}
  #wrap{padding:12px}
- .sp{background:#fff;border:1px solid #ddd;border-radius:6px;margin-bottom:12px;padding:8px 10px}
+ .sp{background:#fff;border:1px solid #ddd;border-radius:6px;margin-bottom:12px;padding:8px 10px;
+     display:flex;gap:14px;align-items:flex-start}
+ .sp .left{flex:0 0 auto} .sp .right{flex:1 1 auto;min-width:280px;max-height:520px;overflow:auto}
  .sp h3{margin:0 0 6px;font-size:13px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
  .sp h3 .k{font-weight:700} .sp h3 .m{color:#777;font-weight:400;font-size:11px}
  .stack{position:relative;display:inline-block;line-height:0;cursor:crosshair;border:1px solid #eee}
- .stack canvas{position:absolute;left:0;top:0}
- .done{opacity:.55}
- .bx{font-size:11px;color:#333;margin-top:4px;display:flex;gap:6px;flex-wrap:wrap}
- .bx span{background:#eef;border:1px solid #ccd;border-radius:4px;padding:1px 5px;
-           display:inline-flex;gap:4px;align-items:center}
- .bx span.nf{background:#fff4e0;border-color:#f0a000}
- .bx span a{cursor:pointer;color:#a00;font-weight:700}
- .bx select{font:11px system-ui;max-width:190px}
- select{font:12px system-ui;padding:3px}
+ .stack canvas{position:absolute;left:0;top:0;pointer-events:none}
+ .bxo{position:absolute;border:2px solid #d02020;box-sizing:border-box;pointer-events:none}
+ .bxo.nf{border-color:#f0a000}
+ .bxo.hi{border-color:#0a8;box-shadow:0 0 0 3px rgba(0,170,136,.35)}
+ .bxo .num{position:absolute;left:-1px;top:-15px;background:#d02020;color:#fff;font:700 10px/1 system-ui;
+            padding:2px 4px;border-radius:3px}
+ .bxo.nf .num{background:#f0a000} .bxo.hi .num{background:#0a8}
+ /* One row per box: the number ties it to the badge on the image, so the select sits with its own letter. */
+ .blist{list-style:none;margin:0;padding:0;font-size:12px}
+ .blist li{display:flex;gap:6px;align-items:center;padding:2px 4px;border-radius:4px}
+ .blist li:hover{background:#eefaf6}
+ .blist li.nf{background:#fff7e8}
+ .blist .n{color:#888;min-width:22px;text-align:right}
+ .blist .ch{font-weight:700;background:#eef;border:1px solid #ccd;border-radius:3px;padding:0 5px;min-width:18px;
+            text-align:center}
+ .blist select{font:11px system-ui;flex:1 1 auto;max-width:260px}
+ .blist a{cursor:pointer;color:#a00;font-weight:700}
  #hint{opacity:.85;font-size:12px}
 </style>
 <header>
  <b>GB-STAMP · seed letters from the Characteristic Sheet</b>
  <label>zoom <input type=range id=zoom min=1 max=8 value=4></label>
  <label><input type=checkbox id=hd onchange=render()> hide specimens already boxed</label>
+ <label><input type=checkbox id=ho onchange=render()> only specimens needing a face</label>
  <button onclick=exportJSON()>Export letter boxes</button>
- <span id=hint>drag a box round ONE letter, then press its key. Click a chip to delete it.</span>
+ <span id=hint>drag a box round ONE letter, then press its key</span>
  <span id=stat></span>
 </header>
 <div id=wrap></div>
 <script>
 const D=__DATA__;
-// Face is a property of the BOX, not the image: ex_contact.jpg carries specimens of many faces at once, and
-// a per-image dropdown silently discarded 72 letters boxed on it. The per-image control below is only a
-// DEFAULT applied to newly drawn boxes.
-const boxes={};                 // stem -> [{x,y,w,h,ch,face}] in IMAGE pixels
-const face={};                  // stem -> default face for new boxes
+const boxes={}, face={};
 D.specs.forEach(s=>{ boxes[s.stem]=(D.prior&&D.prior[s.stem])?D.prior[s.stem]:[]; face[s.stem]=s.face; });
-let pend=null;                  // box awaiting its character
+let pend=null;
 
 function Z(){ return +document.getElementById('zoom').value; }
+function nf(stem){ return boxes[stem].filter(b=>!b.face).length; }
 function stat(){
   const n=Object.values(boxes).reduce((a,b)=>a+b.length,0);
-  const nf=Object.values(boxes).reduce((a,v)=>a+v.filter(b=>!b.face).length,0);
+  const u=Object.keys(boxes).reduce((a,k)=>a+nf(k),0);
   const f=new Set(Object.values(boxes).flat().filter(b=>b.face).map(b=>b.face));
   document.getElementById('stat').textContent =
-    `${n} letters boxed across ${f.size} face(s)` + (nf?` · ${nf} awaiting a face`:'');
+    `${n} letters boxed across ${f.size} face(s)` + (u?` · ${u} awaiting a face`:'');
+}
+function opts(sel){
+  return `<option value=""${sel?'':' selected'}>— assign face —</option>` +
+         D.faces.map(f=>`<option${f==sel?' selected':''}>${f}</option>`).join('');
 }
 function render(){
-  const hide=document.getElementById('hd').checked;
-  document.getElementById('wrap').innerHTML = D.specs.filter(s=>!(hide&&boxes[s.stem].length)).map(s=>{
-    const z=Z();
-    return `<div class="sp${boxes[s.stem].length?' done':''}">
-      <h3><span class=k>${s.stem}</span>
-        <span class=m>${s.os||'(no OS designation)'} · ${s.w}&times;${s.h}</span>
-        default face for new boxes: <select onchange="face['${s.stem}']=this.value">
-          <option value=""${face[s.stem]?'':' selected'}>—</option>
-          ${D.faces.map(f=>`<option${f==face[s.stem]?' selected':''}>${f}</option>`).join('')}
-        </select></h3>
-      <div class=stack id="st_${s.stem}" style="width:${s.w*z}px;height:${s.h*z}px">
-        <img src="data:image/png;base64,${s.img}" width="${s.w*z}" height="${s.h*z}"
-             style="image-rendering:pixelated">
-        <canvas id="cv_${s.stem}" width="${s.w*z}" height="${s.h*z}"></canvas>
+  const hide=document.getElementById('hd').checked, only=document.getElementById('ho').checked, z=Z();
+  document.getElementById('wrap').innerHTML = D.specs.filter(s=>{
+      if(hide && boxes[s.stem].length) return false;
+      if(only && !nf(s.stem)) return false;
+      return true;
+    }).map(s=>`
+    <div class=sp>
+      <div class=left>
+        <h3><span class=k>${s.stem}</span><span class=m>${s.os||'(no OS designation)'} · ${s.w}&times;${s.h}</span></h3>
+        <div class=stack id="st_${s.stem}" style="width:${s.w*z}px;height:${s.h*z}px">
+          <img src="data:image/png;base64,${s.img}" width="${s.w*z}" height="${s.h*z}"
+               style="image-rendering:pixelated">
+          <canvas id="cv_${s.stem}" width="${s.w*z}" height="${s.h*z}"></canvas>
+          ${boxes[s.stem].map((b,i)=>`<div class="bxo${b.face?'':' nf'}" id="bo_${s.stem}_${i}"
+             style="left:${b.x*z}px;top:${b.y*z}px;width:${b.w*z}px;height:${b.h*z}px">
+             <span class=num>${i+1}</span></div>`).join('')}
+        </div>
       </div>
-      <div class=bx>${boxes[s.stem].map((b,i)=>
-          `<span class="${b.face?'':'nf'}">
-             <b>${b.ch||'?'}</b>
-             <select onchange="boxes['${s.stem}'][${i}].face=this.value;render()">
-               <option value=""${b.face?'':' selected'}>— face —</option>
-               ${D.faces.map(f=>`<option${f==b.face?' selected':''}>${f}</option>`).join('')}
-             </select>
-             <a onclick="delBox('${s.stem}',${i})">&times;</a></span>`).join('')}</div>
-    </div>`;
-  }).join('');
+      <div class=right>
+        <div class=m style="margin-bottom:4px">default for new boxes:
+          <select onchange="face['${s.stem}']=this.value">${opts(face[s.stem])}</select></div>
+        <ol class=blist>${boxes[s.stem].map((b,i)=>`
+          <li class="${b.face?'':'nf'}" onmouseenter="hi('${s.stem}',${i},1)" onmouseleave="hi('${s.stem}',${i},0)">
+            <span class=n>${i+1}.</span>
+            <span class=ch>${b.ch||'?'}</span>
+            <select onchange="boxes['${s.stem}'][${i}].face=this.value;render()">${opts(b.face)}</select>
+            <a onclick="delBox('${s.stem}',${i})">&times;</a>
+          </li>`).join('')}</ol>
+      </div>
+    </div>`).join('');
   D.specs.forEach(s=>{ const c=document.getElementById('cv_'+s.stem); if(c) wire(s,c); });
   stat();
 }
-function draw(s,cv){
-  const z=Z(), ctx=cv.getContext('2d');
-  ctx.clearRect(0,0,cv.width,cv.height);
-  ctx.lineWidth=2;
-  boxes[s.stem].forEach(b=>{
-    ctx.strokeStyle=b.face?'#d02020':'#f0a000';    // amber until a face is assigned
-    ctx.strokeRect(b.x*z,b.y*z,b.w*z,b.h*z);
-    if(b.ch){ ctx.fillStyle='#d02020'; ctx.font='bold 14px system-ui';
-              ctx.fillText(b.ch,b.x*z+2,b.y*z-3); }
-  });
+function hi(stem,i,on){
+  const el=document.getElementById(`bo_${stem}_${i}`);
+  if(el) el.classList.toggle('hi',!!on);
+  if(on&&el) el.scrollIntoView({block:'nearest',inline:'nearest'});
 }
 function wire(s,cv){
   const z=Z(); let start=null;
+  cv.style.pointerEvents='auto';
   cv.onmousedown=e=>{ const r=cv.getBoundingClientRect();
     start=[(e.clientX-r.left)/z,(e.clientY-r.top)/z]; e.preventDefault(); };
   cv.onmousemove=e=>{ if(!start)return; const r=cv.getBoundingClientRect();
-    const x=(e.clientX-r.left)/z, y=(e.clientY-r.top)/z;
-    draw(s,cv); const ctx=cv.getContext('2d');
-    ctx.strokeStyle='#2a7'; ctx.lineWidth=2;
+    const x=(e.clientX-r.left)/z, y=(e.clientY-r.top)/z, ctx=cv.getContext('2d');
+    ctx.clearRect(0,0,cv.width,cv.height); ctx.strokeStyle='#2a7'; ctx.lineWidth=2;
     ctx.strokeRect(Math.min(start[0],x)*z,Math.min(start[1],y)*z,
                    Math.abs(x-start[0])*z,Math.abs(y-start[1])*z); };
   cv.onmouseup=e=>{ if(!start)return; const r=cv.getBoundingClientRect();
     const x=(e.clientX-r.left)/z, y=(e.clientY-r.top)/z;
     const b={x:Math.min(start[0],x),y:Math.min(start[1],y),
              w:Math.abs(x-start[0]),h:Math.abs(y-start[1]),ch:'',face:face[s.stem]||''};
-    start=null;
-    if(b.w<2||b.h<2) return;                    // a click, not a box
+    start=null; cv.getContext('2d').clearRect(0,0,cv.width,cv.height);
+    if(b.w<2||b.h<2) return;
     boxes[s.stem].push(b); pend=[s.stem,boxes[s.stem].length-1];
-    draw(s,cv); document.getElementById('hint').textContent='now press the letter key for that box';
+    document.getElementById('hint').textContent='now press the letter key for that box';
+    render();
   };
-  draw(s,cv);
 }
 window.addEventListener('keydown',e=>{
   if(!pend) return;
-  if(e.key==='Escape'){ const [st,i]=pend; boxes[st].splice(i,1); pend=null; render(); return; }
+  const [st,i]=pend;
+  if(e.key==='Escape'){ boxes[st].splice(i,1); pend=null; render(); return; }
   if(e.key.length!==1) return;
-  const [st,i]=pend; boxes[st][i].ch=e.key; pend=null;
-  document.getElementById('hint').textContent='drag a box round ONE letter, then press its key.';
+  boxes[st][i].ch=e.key; pend=null;
+  document.getElementById('hint').textContent='drag a box round ONE letter, then press its key';
   render();
 });
 function delBox(stem,i){ boxes[stem].splice(i,1); render(); }
@@ -262,8 +273,8 @@ function exportJSON(){
     if(bs.length) out.push({stem:s.stem, face:'', os:s.os, boxes:bs});
   });
   if(!out.length){ alert('No letters boxed yet.'); return; }
-  const nf=out.reduce((a,o)=>a+o.boxes.filter(b=>!b.face).length,0);
-  if(nf && !confirm(`${nf} box(es) have no face and will be skipped on extraction; export anyway?`)) return;
+  const u=out.reduce((a,o)=>a+o.boxes.filter(b=>!b.face).length,0);
+  if(u && !confirm(`${u} box(es) have no face and will be skipped on extraction; export anyway?`)) return;
   const blob=new Blob([JSON.stringify({specimens:out},null,1)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='cs_letter_boxes.json'; a.click();
@@ -272,6 +283,7 @@ document.getElementById('zoom').oninput=render;
 render();
 </script>
 """
+
 
 if __name__ == "__main__":
     main()
