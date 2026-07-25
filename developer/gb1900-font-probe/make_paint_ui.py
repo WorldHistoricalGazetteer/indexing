@@ -22,11 +22,20 @@ from hisam_pins import read_tile, N17
 from build_pin_index import load_pins, pins_in_box
 from sheet_clean import stitch, flat_field, lat_px
 
+# One class per thing that LOOKS different, not per thing that means something different. The earlier scheme
+# had a single `line` class holding dashed boundaries, smooth contours and building casings — three unalike
+# appearances — and it scored 0.62 while building outlines were being classified as text. Dashes and
+# continuous rules are now separate, and casings go in with the hatching they enclose, since an outline and
+# its fill are one drawn object.
 CLASSES = [
-    ("paper", "#ffffff", "blank paper — sweep over EMPTY ground (the ink under a paper stroke is ignored)"),
+    ("paper", "#ffffff", "blank paper — sweep over EMPTY ground (ink under a paper stroke is ignored)"),
     ("text", "#1e3cff", "lettering — sweep across whole words like a highlighter; only the ink is taken"),
-    ("line", "#00a000", "roads, contours, boundaries, railway casings, streams"),
-    ("hatch", "#ff9800", "the parallel ruling that fills buildings"),
+    ("dash", "#8e24aa", "DASHED lines — broken boundaries, footpaths, field divisions"),
+    ("dotline", "#e91e63", "DOTTED lines — boundaries drawn as a row of dots (linear, not an area)"),
+    ("line", "#00a000", "CONTINUOUS lines only — contours, streams, unbroken boundaries"),
+    ("rail", "#00838f", "railways — the ladder rules and cross-ticks, quite unlike any other line"),
+    ("hatch", "#ff9800", "buildings AND their casings/outlines — sweep the whole block, edge included"),
+    ("stipple", "#795548", "DOT-STIPPLE shading — dots filling an AREA (rough ground, sand, marsh)"),
     ("solid", "#d02020", "solid black fill"),
 ]
 

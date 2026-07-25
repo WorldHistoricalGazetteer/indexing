@@ -23,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from hisam_pins import N17
 from sheet_clean import stitch, flat_field, lat_px
 
-CLASSES = ["paper", "text", "line", "hatch", "solid"]
+CLASSES = ["paper", "text", "dash", "dotline", "line", "rail", "hatch", "stipple", "solid"]
 KEEP = {"paper", "text"}                       # everything else is noise to be erased
 SIGMAS = (1, 2, 4, 8, 16)
 
@@ -59,17 +59,36 @@ def cmd_train(a):
     from sklearn.ensemble import RandomForestClassifier
     import joblib
 
-    lab = json.load(open(a.labels))
+    # Multiple label files merge, because painting rounds specialise: a round told to concentrate on text
+    # will contain no solid at all, and dropping the earlier round would lose that class entirely. Crop ids
+    # collide across files (each round numbers from zero over DIFFERENT crops), so they are namespaced by
+    # file — otherwise leave-one-crop-out would hold out two unrelated crops as though they were one.
+    rounds = [json.load(open(f)) for f in a.labels]
+    drop = set(a.drop or [])
+    if drop:
+        print(f"dropping classes {sorted(drop)} from all rounds", flush=True)
     gray, (tx0, ty0, nx, ny), hit = load_sheet(a.bbox, a.flatten)
-    print(f"sheet {gray.shape[1]}x{gray.shape[0]} ({hit} tiles); {len(lab['crops'])} painted crops", flush=True)
+    print(f"sheet {gray.shape[1]}x{gray.shape[0]} ({hit} tiles); "
+          f"{sum(len(r['crops']) for r in rounds)} painted crops from {len(rounds)} file(s)", flush=True)
 
     X, y, grp = [], [], []
-    for cr in lab["crops"]:
+    allcrops = [(fi, cr) for fi, r in enumerate(rounds) for cr in r["crops"]]
+    for fi, cr in allcrops:
         S = cr["size"]
-        L = np.frombuffer(base64.b64decode(cr["labels"]), np.uint8).reshape(S, S)
+        L = np.frombuffer(base64.b64decode(cr["labels"]), np.uint8).reshape(S, S).copy()
+        # Remap by NAME, not index. Rounds painted under an older class list would otherwise silently shift:
+        # index 2 meant `line` then and means `dash` now, which would poison the very class being fixed.
+        names = rounds[fi].get("classes") or CLASSES
+        remap = np.full(256, 255, np.uint8)
+        for i, nm in enumerate(names):
+            if nm in drop:
+                continue
+            if nm in CLASSES:
+                remap[i] = CLASSES.index(nm)
+        L = remap[L]
         x0, y0 = cr["gx"] - tx0 * 256, cr["gy"] - ty0 * 256
         if x0 < 0 or y0 < 0 or y0 + S > gray.shape[0] or x0 + S > gray.shape[1]:
-            print(f"  crop {cr['id']} outside this sheet — skipped", flush=True)
+            print(f"  r{fi} crop {cr['id']} outside this sheet — skipped", flush=True)
             continue
         patch = gray[y0:y0 + S, x0:x0 + S]
         F = features(patch)
@@ -82,17 +101,32 @@ def cmd_train(a):
         _, cbw = cv2.threshold(patch, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
         cink = cbw > 0
         paper_i = CLASSES.index("paper")
+        text_i = CLASSES.index("text")
         before = int(m.sum())
         m &= np.where(L == paper_i, ~cink, cink)
+        # Highlighting has a cost: a sweep across a label also covers the casings, building outlines and
+        # railway rules that run through and beside it, and the ink filter dutifully calls all of it text. On
+        # round 2 that made the classifier label every thin stroke on the sheet as text. So ink under a TEXT
+        # stroke that belongs to a long, smooth, thin traced run is dropped — not relabelled, just excluded,
+        # since we cannot know which linework class it is. This is the one job the tracer is genuinely good
+        # at: it never confidently traced a letter.
+        if a.purge_lines and (L == text_i).any():
+            from sheet_clean import trace_lines
+            lm, _ = trace_lines(cbw, min_length=a.purge_length)
+            bad = (L == text_i) & (lm > 0) & m
+            if bad.any():
+                m &= ~bad
+                print(f"  r{fi} crop {cr['id']}: dropped {int(bad.sum())} text px that trace as linework",
+                      flush=True)
         if before and not m.any():
-            print(f"  crop {cr['id']}: {before} painted px, none survived the ink filter", flush=True)
+            print(f"  r{fi} crop {cr['id']}: {before} painted px, none survived the ink filter", flush=True)
             continue
         if not m.any():
             continue
         X.append(F[m])
         y.append(L[m])
-        grp.append(np.full(int(m.sum()), cr["id"]))
-        print(f"  crop {cr['id']}: {int(m.sum())} ink px (of {before} painted) "
+        grp.append(np.full(int(m.sum()), fi * 1000 + cr["id"]))
+        print(f"  r{fi} crop {cr['id']}: {int(m.sum())} ink px (of {before} painted) "
               f"{{{', '.join(f'{CLASSES[c]}:{int((L[m]==c).sum())}' for c in np.unique(L[m]))}}}", flush=True)
     if not X:
         raise SystemExit("no painted pixels found on this sheet")
@@ -112,6 +146,7 @@ def cmd_train(a):
     crops = np.unique(grp)
     hit = {c: [0, 0] for c in np.unique(y)}
     crops_with = {c: 0 for c in np.unique(y)}
+    binhit = {"keep": [0, 0], "erase": [0, 0]}
     for held in crops:
         te = grp == held
         if not (~te).any():
@@ -125,6 +160,11 @@ def cmd_train(a):
             hit[c][0] += int((pred[m] == c).sum())
             hit[c][1] += int(m.sum())
             crops_with[c] += 1
+        kset = {CLASSES.index(c) for c in KEEP}
+        yk = np.isin(y[te], list(kset))
+        pk = np.isin(pred, list(kset))
+        binhit["keep"][0] += int((pk & yk).sum()); binhit["keep"][1] += int(yk.sum())
+        binhit["erase"][0] += int((~pk & ~yk).sum()); binhit["erase"][1] += int((~yk).sum())
     print(f"\nleave-one-crop-out over {len(crops)} crops:", flush=True)
     for c in sorted(hit, key=lambda z: -hit[z][1]):
         ok, n = hit[c]
@@ -132,6 +172,14 @@ def cmd_train(a):
             continue
         warn = "   << only 1 crop: not a generalisation test" if crops_with[c] < 2 else ""
         print(f"  {CLASSES[c]:6s} recall {ok/n:.3f}  (n={n} px over {crops_with[c]} crops){warn}", flush=True)
+    # The 5-class recall overstates the damage: line and hatch are BOTH erased, so confusing one for the
+    # other costs nothing. What the pipeline actually decides is keep-or-erase, and only two errors matter —
+    # text called linework (a label is destroyed) and linework called text (noise survives).
+    tk, tn = binhit["keep"]
+    ek, en = binhit["erase"]
+    print(f"  --- keep/erase, the decision actually made ---", flush=True)
+    print(f"  KEEP  (paper+text) kept    {tk/max(1,tn):.3f}  (n={tn})", flush=True)
+    print(f"  ERASE (line+hatch+solid)   {ek/max(1,en):.3f}  (n={en})", flush=True)
 
     clf = RandomForestClassifier(n_estimators=a.trees, max_depth=a.depth, n_jobs=-1,
                                  class_weight="balanced", random_state=0)
@@ -212,9 +260,14 @@ def main():
         p.add_argument("--model", required=True)
         p.add_argument("--no-flatten", dest="flatten", action="store_false")
         if name == "train":
-            p.add_argument("--labels", required=True)
+            p.add_argument("--labels", required=True, nargs="+", help="one or more painting rounds")
             p.add_argument("--trees", type=int, default=200)
             p.add_argument("--depth", type=int, default=None)
+            p.add_argument("--no-purge-lines", dest="purge_lines", action="store_false",
+                           help="keep linework ink that fell under a text highlight (it will poison text)")
+            p.add_argument("--purge-length", type=int, default=60)
+            p.add_argument("--drop", nargs="*", default=None,
+                           help="class names to discard from the loaded rounds (e.g. a superseded `line`)")
         else:
             p.add_argument("--tag", required=True)
             p.add_argument("--out-tiles", default=None)
