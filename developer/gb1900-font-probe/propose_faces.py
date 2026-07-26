@@ -11,8 +11,7 @@ overlay would later be scored against an alphabet built from the descriptor's ow
 between the two would mean nothing. The descriptor proposes, a human disposes.
 
 The anchors carry the OLD six-signature labels, which do not map one-to-one onto the seventeen named faces.
-Three map cleanly; `italic·solid·serif` straddles the Serif / Serif-Light split and `blackletter·solid·fancy`
-straddles PHS / N. Those are emitted as an explicit either-or rather than silently resolved — a two-way choice
+Three map cleanly; `blackletter·solid·fancy` straddles PHS / N. Those are emitted as an explicit either-or rather than silently resolved — a two-way choice
 is still most of the work done, and a guess would be worse than useless.
 
     python propose_faces.py --boxes .../boxes_sheet_ENG_218_NW.jsonl --n 800 --qc proposals_qc.html
@@ -34,7 +33,7 @@ SIG_FACE = {
     "upright·solid·plain": ["Upright-Solid-Plain"],
     "italic·solid·plain": ["Italic-Solid-Plain"],
     "upright·solid·serif": ["Upright-Solid-Serif"],
-    "italic·solid·serif": ["Italic-Solid-Serif", "Italic-Solid-Serif-Light"],
+    "italic·solid·serif": ["Italic-Solid-Serif"],
     "blackletter·solid·fancy": ["Blackletter-PHS", "Blackletter-N"],
     "numeral·solid·plain": [],
 }

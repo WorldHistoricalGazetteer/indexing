@@ -31,11 +31,8 @@
    "os": "Railways (Mineral)"
   },
   "Italic-Solid-Serif": {
-   "os": "Civil Parishes or Townships|Towns, generally|Chapelries. Other Churches|Parks and Demesnes|Navigable Rivers and Canals|Turnpike Trusts|Market Towns"
-  },
-  "Italic-Solid-Serif-Light": {
-   "os": "Other Villages|Gentlemens Seats|Manufactories. Mines. Farms. Locks.|Trust Bridges and Others|Isolated Houses|Small Rivers & Brooks|Hills (single features)|Antiquities (post-Norman)",
-   "note": "a lighter weight of the same italic serif — split out because the two were mixed in one sample set"
+   "os": "Civil Parishes or Townships|Towns, generally|Chapelries. Other Churches|Parks and Demesnes|Navigable Rivers and Canals|Turnpike Trusts|Market Towns|Other Villages|Gentlemens Seats|Manufactories. Mines. Farms. Locks.|Trust Bridges and Others|Isolated Houses|Small Rivers & Brooks|Hills (single features)|Antiquities (post-Norman)",
+   "note": "Two weights exist: 'Chapelries. Other Churches' is the heavier cut, the rest the lighter. They are told apart only by the terminals on lowercase s (sharp serif vs blob), which is below what a size-normalised glyph carries. Merged; if the distinction is ever needed, take it as a post-processing step on the spot's cap-height in map pixels, which normalisation discards."
   },
   "Italic-Outline-Serif": {
    "os": "Subdivisions of Townships|Town Districts"
@@ -71,9 +68,11 @@
    "Ornate"
   ],
   "weight": [
-   "(default)",
-   "Light"
+   "(merged — see Italic-Solid-Serif note)"
   ]
  },
- "_comment": "Face inventory keyed by signature, not by OS Characteristic-Sheet category: one typeface commonly serves several CS categories at different sizes, so `os` lists them pipe-delimited. Only faces with at least one designation are kept — a permutation nobody has ever drawn is not a face. Blackletter is a letterform family rather than a slant, so it does not decompose into the fill/decor axes and its two faces are named for their OS categories."
+ "_comment": "Face inventory keyed by signature, not by OS Characteristic-Sheet category: one typeface commonly serves several CS categories at different sizes, so `os` lists them pipe-delimited. Only faces with at least one designation are kept — a permutation nobody has ever drawn is not a face. Blackletter is a letterform family rather than a slant, so it does not decompose into the fill/decor axes and its two faces are named for their OS categories.",
+ "aliases": {
+  "Italic-Solid-Serif-Light": "Italic-Solid-Serif"
+ }
 }

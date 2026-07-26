@@ -25,6 +25,7 @@ def main():
     ap.add_argument("--npz", default="/vast/ishi/gb1900/edition/spot/anchor_crops_hisam.npz")
     ap.add_argument("--out", default="/vast/ishi/gb1900/edition/clean/anchor_crops_qc.html")
     ap.add_argument("--n", type=int, default=80)
+    ap.add_argument("--inventory", default="labels/face_inventory.json")
     a = ap.parse_args()
     d = np.load(a.npz, allow_pickle=True)
     sigs = d["sigs"].astype(str)
@@ -36,8 +37,14 @@ def main():
         items.append(dict(i=int(i), sig=sigs[i], text=texts[i],
                           gcx=float(gcx[i]), gcy=float(gcy[i]),
                           mr=b64(d["mr"][i]), word=b64(d["word"][i]), line=b64(d["line"][i])))
+    # Offer the INVENTORY faces, not the legacy signatures the anchors were labelled with. The anchors
+    # predate this inventory: their scheme had no way to say prehistoric/Saxon versus Norman, so both sit
+    # under blackletter-solid-fancy and the descriptor cannot separate what its training data never
+    # distinguished. Re-labelling anchors here is what migrates the classifier to the new label space.
+    faces = list(json.load(open(a.inventory))["faces"]) if os.path.exists(a.inventory) else []
+    legacy = sorted(set(sigs.tolist()))
     html = HTML.replace("__DATA__", json.dumps(dict(items=items, n=len(sigs),
-                                                    sigs=sorted(set(sigs.tolist())))))
+                                                    sigs=faces or legacy, legacy=legacy)))
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     open(a.out, "w").write(html)
     print(f"{len(sigs)} anchors; wrote {a.out} ({os.path.getsize(a.out)/1e6:.2f} MB)")
@@ -60,6 +67,7 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · anchor crop QC<
  select{font:11px system-ui;max-width:180px}
 </style>
 <header><b>anchor crop QC</b> — <span id=s></span>
+ <label><input type=checkbox id=ho onchange=render()> only legacy blackletter</label>
  <label><input type=checkbox id=hd onchange=render()> hide decided</label>
  <button onclick=exportJSON()>Export corrections</button></header>
 <table><thead><tr><th>text</th><th>signature</th><th>MapReader box</th><th>Hi-SAM word</th>
@@ -70,8 +78,8 @@ const dec={};   // row index -> {reject:true} | {sig:"..."}
 function rej(i){ if(dec[i]&&dec[i].reject) delete dec[i]; else dec[i]={reject:true}; render(); }
 function fix(i,s){ if(!s) delete dec[i]; else dec[i]={sig:s}; render(); }
 function render(){
- const hd=document.getElementById('hd').checked;
- const its=D.items.filter(i=>!(hd&&dec[i.i]));
+ const hd=document.getElementById('hd').checked, ho=document.getElementById('ho').checked;
+ const its=D.items.filter(i=>!(hd&&dec[i.i]) && !(ho&&i.sig.indexOf('blackletter')<0));
  document.getElementById('s').textContent=`${its.length} of ${D.n} anchors · ${Object.keys(dec).length} decided`;
  document.getElementById('b').innerHTML=its.map(i=>{
   const d=dec[i.i]||{};
@@ -83,7 +91,7 @@ function render(){
    <td><img src="data:image/png;base64,${i.line}"></td>
    <td><span class="bd${d.reject?' sel':''}" onclick="rej(${i.i})">reject</span><br>
        <select onchange="fix(${i.i}, this.value)">
-         <option value="">— correct signature —</option>${opts}</select></td></tr>`;}).join('');
+         <option value="">— assign inventory face —</option>${opts}</select></td></tr>`;}).join('');
 }
 function exportJSON(){
  const out=[];

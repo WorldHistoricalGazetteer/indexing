@@ -46,6 +46,14 @@ def main():
     a = ap.parse_args()
 
     spec = json.load(open(a.boxes))["specimens"]
+    # Faces merge as the inventory is refined; an alias map lets earlier boxing stay valid without rewriting
+    # the export, which would lose the record of what was originally assigned.
+    alias = {}
+    if os.path.exists("labels/face_inventory.json"):
+        alias = json.load(open("labels/face_inventory.json")).get("aliases", {})
+    if alias:
+        print(f"applying {len(alias)} face alias(es): " +
+              ", ".join(f"{k} -> {v}" for k, v in alias.items()), flush=True)
     glyphs, chars, faces, words, angles, srcs = [], [], [], [], [], []
     skipped = defaultdict(int)
     noface = []
@@ -60,6 +68,7 @@ def main():
         wordid += 1
         for b in s["boxes"]:
             bface = (b.get("face") or face).strip()      # per-box face wins; per-image is the fallback
+            bface = alias.get(bface, bface)
             ch = b.get("ch", "")
             if not ch:
                 skipped["no character"] += 1
