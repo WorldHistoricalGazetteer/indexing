@@ -36,10 +36,14 @@ from shapely.validation import make_valid
 # parts so tippecanoe and ES both render them correctly. Without this,
 # Pacific-rim countries (Russia, USA-Aleutians, Fiji, Tuvalu, Kiribati,
 # NZ Chathams) end up as globe-spanning polygons in the geom_store and
-# break tile generation low-zoom coverage. Hard import — this pipeline
-# requires it; the previous "drop antimeridian-risky hull" workaround was
-# a band-aid for ES indexing only and didn't fix the underlying geometry.
-import antimeridian
+# break tile generation low-zoom coverage.
+#
+# Imported LAZILY (inside ``split_at_antimeridian``) rather than at module top:
+# only the *geometry-building* passes need it, but this module is also imported
+# for its pure helpers (``build_timespans``, ``split_at_antimeridian`` def,
+# ``build_h3_fields_for_geom_entry``) and its ``apply`` path on the Pitt VM,
+# where ``antimeridian`` is not installed. A top-level import made that import
+# fail outright (forcing a standalone applier for the place#145 way patch).
 
 from processing.helpers import enrich_geometry, compute_h3_fields, select_h3_cover_geometry
 from processing.settings import ES_HOST, DATA_DIR
@@ -230,6 +234,7 @@ def split_at_antimeridian(geom):
     except Exception:
         return geom
     try:
+        import antimeridian  # lazy — see module-top note
         # Dispatch on geom type — fix_polygon / fix_multi_polygon return
         # shapely; fix_shape may return a __geo_interface__ dict depending
         # on input. Going via the typed entry points keeps the return
