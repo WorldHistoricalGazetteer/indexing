@@ -31,6 +31,8 @@ def main():
     ap.add_argument("--labels", default="labels/pool_labels.json")
     ap.add_argument("--corrections", default="labels/anchor_corrections.json")
     ap.add_argument("--inventory", default="labels/face_inventory.json")
+    ap.add_argument("--decisions", default="labels/face_decisions.json",
+                    help="confirmed proposals — spots a human accepted, which become anchors in their own right")
     ap.add_argument("--out", default="labels/pool_labels_faced.json")
     a = ap.parse_args()
 
@@ -78,6 +80,35 @@ def main():
     if unresolved:
         print("  unresolved:", dict(unresolved))
     print(f"\n{len(out)} anchors carry an inventory face:")
+    for f, n in Counter(x["face"] for x in out).most_common():
+        via = Counter(x["review"] for x in out if x["face"] == f)
+        print(f"  {f:26s} {n:>4d}   ({', '.join(f'{k} {v}' for k, v in via.items())})")
+    # Confirmed proposals are anchors too. This is the loop closing: the descriptor proposes, a human
+    # confirms, and the confirmation deepens the very anchor set the next pass matches against. It is only
+    # legitimate because a human sat in the middle — folding in UNconfirmed proposals would train the
+    # classifier on its own output.
+    if a.decisions and os.path.exists(a.decisions):
+        have = {key(x["gcx"], x["gcy"]) for x in out}
+        added = Counter()
+        for d in json.load(open(a.decisions))["decisions"]:
+            if d.get("reject") or not d.get("face"):
+                continue
+            face = alias.get(d["face"], d["face"])
+            if face not in faces or is_numeral(d.get("text", "")):
+                continue
+            k = key(d["gcx"], d["gcy"])
+            if k in have:
+                continue
+            have.add(k)
+            out.append(dict(gcx=d["gcx"], gcy=d["gcy"], text=d.get("text", ""),
+                            face=face, sig=None, review="confirmed-proposal"))
+            added[face] += 1
+        if added:
+            print(f"\n+{sum(added.values())} confirmed proposals folded in as anchors:")
+            for f, n in added.most_common():
+                print(f"  {f:26s} {n:>4d}")
+
+    print(f"\nfinal anchor set: {len(out)}")
     for f, n in Counter(x["face"] for x in out).most_common():
         via = Counter(x["review"] for x in out if x["face"] == f)
         print(f"  {f:26s} {n:>4d}   ({', '.join(f'{k} {v}' for k, v in via.items())})")

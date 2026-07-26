@@ -79,6 +79,7 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · anchor crop QC<
  tr.acc td{background:#f4faf4}
  .bd.ok.sel{background:#2a7;border-color:#2a7}
  .fx{font-size:10px;color:#777;margin-top:3px;max-width:170px}
+ .hs{display:none}   /* Hi-SAM columns hidden: its masks clip words, so they showed nothing useful */
  .bd{border:1px solid #bbb;border-radius:12px;padding:2px 9px;cursor:pointer;font-size:11px;background:#f7f7f7}
  .bd.sel{background:#c33;color:#fff;border-color:#c33}
  select{font:11px system-ui;max-width:180px}
@@ -87,8 +88,8 @@ HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · anchor crop QC<
  <label><input type=checkbox id=ho onchange=render()> only legacy blackletter</label>
  <label><input type=checkbox id=hd onchange=render()> hide reviewed</label>
  <button onclick=exportJSON()>Export corrections</button></header>
-<table><thead><tr><th>text</th><th>signature</th><th>MapReader box</th><th>Hi-SAM word</th>
- <th>Hi-SAM line</th><th>verdict</th></tr></thead><tbody id=b></tbody></table>
+<table><thead><tr><th>text</th><th>signature</th><th>crop</th><th class=hs>Hi-SAM word</th>
+ <th class=hs>Hi-SAM line</th><th>verdict</th></tr></thead><tbody id=b></tbody></table>
 <script>
 const D=__DATA__;
 const dec={};   // row index -> {reject:true} | {sig:"..."}
@@ -112,8 +113,8 @@ function render(){
   return `<tr class="${d.reject?'rej':(d.sig?'fix':(d.accept?'acc':''))}">
    <td class=t>${i.text}</td><td class=t>${d.sig||i.sig}${d.sig?' <b>(fixed)</b>':''}</td>
    <td><img src="data:image/png;base64,${i.mr}"></td>
-   <td><img src="data:image/png;base64,${i.word}"></td>
-   <td><img src="data:image/png;base64,${i.line}"></td>
+   <td class=hs><img src="data:image/png;base64,${i.word}"></td>
+   <td class=hs><img src="data:image/png;base64,${i.line}"></td>
    <td><span class="bd ok${d.accept?' sel':''}" onclick="acc(${i.i})">accept</span>
        <span class="bd${d.reject?' sel':''}" onclick="rej(${i.i})">reject</span><br>
        <select onchange="fix(${i.i}, this.value)">

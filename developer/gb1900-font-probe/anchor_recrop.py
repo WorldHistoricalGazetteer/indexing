@@ -36,12 +36,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--weight", default="/vast/ishi/gb1900/probe/hisam/weights/hi_sam_l.pth")
     ap.add_argument("--model-type", default="vit_l")
-    ap.add_argument("--labels", default=f"{HERE}/labels/pool_labels.json")
+    ap.add_argument("--labels", default=f"{HERE}/labels/pool_labels_faced.json")
     ap.add_argument("--win", type=int, default=4, help="window side in tiles (4 = 1024px = Hi-SAM native)")
     ap.add_argument("--out", default=f"{SPOT}/anchor_crops_hisam.npz")
+    ap.add_argument("--hisam", action="store_true",
+                    help="also cut Hi-SAM word/line crops. Off by default: the comparison has been made and "
+                         "MapReader boxes won (0.739 vs 0.660 line, 0.569 word), because Hi-SAM masks clip "
+                         "words — Wood becomes ood. Keeping the columns costs a GPU and a second conda env "
+                         "for crops nothing downstream uses.")
     a = ap.parse_args()
 
-    lab = [l for l in json.load(open(a.labels)) if l.get("sig")]
+    # `face` (inventory vocabulary) wins over `sig` (legacy), so the anchor set migrates without a flag day.
+    lab = [l for l in json.load(open(a.labels)) if l.get("face") or l.get("sig")]
     want = {key(l["gcx"], l["gcy"]) for l in lab}
     rec = {}
     for f in glob.glob(f"{SPOT}/boxes_*.jsonl"):
@@ -57,7 +63,9 @@ def main():
             break
     print(f"{len(lab)} anchors, {len(rec)} matched to MapReader boxes", flush=True)
 
-    model, amg = build_model(a.model_type, a.weight)
+    model = amg = None
+    if a.hisam:
+        model, amg = build_model(a.model_type, a.weight)
     mr, hw, hl, sigs, texts, notes, gcxs, gcys = [], [], [], [], [], [], [], []
     nomask = nocrop = 0
     for l in lab:
@@ -70,6 +78,16 @@ def main():
             nocrop += 1
             continue
         gcx, gcy = float(r["gcx"]), float(r["gcy"])
+        if not a.hisam:
+            mr.append(control.astype(np.uint8))
+            hw.append(control.astype(np.uint8))
+            hl.append(control.astype(np.uint8))
+            sigs.append(l.get("face") or l["sig"])
+            texts.append(str(r.get("text", "")))
+            gcxs.append(gcx)
+            gcys.append(gcy)
+            notes.append(dict(word_ok=False, line_ok=False))
+            continue
         tx0 = int(gcx) // 256 - a.win // 2
         ty0 = int(gcy) // 256 - a.win // 2
         img, hit = window_image(tx0, ty0, a.win)
@@ -94,7 +112,7 @@ def main():
         mr.append(control.astype(np.uint8))
         hw.append(cw.astype(np.uint8))
         hl.append(cl.astype(np.uint8))
-        sigs.append(l["sig"])
+        sigs.append(l.get("face") or l["sig"])
         texts.append(str(r.get("text", "")))
         gcxs.append(float(r["gcx"]))
         gcys.append(float(r["gcy"]))

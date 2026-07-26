@@ -184,7 +184,10 @@ def main():
         order = sorted(per, key=per.get, reverse=True)
         top, second = order[0], order[1] if len(order) > 1 else None
         margin = confidence(per)
-        faces = SIG_FACE.get(top, [])
+        # Anchors may be labelled in either vocabulary. Once they carry inventory faces there is nothing to
+        # map, and looking them up in the legacy table returns nothing — which reported every proposal as
+        # out of inventory. Prefer the label as-is when it already names a face.
+        faces = [top] if top in FACES else SIG_FACE.get(top, [])
         rec = dict(text=r["text"], gcx=r.get("gcx"), gcy=r.get("gcy"),
                    lon=r.get("lon"), lat=r.get("lat"), gpoly=r.get("gpoly"),
                    sig=top, sim=round(per[top], 4), margin=round(margin, 3),
@@ -196,7 +199,7 @@ def main():
             b = io.BytesIO()
             from PIL import Image
             Image.fromarray(crop).save(b, "PNG")
-            ru_faces = SIG_FACE.get(second, []) if second else []
+            ru_faces = ([second] if second in FACES else SIG_FACE.get(second, [])) if second else []
             qc.append(dict(rec, img=base64.b64encode(b.getvalue()).decode(), gpoly=None,
                            runner_faces=ru_faces))
 
@@ -207,7 +210,9 @@ def main():
     print(f"\n{len(out)} proposals ({miss} spots with no usable crop)")
     c = Counter(r["sig"] for r in out)
     for s, n in c.most_common():
-        f = SIG_FACE.get(s, [])
+        # Same resolution the proposals use — reading SIG_FACE directly reported every face-labelled anchor
+        # as out of inventory, which was alarming and wrong.
+        f = [s] if s in FACES else SIG_FACE.get(s, [])
         tag = " / ".join(f) if f else "NOT IN INVENTORY"
         print(f"  {s:26s} {n:>4d}  -> {tag}")
     amb = sum(r["ambiguous"] for r in out)
