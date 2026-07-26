@@ -95,15 +95,24 @@ def main():
     ap.add_argument("--out", default="/vast/ishi/gb1900/edition/spot/face_proposals.jsonl")
     ap.add_argument("--qc", default=None)
     ap.add_argument("--qc-n", type=int, default=200)
+    ap.add_argument("--inventory", default="labels/face_inventory.json")
+    ap.add_argument("--drop-sigs", nargs="*", default=["numeral·solid·plain"],
+                    help="signatures removed from the anchor set: they cannot then be proposed at all, "
+                         "which is the honest treatment of a class that has no face in the inventory")
     a = ap.parse_args()
 
     z = np.load(a.anchors, allow_pickle=True)
     A = z[a.column].astype(np.float32)
     A /= (np.linalg.norm(A, axis=1, keepdims=True) + 1e-9)
     ASIG = z["sigs"].astype(str)
+    if a.drop_sigs:
+        keep = ~np.isin(ASIG, a.drop_sigs)
+        print(f"dropping {int((~keep).sum())} anchors of {a.drop_sigs}", flush=True)
+        A, ASIG = A[keep], ASIG[keep]
     sigs = sorted(set(ASIG))
     cols = {s: np.where(ASIG == s)[0] for s in sigs}
     print(f"{len(A)} anchors over {len(sigs)} signatures ({a.column})", flush=True)
+    FACES = list(json.load(open(a.inventory))["faces"]) if os.path.exists(a.inventory) else []
 
     def class_sims(v):
         sim = A @ v
@@ -182,7 +191,9 @@ def main():
             b = io.BytesIO()
             from PIL import Image
             Image.fromarray(crop).save(b, "PNG")
-            qc.append(dict(rec, img=base64.b64encode(b.getvalue()).decode(), gpoly=None))
+            ru_faces = SIG_FACE.get(second, []) if second else []
+            qc.append(dict(rec, img=base64.b64encode(b.getvalue()).decode(), gpoly=None,
+                           runner_faces=ru_faces))
 
     with open(a.out, "w") as fh:
         for r in out:
@@ -205,7 +216,7 @@ def main():
 
     if a.qc:
         qc.sort(key=lambda r: -r["margin"])
-        open(a.qc, "w").write(QC.replace("__DATA__", json.dumps(dict(items=qc))))
+        open(a.qc, "w").write(QC.replace("__DATA__", json.dumps(dict(items=qc, faces=FACES))))
         print(f"wrote {a.qc} ({os.path.getsize(a.qc)/1e6:.2f} MB)")
     print("PROPOSEDONE", flush=True)
 
@@ -214,34 +225,75 @@ QC = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · face proposals</t
 <style>
  body{font:13px system-ui;margin:0;background:#f4f2ee}
  header{position:sticky;top:0;background:#2a2622;color:#f4f2ee;padding:8px 14px;display:flex;gap:14px;
-        align-items:center;flex-wrap:wrap}
+        align-items:center;flex-wrap:wrap;z-index:9}
+ button{background:#2a7;color:#fff;border:0;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:13px}
+ button.alt{background:#555}
  .it{background:#fff;border:1px solid #ddd;border-radius:6px;margin:8px 12px;padding:8px 10px;
      display:flex;gap:14px;align-items:center}
- .it.amb{background:#fffaf0;border-color:#e0b070}
+ .it.done{background:#f2fbf6;border-color:#8ccdae}
+ .it.rej{background:#fbf2f2;border-color:#e0a0a0;opacity:.6}
  .it img{image-rendering:pixelated;max-height:70px;background:#fff;border:1px solid #eee}
- .m{font-size:11px;color:#666} .f{font-weight:700} .amb .f{color:#8a5a00}
+ .m{font-size:11px;color:#666}
+ /* Badges ARE the control: the winner and the runner-up are the two answers that matter, so accepting
+    either is one click. An ambiguous signature contributes one badge PER face, so the two-way split is
+    resolved by the same click rather than needing a second decision. */
+ .badges{display:flex;gap:6px;flex-wrap:wrap;margin:3px 0}
+ .bd{border:1px solid #bbb;border-radius:12px;padding:2px 10px;cursor:pointer;font-size:12px;background:#f7f7f7}
+ .bd.win{border-color:#2a7;background:#eafaf1;font-weight:600}
+ .bd.run{border-color:#d80;background:#fff6e8}
+ .bd.sel{background:#2a7;color:#fff;border-color:#2a7}
+ .bd:hover{filter:brightness(.96)}
+ select{font:12px system-ui;padding:2px}
  .bar{height:6px;background:#eee;border-radius:3px;width:120px;overflow:hidden}
  .bar i{display:block;height:6px;background:#2a7}
 </style>
-<header><b>face proposals</b> — descriptor's primary pass, sorted by margin
+<header><b>face proposals</b>
  <label>min confidence <input type=range id=mm min=0 max=30 value=0> <span id=mv>0.0</span></label>
  <label><input type=checkbox id=ha onchange=render()> hide two-way</label>
+ <label><input type=checkbox id=hd onchange=render()> hide decided</label>
+ <button onclick=exportJSON()>Export decisions</button>
  <span id=s></span></header>
 <div id=w></div>
 <script>
 const D=__DATA__;
+const dec={};      // key -> {face} or {reject:true}
+const key=i=>`${i.gcx},${i.gcy}`;
+function set(i,face){ const k=key(i); if(face===null){dec[k]={reject:true};} else if(dec[k]&&dec[k].face===face){delete dec[k];} else {dec[k]={face};} render(); }
 function render(){
- const mm=(+document.getElementById('mm').value)/10, ha=document.getElementById('ha').checked;
+ const mm=(+document.getElementById('mm').value)/10, ha=document.getElementById('ha').checked,
+       hd=document.getElementById('hd').checked;
  document.getElementById('mv').textContent=mm.toFixed(1);
- const its=D.items.filter(i=>i.margin>=mm && !(ha&&i.ambiguous));
- document.getElementById('s').textContent=`${its.length} of ${D.items.length}`;
- document.getElementById('w').innerHTML=its.map(i=>`
-  <div class="it${i.ambiguous?' amb':''}">
+ const its=D.items.filter(i=>i.margin>=mm && !(ha&&i.ambiguous) && !(hd&&dec[key(i)]));
+ const n=Object.keys(dec).length;
+ document.getElementById('s').textContent=`${its.length} shown · ${n} decided`;
+ document.getElementById('w').innerHTML=its.map(i=>{
+  const d=dec[key(i)]||{};
+  const win=(i.faces||[]).map(f=>`<span class="bd win${d.face==f?' sel':''}" onclick="set(D.items[${D.items.indexOf(i)}],'${f}')">${f}</span>`).join('');
+  const run=(i.runner_faces||[]).filter(f=>!(i.faces||[]).includes(f))
+      .map(f=>`<span class="bd run${d.face==f?' sel':''}" onclick="set(D.items[${D.items.indexOf(i)}],'${f}')">${f}</span>`).join('');
+  const opts=D.faces.map(f=>`<option${d.face==f?' selected':''}>${f}</option>`).join('');
+  return `<div class="it${d.face?' done':''}${d.reject?' rej':''}">
    <img src="data:image/png;base64,${i.img}">
-   <div><div class=f>${i.faces.length?i.faces.join('  OR  '):'(not in inventory: '+i.sig+')'}</div>
-     <div class=m>${i.text} · sim ${i.sim} · confidence ${i.margin} · runner-up ${i.runner_up||'—'}</div>
-     <div class=bar><i style="width:${Math.min(100,i.margin*40)}%"></i></div></div>
-  </div>`).join('');
+   <div>
+    <div class=badges>${win}${run}
+      <select onchange="set(D.items[${D.items.indexOf(i)}], this.value)">
+        <option value="">— other —</option>${opts}</select>
+      <span class=bd onclick="set(D.items[${D.items.indexOf(i)}], null)">reject</span>
+    </div>
+    <div class=m>${i.text} · conf ${i.margin} · winner ${i.sig}${i.runner_up?' · runner-up '+i.runner_up:''}</div>
+    <div class=bar><i style="width:${Math.min(100,i.margin*40)}%"></i></div>
+   </div></div>`;}).join('');
+}
+function exportJSON(){
+ const out=[];
+ D.items.forEach(i=>{ const d=dec[key(i)]; if(!d) return;
+   out.push({gcx:i.gcx,gcy:i.gcy,lon:i.lon,lat:i.lat,text:i.text,
+             proposed:i.sig,confidence:i.margin,
+             face:d.face||null,reject:!!d.reject}); });
+ if(!out.length){alert('Nothing decided yet — click a badge.');return;}
+ const blob=new Blob([JSON.stringify({decisions:out},null,1)],{type:'application/json'});
+ const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+ a.download='face_decisions.json'; a.click();
 }
 document.getElementById('mm').oninput=render; render();
 </script>

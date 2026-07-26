@@ -58,7 +58,7 @@ def main():
     print(f"{len(lab)} anchors, {len(rec)} matched to MapReader boxes", flush=True)
 
     model, amg = build_model(a.model_type, a.weight)
-    mr, hw, hl, sigs, texts, notes = [], [], [], [], [], []
+    mr, hw, hl, sigs, texts, notes, gcxs, gcys = [], [], [], [], [], [], [], []
     nomask = nocrop = 0
     for l in lab:
         r = rec.get(key(l["gcx"], l["gcy"]))
@@ -96,10 +96,15 @@ def main():
         hl.append(cl.astype(np.uint8))
         sigs.append(l["sig"])
         texts.append(str(r.get("text", "")))
+        gcxs.append(float(r["gcx"]))
+        gcys.append(float(r["gcy"]))
         notes.append(dict(word_ok=bool(wpoly), line_ok=bool(lpoly)))
 
+    # gcx/gcy travel with the crops so a rejection or correction made in the QC page can be keyed straight
+    # back to the anchor in pool_labels.json, rather than relying on row order surviving a re-run.
     np.savez(a.out, mr=np.array(mr, object), word=np.array(hw, object), line=np.array(hl, object),
-             sigs=np.array(sigs, object), texts=np.array(texts, object), notes=np.array(notes, object))
+             sigs=np.array(sigs, object), texts=np.array(texts, object), notes=np.array(notes, object),
+             gcx=np.array(gcxs), gcy=np.array(gcys))
     nw = sum(n["word_ok"] for n in notes)
     nl = sum(n["line_ok"] for n in notes)
     print(f"saved {len(mr)} anchors (no MapReader crop {nocrop}, no Hi-SAM mask {nomask}); "

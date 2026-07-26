@@ -29,11 +29,15 @@ def main():
     d = np.load(a.npz, allow_pickle=True)
     sigs = d["sigs"].astype(str)
     texts = d["texts"].astype(str) if "texts" in d.files else np.array([""] * len(sigs))
+    gcx = d["gcx"] if "gcx" in d.files else np.zeros(len(sigs))
+    gcy = d["gcy"] if "gcy" in d.files else np.zeros(len(sigs))
     items = []
     for i in range(min(a.n, len(sigs))):
-        items.append(dict(sig=sigs[i], text=texts[i],
+        items.append(dict(i=int(i), sig=sigs[i], text=texts[i],
+                          gcx=float(gcx[i]), gcy=float(gcy[i]),
                           mr=b64(d["mr"][i]), word=b64(d["word"][i]), line=b64(d["line"][i])))
-    html = HTML.replace("__DATA__", json.dumps(dict(items=items, n=len(sigs))))
+    html = HTML.replace("__DATA__", json.dumps(dict(items=items, n=len(sigs),
+                                                    sigs=sorted(set(sigs.tolist())))))
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     open(a.out, "w").write(html)
     print(f"{len(sigs)} anchors; wrote {a.out} ({os.path.getsize(a.out)/1e6:.2f} MB)")
@@ -43,23 +47,55 @@ def main():
 HTML = r"""<!doctype html><meta charset=utf-8><title>GB-STAMP · anchor crop QC</title>
 <style>
  body{font:13px system-ui;margin:0;background:#f4f2ee}
- header{position:sticky;top:0;background:#2a2622;color:#f4f2ee;padding:8px 14px}
+ header{position:sticky;top:0;background:#2a2622;color:#f4f2ee;padding:8px 14px;display:flex;gap:14px;
+        align-items:center;flex-wrap:wrap;z-index:9}
+ button{background:#2a7;color:#fff;border:0;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:13px}
  table{border-collapse:collapse;margin:10px} td,th{border:1px solid #ddd;padding:4px 6px;background:#fff;
-   vertical-align:middle} th{background:#efece8;font-size:11px;position:sticky;top:34px}
- img{image-rendering:pixelated;background:#fff;max-width:420px}
+   vertical-align:middle} th{background:#efece8;font-size:11px;position:sticky;top:40px}
+ img{image-rendering:pixelated;background:#fff;max-width:380px}
  .t{font-size:11px;color:#555;max-width:150px;word-break:break-word}
+ tr.rej td{background:#fbf2f2;opacity:.55} tr.fix td{background:#f2fbf6}
+ .bd{border:1px solid #bbb;border-radius:12px;padding:2px 9px;cursor:pointer;font-size:11px;background:#f7f7f7}
+ .bd.sel{background:#c33;color:#fff;border-color:#c33}
+ select{font:11px system-ui;max-width:180px}
 </style>
-<header><b>anchor crop QC</b> — <span id=s></span> · the three crop conventions, same anchor</header>
-<table><thead><tr><th>text</th><th>signature</th><th>MapReader box</th><th>Hi-SAM word</th><th>Hi-SAM line</th></tr></thead>
-<tbody id=b></tbody></table>
+<header><b>anchor crop QC</b> — <span id=s></span>
+ <label><input type=checkbox id=hd onchange=render()> hide decided</label>
+ <button onclick=exportJSON()>Export corrections</button></header>
+<table><thead><tr><th>text</th><th>signature</th><th>MapReader box</th><th>Hi-SAM word</th>
+ <th>Hi-SAM line</th><th>verdict</th></tr></thead><tbody id=b></tbody></table>
 <script>
 const D=__DATA__;
-document.getElementById('s').textContent=`${D.items.length} of ${D.n} anchors`;
-document.getElementById('b').innerHTML=D.items.map(i=>`<tr>
- <td class=t>${i.text}</td><td class=t>${i.sig}</td>
- <td><img src="data:image/png;base64,${i.mr}"></td>
- <td><img src="data:image/png;base64,${i.word}"></td>
- <td><img src="data:image/png;base64,${i.line}"></td></tr>`).join('');
+const dec={};   // row index -> {reject:true} | {sig:"..."}
+function rej(i){ if(dec[i]&&dec[i].reject) delete dec[i]; else dec[i]={reject:true}; render(); }
+function fix(i,s){ if(!s) delete dec[i]; else dec[i]={sig:s}; render(); }
+function render(){
+ const hd=document.getElementById('hd').checked;
+ const its=D.items.filter(i=>!(hd&&dec[i.i]));
+ document.getElementById('s').textContent=`${its.length} of ${D.n} anchors · ${Object.keys(dec).length} decided`;
+ document.getElementById('b').innerHTML=its.map(i=>{
+  const d=dec[i.i]||{};
+  const opts=D.sigs.map(s=>`<option${d.sig==s?' selected':''}>${s}</option>`).join('');
+  return `<tr class="${d.reject?'rej':(d.sig?'fix':'')}">
+   <td class=t>${i.text}</td><td class=t>${d.sig||i.sig}${d.sig?' <b>(fixed)</b>':''}</td>
+   <td><img src="data:image/png;base64,${i.mr}"></td>
+   <td><img src="data:image/png;base64,${i.word}"></td>
+   <td><img src="data:image/png;base64,${i.line}"></td>
+   <td><span class="bd${d.reject?' sel':''}" onclick="rej(${i.i})">reject</span><br>
+       <select onchange="fix(${i.i}, this.value)">
+         <option value="">— correct signature —</option>${opts}</select></td></tr>`;}).join('');
+}
+function exportJSON(){
+ const out=[];
+ D.items.forEach(i=>{ const d=dec[i.i]; if(!d) return;
+   out.push({gcx:i.gcx, gcy:i.gcy, text:i.text, was:i.sig,
+             reject:!!d.reject, sig:d.sig||null}); });
+ if(!out.length){alert('Nothing marked yet.');return;}
+ const blob=new Blob([JSON.stringify({corrections:out},null,1)],{type:'application/json'});
+ const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+ a.download='anchor_corrections.json'; a.click();
+}
+render();
 </script>
 """
 
