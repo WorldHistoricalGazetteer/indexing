@@ -24,6 +24,7 @@ import cv2
 sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_font_testset_v2 import derotate
+from weak_sig import is_numeral
 
 SAFE = 512
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"
@@ -95,6 +96,8 @@ def main():
     ap.add_argument("--qc", default=None)
     ap.add_argument("--qc-n", type=int, default=200)
     ap.add_argument("--inventory", default="labels/face_inventory.json")
+    ap.add_argument("--keep-numerals", dest="skip_numerals", action="store_false",
+                    help="propose faces for numeric transcripts too (they have no face in the inventory)")
     ap.add_argument("--drop-sigs", nargs="*", default=["numeral·solid·plain"],
                     help="signatures removed from the anchor set: they cannot then be proposed at all, "
                          "which is the honest treatment of a class that has no face in the inventory")
@@ -146,7 +149,7 @@ def main():
         if sel:
             print(f"    confidence >= {lo:.1f}: {len(sel):>4d} anchors, accuracy {np.mean(sel):.3f}", flush=True)
 
-    recs = []
+    recs, n_num = [], 0
     for f in sorted(glob.glob(a.boxes)):
         for line in open(f):
             try:
@@ -157,9 +160,12 @@ def main():
                 continue
             if sum(c.isalnum() for c in r.get("text", "")) < a.min_chars:
                 continue
+            if a.skip_numerals and is_numeral(r.get("text", "")):
+                n_num += 1
+                continue
             recs.append(r)
     recs = recs[: a.n]
-    print(f"{len(recs)} spots to propose for", flush=True)
+    print(f"{len(recs)} spots to propose for ({n_num} numeral transcripts skipped)", flush=True)
 
     torch, model, input_format, feat, dev = load_backbone()
     out, qc = [], []

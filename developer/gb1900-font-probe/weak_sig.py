@@ -50,11 +50,28 @@ LEX = [
 ]
 COMPILED = [(face, re.compile(pat, re.I)) for face, pat in LEX]
 
-# Spot heights, bench-mark values and contour numbers are set in the numeral face. Purely numeric transcripts
-# (allowing the OS's raised decimal point) are the one category identifiable by shape rather than vocabulary —
-# and numeral·solid·plain is one of the two signatures the discriminator currently fails on.
-NUMERAL = re.compile(r"^[\dOo]+([\s.,·']+[\dOo]+)*$")
-BM = re.compile(r"^\s*(B\.?\s?M\.?|Bench\s*Mark)\b", re.I)
+# Spot heights, bench-mark values and contour numbers are set in the numeral face, which has no entry in the
+# inventory. Left unfiltered they are not merely clutter: with the numeral anchors dropped, each one is
+# proposed as whichever LETTERING face sits nearest — a confident wrong answer rather than an abstention.
+_ALPHA_TOK = re.compile(r"[A-Za-z]+\.?")
+
+
+def is_numeral(text):
+    """Two or more digits and no WORDS. Abbreviations do not defeat it.
+
+    A whole-string numeric test was too strict: it rejected "B.M. 155·9" and "F.P. 47·7", which are numeral-face
+    labels carrying an abbreviation, while a bare "29" and a spot height are exactly what should be caught. So
+    the test is on the two things that actually distinguish the numeral face — it carries digits, and it carries
+    no running words. An alphabetic run counts as a word only if it is three or more letters AND not
+    abbreviated with a full stop, which lets B.M., F.P., No. and Ho. through while stopping STREET and Cricket.
+    """
+    t = text or ""
+    if sum(c.isdigit() for c in t) < 2:
+        return False
+    for tok in _ALPHA_TOK.findall(t):
+        if len(tok.rstrip(".")) >= 3 and not tok.endswith("."):
+            return False
+    return True
 
 
 def weak_sig(text):
@@ -66,10 +83,7 @@ def weak_sig(text):
     t = (text or "").strip()
     if not t:
         return None, None
-    core = re.sub(r"^\s*(B\.?\s?M\.?|Bench\s*Mark)\s*", "", t, flags=re.I)
-    if BM.match(t) and NUMERAL.match(core.strip()):
-        return FACE_SIG.get("bench_marks") or "numeral·solid·plain", "numeral:bm"
-    if NUMERAL.match(t) and any(c.isdigit() for c in t):
+    if is_numeral(t):                      # one definition, shared with the review-page filters
         return "numeral·solid·plain", "numeral"
     for face, rx in COMPILED:
         if rx.search(t):
