@@ -8,7 +8,11 @@ the ~10.5M ways. This backfills the geometry that predates that:
   * ``--mode areal`` — ``has_geom`` geometries with no ``geom_class`` (relations,
     gazetteer boundaries; ~984k). geom_class is derived from the **actual stored
     geometry type** via ``geom_class_of`` (Polygon/MultiPolygon/GC → area, etc.)
-    — no guessing.
+    — no guessing. Add ``--assume-area`` to skip the (slow) per-geometry store
+    read and set ``area`` directly — valid ONLY when the target set is verified
+    uniformly areal (it is: relations are multipolygons, gazetteers polygons, and
+    the sole ``has_geom`` lines are the osm/ohm ways, which already carry
+    ``geom_class``). The store read runs ~85/s; ``--assume-area`` runs ~1500/s.
   * ``--mode points`` — located geometries with no ``geom_class`` and no
     ``has_geom`` (~35M points). These are set ``point`` directly.
 
@@ -53,7 +57,7 @@ def run(args) -> int:
     index = next(iter(r.json().keys()))
 
     reader = None
-    if args.mode == "areal":
+    if args.mode == "areal" and not args.assume_area:
         from processing.geom_store import GeomStoreReader
         from processing.settings import GEOM_STORE_DIR
         reader = GeomStoreReader(GEOM_STORE_DIR)
@@ -115,18 +119,21 @@ def run(args) -> int:
                     continue
                 upd[str(gi)] = "point"
                 geoms += 1
-            else:  # areal — derive from the real stored geometry
+            else:  # areal
                 if not g.get("has_geom"):
                     continue
-                ref = g.get("geom_ref") or f"{pid}_{gi}"
-                try:
-                    gj = reader.get(ref)
-                except Exception:
-                    gj = None
-                gc = geom_class_of(gj) if gj else None
-                if not gc:
-                    errors += 1
-                    continue
+                if args.assume_area:
+                    gc = "area"
+                else:  # derive from the real stored geometry type
+                    ref = g.get("geom_ref") or f"{pid}_{gi}"
+                    try:
+                        gj = reader.get(ref)
+                    except Exception:
+                        gj = None
+                    gc = geom_class_of(gj) if gj else None
+                    if not gc:
+                        errors += 1
+                        continue
                 upd[str(gi)] = gc
                 geoms += 1
         if upd:
@@ -148,6 +155,9 @@ def run(args) -> int:
 def main() -> None:
     p = argparse.ArgumentParser(description="Backfill geometries[].geom_class (place#145)")
     p.add_argument("--mode", choices=["areal", "points"], required=True)
+    p.add_argument("--assume-area", action="store_true",
+                   help="areal mode: set 'area' without the per-geometry store "
+                        "read (fast; only when the set is verified uniformly areal)")
     p.add_argument("--rps", type=int, default=1500)
     p.add_argument("--batch", type=int, default=500)
     p.add_argument("--scroll", type=int, default=2000)
