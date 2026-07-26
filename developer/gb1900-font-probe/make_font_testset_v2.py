@@ -65,7 +65,11 @@ def assemble(bbox, pad):
             if t is not None:
                 cv[(ty - ty0) * 256:(ty - ty0) * 256 + 256, (tx - tx0) * 256:(tx - tx0) * 256 + 256] = t; ok = True
     if not ok: return None, 0, 0
-    return cv, x0, y0
+    # Return the CANVAS origin, not the padded-bbox origin. The canvas is a tile mosaic starting at
+    # tx0*256, so reporting x0/y0 put every caller's local coordinates out by up to 255 px in each axis —
+    # crops landed on whatever happened to sit a tile away. This was invisible while derotate() was
+    # swallowing its own exception and returning the whole canvas.
+    return cv, tx0 * 256, ty0 * 256
 
 def derotate(r):
     """crop the word-box and rotate to horizontal using its polygon; fallback to axis-aligned bbox."""
@@ -74,17 +78,31 @@ def derotate(r):
     bbox = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
     canvas, ox, oy = assemble(bbox, pad=10)
     if canvas is None: return None
-    local = poly - [ox, oy]
+    # float32 MUST be forced: `poly - [ox, oy]` promotes float32 against an int64 array to float64, and
+    # minAreaRect accepts only CV_32F/CV_32S. Without this the call raised on EVERY word, the bare except
+    # below swallowed it, and the function returned the whole tile-aligned canvas — a 256x512 map region in
+    # place of a 74x24 word — with no error anywhere. Everything downstream then described a neighbourhood
+    # rather than a label. Never widen the except; a failure here must be visible.
+    local = np.asarray(poly - [ox, oy], np.float32)
     try:
         (cx, cy), (w, h), ang = cv2.minAreaRect(local)
         if w < h: ang += 90; w, h = h, w
         if w < 6 or h < 6: return None
+        # minAreaRect is 180-degree ambiguous, so half of all words came out upside down — legible to a human
+        # but a different shape to a matcher, and silently so. The spotter's polygon is ordered ALONG the text
+        # (it is traced from the top edge in reading order), so its leading edge disambiguates the two.
+        lead = local[min(3, max(1, len(local) // 2))] - local[0]
+        if np.hypot(*lead) > 1e-6:
+            lead_ang = math.degrees(math.atan2(lead[1], lead[0]))
+            if math.cos(math.radians(ang - lead_ang)) < 0:
+                ang += 180
         M = cv2.getRotationMatrix2D((cx, cy), ang, 1.0)
         rot = cv2.warpAffine(canvas, M, (canvas.shape[1], canvas.shape[0]), borderValue=255)
         patch = cv2.getRectSubPix(rot, (int(w) + 8, int(h) + 8), (cx, cy))
         return patch
-    except Exception:
-        return canvas
+    except cv2.error as e:
+        print(f"[derotate] FAILED on {r.get('text','?')!r}: {e}", flush=True)
+        return None
 
 def stratified(boxes):
     antiq = [r for r in boxes if ANTIQ.search(r["text"])]
