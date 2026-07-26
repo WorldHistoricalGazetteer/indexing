@@ -35,7 +35,7 @@ SIG_FACE = {
     "italic·solid·plain": ["Italic-Solid-Plain"],
     "upright·solid·serif": ["Upright-Solid-Serif"],
     "italic·solid·serif": ["Italic-Solid-Serif"],
-    "blackletter·solid·fancy": ["Blackletter-PHS", "Blackletter-N"],
+    "blackletter·solid·fancy": ["Blackletter"],
     "numeral·solid·plain": [],
 }
 

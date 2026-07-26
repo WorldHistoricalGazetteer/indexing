@@ -1,0 +1,1336 @@
+{
+ "corrections": [
+  {
+   "gcx": 16546439.2,
+   "gcy": 10277375.2,
+   "text": "Wood",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16630842.5,
+   "gcy": 10804916.7,
+   "text": "QUADRANT",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16679241,
+   "gcy": 10782108.9,
+   "text": "Spring",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16663545.6,
+   "gcy": 9696445.7,
+   "text": "GIRLSTA",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16410078.1,
+   "gcy": 11013908.5,
+   "text": "Capel",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16570638,
+   "gcy": 10852899.5,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16773746.8,
+   "gcy": 11158890.8,
+   "text": "LADY",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16788180.4,
+   "gcy": 11051013.1,
+   "text": "CARLYLE",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376708.5,
+   "gcy": 11104603.4,
+   "text": "Gateway",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-N",
+   "unresolved": false
+  },
+  {
+   "gcx": 16631683.7,
+   "gcy": 10649616,
+   "text": "Wear",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16381851,
+   "gcy": 10471984.3,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16628291,
+   "gcy": 10802662.3,
+   "text": "PL.",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16357192.4,
+   "gcy": 10276732.1,
+   "text": "AlIt",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16399738.8,
+   "gcy": 10120336.1,
+   "text": "Quarry",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16747420.5,
+   "gcy": 10812563.6,
+   "text": "COURTNEY",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635319.4,
+   "gcy": 10848915.5,
+   "text": "Castle",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-N",
+   "unresolved": false
+  },
+  {
+   "gcx": 16636502.9,
+   "gcy": 10851481.1,
+   "text": "Spr",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16539848.6,
+   "gcy": 11165055,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16484501.1,
+   "gcy": 10015798.7,
+   "text": "Keiss",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16509494,
+   "gcy": 9874066.1,
+   "text": "Ph.)",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16691682.4,
+   "gcy": 9673632.8,
+   "text": "Geo",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16659041.4,
+   "gcy": 11119694.7,
+   "text": "Sch",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16262262,
+   "gcy": 10281048.2,
+   "text": "Allt",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16186492.8,
+   "gcy": 11390429.7,
+   "text": "islands",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16568542.9,
+   "gcy": 11105423.4,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16498539.5,
+   "gcy": 10617426.4,
+   "text": "Broonyknow",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16311156.3,
+   "gcy": 10193479.4,
+   "text": "Coirena",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16518033.1,
+   "gcy": 10975710.8,
+   "text": "Parly.",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16402353,
+   "gcy": 10926158.7,
+   "text": "Llyn",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16630717.8,
+   "gcy": 10622964.6,
+   "text": "Windynook",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16498794.5,
+   "gcy": 10864902.6,
+   "text": "Ground",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16655287.5,
+   "gcy": 9629271.9,
+   "text": "Burn",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16382314.6,
+   "gcy": 10476121,
+   "text": "Dey",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16568974.9,
+   "gcy": 11104157.9,
+   "text": "Ps/sup>.",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16448630.8,
+   "gcy": 11273529.7,
+   "text": "HURCH",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16456085.4,
+   "gcy": 10022457.4,
+   "text": "St.",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16574281.9,
+   "gcy": 10797113.1,
+   "text": "Lane",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16652118.1,
+   "gcy": 9679988.5,
+   "text": "FIRT",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16546730.3,
+   "gcy": 10697994.9,
+   "text": "Scar",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16313068.4,
+   "gcy": 10035618.9,
+   "text": "Lor",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16384452,
+   "gcy": 10472296.3,
+   "text": "STREE",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16645534.5,
+   "gcy": 9653149.2,
+   "text": "Eela",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16531199.8,
+   "gcy": 11165281.3,
+   "text": "Quarry",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16447572.8,
+   "gcy": 11273955.4,
+   "text": "HD.",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16537466.9,
+   "gcy": 11167136.2,
+   "text": "Depot",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16499326.8,
+   "gcy": 11235547.3,
+   "text": "Plant###",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16590002,
+   "gcy": 11006117.2,
+   "text": "Path",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16476705.8,
+   "gcy": 9918968.1,
+   "text": "Mill",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16190075,
+   "gcy": 11388452.7,
+   "text": "shown",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16534723.2,
+   "gcy": 11167930.5,
+   "text": "KENT",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16495762.4,
+   "gcy": 11150212.8,
+   "text": "Reen",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16591603.7,
+   "gcy": 10845212.2,
+   "text": "Head",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16554576.9,
+   "gcy": 11174464.5,
+   "text": "Sch.",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16903769.4,
+   "gcy": 11185397.7,
+   "text": "Groin",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16317680.8,
+   "gcy": 11128770.5,
+   "text": "Waterloo",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16382911.2,
+   "gcy": 10472714.8,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16521822.1,
+   "gcy": 10977365.9,
+   "text": "Lone",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16590653,
+   "gcy": 11005473.7,
+   "text": "Hall",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16574914.4,
+   "gcy": 10926357.9,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16457663,
+   "gcy": 10689325.2,
+   "text": "Cottages",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16516650.7,
+   "gcy": 10765572,
+   "text": "GATE",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16480968,
+   "gcy": 10453433.7,
+   "text": "ROAD",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16363499.6,
+   "gcy": 10930717.9,
+   "text": "Fawr",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16451166.6,
+   "gcy": 10196614.5,
+   "text": "Meikle",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16262119.8,
+   "gcy": 10193474.4,
+   "text": "Buast",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16354657.9,
+   "gcy": 10279830.4,
+   "text": "Beannain",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16262852.5,
+   "gcy": 10194794.9,
+   "text": "Spidean",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16360868.1,
+   "gcy": 10030283.2,
+   "text": "Caillich",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16659733.2,
+   "gcy": 11121464.9,
+   "text": "Sch.",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16774420.9,
+   "gcy": 11162174.2,
+   "text": "DOUGLAS",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16682360.7,
+   "gcy": 9629949.4,
+   "text": "HASC###",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16551014.5,
+   "gcy": 9877529.5,
+   "text": "Fay",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16496093.6,
+   "gcy": 10863702.6,
+   "text": "Co.",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16667047.2,
+   "gcy": 9677466.5,
+   "text": "Lee",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16535990.1,
+   "gcy": 11162885.7,
+   "text": "St.",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16661759.2,
+   "gcy": 11121313.5,
+   "text": "PEMBROKE",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16634571.7,
+   "gcy": 10806137.8,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16744972,
+   "gcy": 10812585,
+   "text": "ST.",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16692534.6,
+   "gcy": 9633256,
+   "text": "Fitsy",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16659110,
+   "gcy": 11119895.6,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635124.8,
+   "gcy": 10802298.8,
+   "text": "PARK",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16202211.2,
+   "gcy": 10508820,
+   "text": "Cnoc.",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16537384,
+   "gcy": 11166569.4,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16480501.2,
+   "gcy": 10457030.5,
+   "text": "ST.",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16629109.4,
+   "gcy": 10649271.9,
+   "text": "CROSS",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16654718.8,
+   "gcy": 9650603.5,
+   "text": "Trumba",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16499505.5,
+   "gcy": 10864873.4,
+   "text": "STREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16533770.9,
+   "gcy": 11164501.8,
+   "text": "ALEXANDRA",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16822833.4,
+   "gcy": 10940252.9,
+   "text": "PARK",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16683532.3,
+   "gcy": 9620272.5,
+   "text": "Trolliva",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635123.1,
+   "gcy": 10806153.7,
+   "text": "BER",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16634409.4,
+   "gcy": 10804421.4,
+   "text": "##TREET",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16696321.9,
+   "gcy": 9632629.6,
+   "text": "Smorostanes",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16631271,
+   "gcy": 10806960.6,
+   "text": "LANE",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635241.8,
+   "gcy": 10848883,
+   "text": "Wilderness",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376735.6,
+   "gcy": 11104629,
+   "text": "of)",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376731.2,
+   "gcy": 11104685.6,
+   "text": "of",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376736.5,
+   "gcy": 11104630.2,
+   "text": "of)",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376631.6,
+   "gcy": 11104721.4,
+   "text": "Priory",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-N",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376694.3,
+   "gcy": 11104627.8,
+   "text": "Gite",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376687.3,
+   "gcy": 11104685.2,
+   "text": "(Site",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376714.6,
+   "gcy": 11104656.4,
+   "text": "Chapel",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376631.1,
+   "gcy": 11104721.5,
+   "text": "Priory",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-N",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376687.3,
+   "gcy": 11104685,
+   "text": "(Site",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376714.5,
+   "gcy": 11104656.3,
+   "text": "Chapel",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376694,
+   "gcy": 11104627.9,
+   "text": "(Site",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16376709,
+   "gcy": 11104603.7,
+   "text": "Gateway",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16456086.1,
+   "gcy": 10022457.2,
+   "text": "St.",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16903702.8,
+   "gcy": 11185546.1,
+   "text": "Bourver",
+   "was": "blackletter·solid·fancy",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16903702.9,
+   "gcy": 11185547.6,
+   "text": "Boarved",
+   "was": "blackletter·solid·fancy",
+   "action": "accept",
+   "face": null,
+   "unresolved": true
+  },
+  {
+   "gcx": 16648322.4,
+   "gcy": 11278722.5,
+   "text": "Park",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16648320.9,
+   "gcy": 11278689.1,
+   "text": "North",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16188095.4,
+   "gcy": 11389212.6,
+   "text": "Pots",
+   "was": "italic·solid·plain",
+   "action": "correct",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16589379.5,
+   "gcy": 10847929,
+   "text": "FP.",
+   "was": "italic·solid·plain",
+   "action": "accept",
+   "face": "Italic-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16516251.3,
+   "gcy": 10766814.1,
+   "text": "ROYAL",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16516250,
+   "gcy": 10766813.9,
+   "text": "ROYAL",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16678339.3,
+   "gcy": 10781983.1,
+   "text": "Ground",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16459130.2,
+   "gcy": 11091643.3,
+   "text": "MS",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16521787.4,
+   "gcy": 10723791.8,
+   "text": "Mills",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16521788.1,
+   "gcy": 10723791.8,
+   "text": "Mills",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16523940.6,
+   "gcy": 11076893.3,
+   "text": "Lacy",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16523856.5,
+   "gcy": 11076889.4,
+   "text": "Holme",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16523939.5,
+   "gcy": 11076893.3,
+   "text": "Lacy",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16523857.8,
+   "gcy": 11076889.4,
+   "text": "Holme",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16523938.4,
+   "gcy": 11076893,
+   "text": "Lacy",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16638052.7,
+   "gcy": 11085194.1,
+   "text": "Spring",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16496231.5,
+   "gcy": 11237550.3,
+   "text": "Prospect",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16468352.7,
+   "gcy": 10742065.2,
+   "text": "Middle",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16680767.7,
+   "gcy": 9608495.2,
+   "text": "ottages",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635815.6,
+   "gcy": 10849362.8,
+   "text": "ROUGH",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16658459.7,
+   "gcy": 11119035.2,
+   "text": "SECTION",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16535837.7,
+   "gcy": 11162824.4,
+   "text": "GRENVIL",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16545833,
+   "gcy": 10277586.7,
+   "text": "Pit",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16567135.8,
+   "gcy": 10854317.5,
+   "text": "STREET",
+   "was": "italic·solid·serif",
+   "action": "correct",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16732903.5,
+   "gcy": 10851567,
+   "text": "Drainn",
+   "was": "upright·solid·plain",
+   "action": "correct",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16533974.6,
+   "gcy": 11163287.2,
+   "text": "ELGIN",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16789165.7,
+   "gcy": 11051501.4,
+   "text": "ROMMON",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16362525.5,
+   "gcy": 10029703,
+   "text": "conffict",
+   "was": "upright·solid·plain",
+   "action": "correct",
+   "face": "Blackletter-PHS",
+   "unresolved": false
+  },
+  {
+   "gcx": 16494416,
+   "gcy": 10863809.6,
+   "text": "RADNOR",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16636347.7,
+   "gcy": 11007695.5,
+   "text": "Deer",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16511430.2,
+   "gcy": 9922760.3,
+   "text": "Howe",
+   "was": "blackletter·solid·fancy",
+   "action": "accept",
+   "face": null,
+   "unresolved": true
+  },
+  {
+   "gcx": 16680447.3,
+   "gcy": 10932223.5,
+   "text": "Hall",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16471855.1,
+   "gcy": 10742580.3,
+   "text": "Swash",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16635982.4,
+   "gcy": 10848672.2,
+   "text": "Castle",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16488049.3,
+   "gcy": 9896610,
+   "text": "Quanda",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16566809.2,
+   "gcy": 10853644.3,
+   "text": "SCHOOL",
+   "was": "upright·solid·plain",
+   "action": "accept",
+   "face": "Upright-Solid-Plain",
+   "unresolved": false
+  },
+  {
+   "gcx": 16672970.3,
+   "gcy": 9715618.6,
+   "text": "VOE",
+   "was": "upright·solid·serif",
+   "action": "accept",
+   "face": "Upright-Solid-Serif",
+   "unresolved": false
+  },
+  {
+   "gcx": 16669283,
+   "gcy": 9691264.4,
+   "text": "Lee",
+   "was": "italic·solid·serif",
+   "action": "accept",
+   "face": "Italic-Solid-Serif",
+   "unresolved": false
+  }
+ ]
+}
