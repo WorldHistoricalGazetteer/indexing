@@ -48,7 +48,7 @@ from elasticsearch import Elasticsearch, helpers
 from shapely.geometry import mapping
 from shapely.validation import make_valid
 
-from processing.helpers import enrich_geometry
+from processing.helpers import enrich_geometry, geom_class_of  # noqa: F401
 from processing.settings import ES_HOST
 from processing.osm_boundary_geometry import (
     BULK_THREAD_COUNT,
@@ -77,32 +77,8 @@ def keys_for(namespace):
     return _OHM_KEYS if namespace == "ohm" else _OSM_KEYS
 
 
-def geom_class_of(geojson):
-    """Coarse geometry class ∈ {'point','line','area'} for a GeoJSON dict.
-
-    This is the *shape* discriminator that downstream logic should use for
-    "is it areal / can it contain" — distinct from ``has_geom`` (which records
-    whether the full geometry is retrievable from the store). Multi- variants
-    collapse to their base class (no consumer needs the distinction). A
-    ``GeometryCollection`` is resolved once, here, by its members — any polygon
-    makes it an area, else any line makes it a line — so no consumer ever has to
-    re-open the geometry to classify it. Returns None for an unknown type.
-    """
-    t = (geojson or {}).get("type")
-    if t in ("Polygon", "MultiPolygon"):
-        return "area"
-    if t in ("LineString", "MultiLineString"):
-        return "line"
-    if t in ("Point", "MultiPoint"):
-        return "point"
-    if t == "GeometryCollection":
-        classes = {geom_class_of(g) for g in geojson.get("geometries", [])}
-        if "area" in classes:
-            return "area"
-        if "line" in classes:
-            return "line"
-        return "point"
-    return None
+# geom_class_of lives in processing.helpers (single source — also used by
+# enrich_geometry); imported at module top and used by the way passes below.
 
 
 def _finalize_geom_entry(geom_entry, raw_geom):

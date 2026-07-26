@@ -504,10 +504,13 @@ def build_places_filter(
     if must_not_clauses:
         bool_query["must_not"] = must_not_clauses
 
+    # geom_class ships alongside has_geom so the endpoint can mark a candidate as
+    # a valid containment parent (is_area) by shape rather than mere retrievability.
     geom_fields = (
-        ["geometries.geom", "geometries.repr_point", "geometries.has_geom"]
+        ["geometries.geom", "geometries.repr_point", "geometries.has_geom",
+         "geometries.geom_class"]
         if geom == "full"
-        else ["geometries.repr_point", "geometries.has_geom"]
+        else ["geometries.repr_point", "geometries.has_geom", "geometries.geom_class"]
     )
     # Fields the Python-side containment refine needs when a region is active:
     # h3_cover (fuzzy), repr_point (fast-path / fallback), bounds, and

@@ -945,6 +945,36 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
     return set()
 
 
+def geom_class_of(geojson):
+    """Coarse geometry class ∈ {'point','line','area'} for a GeoJSON dict — the
+    *shape* discriminator stored as ``geometries[].geom_class`` (see
+    ``schemas/field-notes.md``).
+
+    Multi- variants collapse to their base (``MultiPolygon`` → ``area``); a
+    ``GeometryCollection`` is resolved once, here, by its members (any polygon →
+    ``area``, else any line → ``line``, else ``point``) so no consumer re-opens
+    the geometry to classify it. Distinct from ``has_geom`` (retrievability):
+    downstream "is it areal / usable as a ``contained_in`` region" keys on this,
+    not ``has_geom`` (a LineString is ``has_geom`` true but not areal). Returns
+    None for an unknown/empty type.
+    """
+    t = (geojson or {}).get("type")
+    if t in ("Polygon", "MultiPolygon"):
+        return "area"
+    if t in ("LineString", "MultiLineString"):
+        return "line"
+    if t in ("Point", "MultiPoint"):
+        return "point"
+    if t == "GeometryCollection":
+        classes = {geom_class_of(g) for g in geojson.get("geometries", [])}
+        if "area" in classes:
+            return "area"
+        if "line" in classes:
+            return "line"
+        return "point"
+    return None
+
+
 def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
     """
     Compute a geometry entry for the ``places`` index from a GeoJSON geometry.
@@ -1092,6 +1122,12 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
 
         # ── 8. Assemble result (no 'geom' field — stored externally) ─────
         entry: dict = {'has_geom': has_geom}
+        # geom_class = shape discriminator {point,line,area}; see field-notes.
+        # Distinct from has_geom (retrievability): downstream "is it areal / a
+        # containment region" logic keys on geom_class, not has_geom.
+        gc = geom_class_of(full_geom)
+        if gc:
+            entry['geom_class'] = gc
         if rep_point:
             entry['repr_point'] = rep_point
         if hull_geojson:

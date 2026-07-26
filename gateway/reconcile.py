@@ -185,9 +185,14 @@ class CandidateName(BaseModel):
 class CandidateGeometry(BaseModel):
     repr_point: Optional[list[float]] = Field(
         None, description="Representative point [lon, lat] (always present for a located place).")
+    is_area: bool = Field(
+        False, description="True iff this candidate is AREAL (a polygon) — i.e. it can serve as a "
+                           "`contained_in` containment region / a valid hierarchical parent. Keyed on "
+                           "`geom_class == 'area'`. Point and LineString candidates return False.")
     has_geom: bool = Field(
-        False, description="True iff this candidate has a full POLYGON geometry — i.e. it can serve as a "
-                           "containment region (`contained_in`). Point/line-only geometries return False.")
+        False, description="True iff the full geometry is retrievable from the store (RETRIEVABILITY, not "
+                           "shape). A LineString is `has_geom=true` but `is_area=false`. Use `is_area` to "
+                           "pick containment parents; `has_geom` only tells you a stored geometry exists.")
 
 
 class CandidateHit(BaseModel):
@@ -377,19 +382,23 @@ def _format_candidate(
                                        phon_emb=t.get("phon_emb")))
             seen_labels.add(label)
 
-    # Extract representative points + the polygon flag from nested geometries. has_geom lets a client
-    # tell a polygon (usable as a containment region) from a point/line, which repr_point alone can't.
+    # Extract representative points + the areal flag from nested geometries.
+    # is_area (geom_class == "area") tells a client which candidates are valid
+    # containment parents — a polygon, not a point/line — which repr_point alone
+    # can't, and which has_geom (retrievability) gets wrong for LineStrings.
     geometries = []
     for g in (src.get("geometries") or []):
         rp = g.get("repr_point")
         has_geom = bool(g.get("has_geom"))
+        is_area = spatial.is_areal(g)
         point = None
         if isinstance(rp, dict):
             point = [rp.get("lon", 0), rp.get("lat", 0)]
         elif isinstance(rp, list) and len(rp) == 2:
             point = rp
         if point or has_geom:
-            geometries.append(CandidateGeometry(repr_point=point, has_geom=has_geom))
+            geometries.append(CandidateGeometry(repr_point=point, is_area=is_area,
+                                                has_geom=has_geom))
 
     return CandidateHit(
         place_id=src.get("place_id", ""),
@@ -440,19 +449,20 @@ async def reconcile_search(req: ReconcileRequest):
 
     **Response.**  A ``ReconcileResponse`` with a flat ``hits`` list of
     ``CandidateHit`` objects (clustering, if wanted, is done client-side from
-    the shipped ``edges[]`` + fuel).  Each hit carries ``geometries[]``, where every entry has
-    a ``repr_point`` and a ``has_geom`` flag — ``has_geom=True`` marks a
-    candidate backed by a full **polygon** geometry, i.e. one usable as a
-    ``contained_in`` containment region.  Point/line-only candidates report
-    ``has_geom=False``; use this to pick valid parents for hierarchical /
-    containment-scoped reconciliation.
+    the shipped ``edges[]`` + fuel).  Each hit carries ``geometries[]``, where
+    every entry has a ``repr_point``, an ``is_area`` flag and a ``has_geom``
+    flag. **``is_area=True``** marks a candidate backed by an areal (**polygon**)
+    geometry — one usable as a ``contained_in`` region / a valid hierarchical
+    parent; point and LineString candidates report ``is_area=False``. ``has_geom``
+    is a separate *retrievability* signal (a stored geometry exists) and is
+    ``True`` for LineStrings too — use ``is_area``, not ``has_geom``, to pick
+    containment parents.
 
     **Geographic scope is never silently dropped** (place#144).  When
-    ``contained_in`` names a container with no polygon, the scope is applied as
-    an approximate buffer around the container's indexed point instead of being
-    ignored; when no constraint at all can be built the request is **failed
-    closed** (no hits).  Either way ``scope`` in the response records exactly
-    what was applied, so the client can warn the user.
+    ``contained_in`` names a container with no polygon, the scope is taken from a
+    ``sameAs`` co-referent's boundary where one exists; when no real boundary can
+    be found the request is **failed closed** (no hits).  Either way ``scope`` in
+    the response records exactly what was applied, so the client can warn the user.
     """
     import httpx
     from collections import defaultdict

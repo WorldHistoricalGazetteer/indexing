@@ -318,3 +318,50 @@ class TestResolveRegion(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestIsArealAndContainerShape(unittest.TestCase):
+    def test_is_areal_predicate(self):
+        # geom_class is authoritative when present
+        self.assertTrue(spatial.is_areal({"geom_class": "area", "has_geom": True}))
+        self.assertFalse(spatial.is_areal({"geom_class": "line", "has_geom": True}))
+        self.assertFalse(spatial.is_areal({"geom_class": "point"}))
+        # transitional fallback for legacy docs w/o geom_class: has_geom => areal
+        self.assertTrue(spatial.is_areal({"has_geom": True}))
+        self.assertFalse(spatial.is_areal({"has_geom": False}))
+        self.assertFalse(spatial.is_areal({}))
+
+    def test_line_container_is_not_a_region(self):
+        # A restored LineString (has_geom=true, geom_class=line) carries an
+        # h3_cover but must NOT define a containment region (place#145).
+        cover = _cover_for(_square(0, 0, 3, 3))
+        hits = [{"_source": {"place_id": "osm:w1", "geometries": [
+            {"h3_cover": cover, "bounds": [0, 0, 3, 3], "geometry_index": 0,
+             "has_geom": True, "geom_class": "line",
+             "repr_point": {"lon": 1.5, "lat": 1.5}}]}}]
+        region = asyncio.run(spatial.resolve_region(
+            ["osm:w1"], _StubClient(hits), None, link_fallback=False))
+        # no areal container -> no region (the line is recorded as point-only)
+        self.assertIsNone(region)
+
+    def test_polygon_container_with_geom_class_area_builds_region(self):
+        cover = _cover_for(_square(0, 0, 3, 3))
+        hits = [{"_source": {"place_id": "osm:w2", "geometries": [
+            {"h3_cover": cover, "bounds": [0, 0, 3, 3], "geometry_index": 0,
+             "has_geom": True, "geom_class": "area"}]}}]
+        region = asyncio.run(spatial.resolve_region(["osm:w2"], _StubClient(hits), None))
+        self.assertIsNotNone(region)
+        self.assertEqual(region.area_ids, ("osm:w2",))
+
+    def test_legacy_polygon_without_geom_class_still_builds_region(self):
+        # transitional: a pre-backfill relation (has_geom, no geom_class) is
+        # treated as areal so containment keeps working before the corpus
+        # backfill lands.
+        cover = _cover_for(_square(0, 0, 3, 3))
+        hits = [{"_source": {"place_id": "osm:r9", "geometries": [
+            {"h3_cover": cover, "bounds": [0, 0, 3, 3], "geometry_index": 0,
+             "has_geom": True}]}}]
+        region = asyncio.run(spatial.resolve_region(["osm:r9"], _StubClient(hits), None))
+        self.assertIsNotNone(region)
+        self.assertEqual(region.area_ids, ("osm:r9",))

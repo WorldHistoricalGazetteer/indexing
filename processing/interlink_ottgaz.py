@@ -281,12 +281,12 @@ def cmd_wd_geometry(args):
             return None
         if wg["has_geom"]:  # wd has a polygon → reference it (overrides ofs hull)
             return _derived(wg, {
-                "has_geom": True, "geom_ref": wg["geom_ref"],
+                "has_geom": True, "geom_class": "area", "geom_ref": wg["geom_ref"],
                 "repr_point": wg["repr_point"], "hull": wg.get("hull"),
                 "source": "wd", "approximation": "exact", "timespans": []})
         return _derived(wg, {  # wd point only
-            "has_geom": False, "repr_point": wg["repr_point"], "source": "wd",
-            "approximation": "centroid", "timespans": []})
+            "has_geom": False, "geom_class": "point", "repr_point": wg["repr_point"],
+            "source": "wd", "approximation": "centroid", "timespans": []})
 
     upgrades = []  # (pid, geom_entry)
     polys = 0

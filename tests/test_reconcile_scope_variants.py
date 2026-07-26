@@ -211,3 +211,32 @@ class TestVariantScoreAccumulation(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCandidateIsArea(unittest.TestCase):
+    """_format_candidate marks candidates areal by geom_class, not has_geom."""
+
+    def _geoms(self, src):
+        from gateway.reconcile import _format_candidate
+        return _format_candidate(src, 50.0).geometries
+
+    def test_polygon_is_area(self):
+        g = self._geoms({"place_id": "osm:w1", "geometries": [
+            {"repr_point": {"lon": 1, "lat": 2}, "has_geom": True, "geom_class": "area"}]})
+        self.assertEqual([(x.is_area, x.has_geom) for x in g], [(True, True)])
+
+    def test_line_is_not_area_despite_has_geom(self):
+        # the place#145 case: LineString is has_geom=true but NOT areal
+        g = self._geoms({"place_id": "osm:w2", "geometries": [
+            {"repr_point": {"lon": 1, "lat": 2}, "has_geom": True, "geom_class": "line"}]})
+        self.assertEqual([(x.is_area, x.has_geom) for x in g], [(False, True)])
+
+    def test_point_is_not_area(self):
+        g = self._geoms({"place_id": "gn:1", "geometries": [
+            {"repr_point": {"lon": 1, "lat": 2}, "has_geom": False, "geom_class": "point"}]})
+        self.assertEqual([(x.is_area, x.has_geom) for x in g], [(False, False)])
+
+    def test_legacy_polygon_without_geom_class_is_area(self):
+        g = self._geoms({"place_id": "un:FR", "geometries": [
+            {"repr_point": {"lon": 1, "lat": 2}, "has_geom": True}]})
+        self.assertEqual([(x.is_area, x.has_geom) for x in g], [(True, True)])

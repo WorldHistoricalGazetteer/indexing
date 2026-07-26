@@ -376,6 +376,24 @@ def _strip_place_prefix(pid: str) -> str:
     return pid
 
 
+def is_areal(g: dict) -> bool:
+    """True iff a geometry can serve as a **containment region** — i.e. it is
+    areal (a polygon), the shape distinction that ``geom_class`` records.
+
+    Keys on ``geom_class == "area"``. For legacy docs that do not yet carry
+    ``geom_class`` (the corpus-wide backfill is a separate step), it falls back
+    to ``has_geom`` — a stored non-point geometry, which for those docs is a
+    polygon. Crucially, a restored **LineString** carries ``geom_class="line"``
+    and is therefore correctly **excluded** here even though ``has_geom`` is true
+    (place#145 — the reason we stopped keying containment off ``has_geom``: a
+    line is retrievable but not a container).
+    """
+    gc = g.get("geom_class")
+    if gc is not None:
+        return gc == "area"
+    return bool(g.get("has_geom"))
+
+
 _CONTAINER_SOURCE = [
     "place_id",
     "geometries.h3_cover",
@@ -384,6 +402,7 @@ _CONTAINER_SOURCE = [
     "geometries.bounds",
     "geometries.repr_point",
     "geometries.has_geom",
+    "geometries.geom_class",
 ]
 
 
@@ -423,12 +442,12 @@ def _collect_containers(hits: list[dict]) -> _ContainerGeoms:
                 cells = {c for c in cover if isinstance(c, str)}
             elif isinstance(cover, str) and cover:
                 cells = {cover}
-            # Only area geometries (a full polygon written to the geom-store)
-            # define the region EXACTLY. A point-only geometry (has_geom=false)
-            # carries an h3_cover of a single centroid cell, which as a region
-            # would be a degraded, container-independent filter — keep it aside
-            # as a seed for the fallbacks instead.
-            if g.get("has_geom") and cells:
+            # Only AREAL geometries (polygons) define the region EXACTLY. Keyed
+            # on geom_class now, not has_geom: a restored LineString is
+            # has_geom=true but geom_class="line", and a line must not become a
+            # containment region (place#145). Point-only / line geometries are
+            # kept aside as seeds for the fallbacks / reporting instead.
+            if is_areal(g) and cells:
                 out.cells.update(cells)
                 b = g.get("bounds")
                 if isinstance(b, list) and len(b) == 4:
