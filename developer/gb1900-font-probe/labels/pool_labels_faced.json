@@ -1480,25 +1480,81 @@
   "review": "accept"
  },
  {
-  "gcx": 16629300.6,
-  "gcy": 10805162,
-  "text": "ARLEY",
+  "gcx": 16629782.3,
+  "gcy": 10802042.1,
+  "text": "ROAD",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629731.2,
-  "gcy": 10805063.2,
-  "text": "Dunkirk",
-  "face": "Italic-Solid-Serif",
+  "gcx": 16629476.2,
+  "gcy": 10805086.8,
+  "text": "PARK",
+  "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630578.5,
-  "gcy": 10803780.3,
+  "gcx": 16630613.9,
+  "gcy": 10803406.8,
   "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630688.8,
+  "gcy": 10802118.9,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629597.6,
+  "gcy": 10803956.1,
+  "text": "GRANGE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630049.4,
+  "gcy": 10801943.1,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629737.6,
+  "gcy": 10804300.3,
+  "text": "WALK",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630608,
+  "gcy": 10803655.3,
+  "text": "PARK",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629689.5,
+  "gcy": 10802038.8,
+  "text": "ASH",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629397.6,
+  "gcy": 10805048,
+  "text": "ARMLEY",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -1512,33 +1568,9 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629314.7,
-  "gcy": 10804709.2,
-  "text": "Clothing",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629476.2,
-  "gcy": 10805086.8,
-  "text": "PARK",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630555.4,
-  "gcy": 10803920,
-  "text": "#THOR",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629466.9,
-  "gcy": 10803831.5,
-  "text": "AVENUE",
+  "gcx": 16629300.6,
+  "gcy": 10805162,
+  "text": "ARLEY",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -1552,10 +1584,378 @@
   "review": "confirmed-proposal"
  },
  {
+  "gcx": 16629357.3,
+  "gcy": 10803782,
+  "text": "ARGIE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630737.8,
+  "gcy": 10803301.9,
+  "text": "WELT###",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629731.2,
+  "gcy": 10805063.2,
+  "text": "Dunkirk",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630465.1,
+  "gcy": 10803296.2,
+  "text": "LANE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630555.4,
+  "gcy": 10803920,
+  "text": "#THOR",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630433.8,
+  "gcy": 10802608.9,
+  "text": "Spring",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629466.9,
+  "gcy": 10803831.5,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
   "gcx": 16629936.1,
   "gcy": 10802588.4,
   "text": "Bowling",
   "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629747.2,
+  "gcy": 10804755.5,
+  "text": "Yard",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630482,
+  "gcy": 10803012,
+  "text": "STOTT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628897.2,
+  "gcy": 10802290.6,
+  "text": "Wood",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630578.5,
+  "gcy": 10803780.3,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629424.5,
+  "gcy": 10804278.7,
+  "text": "Lane",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630114.1,
+  "gcy": 10803847.2,
+  "text": "Recreation",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630462.5,
+  "gcy": 10803255.6,
+  "text": "ORWOOD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629399.2,
+  "gcy": 10802323.9,
+  "text": "CANTERBURY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629917.2,
+  "gcy": 10803894.3,
+  "text": "LANE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630746.3,
+  "gcy": 10804647.5,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629090.1,
+  "gcy": 10804288.8,
+  "text": "Gott's",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629314.7,
+  "gcy": 10804709.2,
+  "text": "Clothing",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630247.4,
+  "gcy": 10804883.7,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629005.7,
+  "gcy": 10803258.9,
+  "text": "Oatlands",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629364.3,
+  "gcy": 10805233.4,
+  "text": "AVIARY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630196.6,
+  "gcy": 10802379.6,
+  "text": "Sch",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629963.1,
+  "gcy": 10801958.7,
+  "text": "CHAPEL",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628811.3,
+  "gcy": 10803202.8,
+  "text": "Burley",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628996.8,
+  "gcy": 10804986.3,
+  "text": "Hills",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630104.5,
+  "gcy": 10803202,
+  "text": "BOAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629107.6,
+  "gcy": 10805391.5,
+  "text": "SALISBURY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629594.5,
+  "gcy": 10802890.3,
+  "text": "Tennis",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629698.6,
+  "gcy": 10802320.7,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629795.8,
+  "gcy": 10803704.7,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630184.4,
+  "gcy": 10803725.3,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629312.2,
+  "gcy": 10804738,
+  "text": "Works",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630043.3,
+  "gcy": 10802121.6,
+  "text": "BENNETT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630578.7,
+  "gcy": 10802818.2,
+  "text": "DRIVE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630628.9,
+  "gcy": 10802281.3,
+  "text": "The",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629902.8,
+  "gcy": 10804154.9,
+  "text": "PARSONAGE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629047,
+  "gcy": 10802630.9,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630505.6,
+  "gcy": 10804307.6,
+  "text": "CARBERRY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629932.7,
+  "gcy": 10802610.1,
+  "text": "Green",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629364.8,
+  "gcy": 10802395.5,
+  "text": "ESTCOURT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628786.9,
+  "gcy": 10802293.3,
+  "text": "###Batclife",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629862.3,
+  "gcy": 10804690.2,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630724.3,
+  "gcy": 10803963.6,
+  "text": "GROVE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629647.8,
+  "gcy": 10802167.8,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629767.1,
+  "gcy": 10804439.2,
+  "text": "CRES.",
+  "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
@@ -1576,88 +1976,48 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629005.7,
-  "gcy": 10803258.9,
-  "text": "Oatlands",
+  "gcx": 16629938.1,
+  "gcy": 10805426.4,
+  "text": "Foundry",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629689.5,
-  "gcy": 10802038.8,
-  "text": "ASH",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630104.5,
-  "gcy": 10803202,
-  "text": "BOAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630556.7,
-  "gcy": 10803010.5,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629862.3,
-  "gcy": 10804690.2,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629399.2,
-  "gcy": 10802323.9,
-  "text": "CANTERBURY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630613.9,
-  "gcy": 10803406.8,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629597.6,
-  "gcy": 10803956.1,
-  "text": "GRANGE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630588.9,
-  "gcy": 10804331.7,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629662.8,
-  "gcy": 10805482,
-  "text": "Schools",
+  "gcx": 16630696.2,
+  "gcy": 10802283,
+  "text": "Elms",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630629.4,
-  "gcy": 10802876.6,
+  "gcx": 16630123.9,
+  "gcy": 10803506,
+  "text": "ASHVILLE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629350.2,
+  "gcy": 10803292,
+  "text": "Field",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629187.4,
+  "gcy": 10803113.4,
+  "text": "Ann's",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630410.4,
+  "gcy": 10802559.1,
   "text": "ROAD",
   "face": "Upright-Solid-Plain",
   "sig": null,
@@ -1672,377 +2032,9 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629341.4,
-  "gcy": 10804305.3,
-  "text": "Redcote",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630737.8,
-  "gcy": 10803301.9,
-  "text": "WELT###",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629902.8,
-  "gcy": 10804154.9,
-  "text": "PARSONAGE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629314,
-  "gcy": 10803842.6,
+  "gcx": 16629515,
+  "gcy": 10804089,
   "text": "PLACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630433.8,
-  "gcy": 10802608.9,
-  "text": "Spring",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630157.6,
-  "gcy": 10803639.4,
-  "text": "Cricket",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630501.6,
-  "gcy": 10803457.3,
-  "text": "WALMSLEY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629594.5,
-  "gcy": 10802890.3,
-  "text": "Tennis",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630344.6,
-  "gcy": 10803333.9,
-  "text": "CARDIGAN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630462.5,
-  "gcy": 10803255.6,
-  "text": "ORWOOD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629312.2,
-  "gcy": 10804738,
-  "text": "Works",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630410.4,
-  "gcy": 10802559.1,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630130.8,
-  "gcy": 10802115.2,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629819.1,
-  "gcy": 10803245.8,
-  "text": "BEECHWOOD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630539.7,
-  "gcy": 10802724.6,
-  "text": "AVENUE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630710.1,
-  "gcy": 10802772.1,
-  "text": "RICHMOND",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629102.4,
-  "gcy": 10805502,
-  "text": "CECIL",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629643.2,
-  "gcy": 10804265.8,
-  "text": "GREENHOW",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630286.9,
-  "gcy": 10802513.7,
-  "text": "BAINBRIGGE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630609.2,
-  "gcy": 10802947.7,
-  "text": "RICHMOND",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629582.2,
-  "gcy": 10804451.7,
-  "text": "CARDIGAN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630676,
-  "gcy": 10803803.3,
-  "text": "HAROLD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629364.3,
-  "gcy": 10805233.4,
-  "text": "AVIARY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629782.3,
-  "gcy": 10802042.1,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630184.4,
-  "gcy": 10803725.3,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628811.3,
-  "gcy": 10803202.8,
-  "text": "Burley",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628786.9,
-  "gcy": 10802293.3,
-  "text": "###Batclife",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630505.6,
-  "gcy": 10804307.6,
-  "text": "CARBERRY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629851.1,
-  "gcy": 10803618,
-  "text": "STANMORE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630526.3,
-  "gcy": 10803141,
-  "text": "NORWOOD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629516.4,
-  "gcy": 10803159.1,
-  "text": "STANMORE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629747.2,
-  "gcy": 10804755.5,
-  "text": "Yard",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629765.2,
-  "gcy": 10802576,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628829.1,
-  "gcy": 10802670.2,
-  "text": "Oakfiell",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629578,
-  "gcy": 10804591.9,
-  "text": "CARDIGAN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629647.8,
-  "gcy": 10802167.8,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629607.8,
-  "gcy": 10804471,
-  "text": "CARDIGAN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629954.9,
-  "gcy": 10803329.1,
-  "text": "CRESCENT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629917.8,
-  "gcy": 10802227,
-  "text": "MICHAELS",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629398.5,
-  "gcy": 10804017.8,
-  "text": "BANKFIELD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630196.6,
-  "gcy": 10802379.6,
-  "text": "Sch",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629364.8,
-  "gcy": 10802395.5,
-  "text": "ESTCOURT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629702.1,
-  "gcy": 10802892.4,
-  "text": "Lawns",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629107.6,
-  "gcy": 10805391.5,
-  "text": "SALISBURY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630464,
-  "gcy": 10802331.7,
-  "text": "Iry",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630688.8,
-  "gcy": 10802118.9,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629649.2,
-  "gcy": 10804386.5,
-  "text": "AVENUE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -2056,97 +2048,33 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630532.5,
-  "gcy": 10803229.8,
-  "text": "NORWOOD",
+  "gcx": 16630042.8,
+  "gcy": 10803732.2,
+  "text": "PARK",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629747.7,
-  "gcy": 10802785.3,
-  "text": "Ground",
+  "gcx": 16630655.9,
+  "gcy": 10803886.4,
+  "text": "HAROLD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629027.1,
+  "gcy": 10802927.1,
+  "text": "Ann'",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629197.1,
-  "gcy": 10802642.8,
-  "text": "Ann'ss",
-  "face": "Italic-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629516.4,
-  "gcy": 10802357.2,
-  "text": "HEADINGLEY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629585.2,
-  "gcy": 10802326.5,
-  "text": "HEADINGLEY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629413.8,
-  "gcy": 10803032.3,
-  "text": "Cricket",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629407.5,
-  "gcy": 10802497.7,
-  "text": "CANTERBURY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629619.4,
-  "gcy": 10805640.9,
-  "text": "FIELDING",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630121.5,
-  "gcy": 10803820.9,
-  "text": "Burley",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629707.3,
-  "gcy": 10803654.5,
-  "text": "KNOWLE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629917.2,
-  "gcy": 10803894.3,
-  "text": "LANE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629047,
-  "gcy": 10802630.9,
-  "text": "Lodge",
+  "gcx": 16628771.2,
+  "gcy": 10805517,
+  "text": "Works",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
@@ -2160,234 +2088,34 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629181.5,
-  "gcy": 10802670.1,
-  "text": "Tower",
+  "gcx": 16630582.7,
+  "gcy": 10802734.3,
+  "text": "MANOR",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629341.4,
+  "gcy": 10804305.3,
+  "text": "Redcote",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630043.3,
-  "gcy": 10802121.6,
-  "text": "BENNETT",
+  "gcx": 16630256.6,
+  "gcy": 10802040.7,
+  "text": "SHIRE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16628996.8,
-  "gcy": 10804986.3,
-  "text": "Hills",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630745.1,
-  "gcy": 10803848.7,
-  "text": "ROAD",
+  "gcx": 16629102.4,
+  "gcy": 10805502,
+  "text": "CECIL",
   "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629965.8,
-  "gcy": 10802861.9,
-  "text": "BROOMFIELD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629552.1,
-  "gcy": 10804443.3,
-  "text": "AVENUE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629698.6,
-  "gcy": 10802320.7,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630578.7,
-  "gcy": 10802818.2,
-  "text": "DRIVE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630134.3,
-  "gcy": 10805361.9,
-  "text": "Foundry",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630681.2,
-  "gcy": 10803648.1,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629995.2,
-  "gcy": 10803475.3,
-  "text": "AVENUE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629086.3,
-  "gcy": 10803653,
-  "text": "Burley",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630739.5,
-  "gcy": 10804804.1,
-  "text": "VENTNOR",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629350.2,
-  "gcy": 10803292,
-  "text": "Field",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629163.3,
-  "gcy": 10802119.1,
-  "text": "Wood",
-  "face": "Upright-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629718.2,
-  "gcy": 10805629.5,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630665.1,
-  "gcy": 10803829.2,
-  "text": "HAROLD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630162,
-  "gcy": 10801958.2,
-  "text": "Chan",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629752.3,
-  "gcy": 10802753.1,
-  "text": "Football",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630751.6,
-  "gcy": 10803819.6,
-  "text": "WAL##",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629938.1,
-  "gcy": 10805426.4,
-  "text": "Foundry",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629905.6,
-  "gcy": 10803392.4,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630608,
-  "gcy": 10803655.3,
-  "text": "PARK",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629191.8,
-  "gcy": 10803041.7,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630072.3,
-  "gcy": 10802816.1,
-  "text": "CRESCENT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630042.8,
-  "gcy": 10803732.2,
-  "text": "PARK",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630604.2,
-  "gcy": 10802134.7,
-  "text": "OAK",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629730.6,
-  "gcy": 10804514.3,
-  "text": "CARDIGAN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629355.6,
-  "gcy": 10803481.5,
-  "text": "Lodges",
-  "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
@@ -2395,238 +2123,6 @@
   "gcx": 16630560.5,
   "gcy": 10802861.8,
   "text": "RAVEN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629160,
-  "gcy": 10803142.7,
-  "text": "Mount",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629704,
-  "gcy": 10803528.9,
-  "text": "STANMORE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628829.3,
-  "gcy": 10802330.4,
-  "text": "House",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629225.1,
-  "gcy": 10803857.2,
-  "text": "AVENUE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629788.1,
-  "gcy": 10804597.3,
-  "text": "Factory",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629788.1,
-  "gcy": 10804682.2,
-  "text": "LENNOX",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629357.3,
-  "gcy": 10803782,
-  "text": "ARGIE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630125.8,
-  "gcy": 10803311.5,
-  "text": "House",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629641.1,
-  "gcy": 10802137.4,
-  "text": "Headingley",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630741.6,
-  "gcy": 10802694.6,
-  "text": "ROAD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629475.3,
-  "gcy": 10802462.9,
-  "text": "AVENUE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630653.6,
-  "gcy": 10802758.3,
-  "text": "AVENU",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630417.4,
-  "gcy": 10802195.7,
-  "text": "Vic.",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629590.5,
-  "gcy": 10803666.6,
-  "text": "KNOWLE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630175.7,
-  "gcy": 10802200.1,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629515,
-  "gcy": 10804089,
-  "text": "PLACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630639.4,
-  "gcy": 10803942.6,
-  "text": "HAROLD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630332.3,
-  "gcy": 10805329.5,
-  "text": "Leeds",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630011,
-  "gcy": 10804723.4,
-  "text": "BODLEY",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629863.9,
-  "gcy": 10803389.5,
-  "text": "MOUNT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630624.9,
-  "gcy": 10803996.1,
-  "text": "HAROLD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630542.4,
-  "gcy": 10802331.1,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628861.5,
-  "gcy": 10803147.3,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628898.4,
-  "gcy": 10803541.7,
-  "text": "Lodge",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628897.2,
-  "gcy": 10802290.6,
-  "text": "Wood",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630114.1,
-  "gcy": 10803847.2,
-  "text": "Recreation",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628861.5,
-  "gcy": 10804091.5,
-  "text": "Rope",
-  "face": "Italic-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630065.5,
-  "gcy": 10803125.7,
-  "text": "NEWPORT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630049.4,
-  "gcy": 10801943.1,
-  "text": "STREET",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -2640,273 +2136,57 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630533.1,
-  "gcy": 10803679,
-  "text": "ROYAL",
+  "gcx": 16630739.5,
+  "gcy": 10804804.1,
+  "text": "VENTNOR",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629356.2,
-  "gcy": 10803253,
-  "text": "South",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630115.2,
-  "gcy": 10803870.8,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630546.6,
-  "gcy": 10802924.8,
-  "text": "MANOR",
+  "gcx": 16629590.5,
+  "gcy": 10803666.6,
+  "text": "KNOWLE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629832.4,
-  "gcy": 10803099.7,
-  "text": "NORTHERN",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629031.7,
-  "gcy": 10805250.1,
-  "text": "Cricket",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629090.1,
-  "gcy": 10804288.8,
-  "text": "Gott's",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630051.2,
-  "gcy": 10802978.2,
-  "text": "BROOMFIELD",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628770.3,
-  "gcy": 10805491.1,
-  "text": "Brick",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629806.1,
-  "gcy": 10804025,
-  "text": "Schs",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629014.8,
-  "gcy": 10802956.8,
-  "text": "Grange",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630719.9,
-  "gcy": 10804021.4,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630604,
-  "gcy": 10802394.7,
-  "text": "Highfields",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629634.9,
-  "gcy": 10804491.3,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629029,
-  "gcy": 10805280.5,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630085.6,
-  "gcy": 10804489.9,
+  "gcx": 16629314,
+  "gcy": 10803842.6,
   "text": "PLACE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629963.1,
-  "gcy": 10801958.7,
-  "text": "CHAPEL",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629334.1,
-  "gcy": 10803923.9,
-  "text": "##ELSHAM",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630754.2,
-  "gcy": 10805060.8,
-  "text": "Works",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629882,
-  "gcy": 10804600.1,
-  "text": "LENNOX",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630740.5,
-  "gcy": 10803907.5,
-  "text": "MOUNT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629737.8,
-  "gcy": 10803770.4,
-  "text": "VILLAGE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629429.9,
-  "gcy": 10803904.5,
-  "text": "TERRACE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629795.8,
-  "gcy": 10803704.7,
-  "text": "STREET",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630354.3,
-  "gcy": 10802603.8,
-  "text": "SPRING",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630142.8,
-  "gcy": 10803700.7,
-  "text": "Quarry",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629709.1,
-  "gcy": 10803732.6,
-  "text": "MOUNT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630641.1,
-  "gcy": 10802664.9,
+  "gcx": 16630613.6,
+  "gcy": 10802694.6,
   "text": "MANOR",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629488.3,
-  "gcy": 10802284.3,
-  "text": "DRIV",
+  "gcx": 16630710.1,
+  "gcy": 10802772.1,
+  "text": "RICHMOND",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629783.4,
-  "gcy": 10802647.9,
-  "text": "Stands",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630085.5,
-  "gcy": 10802198.7,
-  "text": "GRANBY",
+  "gcx": 16629929.9,
+  "gcy": 10804260.7,
+  "text": "STREET",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629820.1,
-  "gcy": 10803864,
-  "text": "Chap",
-  "face": "Italic-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630465.1,
-  "gcy": 10803296.2,
-  "text": "LANE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630739.6,
-  "gcy": 10804420.1,
-  "text": "LODGE",
+  "gcx": 16629552.1,
+  "gcy": 10804443.3,
+  "text": "AVENUE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -2920,186 +2200,170 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16628811.1,
-  "gcy": 10803234.6,
-  "text": "Hill",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629196.7,
-  "gcy": 10803268.9,
-  "text": "Ann",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630116.6,
-  "gcy": 10803871.5,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629932.7,
-  "gcy": 10802610.1,
-  "text": "Green",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628863.3,
-  "gcy": 10805140.5,
-  "text": "PARMLEY",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629526.4,
-  "gcy": 10803032.1,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630673,
-  "gcy": 10804380.3,
-  "text": "BURLEY",
+  "gcx": 16629707.3,
+  "gcy": 10803654.5,
+  "text": "KNOWLE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630650.6,
-  "gcy": 10803209.6,
-  "text": "School",
+  "gcx": 16630741.6,
+  "gcy": 10802694.6,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630311.9,
+  "gcy": 10805407.9,
+  "text": "Armley",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630655.9,
-  "gcy": 10803886.4,
+  "gcx": 16630542.4,
+  "gcy": 10802331.1,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630085.5,
+  "gcy": 10802198.7,
+  "text": "GRANBY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630130.8,
+  "gcy": 10802115.2,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629761,
+  "gcy": 10804543.3,
+  "text": "CARDIGAN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629965.8,
+  "gcy": 10802861.9,
+  "text": "BROOMFIELD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630067.9,
+  "gcy": 10803699.2,
+  "text": "Old",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629649.4,
+  "gcy": 10804626.1,
+  "text": "CARDIGAN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630719.9,
+  "gcy": 10804021.4,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629747.3,
+  "gcy": 10804273.1,
+  "text": "CRES.",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630609.2,
+  "gcy": 10802947.7,
+  "text": "RICHMOND",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629788.1,
+  "gcy": 10804682.2,
+  "text": "LENNOX",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630604.2,
+  "gcy": 10802134.7,
+  "text": "OAK",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630665.1,
+  "gcy": 10803829.2,
   "text": "HAROLD",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630010.6,
-  "gcy": 10804457.4,
-  "text": "LILIAN",
+  "gcx": 16630344.6,
+  "gcy": 10803333.9,
+  "text": "CARDIGAN",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630123.9,
-  "gcy": 10803506,
-  "text": "ASHVILLE",
+  "gcx": 16629191.8,
+  "gcy": 10803041.7,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630533.1,
+  "gcy": 10803679,
+  "text": "ROYAL",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629187.4,
-  "gcy": 10803113.4,
-  "text": "Ann's",
+  "gcx": 16628898.4,
+  "gcy": 10803541.7,
+  "text": "Lodge",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16628778.1,
-  "gcy": 10803546.8,
-  "text": "###ctoria",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630698.2,
-  "gcy": 10804593.8,
-  "text": "STREET",
+  "gcx": 16630745.1,
+  "gcy": 10803848.7,
+  "text": "ROAD",
   "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629096.8,
-  "gcy": 10805459.7,
-  "text": "CECIL",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630628.9,
-  "gcy": 10802281.3,
-  "text": "The",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630135.2,
-  "gcy": 10805328.4,
-  "text": "Scotch",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630704.3,
-  "gcy": 10805463.4,
-  "text": "Works",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630520.5,
-  "gcy": 10804137.3,
-  "text": "ALBERT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629737.6,
-  "gcy": 10804300.3,
-  "text": "WALK",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630482,
-  "gcy": 10803012,
-  "text": "STOTT",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629290.9,
-  "gcy": 10803702.1,
-  "text": "Works",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630156.5,
-  "gcy": 10803666.5,
-  "text": "Ground",
-  "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
@@ -3112,34 +2376,90 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16628771.2,
-  "gcy": 10805517,
-  "text": "Works",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629737.7,
-  "gcy": 10804730.9,
-  "text": "Corporation",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629443.5,
-  "gcy": 10802373.5,
-  "text": "ESTCOURT",
+  "gcx": 16629607.8,
+  "gcy": 10804471,
+  "text": "CARDIGAN",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629197.4,
-  "gcy": 10803010.5,
-  "text": "Anns",
+  "gcx": 16629718.2,
+  "gcy": 10805629.5,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629852.2,
+  "gcy": 10804216.7,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630526.3,
+  "gcy": 10803141,
+  "text": "NORWOOD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630286.9,
+  "gcy": 10802513.7,
+  "text": "BAINBRIGGE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629863.9,
+  "gcy": 10803389.5,
+  "text": "MOUNT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629662.8,
+  "gcy": 10805482,
+  "text": "Schools",
   "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630556.7,
+  "gcy": 10803010.5,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630157.6,
+  "gcy": 10803639.4,
+  "text": "Cricket",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630104.8,
+  "gcy": 10804463.8,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629582.2,
+  "gcy": 10804451.7,
+  "text": "CARDIGAN",
+  "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
@@ -3147,6 +2467,38 @@
   "gcx": 16629647.3,
   "gcy": 10803733,
   "text": "ANNS",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630676,
+  "gcy": 10803803.3,
+  "text": "HAROLD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630546.6,
+  "gcy": 10802924.8,
+  "text": "MANOR",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630641.1,
+  "gcy": 10802664.9,
+  "text": "MANOR",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630501.6,
+  "gcy": 10803457.3,
+  "text": "WALMSLEY",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -3168,7 +2520,63 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630739.4,
+  "gcx": 16629516.4,
+  "gcy": 10803159.1,
+  "text": "STANMORE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629783.4,
+  "gcy": 10802647.9,
+  "text": "Stands",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629685.9,
+  "gcy": 10804160.6,
+  "text": "GREENHOW",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630134.3,
+  "gcy": 10805361.9,
+  "text": "Foundry",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630624.9,
+  "gcy": 10803996.1,
+  "text": "HAROLD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630681.2,
+  "gcy": 10803648.1,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629788.1,
+  "gcy": 10804597.3,
+  "text": "Factory",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630740.5,
   "gcy": 10803907.5,
   "text": "MOUNT",
   "face": "Upright-Solid-Plain",
@@ -3176,121 +2584,177 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630122.3,
-  "gcy": 10803282.1,
-  "text": "Cleveland",
+  "gcx": 16630121.5,
+  "gcy": 10803820.9,
+  "text": "Burley",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630696.2,
-  "gcy": 10802283,
-  "text": "Elms",
+  "gcx": 16629632,
+  "gcy": 10804042,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629578,
+  "gcy": 10804591.9,
+  "text": "CARDIGAN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630011,
+  "gcy": 10804723.4,
+  "text": "BODLEY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629995.2,
+  "gcy": 10803475.3,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630639.4,
+  "gcy": 10803942.6,
+  "text": "HAROLD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629643.2,
+  "gcy": 10804265.8,
+  "text": "GREENHOW",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630754.2,
+  "gcy": 10805060.8,
+  "text": "Works",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629027.1,
-  "gcy": 10802927.1,
-  "text": "Ann'",
+  "gcx": 16630739.6,
+  "gcy": 10804420.1,
+  "text": "LODGE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630532.5,
+  "gcy": 10803229.8,
+  "text": "NORWOOD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629197.1,
+  "gcy": 10802642.8,
+  "text": "Ann'ss",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630724.3,
-  "gcy": 10803963.6,
-  "text": "GROVE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630198.6,
-  "gcy": 10803461.7,
-  "text": "LANE",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630582.7,
-  "gcy": 10802734.3,
-  "text": "MANOR",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630739.2,
-  "gcy": 10803877.5,
-  "text": "VIEW",
-  "face": "Upright-Solid-Plain",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630067.9,
-  "gcy": 10803699.2,
-  "text": "Old",
+  "gcx": 16629086.3,
+  "gcy": 10803653,
+  "text": "Burley",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630256.6,
-  "gcy": 10802040.7,
-  "text": "SHIRE",
+  "gcx": 16629819.1,
+  "gcy": 10803245.8,
+  "text": "BEECHWOOD",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629305,
-  "gcy": 10802314.2,
-  "text": "Headingley",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629701.6,
-  "gcy": 10803012.1,
-  "text": "LEEDS",
+  "gcx": 16629851.1,
+  "gcy": 10803618,
+  "text": "STANMORE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630153.2,
-  "gcy": 10802137.6,
-  "text": "Sth.",
+  "gcx": 16629196.7,
+  "gcy": 10803268.9,
+  "text": "Ann",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16628808.3,
-  "gcy": 10804861.1,
-  "text": "Stones",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630662.6,
-  "gcy": 10802587.4,
-  "text": "HEADIN###",
+  "gcx": 16630588.9,
+  "gcy": 10804331.7,
+  "text": "ROAD",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630613.6,
-  "gcy": 10802694.6,
-  "text": "MANOR",
+  "gcx": 16630010.6,
+  "gcy": 10804457.4,
+  "text": "LILIAN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629475.3,
+  "gcy": 10802462.9,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628829.1,
+  "gcy": 10802670.2,
+  "text": "Oakfiell",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630115.2,
+  "gcy": 10803870.8,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630520.5,
+  "gcy": 10804137.3,
+  "text": "ALBERT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630739.4,
+  "gcy": 10803907.5,
+  "text": "MOUNT",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -3304,49 +2768,241 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629770.2,
-  "gcy": 10802540.8,
-  "text": "Cricket",
+  "gcx": 16628829.3,
+  "gcy": 10802330.4,
+  "text": "House",
   "face": "Italic-Solid-Serif",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16629099.2,
-  "gcy": 10803233.6,
-  "text": "Lane",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16630759.6,
-  "gcy": 10801940.9,
-  "text": "Bel###",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16628939.9,
-  "gcy": 10803034.5,
-  "text": "Ann's",
-  "face": "Italic-Solid-Serif",
-  "sig": null,
-  "review": "confirmed-proposal"
- },
- {
-  "gcx": 16629778.7,
-  "gcy": 10803553.6,
-  "text": "HILL",
+  "gcx": 16629429.9,
+  "gcy": 10803904.5,
+  "text": "TERRACE",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630421.9,
-  "gcy": 10803144.7,
-  "text": "TER",
+  "gcx": 16630704.3,
+  "gcy": 10805463.4,
+  "text": "Works",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628811.1,
+  "gcy": 10803234.6,
+  "text": "Hill",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629225.1,
+  "gcy": 10803857.2,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629709.1,
+  "gcy": 10803732.6,
+  "text": "MOUNT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630629.4,
+  "gcy": 10802876.6,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630175.7,
+  "gcy": 10802200.1,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629737.8,
+  "gcy": 10803770.4,
+  "text": "VILLAGE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629443.5,
+  "gcy": 10802373.5,
+  "text": "ESTCOURT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629917.8,
+  "gcy": 10802227,
+  "text": "MICHAELS",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630698.2,
+  "gcy": 10804593.8,
+  "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629730.6,
+  "gcy": 10804514.3,
+  "text": "CARDIGAN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629619.4,
+  "gcy": 10805640.9,
+  "text": "FIELDING",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630332.3,
+  "gcy": 10805329.5,
+  "text": "Leeds",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630526,
+  "gcy": 10802606.6,
+  "text": "Bank",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630042.6,
+  "gcy": 10803731.8,
+  "text": "PARK",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629607,
+  "gcy": 10804984,
+  "text": "Wood",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630464,
+  "gcy": 10802331.7,
+  "text": "Iry",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629096.8,
+  "gcy": 10805459.7,
+  "text": "CECIL",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630751.6,
+  "gcy": 10803819.6,
+  "text": "WAL##",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629334.1,
+  "gcy": 10803923.9,
+  "text": "##ELSHAM",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630539.7,
+  "gcy": 10802724.6,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629094,
+  "gcy": 10805420.8,
+  "text": "CECIL",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629824.5,
+  "gcy": 10803355.9,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630125.8,
+  "gcy": 10803311.5,
+  "text": "House",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630139.6,
+  "gcy": 10804388,
+  "text": "PLACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630421.5,
+  "gcy": 10802145.2,
+  "text": "Half",
+  "face": "Blackletter",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629398.5,
+  "gcy": 10804017.8,
+  "text": "BANKFIELD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629516.4,
+  "gcy": 10802357.2,
+  "text": "HEADINGLEY",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -3360,6 +3016,350 @@
   "review": "confirmed-proposal"
  },
  {
+  "gcx": 16629181.5,
+  "gcy": 10802670.1,
+  "text": "Tower",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630673,
+  "gcy": 10804380.3,
+  "text": "BURLEY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630085.6,
+  "gcy": 10804489.9,
+  "text": "PLACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629649.2,
+  "gcy": 10804386.5,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629806.1,
+  "gcy": 10804025,
+  "text": "Schs",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628861.5,
+  "gcy": 10803147.3,
+  "text": "Lodge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630051.2,
+  "gcy": 10802978.2,
+  "text": "BROOMFIELD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629197.4,
+  "gcy": 10803010.5,
+  "text": "Anns",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629160,
+  "gcy": 10803142.7,
+  "text": "Mount",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629413.8,
+  "gcy": 10803032.3,
+  "text": "Cricket",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629355.6,
+  "gcy": 10803481.5,
+  "text": "Lodges",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630142.8,
+  "gcy": 10803700.7,
+  "text": "Quarry",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629765.2,
+  "gcy": 10802576,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630417.4,
+  "gcy": 10802195.7,
+  "text": "Vic.",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629905.6,
+  "gcy": 10803392.4,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630604,
+  "gcy": 10802394.7,
+  "text": "Highfields",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629163.3,
+  "gcy": 10802119.1,
+  "text": "Wood",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629871.1,
+  "gcy": 10804656.8,
+  "text": "LENNOX",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629585.2,
+  "gcy": 10802326.5,
+  "text": "HEADINGLEY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629290.9,
+  "gcy": 10803702.1,
+  "text": "Works",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629099.2,
+  "gcy": 10803233.6,
+  "text": "Lane",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630048.5,
+  "gcy": 10804340.9,
+  "text": "MATTHIASY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629269.7,
+  "gcy": 10805154.8,
+  "text": "ARLEY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630702.5,
+  "gcy": 10802684.2,
+  "text": "TER.",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629702.1,
+  "gcy": 10802892.4,
+  "text": "Lawns",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628939.9,
+  "gcy": 10803034.5,
+  "text": "Ann's",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630485.7,
+  "gcy": 10804369.9,
+  "text": "Sch.",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630585.6,
+  "gcy": 10804620.3,
+  "text": "GREYSTONE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629559.4,
+  "gcy": 10804112.7,
+  "text": "AVENUE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629737.7,
+  "gcy": 10804730.9,
+  "text": "Corporation",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629747.7,
+  "gcy": 10802785.3,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628778.1,
+  "gcy": 10803546.8,
+  "text": "###ctoria",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630072.3,
+  "gcy": 10802816.1,
+  "text": "CRESCENT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630354.3,
+  "gcy": 10802603.8,
+  "text": "SPRING",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629187.8,
+  "gcy": 10805722.2,
+  "text": "BRANCH",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630156.5,
+  "gcy": 10803666.5,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629882,
+  "gcy": 10804600.1,
+  "text": "LENNOX",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629029,
+  "gcy": 10805280.5,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629701.6,
+  "gcy": 10803012.1,
+  "text": "LEEDS",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628861.5,
+  "gcy": 10804091.5,
+  "text": "Rope",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629356.2,
+  "gcy": 10803253,
+  "text": "South",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629954.9,
+  "gcy": 10803329.1,
+  "text": "CRESCENT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629407.5,
+  "gcy": 10802497.7,
+  "text": "CANTERBURY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
   "gcx": 16629185.9,
   "gcy": 10803294.8,
   "text": "Hill",
@@ -3368,9 +3368,433 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630746.3,
-  "gcy": 10804647.5,
+  "gcx": 16629526.4,
+  "gcy": 10803032.1,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630650.6,
+  "gcy": 10803209.6,
+  "text": "School",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629770.2,
+  "gcy": 10802540.8,
+  "text": "Cricket",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630116.6,
+  "gcy": 10803871.5,
+  "text": "Ground",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629662.2,
+  "gcy": 10804509.8,
+  "text": "MOUNT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629031.7,
+  "gcy": 10805250.1,
+  "text": "Cricket",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630329.5,
+  "gcy": 10805361.9,
+  "text": "Forge",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628764.6,
+  "gcy": 10802478.7,
+  "text": "###ion",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629492.9,
+  "gcy": 10805177.8,
+  "text": "GROVE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630653.6,
+  "gcy": 10802758.3,
+  "text": "AVENU",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628808.3,
+  "gcy": 10804861.1,
+  "text": "Stones",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629556,
+  "gcy": 10804515.9,
+  "text": "CROSS",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629634.9,
+  "gcy": 10804491.3,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629641.1,
+  "gcy": 10802137.4,
+  "text": "Headingley",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629014.8,
+  "gcy": 10802956.8,
+  "text": "Grange",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629228.9,
+  "gcy": 10805273.6,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630125.4,
+  "gcy": 10804326.8,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629989.6,
+  "gcy": 10804233.5,
   "text": "STREET",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629704,
+  "gcy": 10803528.9,
+  "text": "STANMORE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629752.3,
+  "gcy": 10802753.1,
+  "text": "Football",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630135.2,
+  "gcy": 10805328.4,
+  "text": "Scotch",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630065.5,
+  "gcy": 10803125.7,
+  "text": "NEWPORT",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630162,
+  "gcy": 10801958.2,
+  "text": "Chan",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628805.9,
+  "gcy": 10803705.6,
+  "text": "Crescent",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629475.8,
+  "gcy": 10804064,
+  "text": "TERRACE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629488.3,
+  "gcy": 10802284.3,
+  "text": "DRIV",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628770.3,
+  "gcy": 10805491.1,
+  "text": "Brick",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629732.9,
+  "gcy": 10805088.8,
+  "text": "House",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630662.6,
+  "gcy": 10802587.4,
+  "text": "HEADIN###",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629359.7,
+  "gcy": 10805183.4,
+  "text": "AVIARY",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629820.1,
+  "gcy": 10803864,
+  "text": "Chap",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630153.2,
+  "gcy": 10802137.6,
+  "text": "Sth.",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630111,
+  "gcy": 10803728.8,
+  "text": "VIEW",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629305,
+  "gcy": 10802314.2,
+  "text": "Headingley",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629496.1,
+  "gcy": 10804971.7,
+  "text": "Cunliff",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629917.6,
+  "gcy": 10802148.1,
+  "text": "TER.",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629832.4,
+  "gcy": 10803099.7,
+  "text": "NORTHERN",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628863.3,
+  "gcy": 10805140.5,
+  "text": "PARMLEY",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629751.4,
+  "gcy": 10803713.6,
+  "text": "ROAD",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628762.6,
+  "gcy": 10803823,
+  "text": "###ield",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630418.9,
+  "gcy": 10802122.5,
+  "text": "Heacinaley",
+  "face": "Blackletter",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630312.4,
+  "gcy": 10802366.7,
+  "text": "Church",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630122.3,
+  "gcy": 10803282.1,
+  "text": "Cleveland",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630195.2,
+  "gcy": 10804876.9,
+  "text": "Gas",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630312.1,
+  "gcy": 10802031.7,
+  "text": "OAK",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628772.5,
+  "gcy": 10803572.7,
+  "text": "House",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630421.9,
+  "gcy": 10803144.7,
+  "text": "TER",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628781.7,
+  "gcy": 10802447.7,
+  "text": "###ngley",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16628803.2,
+  "gcy": 10803731,
+  "text": "Cottages",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629908,
+  "gcy": 10803679.7,
+  "text": "HILL",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629302.6,
+  "gcy": 10802342,
+  "text": "House",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629353.8,
+  "gcy": 10803854.8,
+  "text": "TER.",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629158.4,
+  "gcy": 10802083.9,
+  "text": "Batcliffe",
+  "face": "Upright-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630739.2,
+  "gcy": 10803877.5,
+  "text": "VIEW",
   "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
@@ -3384,6 +3808,30 @@
   "review": "confirmed-proposal"
  },
  {
+  "gcx": 16630198.6,
+  "gcy": 10803461.7,
+  "text": "LANE",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629778.7,
+  "gcy": 10803553.6,
+  "text": "HILL",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16630759.6,
+  "gcy": 10801940.9,
+  "text": "Bel###",
+  "face": "Italic-Solid-Serif",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
   "gcx": 16629492.9,
   "gcy": 10805300.6,
   "text": "TER.",
@@ -3392,10 +3840,18 @@
   "review": "confirmed-proposal"
  },
  {
-  "gcx": 16630526,
-  "gcy": 10802606.6,
-  "text": "Bank",
-  "face": "Italic-Solid-Serif",
+  "gcx": 16629662.2,
+  "gcy": 10803626.2,
+  "text": "TER.",
+  "face": "Upright-Solid-Plain",
+  "sig": null,
+  "review": "confirmed-proposal"
+ },
+ {
+  "gcx": 16629389.4,
+  "gcy": 10802470.1,
+  "text": "TER",
+  "face": "Upright-Solid-Plain",
   "sig": null,
   "review": "confirmed-proposal"
  }

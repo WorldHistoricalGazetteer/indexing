@@ -98,6 +98,10 @@ def main():
     ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--keep-numerals", dest="skip_numerals", action="store_false",
                     help="propose faces for numeric transcripts too (they have no face in the inventory)")
+    ap.add_argument("--min-anchors", type=int, default=3,
+                    help="a face with fewer anchors than this cannot be proposed. A one-anchor class is worse "
+                         "than an absent one: it cannot be estimated, scores 0.000 leave-one-out, and still "
+                         "attracts proposals that a reviewer then has to correct one by one")
     ap.add_argument("--drop-sigs", nargs="*", default=["numeral·solid·plain"],
                     help="signatures removed from the anchor set: they cannot then be proposed at all, "
                          "which is the honest treatment of a class that has no face in the inventory")
@@ -110,6 +114,13 @@ def main():
     if a.drop_sigs:
         keep = ~np.isin(ASIG, a.drop_sigs)
         print(f"dropping {int((~keep).sum())} anchors of {a.drop_sigs}", flush=True)
+        A, ASIG = A[keep], ASIG[keep]
+    thin = [s for s in set(ASIG) if int((ASIG == s).sum()) < a.min_anchors]
+    if thin:
+        for s in sorted(thin):
+            print(f"  {s} has {int((ASIG == s).sum())} anchor(s) — below --min-anchors "
+                  f"{a.min_anchors}, cannot be proposed", flush=True)
+        keep = ~np.isin(ASIG, thin)
         A, ASIG = A[keep], ASIG[keep]
     sigs = sorted(set(ASIG))
     cols = {s: np.where(ASIG == s)[0] for s in sigs}
