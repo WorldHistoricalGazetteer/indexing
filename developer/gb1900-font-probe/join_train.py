@@ -14,6 +14,13 @@ TRAINED ON THE PAIRS IT WILL BE ASKED ABOUT. Candidates come from a deliberately
 same one used at inference — rather than from all pairs. Training on all pairs would drown the model in
 trivially-distant negatives, and its probabilities would be calibrated for a question nobody asks.
 
+AND ON PAIRS INVOLVING WORDS GB1900 NEVER PINNED. The first version only used pairs where BOTH words sat in
+a known-good group, but at inference most neighbours are words no volunteer pinned — unpinned labels,
+misreadings, map furniture — and the model had never been asked about one. What licenses the extra negatives
+is that a group is COMPLETE: every token of the transcription is accounted for, so the label has no room
+left, and any other word beside it is definitely not part of it. That inference needs the group to be
+complete, which is exactly what the strict construction guarantees.
+
 HELD OUT BY PLACE, NOT BY PAIR. Labels on one sheet share a draughtsman, a survey date and a printing, so a
 random split would let the model memorise a region and report it as skill. Regions are grouped into blocks
 about 12km across — coarser than an OS sheet — and whole blocks are held out.
@@ -29,10 +36,44 @@ from assemble_labels import word_frame, norm, tokens, is_alpha
 
 FEATURES = ["gap_pitch", "gap_h", "lat_h", "ang_diff", "h_ratio", "pitch_ratio",
             "long_ratio", "centre_h", "both_upper", "case_match", "either_numeric",
-            "len_ratio", "min_h"]
+            "len_ratio", "min_h",
+            # The face signal. On these sheets typeface encodes feature CATEGORY rather than decoration, so
+            # two words in different faces are two different labels however neatly they line up. Absence is
+            # marked -1 rather than 0 so the tree can split "not classified" off instead of reading a missing
+            # face as a disagreeing one.
+            "font_dot", "font_same_top", "font_known", "font_conf_min"]
 
 
-def pair_features(A, B, ta, tb):
+def font_pair(fa, fb):
+    """Agreement between two words' font distributions, as a soft score rather than a hard identity."""
+    if not fa or not fb:
+        return [-1.0, -1.0, 0.0, -1.0]
+    dot = sum(p * fb.get(k, 0.0) for k, p in fa.items())
+    ta = max(fa.items(), key=lambda kv: kv[1])
+    tb = max(fb.items(), key=lambda kv: kv[1])
+    return [float(dot), 1.0 if ta[0] == tb[0] else 0.0, 1.0, float(min(ta[1], tb[1]))]
+
+
+def load_fonts(d):
+    """box key -> {font: probability}, from the sharded font_classify backfill."""
+    import glob as _g
+    out = {}
+    for f in _g.glob(os.path.join(d, "*.jsonl")):
+        for line in open(f):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            k = (round(r["gcx"] / 4), round(r["gcy"] / 4), norm(r.get("text", "")))
+            out[k] = {a: b for a, b in r.get("fonts", [])}
+    return out
+
+
+def font_key(f):
+    return (round(f["cx"] / 4), round(f["cy"] / 4))
+
+
+def pair_features(A, B, ta, tb, fa=None, fb=None):
     """Symmetric description of a candidate join, in units the typography itself supplies.
 
     Everything that can be is expressed relative to the words' OWN cap height and character pitch, so the
@@ -61,7 +102,7 @@ def pair_features(A, B, ta, tb):
             1.0 if (ua == ub) else 0.0,
             1.0 if (not is_alpha(ta) or not is_alpha(tb)) else 0.0,
             min(len(ta), len(tb)) / max(1.0, max(len(ta), len(tb))),
-            hmin]
+            hmin] + font_pair(fa, fb)
 
 
 def candidates(words, max_gap_pitch=6.0, lat_tol=1.4, h_tol=0.55, ang_tol=28.0):
@@ -162,6 +203,8 @@ def main():
     ap.add_argument("--max-files", type=int, default=60)
     ap.add_argument("--min-lines", type=int, default=200, help="skip near-empty region files")
     ap.add_argument("--test-frac", type=float, default=0.3)
+    ap.add_argument("--fonts", default=None,
+                    help="font_v2 dir from the sharded font_classify backfill; adds the face features")
     ap.add_argument("--out", default="join_rf.joblib")
     a = ap.parse_args()
 
@@ -172,6 +215,9 @@ def main():
     files = files[: a.max_files]
     print(f"{len(files)} region files with >= {a.min_lines} detections")
     P = load_pins(a.pins)
+    FONTS = load_fonts(a.fonts) if a.fonts else {}
+    if a.fonts:
+        print(f"{len(FONTS)} classified boxes carry a face")
 
     X, Y, B = [], [], []
     n_words = n_groups = n_contested = 0
@@ -192,7 +238,8 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(text=txt, f=word_frame(p, txt)))
+            words.append(dict(text=txt, f=word_frame(p, txt),
+                              font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
         if len(words) < 30:
             continue
         n_words += len(words)
@@ -204,10 +251,13 @@ def main():
         blk = block_of(tag)
         for i, j in candidates(words):
             gi, gj = w2g.get(i), w2g.get(j)
-            if gi is None or gj is None:      # unknown, not negative: GB1900 may simply not have pinned it
-                continue
-            X.append(pair_features(words[i]["f"], words[j]["f"], words[i]["text"], words[j]["text"]))
-            Y.append(1 if gi == gj else 0)
+            if gi is None and gj is None:
+                continue          # neither word is accounted for: nothing can be said about this pair
+            X.append(pair_features(words[i]["f"], words[j]["f"], words[i]["text"], words[j]["text"],
+                                   words[i].get("font"), words[j].get("font")))
+            # Same complete group -> positive. Otherwise at least one side belongs to a label whose words
+            # are all already spoken for, so the pair cannot be a join.
+            Y.append(1 if (gi is not None and gi == gj) else 0)
             B.append(blk)
     X, Y, B = np.array(X, np.float32), np.array(Y, np.int8), np.array(B)
     print(f"{n_words} words, {n_groups} known-good label groups ({n_contested} dropped as contested)")

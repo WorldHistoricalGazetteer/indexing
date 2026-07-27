@@ -59,11 +59,22 @@ def get_tile(tx, ty):
             time.sleep(1.5 * (attempt + 1))              # 1.5→6s backoff before next attempt (throttle/timeout)
     return None
 
-def mosaic(mx0, my0, M):
+def mosaic(mx0, my0, M, workers=16):
+    """Fetch the mosaic's tiles CONCURRENTLY.
+
+    Serially, a missing tile costs its whole retry ladder before the next is even attempted, so the cost of
+    a bad patch is the SUM of the failures rather than the slowest of them. Re-spotting a starved region
+    showed mosaics of 6-9s where every tile was cached against 950s, 755s and 637s where 40, 32 and 27 were
+    not — which is also why regions were being killed by their walltime and losing everything. The work is
+    network-bound, so threads are the right tool and the retry ladder inside get_tile is unchanged.
+    """
+    import concurrent.futures as _cf
     canvas = Image.new("RGB", (M * 256, M * 256), (255, 255, 255)); miss = 0
-    for i in range(M):
-        for j in range(M):
-            t = get_tile(mx0 + i, my0 + j)
+    def one(ij):
+        i, j = ij
+        return i, j, get_tile(mx0 + i, my0 + j)
+    with _cf.ThreadPoolExecutor(max_workers=workers) as ex:
+        for i, j, t in ex.map(one, [(i, j) for i in range(M) for j in range(M)]):
             if t is not None: canvas.paste(t, (i * 256, j * 256))
             else: miss += 1
     return canvas, miss

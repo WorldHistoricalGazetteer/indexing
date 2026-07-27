@@ -75,19 +75,48 @@ def classify_boxes(boxes, clf=None):
     return out
 
 def main():
-    OUT = os.environ.get("FONT_OUT", f"{SPOT}/boxes_font.jsonl")
+    """Shardable, resumable backfill.
+
+    The crop stage is already threaded inside classify_boxes, but that is one node's worth of concurrency
+    against a network-bound tile fetch, and the original single task read EVERY box into memory and wrote
+    nothing until the end — so a walltime kill at hour thirty lost the lot. Work is now split per REGION
+    FILE across array tasks, and each region's output lands in its own file, so a killed task resumes at
+    the region it was on rather than at the beginning.
+    """
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--files", default=f"{SPOT}/boxes_gb_*.jsonl")
+    ap.add_argument("--shard", type=int, default=0)
+    ap.add_argument("--of", type=int, default=1)
+    ap.add_argument("--outdir", default=f"{SPOT}/font_v2")
+    a = ap.parse_args()
+    os.makedirs(a.outdir, exist_ok=True)
+    files = sorted(f for f in glob.glob(a.files)
+                   if not os.path.basename(f).startswith("boxes_font"))   # never re-read our own output
+    mine = [f for i, f in enumerate(files) if i % a.of == a.shard]
+    todo = [f for f in mine
+            if not os.path.exists(os.path.join(a.outdir, os.path.basename(f)[6:-6] + ".jsonl"))]
+    print(f"shard {a.shard}/{a.of}: {len(mine)} region files, {len(todo)} still to do", flush=True)
+    if not todo:
+        print("FONTCLASSIFYDONE nothing to do", flush=True)
+        return
     clf = load_classifier()
     print(f"reference glyphs: {len(clf[1])} fonts {dict(Counter(clf[3].tolist()))}", flush=True)
-    boxes = []
-    for f in glob.glob(f"{SPOT}/boxes_*.jsonl"):
-        if os.path.basename(f).startswith("boxes_font"): continue    # never re-read our own output
+    tot = 0
+    for k, f in enumerate(todo):
+        tag = os.path.basename(f)[6:-6]
+        boxes = []
         for line in open(f):
-            boxes.append(json.loads(line))
-    print(f"boxes to classify: {len(boxes)}", flush=True)
-    recs = classify_boxes(boxes, clf)
-    with open(OUT, "w") as fout:
-        for r in recs: fout.write(json.dumps(r) + "\n")
-    print(f"FONTCLASSIFYDONE wrote {len(recs)} -> {OUT}; font dist {dict(Counter(r['font'] for r in recs))}", flush=True)
+            try: boxes.append(json.loads(line))
+            except Exception: pass
+        recs = classify_boxes(boxes, clf) if boxes else []
+        outp = os.path.join(a.outdir, tag + ".jsonl")
+        with open(outp + ".tmp", "w") as fout:
+            for r in recs: fout.write(json.dumps(r) + "\n")
+        os.replace(outp + ".tmp", outp)          # only a COMPLETE region counts as done, so resume is safe
+        tot += len(recs)
+        print(f"  [{a.shard}] {k+1}/{len(todo)} {tag}: {len(boxes)} boxes -> {len(recs)} classified", flush=True)
+    print(f"FONTCLASSIFYDONE shard {a.shard} wrote {tot}", flush=True)
 
 if __name__ == "__main__":
     main()

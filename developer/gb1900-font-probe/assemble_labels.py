@@ -147,14 +147,53 @@ def assemble(words, max_gap_pitch=2.5, lat_tol=0.6, h_tol=0.32, ang_tol=12.0,
             union(i, j)
 
     if model is not None and pend:
+        # A LINE OF TEXT IS A SEQUENCE, NOT A CLIQUE.
+        #
+        # Unioning every pair over threshold is what destroyed the first attempt: the classifier is right on
+        # 93% of pairs, but union-find takes the TRANSITIVE CLOSURE, so roughly one bad link in fourteen is
+        # enough to weld neighbouring labels together and then weld the welds. It produced 31 components
+        # swallowing 9,819 of 16,243 words, one of them 1,548 words long, and exact reproduction collapsed
+        # from 0.381 to 0.083. The hand-set rules escaped this only because their low recall left the graph
+        # too sparse to percolate — which means their apparent robustness was an accident of missing half
+        # the true joins, not a virtue.
+        #
+        # So the graph is constrained to the shape text actually has. Reading along its own direction, a word
+        # has at most ONE predecessor and at most ONE successor, and a link is made only where both words
+        # agree that the other is their best neighbour in that direction. A false pair now has to beat every
+        # true rival on BOTH sides to do any damage, and it can never fan out into a blob.
         from join_train import pair_features
         M, thr = model["model"], model_thr
-        Xp = np.array([pair_features(F[i], F[j], words[i]["text"], words[j]["text"])
+        Xp = np.array([pair_features(F[i], F[j], words[i]["text"], words[j]["text"],
+                                     words[i].get("font"), words[j].get("font"))
                        for i, j in pend], np.float32)
+        want = len(model.get("features") or [])
+        if want and Xp.shape[1] != want:
+            raise SystemExit(f"this model wants {want} features but the vectors carry {Xp.shape[1]} — "
+                             f"pass --fonts if it was trained with the face features, or retrain")
         pr = M.predict_proba(Xp)[:, 1]
-        for (i, j), q in zip(pend, pr):
-            if q >= thr:
-                union(i, j)
+        # Links are taken GREEDILY, best score first, each accepted only if both words still have a free
+        # slot on the side it uses. Mutual-best-neighbour was the first attempt and it silently drops true
+        # links: where two words both rank the same third word best, the loser keeps nothing even when its
+        # own second choice was correct and unclaimed. Greedy assignment lets the strongest evidence settle
+        # first and the rest fall in behind it, which is the same reason it beats mutual-best in matching
+        # problems generally.
+        side_used = [[False, False] for _ in range(n)]        # [behind_taken, ahead_taken]
+
+        def side_of(u, v):
+            dx, dy = F[v]["cx"] - F[u]["cx"], F[v]["cy"] - F[u]["cy"]
+            ux, uy = F[u]["u"]
+            return 1 if (dx * ux + dy * uy) >= 0 else 0
+
+        cand = [(float(q), i, j) for (i, j), q in zip(pend, pr) if q >= thr]
+        cand.sort(key=lambda t: -t[0])
+        for q, i, j in cand:
+            si, sj = side_of(i, j), side_of(j, i)
+            if side_used[i][si] or side_used[j][sj]:
+                continue
+            if find(i) == find(j):                            # already same label: would close a cycle
+                continue
+            side_used[i][si] = side_used[j][sj] = True
+            union(i, j)
 
     lines = defaultdict(list)
     for i in range(n):
@@ -239,6 +278,8 @@ def main():
     ap.add_argument("--max-lines", type=int, default=3,
                     help="a map label runs to two or three lines; a seven-line stack is a runaway merge")
     ap.add_argument("--model", default=None, help="join_rf.joblib from join_train.py")
+    ap.add_argument("--fonts", default=None, help="font_v2 dir; must be supplied if the model was trained "
+                                                  "with face features, or the vectors will not line up")
     ap.add_argument("--blocks-from", default=None,
                     help="join_rf.test_blocks.json — score ONLY regions in blocks the model never saw. "
                          "Kept separate from --model so the rule baseline can be scored on the very same "
@@ -251,6 +292,11 @@ def main():
     ap.add_argument("--out", default="assembled_labels.jsonl")
     a = ap.parse_args()
 
+    FONTS = {}
+    if a.fonts:
+        from join_train import load_fonts
+        FONTS = load_fonts(a.fonts)
+        print(f"{len(FONTS)} classified boxes carry a face")
     files = [f for pat in a.boxes for f in sorted(glob.glob(pat))]
     if a.blocks_from:
         from join_train import block_of
@@ -276,7 +322,8 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(id=len(words), text=txt, poly=p, f=word_frame(p, txt)))
+            words.append(dict(id=len(words), text=txt, poly=p, f=word_frame(p, txt),
+                              font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
     print(f"{len(files)} files -> {len(words)} distinct words")
     if not words:
         raise SystemExit("nothing to assemble")
