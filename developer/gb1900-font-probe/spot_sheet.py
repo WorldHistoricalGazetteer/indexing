@@ -32,7 +32,50 @@ def px_to_lonlat(px, py):
     lat = math.degrees(math.atan(math.sinh(math.pi * (1 - 2 * py / (N17 * 256)))))
     return lon, lat
 
+_STORE_DIR = os.environ.get("TILE_STORE", "/ix1/ishi/gb1900/tilestore")
+_STORE_CACHE = {}
+_STORE_BLOCK = 64
+
+
+def store_tile(tx, ty):
+    """Read from the per-block corpus on /ix1, if it is there.
+
+    Tried FIRST, ahead of loose files and well ahead of the network: this is the whole point of building it.
+    Connections are cached per block because a mosaic's 64 tiles nearly always fall in one or two blocks, so
+    the open cost is paid once per region rather than once per tile. A missing block is remembered as None
+    so an unbuilt corpus costs one failed lookup per block rather than one per tile.
+    """
+    key = (tx // _STORE_BLOCK, ty // _STORE_BLOCK)
+    con = _STORE_CACHE.get(key, False)
+    if con is False:
+        import sqlite3
+        path = f"{_STORE_DIR}/z17_{key[0]}_{key[1]}.sqlite"
+        con = None
+        if os.path.exists(path):
+            try:
+                # Read-write open, not mode=ro: a block still carrying a WAL is invisible to a read-only
+                # connection, and a cache that silently reads as empty is worse than one that fails loudly.
+                con = sqlite3.connect(path, timeout=30)
+                con.execute("SELECT count(*) FROM tile LIMIT 1")
+            except Exception:
+                con = None
+        _STORE_CACHE[key] = con
+    if con is None:
+        return None
+    try:
+        row = con.execute("SELECT data FROM tile WHERE tx=? AND ty=?", (tx, ty)).fetchone()
+    except Exception:
+        return None
+    return row[0] if row else None
+
+
 def get_tile(tx, ty):
+    d = store_tile(tx, ty)
+    if d:
+        try:
+            return Image.open(io.BytesIO(d)).convert("RGB")
+        except Exception:
+            pass
     p = f"{TILES}/{tx}/{ty}.png"
     if os.path.exists(p) and os.path.getsize(p) > 500:
         try: return Image.open(p).convert("RGB")
