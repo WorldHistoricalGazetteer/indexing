@@ -75,7 +75,7 @@ def main():
     ap.add_argument("--mos", type=int, default=8); ap.add_argument("--overlap", type=int, default=1)
     ap.add_argument("--cleanup", action="store_true", help="delete this region's z17 tiles after spotting")
     ap.add_argument("--classify", action="store_true", help="font-classify this region's boxes before cleanup (tiles still hot)")
-    a = ap.parse_args(); t0 = time.time()
+    a = ap.parse_args(); t0 = time.time(); tile_miss = tile_tot = 0
     cxp, cyp = lonlat_to_px(a.lon, a.lat); ctx, cty = int(cxp // 256), int(cyp // 256)
     tx0, ty0 = ctx - a.r, cty - a.r; side = 2 * a.r + 1
     step = a.mos - a.overlap
@@ -92,6 +92,7 @@ def main():
     boxes = {}                                     # dedup key -> record
     for k, (mx0, my0) in enumerate(origins):
         img, miss = mosaic(mx0, my0, a.mos)
+        tile_miss += miss; tile_tot += a.mos * a.mos
         mf = f"{mdir}/m_{mx0}_{my0}.png"; img.save(mf); gx0, gy0 = mx0 * 256, my0 * 256
         df = runner.run_on_image(mf, return_dataframe=True)
         if df is None or len(df) == 0 or "score" not in df.columns:   # blank/uncached mosaic -> 0 boxes
@@ -110,6 +111,12 @@ def main():
                               gcx=round(gcx, 1), gcy=round(gcy, 1), lon=round(lon, 6), lat=round(lat, 6))
         os.remove(mf)
         print(f"  [{a.tag}] mosaic {k+1}/{len(origins)} miss={miss} boxes={len(boxes)} ({time.time()-t0:.0f}s)", flush=True)
+    # A region that completed while NLS tile fetches were failing writes a near-empty file that is
+    # indistinguishable from genuinely empty terrain, and the resume rule then skips it FOREVER because the
+    # file is non-empty. Record what was actually seen, so a starved run can be told from a quiet one.
+    json.dump(dict(tag=a.tag, tiles_missing=tile_miss, tiles_total=tile_tot,
+                   miss_frac=round(tile_miss / max(1, tile_tot), 4), boxes=len(boxes)),
+              open(f"{OUT}/cover_{a.tag}.json", "w"))
     outp = f"{OUT}/boxes_{a.tag}.jsonl"
     with open(outp, "w") as f:
         for rec in boxes.values(): f.write(json.dumps(rec, ensure_ascii=False) + "\n")

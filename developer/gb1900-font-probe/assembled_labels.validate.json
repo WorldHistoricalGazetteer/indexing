@@ -1,0 +1,249 @@
+{
+ "pins": 9539,
+ "word_exact": 0.126,
+ "asm_exact": 0.326,
+ "asm_cover": 0.511,
+ "asm_over": 0.498,
+ "examples": [
+  {
+   "pin": "P. H.",
+   "assembled": "##.",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "WILSON STREET",
+   "assembled": "###ILSON STREET",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "SOUTH WELLINGTON STREET",
+   "assembled": "###ON",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "NORTH FREDERICK STREET",
+   "assembled": "NORTH FRED###",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "BRUNSWICK STREET",
+   "assembled": "NSWICK STREET",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "KING STREET",
+   "assembled": "KING TREET",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "S. B.",
+   "assembled": "###SBORNE STREET",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "P. H.",
+   "assembled": "P.",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "Burial Ground",
+   "assembled": "224 Burial Ground",
+   "words": 3,
+   "lines": 3
+  },
+  {
+   "pin": "Lodge",
+   "assembled": "P. Ch Lodge SOUTHERN Sch. B. S. 307",
+   "words": 8,
+   "lines": 4
+  },
+  {
+   "pin": "P. H.",
+   "assembled": "33 H.",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "U. P. Ch.",
+   "assembled": "P. Ch Lodge SOUTHERN Sch. B. S. 307",
+   "words": 8,
+   "lines": 4
+  },
+  {
+   "pin": "Parly. Burgh By.",
+   "assembled": "Parly. Co. Div. By. Parly. Burgh",
+   "words": 6,
+   "lines": 2
+  },
+  {
+   "pin": "Parly. Co. Div. By.",
+   "assembled": "COLLVERY COLLIERY BY",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "S. P.",
+   "assembled": "S.",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "Iron & Steel Works (Disused)",
+   "assembled": "Iron Steel #. (Disused) 4 Mission Hall Sch.",
+   "words": 8,
+   "lines": 7
+  },
+  {
+   "pin": "S. P.",
+   "assembled": "1S.",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "Brick Works (Disused)",
+   "assembled": "Brick Workss",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "Old Clay Pits",
+   "assembled": "Old Clay Pits Broomvale",
+   "words": 4,
+   "lines": 2
+  },
+  {
+   "pin": "ROTTENROW",
+   "assembled": "ROR",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "GEORGE STREET",
+   "assembled": "505 GOE",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "STIRLING ST.",
+   "assembled": "WALLS ST.",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "SOUTH ALBION ST.",
+   "assembled": "BELL STREET 97",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "Bell Street",
+   "assembled": "BELL STREET 97",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "Hall",
+   "assembled": "Hall Saltmarket Junction",
+   "words": 3,
+   "lines": 3
+  },
+  {
+   "pin": "Saltmarket Junction",
+   "assembled": "Hall Saltmarket Junction",
+   "words": 3,
+   "lines": 3
+  },
+  {
+   "pin": "THE CROSS",
+   "assembled": "CROSS THE",
+   "words": 2,
+   "lines": 2
+  },
+  {
+   "pin": "St. Andrew St.",
+   "assembled": "1ST. ANDREW ST.",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "Greendyke Street",
+   "assembled": "LOW S. ST.",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "Steel St.",
+   "assembled": "ST ST",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "Ch",
+   "assembled": "S",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "LOW GREEN ST.",
+   "assembled": "LOW S. ST.",
+   "words": 3,
+   "lines": 1
+  },
+  {
+   "pin": "ADELPHI TER.",
+   "assembled": "A",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "ORCHARD ST.",
+   "assembled": "VORCHARD ST.",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "GILMOUR STREET",
+   "assembled": "GIEMOUR STREET",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "Sch.",
+   "assembled": "P. Ch Lodge SOUTHERN Sch. B. S. 307",
+   "words": 8,
+   "lines": 4
+  },
+  {
+   "pin": "Bapt. Ch.",
+   "assembled": "Bant Ck.",
+   "words": 2,
+   "lines": 1
+  },
+  {
+   "pin": "Braehead Street",
+   "assembled": "BRAE###",
+   "words": 1,
+   "lines": 1
+  },
+  {
+   "pin": "Parly. Co. By. (Lanark)",
+   "assembled": "Renfrew) Parly. Co. Parly. Co. By. (Lanark",
+   "words": 7,
+   "lines": 4
+  },
+  {
+   "pin": "Parly. Co. By. (Renfrew)",
+   "assembled": "Renfrew) Parly. Co. Parly. Co. By. (Lanark",
+   "words": 7,
+   "lines": 4
+  }
+ ]
+}
