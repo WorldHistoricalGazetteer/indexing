@@ -28,9 +28,21 @@ every future pass would retry all of them.
     python build_tile_corpus.py --shard 0 --of 16 --rps 4      # fetch
     python build_tile_corpus.py --verify                        # per-block completeness
 """
-import argparse, io, json, math, os, sqlite3, sys, threading, time
+import argparse, io, json, math, os, sqlite3, ssl, sys, threading, time
 import urllib.request
 import concurrent.futures as cf
+
+# The mapreader conda env ships no CA bundle, so a plain urlopen dies with CERTIFICATE_VERIFY_FAILED on
+# EVERY tile. That failure is not a 403 or 404, so it was recorded as "unresolved" and retried rather than
+# reported — three hours of the array fetched 154 tiles and logged 117,223 unresolved before anyone looked.
+# certifi is what the rest of the pipeline already uses for exactly this reason.
+try:
+    import certifi
+    SSLCTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    SSLCTX = ssl.create_default_context()
+    SSLCTX.check_hostname = False
+    SSLCTX.verify_mode = ssl.CERT_NONE
 
 N17 = 2 ** 17
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
@@ -114,12 +126,15 @@ def loose_tile(tx, ty):
     return None
 
 
+_FAIL = [0]
+
+
 def fetch(tx, ty, bucket, tries=4):
     bucket.take()
     for attempt in range(tries):
         try:
             req = urllib.request.Request(S3.format(x=tx, y=ty), headers={"User-Agent": "whg-gbstamp-corpus"})
-            with urllib.request.urlopen(req, timeout=30) as r:
+            with urllib.request.urlopen(req, timeout=30, context=SSLCTX) as r:
                 data = r.read()
             return (data, None) if len(data) > 400 else (None, 204)   # tiny object = legitimately blank
         except Exception as e:
@@ -127,7 +142,13 @@ def fetch(tx, ty, bucket, tries=4):
             if code in (403, 404):
                 return None, code                                     # out of series or sea: never retry
             if attempt == tries - 1:
-                return None, None                                     # unknown failure: leave for a re-run
+                # Loud early. A silent "unresolved" counter is why a total network failure looked like slow
+                # progress for three hours.
+                _FAIL[0] += 1
+                if _FAIL[0] in (1, 50, 500, 5000):
+                    print(f"  [fetch] {_FAIL[0]} unresolved so far; last {tx}/{ty}: "
+                          f"{type(e).__name__}: {e}", flush=True)
+                return None, None
             time.sleep(1.5 * (attempt + 1))
             bucket.take()
     return None, None
