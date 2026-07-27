@@ -18,29 +18,89 @@ from make_font_testset import HTML
 SPOT = "/vast/ishi/gb1900/edition/spot"
 # tile cache: default is the live grind's dir, but font_classify sets FCTILES to an isolated cache and relies
 # on fetch-on-miss (grind --cleanup deletes tiles, and GPU/pitt have network so glyph tiles are re-fetchable)
-TILES = os.environ.get("FCTILES") or "/vast/ishi/gb1900/tiles17"
+# Never default the write-through cache onto /vast: it is a 1TB quota shared with production ES, and the
+# loose trees that accumulated there are exactly what the /ix1 block corpus replaces.
+TILES = (os.environ.get("FCTILES")
+         or (os.path.join(os.environ["SLURM_SCRATCH"], "fc_tiles") if os.environ.get("SLURM_SCRATCH")
+             else "/vast/ishi/gb1900/fc_tiles"))
 _S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 _FETCH = bool(os.environ.get("FCTILES"))          # only the isolated backfill cache fetches on miss
 IX1 = "/ix1/ishi/gb1900/tiles17"                  # archived tiles (moved here after spotting)
-import io, urllib.request
+import io, ssl, urllib.request
+
+# The mapreader env ships no CA bundle, so every https fetch raised SSLCertVerificationError — and the bare
+# `except: pass` below turned that into a silent tile miss. Whole crop jobs came back with a third of their
+# crops missing and no error anywhere: the 49-of-89 big-font misses were entirely this. certifi supplies the
+# bundle; the failure is also counted now, because a fetch layer that cannot say it is failing is worse than
+# one that fails loudly.
+try:
+    import certifi
+    _SSLCTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:                                  # no certifi: fall back, but say so on first failure
+    _SSLCTX = None
+_FETCH_FAIL = [0]
 
 def _read(p):
     try: return np.asarray(Image.open(p).convert("L"), np.uint8)
     except Exception: return None
 
+_STORE_DIR = os.environ.get("TILE_STORE", "/ix1/ishi/gb1900/tilestore")
+_STORE_CACHE = {}
+_STORE_BLOCK = 64
+
+
+def _store_tile(tx, ty):
+    """Read the /ix1 block corpus. Same store spot_sheet uses — this accessor is a separate code path and
+    would otherwise keep its own loose cache on /vast, which is the growth we are trying to stop."""
+    key = (tx // _STORE_BLOCK, ty // _STORE_BLOCK)
+    con = _STORE_CACHE.get(key, False)
+    if con is False:
+        import sqlite3
+        path = f"{_STORE_DIR}/z17_{key[0]}_{key[1]}.sqlite"
+        con = None
+        if os.path.exists(path):
+            try:
+                con = sqlite3.connect(path, timeout=30)
+                con.execute("SELECT count(*) FROM tile LIMIT 1")
+            except Exception:
+                con = None
+        _STORE_CACHE[key] = con
+    if con is None:
+        return None
+    try:
+        row = con.execute("SELECT data FROM tile WHERE tx=? AND ty=?", (tx, ty)).fetchone()
+    except Exception:
+        return None
+    if not row:
+        return None
+    return np.asarray(Image.open(io.BytesIO(row[0])).convert("L"), np.uint8)
+
+
 def _get_tile(tx, ty):
+    d = _store_tile(tx, ty)
+    if d is not None: return d                    # the durable corpus on /ix1, tried first
     p = f"{TILES}/{tx}/{ty}.png"
-    if os.path.exists(p): return _read(p)         # hot /vast cache
+    if os.path.exists(p): return _read(p)         # hot local cache
     q = f"{IX1}/{tx}/{ty}.png"
     if os.path.exists(q): return _read(q)         # /ix1 archive (cheaper than re-hitting NLS)
     if not _FETCH: return None                    # inline mode: tiles are hot, a miss means genuinely absent
     try:
         os.makedirs(f"{TILES}/{tx}", exist_ok=True)
-        data = urllib.request.urlopen(urllib.request.Request(_S3.format(x=tx, y=ty),
-                                      headers={"User-Agent": "whg-fc"}), timeout=30).read()
+        for attempt in range(3):                  # NLS/S3 drops connections; a single try loses whole crops
+            try:
+                data = urllib.request.urlopen(urllib.request.Request(_S3.format(x=tx, y=ty),
+                                              headers={"User-Agent": "whg-fc"}),
+                                              timeout=30, context=_SSLCTX).read()
+                break
+            except Exception as e:
+                if attempt == 2:
+                    raise
         if len(data) > 400:
             open(p, "wb").write(data); return np.asarray(Image.open(io.BytesIO(data)).convert("L"), np.uint8)
-    except Exception: pass
+    except Exception as e:
+        _FETCH_FAIL[0] += 1
+        if _FETCH_FAIL[0] in (1, 10, 100, 1000):
+            print(f"[tiles] fetch failed ({_FETCH_FAIL[0]} so far) {tx}/{ty}: {e}", flush=True)
     return None
 OUT = f"{SPOT}/font_testset_v2.html"; random.seed(42)
 ANTIQ = re.compile(r"(Tumul|Cairn|Camp|Barrow|Earthwork|Enclosure|Castle|Moat|Priory|Abbey|Fort|Stone|Site|Cross|Roman|Tower)", re.I)

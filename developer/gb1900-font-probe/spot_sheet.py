@@ -16,7 +16,13 @@ N17 = 2 ** 17
 # SPOT_TILES points the spotter at an alternate tile cache (e.g. a masked/de-noised copy of a sheet built by
 # clean_sheet.py) without touching this script. When set, the /ix1 archive fallback is dropped too — otherwise
 # a missing processed tile would silently fall back to the ORIGINAL imagery and quietly contaminate the run.
-TILES = os.environ.get("SPOT_TILES") or "/vast/ishi/gb1900/tiles17"
+# On-demand fetches are cached to NODE-LOCAL scratch, never to /vast. /vast/ishi is a 1TB project quota
+# shared with production ES and this project has driven it to flood-stage read-only before; a cache that
+# grows without bound on it is a liability, not a convenience. The durable layer is the /ix1 block store,
+# so anything lost when the node goes away costs at most a re-fetch of tiles the corpus does not yet hold.
+TILES = (os.environ.get("SPOT_TILES")
+         or (os.path.join(os.environ["SLURM_SCRATCH"], "tiles17") if os.environ.get("SLURM_SCRATCH")
+             else "/vast/ishi/gb1900/tiles17"))
 IX1 = "" if os.environ.get("SPOT_TILES") else "/ix1/ishi/gb1900/tiles17"
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"

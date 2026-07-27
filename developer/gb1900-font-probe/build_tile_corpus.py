@@ -196,6 +196,10 @@ def main():
     ap.add_argument("--rps", type=float, default=4.0, help="requests/sec THIS task may make")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--verify", action="store_true")
+    ap.add_argument("--ingest-loose", default=None,
+                    help="absorb a loose tile tree (e.g. /vast) into the block store")
+    ap.add_argument("--delete-after", action="store_true",
+                    help="unlink each loose tile ONLY after it has been read back out of the store")
     ap.add_argument("--finalize", action="store_true",
                     help="checkpoint every block and drop it out of WAL mode, so read-only opens work")
     a = ap.parse_args()
@@ -206,6 +210,70 @@ def main():
         blocks.setdefault((tx // BLOCK, ty // BLOCK), []).append((tx, ty))
     keys = sorted(blocks)
     print(f"{len(tiles):,} tiles wanted, in {len(keys):,} blocks of {BLOCK}x{BLOCK}", flush=True)
+
+    if a.ingest_loose:
+        # Getting the loose tiles off /vast, which is a 1TB project quota shared with production ES and has
+        # been driven to flood-stage read-only by this project before.
+        #
+        # Nothing is deleted on the strength of a successful INSERT. The row is read back out of the store,
+        # through a fresh connection, and compared byte-for-byte with what is about to be unlinked; only
+        # then does the source go. An insert that silently did not commit, or a block left mid-WAL, would
+        # otherwise destroy the only copy.
+        found = {}
+        for dirpath, _dirs, files in os.walk(a.ingest_loose):
+            try:
+                tx = int(os.path.basename(dirpath))
+            except ValueError:
+                continue
+            for fn in files:
+                if not fn.endswith(".png"):
+                    continue
+                try:
+                    ty = int(fn[:-4])
+                except ValueError:
+                    continue
+                found.setdefault((tx // BLOCK, ty // BLOCK), []).append((tx, ty, os.path.join(dirpath, fn)))
+        bl = sorted(found)
+        mine = [k for i, k in enumerate(bl) if i % a.of == a.shard]
+        print(f"shard {a.shard}/{a.of}: {sum(len(found[k]) for k in mine):,} loose tiles "
+              f"in {len(mine):,} of {len(bl):,} blocks", flush=True)
+        ing = ver = rm = skip = 0
+        for bx, by in mine:
+            con = open_block(bx, by, write=True)
+            rows = []
+            for tx, ty, path in found[(bx, by)]:
+                try:
+                    with open(path, "rb") as fh:
+                        d = fh.read()
+                except OSError:
+                    continue
+                if len(d) <= 500:
+                    skip += 1
+                    continue
+                rows.append((tx, ty, d))
+            if rows:
+                con.executemany("INSERT OR REPLACE INTO tile(tx,ty,data) VALUES (?,?,?)", rows)
+                con.commit()
+                ing += len(rows)
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            con.execute("PRAGMA journal_mode=DELETE")
+            con.close()
+            # Verify through a NEW connection, so what is checked is what a later reader will actually see.
+            chk = sqlite3.connect(block_path(bx, by), timeout=60)
+            for tx, ty, d in rows:
+                row = chk.execute("SELECT data FROM tile WHERE tx=? AND ty=?", (tx, ty)).fetchone()
+                if row and row[0] == d:
+                    ver += 1
+                    if a.delete_after:
+                        try:
+                            os.unlink(dict(((x, y), p2) for x, y, p2 in found[(bx, by)])[(tx, ty)])
+                            rm += 1
+                        except OSError:
+                            pass
+            chk.close()
+        print(f"INGESTDONE shard {a.shard}: {ing:,} inserted, {ver:,} verified by read-back, "
+              f"{rm:,} removed from source, {skip:,} skipped as too small", flush=True)
+        return
 
     if a.finalize:
         n = 0
