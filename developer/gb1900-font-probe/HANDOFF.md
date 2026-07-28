@@ -8,12 +8,32 @@ Read `MEMORY.md` first; the notes `gbstamp-label-assembly`, `gbstamp-starved-reg
 ## Scope (SG, 27 July)
 
 **GB1900 / OS six-inch only.** Generalisable-method framing is dropped — accuracy on our own maps matters
-more than generality across others. **BIGCAPS chasing is dropped**: polygon datasets serve that information
-better. The three goals are:
+more than generality across others. The three goals are:
 
 1. label boxes, so users can see what has been transcribed;
 2. fonts as hints to entity type;
 3. checking GB1900 crowd transcriptions at scale, and spotting/transcribing additional labels.
+
+### Why BIGCAPS was dropped
+
+The letter-spaced administrative capitals were pursued hard and are now abandoned, for two independent
+reasons — **either would be sufficient, and together they close it**:
+
+1. **Every method tried proved unreliable.** MapReader's word spotter never fires on them at all (the
+   letter-spacing is why). Hi-SAM boxes them but emits no text. The connected-component route — each capital
+   is its own component on a cleaned sheet, grouped by strict collinearity — worked on rural sheets and
+   stayed swamped on dense urban ones (43.9% hatch against 3.1% rural), where a row of hatched buildings is
+   collinear, equal-height and regularly spaced and so passes every arrangement test. Overlay clustering of
+   the extracted components *did* work (162 pure letterform clusters), which is why this took a while to
+   concede: the pieces each worked somewhere, and none worked everywhere.
+2. **The labels add nothing we do not already hold.** They name administrative units — counties,
+   registration and local-government districts, parishes — and the **`vob_*` gazetteers**
+   (`vob_rd`, `vob_rc`, `vob_cty`, `vob_lgd`) plus `kain_par` already cover those as *polygons*, with
+   boundaries, multi-snapshot dates and provenance. A recovered point-with-a-name is strictly worse evidence
+   than a dated polygon for the same unit.
+
+So the effort was buying a degraded version of data already built and validated. Do not restart it because
+the component route "nearly works" on a rural sheet — that was known, and it is not the reason it stopped.
 
 Per the PESOSE technical brief (`~/PESOSE-technical-brief-2026-07-27.pdf`), **GB-STAMP is a capability
 demonstration, not a funded deliverable** — it publishes before any award starts, so it belongs in "current

@@ -90,7 +90,21 @@ single-word faces can't be validated at all.
 
 ---
 
-# The live route — BIGCAPS connected components
+# HISTORICAL — BIGCAPS connected components (ABANDONED 27 July 2026)
+
+> **This route is closed. Do not restart it.** Two independent reasons, either sufficient. First, every
+> method tried proved unreliable: MapReader's word spotter never fires on letter-spaced capitals at all,
+> Hi-SAM boxes them but emits no text, and the connected-component route below worked on rural sheets while
+> staying swamped on dense urban ones. Second — and decisively — **the labels add nothing we do not already
+> hold**: they name administrative units that the `vob_*` gazetteers (`vob_rd`, `vob_rc`, `vob_cty`,
+> `vob_lgd`) and `kain_par` already cover as dated *polygons*, and a recovered point-with-a-name is strictly
+> worse evidence than a boundary with dates.
+>
+> The overlay clustering *did* work, which is why this took a while to concede — each piece worked
+> somewhere and none worked everywhere. That is not a reason to restart it. The current route is in
+> `HANDOFF.md`.
+
+## What was built (kept for the record)
 
 Admin lettering on the six-inch sheets is **letter-spaced by design**. That spacing is why MapReader's
 word spotter never fired on it, and it is also why these labels need no segmentation: on a cleaned sheet
