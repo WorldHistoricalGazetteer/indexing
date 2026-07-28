@@ -1,7 +1,65 @@
 # GB-STAMP — handoff, 28 July 2026
 
 Read `MEMORY.md` first; the notes `gbstamp-label-assembly`, `gbstamp-starved-regions` and
-`gbstamp-tile-corpus` cover most of what follows. This document is the running order.
+`gbstamp-tile-corpus` cover most of what follows. **Start with "START HERE" immediately below**, then read
+the scope and the traps before running anything.
+
+---
+
+## START HERE — what the incoming session should do
+
+**1. Wait for the corpus fetch to finish.** Do not poll in a loop in the foreground; start a background
+wait and get on with reading the rest of this file:
+
+```bash
+until ssh crc0 'test -z "$(squeue -M htc -u stg135 -h -o %j | grep corpus)"'; do sleep 300; done
+```
+
+**2. Then work through "The running order" below, in order.**
+
+- **Step 1 (verify + finalise the corpus)** — no decisions needed, just run it. If `--verify` reports short
+  blocks, re-run `corpus.sbatch`; it is resumable and will pick up only what is missing.
+- **Step 2 (spot all 35,514 regions, ~40 h)** — launch it, then **stop and report**. It cannot be chained to
+  the corpus job, so it needs a manual `sbatch`. When it finishes, the first thing to check is whether the
+  new pass reproduces the old one: identical weights on identical imagery should give the same boxes and
+  merely ADD `gline`. If it does not, say so before anything downstream is built on it.
+- **Steps 3–4** — depend on what step 2's comparison shows. Do not run them blind.
+
+Report progress to SG at each of those points rather than running the whole chain silently: step 2 alone is
+nearly two days of GPU time, and a wrong turn at step 1 would waste it.
+
+### Progress check (correct version)
+
+```bash
+ssh crc0 'cd /vast/ishi/gb1900/probe/font/cov &&
+  echo "shards done: $(grep -l CORPUSDONE corpus_*.log 2>/dev/null | wc -l)/16" &&
+  for k in stored absent unresolved; do
+    grep -h "block " corpus_*.log | grep -o "[0-9]* $k" |
+      awk -v k="$k" "{s+=\$1} END{print \"  \"s\" \"k}"
+  done &&
+  echo "  blocks: $(grep -h "block " corpus_*.log | wc -l)/2366"'
+```
+
+**The `grep -h "block "` filter is load-bearing.** A shard that finishes writes a `CORPUSDONE shard N: X
+stored, Y absent, Z unresolved` summary line carrying its own totals, so a naive `grep -o "[0-9]* stored"`
+sums those ON TOP of the per-block lines and inflates the count. That produced a reading of 11.2M stored
+against a target of 8.06M — impossible, since blocks tile the plane exactly and no tile is stored twice.
+If the total ever exceeds 8,055,356, this is why.
+
+**Completion is `shards done: 16/16`**, or an empty `squeue`. Blocks reaching 2,366 is not sufficient — the
+last block of a shard still has to be written.
+
+**Watch `unresolved`.** It should stay at 0. It is the counter that silently absorbed a total network
+failure for three hours before the certifi fix, because `CERTIFICATE_VERIFY_FAILED` is neither a 403 nor a
+404 and so fell into the "leave it for a later run" bucket. A rising `unresolved` means something is wrong
+with the fetch, not that it is merely slow.
+
+### State at handover (28 July, 32h42m elapsed)
+
+7,245,769 stored · 104,278 absent · **0 unresolved** · 2,297/2,366 blocks · 9/16 shards done · 292 G.
+Roughly 91% resolved; 2–3 hours remaining, set by whichever of the 7 running shards drew the densest blocks.
+Resumable throughout — a block already holding everything it wants is skipped, so a kill costs only the
+block in flight.
 
 ---
 
@@ -40,20 +98,6 @@ demonstration, not a funded deliverable** — it publishes before any award star
 status" as evidence the team can do this work.
 
 ---
-
-## Running now
-
-**Corpus fetch** — `sbatch corpus.sbatch`, 16 htc tasks at 4 req/s (~64/s aggregate).
-At 18h30m: 4,164,121 stored, 77,723 absent, **0 unresolved**, 1,393 of 2,366 blocks, 182 G.
-Expect completion around 26–30h total. Resumable; a block already holding everything it wants is skipped.
-
-Watch `unresolved`. It is the counter that silently absorbed a total network failure for three hours before
-the certifi fix, because `CERTIFICATE_VERIFY_FAILED` is neither a 403 nor a 404.
-
-```bash
-ssh crc0 'cd /vast/ishi/gb1900/probe/font/cov && for k in stored absent unresolved; do
-  cat corpus_*.log | grep -o "[0-9]* $k" | awk -v k=$k "{s+=\$1} END{print s\" \"k}"; done'
-```
 
 ---
 
