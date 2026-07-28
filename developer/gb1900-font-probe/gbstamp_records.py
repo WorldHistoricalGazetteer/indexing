@@ -85,6 +85,44 @@ def classifying_body(uri, label=None, confidence=None, alternatives=None):
     return b
 
 
+def typography_body(cap_height_px=None, cap_height_m=None, face_uri=None, face_label=None,
+                    face_confidence=None, face_alternatives=None, slant_deg=None, lines=None):
+    """What the lettering physically IS, as distinct from what it is taken to mean.
+
+    Cap height is a measurement, not a classification, so it does not belong in a classifying body. It
+    matters in its own right: on the OS six-inch series the typeface encodes feature TYPE and the size
+    encodes IMPORTANCE, per the 1897 Characteristic Sheet — a parish name and a county name can share a face
+    and be told apart by height alone. Recorded in map pixels AND in metres on the ground, because pixels
+    are only comparable within one zoom level and the ground figure is what a downstream analysis wants.
+
+    The face carries alternatives for the same reason a classification does: several OS categories were
+    engraved in an identical face and are inseparable by design.
+    """
+    b = {"purpose": "describing", "type": "TextualBody", "format": "application/json"}
+    v = {}
+    if cap_height_px is not None:
+        v["cap_height_px"] = round(float(cap_height_px), 1)
+    if cap_height_m is not None:
+        v["cap_height_m"] = round(float(cap_height_m), 2)
+    if slant_deg is not None:
+        v["slant_deg"] = round(float(slant_deg), 1)
+    if lines is not None:
+        v["lines"] = int(lines)
+    if face_uri:
+        v["face"] = {"source": face_uri}
+        if face_label:
+            v["face"]["label"] = face_label
+        if face_confidence is not None:
+            v["face"]["confidence"] = round(float(face_confidence), 4)
+        if face_alternatives:
+            v["face"]["alternatives"] = [{"source": u, "confidence": round(float(c), 4)}
+                                         for u, c in face_alternatives]
+    if not v:
+        raise ValueError("a typography body with nothing measured in it says nothing")
+    b["value"] = json.dumps(v, ensure_ascii=False)
+    return b
+
+
 def identifying_body(uri):
     return {"purpose": "identifying", "source": uri}
 

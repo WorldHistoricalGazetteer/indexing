@@ -102,6 +102,62 @@ footprint stops being scattered squares and becomes the series.
 
 ---
 
+## Envisaged downstream processing
+
+**Gated on step 4.** The two miss-rates decide which way the weight falls, so do not commit to a shape
+before they are known:
+
+- if **GB-STAMP misses a lot**, the font-derived hints cover only part of the corpus and GB1900 remains the
+  backbone, with typography an enrichment where it exists;
+- if **GB1900 misses a lot**, GB-STAMP is contributing genuinely new labels and the pipeline has to carry
+  them as first-class records, not as annotations on someone else's;
+- if **both miss substantially but different things**, the union is the product and the disagreement set is
+  itself a deliverable (goal 3 — checking the crowd at scale).
+
+### D1. Metadata onto the joined labels, as W3C Web Annotation
+
+Already designed and implemented — `gbstamp_records.py`, `gb-stamp/docs/data-model.md`. A joined label is an
+annotation whose target is an `oa:List` of its member words, in reading order.
+
+**Extend each label with what the lettering physically is**, via `typography_body()`:
+
+- **cap height**, in map pixels *and* in metres on the ground. Pixels are only comparable within one zoom
+  level; the ground figure is what any later analysis actually wants.
+- **face** — one of the 15-face inventory, as a URI, with confidence and ranked alternatives (several OS
+  categories are engraved in an identical face and are inseparable by design).
+- **slant**, and the line count for multi-line labels.
+
+Height is deliberately *not* folded into the face. On the six-inch series the typeface encodes feature TYPE
+and the size encodes IMPORTANCE, per the 1897 Characteristic Sheet — a parish name and a county name can
+share a face and be separable by height alone. Collapsing them would discard half the signal.
+
+### D2. Co-occurrence analysis — the hint layer
+
+Two passes over the whole corpus, both cheap once D1 exists, and both needing the national sweep rather than
+a sample to be worth anything:
+
+1. **Word ↔ face.** Which words habitually appear in which face. This is what disambiguates the text:
+   *Camp*, *Castle*, *Cross* and *Stone* mean an antiquity in the antiquity hand but a modern feature in
+   roman or italic. The lexicon alone gets these wrong; the face settles them.
+2. **Name-class ↔ (face, size).** Take known name lists — parishes, districts, settlements, hills,
+   railways, counties — and measure which face *and which cap height* their names are set in across the
+   corpus. Size is not decoration here: it is the second axis of the OS's own encoding, and a class that
+   shares a face with another may be separated by height.
+
+Note this replaces the earlier intention to bring in **independent records of civic status** (market towns,
+parliamentary representation, administrative areas). We are no longer planning to capture those. The signal
+is derived from co-occurrence within the corpus instead — cheaper, self-contained, and it does not inherit
+another dataset's coverage gaps.
+
+### D3. Map to AAT
+
+Recovered types aligned to the Getty Art & Architecture Thesaurus, carried as a `classifying_body` with the
+AAT URI, confidence and ranked alternatives. This is the step that makes the corpus thematically searchable
+and linkable, and it is where the `alternatives` list earns its place: an inseparable face pair degrades to
+two candidate types rather than one false verdict.
+
+---
+
 ## Where things stand
 
 **Assembly** — the largest validated piece. Held out by 12-km blocks, exact reproduction of the volunteer's
