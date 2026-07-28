@@ -1,140 +1,162 @@
-"""Emit GB-STAMP records in the interchange shape, and refuse to emit ones that are not.
+"""Emit GB-STAMP records as W3C Web Annotations on IIIF canvases, and refuse to emit malformed ones.
 
-The shape is our instantiation of the MapText Data Model sketched at the Open Maps Meeting (Nov 2024) —
-see gb-stamp/docs/data-model.md. That sketch is a proposal with no serialisation, so this is a concrete
-proposal back, and the point of writing it as code rather than prose is that the pipeline then has to obey
-it. A data model kept only in a document drifts from what is actually written.
+NOT a new schema. Text on a map IS an annotation: the target is a region of an image, the body is the
+transcribed string plus a gazetteer link plus a classification. That is the shape of the W3C Web Annotation
+Data Model, and IIIF addresses the canvases the map libraries we depend on already serve. A parallel
+vocabulary would duplicate a mature standard for no gain and strand us outside every IIIF viewer and
+annotation tool in existence — including Annotorious and Recogito Studio, which are the human-in-the-loop
+correction interface a spotter pipeline needs and which we would otherwise have to build.
 
-The field that earns its place is `provenance.mode`:
+Scale caveat, because anyone who knows the standard will ask: annotations are the interchange and provenance
+format at the point of EXTRACTION AND CORRECTION. The attestation graph remains the internal model. The
+documented mapping between them is the deliverable, not a re-serialisation of the whole index.
 
-    manual     a GB1900 volunteer read this        — it IS the reference
-    automatic  a detector found it unaided         — may be scored against GB1900
-    prompted   a detector was told where to look   — MUST NOT be scored against GB1900
+PROVENANCE IS THE POINT. W3C already separates `creator` (the agent responsible) from `generator` (the
+software), and that separation expresses our three cases without inventing anything:
 
-A prompted detection's text comes FROM GB1900, so scoring it against GB1900 returns a perfect result by
-construction. `scorable_against_gb1900()` makes that a property of the record rather than something a
-future evaluation has to remember.
+    volunteer read it            creator only              -- it IS the reference
+    detector found it unaided    generator only            -- may be scored against GB1900
+    detector prompted by a pin   creator AND generator     -- MUST NOT be scored: circular
+
+The third is the one that matters. A prompted detection's text came FROM GB1900, so scoring it against
+GB1900 returns a perfect result by construction. Carrying both agents records WHY it is circular — the human
+is in its provenance chain — which a flat enum would not. `scorable_against_gb1900()` is then a property of
+the record rather than something a later evaluation has to remember.
+
+See gb-stamp/docs/data-model.md.
 """
 import json
 import re
 
-CONTEXT = "https://worldhistoricalgazetteer.github.io/gb-stamp/data-model"
-MODES = ("manual", "automatic", "prompted")
-TYPES = ("TextAnnotation", "CombinedAnnotation", "SymbolAnnotation")
+CONTEXT = "http://www.w3.org/ns/anno.jsonld"
+BASE = "https://whgazetteer.org/gb-stamp/anno"
+MOTIVATIONS = ("transcribing", "classifying", "identifying", "linking", "commenting")
 
 
-def _pt(xy):
-    return {"type": "Point", "coordinates": [round(float(xy[0]), 2), round(float(xy[1]), 2)]}
+def software(uri, name):
+    return {"id": uri, "type": "Software", "name": name}
 
 
-def provenance(mode, agent, tool, date=None):
-    if mode not in MODES:
-        raise ValueError(f"provenance.mode must be one of {MODES}, not {mode!r}")
-    p = {"mode": mode, "agent": agent, "tool": tool}
-    if date:
-        p["date"] = date
-    return p
+def person(uri_or_name, name=None):
+    a = {"type": "Person"}
+    if str(uri_or_name).startswith("http"):
+        a["id"] = uri_or_name
+        if name:
+            a["name"] = name
+    else:
+        a["name"] = uri_or_name
+    return a
 
 
-def text_annotation(rid, text, confidence, prov, polygon=None, baseline=None,
-                    reference_point=None, semantic_type=None, crs="EPSG:3857"):
-    """One word found on the map, or one volunteer transcription.
-
-    A record may legitimately have geometry and no reference point (a detection nobody pinned) or a
-    reference point and no geometry (a volunteer pin nothing was found at) — but not neither, because then
-    it is not located and cannot be anything.
-    """
-    if polygon is None and reference_point is None:
-        raise ValueError(f"{rid}: an annotation needs a geometry or a reference point")
-    r = {"id": rid, "type": "TextAnnotation",
-         "transcription": {"text": text, "confidence": round(float(confidence), 4)},
-         "provenance": prov}
-    tgt = {"crs": crs}
-    if polygon is not None:
-        tgt["geometry"] = {"type": "Polygon",
-                           "coordinates": [[[round(float(x), 2), round(float(y), 2)] for x, y in polygon]]}
-    if baseline is not None:
-        # Kept separate from the outline: on a curved label the outline's bounding rectangle points ACROSS
-        # the curve, so the baseline is the honest carrier of direction.
-        tgt["baseline"] = {"type": "LineString",
-                           "coordinates": [[round(float(x), 2), round(float(y), 2)] for x, y in baseline]}
-    if len(tgt) > 1:
-        r["target"] = tgt
-    if reference_point is not None:
-        r["reference_point"] = _pt(reference_point)
-    if semantic_type:
-        r["semantic_type"] = semantic_type
-    return r
+def svg_selector(polygon):
+    pts = " ".join(f"{round(float(x), 2)},{round(float(y), 2)}" for x, y in polygon)
+    return {"type": "SvgSelector", "value": f"<svg><polygon points='{pts}'/></svg>"}
 
 
-def combined_annotation(rid, items, text, confidence, prov, lines=1,
-                        reference_point=None, semantic_type=None):
-    """A whole label. `items` is ORDERED: reading order is part of what the label is."""
-    if not isinstance(items, (list, tuple)) or len(items) < 1:
-        raise ValueError(f"{rid}: a CombinedAnnotation needs an ordered, non-empty item list")
-    r = {"id": rid, "type": "CombinedAnnotation", "items": list(items), "lines": int(lines),
-         "transcription": {"text": text, "confidence": round(float(confidence), 4)},
-         "provenance": prov}
-    if reference_point is not None:
-        r["reference_point"] = _pt(reference_point)
-    if semantic_type:
-        r["semantic_type"] = semantic_type
-    return r
+def point_selector(xy, crs="EPSG:3857"):
+    """A GB1900 pin: a point near a label's START, not its extent. Kept as its own selector so the
+    difference is not asserted away — a record may have a pin and no region, or a region and no pin."""
+    return {"type": "PointSelector", "x": round(float(xy[0]), 2), "y": round(float(xy[1]), 2),
+            "conformsTo": crs}
 
 
-def semantic_type(label, uri=None, confidence=None, alternatives=None):
-    """Getty AAT as label + URI, with the ranked runners-up.
-
-    Several OS writing categories are engraved in an identical face and are inseparable by design, so a
-    single verdict would be false precision. The alternatives list is how that degrades gracefully.
-    """
-    s = {"label": label}
-    if uri:
-        s["uri"] = uri
+def textual_body(value, purpose="transcribing", language=None, confidence=None):
+    b = {"type": "TextualBody", "purpose": purpose, "value": value, "format": "text/plain"}
+    if language:
+        b["language"] = language
     if confidence is not None:
-        s["confidence"] = round(float(confidence), 4)
+        b["confidence"] = round(float(confidence), 4)
+    return b
+
+
+def classifying_body(uri, label=None, confidence=None, alternatives=None):
+    """Getty AAT, or one of our face URIs, with the runners-up.
+
+    Several OS writing categories are engraved in an IDENTICAL face and are inseparable by design, so a
+    single verdict would be false precision; the alternatives are how that degrades gracefully.
+    """
+    b = {"purpose": "classifying", "source": uri}
+    if label:
+        b["label"] = label
+    if confidence is not None:
+        b["confidence"] = round(float(confidence), 4)
     if alternatives:
-        s["alternatives"] = [{"label": a, "confidence": round(float(c), 4)} for a, c in alternatives]
-    return s
+        b["alternatives"] = [{"source": u, "confidence": round(float(c), 4)} for u, c in alternatives]
+    return b
 
 
-def scorable_against_gb1900(rec):
-    """False for anything whose text came from GB1900 in the first place."""
-    return (rec.get("provenance") or {}).get("mode") == "automatic"
+def identifying_body(uri):
+    return {"purpose": "identifying", "source": uri}
 
 
-def validate(rec):
-    """Raise on anything that would be misleading downstream. Cheap, so it runs on every write."""
-    rid = rec.get("id")
-    if not rid or not re.match(r"^[a-z]+:[a-zA-Z0-9/_.-]+$", str(rid)):
-        raise ValueError(f"id must be a namespaced identifier, got {rid!r}")
-    if rec.get("type") not in TYPES:
-        raise ValueError(f"{rid}: type must be one of {TYPES}")
-    p = rec.get("provenance") or {}
-    if p.get("mode") not in MODES:
-        raise ValueError(f"{rid}: provenance.mode must be one of {MODES}")
-    if not p.get("tool"):
-        raise ValueError(f"{rid}: provenance.tool is required — a record whose origin is unknown "
-                         f"cannot be trusted or superseded")
-    t = rec.get("transcription") or {}
-    if "text" not in t:
-        raise ValueError(f"{rid}: transcription.text is required")
-    if rec["type"] == "CombinedAnnotation" and not rec.get("items"):
-        raise ValueError(f"{rid}: a CombinedAnnotation without items is not a label")
-    if rec["type"] != "CombinedAnnotation" and not (rec.get("target") or rec.get("reference_point")):
-        raise ValueError(f"{rid}: needs a target geometry or a reference point")
-    return rec
+def annotation(aid, bodies, target, motivation="transcribing",
+               creator=None, generator=None, created=None, generated=None):
+    if motivation not in MOTIVATIONS:
+        raise ValueError(f"{aid}: motivation {motivation!r} is not a W3C motivation we use")
+    a = {"@context": CONTEXT, "id": aid, "type": "Annotation", "motivation": motivation,
+         "body": bodies if isinstance(bodies, list) else [bodies], "target": target}
+    if creator:
+        a["creator"] = creator
+    if generator:
+        a["generator"] = generator
+    if created:
+        a["created"] = created
+    if generated:
+        a["generated"] = generated
+    return a
+
+
+def canvas_target(canvas_uri, selectors):
+    sel = selectors if isinstance(selectors, list) else [selectors]
+    return {"source": canvas_uri, "selector": sel[0] if len(sel) == 1 else sel}
+
+
+def ordered_target(member_ids):
+    """oa:List — an ORDERED multiplicity. Reading order is part of what a label is: MOOR MIDDLETON is not
+    the label MIDDLETON MOOR. W3C already has this construct; we do not need one of our own."""
+    if not isinstance(member_ids, (list, tuple)) or not member_ids:
+        raise ValueError("a label needs a non-empty ordered member list")
+    return {"type": "List", "items": list(member_ids)}
+
+
+def scorable_against_gb1900(anno):
+    """False for anything a human had a hand in — which includes a prompted detection, whose text came
+    from GB1900 and would therefore score perfectly against it by construction."""
+    return bool(anno.get("generator")) and not anno.get("creator")
+
+
+def validate(anno):
+    """Raise on anything that would mislead downstream. Cheap, so it runs on every write."""
+    aid = anno.get("id")
+    if not aid or not str(aid).startswith("http"):
+        raise ValueError(f"id must be a dereferenceable URI, got {aid!r}")
+    if anno.get("type") != "Annotation":
+        raise ValueError(f"{aid}: type must be Annotation")
+    if anno.get("@context") != CONTEXT:
+        raise ValueError(f"{aid}: missing or wrong @context")
+    if not anno.get("body"):
+        raise ValueError(f"{aid}: an annotation with no body says nothing")
+    if not anno.get("target"):
+        raise ValueError(f"{aid}: an annotation with no target is not located, so is not anything")
+    if not (anno.get("creator") or anno.get("generator")):
+        raise ValueError(f"{aid}: needs a creator or a generator — a record whose origin is unknown "
+                         f"cannot be trusted, scored, or superseded")
+    t = anno["target"]
+    if isinstance(t, dict) and t.get("type") == "List" and not t.get("items"):
+        raise ValueError(f"{aid}: an empty List target is not a label")
+    return anno
 
 
 class Writer:
-    """Newline-delimited JSON, validated on the way out."""
+    """Newline-delimited JSON, validated on the way out. NDJSON rather than a single annotation page
+    because the pipeline streams; a page wrapper can be laid over it at publication."""
 
     def __init__(self, path):
         self.fh = open(path, "w")
         self.n = 0
 
-    def write(self, rec):
-        self.fh.write(json.dumps(validate(rec), ensure_ascii=False) + "\n")
+    def write(self, anno):
+        self.fh.write(json.dumps(validate(anno), ensure_ascii=False) + "\n")
         self.n += 1
 
     def close(self):
