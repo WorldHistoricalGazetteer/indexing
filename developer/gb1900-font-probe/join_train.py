@@ -205,7 +205,15 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--boxes", nargs="+", required=True)
     ap.add_argument("--pins", default="/vast/ishi/gb1900/pins_z17.npz")
-    ap.add_argument("--max-files", type=int, default=60)
+    ap.add_argument("--max-files", type=int, default=1200,
+                    help="regions to draw from. With the full sweep this is the whole series; breadth "
+                         "matters more than depth, so prefer many regions lightly sampled")
+    ap.add_argument("--sample-per-region", type=int, default=0,
+                    help="cap pairs taken from any ONE region (0 = no cap). Taking everything from a few "
+                         "regions is what biases the model toward whatever lettering those regions happen "
+                         "to use; a cap spreads the same budget over far more of the country, which is "
+                         "where the rare faces live")
+    ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--min-lines", type=int, default=200, help="skip near-empty region files")
     ap.add_argument("--test-frac", type=float, default=0.3)
     ap.add_argument("--fonts", default=None,
@@ -216,7 +224,11 @@ def main():
     from build_pin_index import load_pins, pins_in_box
     files = [f for pat in a.boxes for f in sorted(glob.glob(pat))]
     files = [f for f in files if sum(1 for _ in open(f)) >= a.min_lines]
-    files.sort(key=lambda f: -os.path.getsize(f))
+    # Largest-first was right when only a sample had been spotted; across the full series it would take
+    # every pair from the densest towns and none from the countryside. Shuffle, so the draw is national.
+    rng0 = np.random.default_rng(a.seed)
+    files = list(files)
+    rng0.shuffle(files)
     files = files[: a.max_files]
     print(f"{len(files)} region files with >= {a.min_lines} detections")
     P = load_pins(a.pins)
@@ -254,7 +266,11 @@ def main():
         if not groups:
             continue
         blk = block_of(tag)
-        for i, j in candidates(words):
+        cand = candidates(words)
+        if a.sample_per_region and len(cand) > a.sample_per_region:
+            pick = rng0.choice(len(cand), a.sample_per_region, replace=False)
+            cand = [cand[int(k)] for k in pick]
+        for i, j in cand:
             gi, gj = w2g.get(i), w2g.get(j)
             if gi is None and gj is None:
                 continue          # neither word is accounted for: nothing can be said about this pair

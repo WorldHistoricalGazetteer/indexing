@@ -47,27 +47,42 @@ python build_tile_corpus.py --finalize   # checkpoint any block left in WAL mode
 `--finalize` matters: a `mode=ro` reader cannot see an un-checkpointed WAL, so an interrupted block reads as
 **empty rather than partial** — silently. Re-run `corpus.sbatch` for anything `--verify` reports short.
 
-### 2. Re-spot everything (~3 h)
+### 2. Spot the WHOLE series — all 35,514 regions (~40 h on 16 GPUs)
 ```bash
-sbatch respot_all.sbatch      # 8 GPU shards, 1,307 regions, writes to spot2/
+sbatch spot_all.sbatch        # 16 shards, centres_all.txt, writes to spot2/
 ```
-Prepared and staged. **Cannot be chained** — Slurm silently ignores cross-cluster dependencies
-(`sbatch -M gpu --dependency=afterany:<htc job>` reports success, shows `(null)`, and starts immediately).
+**Not a re-spot of the 1,307 already done — those are 3.7% of Great Britain.** The sample was a sample only
+because on-demand tile fetching made a region cost minutes to an hour. From the local corpus a mosaic is ~7s,
+so a region is ~65s and the full sweep is 641 GPU-hours: **40 h across 16 shards**, inside the 6-day a100
+QOS. The corpus was sized for exactly this — its 8,055,356 tiles cover all 35,514 centres, not just the
+spotted ones.
 
-Why re-spot all of them: one code version across the whole corpus, and every detection carries the model's
-own baseline (`gline`), which we were discarding. It also subsumes the 94 starved regions, so they need no
-special handling. Output goes to `spot2/` so the old pass survives for comparison — identical weights on
-identical imagery should reproduce the boxes and merely *add* the baseline. **Check that before trusting the
-new pass.**
+`spot_sheet.py` now takes `--centres/--shard/--of` and **loads the model once per shard**. Loading
+MapTextRunner per region cost 20–40s, which was noise when tiles took minutes and would have been a large
+share of the total now that they do not.
+
+Writes to `spot2/`, so the existing pass survives for comparison — identical weights on identical imagery
+should reproduce the boxes and merely *add* the model's own baseline (`gline`). **Check that before trusting
+the new pass.** The 94 starved regions are subsumed and need no special handling.
+
+**Cannot be chained** to the corpus job: Slurm silently ignores cross-cluster dependencies
+(`sbatch -M gpu --dependency=afterany:<htc job>` reports success, shows `(null)`, and starts immediately).
 
 ### 3. Retrain and re-evaluate the join on `spot2/`
 ```bash
-python join_train.py --boxes '/vast/ishi/gb1900/edition/spot2/boxes_gb_*.jsonl' --out join_rf5.joblib
+python join_train.py --boxes '/vast/ishi/gb1900/edition/spot2/boxes_gb_*.jsonl' \
+    --max-files 4000 --sample-per-region 200 --out join_rf5.joblib
 python assemble_labels.py --boxes '…/spot2/boxes_gb_*.jsonl' --validate \
   --blocks-from join_rf5.test_blocks.json --model join_rf5.joblib --model-thr 0.5 \
   --max-lines 3 --centre-tol 0.25
 ```
-With real `gline` the reconstruction fallback stops being exercised — worth re-running the ablation
+**Sample broadly, not deeply.** 60 regions currently give 31,779 pairs, so the full series would give
+~18.8M — far more than a 19-feature model needs, and taking *everything* from a few dense regions is exactly
+what produced the selection bias. `join_train` now shuffles the region list (largest-first would take every
+pair from the densest towns and none from the countryside) and `--sample-per-region` caps the draw from any
+one region, spreading the same budget across far more of the country, which is where the rare faces live.
+
+With real `gline` the reconstruction fallback stops being exercised — re-run the ablation
 (`GBSTAMP_NO_TANGENT=1`) to see whether the model's own baseline beats our reconstruction.
 
 **Produce one coherent table**: nearest-word / hand-set-rules / learned, all on the same held-out split, and
@@ -81,7 +96,9 @@ python bench_sheets.py --plan
 python bench_sheets.py --sheets 16 --dump-misses sheet_misses.jsonl
 ```
 **What proportion of non-numeric labels do GB1900 and GB-STAMP each miss?** The first attempt was
-contaminated by the starved regions and was not quoted. Re-run only after step 2.
+contaminated by the starved regions and was not quoted. After the full sweep this becomes answerable
+**nationally** rather than on a handful of sheets — which is what was originally asked for. The measurable
+footprint stops being scattered squares and becomes the series.
 
 ---
 
@@ -175,4 +192,5 @@ and is therefore circular.
 | `bench_sheets.py` | GB1900 ↔ GB-STAMP miss rates per sheet, inside the measurable footprint |
 | `bench_spotter.py` | scores any spotter against GB1900; refuses pin-prompted output as circular |
 | `gbstamp_records.py` | W3C Web Annotation emitter + validator |
-| `respot_all.sbatch` | staged: re-spot all 1,307 regions from the corpus into `spot2/` |
+| `spot_all.sbatch` | staged: spot ALL 35,514 regions from the corpus into `spot2/`, one model load per shard |
+| `respot_all.sbatch` | superseded by `spot_all.sbatch`; covered only the 1,307 already spotted |

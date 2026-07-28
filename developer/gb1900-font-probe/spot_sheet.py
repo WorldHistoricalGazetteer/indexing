@@ -132,25 +132,64 @@ def mosaic(mx0, my0, M, workers=16):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--lon", type=float, required=True); ap.add_argument("--lat", type=float, required=True)
-    ap.add_argument("--tag", required=True); ap.add_argument("--r", type=int, default=8, help="tile radius")
+    ap.add_argument("--lon", type=float, default=None); ap.add_argument("--lat", type=float, default=None)
+    ap.add_argument("--tag", default=None); ap.add_argument("--r", type=int, default=8, help="tile radius")
     ap.add_argument("--mos", type=int, default=8); ap.add_argument("--overlap", type=int, default=1)
     ap.add_argument("--cleanup", action="store_true", help="delete this region's z17 tiles after spotting")
     ap.add_argument("--classify", action="store_true", help="font-classify this region's boxes before cleanup (tiles still hot)")
-    a = ap.parse_args(); t0 = time.time(); tile_miss = tile_tot = 0
-    cxp, cyp = lonlat_to_px(a.lon, a.lat); ctx, cty = int(cxp // 256), int(cyp // 256)
-    tx0, ty0 = ctx - a.r, cty - a.r; side = 2 * a.r + 1
-    step = a.mos - a.overlap
-    origins = [(tx0 + i, ty0 + j) for i in range(0, side, step) for j in range(0, side, step)]
-    print(f"{a.tag}: region {side}x{side} tiles, {len(origins)} mosaics of {a.mos*256}px", flush=True)
+    ap.add_argument("--centres", default=None,
+                    help="lon lat tag [n] per line — spot MANY regions in one process. The model costs "
+                         "20-40s to load and, now that tiles are local and a mosaic takes ~7s, loading it "
+                         "once per region would be a large share of a 35,514-region sweep")
+    ap.add_argument("--shard", type=int, default=0)
+    ap.add_argument("--of", type=int, default=1)
+    a = ap.parse_args()
+    if not a.centres and (a.lon is None or a.lat is None or not tag):
+        ap.error("give --lon/--lat/--tag, or --centres")
 
-    import torch
-    dev = "cuda" if torch.cuda.is_available() else "cpu"
-    print(f"{a.tag}: spotter device={dev}", flush=True)
+    dev = "cuda" if __import__("torch").cuda.is_available() else "cpu"
     runner = MapTextRunner(pd.DataFrame(),
         cfg_file=f"{INST}/MapTextPipeline/configs/ViTAEv2_S/rumsey/final_rumsey.yaml",
         weights_file=f"{INST}/weights/rumsey-finetune.pth", device=dev)
-    mdir = f"{OUT}/mosaics_{a.tag}"; os.makedirs(mdir, exist_ok=True)
+
+    if not a.centres:
+        do_region(runner, a, a.lon, a.lat, tag)
+        return
+    todo = []
+    for line in open(a.centres):
+        p_ = line.split()
+        if len(p_) >= 3:
+            todo.append((float(p_[0]), float(p_[1]), p_[2]))
+    mine = [r for i, r in enumerate(todo) if i % a.of == a.shard]
+    print(f"shard {a.shard}/{a.of}: {len(mine)} of {len(todo)} regions, model loaded once", flush=True)
+    done = 0
+    for k, (lon, lat, tag) in enumerate(mine):
+        bf = f"{OUT}/boxes_{tag}.jsonl"
+        if os.path.exists(bf) and os.path.getsize(bf) > 0:
+            continue                                   # resumable, same contract as before
+        try:
+            do_region(runner, a, lon, lat, tag)
+            done += 1
+        except Exception as e:
+            print(f"FAIL {tag}: {type(e).__name__}: {e}", flush=True)
+        if (k + 1) % 25 == 0:
+            print(f"  [shard {a.shard}] {k+1}/{len(mine)} seen, {done} spotted "
+                  f"({time.time()-T0:.0f}s)", flush=True)
+    print(f"SHARDDONE {a.shard}: {done} regions spotted", flush=True)
+
+
+T0 = time.time()
+
+
+def do_region(runner, a, lon, lat, tag):
+    t0 = time.time(); tile_miss = tile_tot = 0
+    cxp, cyp = lonlat_to_px(lon, lat); ctx, cty = int(cxp // 256), int(cyp // 256)
+    tx0, ty0 = ctx - a.r, cty - a.r; side = 2 * a.r + 1
+    step = a.mos - a.overlap
+    origins = [(tx0 + i, ty0 + j) for i in range(0, side, step) for j in range(0, side, step)]
+    print(f"{tag}: region {side}x{side} tiles, {len(origins)} mosaics of {a.mos*256}px", flush=True)
+
+    mdir = f"{OUT}/mosaics_{tag}"; os.makedirs(mdir, exist_ok=True)
     boxes = {}                                     # dedup key -> record
     for k, (mx0, my0) in enumerate(origins):
         img, miss = mosaic(mx0, my0, a.mos)
@@ -158,7 +197,7 @@ def main():
         mf = f"{mdir}/m_{mx0}_{my0}.png"; img.save(mf); gx0, gy0 = mx0 * 256, my0 * 256
         df = runner.run_on_image(mf, return_dataframe=True)
         if df is None or len(df) == 0 or "score" not in df.columns:   # blank/uncached mosaic -> 0 boxes
-            os.remove(mf); print(f"  [{a.tag}] mosaic {k+1}/{len(origins)} empty (miss={miss})", flush=True); continue
+            os.remove(mf); print(f"  [{tag}] mosaic {k+1}/{len(origins)} empty (miss={miss})", flush=True); continue
         df = df[df["image_id"].astype(str) == os.path.basename(mf)].reset_index(drop=True)
         df["score"] = pd.to_numeric(df["score"], errors="coerce").fillna(0.0)
         df = df[df["score"] >= SCORE_MIN]
@@ -185,14 +224,14 @@ def main():
                               gline=gl,
                               gcx=round(gcx, 1), gcy=round(gcy, 1), lon=round(lon, 6), lat=round(lat, 6))
         os.remove(mf)
-        print(f"  [{a.tag}] mosaic {k+1}/{len(origins)} miss={miss} boxes={len(boxes)} ({time.time()-t0:.0f}s)", flush=True)
+        print(f"  [{tag}] mosaic {k+1}/{len(origins)} miss={miss} boxes={len(boxes)} ({time.time()-t0:.0f}s)", flush=True)
     # A region that completed while NLS tile fetches were failing writes a near-empty file that is
     # indistinguishable from genuinely empty terrain, and the resume rule then skips it FOREVER because the
     # file is non-empty. Record what was actually seen, so a starved run can be told from a quiet one.
-    json.dump(dict(tag=a.tag, tiles_missing=tile_miss, tiles_total=tile_tot,
+    json.dump(dict(tag=tag, tiles_missing=tile_miss, tiles_total=tile_tot,
                    miss_frac=round(tile_miss / max(1, tile_tot), 4), boxes=len(boxes)),
-              open(f"{OUT}/cover_{a.tag}.json", "w"))
-    outp = f"{OUT}/boxes_{a.tag}.jsonl"
+              open(f"{OUT}/cover_{tag}.json", "w"))
+    outp = f"{OUT}/boxes_{tag}.jsonl"
     with open(outp, "w") as f:
         for rec in boxes.values(): f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     try: os.rmdir(mdir)
@@ -201,11 +240,11 @@ def main():
         try:
             from font_classify import classify_boxes
             recs = classify_boxes(list(boxes.values()))
-            with open(f"{OUT}/boxes_font_{a.tag}.jsonl", "w") as cf_:
+            with open(f"{OUT}/boxes_font_{tag}.jsonl", "w") as cf_:
                 for rec in recs: cf_.write(json.dumps(rec, ensure_ascii=False) + "\n")
-            print(f"[{a.tag}] classified {len(recs)} boxes", flush=True)
+            print(f"[{tag}] classified {len(recs)} boxes", flush=True)
         except Exception as e:
-            print(f"[{a.tag}] classify FAILED: {e}", flush=True)
+            print(f"[{tag}] classify FAILED: {e}", flush=True)
     if a.cleanup:                                  # free /vast by ARCHIVING this region's tiles to /ix1
         moved = 0
         for tx in range(tx0, tx0 + side):
@@ -222,8 +261,8 @@ def main():
                     except OSError: pass
             try: os.rmdir(f"{TILES}/{tx}")
             except OSError: pass
-        print(f"[{a.tag}] archived {moved} tiles to /ix1", flush=True)
-    print(f"[{a.tag}] DONE {len(boxes)} boxes -> {outp} ({time.time()-t0:.0f}s)", flush=True)
+        print(f"[{tag}] archived {moved} tiles to /ix1", flush=True)
+    print(f"[{tag}] DONE {len(boxes)} boxes -> {outp} ({time.time()-t0:.0f}s)", flush=True)
 
 if __name__ == "__main__":
     main()
