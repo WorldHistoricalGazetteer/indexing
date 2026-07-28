@@ -47,11 +47,66 @@ def is_alpha(s):
     return bool(re.search(r"[a-z]", (s or "").lower()))
 
 
-def word_frame(poly, text):
-    """Direction, cap height and character pitch, read off the word's own minimum-area rectangle.
+def centreline(poly, u, k=11, trim=1):
+    """Recover the word's centre-line from its outline.
 
-    The long side is the advance direction: a word is wider than it is tall in every face on these sheets,
-    so this is safe without knowing the reading direction, which is resolved later by the chain's order.
+    MapTextPipeline emits a dense contour (~50 points) around each word: an upper and a lower boundary
+    joined by a cap at each end. Splitting it at the extremes along the long axis and averaging the two
+    sides gives the centre-line — the same thing the model's own pixel_line carries, recovered for
+    detections spotted before that field was kept.
+
+    Two details decide whether this works at all.
+
+    Sides are paired by POSITION ALONG THE READING DIRECTION, not by fractional arc length. The two sides
+    are rarely the same length, so arc-length pairing matches points that are not opposite each other and
+    bends a straight word.
+
+    The ends are TRIMMED. At the extremes both sides converge on the same cap tip, so the average there is
+    pulled to the tip rather than the centre — which on a straight word manufactured a curve of a third of a
+    cap height and threw the end tangent out by tens of degrees. The interior is sound; the caps are not.
+    """
+    P = np.asarray(poly, np.float64)
+    if len(P) < 8:
+        return None
+    uu = np.asarray(u, np.float64)
+    t = P @ uu
+    i0, i1 = int(np.argmin(t)), int(np.argmax(t))
+    if i0 == i1:
+        return None
+    a, b = (i0, i1) if i0 < i1 else (i1, i0)
+    side1, side2 = P[a:b + 1], np.vstack([P[b:], P[:a + 1]])
+    if len(side1) < 3 or len(side2) < 3:
+        return None
+    lo, hi = float(max(t[a], t[b]) * 0 + min(t[i0], t[i1])), float(max(t[i0], t[i1]))
+    if hi - lo < 1e-6:
+        return None
+    grid = np.linspace(lo, hi, k)
+
+    def sample(C):
+        tc = C @ uu
+        o = np.argsort(tc)
+        tc, C = tc[o], C[o]
+        keep = np.concatenate([[True], np.diff(tc) > 1e-9])   # np.interp needs strictly increasing x
+        tc, C = tc[keep], C[keep]
+        if len(tc) < 2:
+            return None
+        return np.stack([np.interp(grid, tc, C[:, j]) for j in (0, 1)], 1)
+
+    r1, r2 = sample(side1), sample(side2)
+    if r1 is None or r2 is None:
+        return None
+    cl = (r1 + r2) / 2.0
+    return cl[trim:len(cl) - trim] if trim and len(cl) > 2 * trim + 2 else cl
+
+
+def word_frame(poly, text, line=None):
+    """Direction, cap height and character pitch, read off the word's own geometry.
+
+    Direction comes from the CENTRE-LINE, not from the minimum-area rectangle. On a curved label the
+    rectangle's long axis is a chord: it points across the curve rather than along it, and worst at the ends
+    where a continuation has to be looked for. The line gives a tangent at each end instead, so a
+    continuation is sought along the word's actual heading. The model's own pixel_line is used when present;
+    otherwise the line is recovered from the outline, which carries enough points to do it.
     """
     import cv2
     p = np.asarray(poly, np.float32)
@@ -59,10 +114,42 @@ def word_frame(poly, text):
     if w < h:
         w, h, ang = h, w, ang + 90.0
     th = math.radians(ang)
+    u = (math.cos(th), math.sin(th))
     n = max(1, len(re.sub(r"\s+", "", text or "")))
+    cl = np.asarray(line, np.float64) if line is not None and len(line) >= 2 else centreline(poly, u)
+    u_start = u_end = u
+    curv = 0.0
+    if cl is not None and len(cl) >= 3:
+        if (cl[0] @ np.asarray(u)) > (cl[-1] @ np.asarray(u)):
+            cl = cl[::-1]
+        def tangent(seg, outward):
+            # Least squares over a third of the line, not the final segment: one segment of a resampled
+            # contour is mostly noise, and the tangent is the thing the whole join hangs on.
+            c = seg - seg.mean(0)
+            v = np.linalg.svd(c, full_matrices=False)[2][0]
+            if (v @ (seg[-1] - seg[0])) < 0:
+                v = -v
+            v = v * outward
+            return (float(v[0]), float(v[1]))
+        m = max(2, len(cl) // 3)
+        u_end = tangent(cl[-m:], 1.0)            # pointing ON out of the word
+        u_start = tangent(cl[:m], -1.0)          # pointing BACK out of the word
+        # How far the centre-line departs from straight, in cap heights: 0 for a plain word, and the
+        # measure of how wrong a single global axis would have been.
+        d = cl[-1] - cl[0]
+        L = float(np.linalg.norm(d))
+        if L > 1e-6:
+            nrm = np.array([-d[1], d[0]]) / L
+            curv = float(np.abs((cl - cl[0]) @ nrm).max() / max(1.0, h))
     return dict(cx=float(cx), cy=float(cy), long=float(w), h=float(h),
-                ang=float(ang), u=(math.cos(th), math.sin(th)),
+                ang=float(ang), u=u, u_start=u_start, u_end=u_end, curv=curv,
                 pitch=float(w) / n)
+
+
+def facing(A, dx, dy):
+    """A's tangent at the end nearest the candidate."""
+    ue, us = A.get("u_end", A["u"]), A.get("u_start", A["u"])
+    return ue if (dx * ue[0] + dy * ue[1]) >= (dx * -us[0] + dy * -us[1]) else (-us[0], -us[1])
 
 
 def joins(A, B, max_gap_pitch, lat_tol, h_tol, ang_tol):
@@ -74,7 +161,9 @@ def joins(A, B, max_gap_pitch, lat_tol, h_tol, ang_tol):
     if da > ang_tol:
         return None
     dx, dy = B["cx"] - A["cx"], B["cy"] - A["cy"]
-    ux, uy = A["u"]
+    # The tangent at whichever end of A faces B. A continuation follows the word's heading where it ends,
+    # which on a curved label is not the direction of the label as a whole.
+    ux, uy = facing(A, dx, dy)
     along = dx * ux + dy * uy
     lat = abs(-dx * uy + dy * ux)
     if lat > lat_tol * hm:
@@ -322,7 +411,8 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(id=len(words), text=txt, poly=p, f=word_frame(p, txt),
+            words.append(dict(id=len(words), text=txt, poly=p,
+                              f=word_frame(p, txt, r.get("gline")),
                               font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
     print(f"{len(files)} files -> {len(words)} distinct words")
     if not words:

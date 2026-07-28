@@ -26,7 +26,9 @@ TILES = (os.environ.get("SPOT_TILES")
 IX1 = "" if os.environ.get("SPOT_TILES") else "/ix1/ishi/gb1900/tiles17"
 S3 = "https://mapseries-tilesets.s3.amazonaws.com/os/6inchsecond/17/{x}/{y}.png"
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"
-OUT = "/vast/ishi/gb1900/edition/spot"; os.makedirs(OUT, exist_ok=True)
+# Overridable so a re-spot can write alongside the existing output instead of over it: comparing an old
+# and a new pass is the only way to tell an intended change (the added baseline) from an unintended one.
+OUT = os.environ.get("SPOT_OUT", "/vast/ishi/gb1900/edition/spot"); os.makedirs(OUT, exist_ok=True)
 SCORE_MIN = 0.4
 
 def lonlat_to_px(lon, lat):
@@ -166,8 +168,21 @@ def main():
             key = (round(gcx / 8), round(gcy / 8), str(r["text"]).lower())
             if key in boxes and boxes[key]["score"] >= float(r["score"]): continue
             lon, lat = px_to_lonlat(gcx, gcy)
+            # Keep the model's OWN baseline as well as the outline. MapTextPipeline emits a pixel_line per
+            # detection — the text's centre-line — and discarding it meant every downstream stage re-derived
+            # direction from the outline's minimum-area rectangle, which is a chord across a curved word
+            # rather than its heading.
+            gl = None
+            l0 = r.get("pixel_line")
+            if l0 is not None:
+                try:
+                    ln = wkt.loads(l0) if isinstance(l0, str) else l0
+                    gl = [[round(float(x) + gx0, 1), round(float(y) + gy0, 1)] for x, y in ln.coords]
+                except Exception:
+                    gl = None
             boxes[key] = dict(text=str(r["text"]), score=round(float(r["score"]), 4),
                               gpoly=[[round(float(x) + gx0, 1), round(float(y) + gy0, 1)] for x, y in poly.exterior.coords],
+                              gline=gl,
                               gcx=round(gcx, 1), gcy=round(gcy, 1), lon=round(lon, 6), lat=round(lat, 6))
         os.remove(mf)
         print(f"  [{a.tag}] mosaic {k+1}/{len(origins)} miss={miss} boxes={len(boxes)} ({time.time()-t0:.0f}s)", flush=True)

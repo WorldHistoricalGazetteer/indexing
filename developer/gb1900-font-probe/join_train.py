@@ -32,7 +32,7 @@ from collections import defaultdict
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from assemble_labels import word_frame, norm, tokens, is_alpha
+from assemble_labels import word_frame, norm, tokens, is_alpha, facing
 
 FEATURES = ["gap_pitch", "gap_h", "lat_h", "ang_diff", "h_ratio", "pitch_ratio",
             "long_ratio", "centre_h", "both_upper", "case_match", "either_numeric",
@@ -41,7 +41,11 @@ FEATURES = ["gap_pitch", "gap_h", "lat_h", "ang_diff", "h_ratio", "pitch_ratio",
             # two words in different faces are two different labels however neatly they line up. Absence is
             # marked -1 rather than 0 so the tree can split "not classified" off instead of reading a missing
             # face as a disagreeing one.
-            "font_dot", "font_same_top", "font_known", "font_conf_min"]
+            "font_dot", "font_same_top", "font_known", "font_conf_min",
+            # How far each word's centre-line departs from straight, in cap heights. A curved word is one
+            # whose continuation a single global axis would point away from, so the model can learn to
+            # weigh the geometric evidence differently there.
+            "curv_max", "curv_sum"]
 
 
 def font_pair(fa, fb):
@@ -84,7 +88,7 @@ def pair_features(A, B, ta, tb, fa=None, fb=None):
     d = math.hypot(dx, dy)
     outs = []
     for F, G in ((A, B), (B, A)):
-        ux, uy = F["u"]
+        ux, uy = facing(F, dx if F is A else -dx, dy if F is A else -dy)
         along = abs(dx * ux + dy * uy)
         lat = abs(-dx * uy + dy * ux)
         outs.append((along - (A["long"] + B["long"]) / 2.0, lat))
@@ -102,7 +106,8 @@ def pair_features(A, B, ta, tb, fa=None, fb=None):
             1.0 if (ua == ub) else 0.0,
             1.0 if (not is_alpha(ta) or not is_alpha(tb)) else 0.0,
             min(len(ta), len(tb)) / max(1.0, max(len(ta), len(tb))),
-            hmin] + font_pair(fa, fb)
+            hmin] + font_pair(fa, fb) + [max(A.get("curv", 0.0), B.get("curv", 0.0)),
+                                         A.get("curv", 0.0) + B.get("curv", 0.0)]
 
 
 def candidates(words, max_gap_pitch=6.0, lat_tol=1.4, h_tol=0.55, ang_tol=28.0):
@@ -238,7 +243,7 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(text=txt, f=word_frame(p, txt),
+            words.append(dict(text=txt, f=word_frame(p, txt, r.get("gline")),
                               font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
         if len(words) < 30:
             continue
