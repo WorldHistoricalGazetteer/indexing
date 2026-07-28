@@ -116,6 +116,12 @@ def word_frame(poly, text, line=None):
     th = math.radians(ang)
     u = (math.cos(th), math.sin(th))
     n = max(1, len(re.sub(r"\s+", "", text or "")))
+    # A switch, so the tangent can be ablated against the bounding-rectangle axis with EVERYTHING else held
+    # identical — same candidate filter, same pairs, same held-out split. Comparing two runs whose test sets
+    # differ is how a change gets credited with an improvement that is really a change of denominator.
+    if os.environ.get("GBSTAMP_NO_TANGENT"):
+        return dict(cx=float(cx), cy=float(cy), long=float(w), h=float(h),
+                    ang=float(ang), u=u, u_start=u, u_end=u, curv=0.0, pitch=float(w) / n)
     cl = np.asarray(line, np.float64) if line is not None and len(line) >= 2 else centreline(poly, u)
     u_start = u_end = u
     curv = 0.0
