@@ -69,6 +69,26 @@ class TestDeclaredLicences(unittest.TestCase):
         used = {s for s in declared_licences().values() if s.startswith("custom-")}
         self.assertEqual(used, {r["spdx_id"] for r in seed_rows()})
 
+    def test_seed_rows_are_not_contributor_selectable(self):
+        """A custom-* id records ONE named source's terms — never something a
+        WHG contributor should be offered for their own dataset (place#157).
+
+        Pinned on the emitted rows, not the definitions, so a future id that
+        simply omits the key still ships as non-selectable rather than
+        defaulting to selectable registry-side.
+        """
+        for row in seed_rows():
+            with self.subTest(spdx=row["spdx_id"]):
+                self.assertIs(False, row["contributor_selectable"])
+
+    def test_no_derivatives_is_explicit_on_every_custom_row(self):
+        """whg3 stores `no_derivatives` rather than deriving it from the id, so
+        our value is authoritative — an omission would silently become
+        "see terms" for a licence that has a definite answer."""
+        for row in seed_rows():
+            with self.subTest(spdx=row["spdx_id"]):
+                self.assertIn("no_derivatives", row)
+
     def test_ohm_is_cc0_not_odbl(self):
         """OHM publishes under CC0; only OSM is ODbL.
 

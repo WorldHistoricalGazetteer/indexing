@@ -334,6 +334,11 @@ CUSTOM_LICENCES = {
         'attribution_required': True,
         'no_derivatives': False,
         'custom': True,
+        # Source-specific terms: one named institution's licence, never a
+        # choice a WHG contributor should be offered for their own dataset
+        # (place#157). Still shown on /licenses/ — reusers must be able to
+        # read them — just not selectable.
+        'contributor_selectable': False,
         'notes': ('OCAP®-aligned bespoke terms. Non-commercial use only; '
                   'redistribution by explicit permission; attribution plus '
                   'acknowledgement of Indigenous communities as the rightful '
@@ -349,6 +354,11 @@ CUSTOM_LICENCES = {
         'attribution_required': False,
         'no_derivatives': False,
         'custom': True,
+        # Source-specific terms: one named institution's licence, never a
+        # choice a WHG contributor should be offered for their own dataset
+        # (place#157). Still shown on /licenses/ — reusers must be able to
+        # read them — just not selectable.
+        'contributor_selectable': False,
         'notes': ('Free for personal, educational, non-commercial AND commercial '
                   'use. Attribution requested but not required.'),
     },
@@ -360,6 +370,11 @@ CUSTOM_LICENCES = {
         'attribution_required': True,
         'no_derivatives': False,
         'custom': True,
+        # Source-specific terms: one named institution's licence, never a
+        # choice a WHG contributor should be offered for their own dataset
+        # (place#157). Still shown on /licenses/ — reusers must be able to
+        # read them — just not selectable.
+        'contributor_selectable': False,
         'notes': ('Academic research only — no commercial use, no resale, and no '
                   'redistribution (stricter than any CC licence). Indexing for '
                   'search/reconciliation only; re-hosting would need direct '
@@ -373,6 +388,11 @@ CUSTOM_LICENCES = {
         'attribution_required': True,
         'no_derivatives': False,
         'custom': True,
+        # Source-specific terms: one named institution's licence, never a
+        # choice a WHG contributor should be offered for their own dataset
+        # (place#157). Still shown on /licenses/ — reusers must be able to
+        # read them — just not selectable.
+        'contributor_selectable': False,
         'notes': ('Registration-gated bespoke EULA. Use for research/teaching '
                   'only, no commercial use, no onward distribution — the data is '
                   'indexed in place and never offered for download. Each user '
@@ -390,6 +410,11 @@ CUSTOM_LICENCES = {
         'attribution_required': True,
         'no_derivatives': None,
         'custom': True,
+        # Source-specific terms: one named institution's licence, never a
+        # choice a WHG contributor should be offered for their own dataset
+        # (place#157). Still shown on /licenses/ — reusers must be able to
+        # read them — just not selectable.
+        'contributor_selectable': False,
         'notes': ('No explicit licence grant from the UN. Attribution to the '
                   'United Nations is required and the boundary/designation '
                   'disclaimer must accompany any use. NOT public domain — the '

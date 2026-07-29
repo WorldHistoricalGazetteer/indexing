@@ -88,10 +88,17 @@ def seed_rows() -> list[dict[str, Any]]:
 
     Only the ids actually referenced by an authority are emitted — an unused
     definition is not something whg3 needs to create.
+
+    ``contributor_selectable`` defaults to **False** for anything emitted here.
+    We only ever mint a ``custom-*`` id to record one named source's bespoke
+    terms, and offering a WHG contributor "UK Data Service End User Licence"
+    as a licence for their own dataset would be nonsense (place#157). Getting
+    this wrong is silent and user-visible, so the safe value is the default and
+    a genuinely reusable custom licence must opt in explicitly.
     """
     used = set(declared_licences().values())
     return [
-        {"spdx_id": spdx, **defn}
+        {"spdx_id": spdx, "contributor_selectable": False, **defn}
         for spdx, defn in CUSTOM_LICENCES.items()
         if spdx in used
     ]
@@ -102,7 +109,7 @@ def seed_rows() -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-def fetch_attribution(namespaces: list[str], *, endpoint: str,
+def fetch_attribution(namespaces: list[str], *, endpoint: str = DEFAULT_ENDPOINT,
                       timeout: int = WHG_HTTP_TIMEOUT) -> dict[str, Any]:
     """GET the public attribution resolver for ``namespaces``."""
     url = f"{endpoint}?{urlparse.urlencode({'namespaces': ','.join(namespaces)})}"
