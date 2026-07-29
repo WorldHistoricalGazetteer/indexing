@@ -147,7 +147,7 @@ first-pass assumptions were WRONG — flagged in notes.
 | osm   | OSM                   | `ODbL-1.0`              | OpenStreetMap contributors        | high  | data is ODbL |
 | ohm   | OHM                   | `CC0-1.0`               | OpenHistoricalMap contributors    | high  | **WRONG first-pass: NOT ODbL** — OHM is CC0 PD dedication |
 | dp    | D-PLACE               | `CC-BY-NC-4.0`          | MPI for Evolutionary Anthropology | high  | **WRONG first-pass: NC**, not plain CC-BY; also cite upstream datasets |
-| un    | ISO3166 / Natural Earth | `custom-public-domain`| Natural Earth                     | high  | public domain |
+| un    | ~~ISO3166 / Natural Earth~~ → UN Geospatial BNDA | ~~`custom-public-domain`~~ → **`custom-un-geodata`** | ~~Natural Earth~~ → United Nations | high | **SOURCE CHANGED 2026-07-14** (Natural Earth retired). The BNDA item carries NO grant of rights — only the boundary-designation disclaimer — so it is **not** public domain. Registry still holds the stale NE value; see the 2026-07-29 status note below |
 | po    | PeriodO               | `CC0-1.0`               | PeriodO contributors              | high  | perio.do/license |
 | gb    | GB1900                | `CC-BY-SA-4.0`          | GB Historical GIS + GB1900 partners | med | **WRONG first-pass: not CC0** — the abridged gazetteer (~1.17M = our count) is BY-SA; only the raw dump is CC0. SA deed version unstated; 4.0 assumed |
 | nl    | NativeLand            | **custom (NO SPDX)**    | Native Land Digital               | high  | Data Sovereignty Treaty (OCAP®): NON-COMMERCIAL + redistribution-by-permission → **custom WHG License row** |
@@ -159,6 +159,7 @@ first-pass assumptions were WRONG — flagged in notes.
 | tm    | Trismegistos          | `CC-BY-SA-4.0`          | Trismegistos / KU Leuven          | high  | **NOT non-commercial** (contrary to first-pass fear); trismegistos.org/dataservices |
 | ofs   | Ottoman NFS Gazetteer | `CC-BY-4.0`             | Kabadayı, Sefer, Boykov & Gerrits | high  | Zenodo 7351936 Rights field |
 | og    | Ottoman Gazetteer     | `CC-BY-NC-4.0`          | Will Hanley (FSU)                 | high  | repo LICENSE + README badge |
+| kain_par | Ancient Parishes (Kain & Oliver / CAMPOP) | **custom (NO SPDX)** → `custom-ukds-eul` | Cambridge Group (CAMPOP); Kain & Oliver | high | UK Data Service End User Licence: registration-gated, research/teaching only, **no** commercial use, **no** onward distribution. Added to the table 2026-07-29 — it post-dates the original audit and had been sending `license_spdx: ''` (silently filtered as falsy) |
 | loc   | LOC                   | — (relations-only)      | —                                 | n/a   | excluded from inventory; no registry row |
 
 > **Needed-but-unseeded SPDX ids found during audit: `CC-BY-ND-4.0`** (dgsd only).
@@ -178,6 +179,33 @@ first-pass assumptions were WRONG — flagged in notes.
 > license_spdx" + skips the FK for these four (the other fields still upsert;
 > self-corrects with a re-push after promotion). The other 16 authorities resolve
 > on prod today.
+
+> **⚠ STATUS 2026-07-29 (place#157) — still unresolved on BOTH stacks.** The
+> paragraph above is stale: `GET /api/attribution/` reports `license: null` for
+> `nl`, `ukhc`, `chgis`, `dgsd` **and** `kain_par` on prod *and* on dev, so
+> whatever `licensing/0003` did has not reached either running site — or it has,
+> and no inventory push has landed since to set the FK. Two further findings:
+>
+> - **`un` is not just missing, it is WRONG.** The registry still holds
+>   `custom-public-domain` — the Natural Earth determination — while the source
+>   has been UN Geospatial BNDA (© United Nations, *no* public-domain grant)
+>   since 2026-07-14. Our `custom-un-geodata` was skipped as unknown, and a skip
+>   leaves the stale row standing rather than clearing it. **A silent skip can
+>   preserve an affirmatively false licence, not merely an absent one.**
+> - **`kain_par` was never sending anything** — it carried `license_spdx: ''`,
+>   which `_attribution_fields` filters out as falsy. Now
+>   `custom-ukds-eul` (defined in `settings.CUSTOM_LICENCES`).
+>
+> The whole class of failure is invisible because the endpoint skips-and-logs
+> WHG-side. It is now checkable in one command from this repo:
+> `python -m processing.verify_licences` (exit ≠ 0 on any unresolved licence)
+> and `--seed-json` emits the exact custom `License` rows to create.
+> `push_gazetteer_inventory` runs the same check after every push and warns.
+>
+> **Remaining work is whg3-side:** seed/deploy the five rows
+> (`custom-nativeland-dst`, `custom-historic-counties`, `custom-chgis-academic`,
+> `custom-ukds-eul`, `custom-un-geodata`) plus the SPDX row `CC-BY-ND-4.0`, then
+> re-push the inventory and re-run the verifier.
 
 Bespoke / non-SPDX terms → use `custom-public-domain` only if truly PD; otherwise flag for a `custom=True` WHG `License` row + a free-text rights statement (coordinate with the WHG repo).
 

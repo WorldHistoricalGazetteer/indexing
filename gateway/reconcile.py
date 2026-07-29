@@ -63,6 +63,7 @@ from .es_helpers import (
     collect_place_ids as _collect_place_ids,
     build_places_filter as _build_places_filter,
     build_toponym_lookup as _build_toponym_lookup,
+    collect_namespaces as _collect_namespaces,
 )
 
 logger = logging.getLogger("gateway.reconcile")
@@ -239,6 +240,14 @@ class ScopeInfo(BaseModel):
 
 class ReconcileResponse(BaseModel):
     hits: list[CandidateHit] = []  # flat ranked candidates (clustering is client-side)
+    # Source-attribution echo (place#157). Reconciliation blends candidates from
+    # many differently-licensed authorities into one response, so the consumer
+    # needs the source set to state per-source terms. `namespaces` = distinct
+    # authorities present in `hits` (each candidate also carries its own
+    # `namespace`); `namespaces_searched` = the explicit positive scope asked
+    # for, the only way to see a namespace that was queried but matched nothing.
+    namespaces: list[str] = []
+    namespaces_searched: list[str] = []
     scope: Optional[ScopeInfo] = None  # geographic-scope diagnostics (when scope requested)
     variants_used: list[str] = []  # name variants actually queried in discovery (post-cap)
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
@@ -468,8 +477,10 @@ async def reconcile_search(req: ReconcileRequest):
     from collections import defaultdict
 
     has_query = bool(req.query and req.query.strip())
+    # Echoed on every return path, empty ones included (place#157).
+    ns_searched = list(req.namespaces or [])
     if not has_query and not req.contained_in and not req.bounds:
-        return ReconcileResponse()
+        return ReconcileResponse(namespaces_searched=ns_searched)
     pure_spatial = not has_query
 
     variants, variant_vectors = _normalise_variants(req) if has_query else ([], [])
@@ -521,10 +532,16 @@ async def reconcile_search(req: ReconcileRequest):
             # unconstrained result set would silently ignore it (place#144).
             # Return nothing plus the reason, and let the client warn the user.
             logger.info("reconcile: scope requested but not applied — %s", scope.message)
-            return ReconcileResponse(scope=scope, variants_used=variants)
+            return ReconcileResponse(
+                scope=scope, variants_used=variants,
+                namespaces_searched=ns_searched,
+            )
 
         if pure_spatial and region is None and not req.bounds:
-            return ReconcileResponse(scope=scope, variants_used=variants)
+            return ReconcileResponse(
+                scope=scope, variants_used=variants,
+                namespaces_searched=ns_searched,
+            )
 
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -588,7 +605,10 @@ async def reconcile_search(req: ReconcileRequest):
                                    include_prefixes, match_names)
 
             if not place_scores:
-                return ReconcileResponse(scope=scope, variants_used=variants)
+                return ReconcileResponse(
+                scope=scope, variants_used=variants,
+                namespaces_searched=ns_searched,
+            )
 
         # ------------------------------------------------------------------
         # Step 2: Filtering — fetch places by ID + spatial/temporal/ccode
@@ -727,6 +747,8 @@ async def reconcile_search(req: ReconcileRequest):
 
     return ReconcileResponse(
         hits=candidates,
+        namespaces=_collect_namespaces(candidates),
+        namespaces_searched=ns_searched,
         scope=scope,
         variants_used=variants,
         edges=edges,

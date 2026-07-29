@@ -44,6 +44,7 @@ from .es_helpers import (
     build_places_filter,
     build_toponym_lookup,
     build_suggest_query,
+    collect_namespaces,
 )
 
 logger = logging.getLogger("gateway.search")
@@ -223,6 +224,15 @@ class SearchResponse(BaseModel):
     hits: list[SearchHit] = []
     total: int = 0
     max_score: float = 0
+    # Source-attribution echo (place#157). `namespaces` = the distinct
+    # authorities represented in `hits`, so a consumer resolves per-source
+    # licence terms in one registry lookup instead of string-splitting every
+    # id. `namespaces_searched` = the explicit positive namespace scope the
+    # request asked for (empty when unrestricted) — it is the ONLY way to know
+    # a namespace was queried but contributed no hits, which id-derivation
+    # cannot express.
+    namespaces: list[str] = []
+    namespaces_searched: list[str] = []
     facets: Facets = Facets()
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     # Offline calibration fuel — populated when include_clustering_fields=True
@@ -304,11 +314,15 @@ async def search(req: SearchRequest):
       places (optionally with per-name embeddings).
     """
     has_query = bool(req.query and req.query.strip())
+    # The explicit namespace scope, echoed on EVERY return path — including the
+    # empty ones, where "we searched chgis and it matched nothing" is precisely
+    # the fact a consumer cannot recover from an empty hit list (place#157).
+    ns_searched = list(req.namespaces or [])
     # Browse mode only applies when there is no query — a query always takes the
     # ranked toponym-discovery path (browse is a no-query enumeration).
     browse = req.browse and not has_query
     if not has_query and not req.contained_in and not req.bounds and not browse:
-        return SearchResponse()
+        return SearchResponse(namespaces_searched=ns_searched)
     pure_spatial = not has_query
 
     auth = es_auth()
@@ -353,7 +367,7 @@ async def search(req: SearchRequest):
             region = spatial.region_from_geojson(req.bounds)
 
         if pure_spatial and region is None and not req.bounds and not browse:
-            return SearchResponse()
+            return SearchResponse(namespaces_searched=ns_searched)
 
         # ------------------------------------------------------------------
         # Step 1: Discovery — search toponyms → collect unique place_ids
@@ -386,7 +400,7 @@ async def search(req: SearchRequest):
                                   include_prefixes, match_names)
 
             if not place_scores:
-                return SearchResponse()
+                return SearchResponse(namespaces_searched=ns_searched)
 
         # ------------------------------------------------------------------
         # Step 2: Filtering + Aggregations — fetch places by ID + filters
@@ -741,6 +755,8 @@ async def search(req: SearchRequest):
         hits=results,
         total=total,
         max_score=results[0].score if results else 0,
+        namespaces=collect_namespaces(results),
+        namespaces_searched=ns_searched,
         facets=facets,
         edges=edges,
         clustering_params=load_clustering_params() if req.include_clustering_fields else None,

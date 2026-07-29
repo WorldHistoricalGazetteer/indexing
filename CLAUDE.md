@@ -283,6 +283,19 @@ Both endpoints share the same architecture via `es_helpers.py`:
 
 **Clustering fuel (opt-in, additive):** `include_hard_links` → result-set `edges[]`; `include_clustering_fields` → per-hit `h3`/`h3_cover`/`temporal_range`/`aat_ids`/`aat_paths`/`query_match` + top-level `clustering_params`/`toponym_stoplist`; `include_embeddings` → per-name int8 `phon_emb`. The browser (`clustering.js`) computes all pair signals + Union-Find. See `developer/plan-outstanding-2026-07.md` §1.
 
+**Source-attribution echo (place#157):** every multi-record response
+(`/api/search`, `/api/reconcile`, `/api/places`) carries `namespaces[]` — the
+distinct authorities represented in its results — so Django resolves per-source
+licence terms in one registry lookup instead of string-splitting every result id.
+`/api/search` + `/api/reconcile` also carry `namespaces_searched[]` (the explicit
+positive namespace scope of the request, echoed even on empty responses): the
+only way to see that a namespace was queried but matched nothing, which
+id-derivation cannot express. Both default to `[]`; `gateway.es_helpers.collect_namespaces`
+is the shared builder. Licence data itself originates in `processing.settings.AUTHORITIES`
+(+ `CUSTOM_LICENCES` for bespoke non-SPDX terms) — verify it actually landed in
+the registry with `python -m processing.verify_licences`, because the registry
+endpoint silently skips a `license_spdx` its own License table doesn't know.
+
 **Response ranking:** Results are sorted by normalised toponym-match score (0–100), with `cluster_size` as tiebreaker (legacy — to be replaced when `build_cluster_lookup` retires).
 
 ### Search modes

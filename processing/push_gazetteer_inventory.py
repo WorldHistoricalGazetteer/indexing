@@ -732,6 +732,41 @@ def push_inventory(
 
 
 # ---------------------------------------------------------------------------
+# Post-push read-back
+# ---------------------------------------------------------------------------
+
+
+def _warn_unresolved_licences(namespaces: list[str | None]) -> None:
+    """Re-read the live attribution resolver and warn about lost licences.
+
+    Best-effort: any failure here (resolver unreachable, shape changed) is
+    logged and swallowed — it must never turn a successful push into a
+    failure. See :mod:`processing.verify_licences` for the gating CLI.
+    """
+    wanted = {ns for ns in namespaces if ns}
+    if not wanted:
+        return
+    try:
+        from processing.verify_licences import audit, fetch_attribution
+        resolved = fetch_attribution(sorted(wanted))
+        problems = [p for p in audit(resolved) if p["namespace"] in wanted]
+    except Exception as exc:  # noqa: BLE001 — advisory check, never fatal
+        print(f"NOTE: could not verify licences post-push ({exc}); run "
+              f"`python -m processing.verify_licences` manually.", file=sys.stderr)
+        return
+
+    if not problems:
+        return
+    print(f"\nWARNING: {len(problems)} pushed gazetteer(s) have NO usable "
+          f"licence in the registry — the endpoint skipped an id its License "
+          f"table does not know:", file=sys.stderr)
+    for p in problems:
+        print(f"  [{p['kind']}] {p['namespace']}: {p['detail']}", file=sys.stderr)
+    print("Seed the rows in whg3 (`python -m processing.verify_licences "
+          "--seed-json`) and re-push.\n", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 
@@ -874,6 +909,14 @@ def main() -> None:
                 failures.append(f"{label} (batch {i}, {pushed}/{len(payload)} "
                                 f"rows pushed): {exc}")
                 break
+
+    # Read back what the registry actually recorded. A 200 from the push is NOT
+    # evidence the licence landed: the endpoint skips+logs a `license_spdx` its
+    # own License table doesn't know, leaving the gazetteer with NO licence at
+    # all — which is how five authorities came to render as "terms unspecified"
+    # in the Atlas while this repo held terms for four of them (place#157).
+    # Advisory only: the push itself succeeded, and the fix is a whg3-side seed.
+    _warn_unresolved_licences([e.get("namespace") for e in payload])
 
     if failures:
         print(

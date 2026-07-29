@@ -30,6 +30,7 @@ from .es_helpers import (
     es_auth,
     ES_HEADERS,
     build_toponym_lookup,
+    collect_namespaces,
 )
 
 logger = logging.getLogger("gateway.places")
@@ -119,6 +120,10 @@ class PlaceDetail(BaseModel):
 class PlacesResponse(BaseModel):
     places: list[PlaceDetail] = []
     not_found: list[str] = []
+    # Distinct authorities represented in `places` (place#157) — the source set
+    # a consumer must state terms for. Not simply the namespaces of the ids that
+    # were asked for: unresolved ids land in `not_found` and contribute nothing.
+    namespaces: list[str] = []
 
 
 # ---------------------------------------------------------------------------
@@ -533,7 +538,11 @@ async def fetch_places(req: PlacesRequest):
                 detail.place_id = rid
             places.append(detail)
 
-    return PlacesResponse(places=places, not_found=not_found)
+    return PlacesResponse(
+        places=places,
+        not_found=not_found,
+        namespaces=collect_namespaces(places),
+    )
 
 
 

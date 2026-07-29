@@ -37,6 +37,40 @@ ES_HEADERS = {"Content-Type": "application/json"}
 
 
 # ---------------------------------------------------------------------------
+# Source attribution — which authorities does a result set draw on?
+# ---------------------------------------------------------------------------
+
+def collect_namespaces(records) -> list[str]:
+    """Return the sorted set of distinct namespaces represented in ``records``.
+
+    Every multi-record response echoes this at its root (place#157) so a
+    consumer can resolve each source's licence terms in ONE registry lookup
+    instead of re-deriving the set by string-splitting every result id. The
+    gateway already knows the set per query, so the echo is both cheaper and
+    robust against any future change to the ``{ns}:{id}`` id format.
+
+    ``records`` may be response models (``SearchHit`` / ``CandidateHit`` /
+    ``PlaceDetail``, all of which carry ``namespace`` + ``place_id``) or raw
+    ES ``_source`` dicts. The stored ``namespace`` field is authoritative;
+    the ``place_id`` prefix is only a fallback for a doc indexed before the
+    ``extract_namespace`` pipeline populated it.
+    """
+    out: set[str] = set()
+    for rec in records:
+        if isinstance(rec, dict):
+            ns = rec.get("namespace") or ""
+            pid = rec.get("place_id") or ""
+        else:
+            ns = getattr(rec, "namespace", "") or ""
+            pid = getattr(rec, "place_id", "") or ""
+        if not ns and ":" in pid:
+            ns = pid.split(":", 1)[0]
+        if ns:
+            out.add(ns)
+    return sorted(out)
+
+
+# ---------------------------------------------------------------------------
 # Geometry extraction from a place ``_source`` (shared by extend + spatial)
 # ---------------------------------------------------------------------------
 

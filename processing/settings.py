@@ -298,6 +298,107 @@ TILESERVER_SERVICES     = os.getenv(
 DOWNLOAD_MAX_RECORDS = 250_000
 
 
+# ── Custom (non-SPDX) licence vocabulary ───────────────────────────────────
+# Several authorities publish under bespoke terms with no SPDX identifier. Those
+# are recorded against a ``custom-*`` id in ``license_spdx`` below, and DEFINED
+# here — this dict is the source of truth for what each id means.
+#
+# WHY THIS EXISTS (place#157). The registry endpoint *skips and logs* a
+# ``license_spdx`` its own License table doesn't know, leaving the row with NO
+# licence at all. Silently. On 2026-07-29 that had left five authorities
+# (chgis, kain_par, nl, dgsd, ukhc) rendering as "licence not specified" in the
+# Atlas even though this file recorded terms for four of them — and had masked a
+# WRONG value for a sixth: ``un`` still carried ``custom-public-domain``, a
+# leftover from the Natural Earth era, while the source has been UN Geospatial
+# BNDA (© United Nations, no public-domain grant) since 2026-07-14.
+#
+# Unrecorded terms are worse than restrictive ones: a non-commercial licence can
+# be cleared or excluded deterministically; an absent one cannot be reasoned
+# about at all. So: every custom id used below MUST appear here, the WHG License
+# table must be seeded from these definitions, and
+# ``processing.verify_licences`` re-reads the live registry after a push to
+# prove each authority actually resolved (turning the silent skip into a loud
+# failure).
+#
+# Field semantics match the registry's License model / the API's `license`
+# object: permits_commercial, share_alike, attribution_required, no_derivatives
+# are the compliance flags a programmatic consumer acts on; `custom` marks a
+# non-SPDX row. `redistribution` is prose only — WHG's own re-hosting decision
+# is the per-authority `redistributable` flag above.
+CUSTOM_LICENCES = {
+    'custom-nativeland-dst': {
+        'label': 'Native Land Digital Data Sovereignty Treaty',
+        'url': 'https://api-docs.native-land.ca/data-sovereignty-treaty',
+        'permits_commercial': False,
+        'share_alike': False,
+        'attribution_required': True,
+        'no_derivatives': False,
+        'custom': True,
+        'notes': ('OCAP®-aligned bespoke terms. Non-commercial use only; '
+                  'redistribution by explicit permission; attribution plus '
+                  'acknowledgement of Indigenous communities as the rightful '
+                  'stewards of the data is mandatory.'),
+    },
+    'custom-historic-counties': {
+        'label': 'Historic County Borders Project terms',
+        'url': 'https://county-borders.co.uk/',
+        'permits_commercial': True,
+        'share_alike': False,
+        # The project "would appreciate" credit — requested, not a condition of
+        # use. Recorded truthfully as False; WHG attributes regardless.
+        'attribution_required': False,
+        'no_derivatives': False,
+        'custom': True,
+        'notes': ('Free for personal, educational, non-commercial AND commercial '
+                  'use. Attribution requested but not required.'),
+    },
+    'custom-chgis-academic': {
+        'label': 'CHGIS academic-use-only terms (Harvard / Fudan)',
+        'url': 'https://chgis.fas.harvard.edu/data/chgis/v6/',
+        'permits_commercial': False,
+        'share_alike': False,
+        'attribution_required': True,
+        'no_derivatives': False,
+        'custom': True,
+        'notes': ('Academic research only — no commercial use, no resale, and no '
+                  'redistribution (stricter than any CC licence). Indexing for '
+                  'search/reconciliation only; re-hosting would need direct '
+                  'permission from the rights holders.'),
+    },
+    'custom-ukds-eul': {
+        'label': 'UK Data Service End User Licence',
+        'url': 'https://ukdataservice.ac.uk/app/uploads/cd137-enduserlicence.pdf',
+        'permits_commercial': False,
+        'share_alike': False,
+        'attribution_required': True,
+        'no_derivatives': False,
+        'custom': True,
+        'notes': ('Registration-gated bespoke EULA. Use for research/teaching '
+                  'only, no commercial use, no onward distribution — the data is '
+                  'indexed in place and never offered for download. Each user '
+                  'must obtain their own copy from the UK Data Service.'),
+    },
+    'custom-un-geodata': {
+        'label': 'UN Geospatial Data terms',
+        'url': 'https://www.un.org/geospatial/',
+        # The UN publishes BNDA with NO explicit grant of rights — the item's
+        # own licenseInfo (checked 2026-07-29 via the ArcGIS item metadata) is
+        # purely the boundary-designation disclaimer. Commercial permission is
+        # therefore NOT established; recorded as unknown (None), not as True.
+        'permits_commercial': None,
+        'share_alike': False,
+        'attribution_required': True,
+        'no_derivatives': None,
+        'custom': True,
+        'notes': ('No explicit licence grant from the UN. Attribution to the '
+                  'United Nations is required and the boundary/designation '
+                  'disclaimer must accompany any use. NOT public domain — the '
+                  'registry\'s former "custom-public-domain" value was inherited '
+                  'from the retired Natural Earth source.'),
+    },
+}
+
+
 # Remote Dataset Configurations
 AUTHORITIES = [
     {  # 2024: 37k+ places
@@ -447,9 +548,19 @@ AUTHORITIES = [
         'dataset_name': 'OpenHistoricalMap',
         'namespace': 'ohm',
         'redistributable': True,  # CC0
-        # Verified 2026-06-06: OHM is CC0 (public-domain dedication), NOT ODbL like
-        # OSM — wiki.openstreetmap.org/wiki/OpenHistoricalMap/Copyright. Attribution
-        # encouraged but not required.
+        # Verified 2026-06-06, RE-VERIFIED 2026-07-29 (place#157 queried this as a
+        # suspected copy-paste of the OSM row): OHM is CC0 (public-domain
+        # dedication), NOT ODbL like OSM. openhistoricalmap.org/copyright —
+        # "Except where otherwise noted, OpenHistoricalMap data is dedicated to
+        # the public domain under a Creative Commons CC0 dedication"; the OSM wiki
+        # page (wiki.openstreetmap.org/wiki/OpenHistoricalMap/Copyright) agrees.
+        # Attribution is appreciated but NOT required. This is a deliberate
+        # determination, not an ingest error — do not "correct" it to ODbL.
+        # CAVEAT (the "except where otherwise noted"): individual OHM elements may
+        # carry a `license=*` tag placing them under CC-BY / CC-BY-SA. We do not
+        # currently read that tag (authorities/ohm-places.py ingests name/type/date
+        # tags only), so a per-element exception would be indexed as CC0. Revisit
+        # if OHM's tagged exceptions become non-trivial in number.
         'citation_text': 'OpenHistoricalMap, by OpenHistoricalMap contributors.',
         'license_spdx': 'CC0-1.0',
         'license_url': 'https://creativecommons.org/publicdomain/zero/1.0/',
@@ -457,7 +568,12 @@ AUTHORITIES = [
         'source_url': 'https://www.openhistoricalmap.org/',
         'contributors': [],
         'api_item': '',
-        'citation': 'OpenHistoricalMap is open data, licensed under the Open Data Commons Open Database License (ODbL). https://www.openhistoricalmap.org/',
+        # NB: this free-text blob is what the registry stores as the gazetteer
+        # `description`. It previously claimed ODbL — copied verbatim from the OSM
+        # row above — flatly contradicting the CC0 licence field and (per
+        # place#157) misleading a reader into "correcting" the licence. Fixed
+        # 2026-07-29; re-push the inventory to propagate.
+        'citation': 'OpenHistoricalMap is open data, dedicated to the public domain under a Creative Commons CC0 dedication (except where individual elements are otherwise noted). https://www.openhistoricalmap.org/',
         'files': [
             {
                 # OHM has no planet-latest symlink; daily dumps use dated names
@@ -798,7 +914,12 @@ AUTHORITIES = [
                           'parishes, townships and places. UK Data Service SN 852232. '
                           'Derived from Kain, R.J.P. & Oliver, R.R., Historic Parishes '
                           'of England and Wales (2001).'),
-        'license_spdx': '',  # UK Data Service End User Licence (bespoke, non-SPDX)
+        # Recorded against the WHG custom License row 'custom-ukds-eul' (see
+        # CUSTOM_LICENCES above). It was previously '' — which the push filters
+        # out as falsy, so the registry received NO licence at all and the Atlas
+        # showed "licence not specified" for the single most restricted authority
+        # we hold (place#157). Bespoke terms are still terms: record them.
+        'license_spdx': 'custom-ukds-eul',
         'license_url': 'https://ukdataservice.ac.uk/app/uploads/cd137-enduserlicence.pdf',
         'rights_holder': ('The Cambridge Group for the History of Population and Social '
                           'Structure; R.J.P. Kain & R.R. Oliver'),
