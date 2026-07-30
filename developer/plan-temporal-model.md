@@ -322,10 +322,13 @@ cycle.
    at submission, so this is comfortable. The job logs `df` before and after and flags any leftover
    `.part` (= the fetch did not finish; resumable, do not delete).
 
-   **Stale derivative to clean up separately:** `/ix1/ishi/data/authorities/tgn/tgn_side_index.sqlite`
-   (1.86 GB, Dec 2025). `authorities/tgn-places.py:115 build_side_index` now builds its indexes in
-   memory from `explicit.zip` and never reads or writes this file — it is a leftover from a retired
-   implementation, and it will be stale against the refreshed `explicit.zip` regardless.
+   **Stale derivative — ✅ deleted 30 July 2026.** `/ix1/ishi/data/authorities/tgn/tgn_side_index.sqlite`
+   (1.86 GB, Dec 2025, plus its `-shm`/`-wal`). `authorities/tgn-places.py:115 build_side_index`
+   builds its indexes **in memory** from `explicit.zip` and contains no sqlite references at all —
+   the file was a leftover from a retired implementation, and stale against the refreshed
+   `explicit.zip` regardless. (The other sqlite-backed authorities — `trismegistos`, `dgsd`,
+   `chgis`, `wikidata-geoshapes` — keep their own databases in their own directories and were
+   unaffected.) `tgn/` now contains only `explicit.zip`.
 2. **Fix the ingest code** (§2 defect 1, §3 per-source table). **Required regardless of any
    backfill** — the backfill is one-off, the encoding is permanent, and a future re-run with
    unfixed code silently re-introduces the defect.
