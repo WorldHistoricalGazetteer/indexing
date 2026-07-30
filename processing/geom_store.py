@@ -42,6 +42,9 @@ Dependencies
 
 import json
 import os
+import re
+import sqlite3
+import threading
 from functools import lru_cache
 from pathlib import Path
 
@@ -66,6 +69,37 @@ _SHARD_H3_RESOLUTION = 3
 # Default shard size (bytes).  256 MB gives ~1 000–4 000 shards across 47 M
 # records with an average WKB size of ~2–8 KB per polygon record.
 DEFAULT_SHARD_SIZE_BYTES = 256 * 1024 * 1024  # 256 MB
+
+# ── Index file names ───────────────────────────────────────────────────────
+INDEX_JSON_NAME = "index.json"
+INDEX_SQLITE_NAME = "index.sqlite"
+
+# Shard filenames are always ``geom_shard_NNNN.bin`` (written by
+# ``consolidate_geom_store``), which lets the SQLite index store the shard
+# *number* as an integer instead of repeating a 20-byte filename 11.5 M times.
+_SHARD_FILENAME_RE = re.compile(r"^geom_shard_(\d+)\.bin$")
+
+
+def shard_filename(shard_num: int) -> str:
+    """Shard number → filename. Inverse of :func:`shard_num_from_filename`."""
+    return f"geom_shard_{shard_num:04d}.bin"
+
+
+def shard_num_from_filename(name: str) -> int:
+    """Filename → shard number.
+
+    Raises ``ValueError`` on anything that is not a ``geom_shard_NNNN.bin``
+    name. This is deliberately loud: the SQLite index cannot represent an
+    arbitrary filename, so silently coercing an unexpected one would produce
+    an index that resolves to the wrong bytes.
+    """
+    m = _SHARD_FILENAME_RE.match(name)
+    if not m:
+        raise ValueError(
+            f"geom-store index entry has non-shard filename {name!r}; the "
+            f"SQLite index only represents 'geom_shard_NNNN.bin'"
+        )
+    return int(m.group(1))
 
 
 # ── Low-level WKB serialisation helpers ───────────────────────────────────
@@ -191,6 +225,114 @@ def configure_module_writer(writer: GeomStoreWriter | None):
 
 def get_module_writer() -> GeomStoreWriter | None:
     return _module_writer
+
+
+# ── SQLite index ───────────────────────────────────────────────────────────
+
+_SQLITE_SCHEMA = """
+CREATE TABLE geom(
+    k     TEXT PRIMARY KEY,
+    shard INTEGER NOT NULL,
+    off   INTEGER NOT NULL,
+    len   INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE meta(k TEXT PRIMARY KEY, v TEXT);
+"""
+
+
+def write_sqlite_index(
+    entries,
+    output_dir: str | Path,
+    batch_size: int = 100_000,
+    progress_every: int = 2_000_000,
+) -> int:
+    """
+    Write ``index.sqlite`` for the geom store from an iterable of entries.
+
+    Args:
+        entries: iterable of ``(key, filename, offset, length)`` tuples.
+                 Streamed, never materialised — the caller may pass a
+                 generator over a multi-GB ``index.json``.
+        output_dir: geom-store directory (receives ``index.sqlite``).
+
+    Returns:
+        Number of rows written.
+
+    Built into ``index.sqlite.tmp`` and ``os.replace``-d into place, matching
+    the discipline ``consolidate_geom_store`` already uses for ``index.json``.
+    That atomic rename is also what makes the reader's ``immutable=1`` open
+    safe: a reader holding the old file keeps reading the old *inode*
+    consistently rather than seeing a half-written index.
+
+    ``journal_mode=OFF`` / ``synchronous=OFF`` are safe here precisely because
+    the target is a throwaway ``.tmp``: a crash mid-build leaves the live index
+    untouched and the rebuild is idempotent. They also leave no ``-wal``/``-shm``
+    companion, which ``immutable=1`` requires.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    final_path = output_dir / INDEX_SQLITE_NAME
+    tmp_path = output_dir / (INDEX_SQLITE_NAME + ".tmp")
+
+    # A stale .tmp (and any journal companions) would otherwise be appended to.
+    for p in (tmp_path, Path(str(tmp_path) + "-wal"), Path(str(tmp_path) + "-shm"),
+              Path(str(tmp_path) + "-journal")):
+        p.unlink(missing_ok=True)
+
+    conn = sqlite3.connect(str(tmp_path))
+    written = 0
+    try:
+        conn.execute("PRAGMA journal_mode=OFF")
+        conn.execute("PRAGMA synchronous=OFF")
+        # index.json is ordered by H3 locality, not lexicographically, so keys
+        # arrive in effectively random order — the page-split-heavy path for a
+        # WITHOUT ROWID B-tree. A cache large enough to hold the whole index
+        # (~0.39 GB at 11.5 M rows) keeps the build from thrashing. This is a
+        # batch-time cost only; the reader opens with SQLite's default cache.
+        conn.execute("PRAGMA cache_size=-1500000")  # ~1.5 GB, in KiB
+        conn.executescript(_SQLITE_SCHEMA)
+
+        def _rows():
+            nonlocal written
+            for key, filename, offset, length in entries:
+                yield (key, shard_num_from_filename(filename), offset, length)
+                written += 1
+                if progress_every and written % progress_every == 0:
+                    print(f"  ... sqlite index {written:,} rows", flush=True)
+
+        # executemany over a generator streams in SQLite-sized batches; the
+        # explicit batch_size only bounds the transaction, not memory.
+        cur = conn.cursor()
+        batch: list[tuple] = []
+        for row in _rows():
+            batch.append(row)
+            if len(batch) >= batch_size:
+                cur.executemany("INSERT OR REPLACE INTO geom VALUES(?,?,?,?)", batch)
+                batch.clear()
+        if batch:
+            cur.executemany("INSERT OR REPLACE INTO geom VALUES(?,?,?,?)", batch)
+
+        # Cache the row count so __len__ never pays a full B-tree scan of an
+        # 11.5M-row WITHOUT ROWID table.
+        conn.execute("INSERT OR REPLACE INTO meta VALUES('count', ?)", (str(written),))
+        conn.commit()
+        conn.execute("PRAGMA optimize")
+    finally:
+        conn.close()
+
+    os.replace(tmp_path, final_path)
+    size_mb = final_path.stat().st_size / (1024 * 1024)
+    print(
+        f"write_sqlite_index: wrote {written:,} rows → {final_path} "
+        f"({size_mb:,.0f} MB)"
+    )
+    return written
+
+
+def _index_dict_to_entries(index: dict[str, dict]):
+    """Adapt an in-memory ``index.json`` dict to ``write_sqlite_index`` input."""
+    for key, e in index.items():
+        yield key, e["file"], e["offset"], e["length"]
 
 
 # ── Consolidation ──────────────────────────────────────────────────────────
@@ -340,13 +482,32 @@ def consolidate_geom_store(
     # ── 5. Write final index (atomically) ──────────────────────────────────
     # Write to a temp file and rename so a concurrent reader (e.g. the live
     # gateway during an incremental --merge) never sees a half-written index.
-    index_path = output_dir / "index.json"
-    tmp_index_path = output_dir / "index.json.tmp"
+    index_path = output_dir / INDEX_JSON_NAME
+    tmp_index_path = output_dir / (INDEX_JSON_NAME + ".tmp")
     with open(tmp_index_path, "w") as f:
         json.dump(final_index, f)
     os.replace(tmp_index_path, index_path)
     print(f"consolidate_geom_store: wrote {written:,} geometries across "
           f"{shard_num} shards → {output_dir}")
+
+    # ── 5b. Write the SQLite index alongside it ───────────────────────────
+    # This is what GeomStoreReader actually opens (see its docstring): the
+    # 1 GB index.json costs ~5.4 GB of RSS to load, which is why exact
+    # containment silently never switched itself on in the gateway.
+    # index.json is still written above, as the interchange/fallback format.
+    try:
+        write_sqlite_index(_index_dict_to_entries(final_index), output_dir)
+    except Exception as exc:
+        # Do not fail the whole consolidation for this — index.json is
+        # written and the reader falls back to it — but be loud, because a
+        # missing SQLite index silently reinstates the 5.4 GB load.
+        print(
+            f"ERROR: consolidate_geom_store wrote {INDEX_JSON_NAME} but FAILED "
+            f"to write {INDEX_SQLITE_NAME}: {exc}\n"
+            f"  The reader will fall back to {INDEX_JSON_NAME} (~5.4 GB RSS). "
+            f"Rebuild with: python -m processing.build_geom_index_sqlite build",
+            flush=True,
+        )
 
     # ── 6. Optionally delete staging files ────────────────────────────────
     if delete_staging:
@@ -365,43 +526,165 @@ class GeomStoreReader:
     """
     O(1) geometry lookup from the consolidated VAST geometry store.
 
-    The ``index.json`` is loaded into memory once on first use (it is
-    typically 2–5 GB for 47 M records but compresses well).  An optional
-    LRU cache keeps recently-accessed WKB blocks in memory.
+    Backend selection
+    ~~~~~~~~~~~~~~~~~
+    Prefers ``index.sqlite``; falls back to ``index.json`` when it is absent,
+    so a store consolidated by an older build still works unchanged. The
+    difference is not cosmetic — measured on the live 11.5 M-entry store:
+
+    =================  ==================  ==================
+    ..                 ``index.json``      ``index.sqlite``
+    =================  ==================  ==================
+    process RSS        ~5.4 GB             ~0 (paged on demand)
+    cold start         parse 1.02 GB JSON  open a file
+    on disk            1.02 GB             ~0.39 GB
+    =================  ==================  ==================
+
+    The 5.4 GB load is why ``containment=exact`` never actually switched
+    itself on in the gateway (place#165): nothing crashed and nothing logged,
+    it just quietly degraded to the ``repr_point`` path. ``backend`` reports
+    which one is live, and construction emits a log line either way so this
+    can never again be invisible.
+
+    Concurrency
+    ~~~~~~~~~~~
+    Safe to share across threads and to inherit across ``fork()``:
+
+    * shard reads use ``os.pread``, which takes the offset as an argument and
+      so cannot race — the previous ``seek()``-then-``read()`` on a *shared*
+      file object would have returned another thread's bytes under concurrency
+      (latent only because the gateway's ``search`` is ``async def`` and runs
+      on the event loop; wrapping the Shapely refine in ``asyncio.to_thread``
+      would have made it live);
+    * SQLite connections are per-thread *and* per-process, since a connection
+      inherited across ``fork()`` is not usable in the child.
 
     Usage::
 
         reader = GeomStoreReader("/vast/ishi/geom")
         geojson = reader.get("osm:r12345_0")
-        if geojson:
-            # use full geometry for precise containment check
-            ...
     """
 
-    def __init__(self, store_dir: str | Path, lru_maxsize: int = 4096):
+    def __init__(
+        self,
+        store_dir: str | Path,
+        lru_maxsize: int = 4096,
+        prefer_sqlite: bool = True,
+    ):
         self._dir = Path(store_dir)
-        index_path = self._dir / "index.json"
-        if not index_path.exists():
-            raise FileNotFoundError(f"Geometry store index not found: {index_path}")
-        with open(index_path) as f:
-            self._index: dict[str, dict] = json.load(f)
-        self._handles: dict[str, "open"] = {}
+        sqlite_path = self._dir / INDEX_SQLITE_NAME
+        json_path = self._dir / INDEX_JSON_NAME
+
+        self._sqlite_path: Path | None = None
+        self._index: dict[str, dict] | None = None
+        self._local = threading.local()
+        self._fds: dict[str, int] = {}
+        self._fd_lock = threading.Lock()
+        self._count: int | None = None
+
+        if prefer_sqlite and sqlite_path.exists():
+            self._sqlite_path = sqlite_path
+            self.backend = "sqlite"
+            # Touch the connection now rather than on the first request, so a
+            # broken/incompatible index fails at construction where
+            # get_geom_reader() can catch it and log a degradation.
+            row = self._conn().execute(
+                "SELECT v FROM meta WHERE k='count'"
+            ).fetchone()
+            self._count = int(row[0]) if row else None
+            print(
+                f"geom-store: opened {sqlite_path} "
+                f"({self._count if self._count is not None else '?'} entries, "
+                f"sqlite backend)",
+                flush=True,
+            )
+        elif json_path.exists():
+            self.backend = "json"
+            with open(json_path) as f:
+                self._index = json.load(f)
+            self._count = len(self._index)
+            print(
+                f"geom-store: opened {json_path} ({self._count:,} entries, "
+                f"JSON backend — expect ~5.4 GB RSS at full scale; build "
+                f"{INDEX_SQLITE_NAME} with "
+                f"'python -m processing.build_geom_index_sqlite build')",
+                flush=True,
+            )
+        else:
+            raise FileNotFoundError(
+                f"Geometry store index not found: neither {sqlite_path} nor "
+                f"{json_path} exists"
+            )
+
         # Wrap the internal read method with an LRU cache on the key
         self._cached_wkb = lru_cache(maxsize=lru_maxsize)(self._read_wkb)
 
-    def _open_handle(self, filename: str):
-        if filename not in self._handles:
-            self._handles[filename] = open(self._dir / filename, "rb")
-        return self._handles[filename]
+    # ── SQLite connection (per thread, per process) ───────────────────────
 
-    def _read_wkb(self, geom_key: str) -> bytes | None:
-        entry = self._index.get(geom_key)
+    def _conn(self) -> sqlite3.Connection:
+        """Return this thread's read-only connection, reopening after a fork.
+
+        ``immutable=1`` skips all locking and change detection. That is
+        correct here because the index is only ever replaced wholesale by an
+        ``os.replace`` (see :func:`write_sqlite_index`): an open reader keeps
+        reading the old inode consistently, exactly as the in-memory
+        ``index.json`` snapshot used to behave, until the process restarts.
+        The re-ingest runbook already ends with ``es gateway-restart``.
+        """
+        pid = os.getpid()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None and getattr(self._local, "pid", None) == pid:
+            return conn
+        uri = f"file:{self._sqlite_path}?mode=ro&immutable=1"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        self._local.conn = conn
+        self._local.pid = pid
+        return conn
+
+    # ── Shard reads ───────────────────────────────────────────────────────
+
+    def _fd(self, filename: str) -> int:
+        """Return a shared read-only fd for *filename*, opening it once."""
+        fd = self._fds.get(filename)
+        if fd is not None:
+            return fd
+        with self._fd_lock:
+            fd = self._fds.get(filename)
+            if fd is None:
+                fd = os.open(self._dir / filename, os.O_RDONLY)
+                self._fds[filename] = fd
+        return fd
+
+    def _locate(self, geom_key: str) -> tuple[str, int, int] | None:
+        """Resolve *geom_key* → ``(shard_filename, offset, length)``."""
+        if self._sqlite_path is not None:
+            row = self._conn().execute(
+                "SELECT shard, off, len FROM geom WHERE k=?", (geom_key,)
+            ).fetchone()
+            if row is None:
+                return None
+            return shard_filename(row[0]), row[1], row[2]
+        entry = self._index.get(geom_key) if self._index else None
         if entry is None:
             return None
+        return entry["file"], entry["offset"], entry["length"]
+
+    def _read_wkb(self, geom_key: str) -> bytes | None:
+        located = self._locate(geom_key)
+        if located is None:
+            return None
+        filename, offset, length = located
         try:
-            fh = self._open_handle(entry["file"])
-            fh.seek(entry["offset"])
-            return fh.read(entry["length"])
+            # os.pread is atomic w.r.t. the file offset — unlike seek()+read()
+            # on a shared handle, it is safe from multiple threads.
+            data = os.pread(self._fd(filename), length, offset)
+            if len(data) != length:
+                print(
+                    f"GeomStoreReader._read_wkb({geom_key}): short read "
+                    f"({len(data)} of {length} bytes from {filename}@{offset})"
+                )
+                return None
+            return data
         except Exception as e:
             print(f"GeomStoreReader._read_wkb({geom_key}): {e}")
             return None
@@ -414,18 +697,36 @@ class GeomStoreReader:
         return _wkb_to_geojson(wkb)
 
     def __contains__(self, geom_key: str) -> bool:
-        return geom_key in self._index
+        if self._sqlite_path is not None:
+            return self._conn().execute(
+                "SELECT 1 FROM geom WHERE k=? LIMIT 1", (geom_key,)
+            ).fetchone() is not None
+        return geom_key in (self._index or {})
 
     def __len__(self) -> int:
-        return len(self._index)
+        if self._count is None:
+            # Only reached for a SQLite index built without the meta row;
+            # a full B-tree scan of a WITHOUT ROWID table, hence cached.
+            self._count = self._conn().execute(
+                "SELECT count(*) FROM geom"
+            ).fetchone()[0]
+        return self._count
 
     def close(self):
-        for fh in self._handles.values():
+        with self._fd_lock:
+            for fd in self._fds.values():
+                try:
+                    os.close(fd)
+                except Exception:
+                    pass
+            self._fds.clear()
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
             try:
-                fh.close()
+                conn.close()
             except Exception:
                 pass
-        self._handles.clear()
+            self._local.conn = None
 
     def __del__(self):
         self.close()
