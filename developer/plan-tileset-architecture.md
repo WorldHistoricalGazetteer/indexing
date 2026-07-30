@@ -1,6 +1,6 @@
 # Plan — tileset architecture: geometry channels, labels, and area selection
 
-> **Status:** proposed, not started
+> **Status:** proposed. §8 step 1 done (whg3 `2182ebfec`); everything else not started.
 > **Written:** 30 July 2026
 > **Supersedes the framing of:** `plan-tiling-fixes-159-160.md` (its findings stand; §7 says what changes)
 > **Issues:** place#156 (Atlas Areas UI), place#159 (per-fragment labels), place#160 (missing tiles),
@@ -324,13 +324,48 @@ sample entries cost 105,995,204 bytes as a Python dict — **465 bytes/entry × 
 available, so it is survivable but not something to put in a request path by accident, and it
 explains why the feature has never switched itself on.
 
-**So the endpoint is cheap only if the index stops being a Python dict.** Replace `index.json`
-with an on-disk key → `(file, offset, length)` index — SQLite with a covering index, or a sorted
-fixed-width binary index with `mmap` + binary search. Either gives O(log n) lookup at ~0 RSS,
-needs no change to the shard files, and is a contained piece of work in `processing/geom_store.py`.
+**So the endpoint is cheap only if the index stops being a Python dict.** That single change
+unblocks **two** things: `/api/geometry/<place_id>`, and the exact-containment path that has been
+dark since it was written. Do it before the endpoint, not after.
 
-That single change unblocks **two** things: `/api/geometry/<place_id>`, and the exact-containment
-path that has been dark since it was written. Do it before the endpoint, not after.
+#### 5.3.1 Replace `index.json` with SQLite — measured, ~1 day of work
+
+Benchmarked on the gateway host against the live store (684,076 real entries parsed from a
+60 MB prefix of `index.json`, extrapolated to the full 11.5 M):
+
+| | `index.json` today | SQLite |
+|---|---|---|
+| gateway RSS | **5.4 GB** | **~0** (pages read on demand) |
+| cold start | parse 1.02 GB of JSON | open a file |
+| on-disk size | 1.02 GB | **0.39 GB** (34 bytes/row) |
+| lookup | O(1) after the 5.4 GB | **9.7 µs/key** warm |
+| build time | — | **~31 s** for 11.5 M rows (374 k rows/s) |
+
+Schema — `WITHOUT ROWID` so the key *is* the B-tree, and the shard filename reduces to its
+number (`geom_shard_0001.bin` → `1`):
+
+```sql
+CREATE TABLE geom(k TEXT PRIMARY KEY, shard INT, off INT, len INT) WITHOUT ROWID;
+```
+
+Three changes in `processing/geom_store.py`:
+
+1. **`GeomStoreReader.__init__`** — prefer `index.sqlite` when present, fall back to `index.json`
+   otherwise, so nothing breaks before the backfill runs and old stores keep working. Open with
+   `check_same_thread=False` and `PRAGMA query_only=1`; give each thread its own connection
+   (the gateway is async, and a shared connection would serialise).
+2. **`_read_wkb`** — one `SELECT shard, off, len FROM geom WHERE k=?` in place of the dict
+   lookup. The existing `lru_cache` and open-handle pool are unchanged and still absorb hot keys.
+3. **`consolidate_geom_store`** (`:343`) — write `index.sqlite` alongside `index.json`, same
+   `.tmp` + atomic-rename discipline it already uses.
+
+Plus a **one-off backfill** for the store that exists now, which must not re-run consolidation:
+stream `index.json` with a incremental parser (or `ijson`) → `executemany` in batches →
+atomic rename. ~31 s of insert on top of however long the streaming parse takes; the peak memory
+is one batch, not the whole index.
+
+Verification before it goes near the gateway: sample ~10 k keys, resolve each through both the
+old dict path and the new SQLite path, and assert byte-identical WKB.
 
 ### 5.4 The containment hierarchy — what it is, what it buys, and why it goes last
 
@@ -437,12 +472,50 @@ in its final form rather than one that would need revisiting for the gazetteers.
 
 **Separately scoped:**
 
-9. `/api/geometry/<place_id>` (§5.3) — needs the ownership decision first.
-10. Containment hierarchy, staged from `un` upward (§5.4).
+9. **`index.sqlite` for the geom store (§5.3.1).** Reachability is verified, so this is no longer
+   blocked on a decision — it is ~1 day of contained work in `processing/geom_store.py` and it is
+   worth doing *whether or not* the endpoint follows, because it also switches exact containment
+   back on. Independent of every retile.
+10. `/api/geometry/<place_id>` (§5.3) — trivial once (9) lands; pointless before it.
+11. Containment hierarchy, staged from `un` upward (§5.4).
 
 ---
 
-## 9. Risks and open questions
+## 9. Ownership, and the decisions this plan does not make
+
+This spans three repos, so it cannot be handed to one team wholesale.
+
+| repo | items | notes |
+|---|---|---|
+| **`indexing`** | §3 channels, §3.3 label anchors, §3.2a `tile-join -pk` + skip-message failure, §3.3 verifier, §1.5 stamp convention, §5.3.1 geom-store index | the bulk of it |
+| **`whg3`** | §3.2 layer filters *(done)*, §4 `_label` symbol layer, §5.2 label-click selection, §5.1.2 client half of the temporal filter, Regions status-line wording | needs its own owner; §4/§5.2 must land in the **same release** as the label channel or labels ship invisible |
+| **`tileboss`** | `style.json` regeneration — band metadata **and** `['has','label']` on the label layers | generated by `scripts/build_whg_context_style.py` here, pushed from the sibling clone |
+
+**Startable today, no dependencies, no retile:**
+
+- §5.3.1 `index.sqlite` — measured, self-contained, and switches exact containment back on.
+- §3.2a `tile-join -pk` + failing on skip messages, and the §3.3 verifier — unit-testable before
+  any retile, and where most of the place#160 fix lives.
+
+**Four decisions that are not mine to make, and which the plan deliberately leaves open:**
+
+1. **The date-stamp convention for contemporary sources** (§1.5). Open-ended `end = 9999`, or no
+   span at all? This blocks the largest measured win and should be settled before the next retile
+   of `osm` / `osm_misc` / `tgn` / `nl`, since that retile is the cheap moment to apply it.
+2. **Should a historical date range hide contemporary sources?** (§5.1). Hiding OSM's boundaries
+   when the user picks 1500 is what the filter *means*, but it will read as breakage unless the
+   UI distinguishes "nothing at this level" from "nothing in this period".
+3. **`/api/geometry/<place_id>` — gateway endpoint or sidecar?** Now that co-location is verified
+   (§5.3) the gateway is the obvious home, but it is still someone's call.
+4. **Whether to pursue the containment hierarchy at all** (§5.4), and how far. It is the most
+   interesting item here and the least urgent; it should be a deliberate yes, not a drift.
+
+**One thing to be sceptical of:** §5.4 is the part I am least confident about. The measurements
+say most of OHM's overlap is temporal and dissolves under a date filter, so the hierarchy may buy
+much less than it appears to — but that judgement rests on two sampled tiles (Berlin, Paris), and
+a wider sample could change it. Measure more before committing to the expensive version.
+
+## 10. Risks and open questions
 
 | | |
 |---|---|
