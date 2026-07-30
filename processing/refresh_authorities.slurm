@@ -71,8 +71,16 @@ if [ -n "$NS" ]; then
     done
 fi
 # Surface any partial downloads left behind — these are resumable, not junk,
-# but they mean the fetch did not complete.
-find "${DATA_ROOT}" -name '*.part' -printf '%s\t%p\n' 2>/dev/null \
+# but they mean THIS fetch did not complete. Scoped to this job's namespaces:
+# scanning all of DATA_ROOT would report the in-flight .part files of any
+# concurrently running fetch job as if they were this job's failures.
+if [ -n "$NS" ]; then
+    PART_DIRS=()
+    for n in ${NS//,/ }; do PART_DIRS+=("${DATA_ROOT}/${n}"); done
+else
+    PART_DIRS=("${DATA_ROOT}")
+fi
+find "${PART_DIRS[@]}" -name '*.part' -printf '%s\t%p\n' 2>/dev/null \
     | sed 's/^/LEFTOVER PART: /'
 
 echo "Finished: $(date -Is)  exit=${RC}"
