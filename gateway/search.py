@@ -527,8 +527,9 @@ async def search(req: SearchRequest):
             reader = None
             if req.containment == "exact":
                 reader = spatial.get_geom_reader()
-                region.load_geometry(reader)  # no-op for bounds-built regions
-            raw_hits = spatial.apply_containment(
+            # The exact path reads real polygons and runs Shapely, so it goes
+            # to a worker thread (load_geometry included); fuzzy stays inline.
+            raw_hits = await spatial.apply_containment_async(
                 raw_hits, region, req.containment, req.relation, reader=reader,
             )
             # keep enrichment bounded, but cover the pagination window

@@ -23,9 +23,11 @@ via a cached ``GeomStoreReader`` and tests them with Shapely.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Optional
@@ -187,6 +189,15 @@ class ResolvedRegion:
     point_ids: tuple[str, ...] = ()        # containers that contributed only a point
     unresolved_ids: tuple[str, ...] = ()   # requested ids with no usable geometry
     _geom_loaded: bool = False
+    # A ResolvedRegion is shared via _region_cache and load_geometry mutates
+    # it, so the load must be serialised now that it runs off the event loop
+    # (see apply_containment_async). Without this, a second thread could
+    # observe _geom_loaded=True while `prepared` was still None and silently
+    # degrade an exact request to fuzzy — the same class of invisible wrong
+    # answer place#165 exists to remove.
+    _lock: Any = field(
+        default_factory=threading.Lock, repr=False, compare=False,
+    )
 
     @property
     def has_cover(self) -> bool:
@@ -194,13 +205,23 @@ class ResolvedRegion:
 
     def load_geometry(self, reader) -> bool:
         """Load the region's real polygons from the geom-store for exact tests.
-        Returns True if a usable geometry is now available."""
+        Returns True if a usable geometry is now available.
+
+        Thread-safe and idempotent: concurrent callers for the same cached
+        region do the work once and all observe the completed result.
+        """
+        if self.prepared is not None:
+            return True
+        with self._lock:
+            return self._load_geometry_locked(reader)
+
+    def _load_geometry_locked(self, reader) -> bool:
         if self.prepared is not None:
             return True
         if self._geom_loaded:
             return self.prepared is not None
-        self._geom_loaded = True
         if reader is None or not _SHAPELY_AVAILABLE:
+            self._geom_loaded = True
             return False
         shapes = []
         for key in self.geom_keys:
@@ -212,6 +233,9 @@ class ResolvedRegion:
                 shp = _safe_shape(gj)
                 if shp is not None:
                     shapes.append(shp)
+        # Set only now that the reads are done: an early flag would let a
+        # waiting thread see "loaded" with nothing behind it.
+        self._geom_loaded = True
         if not shapes:
             return False
         try:
@@ -758,3 +782,35 @@ def apply_containment(
         except Exception as exc:
             logger.debug("containment test failed for a hit: %s", exc)
     return out
+
+
+async def apply_containment_async(
+    hits: list[dict], region: ResolvedRegion, mode: str = "fuzzy",
+    relation: str = "intersects", reader=None,
+) -> list[dict]:
+    """``apply_containment``, with the exact path moved off the event loop.
+
+    Until place#165 the geom-store never loaded, so ``mode='exact'`` did no
+    real work and running it inline was free. Now that it genuinely reads
+    polygons and runs Shapely, doing so on the event loop would stall *every*
+    concurrent request, not just this one — so the exact path (geom-store
+    reads + unary_union + prep + per-hit tests) runs in a worker thread.
+
+    This is only safe because ``GeomStoreReader`` is thread-safe: shard reads
+    use ``os.pread`` rather than ``seek()``-then-``read()`` on a shared handle,
+    and SQLite connections are per-thread. ``load_geometry`` is called inside
+    the thread under the region's lock.
+
+    The fuzzy path stays inline — it is set arithmetic over H3 cells, and the
+    thread hand-off would cost more than the work.
+    """
+    if region is None:
+        return hits
+    if mode != "exact" or reader is None:
+        return apply_containment(hits, region, mode, relation, reader=reader)
+
+    def _work() -> list[dict]:
+        region.load_geometry(reader)  # no-op for bounds-built regions
+        return apply_containment(hits, region, mode, relation, reader=reader)
+
+    return await asyncio.to_thread(_work)

@@ -137,6 +137,137 @@ class TestApplyContainment(unittest.TestCase):
             self.assertIn(id(h), fuzzy_ids)
 
 
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestApplyContainmentAsync(unittest.TestCase):
+    """place#165: the exact path now does real work, so it runs off the loop.
+
+    ``apply_containment_async`` must be a drop-in for ``apply_containment`` —
+    same results — while keeping the Shapely refine out of the event loop.
+    """
+
+    def setUp(self):
+        self.region = spatial.region_from_geojson(_square(0, 0, 2, 2))
+        straddle = _square(1.5, 1.5, 3.0, 3.0)
+        self.hits = [
+            _hit(geoms=[{"type": "Point", "coordinates": [1, 1]}], rp=[1, 1]),
+            _hit(geoms=[{"type": "Point", "coordinates": [50, 50]}], rp=[50, 50]),
+            _hit(geoms=[straddle], rp=[2.25, 2.25], cover=_cover_for(straddle)),
+        ]
+
+    def test_matches_sync_results_for_fuzzy_and_exact(self):
+        for mode in ("fuzzy", "exact"):
+            sync = spatial.apply_containment(self.hits, self.region, mode, "intersects")
+            got = asyncio.run(
+                spatial.apply_containment_async(
+                    self.hits, self.region, mode, "intersects",
+                    # A bounds-built region already carries its geometry, so a
+                    # sentinel reader is enough to select the threaded path.
+                    reader=object() if mode == "exact" else None,
+                )
+            )
+            self.assertEqual([id(h) for h in got], [id(h) for h in sync], mode)
+
+    def test_none_region_passes_hits_through(self):
+        got = asyncio.run(
+            spatial.apply_containment_async(self.hits, None, "exact", "intersects")
+        )
+        self.assertEqual(got, self.hits)
+
+    def test_exact_runs_off_the_event_loop(self):
+        import threading
+
+        seen: list[int] = []
+        real = spatial.hit_matches
+
+        def _spy(*a, **kw):
+            seen.append(threading.get_ident())
+            return real(*a, **kw)
+
+        spatial.hit_matches = _spy
+        try:
+            asyncio.run(
+                spatial.apply_containment_async(
+                    self.hits, self.region, "exact", "intersects", reader=object(),
+                )
+            )
+        finally:
+            spatial.hit_matches = real
+        self.assertTrue(seen, "hit_matches was never called")
+        self.assertNotIn(
+            threading.get_ident(), seen,
+            "exact containment ran on the calling (event-loop) thread",
+        )
+
+
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestLoadGeometryConcurrency(unittest.TestCase):
+    """A cached region is shared; load_geometry must be done once, atomically.
+
+    Regression guard for the window this opened: with the load running off the
+    event loop, a second thread could see ``_geom_loaded=True`` before
+    ``prepared`` was assigned and silently fall back to fuzzy.
+    """
+
+    def test_concurrent_load_geometry_all_observe_the_result(self):
+        import threading
+
+        square = _square(0, 0, 2, 2)
+
+        class _SlowReader:
+            """Widens the load window so an unsynchronised race would show."""
+            calls = 0
+
+            def get(self, key):
+                type(self).calls += 1
+                import time
+                time.sleep(0.02)
+                return square
+
+        region = spatial.ResolvedRegion(
+            cover_by_res={}, resolutions=(), bbox_geojson=square, h3_terms=[],
+            geom_keys=("un:x_0",),
+        )
+        reader = _SlowReader()
+        results: list[bool] = []
+        lock = threading.Lock()
+
+        def _worker():
+            ok = region.load_geometry(reader)
+            with lock:
+                results.append(ok)
+
+        threads = [threading.Thread(target=_worker) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(len(results), 8)
+        self.assertTrue(all(results), "a thread saw the region as unloaded")
+        self.assertIsNotNone(region.prepared)
+        # Loaded exactly once despite 8 concurrent callers.
+        self.assertEqual(_SlowReader.calls, 1)
+
+    def test_no_usable_geometry_is_sticky_and_reports_false(self):
+        region = spatial.ResolvedRegion(
+            cover_by_res={}, resolutions=(), bbox_geojson={}, h3_terms=[],
+            geom_keys=("un:missing_0",),
+        )
+
+        class _EmptyReader:
+            calls = 0
+
+            def get(self, key):
+                type(self).calls += 1
+                return None
+
+        reader = _EmptyReader()
+        self.assertFalse(region.load_geometry(reader))
+        self.assertFalse(region.load_geometry(reader))
+        # Second call must not re-read the store.
+        self.assertEqual(_EmptyReader.calls, 1)
+
+
 class _StubResp:
     def __init__(self, payload):
         self._payload = payload

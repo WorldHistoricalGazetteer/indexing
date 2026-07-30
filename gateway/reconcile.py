@@ -652,8 +652,8 @@ async def reconcile_search(req: ReconcileRequest):
             reader = None
             if req.containment == "exact":
                 reader = spatial.get_geom_reader()
-                region.load_geometry(reader)
-            raw_hits = spatial.apply_containment(
+            # See search.py: exact runs off the event loop, fuzzy inline.
+            raw_hits = await spatial.apply_containment_async(
                 raw_hits, region, req.containment, req.relation, reader=reader,
             )
             raw_hits = raw_hits[: req.size * 4]
