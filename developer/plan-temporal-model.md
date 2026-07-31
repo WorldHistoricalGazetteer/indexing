@@ -1,6 +1,7 @@
 # Plan — temporal model: attestations, uncertainty bounds, and per-source encoding
 
-> **Status:** proposed, not started.
+> **Status:** steps 1–4 done; **step 5 (full rebuild) in flight** — see §10 for the execution log,
+> the run id, and what is verified so far.
 > **Written:** 30 July 2026 — split out of `plan-atlas-data-architecture.md` §1.6, which had grown
 > to a third of that document while being a different programme with a different owner.
 > **Issue:** [place#164](https://github.com/WorldHistoricalGazetteer/place/issues/164)
@@ -450,10 +451,123 @@ distinct.
    ⚠️ **Audit per-namespace coverage after the rebuild.** The last one (`postbarrier-20260502`)
    silently skipped embeddings for ~25% of toponyms, the `wd` geoshapes merge, and `ccode` for
    `osm`/`ohm`. Verify each stage landed rather than assuming the pipeline reported honestly.
-6. **Backfill only what was not refreshed** — `nl`, `iv`, `gb`, `ofs`, `alc`, `un`, `ukhc`,
-   `kain_par`, `vob_*`. `_bulk`, **not** `_update_by_query` (which re-runs the ingest pipeline).
-7. **Re-ingest class B** alongside — `po` (9,003), `pl` (25,561), `tm` (64,196). Hours, not a
-   campaign; do not defer these to "when next touched".
+6. ~~**Backfill only what was not refreshed**~~ and 7. ~~**Re-ingest class B**~~ — **both absorbed
+   into step 5 on 31 July 2026: the rebuild re-extracts all 27 namespaces, not six.** Decided
+   with SG. Two reasons:
+
+   - **No second implementation of the transforms.** The per-source logic (`vob_*` snapshot
+     sequences, the `ukhc`/`kain_par` closure, PeriodO's four bounds) already exists in the fixed
+     authority scripts. A `_bulk` backfill would re-implement all of it against ES documents, and
+     the two copies would drift.
+   - **Otherwise the staged tree stays wrong.** A backfill corrects the index but not
+     `staged/<ns>/final/places.parquet`, so the *next* rebuild silently re-introduces the defect
+     — which is exactly the argument step 2 makes for fixing ingestion rather than only
+     backfilling. Everything outside step 5's original set is ≤1.2 M docs, so the extra extract
+     cost is marginal against `osm` and `wd`.
+
+---
+
+## 10. Execution log — step 5 (31 July 2026)
+
+**Run id `temporal-20260731T160000Z`**, manifest at
+`/vast/ishi/staged/runs/temporal-20260731T160000Z.json`. Submitted with the new
+`processing.submit_extract_slurm` (one job per namespace; rotates `staged/<ns>` aside to
+`staged/<ns>.prev-<run_id>` as a rollback, since `write_staged_place_doc` **appends**).
+
+### Disk — resolved before starting
+
+`/vast` is 1 TB **shared with production ES**, which flood-stages read-only at ~51 GB free. It had
+159 GB. Deleted `hf_cache/hub/models--openai--gpt-oss-120b` (183 GB, re-downloadable, from the
+retired GB-STAMP VLM line) with SG's agreement → **342 GB free, 85% → 67%**. Peak projected use is
+old-plus-new staged trees (~+140 GB) plus the new `places` (24 GB) and `toponyms` (51 GB) indices
+alongside the old, so this clears it with room. The four remaining Qwen/Llama AWQ models
+(38–62 GB each) are still available if more is ever needed.
+
+### Six sources §3's table missed — fixed before extracting (commit 208e6c3)
+
+Two of them sit **inside step 5's own chains**, so a rebuild would have published the defect for
+`wd` and `gn` while this plan recorded them as fixed.
+
+| script | ns | was |
+|---|---|---|
+| `wikidata-geoshapes.py` | `wd` | hardcoded `{"start": {"in": 2025}, "end": {"in": 2025}}` on every Commons polygon |
+| `geonames-toponyms.py` | `gn` | an alternate name with only a `to` got `end.in` and no start bound |
+| `trismegistos/places.py` | `tm` | TM's dates bound the **documents**, not existence — an attestation window (this was the plan's own class-B item, step 7, whose script was never edited) |
+| `dplace-places.py` | `dp` | hardcoded 2025, and the ethnographic focal year as a one-year lifespan |
+| `ottgaz-places.py` | `og` | undated units fell back to `in 1300`/`in 1922` — 622 years of existence Sezen never claims |
+| `indexvillaris-places.py` | `iv` | step 2 fixed the geometry but not the four toponym sites; and the branch reading the source's own LPF timespans pulled `earliest`/`latest` out and re-flattened them to `in`/`in` |
+
+Then, from inspecting the first fresh `ohm` output (commit 8e1f49a): **`ohm`, `clio` and `hgis`
+never had the closure rule**. They are correctly class C and correctly use `in`, but all three
+hand-rolled the timespan dict, so a feature tagged only `end_date=1932` had no bound on its start
+and tested as definitely alive at no year. New `temporal.apply_closure` for structures built or
+forwarded outside `lifespan()`/`bounded()`. `hgis` additionally read only `in` (dropping source
+`earliest`/`latest`) and encoded its 1701–1808 dataset scope as a lifespan.
+
+**`bounded()` now collapses an endpoint whose two bounds coincide to `in`** — settling the `po`
+single-year question SG flagged. Consumers must coalesce `in` into both bounds anyway (class-C
+lifespans use it), so the canonical form costs nothing and makes "special-cases `in`" a non-bug.
+
+### Seven infrastructure faults, all silent or late
+
+The 27-way fan-out was the first time this pipeline ran at that width. In submission order:
+
+1. `run_ingestion` asked the **live index** whether a namespace already had docs, before every
+   script. `es` is None on a compute node → instant AttributeError. The crash was the *lucky*
+   outcome: with ES reachable it would have printed "Skipping wd: 11,455,754 places already exist"
+   for every namespace and made the rebuild a **silent no-op**.
+2. The same call in the **success** path (`es.indices.refresh` after the subprocess), swallowed by
+   a bare `except Exception` → `run_ingestion` returned False. Eleven namespaces staged every
+   document correctly and were recorded **FAILED**.
+3. The closing summary, a third live-index call in the same function.
+4. `whg` was dropped entirely — "No data files found", exit 0. It has no local dump (DO Django
+   reconcile API), so it belongs in `SELF_FETCHING`. **228,918 docs** would have gone missing with
+   only a log line.
+5. `_manifest_lock` used `fcntl.flock`, which needs a lock daemon `/vast` refuses to provide under
+   burst (`ENOLCK`). Retrying it harder did not help — `ENOLCK` is the daemon declining to serve,
+   not another holder saying wait. Replaced with an `O_CREAT|O_EXCL` lock (+ stale-breaking, and
+   proceed-with-warning on timeout since `events.jsonl` is authoritative).
+6. `_is_namespace_snapshot_trigger` fell back to `script_id.endswith("-places")`. `un`'s only
+   script is `un-countries`, so `un` staged its 247 BNDA polygons and **never had its `extract`
+   stage marked completed** — permanently short of the global barrier, absent from the new index,
+   and it is the ccode authority the whole corpus prefilters against. Now derived from
+   `INGESTION_ORDER`.
+7. `ukhc-places.py` had raised `ImportError` on its own import line since 6fba141
+   (`AUTHORITIES` imported from `processing.temporal`). Nothing catches this — the module is only
+   ever `python -m`'d, never imported. `tests/test_authority_imports.py` now AST-checks every
+   `from processing.* import …` in every `INGESTION_ORDER` script.
+
+**The lesson for the remaining phases** is the one already in step 5's warning, sharpened: this
+pipeline reports success it has not earned. Verify each stage against an independent measure —
+doc counts against the live baseline, encoding shape against the source's semantics — rather than
+against the pipeline's own status.
+
+### State at end of session, 31 July 2026
+
+19 of 27 extracts complete, **every count matching the live baseline** (`whg` 228,918, `tm`
+64,196, `iv` 24,000, `ofs` 16,296, `og` 6,260, `ukhc` 92 … exact; `chgis` +1.0%, `hgis` +0.33%,
+`po` +0.16%, `nl` −1 doc = upstream drift). Still running: `osm`, `wd` (96 h walls), `gn`, `tgn`,
+`ohm`, `gb`, `clio`.
+
+Encoding verified on the completed set:
+
+- `osm` **0** point lifespans, 5.0 M attestations; `tgn` 2.76 M attestations; `gb`/`iv`/`alc`/
+  `ofs`/`dp`/`nl` all attestation-only.
+- `wd` recovers **precision** as §4 specified — `{"start": {"earliest": 100, "latest": 199}}` for a
+  century-precision inception instead of a false exact 100, and millennium spans for
+  `earliest: -2000, latest: -1001`. Its 32,787 remaining `in`/`in` pairs are genuine: P585 routes
+  through `attested_at`, and only real P571+P576 pairs produce a lifespan (294 distinct years, no
+  dominant value).
+- `whg`'s **208,937** fuzzy timespans — the exact figure in §2 defect 3 — are now ints and readable
+  rather than computing as undated.
+- `vob_*` carry the four-bound snapshot encoding; `ukhc`/`kain_par`/`ohm` show closure applied.
+- `gn` places carry no timespans at all, which is correct — GeoNames has no temporal data, and its
+  `from`/`to` name validity arrives with the toponyms update patch.
+
+**Next**: phases 2–8 as listed in step 5 — boundary chain (`osm`/`ohm`) → geom-store consolidation
+→ h3/ccode/aat post-chain → global barrier → `index_from_stage` → Symphonym stages 1 and 2 →
+hard-link harvest, inventory push, clustering → audit. Refresh the type-system vocabulary files
+(`scripts/types.sh --build-vocabs`, on pitt) before `aat_enrich`.
 
 ### ⇨ HANDOVER — hand to `plan-atlas-data-architecture.md` §8 here
 
