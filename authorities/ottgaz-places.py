@@ -48,13 +48,42 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, STAGED_BASE_DIR, AUTHORITIES
+from processing.temporal import bounded, lifespan
 
 NAMESPACE = "og"
 OG_CONFIG = next((a for a in AUTHORITIES if a["namespace"] == NAMESPACE), None)
 
-# Ottoman admin geography has no single defining period in Sezen; use a broad
-# attestation window. Refine per-row from StartDate/EndDate if present.
-DEFAULT_TIMESPANS = [{"start": {"in": 1300}, "end": {"in": 1922}}]
+# Ottoman admin geography has no single defining period in Sezen, so an
+# undated unit is bounded only by the empire itself.
+EMPIRE_FIRST, EMPIRE_LAST = 1300, 1922
+
+
+def unit_timespans(start_year: int | None, end_year: int | None) -> list[dict]:
+    """Timespans for one Sezen admin unit, bounded by the empire's own span.
+
+    Sezen's ``StartDate``/``EndDate`` are genuine administrative lifespans, so
+    a known year uses ``in``. What is *not* a lifespan is the fallback: this
+    used to write ``[{"start": {"in": 1300}, "end": {"in": 1922}}]`` for every
+    undated unit, asserting that each one came into being in 1300 and ceased in
+    1922 — 622 years of existence Sezen never claims (place#164). The honest
+    reading of "an Ottoman unit of unknown date" is outer bounds only: possibly
+    alive across the empire, definitely alive at no year we can name.
+
+    The same bound closes a half-dated unit — a unit with a known start cannot
+    have outlived the empire, and one with a known end cannot predate it.
+    """
+    if start_year is not None and end_year is not None:
+        return lifespan(start_year, end_year)
+    if start_year is None and end_year is None:
+        return bounded(start_earliest=EMPIRE_FIRST, end_latest=EMPIRE_LAST)
+    ts = lifespan(start_year, end_year)  # closure fills start.latest when only an end
+    if not ts:
+        return ts
+    if end_year is None:
+        ts[0].setdefault("end", {})["latest"] = EMPIRE_LAST
+    else:
+        ts[0].setdefault("start", {})["earliest"] = EMPIRE_FIRST
+    return ts
 
 # Ottoman admin level → Getty AAT (WHG is AAT-first; the Unit string is kept as
 # sourceLabel for provenance). IDs verified against vocab.getty.edu:
@@ -204,11 +233,7 @@ def process_row(row, ofs_idx, name_to_id):
     place_id = f"{NAMESPACE}:{oid}"
     unit = (row.get("Unit") or "").strip()
 
-    ts = list(DEFAULT_TIMESPANS)
-    sy, ey = _year(row.get("StartDate")), _year(row.get("EndDate"))
-    if sy or ey:
-        ts = [{"start": {"in": sy or DEFAULT_TIMESPANS[0]["start"]["in"]},
-               "end": {"in": ey or DEFAULT_TIMESPANS[0]["end"]["in"]}}]
+    ts = unit_timespans(_year(row.get("StartDate")), _year(row.get("EndDate")))
 
     toponyms, seen = [], set()
     for c in _TR_NAME_COLS:

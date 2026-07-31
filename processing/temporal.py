@@ -173,6 +173,14 @@ def bounded(
 
     The closure rule is applied when nothing bounds ``start`` from above but an
     end is known.
+
+    An endpoint whose two bounds coincide is **collapsed to** ``in``: bounds
+    that meet pin the year exactly, which is what ``in`` means, and emitting the
+    canonical form spares every consumer the choice of two encodings for one
+    fact. That costs nothing — ``in`` is exact and so already has to serve as
+    both bounds when read back (see
+    :func:`processing.gazetteer_temporal_extent.doc_temporal_bounds`), because
+    genuine lifespans use it.
     """
     start: dict[str, Any] = {}
     end: dict[str, Any] = {}
@@ -188,6 +196,11 @@ def bounded(
         closure = end_earliest if end_earliest is not None else end_latest
         if closure is not None:
             start["latest"] = closure
+    for node in (start, end):
+        exact = node.get("earliest")
+        if exact is not None and exact == node.get("latest"):
+            node.clear()
+            node["in"] = exact
     return _clean({"start": start, "end": end})
 
 

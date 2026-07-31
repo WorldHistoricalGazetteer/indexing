@@ -25,6 +25,7 @@ from pathlib import Path
 
 from processing.settings import BATCH_SIZE, DATA_DIR, STAGED_BASE_DIR
 from processing.staging_contract import UPDATE_PATCH_FILENAME
+from processing.temporal import lifespan
 from processing.utilities import stream_file
 
 
@@ -105,14 +106,12 @@ def parse_alternatename_line(line):
     year_from = parse_year(fields[8]) if len(fields) > 8 else None
     year_to = parse_year(fields[9]) if len(fields) > 9 else None
 
-    timespans_list = None
-    if year_from is not None or year_to is not None:
-        ts: dict = {}
-        if year_from is not None:
-            ts["start"] = {"in": year_from}
-        if year_to is not None:
-            ts["end"] = {"in": year_to}
-        timespans_list = [ts]
+    # GeoNames `from`/`to` bound when a name was in use — a genuine lifespan,
+    # so `in` is right. The closure rule matters here though: a name with only
+    # a `to` used to get `end.in` and nothing else, and a record with no upper
+    # bound on its start can never test as *definitely* alive at any year
+    # (place#164). `lifespan` adds `start.latest = to` for that case.
+    timespans_list = lifespan(year_from, year_to) or None
 
     is_preferred = fields[4] == "1" if len(fields) > 4 else False
     return ("toponym", lst, timespans_list, is_preferred, place_id)

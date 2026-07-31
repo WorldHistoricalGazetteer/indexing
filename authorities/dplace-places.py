@@ -25,6 +25,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import attested_at
 
 NAMESPACE = "dp"
 
@@ -32,6 +33,26 @@ DPLACE_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'dp')
 if not DPLACE_CONFIG:
     print("ERROR: D-PLACE configuration not found in AUTHORITIES")
     sys.exit(1)
+
+
+def _release_year():
+    """Year the D-PLACE release on disk attests, else the current year.
+
+    Was a hardcoded ``[{'start': {'in': 2025}, 'end': {'in': 2025}}]``, which
+    claimed every D-PLACE society existed *only* in 2025 (place#164) and went
+    stale the moment a newer release was fetched. Read it from the release.
+    """
+    source_dir = Path(DATA_DIR) / 'authorities' / 'dp'
+    stamps = [p.stat().st_mtime for p in source_dir.glob('*.geojson')] if source_dir.is_dir() else []
+    if stamps:
+        return datetime.fromtimestamp(max(stamps)).year
+    return datetime.now().year
+
+
+#: "Attested alive in the release year" — the D-PLACE snapshot records the
+#: society's location as it was when compiled, not a lifespan bounded by it.
+#: A record carrying its own ethnographic survey ``year`` overrides this.
+RELEASE_TIMESPANS = attested_at(_release_year())
 
 
 def process_dplace_feature(feature, namespace=NAMESPACE):
@@ -68,18 +89,16 @@ def process_dplace_feature(feature, namespace=NAMESPACE):
     glottocode = lang_obj.get('glottocode', props.get('glottocode', ''))
     lang_code = 'und'
 
-    timespan_2025 = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
-
     lst = f"{name}@{lang_code}"
     if lst not in seen_lsts:
-        toponyms.append({'toponym_id': lst, 'timespans': timespan_2025})
+        toponyms.append({'toponym_id': lst, 'timespans': RELEASE_TIMESPANS})
         seen_lsts.add(lst)
 
     name_in_source = lang_obj.get('name_in_source', '')
     if name_in_source and name_in_source != name:
         lst = f"{name_in_source}@{lang_code}"
         if lst not in seen_lsts:
-            toponyms.append({'toponym_id': lst, 'timespans': timespan_2025})
+            toponyms.append({'toponym_id': lst, 'timespans': RELEASE_TIMESPANS})
             seen_lsts.add(lst)
 
     if 'alternate_names' in props and props['alternate_names']:
@@ -88,7 +107,7 @@ def process_dplace_feature(feature, namespace=NAMESPACE):
             if alt_name and alt_name != name:
                 lst = f"{alt_name}@und"
                 if lst not in seen_lsts:
-                    toponyms.append({'toponym_id': lst, 'timespans': timespan_2025})
+                    toponyms.append({'toponym_id': lst, 'timespans': RELEASE_TIMESPANS})
                     seen_lsts.add(lst)
 
     # Extract geometry (try lat/lon fallback if no geometry; proceed without if none)
@@ -112,7 +131,7 @@ def process_dplace_feature(feature, namespace=NAMESPACE):
             if lon > 180:
                 geometry['coordinates'] = [lon - 360, lat]
 
-    geom_entry = enrich_geometry(geometry, timespans=timespan_2025)
+    geom_entry = enrich_geometry(geometry, timespans=RELEASE_TIMESPANS)
     place_doc = {
         'place_id': place_id,
         'title': name,
@@ -208,10 +227,9 @@ def process_dplace_feature(feature, namespace=NAMESPACE):
         try:
             year = int(year)
             place_doc['time_period'] = year
-            place_doc['geometries'][0]['timespans'] = [{
-                'start': {'in': year},
-                'end': {'in': year},
-            }]
+            # The ethnographic focal year: the society was *recorded* there
+            # then, which is an attestation, not a one-year existence.
+            place_doc['geometries'][0]['timespans'] = attested_at(year)
         except (ValueError, TypeError):
             pass
 

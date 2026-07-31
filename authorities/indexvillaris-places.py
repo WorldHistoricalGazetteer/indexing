@@ -12,10 +12,31 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
-from processing.temporal import attested_at
+from processing.temporal import attested_at, normalise_timespans
 
 #: Publication year of Index Villaris — the year its records attest.
 IV_YEAR = 1680
+
+
+def _digitisation_year():
+    """Year the digital edition on disk attests for its modern cross-references.
+
+    The modern-name toponym used to carry a literal ``2000``–``2025`` lifespan,
+    which both invented a start the source never states and went stale on the
+    next fetch. What the edition actually attests is "this is the place's name
+    as of the edition" — one derived year, not a fabricated range.
+    """
+    source_dir = Path(DATA_DIR) / 'authorities' / 'iv'
+    stamps = [p.stat().st_mtime for p in source_dir.glob('*')] if source_dir.is_dir() else []
+    if stamps:
+        return datetime.fromtimestamp(max(stamps)).year
+    return datetime.now().year
+
+
+#: Attestation for the 1680 gazetteer's own names, and for its modern
+#: cross-references. Both say "alive at Y", not "existed only in Y".
+IV_TIMESPANS = attested_at(IV_YEAR)
+MODERN_TIMESPANS = attested_at(_digitisation_year())
 
 NAMESPACE = "iv"
 IV_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'iv'), None)
@@ -74,57 +95,29 @@ def process_iv_entry(entry, namespace='iv'):
             if lst in seen_lsts: continue
 
             when = name_obj.get('when', {})
-            timespans_list = when.get('timespans', [])
+            # The source's own LPF timespans already carry earliest/latest.
+            # This used to read those bounds out and re-flatten them into
+            # `in`/`in` — discarding the source's uncertainty and asserting an
+            # exact one-off existence in its place (place#164). Pass them
+            # through; `normalise_timespans` only coerces string years to int.
+            source_timespans = normalise_timespans(when.get('timespans', []))
 
-            if timespans_list and len(timespans_list) > 0:
-                ts = timespans_list[0]
-                start = ts.get('start', {})
-                end = ts.get('end', {})
-                start_year = start.get('latest', start.get('earliest', start.get('in', 1680)))
-                end_year = end.get('earliest', end.get('latest', end.get('in', 1680)))
-                if isinstance(start_year, str): start_year = int(start_year)
-                if isinstance(end_year, str): end_year = int(end_year)
-
-                toponyms.append({
-                    'toponym_id': lst,
-                    'timespans': [{
-                        'start': {'in': start_year},
-                        'end': {'in': end_year}
-                    }]
-                })
-                seen_lsts.add(lst)
-            else:
-                toponyms.append({
-                    'toponym_id': lst,
-                    'timespans': [{
-                        'start': {'in': 1680},
-                        'end': {'in': 1680}
-                    }]
-                })
-                seen_lsts.add(lst)
+            toponyms.append({
+                'toponym_id': lst,
+                'timespans': source_timespans or IV_TIMESPANS,
+            })
+            seen_lsts.add(lst)
 
     if not toponyms:
         lst = f"{historical_name}@en"
-        toponyms.append({
-            'toponym_id': lst,
-            'timespans': [{
-                'start': {'in': 1680},
-                'end': {'in': 1680}
-            }]
-        })
+        toponyms.append({'toponym_id': lst, 'timespans': IV_TIMESPANS})
         seen_lsts.add(lst)
 
     modern_name = props.get('modern_name', props.get('modern', ''))
     if modern_name and modern_name != historical_name:
         lst = f"{modern_name}@en"
         if lst not in seen_lsts:
-            toponyms.append({
-                'toponym_id': lst,
-                'timespans': [{
-                    'start': {'in': 2000},
-                    'end': {'in': 2025}
-                }]
-            })
+            toponyms.append({'toponym_id': lst, 'timespans': MODERN_TIMESPANS})
             seen_lsts.add(lst)
 
     if 'alternative_names' in props:
@@ -134,19 +127,12 @@ def process_iv_entry(entry, namespace='iv'):
             if alt_name and alt_name not in [historical_name, modern_name]:
                 lst = f"{alt_name}@en"
                 if lst not in seen_lsts:
-                    toponyms.append({
-                        'toponym_id': lst,
-                        'timespans': [{
-                            'start': {'in': 1680},
-                            'end': {'in': 1680}
-                        }]
-                    })
+                    toponyms.append({'toponym_id': lst, 'timespans': IV_TIMESPANS})
                     seen_lsts.add(lst)
 
     # Index Villaris is a 1680 gazetteer: it attests these places were
     # alive in 1680, not that they existed ONLY in 1680 (place#164).
-    timespans = attested_at(IV_YEAR)
-    geom_entry = enrich_geometry(geometry, timespans=timespans) if geometry else None
+    geom_entry = enrich_geometry(geometry, timespans=IV_TIMESPANS) if geometry else None
 
     place_doc = {
         'place_id': place_id,

@@ -33,6 +33,7 @@ from processing.helpers import (
     enrich_geometry,
     select_h3_cover_geometry,
 )
+from processing.temporal import attested_at
 from processing.settings import (
     BATCH_SIZE,
     DATA_DIR,
@@ -49,6 +50,26 @@ from processing.staging_contract import UPDATE_PATCH_FILENAME
 
 ERROR_LOG = os.path.join(DATA_DIR, "wikidata", "geoshapes_errors.log")
 CACHE_DB = os.path.join(DATA_DIR, "wikidata", "geoshape_cache.sqlite")
+
+
+def _observation_year() -> int:
+    """Year these Commons shapes attest, from the refs file that selected them.
+
+    Was a hardcoded ``[{"start": {"in": 2025}, "end": {"in": 2025}}]``, which
+    claimed every Wikidata geoshape existed *only* in 2025 — the
+    attestation-as-lifespan defect (place#164) — and went stale the moment a
+    newer dump was fetched. The refs file is regenerated from each Wikidata
+    dump, so its mtime dates the generation of shapes this run observes.
+    """
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(GEOSHAPE_REFS_FILE)).year
+    except OSError:
+        return datetime.now().year
+
+
+#: Timespans asserting "attested alive in <observation year>" — started no
+#: later than it, ended no earlier, with both outer bounds left unbounded.
+GEOSHAPE_TIMESPANS = attested_at(_observation_year())
 
 HEADERS = {
     "User-Agent": "PittCRC-GeoFetcher/1.0 (stg135@pitt.edu; https://whgazetteer.org/) python-requests",
@@ -320,7 +341,7 @@ def stage_geoshapes(refs_file: str, batch_size: int = BATCH_SIZE) -> dict:
 
                     geom_entry = enrich_geometry(
                         geometry,
-                        timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
+                        timespans=GEOSHAPE_TIMESPANS,
                         geom_key=f"{place_id}_0",
                     )
                     # Single retry on enrichment failure (network jitter at fetch time
@@ -336,7 +357,7 @@ def stage_geoshapes(refs_file: str, batch_size: int = BATCH_SIZE) -> dict:
                         if geometry:
                             geom_entry = enrich_geometry(
                                 geometry,
-                                timespans=[{"start": {"in": 2025}, "end": {"in": 2025}}],
+                                timespans=GEOSHAPE_TIMESPANS,
                                 geom_key=f"{place_id}_0",
                             )
                         if not geom_entry:

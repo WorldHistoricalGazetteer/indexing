@@ -128,6 +128,28 @@ class BoundedTests(unittest.TestCase):
     def test_empty(self):
         self.assertEqual(bounded(), [])
 
+    def test_coincident_bounds_collapse_to_in(self):
+        # po gives a single year for ~8.4k periods. Bounds that meet pin the
+        # year exactly, which is what `in` means — emit the canonical form so
+        # a consumer that special-cases `in` cannot miss them.
+        self.assertEqual(bounded(1492, 1492, 1521, 1521),
+                         [{"start": {"in": 1492}, "end": {"in": 1521}}])
+
+    def test_collapse_is_per_endpoint(self):
+        self.assertEqual(
+            bounded(1901, 1911, 1921, 1921),
+            [{"start": {"earliest": 1901, "latest": 1911}, "end": {"in": 1921}}],
+        )
+
+    def test_collapsed_form_reads_back_identically(self):
+        # The collapse must not change what the date filter sees: `in` is
+        # exact and so serves as both bounds.
+        collapsed = _doc(*bounded(1492, 1492, 1521, 1521))
+        spelled = _doc({"start": {"earliest": 1492, "latest": 1492},
+                        "end": {"earliest": 1521, "latest": 1521}})
+        self.assertEqual(doc_temporal_bounds(collapsed, "po"),
+                         doc_temporal_bounds(spelled, "po"))
+
 
 class CoerceYearTests(unittest.TestCase):
     def test_ints_pass_through(self):

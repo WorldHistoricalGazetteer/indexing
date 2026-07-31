@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.temporal import attested_window
 
 NAMESPACE = "tm"
 DIR = Path(__file__).resolve().parent
@@ -311,17 +312,19 @@ def build_place_doc(row: dict, relations: list[tuple[str, str]]) -> dict:
     toponyms = []
     seen_ids: set[str] = set()
 
-    # Build timespans from TM dates (negative = BCE, positive = CE)
+    # Timespans from TM dates (negative = BCE, positive = CE). These bound the
+    # documents in which the place is *referenced*, not its existence — TM is a
+    # papyrological/epigraphic reference index. So `246–249` means "attested in
+    # documents dated somewhere in 246–249", which is an attestation window and
+    # NOT the lifespan `start.in 246 / end.in 249` this used to write: that
+    # claimed the place came into being in 246 and ceased in 249 (place#164,
+    # class B). The definite core of a multi-year window is legitimately empty.
     begin = row["begin_date"]
     end = row["end_date"]
-    timespans = None
-    if begin != 0 or end != 0:
-        ts: dict = {}
-        if begin != 0:
-            ts["start"] = {"in": begin}
-        if end != 0:
-            ts["end"] = {"in": end}
-        timespans = [ts]
+    timespans = attested_window(
+        begin if begin != 0 else None,
+        end if end != 0 else None,
+    )
 
     def add_toponym(name: str, lang: str = "und"):
         """Add a toponym if not already seen."""
