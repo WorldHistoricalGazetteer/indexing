@@ -30,6 +30,7 @@ Unique Toponyms: 74,417,599 indexed in 1 day, 0:45:53
 import os
 import json
 import subprocess
+import traceback
 import sys
 import time
 import argparse
@@ -392,12 +393,20 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     try:
         cmd = [sys.executable, "-u", "-m", f"authorities.{script_name}"]
         subprocess.run(cmd, check=True, stdout=sys.stdout, stderr=sys.stderr)
-        es.indices.refresh(index=",".join([PLACES_INDEX, TOPONYMS_INDEX]))
         elapsed = datetime.now() - start_time
+
+        # Post-run refresh + count, against the live index the staged run never
+        # wrote to. With `es` None on a compute node these raise, the bare
+        # `except Exception` below swallows it, and `run_ingestion` returns
+        # False — so a namespace that staged every document correctly is
+        # recorded as FAILED in the run manifest. Eleven were.
+        if not is_staging_mode():
+            es.indices.refresh(index=",".join([PLACES_INDEX, TOPONYMS_INDEX]))
+
         print(f"\n✓ Completed in {str(elapsed).split('.')[0]}")
         sys.stdout.flush()
 
-        if not is_update_script:
+        if not is_update_script and not is_staging_mode():
             count = es.options(request_timeout=30).count(
                 index=PLACES_INDEX,
                 body={'query': {'prefix': {'place_id': f"{namespace}:"}}}
@@ -411,7 +420,12 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
         sys.stdout.flush()
         return False
     except Exception as e:
-        print(f"\n✗ Unexpected error: {e}")
+        # This catches post-subprocess bookkeeping failures too, which makes
+        # "the extract failed" indistinguishable from "the extract worked and
+        # the reporting around it did not". Name the type and show the frame so
+        # the next occurrence is diagnosable from the manifest alone.
+        print(f"\n✗ Unexpected error ({type(e).__name__}): {e}")
+        traceback.print_exc()
         sys.stdout.flush()
         return False
 
