@@ -69,6 +69,7 @@ from processing.staging_orchestrator import (
     check_completion_barrier,
     update_namespace_stage_status,
 )
+from processing.helpers import is_staging_mode
 from processing.stage_writers import (
     record_script_wall_time,
     write_namespace_places_snapshot_parquet,
@@ -338,7 +339,25 @@ def run_ingestion(namespace, script_name, skip_existing=True, replace_existing=F
     update_scripts = ['geonames-toponyms', 'wikidata-geoshapes']
     is_update_script = script_name in update_scripts
 
-    if not is_update_script:
+    # The skip/replace decision below asks the LIVE places index whether this
+    # namespace already has documents. In staging mode that is both impossible
+    # and the wrong question:
+    #
+    #   * impossible — compute nodes have no ES_HOST, so ``es`` is None and the
+    #     count raises AttributeError five seconds into the job;
+    #   * wrong — a staged extract writes to staged/<ns>/extract, not to ES, so
+    #     a populated live index says nothing about whether this run's work is
+    #     done. Worse, had ES been reachable the check would have reported
+    #     "Skipping wd: 11,455,754 places already exist" for every namespace
+    #     and turned a full rebuild into a silent no-op.
+    #
+    # Resume in staging mode is answered by ``should_skip_script`` against the
+    # run manifest's per-script checkpoints, which the caller applies before
+    # ever reaching here.
+    if is_staging_mode():
+        print("  Staging mode: skipping the live-index existence check")
+        sys.stdout.flush()
+    elif not is_update_script:
         count = es.options(request_timeout=30).count(
             index=PLACES_INDEX,
             body={'query': {'prefix': {'place_id': f"{namespace}:"}}}

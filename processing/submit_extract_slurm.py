@@ -59,7 +59,10 @@ _CONDA_SH = os.environ.get(
 
 sys.path.insert(0, str(_REPO))
 
-from processing.ingest_all_authorities import INGESTION_ORDER  # noqa: E402
+from processing.ingest_all_authorities import (  # noqa: E402
+    INGESTION_ORDER,
+    STATE_FILES as _STATE_FILES,
+)
 from processing.settings import (  # noqa: E402
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -125,24 +128,50 @@ def _sizing_for(namespace: str) -> tuple[int, str, int]:
 def rotate_staged(namespace: str, run_id: str, *, dry_run: bool = False) -> str:
     """Move ``staged/<ns>`` aside so the append-only extract starts clean.
 
+    The staged extract and the authority script's resume checkpoint
+    (``osm_state.json`` / ``ohm_state.json``) are two halves of one state and
+    must move together. Getting that pairing wrong is silent both ways:
+
+    * checkpoint kept, staged cleared → ``osm-places`` resumes near the end of
+      the planet and stages a fraction of the corpus, reporting success;
+    * checkpoint deleted, staged kept → it restarts from the top and appends a
+      second copy of everything already written.
+
+    So: a **first** submission for this run rotates the tree aside and drops the
+    checkpoint, starting clean. A **resubmit** (``.prev`` already exists) keeps
+    both when a checkpoint survives — that is the whole point of a 96 h job
+    having one — and clears the tree only when there is no checkpoint to resume
+    from, since those scripts restart at the top.
+
     Returns a one-line description of what was done, for the caller to print.
     """
     staged = Path(STAGED_BASE_DIR) / namespace
     prev = Path(STAGED_BASE_DIR) / f"{namespace}.prev-{run_id}"
+    state_file = _STATE_FILES.get(namespace)
+    has_checkpoint = bool(state_file) and Path(state_file).exists()
 
-    if not staged.exists():
-        return f"{namespace}: nothing staged yet"
     if prev.exists():
-        # A resubmit: the rollback copy is already safe, so the partial output
-        # of the failed attempt is what needs clearing.
+        if has_checkpoint:
+            return (f"{namespace}: RESUMING from {Path(state_file).name} "
+                    f"— staged/ and checkpoint both kept")
+        if not staged.exists():
+            return f"{namespace}: nothing staged; restarting clean"
         if dry_run:
-            return f"{namespace}: would CLEAR staged/ (rollback {prev.name} kept)"
+            return f"{namespace}: would CLEAR staged/ (no checkpoint; rollback {prev.name} kept)"
         shutil.rmtree(staged)
-        return f"{namespace}: cleared staged/ (rollback {prev.name} kept)"
+        return f"{namespace}: cleared staged/ (no checkpoint; rollback {prev.name} kept)"
+
+    note = ""
+    if has_checkpoint:
+        note = f", dropped stale {Path(state_file).name}"
+        if not dry_run:
+            Path(state_file).unlink()
+    if not staged.exists():
+        return f"{namespace}: nothing staged yet{note}"
     if dry_run:
-        return f"{namespace}: would rotate staged/ → {prev.name}"
+        return f"{namespace}: would rotate staged/ → {prev.name}{note}"
     staged.rename(prev)
-    return f"{namespace}: rotated staged/ → {prev.name}"
+    return f"{namespace}: rotated staged/ → {prev.name}{note}"
 
 
 # ---------------------------------------------------------------------------
