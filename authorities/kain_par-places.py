@@ -40,6 +40,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.temporal import lifespan
 
 NAMESPACE = "kain_par"
 
@@ -119,7 +120,10 @@ def _emit(reader) -> Iterator[tuple[dict, dict]]:
 
 def build_docs(source: Path) -> Iterator[dict]:
     """Yield one ``places`` doc per parish/place polygon."""
-    timespans = [{"end": {"in": PARISH_END_YEAR}}]  # open start
+    # place#164 closure rule: an end with no start still bounds the start from
+    # above (nothing ends before it begins), and without that bound the parish
+    # can never be *definitely* alive at any year.
+    timespans = lifespan(end=PARISH_END_YEAR)
 
     for rec, osgb_geom in _iter_records(source):
         uid = rec.get("ID")

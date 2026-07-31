@@ -255,8 +255,10 @@ def index_tgn(zip_path):
             td = term_dates.get(term_uri)
             toponyms.append({
                 "toponym_id": toponym_id,
-                "timespans": timespan(td[0], td[1]) if td else
-                             [{"start": {"in": 2025}, "end": {"in": 2025}}],
+                # Undated terms go through the same builder, which now
+                # records an ATTESTATION at the release year rather than
+                # claiming the name existed only in 2025 (place#164).
+                "timespans": timespan(td[0], td[1]) if td else timespan(None, None),
             })
             seen_ids.add(toponym_id)
 
@@ -303,7 +305,7 @@ def index_tgn(zip_path):
             # Real place temporal extent from Getty relation dates if present, else placeholder.
             rd = relation_dates.get(tgn_id)
             geom_ts = (timespan(rd[0], rd[1]) if rd and (rd[0] is not None or rd[1] is not None)
-                       else [{"start": {"in": 2025}, "end": {"in": 2025}}])
+                       else timespan(None, None))
             geom_entry = enrich_geometry(point_geom, timespans=geom_ts)
             if geom_entry:
                 doc["geometries"] = [geom_entry]

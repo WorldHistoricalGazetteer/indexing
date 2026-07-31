@@ -39,6 +39,10 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.temporal import attested_window
+
+#: OS six-inch second-edition survey window that GB1900 transcribes.
+GB_SURVEY_START, GB_SURVEY_END = 1888, 1914
 
 NAMESPACE = "gb"
 
@@ -67,7 +71,12 @@ def parse_gb1900_row(row):
     place_id = f"gb:{pin_id}"
 
     # GB1900 maps are from ca. 1900 (1888–1914 survey period)
-    timespans = [{'start': {'in': 1888}, 'end': {'in': 1914}}]
+    # The OS six-inch survey ran 1888-1914; a given sheet was surveyed at
+    # ONE unknown moment in that window. So the place is attested
+    # somewhere within it — started no later than 1914, ended no earlier
+    # than 1888 — NOT alive across the whole span (place#164). The
+    # definite core is legitimately empty.
+    timespans = attested_window(GB_SURVEY_START, GB_SURVEY_END)
     toponyms = [{
         'toponym_id': f"{name}@en",
         'timespans': timespans,

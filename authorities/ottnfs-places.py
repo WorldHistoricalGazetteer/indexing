@@ -147,6 +147,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import attested_window
 
 NAMESPACE = "ofs"  # Ottoman NFS gazetteer (rename freely; keep short per convention)
 KAZA_NS = "ofs-kaza"  # pseudo-namespace for named (unresolved) admin parents
@@ -246,7 +247,9 @@ def process_row(row):
 
     # --- attestation timespan from the register date ---------------------
     year = hijri_year_to_gregorian(row.get('reg_date')) or REGISTER_MID
-    timespans = [{'start': {'in': REGISTER_START}, 'end': {'in': REGISTER_END}}]
+    # The registers were compiled across 1830-1849; each place was recorded
+    # at one unknown point in that window (place#164).
+    timespans = attested_window(REGISTER_START, REGISTER_END)
 
     # --- modern toponym: detect the placeholders -------------------------
     # ~797 rows carry the literal "vanished" in toponym_modern (a settlement

@@ -22,7 +22,10 @@ from __future__ import annotations
 import re
 import zipfile
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+
+from processing.temporal import attested_at, bounded, lifespan
 
 # gYear literal on a term URI: <…/tgn/term/8-en> <…#estStart> "1800"^^<…gYear>
 _TERM_DATE_RE = re.compile(
@@ -32,8 +35,26 @@ _REL_SUBJECT_RE = re.compile(r"/tgn/rel/(\d+)-")
 _REL_START_RE = re.compile(r'#estStart>\s+"([^"]+)"')
 _REL_END_RE = re.compile(r'#estEnd>\s+"([^"]+)"')
 
-# Present-day fallback the ingestion uses for undated TGN records.
-PLACEHOLDER_YEAR = 2025
+def _default_release_year() -> int:
+    """Year of the TGN release on disk, else the current year.
+
+    Was a hardcoded ``2025``. A literal here goes stale the moment a newer
+    ``explicit.zip`` is fetched, and then every undated TGN record is attested
+    to the wrong year — the same drift that made ``osm`` claim 2025 against a
+    2026 planet (place#164).
+    """
+    try:
+        from processing.settings import DATA_DIR
+        release = Path(DATA_DIR) / "authorities" / "tgn" / "explicit.zip"
+        if release.exists():
+            return datetime.fromtimestamp(release.stat().st_mtime).year
+    except Exception:
+        pass
+    return datetime.now().year
+
+
+#: Year the ingestion attests undated TGN records to (the release year).
+PLACEHOLDER_YEAR = _default_release_year()
 
 
 def parse_gyear(s: str) -> int | None:
@@ -46,22 +67,38 @@ def parse_gyear(s: str) -> int | None:
 
 def timespan(start: int | None, end: int | None,
              placeholder: int = PLACEHOLDER_YEAR) -> list[dict]:
-    """Build a ``timespans`` list from optional bounds.
+    """Build a ``timespans`` list from optional Getty bounds.
 
-    both → [start, end]; start only → [start, placeholder] (assume still extant);
-    end only → [end, end] (can't bound the start); neither → [placeholder,
-    placeholder]. Always start ≤ end."""
+    Rewritten for place#164 — every branch below used to emit
+    ``{"start": {"in": s}, "end": {"in": e}}``, i.e. a closed lifespan, even
+    where TGN asserted nothing of the kind. The undated branch was the worst:
+    it claimed each of ~3 M TGN places "existed only in 2025", so every
+    historical date filter excluded the entire gazetteer.
+
+    ==================  ===========================================================
+    Getty gives         we now record
+    ==================  ===========================================================
+    start **and** end   a genuine lifespan (``in``/``in``) — the one correct use
+    start only          began then, and *attested* still extant at the dump year
+    end only            ended then; closure rule bounds the start (``start.latest``)
+    neither             *attested* at the dump year — no claim about begin/end
+    ==================  ===========================================================
+    """
     if start is None and end is None:
-        s = e = placeholder
-    elif start is None:
-        s = e = end
-    elif end is None:
-        s, e = start, placeholder
-    else:
-        s, e = start, end
-    if s > e:
-        s, e = e, s
-    return [{"start": {"in": s}, "end": {"in": e}}]
+        # Undated: all we know is Getty listed it in this release.
+        return attested_at(placeholder)
+    if start is None:
+        # An end with no start. The closure rule supplies `start.latest`,
+        # without which the record can never be *definitely* alive at any year.
+        return lifespan(end=end)
+    if end is None:
+        # Began at `start` and Getty still lists it: attested alive at the
+        # dump year, but NOT claimed to have ended there.
+        return bounded(start_earliest=start, start_latest=start,
+                       end_earliest=placeholder)
+    if start > end:
+        start, end = end, start
+    return lifespan(start, end)
 
 
 def parse_term_dates(zip_path: Path) -> dict[str, tuple[int | None, int | None]]:

@@ -41,6 +41,7 @@ from typing import Any, Iterator
 import requests
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.temporal import normalise_timespans
 from processing.settings import (
     WHG_API_BASE_URL,
     WHG_API_TOKEN_FILE,
@@ -298,7 +299,13 @@ def _timespans_from_whens(whens: list[Any]) -> list[dict[str, Any]]:
         ts = w.get("timespans")
         if isinstance(ts, list):
             out.extend(t for t in ts if isinstance(t, dict))
-    return out
+    # LPF years arrive as bare numbers in some datasets and ISO date strings
+    # in others. Passing that through verbatim is what mapped
+    # `timespans.start.earliest` as `text` in the live index (dynamic mapping
+    # from the first value seen), made 208,937 whg docs read as undated, and
+    # broke the parquet sidecar's schema inference. Normalise at the write
+    # path so only ints ever leave here. See place#164.
+    return normalise_timespans(out)
 
 
 def lpf_feature_to_staged_doc(

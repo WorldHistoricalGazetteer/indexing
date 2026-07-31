@@ -47,6 +47,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import AUTHORITIES, DATA_DIR
+from processing.temporal import bounded
 
 # Decennial-census cadence. Each snapshot is stamped as valid for the decade it
 # heads: census year Y -> [Y, Y+DECADE]. Consecutive snapshots share an endpoint
@@ -245,6 +246,17 @@ def _lang_for(code: str) -> str:
     return _LANG_MAP.get((code or "").strip().lower(), "und")
 
 
+def _predecessor_map(years: list[int]) -> dict[int, int]:
+    """Map each census year to the *previous* census year in the series.
+
+    The first year maps to nothing (absent from the dict), which is correct:
+    nothing bounds how long before the first census the unit had existed, so
+    ``start.earliest`` stays unbounded there (place#164).
+    """
+    ordered = sorted(set(years))
+    return {y: ordered[i - 1] for i, y in enumerate(ordered) if i > 0}
+
+
 def _successor_map(years: list[int]) -> dict[int, int]:
     """Map each census year to the *next* census year in the dataset series,
     with the final year mapped to ``year + DECADE``.
@@ -289,6 +301,7 @@ def build_docs(level: VobLevel, zip_path: Path) -> Iterator[dict]:
         ))
 
     succ = _successor_map(sorted(all_years))
+    pred = _predecessor_map(sorted(all_years))
 
     for g_unit, snaps in units.items():
         snaps.sort(key=lambda s: s.year)
@@ -297,7 +310,18 @@ def build_docs(level: VobLevel, zip_path: Path) -> Iterator[dict]:
         # Geometries: one snapshot per census year, stamped [Y, next-census].
         geometries = []
         for idx, s in enumerate(snaps):
-            ts = {"start": {"in": s.year}, "end": {"in": succ[s.year]}}
+            # place#164: a 1911 census attests the unit AT 1911; it says
+            # nothing about 1915. But the neighbouring snapshots do bound when
+            # the configuration can have begun and ended, so encode all four:
+            #   definitely alive at 1911, possibly alive 1901-1921.
+            # The old {"start": {"in": 1911}, "end": {"in": 1921}} over-claimed
+            # every intervening year as definite.
+            ts = bounded(
+                start_earliest=pred.get(s.year),
+                start_latest=s.year,
+                end_earliest=s.year,
+                end_latest=succ[s.year],
+            )[0]
             ge = enrich_geometry(
                 s.geom_wgs, timespans=[ts], geom_key=f"{place_id}_{idx}",
             )
@@ -315,7 +339,15 @@ def build_docs(level: VobLevel, zip_path: Path) -> Iterator[dict]:
         for (name, lang), ys in name_years.items():
             toponyms.append({
                 "toponym_id": f"{name}@{lang}",
-                "timespans": [{"start": {"in": min(ys)}, "end": {"in": succ[max(ys)]}}],
+                # Attested at every snapshot the name appears in: definitely
+                # in use from its first to its last attestation, possibly from
+                # the preceding census to the following one.
+                "timespans": bounded(
+                    start_earliest=pred.get(min(ys)),
+                    start_latest=min(ys),
+                    end_earliest=max(ys),
+                    end_latest=succ[max(ys)],
+                ),
             })
 
         # Title / ccodes from the most recent snapshot.

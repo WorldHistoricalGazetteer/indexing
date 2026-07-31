@@ -15,6 +15,14 @@ from urllib.parse import quote
 import orjson  # Much faster than json
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import DATA_DIR, GEOSHAPE_REFS_FILE, WIKIDATA_P1014_FILE
+from processing.temporal import (
+    PRECISION_YEAR,
+    attested_at,
+    attested_window,
+    bounded,
+    lifespan,
+    precision_bounds,
+)
 from typesystem.extract_wikidata_p1014 import extract_p1014_ids
 
 # Wikipedia sitelink allow-list. A well-known place can carry 100–300 sitelinks;
@@ -199,6 +207,51 @@ def _latest_year(claims, prop):
     return max(years) if years else None
 
 
+def _claims_with_precision(claims, prop):
+    """``[(year, precision)]`` for every usable claim of ``prop``.
+
+    Wikibase time values carry a ``precision`` code beside the timestamp
+    (11 day · 10 month · 9 year · 8 decade · 7 century · 6 millennium).
+    Ingestion read ``["time"]`` and **never** ``["precision"]``, so a
+    century-precision inception (``+1200-…``, precision 7) became
+    ``start.in = 1200`` — "began exactly in 1200" — where Wikidata said "some
+    time in the 12th century". That is ~3.55% of dated claims, concentrated in
+    ancient and medieval places (place#164).
+    """
+    out = []
+    for claim in claims.get(prop) or ():
+        try:
+            value = claim["mainsnak"]["datavalue"]["value"]
+        except (KeyError, TypeError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        year = _year_from_wikidata_time(value.get("time"))
+        if year is None:
+            continue
+        out.append((year, value.get("precision")))
+    return out
+
+
+def _endpoint_from_claims(entries, pick):
+    """``(earliest, latest)`` for one endpoint, honouring precision.
+
+    ``pick`` is ``min`` for a start and ``max`` for an end. An exact
+    (year-or-finer) value yields ``(Y, Y)``; a coarse one yields the containing
+    decade / century / millennium. Geological precisions fall back to the raw
+    year rather than inventing a 10-kyr span.
+    """
+    if not entries:
+        return None, None
+    year, precision = pick(entries, key=lambda e: e[0])
+    if precision is None or precision >= PRECISION_YEAR:
+        return year, year
+    lo, hi = precision_bounds(year, precision)
+    if lo is None:
+        return year, year
+    return lo, hi
+
+
 def build_wikidata_timespans(claims):
     """Build a ``timespans`` list from Wikidata temporal claims.
 
@@ -207,30 +260,43 @@ def build_wikidata_timespans(claims):
       * P580 — start time (alternative start)
       * P576 — dissolved, abolished or demolished (end)
       * P582 — end time (alternative end)
-      * P585 — point in time (single-point fallback for both ends)
+      * P585 — point in time — an **attestation**, not a lifespan
 
-    Returns ``[]`` when no usable temporal data is present, so docs without
-    historical metadata don't drag the corpus-wide temporal extent toward
-    today's date.
+    Three place#164 fixes:
+
+    1. **P585 was written as a point lifespan** — ``{"start": {"in": Y},
+       "end": {"in": Y}}`` claimed the place existed *only* in year Y, where
+       "point in time" means it was *recorded* then. Now an attestation.
+    2. **Precision was discarded** — see :func:`_claims_with_precision`.
+    3. **Closure rule** — an entity with P576 but no P571 gains
+       ``start.latest`` from its end, without which it can never test as
+       *definitely* alive at any year.
+
+    P571 inception and P576 dissolution are **genuine** starts and ends, so
+    ``in`` remains correct for them: most of ``wd`` is a real lifespan, not an
+    attestation. Returns ``[]`` when no usable temporal data is present, so
+    undated docs don't drag the corpus-wide extent toward today.
     """
-    start = _earliest_year(claims, "P571")
-    if start is None:
-        start = _earliest_year(claims, "P580")
-    end = _latest_year(claims, "P576")
-    if end is None:
-        end = _latest_year(claims, "P582")
-    if start is None and end is None:
-        # Fall back to a single point-in-time reference; otherwise skip.
-        point = _earliest_year(claims, "P585")
-        if point is None:
+    start_entries = _claims_with_precision(claims, "P571") or \
+        _claims_with_precision(claims, "P580")
+    end_entries = _claims_with_precision(claims, "P576") or \
+        _claims_with_precision(claims, "P582")
+
+    start_lo, start_hi = _endpoint_from_claims(start_entries, min)
+    end_lo, end_hi = _endpoint_from_claims(end_entries, max)
+
+    if start_lo is None and end_lo is None:
+        # P585 "point in time": the place was RECORDED then. Attestation.
+        point_entries = _claims_with_precision(claims, "P585")
+        if not point_entries:
             return []
-        return [{"start": {"in": point}, "end": {"in": point}}]
-    ts = {}
-    if start is not None:
-        ts["start"] = {"in": start}
-    if end is not None:
-        ts["end"] = {"in": end}
-    return [ts]
+        lo, hi = _endpoint_from_claims(point_entries, min)
+        return attested_window(lo, hi) if lo != hi else attested_at(lo)
+
+    # Exact on both sides → a genuine lifespan, which is what `in` is for.
+    if start_lo == start_hi and end_lo == end_hi:
+        return lifespan(start_lo, end_lo)
+    return bounded(start_lo, start_hi, end_lo, end_hi)
 
 
 def create_place_doc_fast(entity, entity_bytes):

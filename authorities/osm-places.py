@@ -20,6 +20,7 @@ from shapely.geometry import mapping
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import DATA_DIR, OSM_STATE_FILE
+from processing.temporal import attested_at
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -77,6 +78,42 @@ class ProgressTracker:
             print(f"\rProcessed {self.counts[type_]:,} {type_}s (Rate: {rate:.0f}/s)", end='', flush=True)
 
 
+# ---------------- ATTESTATION YEAR ----------------
+# OSM is a *snapshot*: the planet dump records places as they were on the day
+# it was cut. That is an ATTESTATION, not a lifespan — see place#164. This
+# used to be a hardcoded `{'start': {'in': 2025}, 'end': {'in': 2025}}`, which
+# was wrong twice over: it claimed every OSM place "existed only in 2025" (so
+# any historical date filter excluded all 8.86 M of them), and the literal
+# 2025 went stale the moment a newer planet was fetched.
+#
+# Read the year from the dump itself so it can never drift again.
+_ATTESTATION_YEAR: int | None = None
+
+
+def resolve_attestation_year(pbf_path) -> int:
+    """Year this planet dump attests, from its replication timestamp.
+
+    Falls back to the file's mtime, then to the current year — a dump with no
+    header timestamp is odd but not a reason to abort an ingest.
+    """
+    try:
+        header = osmium.io.Reader(str(pbf_path)).header()
+        stamp = header.get("osmosis_replication_timestamp")
+        if stamp:
+            return int(str(stamp)[:4])
+    except Exception as exc:
+        print(f"WARN: could not read replication timestamp from {pbf_path}: {exc}")
+    try:
+        return datetime.fromtimestamp(os.path.getmtime(pbf_path)).year
+    except Exception:
+        return datetime.now().year
+
+
+def _attestation_timespans():
+    """Timespans asserting 'attested alive in <dump year>'."""
+    return attested_at(_ATTESTATION_YEAR)
+
+
 # ---------------- HELPERS ----------------
 def create_doc(osm_id, osm_type, tags, geometry):
     place_id = f"osm:{osm_type[0]}{osm_id}"
@@ -84,20 +121,14 @@ def create_doc(osm_id, osm_type, tags, geometry):
     # Build toponyms array with timespans (plural)
     toponyms = [{
         'toponym_id': f"{tags['name']}@und",
-        'timespans': [{
-            'start': {'in': 2025},
-            'end': {'in': 2025}
-        }]
+        'timespans': _attestation_timespans(),
     }]
 
     if 'names' in tags:
         for lang, val in tags['names'].items():
             toponyms.append({
                 'toponym_id': f"{val}@{lang}",
-                'timespans': [{
-                    'start': {'in': 2025},
-                    'end': {'in': 2025}
-                }]
+                'timespans': _attestation_timespans(),
             })
 
     # Base document
@@ -111,7 +142,7 @@ def create_doc(osm_id, osm_type, tags, geometry):
     if geometry:
         geom_entry = enrich_geometry(
             geometry,
-            timespans=[{'start': {'in': 2025}, 'end': {'in': 2025}}],
+            timespans=_attestation_timespans(),
             geom_key=f"{place_id}_0",
         )
         if geom_entry:
@@ -323,6 +354,11 @@ def stage_file_to_scratch(source_path, namespace='osm'):
 def index_osm_optimized(pbf_file):
     from processing.geom_store import GeomStoreWriter, configure_module_writer
     from processing.settings import GEOM_STORE_STAGING_DIR
+
+    global _ATTESTATION_YEAR
+    _ATTESTATION_YEAR = resolve_attestation_year(pbf_file)
+    print(f"OSM attestation year (from dump replication timestamp): "
+          f"{_ATTESTATION_YEAR}")
 
     tracker = ProgressTracker(OSM_STATE_FILE)
 

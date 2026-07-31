@@ -12,6 +12,10 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import attested_at
+
+#: Publication year of Index Villaris — the year its records attest.
+IV_YEAR = 1680
 
 NAMESPACE = "iv"
 IV_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'iv'), None)
@@ -139,7 +143,9 @@ def process_iv_entry(entry, namespace='iv'):
                     })
                     seen_lsts.add(lst)
 
-    timespans = [{'start': {'in': 1680}, 'end': {'in': 1680}}]
+    # Index Villaris is a 1680 gazetteer: it attests these places were
+    # alive in 1680, not that they existed ONLY in 1680 (place#164).
+    timespans = attested_at(IV_YEAR)
     geom_entry = enrich_geometry(geometry, timespans=timespans) if geometry else None
 
     place_doc = {

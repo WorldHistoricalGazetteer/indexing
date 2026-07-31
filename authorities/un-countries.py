@@ -32,6 +32,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import UN_BNDA_COUNTRIES_FILE
+from processing.temporal import attested_at
 
 # Temporal scope of the BNDA boundaries. BNDA_simplified is a present-day
 # snapshot (dataset currency ~2023) and carries NO per-feature dates — the
@@ -44,7 +45,13 @@ from processing.settings import UN_BNDA_COUNTRIES_FILE
 # ``start.in`` year. If a country ever gains dated historical boundary versions,
 # they are added as additional timespanned entries in ``geometries[]``.
 _BOUNDARY_ESTABLISHED_BY = 2025
-_TS_ONGOING = [{'start': {'latest': _BOUNDARY_ESTABLISHED_BY}}]
+# place#164: `start.latest` alone was already the right idiom — the plan's one
+# in-corpus precedent. It was missing `end.earliest`, without which a country
+# is never *definitely* alive at any year: the definite test is
+# `start.latest <= Q <= end.earliest`, and an absent `end.earliest` leaves the
+# upper side unsatisfiable. Adding it says "still extant as of the boundary
+# release" without the `end = 9999` over-claim of "alive today, forever".
+_TS_ONGOING = attested_at(_BOUNDARY_ESTABLISHED_BY)
 
 
 def _load_bnda_features(path):

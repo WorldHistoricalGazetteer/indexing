@@ -139,9 +139,33 @@ class TestBuildDocs(unittest.TestCase):
         self.assertEqual(len(self.docs["vob_rd:200"]["geometries"]), 1)
 
     def test_per_snapshot_timespans(self):
+        """Each census snapshot carries all four bounds (place#164).
+
+        A ``1861`` census attests the unit **at 1861** and says nothing about
+        1865 — but the neighbouring snapshots do bound when the configuration
+        can have begun and ended. The old ``{"start": {"in": 1861}, "end":
+        {"in": 1871}}`` over-claimed every intervening year as definite.
+        """
         ts = [g["timespans"][0] for g in self.docs["vob_rd:100"]["geometries"]]
-        self.assertIn({"start": {"in": 1851}, "end": {"in": 1861}}, ts)
-        self.assertIn({"start": {"in": 1861}, "end": {"in": 1871}}, ts)
+        # 1851 is the first snapshot in the series, so nothing bounds how long
+        # before it the unit had existed: start.earliest stays absent.
+        self.assertIn(
+            {"start": {"latest": 1851},
+             "end": {"earliest": 1851, "latest": 1861}}, ts)
+        self.assertIn(
+            {"start": {"earliest": 1851, "latest": 1861},
+             "end": {"earliest": 1861, "latest": 1871}}, ts)
+
+    def test_snapshot_is_definite_only_at_the_census_year(self):
+        from processing.gazetteer_temporal_extent import doc_temporal_bounds
+
+        doc = self.docs["vob_rd:100"]
+        se, sl, ee, el = doc_temporal_bounds(doc, "vob_rd")
+        self.assertTrue(sl <= 1851 <= ee, "definitely alive at a census year")
+        self.assertTrue(
+            (se is None or se <= 1856) and (el is None or 1856 <= el),
+            "possibly alive between censuses",
+        )
 
     def test_polygons_reprojected_to_wgs84(self):
         g = self.docs["vob_rd:100"]["geometries"][0]

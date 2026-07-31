@@ -32,7 +32,8 @@ from processing.helpers import (
     compute_area_km2,
     write_staged_place_doc,
 )
-from processing.settings import DATA_DIR, AUTHORITIES
+from processing.settings import DATA_DIR
+from processing.temporal import lifespan, AUTHORITIES
 
 NAMESPACE = "ukhc"
 UKHC_CONFIG = next((a for a in AUTHORITIES if a["namespace"] == NAMESPACE), None)
@@ -61,11 +62,17 @@ WELSH_HCS_CODES = frozenset({
 
 
 def _timespans_for(code: str) -> list[dict]:
-    """End-1974 for every county; Welsh counties also carry a 1542 start."""
-    ts: dict = {"end": {"in": HISTORIC_COUNTY_END}}
+    """End-1974 for every county; Welsh counties also carry a 1542 start.
+
+    place#164 closure rule: a county with only an end could never test as
+    *definitely* alive at any year, because the definite test needs an upper
+    bound on the start — plainly wrong for a county that existed in 1973.
+    :func:`~processing.temporal.lifespan` supplies ``start.latest = end`` where
+    no real start is known; the Welsh counties keep their real 1542 start.
+    """
     if code in WELSH_HCS_CODES:
-        ts["start"] = {"in": WELSH_COUNTY_START}
-    return [ts]
+        return lifespan(WELSH_COUNTY_START, HISTORIC_COUNTY_END)
+    return lifespan(end=HISTORIC_COUNTY_END)
 
 
 def _find_zip() -> Path:

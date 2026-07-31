@@ -48,6 +48,7 @@ from processing.staging_contract import (
     validate_temporal_extent_aggregate,
 )
 from processing.staging_orchestrator import update_namespace_stage_status
+from processing.temporal import coerce_year
 
 
 _STAGED_SOURCE_PRIORITY = (
@@ -131,17 +132,26 @@ def _iter_staged_docs(path: Path) -> Iterator[dict[str, Any]]:
 
 
 def _iter_year_ints(node: Any) -> Iterator[int]:
-    """Recursively yield every integer year found under a timespan endpoint.
+    """Recursively yield every year found under a timespan endpoint.
 
     Accepts ``{"in": <year>}``, ``{"earliest": ..., "latest": ...}``, or any
-    other shape with ``int`` leaves. Strings are not coerced — ingest is
-    expected to have parsed years to ``int`` already (see
-    ``processing/osm_boundary_geometry.parse_year``).
+    other shape with scalar leaves.
+
+    **Strings ARE coerced** (place#164). They used not to be, on the assumption
+    that ingest had already parsed years to ``int``. It had not: 208,937 ``whg``
+    docs carry ``{"start": {"earliest": "2022"}}`` as *strings* — LPF
+    ``earliest``/``latest`` are "sometimes a string ISO date, sometimes a bare
+    number" (``processing/staged_parquet.py``) — so those places were computed
+    as **undated** while their dates sat in the index in plain sight: no tile
+    temporal props, no range-mode filtering, absent from their datasets'
+    registry ``temporal_extent``. See :func:`processing.temporal.coerce_year`.
     """
     if isinstance(node, bool):
         return
-    if isinstance(node, int):
-        yield node
+    if isinstance(node, (int, float, str)):
+        year = coerce_year(node)
+        if year is not None:
+            yield year
         return
     if isinstance(node, dict):
         for value in node.values():
@@ -170,25 +180,41 @@ def _collect_extent_for_doc(
     max_end: int | None = None
     rejected = 0
 
+    # The *attested envelope* (place#164): take min/max over every in-range
+    # year in the doc, but only report an endpoint at all if that endpoint
+    # carries a year — which preserves the open-ended conventions
+    # ``(start, None)`` = ongoing and ``(None, end)`` = open-started.
+    #
+    # Partitioning the min to `start` and the max to `end`, as this used to,
+    # inverts attestation encodings: `gb`'s survey window is
+    # `start.latest 1914 / end.earliest 1888`, which returned (1914, 1888) —
+    # a range that ends before it begins. Pooling the years fixes that
+    # without changing any correctly-encoded lifespan.
+    has_start = False
+    has_end = False
+    lo: int | None = None
+    hi: int | None = None
+
     def _scan(timespans: Any) -> None:
-        nonlocal min_start, max_end, rejected
+        nonlocal min_start, max_end, rejected, has_start, has_end, lo, hi
         if not isinstance(timespans, list):
             return
         for ts in timespans:
             if not isinstance(ts, dict):
                 continue
-            for year in _iter_year_ints(ts.get("start")):
-                if year < clamp_min or year > clamp_max:
-                    rejected += 1
-                    continue
-                if min_start is None or year < min_start:
-                    min_start = year
-            for year in _iter_year_ints(ts.get("end")):
-                if year < clamp_min or year > clamp_max:
-                    rejected += 1
-                    continue
-                if max_end is None or year > max_end:
-                    max_end = year
+            for endpoint, seen_flag in (("start", "start"), ("end", "end")):
+                for year in _iter_year_ints(ts.get(endpoint)):
+                    if year < clamp_min or year > clamp_max:
+                        rejected += 1
+                        continue
+                    if seen_flag == "start":
+                        has_start = True
+                    else:
+                        has_end = True
+                    if lo is None or year < lo:
+                        lo = year
+                    if hi is None or year > hi:
+                        hi = year
 
     for geom in doc.get("geometries") or []:
         if isinstance(geom, dict):
@@ -200,6 +226,8 @@ def _collect_extent_for_doc(
         if isinstance(rel, dict):
             _scan(rel.get("timespans"))
 
+    min_start = lo if has_start else None
+    max_end = hi if has_end else None
     return min_start, max_end, rejected
 
 
@@ -226,6 +254,125 @@ def doc_temporal_range(
         doc, clamp_min=clamp_min, clamp_max=clamp_max
     )
     return min_start, max_end
+
+
+def _endpoint_bound(node: Any, keys: tuple[str, ...]) -> int | None:
+    """First present, coercible year among ``keys`` under a timespan endpoint."""
+    if not isinstance(node, dict):
+        return None
+    for key in keys:
+        year = coerce_year(node.get(key))
+        if year is not None:
+            return year
+    return None
+
+
+def doc_temporal_bounds(
+    doc: dict[str, Any], namespace: str
+) -> tuple[int | None, int | None, int | None, int | None]:
+    """Return ``(start_earliest, start_latest, end_earliest, end_latest)``.
+
+    The four bounds the Atlas date filter needs (place#164), where
+    :func:`doc_temporal_range` gives the single envelope the registry
+    aggregate wants. ``None`` means **unbounded**, and that is load-bearing:
+
+    .. code-block::
+
+        definitely alive at Q :  start_latest <= Q <= end_earliest
+        possibly  alive at Q :  (start_earliest ?? -inf) <= Q <= (end_latest ?? +inf)
+
+    A correctly-encoded OSM boundary (attested 2026) yields
+    ``(None, 2026, 2026, None)`` — not *definitely* alive in 1500, but
+    *possibly* alive, because the outer bounds are absent. That is what
+    dissolves the "OSM blanks out on any historical range" defect without a
+    ``end = 9999`` sentinel or a "+Contemporary" toggle.
+
+    Each bound reads its own sub-field, or ``in`` — which is exact and so
+    serves as both bounds at once. There is deliberately **no cross-fallback**:
+    ``start.earliest`` is a *lower* bound and cannot stand in for
+    ``start_latest``, and reading it as one would manufacture a definite core
+    the source never claimed.
+
+    **Approximation:** a doc with several disjoint timespans is reduced to one
+    interval — the widest definite core and the widest possible extent. This
+    over-claims for genuinely disjoint spans (a place that existed 1200–1300
+    and again 1600–1700). Almost every doc carries a single timespan; where
+    that stops being true this should become a list.
+    """
+    clamp_min, clamp_max = clamp_range_for(namespace)
+
+    def _ok(year: int | None) -> int | None:
+        if year is None or year < clamp_min or year > clamp_max:
+            return None
+        return year
+
+    start_earliest: int | None = None
+    start_latest: int | None = None
+    end_earliest: int | None = None
+    end_latest: int | None = None
+    saw_any = False
+    # An unbounded outer edge on ANY timespan makes the doc's outer edge
+    # unbounded, so track whether every timespan supplied one.
+    all_have_start_earliest = True
+    all_have_end_latest = True
+
+    def _scan(timespans: Any) -> None:
+        nonlocal start_earliest, start_latest, end_earliest, end_latest
+        nonlocal saw_any, all_have_start_earliest, all_have_end_latest
+        if not isinstance(timespans, list):
+            return
+        for ts in timespans:
+            if not isinstance(ts, dict):
+                continue
+            start, end = ts.get("start"), ts.get("end")
+            if not isinstance(start, dict) and not isinstance(end, dict):
+                continue
+            saw_any = True
+
+            # Each bound reads its OWN sub-field, or `in` (which is exact and
+            # therefore both bounds at once). No cross-fallback: `earliest` is
+            # a lower bound and cannot serve as an upper one, nor `latest` as
+            # a lower one — treating `start.earliest` as an upper bound on
+            # start would manufacture a definite core that the source never
+            # claimed.
+            se = _ok(_endpoint_bound(start, ("earliest", "in")))
+            sl = _ok(_endpoint_bound(start, ("latest", "in")))
+            ee = _ok(_endpoint_bound(end, ("earliest", "in")))
+            el = _ok(_endpoint_bound(end, ("latest", "in")))
+
+            if se is None:
+                all_have_start_earliest = False
+            elif start_earliest is None or se < start_earliest:
+                start_earliest = se
+
+            if el is None:
+                all_have_end_latest = False
+            elif end_latest is None or el > end_latest:
+                end_latest = el
+
+            # Widest definite core across timespans.
+            if sl is not None and (start_latest is None or sl < start_latest):
+                start_latest = sl
+            if ee is not None and (end_earliest is None or ee > end_earliest):
+                end_earliest = ee
+
+    for geom in doc.get("geometries") or []:
+        if isinstance(geom, dict):
+            _scan(geom.get("timespans"))
+    for top in doc.get("toponyms") or []:
+        if isinstance(top, dict):
+            _scan(top.get("timespans"))
+    for rel in doc.get("relations") or []:
+        if isinstance(rel, dict):
+            _scan(rel.get("timespans"))
+
+    if not saw_any:
+        return None, None, None, None
+    if not all_have_start_earliest:
+        start_earliest = None
+    if not all_have_end_latest:
+        end_latest = None
+    return start_earliest, start_latest, end_earliest, end_latest
 
 
 def compute_temporal_extent(

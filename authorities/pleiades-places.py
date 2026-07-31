@@ -14,6 +14,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.temporal import attested_window
 
 NAMESPACE = "pl"
 
@@ -44,16 +45,12 @@ def extract_geometries(pleiades_record):
 
         # Add temporal attestations if present
         # Pleiades has start/end directly on location
-        start = loc.get('start')
-        end = loc.get('end')
-        timespans = None
-        if start is not None or end is not None:
-            timespan = {}
-            if start is not None:
-                timespan['start'] = {'in': start}
-            if end is not None:
-                timespan['end'] = {'in': end}
-            timespans = [timespan]
+        # Pleiades location start/end is the range across which the location
+        # is ATTESTED by the sources, not a birth/death of the place: the
+        # place is attested somewhere within it (place#164). Encoding it as
+        # start.in/end.in claimed the place was alive across the whole span
+        # and dead outside it.
+        timespans = attested_window(loc.get('start'), loc.get('end')) or None
 
         geom_entry = enrich_geometry(geometry, timespans=timespans,
                                      geom_key=f"{place_id}_{idx}")

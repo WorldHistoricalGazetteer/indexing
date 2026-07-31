@@ -93,6 +93,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES, STAGED_BASE_DIR
+from processing.temporal import attested_window
 
 NAMESPACE = "alc"  # Alcedo / TopUrbi
 
@@ -334,7 +335,9 @@ def process_row(row, admin_index, hgis_idx, alias_map):
         return None
 
     place_id = f"{NAMESPACE}:{entry_id}"
-    timespans = [{"start": {"in": ALC_START}, "end": {"in": ALC_END}}]
+    # Alcedo's dictionary was published across 1786-1789; each entry
+    # attests its place somewhere in that window (place#164).
+    timespans = attested_window(ALC_START, ALC_END)
     hgis_src_ids, hgis_points = hgis_idx
     gmkey = _gm_key(_v(row, "gazetteermatch"))
 

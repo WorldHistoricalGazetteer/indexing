@@ -87,9 +87,40 @@ class TestBuildDocs(unittest.TestCase):
         self.assertEqual(self.docs["kain_par:0"]["title"], "Staplehurst")
 
     def test_open_start_timespan_ends_1851(self):
+        """End 1851, with the closure rule bounding the start (place#164).
+
+        The start is still genuinely unknown — nothing lower-bounds it — but
+        an end always upper-bounds a start, since nothing ends before it
+        begins. Without ``start.latest`` the *definitely alive* test
+        (``start.latest <= Q <= end.earliest``) can never be satisfied, so a
+        parish that plainly existed in 1850 would test as never definitely
+        alive at all.
+        """
         ts = self.docs["kain_par:0"]["geometries"][0]["timespans"][0]
-        self.assertEqual(ts, {"end": {"in": 1851}})
-        self.assertNotIn("start", ts)
+        self.assertEqual(ts, {"end": {"in": 1851}, "start": {"latest": 1851}})
+        self.assertNotIn("earliest", ts["start"], "start is still unbounded below")
+
+    def test_parish_is_definitely_alive_at_its_end_year(self):
+        """What the closure rule actually buys — and what it does not.
+
+        With only an end known, the definite interval is the single year
+        1851: the parish provably existed then. It is *not* definite in 1850,
+        because nothing rules out its having begun in 1851 — only a real
+        start date could establish that, and Kain has none. The gain over the
+        previous encoding is nonetheless real: without ``start.latest`` the
+        record was definitely alive at **no year at all**. 1850 remains
+        *possibly* alive, since ``start.earliest`` is unbounded.
+        """
+        from processing.gazetteer_temporal_extent import doc_temporal_bounds
+
+        se, sl, ee, el = doc_temporal_bounds(self.docs["kain_par:0"], "kain_par")
+        self.assertIsNone(se, "nothing lower-bounds the start")
+        self.assertTrue(sl <= 1851 <= ee, "definitely alive in its end year")
+        self.assertFalse(sl <= 1850 <= ee, "1850 is not provable from an end alone")
+        self.assertTrue(
+            (se is None or se <= 1850) and (el is None or 1850 <= el),
+            "but 1850 is possibly alive",
+        )
 
     def test_parish_added_as_second_toponym_when_distinct(self):
         tops = [t["toponym_id"] for t in self.docs["kain_par:1"]["toponyms"]]

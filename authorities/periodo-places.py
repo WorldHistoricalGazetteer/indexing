@@ -31,6 +31,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.temporal import bounded
 
 PERIODO_URL = "https://data.perio.do/d.json"
 NAMESPACE = "po"
@@ -90,6 +91,33 @@ def fetch_periodo_data(file_path=None):
     print(f"  Cached to: {cache_path}")
 
     return data
+
+
+def _parse_bounds(value):
+    """``(earliest, latest)`` from a PeriodO temporal-extent ``in`` value.
+
+    PeriodO's model is **natively fuzzy**: each of ``start`` and ``stop``
+    carries its own ``earliestYear``/``latestYear``. We used to keep **two of
+    those four numbers** (:func:`_parse_year` with ``prefer=``) and flatten
+    them to ``start.in``/``end.in`` — in a gazetteer whose entire subject
+    matter *is* temporal extent. Those four numbers are exactly the four
+    bounds our model wants (place#164).
+    """
+    if value is None or value == '':
+        return None, None
+    if isinstance(value, dict):
+        if 'year' in value:
+            y = _parse_year(value.get('year'))
+            return y, y
+        lo = _parse_year(value.get('earliestYear'))
+        hi = _parse_year(value.get('latestYear'))
+        if lo is None and hi is None:
+            return None, None
+        # A one-sided range still pins the other side to the same value only
+        # when PeriodO gave nothing else; leave it unbounded otherwise.
+        return lo, hi
+    y = _parse_year(value)
+    return y, y
 
 
 def _parse_year(value, *, prefer='earliest'):
@@ -408,19 +436,10 @@ def process_periodo_period(period_id, period, authority_id, authority_label, spa
     start_node = period.get('start', {})
     end_node = period.get('stop', {})
 
-    if start_node:
-        start_year = _parse_year(start_node.get('in'), prefer='earliest')
-    if end_node:
-        end_year = _parse_year(end_node.get('in'), prefer='latest')
+    start_earliest, start_latest = _parse_bounds(start_node.get('in')) if start_node else (None, None)
+    end_earliest, end_latest = _parse_bounds(end_node.get('in')) if end_node else (None, None)
 
-    timespans = []
-    if start_year is not None or end_year is not None:
-        ts = {}
-        if start_year is not None:
-            ts['start'] = {'in': start_year}
-        if end_year is not None:
-            ts['end'] = {'in': end_year}
-        timespans = [ts]
+    timespans = bounded(start_earliest, start_latest, end_earliest, end_latest)
 
     # Build place_id from period URI
     # PeriodO IDs are like "p0trgkvfmd8" — use as-is

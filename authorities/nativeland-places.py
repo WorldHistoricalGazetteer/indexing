@@ -12,6 +12,15 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import attested_at
+from datetime import datetime
+
+# Native Land is a PRESENT-DAY snapshot of territory/language/treaty extents:
+# it attests these exist now, and says nothing about when they began or ended.
+# Was `{'start': {'in': 2025}, 'end': {'in': 2025}}` = "existed only in 2025",
+# which excluded every nl record from any historical date range (place#164).
+_NL_ATTESTATION_YEAR = datetime.now().year
+_NL_ATTESTED = attested_at(_NL_ATTESTATION_YEAR)
 
 NL_CONFIG = next((auth for auth in AUTHORITIES if auth['namespace'] == 'nl'), None)
 
@@ -32,19 +41,19 @@ def process_territory(feature, namespace='nl'):
 
     lst = f"{name}@en"
     if lst not in seen_lsts:
-        toponyms.append({'toponym_id': lst, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]})
+        toponyms.append({'toponym_id': lst, 'timespans': _NL_ATTESTED})
         seen_lsts.add(lst)
 
     if 'FrenchName' in props and props['FrenchName']:
         lst = f"{props['FrenchName']}@fr"
         if lst not in seen_lsts:
-            toponyms.append({'toponym_id': lst, 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]})
+            toponyms.append({'toponym_id': lst, 'timespans': _NL_ATTESTED})
             seen_lsts.add(lst)
 
     geom_entry = None
     area = None
     if geometry:
-        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        timespans = _NL_ATTESTED
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
 
@@ -76,12 +85,12 @@ def process_language(feature, namespace='nl'):
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:language:{slug}"
 
-    toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
+    toponyms = [{'toponym_id': f"{name}@en", 'timespans': _NL_ATTESTED}]
 
     geom_entry = None
     area = None
     if geometry:
-        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        timespans = _NL_ATTESTED
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
 
@@ -112,12 +121,12 @@ def process_treaty(feature, namespace='nl'):
     slug = props.get('Slug', props.get('slug', name.lower().replace(' ', '-')))
     place_id = f"{namespace}:treaty:{slug}"
 
-    toponyms = [{'toponym_id': f"{name}@en", 'timespans': [{'start': {'in': 2025}, 'end': {'in': 2025}}]}]
+    toponyms = [{'toponym_id': f"{name}@en", 'timespans': _NL_ATTESTED}]
 
     geom_entry = None
     area = None
     if geometry:
-        timespans = [{'start': {'in': 2025}, 'end': {'in': 2025}}]
+        timespans = _NL_ATTESTED
         geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
         area = compute_area_km2(geometry)
 
