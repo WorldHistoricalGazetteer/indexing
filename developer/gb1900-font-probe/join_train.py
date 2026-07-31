@@ -255,7 +255,10 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(text=txt, f=word_frame(p, txt, r.get("gline")),
+            wf = word_frame(p, txt, r.get("gline"))
+            if wf is None:
+                continue                                   # degenerate outline — see word_frame
+            words.append(dict(text=txt, f=wf,
                               font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
         if len(words) < 30:
             continue

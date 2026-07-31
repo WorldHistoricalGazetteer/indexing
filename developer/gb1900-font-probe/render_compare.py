@@ -70,6 +70,11 @@ def main():
     ap.add_argument("--mr-file", default=None, help="MapReader boxes jsonl (default: boxes_<tag>.jsonl)")
     ap.add_argument("--pins-file", default=None, help="Hi-SAM detections jsonl (default: pins_<tag>.jsonl)")
     ap.add_argument("--amg-file", default=None, help="Hi-SAM AUTOMATIC-mode detections jsonl (4th layer)")
+    ap.add_argument("--link-file", default=None,
+                    help="pin detections jsonl (line_gpoly): GROUP the MapReader boxes falling in each "
+                         "GB1900 label and draw the grouping. MapReader itself emits no linkage — its "
+                         "ParentPrediction carries only geometry/score/text — so two boxes over one label "
+                         "are two independent detections. GB1900 supplies the link it cannot.")
     ap.add_argument("--out-dir", default=PINS)
     ap.add_argument("--fetch", action="store_true", help="pull uncached tiles rather than leaving holes")
     ap.add_argument("--tiles-dir", default=None,
@@ -145,6 +150,47 @@ def main():
             if r.get("gpoly"):
                 n_amg += poly(r["gpoly"], (170, 40, 190), 2)
 
+    # Linking, drawn as a chain through the grouped boxes' centres plus a hull around the group.
+    n_link = n_grouped = 0
+    if a.link_file and os.path.exists(a.link_file):
+        from shapely.geometry import Polygon as _P
+        mrpolys = []
+        if os.path.exists(mrf):
+            for line in open(mrf):
+                try:
+                    r = json.loads(line)
+                except Exception:
+                    continue
+                if r.get("gpoly"):
+                    q = np.asarray(r["gpoly"], float)
+                    mrpolys.append((q.mean(0), q))
+        for line in open(a.link_file):
+            try:
+                r = json.loads(line)
+            except Exception:
+                continue
+            poly = r.get("line_gpoly") or r.get("gpoly")
+            if not poly:
+                continue
+            try:
+                g = _P(poly).buffer(0)
+            except Exception:
+                continue
+            if g.is_empty:
+                continue
+            from shapely.geometry import Point as _Pt
+            members = [c for c, q in mrpolys if g.contains(_Pt(*c))]
+            if len(members) < 2:
+                continue
+            n_link += 1
+            n_grouped += len(members)
+            pts = sorted(members, key=lambda c: c[0])
+            chain = [(float(x) - ox, float(y) - oy) for x, y in pts]
+            if all(-50 < u < W + 50 and -50 < v < H + 50 for u, v in chain):
+                d.line(chain, fill=(255, 0, 200), width=5)
+                for u, v in chain:
+                    d.ellipse([u - 6, v - 6, u + 6, v + 6], fill=(255, 0, 200))
+
     # GB1900 last, so the transcripts stay readable over the boxes.
     P = load_pins(a.pins)
     idx = pins_in_box(P, ox, oy, ox + W, oy + H)
@@ -161,6 +207,8 @@ def main():
            ("Hi-SAM pin-prompted line mask (red)", (220, 30, 30))]
     if n_amg:
         key.append(("Hi-SAM automatic / AMG (purple)", (170, 40, 190)))
+    if n_link:
+        key.append((f"GB1900-inferred link between MapReader boxes (magenta) — {n_link} labels", (255, 0, 200)))
     fk = font(26)
     d.rectangle([8, 8, 700, 8 + 34 * len(key) + 12], fill=(255, 255, 255), outline=(0, 0, 0))
     for i, (txt, col) in enumerate(key):
@@ -172,6 +220,9 @@ def main():
     else:
         out = f"{a.out_dir}/compare_{a.tag}.png"
         im.save(out)
+    if n_link:
+        print(f"  linked {n_grouped} MapReader boxes into {n_link} GB1900 labels "
+              f"({n_grouped/max(1,n_link):.2f} boxes per linked label)", flush=True)
     print(f"{a.tag}: {len(idx)} GB1900 pins, {n_mr} MapReader boxes, {n_hs} Hi-SAM boxes -> {out} "
           f"({os.path.getsize(out)/1e6:.0f} MB)", flush=True)
     print("COMPAREDONE", flush=True)

@@ -19,7 +19,7 @@ REPO = "/vast/ishi/gb1900/probe/hisam/Hi-SAM"
 sys.path.insert(0, REPO)
 import torch
 from hi_sam.modeling.auto_mask_generator import AutoMaskGenerator          # noqa: F401  (via build_model)
-from hisam_pins import build_model, read_tile, mask_poly, px_to_lonlat, N17
+from hisam_pins import build_model, read_tile, mask_poly, px_to_lonlat, N17, LINE, PARA
 
 OUT = "/vast/ishi/gb1900/edition/amg"
 
@@ -36,6 +36,50 @@ def window_image_rect(tx0, ty0, nx, ny, fetch=False):
     return canvas, hit
 
 
+@torch.no_grad()
+def amg_lines(amg, model, n_points, nms_iou):
+    """AMG point sampling, but decoded at the LINE level and de-duplicated.
+
+    AutoMaskGenerator.predict returns only the word masks; the line and paragraph channels are computed and
+    thrown away. Here the decoder is called directly so the line channel survives. Every foreground point on a
+    label returns that whole label, so the same line comes back many times over — greedy IoU suppression keeps
+    the highest-scoring instance of each.
+    """
+    pts = amg.forward_foreground_points(False, n_points)
+    if pts is None or pts.shape[0] == 0:
+        return None, None
+    masks, scores = [], []
+    for s in range(0, pts.shape[0], 100):
+        pb = pts[s:s + 100]
+        hi, iou, _ = amg.forward_hi_decoder(pb, torch.ones((len(pb), 1), device=pb.device))
+        masks.append((hi[:, LINE] > model.mask_threshold).cpu().numpy())
+        scores.append(iou[:, LINE].float().cpu().numpy())
+    m = np.concatenate(masks)
+    sc = np.concatenate(scores)
+    order = np.argsort(-sc)
+    keep, kept = [], []
+    flat = m.reshape(len(m), -1).astype(bool)
+    for i in order:
+        a_ = flat[i]
+        n_ = a_.sum()
+        if n_ < 8:
+            continue
+        dup = False
+        for j in kept:
+            b_ = flat[j]
+            inter = np.count_nonzero(a_ & b_)
+            if inter and inter / (n_ + b_.sum() - inter) > nms_iou:
+                dup = True
+                break
+        if not dup:
+            kept.append(i)
+            keep.append(i)
+    if not keep:
+        return None, None
+    # line masks are 256px; the caller scales polygons by the window/256 ratio
+    return m[keep][:, None, :, :], sc[keep][:, None]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", required=True)
@@ -46,6 +90,13 @@ def main():
     ap.add_argument("--weight", default="/vast/ishi/gb1900/probe/hisam/weights/hi_sam_l.pth")
     ap.add_argument("--model-type", default="vit_l")
     ap.add_argument("--fetch", action="store_true")
+    ap.add_argument("--level", default="word", choices=["word", "line"],
+                    help="LINE groups a letter-spaced label into one detection. The big admin labels are "
+                         "exactly the ones that fragment at word level — a spaced ST ALDATE becomes eight "
+                         "masks of 6px, which is why the word-level output looked as though the sheet had no "
+                         "large lettering on it at all.")
+    ap.add_argument("--nms", type=float, default=0.55,
+                    help="line masks repeat: every foreground point on one label returns that whole label")
     ap.add_argument("--out-dir", default=OUT)
     a = ap.parse_args()
     os.makedirs(a.out_dir, exist_ok=True)
@@ -77,8 +128,11 @@ def main():
             ox, oy = wx0 * 256, wy0 * 256
             amg.set_image(img)
             try:
-                masks, scores, _ = amg.predict(from_low_res=False, fg_points_num=a.points,
-                                               batch_points_num=100, score_thresh=0.5, nms_thresh=0.5)
+                if a.level == "word":
+                    masks, scores, _ = amg.predict(from_low_res=False, fg_points_num=a.points,
+                                                   batch_points_num=100, score_thresh=0.5, nms_thresh=0.5)
+                else:
+                    masks, scores = amg_lines(amg, model, a.points, a.nms)
             except torch.cuda.OutOfMemoryError:
                 print(f"  OOM at window {wx0},{wy0}", flush=True)
                 torch.cuda.empty_cache()
@@ -89,15 +143,16 @@ def main():
             # there belongs to the neighbouring window. Exact de-duplication, no distance threshold.
             kx0, ky0 = (cx0 - wx0) * 256, (cy0 - wy0) * 256
             kx1, ky1 = (cx1 - wx0) * 256, (cy1 - wy0) * 256
+            scale = (a.win * 256) / masks.shape[-1]     # line masks are 256px whatever the window size
             for k in range(masks.shape[0]):
                 m = masks[k, 0]
                 ys, xs = np.where(m)
                 if len(xs) < 6:
                     continue
-                cxm, cym = xs.mean(), ys.mean()
+                cxm, cym = xs.mean() * scale, ys.mean() * scale
                 if not (kx0 <= cxm < kx1 and ky0 <= cym < ky1):
                     continue
-                poly, area = mask_poly(m, 1.0, ox, oy)
+                poly, area = mask_poly(m, scale, ox, oy)
                 if poly is None:
                     continue
                 gcx = sum(p[0] for p in poly) / 4.0
@@ -105,11 +160,12 @@ def main():
                 lon, lat = px_to_lonlat(gcx, gcy)
                 recs.append(dict(gpoly=poly, area=area, gcx=round(gcx, 1), gcy=round(gcy, 1),
                                  lon=round(lon, 6), lat=round(lat, 6),
-                                 score=round(float(scores[k][1]) if scores is not None else 0.0, 4)))
+                                 # word mode returns (n,2) scores, line mode (n,1) — take the last either way
+                                 score=round(float(np.ravel(scores[k])[-1]) if scores is not None else 0.0, 4)))
             if nwin % 10 == 0:
                 print(f"  [{a.tag}] window {nwin} ({len(recs)} detections, {time.time()-t0:.0f}s)", flush=True)
 
-    outp = f"{a.out_dir}/amg_{a.tag}.jsonl"
+    outp = f"{a.out_dir}/amg_{a.level}_{a.tag}.jsonl"
     with open(outp, "w") as f:
         for r in recs:
             f.write(json.dumps(r) + "\n")

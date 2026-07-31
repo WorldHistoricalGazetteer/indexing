@@ -21,8 +21,12 @@ import argparse, glob, json, os, sys, numpy as np, cv2
 
 sys.path.insert(0, "/vast/ishi/gb1900/probe/font")               # make_font_testset_v2.derotate
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hisam_pins import build_model, prompt_pins, mask_poly, window_image, LINE, WORD
 from make_font_testset_v2 import derotate
+
+# hisam_pins lives in the hisam probe dir and pulls in the Hi-SAM repo and its torch. It is needed ONLY for
+# --hisam, which is off by default (MapReader boxes won that comparison), so importing it at module scope made
+# the default path depend on a second conda env it never uses — and fail outright under the mapreader env.
+HISAM_DIR = "/vast/ishi/gb1900/probe/hisam"
 
 HERE = "/vast/ishi/gb1900/probe/font"
 SPOT = "/vast/ishi/gb1900/edition/spot"
@@ -61,18 +65,38 @@ def main():
                 rec[k] = r
         if len(rec) >= len(want):
             break
-    print(f"{len(lab)} anchors, {len(rec)} matched to MapReader boxes", flush=True)
+    n_own = sum(1 for l in lab if l.get("gpoly"))
+    print(f"{len(lab)} anchors, {len(rec)} matched to MapReader boxes, "
+          f"{n_own} carrying their own polygon", flush=True)
 
     model = amg = None
     if a.hisam:
+        sys.path.insert(0, HISAM_DIR)
+        from hisam_pins import build_model, prompt_pins, mask_poly, window_image, LINE  # noqa: F401
+        globals().update(prompt_pins=prompt_pins, mask_poly=mask_poly,
+                         window_image=window_image, LINE=LINE)
         model, amg = build_model(a.model_type, a.weight)
-    mr, hw, hl, sigs, texts, notes, gcxs, gcys = [], [], [], [], [], [], [], []
+    mr, hw, hl, sigs, texts, notes, gcxs, gcys, origins = [], [], [], [], [], [], [], [], []
     nomask = nocrop = 0
     for l in lab:
         r = rec.get(key(l["gcx"], l["gcy"]))
-        if r is None:
+        # Big-font anchors exist in no boxes_*.jsonl — MapReader never spotted them, which is the entire
+        # reason they were labelled by hand. They carry their own Hi-SAM LINE polygon instead. Without this
+        # they were not merely unusable but silently absent: every one of them counted as "no MapReader crop"
+        # and the bank would have been rebuilt on the small-font anchors alone, showing no gain at all.
+        #
+        # This does mix two box conventions in one bank (MapReader boxes measured 0.739 against Hi-SAM line
+        # 0.660, because Hi-SAM masks clip words). For these labels there is no alternative convention — the
+        # choice is a line crop or no sample. So the origin travels with each row and the leave-one-out is
+        # reported split by it, which keeps the convention effect visible instead of averaged away.
+        if r is None and l.get("gpoly"):
+            r = dict(gpoly=l["gpoly"], gcx=l["gcx"], gcy=l["gcy"], text=l.get("text", ""))
+            origin = "hisam-line"
+        elif r is None:
             nocrop += 1
             continue
+        else:
+            origin = "mapreader"
         control = derotate(r)
         if control is None or control.size < 80:
             nocrop += 1
@@ -87,6 +111,7 @@ def main():
             gcxs.append(gcx)
             gcys.append(gcy)
             notes.append(dict(word_ok=False, line_ok=False))
+            origins.append(origin)
             continue
         tx0 = int(gcx) // 256 - a.win // 2
         ty0 = int(gcy) // 256 - a.win // 2
@@ -117,16 +142,18 @@ def main():
         gcxs.append(float(r["gcx"]))
         gcys.append(float(r["gcy"]))
         notes.append(dict(word_ok=bool(wpoly), line_ok=bool(lpoly)))
+        origins.append(origin)
 
     # gcx/gcy travel with the crops so a rejection or correction made in the QC page can be keyed straight
     # back to the anchor in pool_labels.json, rather than relying on row order surviving a re-run.
     np.savez(a.out, mr=np.array(mr, object), word=np.array(hw, object), line=np.array(hl, object),
              sigs=np.array(sigs, object), texts=np.array(texts, object), notes=np.array(notes, object),
-             gcx=np.array(gcxs), gcy=np.array(gcys))
+             gcx=np.array(gcxs), gcy=np.array(gcys), origin=np.array(origins, object))
     nw = sum(n["word_ok"] for n in notes)
     nl = sum(n["line_ok"] for n in notes)
-    print(f"saved {len(mr)} anchors (no MapReader crop {nocrop}, no Hi-SAM mask {nomask}); "
-          f"word mask {nw}, line mask {nl} -> {a.out}", flush=True)
+    from collections import Counter as _C
+    print(f"saved {len(mr)} anchors (no crop {nocrop}, no Hi-SAM mask {nomask}); "
+          f"word mask {nw}, line mask {nl}; origins {dict(_C(origins))} -> {a.out}", flush=True)
     print("RECROPDONE", flush=True)
 
 

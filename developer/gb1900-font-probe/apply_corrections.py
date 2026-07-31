@@ -33,6 +33,9 @@ def main():
     ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--decisions", default="labels/face_decisions.json",
                     help="confirmed proposals — spots a human accepted, which become anchors in their own right")
+    ap.add_argument("--bigfont", default="labels/bigfont_decisions.json",
+                    help="direct assignments over Hi-SAM LINE detections MapReader never spotted — the only "
+                         "route to the admin-size faces, which no MapReader-derived loop can reach")
     ap.add_argument("--out", default="labels/pool_labels_faced.json")
     a = ap.parse_args()
 
@@ -105,6 +108,34 @@ def main():
             added[face] += 1
         if added:
             print(f"\n+{sum(added.values())} confirmed proposals folded in as anchors:")
+            for f, n in added.most_common():
+                print(f"  {f:26s} {n:>4d}")
+
+    # Big-font spots are DIRECT judgements, not confirmed proposals: nothing proposed them, because the
+    # descriptor has anchors for four faces and these are here to supply a fifth. They carry no transcript, so
+    # the numeral test cannot run — the reviewer's explicit "numeral" verdict stands in for it.
+    if a.bigfont and os.path.exists(a.bigfont):
+        have = {key(x["gcx"], x["gcy"]) for x in out}
+        added, skipped = Counter(), Counter()
+        for d in json.load(open(a.bigfont))["decisions"]:
+            if d.get("reject") or not d.get("face"):
+                skipped[d.get("reason") or "rejected"] += 1
+                continue
+            face = alias.get(d["face"], d["face"])
+            if face not in faces:
+                skipped["face not in inventory"] += 1
+                continue
+            k = key(d["gcx"], d["gcy"])
+            if k in have:
+                skipped["duplicate"] += 1
+                continue
+            have.add(k)
+            out.append(dict(gcx=d["gcx"], gcy=d["gcy"], text="", gpoly=d.get("gpoly"),
+                            face=face, sig=None, review="bigfont"))
+            added[face] += 1
+        if added or skipped:
+            print(f"\n+{sum(added.values())} big-font anchors folded in "
+                  f"({sum(skipped.values())} not used: {dict(skipped)}):")
             for f, n in added.most_common():
                 print(f"  {f:26s} {n:>4d}")
 

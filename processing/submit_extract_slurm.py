@@ -252,6 +252,9 @@ def submit(
         if dry_run:
             chained = f", after {'+'.join(after)}" if after else ""
             print(f"  {ns}: would submit ({cpus} cpu / {mem} / {hours}h / {_qos_for(hours)}{chained})")
+            # Stand-in id so a dependant printed later shows its chain rather
+            # than silently reporting none.
+            job_ids[ns] = f"<{ns}>"
             continue
 
         sbatch_path = work_dir / f"extract-{ns}.sbatch"

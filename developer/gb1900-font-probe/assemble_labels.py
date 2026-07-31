@@ -111,6 +111,15 @@ def word_frame(poly, text, line=None):
     import cv2
     p = np.asarray(poly, np.float32)
     (cx, cy), (w, h), ang = cv2.minAreaRect(p)
+    # A perfectly flat outline is not a word. The spotter occasionally emits a polygon whose points are all
+    # collinear — 1 in ~24,000 detections, almost always a numeral (spot heights: '350', '524', '383') or
+    # unreadable noise. minAreaRect then returns a zero side, and the first height RATIO downstream divides
+    # by zero and takes the whole run with it. Returning None lets callers drop it, which is the honest
+    # outcome: there is no direction, cap height or pitch to be had from a line segment.
+    #
+    # It survived this long because the join was only ever trained on 60 regions; at 8,756 it is certain.
+    if min(w, h) <= 0:
+        return None
     if w < h:
         w, h, ang = h, w, ang + 90.0
     th = math.radians(ang)
@@ -417,8 +426,10 @@ def main():
             if k in seen:
                 continue
             seen.add(k)
-            words.append(dict(id=len(words), text=txt, poly=p,
-                              f=word_frame(p, txt, r.get("gline")),
+            wf = word_frame(p, txt, r.get("gline"))
+            if wf is None:
+                continue                                   # degenerate outline — see word_frame
+            words.append(dict(id=len(words), text=txt, poly=p, f=wf,
                               font=FONTS.get((round(cx / 4), round(cy / 4), norm(txt)))))
     print(f"{len(files)} files -> {len(words)} distinct words")
     if not words:

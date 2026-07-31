@@ -12,7 +12,9 @@
   "exemplar": "reference/exemplars/county_names.jpg",
   "seed_text": "C",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "none",
+  "decor": "fancy"
  },
  {
   "id": 2,
@@ -27,7 +29,9 @@
   "exemplar": "reference/exemplars/hundreds.jpg",
   "seed_text": "H",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "diagonal",
+  "decor": "serif"
  },
  {
   "id": 3,
@@ -42,7 +46,9 @@
   "exemplar": "reference/exemplars/liberties.jpg",
   "seed_text": "L",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "diagonal",
+  "decor": "serif"
  },
  {
   "id": 4,
@@ -57,7 +63,9 @@
   "exemplar": "reference/exemplars/parishes_ancient.jpg",
   "seed_text": "P",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "none",
+  "decor": "serif"
  },
  {
   "id": 5,
@@ -72,7 +80,9 @@
   "exemplar": "reference/exemplars/civil_parishes.jpg",
   "seed_text": "T",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 6,
@@ -87,7 +97,9 @@
   "exemplar": "reference/exemplars/div_townships.jpg",
   "seed_text": "T",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "horizontal",
+  "decor": "serif"
  },
  {
   "id": 7,
@@ -102,7 +114,9 @@
   "exemplar": "reference/exemplars/subdiv_townships.jpg",
   "seed_text": "T",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "none",
+  "decor": "serif"
  },
  {
   "id": 8,
@@ -117,7 +131,9 @@
   "exemplar": "reference/exemplars/boroughs_parl.jpg",
   "seed_text": "B",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 9,
@@ -132,7 +148,9 @@
   "exemplar": "reference/exemplars/boroughs_munic.jpg",
   "seed_text": "B",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "horizontal",
+  "decor": "serif"
  },
  {
   "id": 10,
@@ -147,7 +165,9 @@
   "exemplar": "reference/exemplars/towns_generally.jpg",
   "seed_text": "B",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 11,
@@ -162,7 +182,9 @@
   "exemplar": "reference/exemplars/town_districts.jpg",
   "seed_text": "D",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "none",
+  "decor": "serif"
  },
  {
   "id": 12,
@@ -177,7 +199,9 @@
   "exemplar": "reference/exemplars/div_counties.jpg",
   "seed_text": "R",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "horizontal",
+  "decor": "serif"
  },
  {
   "id": 13,
@@ -192,7 +216,9 @@
   "exemplar": "reference/exemplars/poor_law_unions.jpg",
   "seed_text": "R",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "diagonal",
+  "decor": "plain"
  },
  {
   "id": 14,
@@ -207,13 +233,16 @@
   "exemplar": "reference/exemplars/urban_sanitary.jpg",
   "seed_text": "R",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "none",
+  "decor": "plain"
  },
  {
   "id": 15,
   "key": "cities_mp",
   "label": "Cities returning Members",
   "base_style": "upright",
+  "fill": "solid",
   "caps": true,
   "size_variable": false,
   "cap_h_px": 61.0,
@@ -222,13 +251,15 @@
   "exemplar": "reference/exemplars/cities_mp.jpg",
   "seed_text": "C",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "decor": "serif"
  },
  {
   "id": 16,
   "key": "cities_nomp",
   "label": "Cities not returning Members",
   "base_style": "upright",
+  "fill": "diagonal",
   "caps": true,
   "size_variable": false,
   "cap_h_px": 62.0,
@@ -237,7 +268,8 @@
   "exemplar": "reference/exemplars/cities_nomp.jpg",
   "seed_text": "C",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "decor": "serif"
  },
  {
   "id": 17,
@@ -252,7 +284,9 @@
   "exemplar": "reference/exemplars/wards.jpg",
   "seed_text": "W",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "plain"
  },
  {
   "id": 18,
@@ -267,7 +301,9 @@
   "exemplar": "reference/exemplars/market_towns.jpg",
   "seed_text": "B",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 19,
@@ -282,7 +318,9 @@
   "exemplar": "reference/exemplars/other_towns.jpg",
   "seed_text": "B",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "horizontal",
+  "decor": "serif"
  },
  {
   "id": 20,
@@ -297,7 +335,9 @@
   "exemplar": "reference/exemplars/parl_div_counties.jpg",
   "seed_text": "P",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "plain"
  },
  {
   "id": 21,
@@ -312,7 +352,9 @@
   "exemplar": "reference/exemplars/county_boroughs.jpg",
   "seed_text": "E",
   "seed_words": 1,
-  "seed_letters": 1
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "fancy"
  },
  {
   "id": 22,
@@ -327,7 +369,9 @@
   "exemplar": "reference/exemplars/extra_parochial.jpg",
   "seed_text": "EXTRA PAROCHIAL",
   "seed_words": 2,
-  "seed_letters": 14
+  "seed_letters": 14,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 23,
@@ -342,7 +386,9 @@
   "exemplar": "reference/exemplars/turnpike_trusts.jpg",
   "seed_text": "TURNPIKE TRUSTS",
   "seed_words": 2,
-  "seed_letters": 14
+  "seed_letters": 14,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 24,
@@ -357,7 +403,9 @@
   "exemplar": "reference/exemplars/parish_churches.jpg",
   "seed_text": "Parish Churches Villages",
   "seed_words": 3,
-  "seed_letters": 22
+  "seed_letters": 22,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 25,
@@ -372,7 +420,9 @@
   "exemplar": "reference/exemplars/chapelries.jpg",
   "seed_text": "Chapelries Other Churches",
   "seed_words": 3,
-  "seed_letters": 23
+  "seed_letters": 23,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 26,
@@ -387,7 +437,9 @@
   "exemplar": "reference/exemplars/other_villages.jpg",
   "seed_text": "Other Villages",
   "seed_words": 2,
-  "seed_letters": 13
+  "seed_letters": 13,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 27,
@@ -399,10 +451,12 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null,
+  "exemplar": "reference/exemplars/parks_demesnes.jpg",
   "seed_text": "PARKS DEMESNES",
   "seed_words": 2,
-  "seed_letters": 13
+  "seed_letters": 13,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 28,
@@ -417,7 +471,9 @@
   "exemplar": "reference/exemplars/gentlemens_seats.jpg",
   "seed_text": "Gentlemens Seat",
   "seed_words": 2,
-  "seed_letters": 14
+  "seed_letters": 14,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 29,
@@ -432,7 +488,9 @@
   "exemplar": "reference/exemplars/manufactories.jpg",
   "seed_text": "Manufactories Mines Farms Lock",
   "seed_words": 4,
-  "seed_letters": 27
+  "seed_letters": 27,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 30,
@@ -447,7 +505,9 @@
   "exemplar": "reference/exemplars/workhouses.jpg",
   "seed_text": "Workhouses",
   "seed_words": 1,
-  "seed_letters": 10
+  "seed_letters": 10,
+  "fill": "none",
+  "decor": "serif"
  },
  {
   "id": 31,
@@ -462,7 +522,9 @@
   "exemplar": "reference/exemplars/county_bridges_word.jpg",
   "seed_text": "County Bridges",
   "seed_words": 2,
-  "seed_letters": 13
+  "seed_letters": 13,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 32,
@@ -477,7 +539,9 @@
   "exemplar": "reference/exemplars/trust_bridges_word.jpg",
   "seed_text": "Trust Bridges and Others",
   "seed_words": 4,
-  "seed_letters": 21
+  "seed_letters": 21,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 33,
@@ -492,7 +556,9 @@
   "exemplar": "reference/exemplars/isolated_houses_word.jpg",
   "seed_text": "Isolated Houses",
   "seed_words": 2,
-  "seed_letters": 14
+  "seed_letters": 14,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 34,
@@ -504,10 +570,12 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null,
+  "exemplar": "reference/exemplars/bays_harbours.jpg",
   "seed_text": "BAYS HARBOURS",
   "seed_words": 2,
-  "seed_letters": 12
+  "seed_letters": 12,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 35,
@@ -519,10 +587,12 @@
   "cap_h_px": null,
   "regime": "any",
   "external": null,
-  "exemplar": null,
+  "exemplar": "reference/exemplars/navigable_rivers.jpg",
   "seed_text": "NAVIGABLE RIVERS CANALS",
   "seed_words": 3,
-  "seed_letters": 21
+  "seed_letters": 21,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 36,
@@ -537,7 +607,9 @@
   "exemplar": "reference/exemplars/small_rivers.jpg",
   "seed_text": "Small Rivers Brooks",
   "seed_words": 3,
-  "seed_letters": 17
+  "seed_letters": 17,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 37,
@@ -549,10 +621,12 @@
   "cap_h_px": null,
   "regime": "pre1879",
   "external": null,
-  "exemplar": null,
+  "exemplar": "reference/exemplars/bogs_moors.jpg",
   "seed_text": "BOGS MOORS FORESTS",
   "seed_words": 3,
-  "seed_letters": 16
+  "seed_letters": 16,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 38,
@@ -567,7 +641,9 @@
   "exemplar": "reference/exemplars/woods_copses.jpg",
   "seed_text": "Woods and Copses",
   "seed_words": 3,
-  "seed_letters": 14
+  "seed_letters": 14,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 39,
@@ -582,7 +658,9 @@
   "exemplar": "reference/exemplars/ranges_hills.jpg",
   "seed_text": "RANGES OF HILLS",
   "seed_words": 3,
-  "seed_letters": 13
+  "seed_letters": 13,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 40,
@@ -597,7 +675,9 @@
   "exemplar": "reference/exemplars/antiq_roman.jpg",
   "seed_text": "ROMAN",
   "seed_words": 1,
-  "seed_letters": 5
+  "seed_letters": 5,
+  "fill": "solid",
+  "decor": "plain"
  },
  {
   "id": 41,
@@ -612,7 +692,9 @@
   "exemplar": "reference/exemplars/antiq_saxon.jpg",
   "seed_text": "Pre historic or Saxon",
   "seed_words": 4,
-  "seed_letters": 18
+  "seed_letters": 18,
+  "fill": "solid",
+  "decor": "fancy"
  },
  {
   "id": 42,
@@ -627,7 +709,9 @@
   "exemplar": "reference/exemplars/antiq_norman.jpg",
   "seed_text": "Norman",
   "seed_words": 1,
-  "seed_letters": 6
+  "seed_letters": 6,
+  "fill": "solid",
+  "decor": "fancy"
  },
  {
   "id": 43,
@@ -642,7 +726,9 @@
   "exemplar": "reference/exemplars/antiq_subsequent.jpg",
   "seed_text": "Subsequent",
   "seed_words": 1,
-  "seed_letters": 10
+  "seed_letters": 10,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 44,
@@ -657,7 +743,9 @@
   "exemplar": "reference/exemplars/railways_passenger.jpg",
   "seed_text": "RAILWAYS",
   "seed_words": 1,
-  "seed_letters": 8
+  "seed_letters": 8,
+  "fill": "solid",
+  "decor": "plain"
  },
  {
   "id": 45,
@@ -672,7 +760,9 @@
   "exemplar": "reference/exemplars/railways_mineral.jpg",
   "seed_text": "RAILWAYS",
   "seed_words": 1,
-  "seed_letters": 8
+  "seed_letters": 8,
+  "fill": "solid",
+  "decor": "plain"
  },
  {
   "id": 46,
@@ -687,7 +777,9 @@
   "exemplar": "reference/exemplars/principal_stations.jpg",
   "seed_text": "Principal Stations",
   "seed_words": 2,
-  "seed_letters": 17
+  "seed_letters": 17,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 47,
@@ -702,7 +794,9 @@
   "exemplar": "reference/exemplars/other_stations.jpg",
   "seed_text": "Other Stations",
   "seed_words": 2,
-  "seed_letters": 13
+  "seed_letters": 13,
+  "fill": "solid",
+  "decor": "serif"
  },
  {
   "id": 48,
@@ -717,6 +811,25 @@
   "exemplar": "reference/exemplars/contour_numeral.jpg",
   "seed_text": "200",
   "seed_words": 1,
-  "seed_letters": 3
+  "seed_letters": 3,
+  "fill": "solid",
+  "decor": "plain"
+ },
+ {
+  "id": 49,
+  "key": "boundary_numeral",
+  "label": "Boundary markers & numerals (italic figures)",
+  "base_style": "italic",
+  "caps": false,
+  "size_variable": false,
+  "cap_h_px": 23.0,
+  "regime": "any",
+  "external": null,
+  "exemplar": null,
+  "seed_text": "3",
+  "seed_words": 1,
+  "seed_letters": 1,
+  "fill": "solid",
+  "decor": "plain"
  }
 ]

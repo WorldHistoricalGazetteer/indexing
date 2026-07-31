@@ -18,18 +18,24 @@ def exb64(key):
     im = Image.open(p).convert("L"); im.thumbnail((150, 90))
     bio = io.BytesIO(); im.save(bio, "PNG"); return base64.b64encode(bio.getvalue()).decode()
 
-seeds = defaultdict(list); fanned = defaultdict(list)
+# Split gen-0 seeds by PROVENANCE: name-lookup seeds (genuine admin names, no mark-letter) vs mark-letter
+# spots (a single reference glyph matched). Conflating them under one "mark-letter" header is misleading —
+# the lookup words legitimately contain no mark-letter.
+lookup = defaultdict(list); mark = defaultdict(list); fanned = defaultdict(list)
 for line in open(f"{OUT}/assignments.jsonl"):
     a = json.loads(line)
-    (seeds if a["gen"] == 0 else fanned)[a["font"]].append(a)
-for f in seeds: seeds[f].sort(key=lambda a: -(a.get("seed_score") or 0))
+    if a["gen"] != 0: fanned[a["font"]].append(a)
+    elif a.get("seed_letter") == "lookup": lookup[a["font"]].append(a)
+    else: mark[a["font"]].append(a)
+for f in mark: mark[f].sort(key=lambda a: -(a.get("seed_score") or 0))
 
-fonts = sorted(set(seeds) | set(fanned),
+fonts = sorted(set(lookup) | set(mark) | set(fanned),
                key=lambda f: (0 if (TAX.get(f, {}).get("seed_letters") == 1) else 1, f))
 data = [{"font": f, "style": f"{TAX.get(f,{}).get('base_style','')}{'CAPS' if TAX.get(f,{}).get('caps') else ''}",
          "single": TAX.get(f, {}).get("seed_letters") == 1, "ex": exb64(f),
-         "seeds": seeds.get(f, [])[:60], "fan": fanned.get(f, [])[:60],
-         "nseed": len(seeds.get(f, [])), "nfan": len(fanned.get(f, []))} for f in fonts]
+         "lookup": lookup.get(f, [])[:60], "mark": mark.get(f, [])[:60], "fan": fanned.get(f, [])[:60],
+         "nlook": len(lookup.get(f, [])), "nmark": len(mark.get(f, [])), "nfan": len(fanned.get(f, []))}
+        for f in fonts]
 
 HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — font reference inspection</title>
 <style>
@@ -60,18 +66,23 @@ HTML = """<!doctype html><meta charset=utf-8><title>GB-STAMP — font reference 
 <script>
 const D=__DATA__;
 document.body.addEventListener('click',e=>{if(e.target.tagName==='IMG'&&e.target.closest('.s')){document.getElementById('lbi').src=e.target.src;document.getElementById('lb').style.display='flex';}});
-function grid(arr,seed){
+function grid(arr,kind){
  if(!arr.length) return '<div class=empty>none</div>';
- return '<div class=snips>'+arr.map(a=>`<div class=s><img src="data:image/png;base64,${a.crop}"><div class=t title="${(a.text||'').replace(/"/g,'&quot;')}">${(a.text||'').replace(/</g,'&lt;')}</div><div class=c>${seed?('spot '+a.seed_letter+' @'+(a.seed_score||0)):('gen'+a.gen)}</div></div>`).join('')+'</div>';
+ return '<div class=snips>'+arr.map(a=>{
+   let c = kind==='mark' ? ('spot '+a.seed_letter+' @'+(a.seed_score||0)) : kind==='lookup' ? 'name-lookup' : ('gen'+a.gen);
+   if(a.cap_h) c += ' · '+Math.round(a.cap_h)+'px';
+   return `<div class=s><img src="data:image/png;base64,${a.crop}"><div class=t title="${(a.text||'').replace(/"/g,'&quot;')}">${(a.text||'').replace(/</g,'&lt;')}</div><div class=c>${c}</div></div>`;
+ }).join('')+'</div>';
 }
 function render(){
  const only=document.getElementById('only').checked;
  const g=document.getElementById('grid');g.innerHTML='';
  for(const d of D){ if(only&&!d.single) continue;
   const el=document.createElement('div');el.className='font'+(d.single?' single':'');
-  el.innerHTML=`<div class=fh>${d.ex?`<img src="data:image/png;base64,${d.ex}">`:''}<b>${d.font}</b> <span class=muted>${d.style}</span>${d.single?' <span class=tag>single-char seed</span>':''} <span class=muted>· ${d.nseed} spots, ${d.nfan} fanned</span></div>`+
-   `<div class=sec>INITIAL SPOTS (seed step — assigned by the single mark-letter):</div>${grid(d.seeds,true)}`+
-   `<div class=sec>FANNED (co-occurrence):</div>${grid(d.fan,false)}`;
+  el.innerHTML=`<div class=fh>${d.ex?`<img src="data:image/png;base64,${d.ex}">`:''}<b>${d.font}</b> <span class=muted>${d.style}</span>${d.single?' <span class=tag>single-char seed</span>':''} <span class=muted>· ${d.nlook} name-lookup, ${d.nmark} mark-letter, ${d.nfan} fanned</span></div>`+
+   `<div class=sec>NAME-LOOKUP SEEDS (genuine admin names — no mark-letter):</div>${grid(d.lookup,'lookup')}`+
+   `<div class=sec>MARK-LETTER SPOTS (seeded by the single mark-letter):</div>${grid(d.mark,'mark')}`+
+   `<div class=sec>FANNED (co-occurrence):</div>${grid(d.fan,'fan')}`;
   g.appendChild(el);
  }
 }
@@ -80,4 +91,5 @@ render();
 document.getElementById('stat').textContent=D.length+' faces · '+D.filter(d=>d.single).length+' single-character';
 </script>"""
 open(f"{OUT}/ref_ui.html", "w").write(HTML.replace("__DATA__", json.dumps(data)))
-print(f"wrote {OUT}/ref_ui.html ({len(data)} faces, {sum(d['nseed'] for d in data)} seed spots, {sum(d['nfan'] for d in data)} fanned)")
+print(f"wrote {OUT}/ref_ui.html ({len(data)} faces, {sum(d['nlook'] for d in data)} name-lookup, "
+      f"{sum(d['nmark'] for d in data)} mark-letter, {sum(d['nfan'] for d in data)} fanned)")

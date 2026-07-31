@@ -6,7 +6,7 @@ font test-set and the same-letter alphabet.
 
     /home/stg135/.conda/envs/mapreader/bin/python spot_sheet.py --lon -1.78 --lat 51.18 --tag amesbury --r 8
 """
-import argparse, os, io, math, json, time, shutil, urllib.request, numpy as np
+import argparse, os, io, math, json, threading, time, shutil, urllib.request, numpy as np
 import pandas as pd
 from shapely import wkt
 from PIL import Image
@@ -41,8 +41,14 @@ def px_to_lonlat(px, py):
     return lon, lat
 
 _STORE_DIR = os.environ.get("TILE_STORE", "/ix1/ishi/gb1900/tilestore")
-_STORE_CACHE = {}
+# Connections are PER THREAD. mosaic() reads its 64 tiles through a 16-thread pool, and sqlite3.connect
+# defaults to check_same_thread=True: every thread but the one that opened the connection raises
+# ProgrammingError, which store_tile's except swallows into a miss. The result was 63 misses out of 64 on
+# mosaics whose tiles were ALL present — and the S3 fallback then quietly served the whole sweep from the
+# network, which is why regions cost minutes to an hour and why the corpus appeared to buy nothing.
+_STORE_TLS = threading.local()
 _STORE_BLOCK = 64
+ABSENT = object()   # the corpus positively knows this tile does not exist upstream — see store_tile()
 
 
 def store_tile(tx, ty):
@@ -53,8 +59,11 @@ def store_tile(tx, ty):
     the open cost is paid once per region rather than once per tile. A missing block is remembered as None
     so an unbuilt corpus costs one failed lookup per block rather than one per tile.
     """
+    cache = getattr(_STORE_TLS, "cache", None)
+    if cache is None:
+        cache = _STORE_TLS.cache = {}
     key = (tx // _STORE_BLOCK, ty // _STORE_BLOCK)
-    con = _STORE_CACHE.get(key, False)
+    con = cache.get(key, False)
     if con is False:
         import sqlite3
         path = f"{_STORE_DIR}/z17_{key[0]}_{key[1]}.sqlite"
@@ -64,21 +73,38 @@ def store_tile(tx, ty):
                 # Read-write open, not mode=ro: a block still carrying a WAL is invisible to a read-only
                 # connection, and a cache that silently reads as empty is worse than one that fails loudly.
                 con = sqlite3.connect(path, timeout=30)
-                con.execute("SELECT count(*) FROM tile LIMIT 1")
+                # Liveness probe must be O(1). `SELECT count(*)` was O(block): `tile` is WITHOUT ROWID with
+                # the PNG stored inline, so counting walks the entire b-tree — ~140 MB of NFS reads per
+                # connection, now paid once per thread per block. Fetching one row proves the table exists
+                # and reads a single page.
+                con.execute("SELECT 1 FROM tile LIMIT 1").fetchone()
             except Exception:
                 con = None
-        _STORE_CACHE[key] = con
+        cache[key] = con
     if con is None:
         return None
     try:
         row = con.execute("SELECT data FROM tile WHERE tx=? AND ty=?", (tx, ty)).fetchone()
+        if row:
+            return row[0]
+        # Not stored — but the corpus ALSO records what does not exist upstream, and that answer is just as
+        # authoritative. Without this the fallback chain re-asks S3 for every tile the build already proved
+        # was a 404: 8 shards x 16 threads of pointless requests, answered with 503 SlowDown, each paying
+        # the full 1.5->6s retry ladder. Measured on the first launch: mosaics of ~95s where 55 of 64 tiles
+        # were known-absent, against ~7s where they were present -- an 11x overrun that would have put the
+        # 35,514-region sweep at ~27 days, well past the 6-day QOS. The corpus exists to end network traffic;
+        # a recorded absence is a result, not a miss.
+        if con.execute("SELECT 1 FROM absent WHERE tx=? AND ty=?", (tx, ty)).fetchone():
+            return ABSENT
     except Exception:
         return None
-    return row[0] if row else None
+    return None
 
 
 def get_tile(tx, ty):
     d = store_tile(tx, ty)
+    if d is ABSENT:
+        return None                                     # corpus says it does not exist; do not ask S3 again
     if d:
         try:
             return Image.open(io.BytesIO(d)).convert("RGB")
@@ -95,6 +121,15 @@ def get_tile(tx, ty):
     if os.environ.get("SPOT_TILES"):
         return None          # processed-tile mode: a miss is a miss. Fetching would pull the ORIGINAL tile
                              # into the processed cache and silently un-do the masking for that tile.
+    if os.environ.get("SPOT_NO_FETCH"):
+        # Full-sweep mode: the corpus IS the world. Its wanted-set is the union of every region in
+        # centres_all, so a tile it does not hold lies outside the sweep's footprint — there is nothing to
+        # be gained by asking S3 for it, and a great deal to lose. The mosaic grid overruns each region's
+        # edge (side 17, step 7 puts the last origin at 14, reaching 5 tiles past the boundary). For an
+        # INTERIOR region the neighbour already put those tiles in the corpus; for an EDGE region there is
+        # no neighbour, so every one of them was a live S3 request answered 404 or 503-throttled. Measured
+        # on Unst, Shetland: 55 of 64 tiles per mosaic, 95s a mosaic against ~7s cached.
+        return None
     os.makedirs(f"{TILES}/{tx}", exist_ok=True)
     # Retry with backoff: S3 returns 503 SlowDown under concurrent load (8 GPU tasks × ~289 tiles/region),
     # and the old no-retry get_tile dropped the WHOLE region to 0 boxes on a throttle burst (1018/1200 empties).
@@ -162,16 +197,43 @@ def main():
             todo.append((float(p_[0]), float(p_[1]), p_[2]))
     mine = [r for i, r in enumerate(todo) if i % a.of == a.shard]
     print(f"shard {a.shard}/{a.of}: {len(mine)} of {len(todo)} regions, model loaded once", flush=True)
-    done = 0
+    # Regions whose output vast_sweep.py has archived to /ix1 to keep /vast off production ES's back. Their
+    # boxes file is GONE from OUT, so the size test below would re-spot 40h of finished work. Read once:
+    # within a shard each tag is visited once, so the only case this serves is a RESTART after a sweep.
+    swept = set()
+    sw = os.environ.get("SPOT_SWEPT", "/ix1/ishi/gb1900/edition/spot2_archive/swept.txt")
+    if os.path.exists(sw):
+        swept = {ln.strip() for ln in open(sw) if ln.strip()}
+        print(f"shard {a.shard}: {len(swept)} regions already archived off /vast", flush=True)
+    done = fails = 0
     for k, (lon, lat, tag) in enumerate(mine):
         bf = f"{OUT}/boxes_{tag}.jsonl"
+        if tag in swept:
+            continue                                   # done, and swept to /ix1
         if os.path.exists(bf) and os.path.getsize(bf) > 0:
             continue                                   # resumable, same contract as before
         try:
             do_region(runner, a, lon, lat, tag)
             done += 1
+            fails = 0
         except Exception as e:
             print(f"FAIL {tag}: {type(e).__name__}: {e}", flush=True)
+            # A region that raises leaves its mosaic directory behind, holding the 2048px PNG that was
+            # saved just before inference. One is 5-6 MB; the rtx6k shards failed on EVERY region and left
+            # 4,333 directories totalling 20 G on a volume shared with production ES. Clean up here, where
+            # we know the region is over — do_region cannot, because it never returns.
+            shutil.rmtree(f"{OUT}/mosaics_{tag}", ignore_errors=True)
+            fails += 1
+            # Per-region tolerance is right for a bad region; it is catastrophic for a bad NODE. On an
+            # rtx6k in the preempt partition every region raises "CUDA error: no kernel image is available
+            # for execution on the device" — this build has no Turing kernels — and the shard cheerfully
+            # logged 2,220 failures at ~1s each and exited "SHARDDONE: 0 regions spotted". A run that
+            # cannot spot anything must fail loudly enough for Slurm to record it, not quietly return
+            # success having done nothing.
+            if fails >= 10:
+                raise RuntimeError(
+                    f"shard {a.shard}: {fails} consecutive region failures, last {type(e).__name__}: {e} "
+                    f"— aborting rather than burning through the shard producing nothing") from e
         if (k + 1) % 25 == 0:
             print(f"  [shard {a.shard}] {k+1}/{len(mine)} seen, {done} spotted "
                   f"({time.time()-T0:.0f}s)", flush=True)
@@ -228,11 +290,15 @@ def do_region(runner, a, lon, lat, tag):
     # A region that completed while NLS tile fetches were failing writes a near-empty file that is
     # indistinguishable from genuinely empty terrain, and the resume rule then skips it FOREVER because the
     # file is non-empty. Record what was actually seen, so a starved run can be told from a quiet one.
-    json.dump(dict(tag=tag, tiles_missing=tile_miss, tiles_total=tile_tot,
-                   miss_frac=round(tile_miss / max(1, tile_tot), 4), boxes=len(boxes)),
-              open(f"{OUT}/cover_{tag}.json", "w"))
+    with open(f"{OUT}/cover_{tag}.json", "w", encoding="utf-8") as cf:
+        json.dump(dict(tag=tag, tiles_missing=tile_miss, tiles_total=tile_tot,
+                       miss_frac=round(tile_miss / max(1, tile_tot), 4), boxes=len(boxes)), cf)
     outp = f"{OUT}/boxes_{tag}.jsonl"
-    with open(outp, "w") as f:
+    # encoding="utf-8" is REQUIRED, not tidiness. `ensure_ascii=False` emits real characters, and a plain
+    # open() encodes with the locale's charset — which under Slurm is ASCII, so the first Welsh or Gaelic
+    # name with a diacritic raised "ordinal not in range(128)" and took the WHOLE region down after all its
+    # inference had been paid for. 36 regions on shard 8 before this was caught.
+    with open(outp, "w", encoding="utf-8") as f:
         for rec in boxes.values(): f.write(json.dumps(rec, ensure_ascii=False) + "\n")
     try: os.rmdir(mdir)
     except OSError: pass

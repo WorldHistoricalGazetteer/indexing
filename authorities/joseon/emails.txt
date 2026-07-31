@@ -1,0 +1,66 @@
+Dear Dr. Choi and Hyunjong Kim,
+
+Thank you for sharing the sample data. I have had a chance to go through both datasets and wanted to share some initial observations ahead of our Zoom call.
+
+Both datasets are well-structured and align closely with what WHG works with, which is very encouraging.
+
+For the Daedongyeojido place names dataset, I can see the data includes Korean, Chinese, and English romanizations for each place, which is really valuable for WHG since we track name variants across scripts and languages. The feature type classifications are also very detailed, covering mountains, rivers, settlements, post stations, beacon fires, and many more categories. One thing I noticed is that 132 records are marked as impossible to locate (불가). Could you clarify how you would like these handled? We could either exclude them from the initial WHG submission or include them as unlocated records, depending on your preference.
+
+For the administrative districts dataset, the temporal structure with time_begin and time_end fields maps directly onto WHG's data format, which is great. I also noticed the base_year field uses a text format listing multiple snapshot years. For WHG ingestion, it would be helpful to discuss how to best represent these multiple snapshots.
+
+Both datasets are in Shapefile format, which WHG's tools support for conversion, so the technical path forward looks straightforward.
+
+Our Technical Director, Stephen Gadd, is copied on this email as he will be best placed to advise on the more technical aspects of the data integration. These are just my initial observations and I wanted to make sure we acknowledged the data promptly.
+
+Thank you again for sharing this and we look forward to discussing further on our call.
+
+Best regards,
+Palak Vashist
+Managing Editor, World Historical Gazetteer
+University of Pittsburgh
+
+From: HyunJong Kim <unqtsi@gmail.com>
+Date: Thursday, 16 July 2026 at 22:34
+To: Straub, Alexandra Lorana <ALS512@pitt.edu>
+Cc: usic62@jnu.ac.kr <usic62@jnu.ac.kr>, Mostern, Ruth <rmostern@pitt.edu>, Vashist, Palak <PAV82@pitt.edu>, Gadd, Stephen <stephen@docuracy.co.uk>, yusikchoi62@gmail.com <yusikchoi62@gmail.com>
+Subject: Re: Follow up from Incheon - World Historical Gazetteer
+
+You don't often get email from unqtsi@gmail.com. Learn why this is important
+Dear, Dr. Alexandra and WHG Team.
+
+I hope this email finds you well.
+
+Looking back, I believe our recent meeting in Incheon was an incredibly fruitful and meaningful occasion. While developing specialized historical GIS data is crucial, I deeply agree that building a reliable, globally encompassing historical gazetteer is an equally important task.
+
+In this regard, we fully support the idea of not only launching our independent service in Korea but also actively sharing our research outcomes through close collaboration with WHG.
+
+As mentioned during the meeting, while we plan to enable individual users to share historical GIS data in the future, our immediate focus is on sharing data managed at the team level first. Although we didn't have an English name for our team during the meeting, we have officially decided to name ourselves "Team Yeokji"
+
+Below, please find a brief introduction to our team and explanations for two types of sample data:
+
+Lastly, regarding our future communication: As my English is somewhat limited, while I will be attending our upcoming Zoom meetings, Dr. Yoosik Choi will be taking the lead in managing the collaboration with WHG moving forward. Should there be any specific inputs or opinions from my end, I will ensure they are organized and shared in writing ahead of time.
+
+Thank you once again for your wonderful collaboration, and I look forward to working together closely.
+
+Warm regards,
+Hyunjong Kim
+
+========================================================================================================
+About Team Yeokji (역지사지, 歷地思之)
+- Established in 2023, Team Yeokji (pronounced: yolk-gee) is a Korean research group dedicated to the study of Historical GIS.
+- The team’s full name, “Yeokjisaji,” was originally devised a double entendre: one for “yeok-ji-sa-ji” (易地思之; “to put oneself in another’s shoes” in Korean), and the other for “yeok-sa-ji-ri” (歷史地理; “historical geography”). For brevity’s sake, however, the group finally selected “Team Yeokji” as its official English name.
+- Team Yeokji actively shares research achievements and GIS layers on historical geography through its wiki-based platform: https://www.hisgeo.info. In the long run, it aims to develop a full-scale Web GIS service.
+
+Database #1: Place names and map symbols printed on Daedongyeojido
+- Daedongyeojido (大東輿地圖; Territorial Map of the Great East) is a woodblock-printed map that covers the entire territory of Joseon in the late 19th century. Not only does it represent the pinnacle of Joseon cartography, but it also serves as the most important resource when studying pre-modern historical geography in Korea.
+- Team Yeokji converted all the place names and map symbols from the paper map to digital files. The task started as groundwork for a complete, unified dataset that would encompass all place names mentioned in significant historical resources. The result amounts to 11,229 place names and 4,226 map symbols (15,529 unique data points after removing overlaps).
+- For an overview of Daedongyeojido in English alongside its images:
+  - https://en.wikipedia.org/wiki/Daedongyeojido
+  - https://www.museum.go.kr/ENG/contents/E0402000000.do?searchId=search&schM=view&relicId=4502
+
+Database #2: County seats and administrative districts during the Joseon Dynasty
+- Team Yeokji has restored the governing entities in two formats, point and polygon, given that a point alone was insufficient to understand or analyze the spatial structure of pre-modern Korea.
+- Two critical moments resulted in extensive changes to the districts: the Japanese colonial redistricting order in 1914 and the north-south division in 1945. Still, scholars recognize all the minor changes in between those major events. To address the issue, Team Yeokji is now constructing a continuous, year-by-year database of administrative districts and county seats (邑治, eupchi) spanning the entire Joseon Dynasty (1392–1910).
+- The database structure is designed similarly to the CHGIS (China Historical GIS).
+- Spatial layers upon a continuous time series can be challenging for general users to navigate through. Thus, Team Yeokji also provides map layers centered on specific years—key moments, snapshots, or highlights in history—for better accessibility.
+

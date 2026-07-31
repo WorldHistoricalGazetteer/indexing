@@ -21,7 +21,15 @@ import argparse, glob, json, math, os, sys
 import numpy as np, cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hisam_pins import read_tile, N17
+# See sheet_clean: hisam_pins drags in the Hi-SAM repo for a tile reader this module can get locally.
+from make_font_testset_v2 import _get_tile
+N17 = 1 << 17
+
+
+def read_tile(tx, ty, fetch=False):
+    import numpy as _np
+    t = _get_tile(tx, ty)
+    return None if t is None else _np.repeat(t[:, :, None], 3, 2)
 
 
 def lat_px(lat):

@@ -20,7 +20,7 @@ import argparse, base64, json, math, os, sys, time
 import numpy as np, cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hisam_pins import N17
+N17 = 1 << 17          # local: hisam_pins pulls in the Hi-SAM repo and a second env for one constant
 from sheet_clean import stitch, flat_field, lat_px
 
 CLASSES = ["paper", "text", "dash", "dotline", "line", "rail", "hatch", "stipple", "solid"]
@@ -285,14 +285,20 @@ def cmd_apply(a):
     for i, c in enumerate(CLASSES):
         print(f"    {c:6s} {(((lab==i)&ink).sum())/max(1,ink.sum()):.1%} of ink", flush=True)
 
+    if getattr(a, "out_labels", None):
+        os.makedirs(os.path.dirname(a.out_labels), exist_ok=True)
+        cv2.imwrite(a.out_labels, lab)
+        print(f"  class map -> {a.out_labels}", flush=True)
+
     if a.diag:
         cols = {"paper": (255, 255, 255), "text": (30, 60, 255), "line": (0, 160, 0),
-                "hatch": (255, 152, 0), "solid": (208, 32, 32)}
+                "hatch": (255, 152, 0), "solid": (208, 32, 32), "dash": (0, 200, 160),
+                "dotline": (120, 200, 0), "rail": (140, 0, 200), "stipple": (200, 200, 0)}
         rgbd = np.repeat(gray[:, :, None], 3, 2).copy()
         for i, c in enumerate(CLASSES):
             if c == "paper":
                 continue
-            rgbd[(lab == i) & ink] = cols[c]
+            rgbd[(lab == i) & ink] = cols.get(c, (128, 128, 128))
         os.makedirs(os.path.dirname(a.diag), exist_ok=True)
         cv2.imwrite(a.diag, cv2.cvtColor(rgbd, cv2.COLOR_RGB2BGR))
         print(f"  diagnostic -> {a.diag}", flush=True)
@@ -333,6 +339,10 @@ def main():
         else:
             p.add_argument("--tag", required=True)
             p.add_argument("--out-tiles", default=None)
+            p.add_argument("--out-labels", default=None,
+                           help="save the per-pixel class map as a PNG. More useful than the erased raster "
+                                "for component work: a component can be judged by the fraction of its "
+                                "pixels classified as text, which cannot destroy a letter as erasure can")
             p.add_argument("--diag", default=None)
             p.add_argument("--clean-png", default=None)
             p.add_argument("--block", type=int, default=1024)

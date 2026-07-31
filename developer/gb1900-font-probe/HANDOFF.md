@@ -132,6 +132,44 @@ the new pass.** The 94 starved regions are subsumed and need no special handling
 **Cannot be chained** to the corpus job: Slurm silently ignores cross-cluster dependencies
 (`sbatch -M gpu --dependency=afterany:<htc job>` reports success, shows `(null)`, and starts immediately).
 
+**Launch the /vast valve alongside it** (`sbatch vast_watch.sbatch`). `/vast/ishi` is a 1 TB quota shared
+with production ES and stood at **83%** when the sweep was launched; `spot2/` adds ~30 G. The watcher checks
+every 10 min and, above 90%, tars the oldest *finished* regions to `/ix1/ishi/gb1900/edition/spot2_archive`
+until back under 86% — write → verify → delete → index, in that order, so nothing leaves `/vast` until it
+has been read back off `/ix1`. Swept tags are appended to `swept.txt`, which `spot_sheet.py` now reads at
+startup: without it a restarted shard would re-spot everything the sweeper had archived, because the resume
+rule keys on the boxes file being present.
+
+Consequence for step 3: if anything was swept, `…/spot2/boxes_gb_*.jsonl` is no longer the whole series.
+Run `python vast_sweep.py --restore-to $SLURM_SCRATCH/spot2` on the node first and glob that instead —
+node-local, so the full set is never reassembled on `/vast`. `--status` says whether any of this applies;
+if it reports 0 archived, the plain glob is complete.
+
+### 2b. Verify completeness — the sweep does NOT guarantee it
+
+A shard can end having spotted less than its share, and the count of `boxes_*.jsonl` is the only thing that
+proves otherwise. Two ways it happened on 29 July:
+
+- **Locale.** `boxes_<tag>.jsonl` was written through a plain `open()` while `json.dumps` emitted non-ASCII
+  (`ensure_ascii=False`). Python encodes text files with the *locale* charset, and one preempt node
+  (`gpu-n61`) had no UTF-8 locale — so identical code that ran clean on fifteen shards killed **34%** of
+  regions on that one, after paying for all nine mosaics of inference each time (`ö`, `°` — recogniser noise
+  as much as real names). Not a property of the data; a property of the machine. Fixed twice over:
+  `encoding="utf-8"` in `spot_sheet.py`, and `LC_ALL=C.UTF-8 LANG=C.UTF-8 PYTHONUTF8=1` in both sbatch
+  scripts so it cannot depend on where a shard lands.
+- **Dead GPU.** rtx6k nodes have no kernels in this torch build; those shards logged `FAIL` per region and
+  exited *reporting success*. `spot_sheet` now aborts after 10 consecutive failures.
+
+Because the resume rule skips only regions that already have a boxes file, **a failed region is retried
+automatically by any later run of the same shard** — restarting a broken shard recovers its losses; no
+separate mop-up pass is needed. What is needed is the check:
+
+```bash
+ls /vast/ishi/gb1900/edition/spot2/boxes_*.jsonl | wc -l          # must reach 35,514
+grep -h "^FAIL" cov/spotall_*.log | sed 's/.*: //' | sort | uniq -c
+sbatch spot_all.sbatch    # if short: resumes, touching only the gaps
+```
+
 ### 3. Retrain and re-evaluate the join on `spot2/`
 ```bash
 python join_train.py --boxes '/vast/ishi/gb1900/edition/spot2/boxes_gb_*.jsonl' \
@@ -140,6 +178,39 @@ python assemble_labels.py --boxes '…/spot2/boxes_gb_*.jsonl' --validate \
   --blocks-from join_rf5.test_blocks.json --model join_rf5.joblib --model-thr 0.5 \
   --max-lines 3 --centre-tol 0.25
 ```
+**Sizing, measured 29 July — read before submitting.** `join_train` is the cheap half: 4,000 files with
+`--sample-per-region 200` gave 305,931 pairs over 700 blocks in ~12 min inside 64 G. `assemble_labels` is
+the expensive half, because it holds every word *and* every candidate pair in memory at once:
+
+| held-out files | words | RSS | wall per stage |
+|---|---|---|---|
+| 506 | 122 k | 27 G | ~33 min — fine |
+| 2,290 | 412 k | 64 G → OOM; 400 G → **182 G, TIMEOUT at 8 h** | never finished one stage |
+
+**Violently superlinear — 3.4× the words cost >13× the time and 6.8× the memory.** 412 k words is already
+past the practical ceiling: with 400 G it still could not complete a single stage inside 8 h. The full series
+(~35.5 k regions → ~10 k held-out files → ~1.8 M words) therefore **cannot be evaluated whole.** Either keep
+the bounded frozen sample (~500 held-out files, which produced the table below), or profile and fix the
+assembly's scaling first — suspect candidate-pair generation, not the load.
+
+Do **not** extrapolate stage time from load time: loading 2,290 files took 45 min and the assembly then ran
+7 h without finishing. There is no progress output inside that phase — add one before trusting an estimate.
+
+Four traps, each of which cost a run:
+
+- **Never `--out /dev/null`.** `assemble_labels` derives `<out>.validate.json` from `--out`, so it dies with
+  `PermissionError` *after* completing all the work — and `set -e` then takes the later stages with it.
+- **Always `python -u`.** Otherwise stdout block-buffers into the Slurm log and a healthy job looks identical
+  to a hung one; also to an OOM-killed one.
+- **Freeze the evaluation region list.** While the sweep runs the boxes directory GROWS (9,567 → 11,830 in
+  two hours), so "every Nth file" picks a different set on each computation and two runs cannot share a
+  table. Frozen at `/ix1/ishi/gb1900/edition/join_eval_regions.txt`.
+- **Run every comparison stage in ONE job**, sharing one snapshot and one split.
+
+**Re-measure the baselines on every split.** On the new split nearest-word alone rose 0.219 → 0.363, so the
+learned join's 0.582 is *not* a +0.157 gain on the published 0.425 — most of that gap is a different, easier
+test set. Only the rule baseline scored on the same held-out blocks supports a claim.
+
 **Sample broadly, not deeply.** 60 regions currently give 31,779 pairs, so the full series would give
 ~18.8M — far more than a 19-feature model needs, and taking *everything* from a few dense regions is exactly
 what produced the selection bias. `join_train` now shuffles the region list (largest-first would take every
@@ -225,7 +296,9 @@ two candidate types rather than one false verdict.
 ## Where things stand
 
 **Assembly** — the largest validated piece. Held out by 12-km blocks, exact reproduction of the volunteer's
-transcription:
+transcription.
+
+Published figures, on the network-fed pass (kept for the record; **not** comparable to the table below):
 
 | | |
 |---|---|
@@ -234,8 +307,41 @@ transcription:
 | learned join + sequence constraint | 0.425 |
 | …+ hard negatives, on a later split | 0.442 → **0.453** with end tangents |
 
-Four attempted improvements: **hard negatives +0.009**, **end tangent +0.011**, face features **null**,
-greedy topology **null**.
+Four attempted improvements there: **hard negatives +0.009**, **end tangent +0.011**, face features
+**null**, greedy topology **null**.
+
+**Retrained on the corpus-fed pass, 29–30 July** — 305,931 pairs over 700 blocks (vs 31,779 over 60
+regions). One frozen split throughout: 506 held-out region files, 122,468 words, 25,080 GB1900 labels,
+210 blocks the model never saw.
+
+| on the same split | exact | contains all | right *n* | over-join |
+|---|---|---|---|---|
+| nearest word alone | 0.357 | — | — | — |
+| hand-set rules | 0.517 | 0.651 | 0.618 | 0.325 |
+| **learned join + sequence constraint** | **0.576** | 0.691 | 0.696 | 0.300 |
+| learned, end tangent ablated | 0.509 | 0.651 | 0.631 | 0.333 |
+| *control: same model, OLD pass, 3,765 labels* | *0.546* | *0.743* | *0.648* | *0.327* |
+
+**The whole table sits ~0.14 above the published one, baselines included** (nearest-word 0.219 → 0.357), so
+the level reflects an easier split — far-northern, sparser, shorter labels — not a 0.425 → 0.576 improvement.
+Read the gaps, not the absolutes:
+
+- **learned over rules: +0.059** (was +0.044). The learned advantage survives 10× the training data and
+  widens slightly.
+- **the end tangent is now worth +0.067, six times the +0.011 it scored before** — and it is the single
+  largest effect measured. This is the question `gline` made answerable: with the model's *own* centre-line
+  rather than one reconstructed from the outline, direction is the dominant signal. Ablate it and the
+  learned join (0.509) falls **below** the hand-set rules (0.517): the model's edge over the rules depends
+  entirely on having a real baseline to read direction from.
+- the learned join joins more (28.3% of words vs 21.4%) *and* is right more often, with less over-join.
+
+**Over-join is now the leading error mode**: 30% of labels carry extra words, and only 69.6% have the right
+word count. That, not pairwise precision, is where the next gain is.
+
+Caveat on the control: it necessarily scores different labels (only the 297 old-pass files inside the
+held-out blocks, 3,765 labels), and those files average 47.6 words against 242 in the new pass — so its
+higher nearest-word baseline (0.393) partly reflects sparser detections making single-word labels trivially
+matchable. Indicative, not a like-for-like control.
 
 **Recognition is not the bottleneck** — 93% of labels are read with no unknown-character marker, and exact
 match on that clean subset is only ~0.48. Grouping is the limit.
@@ -263,6 +369,31 @@ doing the joining. I twice nearly reported a gain that was a change of denominat
 i.e. most OS labels strongly curved. They are not. Two bugs: contour sides paired by *arc length* rather than
 by position along the reading direction, and cap tips dragging the average at exactly the ends where the
 tangent is taken. Corrected: median 2.16°, but the axis is still wrong by >12° for 12.4% of words.
+
+**The spotter never actually read the tile corpus until 29 July, and the fallback hid it.** `mosaic()`
+reads its 64 tiles through a 16-thread pool; `sqlite3.connect` defaults to `check_same_thread=True`, so the
+connection cached by one thread raised in every other, `store_tile` swallowed the exception as a miss, and
+S3 silently served the whole sweep. A test against the pre-fix code retrieves **0 of 64** known-present
+tiles threaded, 64/64 serially. Consequences, all of which have to be assumed of any output made before
+that date:
+
+- Regions cost minutes to an hour because they were network-bound — the corpus bought nothing because
+  nothing consulted it. The 33-hour build was sound; the reader was not.
+- Under 8 concurrent shards the fallback drew `503 SlowDown` and gave up after 5 retries, so **in-region
+  tiles were dropped even where the corpus held them** (`mosaic 1/9 empty (miss=15)` on a block that is
+  64/64 present). The 94 "starved regions" are the visible tail of this, not a separate accident.
+- Same region, same weights, before and after: **742s → 25s, and 15 boxes → 93.** So the old pass was
+  spotting on largely absent imagery. **Do not treat the `spot/` → `spot2/` comparison as a regression
+  test** — the imagery was not identical, and reproduction is not the expected outcome. Measure the old
+  pass's dropout with it instead.
+
+Two smaller faults found with it, both fixed: `store_tile` never consulted the corpus's `absent` table, so
+every recorded 404 was re-asked of S3 on every visit; and the connection liveness probe was
+`SELECT count(*) FROM tile`, which on a `WITHOUT ROWID` table with the PNG inline walks the whole b-tree —
+~140 MB of NFS reads per connection. (Same property makes `--verify` a ~1.5 h job.) `SPOT_NO_FETCH=1` now
+makes the corpus authoritative for the sweep, so the mosaic grid's overrun past a region edge cannot become
+live S3 traffic: harmless inland where the neighbour cached those tiles, ruinous at the coast where there
+is no neighbour.
 
 **A non-empty `boxes_<tag>.jsonl` does not mean the region was properly spotted.** `spot_sheet` writes once
 at the end, so non-empty means *completed* — but a region that completed while tile fetches were failing
@@ -313,4 +444,6 @@ and is therefore circular.
 | `bench_spotter.py` | scores any spotter against GB1900; refuses pin-prompted output as circular |
 | `gbstamp_records.py` | W3C Web Annotation emitter + validator |
 | `spot_all.sbatch` | staged: spot ALL 35,514 regions from the corpus into `spot2/`, one model load per shard |
+| `vast_sweep.py` | the `/vast` valve: archives finished regions to `/ix1` above 90%; `--status`, `--sweep`, `--restore-to` |
+| `vast_watch.sbatch` | runs the valve every 10 min for the duration of the sweep (htc, 1 core) |
 | `respot_all.sbatch` | superseded by `spot_all.sbatch`; covered only the 1,307 already spotted |

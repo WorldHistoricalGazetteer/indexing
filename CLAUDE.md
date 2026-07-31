@@ -202,24 +202,6 @@ jobs. The `htc` partition has four QOS tiers:
 
 ---
 
-## `types.sh` — Type System Orchestrator (`scripts/types.sh`)
-
-Slurm-based orchestration for the full type system pipeline. Submits
-dependency-chained jobs for each step.
-
-| Command | Description |
-|---------|-------------|
-| `bash scripts/types.sh --all --es-host URL` | Full pipeline: build → map → sync → merge |
-| `bash scripts/types.sh --build-vocabs --es-host URL` | Build GeoNames/Wikidata/Pleiades vocabulary files |
-| `bash scripts/types.sh --map` | Apply AAT mappings (static → Wikidata → SPARQL) |
-| `bash scripts/types.sh --sync --es-host URL` | Sync AAT hierarchy → ES types index |
-| `bash scripts/types.sh --merge --es-host URL` | Merge cross-vocabulary fields into ES |
-| `bash scripts/types.sh --status` | Show running/recent type pipeline jobs |
-| `bash scripts/types.sh --force --sync --es-host URL` | Force re-download AAT dump |
-| `bash scripts/types.sh --wait --all --es-host URL` | Run synchronously (wait for each step) |
-
----
-
 ## Key Indices (ES 9.x)
 
 | Index | Schema | Content |
@@ -231,18 +213,7 @@ dependency-chained jobs for each step.
 
 ### Places schema (key fields)
 
-```
-place_id     keyword    — namespaced ID (e.g. gn:2988507, wd:Q90, osm:n12345)
-title        text       — primary name
-toponyms[]   nested     — {toponym_id, timespans[]}
-geometries[] nested     — {geom (geo_shape), repr_point (geo_point), timespans[]}
-types[]      nested     — {identifier, label, sourceLabel}
-ccodes[]     keyword    — ISO 3166-1 alpha-2
-relations[]  nested     — {relation_type, related_place_id, label, timespans[]}
-links[]      nested     — {type, identifier}
-population   long
-elevation    integer
-```
+Field definitions are in `schemas/places.json`.
 
 ---
 
@@ -353,123 +324,17 @@ Index names use wildcard/alias patterns for dated indices:
 
 ---
 
-## Type System (`typesystem/`)
+## Type System
 
-### Overview
-
-The type system manages a canonical **Getty AAT** (Art & Architecture
-Thesaurus) place-type hierarchy and cross-vocabulary mappings. The ES `types`
-index serves the type-tree widget in the Django search UI and enables
-hierarchical type filtering in search queries. Multilingual AAT labels and
-scope notes are harvested and stored for future internationalisation.
-
-### Module structure
-
-| Module | Role |
-|--------|------|
-| `aat_config.py` | AAT entry points, excluded subtrees, fclass map, SPARQL/API URLs |
-| `sync_aat_types.py` | Download AAT N-Triples dump → parse hierarchy → index to ES |
-| `aat_mapper.py` | Augment `typesystem/data/*.json` with AAT mappings (static, SPARQL, Wikidata bridge) |
-| `merge_mappings.py` | Write cross-vocabulary fields from data files into ES types docs |
-| `tree_api.py` | FastAPI router for type-tree widget (`/api/types/tree`, search, descendants) |
-| `build_geonames_types.py` | Build `typesystem/data/geonames.json` from featureCodes_en.txt |
-| `build_wikidata_types.py` | Build `typesystem/data/wikidata.json` via ES P31 aggregation + Wikidata API |
-| `build_pleiades_types.py` | Build `typesystem/data/pleiades.json` from Pleiades vocabulary (includes AAT same_as) |
-
-### Type data files (`typesystem/data/`)
-
-| File | Source | Structure |
-|------|--------|-----------|
-| `osm.json` | OSM TagInfo API | Keyed by tag key → values with counts |
-| `ohm.json` | OHM Overpass API | Same structure as OSM |
-| `geonames.json` | GeoNames featureCodes_en.txt | Keyed by feature class (A, H, P, etc.) → codes |
-| `wikidata.json` | ES aggregation + Wikidata API | Flat list of P31 Q-items with labels |
-| `pleiades.json` | Pleiades vocabulary API | Flat list with `same_as` AAT URIs |
-
-Each value entry can carry an `aat_mapping` dict:
-`{aat_id, aat_term, confidence, source}`.
-
-### AAT mapping pipeline
-
-```bash
-# 1. Build type vocabulary files (one-time or after re-ingestion)
-python -m typesystem.build_geonames_types
-python -m typesystem.build_wikidata_types --es-host URL
-python -m typesystem.build_pleiades_types
-
-# 2. Apply curated static AAT mappings to all data files
-python -m typesystem.aat_mapper static
-
-# 3. Bridge Wikidata → AAT via P1014 property
-python -m typesystem.aat_mapper wikidata
-
-# 4. SPARQL label matching for remaining unmapped entries
-python -m typesystem.aat_mapper sparql
-
-# 5. Validate AAT IDs against the Getty API
-python -m typesystem.aat_mapper validate
-
-# 6. Report coverage
-python -m typesystem.aat_mapper report
-```
-
-### ES types index pipeline
-
-```bash
-# 1. Sync AAT hierarchy → ES types index
-python -m typesystem.sync_aat_types --es-host URL              # bulk N-Triples
-python -m typesystem.sync_aat_types --es-host URL --api        # JSON API fallback
-
-# 2. Merge cross-vocabulary mappings into ES
-python -m typesystem.merge_mappings --es-host URL
-```
-
-### Legacy code (`typesystem/AAT_legacy/`)
-
-The `AAT_legacy/` directory preserves the original Django app (`placetypes`)
-used on the DigitalOcean VM. Key files:
-- `management/commands/sync_aat_types.py` — 780-line Django management command
-  (ported to standalone `typesystem/sync_aat_types.py`)
-- `aat_utils.py` — tree widget and search utilities (ported to `typesystem/tree_api.py`)
-- `models.py` — Django `Type` model with materialized path
-- `views.py` — JSON endpoints for tree widget
-
-### Native type vocabularies (per authority)
-
-- **GeoNames**: `{identifier: "PPL", label: "P", sourceLabel: "P.PPL"}`
-- **Wikidata**: `{identifier: "Q515", label: "wikidata", sourceLabel: "Q515"}`
-- **OSM**: `{identifier: "city", label: "osm", sourceLabel: "place=city"}`
-  - Currently extracts from 6 tag keys: `place`, `natural`, `water`, `waterway`, `historic`, `landuse`
-  - 11 additional keys identified for expansion: `amenity`, `tourism`, `leisure`, `man_made`, `boundary`, `military`, `building`, `aeroway`, `railway`, `geological`, `power`
-  - `boundary=administrative` will be **dual-indexed**: into the `places` index
-    (searchable as places) **and** a separate `boundaries` index (feeding the
-    Space filter in the search UI)
-  - Raw TagInfo data in `typesystem/data/osm.json`; detailed inventory in
-    `developer/osm-types-inventory.md`
-- **OHM**: `{identifier: "city", label: "ohm", sourceLabel: "place=city"}`
-  — Same tag schema as OSM; excellent temporal coverage (`start_date`/`end_date`).
-  Raw data in `typesystem/data/ohm.json`; inventory in `developer/ohm-types-inventory.md`.
-- **Pleiades**: `{identifier: "settlement", label: "pleiades", sourceLabel: "settlement"}`
-  — ~151 types already have AAT same_as URIs from the Pleiades vocabulary.
-- **TGN**: `{identifier: "place", label: "tgn", sourceLabel: "getty-tgn"}` (not extracting AAT types yet)
-
+The AAT type-system pipeline (vocabulary building, AAT mapping, ES `types` index sync,
+`scripts/types.sh`) is documented in the **type-system** skill — invoke it when working on
+place types or AAT alignment.
 
 ---
 
 ## Environment & Paths
 
 Configuration is in `.env` (root) and `processing/settings.py`.
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `IX1_BASE` | `/ix1/ishi` | Primary CRC storage |
-| `IX3_BASE` | `/vast/ishi` | Fast CRC storage |
-| `DATA_DIR` | `${IX1_BASE}/data` | Authority data files |
-| `ES_HOST` | Auto-detected from staging info file | Staging ES URL |
-| `PROD_ES_URL` | `http://localhost:9200` | Production ES URL |
-| `BATCH_SIZE` | `5000` | ES bulk indexing batch |
-
----
 
 ## Key Commands
 
@@ -648,7 +513,13 @@ the gitignored **`.env.local`**, never the tracked `.env`.
   the source vocabulary (e.g. `osm`, `wikidata`, `pleiades`, `P` for GeoNames
   feature class).
 - Full geometries live in the `/vast` geom store (keyed
-  `{place_id}_{geometry_index}`), **not** in ES `_source`. Each ES `geometries[]`
+  `{place_id}_{geometry_index}`), **not** in ES `_source`. The store's key→shard
+  index is **`index.sqlite`** (`processing.geom_store.GeomStoreReader` prefers it,
+  falling back to the legacy `index.json`). This matters: `json.load()`-ing the
+  1.02 GB `index.json` cost ~5.4 GB of RSS, which is why `containment=exact`
+  silently never loaded in prod until 2026-07-30 (place#165). `consolidate_geom_store`
+  writes both; rebuild the SQLite index alone with
+  `python -m processing.build_geom_index_sqlite build` (then `verify`). Each ES `geometries[]`
   entry carries `repr_point` (geo_point, guaranteed *within* the geometry),
   `bounds`, and `h3_cover` / `h3_centroid` — the latter computed from the real
   geom-store polygon (incl. GeometryCollections; large polygons are simplified

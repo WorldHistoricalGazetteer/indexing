@@ -25,6 +25,8 @@ sys.path.insert(0, "/vast/ishi/gb1900/probe/font")
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_font_testset_v2 import derotate
 from weak_sig import is_numeral
+from segment_spots import binarise
+from slant_word import shear_slant
 
 SAFE = 512
 INST = "/vast/ishi/gb1900/probe/mapreader_text/install"
@@ -95,6 +97,15 @@ def main():
     ap.add_argument("--out", default="/vast/ishi/gb1900/edition/spot/face_proposals.jsonl")
     ap.add_argument("--qc", default=None)
     ap.add_argument("--qc-n", type=int, default=200)
+    ap.add_argument("--seed", type=int, default=0, help="sampling seed for the --n truncation")
+    ap.add_argument("--slant-weight", type=float, default=0.5,
+                    help="L2 weight of the whole-word slant scalar appended to the unit-norm descriptor. "
+                         "0 disables it. 0.5 measured best (balanced LOO 0.514 -> 0.577); 1.0+ HURTS, because "
+                         "one scalar starts to outweigh 896 dimensions")
+    ap.add_argument("--min-sharp", type=float, default=1.0,
+                    help="slant readings weaker than this contribute 0, not a spurious 'upright'")
+    ap.add_argument("--slant-npz", default="/vast/ishi/gb1900/edition/spot/slant_word.npz",
+                    help="precomputed anchor slants from slant_word.py")
     ap.add_argument("--inventory", default="labels/face_inventory.json")
     ap.add_argument("--keep-numerals", dest="skip_numerals", action="store_false",
                     help="propose faces for numeric transcripts too (they have no face in the inventory)")
@@ -111,6 +122,27 @@ def main():
     A = z[a.column].astype(np.float32)
     A /= (np.linalg.norm(A, axis=1, keepdims=True) + 1e-9)
     ASIG = z["sigs"].astype(str)
+    # The slant block must be appended to the ANCHORS too. Appending it to the query alone would compare
+    # vectors of different lengths in different spaces — the kind of mistake that still returns plausible
+    # numbers. Anchor slants come from the precomputed npz, matched on gcx/gcy.
+    if a.slant_weight:
+        sw = np.zeros((len(A), 1), np.float32)
+        if os.path.exists(a.slant_npz):
+            sz = np.load(a.slant_npz, allow_pickle=True)
+            smap = {(round(float(x), 1), round(float(y), 1)): (float(v), float(p))
+                    for x, y, v, p in zip(sz["gcx"], sz["gcy"], sz["shear"], sz["sharp"])}
+            hit = 0
+            for i, (x, y) in enumerate(zip(z["gcx"], z["gcy"])):
+                v = smap.get((round(float(x), 1), round(float(y), 1)))
+                if v and not np.isnan(v[0]) and v[1] >= a.min_sharp:
+                    sw[i, 0] = v[0] / 30.0
+                    hit += 1
+            print(f"slant: {hit}/{len(A)} anchors carry a usable reading "
+                  f"(weight {a.slant_weight})", flush=True)
+        else:
+            print(f"slant: {a.slant_npz} missing — anchors get 0, which silently disables the cue", flush=True)
+        A = np.hstack([A, sw * a.slant_weight])
+        A /= (np.linalg.norm(A, axis=1, keepdims=True) + 1e-9)
     if a.drop_sigs:
         keep = ~np.isin(ASIG, a.drop_sigs)
         print(f"dropping {int((~keep).sum())} anchors of {a.drop_sigs}", flush=True)
@@ -175,8 +207,20 @@ def main():
                 n_num += 1
                 continue
             recs.append(r)
+    # Shuffle before truncating. `recs[:n]` on a filename-sorted glob takes the alphabetically first sheets,
+    # so a 1,500-spot run over 40 sheets would in fact have been a run over the first two or three of them.
+    import random as _r
+    _r.Random(a.seed).shuffle(recs)
+    n_all = len(recs)
     recs = recs[: a.n]
+    if n_all > len(recs):
+        print(f"  sampled {len(recs)} of {n_all} eligible spots (seed {a.seed})", flush=True)
     print(f"{len(recs)} spots to propose for ({n_num} numeral transcripts skipped)", flush=True)
+    if not recs:
+        print("nothing to propose for — do the --boxes files carry `text`? "
+              "(the per-sheet coverage files hold polygons only)", flush=True)
+        print("PROPOSEDONE", flush=True)
+        return
 
     torch, model, input_format, feat, dev = load_backbone()
     out, qc = [], []
@@ -191,6 +235,11 @@ def main():
             miss += 1
             continue
         d = d / (np.linalg.norm(d) + 1e-9)
+        if a.slant_weight:
+            sv, sp = shear_slant(binarise(crop))
+            sv = 0.0 if (np.isnan(sv) or sp < a.min_sharp) else sv / 30.0
+            d = np.concatenate([d, [sv * a.slant_weight]]).astype(np.float32)
+            d /= (np.linalg.norm(d) + 1e-9)
         per = class_sims(d)
         order = sorted(per, key=per.get, reverse=True)
         top, second = order[0], order[1] if len(order) > 1 else None

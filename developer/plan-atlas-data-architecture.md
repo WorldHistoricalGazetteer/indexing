@@ -1,10 +1,15 @@
-# Plan — tileset architecture: geometry channels, labels, and area selection
+# Plan — Atlas data architecture: geometry channels, labels, the temporal model, and area selection
 
 > **Status:** proposed. §8 step 1 done (whg3 `2182ebfec`); everything else not started.
-> **Written:** 30 July 2026
+> **Written:** 30 July 2026 (renamed from `plan-tileset-architecture.md` — it outgrew the name;
+> older issue comments link to the previous path)
 > **Supersedes the framing of:** `plan-tiling-fixes-159-160.md` (its findings stand; §7 says what changes)
 > **Issues:** place#156 (Atlas Areas UI), place#159 (per-fragment labels), place#160 (missing tiles),
-> place#140 (low-zoom coverage), place#133 (point density), place#131 (per-feature temporal props)
+> place#140 (low-zoom coverage), place#133 (point density), place#131 (per-feature temporal props),
+> **place#164 (temporal model — see `plan-temporal-model.md`)**, **place#165 (geom-store index)**,
+> **place#166 (channel model)**
+> **Runs AFTER `plan-temporal-model.md`**, which commissions the re-ingestion this plan's retile
+> rides on — see §8's entry condition.
 > **Repos:** `indexing` (tiling), `whg3` (rendering + interaction), `tileboss` (`style.json`)
 
 ---
@@ -108,11 +113,46 @@ So switching the map layers onto the temporal filter today would **blank OpenStr
 Getty TGN and Native Land the moment a user drags the Date Range into the past**, and blank
 GeoNames in plain range mode. `(2025, 2025)` is a snapshot stamp being read as a lifespan.
 
-This does not sink §5.1 — it moves it. The fix is a data convention, decided once and applied at
-staging: a contemporary source should be **open-ended** (`start` = coverage start or absent,
-`end` = 9999, as `un` already does) or carry **no** span, never a point-stamp at the snapshot
-year. Until then the client cannot tell "this place existed only in 2025" from "we tiled this in
-2025".
+*(The `un` row reports the **tile** value. ES holds `{start: {latest: 2025}}` with no end; the
+`9999` is `TILE_OPEN_END_YEAR` substituted for an absent endpoint. The table describes tile
+sentinels, not stored semantics — a distinction the temporal model depends on.)*
+
+This does not sink §5.1 — it moves it. **An earlier draft of this section prescribed the wrong
+fix** (make contemporary sources open-ended, `end = 9999`). §1.6 below, and
+`plan-temporal-model.md` in full, supersede it: `(2025, 2025)` is not a provenance artefact to be
+neutralised, it is a real claim about the place that we are recording in the wrong field.
+
+---
+
+## 1.6 The date stamps encode the wrong claim — split out to its own plan
+
+`schemas/places.json` gives every temporal endpoint `in` / `earliest` / `latest`, and ingestion
+uses `in` almost exclusively. So a source that records places *as they were* at a moment — OSM's
+2025 dump, Index Villaris in 1680 — has its **attestation** stored as a **lifespan**:
+
+| encoding | claim |
+|---|---|
+| `start.in = Y`, `end.in = Y` | the place existed **only** in year Y |
+| `start.latest = Y`, `end.earliest = Y` | attested alive at Y — started no later, ended no earlier |
+
+That is why §1.5's stamps are unusable, and encoding them correctly dissolves the problem with no
+convention hack: an OSM boundary is then not *definitely* alive in 1500 but **is** *possibly*
+alive, because `start.earliest` is absent and therefore unbounded.
+
+**The analysis, the per-source encoding table, the Wikidata precision mapping, the calendar-model
+finding and the dump-refresh sequencing now live in `plan-temporal-model.md`** (place#164). It
+outgrew this document — it is a different programme, in ingestion and query semantics rather than
+tiling, and needs its own owner.
+
+**What this plan needs from it:** only §5.1. The temporal filter on map layers is the largest
+measured win here (it collapses OHM's overlap by 88–99 %, §1.4) and it **must not ship first**, or
+it blanks `osm` / `osm_misc` / `tgn` / `nl`. Two further consequences are recorded there and
+matter to scheduling here:
+
+- the client half becomes **two filter modes** — *definitely* vs *possibly* alive — rather than one
+  range test plus an "+Undated" escape hatch;
+- refreshing the `osm` / `ohm` dumps forces a retile of exactly the three buckets §8 covers, so
+  running the tiling fix standalone first means paying that 24 h retile twice.
 
 ---
 
@@ -131,7 +171,7 @@ too. A bucket holding all three needs all three answers, not one.
 
 ---
 
-## 3. The channel model
+## 3. The channel model (**place#166**)
 
 Each bucket emits up to five channels. Each is its own `tippecanoe` pass with its own flags and
 zoom range; all are `tile-join`ed into **one source-layer** and distinguished by a property —
@@ -328,10 +368,37 @@ explains why the feature has never switched itself on.
 unblocks **two** things: `/api/geometry/<place_id>`, and the exact-containment path that has been
 dark since it was written. Do it before the endpoint, not after.
 
-#### 5.3.1 Replace `index.json` with SQLite — measured, ~1 day of work
+#### 5.3.1 Replace `index.json` with SQLite — ✅ **DONE, LIVE IN PROD 30 July 2026** (**place#165**)
 
-Benchmarked on the gateway host against the live store (684,076 real entries parsed from a
-60 MB prefix of `index.json`, extrapolated to the full 11.5 M):
+Shipped in commits `e98a1af` (store + backfill + tests) and `361e5ba` (gateway threading).
+Predictions vs. what actually happened on the live 11,545,093-entry store:
+
+| | `index.json` before | SQLite — predicted | SQLite — **measured** |
+|---|---|---|---|
+| gateway RSS | **5.4 GB** | ~0 | **+3.8 MB** (642.9 → 646.8 MB across the first exact request) |
+| on-disk size | 1.02 GB | 0.39 GB | **0.375 GB** |
+| build time | — | ~31 s | **~2 min** (`ijson` streaming is the bottleneck, not the inserts) |
+
+**Verified live:** `geom-store: opened /vast/ishi/geom/index.sqlite (11545093 entries, sqlite
+backend)` now appears in `logs/gateway.log` — the first time the store has ever loaded in
+production. The backfill's `verify` pass confirmed row-count agreement and **byte-identical WKB
+across 10,000 sampled keys** resolved through both paths. End-to-end, `containment=exact` and
+`containment=fuzzy` now return **different** result sets (38 vs 35 for a `Saint*`-within-France
+query, all 38 `ccodes:[FR]`) — which is itself the proof the exact path is live, since with
+`reader=None` `prepared` stayed unset and `hit_matches` fell straight through to the fuzzy test.
+
+Three problems were mitigated beyond the spec below; see place#165 for the full write-up:
+`__contains__`/`__len__` also read the index (and `__len__` would full-scan a `WITHOUT ROWID`
+table, so the row count is cached in a `meta` row); shard reads moved to `os.pread` because
+`seek()`-then-`read()` on a shared handle returns another thread's bytes; and connections are
+keyed per-process as well as per-thread, since a fork-inherited connection is unusable and
+`h3_stage` is a second consumer. Turning the feature on also meant the Shapely refine had to
+move off the event loop (`apply_containment_async`), which in turn required a lock on the
+cached `ResolvedRegion`.
+
+*Original estimate, kept for the record — benchmarked on the gateway host against the live store
+(684,076 real entries parsed from a 60 MB prefix of `index.json`, extrapolated to the full
+11.5 M):*
 
 | | `index.json` today | SQLite |
 |---|---|---|
@@ -453,8 +520,32 @@ in its final form rather than one that would need revisiting for the gazetteers.
 
 2. Temporal filter on map layers (§5.1). The largest measured win, but it must not ship before
    the `(2025, 2025)` stamps are fixed, or it blanks `osm` / `osm_misc` / `tgn` / `nl`. The
-   client-side half is a few lines; the convention decision and the re-stamp are the work.
+   client-side half is a few lines; the encoding fix is the work — **now tracked as place#164**
+   (`plan-temporal-model.md`), which also changes what the client half looks like: two filter modes (*definitely* vs
+   *possibly* alive) rather than one range test plus an "+Undated" escape hatch.
 3. Instant-in-time lock toggle (§5.1.3) — follows (2); useless before it.
+
+**⚠️ ENTRY CONDITION FOR THE RETILE — read before scheduling one.**
+
+`plan-temporal-model.md` (place#164) commissions a **re-ingestion** of `wd` / `osm` / `ohm` / `gn` /
+`pl` / `tgn` from refreshed dumps. Re-ingesting `osm`/`ohm` forces a retile of exactly the three
+buckets below, so **that plan runs first and hands over here at the point re-ingestion completes.**
+Retiling before then means paying the 24 h-per-bucket cost twice *and* publishing the wrong
+temporal encoding for another cycle.
+
+The retile is gated on **four** things, all of which change tile content:
+
+| gate | issue | why it gates |
+|---|---|---|
+| temporal encoding fixed **and** re-ingested | place#164 | `start`/`end` values in every feature |
+| `tile-join -pk` + skip-message failure + verifier | place#160 | tiles currently discarded at the join |
+| labels channel (`label:1`) | place#159 | new features in the tileset |
+| containment-hierarchy **test decided** (§9.4) | place#166-adjacent | if adopted, fragment→label links add an array-valued attribute |
+
+Everything *except the retile itself* parallelises freely — the `tile_join` change and the verifier
+are unit-testable today against the band GeoJSONL kept on `/ix1` (§8.1), and the dump downloads
+(148 GB `wd`, 92 GB `osm`) are the real long pole and should start first, since they block nothing
+and are blocked by nothing.
 
 **Retile of `osm` / `ohm` / `osm_misc` (the in-flight plan, amended by §7):**
 
@@ -479,6 +570,42 @@ in its final form rather than one that would need revisiting for the gazetteers.
 10. `/api/geometry/<place_id>` (§5.3) — trivial once (9) lands; pointless before it.
 11. Containment hierarchy, staged from `un` upward (§5.4).
 
+### 8.1 Scratch artefacts left on CRC — keep until the retile lands, then delete
+
+`/ix1/ishi/data/tiles/_step0/` holds the working files from the place#160 diagnostic
+(29–30 July 2026, jobs 10687880 / 10688065 / 10688091):
+
+| artefact | what it is |
+|---|---|
+| `ohm.{continental,country,state,district,local}.geojsonl` | ohm's five band streams, ~5.9 GB apparent (2.7 GB on disk) |
+| `step0.sbatch`, `step0b.sbatch`, `step0d.sbatch` + `*-<jobid>.log` | the measurement record behind §7 and `plan-tiling-fixes-159-160.md` §2 |
+| `g_*.log`, `v_*.log`, `d_*.log` | per-variant tippecanoe / tile-join output, including the `Skipping this tile` lines that identified the cause |
+
+**Keep them until §8 items 3–5 have landed and been verified.** Regenerating the band files
+means re-running the streaming pass over ohm's staged parquet plus geom-store reads — the bulk
+of a 1 h 17 m job at 48 GB on `htc`. While they exist, the `tile-join -pk` change, the
+skip-message check and the labels channel can all be exercised against real ohm band data in
+minutes rather than hours:
+
+```bash
+tippecanoe --output /tmp/x.mbtiles --force --layer ohm --minimum-zoom 0 --maximum-zoom 2 \
+  --simplification 10 --detect-shared-borders --coalesce-densest-as-needed \
+  --no-tile-compression --read-parallel /ix1/ishi/data/tiles/_step0/ohm.continental.geojsonl
+```
+
+**Then delete the directory.** They are a subdirectory, so they are outside the
+`/ix1/ishi/data/tiles/*.mbtiles` glob and cannot be picked up by the pipeline or deployed —
+but they are 2.7 GB of undocumented scratch on a shared volume, and the numbers they support
+are already written down here and in `plan-tiling-fixes-159-160.md` §2. Nothing needs them
+after the retile.
+
+Note the band `.geojsonl` files produced by a *normal* run are written to
+`/ix1/ishi/data/tiles/` itself and are **not** cleaned up either — only the per-band `.mbtiles`
+intermediates are (`generate_tiles.tile_join`, `:1397-1402`). `osm*.geojsonl` and
+`osm_admin*.geojsonl` totalling tens of GB are sitting there from previous runs, including
+`osm_admin.*` from the May 2025 pre-rename era. Worth a sweep at the same time, though that is
+a separate cleanup from this plan's scratch.
+
 ---
 
 ## 9. Ownership, and the decisions this plan does not make
@@ -487,7 +614,8 @@ This spans three repos, so it cannot be handed to one team wholesale.
 
 | repo | items | notes |
 |---|---|---|
-| **`indexing`** | §3 channels, §3.3 label anchors, §3.2a `tile-join -pk` + skip-message failure, §3.3 verifier, §1.5 stamp convention, §5.3.1 geom-store index | the bulk of it |
+| **`indexing`** | §3 channels, §3.3 label anchors, §3.2a `tile-join -pk` + skip-message failure, §3.3 verifier, §5.3.1 geom-store index | the bulk of it |
+| **`indexing`** (separate track) | temporal encoding — **place#164**, `plan-temporal-model.md`. Ingestion, ES mapping, reader, query semantics; the tiling side is trivial. The ingest fix is needed *regardless of backfill*, so future re-runs stay correct. | own issue, own owner; gates §5.1 only |
 | **`whg3`** | §3.2 layer filters *(done)*, §4 `_label` symbol layer, §5.2 label-click selection, §5.1.2 client half of the temporal filter, Regions status-line wording | needs its own owner; §4/§5.2 must land in the **same release** as the label channel or labels ship invisible |
 | **`tileboss`** | `style.json` regeneration — band metadata **and** `['has','label']` on the label layers | generated by `scripts/build_whg_context_style.py` here, pushed from the sibling clone |
 
@@ -499,16 +627,36 @@ This spans three repos, so it cannot be handed to one team wholesale.
 
 **Four decisions that are not mine to make, and which the plan deliberately leaves open:**
 
-1. **The date-stamp convention for contemporary sources** (§1.5). Open-ended `end = 9999`, or no
-   span at all? This blocks the largest measured win and should be settled before the next retile
-   of `osm` / `osm_misc` / `tgn` / `nl`, since that retile is the cheap moment to apply it.
-2. **Should a historical date range hide contemporary sources?** (§5.1). Hiding OSM's boundaries
-   when the user picks 1500 is what the filter *means*, but it will read as breakage unless the
-   UI distinguishes "nothing at this level" from "nothing in this period".
-3. **`/api/geometry/<place_id>` — gateway endpoint or sidecar?** Now that co-location is verified
-   (§5.3) the gateway is the obvious home, but it is still someone's call.
-4. **Whether to pursue the containment hierarchy at all** (§5.4), and how far. It is the most
-   interesting item here and the least urgent; it should be a deliberate yes, not a drift.
+1. ~~**The date-stamp convention for contemporary sources** (§1.5). Open-ended `end = 9999`, or no
+   span at all?~~ **Superseded by `plan-temporal-model.md` / place#164.** The question was wrongly posed: `(2025, 2025)`
+   is not a provenance artefact needing a convention to neutralise it, it is an *attestation*
+   being recorded in the wrong sub-field, and both candidate answers were workarounds (`end = 9999`
+   over-claims "still alive today"). The remaining decision is narrower and belongs to place#164:
+   the **per-source** encoding table — specifically the two classed `?`, `vob_*` (census snapshots:
+   lifespan or attestation?) and `wd` (per-statement). Still true that the next retile of
+   `osm` / `tgn` / `nl` is the cheap moment to apply it, and that shipping that retile without it
+   locks the wrong encoding in for another cycle.
+2. ~~**Should a historical date range hide contemporary sources?**~~ **DECIDED (SG, 30 July 2026):
+   yes — it hides them.** That is what the filter means, and the alternative was worse: the
+   "+Contemporary" / include-21st-century toggle is **abandoned**, because a year heuristic
+   misclassifies genuine 21st-century history (measured: 5,405 OHM records have `start >= 2000` and
+   `end <= 2026`, comparable to the 8,288 alive in 1500). Correct attestation encoding
+   (`plan-temporal-model.md`) makes the toggle unnecessary anyway: an OSM boundary is *possibly*
+   alive in 1500 because its `start.earliest` is unbounded. **UI consequence that must ship with
+   it:** the Regions status line has to distinguish "no boundaries at this level" from "this source
+   has nothing in this period", or it reads as breakage.
+
+3. ~~**`/api/geometry/<place_id>` — gateway endpoint or sidecar?**~~ **DECIDED (SG, 30 July 2026):
+   the gateway.** Co-location is verified (§5.3), so the sidecar buys nothing. Gated on the
+   geom-store index replacement — **place#165** — which must land first; the endpoint is cheap
+   after it and expensive before it.
+
+4. ~~**Whether to pursue the containment hierarchy at all**~~ **DECIDED (SG, 30 July 2026): yes —
+   but prove it on a sensibly-sized polygon gazetteer first, explicitly NOT `osm`.** Start at `un`
+   (~200 polygons) per the staging in §5.4; `ukhc` (92) is an even cheaper second opinion. **The
+   corpus retile waits on the outcome of that test**, because if the hierarchy is adopted the
+   fragment→label links add an array-valued tile attribute — i.e. it changes tile *content*, and a
+   retile that predates the decision would have to be redone. See §8's entry condition.
 
 **One thing to be sceptical of:** §5.4 is the part I am least confident about. The measurements
 say most of OHM's overlap is temporal and dissolves under a date filter, so the hierarchy may buy

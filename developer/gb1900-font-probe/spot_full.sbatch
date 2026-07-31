@@ -21,11 +21,15 @@ cd /vast/ishi/gb1900/probe/font
 MRPY=/vast/ishi/envs/mapreader/bin/python
 S=$SLURM_ARRAY_TASK_ID
 CENTRES=${CENTRES:-centres_all.txt}
-awk "NR%16==$S" "$CENTRES" | while read lon lat tag; do
+awk "NR%16==$S" "$CENTRES" | while read lon lat tag _; do   # _ absorbs the 4th col (label count); else tag swallows it
   [ -z "$lon" ] && continue
   bf=/vast/ishi/gb1900/edition/spot/boxes_$tag.jsonl
-  [ -f "$bf" ] && continue
-  OMP_NUM_THREADS=6 $MRPY spot_sheet.py --lon "$lon" --lat "$lat" --tag "$tag" --r 8 --cleanup \
-    > "/tmp/log_$tag.log" 2>&1 || echo "FAIL $tag"
+  [ -s "$bf" ] && continue   # skip only if NON-EMPTY; empty files are prior timeout-failures -> retry them
+  # hard per-region cap: get_tile's urlopen timeout does NOT fire on some hung S3 connections (tasks were
+  # stuck 2h+ in I/O-wait), so wrap the region in `timeout`. NB a NORMAL region (289 fresh tiles + 9 mosaic
+  # inferences under 8-way GPU load) can take 10-15 min, so the cap must be generous (1200s) — 420s was
+  # killing normal-but-slow regions (all fails were rc=124). Only genuine 2h+ hangs are now caught.
+  OMP_NUM_THREADS=6 timeout -k 60 1200 $MRPY spot_sheet.py --lon "$lon" --lat "$lat" --tag "$tag" --r 8 --cleanup \
+    > "/tmp/log_$tag.log" 2>&1 || echo "FAIL $tag rc=$?"
 done
 echo "SHARD $S DONE $(date)"

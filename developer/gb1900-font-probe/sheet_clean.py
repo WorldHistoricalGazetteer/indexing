@@ -28,7 +28,18 @@ import argparse, json, math, os, sys, time
 import numpy as np, cv2
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from hisam_pins import read_tile, N17
+# hisam_pins imports the whole Hi-SAM repo (and its einops/torch stack) for one tile reader and one
+# constant, which makes every consumer of this module depend on a second conda env it never uses. The
+# mapreader-side reader is equivalent; N17 is just the z17 tile count.
+from make_font_testset_v2 import _get_tile
+N17 = 1 << 17
+
+
+def read_tile(tx, ty, fetch=False):
+    """Grayscale tile, shaped like the Hi-SAM reader's RGB output so callers need no change."""
+    import numpy as _np
+    t = _get_tile(tx, ty)
+    return None if t is None else _np.repeat(t[:, :, None], 3, 2)
 from clean_sheet import load_boxes, lat_px
 
 
