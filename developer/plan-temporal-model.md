@@ -382,10 +382,74 @@ cycle.
    `end.latest` (§2 defect 3); takes effect at the next full rebuild, so it must be in place before
    step 6.
 
+### Smoke test — done 31 July 2026, `po` through `extract`
+
+Before committing to a multi-day rebuild across fifteen edited authority scripts, one small
+namespace was run end-to-end. `po` (PeriodO) was chosen because it is the class-B case with the
+most to recover. Run in isolation with `STAGED_BASE_DIR=/vast/ishi/staged_smoketest` — necessary
+because `write_staged_place_doc` **appends**, so re-running against the live staged tree silently
+duplicates every doc.
+
+| | before | after |
+|---|---|---|
+| docs staged | 9,017 | 9,017 (0 undated; 7,815 with geometry — matches the recorded figures) |
+| bounds kept | 2 of 4 | **9,011 docs carry all four** |
+| genuinely fuzzy starts (`earliest != latest`) | discarded | **576** |
+| genuinely fuzzy ends | discarded | **559** |
+| fuzzy on **both** ends | discarded | **400** |
+
+So ~6% of PeriodO periods carry real uncertainty that was being thrown away — in the one gazetteer
+whose entire subject matter is temporal extent.
+
+**24 docs have an empty definite core, and that is correct.** Middle Minoan IA, for example, has
+`start ∈ [-2159, -1978]` and `end ∈ [-1998, -1899]`: the uncertainty ranges overlap, so there is no
+year PeriodO's own data proves the period spanned. The old encoding flattened it to
+`start.in -2159 / end.in -1899` and asserted definite existence across 260 years the source never
+claimed. An empty definite core is the honest answer, and the *possibly alive* test still covers
+the full range.
+
+*Minor, not worth changing:* where PeriodO gives a single `year`, `bounded()` emits
+`{"earliest": Y, "latest": Y}` rather than `{"in": Y}`. Semantically identical and the reader
+handles both, but a consumer that special-cases `in` would miss it. Affects ~8.4 k `po` docs only —
+`wd` already collapses to `lifespan()` when both ends are exact, and `vob_*` values are genuinely
+distinct.
+
 ### Then
 
 5. **Re-ingest** `wd`, `osm`, `ohm`, `gn`, `pl`, `tgn` from the refreshed dumps — they arrive
    correctly encoded, so **no class-A backfill is needed for any of them** (§5).
+
+   **This is a FULL REBUILD, not a series of incremental adds** (decided 31 July 2026). Use
+   `processing.index_from_stage` — which builds a *new* dated index and swaps the alias — **not**
+   `processing.index_namespace`, which writes into the concrete index behind the live alias. Three
+   independent reasons, any one of which is sufficient:
+
+   - **It is the only thing that applies the step-4 mapping fix.** The live index's timespan
+     sub-fields were created by *dynamic mapping*, not from `schemas/places.json`:
+     `geometries.timespans.start.earliest` and `end.latest` are **`text`** (so they cannot be
+     range-queried at all), and `geometries.end.earliest` plus **every** `toponyms` outer bound do
+     not exist. Those are precisely the fields the new encoding makes primary. An incremental add
+     writes into the existing mapping and inherits every one of those defects.
+   - **Six namespaces including the two biggest already is a rebuild.** `osm` (8.86 M) + `wd`
+     (~11 M) + `gn` (~13 M) + `ohm` + `tgn` + `pl` is the substantial majority of the corpus;
+     doing that in place is strictly more disruptive than a clean build behind an alias swap.
+   - **Cutover is atomic and reversible.** The alias re-point is instant and the previous index
+     survives until deliberately dropped — which an in-place rewrite of 30 M+ docs does not give.
+
+   Follow the existing rebuild path, then the post-ingest chain that a rebuild always requires
+   (CLAUDE.md → "Re-ingestion workflow"): geom-store consolidation → `h3_stage`/`h3_merge` →
+   `ccode_merge` → `index_from_stage` → **Symphonym stage 1** (`rebuild_toponyms_index`,
+   PanPhon) → **stage 2** (`update_es compute` + `index`) → **clustering**. None of that is
+   optional: the toponyms index is rebuilt from `places`, so skipping it leaves orphaned
+   attestations.
+
+   ⚠️ **`consolidate_geom_store` now also writes `index.sqlite`** (place#165). That is deliberate
+   and free — the rebuild produces the SQLite index as a side effect, so no separate backfill is
+   needed. Restart the gateway afterwards so it re-opens the new index.
+
+   ⚠️ **Audit per-namespace coverage after the rebuild.** The last one (`postbarrier-20260502`)
+   silently skipped embeddings for ~25% of toponyms, the `wd` geoshapes merge, and `ccode` for
+   `osm`/`ohm`. Verify each stage landed rather than assuming the pipeline reported honestly.
 6. **Backfill only what was not refreshed** — `nl`, `iv`, `gb`, `ofs`, `alc`, `un`, `ukhc`,
    `kain_par`, `vob_*`. `_bulk`, **not** `_update_by_query` (which re-runs the ingest pipeline).
 7. **Re-ingest class B** alongside — `po` (9,003), `pl` (25,561), `tm` (64,196). Hours, not a
