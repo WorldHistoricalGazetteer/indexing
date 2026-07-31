@@ -36,37 +36,93 @@ def generate_run_id(prefix: str = "ingest") -> str:
     return f"{prefix}-{ts}"
 
 
-#: How hard to try for a manifest lock before giving up. ~2 minutes total at
-#: the backoff below, which is far longer than any writer holds it (a small
-#: JSON read-modify-write) and so only expires on a genuinely stuck lock.
-_LOCK_MAX_ATTEMPTS = 12
-_LOCK_BASE_DELAY = 0.25
-_LOCK_MAX_DELAY = 30.0
+#: A few quick flock retries absorb momentary ``ENOLCK``; past that the lock
+#: daemon is not going to start working, and we switch to the O_EXCL lock.
+_FLOCK_ATTEMPTS = 4
+_FLOCK_BASE_DELAY = 0.25
+
+#: Budget for the O_EXCL fallback, and the age at which a lock file is assumed
+#: to belong to a dead process. Holders keep it for one small JSON
+#: read-modify-write — milliseconds — so a minute-old lock is abandoned, not busy.
+_EXCL_LOCK_TIMEOUT = 90.0
+_EXCL_LOCK_STALE_AFTER = 60.0
 
 
-def _flock_with_retry(fd: int, lock_path: Path) -> None:
-    """Take an exclusive flock, retrying while the NFS server says ``ENOLCK``.
+def _try_flock(fd: int) -> bool:
+    """Take an exclusive flock, absorbing brief ``ENOLCK``. False if unavailable.
 
-    Raises the last ``OSError`` if the lock is still unavailable after
-    ``_LOCK_MAX_ATTEMPTS``; anything other than ``ENOLCK`` propagates at once.
+    ``ENOLCK`` from an NFS server is not a refusal by another holder, it is the
+    lock daemon declining to serve — so it means "flock is unusable here", not
+    "wait your turn". Anything else propagates.
     """
-    delay = _LOCK_BASE_DELAY
-    for attempt in range(1, _LOCK_MAX_ATTEMPTS + 1):
+    delay = _FLOCK_BASE_DELAY
+    for attempt in range(_FLOCK_ATTEMPTS):
         try:
             fcntl.flock(fd, fcntl.LOCK_EX)
-            return
+            return True
         except OSError as exc:
-            if exc.errno != errno.ENOLCK or attempt == _LOCK_MAX_ATTEMPTS:
+            if exc.errno != errno.ENOLCK:
                 raise
+            if attempt == _FLOCK_ATTEMPTS - 1:
+                return False
             # Jitter across the full interval, not a fixed fraction of it, so a
             # cohort that started together does not re-collide in lockstep.
             time.sleep(random.uniform(0, delay))
-            delay = min(delay * 2, _LOCK_MAX_DELAY)
-            if attempt % 4 == 0:
-                print(
-                    f"  waiting on manifest lock ({lock_path.name}): "
-                    f"NFS reported no locks available, attempt {attempt}"
-                )
+            delay *= 2
+    return False
+
+
+@contextlib.contextmanager
+def _excl_lock(lock_path: Path) -> Iterator[bool]:
+    """NFS-safe mutual exclusion by ``O_CREAT | O_EXCL``, for when flock isn't.
+
+    ``fcntl.flock`` needs a working lock daemon. On the CRC ``/vast`` mount that
+    daemon returns ``ENOLCK`` once a Slurm fan-out reaches for the same file at
+    once — it killed five jobs on the first attempt of the place#164 rebuild and
+    four more after retries were added, because retrying a service that is
+    refusing to serve does not help. Exclusive create needs no daemon: it is a
+    single atomic NFS operation, which is the standard way to lock over NFS.
+
+    Yields True when the lock was taken (and removes it on exit) and False when
+    the timeout expired. A caller that gets False should proceed anyway rather
+    than die: the manifest is bookkeeping, its writes are atomic
+    (tmp-then-replace) so the worst case is a lost update rather than a corrupt
+    file, and the authoritative state is the per-namespace append-only
+    ``events.jsonl`` that ``stage_status_with_fallback`` reads.
+
+    A lock file older than ``_EXCL_LOCK_STALE_AFTER`` is broken: holders keep it
+    for one small read-modify-write, so an aged one means the holder was killed
+    (Slurm TIMEOUT, node failure) and nothing will ever release it.
+    """
+    excl_path = lock_path.with_suffix(lock_path.suffix + ".excl")
+    deadline = time.monotonic() + _EXCL_LOCK_TIMEOUT
+    delay = 0.05
+    held = False
+    while time.monotonic() < deadline:
+        try:
+            fd = os.open(str(excl_path), os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o644)
+            os.write(fd, f"{os.getpid()}@{os.uname().nodename}\n".encode())
+            os.close(fd)
+            held = True
+            break
+        except FileExistsError:
+            try:
+                if time.monotonic() - excl_path.stat().st_mtime > _EXCL_LOCK_STALE_AFTER:
+                    print(f"  breaking stale manifest lock: {excl_path.name}")
+                    excl_path.unlink(missing_ok=True)
+                    continue
+            except OSError:
+                pass  # Released between the failed create and the stat.
+            time.sleep(random.uniform(0, delay))
+            delay = min(delay * 2, 2.0)
+    try:
+        yield held
+    finally:
+        if held:
+            try:
+                excl_path.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 @contextlib.contextmanager
@@ -84,29 +140,41 @@ def _manifest_lock(manifest_path: Path) -> Iterator[None]:
     the same node and across nodes on NFSv4 (which is what /vast on CRC
     runs); the lock travels with the inode, not the open handle.
 
-    **Retries on ``ENOLCK``.** "Works on NFSv4" is true of the protocol and
-    not of the server under burst: submitting the 27-namespace rebuild fan-out
-    had five jobs die instantly with ``OSError: [Errno 37] No locks
-    available`` when they all reached for this lock at once. ``ENOLCK`` is a
-    transient resource condition, not a refusal, so it is retried with
-    exponential backoff and jitter rather than propagated. The jitter matters:
-    Slurm starts array-like fan-outs within milliseconds of each other, so an
-    unjittered backoff just re-collides the same cohort.
+    **flock is not available on every mount.** "Works on NFSv4" is true of the
+    protocol and not of the server: the 27-namespace rebuild fan-out had five
+    jobs die instantly with ``OSError: [Errno 37] No locks available`` when
+    they all reached for this lock at once, and four more die the same way
+    after retries were added — ``ENOLCK`` means the lock daemon is declining to
+    serve, so retrying it harder achieves nothing. Where flock is unusable this
+    falls back to :func:`_excl_lock`, which needs no daemon.
+
+    If even that times out the block still runs, unlocked, with a warning.
+    Failing the job would be worse: the manifest is bookkeeping, its writes are
+    atomic, and the authoritative record is the per-namespace ``events.jsonl``.
     """
     manifest_path = Path(manifest_path)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = manifest_path.with_suffix(manifest_path.suffix + ".lock")
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        _flock_with_retry(fd, lock_path)
-        yield
+        if _try_flock(fd):
+            try:
+                yield
+            finally:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                except OSError:
+                    pass
+            return
+        with _excl_lock(lock_path) as held:
+            if not held:
+                print(
+                    f"  WARNING: proceeding without the manifest lock "
+                    f"({lock_path.name}) — events.jsonl remains authoritative"
+                )
+            yield
     finally:
-        try:
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        except OSError:
-            pass
-        finally:
-            os.close(fd)
+        os.close(fd)
 
 
 def _atomic_write_json(path: Path, payload: dict) -> None:
