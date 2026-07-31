@@ -297,9 +297,20 @@ cycle.
 
 ### Start immediately — no dependencies, nothing blocked by them
 
-1. **Kick off the dump downloads.** ✅ **RUNNING — submitted 30 July 2026, 17:12 EDT.** 148 GB
-   (`wd`) + 92 GB (`osm`), plus `gn`, `ohm`, `pl`, `tgn` (§5). This is the long pole and it blocks
-   nothing, so it runs while the code work happens.
+1. **Kick off the dump downloads.** ✅ **DONE — all six refreshed, 30–31 July 2026.** This was
+   the long pole and it blocked nothing, so it ran while the code work happened.
+
+   | source | old | new | wall |
+   |---|---|---|---|
+   | `wd` `latest-all.json.gz` | 2025-11-23, 139.7 GiB | **2026-07-31, 144.4 GiB** | 9 h 18 m |
+   | `osm` `planet-latest.osm.pbf` | 2026-04-06, 85.8 GiB | **2026-07-30, 87.5 GiB** | 54 m |
+   | `ohm` `planet-latest.osm.pbf` | 2026-04-06, 1.009 GiB | **2026-07-30, 1.063 GiB** | ~2 m |
+   | `tgn` `explicit.zip` | 2025-12-18, 1.081 GiB | **2026-07-30, 1.075 GiB** | ~2 m |
+   | `gn` `allCountries.zip` | 2025-11-22, 396 MiB | **2026-07-30, 382 MiB** | 18 s |
+   | `gn` `alternateNamesV2.zip` | 2025-11-22, 189 MiB | **2026-07-30, 184 MiB** | 9 s |
+   | `pl` `pleiades-places-latest.json.gz` | 2026-05-05, 126 MiB | **2026-07-30, 129 MiB** | 1 s |
+
+   All three jobs exited 0. `/ix1/ishi` went 2.1 TB → 2.0 TB free.
 
    Three Slurm jobs on `htc` (never on a login node), via the now-parameterised
    `processing/refresh_authorities.slurm` — `NS`/`AGE` come from the submitting environment:
@@ -311,8 +322,40 @@ cycle.
    NS=gn,pl,ohm,tgn AGE=0 sbatch -M htc --account=ishi -J fetch_small --time=12:00:00 --qos=htc-htc-s --export=ALL processing/refresh_authorities.slurm
    ```
 
-   (Split three ways so a slow `wd` does not hold up the rest. Jobs 10692795 / 10692796 / 10692797;
+   (Split three ways so a slow `wd` did not hold up the rest — it wouldn't have: `wd` ran at
+   ~4.5 MB/s against `osm`'s ~28 MB/s and took 10× longer. Jobs 10692795 / 10692796 / 10692797;
    logs at `/ix1/ishi/logs/fetch_*_<jobid>.log`.)
+
+   **`osm` moves the attestation year 2025 → 2026** as §5 anticipated. Read from the PBF header
+   rather than the filename: the planet's `osmosis_replication_timestamp` is **2026-07-20**
+   (`ohm`'s is **2026-07-29**). That shift is the whole reason not to backfill `osm`'s 8.86 M
+   docs first.
+
+   **A fresh dump is not a verified dump** — `curl` exiting 0 only says the transfer ended, and a
+   silently-truncated 144 GiB file would not surface until deep into a re-ingest. Verified:
+
+   | source | check | result |
+   |---|---|---|
+   | `wd` | `gzip -t` — CRC32 over the whole 144.4 GiB stream | ✅ OK (106 min) |
+   | `wd` | first entities parse | ✅ Q31 (417 claims), Q8, Q23 |
+   | `ohm` | `osmium.apply(Reader)` — every block decoded | ✅ OK (13.3 s) |
+   | `osm` | `osmium.apply(Reader)` — every block decoded | ✅ OK (19 m 23 s) |
+   | `gn` ×2, `tgn` | `unzip -t` | ✅ OK |
+   | `pl` | `gzip -t` | ✅ OK |
+
+   **Two traps in the verification itself**, both of which produced a *false* verdict first time:
+
+   - **The `osmium` CLI is broken in the `whg` env** — `error while loading shared libraries:
+     libboost_program_options.so.1.85.0`. It exits non-zero in 0.06 s, so a naive
+     `osmium fileinfo -e || echo BAD` reports **"PBF BAD"** while having read nothing. Use
+     **pyosmium** (which is what ingestion itself uses, so it also exercises the real code
+     path): `r = osmium.io.Reader(p); osmium.apply(r)` decodes every block with no per-object
+     Python cost — 13 s for `ohm`, ~20 min for the planet. Note pyosmium here is **4.2.0**,
+     where `Reader.read()` no longer exists and `osmium.__version__` is absent
+     (`osmium.version.pyosmium_release`).
+   - **Wikidata's dump opens with `[\n`**, so "skip one byte, take the first line" yields an
+     empty string and a `JSONDecodeError` that looks like a corrupt dump. Skip the bare `[`,
+     `]` and blank lines and strip the trailing comma per entity.
 
    **Storage — no manual deletion needed.** Every one of the six writes to a *fixed* filename
    (`ohm` has an explicit `name:` in its config precisely because upstream uses dated ones), and
