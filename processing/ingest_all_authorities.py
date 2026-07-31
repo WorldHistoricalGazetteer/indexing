@@ -507,7 +507,14 @@ def ingest_all(
                     'dgsd': ('dgsd', 'dgsd.db'),
                 }
                 # These authorities self-fetch their data at ingestion time
-                SELF_FETCHING = {'po', 'clio'}
+                # No local dump: these discover and fetch their own source at
+                # ingestion time. `whg` in particular pulls every contributed
+                # dataset from the DO Django reconcile API, so
+                # DATA_DIR/authorities/whg does not exist at all — and without
+                # it listed here the data-files check quietly dropped all
+                # 228,918 whg docs from the rebuild, reporting "Skipping whg:
+                # No data files found" and exiting 0.
+                SELF_FETCHING = {'po', 'clio', 'whg'}
 
                 if ns in SOURCE_TREE_DBS:
                     subdir, db_name = SOURCE_TREE_DBS[ns]
@@ -782,18 +789,27 @@ def ingest_all(
     print(f"✗ Failed: {', '.join(results['failed']) or 'None'}")
     sys.stdout.flush()
 
-    counts = get_index_counts()
-    print("\nFinal document counts by source:")
-    total = 0
-    for ns in sorted(counts.keys()):
-        if counts[ns] > 0:
-            print(f"  {ns:8} {counts[ns]:>12,}")
-            total += counts[ns]
-    print(f"  {'Total:':8} {total:>12,}")
+    # Closing summary from the LIVE index. Meaningless in staging mode (the run
+    # wrote staged files, not ES) and impossible on a compute node, where
+    # ES_HOST is unset and `es` is None. Left unguarded this killed the job
+    # AFTER every doc had been staged successfully, so a completed extract
+    # reported as FAILED — the worst possible place to crash.
+    if is_staging_mode():
+        print("\nStaging mode: no live-index summary (this run wrote staged files)")
+        sys.stdout.flush()
+    else:
+        counts = get_index_counts()
+        print("\nFinal document counts by source:")
+        total = 0
+        for ns in sorted(counts.keys()):
+            if counts[ns] > 0:
+                print(f"  {ns:8} {counts[ns]:>12,}")
+                total += counts[ns]
+        print(f"  {'Total:':8} {total:>12,}")
 
-    print(f"\nTotal places in index: {es.count(index=PLACES_INDEX)['count']:,}")
-    print(f"Total toponyms in index: {es.count(index=TOPONYMS_INDEX)['count']:,}")
-    sys.stdout.flush()
+        print(f"\nTotal places in index: {es.count(index=PLACES_INDEX)['count']:,}")
+        print(f"Total toponyms in index: {es.count(index=TOPONYMS_INDEX)['count']:,}")
+        sys.stdout.flush()
 
     if run_manifest_path:
         final_status = "failed" if results['failed'] else "completed"

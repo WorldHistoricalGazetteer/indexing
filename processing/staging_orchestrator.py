@@ -9,11 +9,14 @@ This module provides lightweight, dependency-free utilities for:
 from __future__ import annotations
 
 import contextlib
+import errno
 import fcntl
 import json
 import os
+import random
 import re
 import shutil
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Iterator
@@ -33,6 +36,39 @@ def generate_run_id(prefix: str = "ingest") -> str:
     return f"{prefix}-{ts}"
 
 
+#: How hard to try for a manifest lock before giving up. ~2 minutes total at
+#: the backoff below, which is far longer than any writer holds it (a small
+#: JSON read-modify-write) and so only expires on a genuinely stuck lock.
+_LOCK_MAX_ATTEMPTS = 12
+_LOCK_BASE_DELAY = 0.25
+_LOCK_MAX_DELAY = 30.0
+
+
+def _flock_with_retry(fd: int, lock_path: Path) -> None:
+    """Take an exclusive flock, retrying while the NFS server says ``ENOLCK``.
+
+    Raises the last ``OSError`` if the lock is still unavailable after
+    ``_LOCK_MAX_ATTEMPTS``; anything other than ``ENOLCK`` propagates at once.
+    """
+    delay = _LOCK_BASE_DELAY
+    for attempt in range(1, _LOCK_MAX_ATTEMPTS + 1):
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            return
+        except OSError as exc:
+            if exc.errno != errno.ENOLCK or attempt == _LOCK_MAX_ATTEMPTS:
+                raise
+            # Jitter across the full interval, not a fixed fraction of it, so a
+            # cohort that started together does not re-collide in lockstep.
+            time.sleep(random.uniform(0, delay))
+            delay = min(delay * 2, _LOCK_MAX_DELAY)
+            if attempt % 4 == 0:
+                print(
+                    f"  waiting on manifest lock ({lock_path.name}): "
+                    f"NFS reported no locks available, attempt {attempt}"
+                )
+
+
 @contextlib.contextmanager
 def _manifest_lock(manifest_path: Path) -> Iterator[None]:
     """Cross-process exclusive lock on a manifest's read-modify-write cycle.
@@ -47,17 +83,28 @@ def _manifest_lock(manifest_path: Path) -> Iterator[None]:
     explicit unlock or by file-handle close. Works across processes on
     the same node and across nodes on NFSv4 (which is what /vast on CRC
     runs); the lock travels with the inode, not the open handle.
+
+    **Retries on ``ENOLCK``.** "Works on NFSv4" is true of the protocol and
+    not of the server under burst: submitting the 27-namespace rebuild fan-out
+    had five jobs die instantly with ``OSError: [Errno 37] No locks
+    available`` when they all reached for this lock at once. ``ENOLCK`` is a
+    transient resource condition, not a refusal, so it is retried with
+    exponential backoff and jitter rather than propagated. The jitter matters:
+    Slurm starts array-like fan-outs within milliseconds of each other, so an
+    unjittered backoff just re-collides the same cohort.
     """
     manifest_path = Path(manifest_path)
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     lock_path = manifest_path.with_suffix(manifest_path.suffix + ".lock")
     fd = os.open(str(lock_path), os.O_CREAT | os.O_RDWR, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        _flock_with_retry(fd, lock_path)
         yield
     finally:
         try:
             fcntl.flock(fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
         finally:
             os.close(fd)
 
