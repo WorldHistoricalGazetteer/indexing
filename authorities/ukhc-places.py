@@ -32,8 +32,8 @@ from processing.helpers import (
     compute_area_km2,
     write_staged_place_doc,
 )
-from processing.settings import DATA_DIR
-from processing.temporal import lifespan, AUTHORITIES
+from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import lifespan
 
 NAMESPACE = "ukhc"
 UKHC_CONFIG = next((a for a in AUTHORITIES if a["namespace"] == NAMESPACE), None)
