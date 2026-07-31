@@ -68,7 +68,13 @@ from processing.settings import (  # noqa: E402
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
-from processing.staging_orchestrator import create_run_manifest  # noqa: E402
+from processing.staging_orchestrator import (  # noqa: E402
+    _atomic_write_json,
+    _manifest_lock,
+    create_run_manifest,
+    load_run_manifest,
+    stage_status_with_fallback,
+)
 
 #: Namespaces in ingestion order, de-duplicated (``gn``/``wd`` appear twice).
 ALL_NAMESPACES: list[str] = list(dict.fromkeys(ns for ns, *_ in INGESTION_ORDER))
@@ -234,6 +240,34 @@ def ensure_manifest(run_id: str, *, dry_run: bool = False) -> Path:
     return manifest_path
 
 
+def _extract_is_complete(manifest_path: Path, namespace: str) -> bool:
+    """Has this namespace already finished its extract for this run?
+
+    Reads the manifest with the ``events.jsonl`` fallback, so a completion
+    recorded by a job whose manifest update was lost still counts.
+    """
+    if not manifest_path.exists():
+        return False
+    try:
+        manifest = load_run_manifest(manifest_path)
+    except (OSError, ValueError):
+        return False
+    return stage_status_with_fallback(manifest, namespace, "extract") == "completed"
+
+
+def _clear_checkpoints(manifest_path: Path, namespace: str) -> None:
+    """Drop a namespace's per-script checkpoints so ``--resume-run`` re-runs it."""
+    with _manifest_lock(manifest_path):
+        manifest = load_run_manifest(manifest_path)
+        entry = manifest.get("namespaces", {}).get(namespace)
+        if not entry:
+            return
+        entry["scripts"] = {}
+        entry["status"] = "pending"
+        entry.setdefault("stages", {})["extract"] = "pending"
+        _atomic_write_json(manifest_path, manifest)
+
+
 def submit(
     *,
     run_id: str,
@@ -241,6 +275,7 @@ def submit(
     rotate: bool = True,
     dry_run: bool = False,
     ignore_dependencies: bool = False,
+    force: bool = False,
 ) -> dict[str, str]:
     """Rotate and submit one job per namespace. Returns ``{namespace: job_id}``."""
     unknown = [ns for ns in namespaces if ns not in ALL_NAMESPACES]
@@ -258,7 +293,7 @@ def submit(
                     f"--ignore-dependencies to accept geometry-less {ns} docs."
                 )
 
-    ensure_manifest(run_id, dry_run=dry_run)
+    manifest_path = ensure_manifest(run_id, dry_run=dry_run)
     work_dir = Path(STAGED_BASE_DIR) / "runs" / run_id
     if not dry_run:
         work_dir.mkdir(parents=True, exist_ok=True)
@@ -270,6 +305,21 @@ def submit(
     job_ids: dict[str, str] = {}
     for ns in order:
         cpus, mem, hours = _sizing_for(ns)
+
+        # Rotation versus the resume checkpoint is the same trap as the staged
+        # tree versus osm_state.json, one level up. `--resume-run` skips any
+        # script already checkpointed completed, so resubmitting a finished
+        # namespace deletes its staged output and then declines to regenerate
+        # it. That is exactly what happened to `un`: 247 BNDA country polygons
+        # staged, cleared on a needless resubmit, job exited 0 having done
+        # nothing, and the loss showed up only as an empty directory.
+        if _extract_is_complete(manifest_path, ns) and not force:
+            print(f"  {ns}: extract already completed for this run — skipping "
+                  f"(--force to redo it)")
+            continue
+        if force and not dry_run and manifest_path.exists():
+            _clear_checkpoints(manifest_path, ns)
+
         if rotate:
             print(f"  {rotate_staged(ns, run_id, dry_run=dry_run)}")
         sbatch_text = _build_sbatch(ns, run_id)
@@ -320,6 +370,9 @@ def main() -> None:
                              "already empty — the extract writer APPENDS)")
     parser.add_argument("--ignore-dependencies", action="store_true",
                         help="Submit even when a namespace's staged input is absent")
+    parser.add_argument("--force", action="store_true",
+                        help="Re-extract even if this run already completed the namespace "
+                             "(clears its script checkpoints so --resume-run re-runs it)")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -335,6 +388,7 @@ def main() -> None:
         rotate=not args.no_rotate,
         dry_run=args.dry_run,
         ignore_dependencies=args.ignore_dependencies,
+        force=args.force,
     )
 
 
