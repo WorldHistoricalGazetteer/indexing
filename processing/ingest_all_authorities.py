@@ -124,9 +124,18 @@ INGESTION_ORDER = [
     # appear in the per-namespace extract pipeline.
 ]
 
+#: Namespace → the script_id after which the namespace is fully staged, derived
+#: from INGESTION_ORDER rather than maintained by hand.
+#:
+#: This used to be a two-entry dict (gn → gn-toponyms, wd → wd-geoshapes) with
+#: everything else falling back to ``script_id.endswith("-places")``. `un`'s
+#: only script is ``un-countries``, which matches neither — so `un` staged its
+#: 247 country polygons correctly and then never had its `extract` stage marked
+#: completed, leaving it permanently short of the global barrier and out of the
+#: rebuilt index. Deriving it means a namespace whose scripts are renamed, or a
+#: new one that doesn't happen to end in "-places", cannot reintroduce that.
 FINAL_NAMESPACE_SCRIPT_ID = {
-    "gn": "gn-toponyms",
-    "wd": "wd-geoshapes",
+    ns: script_id for ns, _script, _desc, script_id in INGESTION_ORDER
 }
 
 BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
@@ -135,13 +144,12 @@ BOUNDARY_REQUIRED_NAMESPACES = {"osm", "ohm"}
 def _is_namespace_snapshot_trigger(namespace: str, script_id: str) -> bool:
     """Return True when a namespace has reached its final local mutator.
 
-    Most namespaces finalize after their `*-places` script. Namespaces with
-    follow-up mutators (currently GeoNames and Wikidata) finalize only after the
-    last namespace-local updater has run.
+    Most namespaces finalize after their single ``*-places`` script; those with
+    follow-up mutators (GeoNames toponyms, Wikidata geoshapes) finalize only
+    after the last namespace-local updater has run. Both cases fall out of
+    INGESTION_ORDER, which lists each namespace's scripts in order.
     """
-    if namespace in FINAL_NAMESPACE_SCRIPT_ID:
-        return script_id == FINAL_NAMESPACE_SCRIPT_ID[namespace]
-    return script_id.endswith("-places")
+    return FINAL_NAMESPACE_SCRIPT_ID.get(namespace) == script_id
 
 
 def _run_boundary_pre_h3_stages(
