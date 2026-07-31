@@ -234,31 +234,42 @@ def submit(
     if not dry_run:
         work_dir.mkdir(parents=True, exist_ok=True)
 
+    # Submit dependants last, so a dependency submitted in this same call has
+    # a job id to chain against.
+    order = sorted(namespaces, key=lambda ns: len(EXTRACT_DEPENDENCIES.get(ns, ())))
+
     job_ids: dict[str, str] = {}
-    for ns in namespaces:
+    for ns in order:
         cpus, mem, hours = _sizing_for(ns)
         if rotate:
             print(f"  {rotate_staged(ns, run_id, dry_run=dry_run)}")
         sbatch_text = _build_sbatch(ns, run_id)
 
+        # Co-selection is not enough: without an afterok chain Slurm is free to
+        # start `og` before `ofs` has written the extract it reads.
+        after = [job_ids[d] for d in EXTRACT_DEPENDENCIES.get(ns, ()) if d in job_ids]
+
         if dry_run:
-            print(f"  {ns}: would submit ({cpus} cpu / {mem} / {hours}h / {_qos_for(hours)})")
+            chained = f", after {'+'.join(after)}" if after else ""
+            print(f"  {ns}: would submit ({cpus} cpu / {mem} / {hours}h / {_qos_for(hours)}{chained})")
             continue
 
         sbatch_path = work_dir / f"extract-{ns}.sbatch"
         sbatch_path.write_text(sbatch_text, encoding="utf-8")
-        result = subprocess.run(
-            ["sbatch", "-M", os.environ.get("WHG_SLURM_CLUSTER", "htc"),
-             "--account=ishi", "--parsable", str(sbatch_path)],
-            capture_output=True, text=True, check=False,
-        )
+        command = ["sbatch", "-M", os.environ.get("WHG_SLURM_CLUSTER", "htc"),
+                   "--account=ishi", "--parsable"]
+        if after:
+            command.append(f"--dependency=afterok:{':'.join(after)}")
+        command.append(str(sbatch_path))
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             print(f"  ✗ {ns}: sbatch failed:\n{result.stderr}", file=sys.stderr)
             continue
         # --parsable prints "<jobid>" or "<jobid>;<cluster>"
         job_id = result.stdout.strip().split(";")[0]
         job_ids[ns] = job_id
-        print(f"  ✓ {ns}: job {job_id}  ({cpus} cpu / {mem} / {hours}h / {_qos_for(hours)})")
+        chained = f", after {'+'.join(after)}" if after else ""
+        print(f"  ✓ {ns}: job {job_id}  ({cpus} cpu / {mem} / {hours}h / {_qos_for(hours)}{chained})")
 
     return job_ids
 
