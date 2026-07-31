@@ -306,8 +306,8 @@ cycle.
    | `osm` `planet-latest.osm.pbf` | 2026-04-06, 85.8 GiB | **2026-07-30, 87.5 GiB** | 54 m |
    | `ohm` `planet-latest.osm.pbf` | 2026-04-06, 1.009 GiB | **2026-07-30, 1.063 GiB** | ~2 m |
    | `tgn` `explicit.zip` | 2025-12-18, 1.081 GiB | **2026-07-30, 1.075 GiB** | ~2 m |
-   | `gn` `allCountries.zip` | 2025-11-22, 396 MiB | **2026-07-30, 382 MiB** | 18 s |
-   | `gn` `alternateNamesV2.zip` | 2025-11-22, 189 MiB | **2026-07-30, 184 MiB** | 9 s |
+   | `gn` `allCountries.zip` | 2025-11-22, 396.1 MiB | **2026-07-30, 400.4 MiB** | 18 s |
+   | `gn` `alternateNamesV2.zip` | 2025-11-22, 189.3 MiB | **2026-07-30, 193.1 MiB** | 9 s |
    | `pl` `pleiades-places-latest.json.gz` | 2026-05-05, 126 MiB | **2026-07-30, 129 MiB** | 1 s |
 
    All three jobs exited 0. `/ix1/ishi` went 2.1 TB → 2.0 TB free.
