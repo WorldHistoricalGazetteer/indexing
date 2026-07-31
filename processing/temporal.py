@@ -74,6 +74,7 @@ __all__ = [
     "attested_window",
     "lifespan",
     "bounded",
+    "apply_closure",
     "coerce_year",
     "normalise_timespans",
     "precision_bounds",
@@ -202,6 +203,36 @@ def bounded(
             node.clear()
             node["in"] = exact
     return _clean({"start": start, "end": end})
+
+
+def apply_closure(timespans: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Add ``start.latest`` to any timespan that bounds an end but not a start.
+
+    The closure rule for structures built or passed through elsewhere —
+    :func:`lifespan` and :func:`bounded` apply it themselves, but a source whose
+    LPF ``when`` we forward verbatim (``hgis``) or a script that assembles the
+    dict by hand (``ohm``, ``clio``) needs it applied afterwards.
+
+    Without it a record carrying only an end tests as definitely alive at **no**
+    year, which is wrong for anything that demonstrably existed before it ended
+    — an OHM feature with ``end_date=1932`` and no ``start_date``, say. The
+    bound used is the tightest the end offers: ``in``, else ``earliest``, else
+    ``latest``.
+
+    Modifies nothing in place; returns a new list.
+    """
+    out: list[dict[str, Any]] = []
+    for ts in timespans or []:
+        if not isinstance(ts, dict):
+            continue
+        ts = {k: dict(v) for k, v in ts.items() if isinstance(v, dict)}
+        end = ts.get("end") or {}
+        if end and not ts.get("start"):
+            closure = end.get("in", end.get("earliest", end.get("latest")))
+            if closure is not None:
+                ts["start"] = {"latest": closure}
+        out.append(ts)
+    return out
 
 
 def coerce_year(value: Any) -> int | None:

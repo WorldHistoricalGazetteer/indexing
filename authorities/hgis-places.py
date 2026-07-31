@@ -80,39 +80,37 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
+from processing.temporal import apply_closure, attested_window, normalise_timespans
 
 NAMESPACE = "hgis"
 HGIS_START, HGIS_END = 1701, 1808   # Bourbon Spanish America window (dataset scope)
 LANG = "es"
 
 HGIS_CONFIG = next((a for a in AUTHORITIES if a["namespace"] == NAMESPACE), None)
-_DEFAULT_TS = [{"start": {"in": HGIS_START}, "end": {"in": HGIS_END}}]
 
-
-def _year(d):
-    if not isinstance(d, dict):
-        return None
-    try:
-        return int(d.get("in"))
-    except (TypeError, ValueError):
-        return None
+# The dataset's scope, used where a feature carries no `when` of its own. This
+# module's own docstring calls it an "attestation window", but it was encoded as
+# `{"start": {"in": 1701}, "end": {"in": 1808}}` — a lifespan asserting that
+# every such place came into being in 1701 and ceased in 1808 (place#164). HGIS
+# documents these places across the Bourbon period, so the honest reading is
+# attested somewhere within it: started no later than 1808, ended no earlier
+# than 1701, with the definite core legitimately empty.
+_DEFAULT_TS = attested_window(HGIS_START, HGIS_END)
 
 
 def _timespans(when):
-    """LPF `when` → schema timespans list (ints), or None."""
+    """LPF `when` → schema timespans list (ints), or None.
+
+    Admin-unit lifespans, so `in` is correct where the source gives it
+    (place#164 class C). Two fixes: this used to read only `in` and drop any
+    `earliest`/`latest` the source stated, and it never applied the closure
+    rule, so a unit known only by its end tested as definitely alive at no
+    year. `normalise_timespans` forwards whatever the source states (coercing
+    string years to int); `apply_closure` bounds a lone end.
+    """
     if not isinstance(when, dict):
         return None
-    out = []
-    for sp in (when.get("timespans") or []):
-        s, e = _year(sp.get("start") or {}), _year(sp.get("end") or {})
-        span = {}
-        if s is not None:
-            span["start"] = {"in": s}
-        if e is not None:
-            span["end"] = {"in": e}
-        if span:
-            out.append(span)
-    return out or None
+    return apply_closure(normalise_timespans(when.get("timespans") or [])) or None
 
 
 def _dokuid(url):

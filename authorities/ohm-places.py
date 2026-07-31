@@ -27,6 +27,7 @@ from shapely.geometry import mapping
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.settings import ES_HOST, DATA_DIR, OHM_STATE_FILE
+from processing.temporal import lifespan
 
 # ---------------- CONFIG ----------------
 CHECKPOINT_INTERVAL = 50000
@@ -100,19 +101,16 @@ def build_timespans(tags):
 
     Returns list of timespan dicts, or a default [current] if no dates.
     """
-    start_year = parse_ohm_year(tags.get('start_date'))
-    end_year = parse_ohm_year(tags.get('end_date'))
-
-    if start_year is not None or end_year is not None:
-        ts = {}
-        if start_year is not None:
-            ts['start'] = {'in': start_year}
-        if end_year is not None:
-            ts['end'] = {'in': end_year}
-        return [ts]
-
-    # Fallback: no temporal info → mark as undated
-    return []
+    # OHM's start_date/end_date are genuine lifespans — `in` is correct here,
+    # and this is one of the few sources where it is (place#164 class C). What
+    # was missing is the closure rule: a feature tagged only `end_date=1932`
+    # got `end.in` and no bound on its start, so it tested as definitely alive
+    # at NO year despite demonstrably existing before 1932. `lifespan` adds
+    # `start.latest = end` for exactly that case. No dates → undated, as before.
+    return lifespan(
+        parse_ohm_year(tags.get('start_date')),
+        parse_ohm_year(tags.get('end_date')),
+    )
 
 
 # ---------------- STATE MANAGEMENT ----------------

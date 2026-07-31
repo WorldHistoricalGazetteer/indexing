@@ -30,6 +30,7 @@ from processing.helpers import (
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR
+from processing.temporal import lifespan
 
 CLIOPATRIA_URL = (
     "https://github.com/Seshat-Global-History-Databank/cliopatria/"
@@ -132,14 +133,10 @@ def process_cliopatria_feature(feature):
         props.get('ToYear') or props.get('to') or props.get('end')
     )
 
-    timespans = []
-    if start_year is not None or end_year is not None:
-        ts = {}
-        if start_year is not None:
-            ts['start'] = {'in': start_year}
-        if end_year is not None:
-            ts['end'] = {'in': end_year}
-        timespans = [ts]
+    # Polity lifespans — `in` is correct (place#164 class C). `lifespan` also
+    # closes a polity known only by its ToYear, which otherwise tests as
+    # definitely alive at no year at all.
+    timespans = lifespan(start_year, end_year)
 
     # If there's a date range in the ID, use it to make the place_id unique
     if start_year is not None:
