@@ -99,15 +99,31 @@ _DEFAULT_MEGA_WALL_HOURS = {
     "osm": 96,
 }
 _PLANNER_WALL_HOURS = {
-    # OSM planet PBF (~92 GB) prefilter is dominated by NFS read of
-    # ``/ix1``; observed effective rates 1-5 MB/s, so 92 GB → 5-25 h.
-    # Pair with the 12 h ``prefilter_boundaries`` subprocess timeout in
-    # ``osm_boundary_geometry``: planner needs prefilter time +
-    # ~1 h enumerate (single-pass fix landed 2026-05-01) + few-min
-    # persist-copy + finalize-step margin. 24 h is comfortably above the
-    # observed 12 h ceiling and below the htc-htc-s 1-day QOS limit.
-    "ohm": 4,
-    "osm": 24,
+    # MEASURED 2026-08-01, and it is not what the previous note here claimed.
+    # That note said the prefilter was "dominated by NFS read of /ix1;
+    # observed effective rates 1-5 MB/s, so 92 GB → 5-25 h" — a figure taken
+    # from a single 2026-05-01 probe during the last rebuild, when concurrent
+    # boundary and tile workers were saturating /ix1 with the small-file reads
+    # that motivated the move to /vast. It was a contention snapshot, and it
+    # got enshrined here as if it were the mount's steady state.
+    #
+    #   /ix1 sequential read   711 MB/s O_DIRECT, 535 MB/s buffered
+    #   /vast write            987 MB/s
+    #   node-local NVMe        2.0 GB/s write, 2.8 TB free
+    #
+    # At 535 MB/s the 94 GB planet is a ~3 min read. The real cost is osmium's
+    # own decompress-and-filter, which runs at ~72 MB/s single-threaded and is
+    # CPU-bound, not I/O-bound: ohm 1.1 GB in 15 s, osm 94 GB in 1308 s (21.8
+    # min), the same rate at 85x the size. Planner end-to-end: ohm 20 s, osm
+    # 1342 s.
+    #
+    # Walls stay far above measurement because they are caps, not
+    # reservations — Slurm bills elapsed — and because the 2026-05-01
+    # contention was real even if it was not typical. 8 h is ~22x the measured
+    # osm planner and survives a 20x degradation; it no longer asks the
+    # scheduler for a day.
+    "ohm": 2,
+    "osm": 8,
 }
 # Finalize concatenates the shard JSONLs AND runs boundary_merge (added
 # 2026-08-01 — leaving the merge to the operator ended the documented boundary
@@ -206,7 +222,7 @@ source {_CONDA_SH}
 conda activate {_CONDA_ENV}
 cd {_REPO}
 
-python -m processing.boundary_shard_planner \\
+python -u -m processing.boundary_shard_planner \\
     --pbf {pbf_file} \\
     --namespace {namespace} \\
     --shard-count {shard_count} \\
@@ -302,7 +318,7 @@ source {_CONDA_SH}
 conda activate {_CONDA_ENV}
 cd {_REPO}
 
-python -m processing.boundary_stage_finalize \\
+python -u -m processing.boundary_stage_finalize \\
     --run-id {run_id} \\
     --namespace {namespace} \\
     --shard-map {shard_map_path} \\
@@ -315,7 +331,7 @@ python -m processing.boundary_stage_finalize \\
 # ended one step short of the barrier with nothing saying why — and h3_stage
 # silently falls back to the extract's relation point fallbacks if
 # boundary_merged/ is absent.
-python -m processing.boundary_merge \\
+python -u -m processing.boundary_merge \\
     --run-id {run_id} \\
     --namespace {namespace} \\
     --manifest-path {manifest_path}

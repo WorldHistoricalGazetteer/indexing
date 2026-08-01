@@ -536,12 +536,21 @@ def prefilter_boundaries(input_pbf, output_pbf):
     print(f"  Input:  {input_pbf} ({input_size_gb:.1f} GB)")
     start = time.time()
 
-    # 12 h: the 92 GB OSM planet PBF read from ``/ix1`` NFS is the
-    # dominant cost, and effective NFS read rates on busy days drop to
-    # 1-3 MB/s (probed 2026-05-01: 4 GiB sequential read couldn't finish
-    # in 30 min). At 2 MB/s, 92 GB needs ~13 h — earlier 2 h then 6 h
-    # caps both timed out under contention. 12 h is generous; the
-    # planner Slurm walltime is bumped accordingly.
+    # 6 h. The previous 12 h was set from a 2026-05-01 probe in which a 4 GiB
+    # sequential read of /ix1 "couldn't finish in 30 min" (<2.3 MB/s), taken to
+    # mean the mount was the dominant cost. Re-measured 2026-08-01 on an htc
+    # node: /ix1 sequential read is **535 MB/s buffered, 711 MB/s O_DIRECT** —
+    # two orders of magnitude off. That probe caught /ix1 mid-rebuild, being
+    # hammered by concurrent boundary and tile workers.
+    #
+    # The real cost is this subprocess itself: `osmium tags-filter` decompresses
+    # and tag-checks every block single-threaded at ~72 MB/s, which is CPU-bound
+    # and barely touches the disk. Measured: ohm 1.1 GB in 15 s, osm 94 GB in
+    # 1308 s — the same rate across an 85x size range, which is what a
+    # CPU-bound stage looks like.
+    #
+    # 6 h is ~16x the measured osm prefilter. Kept generous because the 05-01
+    # contention was real, just not typical.
     try:
         result = subprocess.run(
             [
@@ -557,7 +566,7 @@ def prefilter_boundaries(input_pbf, output_pbf):
             timeout=43200,
         )
     except subprocess.TimeoutExpired:
-        print("  Pre-filter timed out after 12 hours")
+        print("  Pre-filter timed out after 6 hours")
         return None
     except FileNotFoundError:
         print("  osmium command failed to execute")
