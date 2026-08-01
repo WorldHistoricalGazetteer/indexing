@@ -152,66 +152,36 @@ def _is_namespace_snapshot_trigger(namespace: str, script_id: str) -> bool:
     return FINAL_NAMESPACE_SCRIPT_ID.get(namespace) == script_id
 
 
-def _run_boundary_pre_h3_stages(
-    *,
-    namespace: str,
-    run_id: str,
-    run_manifest_path: Path | None,
-) -> bool:
-    """Run boundary stage + merge for namespaces requiring pre-H3 geometry completion.
-
-    Returns True on success, False on failure.
-    """
-    if namespace not in BOUNDARY_REQUIRED_NAMESPACES:
-        return True
-
-    cmd_boundary = [
-        sys.executable,
-        "-u",
-        "-m",
-        "processing.boundary_stage",
-        "--run-id",
-        run_id,
-        "--namespace",
-        namespace,
-    ]
-    if run_manifest_path is not None:
-        cmd_boundary.extend(["--manifest-path", str(run_manifest_path)])
-
-    cmd_merge = [
-        sys.executable,
-        "-u",
-        "-m",
-        "processing.boundary_merge",
-        "--run-id",
-        run_id,
-        "--namespace",
-        namespace,
-    ]
-    if run_manifest_path is not None:
-        cmd_merge.extend(["--manifest-path", str(run_manifest_path)])
-
-    try:
-        print(f"\nRunning boundary stage for {namespace} (pre-H3 requirement)...")
-        subprocess.run(cmd_boundary, check=True, stdout=sys.stdout, stderr=sys.stderr)
-
-        print(f"Running boundary merge for {namespace}...")
-        subprocess.run(cmd_merge, check=True, stdout=sys.stdout, stderr=sys.stderr)
-        return True
-    except subprocess.CalledProcessError as e:
-        print(f"\n✗ Boundary pre-H3 stage failed for {namespace} with exit code {e.returncode}")
-        sys.stdout.flush()
-        return False
-    except Exception as e:
-        print(f"\n✗ Boundary pre-H3 stage failed for {namespace}: {e}")
-        sys.stdout.flush()
-        return False
+# The former ``_run_boundary_pre_h3_stages`` lived here: it shelled out to
+# boundary_stage + boundary_merge inline, inside the extract job, as a single
+# unsharded process. It is gone rather than merely unused, because dead code
+# that looks operational is worse than none — this is the function that timed
+# `ohm` out at 12 h and, by returning False, discarded the completion of a
+# 20.6 M-doc `osm` extract. The boundary work belongs to
+# ``processing.submit_boundary_slurm`` (planner -> sharded workers -> finalize,
+# which now also runs boundary_merge).
 
 
 def delete_existing_namespace(namespace):
     """
-    Delete all places for a given authority namespace.
+    Delete all places for a given authority namespace, from the LIVE index.
+
+    Refuses to run in staging mode. A staged run writes to
+    ``staged/<ns>/extract`` and never touches Elasticsearch, so
+    ``--replace-existing`` there cannot mean "replace what this run produced" —
+    it would delete the namespace out of the index currently serving
+    production, on the strength of a flag whose apparent meaning is "re-extract
+    from scratch". The staged equivalent is rotating the staged tree, which
+    ``processing.submit_extract_slurm`` does.
     """
+    if is_staging_mode():
+        raise RuntimeError(
+            f"refusing to delete '{namespace}' from the live index in staging mode: "
+            f"--replace-existing targets Elasticsearch, but this run writes staged "
+            f"files. To re-extract, rotate the staged tree "
+            f"(processing.submit_extract_slurm --force)."
+        )
+
     print(f"\nDeleting existing data for namespace '{namespace}'")
     sys.stdout.flush()
 
@@ -656,27 +626,37 @@ def ingest_all(
                     except Exception as e:
                         print(f"  Warning: failed to materialize namespace manifest ({ns}/{script_id}): {e}")
 
-                # Boundary completion is mandatory for osm/ohm before any H3 stage.
+                # Boundary completion is mandatory for osm/ohm before any H3
+                # stage — but it does NOT belong inside the extract job. Run
+                # inline it is a single unsharded process assembling relation
+                # multipolygons for the whole planet, which cannot finish in a
+                # job wall: `ohm` (the small one, 905 k docs) hit a 12 h TIMEOUT
+                # still pre-filtering its PBF, and `osm` is twenty times larger.
+                #
+                # Worse, failing here also skipped the `extract` completion
+                # marking below, so a perfectly good 20.6 M-doc extract was
+                # recorded as if it had never happened.
+                #
+                # `processing.submit_boundary_slurm` is the supported path: a
+                # planner that shards by cost, then mega + regular worker
+                # arrays, then finalize. Mark the stage pending and say so.
                 if should_snapshot and run_id and ns in BOUNDARY_REQUIRED_NAMESPACES:
-                    boundary_ok = _run_boundary_pre_h3_stages(
-                        namespace=ns,
-                        run_id=run_id,
-                        run_manifest_path=run_manifest_path,
+                    if run_manifest_path:
+                        update_namespace_stage_status(
+                            run_manifest_path, ns, "boundary", "pending"
+                        )
+                        update_namespace_stage_status(
+                            run_manifest_path, ns, "boundary_merge", "pending"
+                        )
+                    print(
+                        f"\n⚠ {ns} needs the boundary chain before H3. It is NOT run here "
+                        f"(unsharded, cannot finish in a job wall). Submit it with:\n"
+                        f"    python -m processing.submit_boundary_slurm "
+                        f"--run-id {run_id} --namespace {ns}\n"
+                        f"  The global barrier requires boundary_merge, so the chain "
+                        f"must complete before the post-extract stages."
                     )
-                    if not boundary_ok:
-                        if run_manifest_path:
-                            update_namespace_stage_status(
-                                run_manifest_path,
-                                ns,
-                                "boundary",
-                                "failed",
-                                error="boundary stage/merge failed",
-                            )
-                        if ns not in results['failed']:
-                            results['failed'].append(ns)
-                        print(f"Stopping further {ns} scripts due to boundary stage failure")
-                        sys.stdout.flush()
-                        continue
+                    sys.stdout.flush()
 
                 # For namespaces without boundary stage, explicitly mark stages skipped.
                 if should_snapshot and run_manifest_path and ns not in BOUNDARY_REQUIRED_NAMESPACES:
@@ -686,26 +666,16 @@ def ingest_all(
                 if run_manifest_path and should_snapshot:
                     update_namespace_stage_status(run_manifest_path, ns, "extract", "completed")
                     if defer_h3:
-                        if ns in BOUNDARY_REQUIRED_NAMESPACES:
-                            manifest = load_run_manifest(run_manifest_path)
-                            boundary_merge_status = (
-                                manifest.get("namespaces", {})
-                                .get(ns, {})
-                                .get("stages", {})
-                                .get("boundary_merge")
-                            )
-                            if boundary_merge_status == "completed":
-                                update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
-                            else:
-                                update_namespace_stage_status(
-                                    run_manifest_path,
-                                    ns,
-                                    "h3",
-                                    "failed",
-                                    error="boundary_merge must complete before H3",
-                                )
-                        else:
-                            update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
+                        # H3 is `pending` either way. It used to be marked
+                        # `failed` for osm/ohm whenever boundary_merge wasn't
+                        # already complete — but now that the boundary chain is
+                        # deliberately deferred to submit_boundary_slurm, that
+                        # is the normal state, not an error. Recording it as
+                        # `failed` would put a permanent falsehood in the
+                        # manifest for every rebuild. `submit_h3_slurm` gates on
+                        # boundary_merge itself, and the global barrier requires
+                        # it, so nothing runs early on the strength of this.
+                        update_namespace_stage_status(run_manifest_path, ns, "h3", "pending")
                 if run_id and should_snapshot and defer_h3:
                     try:
                         h3_status = "pending"

@@ -10,13 +10,20 @@ This file is the canonical run-selection control for ingestion.
 
 ## Core Authorities (local)
 
+> **Every namespace in `INGESTION_ORDER` must appear here.** Omission is not the
+> same as `[ ]`: an absent entry parses as deselected, and deselection *deletes*
+> that namespace's staged artefacts at run start. This file drifted to 18 of 27
+> between May and July 2026, so a from-scratch run would have silently dropped
+> nine authorities and deleted their staged trees. `tests/test_authority_selection.py`
+> now fails if the two lists diverge.
+
 - [x] `osm` - OpenStreetMap places
 - [x] `ohm` - OpenHistoricalMap places
 - [x] `gn` - GeoNames places + toponym updates
 - [x] `wd` - Wikidata places + geoshape updates
 - [x] `tgn` - Getty TGN
 - [x] `pl` - Pleiades
-- [x] `un` - UN countries
+- [x] `un` - UN countries (ISO country boundaries; the ccode authority)
 - [x] `dp` - D-PLACE
 - [x] `nl` - Native Land
 - [x] `ukhc` - UK Historic Counties
@@ -27,7 +34,16 @@ This file is the canonical run-selection control for ingestion.
 - [x] `tm` - Trismegistos
 - [x] `po` - PeriodO
 - [x] `clio` - Cliopatria
-- [x] `loc` - Library of Congress relations update
+- [x] `ofs` - Ottoman NFS Gazetteer
+- [x] `og` - Ottoman Gazetteer (ottgaz; reads the `ofs` staged extract for hulls)
+- [x] `hgis` - HGIS de las Indias (lugares + territorios)
+- [x] `alc` - Alcedo / TopUrbi
+- [x] `kain_par` - Kain & Oliver ancient parishes (pre-1850)
+- [x] `vob_rd` - GBHGIS registration districts / poor-law unions
+- [x] `vob_rc` - GBHGIS registration counties
+- [x] `vob_cty` - GBHGIS administrative counties
+- [x] `vob_lgd` - GBHGIS local-government districts
+- [x] `loc` - Library of Congress relations update (relations only; Batch 12)
 
 ## WHG Authorities (group + discovered datasets)
 

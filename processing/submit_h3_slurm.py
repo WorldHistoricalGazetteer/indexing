@@ -74,6 +74,12 @@ _QOS_TIERS: list[tuple[int, str]] = [
     (21 * 86_400, "htc-htc-ll"),  # ≤ 21 days (maximum)
 ]
 
+# Namespaces whose real geometry arrives via the boundary chain, not the
+# extract. Imported rather than redefined so the two cannot drift.
+from processing.ingest_all_authorities import (  # noqa: E402
+    BOUNDARY_REQUIRED_NAMESPACES as _BOUNDARY_REQUIRED,
+)
+
 # Namespaces known to be large — allocate extra by default on first run
 _LARGE_NAMESPACES = {"osm", "ohm", "gn", "wd"}
 _LARGE_DEFAULT_HOURS = 48
@@ -99,15 +105,35 @@ def _seconds_to_slurm_time(seconds: int) -> str:
 
 
 def _pending_namespaces(manifest: dict) -> list[str]:
-    """Return namespaces whose H3 stage is pending or failed (skipped if completed)."""
+    """Return namespaces whose H3 stage is pending or failed (skipped if completed).
+
+    ``osm``/``ohm`` additionally require ``boundary_merge``. This used to gate on
+    ``extract`` alone, which is not enough and fails **silently**: those two
+    emit point fallbacks for relation multipolygons at extract time, and the
+    real geometry only arrives via the boundary chain. ``h3_stage`` prefers
+    ``boundary_merged/`` when it exists and quietly falls back to the extract
+    when it does not — so running H3 early doesn't error, it just computes
+    ``h3_cover`` from a point for every admin boundary in the planet.
+    """
     pending = []
     for ns, info in manifest.get("namespaces", {}).items():
         stages = info.get("stages", {})
         h3_status = stages.get("h3", "pending")
-        if h3_status in ("pending", "failed"):
-            # Only include namespaces that have a completed extract stage
-            if stages.get("extract") == "completed":
-                pending.append(ns)
+        if h3_status not in ("pending", "failed"):
+            continue
+        if stages.get("extract") != "completed":
+            continue
+        if ns in _BOUNDARY_REQUIRED and stages.get("boundary_merge") not in (
+            "completed", "skipped"
+        ):
+            print(
+                f"  {ns}: extract is complete but boundary_merge is "
+                f"'{stages.get('boundary_merge', 'pending')}' — H3 deferred, because "
+                f"it would otherwise be computed from relation point fallbacks. "
+                f"Run: python -m processing.submit_boundary_slurm --namespace {ns}"
+            )
+            continue
+        pending.append(ns)
     return pending
 
 

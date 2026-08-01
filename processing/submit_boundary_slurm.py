@@ -109,7 +109,19 @@ _PLANNER_WALL_HOURS = {
     "ohm": 4,
     "osm": 24,
 }
-_FINALIZE_WALL_HOURS = 1
+# Finalize concatenates the shard JSONLs AND runs boundary_merge (added
+# 2026-08-01 — leaving the merge to the operator ended the documented boundary
+# path one stage short of the global barrier). The merge is the expensive half:
+# `_load_boundary_patches` holds the whole patch in a dict, and osm's is ~1.3 GB
+# of JSONL, so the previous 1 h / 8 G would have OOM'd rather than merged.
+_FINALIZE_WALL_HOURS = {
+    "ohm": 4,
+    "osm": 12,
+}
+_FINALIZE_MEM_GB = {
+    "ohm": 32,
+    "osm": 96,
+}
 
 # Cluster + QOS picked per job class. Probed 2026-05-01: htc nodes
 # average ~40 % faster NFS reads from /ix1 than smp (htc 18 MB/s avg,
@@ -277,13 +289,13 @@ def _build_finalize_sbatch(
 #SBATCH --job-name=whg-boundary-finalize-{run_id}
 #SBATCH --output={log_prefix}.out
 #SBATCH --error={log_prefix}.err
-#SBATCH --time={_hours_to_slurm_time(_FINALIZE_WALL_HOURS)}
+#SBATCH --time={_hours_to_slurm_time(_FINALIZE_WALL_HOURS.get(namespace, 12))}
 #SBATCH --partition={_PARTITION}
 #SBATCH --qos={_QOS_SHORT}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=2
-#SBATCH --mem=8G
+#SBATCH --mem={_FINALIZE_MEM_GB.get(namespace, 96)}G
 
 set -eo pipefail
 source {_CONDA_SH}
@@ -294,6 +306,18 @@ python -m processing.boundary_stage_finalize \\
     --run-id {run_id} \\
     --namespace {namespace} \\
     --shard-map {shard_map_path} \\
+    --manifest-path {manifest_path}
+
+# Collapse the boundary patch into boundary_merged/, which is what h3_stage
+# actually reads. Finalize only concatenates the shards and marks `boundary`;
+# `boundary_merge` is a separate stage and a GLOBAL_BARRIER_REQUIRED_STAGES
+# member, so leaving it to the operator meant the documented boundary path
+# ended one step short of the barrier with nothing saying why — and h3_stage
+# silently falls back to the extract's relation point fallbacks if
+# boundary_merged/ is absent.
+python -m processing.boundary_merge \\
+    --run-id {run_id} \\
+    --namespace {namespace} \\
     --manifest-path {manifest_path}
 """
     sbatch_path = work_dir / f"boundary_finalize_{namespace}.sbatch"
