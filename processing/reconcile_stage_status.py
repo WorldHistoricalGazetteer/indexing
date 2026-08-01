@@ -171,7 +171,12 @@ def main() -> None:
         print(f"Run manifest not found: {manifest_path}", file=sys.stderr)
         sys.exit(1)
 
-    stages = args.stage or ["extract"]
+    # Scripts-only when --script is given without an explicit --stage. That
+    # combination is how you say "this script ran, but the namespace is not
+    # finished" — `gn` and `wd` each have a second script (gn-toponyms,
+    # wikidata-geoshapes) that must still run, and marking `extract` completed
+    # early would let the global barrier pass them without it.
+    stages = args.stage or ([] if args.script else ["extract"])
     unknown = [s for s in stages if s not in STAGE_ARTEFACTS]
     if unknown:
         print(f"Unknown stage(s): {', '.join(unknown)}", file=sys.stderr)
