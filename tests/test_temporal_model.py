@@ -365,3 +365,43 @@ class NormaliseTimespansTests(unittest.TestCase):
         self.assertEqual(normalise_timespans(None), [])
         self.assertEqual(normalise_timespans("nope"), [])
         self.assertEqual(normalise_timespans([None, 3, {"start": "x"}]), [])
+
+
+class RepresentableYearTests(unittest.TestCase):
+    """Years must survive the trip into Elasticsearch's ``integer`` mapping.
+
+    Wikidata models the age of the universe as an ordinary time claim, so
+    ``-13798000000`` reaches the builders. ES rejects the whole document with
+    ``failed to parse field [...] of type [integer]`` — 3,639 ``wd`` docs were
+    lost that way on the place#164 rebuild before this bound existed.
+    """
+
+    def test_out_of_range_year_is_dropped_not_clamped(self):
+        # Clamping to the int32 floor would assert a date the source never gave.
+        self.assertEqual(attested_at(-13_798_000_000), [])
+        self.assertEqual(attested_window(-13_798_000_000, -13_797_000_000), [])
+        self.assertEqual(lifespan(-13_798_000_000), [])
+
+    def test_the_representable_half_of_a_pair_survives(self):
+        # A place with an absurd start and a real end keeps the end, and the
+        # closure rule still applies to it.
+        self.assertEqual(
+            lifespan(-13_798_000_000, 1900),
+            [{"end": {"in": 1900}, "start": {"latest": 1900}}],
+        )
+
+    def test_boundary_values(self):
+        from processing.temporal import YEAR_MAX, YEAR_MIN
+        self.assertEqual(lifespan(YEAR_MIN), [{"start": {"in": YEAR_MIN}}])
+        self.assertEqual(lifespan(YEAR_MAX), [{"start": {"in": YEAR_MAX}}])
+        self.assertEqual(lifespan(YEAR_MIN - 1), [])
+        self.assertEqual(lifespan(YEAR_MAX + 1), [])
+
+    def test_ordinary_deep_history_is_untouched(self):
+        # The bound must not disturb real archaeology.
+        self.assertEqual(lifespan(-3000, -2000),
+                         [{"start": {"in": -3000}, "end": {"in": -2000}}])
+
+    def test_coerce_year_applies_the_same_bound(self):
+        self.assertIsNone(coerce_year("-13798000000"))
+        self.assertEqual(coerce_year("-3000"), -3000)

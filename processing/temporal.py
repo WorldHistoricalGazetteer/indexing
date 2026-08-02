@@ -75,6 +75,9 @@ __all__ = [
     "lifespan",
     "bounded",
     "apply_closure",
+    "representable_year",
+    "YEAR_MIN",
+    "YEAR_MAX",
     "coerce_year",
     "normalise_timespans",
     "precision_bounds",
@@ -85,6 +88,30 @@ __all__ = [
 #: The two endpoints and three sub-fields every timespan may carry.
 ENDPOINTS = ("start", "end")
 SUBFIELDS = ("in", "earliest", "latest")
+
+
+#: Years must survive the round trip into Elasticsearch, where every timespan
+#: sub-field is mapped ``integer`` (``schemas/places.json``) — a signed 32-bit
+#: value. Wikidata does not respect that: it models the age of the universe,
+#: the formation of the Earth and similar as ordinary time claims, so
+#: ``_year_from_wikidata_time`` happily returns ``-13798000000``. Indexing one
+#: fails the whole document with
+#: ``failed to parse field [...] of type [integer]``, which cost 3,639 ``wd``
+#: docs on the place#164 rebuild — a bounded, counted loss, but a loss.
+#:
+#: Such a value is not a *place* date in any usable sense, and clamping it to
+#: the int32 floor would assert something false. Dropping the endpoint is the
+#: honest response, and it is done here — in the shared vocabulary — so every
+#: source is covered rather than whichever one happens to hit it next.
+YEAR_MIN = -(2 ** 31)
+YEAR_MAX = 2 ** 31 - 1
+
+
+def representable_year(year: int | None) -> int | None:
+    """``year`` if Elasticsearch can store it, else ``None``."""
+    if year is None:
+        return None
+    return year if YEAR_MIN <= year <= YEAR_MAX else None
 
 
 def _clean(ts: dict[str, Any]) -> list[dict[str, Any]]:
@@ -103,6 +130,7 @@ def attested_at(year: int | None) -> list[dict[str, Any]]:
     This is the correct encoding for a dated snapshot — **not**
     ``start.in``/``end.in``, which claims the place existed *only* in that year.
     """
+    year = representable_year(year)
     if year is None:
         return []
     return _clean({"start": {"latest": year}, "end": {"earliest": year}})
@@ -121,6 +149,7 @@ def attested_window(first: int | None, last: int | None) -> list[dict[str, Any]]
     Degrades to :func:`attested_at` when the window is a single year, and
     tolerates a reversed pair rather than emitting nonsense.
     """
+    first, last = representable_year(first), representable_year(last)
     if first is None and last is None:
         return []
     if first is None:
@@ -148,6 +177,7 @@ def lifespan(
     Pass ``apply_closure=False`` only when the caller supplies its own
     ``start`` bound.
     """
+    start, end = representable_year(start), representable_year(end)
     ts: dict[str, Any] = {}
     if start is not None:
         ts["start"] = {"in": start}
@@ -183,6 +213,10 @@ def bounded(
     :func:`processing.gazetteer_temporal_extent.doc_temporal_bounds`), because
     genuine lifespans use it.
     """
+    start_earliest = representable_year(start_earliest)
+    start_latest = representable_year(start_latest)
+    end_earliest = representable_year(end_earliest)
+    end_latest = representable_year(end_latest)
     start: dict[str, Any] = {}
     end: dict[str, Any] = {}
     if start_earliest is not None:
@@ -270,7 +304,7 @@ def coerce_year(value: Any) -> int | None:
         year = int(head)
     except ValueError:
         return None
-    return -year if negative else year
+    return representable_year(-year if negative else year)
 
 
 def normalise_timespans(timespans: Any) -> list[dict[str, Any]]:
