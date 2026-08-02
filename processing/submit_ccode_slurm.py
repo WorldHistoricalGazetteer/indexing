@@ -54,7 +54,11 @@ from processing.settings import (  # noqa: E402
 )
 from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
 from processing.staging_contract import is_relations_only  # noqa: E402
-from processing.staging_orchestrator import array_memory_gb, load_run_manifest  # noqa: E402
+from processing.staging_orchestrator import (  # noqa: E402
+    array_memory_gb,
+    load_run_manifest,
+    update_namespace_stage_status,
+)
 
 
 _QOS_TIERS: list[tuple[int, str]] = [
@@ -81,6 +85,24 @@ def _seconds_to_slurm_time(seconds: int) -> str:
     if days:
         return f"{days}-{hours:02d}:{mins:02d}:{secs:02d}"
     return f"{hours:02d}:{mins:02d}:{secs:02d}"
+
+
+def _mark_un_skipped(manifest: dict, manifest_path: Path, *, dry_run: bool = False) -> None:
+    """Record UN's ccode stages as ``skipped`` so the global barrier can pass."""
+    if UN_NAMESPACE not in manifest.get("namespaces", {}):
+        return
+    stages = manifest["namespaces"][UN_NAMESPACE].get("stages", {})
+    todo = [s for s in ("ccode", "ccode_merge")
+            if stages.get(s) not in ("completed", "skipped")]
+    if not todo:
+        return
+    if dry_run:
+        print(f"  would mark {UN_NAMESPACE} {'/'.join(todo)} as skipped "
+              f"(it is the ccode source)")
+        return
+    for stage in todo:
+        update_namespace_stage_status(manifest_path, UN_NAMESPACE, stage, "skipped")
+    print(f"  marked {UN_NAMESPACE} {'/'.join(todo)} as skipped (it is the ccode source)")
 
 
 def _pending_namespaces(manifest: dict) -> list[str]:
@@ -180,6 +202,14 @@ def submit(
 ) -> str | None:
     manifest = load_run_manifest(manifest_path)
     namespaces = _pending_namespaces(manifest)
+
+    # `un` is excluded from the array because it supplies ccodes rather than
+    # receiving them — but excluding it is not the same as recording it, and
+    # GLOBAL_BARRIER_REQUIRED_STAGES demands `completed` or `skipped` for both
+    # ccode stages. Left `pending`, `un` blocks the barrier for ever, and the
+    # barrier report says only that `un` is missing ccode — which reads like a
+    # failure rather than a namespace that was never meant to run.
+    _mark_un_skipped(manifest, manifest_path, dry_run=dry_run)
 
     if not namespaces:
         print("No namespaces eligible for ccode enrichment in this manifest.")
