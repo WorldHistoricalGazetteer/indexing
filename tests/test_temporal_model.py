@@ -315,7 +315,7 @@ class SchemaMappingTests(unittest.TestCase):
     fields, so this guards the schema that the next full rebuild applies.
     """
 
-    def test_every_timespan_subfield_is_integer_in_the_schema(self):
+    def test_every_timespan_subfield_is_long_in_the_schema(self):
         import json
         from pathlib import Path
 
@@ -333,8 +333,8 @@ class SchemaMappingTests(unittest.TestCase):
                         f"{section}.timespans.{endpoint}.{sub} missing from schema",
                     )
                     self.assertEqual(
-                        fields[sub]["type"], "integer",
-                        f"{section}.timespans.{endpoint}.{sub} must be integer "
+                        fields[sub]["type"], "long",
+                        f"{section}.timespans.{endpoint}.{sub} must be long "
                         f"— text cannot be range-queried",
                     )
 
@@ -368,29 +368,46 @@ class NormaliseTimespansTests(unittest.TestCase):
 
 
 class RepresentableYearTests(unittest.TestCase):
-    """Years must survive the trip into Elasticsearch's ``integer`` mapping.
+    """Years must survive the trip into Elasticsearch's ``long`` mapping.
 
-    Wikidata models the age of the universe as an ordinary time claim, so
-    ``-13798000000`` reaches the builders. ES rejects the whole document with
-    ``failed to parse field [...] of type [integer]`` — 3,639 ``wd`` docs were
-    lost that way on the place#164 rebuild before this bound existed.
+    The sub-fields were ``integer`` until 2026-08-02, and that cost data:
+    Wikidata models the age of the universe as an ordinary time claim, and a
+    value outside int32 makes ES reject the WHOLE document — 3,639 ``wd`` docs
+    lost their entire record. Dropping such years was the first fix, until
+    ``po`` showed it was wrong: 14 of its docs are geological eons whose dates
+    are the content. So the storage widened instead.
     """
 
-    def test_out_of_range_year_is_dropped_not_clamped(self):
-        # Clamping to the int32 floor would assert a date the source never gave.
-        self.assertEqual(attested_at(-13_798_000_000), [])
-        self.assertEqual(attested_window(-13_798_000_000, -13_797_000_000), [])
-        self.assertEqual(lifespan(-13_798_000_000), [])
-
-    def test_the_representable_half_of_a_pair_survives(self):
-        # A place with an absurd start and a real end keeps the end, and the
-        # closure rule still applies to it.
+    def test_deep_time_is_now_preserved(self):
+        # The Hadean Eon, as PeriodO gives it. Previously unstorable.
         self.assertEqual(
-            lifespan(-13_798_000_000, 1900),
-            [{"end": {"in": 1900}, "start": {"latest": 1900}}],
+            bounded(-4_567_998_050, -4_565_998_050, -3_999_998_050, -3_999_998_050),
+            [{"start": {"earliest": -4_567_998_050, "latest": -4_565_998_050},
+              "end": {"in": -3_999_998_050}}],
         )
 
-    def test_boundary_values(self):
+    def test_cosmological_years_survive_the_builders(self):
+        self.assertEqual(
+            attested_at(-13_798_000_000),
+            [{"start": {"latest": -13_798_000_000},
+              "end": {"earliest": -13_798_000_000}}],
+        )
+        self.assertEqual(
+            lifespan(-13_798_000_000, 1900),
+            [{"start": {"in": -13_798_000_000}, "end": {"in": 1900}}],
+        )
+
+    def test_normalise_timespans_preserves_them_too(self):
+        self.assertEqual(
+            normalise_timespans([{"start": {"in": -13_798_000_000},
+                                  "end": {"in": 1900}}]),
+            [{"start": {"in": -13_798_000_000}, "end": {"in": 1900}}],
+        )
+
+    def test_beyond_int64_is_still_rejected(self):
+        # The bound remains because Python ints are unbounded and ES is not.
+        # Nothing real reaches it: the universe is ~1.4e10 years old, int64
+        # spans ~9.2e18.
         from processing.temporal import YEAR_MAX, YEAR_MIN
         self.assertEqual(lifespan(YEAR_MIN), [{"start": {"in": YEAR_MIN}}])
         self.assertEqual(lifespan(YEAR_MAX), [{"start": {"in": YEAR_MAX}}])
@@ -398,7 +415,6 @@ class RepresentableYearTests(unittest.TestCase):
         self.assertEqual(lifespan(YEAR_MAX + 1), [])
 
     def test_ordinary_deep_history_is_untouched(self):
-        # The bound must not disturb real archaeology.
         self.assertEqual(lifespan(-3000, -2000),
                          [{"start": {"in": -3000}, "end": {"in": -2000}}])
 
@@ -406,18 +422,7 @@ class RepresentableYearTests(unittest.TestCase):
         """The bound is a write-path concern, and coerce_year is shared.
 
         ``gazetteer_temporal_extent`` reads through coerce_year and applies its
-        own per-namespace clamp — and ``po`` deliberately admits geological
-        years down to -5e9, because PeriodO covers geological periods. Bounding
-        here broke that; the storage bound lives in the builders and in
-        normalise_timespans instead.
+        own per-namespace clamp — ``po`` admits years to -5e9. The storage bound
+        lives in the builders and normalise_timespans instead.
         """
         self.assertEqual(coerce_year(-4_567_998_050), -4_567_998_050)
-        self.assertEqual(coerce_year("-13798000000"), -13_798_000_000)
-
-    def test_normalise_timespans_does_apply_it(self):
-        from processing.temporal import normalise_timespans
-        self.assertEqual(
-            normalise_timespans([{"start": {"in": -13_798_000_000},
-                                  "end": {"in": 1900}}]),
-            [{"end": {"in": 1900}}],
-        )

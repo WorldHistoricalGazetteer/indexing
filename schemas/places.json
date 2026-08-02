@@ -62,13 +62,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               },
@@ -76,13 +76,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               }
@@ -130,13 +130,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               },
@@ -144,13 +144,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               }
@@ -206,13 +206,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               },
@@ -220,13 +220,13 @@
                 "type": "object",
                 "properties": {
                   "in": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "earliest": {
-                    "type": "integer"
+                    "type": "long"
                   },
                   "latest": {
-                    "type": "integer"
+                    "type": "long"
                   }
                 }
               }

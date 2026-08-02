@@ -90,21 +90,25 @@ ENDPOINTS = ("start", "end")
 SUBFIELDS = ("in", "earliest", "latest")
 
 
-#: Years must survive the round trip into Elasticsearch, where every timespan
-#: sub-field is mapped ``integer`` (``schemas/places.json``) — a signed 32-bit
-#: value. Wikidata does not respect that: it models the age of the universe,
-#: the formation of the Earth and similar as ordinary time claims, so
-#: ``_year_from_wikidata_time`` happily returns ``-13798000000``. Indexing one
-#: fails the whole document with
-#: ``failed to parse field [...] of type [integer]``, which cost 3,639 ``wd``
-#: docs on the place#164 rebuild — a bounded, counted loss, but a loss.
+#: Years must survive the round trip into Elasticsearch. ``schemas/places.json``
+#: maps every timespan sub-field ``long`` (widened from ``integer`` on
+#: 2026-08-02), so the bound is signed 64-bit.
 #:
-#: Such a value is not a *place* date in any usable sense, and clamping it to
-#: the int32 floor would assert something false. Dropping the endpoint is the
-#: honest response, and it is done here — in the shared vocabulary — so every
-#: source is covered rather than whichever one happens to hit it next.
-YEAR_MIN = -(2 ** 31)
-YEAR_MAX = 2 ** 31 - 1
+#: It was ``integer``, and that cost real data: Wikidata models the age of the
+#: universe as an ordinary time claim, and a value ~6x outside int32 makes ES
+#: reject the **whole document** — 3,639 ``wd`` places lost their entire record
+#: over a date that was never about the place. The obvious fix was to drop such
+#: years, but ``po`` showed why that was wrong: 14 of its docs are geological
+#: eons (Hadean, Archean, Eoarchean) whose dates ARE the content, and
+#: ``gazetteer_temporal_extent`` already carries a clamp override admitting
+#: years to -5e9 for exactly them. So the storage widened rather than the data
+#: shrinking.
+#:
+#: The bound remains because Python integers are unbounded and ES is not; a
+#: value beyond int64 would fail the same way. Nothing real reaches it — the
+#: universe is ~1.4e10 years old and int64 spans ~9.2e18.
+YEAR_MIN = -(2 ** 63)
+YEAR_MAX = 2 ** 63 - 1
 
 
 def representable_year(year: int | None) -> int | None:
