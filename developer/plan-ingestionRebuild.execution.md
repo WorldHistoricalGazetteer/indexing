@@ -2698,14 +2698,29 @@ Question on resumption: did the 2026-05-05 OSM/OHM boundary re-run leave prod ES
 ## Mass-rebuild prep phase (run before any extracts)
 
 Before launching the per-namespace extracts for a fresh rebuild, refresh the
-type-system data files on the Pitt VM. These files live on the shared ``/ix1``
-mount, so a single run on pitt makes them visible to every CRC compute node
-(including Slurm boundary/post-chain workers) without any sync step:
+type-system data files on the Pitt VM. They live on the shared ``/vast`` mount,
+so a single run on pitt makes them visible to every CRC compute node (including
+Slurm boundary/post-chain workers) without any sync step.
+
+**Two steps, not one.** ``--build-vocabs`` produces the *vocabularies*;
+``aat_mapper`` is what attaches the AAT mappings. Running only the first leaves
+``geonames``/``wikidata``/``pleiades`` with **zero** ``aat_mapping`` entries,
+and ``aat_enrich`` then emits no ``aat_ids`` for ``gn`` (13.4 M docs), ``wd``
+(11.5 M) and ``pl``. This section previously listed only the first step, which
+is how the place#164 rebuild reached ``aat_enrich`` with three empty vocabs.
 
 ```
 ssh pitt
 cd /vast/ishi/elastic
-bash scripts/types.sh --build-vocabs    # geonames + pleiades + wikidata + aat_hierarchy
+
+# 1. Vocabularies (geonames + pleiades + wikidata + aat_hierarchy)
+bash scripts/types.sh --build-vocabs
+
+# 2. AAT mappings — WITHOUT THIS THE VOCABS MAP NOTHING
+python -m typesystem.aat_mapper static
+python -m typesystem.aat_mapper wikidata --es-host http://localhost:9201
+python -m typesystem.aat_mapper sparql   --es-host http://localhost:9201
+python -m typesystem.aat_mapper report          # prints per-vocab coverage
 ```
 
 This produces:
@@ -2714,11 +2729,30 @@ This produces:
 * ``typesystem/data/pleiades.json``
 * ``typesystem/data/wikidata.json``  (requires ES — only buildable from pitt)
 * ``typesystem/data/aat_hierarchy.json``  (id → {path, label_en} from production ``types``)
-* (re-applied) ``typesystem/data/osm.json`` and ``ohm.json`` (committed in the repo)
+* (refreshed) ``typesystem/data/osm.json`` and ``ohm.json``
 
-The ``aat_enrich`` post-chain stage reads these directly. Slurm compute nodes
-see the same inodes via NFS — no ``git pull`` or rsync between pitt and CRC
-needed.
+**Verify before running the post-chain**, because an unmapped vocab is silent
+at the point of use:
+
+```
+python -c "
+from pathlib import Path
+from processing.aat_data_lookup import load_all_aat_mappings
+m = load_all_aat_mappings(Path('typesystem/data'))
+print({v: len(m.get(v) or {}) for v in ('osm','ohm','gn','wd','pleiades','un','chgis')})"
+```
+
+Every vocab must be non-zero. For reference, 2026-08-02 gave
+``osm 1264, ohm 513, gn 250, wd 2229, pleiades 180, un 2, chgis 262``.
+``processing.aat_enrich`` now refuses to run when the vocab a namespace
+resolves through is empty, so this cannot pass unnoticed a second time — but
+checking here is cheaper than discovering it from a failed Slurm array.
+
+Then **commit the refreshed vocabularies** (see the note below — this is not
+optional). The ``aat_enrich`` post-chain stage reads these files directly;
+Slurm compute nodes see the same inodes via NFS, so no ``git pull`` or rsync
+between pitt and CRC is needed for the *running* rebuild — but a fresh
+checkout has only what git carries.
 
 **Commit the vocabulary files. This is not optional** (corrected 2026-08-02):
 

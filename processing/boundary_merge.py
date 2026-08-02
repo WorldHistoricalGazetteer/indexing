@@ -37,6 +37,23 @@ from processing.staged_parquet import (
 )
 from processing.staging_orchestrator import update_namespace_stage_status
 
+#: Emit a progress line every N documents in the merge loop, and announce the
+#: Parquet conversion separately.
+#:
+#: These stages used to print exactly once, on completion. That is fine at
+#: small scale and actively harmful at osm's: the H3 merge ran for five hours
+#: against a 20.6M-doc corpus with a zero-byte log, which is indistinguishable
+#: from a hang. It cost a near-cancellation of a healthy job, and later a
+#: mis-diagnosis of a dying one — the JSONL had completed and the OOM came in
+#: the Parquet step, which nothing announced.
+_PROGRESS_EVERY = 1_000_000
+
+
+def _progress(label: str, n: int, *, every: int = _PROGRESS_EVERY) -> None:
+    if n and n % every == 0:
+        print(f"  {label}: {n:,} docs", flush=True)
+
+
 
 def _iter_extract_docs(namespace: str) -> Iterable[dict[str, Any]]:
     extract_dir = Path(STAGED_BASE_DIR) / namespace / "extract"
@@ -153,6 +170,7 @@ def run_boundary_merge(
             doc = _augment_doc_for_stage(doc)
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
+            _progress("boundary_merge", docs_written)
 
         # Optionally append upserts for patches with no existing base row.
         if allow_upsert:
@@ -170,7 +188,10 @@ def run_boundary_merge(
     # JSONL, then convert to parquet. The canonical JSONL keeps hull intact
     # for downstream consumers (ccode_enrichment, generate_tiles); only the
     # parquet sidecar is hull-less (lossless — those consumers don't read it).
+    print(f"  boundary_merge: merged {docs_written:,} docs; converting to Parquet ...",
+          flush=True)
     write_parquet_from_jsonl(jsonl_path, parquet_path)
+    print(f"  boundary_merge: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,

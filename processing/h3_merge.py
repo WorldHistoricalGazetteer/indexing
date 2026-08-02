@@ -53,6 +53,23 @@ BOUNDARY_REQUIRED_NAMESPACES = frozenset({"osm", "ohm"})
 
 from processing.staging_contract import UPDATE_PATCH_NAMESPACES  # noqa: E402
 
+#: Emit a progress line every N documents in the merge loop, and announce the
+#: Parquet conversion separately.
+#:
+#: These stages used to print exactly once, on completion. That is fine at
+#: small scale and actively harmful at osm's: the H3 merge ran for five hours
+#: against a 20.6M-doc corpus with a zero-byte log, which is indistinguishable
+#: from a hang. It cost a near-cancellation of a healthy job, and later a
+#: mis-diagnosis of a dying one — the JSONL had completed and the OOM came in
+#: the Parquet step, which nothing announced.
+_PROGRESS_EVERY = 1_000_000
+
+
+def _progress(label: str, n: int, *, every: int = _PROGRESS_EVERY) -> None:
+    if n and n % every == 0:
+        print(f"  {label}: {n:,} docs", flush=True)
+
+
 
 def _source_dir(namespace: str) -> Path:
     """Resolve the snapshot directory h3_merge should read from.
@@ -228,8 +245,12 @@ def run_h3_merge(
 
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
+            _progress("h3_merge", docs_written)
 
+    print(f"  h3_merge: merged {docs_written:,} docs; converting to Parquet ...",
+          flush=True)
     write_parquet_from_jsonl(jsonl_path, parquet_path)
+    print(f"  h3_merge: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,

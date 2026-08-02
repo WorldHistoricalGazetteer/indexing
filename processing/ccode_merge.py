@@ -42,6 +42,23 @@ from processing.staging_contract import (
 )
 from processing.staging_orchestrator import update_namespace_stage_status
 
+#: Emit a progress line every N documents in the merge loop, and announce the
+#: Parquet conversion separately.
+#:
+#: These stages used to print exactly once, on completion. That is fine at
+#: small scale and actively harmful at osm's: the H3 merge ran for five hours
+#: against a 20.6M-doc corpus with a zero-byte log, which is indistinguishable
+#: from a hang. It cost a near-cancellation of a healthy job, and later a
+#: mis-diagnosis of a dying one — the JSONL had completed and the OOM came in
+#: the Parquet step, which nothing announced.
+_PROGRESS_EVERY = 1_000_000
+
+
+def _progress(label: str, n: int, *, every: int = _PROGRESS_EVERY) -> None:
+    if n and n % every == 0:
+        print(f"  {label}: {n:,} docs", flush=True)
+
+
 
 def _iter_source_docs(namespace: str) -> Iterable[dict[str, Any]]:
     src_dir = Path(STAGED_BASE_DIR) / namespace / "h3_merged"
@@ -148,11 +165,15 @@ def run_ccode_merge(
 
             out_jsonl.write(json.dumps(normalize_for_parquet(doc), ensure_ascii=True) + "\n")
             docs_written += 1
+            _progress("ccode_merge", docs_written)
 
     # Stream the canonical JSONL through hull-strip + null-strip into a
     # temp parquet-input JSONL, then convert to parquet. The canonical
     # JSONL keeps hull and explicit nulls intact for downstream consumers.
+    print(f"  ccode_merge: merged {docs_written:,} docs; converting to Parquet ...",
+          flush=True)
     write_parquet_from_jsonl(jsonl_path, parquet_path)
+    print(f"  ccode_merge: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,
