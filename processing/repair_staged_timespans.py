@@ -48,23 +48,55 @@ import pyarrow.parquet as pq
 
 from processing.settings import STAGED_BASE_DIR
 from processing.staged_parquet import normalize_for_parquet, write_parquet_from_jsonl
-from processing.temporal import normalise_timespans
+from processing.temporal import (
+    ENDPOINTS,
+    SUBFIELDS,
+    coerce_year,
+    normalise_timespans,
+    representable_year,
+)
 
 #: Where timespans can appear on a place doc.
 _DOC_LEVEL = "timespans"
 _NESTED = ("geometries", "toponyms")
 
 
+def _has_unrepresentable_year(timespans: Any) -> bool:
+    """True when any year present is outside what Elasticsearch can store.
+
+    The precise question, deliberately. An earlier version asked "did
+    normalise_timespans change anything?", which reads as *every* doc changing:
+    a Parquet round trip materialises the whole schema with explicit nulls
+    (``{"in": None, "earliest": -49, "latest": None}``) and normalisation strips
+    them. That reported 9,017 of 9,017 ``po`` docs as damaged when 14 were —
+    and would have re-indexed 11.5 M ``wd`` docs to repair 3,639.
+    """
+    if not isinstance(timespans, list):
+        return False
+    for ts in timespans:
+        if not isinstance(ts, dict):
+            continue
+        for endpoint in ENDPOINTS:
+            node = ts.get(endpoint)
+            if not isinstance(node, dict):
+                continue
+            for sub in SUBFIELDS:
+                if sub not in node:
+                    continue
+                year = coerce_year(node.get(sub))
+                if year is not None and representable_year(year) is None:
+                    return True
+    return False
+
+
 def _repair_doc(doc: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Return ``(doc, changed)`` with every timespan list re-normalised."""
+    """Return ``(doc, changed)``, normalising only docs that actually need it."""
     changed = False
 
     original = doc.get(_DOC_LEVEL)
-    if isinstance(original, list):
-        fixed = normalise_timespans(original)
-        if fixed != original:
-            doc[_DOC_LEVEL] = fixed
-            changed = True
+    if _has_unrepresentable_year(original):
+        doc[_DOC_LEVEL] = normalise_timespans(original)
+        changed = True
 
     for field in _NESTED:
         items = doc.get(field)
@@ -74,11 +106,8 @@ def _repair_doc(doc: dict[str, Any]) -> tuple[dict[str, Any], bool]:
             if not isinstance(item, dict):
                 continue
             original = item.get(_DOC_LEVEL)
-            if not isinstance(original, list):
-                continue
-            fixed = normalise_timespans(original)
-            if fixed != original:
-                item[_DOC_LEVEL] = fixed
+            if _has_unrepresentable_year(original):
+                item[_DOC_LEVEL] = normalise_timespans(original)
                 changed = True
 
     return doc, changed
