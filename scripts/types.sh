@@ -31,10 +31,23 @@ LOG_DIR="${IX1_BASE}/logs"
 SLURM_ACCOUNT="${SLURM_ACCOUNT:-ishi}"
 
 # --- Load .env (provides STAGING_INFO_FILE, etc.) ---
+#
+# `.env` sets REPO_DIR="${IX1_BASE}/elastic", which has been wrong since the
+# repo moved to /vast on 2026-05-01 — that path does not exist. Sourcing it
+# here therefore clobbered the correct value derived from this script's own
+# location, and every invocation died on `cd: /ix1/ishi/elastic: No such file
+# or directory`. It failed at the *end* of the argument parsing, so it looked
+# like the pipeline had started.
+#
+# The script's own location is authoritative — nothing in .env can know better
+# than where this file actually is — so restore it after sourcing rather than
+# trusting the environment.
 ENV_FILE="${REPO_DIR}/.env"
+_DERIVED_REPO_DIR="$REPO_DIR"
 if [ -f "$ENV_FILE" ]; then
     source "$ENV_FILE"
 fi
+REPO_DIR="$_DERIVED_REPO_DIR"
 
 STAGING_INFO_FILE="${STAGING_INFO_FILE:-${IX1_BASE}/esinfo/es-staging.env}"
 

@@ -240,6 +240,67 @@ def augment_doc(
     return new_doc, types_seen, augmented
 
 
+#: namespace → the vocab key its ``types[]`` entries resolve through, for
+#: namespaces where an empty vocab map means the enrichment silently does
+#: nothing. Namespaces absent here either carry no native vocabulary or are
+#: enriched from their own ``aat_ids`` at extract time.
+_NAMESPACE_VOCAB = {
+    "osm": "osm",
+    "ohm": "ohm",
+    "gn": "gn",
+    "wd": "wd",
+    "pl": "pleiades",
+    "un": "un",
+    "chgis": "chgis",
+}
+
+#: vocab key → the file that populates it, for the error message.
+_VOCAB_FILE = {
+    "osm": "osm.json",
+    "ohm": "ohm.json",
+    "gn": "geonames.json",
+    "wd": "wikidata.json",
+    "pleiades": "pleiades.json",
+    "un": "un.json",
+    "chgis": "chgis.json",
+}
+
+
+def _require_vocab_for(namespace: str, mappings: dict, data_dir: Path) -> None:
+    """Fail when the vocab this namespace needs loaded empty.
+
+    ``load_all_aat_mappings`` deliberately tolerates a missing vocab file so a
+    partial refresh still enriches the vocabs that did refresh — but its
+    "logged-by-omission" is not logged anywhere, it just returns ``{}``. For a
+    namespace whose types resolve *through* that vocab the result is an
+    enrichment pass that reports success, writes every document, and augments
+    nothing.
+
+    This is not hypothetical. On 2026-08-02 ``geonames.json``,
+    ``wikidata.json`` and ``pleiades.json`` were all absent from
+    ``typesystem/data/`` — the pre-rebuild prep phase had never produced them,
+    because ``scripts/types.sh`` had been dying on a stale ``REPO_DIR`` since
+    the /vast move. ``aat_enrich`` would have run clean over ``gn`` (13.4 M),
+    ``wd`` (11.5 M) and ``pl`` and emitted zero AAT ids for any of them.
+
+    A missing vocab for a namespace that needs it is a prep-phase failure, not
+    a partial refresh, so it raises.
+    """
+    vocab = _NAMESPACE_VOCAB.get(namespace)
+    if vocab is None:
+        return
+    if mappings.get(vocab):
+        return
+    filename = _VOCAB_FILE.get(vocab, f"{vocab}.json")
+    raise FileNotFoundError(
+        f"AAT vocabulary '{vocab}' is empty for namespace '{namespace}' — "
+        f"{data_dir / filename} is missing or has no mappings. Enriching now "
+        f"would silently emit zero aat_ids for the whole namespace. Run the "
+        f"prep phase first: bash scripts/types.sh --build-vocabs (on the VM, "
+        f"which is where ES is reachable)."
+    )
+
+
 def run_aat_enrich(
     *,
     run_id: str,
@@ -272,6 +333,7 @@ def run_aat_enrich(
     # vocab maps + the hierarchy file; trivial vs the per-doc cost.
     mappings = load_all_aat_mappings(data_dir)
     hierarchy = load_aat_hierarchy(data_dir)
+    _require_vocab_for(namespace, mappings, data_dir)
 
     out_dir = Path(STAGED_BASE_DIR) / namespace / "final"
     out_dir.mkdir(parents=True, exist_ok=True)

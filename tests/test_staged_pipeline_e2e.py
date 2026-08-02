@@ -190,6 +190,20 @@ class StagedPipelineE2E(unittest.TestCase):
                            "wikidata.json", "pleiades.json"):
             (aat_data_dir / vocab_file).write_text("{}", encoding="utf-8")
         (aat_data_dir / "aat_hierarchy.json").write_text("{}", encoding="utf-8")
+        # `un` is the namespace this fixture actually enriches, so its vocab
+        # gets real content rather than an empty stub: `aat_enrich` now refuses
+        # to run when the vocab a namespace resolves through is empty, because
+        # that silently emits zero aat_ids for the whole namespace instead of
+        # failing. An empty stub here would be the very state the guard exists
+        # to catch — and would make this end-to-end test assert nothing about
+        # enrichment.
+        (aat_data_dir / "un.json").write_text(json.dumps({
+            "values": [
+                {"value": "country",
+                 "aat_mapping": {"aat_id": 300128207, "aat_term": "nations",
+                                 "confidence": 1.0, "source": "static"}},
+            ]
+        }), encoding="utf-8")
         for ns in ("un", "nl"):
             # nl actually has a final/places.{jsonl,parquet} from ccode_merge;
             # un doesn't (ccode skipped) so we synthesise one from h3_merged.
