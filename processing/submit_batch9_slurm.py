@@ -63,6 +63,7 @@ from processing.settings import (  # noqa: E402
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+from processing.staging_orchestrator import array_memory_gb
 from processing.staging_contract import is_relations_only  # noqa: E402
 from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
 from processing.staging_orchestrator import (  # noqa: E402
@@ -213,7 +214,7 @@ def _build_aat_enrich_sbatch(
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         "#SBATCH --cpus-per-task=2",
-        "#SBATCH --mem=8G",
+        f"#SBATCH --mem={array_memory_gb(namespaces, STAGED_BASE_DIR)}G",
     ]
     if depend_on:
         lines.append(f"#SBATCH --dependency=afterok:{depend_on}")
@@ -262,7 +263,7 @@ def _build_temporal_sbatch(
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         "#SBATCH --cpus-per-task=2",
-        "#SBATCH --mem=8G",
+        f"#SBATCH --mem={array_memory_gb(namespaces, STAGED_BASE_DIR)}G",
     ]
     if depend_on:
         lines.append(f"#SBATCH --dependency=afterok:{depend_on}")
