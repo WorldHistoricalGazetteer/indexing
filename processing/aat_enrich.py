@@ -73,6 +73,14 @@ _STAGED_SOURCE_PRIORITY = (
 )
 
 
+#: Progress cadence for the augmentation loop. aat_enrich streams a whole
+#: namespace and then converts JSONL to Parquet, and printed nothing until it
+#: finished — so osm and wd ran for half an hour looking identical to a hang,
+#: the same ambiguity that nearly cost a healthy H3 job its life. The Parquet
+#: step is announced separately because that is where the OOMs land.
+_PROGRESS_EVERY = 1_000_000
+
+
 def _resolve_source_path(namespace: str) -> Path:
     base = Path(STAGED_BASE_DIR) / namespace
     for stage in _STAGED_SOURCE_PRIORITY:
@@ -358,9 +366,14 @@ def run_aat_enrich(
             types_seen += n_seen
             types_augmented += n_aug
             fh.write(json.dumps(normalize_for_parquet(new_doc), ensure_ascii=True) + "\n")
+            if docs_seen % _PROGRESS_EVERY == 0:
+                print(f"  aat_enrich[{namespace}]: {docs_seen:,} docs, "
+                      f"{types_augmented:,} types augmented", flush=True)
 
     tmp_jsonl.replace(jsonl_path)
+    print(f"  aat_enrich[{namespace}]: {docs_seen:,} docs, {types_augmented:,} types augmented; converting to Parquet ...", flush=True)
     parquet_written = write_parquet_from_jsonl(jsonl_path, parquet_path)
+    print(f"  aat_enrich[{namespace}]: Parquet written", flush=True)
 
     metrics = {
         "docs_seen": docs_seen,
