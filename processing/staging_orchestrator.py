@@ -31,6 +31,60 @@ from processing.staging_contract import (
 _CHECKBOX_RE = re.compile(r"^\s*-\s*\[(?P<state>[xX\s])]\s*`(?P<name>[^`]+)`")
 
 
+#: Memory tiers for the per-namespace Slurm arrays, chosen from the largest
+#: staged artefact among the tasks. Slurm takes one ``--mem`` for a whole
+#: array, so this is necessarily the max across tasks rather than per-namespace.
+#:
+#: Every merge stage in the pipeline (``boundary_merge``, ``h3_merge``,
+#: ``ccode_merge``) holds its whole patch in a dict and then converts a merged
+#: JSONL to Parquet, so the requirement scales with corpus size. Flat
+#: allocations chosen for the small namespaces have now failed three times on
+#: ``osm``: boundary finalize at 8 G against a 63.8 G peak, and the H3 array at
+#: 16 G against 42.3 G — the latter after five hours of work.
+#:
+#: Tiers are deliberately coarse. The small namespaces finish in minutes, so
+#: over-allocating them costs a little scheduling latency; under-allocating the
+#: big one costs a whole re-run.
+_MEM_TIERS_GB: list[tuple[int, int]] = [
+    (2 * 1024**3, 16),    # <  2 GB staged  -> 16 G
+    (8 * 1024**3, 64),    # <  8 GB         -> 64 G
+    (20 * 1024**3, 128),  # < 20 GB         -> 128 G
+]
+_MEM_MAX_GB = 192
+
+#: Staged stages that can be a merge input, largest-first is not needed — the
+#: max across them is the size proxy.
+_SIZE_PROBE_STAGES = (
+    "final", "ccode_merged", "h3_merged", "boundary_merged", "update_merged", "extract",
+)
+
+
+def staged_source_bytes(namespace: str, staged_base_dir: str | Path) -> int:
+    """Size of the namespace's largest staged artefact, 0 if none found."""
+    base = Path(staged_base_dir) / namespace
+    best = 0
+    for stage in _SIZE_PROBE_STAGES:
+        for name in ("places.parquet", "places.jsonl"):
+            path = base / stage / name
+            try:
+                if path.is_file():
+                    best = max(best, path.stat().st_size)
+            except OSError:
+                continue
+    return best
+
+
+def array_memory_gb(namespaces: Iterable[str], staged_base_dir: str | Path) -> int:
+    """Pick an array-wide ``--mem`` (GB) from the largest namespace in the set."""
+    largest = max(
+        (staged_source_bytes(ns, staged_base_dir) for ns in namespaces), default=0
+    )
+    for threshold, gb in _MEM_TIERS_GB:
+        if largest < threshold:
+            return gb
+    return _MEM_MAX_GB
+
+
 def generate_run_id(prefix: str = "ingest") -> str:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     return f"{prefix}-{ts}"

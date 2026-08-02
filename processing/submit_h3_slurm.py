@@ -61,7 +61,10 @@ from processing.settings import (  # noqa: E402
     STAGED_RUNS_DIR,
 )
 from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
-from processing.staging_orchestrator import load_run_manifest    # noqa: E402
+from processing.staging_orchestrator import (  # noqa: E402
+    array_memory_gb,
+    load_run_manifest,
+)
 
 # ---------------------------------------------------------------------------
 # QOS tiers (htc partition)
@@ -137,48 +140,6 @@ def _pending_namespaces(manifest: dict) -> list[str]:
     return pending
 
 
-#: Memory for the H3 array, chosen from the largest staged extract in it.
-#: Slurm takes one --mem for a whole array, so this is necessarily the max
-#: across tasks rather than per-namespace.
-#:
-#: It used to be a flat 16G. `h3_merge` holds the whole H3 patch in a dict
-#: (`_load_h3_patches`) and then converts a merged JSONL to Parquet, so the
-#: requirement scales with corpus size — and `osm` (20.6M docs, 2.98 GB patch)
-#: OOM'd at exactly 16.0 GB after 5h13m, having completed h3_stage and written
-#: the 17.8 GB merged JSONL before dying in the Parquet step. Five hours to
-#: discover a number that was knowable from the input size.
-#:
-#: The thresholds are deliberately coarse: the small namespaces finish in
-#: minutes, so over-allocating them costs a little scheduling latency, whereas
-#: under-allocating the big one costs a whole re-run.
-_MEM_TIERS_GB: list[tuple[int, int]] = [
-    (2 * 1024**3, 16),    # <  2 GB staged  → 16 G
-    (8 * 1024**3, 64),    # <  8 GB         → 64 G
-    (20 * 1024**3, 128),  # < 20 GB         → 128 G
-]
-_MEM_MAX_GB = 192
-
-
-def _staged_bytes(namespace: str) -> int:
-    """Size of the namespace's largest staged source, 0 if none found."""
-    base = Path(STAGED_BASE_DIR) / namespace
-    best = 0
-    for stage in ("boundary_merged", "update_merged", "extract"):
-        for name in ("places.parquet", "places.jsonl"):
-            p = base / stage / name
-            if p.is_file():
-                best = max(best, p.stat().st_size)
-    return best
-
-
-def _array_mem_gb(namespaces: list[str]) -> int:
-    largest = max((_staged_bytes(ns) for ns in namespaces), default=0)
-    for threshold, gb in _MEM_TIERS_GB:
-        if largest < threshold:
-            return gb
-    return _MEM_MAX_GB
-
-
 def _write_array_map(namespaces: list[str], work_dir: Path) -> Path:
     """Write a JSON map {task_id: namespace} for use by the array wrapper."""
     array_map = {str(i): ns for i, ns in enumerate(namespaces)}
@@ -225,7 +186,7 @@ def _build_sbatch_script(
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         "#SBATCH --cpus-per-task=4",
-        f"#SBATCH --mem={_array_mem_gb(namespaces)}G",
+        f"#SBATCH --mem={array_memory_gb(namespaces, STAGED_BASE_DIR)}G",
         "",
         "set -eo pipefail",
         f"source {_CONDA_SH}",

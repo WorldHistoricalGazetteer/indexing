@@ -54,7 +54,7 @@ from processing.settings import (  # noqa: E402
 )
 from processing.stage_writers import estimate_wall_time_seconds  # noqa: E402
 from processing.staging_contract import is_relations_only  # noqa: E402
-from processing.staging_orchestrator import load_run_manifest  # noqa: E402
+from processing.staging_orchestrator import array_memory_gb, load_run_manifest  # noqa: E402
 
 
 _QOS_TIERS: list[tuple[int, str]] = [
@@ -144,7 +144,7 @@ def _build_sbatch_script(
         "#SBATCH --nodes=1",
         "#SBATCH --ntasks=1",
         "#SBATCH --cpus-per-task=4",
-        "#SBATCH --mem=24G",
+        f"#SBATCH --mem={array_memory_gb(namespaces, STAGED_BASE_DIR)}G",
     ]
     if depend_on:
         lines.append(f"#SBATCH --dependency=afterok:{depend_on}")
