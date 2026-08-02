@@ -234,10 +234,16 @@ def main() -> None:
     # wikidata-geoshapes) that must still run, and marking `extract` completed
     # early would let the global barrier pass them without it.
     stages = args.stage or ([] if args.script else ["extract"])
-    unknown = [s for s in stages if s not in STAGE_ARTEFACTS]
-    if unknown:
-        print(f"Unknown stage(s): {', '.join(unknown)}", file=sys.stderr)
-        sys.exit(1)
+    # STAGE_ARTEFACTS exists so a *promotion* can be checked against the file
+    # that proves it. Reset needs no such proof, and the stages most worth
+    # resetting produce no staged artefact at all — `index` writes to
+    # Elasticsearch, so it is absent from the table and was being rejected.
+    if not args.reset:
+        unknown = [s for s in stages if s not in STAGE_ARTEFACTS]
+        if unknown:
+            print(f"Unknown stage(s) for promotion: {', '.join(unknown)}. "
+                  f"Known: {', '.join(STAGE_ARTEFACTS)}", file=sys.stderr)
+            sys.exit(1)
 
     scripts: dict[str, str] = {}
     for spec in args.script:
