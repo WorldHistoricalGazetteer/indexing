@@ -39,6 +39,7 @@ from processing.settings import (
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+from processing.stage_writers import write_stage_event
 from processing.staging_orchestrator import (
     load_run_manifest,
     update_namespace_checkpoint,
@@ -89,6 +90,7 @@ def find_artefact(namespace: str, stage: str, staged_base: Path) -> tuple[Path, 
 
 def reconcile(
     *,
+    run_id: str,
     manifest_path: Path,
     namespaces: list[str] | None,
     stages: list[str],
@@ -125,6 +127,18 @@ def reconcile(
                   f"{n:,} records in {path.relative_to(staged_base)})")
             if execute:
                 update_namespace_stage_status(manifest_path, ns, stage, "completed")
+                # The manifest is not the only reader. `events.jsonl` is the
+                # authoritative cross-run record — `stage_status_with_fallback`
+                # consults it whenever the manifest lacks a passing status, and
+                # some tooling reads it directly. Reconciling only the manifest
+                # leaves the two disagreeing, which is confusing at best and
+                # wrong for any consumer that trusts the event log.
+                write_stage_event(
+                    run_id=run_id, namespace=ns,
+                    script_id="reconcile-stage-status", status="completed",
+                    stage=stage,
+                    metrics={"reconciled_from": str(path), "records": n},
+                )
 
         for script_id, owner_ns in (scripts or {}).items():
             if owner_ns != ns:
@@ -192,6 +206,7 @@ def main() -> None:
 
     print(f"Manifest: {manifest_path}")
     changes = reconcile(
+        run_id=args.run_id,
         manifest_path=manifest_path,
         namespaces=args.namespace or None,
         stages=stages,
