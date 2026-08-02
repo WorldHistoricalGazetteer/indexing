@@ -160,6 +160,46 @@ def reconcile(
     return changes
 
 
+def reset(
+    *,
+    run_id: str,
+    manifest_path: Path,
+    namespaces: list[str] | None,
+    stages: list[str],
+    execute: bool = False,
+) -> int:
+    """Demote stages to ``pending`` so they re-run.
+
+    Deliberately needs no evidence, unlike promotion: demoting can only cause
+    work to be repeated, never cause a wrong state to be believed. The case it
+    exists for is a stage whose *output* was discarded — e.g. dropping a
+    staging index built under a superseded mapping, where every namespace's
+    ``index`` stage still reads ``completed`` and ``index_from_stage`` would
+    skip the lot.
+    """
+    manifest = load_run_manifest(manifest_path)
+    targets = namespaces or sorted(manifest.get("namespaces", {}))
+    changes = 0
+    for ns in targets:
+        entry = manifest.get("namespaces", {}).get(ns)
+        if entry is None:
+            continue
+        for stage in stages:
+            current = entry.get("stages", {}).get(stage)
+            if current in (None, "pending"):
+                continue
+            changes += 1
+            verb = "resetting" if execute else "would reset"
+            print(f"  {ns}/{stage}: {current} → pending ({verb})")
+            if execute:
+                update_namespace_stage_status(manifest_path, ns, stage, "pending")
+                write_stage_event(
+                    run_id=run_id, namespace=ns,
+                    script_id="reconcile-stage-status", status="pending", stage=stage,
+                )
+    return changes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Promote manifest stages to completed where the artefact proves it"
@@ -174,6 +214,9 @@ def main() -> None:
     parser.add_argument("--script", action="append", default=[],
                         help="Also checkpoint a script as completed, as ns:script_id "
                              "(e.g. gn:gn-places). Gated on the extract artefact existing.")
+    parser.add_argument("--reset", action="store_true",
+                        help="Demote the named --stage(s) to pending so they re-run, "
+                             "instead of promoting them to completed")
     parser.add_argument("--execute", action="store_true",
                         help="Apply the changes (default is a report only)")
     args = parser.parse_args()
@@ -205,6 +248,18 @@ def main() -> None:
         scripts[script_id] = ns
 
     print(f"Manifest: {manifest_path}")
+    if args.reset:
+        if not args.stage:
+            print("--reset requires an explicit --stage", file=sys.stderr)
+            sys.exit(2)
+        changes = reset(run_id=args.run_id, manifest_path=manifest_path,
+                        namespaces=args.namespace or None, stages=stages,
+                        execute=args.execute)
+        if not changes:
+            print("Nothing to reset.")
+        elif not args.execute:
+            print(f"\n{changes} change(s) — re-run with --execute to apply.")
+        return
     changes = reconcile(
         run_id=args.run_id,
         manifest_path=manifest_path,
