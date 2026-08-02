@@ -2720,11 +2720,32 @@ The ``aat_enrich`` post-chain stage reads these directly. Slurm compute nodes
 see the same inodes via NFS — no ``git pull`` or rsync between pitt and CRC
 needed.
 
-If you want a versioned snapshot pinned to a particular rebuild, optionally
-``git add typesystem/data/{geonames,pleiades,wikidata,aat_hierarchy}.json &&
-git commit -m "refresh type-system for rebuild <date>" && git push`` from
-pitt. This is for audit/curatorial reasons only — operationally the files
-work the moment they're written.
+**Commit the vocabulary files. This is not optional** (corrected 2026-08-02):
+
+```
+git add typesystem/data/{geonames,pleiades,wikidata}.json
+git commit -m "refresh type-system vocabularies for rebuild <date>" && git push
+```
+
+This paragraph previously called committing them "for audit/curatorial reasons
+only — operationally the files work the moment they're written". That was wrong
+in a way that cost the place#164 rebuild real coverage. The three uncommitted
+files were generated into the repo on ``/ix1``, and the 2026-05-01 move to
+``/vast`` left them behind. Nobody noticed for three months, because their
+absence is **silent**: ``load_all_aat_mappings`` deliberately tolerates a
+missing vocab and returns ``{}``, so ``aat_enrich`` runs clean, reports
+success, writes every document and emits zero ``aat_ids``. ``osm.json`` /
+``ohm.json`` / ``chgis.json`` / ``un.json`` survived precisely because they
+*were* committed.
+
+``processing.aat_enrich`` now refuses to run when the vocab a namespace
+resolves through is empty, so this specific loss can no longer pass unnoticed —
+but the file still has to exist, and a git-tracked copy is what makes a fresh
+checkout usable.
+
+``aat_hierarchy.json`` is deliberately **not** committed: 8.4 MB, cheaply
+rebuilt from prod ES, and ``load_aat_hierarchy`` already raises when it is
+absent. Its loss is loud, which is the distinction that matters.
 
 The next time a curator updates AAT mappings via the Django UI (writes to
 the production ``types`` index), re-run the prep step above to refresh the
