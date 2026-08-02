@@ -113,7 +113,13 @@
       {
         "value": "point",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300164243,
+          "aat_term": "point blocks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "isolated_dwelling",
@@ -134,7 +140,13 @@
       {
         "value": "rock",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300007699,
+          "aat_term": "rock shelters",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "confluence",
@@ -306,7 +318,13 @@
       {
         "value": "ship",
         "count": 53,
-        "fraction": 0.0106
+        "fraction": 0.0106,
+        "aat_mapping": {
+          "aat_id": 300266335,
+          "aat_term": "ship-settings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "roman_road",
@@ -343,7 +361,13 @@
       {
         "value": "heritage",
         "count": 32,
-        "fraction": 0.0064
+        "fraction": 0.0064,
+        "aat_mapping": {
+          "aat_id": 300000627,
+          "aat_term": "heritage trails",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bunker",
@@ -358,7 +382,13 @@
       {
         "value": "road",
         "count": 20,
-        "fraction": 0.004
+        "fraction": 0.004,
+        "aat_mapping": {
+          "aat_id": 300430039,
+          "aat_term": "road barriers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mine_shaft",
@@ -406,7 +436,13 @@
       {
         "value": "construction",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300312090,
+          "aat_term": "construction sites",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "battlefield",
@@ -433,12 +469,24 @@
       {
         "value": "fortress",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300435175,
+          "aat_term": "fortress architects",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "railway",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300108395,
+          "aat_term": "railway hotels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "monastery",
@@ -454,7 +502,13 @@
       {
         "value": "maritime",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300255069,
+          "aat_term": "maritime history",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pillory",
@@ -464,22 +518,46 @@
       {
         "value": "town",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300006063,
+          "aat_term": "town halls",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "house",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300417525,
+          "aat_term": "house churches",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "stone",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300106724,
+          "aat_term": "Stone Age",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "exhibit",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300077356,
+          "aat_term": "exhibit cases",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tramway",
@@ -510,17 +588,35 @@
       {
         "value": "marker",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300421738,
+          "aat_term": "aerial marker panels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "district",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300387222,
+          "aat_term": "district capitals",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gallows",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300266883,
+          "aat_term": "gallows",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "chapel",
@@ -530,7 +626,13 @@
       {
         "value": "city",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300234611,
+          "aat_term": "city-states",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "artwork",
@@ -540,7 +642,13 @@
       {
         "value": "cannon",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300422578,
+          "aat_term": "cannon cradles",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "aqueduct",
@@ -577,17 +685,35 @@
       {
         "value": "theatre",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300213184,
+          "aat_term": "pressbooks (theatre manuals)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "factory",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300387303,
+          "aat_term": "factory centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "wall",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300186885,
+          "aat_term": "wall-to-wall carpeting",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "path",
@@ -602,7 +728,13 @@
       {
         "value": "warehouse",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300312070,
+          "aat_term": "warehouse lists",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "still some signes visible in the current  function",
@@ -628,17 +760,35 @@
       {
         "value": "gate",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300129523,
+          "aat_term": "gate structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "statue",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300400649,
+          "aat_term": "statue menhirs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "settlement",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300179506,
+          "aat_term": "settlement houses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "railway_station",
@@ -648,7 +798,13 @@
       {
         "value": "prison",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300000281,
+          "aat_term": "prison camps",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Райволанйоки",
@@ -674,7 +830,13 @@
       {
         "value": "administrative",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300387264,
+          "aat_term": "administrative centres",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "replica",
@@ -684,7 +846,13 @@
       {
         "value": "villa",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300018205,
+          "aat_term": "Italian Villa Style",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "attraction",
@@ -694,7 +862,13 @@
       {
         "value": "fountain",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300108307,
+          "aat_term": "fountain-houses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "drinking_fountain",
@@ -715,12 +889,24 @@
       {
         "value": "locomotive",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300022342,
+          "aat_term": "locomotive cranes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fortification",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300069410,
+          "aat_term": "fortification openings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "sportsway",
@@ -730,7 +916,13 @@
       {
         "value": "granary",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300439376,
+          "aat_term": "granary door",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "viaduct",
@@ -771,7 +963,13 @@
       {
         "value": "marker",
         "count": 889,
-        "fraction": 0.1778
+        "fraction": 0.1778,
+        "aat_mapping": {
+          "aat_id": 300421738,
+          "aat_term": "aerial marker panels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "religious_administration",
@@ -813,12 +1011,24 @@
       {
         "value": "political",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300387320,
+          "aat_term": "political centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "census",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300250943,
+          "aat_term": "census districts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "landuse",
@@ -853,7 +1063,13 @@
       {
         "value": "land",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300000837,
+          "aat_term": "lots (land)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       }
     ]
   },
@@ -889,7 +1105,13 @@
       {
         "value": "coastline",
         "count": 889,
-        "fraction": 0.1778
+        "fraction": 0.1778,
+        "aat_mapping": {
+          "aat_id": 300008734,
+          "aat_term": "coastline (land/sea border)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cape",
@@ -938,7 +1160,13 @@
       {
         "value": "tree",
         "count": 152,
-        "fraction": 0.0304
+        "fraction": 0.0304,
+        "aat_mapping": {
+          "aat_id": 300431396,
+          "aat_term": "tree grates",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bay",
@@ -992,7 +1220,13 @@
       {
         "value": "point",
         "count": 20,
-        "fraction": 0.004
+        "fraction": 0.004,
+        "aat_mapping": {
+          "aat_id": 300164243,
+          "aat_term": "point blocks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "peninsula",
@@ -1008,7 +1242,13 @@
       {
         "value": "hill",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300387315,
+          "aat_term": "hill settlements",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "volcano",
@@ -1024,7 +1264,13 @@
       {
         "value": "rock",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300007699,
+          "aat_term": "rock shelters",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "reef",
@@ -1051,7 +1297,13 @@
       {
         "value": "land",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300000837,
+          "aat_term": "lots (land)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "geyser",
@@ -1061,7 +1313,13 @@
       {
         "value": "rocks",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300404733,
+          "aat_term": "rocks (landforms)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "wood",
@@ -1093,7 +1351,13 @@
       {
         "value": "stone",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300106724,
+          "aat_term": "Stone Age",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hot_spring",
@@ -1135,12 +1399,24 @@
       {
         "value": "island",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300387062,
+          "aat_term": "island nations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "rapid",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300265423,
+          "aat_term": "rapid prototyping",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gorge",
@@ -1150,7 +1426,13 @@
       {
         "value": "cave",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300008019,
+          "aat_term": "cave architecture",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mountain_range",
@@ -1160,7 +1442,13 @@
       {
         "value": "mesa",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300447052,
+          "aat_term": "mēṣa-makara-mālā",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "storks_nest",
@@ -1243,12 +1531,24 @@
       {
         "value": "rapids",
         "count": 52,
-        "fraction": 0.0104
+        "fraction": 0.0104,
+        "aat_mapping": {
+          "aat_id": 300008739,
+          "aat_term": "rapids",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lock",
         "count": 34,
-        "fraction": 0.0068
+        "fraction": 0.0068,
+        "aat_mapping": {
+          "aat_id": 300002907,
+          "aat_term": "lock stiles",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "dock",
@@ -1316,12 +1616,24 @@
       {
         "value": "mooring",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300411403,
+          "aat_term": "mooring buoys",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "source",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300387513,
+          "aat_term": "open source software",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pumping_station",
@@ -1331,7 +1643,13 @@
       {
         "value": "sluice",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300123017,
+          "aat_term": "sluice gates",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "quay",
@@ -1346,7 +1664,13 @@
       {
         "value": "lift",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300007860,
+          "aat_term": "lift bridges",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bifurcation",
@@ -1366,7 +1690,13 @@
       {
         "value": "crossing",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300080633,
+          "aat_term": "crossing towers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "rivermouth",
@@ -1381,7 +1711,13 @@
       {
         "value": "gate",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300129523,
+          "aat_term": "gate structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ford",
@@ -1432,7 +1768,13 @@
       {
         "value": "post_office",
         "count": 2122,
-        "fraction": 0.4244
+        "fraction": 0.4244,
+        "aat_mapping": {
+          "aat_id": 300255796,
+          "aat_term": "post-office boxes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ferry_terminal",
@@ -1464,7 +1806,13 @@
       {
         "value": "restaurant",
         "count": 181,
-        "fraction": 0.0362
+        "fraction": 0.0362,
+        "aat_mapping": {
+          "aat_id": 300429935,
+          "aat_term": "restaurant booths",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "theatre",
@@ -1485,7 +1833,13 @@
       {
         "value": "bank",
         "count": 85,
-        "fraction": 0.017
+        "fraction": 0.017,
+        "aat_mapping": {
+          "aat_id": 300004902,
+          "aat_term": "bank barns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hospital",
@@ -1501,17 +1855,35 @@
       {
         "value": "cinema",
         "count": 69,
-        "fraction": 0.0138
+        "fraction": 0.0138,
+        "aat_mapping": {
+          "aat_id": 300375168,
+          "aat_term": "cinéma vérité",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fuel",
         "count": 48,
-        "fraction": 0.0096
+        "fraction": 0.0096,
+        "aat_mapping": {
+          "aat_id": 300015139,
+          "aat_term": "fuel",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cafe",
         "count": 47,
-        "fraction": 0.0094
+        "fraction": 0.0094,
+        "aat_mapping": {
+          "aat_id": 300421391,
+          "aat_term": "café tables",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "townhall",
@@ -1527,7 +1899,13 @@
       {
         "value": "fast_food",
         "count": 39,
-        "fraction": 0.0078
+        "fraction": 0.0078,
+        "aat_mapping": {
+          "aat_id": 300005191,
+          "aat_term": "fast food restaurants",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "library",
@@ -1548,7 +1926,13 @@
       {
         "value": "pharmacy",
         "count": 31,
-        "fraction": 0.0062
+        "fraction": 0.0062,
+        "aat_mapping": {
+          "aat_id": 300054520,
+          "aat_term": "pharmacy (discipline)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "courthouse",
@@ -1564,12 +1948,24 @@
       {
         "value": "police",
         "count": 28,
-        "fraction": 0.0056
+        "fraction": 0.0056,
+        "aat_mapping": {
+          "aat_id": 300006049,
+          "aat_term": "police stations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fire_station",
         "count": 24,
-        "fraction": 0.0048
+        "fraction": 0.0048,
+        "aat_mapping": {
+          "aat_id": 300052750,
+          "aat_term": "remote-station fire alarm systems",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "post_box",
@@ -1617,7 +2013,13 @@
       {
         "value": "bar",
         "count": 20,
-        "fraction": 0.004
+        "fraction": 0.004,
+        "aat_mapping": {
+          "aat_id": 300420732,
+          "aat_term": "bar rails",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "college",
@@ -1644,7 +2046,13 @@
       {
         "value": "saloon",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300164649,
+          "aat_term": "saloon tables",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "monastery",
@@ -1665,12 +2073,24 @@
       {
         "value": "drinking_water",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300011778,
+          "aat_term": "drinking water",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "doctors",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300312079,
+          "aat_term": "doctors (academics)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "social_facility",
@@ -1685,17 +2105,35 @@
       {
         "value": "archive",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300264596,
+          "aat_term": "archive repositories (storage facilities)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "studio",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300185650,
+          "aat_term": "studio ceramics",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "parking",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300007826,
+          "aat_term": "parking lots",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "public_bath",
@@ -1705,7 +2143,13 @@
       {
         "value": "clock",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300205706,
+          "aat_term": "clock cases",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "childcare",
@@ -1720,7 +2164,13 @@
       {
         "value": "public_building",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300256701,
+          "aat_term": "public building fixtures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "dentist",
@@ -1735,7 +2185,13 @@
       {
         "value": "kindergarten",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300254178,
+          "aat_term": "kindergarten gifts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "clinic",
@@ -1755,7 +2211,13 @@
       {
         "value": "bench",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300023285,
+          "aat_term": "bench shears",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "casino",
@@ -1780,7 +2242,13 @@
       {
         "value": "cemetery",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300186184,
+          "aat_term": "cemetery carpets",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "crematorium",
@@ -1790,7 +2258,13 @@
       {
         "value": "recycling",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300191243,
+          "aat_term": "recycling",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "post_depot",
@@ -1840,7 +2314,13 @@
       {
         "value": "tailor",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300227768,
+          "aat_term": "tailor-made",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "washhouse",
@@ -1895,12 +2375,24 @@
       {
         "value": "toilets",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300052638,
+          "aat_term": "toilets (fixtures)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ice_cream",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300266767,
+          "aat_term": "ice cream",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "religious_college",
@@ -1931,7 +2423,13 @@
       {
         "value": "planetarium",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300430410,
+          "aat_term": "planetarium projectors",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Uszpelken",
@@ -2019,7 +2517,13 @@
       {
         "value": "information",
         "count": 89,
-        "fraction": 0.0178
+        "fraction": 0.0178,
+        "aat_mapping": {
+          "aat_id": 300311832,
+          "aat_term": "information",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gallery",
@@ -2035,7 +2539,13 @@
       {
         "value": "viewpoint",
         "count": 46,
-        "fraction": 0.0092
+        "fraction": 0.0092,
+        "aat_mapping": {
+          "aat_id": 300056365,
+          "aat_term": "viewpoint",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hostel",
@@ -2045,12 +2555,24 @@
       {
         "value": "sightseeing",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300380141,
+          "aat_term": "sightseeing",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "apartment",
         "count": 13,
-        "fraction": 0.0026
+        "fraction": 0.0026,
+        "aat_mapping": {
+          "aat_id": 300458777,
+          "aat_term": "apartment towers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "theme_park",
@@ -2190,7 +2712,13 @@
       {
         "value": "pitch",
         "count": 185,
-        "fraction": 0.037
+        "fraction": 0.037,
+        "aat_mapping": {
+          "aat_id": 300012998,
+          "aat_term": "navy pitch",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "slipway",
@@ -2221,7 +2749,13 @@
       {
         "value": "golf_course",
         "count": 68,
-        "fraction": 0.0136
+        "fraction": 0.0136,
+        "aat_mapping": {
+          "aat_id": 300178894,
+          "aat_term": "golf course communities",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "swimming_pool",
@@ -2231,7 +2765,13 @@
       {
         "value": "playground",
         "count": 57,
-        "fraction": 0.0114
+        "fraction": 0.0114,
+        "aat_mapping": {
+          "aat_id": 300430478,
+          "aat_term": "playground trapeze",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fitness_centre",
@@ -2241,17 +2781,35 @@
       {
         "value": "track",
         "count": 30,
-        "fraction": 0.006
+        "fraction": 0.006,
+        "aat_mapping": {
+          "aat_id": 300224856,
+          "aat_term": "track scales",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bowling_alley",
         "count": 29,
-        "fraction": 0.0058
+        "fraction": 0.0058,
+        "aat_mapping": {
+          "aat_id": 300222769,
+          "aat_term": "bowling alley sports",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "dance",
         "count": 25,
-        "fraction": 0.005
+        "fraction": 0.005,
+        "aat_mapping": {
+          "aat_id": 300000820,
+          "aat_term": "dance grounds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ice_rink",
@@ -2276,7 +2834,13 @@
       {
         "value": "resort",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300387292,
+          "aat_term": "resort centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bandstand",
@@ -2286,12 +2850,24 @@
       {
         "value": "common",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300048949,
+          "aat_term": "common nails",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "miniature_golf",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300312086,
+          "aat_term": "miniature golf",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hackerspace",
@@ -2306,7 +2882,13 @@
       {
         "value": "fishing",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300239470,
+          "aat_term": "fishing",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "proposed",
@@ -2351,12 +2933,24 @@
       {
         "value": "bleachers",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300247483,
+          "aat_term": "bleachers",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "beach",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300400725,
+          "aat_term": "beach huts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Traditional Crag",
@@ -2391,12 +2985,24 @@
       {
         "value": "artificial_turf",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300448975,
+          "aat_term": "artificial turf",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "field",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006951,
+          "aat_term": "field fortifications",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "swimming_area",
@@ -2523,7 +3129,13 @@
       {
         "value": "pipeline",
         "count": 53,
-        "fraction": 0.0106
+        "fraction": 0.0106,
+        "aat_mapping": {
+          "aat_id": 300443795,
+          "aat_term": "oil pipeline junctions",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "water_well",
@@ -2597,7 +3209,13 @@
       {
         "value": "surveillance",
         "count": 22,
-        "fraction": 0.0044
+        "fraction": 0.0044,
+        "aat_mapping": {
+          "aat_id": 300404761,
+          "aat_term": "surveillance",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "obelisk",
@@ -2617,12 +3235,24 @@
       {
         "value": "telescope",
         "count": 17,
-        "fraction": 0.0034
+        "fraction": 0.0034,
+        "aat_mapping": {
+          "aat_id": 300434502,
+          "aat_term": "telescope cases",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fort",
         "count": 17,
-        "fraction": 0.0034
+        "fraction": 0.0034,
+        "aat_mapping": {
+          "aat_id": 300451439,
+          "aat_term": "fort complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "monitoring_station",
@@ -2632,7 +3262,13 @@
       {
         "value": "beacon",
         "count": 16,
-        "fraction": 0.0032
+        "fraction": 0.0032,
+        "aat_mapping": {
+          "aat_id": 300420917,
+          "aat_term": "beacon receivers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "breakwater",
@@ -2647,7 +3283,13 @@
       {
         "value": "cross",
         "count": 13,
-        "fraction": 0.0026
+        "fraction": 0.0026,
+        "aat_mapping": {
+          "aat_id": 300133797,
+          "aat_term": "cross monuments",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "quay",
@@ -2672,17 +3314,35 @@
       {
         "value": "mast",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300428627,
+          "aat_term": "mast chocks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tunnel",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300431679,
+          "aat_term": "tunnel carriages",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "chimney",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300003944,
+          "aat_term": "chimney components",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "embankment",
@@ -2692,12 +3352,24 @@
       {
         "value": "kiln",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300427776,
+          "aat_term": "kiln pokers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lake",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300005678,
+          "aat_term": "lake dwellings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "spillway",
@@ -2707,17 +3379,35 @@
       {
         "value": "flagpole",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300425617,
+          "aat_term": "flagpole holders",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "island",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300387062,
+          "aat_term": "island nations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "wharf",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300411381,
+          "aat_term": "wharf cellars",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "communications_tower",
@@ -2737,7 +3427,13 @@
       {
         "value": "antenna",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300420226,
+          "aat_term": "antenna insulators",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "courtyard",
@@ -2757,17 +3453,35 @@
       {
         "value": "dam",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300003676,
+          "aat_term": "dam elements",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lock",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300002907,
+          "aat_term": "lock stiles",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "torii",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300005100,
+          "aat_term": "torii",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "water_canal",
@@ -2787,7 +3501,13 @@
       {
         "value": "sluice",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300123017,
+          "aat_term": "sluice gates",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "milestone",
@@ -2807,12 +3527,24 @@
       {
         "value": "statue",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300400649,
+          "aat_term": "statue menhirs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mine",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006423,
+          "aat_term": "mine structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gas_works",
@@ -2842,37 +3574,79 @@
       {
         "value": "reservoir",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300266522,
+          "aat_term": "reservoir pens",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lagoon",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300262859,
+          "aat_term": "Lagoon people",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pontoon",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300007849,
+          "aat_term": "pontoon bridges",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pump",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300065035,
+          "aat_term": "pump rooms",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pond",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300012670,
+          "aat_term": "pond pine (wood)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mill",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300387304,
+          "aat_term": "mill centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "grotto",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300139992,
+          "aat_term": "grotto tables",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "groyne",
@@ -2882,12 +3656,24 @@
       {
         "value": "storage",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300056390,
+          "aat_term": "storage",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "arch",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006086,
+          "aat_term": "arch dams",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ceremonial_gate",
@@ -2917,7 +3703,13 @@
       {
         "value": "tower",
         "count": 202,
-        "fraction": 0.20301507537688443
+        "fraction": 0.20301507537688443,
+        "aat_mapping": {
+          "aat_id": 300411567,
+          "aat_term": "tower mills",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "barracks",
@@ -2955,7 +3747,13 @@
       {
         "value": "trench",
         "count": 101,
-        "fraction": 0.10150753768844221
+        "fraction": 0.10150753768844221,
+        "aat_mapping": {
+          "aat_id": 300201608,
+          "aat_term": "trench knives",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "airfield",
@@ -2976,7 +3774,13 @@
       {
         "value": "office",
         "count": 33,
-        "fraction": 0.033165829145728645
+        "fraction": 0.033165829145728645,
+        "aat_mapping": {
+          "aat_id": 300000490,
+          "aat_term": "office complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "training_area",
@@ -2986,27 +3790,57 @@
       {
         "value": "range",
         "count": 12,
-        "fraction": 0.012060301507537688
+        "fraction": 0.012060301507537688,
+        "aat_mapping": {
+          "aat_id": 300412045,
+          "aat_term": "dynamic range",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cupola",
         "count": 12,
-        "fraction": 0.012060301507537688
+        "fraction": 0.012060301507537688,
+        "aat_mapping": {
+          "aat_id": 300424174,
+          "aat_term": "cupola furnaces",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "turret",
         "count": 11,
-        "fraction": 0.011055276381909548
+        "fraction": 0.011055276381909548,
+        "aat_mapping": {
+          "aat_id": 300023272,
+          "aat_term": "turret lathes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "academy",
         "count": 10,
-        "fraction": 0.010050251256281407
+        "fraction": 0.010050251256281407,
+        "aat_mapping": {
+          "aat_id": 300014235,
+          "aat_term": "academy board",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fort",
         "count": 10,
-        "fraction": 0.010050251256281407
+        "fraction": 0.010050251256281407,
+        "aat_mapping": {
+          "aat_id": 300451439,
+          "aat_term": "fort complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cordon",
@@ -3021,17 +3855,35 @@
       {
         "value": "fortification",
         "count": 7,
-        "fraction": 0.007035175879396985
+        "fraction": 0.007035175879396985,
+        "aat_mapping": {
+          "aat_id": 300069410,
+          "aat_term": "fortification openings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bastion",
         "count": 6,
-        "fraction": 0.006030150753768844
+        "fraction": 0.006030150753768844,
+        "aat_mapping": {
+          "aat_id": 300100131,
+          "aat_term": "bastion components",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ammunition",
         "count": 5,
-        "fraction": 0.005025125628140704
+        "fraction": 0.005025125628140704,
+        "aat_mapping": {
+          "aat_id": 300036928,
+          "aat_term": "ammunition",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "armory",
@@ -3062,7 +3914,13 @@
       {
         "value": "school",
         "count": 2,
-        "fraction": 0.0020100502512562816
+        "fraction": 0.0020100502512562816,
+        "aat_mapping": {
+          "aat_id": 300000717,
+          "aat_term": "school districts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "field_headquarters",
@@ -3072,7 +3930,13 @@
       {
         "value": "hospital",
         "count": 1,
-        "fraction": 0.0010050251256281408
+        "fraction": 0.0010050251256281408,
+        "aat_mapping": {
+          "aat_id": 300449011,
+          "aat_term": "hospital chapels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "arsenal",
@@ -3092,7 +3956,13 @@
       {
         "value": "warehouse",
         "count": 1,
-        "fraction": 0.0010050251256281408
+        "fraction": 0.0010050251256281408,
+        "aat_mapping": {
+          "aat_id": 300312070,
+          "aat_term": "warehouse lists",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       }
     ]
   },
@@ -3199,7 +4069,13 @@
       {
         "value": "construction",
         "count": 147,
-        "fraction": 0.0294
+        "fraction": 0.0294,
+        "aat_mapping": {
+          "aat_id": 300312090,
+          "aat_term": "construction sites",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "reservoir",
@@ -3226,7 +4102,13 @@
       {
         "value": "depot",
         "count": 83,
-        "fraction": 0.0166
+        "fraction": 0.0166,
+        "aat_mapping": {
+          "aat_id": 300417339,
+          "aat_term": "depot wagons",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "quarry",
@@ -3242,7 +4124,13 @@
       {
         "value": "grass",
         "count": 64,
-        "fraction": 0.0128
+        "fraction": 0.0128,
+        "aat_mapping": {
+          "aat_id": 300426710,
+          "aat_term": "grass shears",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "allotments",
@@ -3279,27 +4167,57 @@
       {
         "value": "religious",
         "count": 46,
-        "fraction": 0.0092
+        "fraction": 0.0092,
+        "aat_mapping": {
+          "aat_id": 300263741,
+          "aat_term": "religious complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "railway",
         "count": 40,
-        "fraction": 0.008
+        "fraction": 0.008,
+        "aat_mapping": {
+          "aat_id": 300108395,
+          "aat_term": "railway hotels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "conservation",
         "count": 34,
-        "fraction": 0.0068
+        "fraction": 0.0068,
+        "aat_mapping": {
+          "aat_id": 300379401,
+          "aat_term": "conservation policy",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "retail",
         "count": 31,
-        "fraction": 0.0062
+        "fraction": 0.0062,
+        "aat_mapping": {
+          "aat_id": 300253567,
+          "aat_term": "retail parks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "education",
         "count": 26,
-        "fraction": 0.0052
+        "fraction": 0.0052,
+        "aat_mapping": {
+          "aat_id": 300054360,
+          "aat_term": "education",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "zone_of_alienation",
@@ -3309,12 +4227,24 @@
       {
         "value": "basin",
         "count": 22,
-        "fraction": 0.0044
+        "fraction": 0.0044,
+        "aat_mapping": {
+          "aat_id": 300018810,
+          "aat_term": "Kuznetsk Basin",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "farm",
         "count": 18,
-        "fraction": 0.0036
+        "fraction": 0.0036,
+        "aat_mapping": {
+          "aat_id": 300448609,
+          "aat_term": "farm mounds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "landfill",
@@ -3324,7 +4254,13 @@
       {
         "value": "island",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300387062,
+          "aat_term": "island nations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "greenfield",
@@ -3344,7 +4280,13 @@
       {
         "value": "brownfield",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300260689,
+          "aat_term": "brownfield sites",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "harbour",
@@ -3376,17 +4318,35 @@
       {
         "value": "aquaculture",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300380483,
+          "aat_term": "aquaculture",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "winter_sports",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300007383,
+          "aat_term": "winter sports structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "water",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300432647,
+          "aat_term": "water fountains",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "churchyard",
@@ -3396,7 +4356,13 @@
       {
         "value": "road",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300430039,
+          "aat_term": "road barriers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Bird Sanctuary",
@@ -3411,22 +4377,46 @@
       {
         "value": "field",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006951,
+          "aat_term": "field fortifications",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "wood",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300012349,
+          "aat_term": "plane wood (wood)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "rock",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300007699,
+          "aat_term": "rock shelters",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cliff",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300451609,
+          "aat_term": "cliff tombs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "nature_rexerve",
@@ -3436,22 +4426,46 @@
       {
         "value": "marina",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300444930,
+          "aat_term": "marina settlements",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "scrub",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300431559,
+          "aat_term": "scrub",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mine",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006423,
+          "aat_term": "mine structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "police",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300006049,
+          "aat_term": "police stations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "redidential",
@@ -3461,12 +4475,24 @@
       {
         "value": "park",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300000712,
+          "aat_term": "park districts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "civic",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300055424,
+          "aat_term": "civic improvement",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "animal_keeping",
@@ -3528,12 +4554,24 @@
       {
         "value": "stop",
         "count": 252,
-        "fraction": 0.0504
+        "fraction": 0.0504,
+        "aat_mapping": {
+          "aat_id": 300033596,
+          "aat_term": "stop keys",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "site",
         "count": 109,
-        "fraction": 0.0218
+        "fraction": 0.0218,
+        "aat_mapping": {
+          "aat_id": 300078073,
+          "aat_term": "site elements",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "service_station",
@@ -3543,22 +4581,46 @@
       {
         "value": "junction",
         "count": 16,
-        "fraction": 0.0032
+        "fraction": 0.0032,
+        "aat_mapping": {
+          "aat_id": 300427707,
+          "aat_term": "junction boxes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "switch",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300174901,
+          "aat_term": "switch plates",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "yard",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300433374,
+          "aat_term": "yard signs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "signal",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300417360,
+          "aat_term": "signal houses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "subway_entrance",
@@ -3583,7 +4645,13 @@
       {
         "value": "crossing",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300080633,
+          "aat_term": "crossing towers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "block_post",
@@ -3623,7 +4691,13 @@
       {
         "value": "residential",
         "count": 392,
-        "fraction": 0.0784
+        "fraction": 0.0784,
+        "aat_mapping": {
+          "aat_id": 300387271,
+          "aat_term": "residential centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "church",
@@ -3639,17 +4713,35 @@
       {
         "value": "commercial",
         "count": 219,
-        "fraction": 0.0438
+        "fraction": 0.0438,
+        "aat_mapping": {
+          "aat_id": 300132652,
+          "aat_term": "commercial complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "house",
         "count": 148,
-        "fraction": 0.0296
+        "fraction": 0.0296,
+        "aat_mapping": {
+          "aat_id": 300417525,
+          "aat_term": "house churches",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "public",
         "count": 114,
-        "fraction": 0.0228
+        "fraction": 0.0228,
+        "aat_mapping": {
+          "aat_id": 300263422,
+          "aat_term": "public spaces",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "university",
@@ -3681,12 +4773,24 @@
       {
         "value": "warehouse",
         "count": 36,
-        "fraction": 0.0072
+        "fraction": 0.0072,
+        "aat_mapping": {
+          "aat_id": 300312070,
+          "aat_term": "warehouse lists",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "industrial",
         "count": 33,
-        "fraction": 0.0066
+        "fraction": 0.0066,
+        "aat_mapping": {
+          "aat_id": 300000385,
+          "aat_term": "industrial complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "chapel",
@@ -3702,7 +4806,13 @@
       {
         "value": "apartments",
         "count": 22,
-        "fraction": 0.0044
+        "fraction": 0.0044,
+        "aat_mapping": {
+          "aat_id": 300004063,
+          "aat_term": "apartments",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "public; residential",
@@ -3734,7 +4844,13 @@
       {
         "value": "transportation",
         "count": 17,
-        "fraction": 0.0034
+        "fraction": 0.0034,
+        "aat_mapping": {
+          "aat_id": 300055244,
+          "aat_term": "transportation",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cathedral",
@@ -3750,12 +4866,24 @@
       {
         "value": "retail",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300253567,
+          "aat_term": "retail parks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "office",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300000490,
+          "aat_term": "office complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hotel",
@@ -3787,12 +4915,24 @@
       {
         "value": "college",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300008430,
+          "aat_term": "college towns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "religious",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300263741,
+          "aat_term": "religious complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tower",
@@ -3808,12 +4948,24 @@
       {
         "value": "civic",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300055424,
+          "aat_term": "civic improvement",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "terrace",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300404778,
+          "aat_term": "terrace gardens",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "stadium",
@@ -3829,7 +4981,13 @@
       {
         "value": "farm",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300448609,
+          "aat_term": "farm mounds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "castle",
@@ -3850,7 +5008,13 @@
       {
         "value": "construction",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300312090,
+          "aat_term": "construction sites",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "no",
@@ -3860,22 +5024,46 @@
       {
         "value": "shed",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300024958,
+          "aat_term": "shed sticks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "windmill",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300433034,
+          "aat_term": "windmill weights",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "stable",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300004172,
+          "aat_term": "stalls (stable spaces)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ruins",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300008057,
+          "aat_term": "ruins",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mosque",
@@ -3896,12 +5084,24 @@
       {
         "value": "detached",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300379890,
+          "aat_term": "detached leaves",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ship",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300266335,
+          "aat_term": "ship-settings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "industrial building",
@@ -3937,22 +5137,46 @@
       {
         "value": "roof",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300008131,
+          "aat_term": "roof gardens",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "basilica",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300449134,
+          "aat_term": "forum-basilica complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lighthouse",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300251969,
+          "aat_term": "lighthouse keepers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mausoleum",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300451451,
+          "aat_term": "complexes, mausoleum",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "monastery",
@@ -3968,7 +5192,13 @@
       {
         "value": "stables",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300375137,
+          "aat_term": "livery stables",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gatehouse",
@@ -3994,7 +5224,13 @@
       {
         "value": "hut",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300388482,
+          "aat_term": "Jah Hut (language)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "farm_auxiliary",
@@ -4004,12 +5240,24 @@
       {
         "value": "pyramid",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300445042,
+          "aat_term": "pyramid complexes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "stage",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300387017,
+          "aat_term": "stage stations",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mansion",
@@ -4019,7 +5267,13 @@
       {
         "value": "kindergarten",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300254178,
+          "aat_term": "kindergarten gifts",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Socony Mobil",
@@ -4029,7 +5283,13 @@
       {
         "value": "greenhouse",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300266800,
+          "aat_term": "greenhouse effect",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bakehouse",
@@ -4044,7 +5304,13 @@
       {
         "value": "parking",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300007826,
+          "aat_term": "parking lots",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "grandstand",
@@ -4079,7 +5345,13 @@
       {
         "value": "clothes",
         "count": 417,
-        "fraction": 0.0834
+        "fraction": 0.0834,
+        "aat_mapping": {
+          "aat_id": 300236267,
+          "aat_term": "clothes brush",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "supermarket",
@@ -4089,7 +5361,13 @@
       {
         "value": "convenience",
         "count": 296,
-        "fraction": 0.0592
+        "fraction": 0.0592,
+        "aat_mapping": {
+          "aat_id": 300005341,
+          "aat_term": "convenience stores (built works.)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "department_store",
@@ -4109,17 +5387,35 @@
       {
         "value": "books",
         "count": 186,
-        "fraction": 0.0372
+        "fraction": 0.0372,
+        "aat_mapping": {
+          "aat_id": 300028051,
+          "aat_term": "books",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "shoes",
         "count": 100,
-        "fraction": 0.02
+        "fraction": 0.02,
+        "aat_mapping": {
+          "aat_id": 300420185,
+          "aat_term": "animal shoes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "laundry",
         "count": 98,
-        "fraction": 0.0196
+        "fraction": 0.0196,
+        "aat_mapping": {
+          "aat_id": 300451033,
+          "aat_term": "laundry buildings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "yes",
@@ -4129,7 +5425,13 @@
       {
         "value": "car",
         "count": 90,
-        "fraction": 0.018
+        "fraction": 0.018,
+        "aat_mapping": {
+          "aat_id": 300178763,
+          "aat_term": "car washes",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "chemist",
@@ -4139,27 +5441,57 @@
       {
         "value": "alcohol",
         "count": 83,
-        "fraction": 0.0166
+        "fraction": 0.0166,
+        "aat_mapping": {
+          "aat_id": 300015226,
+          "aat_term": "amyl alcohol",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "furniture",
         "count": 81,
-        "fraction": 0.0162
+        "fraction": 0.0162,
+        "aat_mapping": {
+          "aat_id": 300037680,
+          "aat_term": "furniture",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tailor",
         "count": 80,
-        "fraction": 0.016
+        "fraction": 0.016,
+        "aat_mapping": {
+          "aat_id": 300227768,
+          "aat_term": "tailor-made",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hardware",
         "count": 64,
-        "fraction": 0.0128
+        "fraction": 0.0128,
+        "aat_mapping": {
+          "aat_id": 300045309,
+          "aat_term": "finish hardware (hardware)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "jewelry",
         "count": 63,
-        "fraction": 0.0126
+        "fraction": 0.0126,
+        "aat_mapping": {
+          "aat_id": 300209286,
+          "aat_term": "jewelry",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mall",
@@ -4174,27 +5506,57 @@
       {
         "value": "beauty",
         "count": 56,
-        "fraction": 0.0112
+        "fraction": 0.0112,
+        "aat_mapping": {
+          "aat_id": 300055821,
+          "aat_term": "beauty",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "video",
         "count": 50,
-        "fraction": 0.01
+        "fraction": 0.01,
+        "aat_mapping": {
+          "aat_id": 300007216,
+          "aat_term": "video arcades",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "music",
         "count": 50,
-        "fraction": 0.01
+        "fraction": 0.01,
+        "aat_mapping": {
+          "aat_id": 300448924,
+          "aat_term": "music buildings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "butcher",
         "count": 48,
-        "fraction": 0.0096
+        "fraction": 0.0096,
+        "aat_mapping": {
+          "aat_id": 300199923,
+          "aat_term": "butcher knives",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "electronics",
         "count": 47,
-        "fraction": 0.0094
+        "fraction": 0.0094,
+        "aat_mapping": {
+          "aat_id": 300266785,
+          "aat_term": "feedback (electronics)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "optician",
@@ -4204,7 +5566,13 @@
       {
         "value": "general",
         "count": 43,
-        "fraction": 0.0086
+        "fraction": 0.0086,
+        "aat_mapping": {
+          "aat_id": 300312213,
+          "aat_term": "general hospitals",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "colonial goods",
@@ -4214,22 +5582,46 @@
       {
         "value": "gift",
         "count": 41,
-        "fraction": 0.0082
+        "fraction": 0.0082,
+        "aat_mapping": {
+          "aat_id": 300404212,
+          "aat_term": "gift giving",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bicycle",
         "count": 36,
-        "fraction": 0.0072
+        "fraction": 0.0072,
+        "aat_mapping": {
+          "aat_id": 300007711,
+          "aat_term": "bicycle sheds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "funeral_directors",
         "count": 36,
-        "fraction": 0.0072
+        "fraction": 0.0072,
+        "aat_mapping": {
+          "aat_id": 300389799,
+          "aat_term": "funeral directors",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "trade",
         "count": 36,
-        "fraction": 0.0072
+        "fraction": 0.0072,
+        "aat_mapping": {
+          "aat_id": 300387286,
+          "aat_term": "trade centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "houseware",
@@ -4249,37 +5641,79 @@
       {
         "value": "store",
         "count": 28,
-        "fraction": 0.0056
+        "fraction": 0.0056,
+        "aat_mapping": {
+          "aat_id": 300191670,
+          "aat_term": "store cards",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tobacco",
         "count": 27,
-        "fraction": 0.0054
+        "fraction": 0.0054,
+        "aat_mapping": {
+          "aat_id": 300004911,
+          "aat_term": "tobacco barns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "confectionery",
         "count": 27,
-        "fraction": 0.0054
+        "fraction": 0.0054,
+        "aat_mapping": {
+          "aat_id": 300422248,
+          "aat_term": "confectionery jars",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pastry",
         "count": 26,
-        "fraction": 0.0052
+        "fraction": 0.0052,
+        "aat_mapping": {
+          "aat_id": 300389829,
+          "aat_term": "pastry",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "stationery",
         "count": 25,
-        "fraction": 0.005
+        "fraction": 0.005,
+        "aat_mapping": {
+          "aat_id": 300207873,
+          "aat_term": "stationery",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "sports",
         "count": 25,
-        "fraction": 0.005
+        "fraction": 0.005,
+        "aat_mapping": {
+          "aat_id": 300222725,
+          "aat_term": "sports",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "antiques",
         "count": 25,
-        "fraction": 0.005
+        "fraction": 0.005,
+        "aat_mapping": {
+          "aat_id": 300117125,
+          "aat_term": "antiques (object genre)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mobile_phone",
@@ -4304,12 +5738,24 @@
       {
         "value": "toys",
         "count": 21,
-        "fraction": 0.0042
+        "fraction": 0.0042,
+        "aat_mapping": {
+          "aat_id": 300429129,
+          "aat_term": "pet toys",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "florist",
         "count": 20,
-        "fraction": 0.004
+        "fraction": 0.004,
+        "aat_mapping": {
+          "aat_id": 300005314,
+          "aat_term": "florist shops (built works)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "second_hand",
@@ -4319,32 +5765,68 @@
       {
         "value": "musical_instrument",
         "count": 19,
-        "fraction": 0.0038
+        "fraction": 0.0038,
+        "aat_mapping": {
+          "aat_id": 300429383,
+          "aat_term": "musical instrument cases",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "photo",
         "count": 18,
-        "fraction": 0.0036
+        "fraction": 0.0036,
+        "aat_mapping": {
+          "aat_id": 300266017,
+          "aat_term": "photo frames",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "dry_cleaning",
         "count": 18,
-        "fraction": 0.0036
+        "fraction": 0.0036,
+        "aat_mapping": {
+          "aat_id": 300219637,
+          "aat_term": "dry cleaning",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "grocery",
         "count": 18,
-        "fraction": 0.0036
+        "fraction": 0.0036,
+        "aat_mapping": {
+          "aat_id": 300005321,
+          "aat_term": "grocery stores (built works)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "carpet",
         "count": 16,
-        "fraction": 0.0032
+        "fraction": 0.0032,
+        "aat_mapping": {
+          "aat_id": 300239949,
+          "aat_term": "carpet beds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "charity",
         "count": 16,
-        "fraction": 0.0032
+        "fraction": 0.0032,
+        "aat_mapping": {
+          "aat_id": 300379107,
+          "aat_term": "charity (philosophical concept)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "deli",
@@ -4354,17 +5836,35 @@
       {
         "value": "pet",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300000376,
+          "aat_term": "pet cemeteries",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "seafood",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300431746,
+          "aat_term": "seafood picks",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "paint",
         "count": 14,
-        "fraction": 0.0028
+        "fraction": 0.0028,
+        "aat_mapping": {
+          "aat_id": 300015050,
+          "aat_term": "oil paint (paint)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fashion_accessories",
@@ -4379,17 +5879,35 @@
       {
         "value": "outdoor",
         "count": 12,
-        "fraction": 0.0024
+        "fraction": 0.0024,
+        "aat_mapping": {
+          "aat_id": 300005203,
+          "aat_term": "outdoor cafés",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "appliance",
         "count": 12,
-        "fraction": 0.0024
+        "fraction": 0.0024,
+        "aat_mapping": {
+          "aat_id": 300386681,
+          "aat_term": "appliance manufacturers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "coffee",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300005187,
+          "aat_term": "coffee shops",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "garden_centre",
@@ -4399,32 +5917,68 @@
       {
         "value": "art",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300056487,
+          "aat_term": "folk art (traditional art)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "dairy",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300004907,
+          "aat_term": "dairy barns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bed",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300001798,
+          "aat_term": "bed moldings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "anime",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300404884,
+          "aat_term": "anime (genre)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "sewing",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300261531,
+          "aat_term": "French sewing (bookbinding sewing)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "craft",
         "count": 11,
-        "fraction": 0.0022
+        "fraction": 0.0022,
+        "aat_mapping": {
+          "aat_id": 300422507,
+          "aat_term": "craft paper",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "travel_agency",
@@ -4434,7 +5988,13 @@
       {
         "value": "computer",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300005378,
+          "aat_term": "computer centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "kiosk",
@@ -4449,57 +6009,123 @@
       {
         "value": "wine",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300379442,
+          "aat_term": "wine",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cosmetics",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300236306,
+          "aat_term": "cosmetics",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "collector",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300452086,
+          "aat_term": "collector assigned numbers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "fabric",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300425245,
+          "aat_term": "fabric shears",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ticket",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300434689,
+          "aat_term": "ticket dispensers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "motorcycle",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300429290,
+          "aat_term": "motorcycle sidecars",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pharmacy",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300054520,
+          "aat_term": "pharmacy (discipline)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "leather",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300011845,
+          "aat_term": "leather",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "food",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300254496,
+          "aat_term": "food",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "weapons",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300036926,
+          "aat_term": "weapons",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "interior_decoration",
         "count": 8,
-        "fraction": 0.0016
+        "fraction": 0.0016,
+        "aat_mapping": {
+          "aat_id": 300161596,
+          "aat_term": "interior decoration",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hifi",
@@ -4509,7 +6135,13 @@
       {
         "value": "kitchen",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300427795,
+          "aat_term": "kitchen houses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pawnbroker",
@@ -4519,12 +6151,24 @@
       {
         "value": "camera",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300025647,
+          "aat_term": "camera operators",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "medical_supply",
         "count": 7,
-        "fraction": 0.0014
+        "fraction": 0.0014,
+        "aat_mapping": {
+          "aat_id": 300427324,
+          "aat_term": "medical supply holders",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "baby_goods",
@@ -4539,12 +6183,24 @@
       {
         "value": "electrical",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300056188,
+          "aat_term": "electrical properties",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "watches",
         "count": 6,
-        "fraction": 0.0012
+        "fraction": 0.0012,
+        "aat_mapping": {
+          "aat_id": 300041615,
+          "aat_term": "watches",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "copyshop",
@@ -4554,7 +6210,13 @@
       {
         "value": "tea",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300008117,
+          "aat_term": "tea gardens",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "agrarian",
@@ -4564,12 +6226,24 @@
       {
         "value": "video_games",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300256888,
+          "aat_term": "video games",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "flooring",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300014866,
+          "aat_term": "flooring",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "newsagent",
@@ -4584,17 +6258,35 @@
       {
         "value": "printing",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300161798,
+          "aat_term": "printing blocks (printing surfaces)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "party",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300428915,
+          "aat_term": "party games",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "beverages",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300389821,
+          "aat_term": "beverages",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hobby",
@@ -4604,17 +6296,35 @@
       {
         "value": "curtain",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300375275,
+          "aat_term": "curtain rings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "rental",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300000312,
+          "aat_term": "rental housing",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "religion",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300400837,
+          "aat_term": "Greek religion (ancient religion)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "radiotechnics",
@@ -4624,12 +6334,24 @@
       {
         "value": "photography",
         "count": 4,
-        "fraction": 0.0008
+        "fraction": 0.0008,
+        "aat_mapping": {
+          "aat_id": 300135005,
+          "aat_term": "solarization (photography)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "liquor",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300380579,
+          "aat_term": "whiskey (liquor)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "health_food",
@@ -4639,12 +6361,24 @@
       {
         "value": "catalogue",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300026059,
+          "aat_term": "catalogue",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "massage",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300007231,
+          "aat_term": "massage parlors",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "swimming_pool",
@@ -4654,12 +6388,24 @@
       {
         "value": "fireplace",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300052273,
+          "aat_term": "fireplace components",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "vacuum_cleaner",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300432027,
+          "aat_term": "vacuum cleaner attachments",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "shoe_repair",
@@ -4669,17 +6415,35 @@
       {
         "value": "games",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300424740,
+          "aat_term": "games",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "farm",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300448609,
+          "aat_term": "farm mounds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bag",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300427040,
+          "aat_term": "harvesting bag",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "delicatessen",
@@ -4689,12 +6453,24 @@
       {
         "value": "horses",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300426019,
+          "aat_term": "froe horses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "model",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300008492,
+          "aat_term": "model cities",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "drugstore",
@@ -4719,7 +6495,13 @@
       {
         "value": "erotic",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300417763,
+          "aat_term": "erotic stories",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "nutrition_supplements",
@@ -4729,37 +6511,79 @@
       {
         "value": "boat",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300007205,
+          "aat_term": "boat clubs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "doors",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300002803,
+          "aat_term": "doors",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tiles",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300430306,
+          "aat_term": "pill tiles",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cheese",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300390514,
+          "aat_term": "cheese",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tattoo",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300025184,
+          "aat_term": "tattoo artists",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "repair",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300006410,
+          "aat_term": "repair shops",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "glass",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300210980,
+          "aat_term": "green glass (bottle glass)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bicycle_repair",
@@ -4774,12 +6598,24 @@
       {
         "value": "spices",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300386730,
+          "aat_term": "spices",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "coal",
         "count": 2,
-        "fraction": 0.0004
+        "fraction": 0.0004,
+        "aat_mapping": {
+          "aat_id": 300015149,
+          "aat_term": "coal",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "boutique",
@@ -4789,7 +6625,13 @@
       {
         "value": "cigars",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300419975,
+          "aat_term": "cigars",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "photo gallery",
@@ -4799,17 +6641,35 @@
       {
         "value": "hat",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300427057,
+          "aat_term": "hat stretchers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "sewing machines",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300428090,
+          "aat_term": "leather sewing machines",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "picture frames",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300404391,
+          "aat_term": "picture frames",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "window_blind",
@@ -4819,12 +6679,24 @@
       {
         "value": "lighting",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300051944,
+          "aat_term": "lighting",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "ice",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300132320,
+          "aat_term": "pack ice",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tv",
@@ -4844,12 +6716,24 @@
       {
         "value": "frame",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300434829,
+          "aat_term": "toggling frame",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "candles",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300037654,
+          "aat_term": "candles",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pyrotechnics",
@@ -4869,7 +6753,13 @@
       {
         "value": "hearing_aids",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300248928,
+          "aat_term": "hearing aids",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "printer_ink",
@@ -4884,7 +6774,13 @@
       {
         "value": "fuel",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300015139,
+          "aat_term": "fuel",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "clock_repair",
@@ -4894,12 +6790,24 @@
       {
         "value": "tools",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300024841,
+          "aat_term": "tools",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "discount",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300120447,
+          "aat_term": "discount houses (built works)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "organiser",
@@ -4919,22 +6827,46 @@
       {
         "value": "telecommunication",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300431346,
+          "aat_term": "transmitters (telecommunication )",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cannabis",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300375511,
+          "aat_term": "Cannabis (genus)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "psychic",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300139724,
+          "aat_term": "psychic photographs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "gun",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300426806,
+          "aat_term": "gun shelters",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "shopping_centre",
@@ -4949,7 +6881,13 @@
       {
         "value": "fishing",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300239470,
+          "aat_term": "fishing",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "bookmaker",
@@ -4959,17 +6897,35 @@
       {
         "value": "pottery",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300263188,
+          "aat_term": "Pottery Neolithic",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "maps",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300028219,
+          "aat_term": "seismicity maps",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "vacant",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300122264,
+          "aat_term": "vacant lots",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       }
     ]
   },
@@ -4994,7 +6950,13 @@
       {
         "value": "government",
         "count": 523,
-        "fraction": 0.28377645143787306
+        "fraction": 0.28377645143787306,
+        "aat_mapping": {
+          "aat_id": 300055507,
+          "aat_term": "government policy",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "yes",
@@ -5004,22 +6966,46 @@
       {
         "value": "diplomatic",
         "count": 164,
-        "fraction": 0.08898534997287032
+        "fraction": 0.08898534997287032,
+        "aat_mapping": {
+          "aat_id": 300107996,
+          "aat_term": "diplomatic buildings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "company",
         "count": 132,
-        "fraction": 0.0716223548562127
+        "fraction": 0.0716223548562127,
+        "aat_mapping": {
+          "aat_id": 300155931,
+          "aat_term": "company towns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "newspaper",
         "count": 115,
-        "fraction": 0.062398263700488336
+        "fraction": 0.062398263700488336,
+        "aat_mapping": {
+          "aat_id": 300026441,
+          "aat_term": "newspaper columns",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "insurance",
         "count": 70,
-        "fraction": 0.03798155181768855
+        "fraction": 0.03798155181768855,
+        "aat_mapping": {
+          "aat_id": 300055719,
+          "aat_term": "insurance",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "it",
@@ -5029,7 +7015,13 @@
       {
         "value": "association",
         "count": 51,
-        "fraction": 0.027672273467173086
+        "fraction": 0.027672273467173086,
+        "aat_mapping": {
+          "aat_id": 300389850,
+          "aat_term": "<styles, periods, and cultures by association>",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "lawyer",
@@ -5059,12 +7051,24 @@
       {
         "value": "religion",
         "count": 25,
-        "fraction": 0.013564839934888768
+        "fraction": 0.013564839934888768,
+        "aat_mapping": {
+          "aat_id": 300400837,
+          "aat_term": "Greek religion (ancient religion)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "telecommunication",
         "count": 23,
-        "fraction": 0.012479652740097666
+        "fraction": 0.012479652740097666,
+        "aat_mapping": {
+          "aat_id": 300431346,
+          "aat_term": "transmitters (telecommunication )",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "educational_institution",
@@ -5074,22 +7078,46 @@
       {
         "value": "architect",
         "count": 20,
-        "fraction": 0.010851871947911014
+        "fraction": 0.010851871947911014,
+        "aat_mapping": {
+          "aat_id": 300191821,
+          "aat_term": "architect-designed",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "research",
         "count": 19,
-        "fraction": 0.010309278350515464
+        "fraction": 0.010309278350515464,
+        "aat_mapping": {
+          "aat_id": 300120662,
+          "aat_term": "research structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "financial",
         "count": 15,
-        "fraction": 0.008138903960933261
+        "fraction": 0.008138903960933261,
+        "aat_mapping": {
+          "aat_id": 300387284,
+          "aat_term": "financial centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "charity",
         "count": 13,
-        "fraction": 0.00705371676614216
+        "fraction": 0.00705371676614216,
+        "aat_mapping": {
+          "aat_id": 300379107,
+          "aat_term": "charity (philosophical concept)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "tax_advisor",
@@ -5104,7 +7132,13 @@
       {
         "value": "foundation",
         "count": 11,
-        "fraction": 0.005968529571351058
+        "fraction": 0.005968529571351058,
+        "aat_mapping": {
+          "aat_id": 300400607,
+          "aat_term": "foundation deposits",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "employment_agency",
@@ -5119,7 +7153,13 @@
       {
         "value": "union",
         "count": 8,
-        "fraction": 0.004340748779164406
+        "fraction": 0.004340748779164406,
+        "aat_mapping": {
+          "aat_id": 300375133,
+          "aat_term": "union halls",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "coworking",
@@ -5144,7 +7184,13 @@
       {
         "value": "graphic_design",
         "count": 5,
-        "fraction": 0.0027129679869777536
+        "fraction": 0.0027129679869777536,
+        "aat_mapping": {
+          "aat_id": 300054181,
+          "aat_term": "graphic design",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "water_utility",
@@ -5169,22 +7215,46 @@
       {
         "value": "consulting",
         "count": 3,
-        "fraction": 0.0016277807921866521
+        "fraction": 0.0016277807921866521,
+        "aat_mapping": {
+          "aat_id": 300137940,
+          "aat_term": "consulting",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mortgage",
         "count": 3,
-        "fraction": 0.0016277807921866521
+        "fraction": 0.0016277807921866521,
+        "aat_mapping": {
+          "aat_id": 300027251,
+          "aat_term": "mortgage deeds",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "transport",
         "count": 3,
-        "fraction": 0.0016277807921866521
+        "fraction": 0.0016277807921866521,
+        "aat_mapping": {
+          "aat_id": 300387016,
+          "aat_term": "transport points",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "forestry",
         "count": 3,
-        "fraction": 0.0016277807921866521
+        "fraction": 0.0016277807921866521,
+        "aat_mapping": {
+          "aat_id": 300054511,
+          "aat_term": "forestry",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "logistics",
@@ -5194,7 +7264,13 @@
       {
         "value": "university",
         "count": 2,
-        "fraction": 0.0010851871947911015
+        "fraction": 0.0010851871947911015,
+        "aat_mapping": {
+          "aat_id": 300008429,
+          "aat_term": "university cities",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "therapist",
@@ -5219,7 +7295,13 @@
       {
         "value": "administrative",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300387264,
+          "aat_term": "administrative centres",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "shipping_agent",
@@ -5244,17 +7326,35 @@
       {
         "value": "marketing",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300054673,
+          "aat_term": "marketing",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "investment",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300025227,
+          "aat_term": "investment counsels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "taxi",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300003911,
+          "aat_term": "taxi stands",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "courier",
@@ -5274,7 +7374,13 @@
       {
         "value": "chamber",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300005935,
+          "aat_term": "chamber tombs",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "Rail Road",
@@ -5289,17 +7395,35 @@
       {
         "value": "design",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300457796,
+          "aat_term": "design methods",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "broadcaster",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300421141,
+          "aat_term": "broadcaster",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "mill",
         "count": 1,
-        "fraction": 0.0005425935973955507
+        "fraction": 0.0005425935973955507,
+        "aat_mapping": {
+          "aat_id": 300387304,
+          "aat_term": "mill centers",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "weighbridge",
@@ -5344,7 +7468,13 @@
       {
         "value": "movable",
         "count": 15,
-        "fraction": 0.003
+        "fraction": 0.003,
+        "aat_mapping": {
+          "aat_id": 300007857,
+          "aat_term": "movable bridges",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "boardwalk",
@@ -5354,17 +7484,35 @@
       {
         "value": "trestle",
         "count": 9,
-        "fraction": 0.0018
+        "fraction": 0.0018,
+        "aat_mapping": {
+          "aat_id": 300007869,
+          "aat_term": "trestle bridges",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "cantilever",
         "count": 5,
-        "fraction": 0.001
+        "fraction": 0.001,
+        "aat_mapping": {
+          "aat_id": 300007845,
+          "aat_term": "cantilever bridges",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "abandoned",
         "count": 3,
-        "fraction": 0.0006
+        "fraction": 0.0006,
+        "aat_mapping": {
+          "aat_id": 300386961,
+          "aat_term": "abandoned structures",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "no",
@@ -5374,7 +7522,13 @@
       {
         "value": "basin",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300018810,
+          "aat_term": "Kuznetsk Basin",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       }
     ]
   },
@@ -5409,7 +7563,13 @@
       {
         "value": "true",
         "count": 10,
-        "fraction": 0.002
+        "fraction": 0.002,
+        "aat_mapping": {
+          "aat_id": 300374987,
+          "aat_term": "true lancewood (wood)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "no",
@@ -5419,7 +7579,13 @@
       {
         "value": "private",
         "count": 1,
-        "fraction": 0.0002
+        "fraction": 0.0002,
+        "aat_mapping": {
+          "aat_id": 300008151,
+          "aat_term": "private gardens",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "undefined",
@@ -5460,17 +7626,35 @@
       {
         "value": "taxiway",
         "count": 192,
-        "fraction": 0.22829964328180738
+        "fraction": 0.22829964328180738,
+        "aat_mapping": {
+          "aat_id": 300181687,
+          "aat_term": "taxiway lights",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "terminal",
         "count": 144,
-        "fraction": 0.17122473246135553
+        "fraction": 0.17122473246135553,
+        "aat_mapping": {
+          "aat_id": 300444013,
+          "aat_term": "Terminal Classic",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "runway",
         "count": 47,
-        "fraction": 0.0558858501783591
+        "fraction": 0.0558858501783591,
+        "aat_mapping": {
+          "aat_id": 300181694,
+          "aat_term": "runway lights",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "hangar",
@@ -5490,12 +7674,24 @@
       {
         "value": "tower",
         "count": 6,
-        "fraction": 0.007134363852556481
+        "fraction": 0.007134363852556481,
+        "aat_mapping": {
+          "aat_id": 300411567,
+          "aat_term": "tower mills",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "apron",
         "count": 5,
-        "fraction": 0.005945303210463734
+        "fraction": 0.005945303210463734,
+        "aat_mapping": {
+          "aat_id": 300422315,
+          "aat_term": "cooking apron",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "spaceport",
@@ -5545,12 +7741,24 @@
       {
         "value": "plant",
         "count": 178,
-        "fraction": 0.2202970297029703
+        "fraction": 0.2202970297029703,
+        "aat_mapping": {
+          "aat_id": 300048769,
+          "aat_term": "plant fortifications",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "line",
         "count": 124,
-        "fraction": 0.15346534653465346
+        "fraction": 0.15346534653465346,
+        "aat_mapping": {
+          "aat_id": 300198407,
+          "aat_term": "line fillings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "substation",
@@ -5560,12 +7768,24 @@
       {
         "value": "tower",
         "count": 48,
-        "fraction": 0.0594059405940594
+        "fraction": 0.0594059405940594,
+        "aat_mapping": {
+          "aat_id": 300411567,
+          "aat_term": "tower mills",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "station",
         "count": 2,
-        "fraction": 0.0024752475247524753
+        "fraction": 0.0024752475247524753,
+        "aat_mapping": {
+          "aat_id": 300444144,
+          "aat_term": "station houses",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "minor_line",
@@ -5585,7 +7805,13 @@
       {
         "value": "cable",
         "count": 1,
-        "fraction": 0.0012376237623762376
+        "fraction": 0.0012376237623762376,
+        "aat_mapping": {
+          "aat_id": 300003493,
+          "aat_term": "cable moldings",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       }
     ]
   },
@@ -5610,12 +7836,24 @@
       {
         "value": "hospital",
         "count": 487,
-        "fraction": 0.4840954274353877
+        "fraction": 0.4840954274353877,
+        "aat_mapping": {
+          "aat_id": 300449011,
+          "aat_term": "hospital chapels",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "pharmacy",
         "count": 202,
-        "fraction": 0.20079522862823063
+        "fraction": 0.20079522862823063,
+        "aat_mapping": {
+          "aat_id": 300054520,
+          "aat_term": "pharmacy (discipline)",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "doctor",
@@ -5640,7 +7878,13 @@
       {
         "value": "alternative",
         "count": 14,
-        "fraction": 0.013916500994035786
+        "fraction": 0.013916500994035786,
+        "aat_mapping": {
+          "aat_id": 300192556,
+          "aat_term": "alternative spaces",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "optometrist",
@@ -5655,12 +7899,24 @@
       {
         "value": "laboratory",
         "count": 7,
-        "fraction": 0.006958250497017893
+        "fraction": 0.006958250497017893,
+        "aat_mapping": {
+          "aat_id": 300427884,
+          "aat_term": "laboratory coat",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "rehabilitation",
         "count": 6,
-        "fraction": 0.005964214711729622
+        "fraction": 0.005964214711729622,
+        "aat_mapping": {
+          "aat_id": 300053745,
+          "aat_term": "rehabilitation",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "physiotherapist",
@@ -5685,7 +7941,13 @@
       {
         "value": "midwife",
         "count": 3,
-        "fraction": 0.002982107355864811
+        "fraction": 0.002982107355864811,
+        "aat_mapping": {
+          "aat_id": 300427520,
+          "aat_term": "midwife kits",
+          "confidence": "es_fuzzy",
+          "source": "aat_es"
+        }
       },
       {
         "value": "podiatrist",
@@ -5705,7 +7967,13 @@
       {
         "value": "dialysis",
         "count": 1,
-        "fraction": 0.0009940357852882703
+        "fraction": 0.0009940357852882703,
+        "aat_mapping": {
+          "aat_id": 300265325,
+          "aat_term": "dialysis",
+          "confidence": "es_exact",
+          "source": "aat_es"
+        }
       },
       {
         "value": "centre",
