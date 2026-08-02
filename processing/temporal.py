@@ -280,6 +280,13 @@ def coerce_year(value: Any) -> int | None:
 
     ``bool`` is rejected explicitly: it is an ``int`` subclass, and ``True``
     would otherwise read as year 1.
+
+    **No range bound here.** This is shared with the *reader*
+    (``gazetteer_temporal_extent``), which applies its own per-namespace clamp —
+    and ``po`` deliberately admits geological years down to -5e9, because
+    PeriodO covers geological periods. The storage bound
+    (:func:`representable_year`) belongs on the write path: the builders and
+    :func:`normalise_timespans`.
     """
     if isinstance(value, bool):
         return None
@@ -304,7 +311,7 @@ def coerce_year(value: Any) -> int | None:
         year = int(head)
     except ValueError:
         return None
-    return representable_year(-year if negative else year)
+    return -year if negative else year
 
 
 def normalise_timespans(timespans: Any) -> list[dict[str, Any]]:
@@ -344,7 +351,7 @@ def normalise_timespans(timespans: Any) -> list[dict[str, Any]]:
             for sub in SUBFIELDS:
                 if sub not in node:
                     continue
-                year = coerce_year(node.get(sub))
+                year = representable_year(coerce_year(node.get(sub)))
                 if year is not None:
                     fields[sub] = year
             if fields:

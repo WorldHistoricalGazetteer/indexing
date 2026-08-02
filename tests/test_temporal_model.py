@@ -402,6 +402,22 @@ class RepresentableYearTests(unittest.TestCase):
         self.assertEqual(lifespan(-3000, -2000),
                          [{"start": {"in": -3000}, "end": {"in": -2000}}])
 
-    def test_coerce_year_applies_the_same_bound(self):
-        self.assertIsNone(coerce_year("-13798000000"))
-        self.assertEqual(coerce_year("-3000"), -3000)
+    def test_coerce_year_does_NOT_apply_the_storage_bound(self):
+        """The bound is a write-path concern, and coerce_year is shared.
+
+        ``gazetteer_temporal_extent`` reads through coerce_year and applies its
+        own per-namespace clamp — and ``po`` deliberately admits geological
+        years down to -5e9, because PeriodO covers geological periods. Bounding
+        here broke that; the storage bound lives in the builders and in
+        normalise_timespans instead.
+        """
+        self.assertEqual(coerce_year(-4_567_998_050), -4_567_998_050)
+        self.assertEqual(coerce_year("-13798000000"), -13_798_000_000)
+
+    def test_normalise_timespans_does_apply_it(self):
+        from processing.temporal import normalise_timespans
+        self.assertEqual(
+            normalise_timespans([{"start": {"in": -13_798_000_000},
+                                  "end": {"in": 1900}}]),
+            [{"end": {"in": 1900}}],
+        )
