@@ -313,6 +313,16 @@ def main() -> None:
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
+    # argparse's required=True is satisfied by an empty string, so
+    # `--es-host "$ES_HOST"` with the variable unset builds and submits a job
+    # pointed at nowhere. The staging env file exports ES_URL, not ES_HOST, so
+    # that exact typo is easy to make and produces no error until the job runs.
+    if not (args.es_host or "").strip():
+        print("--es-host is empty. The staging env file exports ES_URL "
+              "(e.g. `source /ix1/ishi/esinfo/es-staging.env && "
+              "--es-host \"$ES_URL\"`).", file=sys.stderr)
+        sys.exit(2)
+
     if args.manifest_path:
         manifest_path = Path(args.manifest_path)
     else:
