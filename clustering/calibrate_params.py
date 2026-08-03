@@ -116,19 +116,51 @@ def spatial_signal(km: Optional[float], *, half_life_km: float = 25.0) -> float:
     return 1.0 / (1.0 + km / half_life_km)
 
 
-def temporal_overlap(a: Optional[list[int]], b: Optional[list[int]]) -> float:
+def temporal_overlap(a: Optional[list[Optional[int]]],
+                     b: Optional[list[Optional[int]]]) -> float:
     """Interval-overlap signal in [0,1] (Jaccard over year ranges).
 
-    ``[start, end]`` inclusive. Either side undated (None) → 0.0. Two identical
-    single-year points → 1.0; disjoint → 0.0."""
+    ``[start, end]`` inclusive, either bound possibly ``None`` = **unbounded**
+    (an open-start boundary such as ``ukhc``, or an ongoing one such as ``un``).
+    Either side wholly undated → 0.0. Two identical single-year points → 1.0;
+    disjoint → 0.0.
+
+    An unknown bound **adopts the other record's** on that side, so it neither
+    adds nor removes span: it can neither manufacture support nor be penalised
+    for what its source never claimed. ``[None, 1974]`` against ``[1889, 1974]``
+    is therefore 1.0 — nothing distinguishes them — while against ``[1200, 1250]``
+    it is ~0.06, because what *is* known of the two spans barely coincides.
+    Where neither record bounds a side, both are anchored to the same year and
+    that side contributes nothing to either intersection or union.
+
+    ⚠️ This must stay identical to ``temporalOverlap`` in whg3's
+    ``clustering.js``: the browser scores as this calibrated (place#169).
+    """
     if not a or not b:
         return 0.0
-    lo = max(a[0], b[0])
-    hi = min(a[1], b[1])
+    a0, a1 = a[0], a[1]
+    b0, b1 = b[0], b[1]
+    if (a0 is None and a1 is None) or (b0 is None and b1 is None):
+        return 0.0                          # wholly undated on one side
+
+    s_a = a0 if a0 is not None else b0
+    s_b = b0 if b0 is not None else a0
+    e_a = a1 if a1 is not None else b1
+    e_b = b1 if b1 is not None else a1
+
+    if s_a is None or s_b is None:          # neither record has a start
+        if e_a is None or e_b is None:
+            return 0.0                      # nothing bounded on either side
+        s_a = s_b = min(e_a, e_b)
+    if e_a is None or e_b is None:          # neither record has an end
+        e_a = e_b = max(s_a, s_b)
+
+    lo = max(s_a, s_b)
+    hi = min(e_a, e_b)
     if hi < lo:
         return 0.0
     inter = hi - lo
-    union = max(a[1], b[1]) - min(a[0], b[0])
+    union = max(e_a, e_b) - min(s_a, s_b)
     if union <= 0:
         return 1.0  # both the same single year
     return inter / union

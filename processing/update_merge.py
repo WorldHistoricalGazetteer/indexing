@@ -228,7 +228,16 @@ def _apply_patch(doc: dict[str, Any], patch: dict[str, Any]) -> tuple[dict[str, 
             changed = True
 
     if "geometries_to_replace" in patch and patch["geometries_to_replace"] is not None:
-        merged["geometries"] = patch["geometries_to_replace"]
+        # Stamp the positional index the rest of the pipeline keys on. The
+        # geoshapes patch builds its entries with enrich_geometry, which does
+        # not set geometry_index, so replacing wholesale left the field absent
+        # — and after a Parquet round trip, present-and-null.
+        replacements = []
+        for position, replacement in enumerate(patch["geometries_to_replace"]):
+            if isinstance(replacement, dict) and replacement.get("geometry_index") is None:
+                replacement = dict(replacement, geometry_index=position)
+            replacements.append(replacement)
+        merged["geometries"] = replacements
         if "h3_centroid" in patch:
             merged["h3_centroid"] = patch["h3_centroid"]
         if "h3_cover" in patch:

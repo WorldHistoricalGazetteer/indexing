@@ -157,7 +157,14 @@ def _build_h3_patch(doc: dict[str, Any]) -> tuple[dict[str, Any] | None, int, in
         if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
             continue
 
-        gi = geom.get("geometry_index", idx)
+        # `.get(key, default)` does not help here: a Parquet round trip
+        # materialises every schema field, so geometry_index is
+        # PRESENT-and-null rather than absent, and the default never
+        # fires. That reached h3_merge as int(None) and killed the wd
+        # chain the first time update_merge ever ran.
+        gi = geom.get("geometry_index")
+        if gi is None:
+            gi = idx
         # Sub-cell features cannot span more than the centroid cell, so skip the
         # geom-store read + polyfill and derive the centroid-only cover directly
         # (identical output). Only features large enough to produce a multi-cell

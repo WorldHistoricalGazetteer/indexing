@@ -146,15 +146,22 @@ def _temporal_core(geometries: list[dict]) -> list[int] | None:
     return [min(starts), max(ends)]
 
 
-def _temporal_range(geometries: list[dict]) -> list[int] | None:
-    """``[min_start, max_end]`` across all geometries' ``timespans``; None if none.
+def _temporal_range(geometries: list[dict]) -> list[int | None] | None:
+    """``[earliest_start, latest_end]`` across all geometries' ``timespans``, with
+    **None for a side no timespan bounds at all**; None when nothing is dated.
 
-    The widest span the bounds allow: the earliest possible start to the latest
-    possible end. Interval-overlap support (``s.t``) is a *could these be the
-    same place* test, so the permissive reading is the right one — a narrower
-    core would refuse to cluster an attestation with the lifespan it belongs to.
-    A missing start/end simply doesn't contribute a bound; if neither bound is
-    ever seen the range is None (undated)."""
+    The widest span the bounds allow. Interval-overlap support (``s.t``) is a
+    *could these be the same place* test, so the permissive reading is right — a
+    narrower core would refuse to cluster an attestation with the lifespan it
+    belongs to.
+
+    An absent bound is genuinely unbounded and must stay None rather than
+    borrowing the other end (place#169). Collapsing an open-start county to
+    ``[1974, 1974]`` claims it began in 1974, which excluded it from any earlier
+    window in the Atlas's client-side preview — the exact over-claim place#164
+    removed from storage. Consumers treat None as unbounded: see
+    ``clustering.temporal_overlap`` and its JS twin in ``whg3 clustering.js``.
+    """
     starts: list[int] = []
     ends: list[int] = []
     for g in geometries:
@@ -171,9 +178,7 @@ def _temporal_range(geometries: list[dict]) -> list[int] | None:
                 ends.append(end)
     if not starts and not ends:
         return None
-    lo = min(starts) if starts else min(ends)
-    hi = max(ends) if ends else max(starts)
-    return [lo, hi]
+    return [min(starts) if starts else None, max(ends) if ends else None]
 
 
 def assemble_clustering_fields(src: dict) -> dict:

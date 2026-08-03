@@ -56,9 +56,16 @@ class TestAssembleClusteringFields(unittest.TestCase):
         self.assertIsNone(cp.assemble_clustering_fields(src)["temporal_range"])
 
     def test_temporal_range_partial_bounds(self):
-        # Only an end year present — range collapses to [end, end].
+        # Only an end year present. The missing start is UNBOUNDED, not 1850:
+        # borrowing the end claimed the place began then, which excluded every
+        # open-start boundary from earlier windows in the Atlas preview (place#169).
         src = {"geometries": [_geom(spans=[{"end": {"in": 1850}}])]}
-        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1850, 1850])
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [None, 1850])
+
+    def test_temporal_range_open_end_is_none(self):
+        # The mirror image: an ongoing feature (un boundaries) has no end.
+        src = {"geometries": [_geom(spans=[{"start": {"in": 1707}}])]}
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1707, None])
 
     def test_temporal_range_reads_outer_bounds_not_just_in(self):
         # place#169: an attestation carries only the outer bounds. Reading `in`
@@ -94,7 +101,7 @@ class TestAssembleClusteringFields(unittest.TestCase):
         src = {"geometries": [_geom(spans=[{"end": {"in": 1851}}])]}
         out = cp.assemble_clustering_fields(src)
         self.assertIsNone(out["temporal_core"])
-        self.assertEqual(out["temporal_range"], [1851, 1851])
+        self.assertEqual(out["temporal_range"], [None, 1851])
 
     def test_temporal_core_from_exact_lifespan(self):
         src = {"geometries": [_geom(spans=[{"start": {"in": 1400}, "end": {"in": 1550}}])]}
