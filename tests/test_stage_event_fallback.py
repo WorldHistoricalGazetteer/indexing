@@ -168,6 +168,9 @@ class TestBarrierFallback(unittest.TestCase):
                     "stages": {
                         "extract": "completed",
                         "boundary_merge": "skipped",
+                        # gn emits a Phase 3 update patch, so the merge is a
+                        # real requirement for it rather than a skip.
+                        "update_merge": "completed",
                         "h3": "completed",
                         "h3_merge": "completed",
                         "h3_coverage": "completed",
@@ -193,8 +196,8 @@ class TestBarrierFallback(unittest.TestCase):
             "namespaces": {
                 "osm": {
                     "stages": {s: "completed" for s in [
-                        "extract", "boundary_merge", "h3", "h3_merge",
-                        "h3_coverage", "ccode",
+                        "extract", "update_merge", "boundary_merge",
+                        "h3", "h3_merge", "h3_coverage", "ccode",
                     ]} | {"ccode_merge": "running"}
                 }
             },
