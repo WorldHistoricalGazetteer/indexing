@@ -213,8 +213,9 @@ class CandidateHit(BaseModel):
     # Per-hit clustering fuel — only populated when include_clustering_fields=True
     h3: Optional[str] = None
     h3_cover: list[str] = []
-    temporal_range: Optional[list[int]] = None
-    temporal_core: Optional[list[int]] = None  # [latest_start, earliest_end] attested span, or null
+    # Either element may be null — see the twin in search.py (place#169).
+    temporal_range: Optional[list[Optional[int]]] = None
+    temporal_core: Optional[list[Optional[int]]] = None
     aat_ids: list[int] = []
     aat_paths: list[str] = []
     query_match: Optional[dict] = None

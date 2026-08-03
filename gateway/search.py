@@ -214,8 +214,11 @@ class SearchHit(BaseModel):
     # Per-hit clustering fuel — only populated when include_clustering_fields=True
     h3: Optional[str] = None                   # representative H3 centroid cell
     h3_cover: list[str] = []                   # bounded union of H3 cover cells
-    temporal_range: Optional[list[int]] = None  # [min_start, max_end] years, or null
-    temporal_core: Optional[list[int]] = None  # [latest_start, earliest_end] attested span, or null
+    # Either element may be null: an unbounded side (an open-start boundary, or an
+    # ongoing one) is unknown, not a year — declaring list[int] made every hit
+    # carrying one a 500 (place#169).
+    temporal_range: Optional[list[Optional[int]]] = None  # [min_start, max_end], either may be null
+    temporal_core: Optional[list[Optional[int]]] = None   # [latest_start, earliest_end], or null
     aat_ids: list[int] = []                    # leaf AAT concept ids
     aat_paths: list[str] = []                  # materialised root→leaf AAT paths (ancestors + depth)
     query_match: Optional[dict] = None         # {"name": ..., "score": ...} — the matching toponym
