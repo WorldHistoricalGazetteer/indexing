@@ -320,6 +320,110 @@ def _has_geometries(bounds: dict) -> bool:
     if geom_type == "GeometryCollection":
         return bool(bounds.get("geometries"))
     return bool(geom_type)
+# ---------------------------------------------------------------------------
+# Temporal filtering — the four-bound encoding (place#164, place#169)
+# ---------------------------------------------------------------------------
+
+#: Nested path carrying the timespans the place filter tests. Geometry- and
+#: relation-level timespans exist in the schema but have never been consulted
+#: here; see place#169 ("out of scope") before changing that.
+_TS = "toponyms.timespans"
+
+#: How a date window is matched against a place's temporal bounds.
+#:
+#:   possibly   (start.earliest ?? -inf) <= Q <= (end.latest ?? +inf)
+#:   definitely  start.latest <= Q <= end.earliest
+#:
+#: A source recording places *as they were* at a moment (OSM's dump, Index
+#: Villaris in 1680) constrains one side of each bound only; the absent outer
+#: bounds are what carry "unbounded", which is why no sentinel year is needed.
+TEMPORAL_MODES = ("possibly", "definitely")
+DEFAULT_TEMPORAL_MODE = "possibly"
+
+
+def _bound_clause(primary: str, fallback: str, op: str, value: int,
+                  unbounded_passes: bool) -> dict:
+    """One side of the overlap test, reading ``primary ?? fallback``.
+
+    ``in`` is the fallback everywhere because the sources that legitimately
+    still use it (``ohm``, ``clio``, ``hgis``) mean it as an exact year — which
+    is simultaneously the earliest and the latest that endpoint could be, so it
+    stands in for whichever outer bound is being asked for.
+
+    ``unbounded_passes`` distinguishes the two modes: with neither sub-field
+    present the endpoint is unknown, which means *unbounded* to a possibly-alive
+    query (it passes) and *no definite core* to a definitely-alive one (it fails).
+    """
+    should = [
+        {"range": {primary: {op: value}}},
+        {"bool": {
+            "must_not": [{"exists": {"field": primary}}],
+            "must": [{"range": {fallback: {op: value}}}],
+        }},
+    ]
+    if unbounded_passes:
+        should.append({"bool": {"must_not": [
+            {"exists": {"field": primary}},
+            {"exists": {"field": fallback}},
+        ]}})
+    return {"bool": {"should": should, "minimum_should_match": 1}}
+
+
+def _temporal_filter(start_year: int | None, end_year: int | None,
+                     mode: str, undated: bool) -> dict:
+    """Filter clause for a date window, in ``possibly`` or ``definitely`` mode.
+
+    The window is an interval, so the test is interval overlap: the place's start
+    must not fall after the window ends, and its end must not fall before the
+    window begins. Which bound stands for "the place's start" is what the mode
+    selects.
+    """
+    if mode not in TEMPORAL_MODES:
+        mode = DEFAULT_TEMPORAL_MODE
+    definite = mode == "definitely"
+    conditions: list[dict] = []
+
+    if end_year is not None:
+        # Started at/before the window ends. Possibly: the earliest it could have
+        # started. Definitely: the latest it could have started — an open-start
+        # feature (ukhc, un, vob_*, kain_par) has no definite start, so it can be
+        # *possibly* alive in a window but never *definitely* so.
+        conditions.append(_bound_clause(
+            f"{_TS}.start.earliest" if not definite else f"{_TS}.start.latest",
+            f"{_TS}.start.in", "lte", end_year, unbounded_passes=not definite,
+        ))
+    if start_year is not None:
+        # Still there at/after the window begins. Possibly: the latest it could
+        # have ended, absent meaning ongoing. Definitely: the earliest it could
+        # have ended.
+        conditions.append(_bound_clause(
+            f"{_TS}.end.latest" if not definite else f"{_TS}.end.earliest",
+            f"{_TS}.end.in", "gte", start_year, unbounded_passes=not definite,
+        ))
+
+    match = {"nested": {"path": "toponyms", "query": {
+        "nested": {"path": _TS, "query": {"bool": {"must": conditions}}},
+    }}}
+    if not undated:
+        return match
+
+    # `undated` admits places carrying no temporal information at all, so a date
+    # filter doesn't silently drop every undated record. The probe must name all
+    # six sub-fields: testing `in` alone (as it did until place#169) reads every
+    # re-encoded attestation — which carries only earliest/latest — as undated.
+    no_timespans = {"bool": {"must_not": {"nested": {"path": "toponyms", "query": {
+        "nested": {"path": _TS, "query": {"bool": {
+            "should": [
+                {"exists": {"field": f"{_TS}.{side}.{qualifier}"}}
+                for side in ("start", "end")
+                for qualifier in ("in", "earliest", "latest")
+            ],
+            "minimum_should_match": 1,
+        }}},
+    }}}}}
+    return {"bool": {"should": [match, no_timespans], "minimum_should_match": 1}}
+
+
 def build_places_filter(
     place_ids: list[str] | None,
     ccodes: list[str] | None,
@@ -328,6 +432,7 @@ def build_places_filter(
     end_year: int | None,
     size: int = 50,
     undated: bool = False,
+    temporal_mode: str = DEFAULT_TEMPORAL_MODE,
     exclude_namespaces: list[str] | None = None,
     namespaces: list[str] | None = None,
     fclasses: list[str] | None = None,
@@ -356,6 +461,9 @@ def build_places_filter(
         geom: ``"full"`` (default) returns ``geometries.geom`` and
             ``geometries.repr_point``; ``"repr_point"`` returns only the
             centroid, keeping responses lightweight for list/suggest views.
+        temporal_mode: ``"possibly"`` (default) or ``"definitely"`` — which of
+            the four temporal bounds ``start_year``/``end_year`` are tested
+            against. See ``_temporal_filter``.
         region: An optional resolved containment region (duck-typed; expects
             ``.bbox_geojson`` and ``.h3_terms``). When set, adds a coarse
             spatial gate — ``repr_point`` intersecting the region bbox OR
@@ -471,68 +579,9 @@ def build_places_filter(
         filter_clauses.append({"bool": {"should": should, "minimum_should_match": 1}})
 
     if start_year is not None or end_year is not None:
-        TS = "toponyms.timespans"
-        temporal_conditions = []
-        if start_year is not None:
-            # Place still exists at/after the window start: its end is >= start_year
-            # under ANY qualifier (in/latest/earliest), OR it is *ongoing* — a
-            # timespan with a start but no end (the WHG convention for current
-            # features, e.g. the UN country boundaries). Previously only
-            # `end.in >= start_year` was checked, which silently dropped every
-            # ongoing feature from bounded temporal queries.
-            temporal_conditions.append({"bool": {"should": [
-                {"range": {f"{TS}.end.in": {"gte": start_year}}},
-                {"range": {f"{TS}.end.latest": {"gte": start_year}}},
-                {"range": {f"{TS}.end.earliest": {"gte": start_year}}},
-                {"bool": {"must_not": [
-                    {"exists": {"field": f"{TS}.end.in"}},
-                    {"exists": {"field": f"{TS}.end.latest"}},
-                    {"exists": {"field": f"{TS}.end.earliest"}},
-                ]}},
-            ], "minimum_should_match": 1}})
-        if end_year is not None:
-            # Place started at/before the window end under ANY start qualifier
-            # (in/earliest/latest). For an ongoing boundary dated only
-            # `start.latest`, this matches queries whose end year is >= that bound.
-            temporal_conditions.append({"bool": {"should": [
-                {"range": {f"{TS}.start.in": {"lte": end_year}}},
-                {"range": {f"{TS}.start.earliest": {"lte": end_year}}},
-                {"range": {f"{TS}.start.latest": {"lte": end_year}}},
-            ], "minimum_should_match": 1}})
-        temporal_match = {
-            "nested": {
-                "path": "toponyms",
-                "query": {
-                    "nested": {
-                        "path": "toponyms.timespans",
-                        "query": {"bool": {"must": temporal_conditions}},
-                    }
-                },
-            }
-        }
-        if undated:
-            # Legacy parity: with `undated`, ALSO admit places carrying no
-            # temporal information at all (a place matches if its timespans
-            # overlap the range OR it has none) — otherwise a date filter
-            # silently drops every undated record.
-            no_timespans = {"bool": {"must_not": {
-                "nested": {
-                    "path": "toponyms",
-                    "query": {"nested": {
-                        "path": "toponyms.timespans",
-                        "query": {"bool": {"should": [
-                            {"exists": {"field": "toponyms.timespans.start.in"}},
-                            {"exists": {"field": "toponyms.timespans.end.in"}},
-                        ]}},
-                    }},
-                }
-            }}}
-            filter_clauses.append({"bool": {
-                "should": [temporal_match, no_timespans],
-                "minimum_should_match": 1,
-            }})
-        else:
-            filter_clauses.append(temporal_match)
+        filter_clauses.append(
+            _temporal_filter(start_year, end_year, temporal_mode, undated)
+        )
 
     bool_query = {"filter": filter_clauses}
     if must_not_clauses:

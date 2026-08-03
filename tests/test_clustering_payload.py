@@ -60,6 +60,24 @@ class TestAssembleClusteringFields(unittest.TestCase):
         src = {"geometries": [_geom(spans=[{"end": {"in": 1850}}])]}
         self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1850, 1850])
 
+    def test_temporal_range_reads_outer_bounds_not_just_in(self):
+        # place#169: an attestation carries only the outer bounds. Reading `in`
+        # alone emptied the temporal support of every re-encoded source.
+        src = {"geometries": [_geom(spans=[
+            {"start": {"latest": 2025}, "end": {"earliest": 2025}},
+        ])]}
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [2025, 2025])
+
+    def test_temporal_range_is_the_widest_the_bounds_allow(self):
+        # Interval-overlap support asks "could these be the same place?", so the
+        # permissive envelope is right: a narrower core would refuse to cluster
+        # an attestation with the lifespan it belongs to.
+        src = {"geometries": [_geom(spans=[{
+            "start": {"earliest": 1841, "latest": 1851},
+            "end": {"earliest": 1851, "latest": 1861},
+        }])]}
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1841, 1861])
+
     def test_aat_ids_and_paths_union_sorted(self):
         src = {"types": [
             {"aat_ids": [300132315], "aat_paths": ["300264550.300132315"]},

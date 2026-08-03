@@ -172,37 +172,76 @@ def _extract_repr_point(geometries: list[dict]) -> list[float] | None:
     return None
 
 
-def _normalise_timespans(raw: list) -> list[dict]:
-    """Flatten nested ``{start: {in: <int>}, end: {in: <int>}}`` shapes into
-    plain ``[{start: <int>, end: <int>}]`` entries.
+def _span_bounds(ts: dict) -> tuple[int | None, int | None, int | None, int | None]:
+    """``(possible_start, definite_start, definite_end, possible_end)`` for one timespan.
 
-    Either bound may be ``None`` if only one side is attested. Empty list
-    when no usable timespans are present.
+    Each endpoint carries up to three sub-fields — ``in`` (exact), ``earliest``
+    and ``latest`` (place#164). ``in`` stands in for whichever outer bound is
+    being asked for, because a source that means it (``ohm``, ``clio``,
+    ``hgis``) means the endpoint is exactly that year. A bound that is absent is
+    genuinely unknown and stays ``None`` — the caller decides whether that reads
+    as unbounded (possible) or as no definite core.
+    """
+    def pick(endpoint, *qualifiers):
+        if not isinstance(endpoint, dict):
+            return None
+        for q in qualifiers:
+            v = endpoint.get(q)
+            if isinstance(v, int):
+                return v
+        return None
+
+    start_ep = ts.get("start") or {}
+    end_ep = ts.get("end") or {}
+    return (
+        pick(start_ep, "earliest", "in"),   # earliest it could have started
+        pick(start_ep, "latest", "in"),     # latest it could have started
+        pick(end_ep, "earliest", "in"),     # earliest it could have ended
+        pick(end_ep, "latest", "in"),       # latest it could have ended
+    )
+
+
+def _normalise_timespans(raw: list) -> list[dict]:
+    """Flatten nested timespans into plain ``[{start, end}]`` entries.
+
+    ``start``/``end`` are the **possible envelope** — the earliest possible start
+    to the latest possible end — so an attestation-encoded record no longer reads
+    as undated (it carries no ``in`` at all). Where the record also pins a
+    definite core (attested alive throughout), that is carried alongside as
+    ``definite: [start, end]`` rather than being flattened away: an OSM boundary
+    is *possibly* alive in 1500 and *definitely* alive in 2025, and a UI that
+    cannot tell those apart will assert the first as if it were the second.
+
+    Either bound may be ``None`` if only one side is attested. Empty list when no
+    usable timespans are present.
     """
     out: list[dict] = []
     for ts in raw or []:
         if not isinstance(ts, dict):
             continue
-        start_in = (ts.get("start") or {}).get("in")
-        end_in = (ts.get("end") or {}).get("in")
-        if not isinstance(start_in, int):
-            start_in = None
-        if not isinstance(end_in, int):
-            end_in = None
-        if start_in is None and end_in is None:
+        poss_start, def_start, def_end, poss_end = _span_bounds(ts)
+        if poss_start is None and poss_end is None and def_start is None and def_end is None:
             continue
-        out.append({"start": start_in, "end": end_in})
+        entry: dict = {"start": poss_start, "end": poss_end}
+        if def_start is not None and def_end is not None:
+            entry["definite"] = [def_start, def_end]
+        out.append(entry)
     return out
 
 
 def _collapse_timespans(src: dict) -> list[dict]:
     """Collapse nested timespan ranges into a single overall range.
 
-    Timespans live nested under ``toponyms[].timespans``, ``geometries[].timespans``,
-    and ``relations[].timespans`` (see schemas/places.json). Each timespan has
-    ``start.in`` and ``end.in`` integer year fields. We take the global
-    min(start.in) and max(end.in) across all three sources to give callers a
-    single "active from–to" summary.
+    Timespans live nested under ``toponyms[].timespans``, ``geometries[].timespans``
+    and ``relations[].timespans`` (see schemas/places.json). This returns the
+    **possible envelope** across all three — earliest possible start to latest
+    possible end — as a single "active from–to" summary.
+
+    It deliberately does *not* summarise the definite cores. Several timespans'
+    cores are a set of intervals, not one interval, and collapsing them to
+    min-to-max would assert continuous attested existence across the gaps
+    between them. Callers needing that detail read the per-entry ``definite``
+    from the timespans on each toponym / geometry / relation.
 
     Returns ``[{"start": <int>, "end": <int>}]`` or ``[]`` if no timespans
     are present. Either bound may be ``None`` if only one side is attested.
@@ -216,12 +255,11 @@ def _collapse_timespans(src: dict) -> list[dict]:
             for ts in entry.get("timespans") or []:
                 if not isinstance(ts, dict):
                     continue
-                start_in = (ts.get("start") or {}).get("in")
-                end_in = (ts.get("end") or {}).get("in")
-                if isinstance(start_in, int):
-                    starts.append(start_in)
-                if isinstance(end_in, int):
-                    ends.append(end_in)
+                poss_start, _, _, poss_end = _span_bounds(ts)
+                if poss_start is not None:
+                    starts.append(poss_start)
+                if poss_end is not None:
+                    ends.append(poss_end)
     if not starts and not ends:
         return []
     return [{

@@ -96,10 +96,30 @@ CLUSTERING_SOURCE_FIELDS = (
 )
 
 
+def _timespan_bound(endpoint: dict, qualifiers: tuple[str, ...]) -> int | None:
+    """First integer year present among ``qualifiers``, in preference order.
+
+    Each endpoint carries up to three sub-fields — ``in`` (exact), ``earliest``
+    and ``latest``. Reading only ``in``, as this did until place#169, empties
+    the temporal support of every source re-encoded under place#164, which
+    records attestations with the outer bounds and no ``in`` at all.
+    """
+    if not isinstance(endpoint, dict):
+        return None
+    for q in qualifiers:
+        v = endpoint.get(q)
+        if isinstance(v, int):
+            return v
+    return None
+
+
 def _temporal_range(geometries: list[dict]) -> list[int] | None:
     """``[min_start, max_end]`` across all geometries' ``timespans``; None if none.
 
-    Reads ``timespans[].start.in`` / ``timespans[].end.in`` (integer years).
+    The widest span the bounds allow: the earliest possible start to the latest
+    possible end. Interval-overlap support (``s.t``) is a *could these be the
+    same place* test, so the permissive reading is the right one — a narrower
+    core would refuse to cluster an attestation with the lifespan it belongs to.
     A missing start/end simply doesn't contribute a bound; if neither bound is
     ever seen the range is None (undated)."""
     starts: list[int] = []
@@ -110,11 +130,11 @@ def _temporal_range(geometries: list[dict]) -> list[int] | None:
         for ts in g.get("timespans", []) or []:
             if not isinstance(ts, dict):
                 continue
-            start = (ts.get("start") or {}).get("in")
-            end = (ts.get("end") or {}).get("in")
-            if isinstance(start, int):
+            start = _timespan_bound(ts.get("start") or {}, ("earliest", "in", "latest"))
+            end = _timespan_bound(ts.get("end") or {}, ("latest", "in", "earliest"))
+            if start is not None:
                 starts.append(start)
-            if isinstance(end, int):
+            if end is not None:
                 ends.append(end)
     if not starts and not ends:
         return None

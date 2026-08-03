@@ -132,6 +132,14 @@ class SearchRequest(BaseModel):
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
     undated: bool = Field(False, description="Include places with no timespans when temporal filter is active")
+    temporal_mode: str = Field(
+        "possibly",
+        description="How start_year/end_year are matched: 'possibly' (default) "
+                    "admits a place whose bounds allow it to have been alive in "
+                    "the window; 'definitely' requires its attested core to fall "
+                    "inside it. Sources that record places as they were at one "
+                    "moment are possibly, not definitely, alive at earlier dates.",
+    )
     size: int = Field(100, ge=1, le=500, description="Max results to return")
     offset: int = Field(
         0, ge=0, le=10000,
@@ -433,6 +441,7 @@ async def search(req: SearchRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             undated=req.undated,
+            temporal_mode=req.temporal_mode,
             size=pool_k,
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,

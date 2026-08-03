@@ -132,6 +132,11 @@ class ReconcileRequest(BaseModel):
     )
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
+    temporal_mode: str = Field(
+        "possibly",
+        description="How start_year/end_year are matched: 'possibly' (default) "
+                    "or 'definitely' — see /api/search.",
+    )
     size: int = Field(50, ge=1, le=500, description="Max results to return")
     exclude_namespaces: list[str] = Field(
         default=["gb"],
@@ -627,6 +632,7 @@ async def reconcile_search(req: ReconcileRequest):
             region=region,
             start_year=req.start_year,
             end_year=req.end_year,
+            temporal_mode=req.temporal_mode,
             size=min(req.size * (8 if pure_spatial else 4), 10000),
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
