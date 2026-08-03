@@ -59,6 +59,7 @@ sys.path.insert(0, str(_REPO))
 
 from processing.settings import (  # noqa: E402
     IX1_BASE,
+    IX3_BASE,
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
@@ -458,8 +459,12 @@ def submit(
 
     # ---- Global toponym extraction (single job) --------------------------
     if not skip_toponyms:
-        db_path = db_path or Path(IX1_BASE) / "data" / "toponyms.db"
-        output_dir = output_dir or (Path(IX1_BASE) / "models" / "phonetic" / "data" / f"v{run_id}")
+        # Both default to /vast. A ~35 GB DuckDB under sustained random write
+        # is exactly the access pattern /ix1 handles worst — it is why ES, the
+        # repo and the Slurm WorkDir all moved to flash on 2026-05-01. The
+        # default was left pointing at /ix1 through that migration.
+        db_path = db_path or Path(IX3_BASE) / "data" / f"toponyms-{run_id}.db"
+        output_dir = output_dir or (Path(IX3_BASE) / "models" / "phonetic" / "data" / f"v{run_id}")
         # IPA + PanPhon are training-only artefacts: the active toponyms
         # schema has no panphon_embedding field and the gateway never reads
         # IPA. Default to skipping the Epitran/Phonikud/CharsiuG2P pipeline
