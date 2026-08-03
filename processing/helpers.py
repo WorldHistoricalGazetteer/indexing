@@ -1002,6 +1002,44 @@ def geom_class_of(geojson):
     return None
 
 
+def has_valid_latitudes(geojson_geom):
+    """False when any latitude is outside [-90, 90] — an unfixable geometry.
+
+    Longitude can be folded (:func:`wrap_longitude`); latitude cannot. A value
+    past the pole is upstream corruption, and every candidate "fix" invents
+    data: transposing lat/lon guesses, clamping to +/-90 relocates the place to
+    a pole. Wikidata supplied five on the place#164 rebuild —
+
+        wd:Q134355453  lat=123.045403 lon=13.51768   (Bikol Wiktionary event,
+                                                      coordinates transposed)
+        wd:Q130748798  lat=123.045403 lon=13.51768   (same, same event venue)
+        wd:Q134355589  lat=123.16244  lon=13.45592   (likewise)
+        wd:Q64027103   lat=135.872891                (Kashiwa is 35.87N)
+        wd:Q113370244  lat=99.999999  lon=0.0        (placeholder sentinel)
+
+    — and Elasticsearch rejects the whole document on each, so the place would
+    be absent entirely rather than merely unlocated. Dropping the geometry
+    keeps the record, its names, types and links; only the coordinate we never
+    had is lost.
+    """
+    if not isinstance(geojson_geom, dict):
+        return True
+    coords = geojson_geom.get("coordinates")
+    if coords is None:
+        return True
+    stack = [coords]
+    while stack:
+        cur = stack.pop()
+        if isinstance(cur, (list, tuple)):
+            if (len(cur) >= 2 and isinstance(cur[0], (int, float))
+                    and isinstance(cur[1], (int, float))):
+                if not (-90.0 <= float(cur[1]) <= 90.0):
+                    return False
+            else:
+                stack.extend(cur)
+    return True
+
+
 def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
     """
     Compute a geometry entry for the ``places`` index from a GeoJSON geometry.
@@ -1053,6 +1091,11 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
         # ── 1. Round coordinates first ──────────────────────────────────
         rounded_geojson = round_coordinates(geojson_geom)
         if not rounded_geojson:
+            return None
+
+        # An impossible latitude makes the geometry unusable and, left alone,
+        # makes ES reject the entire document. Drop the geometry, keep the place.
+        if not has_valid_latitudes(rounded_geojson):
             return None
 
         # ── 2. Convert to Shapely (after rounding) ─────────────────────

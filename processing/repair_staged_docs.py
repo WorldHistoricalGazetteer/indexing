@@ -99,18 +99,34 @@ def _has_unrepresentable_year(timespans: Any) -> bool:
 
 
 def _repair_repr_points(doc: dict[str, Any]) -> bool:
-    """Fold any out-of-range ``repr_point`` longitude. True if one moved."""
+    """Fix out-of-range ``repr_point`` coordinates. True if anything changed.
+
+    Longitude folds into [-180, 180] — that is a convention difference, and the
+    corrected position is exact. Latitude cannot: a value past the pole is
+    upstream corruption and every candidate repair invents data, so the whole
+    geometry is dropped instead. The place keeps its names, types and links;
+    only a coordinate we never really had is lost. Left alone, ES rejects the
+    entire document and the place vanishes.
+    """
     changed = False
+    keep: list[Any] = []
     for geom in (doc.get("geometries") or []):
         if not isinstance(geom, dict):
+            keep.append(geom)
             continue
         rp = geom.get("repr_point")
-        if not isinstance(rp, dict):
-            continue
-        lon = rp.get("lon")
-        if isinstance(lon, (int, float)) and not (-180.0 <= lon <= 180.0):
-            rp["lon"] = round(wrap_longitude(lon), 6)
-            changed = True
+        if isinstance(rp, dict):
+            lat = rp.get("lat")
+            if isinstance(lat, (int, float)) and not (-90.0 <= lat <= 90.0):
+                changed = True
+                continue  # drop this geometry entirely
+            lon = rp.get("lon")
+            if isinstance(lon, (int, float)) and not (-180.0 <= lon <= 180.0):
+                rp["lon"] = round(wrap_longitude(lon), 6)
+                changed = True
+        keep.append(geom)
+    if changed and "geometries" in doc:
+        doc["geometries"] = keep
     return changed
 
 

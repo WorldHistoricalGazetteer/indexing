@@ -51,5 +51,58 @@ class WrapLongitudeTests(unittest.TestCase):
             self.assertEqual(wrap_longitude(value), value)
 
 
+
+class LatitudeValidityTests(unittest.TestCase):
+    """Latitude cannot be folded the way longitude can.
+
+    A value past the pole is upstream corruption, and every candidate repair
+    invents data: transposing lat/lon guesses, clamping to +/-90 relocates the
+    place. Wikidata supplied five on the place#164 rebuild — three Philippine
+    events with transposed coordinates, a Japanese hospital at lat 135, and a
+    99.999999 placeholder — and ES rejects the whole document on each, so the
+    place would be absent rather than merely unlocated.
+    """
+
+    def test_the_five_real_offenders_are_rejected(self):
+        from processing.helpers import has_valid_latitudes
+        for lon, lat, who in (
+            (13.51768, 123.045403, "wd:Q134355453 Bikol Wiktionary"),
+            (13.51768, 123.045403, "wd:Q130748798 Wikidata Day Philippines"),
+            (13.45592, 123.16244, "wd:Q134355589 Arte Feminismo"),
+            (139.961129, 135.872891, "wd:Q64027103 Kashiwa hospital"),
+            (0.0, 99.999999, "wd:Q113370244 Royal Guernsey sentinel"),
+        ):
+            self.assertFalse(
+                has_valid_latitudes({"type": "Point", "coordinates": [lon, lat]}),
+                who,
+            )
+
+    def test_real_places_are_accepted(self):
+        from processing.helpers import has_valid_latitudes
+        for lon, lat in ((139.96, 35.87), (-122.4194, 37.7749), (0.0, 51.5)):
+            self.assertTrue(has_valid_latitudes({"type": "Point",
+                                                 "coordinates": [lon, lat]}))
+
+    def test_poles_are_valid(self):
+        from processing.helpers import has_valid_latitudes
+        self.assertTrue(has_valid_latitudes({"type": "Point", "coordinates": [0, 90]}))
+        self.assertTrue(has_valid_latitudes({"type": "Point", "coordinates": [0, -90]}))
+
+    def test_nested_geometries_are_walked(self):
+        from processing.helpers import has_valid_latitudes
+        good = {"type": "Polygon", "coordinates": [[[0, 0], [1, 0], [1, 1], [0, 0]]]}
+        bad = {"type": "Polygon", "coordinates": [[[0, 0], [1, 95], [1, 1], [0, 0]]]}
+        self.assertTrue(has_valid_latitudes(good))
+        self.assertFalse(has_valid_latitudes(bad))
+
+    def test_enrich_geometry_drops_an_impossible_geometry(self):
+        from processing.helpers import enrich_geometry
+        self.assertIsNone(
+            enrich_geometry({"type": "Point", "coordinates": [13.51768, 123.045403]})
+        )
+        self.assertIsNotNone(
+            enrich_geometry({"type": "Point", "coordinates": [139.96, 35.87]})
+        )
+
 if __name__ == "__main__":
     unittest.main()
