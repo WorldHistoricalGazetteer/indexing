@@ -467,7 +467,7 @@ distinct.
 
 ---
 
-## 10. Execution log — step 5 (31 July 2026)
+## 10. Execution log — step 5 (31 July – 3 August 2026)
 
 **Run id `temporal-20260731T160000Z`**, manifest at
 `/vast/ishi/staged/runs/temporal-20260731T160000Z.json`. Submitted with the new
@@ -542,32 +542,83 @@ pipeline reports success it has not earned. Verify each stage against an indepen
 doc counts against the live baseline, encoding shape against the source's semantics — rather than
 against the pipeline's own status.
 
-### State at end of session, 31 July 2026
+### What the NEXT rebuild gets for free (code, committed)
 
-19 of 27 extracts complete, **every count matching the live baseline** (`whg` 228,918, `tm`
-64,196, `iv` 24,000, `ofs` 16,296, `og` 6,260, `ukhc` 92 … exact; `chgis` +1.0%, `hgis` +0.33%,
-`po` +0.16%, `nl` −1 doc = upstream drift). Still running: `osm`, `wd` (96 h walls), `gn`, `tgn`,
-`ohm`, `gb`, `clio`.
+This is the section to read before running the pipeline again. Every item below
+was a fault this rebuild hit; each is now fixed in the repository, so a
+from-scratch run does not repeat it. Grouped by what would otherwise go wrong.
 
-Encoding verified on the completed set:
+**Silent data loss — the pipeline reporting success it had not earned**
 
-- `osm` **0** point lifespans, 5.0 M attestations; `tgn` 2.76 M attestations; `gb`/`iv`/`alc`/
-  `ofs`/`dp`/`nl` all attestation-only.
-- `wd` recovers **precision** as §4 specified — `{"start": {"earliest": 100, "latest": 199}}` for a
-  century-precision inception instead of a false exact 100, and millennium spans for
-  `earliest: -2000, latest: -1001`. Its 32,787 remaining `in`/`in` pairs are genuine: P585 routes
-  through `attested_at`, and only real P571+P576 pairs produce a lifespan (294 distinct years, no
-  dominant value).
-- `whg`'s **208,937** fuzzy timespans — the exact figure in §2 defect 3 — are now ints and readable
-  rather than computing as undated.
-- `vob_*` carry the four-bound snapshot encoding; `ukhc`/`kain_par`/`ohm` show closure applied.
-- `gn` places carry no timespans at all, which is correct — GeoNames has no temporal data, and its
-  `from`/`to` name validity arrives with the toponyms update patch.
+| fixed | was |
+|---|---|
+| `update_merge` in `GLOBAL_BARRIER_REQUIRED_STAGES`, recorded `skipped`/`pending` by `ingest_all_authorities`, gated in `submit_h3_slurm` | The stage had **never run** — not in this rebuild, not in `postbarrier-20260502`. `h3_stage` silently falls back to `extract/`, so nothing errored. Cost production **~26.7 M GeoNames alternate names** (no Japanese/Cyrillic/Arabic recall for those places) and **58,658 Wikidata geoshapes** |
+| `update_merge` uses `staged_parquet.write_parquet_from_jsonl` | It called `paj.read_json` directly and crashed on ragged GeoJSON `coordinates`. **This is why the stage was never wired in** — it did not work |
+| `aat_enrich` refuses an empty vocab | `load_all_aat_mappings` returns `{}` for a missing file, so enrichment ran clean and emitted **zero** `aat_ids` for `gn` (13.4 M), `wd` (11.5 M), `pl` |
+| `scripts/types.sh` REPO_DIR; `.env` REPO_DIR → `/vast` | Dying on `cd /ix1/ishi/elastic` since the May relocation, taking the AAT vocabulary refresh with it. `scripts/model.sh` had the same latent break |
+| AAT vocabularies committed | `geonames`/`wikidata`/`pleiades.json` were generated-but-uncommitted and lost in the `/ix1`→`/vast` move. The survivors were also 3 months stale (`osm` 176 → 1,264 keys) |
+| `whg` in `SELF_FETCHING` | Dropped from the run entirely — "No data files found", exit 0. **228,918 docs** |
+| `_is_namespace_snapshot_trigger` derived from `INGESTION_ORDER` | `un` (script `un-countries`) never matched `*-places`, so its `extract` was never marked complete — and `un` is the ccode authority |
+| `un`'s ccode stages recorded `skipped` | Excluded from the array but never recorded, so the barrier waited on it for ever |
+| `authority-selection.md` complete + test | Listed 18 of 27; the default path **deletes** the staged tree of anything deselected |
+| `stream_file(member=...)` | Concatenated every `.txt` in a zip, so `iso-languagecodes.txt` was parsed as alternate names |
 
-**Next**: phases 2–8 as listed in step 5 — boundary chain (`osm`/`ohm`) → geom-store consolidation
-→ h3/ccode/aat post-chain → global barrier → `index_from_stage` → Symphonym stages 1 and 2 →
-hard-link harvest, inventory push, clustering → audit. Refresh the type-system vocabulary files
-(`scripts/types.sh --build-vocabs`, on pitt) before `aat_enrich`.
+**Data that Elasticsearch rejects outright** (ES fails the *whole document*)
+
+| fixed | was |
+|---|---|
+| timespan sub-fields `integer` → `long` | Wikidata models the age of the universe as a time claim; `po` carries geological eons to −4.57 × 10⁹ |
+| `wrap_longitude` in `enrich_geometry` | Wikidata mixes [0,360] and past-dateline conventions. **3,631 `wd` + 1 `nl`** docs rejected |
+| `has_valid_latitudes` in `enrich_geometry` | Transposed lat/lon and a `99.999999` sentinel. **5 `wd`** docs. Dropped, not guessed — the place is kept, the invented coordinate is not |
+| `geometry_index` stamped in `update_merge`; null-safe in `h3_stage` | A Parquet round trip materialises every field, so `.get(key, default)` never fires on a present-but-null key |
+
+**Resource sizing** — every merge stage holds its patch in a dict, so cost scales with the corpus. Four arrays used flat allocations chosen for small namespaces:
+
+| stage | was | `osm` actually needed |
+|---|---:|---:|
+| boundary finalize | 8 G | **63.8 G** |
+| h3 array | 16 G | **42.3 G** |
+| ccode array | 24 G | **64.0 G** |
+| aat_enrich / temporal_extent | 8 G | **51.5 G** |
+
+All four now derive from `staging_orchestrator.array_memory_gb()`. `submit_boundary_slurm` also chains `boundary_merge` into finalize (it was a barrier requirement nobody ran) and sizes it accordingly.
+
+**Observability** — several stages printed once, on completion:
+
+- `h3_merge` / `ccode_merge` / `boundary_merge` / `aat_enrich` report every million docs and announce the Parquet conversion separately. `osm`'s H3 ran **five hours with a zero-byte log**, which is indistinguishable from a hang: it nearly cost a healthy job its life, and then hid an OOM that happened in the unannounced Parquet step.
+- `python -u` on the boundary planner/finalize/merge. A 22-minute job showed nothing for 20 of them, which is how a *stale performance figure survived three months* (see below).
+- `submit_index_slurm` rejects an empty `--es-host` (the staging env exports `ES_URL`, not `ES_HOST`).
+
+**Measurement that had become folklore** — `/ix1` was documented as 1–5 MB/s, sizing a 24 h wall and a 12 h timeout. Measured 2026-08-02: **711 MB/s O_DIRECT, 535 MB/s buffered**. The old figure came from a single probe taken *during* the last rebuild, while concurrent workers saturated the mount. The real cost is `osmium tags-filter` itself at ~72 MB/s, CPU-bound. Walls corrected to ~16–22× measurement.
+
+**New tooling**
+
+- `processing/submit_extract_slurm.py` — per-namespace extract fan-out; rotates the staged tree aside as a rollback, pairs rotation with the resume checkpoint, chains `og` after `ofs`, refuses to re-rotate a completed namespace.
+- `processing/reconcile_stage_status.py` — evidence-based manifest repair (promotes only when the artefact proves it), plus `--reset` for a stage whose output was discarded.
+- `processing/repair_staged_docs.py` — re-applies current write-path rules to an already-staged snapshot and re-indexes only the changed docs. Needed because fixes land at *extract* time and a snapshot on disk keeps whatever it was written with.
+
+### Preflight checklist for the next run
+
+1. `bash scripts/types.sh --build-vocabs` **and** `aat_mapper static|wikidata|sparql` on pitt — both steps; verify every vocab is non-zero.
+2. Commit the refreshed vocabularies.
+3. Check `/vast` headroom: peak is old + new staged trees plus the new indices alongside the old.
+4. `submit_extract_slurm --all`, then `submit_boundary_slurm` for `osm`/`ohm`, then `update_merge` for `gn`/`wd` — the barrier now enforces the last one.
+5. After each stage, compare per-namespace counts against the live baseline. `index_from_stage` reports per-namespace errors; **read them** — that is the only place in the pipeline that counts what it dropped.
+
+### State of this run, 3 August 2026
+
+- **places index built in staging**: 51,184,251 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
+- Global barrier passed; `gn`/`wd` re-running their chain to fold in the recovered update patches (`gn` 7,838,457 places gained alternate names).
+- Toponyms stage 1 produced 67,983,745 unique toponyms **before** the patch recovery; it must re-run afterwards.
+- Symphonym cache hydration running on pitt — lifts the cache from 16.97 M to ~68 M rows so the GPU step is ~99 % cache hits rather than ~28 h.
+- **Production untouched.** `places` → `places_postbarrier-20260502t130000z`, `toponyms` → `toponyms_ngram-20260722`. No alias has been swapped.
+
+### Still outstanding (deliberately)
+
+- Merge stages hold whole patches in memory. The *allocations* are tiered; the memory profile is unchanged.
+- `geom_store --merge` grows every rebuild; no prune step for keys absent from the current corpus.
+- `authorities/backfill_admin_levels.py` has a broken import (`BOUNDARIES_INDEX`); not in `INGESTION_ORDER`, so not a rebuild blocker.
+- AAT coverage is 4,436/15,448 (28.7 %) — tracked as **place#142**, not this plan.
 
 ### ⇨ HANDOVER — hand to `plan-atlas-data-architecture.md` §8 here
 
