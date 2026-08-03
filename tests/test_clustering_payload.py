@@ -27,7 +27,7 @@ class TestAssembleClusteringFields(unittest.TestCase):
         out = cp.assemble_clustering_fields({})
         self.assertEqual(out, {
             "h3": None, "h3_cover": [], "temporal_range": None,
-            "aat_ids": [], "aat_paths": [],
+            "temporal_core": None, "aat_ids": [], "aat_paths": [],
         })
 
     def test_h3_centroid_is_first_available(self):
@@ -77,6 +77,28 @@ class TestAssembleClusteringFields(unittest.TestCase):
             "end": {"earliest": 1851, "latest": 1861},
         }])]}
         self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1841, 1861])
+
+    def test_temporal_core_is_the_attested_span(self):
+        # place#169: the Atlas mirrors the gateway's two modes client-side, so it
+        # needs the core as well as the envelope.
+        src = {"geometries": [_geom(spans=[{
+            "start": {"earliest": 1841, "latest": 1851},
+            "end": {"earliest": 1851, "latest": 1861},
+        }])]}
+        out = cp.assemble_clustering_fields(src)
+        self.assertEqual(out["temporal_core"], [1851, 1851])
+        self.assertEqual(out["temporal_range"], [1841, 1861])
+
+    def test_temporal_core_none_without_both_bounds(self):
+        # An open start (ukhc, kain_par) pins no core at all.
+        src = {"geometries": [_geom(spans=[{"end": {"in": 1851}}])]}
+        out = cp.assemble_clustering_fields(src)
+        self.assertIsNone(out["temporal_core"])
+        self.assertEqual(out["temporal_range"], [1851, 1851])
+
+    def test_temporal_core_from_exact_lifespan(self):
+        src = {"geometries": [_geom(spans=[{"start": {"in": 1400}, "end": {"in": 1550}}])]}
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_core"], [1400, 1550])
 
     def test_aat_ids_and_paths_union_sorted(self):
         src = {"types": [

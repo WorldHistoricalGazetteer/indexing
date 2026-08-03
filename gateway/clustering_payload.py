@@ -11,6 +11,7 @@ those fields from a `places` index `_source`:
   spatial-proximity / spatial synthetic-edge passes (``s.sp`` support).
 * ``h3_cover`` — the union of the place's H3 cover cells (bounded), for coarse
   spatial-overlap tests.
+* ``temporal_core`` — ``[latest_start, earliest_end]``, the attested span
 * ``temporal_range`` — ``[min_start, max_end]`` derived from the geometries'
   ``timespans`` (``s.t`` interval-overlap support). Gateway-derived; no schema
   change.
@@ -113,6 +114,38 @@ def _timespan_bound(endpoint: dict, qualifiers: tuple[str, ...]) -> int | None:
     return None
 
 
+def _temporal_core(geometries: list[dict]) -> list[int] | None:
+    """``[latest_start, earliest_end]`` — the span the record is *attested* alive
+    throughout — or None where no timespan pins both bounds.
+
+    The counterpart to ``_temporal_range``'s envelope. The Atlas needs both to
+    mirror the gateway's two query modes client-side (place#169): filtering a
+    loaded result set on the envelope while the server filters on the core would
+    show hits the next server response then removes.
+
+    Where several timespans each pin a core, this takes the widest they span.
+    That is deliberately the permissive choice for a *client-side preview*: the
+    server remains authoritative, and a preview that keeps a borderline hit reads
+    better than one that flickers it away and back.
+    """
+    starts: list[int] = []
+    ends: list[int] = []
+    for g in geometries:
+        if not isinstance(g, dict):
+            continue
+        for ts in g.get("timespans", []) or []:
+            if not isinstance(ts, dict):
+                continue
+            start = _timespan_bound(ts.get("start") or {}, ("latest", "in"))
+            end = _timespan_bound(ts.get("end") or {}, ("earliest", "in"))
+            if start is not None and end is not None:
+                starts.append(start)
+                ends.append(end)
+    if not starts:
+        return None
+    return [min(starts), max(ends)]
+
+
 def _temporal_range(geometries: list[dict]) -> list[int] | None:
     """``[min_start, max_end]`` across all geometries' ``timespans``; None if none.
 
@@ -190,6 +223,7 @@ def assemble_clustering_fields(src: dict) -> dict:
         "h3": h3,
         "h3_cover": h3_cover,
         "temporal_range": _temporal_range(geometries),
+        "temporal_core": _temporal_core(geometries),
         "aat_ids": sorted(aat_ids),
         "aat_paths": sorted(aat_paths),
     }

@@ -214,6 +214,7 @@ class CandidateHit(BaseModel):
     h3: Optional[str] = None
     h3_cover: list[str] = []
     temporal_range: Optional[list[int]] = None
+    temporal_core: Optional[list[int]] = None  # [latest_start, earliest_end] attested span, or null
     aat_ids: list[int] = []
     aat_paths: list[str] = []
     query_match: Optional[dict] = None

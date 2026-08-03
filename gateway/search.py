@@ -215,6 +215,7 @@ class SearchHit(BaseModel):
     h3: Optional[str] = None                   # representative H3 centroid cell
     h3_cover: list[str] = []                   # bounded union of H3 cover cells
     temporal_range: Optional[list[int]] = None  # [min_start, max_end] years, or null
+    temporal_core: Optional[list[int]] = None  # [latest_start, earliest_end] attested span, or null
     aat_ids: list[int] = []                    # leaf AAT concept ids
     aat_paths: list[str] = []                  # materialised root→leaf AAT paths (ancestors + depth)
     query_match: Optional[dict] = None         # {"name": ..., "score": ...} — the matching toponym
