@@ -53,6 +53,7 @@ from typing import Any, Iterator
 import pyarrow.json as paj
 import pyarrow.parquet as pq
 
+from processing.staged_parquet import write_parquet_from_jsonl
 from processing.settings import (
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
@@ -298,8 +299,26 @@ def run_update_merge(
             out_jsonl.write(json.dumps(doc, ensure_ascii=True) + "\n")
             docs_written += 1
 
-    table = paj.read_json(str(jsonl_path))
-    pq.write_table(table, str(parquet_path))
+    # Use the shared writer, not a raw paj.read_json. GeoJSON `coordinates`
+    # are ragged — [x, y] for a Point, [[[x, y], ...]] for a Polygon — so
+    # pyarrow's schema inference fails the moment a namespace mixes them:
+    #
+    #   ArrowInvalid: Column(/geometries/[]/hull/coordinates/[]) changed from
+    #   array to number in row 1
+    #
+    # which is exactly what `wd` does once the geoshapes patch replaces point
+    # geometries with Commons polygons. staged_parquet.write_parquet_from_jsonl
+    # strips `hull` and explicit nulls for the conversion (keeping them in the
+    # canonical JSONL) and returns False rather than raising when inference
+    # still fails, so a namespace is never lost to a sidecar problem.
+    #
+    # This is very likely why update_merge was never wired into a rebuild: run
+    # against wd it did not work, and the stage was quietly left out instead
+    # — taking 26.7M GeoNames alternate names with it.
+    parquet_written = write_parquet_from_jsonl(jsonl_path, parquet_path)
+    if not parquet_written:
+        print(f"  WARNING: parquet sidecar not written for {namespace}; "
+              f"downstream stages will read {jsonl_path.name}")
 
     finished = datetime.now(timezone.utc)
     metrics = {
