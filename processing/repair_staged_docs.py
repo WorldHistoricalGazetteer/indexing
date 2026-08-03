@@ -1,11 +1,11 @@
 #!/usr/bin/env python
-"""Re-apply the current temporal encoding rules to an already-staged snapshot.
+"""Re-apply the current write-path rules to an already-staged snapshot.
 
 Usage
 -----
-    python -m processing.repair_staged_timespans --namespace wd            # report
-    python -m processing.repair_staged_timespans --namespace wd --execute
-    python -m processing.repair_staged_timespans --namespace wd --execute \\
+    python -m processing.repair_staged_docs --namespace wd            # report
+    python -m processing.repair_staged_docs --namespace wd --execute
+    python -m processing.repair_staged_docs --namespace wd --execute \\
         --reindex --es-host "$ES_URL" --index places_<run_id>
 
 Why this exists
@@ -15,20 +15,28 @@ a rule fixed in ``processing.temporal`` after staging does not reach it. The
 alternative is re-extracting, which for ``wd`` means re-parsing a 144 GiB dump
 to correct a handful of fields.
 
-The immediate case: Wikidata models the age of the universe as an ordinary time
-claim, and years outside signed 32-bit make Elasticsearch reject the **whole
-document** (``failed to parse field [...] of type [integer]``). 3,639 ``wd``
-places were lost that way. ``processing.temporal.representable_year`` now bounds
-them at the source, but the already-staged parquet still carries the values.
+Two rules are applied, both learned from documents Elasticsearch rejected
+outright — ES fails the **whole document**, not the offending field:
+
+* **Timespans** — years outside what the mapping can store. Wikidata models the
+  age of the universe as an ordinary time claim.
+* **repr_point longitude** — folded into [-180, 180]. Sources disagree on
+  convention: Wikidata carries some coordinates in [0, 360] and some already
+  shifted past the dateline; a Native Land treaty polygon straddling the
+  antimeridian yields a representative point at -186.05. This was the real
+  cause of 3,636 ``wd`` failures and one ``nl`` failure.
+
+Both are now enforced at extract time (``processing.temporal`` and
+``processing.helpers.wrap_longitude``), so a future rebuild never produces
+them — but a snapshot already on disk still carries whatever it was written
+with, and re-extracting ``wd`` means re-parsing a 144 GiB dump.
 
 What it does
 ------------
-Streams the namespace's ``final/`` snapshot, passes every timespan list through
-``normalise_timespans`` (which coerces string years to int and now applies the
-representable-year bound), and rewrites the snapshot only if something changed.
-Timespans live in three places on a doc — ``geometries[].timespans``,
+Streams the namespace's ``final/`` snapshot and repairs only the documents that
+need it. Timespans live in three places on a doc — ``geometries[].timespans``,
 ``toponyms[].timespans`` and a doc-level ``timespans`` — and all three are
-covered.
+covered, as is ``geometries[].repr_point``.
 
 ``--reindex`` then bulk-indexes **only the changed documents**, so repairing a
 20 M-doc namespace costs one pass plus a few thousand writes rather than a full
@@ -46,6 +54,7 @@ from typing import Any, Iterator
 
 import pyarrow.parquet as pq
 
+from processing.helpers import wrap_longitude
 from processing.settings import STAGED_BASE_DIR
 from processing.staged_parquet import normalize_for_parquet, write_parquet_from_jsonl
 from processing.temporal import (
@@ -89,9 +98,25 @@ def _has_unrepresentable_year(timespans: Any) -> bool:
     return False
 
 
-def _repair_doc(doc: dict[str, Any]) -> tuple[dict[str, Any], bool]:
-    """Return ``(doc, changed)``, normalising only docs that actually need it."""
+def _repair_repr_points(doc: dict[str, Any]) -> bool:
+    """Fold any out-of-range ``repr_point`` longitude. True if one moved."""
     changed = False
+    for geom in (doc.get("geometries") or []):
+        if not isinstance(geom, dict):
+            continue
+        rp = geom.get("repr_point")
+        if not isinstance(rp, dict):
+            continue
+        lon = rp.get("lon")
+        if isinstance(lon, (int, float)) and not (-180.0 <= lon <= 180.0):
+            rp["lon"] = round(wrap_longitude(lon), 6)
+            changed = True
+    return changed
+
+
+def _repair_doc(doc: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Return ``(doc, changed)``, repairing only docs that actually need it."""
+    changed = _repair_repr_points(doc)
 
     original = doc.get(_DOC_LEVEL)
     if _has_unrepresentable_year(original):
