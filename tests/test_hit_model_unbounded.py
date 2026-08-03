@@ -33,19 +33,22 @@ class TestHitModelsAcceptUnboundedSides(unittest.TestCase):
     def test_search_hit(self):
         for span, why in UNBOUNDED:
             with self.subTest(why=why):
-                hit = SearchHit(place_id="ukhc:KNT", temporal_range=span, temporal_core=span)
+                hit = SearchHit(place_id="ukhc:KNT", title="Kent",
+                                temporal_range=span, temporal_core=span)
                 self.assertEqual(hit.temporal_range, span)
                 self.assertEqual(hit.temporal_core, span)
 
     def test_candidate_hit(self):
         for span, why in UNBOUNDED:
             with self.subTest(why=why):
-                hit = CandidateHit(place_id="ukhc:KNT", temporal_range=span, temporal_core=span)
+                hit = CandidateHit(place_id="ukhc:KNT", title="Kent",
+                                   temporal_range=span, temporal_core=span)
                 self.assertEqual(hit.temporal_range, span)
 
     def test_serialises_through_the_response_model(self):
         # The failure was on the way OUT, not in construction.
-        hit = SearchHit(place_id="ukhc:KNT", temporal_range=[None, 1974], temporal_core=None)
+        hit = SearchHit(place_id="ukhc:KNT", title="Kent",
+                        temporal_range=[None, 1974], temporal_core=None)
         self.assertEqual(hit.model_dump()["temporal_range"], [None, 1974])
 
 
