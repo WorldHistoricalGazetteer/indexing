@@ -82,6 +82,7 @@ _QOS_TIERS: list[tuple[int, str]] = [
 from processing.ingest_all_authorities import (  # noqa: E402
     BOUNDARY_REQUIRED_NAMESPACES as _BOUNDARY_REQUIRED,
 )
+from processing.staging_contract import UPDATE_PATCH_NAMESPACES  # noqa: E402
 
 # Namespaces known to be large — allocate extra by default on first run
 _LARGE_NAMESPACES = {"osm", "ohm", "gn", "wd"}
@@ -134,6 +135,21 @@ def _pending_namespaces(manifest: dict) -> list[str]:
                 f"'{stages.get('boundary_merge', 'pending')}' — H3 deferred, because "
                 f"it would otherwise be computed from relation point fallbacks. "
                 f"Run: python -m processing.submit_boundary_slurm --namespace {ns}"
+            )
+            continue
+        # Identical hazard one stage over: h3_stage prefers update_merged/ for
+        # gn/wd but falls back to extract/ when it is absent, so running early
+        # does not error — it just drops the namespace's update patch. That is
+        # how ~26.7M GeoNames alternate names and 58,658 Wikidata geoshapes
+        # went missing from production and from this rebuild.
+        if ns in UPDATE_PATCH_NAMESPACES and stages.get("update_merge") not in (
+            "completed", "skipped"
+        ):
+            print(
+                f"  {ns}: extract is complete but update_merge is "
+                f"'{stages.get('update_merge', 'pending')}' — H3 deferred, because "
+                f"it would otherwise silently drop the Phase 3 update patch. "
+                f"Run: python -m processing.update_merge --namespace {ns}"
             )
             continue
         pending.append(ns)

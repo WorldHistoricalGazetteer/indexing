@@ -236,6 +236,13 @@ class StagedPipelineE2E(unittest.TestCase):
             update_namespace_stage_status(self.manifest_path, ns, "extract", "completed")
             update_namespace_stage_status(self.manifest_path, ns, "boundary", "skipped")
             update_namespace_stage_status(self.manifest_path, ns, "boundary_merge", "skipped")
+            # Neither un nor nl emits a Phase 3 update patch, so the merge is
+            # legitimately skipped — but it must be RECORDED, exactly as
+            # ingest_all_authorities now does. Leaving it unset is how gn and
+            # wd passed the barrier with 26.7M GeoNames alternate names and
+            # 58,658 Wikidata geoshapes unmerged.
+            update_namespace_stage_status(self.manifest_path, ns, "update_patch", "skipped")
+            update_namespace_stage_status(self.manifest_path, ns, "update_merge", "skipped")
         update_namespace_stage_status(self.manifest_path, "un", "ccode", "skipped")
         update_namespace_stage_status(self.manifest_path, "un", "ccode_merge", "skipped")
 

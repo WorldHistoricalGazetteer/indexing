@@ -71,6 +71,7 @@ from processing.staging_orchestrator import (
     update_namespace_stage_status,
 )
 from processing.helpers import is_staging_mode
+from processing.staging_contract import UPDATE_PATCH_NAMESPACES
 from processing.stage_writers import (
     record_script_wall_time,
     write_namespace_places_snapshot_parquet,
@@ -662,6 +663,28 @@ def ingest_all(
                 if should_snapshot and run_manifest_path and ns not in BOUNDARY_REQUIRED_NAMESPACES:
                     update_namespace_stage_status(run_manifest_path, ns, "boundary", "skipped")
                     update_namespace_stage_status(run_manifest_path, ns, "boundary_merge", "skipped")
+
+                # Same for the Phase 3 update patch. Only gn and wd emit one;
+                # the rest must be recorded `skipped` or they hold the global
+                # barrier for ever, now that update_merge is required by it.
+                if should_snapshot and run_manifest_path and ns not in UPDATE_PATCH_NAMESPACES:
+                    update_namespace_stage_status(run_manifest_path, ns, "update_patch", "skipped")
+                    update_namespace_stage_status(run_manifest_path, ns, "update_merge", "skipped")
+
+                # gn/wd DO emit one, and nothing else in the pipeline runs the
+                # merge. Left unmerged, h3_stage quietly reads extract/ instead
+                # and the patch is lost with no error anywhere — which is how
+                # 26.7M GeoNames alternate names went missing from production.
+                if should_snapshot and run_manifest_path and ns in UPDATE_PATCH_NAMESPACES:
+                    update_namespace_stage_status(run_manifest_path, ns, "update_merge", "pending")
+                    print(
+                        f"\n⚠ {ns} has a Phase 3 update patch that MUST be merged before H3:\n"
+                        f"    python -m processing.update_merge "
+                        f"--run-id {run_id} --namespace {ns}\n"
+                        f"  The global barrier requires update_merge, and submit_h3_slurm "
+                        f"defers {ns} until it completes."
+                    )
+                    sys.stdout.flush()
 
                 if run_manifest_path and should_snapshot:
                     update_namespace_stage_status(run_manifest_path, ns, "extract", "completed")

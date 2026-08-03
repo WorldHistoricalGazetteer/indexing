@@ -585,6 +585,16 @@ def check_preprocessing_barrier(
 # completed/skipped before a namespace is indexed.
 GLOBAL_BARRIER_REQUIRED_STAGES: tuple[str, ...] = (
     "extract",
+    # update_merge folds a namespace's Phase 3 update patch into its snapshot.
+    # It was absent from this list until 2026-08-03, and the omission was
+    # invisible: nothing runs it, nothing checks it, and h3_stage silently
+    # falls back to extract/ when update_merged/ is missing. So gn and wd
+    # passed the barrier with their patches unmerged in the 2026-05-02 rebuild
+    # AND in this one — costing production ~26.7M GeoNames alternate names
+    # (every non-primary name, so no Japanese/Cyrillic/Arabic search recall for
+    # those places) and 58,658 Wikidata Commons geoshapes. Tolerated as
+    # `skipped` for the 25 namespaces that emit no patch.
+    "update_merge",
     "boundary_merge",
     "h3",
     "h3_merge",
