@@ -17,7 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import defaultdict
-from typing import Optional
+from typing import Literal, Optional
 
 import httpx
 from fastapi import APIRouter, Query, HTTPException
@@ -132,7 +132,7 @@ class SearchRequest(BaseModel):
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
     undated: bool = Field(False, description="Include places with no timespans when temporal filter is active")
-    temporal_mode: str = Field(
+    temporal_mode: Literal["possibly", "definitely"] = Field(
         "possibly",
         description="How start_year/end_year are matched: 'possibly' (default) "
                     "admits a place whose bounds allow it to have been alive in "

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -132,7 +132,7 @@ class ReconcileRequest(BaseModel):
     )
     start_year: Optional[int] = Field(None, description="Temporal filter: start year")
     end_year: Optional[int] = Field(None, description="Temporal filter: end year")
-    temporal_mode: str = Field(
+    temporal_mode: Literal["possibly", "definitely"] = Field(
         "possibly",
         description="How start_year/end_year are matched: 'possibly' (default) "
                     "or 'definitely' — see /api/search.",
