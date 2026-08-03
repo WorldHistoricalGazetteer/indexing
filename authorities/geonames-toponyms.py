@@ -172,7 +172,9 @@ def stage_alternatenames(file_path: str) -> dict:
     print(f"Output: {out_path}")
 
     with out_path.open("w", encoding="utf-8") as fh:
-        for line in stream_file(file_path):
+        # Name the member explicitly: alternateNamesV2.zip also contains
+        # iso-languagecodes.txt, whose rows are not places.
+        for line in stream_file(file_path, member="alternateNamesV2.txt"):
             if not line or line.startswith("#"):
                 continue
             processed += 1

@@ -53,10 +53,24 @@ from processing.settings import STAGING_REPO_NAME, PLACES_INDEX, TOPONYMS_INDEX,
 #     return model
 
 
-def stream_file(file_path):
+def stream_file(file_path, member=None):
     """
     Generator yielding lines from .txt, .gz, or .zip files.
     ZIP files are streamed without extraction.
+
+    ``member`` names the single archive entry to read. Pass it whenever the
+    archive holds more than one ``.txt``: this used to concatenate every
+    ``.txt`` member, on the stated assumption that there was "only one relevant
+    file in the zip (like alternateNamesV2.txt)" — and that is exactly the
+    archive where it is false. ``alternateNamesV2.zip`` also carries
+    ``iso-languagecodes.txt``, whose rows were parsed as alternate names and
+    emitted 415 patch rows for place_ids like ``gn:aar``, ``gn:ISO 639-2`` and
+    ``gn:``. They matched nothing, so the damage was only noise — but nothing
+    said so, and a language code that happened to collide with a real id would
+    have written a name onto the wrong place.
+
+    Without ``member``, a multi-``.txt`` archive now warns rather than silently
+    concatenating.
     """
     if file_path.endswith(".gz"):
         with gzip.open(file_path, "rt", encoding="utf-8") as f:
@@ -65,12 +79,21 @@ def stream_file(file_path):
 
     elif file_path.endswith(".zip"):
         with zipfile.ZipFile(file_path, 'r') as zf:
-            # Assume there is only one relevant file in the zip (like alternateNamesV2.txt)
-            for name in zf.namelist():
-                if name.endswith('.txt'):
-                    with zf.open(name, 'r') as f:
-                        for line in f:
-                            yield line.decode('utf-8').strip()
+            texts = [n for n in zf.namelist() if n.endswith('.txt')]
+            if member is not None:
+                if member not in texts:
+                    raise FileNotFoundError(
+                        f"{member!r} not in {file_path} (has: {texts})"
+                    )
+                texts = [member]
+            elif len(texts) > 1:
+                print(f"  WARNING: {file_path} holds {len(texts)} .txt members "
+                      f"{texts} and no `member` was given — reading all of them, "
+                      f"which is almost certainly not intended.")
+            for name in texts:
+                with zf.open(name, 'r') as f:
+                    for line in f:
+                        yield line.decode('utf-8').strip()
 
     else:
         with open(file_path, "r", encoding="utf-8") as f:
