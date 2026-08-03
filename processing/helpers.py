@@ -178,6 +178,33 @@ def strip_z_coordinates(geojson_geom):
 COORDINATE_PRECISION = 6
 
 
+def wrap_longitude(lon):
+    """Fold a longitude into [-180, 180], the only range Elasticsearch accepts.
+
+    Sources do not agree on convention. Wikidata carries some coordinates in
+    [0, 360] (``351.83`` for -8.17), some already-shifted past the antimeridian
+    (``-236.4`` for 123.6), and a Native Land treaty polygon straddling the
+    dateline yields a representative point at ``-186.05``. ES rejects the
+    **whole document** on any of them — ``illegal longitude value [351.83] for
+    repr_point`` — which cost 3,636 ``wd`` docs and one ``nl`` doc on the
+    place#164 rebuild.
+
+    Applied to the *representative point* only. A ring's vertices must NOT be
+    wrapped individually: doing so tears a polygon that crosses the dateline
+    into a globe-spanning artefact. That case has its own machinery
+    (``split_at_antimeridian``), and the full geometry lives in the geom store
+    rather than in ES anyway — ``repr_point`` and ``bounds`` are what ES sees.
+    """
+    if not isinstance(lon, (int, float)):
+        return lon
+    # ((lon + 180) mod 360) - 180, with the +180 boundary preserved rather than
+    # folded to -180, since a point exactly on the dateline is legitimate.
+    wrapped = (lon + 180.0) % 360.0 - 180.0
+    if wrapped == -180.0 and lon > 0:
+        return 180.0
+    return wrapped
+
+
 def round_coordinates(geojson_geom, precision=COORDINATE_PRECISION):
     """
     Round all coordinates in a GeoJSON geometry to *precision* decimal places.
@@ -1048,15 +1075,18 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
         P = COORDINATE_PRECISION
         rep_point = None
         if isinstance(geom, Point):
-            rep_point = {'lon': round(geom.x, P), 'lat': round(geom.y, P)}
+            rep_point = {'lon': round(wrap_longitude(geom.x), P),
+                         'lat': round(geom.y, P)}
         elif isinstance(geom, GeometryCollection):
             rp = _representative_from_collection(geom)
             if rp is not None:
-                rep_point = {'lon': round(rp.x, P), 'lat': round(rp.y, P)}
+                rep_point = {'lon': round(wrap_longitude(rp.x), P),
+                             'lat': round(rp.y, P)}
         else:
             try:
                 rp = geom.representative_point()
-                rep_point = {'lon': round(rp.x, P), 'lat': round(rp.y, P)}
+                rep_point = {'lon': round(wrap_longitude(rp.x), P),
+                             'lat': round(rp.y, P)}
             except Exception:
                 pass
 
