@@ -15,7 +15,7 @@ import unittest
 
 try:
     from gateway.search import SearchHit
-    from gateway.reconcile import ReconcileHit
+    from gateway.reconcile import CandidateHit
 except ModuleNotFoundError as exc:  # pragma: no cover - dev machines without the API deps
     raise unittest.SkipTest(f"gateway serving deps unavailable: {exc}")
 
@@ -37,10 +37,10 @@ class TestHitModelsAcceptUnboundedSides(unittest.TestCase):
                 self.assertEqual(hit.temporal_range, span)
                 self.assertEqual(hit.temporal_core, span)
 
-    def test_reconcile_hit(self):
+    def test_candidate_hit(self):
         for span, why in UNBOUNDED:
             with self.subTest(why=why):
-                hit = ReconcileHit(place_id="ukhc:KNT", temporal_range=span, temporal_core=span)
+                hit = CandidateHit(place_id="ukhc:KNT", temporal_range=span, temporal_core=span)
                 self.assertEqual(hit.temporal_range, span)
 
     def test_serialises_through_the_response_model(self):
