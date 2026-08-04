@@ -724,7 +724,15 @@ staging_start() {
     # copy of anything built in it until a snapshot is taken.
     STAGING_TIME="${STAGING_TIME:-3-00:00:00}"
     STAGING_QOS="${STAGING_QOS:-}"
-    SBATCH_EXTRA=(--time="$STAGING_TIME")
+    STAGING_CLUSTER="${STAGING_CLUSTER:-smp}"
+    STAGING_ACCOUNT="${STAGING_ACCOUNT:-ishi}"
+    # -M/--account are required even though the sbatch names its partition:
+    # the login nodes' default cluster is not smp, so without -M the request
+    # lands elsewhere and fails as "NO/WRONG partition ... Invalid account or
+    # account/partition combination" — which reads like a QOS permissions
+    # problem and is not one.
+    SBATCH_EXTRA=(-M "$STAGING_CLUSTER" --account="$STAGING_ACCOUNT"
+                  --time="$STAGING_TIME")
     if [ -n "$STAGING_QOS" ]; then
         SBATCH_EXTRA+=(--qos="$STAGING_QOS")
     fi
