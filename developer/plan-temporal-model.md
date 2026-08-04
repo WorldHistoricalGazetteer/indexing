@@ -690,13 +690,33 @@ Run it standalone at any time:
 python -m processing.index_freshness --manifest-path /vast/ishi/staged/runs/<RUN_ID>.json
 ```
 
-**Stage 1 had to be re-run**, and the reason is worth recording. `wd`'s final
-was rewritten at 04:53 on 4 Aug; stage 1 scanned the corpus 01:22–04:11, so it
-read the previous one. Enumerating every `toponym_id` in `wd`'s current final
-against the DuckDB found **2,322,939 missing** — overwhelmingly Wikidata
-language variants (`@zh-hant`, `@en-ca`, `@pt-br`, `@kk-arab`). So the rewrite
-was *not* geometry-only, and the vocabulary did not cover the corpus: 2.3 M
-names would have been unsearchable.
+**Stage 1 was re-run — on provenance grounds, and it proved to be a no-op.**
+`wd`'s final was rewritten at 04:53 on 4 Aug; stage 1 scanned 01:22–04:11, so
+the vocabulary had demonstrably been built from `wd`'s *superseded* final. That
+alone justified the re-run. The re-run produced **exactly 72,703,552 unique
+toponyms — identical to the previous DuckDB** — which is the clean proof that
+`wd`'s rewrite changed no names, i.e. it really was geometry-only.
+
+**A false alarm on the way, worth recording because the trap is reusable.** A
+check enumerating every `toponym_id` in `wd`'s final against the DuckDB reported
+**2,322,939 missing**. They were not missing. The two stores use *different key
+forms*:
+
+| corpus (`places.toponyms[].toponym_id`) | vocabulary (`toponyms.toponym_id`) |
+|---|---|
+| `República…@pt-br` | `@pt` — region subtag **dropped** |
+| `Spechtsberg@en-ca` | `@en` — region subtag **dropped** |
+| `波多黎各…@zh-hant` | `@zh` + `lang_variant='hant'` — script variant **moved to its own column** |
+
+937,710 vocabulary rows carry a `lang_variant`; only **81** `toponym_id`s retain
+a hyphenated tag. Every one of the 15 reported samples had a language subtag —
+a signal visible in the output and not acted on. **Any cross-store comparison
+must normalise the language tag first.**
+
+*Consequence to be aware of (pre-existing, not this plan's to fix):* the gateway
+joins `places` to `toponyms` via `attestations`/`place_id`, never via
+`toponym_id`, so nothing is broken today. Code that ever joins the two indices
+*on `toponym_id`* would silently miss ~2.3 M names.
 
 Stage 1 rebuilds from scratch unless `--resume` is passed, so a plain re-run is
 correct — the *"Deduplication already done (N unique toponyms), skipping…"* log
