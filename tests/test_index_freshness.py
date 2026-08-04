@@ -153,5 +153,40 @@ class StaleCompletionIsReEligible(unittest.TestCase):
         # The `continue` must be conditional on NOT stale.
         self.assertIn("if not check_namespace(ns, manifest)[\"stale\"]:", window)
 
+class CollapsedPlaceIdsAreReported(unittest.TestCase):
+    """Duplicate place_ids produce two successful writes and one document.
+
+    chgis stages 82,117 rows with 127 place_ids duplicated across 825 rows —
+    all differing in `geometries` — and ends up with 81,292 documents. Because
+    every bulk write succeeded, docs_indexed read 82,117 and the load looked
+    clean. Only comparing staged rows against resulting DOCUMENTS shows it.
+    """
+
+    def test_helper_exists_and_compares_documents_not_writes(self):
+        src = Path("processing/index_from_stage.py").read_text()
+        self.assertIn("def _report_collapsed_ids(", src)
+        i = src.index("def _report_collapsed_ids(")
+        body = src[i:i + 2200]
+        self.assertIn('"term": {"namespace": ns}', body,
+                      "must count documents in the index per namespace")
+        self.assertIn("docs_in_source", body,
+                      "must compare against the staged row count")
+        self.assertIn("if docs < staged:", body)
+
+    def test_it_is_called_after_finalize(self):
+        """Counting before the refresh would read a stale number."""
+        src = Path("processing/index_from_stage.py").read_text()
+        fin = src.index("final_count = finalize_index(")
+        call = src.index("collapses = _report_collapsed_ids(")
+        self.assertLess(fin, call)
+
+    def test_it_does_not_block_the_load(self):
+        """A duplicate place_id is a source defect, not an indexing failure."""
+        src = Path("processing/index_from_stage.py").read_text()
+        i = src.index("def _report_collapsed_ids(")
+        body = src[i:i + 2200]
+        self.assertNotIn("sys.exit", body)
+        self.assertNotIn("raise SystemExit", body)
+
 if __name__ == "__main__":
     unittest.main()

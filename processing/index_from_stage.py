@@ -340,6 +340,49 @@ def _eligible_namespaces(manifest: dict, only: list[str] | None = None) -> list[
     return out
 
 
+def _report_collapsed_ids(
+    es: Elasticsearch,
+    index_name: str,
+    per_namespace: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, int]]:
+    """Compare staged rows against resulting documents, per namespace.
+
+    A shortfall means duplicate ``place_id``s in the staged snapshot: the later
+    row overwrote the earlier one and both were reported as indexed. Returns
+    ``{ns: {"staged": n, "documents": m, "lost": n - m}}`` for the namespaces
+    that lost rows.
+
+    This does not fail the load. A duplicate place_id is a defect in the
+    *source* extract (an authority script emitting one row per geometry instead
+    of accumulating them into one document), not in the indexing, and it is
+    routinely pre-existing. Making it loud is the point.
+    """
+    collapses: dict[str, dict[str, int]] = {}
+    for ns, metrics in sorted(per_namespace.items()):
+        staged = metrics.get("docs_in_source")
+        if not staged:
+            continue
+        try:
+            docs = int(es.count(index=index_name,
+                                query={"term": {"namespace": ns}})["count"])
+        except Exception as exc:
+            print(f"  ! {ns}: could not verify document count ({exc})")
+            continue
+        if docs < staged:
+            lost = staged - docs
+            collapses[ns] = {"staged": staged, "documents": docs, "lost": lost}
+            print(f"  ! {ns}: {staged:,} staged rows produced only {docs:,} "
+                  f"documents — {lost:,} lost to duplicate place_ids "
+                  f"(the extract emits multiple rows per place)")
+        metrics["documents_in_index"] = docs
+    if collapses:
+        total = sum(c["lost"] for c in collapses.values())
+        print(f"  ! {total:,} staged rows across {len(collapses)} namespace(s) "
+              f"did not become documents. This is a source-extract defect, not "
+              f"an indexing failure; it does not block the load.")
+    return collapses
+
+
 def run_index_from_stage(
     *,
     run_id: str,
@@ -454,6 +497,15 @@ def run_index_from_stage(
     final_count = finalize_index(es, index_name)
     print(f"\nFinalized {index_name}: {final_count:,} docs")
 
+    # Bulk writes key on place_id as _id, so two staged rows sharing a place_id
+    # produce two SUCCESSFUL writes and one document — the second silently
+    # overwrites the first. docs_indexed counts writes, not documents, so a
+    # namespace can report a clean load while losing rows. chgis does exactly
+    # this: 82,117 staged rows, 127 place_ids duplicated across 825 rows, all
+    # differing in `geometries`, leaving 81,292 documents. Comparing the
+    # resulting index against the staged row count is the only way to see it.
+    collapses = _report_collapsed_ids(es, index_name, per_namespace)
+
     # Refuse to publish an index whose sources moved underneath it. This is
     # the last point at which a stale build is still private; past the swap it
     # is what users search.
@@ -477,6 +529,7 @@ def run_index_from_stage(
         "namespaces_failed": failures,
         "per_namespace_metrics": per_namespace,
         "doc_count": final_count,
+        "collapsed_place_ids": collapses,
         "alias_swapped": swapped,
         "previous_alias_targets": previous,
     }
