@@ -690,10 +690,18 @@ Run it standalone at any time:
 python -m processing.index_freshness --manifest-path /vast/ishi/staged/runs/<RUN_ID>.json
 ```
 
-**Related trap, for whoever re-runs stage 1:** it logs *"Deduplication already
-done (N unique toponyms), skipping…"* when it finds existing output. A re-run
-after a corpus change silently reuses the old vocabulary and reports success.
-Remove the dedup output first.
+**Stage 1 had to be re-run**, and the reason is worth recording. `wd`'s final
+was rewritten at 04:53 on 4 Aug; stage 1 scanned the corpus 01:22–04:11, so it
+read the previous one. Enumerating every `toponym_id` in `wd`'s current final
+against the DuckDB found **2,322,939 missing** — overwhelmingly Wikidata
+language variants (`@zh-hant`, `@en-ca`, `@pt-br`, `@kk-arab`). So the rewrite
+was *not* geometry-only, and the vocabulary did not cover the corpus: 2.3 M
+names would have been unsearchable.
+
+Stage 1 rebuilds from scratch unless `--resume` is passed, so a plain re-run is
+correct — the *"Deduplication already done (N unique toponyms), skipping…"* log
+line is an idempotence check on freshly extracted rows, not a reuse of stale
+output.
 
 ### State of this run, 3–4 August 2026
 
