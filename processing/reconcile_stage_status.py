@@ -200,6 +200,66 @@ def reset(
     return changes
 
 
+#: Stages that are only *legitimately* skippable for some namespaces, and the
+#: predicate for "this stage genuinely applies here". `--skip` refuses when the
+#: stage applies, so it can never be used to paper over work that was actually
+#: needed — which is the exact failure this whole rebuild was spent unwinding.
+def _stage_applies(stage: str, namespace: str) -> bool:
+    from processing.ingest_all_authorities import BOUNDARY_REQUIRED_NAMESPACES
+    from processing.staging_contract import UPDATE_PATCH_NAMESPACES
+    if stage in ("update_patch", "update_merge"):
+        return namespace in UPDATE_PATCH_NAMESPACES
+    if stage in ("boundary", "boundary_merge"):
+        return namespace in BOUNDARY_REQUIRED_NAMESPACES
+    if stage in ("ccode", "ccode_merge"):
+        return namespace != "un"          # un supplies ccodes rather than receiving them
+    return True                            # unknown stage: assume it applies
+
+
+def skip(
+    *,
+    run_id: str,
+    manifest_path: Path,
+    namespaces: list[str] | None,
+    stages: list[str],
+    execute: bool = False,
+) -> int:
+    """Mark stages ``skipped`` where they do not apply to the namespace.
+
+    Needed because a stage that never runs and is never *recorded* holds the
+    global barrier for ever — `un`'s ccode did exactly that, and so did
+    `update_merge` for the 25 namespaces that emit no patch once it became a
+    barrier requirement.
+
+    Refuses when the stage genuinely applies, so this cannot be used to make a
+    real omission look intentional.
+    """
+    manifest = load_run_manifest(manifest_path)
+    targets = namespaces or sorted(manifest.get("namespaces", {}))
+    changes = 0
+    for ns in targets:
+        entry = manifest.get("namespaces", {}).get(ns)
+        if entry is None:
+            continue
+        for stage in stages:
+            if _stage_applies(stage, ns):
+                print(f"  {ns}/{stage}: APPLIES to this namespace — refusing to skip")
+                continue
+            current = entry.get("stages", {}).get(stage)
+            if current in ("completed", "skipped"):
+                continue
+            changes += 1
+            verb = "skipping" if execute else "would skip"
+            print(f"  {ns}/{stage}: {current or 'unset'} → skipped ({verb})")
+            if execute:
+                update_namespace_stage_status(manifest_path, ns, stage, "skipped")
+                write_stage_event(
+                    run_id=run_id, namespace=ns,
+                    script_id="reconcile-stage-status", status="skipped", stage=stage,
+                )
+    return changes
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Promote manifest stages to completed where the artefact proves it"
@@ -214,6 +274,9 @@ def main() -> None:
     parser.add_argument("--script", action="append", default=[],
                         help="Also checkpoint a script as completed, as ns:script_id "
                              "(e.g. gn:gn-places). Gated on the extract artefact existing.")
+    parser.add_argument("--skip", action="store_true",
+                        help="Mark the named --stage(s) skipped where they do not apply "
+                             "to the namespace; refuses where the stage does apply")
     parser.add_argument("--reset", action="store_true",
                         help="Demote the named --stage(s) to pending so they re-run, "
                              "instead of promoting them to completed")
@@ -238,7 +301,7 @@ def main() -> None:
     # that proves it. Reset needs no such proof, and the stages most worth
     # resetting produce no staged artefact at all — `index` writes to
     # Elasticsearch, so it is absent from the table and was being rejected.
-    if not args.reset:
+    if not (args.reset or args.skip):
         unknown = [s for s in stages if s not in STAGE_ARTEFACTS]
         if unknown:
             print(f"Unknown stage(s) for promotion: {', '.join(unknown)}. "
@@ -254,6 +317,18 @@ def main() -> None:
         scripts[script_id] = ns
 
     print(f"Manifest: {manifest_path}")
+    if args.skip:
+        if not args.stage:
+            print("--skip requires an explicit --stage", file=sys.stderr)
+            sys.exit(2)
+        changes = skip(run_id=args.run_id, manifest_path=manifest_path,
+                       namespaces=args.namespace or None, stages=stages,
+                       execute=args.execute)
+        if not changes:
+            print("Nothing to skip.")
+        elif not args.execute:
+            print(f"\n{changes} change(s) — re-run with --execute to apply.")
+        return
     if args.reset:
         if not args.stage:
             print("--reset requires an explicit --stage", file=sys.stderr)
