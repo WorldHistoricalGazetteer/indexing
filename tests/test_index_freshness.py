@@ -63,10 +63,13 @@ class FreshnessDetection(unittest.TestCase):
         """A recorded fingerprint is authoritative over directory mtimes."""
         from processing.index_freshness import check_namespace, source_fingerprint
         f, _ = self._make("wd", indexed_after=False)  # mtimes say stale
-        manifest = {"namespaces": {"wd": {"stages": {"index": {
-            "status": "completed",
-            "metrics": {"source_fingerprint": source_fingerprint(f)},
-        }}}}}
+        # The real manifest shape: status is a bare string, metrics live in a
+        # sibling `stage_metrics` map (update_namespace_stage_status).
+        manifest = {"namespaces": {"wd": {
+            "stages": {"index": "completed"},
+            "stage_metrics": {"index": {
+                "source_fingerprint": source_fingerprint(f)}},
+        }}}
         r = check_namespace("wd", manifest, self.base)
         self.assertFalse(r["stale"], "fingerprint matches, so not stale")
         self.assertEqual(r["basis"], "fingerprint")
@@ -81,8 +84,10 @@ class FreshnessDetection(unittest.TestCase):
         from processing.index_freshness import check_namespace, source_fingerprint
         f, _ = self._make("gn", final_body=b"a" * 100, indexed_after=True)
         recorded = source_fingerprint(f)
-        manifest = {"namespaces": {"gn": {"stages": {"index": {
-            "metrics": {"source_fingerprint": recorded}}}}}}
+        manifest = {"namespaces": {"gn": {
+            "stages": {"index": "completed"},
+            "stage_metrics": {"index": {"source_fingerprint": recorded}},
+        }}}
         self.assertFalse(check_namespace("gn", manifest, self.base)["stale"])
 
         # Rewrite with identical byte length but a later mtime.

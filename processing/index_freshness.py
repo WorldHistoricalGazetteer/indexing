@@ -87,10 +87,18 @@ def check_namespace(namespace: str, manifest: dict[str, Any] | None = None,
     recorded = None
     if manifest:
         ns_entry = (manifest.get("namespaces", {}).get(namespace) or {})
-        stages = ns_entry.get("stages", ns_entry)
-        idx = stages.get("index")
-        if isinstance(idx, dict):
-            recorded = (idx.get("metrics") or {}).get("source_fingerprint")
+        # update_namespace_stage_status stores the stage VALUE as a bare status
+        # string and puts metrics in a sibling `stage_metrics` map. Reading
+        # only stages["index"]["metrics"] finds nothing and silently degrades
+        # to the mtime fallback — which cannot clear after a re-index, because
+        # nothing touches the index/ directory. Both shapes are accepted so
+        # the check does not depend on that detail staying put.
+        metrics = (ns_entry.get("stage_metrics") or {}).get("index") or {}
+        recorded = metrics.get("source_fingerprint")
+        if not recorded:
+            idx = (ns_entry.get("stages", ns_entry) or {}).get("index")
+            if isinstance(idx, dict):
+                recorded = (idx.get("metrics") or {}).get("source_fingerprint")
 
     current = current_source(namespace, staged_base)
     if current is None:
