@@ -47,6 +47,7 @@ from processing.settings import (
     STAGED_RUNS_DIR,
 )
 from processing.index_freshness import (
+    check_namespace,
     source_fingerprint,
     stale_namespaces,
 )
@@ -325,7 +326,16 @@ def _eligible_namespaces(manifest: dict, only: list[str] | None = None) -> list[
         if aat not in ("completed", "skipped"):
             continue
         if stage_status_with_fallback(manifest, ns, "index") == "completed":
-            continue
+            # "completed" records what was true when it was written. If the
+            # staged source has been rewritten since (a re-run of update_merge,
+            # a repair), the namespace needs indexing again — so a stale
+            # completion must not skip it, or the pipeline resumes into
+            # precisely the state the freshness check exists to catch. gn, wd
+            # and nl sat at index:completed for two days holding pre-merge data.
+            if not check_namespace(ns, manifest)["stale"]:
+                continue
+            print(f"  {ns}: index marked completed but its staged source has "
+                  f"changed since — re-indexing")
         out.append(ns)
     return out
 

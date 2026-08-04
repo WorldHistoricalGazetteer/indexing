@@ -129,5 +129,24 @@ class PublicationIsGated(unittest.TestCase):
         self.assertIn("ok = False", window)
 
 
+class StaleCompletionIsReEligible(unittest.TestCase):
+    """A stale `index: completed` must not make the namespace skip on resume.
+
+    gn, wd and nl sat at index:completed for two days holding pre-merge data.
+    A resume that honours that status walks straight back into the fault, and
+    reports "No namespaces eligible for indexing" while doing so.
+    """
+
+    def test_eligibility_reruns_stale_namespaces(self):
+        src = Path("processing/index_from_stage.py").read_text()
+        i = src.index('if stage_status_with_fallback(manifest, ns, "index") == "completed":')
+        window = src[i:i + 900]
+        self.assertIn("check_namespace(ns, manifest)", window,
+                      "a completed index must be freshness-checked before it "
+                      "is allowed to skip")
+        self.assertIn('["stale"]', window)
+        # The `continue` must be conditional on NOT stale.
+        self.assertIn("if not check_namespace(ns, manifest)[\"stale\"]:", window)
+
 if __name__ == "__main__":
     unittest.main()
