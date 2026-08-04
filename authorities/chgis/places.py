@@ -22,7 +22,11 @@ import sys
 import time
 from pathlib import Path
 
-from processing.helpers import enrich_geometry, write_staged_place_doc
+from processing.helpers import (
+    enrich_geometry,
+    merge_place_docs,
+    write_staged_place_doc,
+)
 
 NAMESPACE = "chgis"
 DIR = Path(__file__).resolve().parent
@@ -287,6 +291,16 @@ def stage_chgis():
     print(f"  {sum(len(v) for v in lookups['prec_by'].values()):,} prec_by relations")
     print(f"  {sum(len(v) for v in lookups['wikidata'].values()):,} Wikidata links")
 
+    # ORDER BY sys_id groups the rows for one place together so they can be
+    # merged in a single pass without holding the whole table in memory.
+    #
+    # place_id is chgis:<sys_id>, but sys_id is NOT the primary key of
+    # `placename` — `id` is, and TGAZ carries up to 11 byte-identical rows per
+    # sys_id (differing only in that surrogate). Emitting one document per row
+    # produced 82,117 documents for 81,292 places; bulk indexing then collapsed
+    # them on _id, silently, keeping whichever was written last. Because
+    # h3_stage had enriched only one copy, 127 places ended up with a null
+    # h3_cover and disappeared from fuzzy spatial containment.
     cur = conn.cursor()
     cur.execute("""
         SELECT id, sys_id, ftype_id, data_src, data_src_ref,
@@ -294,20 +308,42 @@ def stage_chgis():
         FROM placename
         WHERE x_coord IS NOT NULL AND x_coord != ''
           AND y_coord IS NOT NULL AND y_coord != ''
+        ORDER BY sys_id, id
     """)
 
     start_time = time.time()
     staged = 0
+    merged_rows = 0
 
-    for row in cur:
-        doc = build_document(row, lookups)
-        write_staged_place_doc(NAMESPACE, doc)
+    def _flush(group):
+        """Emit one document for a sys_id, merging its rows."""
+        nonlocal staged, merged_rows
+        if not group:
+            return
+        docs = [build_document(r, lookups) for r in group]
+        docs = [d for d in docs if d]
+        if not docs:
+            return
+        if len(docs) > 1:
+            merged_rows += len(docs) - 1
+        write_staged_place_doc(NAMESPACE, merge_place_docs(docs))
         staged += 1
-        if staged % 5_000 == 0:
+
+    group: list = []
+    current_sys_id = None
+    for row in cur:
+        sys_id = row["sys_id"]
+        if sys_id != current_sys_id:
+            _flush(group)
+            group, current_sys_id = [], sys_id
+        group.append(row)
+        if staged and staged % 5_000 == 0:
             elapsed = time.time() - start_time
             rate = staged / elapsed if elapsed > 0 else 0
             print(f"\r  Staged: {staged:,}  Rate: {rate:.0f} docs/s",
                   end="", flush=True)
+
+    _flush(group)  # the final sys_id has no successor to trigger its flush
 
     conn.close()
     elapsed = time.time() - start_time
@@ -316,6 +352,8 @@ def stage_chgis():
     print(f"  CHGIS/TGAZ STAGING COMPLETE")
     print(f"{'=' * 60}")
     print(f"  Staged:   {staged:,}")
+    print(f"  Merged:   {merged_rows:,} duplicate placename rows folded into "
+          f"their sys_id")
     print(f"  Time:     {elapsed:.0f}s ({elapsed / 60:.1f}m)")
     if elapsed > 0:
         print(f"  Rate:     {staged / elapsed:.0f} docs/s")

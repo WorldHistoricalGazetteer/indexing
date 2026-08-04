@@ -77,6 +77,7 @@ from processing.helpers import (
     enrich_geometry,
     compute_h3_fields,
     select_h3_cover_geometry,
+    merge_place_docs,
     write_staged_place_doc,
 )
 from processing.settings import DATA_DIR, AUTHORITIES
@@ -260,6 +261,19 @@ def stage_hgis(files, limit=None, dry=False):
     staged = skipped = errors = 0
     start = datetime.now()
 
+    # The header's "lugares numeric, territorios alnum — 0 collisions" holds:
+    # the two files share no src_id. The 47 duplicate place_ids are duplicate
+    # FEATURES WITHIN a file — 46 in lugares, 1 in territorios. Two shapes:
+    #   * 45 are exact duplicates (same geometry, same title);
+    #   * 2 pair a geometry-less stub with the real record (hgis:2000963 in
+    #     lugares, PRGUCR00 in territorios).
+    # Writing each feature made them several documents under one place_id, so
+    # bulk indexing kept whichever was written last — for the stub pairs, that
+    # could be the copy with no geometry at all. Buffering by place_id and
+    # merging keeps the real geometry regardless of file order, and would keep
+    # both if a future release ever gave one place two genuine geometries.
+    by_place_id: dict[str, list[dict]] = {}
+
     def _run():
         nonlocal staged, skipped, errors
         for fn in files:
@@ -280,10 +294,12 @@ def stage_hgis(files, limit=None, dry=False):
                         print(json.dumps(doc, ensure_ascii=False)[:1400])
                         staged += 1
                         continue
-                    write_staged_place_doc(namespace=NAMESPACE, doc=doc)
-                    staged += 1
-                    if staged % 2000 == 0:
-                        print(f"\r  staged: {staged}", end="", flush=True)
+                    # Buffer by place_id instead of writing immediately: the
+                    # two source files DO share ids (see by_place_id below).
+                    by_place_id.setdefault(doc["place_id"], []).append(doc)
+                    if len(by_place_id) % 2000 == 0:
+                        print(f"\r  buffered: {len(by_place_id)}", end="",
+                              flush=True)
                 except Exception as e:
                     print(f"\n  ERROR {path.name} #{i} "
                           f"(src_id={(feat.get('properties') or {}).get('src_id')!r}): {e}")
@@ -302,9 +318,23 @@ def stage_hgis(files, limit=None, dry=False):
             finally:
                 configure_module_writer(None)
 
+    # Write once per place_id, merging any features that shared one. This has
+    # to happen after BOTH files are read, so it cannot live inside _run().
+    merged_ids = 0
+    if not dry:
+        for place_id, docs in by_place_id.items():
+            if len(docs) > 1:
+                merged_ids += 1
+            write_staged_place_doc(namespace=NAMESPACE,
+                                   doc=merge_place_docs(docs))
+            staged += 1
+
     print(f"\n{'=' * 80}\nHGIS STAGING {'(DRY)' if dry else 'COMPLETE'}\n{'=' * 80}")
     print(f"Time: {(datetime.now() - start).seconds}s")
     print(f"Staged: {staged:,}\nSkipped: {skipped:,}\nErrors: {errors:,}")
+    if merged_ids:
+        print(f"Merged: {merged_ids:,} place_ids present in both source files "
+              f"(lugar + territorio) folded into one document each")
 
 
 if __name__ == "__main__":

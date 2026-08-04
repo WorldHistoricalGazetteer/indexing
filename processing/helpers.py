@@ -1224,6 +1224,113 @@ def enrich_geometry(geojson_geom, timespans=None, geom_key: str | None = None):
 _VALID_DATASET_STATUSES = ("published", "pending")
 
 
+def _geometry_signature(geom: dict) -> str:
+    """Content identity of a geometry, ignoring fields added by later stages.
+
+    ``geometry_index`` is positional and ``h3_centroid`` / ``h3_cover`` are
+    filled in by ``h3_stage``, which enriches only one copy when an extract has
+    emitted several. Including them would make identical geometries look
+    distinct — and it was precisely their divergence that made 127 chgis
+    documents end up with a null ``h3_cover``.
+    """
+    import json
+    ignore = {"geometry_index", "h3_centroid", "h3_cover"}
+    return json.dumps({k: v for k, v in sorted(geom.items()) if k not in ignore},
+                      sort_keys=True, default=str)
+
+
+def merge_place_docs(docs: list[dict]) -> dict:
+    """Merge staged place documents that share a ``place_id`` into one.
+
+    Bulk indexing keys on ``place_id`` as ``_id``, so several staged rows for
+    one place are several successful writes and a single surviving document —
+    whichever was written last. Nothing errors, and ``docs_indexed`` counts the
+    writes, so the loss is invisible from the indexer's own report.
+
+    Two real cases, both observed:
+
+    * **Duplicate source rows.** CHGIS `placename` has up to 11 byte-identical
+      rows per ``sys_id`` (differing only in a surrogate key), and the extract
+      keys documents on ``sys_id``. Merging collapses them to one.
+    * **Genuinely distinct geometries for one place.** HGIS ships *lugares*
+      (points) and *territorios* (polygons) as separate LPF files, and 47
+      ``src_id``s appear in both. The point and the polygon belong on the same
+      document, as two entries in ``geometries``. Keeping the last-written row
+      discards one of them.
+
+    Scalars take the first non-empty value; lists are unioned preserving first
+    -seen order. ``geometries`` are deduplicated on content and renumbered, so
+    a place with genuinely different geometries — including ones attested over
+    different timespans — keeps all of them.
+    """
+    if not docs:
+        raise ValueError("merge_place_docs() called with no documents")
+    if len(docs) == 1:
+        return docs[0]
+
+    merged: dict = {}
+    for doc in docs:
+        for key, value in doc.items():
+            if key in ("toponyms", "geometries", "types", "relations",
+                       "links", "ccodes"):
+                continue
+            if merged.get(key) in (None, "", [], {}):
+                merged[key] = value
+
+    def _union(key, identity):
+        seen, out = set(), []
+        for doc in docs:
+            for item in (doc.get(key) or []):
+                ident = identity(item)
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                out.append(item)
+        return out
+
+    import json as _json
+
+    merged["toponyms"] = _union(
+        "toponyms", lambda t: t.get("toponym_id") or _json.dumps(t, sort_keys=True, default=str))
+    merged["types"] = _union(
+        "types", lambda t: (t.get("identifier"), t.get("label")))
+    merged["relations"] = _union(
+        "relations", lambda r: (r.get("relation_type"), r.get("related_place_id")))
+    merged["links"] = _union(
+        "links", lambda l: (l.get("type"), l.get("identifier") or l.get("url")))
+    merged["ccodes"] = _union("ccodes", lambda c: c)
+
+    # Deduplicate geometries on content, but salvage the enrichment fields:
+    # h3_stage populates only one copy when an extract emitted several, so the
+    # copy that survives a first-seen-wins dedup may be the one with a null
+    # h3_cover. That is the exact shape of the chgis loss, so it is repaired
+    # here rather than depending on which row happened to come first.
+    geometries: list[dict] = []
+    by_signature: dict[str, dict] = {}
+    for doc in docs:
+        for geom in (doc.get("geometries") or []):
+            sig = _geometry_signature(geom)
+            kept = by_signature.get(sig)
+            if kept is None:
+                kept = dict(geom)
+                by_signature[sig] = kept
+                geometries.append(kept)
+                continue
+            for field in ("h3_centroid", "h3_cover"):
+                if kept.get(field) in (None, [], "") and geom.get(field):
+                    kept[field] = geom[field]
+    for idx, geom in enumerate(geometries):
+        geom["geometry_index"] = idx
+    merged["geometries"] = geometries
+
+    # Drop keys that were absent everywhere rather than inventing empty lists.
+    for key in ("toponyms", "geometries", "types", "relations", "links",
+                "ccodes"):
+        if not merged[key] and not any(d.get(key) for d in docs):
+            merged.pop(key, None)
+    return merged
+
+
 def write_staged_place_doc(namespace: str, doc: dict) -> None:
     """Write a standardised place document to the staged extract for a namespace.
 
