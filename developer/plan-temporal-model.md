@@ -409,11 +409,18 @@ year PeriodO's own data proves the period spanned. The old encoding flattened it
 claimed. An empty definite core is the honest answer, and the *possibly alive* test still covers
 the full range.
 
-*Minor, not worth changing:* where PeriodO gives a single `year`, `bounded()` emits
-`{"earliest": Y, "latest": Y}` rather than `{"in": Y}`. Semantically identical and the reader
-handles both, but a consumer that special-cases `in` would miss it. Affects ~8.4 k `po` docs only —
-`wd` already collapses to `lifespan()` when both ends are exact, and `vob_*` values are genuinely
-distinct.
+*~~Minor, not worth changing:~~ **CHANGED, and verified in the built corpus.*** Where PeriodO gave
+a single `year`, `bounded()` emitted `{"earliest": Y, "latest": Y}` rather than `{"in": Y}`.
+Semantically identical and the reader handles both, but a consumer that special-cases `in` would
+miss it — and every consumer would face two encodings of one fact. `bounded()` now **collapses an
+endpoint whose two bounds coincide to `in`**: bounds that meet pin the year exactly, which is what
+`in` means. It costs nothing, because `in` already has to serve as both bounds when read back
+(genuine lifespans use it).
+
+Verified against the staging index, 4 August 2026 — **zero** documents in all 51,187,900 have
+`start.earliest == start.latest`, and zero have `end.earliest == end.latest` (script-query count,
+4/4 shards). Genuinely fuzzy bounds are untouched: `po:p02kbfn578j` reads
+`start {earliest −649, latest −639}` with `end {in −619}`.
 
 ### Then
 
