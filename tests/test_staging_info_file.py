@@ -33,11 +33,30 @@ class InfoFileWritesExplicitKey(unittest.TestCase):
     def test_writes_staging_prefixed_key(self):
         self.assertIn("STAGING_SLURM_JOB_ID=$SLURM_JOB_ID", self.sbatch)
 
+    def test_does_not_write_bare_slurm_job_id(self):
+        """Writing it 'for compatibility' preserves the whole hazard.
+
+        update_es.py derives its scratch path from SLURM_JOB_ID in Python, so a
+        clobbered value reaches code that never mentions this file. es.sh keeps
+        a fallback for info files written before the change, which is what
+        preserves the ability to stop an already-running instance.
+        """
+        for line in self.sbatch.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            self.assertNotRegex(
+                stripped, r"^SLURM_JOB_ID=",
+                "the info file must not export a bare SLURM_JOB_ID")
+
     def test_documents_the_hazard_where_it_is_written(self):
         """The comment has to sit next to the line, or it will be lost."""
         idx = self.sbatch.index("STAGING_SLURM_JOB_ID=$SLURM_JOB_ID")
-        window = self.sbatch[idx:idx + 500]
-        self.assertIn("overwritten", window.lower())
+        window = self.sbatch[idx:idx + 700].lower()
+        self.assertIn("replace", window,
+                      "say what goes wrong, next to the line that governs it")
+        self.assertIn("update_es", window,
+                      "name the Python consumer — the hazard is not shell-only")
 
     def test_self_ownership_check_accepts_either_key(self):
         """The cleanup guard must still recognise its own info file."""

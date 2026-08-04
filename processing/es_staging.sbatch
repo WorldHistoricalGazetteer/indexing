@@ -84,11 +84,14 @@ ES_URL=http://$SLURMD_NODENAME:$STAGING_ES_PORT
 ES_DATA=$STAGING_DATA_DIR
 ES_ROOT=$STAGING_ROOT
 STAGING_SLURM_JOB_ID=$SLURM_JOB_ID
-# Deprecated: kept so an es.sh from before the rename can still stop this
-# instance. Any job that sources this file gets its OWN SLURM_JOB_ID
-# overwritten by the staging job's — which silently redirects
-# /scratch/slurm-$SLURM_JOB_ID at a directory owned by another job.
-SLURM_JOB_ID=$SLURM_JOB_ID
+# SLURM_JOB_ID is deliberately NOT written here. This file is sourced by batch
+# jobs that need staging ES, and exporting the staging job's id would replace
+# theirs — silently redirecting /scratch/slurm-\$SLURM_JOB_ID at a directory
+# owned by another job. That is not only a shell hazard:
+# phonetics/inference/update_es.py derives its scratch path from SLURM_JOB_ID
+# in Python, so the clobber reaches code that never mentions this file.
+# es.sh falls back to a sourced SLURM_JOB_ID for info files written before
+# this change, so a running instance can still be stopped.
 EOF
 
 echo "=========================================="
