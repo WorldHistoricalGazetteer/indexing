@@ -83,6 +83,11 @@ ES_PORT=$STAGING_ES_PORT
 ES_URL=http://$SLURMD_NODENAME:$STAGING_ES_PORT
 ES_DATA=$STAGING_DATA_DIR
 ES_ROOT=$STAGING_ROOT
+STAGING_SLURM_JOB_ID=$SLURM_JOB_ID
+# Deprecated: kept so an es.sh from before the rename can still stop this
+# instance. Any job that sources this file gets its OWN SLURM_JOB_ID
+# overwritten by the staging job's — which silently redirects
+# /scratch/slurm-$SLURM_JOB_ID at a directory owned by another job.
 SLURM_JOB_ID=$SLURM_JOB_ID
 EOF
 
@@ -145,7 +150,7 @@ cleanup() {
     # Another staging instance may have overwritten it with its own details;
     # deleting it would orphan that instance from all downstream scripts.
     if [ -f "$STAGING_INFO_FILE" ]; then
-        FILE_JOB_ID=$(grep '^SLURM_JOB_ID=' "$STAGING_INFO_FILE" 2>/dev/null | cut -d= -f2)
+        FILE_JOB_ID=$(grep -E '^(STAGING_)?SLURM_JOB_ID=' "$STAGING_INFO_FILE" 2>/dev/null | head -1 | cut -d= -f2)
         if [ "$FILE_JOB_ID" = "$SLURM_JOB_ID" ]; then
             rm -f "$STAGING_INFO_FILE"
             echo "Removed staging info file."

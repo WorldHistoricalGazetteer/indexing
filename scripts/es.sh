@@ -685,7 +685,8 @@ staging_start() {
         # Verify job is actually running
         if squeue -j "$SLURM_JOB_ID" &>/dev/null; then
             echo "Job is active. Use -staging-stop first if you want to restart."
-            export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
+            SLURM_JOB_ID="${STAGING_SLURM_JOB_ID:-$SLURM_JOB_ID}"
+        export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
             return 0
         else
             echo "Stale info file found. Cleaning up..."
@@ -778,7 +779,8 @@ staging_start() {
     fi
 
     source "$STAGING_INFO_FILE"
-    export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
+    SLURM_JOB_ID="${STAGING_SLURM_JOB_ID:-$SLURM_JOB_ID}"
+    export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
 
     echo
     echo "=========================================="
@@ -827,7 +829,7 @@ staging_stop() {
     sleep 5
     rm -f "$STAGING_INFO_FILE"
 
-    unset ES_NODE ES_PORT ES_DATA SLURM_JOB_ID
+    unset ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
 
     echo "Staging instance stopped."
 }
