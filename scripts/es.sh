@@ -1334,7 +1334,7 @@ case "$1" in
         echo "    --slurm              Submit as Slurm job (requires staging ES running)"
         echo "    --mem SIZE           Slurm memory (default: 500G)"
         echo "    --time HH:MM:SS     Slurm wall time (default: 3-00:00:00; env STAGING_TIME)"
-        echo "                        smp-smp-l allows up to 6-00:00:00 (env STAGING_QOS)"
+        echo "                        qos long allows 6 days on smp/ishi (env STAGING_QOS)"
         echo
         echo "  Examples:"
         echo "    $0 -cluster --full                    # nohup on VM"

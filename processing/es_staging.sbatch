@@ -6,7 +6,9 @@
 # advertised 3-00:00:00 and silently gave the place#164 rebuild a 2-day
 # window it then had to work around — staging holds the only copy of a
 # freshly built index until it is snapshotted, so the wall is a data
-# deadline, not just a scheduling one. smp-smp-l allows 6 days.
+# deadline, not just a scheduling one. On smp/ishi, --qos=long allows 6
+# days; the account has no smp-smp-* QOS despite those appearing in a
+# cluster-wide `sacctmgr show qos` listing.
 #SBATCH --time=3-00:00:00
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
