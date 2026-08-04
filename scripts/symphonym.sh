@@ -1155,6 +1155,22 @@ do_update_embeddings() {
     # rebuild's toponyms index could not be promoted by name at all.
     TOPONYMS_TARGET_INDEX="${TOPONYMS_TARGET_INDEX:-toponyms}"
 
+    # The compute step writes EMBEDDINGS_FILE unconditionally, and that path is
+    # version-scoped (embeddings_v7.parquet), not run-scoped — so re-running it
+    # destroys the previous rebuild's embeddings without asking. Those are GPU
+    # hours, and the only copy outside the ES index. Move any existing file
+    # aside first, stamped with its own mtime.
+    if [ -f "$EMBEDDINGS_FILE" ]; then
+        _EMB_STAMP=$(date -r "$EMBEDDINGS_FILE" +%Y%m%d 2>/dev/null || echo prev)
+        if [ ! -f "${EMBEDDINGS_FILE}.${_EMB_STAMP}" ]; then
+            mv "$EMBEDDINGS_FILE" "${EMBEDDINGS_FILE}.${_EMB_STAMP}"
+            echo "  Preserved previous embeddings -> $(basename "${EMBEDDINGS_FILE}").${_EMB_STAMP}"
+        else
+            echo "  WARNING: ${EMBEDDINGS_FILE} exists and so does its .${_EMB_STAMP} backup;"
+            echo "           it will be OVERWRITTEN."
+        fi
+    fi
+
     # Dependency flag for sbatch
     DEP_FLAG=""
     if [ -n "$AFTER_JOB" ]; then
