@@ -152,6 +152,71 @@ def stale_namespaces(namespaces: list[str],
             if r["stale"]]
 
 
+# ---------------------------------------------------------------------------
+# Vocabulary (toponyms DuckDB) freshness
+# ---------------------------------------------------------------------------
+#
+# The same fault, one stage over. The toponym vocabulary is built by scanning
+# every namespace's staged final, and that scan takes hours — during which the
+# corpus can be rewritten underneath it. It happened twice in the place#164
+# rebuild: the vocabulary was built from `wd`'s superseded final (scan ended
+# 04:11, final rewritten 04:53), and again from pre-merge `chgis`/`hgis`.
+#
+# Both turned out immaterial, but establishing that cost a 3.5-hour re-run and
+# a bespoke comparison against a backup that happened to still exist. Recording
+# what was scanned makes the question answerable in a second.
+
+VOCABULARY_SOURCES_SUFFIX = ".sources.json"
+
+
+def vocabulary_sources_path(db_path: str | Path) -> Path:
+    return Path(str(db_path) + VOCABULARY_SOURCES_SUFFIX)
+
+
+def record_vocabulary_sources(db_path: str | Path, namespaces: list[str],
+                              staged_base: Path | None = None) -> Path:
+    """Record the artefact each namespace contributed to a vocabulary build."""
+    import json
+    out = {}
+    for ns in namespaces:
+        src = current_source(ns, staged_base)
+        if src is not None:
+            out[ns] = source_fingerprint(src)
+    path = vocabulary_sources_path(db_path)
+    path.write_text(json.dumps(out, indent=1, sort_keys=True), encoding="utf-8")
+    return path
+
+
+def check_vocabulary(db_path: str | Path,
+                     staged_base: Path | None = None) -> list[dict[str, Any]]:
+    """Which namespaces have been rewritten since the vocabulary was built?"""
+    import json
+    path = vocabulary_sources_path(db_path)
+    if not path.exists():
+        return [{"namespace": "*", "stale": False, "unknown": True,
+                 "basis": "no-record",
+                 "detail": f"no {path.name}; vocabulary provenance unknown"}]
+    recorded = json.loads(path.read_text())
+    results = []
+    for ns, fp in sorted(recorded.items()):
+        src = current_source(ns, staged_base)
+        if src is None:
+            results.append({"namespace": ns, "stale": False, "unknown": True,
+                            "basis": "no-artefact", "detail": "source gone"})
+            continue
+        now = source_fingerprint(src)
+        changed = (fp.get("path") != now["path"]
+                   or fp.get("size") != now["size"]
+                   or abs(float(fp.get("mtime", 0)) - now["mtime"]) > 1.0)
+        results.append({
+            "namespace": ns, "stale": changed, "unknown": False,
+            "basis": "fingerprint",
+            "detail": (f"scanned {_fmt(fp.get('mtime'))}, "
+                       f"now {_fmt(now['mtime'])}") if changed else "match",
+        })
+    return results
+
+
 def main() -> None:
     import argparse
     import json
@@ -164,7 +229,26 @@ def main() -> None:
     ap.add_argument("--namespace", action="append",
                     help="Restrict to namespace(s); default: all staged")
     ap.add_argument("--staged-base", default=None)
+    ap.add_argument("--vocabulary", default=None,
+                    help="Path to the toponyms DuckDB; checks which namespaces "
+                         "were rewritten since it was built, instead of "
+                         "checking the places index")
     args = ap.parse_args()
+
+    if args.vocabulary:
+        results = check_vocabulary(args.vocabulary,
+                                   Path(args.staged_base) if args.staged_base
+                                   else None)
+        width = max((len(r["namespace"]) for r in results), default=9)
+        for r in results:
+            state = ("*** STALE ***" if r["stale"]
+                     else "unknown" if r["unknown"] else "ok")
+            print(f"{r['namespace']:{width}s}  {state:14s} [{r['basis']}] "
+                  f"{r['detail']}")
+        stale = [r["namespace"] for r in results if r["stale"]]
+        print(f"\nvocabulary {args.vocabulary}: "
+              f"stale sources: {', '.join(stale) if stale else 'none'}")
+        sys.exit(1 if stale else 0)
 
     manifest = None
     if args.manifest_path:

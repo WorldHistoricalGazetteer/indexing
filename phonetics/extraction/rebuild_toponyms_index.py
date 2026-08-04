@@ -2174,6 +2174,24 @@ def main():
                 conn.close()
                 shutil.copy2(temp_db_path, final_db_path)
 
+                # Record which artefact each namespace contributed. The scan
+                # takes hours and the staged corpus can be rewritten underneath
+                # it — twice in the place#164 rebuild. Without this, answering
+                # "was the vocabulary built from the current corpus?" means a
+                # full re-run, or a comparison against a backup that may not
+                # exist. Check it with:
+                #   python -m processing.index_freshness --vocabulary <db>
+                try:
+                    from processing.index_freshness import (
+                        record_vocabulary_sources,
+                    )
+                    rec = record_vocabulary_sources(
+                        final_db_path, list(extraction_namespaces)
+                    )
+                    logger.info(f"Recorded vocabulary sources -> {rec}")
+                except Exception as exc:  # never fail the build over bookkeeping
+                    logger.warning(f"Could not record vocabulary sources: {exc}")
+
             # Reopen DB from scratch (whether resumed or just created)
             conn = create_db(str(temp_db_path))
             optimize_db_after_load(conn)

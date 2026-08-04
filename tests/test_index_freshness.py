@@ -188,5 +188,67 @@ class CollapsedPlaceIdsAreReported(unittest.TestCase):
         self.assertNotIn("sys.exit", body)
         self.assertNotIn("raise SystemExit", body)
 
+class VocabularyFreshness(unittest.TestCase):
+    """The toponym vocabulary can also be built from a superseded corpus.
+
+    It happened twice in the place#164 rebuild: once from wd's superseded final
+    (scan ended 04:11, final rewritten 04:53) and once from pre-merge
+    chgis/hgis. Both were immaterial, but proving it cost a 3.5-hour re-run and
+    a comparison against a backup that happened to survive.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name)
+        self.db = self.base / "toponyms.db"
+        self.db.write_bytes(b"pretend duckdb")
+
+    def _ns(self, name, body=b"x" * 50):
+        d = self.base / name / "final"
+        d.mkdir(parents=True)
+        f = d / "places.parquet"
+        f.write_bytes(body)
+        return f
+
+    def test_records_and_matches(self):
+        from processing.index_freshness import (
+            check_vocabulary, record_vocabulary_sources,
+        )
+        self._ns("gn")
+        self._ns("wd")
+        record_vocabulary_sources(self.db, ["gn", "wd"], self.base)
+        results = check_vocabulary(self.db, self.base)
+        self.assertEqual(len(results), 2)
+        self.assertFalse(any(r["stale"] for r in results), results)
+
+    def test_detects_a_source_rewritten_after_the_scan(self):
+        from processing.index_freshness import (
+            check_vocabulary, record_vocabulary_sources,
+        )
+        self._ns("gn")
+        f = self._ns("wd")
+        record_vocabulary_sources(self.db, ["gn", "wd"], self.base)
+        f.write_bytes(b"y" * 90)                       # rewritten
+        os.utime(f, (time.time() + 10, time.time() + 10))
+        results = {r["namespace"]: r for r in check_vocabulary(self.db, self.base)}
+        self.assertTrue(results["wd"]["stale"], results["wd"])
+        self.assertFalse(results["gn"]["stale"], results["gn"])
+
+    def test_absent_record_is_unknown_not_fresh(self):
+        """No record must not read as 'the vocabulary is current'."""
+        from processing.index_freshness import check_vocabulary
+        results = check_vocabulary(self.db, self.base)
+        self.assertTrue(results[0]["unknown"])
+        self.assertFalse(results[0]["stale"])
+
+    def test_stage_one_records_them(self):
+        src = Path("phonetics/extraction/rebuild_toponyms_index.py").read_text()
+        self.assertIn("record_vocabulary_sources(", src)
+        # Must run after the DB is checkpointed, or it records a build that
+        # may not have survived.
+        self.assertLess(src.index("shutil.copy2(temp_db_path, final_db_path)"),
+                        src.index("record_vocabulary_sources("))
+
 if __name__ == "__main__":
     unittest.main()
