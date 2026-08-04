@@ -48,6 +48,47 @@ def get_es_host():
 ES_HOST = get_es_host()
 ES_HOST_PRODUCTION = os.getenv("PROD_ES_URL", "http://localhost:9200")
 
+# Hostnames that mean "the production cluster". A full rebuild must never be
+# built directly into production: it is constructed in a disposable staging ES
+# on a compute node, snapshotted, restored, and only then promoted by an atomic
+# alias swap (processing.promote_to_production). Building in place would expose
+# a half-loaded index under the live alias for hours.
+#
+# On the production VM, ES *is* localhost — which is exactly why an unqualified
+# localhost URL has to count as production rather than as a harmless default.
+_PRODUCTION_HOSTNAMES = {"localhost", "127.0.0.1", "::1"}
+
+
+def is_production_host(url: str | None) -> bool:
+    """True when ``url`` addresses the production cluster."""
+    if not url:
+        return False
+    from urllib.parse import urlparse
+    hostname = (urlparse(url).hostname or "").lower()
+    if not hostname:
+        return False
+    if hostname in _PRODUCTION_HOSTNAMES:
+        return True
+    prod = (urlparse(ES_HOST_PRODUCTION).hostname or "").lower()
+    if prod and hostname == prod:
+        return True
+    extra = os.getenv("PROD_ES_HOSTNAMES", "")
+    return hostname in {h.strip().lower() for h in extra.split(",") if h.strip()}
+
+
+def get_staging_host() -> str | None:
+    """Staging ES URL from STAGING_INFO_FILE, ignoring any ES_HOST override."""
+    if not os.path.exists(STAGING_INFO_FILE):
+        return None
+    node = port = None
+    with open(STAGING_INFO_FILE) as f:
+        for line in f:
+            if line.startswith("ES_NODE="):
+                node = line.strip().split("=", 1)[1]
+            elif line.startswith("ES_PORT="):
+                port = line.strip().split("=", 1)[1]
+    return f"http://{node}:{port}" if node and port else None
+
 # Production types-index lookup (Batch 2 preflight)
 TYPES_ES_HOST = os.getenv("TYPES_ES_HOST", ES_HOST_PRODUCTION)
 TYPES_INDEX = os.getenv("TYPES_INDEX", "types")

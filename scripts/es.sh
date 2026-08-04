@@ -720,7 +720,16 @@ staging_start() {
         EXPORT_VARS="${EXPORT_VARS},SKIP_SNAPSHOT_RESTORE=1"
     fi
 
-    JOBID=$(sbatch --parsable --export="$EXPORT_VARS" "$STAGING_SCRIPT")
+    # Wall/QOS overridable; default generously because staging holds the only
+    # copy of anything built in it until a snapshot is taken.
+    STAGING_TIME="${STAGING_TIME:-3-00:00:00}"
+    STAGING_QOS="${STAGING_QOS:-}"
+    SBATCH_EXTRA=(--time="$STAGING_TIME")
+    if [ -n "$STAGING_QOS" ]; then
+        SBATCH_EXTRA+=(--qos="$STAGING_QOS")
+    fi
+    echo "  Wall time: $STAGING_TIME${STAGING_QOS:+ (qos $STAGING_QOS)}"
+    JOBID=$(sbatch --parsable "${SBATCH_EXTRA[@]}" --export="$EXPORT_VARS" "$STAGING_SCRIPT")
 
     if [ -z "$JOBID" ]; then
         echo "ERROR: Failed to submit Slurm job"
@@ -1324,7 +1333,8 @@ case "$1" in
         echo "  Slurm options:"
         echo "    --slurm              Submit as Slurm job (requires staging ES running)"
         echo "    --mem SIZE           Slurm memory (default: 500G)"
-        echo "    --time HH:MM:SS     Slurm wall time (default: 3-00:00:00)"
+        echo "    --time HH:MM:SS     Slurm wall time (default: 3-00:00:00; env STAGING_TIME)"
+        echo "                        smp-smp-l allows up to 6-00:00:00 (env STAGING_QOS)"
         echo
         echo "  Examples:"
         echo "    $0 -cluster --full                    # nohup on VM"

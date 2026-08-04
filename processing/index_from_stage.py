@@ -41,6 +41,7 @@ from elasticsearch import Elasticsearch, helpers
 
 from processing.settings import (
     ES_HOST,
+    is_production_host,
     STAGED_BASE_DIR,
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
@@ -464,7 +465,28 @@ def main() -> None:
     parser.add_argument("--request-timeout", type=int, default=300)
     parser.add_argument("--skip-alias-swap", action="store_true",
                         help="Do not swap the 'places' alias on completion (staged rollout)")
+    parser.add_argument("--allow-production", action="store_true",
+                        help="Permit --es-host to address production (normally refused; "
+                             "a full rebuild belongs in staging, promoted by snapshot)")
     args = parser.parse_args()
+
+    # A full rebuild is built in a disposable staging ES and promoted with
+    # processing.promote_to_production (snapshot both indices -> restore ->
+    # atomic alias swap). Building straight into production would leave a
+    # partially loaded index reachable under the live alias for hours, and it
+    # is an easy accident: ES_HOST is unset on the VM, so --es-host defaults to
+    # None and a well-meaning "http://localhost:9201" gets typed in.
+    if not args.es_host:
+        print("No Elasticsearch host resolved. Start staging ES "
+              "(`source es.sh -staging-start`) or pass --es-host.", file=sys.stderr)
+        sys.exit(2)
+    if is_production_host(args.es_host) and not args.allow_production:
+        print(f"Refusing to build into production ({args.es_host}).\n"
+              "  A full rebuild goes into staging, then:\n"
+              "    python -m processing.promote_to_production --run-id <RUN_ID> --execute\n"
+              "  Pass --allow-production only if you genuinely mean to write live.",
+              file=sys.stderr)
+        sys.exit(2)
 
     if args.manifest_path:
         manifest_path = Path(args.manifest_path)
