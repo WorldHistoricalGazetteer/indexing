@@ -1148,6 +1148,13 @@ do_update_embeddings() {
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
 
+    # A full rebuild must write toponyms_<run_id>, matching the places index
+    # built by processing.index_from_stage, so processing.promote_to_production
+    # can find BOTH and swap their aliases in one atomic request. The bare
+    # literal "toponyms" was the only name available here, which meant a
+    # rebuild's toponyms index could not be promoted by name at all.
+    TOPONYMS_TARGET_INDEX="${TOPONYMS_TARGET_INDEX:-toponyms}"
+
     # Dependency flag for sbatch
     DEP_FLAG=""
     if [ -n "$AFTER_JOB" ]; then
@@ -1229,7 +1236,7 @@ python -u -m phonetics.inference.update_es index \
     --input-file "${EMBEDDINGS_FILE}" \
     --db-path "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
     --es-host "http://\\\${ES_NODE}:\\\${ES_PORT}" \
-    --index toponyms \
+    --index ${TOPONYMS_TARGET_INDEX} \
     --embedding-version ${DATA_VERSION}
 
 echo "Indexing complete: \\\$(date)"
@@ -1263,6 +1270,13 @@ do_update_embeddings_index() {
     mkdir -p "$EMBEDDINGS_LOG_DIR"
 
     EMBEDDINGS_FILE="${DATA_DIR}/embeddings_v${DATA_VERSION}.parquet"
+
+    # A full rebuild must write toponyms_<run_id>, matching the places index
+    # built by processing.index_from_stage, so processing.promote_to_production
+    # can find BOTH and swap their aliases in one atomic request. The bare
+    # literal "toponyms" was the only name available here, which meant a
+    # rebuild's toponyms index could not be promoted by name at all.
+    TOPONYMS_TARGET_INDEX="${TOPONYMS_TARGET_INDEX:-toponyms}"
 
     # Only check file existence when not depending on a prior job
     # (when --after is set the file doesn't exist yet at submission time)
@@ -1321,7 +1335,7 @@ python -u -m phonetics.inference.update_es index \
     --embeddings-file "${EMBEDDINGS_FILE}" \
     --schema-file "${REPO_DIR}/schemas/toponyms.json" \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
-    --index toponyms \
+    --index ${TOPONYMS_TARGET_INDEX} \
     --embedding-version ${DATA_VERSION} \
     --batch-size 2000
 
