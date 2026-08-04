@@ -643,6 +643,58 @@ rebuild reassembled the sequence by hand. Now:
   snapshotted, so the wall is a **data** deadline. Now overridable
   (`STAGING_TIME` / `STAGING_QOS`; `smp-smp-l` allows 6 days), default 3 days.
 
+### Fault 8 — an index built from a since-superseded artefact (4 August 2026)
+
+**The worst fault of the campaign, because the obvious verification cannot see it.**
+
+`update_merge` re-ran for `gn`, `wd` and `nl` *after* those namespaces had been
+indexed. The chain rewrote each `staged/<ns>/final/places.parquet`; nothing
+re-ran the index stage. The manifest read `index: completed` throughout — true
+when written, false afterwards, and carrying no timestamp with which to notice.
+
+| ns | `final/` written | indexed | what was missing |
+|----|------------------|---------|------------------|
+| `gn` | 3 Aug 16:21 | 2 Aug 17:17 | 26.7 M GeoNames alternate names |
+| `wd` | 4 Aug 05:03 | 2 Aug 17:38 | 58,658 Commons geoshapes + geometry repairs |
+| `nl` | 3 Aug 02:37 | 2 Aug 18:18 | — |
+
+**Doc counts are structurally blind to this.** `update_merge` adds names to
+*existing* places, so the place count is byte-identical before and after. A
+per-namespace staging-vs-production comparison matched on **all 27 namespaces**
+while `gn` held 13,454,732 toponyms for 13,454,817 places — one name each. The
+count was the one measure guaranteed to look right either way.
+
+**What exposed it:** the toponyms DuckDB contained `花園牧場@ja` while the place
+document `gn:11672423` did not. Two artefacts built from different generations
+of the same source cannot both be right. Stage 1's own numbers corroborate it —
+the 3 Aug run produced 67,983,745 unique toponyms, the 4 Aug run 72,703,552, and
+that +4.72 M *is* the recovered alternate names.
+
+**Fixed (`index_freshness.py`, commits d193061 / bb8b654 / 16401cb):**
+
+1. The index stage records a **fingerprint** (path, size, mtime) of the file it
+   actually read. Freshness compares that against the file on disk now, falling
+   back to `final/` vs `index/` directory mtimes for runs predating
+   fingerprinting — which is how these three were found.
+2. **Both publication points refuse a stale build**: `index_from_stage` will not
+   swap the `places` alias, and `promote_to_production` fails verification.
+3. **A stale `index: completed` no longer skips on resume.** The first re-index
+   attempt reported *"No namespaces eligible for indexing"* and did nothing,
+   because eligibility honoured the very status the freshness check exists to
+   distrust. A completed index stage is now freshness-checked before it is
+   allowed to skip.
+
+Run it standalone at any time:
+
+```bash
+python -m processing.index_freshness --manifest-path /vast/ishi/staged/runs/<RUN_ID>.json
+```
+
+**Related trap, for whoever re-runs stage 1:** it logs *"Deduplication already
+done (N unique toponyms), skipping…"* when it finds existing output. A re-run
+after a corpus change silently reuses the old vocabulary and reports success.
+Remove the dedup output first.
+
 ### State of this run, 3–4 August 2026
 
 - **places index built in staging**: 51,187,900 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
