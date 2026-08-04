@@ -1137,7 +1137,7 @@ do_update_embeddings() {
     echo "EMBEDDING PIPELINE (v${DATA_VERSION})"
     echo "=========================================="
     echo "  Checkpoint: ${CHECKPOINT_DIR}/phase3_best.pt"
-    echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
+    echo "  DuckDB:     ${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
     echo "  GPU Part:   ${GPU_PARTITION}"
@@ -1227,7 +1227,7 @@ source "${STAGING_INFO_FILE}"
 echo "Indexing embeddings to ES at http://\\\${ES_NODE}:\\\${ES_PORT}..."
 python -u -m phonetics.inference.update_es index \
     --input-file "${EMBEDDINGS_FILE}" \
-    --db-path "${IX1_BASE}/data/toponyms.db" \
+    --db-path "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
     --es-host "http://\\\${ES_NODE}:\\\${ES_PORT}" \
     --index toponyms \
     --embedding-version ${DATA_VERSION}
@@ -1285,7 +1285,7 @@ do_update_embeddings_index() {
     echo "INDEX EMBEDDINGS (v${DATA_VERSION})"
     echo "=========================================="
     echo "  Embeddings: ${EMBEDDINGS_FILE}"
-    echo "  DuckDB:     ${IX1_BASE}/data/toponyms.db"
+    echo "  DuckDB:     ${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
     echo "  ES Host:    http://${ES_NODE}:${ES_PORT}"
     echo "  Logs:       ${EMBEDDINGS_LOG_DIR}"
     echo
@@ -1317,7 +1317,7 @@ cd "${REPO_DIR}"
 
 echo "Rebuilding ES index from DuckDB + embeddings..."
 python -u -m phonetics.inference.update_es index \
-    --duckdb-file "${IX1_BASE}/data/toponyms.db" \
+    --duckdb-file "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
     --embeddings-file "${EMBEDDINGS_FILE}" \
     --schema-file "${REPO_DIR}/schemas/toponyms.json" \
     --es-host "http://${ES_NODE}:${ES_PORT}" \
