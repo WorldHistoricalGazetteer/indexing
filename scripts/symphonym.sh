@@ -1177,19 +1177,39 @@ do_update_embeddings() {
         DEP_FLAG="--dependency=afterok:${AFTER_JOB}"
     fi
 
+    # The preempt partition is usually the fastest route to a GPU: the paid
+    # partitions queue for hours even with nodes idle (measured 4 Aug 2026 —
+    # preempt now, a100 +7h, l40s +10h). It suits this job in particular
+    # because computed embeddings are appended to the cache as they are
+    # produced, so a requeue resumes cheaply instead of restarting.
+    #
+    # --qos=gpu-preempt-l is required and is not discoverable from the
+    # partition name; --constraint dodges the rtx6k nodes, whose kernels fail
+    # for this model. `sbatch --test-only` does NOT validate a wrong QOS.
+    if [ "$GPU_PARTITION" = "preempt" ]; then
+        GPU_QOS="${GPU_QOS:-gpu-preempt-l}"
+        GPU_CONSTRAINT="${GPU_CONSTRAINT:-a100|l40s}"
+        GPU_REQUEUE="${GPU_REQUEUE:-1}"
+    fi
+    GPU_EXTRA_SBATCH=""
+    [ -n "${GPU_QOS:-}" ] && GPU_EXTRA_SBATCH="${GPU_EXTRA_SBATCH}#SBATCH --qos=${GPU_QOS}\n"
+    [ -n "${GPU_CONSTRAINT:-}" ] && GPU_EXTRA_SBATCH="${GPU_EXTRA_SBATCH}#SBATCH --constraint=${GPU_CONSTRAINT}\n"
+    [ "${GPU_REQUEUE:-0}" = "1" ] && GPU_EXTRA_SBATCH="${GPU_EXTRA_SBATCH}#SBATCH --requeue\n"
+
     # Step 1: Compute embeddings (GPU)
     echo "Step 1: Submitting compute job (GPU)..."
+    echo "  Partition: ${GPU_PARTITION}${GPU_QOS:+ (qos ${GPU_QOS})}${GPU_CONSTRAINT:+ [${GPU_CONSTRAINT}]}"
     echo "  Note: compute job will submit the SMP index job itself on completion"
     echo "  (cross-cluster Slurm dependencies are not supported on Pitt CRC)"
 
-    COMPUTE_JOB=$(sbatch --parsable -M gpu ${DEP_FLAG} <<EOF
+    COMPUTE_JOB=$(sbatch --parsable -M gpu --account="${SLURM_ACCOUNT:-ishi}" ${DEP_FLAG} <<EOF
 #!/bin/bash
 #SBATCH --job-name=whg-embed-compute-v${DATA_VERSION}
 #SBATCH --output=${EMBEDDINGS_LOG_DIR}/compute_%j.out
 #SBATCH --error=${EMBEDDINGS_LOG_DIR}/compute_%j.err
 #SBATCH --time=48:00:00
 #SBATCH --partition=${GPU_PARTITION}
-#SBATCH --gres=gpu:1
+$(printf "${GPU_EXTRA_SBATCH}#SBATCH --gres=gpu:1")
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
