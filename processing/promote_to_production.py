@@ -178,11 +178,35 @@ def wait_snapshot(staging: Elasticsearch, repo: str, snapshot: str) -> bool:
 # --------------------------------------------------------------------------
 
 def ensure_restored(prod: Elasticsearch, repo: str, snapshot: str,
-                    indices: list[str], execute: bool) -> bool:
-    """Restore any of ``indices`` not already present in production."""
-    todo = [i for i in indices if not prod.indices.exists(index=i)]
-    for present in [i for i in indices if i not in todo]:
-        print(f"  {present}: already present in production — not re-restoring")
+                    indices: list[str], execute: bool,
+                    reuse_existing: bool = False) -> bool:
+    """Restore ``indices`` into production.
+
+    An index of the same name already in production is **not** assumed to be
+    the same index. It is routinely an *earlier generation* of the same build:
+    a rebuild that was restored, then found stale, then corrected in staging.
+    Doc counts cannot distinguish the two (a re-run of ``update_merge`` adds
+    names to existing places and leaves the count identical), so presence is
+    treated as a conflict to be resolved deliberately rather than as evidence
+    of correctness.
+
+    ``reuse_existing`` accepts the resident copy — correct when a previous
+    promotion of *this same* snapshot was interrupted after the restore.
+    """
+    resident = [i for i in indices if prod.indices.exists(index=i)]
+    if resident and not reuse_existing:
+        raise SystemExit(
+            "Already in production: " + ", ".join(resident) + "\n"
+            "  This is NOT proof it matches staging — an earlier generation of\n"
+            "  the same build carries the same name and the same doc count.\n"
+            "  Either delete it and re-run:\n"
+            "    curl -XDELETE $PROD/" + resident[0] + "\n"
+            "  or pass --reuse-existing if a previous promotion of this exact\n"
+            "  snapshot was interrupted after its restore completed."
+        )
+    todo = [i for i in indices if i not in resident]
+    for present in resident:
+        print(f"  {present}: already present, --reuse-existing given — kept")
     if not todo:
         return True
     if not execute:
@@ -320,6 +344,10 @@ def main() -> None:
     ap.add_argument("--manifest-path", default=None,
                     help="Run manifest; enables the staged-source freshness "
                          "check (strongly recommended)")
+    ap.add_argument("--reuse-existing", action="store_true",
+                    help="Accept an index of the same name already in "
+                         "production instead of failing (only when a previous "
+                         "promotion of this exact snapshot was interrupted)")
     ap.add_argument("--allow-stale", action="store_true",
                     help="Promote even if a namespace's staged source changed "
                          "after it was indexed")
@@ -375,7 +403,7 @@ def main() -> None:
 
     print("\n[3/5] restore into production")
     if indices and not ensure_restored(prod, args.repo, snapshot, indices,
-                                       args.execute):
+                                       args.execute, args.reuse_existing):
         raise SystemExit("Restore did not complete cleanly — stopping.")
 
     print("\n[4/5] verify")
