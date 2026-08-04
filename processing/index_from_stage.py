@@ -46,6 +46,10 @@ from processing.settings import (
     STAGED_RUN_MANIFEST_FILE_TEMPLATE,
     STAGED_RUNS_DIR,
 )
+from processing.index_freshness import (
+    source_fingerprint,
+    stale_namespaces,
+)
 from processing.stage_writers import (
     record_script_wall_time,
     write_runtime_history_event,
@@ -247,6 +251,12 @@ def load_namespace(
             "Run extract / boundary_merge / h3_merge / ccode_merge first."
         )
 
+    # Fingerprint the artefact actually read, so a later run can tell whether
+    # the index it produced has since been superseded. Doc counts cannot: a
+    # re-run of update_merge adds names to existing places and leaves the place
+    # count identical, which is how gn shipped missing 26.7M alternate names
+    # while every count matched (see processing/index_freshness.py).
+    fingerprint = source_fingerprint(src)
     total = _count_staged_docs(src)
     started = time.monotonic()
     indexed = 0
@@ -274,6 +284,7 @@ def load_namespace(
     return {
         "namespace": namespace,
         "source_path": str(src),
+        "source_fingerprint": fingerprint,
         "docs_in_source": total,
         "docs_indexed": indexed,
         "errors": errors,
@@ -433,9 +444,19 @@ def run_index_from_stage(
     final_count = finalize_index(es, index_name)
     print(f"\nFinalized {index_name}: {final_count:,} docs")
 
+    # Refuse to publish an index whose sources moved underneath it. This is
+    # the last point at which a stale build is still private; past the swap it
+    # is what users search.
+    stale = stale_namespaces(eligible, manifest)
+    if stale:
+        print(f"\nSTALE: {', '.join(stale)} — the staged source changed after "
+              f"these were indexed. Re-index them before swapping the alias:\n"
+              f"  python -m processing.index_from_stage --run-id {run_id} "
+              f"{' '.join('--namespace ' + n for n in stale)} --skip-alias-swap")
+
     swapped = False
     previous: list[str] = []
-    if swap_alias_on_complete and not failures:
+    if swap_alias_on_complete and not failures and not stale:
         previous = swap_alias(es, new_index=index_name)
         swapped = True
         print(f"Alias '{PLACES_ALIAS}' → {index_name} (replaced: {previous or '∅'})")

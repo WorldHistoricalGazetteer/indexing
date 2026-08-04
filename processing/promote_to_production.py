@@ -35,12 +35,14 @@ Dry-run by default; ``--execute`` performs the work.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
 
 from elasticsearch import Elasticsearch
 
+from processing.index_freshness import check_all, stale_namespaces
 from processing.settings import (
     STAGING_REPO_NAME,
     get_staging_host,
@@ -315,6 +317,12 @@ def main() -> None:
     ap.add_argument("--es-password-file", default=DEFAULT_ES_PASSWORD_FILE)
     ap.add_argument("--skip-swap", action="store_true",
                     help="Snapshot, restore and verify, but leave aliases alone")
+    ap.add_argument("--manifest-path", default=None,
+                    help="Run manifest; enables the staged-source freshness "
+                         "check (strongly recommended)")
+    ap.add_argument("--allow-stale", action="store_true",
+                    help="Promote even if a namespace's staged source changed "
+                         "after it was indexed")
     ap.add_argument("--execute", action="store_true",
                     help="Perform the promotion (default: dry run)")
     args = ap.parse_args()
@@ -374,6 +382,27 @@ def main() -> None:
     ok, lines = verify(staging, prod, in_staging, in_prod)
     for line in lines:
         print(line)
+
+    # Doc counts cannot see a namespace re-enriched after it was indexed:
+    # update_merge adds names to existing places, leaving the count identical.
+    # gn shipped one toponym per place — 26.7M alternate names missing — with
+    # every count matching. So compare the artefacts, not the totals.
+    if args.manifest_path:
+        manifest_data = json.loads(Path(args.manifest_path).read_text())
+        names = sorted(manifest_data.get("namespaces", {}))
+        stale = stale_namespaces(names, manifest_data)
+        if stale:
+            lines_stale = "\n".join(
+                f"    {r['namespace']}: {r['detail']}"
+                for r in check_all(names, manifest_data) if r["stale"])
+            print(f"  freshness: *** {len(stale)} STALE *** \n{lines_stale}")
+            if not args.allow_stale:
+                ok = False
+        else:
+            print(f"  freshness: all {len(names)} namespaces current OK")
+    else:
+        print("  freshness: NOT CHECKED (pass --manifest-path)")
+
     if not ok:
         raise SystemExit(
             "Verification failed — aliases NOT swapped. Production still "
