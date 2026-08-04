@@ -54,7 +54,12 @@ do_rebuild_toponyms() {
 
     # Output directory for data
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
-    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    # Overridable, and defaulting to flash. A ~39 GB DuckDB under sustained
+    # random write is the access pattern /ix1 handles worst — the reason ES,
+    # the repo and the Slurm WorkDir moved to /vast on 2026-05-01. The name
+    # is also run-scoped by the rebuild (toponyms-<run_id>.db), so a fixed
+    # path here silently reads the PREVIOUS corpus.
+    DB_PATH="${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
     NEURAL_PHONETICS="${OUTPUT_DIR}/neural_phonetics.parquet"
 
     # Setup local scratch (CRC convention)
@@ -219,7 +224,12 @@ do_partial_update_es() {
     fi
 
     ES_URL="http://${ES_NODE}:${ES_PORT}"
-    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    # Overridable, and defaulting to flash. A ~39 GB DuckDB under sustained
+    # random write is the access pattern /ix1 handles worst — the reason ES,
+    # the repo and the Slurm WorkDir moved to /vast on 2026-05-01. The name
+    # is also run-scoped by the rebuild (toponyms-<run_id>.db), so a fixed
+    # path here silently reads the PREVIOUS corpus.
+    DB_PATH="${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
 
     # Verify DuckDB exists
     if [ ! -f "$DB_PATH" ]; then
@@ -324,7 +334,12 @@ do_precompute_phonetics() {
     DATA_VERSION=${1:-6}
 
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
-    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    # Overridable, and defaulting to flash. A ~39 GB DuckDB under sustained
+    # random write is the access pattern /ix1 handles worst — the reason ES,
+    # the repo and the Slurm WorkDir moved to /vast on 2026-05-01. The name
+    # is also run-scoped by the rebuild (toponyms-<run_id>.db), so a fixed
+    # path here silently reads the PREVIOUS corpus.
+    DB_PATH="${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
     OUTPUT_FILE="${OUTPUT_DIR}/neural_phonetics.parquet"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/logs}"
 
@@ -481,7 +496,12 @@ do_generate_training_data() {
     mkdir -p "$LOG_DIR"
 
     OUTPUT_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
-    DB_PATH="${IX1_BASE}/data/toponyms.db"
+    # Overridable, and defaulting to flash. A ~39 GB DuckDB under sustained
+    # random write is the access pattern /ix1 handles worst — the reason ES,
+    # the repo and the Slurm WorkDir moved to /vast on 2026-05-01. The name
+    # is also run-scoped by the rebuild (toponyms-<run_id>.db), so a fixed
+    # path here silently reads the PREVIOUS corpus.
+    DB_PATH="${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
 
     # DuckDB is optional - we read training data from ES toponyms index
     DB_ARG=""
@@ -682,7 +702,7 @@ do_train_model() {
         fi
     fi
 
-    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DATA_DIR="${SYMPHONYM_DATA_DIR:-${IX3_BASE:-/vast/ishi}/models/phonetic/data/v${DATA_VERSION}}"
     OUTPUT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
@@ -1080,7 +1100,7 @@ do_update_embeddings() {
         esac
     done
 
-    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DATA_DIR="${SYMPHONYM_DATA_DIR:-${IX3_BASE:-/vast/ishi}/models/phonetic/data/v${DATA_VERSION}}"
     CHECKPOINT_DIR="/ix1/ishi/models/phonetic/checkpoints/v${DATA_VERSION}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
@@ -1098,8 +1118,8 @@ do_update_embeddings() {
         return 1
     fi
 
-    if [ ! -f "${IX1_BASE}/data/toponyms.db" ]; then
-        echo "ERROR: DuckDB database not found at ${IX1_BASE}/data/toponyms.db"
+    if [ ! -f "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" ]; then
+        echo "ERROR: DuckDB database not found at ${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}"
         echo "Rebuild toponyms first: es -rebuild-toponyms ${DATA_VERSION}"
         return 1
     fi
@@ -1168,7 +1188,7 @@ cd "${REPO_DIR}"
 
 echo "Computing embeddings from DuckDB (ALL toponyms)..."
 python -u -m phonetics.inference.update_es compute \
-    --input-file "${IX1_BASE}/data/toponyms.db" \
+    --input-file "${TOPONYMS_DB:-${IX3_BASE:-/vast/ishi}/data/toponyms.db}" \
     --output-file "${EMBEDDINGS_FILE}" \
     --checkpoint "${CHECKPOINT_DIR}/phase3_best.pt" \
     --vocab-dir "${DATA_DIR}/vocab" \
@@ -1232,7 +1252,7 @@ do_update_embeddings_index() {
     DATA_VERSION=${1:-6}
     shift || true
 
-    DATA_DIR="/ix1/ishi/models/phonetic/data/v${DATA_VERSION}"
+    DATA_DIR="${SYMPHONYM_DATA_DIR:-${IX3_BASE:-/vast/ishi}/models/phonetic/data/v${DATA_VERSION}}"
     LOG_DIR="${STAGING_SLURM_LOGS:-/ix1/ishi/es/staging-logs}"
 
     if [ -z "$REPO_DIR" ]; then
