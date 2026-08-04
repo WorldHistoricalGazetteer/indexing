@@ -172,17 +172,25 @@ def _iter_staged(path: Path) -> Iterator[dict[str, Any]]:
 def repair(
     namespace: str,
     *,
+    stage: str = "final",
     execute: bool = False,
     staged_base: Path | None = None,
     changed_out: Path | None = None,
 ) -> dict[str, Any]:
-    """Re-normalise a namespace's staged ``final/`` snapshot.
+    """Re-normalise one staged snapshot of a namespace.
+
+    ``stage`` matters more than it looks. Repairing only ``final/`` is undone
+    the moment anything regenerates it: ``update_merge`` rebuilt wd's snapshot
+    from ``extract/`` and the whole chain followed, so 3,637 documents ES had
+    already rejected came straight back. The unrepaired data lives upstream, so
+    repair upstream too — ``extract`` first, then any derived stage already on
+    disk.
 
     Writes the corrected snapshot only under ``execute``. When ``changed_out``
     is given, the changed docs are written there as JSONL so ``--reindex`` can
     load just those.
     """
-    base = (staged_base or Path(STAGED_BASE_DIR)) / namespace / "final"
+    base = (staged_base or Path(STAGED_BASE_DIR)) / namespace / stage
     src = next((base / n for n in ("places.parquet", "places.jsonl")
                 if (base / n).is_file()), None)
     if src is None:
@@ -281,6 +289,9 @@ def main() -> None:
         description="Re-apply current temporal rules to a staged snapshot"
     )
     parser.add_argument("--namespace", required=True)
+    parser.add_argument("--stage", default="final",
+                        help="Staged stage to repair (default: final). Repair "
+                             "`extract` too, or a later regeneration undoes it.")
     parser.add_argument("--execute", action="store_true",
                         help="Write the corrected snapshot (default: report only)")
     parser.add_argument("--reindex", action="store_true",
@@ -293,8 +304,9 @@ def main() -> None:
         print("--reindex requires --execute, --es-host and --index", file=sys.stderr)
         sys.exit(2)
 
-    changed_path = Path(STAGED_BASE_DIR) / args.namespace / "final" / "places.repaired.jsonl"
-    result = repair(args.namespace, execute=args.execute,
+    changed_path = (Path(STAGED_BASE_DIR) / args.namespace / args.stage
+                    / "places.repaired.jsonl")
+    result = repair(args.namespace, stage=args.stage, execute=args.execute,
                     changed_out=changed_path if args.reindex else None)
     print(json.dumps(result, indent=2))
 
