@@ -723,6 +723,55 @@ correct — the *"Deduplication already done (N unique toponyms), skipping…"* 
 line is an idempotence check on freshly extracted rows, not a reuse of stale
 output.
 
+### Fault 9 — the staging info file clobbers SLURM_JOB_ID (4 August 2026)
+
+`/ix1/ishi/esinfo/es-staging.env` exported `SLURM_JOB_ID` — the **staging job's**
+id. It is sourced by any batch job that needs staging ES, so the consuming job's
+own id was silently replaced, and `/scratch/slurm-$SLURM_JOB_ID` then addressed
+a directory owned by a different job:
+
+```
+mkdir: cannot create directory '/scratch/slurm-23668874': Permission denied
+```
+
+Permission-denied is the *lucky* outcome. Had the staging job been on the same
+node, the job would have written into its scratch instead of failing.
+
+**Two things made this worse than it looks.** First,
+`phonetics/inference/update_es.py` derives its scratch directory from
+`SLURM_JOB_ID` **in Python**, so a job that carefully captures its own id in the
+shell is still caught — the library reads the clobbered variable. Second, the
+first fix kept writing `SLURM_JOB_ID=` "for backward compatibility", which
+preserved the whole hazard for every future instance: the file is sourced
+precisely by the jobs it breaks. Now `STAGING_SLURM_JOB_ID` only (commits
+3eba530, and the follow-up removing the bare key), with `es.sh` falling back to
+a sourced value so instances started before the change can still be stopped.
+
+### Fault 10 — the toponym vocabulary rebuild does ~5 h of work this pipeline discards
+
+Stage 1's steps 3–4 compute IPA via Epitran and write `panphon_features` back
+for 31.9 M records — ~8 h of the ~11 h run. **Nothing in the rebuild reads
+them:**
+
+| consumer | columns read |
+|---|---|
+| `update_es compute` | `toponym_id, name, lang, script` |
+| `update_es index` | + `lang_variant`, namespaces, attestations |
+| `schemas/toponyms.json` | has no `ipa` / `panphon_features` fields at all |
+
+They are **training-data** artefacts, needed to train Symphonym, not to run
+inference with an existing checkpoint. Stage 1 checkpoints the DuckDB to `/vast`
+immediately after extraction, so the vocabulary the GPU needs exists hours
+before the job ends.
+
+**What to do next time:** copy the post-extraction checkpoint, create the six
+indexes `optimize_db_after_load()` would have (they are the only thing the copy
+lacks, and the index stage's GROUP BY over 72.7 M rows joined to two 121 M-row
+tables needs them), and run compute + index against the copy while stage 1
+finishes. Doing that here recovered ~5 h. Stage 1 is still worth completing —
+the next training run wants those columns — it simply should not be on the
+critical path.
+
 ### State of this run, 3–4 August 2026
 
 - **places index built in staging**: 51,187,900 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
