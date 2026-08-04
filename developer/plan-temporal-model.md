@@ -605,9 +605,41 @@ All four now derive from `staging_orchestrator.array_memory_gb()`. `submit_bound
 4. `submit_extract_slurm --all`, then `submit_boundary_slurm` for `osm`/`ohm`, then `update_merge` for `gn`/`wd` — the barrier now enforces the last one.
 5. After each stage, compare per-namespace counts against the live baseline. `index_from_stage` reports per-namespace errors; **read them** — that is the only place in the pipeline that counts what it dropped.
 
-### State of this run, 3 August 2026
+### Staging is the default, and promotion is a tool (4 August 2026, commit 20ae8d6)
 
-- **places index built in staging**: 51,184,251 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
+A rebuild is built in a disposable staging ES on a compute node and moved to
+production by **snapshot → restore → atomic alias swap**. That was always the
+intent, but nothing enforced it and nothing implemented the transfer, so each
+rebuild reassembled the sequence by hand. Now:
+
+- `settings.is_production_host()` classifies an ES URL. **`localhost` counts as
+  production** — ES binds locally on the VM, so an unqualified localhost URL is
+  the live cluster, and it is precisely what gets typed when a tool says "no
+  host resolved". `PROD_ES_HOSTNAMES` (in `.env`) adds the VM's own name, which
+  `PROD_ES_HOST="localhost"` cannot cover.
+- `index_from_stage` refuses a production `--es-host` without
+  `--allow-production`, and refuses to run with **no** host rather than falling
+  through to a default.
+- **`python -m processing.promote_to_production --run-id <RUN_ID> --execute`**
+  does the transfer. Both aliases move in **one** `_aliases` request: `places`
+  and `toponyms` reference each other (a toponym's `attestations[]` are
+  place_ids), so a split swap joins a new toponym inventory onto an old place
+  index — which does not error, it silently drops the hits whose ids exist on
+  only one side. Doc counts and the `extract_namespace` pipeline (which a
+  restore does **not** recreate) gate the swap. Every stage checks for its own
+  completed output first, so an interrupted promotion is re-run, not unpicked.
+  An index already in production while its sibling is still building in a later
+  staging instance is a supported state — staging is wall-clocked and the two
+  builds finish hours apart.
+- `es_staging.sbatch` hardcoded `--time=48:00:00` while the help advertised
+  `3-00:00:00`. Staging holds the only copy of a freshly built index until it is
+  snapshotted, so the wall is a **data** deadline. Now overridable
+  (`STAGING_TIME` / `STAGING_QOS`; `smp-smp-l` allows 6 days), default 3 days.
+
+### State of this run, 3–4 August 2026
+
+- **places index built in staging**: 51,187,900 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
+- **places snapshotted and restored into production** as `places_temporal-20260731t160000z` (4 Aug). Snapshot `places-temporal-20260731t160000z` was taken at 05:08Z, *after* the 05:03Z wd geometry repair reindex, so it carries the repaired documents. **No alias swapped** — production still serves the old index.
 - Global barrier passed; `gn`/`wd` re-running their chain to fold in the recovered update patches (`gn` 7,838,457 places gained alternate names).
 - Toponyms stage 1 produced 67,983,745 unique toponyms **before** the patch recovery; it must re-run afterwards.
 - Symphonym cache hydration running on pitt — lifts the cache from 16.97 M to ~68 M rows so the GPU step is ~99 % cache hits rather than ~28 h.
