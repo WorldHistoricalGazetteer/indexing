@@ -84,5 +84,68 @@ class CoverDoesNotShrink(unittest.TestCase):
         self.assertIn("11 km", src)
 
 
+class OverlapContainment(unittest.TestCase):
+    """A cell the polygon intersects must be covered, even if its centre is not.
+
+    ``h3shape_to_cells`` emits a cell only when the cell's CENTRE lies inside
+    the polygon. At res 3 (~120 km hexagons) a coastal city routinely sits in a
+    cell whose centre is offshore, so the cell was never emitted. Measured on
+    Australia with simplification disabled: Sydney had no covering cell at any
+    resolution while Cronulla, 20 km away, did. Rio, Buenos Aires, Honolulu and
+    the Fujian coast behaved identically.
+
+    This is not only a ccode prefilter concern — ``gateway/spatial.py`` runs
+    fuzzy containment, the DEFAULT search mode, off ``h3_cover`` for both the
+    region and each hit (place#174).
+    """
+
+    def test_cell_is_covered_when_its_centre_lies_outside_the_polygon(self):
+        try:
+            import h3
+        except ImportError:
+            self.skipTest("h3 unavailable")
+        from processing import helpers
+
+        # A point, and the res-5 cell containing it.
+        lon, lat = 10.0, 50.0
+        res = 5
+        cell = h3.latlng_to_cell(lat, lon, res)
+        c_lat, c_lon = h3.cell_to_latlng(cell)
+
+        # A small polygon around the point that deliberately EXCLUDES the
+        # cell's centre — exactly the coastal-city geometry.
+        d = 0.004
+        poly = {"type": "Polygon", "coordinates": [[
+            [lon - d, lat - d], [lon + d, lat - d],
+            [lon + d, lat + d], [lon - d, lat + d], [lon - d, lat - d]]]}
+
+        from shapely.geometry import Point, shape
+        self.assertFalse(
+            shape(poly).contains(Point(c_lon, c_lat)),
+            "fixture invalid: the polygon must not contain the cell centre")
+
+        cells = helpers._polyfill_adaptive(poly)
+        covered = any(h3.latlng_to_cell(lat, lon, r) in cells
+                      for r in range(0, 12))
+        self.assertTrue(
+            covered,
+            "the polygon intersects this cell but the cover omits it — "
+            "centre containment, the defect this guards against")
+
+    def test_source_requests_overlap_containment(self):
+        from pathlib import Path
+        src = Path("processing/helpers.py").read_text()
+        self.assertIn('contain="overlap"', src)
+        self.assertIn("h3shape_to_cells_experimental", src)
+
+    def test_falls_back_when_the_experimental_api_is_absent(self):
+        """The API is flagged experimental; a narrow cover beats none."""
+        from pathlib import Path
+        src = Path("processing/helpers.py").read_text()
+        i = src.index("def _cells_for_shape(")
+        body = src[i:src.index("\ndef ", i + 10)]
+        self.assertIn("getattr(_h3", body)
+        self.assertIn("h3shape_to_cells(h3_poly, res)", body)
+
 if __name__ == "__main__":
     unittest.main()
