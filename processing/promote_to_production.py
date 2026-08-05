@@ -114,9 +114,26 @@ def resolve_staged_indices(staging: Elasticsearch, prod: Elasticsearch,
     return in_staging, in_prod
 
 
-def doc_count(client: Elasticsearch, index: str) -> int:
-    client.indices.refresh(index=index)
-    return int(client.count(index=index)["count"])
+def doc_count(client: Elasticsearch, index: str, attempts: int = 5) -> int:
+    """Refresh and count, tolerating the transient 503s a fresh restore emits.
+
+    A shard that has just finished recovering can still answer
+    ``search_phase_execution_exception`` for a moment. Aborting the promotion
+    on that is wrong — nothing is broken, the cluster is simply catching up —
+    and it left a half-verified restore behind when it happened.
+    """
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            client.indices.refresh(index=index)
+            return int(client.count(index=index)["count"])
+        except Exception as exc:
+            last = exc
+            if attempt < attempts - 1:
+                print(f"    (count on {index} failed: {type(exc).__name__}; "
+                      f"retry {attempt + 1}/{attempts - 1})")
+                time.sleep(POLL_SECONDS)
+    raise RuntimeError(f"could not count {index} after {attempts} attempts") from last
 
 
 # --------------------------------------------------------------------------
@@ -223,20 +240,58 @@ def ensure_restored(prod: Elasticsearch, repo: str, snapshot: str,
 
 
 def wait_recovery(prod: Elasticsearch, indices: list[str]) -> bool:
-    """Block until every shard of ``indices`` is recovered."""
+    """Block until every shard of ``indices`` is recovered AND searchable.
+
+    ``snapshot.restore(wait_for_completion=False)`` returns before recovery
+    starts, so there is a window in which *no* recovery is active yet. Treating
+    "0 active recoveries" as "finished" exits that window immediately and the
+    caller then counts a half-restored index — or, as happened here, gets a
+    503 ``search_phase_execution_exception`` because the shards are not yet
+    searchable.
+
+    So completion is established from the shard states themselves: every shard
+    STARTED, none initializing or relocating, and a count that actually
+    succeeds. The count is the real proof, because it is the operation the
+    verification step performs next.
+    """
+    joined = ",".join(indices)
+    stable_polls = 0
     while True:
-        health = prod.cluster.health(
-            index=",".join(indices), wait_for_status="yellow", timeout="60s",
-        )
-        recovery = prod.indices.recovery(index=",".join(indices),
-                                         active_only=True)
+        health = prod.cluster.health(index=joined)
+        initializing = health.get("initializing_shards", 0)
+        relocating = health.get("relocating_shards", 0)
+        unassigned = health.get("unassigned_shards", 0)
+        status = health.get("status")
+
+        recovery = prod.indices.recovery(index=joined, active_only=True)
         active = sum(len(v["shards"]) for v in recovery.values())
-        if active == 0 and not health.get("timed_out", False):
-            print(f"  recovery complete ({health['status']})")
-            return health["status"] in ("green", "yellow")
+
+        settled = (status in ("green", "yellow") and initializing == 0
+                   and relocating == 0 and unassigned == 0 and active == 0)
+
+        if settled:
+            # Require the quiet state to persist, then prove it by counting.
+            # One quiet poll can simply mean recovery has not begun.
+            stable_polls += 1
+            if stable_polls >= 2:
+                try:
+                    for index in indices:
+                        prod.indices.refresh(index=index)
+                        prod.count(index=index)
+                except Exception as exc:
+                    print(f"    … settled but not yet searchable ({type(exc).__name__})")
+                    stable_polls = 0
+                    time.sleep(POLL_SECONDS)
+                    continue
+                print(f"  recovery complete ({status}, all shards started)")
+                return True
+        else:
+            stable_polls = 0
+
         pct = [s.get("index", {}).get("size", {}).get("percent", "?")
                for v in recovery.values() for s in v["shards"]]
-        print(f"    … {active} shards recovering {pct}")
+        print(f"    … {status}: {active} recovering {pct}, "
+              f"init={initializing} reloc={relocating} unassigned={unassigned}")
         time.sleep(POLL_SECONDS)
 
 

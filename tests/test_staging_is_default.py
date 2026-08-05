@@ -109,5 +109,42 @@ class PromotionAtomicity(unittest.TestCase):
         self.assertIn("get_pipeline", verify)
 
 
+class RecoveryWaitIsNotFooledByAQuietStart(unittest.TestCase):
+    """`restore(wait_for_completion=False)` returns BEFORE recovery starts.
+
+    Treating "0 active recoveries" as "finished" exits that window instantly.
+    It did: the promotion reported "recovery complete (yellow)" with prod at
+    180M/361M places and 18M/72M toponyms, then aborted on a 503 from counting
+    shards that were not yet searchable.
+    """
+
+    def setUp(self):
+        from pathlib import Path
+        self.src = Path("processing/promote_to_production.py").read_text()
+        i = self.src.index("def wait_recovery(")
+        self.body = self.src[i:self.src.index("\ndef ", i + 10)]
+
+    def test_checks_shard_states_not_just_active_recoveries(self):
+        for field in ("initializing_shards", "relocating_shards",
+                      "unassigned_shards"):
+            self.assertIn(field, self.body,
+                          "shard state is the evidence; an empty recovery list "
+                          "is not")
+
+    def test_requires_the_quiet_state_to_persist(self):
+        self.assertIn("stable_polls", self.body,
+                      "one quiet poll can just mean recovery has not begun")
+
+    def test_proves_it_by_counting(self):
+        """The count is what the next stage does, so it is the real proof."""
+        self.assertIn("prod.count(index=index)", self.body)
+
+    def test_count_tolerates_transient_503(self):
+        i = self.src.index("def doc_count(")
+        body = self.src[i:self.src.index("\ndef ", i + 10)]
+        self.assertIn("attempts", body,
+                      "a fresh restore emits transient 503s; aborting the "
+                      "promotion on one leaves a half-verified restore")
+
 if __name__ == "__main__":
     unittest.main()
