@@ -216,12 +216,25 @@ def check_repr_point_self_resolution(
 
 
 def check_coastal_fidelity(geoms: dict[str, list]) -> tuple[list[str], dict]:
-    """HARD. Guards against a regression to coarse outlines."""
+    """HARD on the mean; REPORTS the tail, which the mean hides.
+
+    geoBoundaries gbOpen ADM0 aggregates whatever each national source
+    publishes, so detail varies across five orders of magnitude: NZ 2,668,713
+    vertices, JM 16. The mean (75,586) therefore flatters the corpus badly —
+    the median is 10,575, and 38 countries sit at or below BNDA-class detail
+    (BNDA averaged 232), among them Belgium at 46, Kenya at 65 and Argentina
+    at 365. For those countries the migration bought no precision at all.
+
+    Quoting the mean alone is how that went unnoticed, so the tail is reported
+    explicitly rather than summarised away.
+    """
     counts = {cc: sum(_vertex_count(g) for g in gs)
               for cc, gs in geoms.items()}
     if not counts:
         return ["no country geometries loaded at all"], {}
     mean = sum(counts.values()) / len(counts)
+    ordered = sorted(counts.values())
+    median = ordered[len(ordered) // 2]
     failures = []
     if mean < MIN_MEAN_VERTICES_PER_COUNTRY:
         failures.append(
@@ -231,6 +244,14 @@ def check_coastal_fidelity(geoms: dict[str, list]) -> tuple[list[str], dict]:
         "countries": len(counts),
         "total_vertices": sum(counts.values()),
         "mean_vertices": round(mean, 1),
+        "median_vertices": median,
+        "per_country": counts,
+        # BNDA averaged 232 vertices/country. Countries at or under that gained
+        # nothing from the migration and are the candidates for a future
+        # upgrade — recorded so the claim stays honest.
+        "no_better_than_bnda": sorted(
+            [(cc, n) for cc, n in counts.items() if n <= 232],
+            key=lambda t: t[1]),
         "least_detailed": sorted(counts.items(), key=lambda t: t[1])[:40],
         "under_1000_vertices": sorted(
             [(cc, n) for cc, n in counts.items() if n < 1000],
@@ -238,6 +259,47 @@ def check_coastal_fidelity(geoms: dict[str, list]) -> tuple[list[str], dict]:
         "most_detailed": sorted(counts.items(), key=lambda t: -t[1])[:10],
     }
     return failures, stats
+
+
+def check_against_baseline(
+    counts: dict[str, int],
+    baseline_path: str,
+    *,
+    drop_fraction: float = 0.5,
+) -> tuple[list[str], list[str]]:
+    """REVIEW. Diff per-country outline detail against a recorded release.
+
+    geoBoundaries rewrites country attribution and geometry between releases.
+    The LFS manifest pins WHICH release we hold; this pins what that release
+    was actually like, so an upgrade that silently coarsens a country — or
+    drops one — is visible instead of being absorbed into a moved mean.
+
+    Returns (regressions, additions_and_removals).
+    """
+    try:
+        with open(baseline_path, encoding="utf-8") as fh:
+            baseline = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return ([f"no readable baseline at {baseline_path} — "
+                 f"write one with --write-baseline"], [])
+
+    prev = baseline.get("per_country", {})
+    regressions, membership = [], []
+
+    for cc, was in sorted(prev.items()):
+        now = counts.get(cc)
+        if now is None:
+            membership.append(f"{cc}: present in baseline ({was:,} vertices), "
+                              f"ABSENT now")
+        elif was > 0 and now < was * drop_fraction:
+            regressions.append(
+                f"{cc}: {was:,} → {now:,} vertices "
+                f"({100 * (1 - now / was):.0f}% less detail)")
+
+    for cc in sorted(set(counts) - set(prev)):
+        membership.append(f"{cc}: NEW ({counts[cc]:,} vertices)")
+
+    return regressions, membership
 
 
 def check_outlying_territories(geoms: dict[str, list]) -> list[str]:
@@ -262,6 +324,12 @@ def main() -> int:
     ap.add_argument("--json-out", help="Write the full report as JSON")
     ap.add_argument("--skip-overlap", action="store_true",
                     help="Skip repr-point cross-resolution (the slow check)")
+    ap.add_argument("--baseline",
+                    help="Compare per-country outline detail against this "
+                         "recorded release baseline")
+    ap.add_argument("--write-baseline",
+                    help="Write the current per-country detail as a baseline "
+                         "for the next release to be compared against")
     args = ap.parse_args()
 
     print("Loading `un` primary-tier geometries…", flush=True)
@@ -295,10 +363,32 @@ def main() -> int:
     report["coastal_fidelity"] = {"failures": cf, "stats": stats}
     hard_failures += cf
     print(f"  {'FAIL' if cf else 'pass'}: mean "
-          f"{stats.get('mean_vertices', 0):,.0f} vertices/country "
+          f"{stats.get('mean_vertices', 0):,.0f}, median "
+          f"{stats.get('median_vertices', 0):,} vertices/country "
           f"across {stats.get('countries', 0)}")
     for line in cf:
         print(f"    {line}")
+    nb = stats.get("no_better_than_bnda", [])
+    print(f"  review: {len(nb)} countries at or below BNDA-class detail "
+          f"(<=232 vertices) — the migration bought them nothing:")
+    print(f"    {', '.join(f'{cc}({n})' for cc, n in nb[:25])}"
+          f"{' …' if len(nb) > 25 else ''}")
+
+    counts = stats.get("per_country", {})
+    if args.write_baseline:
+        with open(args.write_baseline, "w", encoding="utf-8") as fh:
+            json.dump({"per_country": counts}, fh, indent=2, sort_keys=True)
+        print(f"  baseline written to {args.write_baseline}")
+    if args.baseline:
+        print("\n[2b/4] release baseline — detail regressions (review)",
+              flush=True)
+        regs, membership = check_against_baseline(counts, args.baseline)
+        report["baseline_regressions"] = regs
+        report["baseline_membership"] = membership
+        print(f"  {len(regs)} regression(s), {len(membership)} membership "
+              f"change(s)")
+        for line in (regs + membership)[:30]:
+            print(f"    {line}")
 
     print("\n[3/4] outlying territories — single-part countries (review)",
           flush=True)

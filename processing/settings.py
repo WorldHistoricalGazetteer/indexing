@@ -802,17 +802,40 @@ AUTHORITIES = [
         'dataset_name': 'UN Countries',
         'namespace': 'un',  # United Nations countries and territories
         'redistributable': True,  # UN geodata — already committed as reference geometry
-        # Adopted 2026-07-14: UN Geospatial BNDA (Boundaries of Administrative
-        # units, "BNDA_simplified"), replacing Natural Earth. The UN's own
-        # authoritative, politically-neutral administrative boundaries, with
-        # native ISO 3166-1 alpha-2 codes for every country and dependent
-        # territory (no NE "-99" dropout). Committed as
+        # TWO-TIER SOURCE, adopted 2026-08-05 (place#173).
+        #
+        # PRIMARY — geoBoundaries gbOpen ADM0 (the "HPSC" high-precision single
+        # country files), CC-BY-4.0. 229 countries, averaging 73,663 vertices
+        # against BNDA's 232: BNDA proved far too coarse for point-in-polygon
+        # work, misattributing places near any real coastline or border.
+        # Pinned by repository commit plus a per-file sha256 for every release
+        # file, recorded in `adm0_lfs_manifest.json` by
+        # `processing.fetch_geoboundaries` — geoBoundaries rewrites country
+        # attribution between releases, so an unpinned fetch silently changes
+        # the corpus. Verify with `fetch_geoboundaries --verify-only`.
+        #
+        # FALLBACK — UN Geospatial BNDA (adopted 2026-07-14, replacing Natural
+        # Earth and its "-99" dropout), retained for the ~18 countries and
+        # territories geoBoundaries does not cover. Consulted ONLY where the
+        # primary returns no country at all; the tiers are never merged, since
+        # a 232-vertex outline beside a 73,663-vertex one along a shared border
+        # would make every border place ambiguous. Committed as
         # processing/data/un_bnda_countries.geojson.
-        'citation_text': 'Country and territory boundaries © United Nations, from UN Geospatial Data (BNDA), 2023.',
-        'license_spdx': 'custom-un-geodata',
-        'license_url': 'https://www.un.org/geospatial/',
-        'rights_holder': 'United Nations',
-        'source_url': 'https://geoportal.un.org/',
+        #
+        # NOTE (for SG): this makes `un` a MIXED-LICENCE dataset. license_spdx
+        # below records the primary, which covers 229 of ~247 entities; the
+        # fallback subset remains under the UN's own custom terms, named in
+        # citation_text. Splitting it into two registry entries is a licensing
+        # decision, deliberately not taken here.
+        'citation_text': (
+            'Country and territory boundaries from geoBoundaries (gbOpen ADM0), '
+            'CC-BY-4.0, © William & Mary geoLab; with boundaries for territories '
+            'not covered there © United Nations, from UN Geospatial Data (BNDA), 2023.'
+        ),
+        'license_spdx': 'CC-BY-4.0',
+        'license_url': 'https://creativecommons.org/licenses/by/4.0/',
+        'rights_holder': 'William & Mary geoLab (geoBoundaries); United Nations (BNDA fallback)',
+        'source_url': 'https://www.geoboundaries.org/',
         'contributors': [],
         'api_item': '',
         'citation': ('United Nations Geospatial Data (Geodata). The designations '
