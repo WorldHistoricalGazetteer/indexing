@@ -347,7 +347,9 @@ class _UnGeometryCache:
         cached = self._prepared_per_ccode.get(ccode)
         if cached is not None:
             return cached
-        pairs = [(prep(g), g) for g in self._load(ccode)]
+        # Built from geoms_for(), not _load(), so that geoms_for remains the
+        # single override point for subclasses and test doubles.
+        pairs = [(prep(g), g) for g in self.geoms_for(ccode)]
         self._prepared_per_ccode[ccode] = pairs
         return pairs
 
@@ -437,6 +439,10 @@ def _filter_by_containment(
         "LineString", "MultiLineString", "LinearRing")
     matches: list[tuple[str, float]] = []
 
+    # The place's own measure, in its own dimension. For any place that a
+    # country wholly covers, this IS the measure of the intersection.
+    place_measure = place_geom.length if is_linear else place_geom.area
+
     for ccode in candidate_ccodes:
         for prepared, un_geom in un_cache.prepared_for(ccode):
             try:
@@ -444,6 +450,27 @@ def _filter_by_containment(
                     continue
                 if is_point:
                     matches.append((ccode, 1.0))
+                    break
+                # Fast path: the overwhelmingly common case is a place that
+                # lies wholly inside one country. Then intersection(place) ==
+                # place, so the overlay computes a result we already have.
+                #
+                # This is not an approximation — the measure is exact — but it
+                # replaces a full polygon overlay against a 73,663-vertex
+                # geoBoundaries outline with a prepared predicate answered from
+                # the STRtree ``intersects`` has already built. The overlay is
+                # then reserved for genuine border-straddlers, which are rare.
+                #
+                # Overlay cost scales with the COUNTRY's vertex count, not the
+                # place's, so the BNDA→geoBoundaries precision upgrade (232 →
+                # 73,663 vertices/country) made it ~300x dearer. That is what
+                # collapsed `osm` from ~206,000 docs/min across its points to
+                # 4,223/min once it reached areal ways — a ~36 h projection.
+                if prepared.covers(place_geom):
+                    measure = place_measure
+                    if measure <= 0:
+                        continue
+                    matches.append((ccode, measure))
                     break
                 inter = un_geom.intersection(place_geom)
                 if inter.is_empty:

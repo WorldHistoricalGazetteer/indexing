@@ -34,6 +34,9 @@ class LinearFeaturesGetCodes(unittest.TestCase):
 
         class _Cache(_UnGeometryCache):
             def __init__(self, geoms):
+                # Initialise the base so the prepared-geometry cache exists;
+                # geoms_for is the override point that supplies the shapes.
+                super().__init__({})
                 self._geoms = geoms
 
             def geoms_for(self, ccode):
