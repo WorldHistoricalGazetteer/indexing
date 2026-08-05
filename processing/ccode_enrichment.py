@@ -361,7 +361,9 @@ def _filter_by_containment(
     (majority-overlap tie-break) but keep all matches — a region that
     legitimately straddles a border should attest to all its countries.
     """
-    is_point = place_geom.geom_type == "Point"
+    is_point = place_geom.geom_type in ("Point", "MultiPoint")
+    is_linear = place_geom.geom_type in (
+        "LineString", "MultiLineString", "LinearRing")
     matches: list[tuple[str, float]] = []
 
     for ccode in candidate_ccodes:
@@ -376,11 +378,25 @@ def _filter_by_containment(
                 inter = un_geom.intersection(place_geom)
                 if inter.is_empty:
                     continue
-                area = inter.area
-                if area <= 0:
-                    # Touch-only intersection (shared border, zero area).
+                # Measure the intersection in the dimension of the PLACE, not
+                # of the intersection.
+                #
+                # A line inside a polygon intersects as a *line*: zero area,
+                # non-zero length. Testing area alone discarded every linear
+                # feature as a border touch — 10,078,925 osm and 681,970 ohm
+                # ways had NO ccode at all (0.0%, against 94% for points and
+                # 96% for areas in the same namespaces).
+                #
+                # But "area or length" is not the fix: two polygons sharing a
+                # border also intersect as a line, and crediting that would
+                # give every place the countries next door. Keying off the
+                # place's own dimension separates the two — an areal place
+                # still needs areal overlap, a linear place needs linear
+                # overlap.
+                measure = inter.length if is_linear else inter.area
+                if measure <= 0:
                     continue
-                matches.append((ccode, area))
+                matches.append((ccode, measure))
                 break
             except Exception:
                 continue
