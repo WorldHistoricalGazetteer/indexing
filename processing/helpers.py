@@ -883,6 +883,37 @@ def _split_polygon_at_antimeridian(poly_geojson: dict) -> list[dict]:
         return [poly_geojson]
 
 
+def _cells_for_shape(h3_poly, res: int) -> list:
+    """Cells the shape OVERLAPS, not merely those whose centre it contains.
+
+    ``h3shape_to_cells`` emits a cell only when the cell's **centre** falls
+    inside the polygon. At the resolutions used for large geometries — res 3
+    hexagons are ~120 km across — a coastal city routinely sits in a cell whose
+    centre is offshore, so the cell is never emitted even though the polygon
+    plainly covers the city. Measured on Australia (6,627 parts, 1,655,696
+    vertices): Sydney had no covering cell at any resolution, while Cronulla
+    20 km away did. Rio, Buenos Aires, Honolulu and the Fujian coast behaved the
+    same way.
+
+    That matters twice over. ``h3_cover`` is the candidate prefilter for ccode
+    resolution, and it is also what ``gateway/spatial.py`` uses for **fuzzy
+    containment — the default search mode** — on both the region and each hit
+    (place#174). A missing cell is a silent false negative in both.
+
+    h3 4.x exposes the correct semantics directly. ``contain='overlap'`` returns
+    every cell the shape intersects. Guarded because the API is marked
+    experimental: if it is absent or changes, fall back to centre containment
+    rather than failing, since a narrow cover still beats none.
+    """
+    fn = getattr(_h3, "h3shape_to_cells_experimental", None)
+    if fn is not None:
+        try:
+            return fn(h3_poly, res, contain="overlap")
+        except Exception:
+            pass
+    return _h3.h3shape_to_cells(h3_poly, res)
+
+
 def _polyfill_adaptive(geojson_geom: dict) -> set[str]:
     """Polyfill a GeoJSON polygon with H3 cells at an adaptive resolution.
 
@@ -982,7 +1013,7 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
 
     for res in candidates:
         try:
-            cells = _h3.h3shape_to_cells(h3_poly, res)
+            cells = _cells_for_shape(h3_poly, res)
             if len(cells) <= H3_POLYFILL_MAX_CELLS:
                 return set(cells)
         except Exception:
