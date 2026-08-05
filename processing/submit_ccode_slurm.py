@@ -105,22 +105,34 @@ def _mark_un_skipped(manifest: dict, manifest_path: Path, *, dry_run: bool = Fal
     print(f"  marked {UN_NAMESPACE} {'/'.join(todo)} as skipped (it is the ccode source)")
 
 
-def _pending_namespaces(manifest: dict) -> list[str]:
+def _pending_namespaces(manifest: dict, *,
+                        h3_pending_ok: bool = False) -> list[str]:
     """Namespaces eligible for ccode enrichment.
 
     Eligibility:
     * must not be the UN namespace itself (UN docs supply ccodes directly);
     * must not be relations-only (e.g. LOC);
-    * must have a completed ``h3_merge`` stage;
+    * must have a completed ``h3_merge`` stage — **unless** ``h3_pending_ok``,
+      see below;
     * ``ccode`` stage status must be ``pending`` or ``failed`` (skip when
       already completed so resumes are idempotent).
+
+    ``h3_pending_ok`` exists because eligibility is evaluated when the array is
+    *submitted*, not when it *runs*. Chaining this array behind the H3 array
+    with ``--depend-on`` therefore froze the namespace list against a
+    part-finished H3 run: on 5 Aug 2026 it selected 11 of 27 namespaces — the
+    small ones whose H3 tasks had already completed in the few minutes since
+    submission — and silently omitted ``osm``, ``gn``, ``wd``, ``tgn`` and
+    ``ohm``, i.e. every namespace that mattered. The dependency implies the H3
+    stage will have run by then, so when one is given the H3 gate must not be
+    applied at selection time.
     """
     pending = []
     for ns, info in manifest.get("namespaces", {}).items():
         if ns == UN_NAMESPACE or is_relations_only(ns):
             continue
         stages = info.get("stages", {})
-        if stages.get("h3_merge") != "completed":
+        if not h3_pending_ok and stages.get("h3_merge") != "completed":
             continue
         ccode_status = stages.get("ccode", "pending")
         if ccode_status in ("pending", "failed"):
@@ -201,7 +213,18 @@ def submit(
     dry_run: bool = False,
 ) -> str | None:
     manifest = load_run_manifest(manifest_path)
-    namespaces = _pending_namespaces(manifest)
+    # A dependency means the H3 array will have completed before this one runs,
+    # so its stage status at SUBMIT time must not gate selection.
+    namespaces = _pending_namespaces(manifest, h3_pending_ok=bool(depend_on))
+    if depend_on:
+        not_yet = [ns for ns in namespaces
+                   if (manifest["namespaces"][ns].get("stages") or {}
+                       ).get("h3_merge") != "completed"]
+        if not_yet:
+            print(f"  --depend-on {depend_on}: including {len(not_yet)} "
+                  f"namespace(s) whose h3_merge is still pending "
+                  f"({', '.join(sorted(not_yet)[:8])}"
+                  f"{' …' if len(not_yet) > 8 else ''})")
 
     # `un` is excluded from the array because it supplies ccodes rather than
     # receiving them — but excluding it is not the same as recording it, and
