@@ -212,6 +212,7 @@ def submit(
     depend_on: str | None = None,
     dry_run: bool = False,
     only_namespaces: list[str] | None = None,
+    wall_hours: float | None = None,
 ) -> str | None:
     manifest = load_run_manifest(manifest_path)
     if only_namespaces:
@@ -254,6 +255,9 @@ def submit(
 
     wall_seconds_per_ns: dict[str, int] = {}
     for ns in namespaces:
+        if wall_hours:
+            wall_seconds_per_ns[ns] = int(wall_hours * 3600)
+            continue
         est = estimate_wall_time_seconds(ns, "ccode-enrichment")
         if est == 86_400 and ns in _LARGE_NAMESPACES:
             est = 2 * 86_400
@@ -322,6 +326,17 @@ def main() -> None:
             "nor failed, so a plain resubmit silently skips it."
         ),
     )
+    parser.add_argument(
+        "--wall-hours",
+        type=float,
+        help=(
+            "Override the estimated wall time (hours). estimate_wall_time_"
+            "seconds medians past runs, which is only predictive while the "
+            "INPUTS are unchanged: the BNDA->geoBoundaries move raised country "
+            "outlines from 232 to 73,663 vertices and made osm ~5x dearer, so "
+            "the inherited 66-minute median would kill it mid-run."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print sbatch but do not submit")
     args = parser.parse_args()
 
@@ -346,6 +361,7 @@ def main() -> None:
         dry_run=args.dry_run,
         only_namespaces=([n.strip() for n in args.namespaces.split(",")
                           if n.strip()] if args.namespaces else None),
+        wall_hours=args.wall_hours,
     )
 
 
