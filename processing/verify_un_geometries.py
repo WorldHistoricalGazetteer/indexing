@@ -64,6 +64,10 @@ MAX_PART_LON_SPAN_DEG = 180.0
 # without tripping on genuinely tiny states.
 MIN_MEAN_VERTICES_PER_COUNTRY = 5_000
 
+# Beyond this latitude a polygon is a polar cap, for which spanning every
+# longitude is correct rather than a wrap.
+POLAR_LAT_DEG = 85.0
+
 
 def _parts(geom) -> list:
     if geom is None or geom.is_empty:
@@ -104,17 +108,55 @@ def check_antimeridian(geoms: dict[str, list]) -> list[str]:
     The Natural Earth defect: a ring crossing ±180 written as a single part
     running the long way round, so its bbox covered most of the planet and its
     containment test answered yes almost everywhere.
+
+    A polar cap is exempt. Antarctica encircles the South Pole, so spanning
+    every longitude is not a wrap but the only way to draw it — the first run
+    of this suite flagged ``AQ`` at 360.0° and was wrong to.
     """
     failures = []
     for ccode, parts_of in sorted(geoms.items()):
         for geom in parts_of:
             for part in _parts(geom):
-                minx, _, maxx, _ = part.bounds
+                minx, miny, maxx, maxy = part.bounds
                 span = maxx - minx
-                if span > MAX_PART_LON_SPAN_DEG:
-                    failures.append(
-                        f"{ccode}: part spans {span:.1f}° of longitude "
-                        f"({minx:.3f} → {maxx:.3f}) — antimeridian wrap")
+                if span <= MAX_PART_LON_SPAN_DEG:
+                    continue
+                if miny <= -POLAR_LAT_DEG or maxy >= POLAR_LAT_DEG:
+                    continue  # polar cap: all longitudes converge
+                failures.append(
+                    f"{ccode}: part spans {span:.1f}° of longitude "
+                    f"({minx:.3f} → {maxx:.3f}) — antimeridian wrap")
+    return failures
+
+
+def check_hull_fallback(geoms: dict[str, list]) -> list[str]:
+    """HARD. No country may be standing in for itself with a convex hull.
+
+    ``_UnGeometryCache._load`` falls back to the staged ``hull`` when the geom
+    store has no entry for a ``geom_ref``. That fallback is silent, and a hull
+    is catastrophic for containment: Jamaica's hull swallows open sea, and a
+    hull of any country with a concave border claims its neighbours' land.
+
+    The first run of this suite reported JM at 16 vertices, BN 24, BA 40, BE
+    46, KE 65 — against a 75,586 mean. Vertex count alone is ambiguous (a
+    genuinely tiny state is legitimately simple), so this tests the actual
+    property: a real country outline is never equal to its own convex hull.
+    """
+    failures = []
+    for ccode, parts_of in sorted(geoms.items()):
+        for geom in parts_of:
+            if geom.is_empty or geom.area <= 0:
+                continue
+            hull = geom.convex_hull
+            if hull.area <= 0:
+                continue
+            # equals_exact with a generous tolerance: a hull round-tripped
+            # through GeoJSON and 6-dp rounding is not bit-identical.
+            if geom.equals(hull) or (geom.area / hull.area) > 0.9999:
+                failures.append(
+                    f"{ccode}: geometry IS its convex hull "
+                    f"({_vertex_count(geom)} vertices) — geom-store lookup "
+                    f"missed, silently substituting a hull")
     return failures
 
 
@@ -189,7 +231,10 @@ def check_coastal_fidelity(geoms: dict[str, list]) -> tuple[list[str], dict]:
         "countries": len(counts),
         "total_vertices": sum(counts.values()),
         "mean_vertices": round(mean, 1),
-        "least_detailed": sorted(counts.items(), key=lambda t: t[1])[:10],
+        "least_detailed": sorted(counts.items(), key=lambda t: t[1])[:40],
+        "under_1000_vertices": sorted(
+            [(cc, n) for cc, n in counts.items() if n < 1000],
+            key=lambda t: t[1]),
         "most_detailed": sorted(counts.items(), key=lambda t: -t[1])[:10],
     }
     return failures, stats
@@ -234,6 +279,15 @@ def main() -> int:
     hard_failures += am
     print(f"  {'FAIL: ' + str(len(am)) if am else 'pass'}")
     for line in am[:10]:
+        print(f"    {line}")
+
+    print("\n[1b/4] hull fallback — no country may be its own convex hull",
+          flush=True)
+    hulls = check_hull_fallback(geoms)
+    report["hull_fallback"] = hulls
+    hard_failures += hulls
+    print(f"  {'FAIL: ' + str(len(hulls)) if hulls else 'pass'}")
+    for line in hulls[:25]:
         print(f"    {line}")
 
     print("\n[2/4] coastal fidelity — outline detail floor", flush=True)
