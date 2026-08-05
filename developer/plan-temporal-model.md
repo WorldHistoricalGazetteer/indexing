@@ -764,6 +764,14 @@ inference with an existing checkpoint. Stage 1 checkpoints the DuckDB to `/vast`
 immediately after extraction, so the vocabulary the GPU needs exists hours
 before the job ends.
 
+**Outcome here: stage 1 hit its 12 h wall and was killed (TIMEOUT) in step 4.**
+That cost this rebuild nothing — the vocabulary was complete and checkpointed at
+12:02, and compute + index ran from a copy of it. But it means
+`toponyms-temporal-20260731T160000Z.db` carries **no `ipa` / `panphon_features`
+values**. Nothing in the search stack wants them; the next **Symphonym
+training** run does, and will need stage 1's steps 3–4 re-run (allow ~9 h, or
+raise the wall — 12 h was not enough for 27 namespaces).
+
 **What to do next time:** copy the post-extraction checkpoint, create the six
 indexes `optimize_db_after_load()` would have (they are the only thing the copy
 lacks, and the index stage's GROUP BY over 72.7 M rows joined to two 121 M-row
