@@ -134,16 +134,94 @@ def _normalize_lons(geom):
     return out
 
 
-def create_country_place_doc(feature):
-    """Build a ``un:`` place doc from one BNDA feature."""
+# ---------------------------------------------------------------------------
+# geoBoundaries geometry override (place#173)
+# ---------------------------------------------------------------------------
+#
+# BNDA remains the METADATA source — it carries iso2cd / iso3cd / m49_cd, the
+# English and French names, and 247 territories including the dependencies
+# geoBoundaries does not carve out. Only the POLYGON is replaced, and only
+# where geoBoundaries has one.
+#
+# Why: BNDA describes the entire world in 57,516 vertices (232 per country).
+# Land's End sits 9,668 m outside Great Britain and Cronulla 474 m outside
+# Australia, so coastal places resolve to no country at all. geoBoundaries
+# HPSC is 17,016,220 vertices (73,663 per country) and puts both inside.
+#
+# Territories geoBoundaries lacks keep their BNDA polygon, and the ccode
+# resolver consults BNDA as a strictly separate tier-2 fallback rather than
+# merging the two sets (processing/ccode_tiers.py) — merging outlines of such
+# different resolution along a shared border turns every disagreement into a
+# sliver.
+
+GEOBOUNDARIES_ADM0_GLOB = (
+    "releaseData/gbOpen/*/ADM0/geoBoundaries-*-ADM0.geojson"
+)
+
+
+def load_geoboundaries_geoms(repo_dir):
+    """Return {ISO3: geojson geometry} from a geoBoundaries checkout.
+
+    Returns an empty dict when the checkout is absent, so the extract falls
+    back to pure BNDA rather than failing — the switch should be a deliberate
+    act, not an accident of what happens to be on disk.
+    """
+    import json
+    from pathlib import Path
+
+    from shapely.geometry import mapping, shape
+    from shapely.ops import unary_union
+
+    base = Path(repo_dir)
+    if not base.exists():
+        print(f"  geoBoundaries checkout not found at {base}; using BNDA only")
+        return {}
+
+    out = {}
+    for path in sorted(base.glob(GEOBOUNDARIES_ADM0_GLOB)):
+        if "_simplified" in path.name:
+            continue
+        iso3 = path.parts[-3].upper()
+        try:
+            feats = json.loads(path.read_text()).get("features") or []
+            geoms = [shape(f["geometry"]) for f in feats if f.get("geometry")]
+            if not geoms:
+                continue
+            merged = unary_union(geoms) if len(geoms) > 1 else geoms[0]
+            if merged.is_empty:
+                continue
+            out[iso3] = mapping(merged)
+        except Exception as exc:
+            print(f"  !! {iso3}: {type(exc).__name__}: {exc}")
+    print(f"  geoBoundaries: loaded {len(out)} ADM0 geometries")
+    return out
+
+
+def create_country_place_doc(feature, geom_override=None):
+    """Build a ``un:`` place doc from one BNDA feature.
+
+    ``geom_override`` maps ISO3 -> geometry (see ``load_geoboundaries_geoms``).
+    Where it has an entry, that polygon replaces BNDA's; the identifiers,
+    names, relations and timespans still come from BNDA.
+    """
     props = feature.get('properties') or {}
     geometry = feature.get('geometry')
     if not geometry:
         return None
-    geometry = _normalize_lons(geometry)
 
     iso2 = (props.get('iso2cd') or '').strip()
     iso3 = (props.get('iso3cd') or '').strip()
+
+    boundary_source = 'bnda'
+    if geom_override and iso3 and iso3.upper() in geom_override:
+        geometry = geom_override[iso3.upper()]
+        boundary_source = 'geoboundaries'
+
+    # ALWAYS after the override: BNDA represents the US Aleutians with
+    # unwrapped longitudes up to 191, and any source may do the same. Without
+    # wrapping, geo_to_h3shape chokes on lon>180 and h3_cover collapses to a
+    # single centroid cell (USA had h3_cover=1).
+    geometry = _normalize_lons(geometry)
     m49 = (props.get('m49_cd') or '').strip()
     name = (props.get('nam_en') or props.get('lbl_en') or '').strip()
     name_fr = (props.get('name_fr') or '').strip()
@@ -167,6 +245,8 @@ def create_country_place_doc(feature):
                                  geom_key=f"{place_id}_0")
     if not geom_entry:
         return None
+
+    geom_entry['boundary_source'] = boundary_source
 
     doc = {
         'place_id': place_id,
@@ -248,6 +328,16 @@ def stage_un_countries(**_ignored):
 
     features = _load_bnda_features(UN_BNDA_COUNTRIES_FILE)
 
+    # geoBoundaries HPSC polygons where available (place#173). Off unless the
+    # checkout exists or WHG_GEOBOUNDARIES_DIR points at one, so the switch is
+    # deliberate. Fetch with: python -m processing.fetch_geoboundaries
+    import os
+    gb_dir = os.getenv(
+        "WHG_GEOBOUNDARIES_DIR",
+        "/vast/ishi/data/authorities/geoboundaries/repo",
+    )
+    geom_override = load_geoboundaries_geoms(gb_dir)
+
     # Group features by country (iso3) and MERGE their geometries: several
     # countries span multiple BNDA features — mainland + offshore parts (Spain +
     # Canaries, Portugal + Madeira + Azores, Ecuador + Galápagos, USA's two
@@ -257,7 +347,8 @@ def stage_un_countries(**_ignored):
     grouped = _group_features_by_country(features)
     print(f"\n{len(features)} features -> {len(grouped)} countries; staging...\n")
 
-    stats = {'places_staged': 0, 'no_iso': 0, 'errors': 0, 'multipart': 0}
+    stats = {'places_staged': 0, 'no_iso': 0, 'errors': 0, 'multipart': 0,
+             'from_geoboundaries': 0, 'from_bnda': 0}
 
     with GeomStoreWriter(GEOM_STORE_STAGING_DIR, "un") as gsw:
         configure_module_writer(gsw)
@@ -266,12 +357,15 @@ def stage_un_countries(**_ignored):
                 if len(feats) > 1:
                     stats['multipart'] += 1
                 feature = _merge_country_features(feats)
-                doc = create_country_place_doc(feature)
+                doc = create_country_place_doc(feature, geom_override)
                 if doc is None:
                     stats['errors'] += 1
                     continue
                 if not doc.get('ccodes'):
                     stats['no_iso'] += 1
+                src = (doc.get('geometries') or [{}])[0].get('boundary_source')
+                stats['from_geoboundaries' if src == 'geoboundaries'
+                      else 'from_bnda'] += 1
                 write_staged_place_doc(namespace='un', doc=doc)
                 stats['places_staged'] += 1
                 if (i + 1) % 50 == 0:
