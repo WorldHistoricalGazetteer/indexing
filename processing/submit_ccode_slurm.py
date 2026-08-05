@@ -211,12 +211,24 @@ def submit(
     manifest_path: Path,
     depend_on: str | None = None,
     dry_run: bool = False,
+    only_namespaces: list[str] | None = None,
 ) -> str | None:
     manifest = load_run_manifest(manifest_path)
-    # A dependency means the H3 array will have completed before this one runs,
-    # so its stage status at SUBMIT time must not gate selection.
-    namespaces = _pending_namespaces(manifest, h3_pending_ok=bool(depend_on))
-    if depend_on:
+    if only_namespaces:
+        namespaces = list(only_namespaces)
+        known = set(manifest.get("namespaces", {}))
+        unknown = [ns for ns in namespaces if ns not in known]
+        if unknown:
+            print(f"Not in this run manifest: {', '.join(unknown)}",
+                  file=sys.stderr)
+            sys.exit(1)
+        print(f"Explicit namespace override: {', '.join(namespaces)}")
+    else:
+        # A dependency means the H3 array will have completed before this one
+        # runs, so its stage status at SUBMIT time must not gate selection.
+        namespaces = _pending_namespaces(manifest,
+                                         h3_pending_ok=bool(depend_on))
+    if depend_on and not only_namespaces:
         not_yet = [ns for ns in namespaces
                    if (manifest["namespaces"][ns].get("stages") or {}
                        ).get("h3_merge") != "completed"]
@@ -301,6 +313,15 @@ def main() -> None:
         "--depend-on",
         help="Slurm job ID this array should wait on (afterok)",
     )
+    parser.add_argument(
+        "--namespaces",
+        help=(
+            "Comma-separated namespaces to submit, overriding eligibility. "
+            "Needed after a task is cancelled: its ccode stage is left at "
+            "'running', which _pending_namespaces treats as neither pending "
+            "nor failed, so a plain resubmit silently skips it."
+        ),
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print sbatch but do not submit")
     args = parser.parse_args()
 
@@ -323,6 +344,8 @@ def main() -> None:
         manifest_path=manifest_path,
         depend_on=args.depend_on,
         dry_run=args.dry_run,
+        only_namespaces=([n.strip() for n in args.namespaces.split(",")
+                          if n.strip()] if args.namespaces else None),
     )
 
 
