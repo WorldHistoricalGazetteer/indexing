@@ -297,8 +297,17 @@ def run_compute(args):
                     # int8 Parquet schema rejects (e.g. 245 → "Value 245 too
                     # large"). Reinterpret as int8 to round-trip the sign.
                     emb_int8 = np.frombuffer(emb_bytes, dtype=np.int8).tolist()
+                    # The key MUST be 'doc_id' — that is the output schema's
+                    # field name, and the column the index stage joins on.
+                    # ``pa.Table.from_pylist`` with an explicit schema does not
+                    # reject unknown keys: it silently writes null for every
+                    # field the dict does not supply. Writing 'toponym_id' here
+                    # produced 67,878,740 rows with a null doc_id — every cache
+                    # hit — which the index stage then could not join, leaving
+                    # 93% of the toponyms index without an embedding while
+                    # compute, index and bulk all reported success.
                     hit_batch.append({
-                        'toponym_id': toponym_id, 'embedding': emb_int8,
+                        'doc_id': toponym_id, 'embedding': emb_int8,
                     })
                 else:
                     miss_batch.append({
