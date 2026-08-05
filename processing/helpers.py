@@ -944,6 +944,24 @@ def _polyfill_one_polygon(geojson_geom: dict) -> set[str]:
         try:
             tol = _H3_SIMPLIFY_TOL_DEG.get(start_res, 0.04)
             simplified = shape(geojson_geom).simplify(tol, preserve_topology=True)
+            # Douglas–Peucker moves the boundary INWARD by up to ``tol`` — at
+            # res 4 that is 0.10° ≈ 11 km, at res 3 0.25° ≈ 28 km. For a
+            # country that silently deletes coastal cells, and an h3_cover is
+            # a PREFILTER: a cell that is missing loses its candidate
+            # permanently, because the precise Shapely refine never sees the
+            # place. A cell that is spurious costs only that refine, which
+            # rejects it.
+            #
+            # So the error must point outward. Dilating the simplified shape by
+            # the same tolerance guarantees it contains the original, hence
+            # cover(simplified ⊕ tol) ⊇ cover(original).
+            #
+            # Measured cost of not doing this: the UN prefilter held 77,279
+            # res-4 cells against ~84,000 needed for global land, and 外高村
+            # (118.690158, 24.67126) sat *inside* China's polygon yet was never
+            # offered China as a candidate — ~615 k osm places lost this way.
+            if not simplified.is_empty:
+                simplified = simplified.buffer(tol)
             if not simplified.is_empty:
                 geojson_geom = json.loads(json.dumps(simplified.__geo_interface__))
         except Exception:
