@@ -70,6 +70,24 @@ _QOS_TIERS: list[tuple[int, str]] = [
 
 _LARGE_NAMESPACES = {"osm", "ohm", "gn", "wd"}
 
+# Floor for any ccode task, regardless of what the history says.
+#
+# estimate_wall_time_seconds medians the last 5 completed runs, which is only
+# predictive while the INPUTS are unchanged. The BNDA→geoBoundaries move
+# (232 → 73,663 vertices per country) invalidated every stored ccode runtime
+# at a stroke, and the stale median cost two tasks on 5 Aug 2026: the array
+# was given 01:20:00, and `clio` and `ohm` were killed at the wall with 9,407
+# of 15,690 and 580,085 of ~905,000 documents written.
+#
+# Cost per document depends on geometry complexity, not just document count —
+# `clio` is only 15,690 places but its continent-scale polities ran at 198
+# docs/min, while `osm` points ran at 460,000 — so no doc-count-derived floor
+# is safe either. Slurm wall time is a ceiling rather than a reservation, so
+# over-asking costs only backfill priority, and 12 h still sits inside the
+# shortest QOS tier (htc-htc-s, ≤ 1 day). Buying the whole tier is cheaper
+# than losing a run.
+_MIN_CCODE_WALL_SECONDS = 12 * 3600
+
 
 def _select_qos(wall_seconds: int) -> tuple[str, int]:
     for cap, qos in _QOS_TIERS:
@@ -261,6 +279,11 @@ def submit(
         est = estimate_wall_time_seconds(ns, "ccode-enrichment")
         if est == 86_400 and ns in _LARGE_NAMESPACES:
             est = 2 * 86_400
+        if est < _MIN_CCODE_WALL_SECONDS:
+            print(f"  {ns}: history suggests {_seconds_to_slurm_time(est)}; "
+                  f"raising to the "
+                  f"{_seconds_to_slurm_time(_MIN_CCODE_WALL_SECONDS)} floor")
+            est = _MIN_CCODE_WALL_SECONDS
         wall_seconds_per_ns[ns] = est
 
     work_dir = Path(STAGED_BASE_DIR) / "runs" / run_id
