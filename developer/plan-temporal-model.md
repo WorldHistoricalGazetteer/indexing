@@ -772,6 +772,50 @@ finishes. Doing that here recovered ~5 h. Stage 1 is still worth completing —
 the next training run wants those columns — it simply should not be on the
 critical path.
 
+### Fault 11 — every Symphonym cache hit was written with a null `doc_id`
+
+**The most consequential bug of the campaign, and it is in long-standing
+committed code, not in this run's operations.**
+
+`update_es compute` writes cache hits and cache misses through the *same*
+Parquet writer and schema. The schema's field is `doc_id`. The miss path wrote
+`{'doc_id': …}`; the hit path wrote `{'toponym_id': …}`. And
+`pa.Table.from_pylist(rows, schema=…)` **does not reject unknown keys** — it
+silently writes null for every field the dict omits.
+
+```
+rows                72,703,552
+doc_id non-null      4,824,812   <- exactly the cache-MISS count
+embedding non-null  72,703,552   <- every embedding present, none joinable
+```
+
+The toponyms index built out with **4,824,812 embeddings instead of
+72,703,552** — 93 % missing — while `compute` logged *"72,703,552 embeddings
+saved"*, the bulk load logged *"Success: 72,703,552, Errors: 0"*, and the job
+exited 0. Three stages, three success reports, one silently broken index.
+
+**This is almost certainly the cause of `postbarrier-20260502`'s recorded
+"embeddings missing for ~25 % of toponyms"** — same mechanism, the proportion
+set by how warm the cache happened to be. It has been latent since the cache
+was introduced.
+
+Fixed in **690ae1e**; `tests/test_embeddings_parquet_keys.py` asserts both write
+paths use the schema's field name and pins the pyarrow behaviour the bug relied
+on, so the guard's purpose stays legible.
+
+**The check that catches it — the log line cannot:**
+
+```sql
+SELECT COUNT(*), COUNT(doc_id), COUNT(embedding) FROM read_parquet('<emb>.parquet')
+```
+
+all three must be equal; then in ES, count documents with `exists: embedding`
+against the vocabulary size. The compute sbatch now runs the first check itself
+and **exits non-zero** rather than reporting success.
+
+Re-running compute after the fix took **22 minutes**, not 2 h 51 m: the misses
+from the broken run were already in the cache, so it was 100 % hits.
+
 ### State of this run, 3–4 August 2026
 
 - **places index built in staging**: 51,187,900 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
