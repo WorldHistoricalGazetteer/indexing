@@ -180,6 +180,33 @@ def _normalise_cells_to_resolution(
     return out
 
 
+def split_by_tier(
+    un_records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Partition `un` records into (primary, fallback) by ``boundary_source``.
+
+    The primary source (geoBoundaries HPSC) is ADM0 at sovereign-state level and
+    does not carve out twelve ISO territories — ``HK``, ``SJ``, ``TF``, ``GS``,
+    ``JE``, ``MO``, ``PM``, ``MF``, ``SX``, ``CC``, ``BV``, ``HM``, together
+    32,703 places. Those keep their BNDA polygon and form tier 2.
+
+    The tiers must NOT be merged into one polygon set. A 232-vertex BNDA outline
+    beside a 73,663-vertex geoBoundaries one along a shared border turns every
+    disagreement into a sliver where a place is claimed by both countries or by
+    neither. Consulting tier 2 only when tier 1 returned nothing makes that
+    impossible.
+
+    Records with no ``boundary_source`` (a pre-place#173 extract) all count as
+    primary, which reproduces the previous single-tier behaviour exactly.
+    """
+    primary, fallback = [], []
+    for doc in un_records:
+        sources = {(g or {}).get("boundary_source")
+                   for g in (doc.get("geometries") or [])}
+        (fallback if sources == {"bnda"} else primary).append(doc)
+    return primary, fallback
+
+
 def build_un_prefilter(
     un_records: list[dict[str, Any]],
     *,
