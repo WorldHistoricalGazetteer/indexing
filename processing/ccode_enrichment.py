@@ -45,6 +45,7 @@ from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.prepared import prep
 
+from processing.ccode_tiers import apply_overlay, load_disputed_claims
 from processing.geom_store import GeomStoreReader
 from processing.helpers import geojson_to_shapely
 from processing.settings import (
@@ -370,6 +371,27 @@ def _extract_place_geometry(doc: dict[str, Any], reader: GeomStoreReader | None)
         if rp:
             try:
                 return Point(float(rp["lon"]), float(rp["lat"]))
+            except (KeyError, TypeError, ValueError):
+                continue
+    return None
+
+
+def _repr_point_of(doc: dict[str, Any]) -> tuple[float, float] | None:
+    """(lon, lat) of the doc's first usable representative point.
+
+    Used only by the disputed-claims overlay, which asks "is this place inside
+    a contested territory?" — a point test, not a shape test. A place whose
+    geometry straddles a disputed boundary is attested by where it is
+    represented, which is the same basis the rest of the pipeline uses for
+    ``h3_centroid``.
+    """
+    for geom in (doc.get("geometries") or []):
+        if not isinstance(geom, dict):
+            continue
+        rp = geom.get("repr_point")
+        if isinstance(rp, dict):
+            try:
+                return float(rp["lon"]), float(rp["lat"])
             except (KeyError, TypeError, ValueError):
                 continue
     return None
@@ -812,8 +834,34 @@ def run_ccode_enrichment(
     started_at = datetime.now(timezone.utc)
 
     un_records = _load_un_records()
-    cell_to_ccodes, ccode_to_geoms = build_un_prefilter(un_records)
+
+    # Tier 1 (geoBoundaries HPSC) and tier 2 (the territories it does not carve
+    # out, which keep their BNDA polygon) are built as SEPARATE candidate sets
+    # and consulted in order. Merging them would put a 232-vertex BNDA outline
+    # beside a 73,663-vertex geoBoundaries one along a shared border, and every
+    # disagreement between them becomes a sliver where a place is claimed by
+    # both countries or by neither. Fallback-on-empty makes that impossible.
+    primary_records, fallback_records = split_by_tier(un_records)
+    cell_to_ccodes, ccode_to_geoms = build_un_prefilter(primary_records)
     un_cache = _UnGeometryCache(ccode_to_geoms)
+
+    fb_cell_to_ccodes: dict[str, set[str]] = {}
+    fb_cache: _UnGeometryCache | None = None
+    if fallback_records:
+        fb_cell_to_ccodes, fb_ccode_to_geoms = build_un_prefilter(fallback_records)
+        fb_cache = _UnGeometryCache(fb_ccode_to_geoms)
+    print(f"  tiers: primary={len(primary_records)} "
+          f"fallback={len(fallback_records)} "
+          f"(prefilter cells {len(cell_to_ccodes):,} / {len(fb_cell_to_ccodes):,})")
+
+    # Disputed-territory overlay, applied IN ADDITION to tier 1 so that where a
+    # source picks a single claimant all claimants are still attested. Without
+    # it Western Sahara's 4,387 places silently become Moroccan, because the
+    # primary DOES answer and no fallback fires.
+    territories = load_disputed_claims()
+    if territories:
+        print(f"  disputed-claims overlay: {len(territories)} territory/ies "
+              f"({', '.join(t.get('name', '?') for t in territories)})")
 
     try:
         place_reader: GeomStoreReader | None = GeomStoreReader(GEOM_STORE_DIR)
@@ -829,6 +877,8 @@ def run_ccode_enrichment(
     docs_no_geom = 0
     docs_no_candidate = 0
     docs_no_match = 0
+    docs_from_fallback = 0
+    docs_overlay_applied = 0
 
     with out_path.open("w", encoding="utf-8") as fh:
         for doc in _iter_staged_docs(namespace):
@@ -843,7 +893,9 @@ def run_ccode_enrichment(
                 continue
 
             candidates = candidate_ccodes_for_cells(cells, cell_to_ccodes)
-            if not candidates:
+            fb_candidates = (candidate_ccodes_for_cells(cells, fb_cell_to_ccodes)
+                             if fb_cell_to_ccodes else [])
+            if not candidates and not fb_candidates:
                 docs_no_candidate += 1
                 continue
 
@@ -852,7 +904,28 @@ def run_ccode_enrichment(
                 docs_no_geom += 1
                 continue
 
-            ccodes = _filter_by_containment(place_geom, candidates, un_cache)
+            # Tier 1 first; tier 2 ONLY when tier 1 answers nothing.
+            ccodes = (_filter_by_containment(place_geom, candidates, un_cache)
+                      if candidates else [])
+            tier = "primary" if ccodes else "none"
+            if not ccodes and fb_candidates and fb_cache is not None:
+                ccodes = _filter_by_containment(place_geom, fb_candidates,
+                                                fb_cache)
+                if ccodes:
+                    tier = "fallback"
+                    docs_from_fallback += 1
+
+            # Additive: never removes a code the source returned. Asserting a
+            # source is wrong about who ADMINISTERS a territory is a far larger
+            # claim than asserting a territory is CONTESTED.
+            if territories:
+                rp = _repr_point_of(doc)
+                if rp is not None:
+                    before = list(ccodes)
+                    ccodes = apply_overlay(ccodes, rp[0], rp[1], territories)
+                    if ccodes != before:
+                        docs_overlay_applied += 1
+
             if not ccodes:
                 docs_no_match += 1
                 continue
@@ -878,7 +951,9 @@ def run_ccode_enrichment(
         "un_records": len(un_records),
         "un_prefilter_cells": len(cell_to_ccodes),
         "wall_seconds": round(wall_seconds, 1),
-    }
+            "docs_from_fallback": docs_from_fallback,
+        "docs_overlay_applied": docs_overlay_applied,
+}
 
     try:
         record_script_wall_time(
