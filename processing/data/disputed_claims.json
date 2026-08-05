@@ -1,0 +1,109 @@
+{
+  "_comment": [
+    "Disputed-territory overlay for ccode resolution (place#173).",
+    "",
+    "Applied IN ADDITION to the primary boundary source, never instead of it:",
+    "where a place falls inside one of these territories, every claimant listed",
+    "is attested alongside whatever the source returned. The overlay is",
+    "deliberately additive — asserting that a source is WRONG about who",
+    "administers a territory is a far larger claim than asserting that more",
+    "than one party claims it, and WHG should not be making the former.",
+    "",
+    "This replaces ccode_enrichment.BNDA_DISPUTED_CLAIMANTS, a hardcoded table",
+    "of four disputes which omitted Crimea, the Golan, Taiwan, Northern Cyprus,",
+    "Abkhazia, South Ossetia and the Falklands entirely.",
+    "",
+    "Only territories with an EXPLICIT decision recorded below are included.",
+    "Disputes the primary source already represents by overlapping claims need",
+    "no entry: geoBoundaries HPSC returns both claimants for Gilgit-Baltistan,",
+    "Aksai Chin, Arunachal Pradesh and Taiwan without help.",
+    "",
+    "Geometry is omitted where a polygon has not yet been sourced; such entries",
+    "are inert until one is added. They are listed so the outstanding decision",
+    "is visible rather than forgotten."
+  ],
+  "schema": {
+    "name": "human-readable territory name",
+    "claimants": "ISO 3166-1 alpha-2 codes of ALL claimants, to be attested",
+    "primary_returns": "what the primary source gives today, for comparison",
+    "decided": "ISO date of the decision, and by whom",
+    "evidence": "why this entry exists",
+    "bbox": "[minlon, minlat, maxlon, maxlat] cheap reject before geometry",
+    "geometry": "GeoJSON geometry of the disputed territory; null = inert"
+  },
+  "territories": [
+    {
+      "name": "Western Sahara",
+      "claimants": ["MA", "EH"],
+      "primary_returns": ["MA"],
+      "decided": "2026-08-05, SG",
+      "evidence": [
+        "geoBoundaries gbOpen places Laayoune (-13.203, 27.154) inside MAR,",
+        "so 4,387 places would silently become Moroccan and no fallback would",
+        "fire, because the primary DID return an answer.",
+        "EH is a distinct ISO 3166-1 code precisely because sovereignty is",
+        "contested (Morocco vs SADR/Polisario). The `un` citation carries the",
+        "UN designation disclaimer verbatim — 'do not imply the expression of",
+        "any opinion whatsoever concerning the legal status of any country or",
+        "territory' — which asserting Moroccan sovereignty by omission would",
+        "contradict.",
+        "Chosen as option 3 of three: return BOTH, consistent with how Kashmir",
+        "and the Kurils are already treated, and requiring no adjudication."
+      ],
+      "bbox": [-17.11, 20.77, -8.67, 27.67],
+      "geometry": null,
+      "geometry_source": "TODO: take the EH polygon from BNDA (un_bnda_countries.geojson), which already carries it as its own ISO territory"
+    }
+  ],
+  "undecided": [
+    {
+      "name": "Kashmir (Indian-administered, Srinagar)",
+      "contested": ["IN", "PK"],
+      "today_bnda": ["IN", "PK"],
+      "after_switch": ["IN"],
+      "note": "NARROWS from two claimants to one. Strongest candidate for an overlay entry alongside EH, since it runs directly against the stated all-claims policy. geoBoundaries DOES return both for Gilgit-Baltistan, so the inconsistency is within the source itself."
+    },
+    {
+      "name": "Golan Heights",
+      "contested": ["IL", "SY"],
+      "today_bnda": ["SY"],
+      "after_switch": ["IL"],
+      "note": "CHANGES claimant. geoBoundaries follows de facto administration here, BNDA follows de jure."
+    },
+    {
+      "name": "Kuril Islands",
+      "contested": ["RU", "JP"],
+      "today_bnda": [],
+      "after_switch": ["RU"],
+      "note": "Gains a code (BNDA returns nothing at all), but omits the Japanese claim."
+    },
+    {
+      "name": "Crimea",
+      "contested": ["RU", "UA"],
+      "today_bnda": ["UA"],
+      "after_switch": ["UA"],
+      "note": "Unchanged; both sources follow de jure. Listed for completeness."
+    },
+    {
+      "name": "Northern Cyprus",
+      "contested": ["CY", "TR"],
+      "today_bnda": ["CY"],
+      "after_switch": ["CY"],
+      "note": "Unchanged."
+    },
+    {
+      "name": "Abkhazia and South Ossetia",
+      "contested": ["GE", "RU"],
+      "today_bnda": ["GE"],
+      "after_switch": ["GE"],
+      "note": "Unchanged."
+    },
+    {
+      "name": "Falkland Islands / Islas Malvinas",
+      "contested": ["FK", "AR"],
+      "today_bnda": ["FK"],
+      "after_switch": ["FK"],
+      "note": "Unchanged; both give the territory its own code."
+    }
+  ]
+}
