@@ -289,7 +289,15 @@ class _UnGeometryCache:
     def __init__(self, ccode_to_geoms: dict[str, list[dict[str, Any]]]):
         self._ccode_to_geoms = ccode_to_geoms
         self._reader: GeomStoreReader | None = None
-        self._prepared_per_ccode: dict[str, list[BaseGeometry]] = {}
+        self._geoms_per_ccode: dict[str, list[BaseGeometry]] = {}
+        # Shapely PreparedGeometry per country, built ONCE. ``prep()`` builds an
+        # STRtree over the polygon: with BNDA's 232-vertex outlines that was
+        # nearly free, but geoBoundaries HPSC averages 73,663 vertices per
+        # country (Australia has 1,655,696), so rebuilding it per place per
+        # candidate is catastrophic. It is what stalled `clio` — continent-scale
+        # polities intersecting dozens of countries — and made `osm` decelerate
+        # from 1.8 MB/min to 0.67 MB/min, a ~13 h projection.
+        self._prepared_per_ccode: dict[str, list] = {}
 
     def _ensure_reader(self) -> GeomStoreReader | None:
         if self._reader is not None:
@@ -301,7 +309,7 @@ class _UnGeometryCache:
         return self._reader
 
     def _load(self, ccode: str) -> list[BaseGeometry]:
-        cached = self._prepared_per_ccode.get(ccode)
+        cached = self._geoms_per_ccode.get(ccode)
         if cached is not None:
             return cached
 
@@ -323,11 +331,25 @@ class _UnGeometryCache:
             if shp is not None and not shp.is_empty:
                 geoms.append(shp)
 
-        self._prepared_per_ccode[ccode] = geoms
+        self._geoms_per_ccode[ccode] = geoms
         return geoms
 
     def geoms_for(self, ccode: str) -> list[BaseGeometry]:
         return self._load(ccode)
+
+    def prepared_for(self, ccode: str) -> list:
+        """(prepared, raw) pairs for a country, prepared built once and reused.
+
+        The raw geometry is returned alongside because ``PreparedGeometry``
+        supports only predicates — ``intersection()`` for the overlap measure
+        still needs the original.
+        """
+        cached = self._prepared_per_ccode.get(ccode)
+        if cached is not None:
+            return cached
+        pairs = [(prep(g), g) for g in self._load(ccode)]
+        self._prepared_per_ccode[ccode] = pairs
+        return pairs
 
 
 # ---------------------------------------------------------------------------
@@ -416,9 +438,8 @@ def _filter_by_containment(
     matches: list[tuple[str, float]] = []
 
     for ccode in candidate_ccodes:
-        for un_geom in un_cache.geoms_for(ccode):
+        for prepared, un_geom in un_cache.prepared_for(ccode):
             try:
-                prepared = prep(un_geom)
                 if not prepared.intersects(place_geom):
                     continue
                 if is_point:
