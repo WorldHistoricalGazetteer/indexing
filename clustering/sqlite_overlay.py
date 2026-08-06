@@ -28,7 +28,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Any, Iterable, Iterator
 
 from processing.staging_contract import (
     HARD_LINK_REQUIRED_FIELDS,
@@ -355,3 +355,92 @@ def finalise_local(local_db: Path, *, optimize: bool = True) -> int:
         return int(count)
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Local publish — shared filesystem instead of ssh (place#164 Phase 7)
+# ---------------------------------------------------------------------------
+
+
+def publish_local(
+    *,
+    local_db: Path,
+    target_dir: str | Path,
+    target_filename: str = "hard_links.sqlite",
+    keep_backup: bool = True,
+) -> dict[str, str]:
+    """Publish a freshly built overlay by renaming it on a shared filesystem.
+
+    ``ship_to_pitt`` rsyncs over ssh, which cannot work from a CRC compute
+    node: the Pitt VM is firewalled from them on **both** 9200 and 22 (verified
+    6 Aug 2026 — ``curl`` exit 28, ``ssh`` connect timeout). It is also
+    unnecessary. ``/ix1`` is mounted on the compute nodes *and* on the VM, and
+    ``PITT_HARDLINK_DIR`` (``/ix1/ishi/hardlinks``) is where the gateway reads
+    its batch overlay from. The "ship" is therefore a rename within one
+    filesystem, which is exactly what the remote ``mv`` was doing anyway.
+
+    Preserves ship_to_pitt's atomicity guarantee: the copy lands on a hidden
+    ``.incoming`` path first, so a partial write can never replace the live
+    file, and the final ``os.replace`` is a single rename within the same
+    filesystem. The gateway's open descriptors against the previous inode stay
+    valid until it re-opens.
+
+    Returns ``{"published_path", "incoming_path", "backup_path"}``.
+    """
+    local_db = Path(local_db)
+    if not local_db.exists():
+        raise FileNotFoundError(f"local_db not found: {local_db}")
+
+    target_dir = Path(target_dir)
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / target_filename
+    incoming = target_dir / f".{target_filename}.incoming"
+
+    # Copy rather than rename the source: the run-scoped build is worth keeping
+    # so a bad publish can be re-done without re-harvesting.
+    shutil.copyfile(local_db, incoming)
+
+    backup = ""
+    if keep_backup and target.exists():
+        backup_path = target_dir / f"{target_filename}.previous"
+        os.replace(target, backup_path)
+        backup = str(backup_path)
+
+    os.replace(incoming, target)
+
+    return {
+        "published_path": str(target),
+        "incoming_path": str(incoming),
+        "backup_path": backup,
+    }
+
+
+def prune_live_delta_local(
+    *,
+    live_db_path: str | Path,
+    cutoff_iso: str,
+) -> dict[str, Any]:
+    """Prune the gateway live-delta on a locally-mounted path.
+
+    Same semantics as ``prune_live_delta``, without the ssh hop: the live delta
+    lives under ``IX3_BASE`` (``/vast/ishi/hardlinks``), which compute nodes
+    mount. Rows with ``asserted_at > cutoff`` or NULL are left alone — they may
+    have been created *during* this build and are not guaranteed to be in the
+    freshly published overlay, so pruning them would risk a lost write.
+    """
+    live = Path(live_db_path)
+    if not live.exists():
+        return {"deleted": 0, "cutoff": cutoff_iso, "db": str(live),
+                "skipped": "live delta not present"}
+
+    conn = sqlite3.connect(str(live), timeout=30, isolation_level=None)
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        deleted = conn.execute(
+            "DELETE FROM hard_link_assertions "
+            "WHERE asserted_at IS NOT NULL AND asserted_at <= ?",
+            (cutoff_iso,),
+        ).rowcount
+    finally:
+        conn.close()
+    return {"deleted": deleted, "cutoff": cutoff_iso, "db": str(live)}
