@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import shutil
 import subprocess
@@ -420,7 +421,18 @@ def generate_tileset(
             '--no-tile-size-limit',
         ]
     else:
-        cmd += ['--coalesce-densest-as-needed']
+        # --coalesce-densest-as-needed MERGES features that can be combined.
+        # OHM's polygons each carry distinct name / place_id / date attributes,
+        # so there is almost nothing to merge and the strategy runs out of room:
+        # its low-zoom tiles wanted 2.4-3.5 MB against a 500 KB ceiling. What
+        # happened then was whole-tile loss, not thinning (place#160).
+        #
+        # --drop-densest-as-needed sheds FEATURES until the tile fits, so an
+        # over-large tile degrades to "fewer polities visible when zoomed out"
+        # instead of "blank continent". It only engages on tiles that are over
+        # the limit — precisely the tiles whose current outcome is worse — so
+        # it is a no-op everywhere else.
+        cmd += ['--coalesce-densest-as-needed', '--drop-densest-as-needed']
     if cluster_points:
         # Cluster point features at zooms <= 8 within 10 px. Tippecanoe
         # auto-attaches a ``point_count`` attribute to each surviving
@@ -1342,6 +1354,18 @@ def _stream_bucket_banded(
     return band_paths, {name: dict(c) for name, c in band_counts.items()}
 
 
+# tile-join announces a dropped tile on stderr and exits 0 regardless. The
+# wording has varied across tippecanoe releases, so match on the two things
+# every variant has: a z/x/y triple and a "skip" verb.
+_TILE_SKIP_RE = re.compile(r"\b\d+/\d+/\d+\b.*\bskip", re.IGNORECASE)
+
+
+def _tile_join_skips(stderr: str) -> list[str]:
+    """Return tile-join stderr lines reporting a dropped tile."""
+    return [ln.strip() for ln in (stderr or "").splitlines()
+            if _TILE_SKIP_RE.search(ln)]
+
+
 def tile_join(
     band_mbtiles: list[Path],
     output: Path,
@@ -1374,6 +1398,17 @@ def tile_join(
     if output.exists():
         output.unlink()
     cmd = [tj, "--force", "--no-tile-compression", "-o", str(output)]
+    # -pk / --no-tile-size-limit: WITHOUT it, tile-join has no thinning
+    # strategy — a merged tile over the 500 KB ceiling is DROPPED WHOLE, and
+    # tile-join still exits 0. That is place#160: `ohm` lost 0/0/0 (the entire
+    # world), both z1 northern-hemisphere tiles, and central Europe at z3,
+    # while the job reported success and the tileset shipped with square holes.
+    #
+    # Each band can sit comfortably under the limit while their SUM does not,
+    # which is exactly the observed shape — only the densest merged tiles
+    # vanished. Keeping an oversize tile is a far better failure than losing a
+    # continent; the per-band thinning below is what actually keeps sizes sane.
+    cmd.append("-pk")
     if layer_name:
         # -l filters input features to the named layer (every band emits
         # only that layer, so this is a safety check). -n sets the output
@@ -1385,10 +1420,26 @@ def tile_join(
 
     print(f"  joining {len(band_mbtiles)} band mbtiles → {output.name} ...")
     start = time.time()
-    result = subprocess.run(cmd, stdout=sys.stdout, stderr=sys.stderr)
+    # Capture stderr rather than passing it through: tile-join reports a
+    # dropped tile on stderr and STILL EXITS 0, so streaming it to the console
+    # and checking only the return code is precisely how place#160 shipped
+    # silently. A skipped tile is a build failure, not a log line.
+    result = subprocess.run(cmd, stdout=sys.stdout, stderr=subprocess.PIPE,
+                            text=True)
     elapsed = time.time() - start
+    stderr = result.stderr or ""
+    if stderr:
+        sys.stderr.write(stderr)
     if result.returncode != 0:
         print(f"  ✗ tile-join failed (rc={result.returncode})")
+        return False
+
+    skipped = _tile_join_skips(stderr)
+    if skipped:
+        print(f"  ✗ tile-join SKIPPED {len(skipped)} tile(s) — refusing to "
+              f"publish a tileset with holes (place#160). First few:")
+        for line in skipped[:5]:
+            print(f"      {line}")
         return False
 
     size_mb = output.stat().st_size / 1e6 if output.exists() else 0
