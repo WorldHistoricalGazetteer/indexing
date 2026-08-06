@@ -344,6 +344,9 @@ def main() -> int:
                          "for the next release to be compared against")
     args = ap.parse_args()
 
+    report: dict[str, Any] = {}
+    hard_failures: list[str] = []
+
     # The fallback tier gets the geometry-shape checks that do not depend on
     # source resolution. Not the coastal-fidelity floor: BNDA is coarse by
     # definition, and that is why it is only a fallback.
@@ -370,9 +373,6 @@ def main() -> int:
     print(f"  {len(geoms)} countries, "
           f"{sum(len(_parts(g)) for gs in geoms.values() for g in gs):,} parts",
           flush=True)
-
-    report: dict[str, Any] = {}
-    hard_failures: list[str] = []
 
     print("\n[1/4] antimeridian — no part may span >180° longitude", flush=True)
     am = check_antimeridian(geoms)
