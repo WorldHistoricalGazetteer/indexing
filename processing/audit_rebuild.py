@@ -120,8 +120,12 @@ def audit(es: Elasticsearch, *, places="places", toponyms="toponyms") -> dict:
 
     # --- 4. toponyms + embeddings ------------------------------------------
     # "silently skipped embeddings for ~25% of toponyms" — measure, don't ask.
+    # The index field is `embedding`; `phon_emb` is the name the SEARCH
+    # RESPONSE uses. Querying the response name reported 0.0% coverage of
+    # 72.7M toponyms — a false alarm of exactly the kind this audit exists to
+    # avoid, and the reason its own field names are checked against the schema.
     t_total = _count(es, toponyms)
-    t_emb = _count(es, toponyms, {"exists": {"field": "phon_emb"}})
+    t_emb = _count(es, toponyms, {"exists": {"field": "embedding"}})
     report["toponyms"] = {
         "total": t_total, "with_embedding": t_emb,
         "pct": round(100 * t_emb / t_total, 2) if t_total else 0}
@@ -133,8 +137,11 @@ def audit(es: Elasticsearch, *, places="places", toponyms="toponyms") -> dict:
     # --- 5. wd geoshapes + links -------------------------------------------
     # The wd geoshapes merge was silently skipped last rebuild; sitelinks must
     # be re-run after any wd rebuild.
+    # `links` is a NESTED field, so a plain exists() never matches it.
     wd_links = _count(es, places, {"bool": {"filter": [
-        {"term": {"namespace": "wd"}}, {"exists": {"field": "links"}}]}})
+        {"term": {"namespace": "wd"}},
+        {"nested": {"path": "links", "query": {
+            "exists": {"field": "links.identifier"}}}}]}})
     report["wd_with_links"] = wd_links
     wd_total = by_ns.get("wd", 0)
     if wd_total and wd_links == 0:
