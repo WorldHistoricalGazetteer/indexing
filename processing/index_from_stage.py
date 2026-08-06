@@ -80,6 +80,10 @@ PLACES_SCHEMA_PATH = Path(__file__).resolve().parent.parent / "schemas" / "place
 PLACES_PIPELINE_NAME = "extract_namespace"
 PLACES_ALIAS = "places"
 
+# Same literal the other production-facing tools use (apply_ccode_patch,
+# apply_update_patch, promote_to_production).
+DEFAULT_ES_PASSWORD_FILE = "/ix1/ishi/es/config/elastic.password"
+
 
 def _staged_namespace_source(namespace: str) -> Path | None:
     base = Path(STAGED_BASE_DIR) / namespace
@@ -549,6 +553,9 @@ def main() -> None:
     parser.add_argument("--request-timeout", type=int, default=300)
     parser.add_argument("--skip-alias-swap", action="store_true",
                         help="Do not swap the 'places' alias on completion (staged rollout)")
+    parser.add_argument("--es-password-file", default=DEFAULT_ES_PASSWORD_FILE,
+                        help="File holding the `elastic` password. Staging runs "
+                             "without security; production requires it.")
     parser.add_argument("--allow-production", action="store_true",
                         help="Permit --es-host to address production (normally refused; "
                              "a full rebuild belongs in staging, promoted by snapshot)")
@@ -584,9 +591,28 @@ def main() -> None:
         print(f"Run manifest not found: {manifest_path}", file=sys.stderr)
         sys.exit(1)
 
-    es = Elasticsearch(args.es_host, request_timeout=args.request_timeout, max_retries=3)
+    # Staging runs without security, so this client was built unauthenticated —
+    # which meant --allow-production could never actually work: production
+    # requires basic auth, so ping() failed with a bare "cannot connect", which
+    # reads as a network problem rather than a missing credential. Repairing a
+    # single namespace in the live index is a legitimate operation (it is how
+    # `un`'s stale h3_cover was fixed on 6 Aug 2026), so it needs to be possible.
+    es_kwargs: dict[str, Any] = {
+        "request_timeout": args.request_timeout,
+        "max_retries": 3,
+    }
+    pw_file = Path(args.es_password_file) if args.es_password_file else None
+    if pw_file and pw_file.exists():
+        es_kwargs["basic_auth"] = ("elastic",
+                                   pw_file.read_text(encoding="utf-8").strip())
+
+    es = Elasticsearch(args.es_host, **es_kwargs)
     if not es.ping():
-        print(f"ERROR: cannot connect to ES at {args.es_host}", file=sys.stderr)
+        hint = "" if "basic_auth" in es_kwargs else (
+            f"\n  No credentials were sent. If this host requires auth, pass "
+            f"--es-password-file (default {DEFAULT_ES_PASSWORD_FILE}).")
+        print(f"ERROR: cannot connect to ES at {args.es_host}{hint}",
+              file=sys.stderr)
         sys.exit(1)
 
     summary = run_index_from_stage(
