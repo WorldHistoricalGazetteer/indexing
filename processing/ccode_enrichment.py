@@ -45,7 +45,11 @@ from shapely.geometry import Point
 from shapely.geometry.base import BaseGeometry
 from shapely.prepared import prep
 
-from processing.ccode_tiers import apply_overlay, load_disputed_claims
+from processing.ccode_tiers import (
+    BndaFallbackIndex,
+    apply_overlay,
+    load_disputed_claims,
+)
 from processing.geom_store import GeomStoreReader
 from processing.helpers import geojson_to_shapely
 from processing.settings import (
@@ -893,14 +897,24 @@ def run_ccode_enrichment(
     cell_to_ccodes, ccode_to_geoms = build_un_prefilter(primary_records)
     un_cache = _UnGeometryCache(ccode_to_geoms)
 
-    fb_cell_to_ccodes: dict[str, set[str]] = {}
-    fb_cache: _UnGeometryCache | None = None
-    if fallback_records:
-        fb_cell_to_ccodes, fb_ccode_to_geoms = build_un_prefilter(fallback_records)
-        fb_cache = _UnGeometryCache(fb_ccode_to_geoms)
+    # Tier 2 is the FULL BNDA set, not merely the countries geoBoundaries does
+    # not carve out. Keying tier 2 on "geoBoundaries lacks this country" left a
+    # place just outside geoBoundaries' finer coastline with no country at all,
+    # because its own country was in tier 1 and so absent from tier 2: 464
+    # places across VI, AS, GU, MP and BQ on the 5 Aug 2026 run.
+    #
+    # Two causes, both answered by the same fallback:
+    #   * coastal features (capes, bays, rocks, piers) whose repr_point sits a
+    #     few metres seaward — a 232-vertex outline swallowed them, a
+    #     73,663-vertex one correctly does not;
+    #   * genuine omissions — geoBoundaries models BQ as ONE polygon covering
+    #     Bonaire only, so Saba and Sint Eustatius, including their own
+    #     administrative polygons, fall outside every primary geometry.
+    fb_index = BndaFallbackIndex()
     print(f"  tiers: primary={len(primary_records)} "
-          f"fallback={len(fallback_records)} "
-          f"(prefilter cells {len(cell_to_ccodes):,} / {len(fb_cell_to_ccodes):,})")
+          f"(prefilter cells {len(cell_to_ccodes):,}); "
+          f"fallback=full BNDA, {len(fb_index)} features "
+          f"({len(fallback_records)} countries absent from the primary)")
 
     # Disputed-territory overlay, applied IN ADDITION to tier 1 so that where a
     # source picks a single claimant all claimants are still attested. Without
@@ -941,9 +955,11 @@ def run_ccode_enrichment(
                 continue
 
             candidates = candidate_ccodes_for_cells(cells, cell_to_ccodes)
-            fb_candidates = (candidate_ccodes_for_cells(cells, fb_cell_to_ccodes)
-                             if fb_cell_to_ccodes else [])
-            if not candidates and not fb_candidates:
+            # No H3 prefilter for tier 2: it is an STRtree over the whole BNDA
+            # set, queried by bounding box. A place with no tier-1 candidate is
+            # therefore still worth resolving — which is the point, since those
+            # are exactly the places that previously ended uncoded.
+            if not candidates and not fb_index:
                 docs_no_candidate += 1
                 continue
 
@@ -956,9 +972,8 @@ def run_ccode_enrichment(
             ccodes = (_filter_by_containment(place_geom, candidates, un_cache)
                       if candidates else [])
             tier = "primary" if ccodes else "none"
-            if not ccodes and fb_candidates and fb_cache is not None:
-                ccodes = _filter_by_containment(place_geom, fb_candidates,
-                                                fb_cache)
+            if not ccodes and fb_index:
+                ccodes = fb_index.ccodes_for(place_geom)
                 if ccodes:
                     tier = "fallback"
                     docs_from_fallback += 1

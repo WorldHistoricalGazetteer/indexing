@@ -24,16 +24,38 @@ class TieringIsReached(unittest.TestCase):
     def test_resolver_splits_the_records(self):
         self.assertIn("split_by_tier(un_records)", SRC)
 
-    def test_two_prefilters_are_built(self):
+    def test_primary_prefilter_is_built_from_the_primary_records(self):
         self.assertIn("build_un_prefilter(primary_records)", SRC)
-        self.assertIn("build_un_prefilter(fallback_records)", SRC)
+
+    def test_fallback_index_is_constructed_and_used(self):
+        """Tier 2 is now the FULL BNDA set behind an STRtree, not a second H3
+        prefilter over the countries geoBoundaries happens to lack.
+
+        Keying tier 2 on "geoBoundaries lacks this country" left 464 places in
+        VI, AS, GU, MP and BQ with no code at all: tier 1 said nothing, and
+        their own country was in tier 1 and so absent from tier 2.
+        """
+        self.assertIn("BndaFallbackIndex", SRC)
+        self.assertIn("fb_index = BndaFallbackIndex()", SRC)
+        self.assertIn("fb_index.ccodes_for(place_geom)", SRC)
 
     def test_fallback_runs_only_when_primary_is_empty(self):
         i = SRC.index("tier = \"primary\" if ccodes else \"none\"")
         window = SRC[i:i + 400]
-        self.assertIn("if not ccodes and fb_candidates", window,
+        self.assertIn("if not ccodes and fb_index", window,
                       "tier 2 must be gated on tier 1 returning nothing — "
                       "consulting it unconditionally is the merged set again")
+
+    def test_no_tier1_candidates_no_longer_skips_the_document(self):
+        """A place with no tier-1 candidate must still reach tier 2.
+
+        Previously `not candidates and not fb_candidates` skipped the document
+        as `docs_no_candidate`, which is exactly the population that ended
+        uncoded — tier 2 has no H3 prefilter now, so there is nothing to be
+        absent from.
+        """
+        self.assertNotIn("if not candidates and not fb_candidates", SRC)
+        self.assertIn("if not candidates and not fb_index", SRC)
 
     def test_fallback_usage_is_counted(self):
         self.assertIn("docs_from_fallback", SRC)
