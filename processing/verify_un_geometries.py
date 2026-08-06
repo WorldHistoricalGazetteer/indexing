@@ -87,14 +87,26 @@ def _vertex_count(geom) -> int:
     return total
 
 
-def load_geometries() -> tuple[dict[str, list], list[dict[str, Any]]]:
-    """(ccode → [shapely geoms], raw un records) for the PRIMARY tier."""
+def load_geometries(tier: str = "primary"
+                    ) -> tuple[dict[str, list], list[dict[str, Any]]]:
+    """(ccode → [shapely geoms], raw un records) for one tier.
+
+    The FALLBACK tier must be checked too, and originally was not. That gap
+    was not hypothetical: BNDA's Kosovo polygon spanned lon 10.343 to -109.504
+    and lat -77.409 to 58.585 — Antarctica to the Americas — and put a
+    lowercase `xk` on 63,345 places, not one of which was in Kosovo. It sat in
+    production undetected. A defective polygon in the fallback tier is *harder*
+    to notice than one in the primary, because it only fires where the primary
+    returns nothing, so it corrupts a scattered minority rather than a
+    contiguous region.
+    """
     records = _load_un_records()
-    primary, _fallback = split_by_tier(records)
-    _cells, ccode_to_geoms = build_un_prefilter(primary)
+    primary, fallback = split_by_tier(records)
+    chosen = primary if tier == "primary" else fallback
+    _cells, ccode_to_geoms = build_un_prefilter(chosen)
     cache = _UnGeometryCache(ccode_to_geoms)
     geoms = {cc: cache.geoms_for(cc) for cc in sorted(ccode_to_geoms)}
-    return {cc: g for cc, g in geoms.items() if g}, primary
+    return {cc: g for cc, g in geoms.items() if g}, chosen
 
 
 # ---------------------------------------------------------------------------
@@ -332,7 +344,28 @@ def main() -> int:
                          "for the next release to be compared against")
     args = ap.parse_args()
 
-    print("Loading `un` primary-tier geometries…", flush=True)
+    # The fallback tier gets the geometry-shape checks that do not depend on
+    # source resolution. Not the coastal-fidelity floor: BNDA is coarse by
+    # definition, and that is why it is only a fallback.
+    print("Checking the FALLBACK (BNDA) tier for shape defects…", flush=True)
+    fb_geoms, fb_records = load_geometries("fallback")
+    print(f"  {len(fb_geoms)} countries", flush=True)
+    fb_am = check_antimeridian(fb_geoms)
+    fb_hull = check_hull_fallback(fb_geoms)
+    fb_self, fb_over = ([], [])
+    if not args.skip_overlap:
+        fb_self, fb_over = check_repr_point_self_resolution(fb_geoms,
+                                                            fb_records)
+    report["fallback"] = {"antimeridian": fb_am, "hull": fb_hull,
+                          "repr_self": fb_self, "repr_overlap": fb_over}
+    hard_failures += fb_am + fb_hull + fb_self
+    print(f"  antimeridian: {'FAIL ' + str(len(fb_am)) if fb_am else 'pass'}"
+          f" | hull: {'FAIL ' + str(len(fb_hull)) if fb_hull else 'pass'}"
+          f" | repr-self: {'FAIL ' + str(len(fb_self)) if fb_self else 'pass'}")
+    for line in (fb_am + fb_hull + fb_self)[:15]:
+        print(f"    {line}")
+
+    print("\nLoading `un` primary-tier geometries…", flush=True)
     geoms, records = load_geometries()
     print(f"  {len(geoms)} countries, "
           f"{sum(len(_parts(g)) for gs in geoms.values() for g in gs):,} parts",

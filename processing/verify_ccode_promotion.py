@@ -65,7 +65,11 @@ def namespace_counts(es: Elasticsearch, index: str) -> dict[str, int]:
 
 
 def ccode_stats(es: Elasticsearch, index: str) -> tuple[int, dict[str, int]]:
-    res = es.search(index=index, size=0, body={
+    # track_total_hits: ES stops counting at 10,000 by default and reports
+    # exactly that, so both sides came back "10,000 -> 10,000 (+0)" for a
+    # corpus of 51M. A capped constant compared against itself looks like
+    # perfect stability, which is the most misleading answer available.
+    res = es.search(index=index, size=0, track_total_hits=True, body={
         "query": {"exists": {"field": "ccodes"}},
         "aggs": {"cc": {"terms": {"field": "ccodes", "size": 300}}}})
     with_ccodes = res["hits"]["total"]["value"]
