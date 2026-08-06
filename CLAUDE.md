@@ -287,10 +287,18 @@ strings — no filters, no place lookups.
 
 ### Configuration (`gateway/config.py`)
 
-Index names use wildcard/alias patterns for dated indices:
-`TOPONYMS_INDEX = "toponyms_*"`, `PLACES_INDEX = "places_*"`,
-`CLUSTERS_INDEX = "clusters"`. ES password is read from
-`{IX1_BASE}/es/config/elastic.password`.
+The gateway queries **aliases**, not wildcards: `PLACES_INDEX = "places"`,
+`TOPONYMS_INDEX = "toponyms"` (defaults in `gateway/config.py`, matching
+`.env`). `CLUSTERS_INDEX` is **gone** — clustering is client-side.
+
+This matters when retiring a superseded index. Under the old `places_*`
+wildcard a second dated index would silently join every query; under an alias it
+cannot, so several generations can coexist safely and a cutover is one atomic
+alias re-point. Before deleting one, still confirm it holds no alias **and**
+that a SUCCESS snapshot exists (`_snapshot/staging_repo/_all`) — deletion is
+otherwise irreversible.
+
+ES password is read from `{IX1_BASE}/es/config/elastic.password`.
 
 ---
 
