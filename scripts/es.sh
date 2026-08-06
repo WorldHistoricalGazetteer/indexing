@@ -676,17 +676,40 @@ staging_start() {
     # Check if staging already running
     if [ -f "$STAGING_INFO_FILE" ]; then
         source "$STAGING_INFO_FILE"
+
+        # Resolve the staging job id BEFORE testing it. The info file
+        # deliberately does not write SLURM_JOB_ID — that would replace the
+        # caller's — so STAGING_SLURM_JOB_ID is the real field, and
+        # SLURM_JOB_ID is only a fallback for files written before that
+        # change. Reading $SLURM_JOB_ID here instead meant a current-format
+        # info file tested the CALLER's job id, or an empty string from a
+        # login shell, and so always looked stale.
+        local staging_job="${STAGING_SLURM_JOB_ID:-$SLURM_JOB_ID}"
+
         echo "Staging instance may already be running:"
-        echo "  Job ID: $SLURM_JOB_ID"
+        echo "  Job ID: ${staging_job:-<unknown>}"
         echo "  Node:   $ES_NODE"
         echo "  Port:   $ES_PORT"
         echo
 
-        # Verify job is actually running
-        if squeue -j "$SLURM_JOB_ID" &>/dev/null; then
+        # Verify job is actually running.
+        #
+        # -M all because this is a FEDERATED cluster: staging runs on `smp`,
+        # and `squeue -j <id>` without a cluster queries only the local one and
+        # answers "Invalid job id specified". Every check therefore said
+        # "stale" and launched a DUPLICATE staging ES. On 5 Aug 2026 that left
+        # job 23668874 running for 1d15h beside its replacement — and
+        # unreachable, because the check had already deleted the only info
+        # file pointing at it.
+        #
+        # Test for non-empty output rather than exit status: squeue can exit 0
+        # while reporting nothing for a job that no longer exists.
+        if [ -n "$staging_job" ] && \
+           squeue -M all -j "$staging_job" -h -o "%T" 2>/dev/null | grep -q .; then
             echo "Job is active. Use -staging-stop first if you want to restart."
-            SLURM_JOB_ID="${STAGING_SLURM_JOB_ID:-$SLURM_JOB_ID}"
-        export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
+            SLURM_JOB_ID="$staging_job"
+            STAGING_SLURM_JOB_ID="$staging_job"
+            export ES_NODE ES_PORT ES_DATA SLURM_JOB_ID STAGING_SLURM_JOB_ID
             return 0
         else
             echo "Stale info file found. Cleaning up..."
