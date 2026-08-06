@@ -79,11 +79,24 @@ _WALL_SECONDS = 12 * 3_600
 _QOS = "htc-htc-s"  # ≤ 1 day tier
 
 
+# Floor for the harvest job, regardless of recorded history.
+#
+# estimate_wall_time_seconds medians the last 5 completed runs, which is only
+# predictive while the INPUTS are unchanged. The corpus grew to 51,187,900
+# places and the LOC source is a 4.5 GB gzip, so an inherited median can be
+# badly short. On 5 Aug 2026 exactly that killed the `clio` and `ohm` ccode
+# tasks at a 01:20:00 wall inherited from pre-geoBoundaries runs. Slurm wall
+# time is a ceiling rather than a reservation, and this floor still sits inside
+# the shortest QOS tier, so over-asking costs only backfill priority.
+_MIN_WALL_SECONDS = 6 * 3_600
+
+
 def _estimate_hardlinks_wall() -> int:
     """Single-job estimate keyed on synthetic 'hardlinks' namespace."""
-    return estimate_wall_time_seconds(
+    est = estimate_wall_time_seconds(
         "hardlinks", "hard-links-staged", default=_WALL_SECONDS,
     )
+    return max(est, _MIN_WALL_SECONDS)
 
 
 def _seconds_to_slurm_time(seconds: int) -> str:
