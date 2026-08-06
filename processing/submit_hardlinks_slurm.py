@@ -123,6 +123,7 @@ def _build_sbatch(
     skip_loc: bool,
     skip_contributors: bool,
     skip_prune: bool,
+    publish_local_flag: bool = False,
     loc_source: str | None,
 ) -> str:
     log_dir = Path(_REPO) / "logs"
@@ -233,10 +234,25 @@ def _build_sbatch(
             "print('shipped:', json.dumps(result))",
             "PYEOF",
         ])
+    elif publish_local_flag:
+        # Shared-filesystem publication. Compute nodes cannot ssh to the Pitt
+        # VM (firewalled on 22 as well as 9200), and do not need to: /ix1 is
+        # mounted on both, and PITT_HARDLINK_DIR is where the gateway reads
+        # its batch overlay. Same code as a standalone recovery publish.
+        lines.extend([
+            "",
+            "echo '--- Publish over shared storage + prune live delta ---'",
+            "python -u -m processing.publish_hardlinks \\",
+            f"    --run-id {run_id} \\",
+            "    --db-path \"$DB_PATH\" \\",
+            f"    --marker-path {marker_path} \\",
+            "    --cutoff \"$HARDLINK_HARVEST_START\" \\",
+            "    --execute",
+        ])
     else:
         lines.extend([
             "",
-            "echo 'Ship-to-Pitt skipped (pass --pitt-user/--pitt-host/--pitt-dir to enable).'",
+            "echo 'Ship-to-Pitt skipped (pass --pitt-user/--pitt-host/--pitt-dir or --publish-local).'",
             "python -u <<'PYEOF'",
             "import json, sys",
             "from pathlib import Path",
@@ -283,6 +299,7 @@ def submit(
     skip_contributors: bool = False,
     skip_prune: bool = False,
     loc_source: str | None = None,
+    publish_local_flag: bool = False,
     enforce_barrier: bool = True,
     dry_run: bool = False,
 ) -> str | None:
@@ -322,6 +339,7 @@ def submit(
         skip_contributors=skip_contributors,
         skip_prune=skip_prune,
         loc_source=loc_source,
+        publish_local_flag=publish_local_flag,
     )
     sbatch_path = work_dir / "hardlinks.sbatch"
     sbatch_path.write_text(sbatch_text, encoding="utf-8")
@@ -359,6 +377,11 @@ def main() -> None:
                         help="Skip the LOC harvest phase")
     parser.add_argument("--skip-contributors", action="store_true",
                         help="Skip the DO PG contributor replay phase")
+    parser.add_argument("--publish-local", action="store_true",
+                        help="Publish over shared storage instead of ssh. "
+                             "Compute nodes cannot reach the Pitt VM on 22 or "
+                             "9200, and do not need to: /ix1 is mounted on "
+                             "both and is where the gateway reads the overlay.")
     parser.add_argument("--skip-prune", action="store_true",
                         help="Skip the post-ship live-delta prune")
     parser.add_argument("--loc-source",
@@ -394,6 +417,7 @@ def main() -> None:
         skip_contributors=args.skip_contributors,
         skip_prune=args.skip_prune,
         loc_source=args.loc_source,
+        publish_local_flag=args.publish_local,
         enforce_barrier=not args.no_enforce_barrier,
         dry_run=args.dry_run,
     )
