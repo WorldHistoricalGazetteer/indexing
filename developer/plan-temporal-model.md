@@ -824,7 +824,7 @@ and **exits non-zero** rather than reporting success.
 Re-running compute after the fix took **22 minutes**, not 2 h 51 m: the misses
 from the broken run were already in the cache, so it was 100 % hits.
 
-### State of this run, 3–4 August 2026
+### State at 3–4 August 2026 (superseded — see below)
 
 - **places index built in staging**: 51,187,900 docs, **zero errors across all 27 namespaces** after the geometry repairs. Baseline was 50,735,086 (+0.9%, consistent with refreshed dumps).
 - **places snapshotted and restored into production** as `places_temporal-20260731t160000z` (4 Aug). Snapshot `places-temporal-20260731t160000z` was taken at 05:08Z, *after* the 05:03Z wd geometry repair reindex, so it carries the repaired documents. **No alias swapped** — production still serves the old index.
@@ -832,6 +832,74 @@ from the broken run were already in the cache, so it was 100 % hits.
 - Toponyms stage 1 produced 67,983,745 unique toponyms **before** the patch recovery; it must re-run afterwards.
 - Symphonym cache hydration running on pitt — lifts the cache from 16.97 M to ~68 M rows so the GPU step is ~99 % cache hits rather than ~28 h.
 - **Production untouched.** `places` → `places_postbarrier-20260502t130000z`, `toponyms` → `toponyms_ngram-20260722`. No alias has been swapped.
+
+### FINAL STATE — 6 August 2026: step 5 complete, production cut over
+
+Everything above this line describes the run mid-flight. It is kept as the
+execution log; the statement "Production untouched" in it is **no longer true**.
+
+**Live now:** `places` → `places_h3ccode-20260805t120000z` (51,187,900 docs),
+`toponyms` → `toponyms_temporal-20260731t160000z` (72,703,552). Promoted by
+snapshot → restore → one atomic alias swap, after per-namespace parity
+verification against the previous index. `places_temporal-20260731t160000z` and
+`toponyms_ngram-20260722` are retained as the rollback path.
+
+Between the 4 August state and this one, an audit of the cutover found country
+codes to be substantially wrong, which became **place#173** and forced a second
+corpus-wide pass (h3 + ccode) and a second promotion. The temporal work itself
+was unaffected.
+
+**Post-rebuild audit** (`processing/audit_rebuild.py`, measured from the live
+indices — never from a manifest status):
+
+| measure | result |
+|---|---|
+| places | 51,187,900 |
+| with `ccodes` | 49,731,096 (**97.15%**, was 73.90%) |
+| toponyms | 72,703,552 |
+| with `embedding` | 72,703,552 (**100.0%**) |
+| places with types | 51,014,923 (99.7%) |
+| `wd` docs with links | 3,093,094 |
+| `wd` areal geometries | 51,094 |
+
+The three faults step 5 warned about are all clear: embeddings are complete
+(the previous rebuild silently skipped ~25%), the `wd` geoshapes merge landed,
+and `ccode` ran for `osm`/`ohm`.
+
+**Residual findings, 2,570 docs of 51.2M (0.005%)** — recorded, not blocking:
+
+* 1,497 docs with an areal geometry and `has_geom=false`
+* 1,072 docs with a linear geometry and `has_geom=false`
+* 1 doc with an areal geometry and no `h3_cover`
+
+The first two are the standing incomplete-ingestion predicate from
+`schemas/field-notes.md`, and are a large improvement on the ~10.5M OSM/OHM way
+polygons previously missing from the geom store.
+
+**Phase 7 completed 6 August:** hard-link overlay rebuilt (7,596,959 rows,
+**+18.2%** on the incumbent) and published; registry inventory pushed to prod
+and dev (67/67 batches each, 0 errors, 74 entries), all 26 authority licences
+independently verified.
+
+### Two faults worth carrying forward
+
+**Fault 12 — a stage skipped is a stage not regenerated.** `un` is marked
+`skipped` for ccode because it *supplies* country codes rather than receiving
+them. But `final/` is written by `ccode_merge`, so skipping ccode also skipped
+`un`'s `final` regeneration: its improved `h3_cover` sat in `h3_merged` for
+three days while the index kept a stale copy, and the freshness gate could not
+see it because `final/` was self-consistent. `un` is the namespace that supplies
+`contained_in` regions, so this alone nullified the #174 fix until found. Fixed
+by hand for this run; the orchestration should regenerate `final` from
+`h3_merged` whenever ccode is skipped.
+
+**Fault 13 — inherited wall times.** `estimate_wall_time_seconds` medians past
+runs, which is only predictive while the *inputs* are unchanged. The
+BNDA→geoBoundaries move invalidated every stored ccode runtime at a stroke, and
+the stale median killed `clio` and `ohm` at a 01:20:00 wall with their work
+unfinished. Floors now exist in `submit_ccode_slurm` and
+`submit_hardlinks_slurm`; Slurm wall time is a ceiling, not a reservation, so
+over-asking costs only backfill priority.
 
 ### Still outstanding (deliberately)
 
@@ -857,6 +925,37 @@ ours — see its §8 entry condition:
 
 **Do not schedule a retile from this plan.** If steps 2–5 finish before the other three gates,
 stop and say so — the retile waits.
+
+#### ⇨ HANDOVER FIRED — 6 August 2026
+
+Steps 2–5 are complete and in production, and Phases 7–8 are done. **This plan
+owns nothing further.**
+
+Gate status at handover:
+
+| gate | owner | state |
+|---|---|---|
+| temporal encoding fixed **and** re-ingested | this plan | ✅ **met** — live as `places_h3ccode-20260805t120000z` |
+| `tile-join -pk` + skip-message failure + verifier | place#160 | ⬜ not ours |
+| labels channel `label:1` | place#159 | ⬜ not ours |
+| containment-hierarchy test decided | Atlas §5.4 | ⬜ not ours |
+
+**One of four gates is met, so the retile waits — and no retile has been
+scheduled from here**, as instructed above. Saying so explicitly, because the
+temptation at this point is to publish the work that has just been finished.
+
+Carried out of this plan, not blocking the handover:
+
+* Stage 1 (`rebuild_toponyms_index`) timed out at its 12 h wall, so `ipa` /
+  `panphon_features` were never written to
+  `toponyms-temporal-20260731T160000Z.db`. Nothing in the search stack reads
+  them; the next **Symphonym training** run does. Allow ~9 h and raise the wall.
+* Retention: production holds three `places` generations and two `toponyms`.
+  Retiring `places_postbarrier-20260502t130000z` (24.2 GB) and
+  `toponyms_ngram-20260722` (50.7 GB) frees ~75 GB, with `/vast` at 80%. Gated
+  on sign-off, since they are the rollback path.
+* Faults 12 and 13 above — both patched by hand for this run, both wanting a
+  code fix before the next rebuild.
 
 ### Afterwards (Atlas plan owns these, listed so the dependency is visible)
 
