@@ -566,7 +566,25 @@ overlap depth as a deliberate style choice; and a geometric first pass at `withi
 v4 graph model. If pursued, take §5.4's staged route — `un` (~200 polygons) → `ukhc` / `vob_*` →
 `ohm` at a single date → `osm` — where the first two stages prove the model in days.
 
-**The retile is therefore unblocked.** The tilesets are already built and verified, parked at
+#### ✅ RETILE COMPLETE — 7 August 2026
+
+All 27 tilesets deployed and the `tileboss` style pushed to `origin/production` in the same
+operation. Verified after deploy: 27/27 pushed, 12/12 sampled buckets serving, 10/10 label layers
+filtering on `["has","label"]`, `ohm` carrying anchors (67/200 sampled z6 tiles) and passing the
+land-coverage assertion. place#159 and place#160 closed.
+
+**Operational note for the next retile.** The push drove the tileserver to **99% disk (518 MB
+free)** despite a net content change of only +0.23 GB: `tiler.service` held open descriptors on
+the *old* mbtiles inodes, so `mv` swapped the directory entries while the disk carried both
+copies — 420 deleted-but-held-open files. The service restart released them (back to 82% / 8.9 GB).
+Two consequences worth carrying forward: **restart the tileserver promptly after any tileset
+push**, and note that 8.9 GB of headroom for 83 tilesets is thin — a retile that grows content
+materially could fill the disk mid-push. Also: `rsync` is not installed on the tileserver host,
+and `/srv/restart_services.sh` is not executable (invoke as `sudo bash`).
+
+---
+
+**Superseded — the retile is done.** The tilesets were built and verified at
 `/vast/ishi/tiles-verify/` (27 buckets; `osm` 966 MB, `ohm` 702 MB, `wd` 1.84 GB). What remains is
 publication only:
 
