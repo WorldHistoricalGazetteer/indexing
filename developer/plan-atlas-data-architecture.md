@@ -579,8 +579,16 @@ the *old* mbtiles inodes, so `mv` swapped the directory entries while the disk c
 copies — 420 deleted-but-held-open files. The service restart released them (back to 82% / 8.9 GB).
 Two consequences worth carrying forward: **restart the tileserver promptly after any tileset
 push**, and note that 8.9 GB of headroom for 83 tilesets is thin — a retile that grows content
-materially could fill the disk mid-push. Also: `rsync` is not installed on the tileserver host,
-and `/srv/restart_services.sh` is not executable (invoke as `sudo bash`).
+materially could fill the disk mid-push. Also: `/srv/restart_services.sh` is not executable (invoke as `sudo bash`).
+
+**Deploy from a CRC compute node, not from pitt.** `rsync` IS present on the
+tileserver and on CRC compute nodes, but NOT on pitt — and compute nodes can reach the
+tileserver directly (verified 7 Aug 2026), so the proxy hop is unnecessary.
+`push_mbtiles_to_tileserver` already short-circuits to direct mode whenever
+`TILESERVER_SSH_KEY` is set, giving rsync delta transfer (**124x speedup measured** on an
+unchanged tileset, versus scp re-sending 9.2 GB in full). Use
+`python -m processing.generate_tiles --bucket <B> --output-dir <DIR> --redeploy-only`
+from a Slurm task rather than hand-rolling scp.
 
 ---
 

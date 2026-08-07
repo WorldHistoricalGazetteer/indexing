@@ -659,7 +659,15 @@ def deploy_tilesets(mbtiles_paths, **kwargs) -> dict[str, bool]:
     Used by the post-array catch-up path; per-bucket pushes during a tile
     gen run go through ``push_mbtiles_to_tileserver`` directly.
     """
-    print(f"\nDeploying {len(mbtiles_paths)} tilesets via Pitt-VM proxy …")
+    # Say which route is actually taken. The banner claimed "via Pitt-VM
+    # proxy" unconditionally while push_mbtiles_to_tileserver short-circuits
+    # to DIRECT whenever TILESERVER_SSH_KEY is set — which it is on CRC. That
+    # mislabelling is why a manual deploy was hand-rolled through pitt, a host
+    # that has no rsync, instead of using this path from a compute node where
+    # both ends do (measured delta speedup: 124x on an unchanged tileset).
+    from processing.settings import TILESERVER_SSH_KEY as _K
+    _route = "direct (rsync, delta transfer)" if _K else "via Pitt-VM proxy"
+    print(f"\nDeploying {len(mbtiles_paths)} tilesets {_route} …")
     results: dict[str, bool] = {}
     for path in mbtiles_paths:
         results[path.name] = push_mbtiles_to_tileserver(path, **kwargs)
