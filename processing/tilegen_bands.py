@@ -69,6 +69,21 @@ class Band:
     minzoom: int
     maxzoom: int
     where: dict[str, Any] | None = None
+    # place#159: label symbol layers use their own zoom windows, which are NOT
+    # the polygon band's. Continental labels are wanted at z5 while the
+    # continental polygon band stops at z4, so a shared range would silently
+    # drop them at the zoom they matter most. None = fall back to the polygon
+    # range, which is right for every band whose style window matches.
+    label_minzoom: int | None = None
+    label_maxzoom: int | None = None
+
+    @property
+    def lbl_min(self) -> int:
+        return self.minzoom if self.label_minzoom is None else self.label_minzoom
+
+    @property
+    def lbl_max(self) -> int:
+        return self.maxzoom if self.label_maxzoom is None else self.label_maxzoom
 
     def matches(self, feature: dict[str, Any]) -> bool:
         """True when the feature belongs in this band.

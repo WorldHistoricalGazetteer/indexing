@@ -137,7 +137,13 @@ def label_layer(*, src, level_id, label, level_filter, lbl_minzoom, lbl_maxzoom)
         "metadata": {"whg:switchgroup": src_group + " Labels", "whg:switchlabel": label},
         "source": src, "source-layer": src,
         "minzoom": lbl_minzoom, "maxzoom": lbl_maxzoom,
-        "filter": level_filter,
+        # place#159: draw from the LABEL ANCHOR, not the polygon. A polygon is
+        # cut at every tile edge and MapLibre emits one symbol per feature per
+        # tile, so Nebraska carried five labels and Italy eight. The tiler now
+        # emits one anchor point per boundary, in this same source-layer,
+        # marked `label: 1` (plan-atlas-data-architecture.md §3.1 — a separate
+        # vector layer would earn the anchors their own heatmap).
+        "filter": ["all", ["has", "label"], level_filter],
         "layout": {
             "visibility": "none",
             "text-field": ["coalesce", ["get", "name_local"], ["get", "name"]],

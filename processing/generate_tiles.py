@@ -1110,6 +1110,124 @@ def _accumulate_coverage(geom_json, sink: list) -> None:
         pass
 
 
+# Properties carried onto a label anchor. The style's label layers filter on
+# `boundary`, and the whg3 date filter reads `start`/`end`, so those must
+# survive. `aat` / `population` / `fcode` are dropped: labels are not
+# type-filtered and every omitted key is bytes on every anchor.
+_LABEL_KEEP_PROPS = ("place_id", "namespace", "boundary", "name", "name_local",
+                     "start", "end")
+
+# Above this vertex count, simplify before polylabel. polylabel is iterative
+# and unbounded on a 100k-vertex ring — Australia's outline is 1,655,696.
+_LABEL_SIMPLIFY_VERTICES = 5_000
+
+
+def _label_anchor(geom):
+    """Pole of inaccessibility for a polygonal geometry, or None.
+
+    NOT the staged ``repr_point``: that is shapely ``representative_point()``,
+    guaranteed inside but often hard against an edge, which puts the label in
+    the wrong place on a concave region — the very thing #159 asks us to fix.
+
+    Falls back ``polylabel`` → ``representative_point`` → ``centroid`` so a
+    degenerate ring yields a usable anchor rather than no label at all.
+    """
+    parts = [g for g in _polygonal_parts(geom) if not g.is_empty]
+    if not parts:
+        return None
+    # polylabel takes a single Polygon; use the largest-area member so the
+    # label lands on the mainland rather than an offshore islet.
+    flat = []
+    for g in parts:
+        flat.extend(g.geoms if g.geom_type == "MultiPolygon" else [g])
+    flat = [g for g in flat if not g.is_empty and g.area > 0]
+    if not flat:
+        return None
+    target = max(flat, key=lambda g: g.area)
+
+    try:
+        n = len(target.exterior.coords)
+    except Exception:
+        n = 0
+    if n > _LABEL_SIMPLIFY_VERTICES:
+        simplified = target.simplify(_COVERAGE_SIMPLIFY_DEG,
+                                     preserve_topology=True)
+        if not simplified.is_empty and simplified.geom_type == "Polygon":
+            target = simplified
+
+    try:
+        from shapely.ops import polylabel
+        return polylabel(target, tolerance=_COVERAGE_SIMPLIFY_DEG)
+    except Exception:
+        pass
+    try:
+        return target.representative_point()
+    except Exception:
+        pass
+    try:
+        return target.centroid
+    except Exception:
+        return None
+
+
+def _label_point_feature(feature: dict) -> dict[str, Any] | None:
+    """One label anchor per polygonal feature, marked ``label: 1`` (place#159).
+
+    A polygon is cut at every tile edge, and MapLibre draws one symbol per
+    feature *per tile* — so Nebraska got five "Nebraska" labels and Italy
+    eight "Italia". Nothing client-side can fix that: choosing the right
+    fragment needs the label point, which is exactly what the tileset lacked.
+
+    The anchor is emitted into the **same source-layer** as the shapes and
+    distinguished by ``label: 1``, per plan-atlas-data-architecture.md §3.1 —
+    which withdrew the earlier separate-``<bucket>_labels``-layer design. A
+    separate vector layer would get its own heatmap from ``loadGazetteerStyle``
+    (a density field made purely of label anchors), and would need tile-join's
+    keep-only ``-l`` filter turned into a sequence, which silently discards a
+    layer when got wrong. Sharing the layer also shares the feature id, so
+    hovering a label highlights its polygon with no bookkeeping.
+
+    Returns None for non-polygonal features: a point is already its own anchor,
+    and emitting anchors for points would double gn's ~12M features for nothing.
+    """
+    geom_json = feature.get("geometry")
+    if not isinstance(geom_json, dict):
+        return None
+    if geom_json.get("type") not in ("Polygon", "MultiPolygon",
+                                     "GeometryCollection"):
+        return None
+    try:
+        from shapely.geometry import shape
+        from shapely.validation import make_valid
+        g = shape(geom_json)
+        if not g.is_valid:
+            g = make_valid(g)
+        anchor = _label_anchor(g)
+    except Exception:
+        return None
+    if anchor is None or anchor.is_empty:
+        return None
+
+    src = feature.get("properties") or {}
+    props: dict[str, Any] = {"label": 1}
+    for k in _LABEL_KEEP_PROPS:
+        if src.get(k) is not None:
+            props[k] = src[k]
+    # Localised names (name_en, name_fr, ...) drive multilingual labels.
+    for k, v in src.items():
+        if k.startswith("name_") and v is not None:
+            props[k] = v
+    if "name" not in props and "name_local" not in props:
+        return None  # nothing to draw
+
+    return {
+        "type": "Feature",
+        "properties": props,
+        "geometry": {"type": "Point",
+                     "coordinates": [round(anchor.x, 6), round(anchor.y, 6)]},
+    }
+
+
 def _coverage_feature(poly_geoms: list, namespace: str) -> dict[str, Any] | None:
     """Build the single dissolved COVERAGE FOOTPRINT feature (place#140).
 
@@ -1212,6 +1330,7 @@ def _stream_bucket(
     *,
     geojsonl_path: Path,
     collect_coverage: bool = False,
+    labels_path: Path | None = None,
 ) -> tuple[dict[str, int], dict[str, int], list]:
     """Stream every contributing namespace's docs into one bucket output file.
 
@@ -1238,6 +1357,14 @@ def _stream_bucket(
     written: dict[str, int] = defaultdict(int)
     counts = {"polygon": 0, "point": 0}
     coverage_geoms: list = []
+
+    # place#159: one label anchor per polygon, its own tippecanoe pass (never
+    # clustered, own zoom range) but the SAME layer name, so tile-join merges
+    # it into one source-layer distinguished by `label: 1`.
+    labels_fh = None
+    if labels_path is not None:
+        labels_path.write_bytes(b"")
+        labels_fh = open(labels_path, "ab")
 
     with open(geojsonl_path, "ab") as fh:
         for namespace in contributors:
@@ -1266,11 +1393,19 @@ def _stream_bucket(
                     counts["polygon"] += 1
                     if collect_coverage:
                         _accumulate_coverage(geom, coverage_geoms)
+                    if labels_fh is not None:
+                        lf = _label_point_feature(feature)
+                        if lf is not None:
+                            labels_fh.write(orjson.dumps(lf))
+                            labels_fh.write(b"\n")
                 else:
                     counts["point"] += 1
                 fh.write(orjson.dumps(feature))
                 fh.write(b"\n")
                 written[ns] += 1
+
+    if labels_fh is not None:
+        labels_fh.close()
 
     return dict(written), counts, coverage_geoms
 
@@ -1281,7 +1416,8 @@ def _stream_bucket_banded(
     bands: list,                       # list[Band] from tilegen_bands
     *,
     out_dir: Path,
-) -> tuple[dict[str, Path], dict[str, dict[str, int]]]:
+    emit_labels: bool = True,
+) -> tuple[dict[str, Path], dict[str, dict[str, int]], dict[str, Path]]:
     """Stream a bucket's features into ONE geojsonl per band.
 
     Returns ``(band_paths, per_band_counts)``:
@@ -1313,6 +1449,15 @@ def _stream_bucket_banded(
     band_counts: dict[str, dict[str, int]] = {b.name: defaultdict(int) for b in bands}
     unmatched = 0
 
+    # place#159: one label anchor per polygon, per band — label zoom windows
+    # differ from the polygon bands (continental polygons stop at z4 but its
+    # labels are wanted to z5), so they cannot share a pass.
+    label_paths = ({b.name: out_dir / f"{bucket}.{b.name}.labels.geojsonl"
+                    for b in bands} if emit_labels else {})
+    for p in label_paths.values():
+        p.write_bytes(b"")
+    label_handles = {name: open(p, "ab") for name, p in label_paths.items()}
+
     handles = {name: open(p, "ab") for name, p in band_paths.items()}
     try:
         for namespace in contributors:
@@ -1338,8 +1483,16 @@ def _stream_bucket_banded(
                 handles[band.name].write(orjson.dumps(feature))
                 handles[band.name].write(b"\n")
                 band_counts[band.name][ns] += 1
+                lh = label_handles.get(band.name)
+                if lh is not None:
+                    lf = _label_point_feature(feature)
+                    if lf is not None:
+                        lh.write(orjson.dumps(lf))
+                        lh.write(b"\n")
     finally:
         for h in handles.values():
+            h.close()
+        for h in label_handles.values():
             h.close()
 
     if unmatched:
@@ -1351,7 +1504,13 @@ def _stream_bucket_banded(
         name: path for name, path in band_paths.items()
         if path.exists() and path.stat().st_size > 0
     }
-    return band_paths, {name: dict(c) for name, c in band_counts.items()}
+    label_paths = {
+        name: path for name, path in label_paths.items()
+        if path.exists() and path.stat().st_size > 0
+    }
+    return (band_paths,
+            {name: dict(c) for name, c in band_counts.items()},
+            label_paths)
 
 
 # tile-join announces a dropped tile on stderr and exits 0 regardless. The
@@ -1551,6 +1710,7 @@ def generate_tiles_from_staged(
     bucket_counts: dict[str, int] = {}
     per_namespace_totals: dict[str, int] = defaultdict(int)
     bucket_band_paths: dict[str, dict[str, Path]] = {}   # bucket → {band_name: geojsonl}
+    bucket_label_paths: dict[str, dict[str, Path]] = {}  # place#159 label anchors
     bucket_geojsonl: dict[str, Path] = {}                 # legacy single-band path
     bucket_coverage_geojsonl: dict[str, Path] = {}        # place#140 dissolved footprint
     bucket_uses_bands: dict[str, bool] = {}
@@ -1563,10 +1723,11 @@ def generate_tiles_from_staged(
                 bucket_uses_bands[bucket] = True
                 print(f"\nStreaming bucket '{bucket}' (banded: {[b.name for b in bands]}) "
                       f"from {_bucket_contributors(bucket)} ...")
-                band_paths, band_counts = _stream_bucket_banded(
+                band_paths, band_counts, label_paths = _stream_bucket_banded(
                     bucket, reader, bands, out_dir=out_dir,
                 )
                 bucket_band_paths[bucket] = band_paths
+                bucket_label_paths[bucket] = label_paths
                 bucket_counts[bucket] = sum(
                     sum(c.values()) for c in band_counts.values()
                 )
@@ -1652,6 +1813,27 @@ def generate_tiles_from_staged(
                     else:
                         if band_geojsonl.exists() and band_geojsonl.stat().st_size > 0:
                             bucket_failures.append(f"{bucket}/{band.name}")
+
+                # place#159: one label-anchor pass per band, SAME layer name so
+                # tile-join folds it into the single source-layer; the anchors
+                # are distinguished by `label: 1`, not by living in their own
+                # vector layer (which would earn them a spurious heatmap).
+                label_paths = bucket_label_paths.get(bucket, {})
+                for band in bands:
+                    lp = label_paths.get(band.name)
+                    if lp is None:
+                        continue
+                    label_mbtile = out_dir / f"{bucket}.{band.name}.labels.mbtiles"
+                    print(f"\n  band '{band.name}' LABELS "
+                          f"(z{band.lbl_min}-{band.lbl_max})")
+                    if generate_tileset(
+                        lp, label_mbtile, bucket, description,
+                        minzoom=band.lbl_min, maxzoom=band.lbl_max,
+                        preserve_all=True,
+                    ):
+                        band_mbtiles.append(label_mbtile)
+                    else:
+                        bucket_failures.append(f"{bucket}/{band.name}-labels")
 
                 if band_mbtiles and tile_join(band_mbtiles, mbtiles, layer_name=bucket):
                     tilesets_generated.append(mbtiles)
