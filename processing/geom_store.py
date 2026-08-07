@@ -43,6 +43,7 @@ Dependencies
 import json
 import os
 import re
+import shutil
 import sqlite3
 import threading
 from functools import lru_cache
@@ -335,6 +336,94 @@ def _index_dict_to_entries(index: dict[str, dict]):
         yield key, e["file"], e["offset"], e["length"]
 
 
+def backup_sqlite_index(
+    output_dir: str | Path,
+    backup_dir: str | Path | None = None,
+    keep: int | None = None,
+) -> Path | None:
+    """Copy a freshly-consolidated ``index.sqlite`` to separate storage.
+
+    Called once per consolidation, *after* every namespace has been packed and
+    the index written — so the copy is only ever taken of a complete index, and
+    a run that dies mid-consolidation cannot rotate a good backup out.
+
+    Why this exists
+    ---------------
+    The shards are ~61 GB of **keyless** WKB: nothing in a shard says which
+    place a blob belongs to, and the key → (shard, offset, length) map lives
+    only in the index. Lose the index and the store is stranded — every byte of
+    geometry intact and none of it addressable. That is not hypothetical; on
+    2026-08-07 a test run rewrote the live index with two synthetic rows and the
+    only route back was a multi-day re-extract of every namespace carrying
+    non-point geometry, because ES and the staged parquet both store just a
+    ``geom_ref`` and no coordinates.
+
+    Backups are timestamped rather than a single rolling file, so a *bad*
+    consolidation can't quietly overwrite the last good copy, and land on a
+    different filesystem from the store (``IX1_BASE`` vs ``IX3_BASE``) so one
+    errant write path can't take both. Restoring is a plain file copy back to
+    ``<store>/index.sqlite`` — the shards are untouched by all of this.
+
+    Failure is loud but non-fatal: a completed consolidation is worth more than
+    its backup, and raising here would discard hours of packing.
+
+    Returns the backup path, or ``None`` if it could not be written.
+    """
+    from datetime import datetime, timezone
+
+    from processing.settings import (
+        GEOM_STORE_BACKUP_DIR, GEOM_STORE_BACKUP_KEEP,
+    )
+
+    src = Path(output_dir) / INDEX_SQLITE_NAME
+    dest_dir = Path(backup_dir if backup_dir is not None else GEOM_STORE_BACKUP_DIR)
+    keep = GEOM_STORE_BACKUP_KEEP if keep is None else keep
+
+    try:
+        if not src.exists():
+            print(f"ERROR: geom index backup skipped — {src} does not exist",
+                  flush=True)
+            return None
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        dest = dest_dir / f"index-{stamp}.sqlite"
+        # Two consolidations inside the same second would otherwise collide, and
+        # the second would overwrite the first — the precise failure timestamping
+        # exists to prevent. Suffix with `_N`, which also keeps the filenames
+        # sorting chronologically ('.' < '_'), so pruning still drops the oldest.
+        collision = 2
+        while dest.exists():
+            dest = dest_dir / f"index-{stamp}_{collision}.sqlite"
+            collision += 1
+        tmp = dest.with_suffix(dest.suffix + ".tmp")
+        # Copy then rename, so a reader (or a pruning pass) never sees a
+        # half-written backup and mistake it for a good one.
+        shutil.copyfile(src, tmp)
+        os.replace(tmp, dest)
+        size_gb = dest.stat().st_size / 1e9
+        print(f"consolidate_geom_store: backed up {INDEX_SQLITE_NAME} "
+              f"({size_gb:.2f} GB) → {dest}", flush=True)
+
+        # Prune oldest first; names sort chronologically by construction.
+        existing = sorted(dest_dir.glob("index-*.sqlite"))
+        for stale in existing[:-keep] if keep > 0 else []:
+            try:
+                stale.unlink()
+                print(f"  pruned old geom index backup: {stale.name}", flush=True)
+            except OSError as exc:
+                print(f"  WARNING: could not prune {stale.name}: {exc}", flush=True)
+        return dest
+    except Exception as exc:
+        print(
+            f"ERROR: geom index backup FAILED ({exc}).\n"
+            f"  {src} is the ONLY copy of the key→shard map for this store; "
+            f"without it the shards cannot be addressed and the geometry must "
+            f"be re-extracted from source. Copy it to {dest_dir} by hand.",
+            flush=True,
+        )
+        return None
+
+
 # ── Consolidation ──────────────────────────────────────────────────────────
 
 def consolidate_geom_store(
@@ -497,6 +586,10 @@ def consolidate_geom_store(
     # index.json is still written above, as the interchange/fallback format.
     try:
         write_sqlite_index(_index_dict_to_entries(final_index), output_dir)
+        # Every namespace in this consolidation is now packed and indexed, so
+        # this is the first (and only) moment the index is complete. Back it up
+        # to separate storage before anything else can touch it.
+        backup_sqlite_index(output_dir)
     except Exception as exc:
         # Do not fail the whole consolidation for this — index.json is
         # written and the reader falls back to it — but be loud, because a

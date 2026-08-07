@@ -141,6 +141,21 @@ OHM_STATE_FILE = os.getenv("OHM_STATE_FILE", f"{IX3_BASE}/elastic/ohm_state.json
 GEOM_STORE_DIR = os.getenv("GEOM_STORE_DIR", f"{IX3_BASE}/geom")
 GEOM_STORE_STAGING_DIR = os.getenv("GEOM_STORE_STAGING_DIR", f"{IX3_BASE}/geom/staging")
 
+# Where consolidation copies ``index.sqlite`` once every namespace has been
+# packed. Deliberately on a DIFFERENT filesystem from GEOM_STORE_DIR (IX1 vs
+# IX3): the shards are ~61 GB of keyless WKB whose only key→(shard, offset,
+# length) map is that index, so losing it strands the entire store. On
+# 2026-08-07 a test run rewrote the live index with two synthetic rows and the
+# store became unrecoverable — 248 intact shards that nothing could address —
+# forcing a multi-day re-extract of every namespace carrying non-point
+# geometry. A copy on separate storage turns that from a rebuild into a
+# file copy.
+GEOM_STORE_BACKUP_DIR = os.getenv("GEOM_STORE_BACKUP_DIR", f"{IX1_BASE}/backups/geom")
+# How many timestamped index backups to retain (oldest pruned first). Each is
+# ~1 GB, so this trades disk against history; 3 keeps the last good one plus
+# room to notice a bad consolidation before it rotates out.
+GEOM_STORE_BACKUP_KEEP = int(os.getenv("GEOM_STORE_BACKUP_KEEP", "3"))
+
 # Staged ingestion artefacts (Batch 1 foundation)
 # Canonical staging root and authority-selection control file.
 REPO_ROOT = Path(__file__).resolve().parent.parent
