@@ -542,6 +542,41 @@ The retile is gated on **four** things, all of which change tile content:
 | labels channel (`label:1`) | place#159 | new features in the tileset |
 | containment-hierarchy **test decided** (§9.4) | place#166-adjacent | if adopted, fragment→label links add an array-valued attribute |
 
+#### ✅ ALL FOUR GATES CLEARED — 7 August 2026
+
+| gate | state |
+|---|---|
+| temporal encoding fixed **and** re-ingested | ✅ live as `places_h3ccode-20260805t120000z` (place#164 closed) |
+| `tile-join -pk` + skip-message failure + verifier | ✅ place#160 — `ohm` rebuilt clean, 0 skips, land-coverage assertion passes |
+| labels channel (`label:1`) | ✅ place#159 — 12,713 anchors / 12,713 place_ids / 0 duplicates on `ohm`; all 27 tilesets rebuilt |
+| containment-hierarchy test decided | ✅ **DEFERRED by SG, 7 August 2026** — see below |
+
+**The containment-hierarchy decision: deferred, not rejected.**
+
+§5.4's own argument carried it. Most of the reported problem is *temporal* — 403 distinct spans
+across 591 features at Berlin z6 are versions, not rivals — and §5.1's date filter removes it for
+a fraction of the cost. Containment overlap is information rather than a defect, so the expensive
+part (a true planar arrangement) is only needed for sibling *partial* overlaps, which are rare
+once containment is factored out. Against that, it was the only thing standing between a finished
+pipeline and a publishable map.
+
+What it would still buy is unchanged and worth revisiting later: one dissolve engine serving the
+low-zoom mottle, per-feature dissolve and ancestor reconstruction; evenly-rendering fills with
+overlap depth as a deliberate style choice; and a geometric first pass at `within` edges for the
+v4 graph model. If pursued, take §5.4's staged route — `un` (~200 polygons) → `ukhc` / `vob_*` →
+`ohm` at a single date → `osm` — where the first two stages prove the model in days.
+
+**The retile is therefore unblocked.** The tilesets are already built and verified, parked at
+`/vast/ishi/tiles-verify/` (27 buckets; `osm` 966 MB, `ohm` 702 MB, `wd` 1.84 GB). What remains is
+publication only:
+
+1. deploy the tilesets to the tileserver, **and**
+2. regenerate + `git push origin production` the `tileboss` style in the same operation.
+
+Neither alone: tiles-without-style makes place#159 worse (labels drawn from polygons *and*
+anchors), style-without-tiles blanks every boundary label. Confirm afterwards with
+`grep -c '"has", *"label"' tileserver/styles/whg-context/style.json`.
+
 **⚠️ AND ONE THING THAT IS NOT A TILE CHANGE, BUT MUST SHIP WITH THE RETILE.**
 
 The `tileboss` style must be regenerated and pushed **in the same operation** as the retile —
