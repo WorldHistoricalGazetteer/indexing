@@ -12,6 +12,11 @@ import pyarrow.parquet as pq
 
 from processing import update_merge
 
+try:                            # package-qualified run (tests/__init__.py ran)
+    from ._sandbox import assert_sandboxed
+except ImportError:             # `discover -s tests` puts tests/ on sys.path
+    from _sandbox import assert_sandboxed
+
 
 def _square_geom():
     return {
@@ -37,6 +42,11 @@ class TestUpdateMergeGeoNamesShape(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # This class rmtree's and rewrites a real namespace directory under
+        # STAGED_BASE_DIR, so refuse to run unless the sandbox took effect:
+        # `discover -s tests` skips tests/__init__.py, and without this check
+        # the test silently replaces the live gn / wd staged snapshots.
+        assert_sandboxed()
         from processing.settings import STAGED_BASE_DIR
         cls.staged_base = Path(STAGED_BASE_DIR)
         cls.namespace = "gn"
@@ -158,6 +168,11 @@ class TestUpdateMergeWikidataShape(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # This class rmtree's and rewrites a real namespace directory under
+        # STAGED_BASE_DIR, so refuse to run unless the sandbox took effect:
+        # `discover -s tests` skips tests/__init__.py, and without this check
+        # the test silently replaces the live gn / wd staged snapshots.
+        assert_sandboxed()
         from processing.settings import STAGED_BASE_DIR
         cls.staged_base = Path(STAGED_BASE_DIR)
         cls.namespace = "wd"
@@ -227,6 +242,11 @@ class TestUpdateMergeNoPatch(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # This class rmtree's and rewrites a real namespace directory under
+        # STAGED_BASE_DIR, so refuse to run unless the sandbox took effect:
+        # `discover -s tests` skips tests/__init__.py, and without this check
+        # the test silently replaces the live gn / wd staged snapshots.
+        assert_sandboxed()
         from processing.settings import STAGED_BASE_DIR
         cls.staged_base = Path(STAGED_BASE_DIR)
         cls.namespace = "gn"

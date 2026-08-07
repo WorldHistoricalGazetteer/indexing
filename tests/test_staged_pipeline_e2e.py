@@ -9,6 +9,13 @@ Sandbox paths come from ``tests/__init__.py`` so that any test module
 imported in any order sees a tempdir-rooted ``STAGED_BASE_DIR`` /
 ``GEOM_STORE_DIR``. This test writes its synthetic ``extract/places.parquet``
 files **inside** that sandbox.
+
+⚠️ It also calls ``consolidate_geom_store(output_dir=Path(GEOM_STORE_DIR))``
+with a two-feature synthetic store. Unsandboxed, that **replaces the real geom
+store index and its first shard** — which is what happened on 2026-08-07 under
+``unittest discover -s tests`` (the form that skips ``tests/__init__.py``),
+leaving ``index.sqlite`` holding 2 rows and blocking every tileset rebuild that
+streams geometry. Hence the ``assert_sandboxed()`` gate in ``setUpClass``.
 """
 
 from __future__ import annotations
@@ -19,6 +26,11 @@ from pathlib import Path
 
 import pyarrow as pa
 import pyarrow.parquet as pq
+
+try:                            # package-qualified run (tests/__init__.py ran)
+    from ._sandbox import assert_sandboxed
+except ImportError:             # `discover -s tests` puts tests/ on sys.path
+    from _sandbox import assert_sandboxed
 
 
 def _square(lon0, lat0, side):
@@ -91,7 +103,10 @@ class StagedPipelineE2E(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         # Use the package-level sandbox from tests/__init__.py so we don't
-        # contend with already-imported processing.* module-level constants.
+        # contend with already-imported processing.* module-level constants —
+        # and verify it actually took effect before writing a geom store, since
+        # `discover -s tests` never runs that __init__ (see module docstring).
+        assert_sandboxed()
         from processing.settings import (
             GEOM_STORE_DIR, STAGED_BASE_DIR, STAGED_RUNS_DIR,
         )
