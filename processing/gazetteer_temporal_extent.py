@@ -239,10 +239,24 @@ def doc_temporal_range(
     A thin, side-effect-free wrapper around :func:`_collect_extent_for_doc`
     exposing the *per-document* temporal span (widest ``[min(start), max(end)]``
     across the doc's geometry/toponym/relation timespans, with the same
-    per-namespace outlier clamp as the namespace aggregate). Shared by the
-    :mod:`processing.gazetteer_temporal_extent` aggregate and the vector-tile
-    builder (``processing.generate_tiles``) so the Atlas map's per-feature date
-    filter and the registry's ``temporal_extent`` use identical semantics.
+    per-namespace outlier clamp as the namespace aggregate). Feeds the registry
+    ``temporal_extent`` aggregate.
+
+    ⚠️ **This is the attested COVERAGE extent, not the possible envelope — and
+    the two must not be conflated again** (place#176). It pools every year found
+    under an endpoint (``in``, ``earliest`` *and* ``latest``), so an attestation
+    — ``{"start": {"latest": 2026}}``, meaning *began no later than 2026,
+    unbounded before* — reports 2026 as a lower bound. That is the right reading
+    for "which period does this gazetteer describe?", where ``osm`` should read
+    as contemporary rather than as spanning all of time; it is the wrong reading
+    for any overlap or filter test, where it asserts a beginning the source
+    never claimed.
+
+    The vector-tile builder shared this helper and inherited the over-claim,
+    stamping every contemporary feature ``(2026, 2026)`` — so switching on the
+    map's date filter blanked ``osm`` / ``osm_misc`` / ``tgn`` / ``nl`` on any
+    historical range. It now reads :func:`doc_temporal_bounds` instead.
+    **For filtering or overlap use that function, never this one.**
 
     Either bound may be ``None``: ``(None, None)`` means undated (no parseable
     in-range year on either endpoint); ``(start, None)`` means an *ongoing*

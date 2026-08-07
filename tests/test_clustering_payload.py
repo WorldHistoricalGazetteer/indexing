@@ -71,9 +71,41 @@ class TestAssembleClusteringFields(unittest.TestCase):
         # place#169: an attestation carries only the outer bounds. Reading `in`
         # alone emptied the temporal support of every re-encoded source.
         src = {"geometries": [_geom(spans=[
-            {"start": {"latest": 2025}, "end": {"earliest": 2025}},
+            {"start": {"earliest": 1841}, "end": {"latest": 1861}},
         ])]}
-        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [2025, 2025])
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [1841, 1861])
+
+    def test_attestation_only_span_bounds_no_envelope(self):
+        # place#176 — THE regression this fix exists for. An attestation
+        # ("definitely alive in 2026, unbounded either side") is the whole
+        # contemporary corpus: osm, wd, tgn, gn, nl. Reading the INNER qualifier
+        # as an envelope bound made every one of them ship [2026, 2026], which
+        # contradicted the gateway's own filter — it returns these hits for a
+        # 1500-1600 `possibly` window, and the Atlas mirror then dropped them.
+        src = {"geometries": [_geom(spans=[
+            {"start": {"latest": 2026}, "end": {"earliest": 2026}},
+        ])]}
+        out = cp.assemble_clustering_fields(src)
+        self.assertEqual(out["temporal_range"], [None, None])
+        # The information is not lost — it moves to the core, where it belongs.
+        self.assertEqual(out["temporal_core"], [2026, 2026])
+
+    def test_attestation_envelope_is_distinct_from_undated(self):
+        # [None, None] (has timespans, bounds nothing) vs None (no timespans at
+        # all) are different claims, even though the overlap scores both 0.0.
+        attested = {"geometries": [_geom(spans=[{"start": {"latest": 2026}}])]}
+        undated = {"geometries": [_geom(cover=["a"])]}
+        self.assertEqual(cp.assemble_clustering_fields(attested)["temporal_range"], [None, None])
+        self.assertIsNone(cp.assemble_clustering_fields(undated)["temporal_range"])
+
+    def test_inverted_attestation_bounds_no_envelope(self):
+        # `gb`'s survey window is encoded start.latest 1914 / end.earliest 1888 —
+        # inner bounds that cross. The envelope is unbounded both ways; it must
+        # not come out as the inverted (1914, 1888).
+        src = {"geometries": [_geom(spans=[
+            {"start": {"latest": 1914}, "end": {"earliest": 1888}},
+        ])]}
+        self.assertEqual(cp.assemble_clustering_fields(src)["temporal_range"], [None, None])
 
     def test_temporal_range_is_the_widest_the_bounds_allow(self):
         # Interval-overlap support asks "could these be the same place?", so the

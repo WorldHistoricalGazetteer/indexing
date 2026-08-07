@@ -66,23 +66,53 @@ class TestDocTemporalRange(unittest.TestCase):
 
 
 class TestTemporalProps(unittest.TestCase):
-    def test_dated_emits_both_bounds(self):
+    def test_exact_lifespan_emits_envelope_and_core(self):
+        # An exact lifespan bounds everything: `in` is both bounds at once, so
+        # the feature is possibly AND definitely alive across 1500-1800.
         doc = {"geometries": [{"timespans": [{"start": {"in": 1500},
                                               "end": {"in": 1800}}]}]}
         self.assertEqual(gt._temporal_props(doc, "iv"),
-                         {"start": 1500, "end": 1800})
+                         {"start": 1500, "end": 1800,
+                          "start_def": 1500, "end_def": 1800})
 
-    def test_ongoing_fills_end_sentinel(self):
+    def test_ongoing_fills_end_sentinel_and_has_no_core(self):
+        # `un`: started 1707, still current. No earliest end, so no *definitely*
+        # window can be satisfied — matching unbounded_passes=False on the query
+        # side. The core props are absent, not sentinelled.
         doc = {"geometries": [{"timespans": [{"start": {"in": 1707}}]}]}
         self.assertEqual(gt._temporal_props(doc, "un"),
                          {"start": 1707, "end": gt.TILE_OPEN_END_YEAR})
 
-    def test_open_start_fills_start_sentinel(self):
+    def test_open_start_fills_start_sentinel_and_has_no_core(self):
         doc = {"toponyms": [{"timespans": [{"end": {"in": 1974}}]}]}
         self.assertEqual(gt._temporal_props(doc, "ukhc"),
                          {"start": gt.TILE_OPEN_START_YEAR, "end": 1974})
 
-    def test_undated_omits_both(self):
+    def test_attestation_is_unbounded_in_the_envelope(self):
+        # place#176 — THE case the map filter was blocked on. osm/wd/tgn/nl
+        # record a place as it was at one moment: definitely alive in 2026,
+        # unbounded either side. Stamping (2026, 2026) blanked every one of them
+        # on any historical range, so the envelope must carry BOTH sentinels —
+        # a *possibly* window never hides them — while the core still refuses a
+        # *definitely* window that doesn't contain 2026.
+        doc = {"geometries": [{"timespans": [{"start": {"latest": 2026},
+                                              "end": {"earliest": 2026}}]}]}
+        self.assertEqual(gt._temporal_props(doc, "osm"),
+                         {"start": gt.TILE_OPEN_START_YEAR,
+                          "end": gt.TILE_OPEN_END_YEAR,
+                          "start_def": 2026, "end_def": 2026})
+
+    def test_census_window_separates_envelope_from_core(self):
+        # vob_*: possibly alive 1841-1861, definitely alive at the 1851 census.
+        doc = {"geometries": [{"timespans": [{
+            "start": {"earliest": 1841, "latest": 1851},
+            "end": {"earliest": 1851, "latest": 1861},
+        }]}]}
+        self.assertEqual(gt._temporal_props(doc, "iv"),
+                         {"start": 1841, "end": 1861,
+                          "start_def": 1851, "end_def": 1851})
+
+    def test_undated_omits_everything(self):
         doc = {"geometries": [{"timespans": []}]}
         self.assertEqual(gt._temporal_props(doc, "iv"), {})
 

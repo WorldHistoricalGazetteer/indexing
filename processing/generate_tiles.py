@@ -65,7 +65,7 @@ from processing.osm_boundary_geometry import (
     is_admin_boundary_value,
     is_misc_boundary_value,
 )
-from processing.gazetteer_temporal_extent import doc_temporal_range
+from processing.gazetteer_temporal_extent import doc_temporal_bounds
 from processing.settings import (
     DATA_DIR,
     GEOM_STORE_DIR,
@@ -78,17 +78,32 @@ from processing.settings import (
 TILES_OUTPUT_DIR = Path(DATA_DIR) / 'tiles'
 
 # Per-feature temporal sentinels for the Atlas client-side date filter
-# (place#131). The whg3 map filter is interval-overlap:
-#   ['all', ['has','start'], ['<=',['get','start'],toYear], ['>=',['get','end'],fromYear]]
-# It reads *both* ``start`` and ``end`` on every dated feature, so open-ended
-# spans can't leave a bound absent (a missing ``end`` would wrongly hide every
-# still-current place). We therefore emit a sentinel for the open side:
+# (place#131, place#176). Features carry the possible envelope as
+# ``start``/``end`` and, where a timespan pins both inner bounds, the attested
+# core as ``start_def``/``end_def`` — so the map can express the SAME two modes
+# as the gateway query (place#169):
+#
+#   possibly   ['any', ['!', ['has','start']],
+#                      ['all', ['<=',['get','start'],toYear],
+#                              ['>=',['get','end'],fromYear]]]
+#   definitely ['all', ['has','start_def'],
+#                      ['<=',['get','start_def'],fromYear],
+#                      ['>=',['get','end_def'],toYear]]
+#
+# The envelope reads *both* ``start`` and ``end`` on every dated feature, so an
+# open-ended span can't leave a bound absent (a missing ``end`` would wrongly
+# hide every still-current place). We therefore emit a sentinel for the open
+# side, and an attestation — unbounded on BOTH sides — gets both sentinels:
 #   ongoing  (start, no end)  -> end   = TILE_OPEN_END_YEAR   (always >= fromYear)
 #   open-start (end, no start)-> start = TILE_OPEN_START_YEAR (always <= toYear)
-#   undated  (no start/end)   -> omit both; the client admits these only in
-#                               "+ undated" mode via ['!',['has','start']].
-# This mirrors the gateway's temporal-overlap + ``undated`` semantics
-# (``gateway/es_helpers.py``). Fixed (not build-year) so tiles stay
+#   attested-at-an-instant    -> both sentinels; never hidden in *possibly*, and
+#                               refused by *definitely* unless the core fits.
+#   undated  (no timespans)   -> omit everything; the client admits these in
+#                               *possibly* only, via ['!',['has','start']].
+# The core carries NO sentinels: its absence is the signal that no *definitely*
+# window can ever be satisfied, which is exactly what ``unbounded_passes=False``
+# means on the query side. This mirrors the gateway's two modes + ``undated``
+# semantics (``gateway/es_helpers.py``). Fixed (not build-year) so tiles stay
 # reproducible; the values only need to fall outside any real query window.
 TILE_OPEN_END_YEAR = 9999
 TILE_OPEN_START_YEAR = -9999
@@ -449,9 +464,16 @@ def generate_tileset(
         # (place#131) so low-zoom clusters date-filter too, not just individual
         # features. ``start:min``/``end:max`` widen to the union of members'
         # spans (a cluster shows if *any* member overlaps the window).
+        # The definite core widens the same way (place#176): a cluster passes a
+        # *definitely* window if ANY member could, which is the same
+        # err-toward-visible reading as the envelope. A cluster point stands for
+        # many places; refusing to draw it because its members disagree would
+        # hide all of them.
         cmd += [
             '--accumulate-attribute', 'start:min',
             '--accumulate-attribute', 'end:max',
+            '--accumulate-attribute', 'start_def:min',
+            '--accumulate-attribute', 'end_def:max',
         ]
         # NOTE: AAT is deliberately NOT accumulated onto cluster points.
         # ``aat:concat`` builds an *unbounded* string (every member's paths
@@ -887,22 +909,52 @@ def _has_renderable_geometry(geom_entry: Any) -> bool:
 
 
 def _temporal_props(doc: dict[str, Any], namespace: str) -> dict[str, int]:
-    """Per-feature ``start``/``end`` props for the Atlas date filter (place#131).
+    """Per-feature date-filter props for the Atlas map (place#131, place#176).
 
-    Uses the shared :func:`doc_temporal_range` so the map's per-feature filter
-    and the registry ``temporal_extent`` derive from identical logic. Returns an
-    empty dict for undated features (both bounds omitted → client shows them
-    only in "+ undated" mode); otherwise fills the open side with a sentinel so
-    both ``start`` and ``end`` are always present on a dated feature. See
-    ``TILE_OPEN_END_YEAR`` / ``TILE_OPEN_START_YEAR``.
+    Emits up to four numbers, mirroring the gateway's **two query modes** so the
+    map filter and the search filter can agree (place#169):
+
+    ``start`` / ``end``
+        The *possible envelope* — the outer bounds, with a sentinel on any side
+        nothing bounds, so both are always present on a feature that has any
+        temporal information at all. Drives *possibly* mode.
+    ``start_def`` / ``end_def``
+        The *attested core* — the inner bounds. Present only when a timespan
+        pins both, which is exactly when a *definitely* test can be satisfied.
+        Drives *definitely* mode; a feature lacking them can never be definitely
+        alive and the client filters it out by testing ``has``.
+
+    Reads :func:`doc_temporal_bounds`, **not** ``doc_temporal_range``. The
+    latter pools every year found under an endpoint, so an attestation
+    (``{"start": {"latest": 2026}}`` — began no later than 2026, unbounded
+    before) collapsed to a lower bound of 2026 and every contemporary feature
+    stamped ``(2026, 2026)``. Switching the map filter on against those stamps
+    blanks ``osm`` / ``osm_misc`` / ``tgn`` / ``nl`` on any historical range —
+    the precise defect place#164 exists to remove, arriving by a different road.
+    Such a feature now gets ``start = -9999, end = 9999`` (unbounded: never
+    hidden in *possibly*) plus ``start_def = end_def = 2026`` (correctly refused
+    by any *definitely* window that doesn't contain 2026).
+
+    Undated features — no timespans at all — omit every prop, and the client
+    admits them only in *possibly* mode, matching the gateway's ``undated``
+    branch. See ``TILE_OPEN_END_YEAR`` / ``TILE_OPEN_START_YEAR``.
     """
-    start, end = doc_temporal_range(doc, namespace)
-    if start is None and end is None:
-        return {}
-    return {
-        "start": start if start is not None else TILE_OPEN_START_YEAR,
-        "end": end if end is not None else TILE_OPEN_END_YEAR,
+    start_earliest, start_latest, end_earliest, end_latest = doc_temporal_bounds(
+        doc, namespace)
+    if (start_earliest is None and start_latest is None
+            and end_earliest is None and end_latest is None):
+        return {}                       # genuinely undated
+    props: dict[str, int] = {
+        # Envelope: an absent outer bound is UNBOUNDED, never the inner one.
+        "start": start_earliest if start_earliest is not None else TILE_OPEN_START_YEAR,
+        "end": end_latest if end_latest is not None else TILE_OPEN_END_YEAR,
     }
+    # Core: only where a timespan pins both sides. No sentinels — absence is
+    # the signal that no *definitely* window can be satisfied.
+    if start_latest is not None and end_earliest is not None:
+        props["start_def"] = start_latest
+        props["end_def"] = end_earliest
+    return props
 
 
 def _aat_prop(doc: dict[str, Any]) -> str | None:
@@ -1119,11 +1171,13 @@ def _accumulate_coverage(geom_json, sink: list) -> None:
 
 
 # Properties carried onto a label anchor. The style's label layers filter on
-# `boundary`, and the whg3 date filter reads `start`/`end`, so those must
-# survive. `aat` / `population` / `fcode` are dropped: labels are not
-# type-filtered and every omitted key is bytes on every anchor.
+# `boundary`, and the whg3 date filter reads `start`/`end` plus the definite
+# core `start_def`/`end_def` (place#176), so those must survive — a label whose
+# polygon the date filter keeps must not itself vanish, and vice versa.
+# `aat` / `population` / `fcode` are dropped: labels are not type-filtered and
+# every omitted key is bytes on every anchor.
 _LABEL_KEEP_PROPS = ("place_id", "namespace", "boundary", "name", "name_local",
-                     "start", "end")
+                     "start", "end", "start_def", "end_def")
 
 # Above this vertex count, simplify before polylabel. polylabel is iterative
 # and unbounded on a 100k-vertex ring — Australia's outline is 1,655,696.

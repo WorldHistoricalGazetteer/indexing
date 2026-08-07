@@ -161,22 +161,45 @@ def _temporal_range(geometries: list[dict]) -> list[int | None] | None:
     window in the Atlas's client-side preview — the exact over-claim place#164
     removed from storage. Consumers treat None as unbounded: see
     ``clustering.temporal_overlap`` and its JS twin in ``whg3 clustering.js``.
+
+    **Only the OUTER qualifier of each endpoint bounds the envelope**
+    (``start.earliest`` / ``end.latest``), or ``in``, which is an exact year and
+    so bounds both sides at once. Falling back to the *inner* qualifier — as
+    this did until place#176 — reintroduces the same over-claim by a different
+    route: an attestation reading ``{"start": {"latest": 2026}}`` says the place
+    began *no later than* 2026 and says nothing whatever about how much earlier,
+    so borrowing 2026 as the envelope's lower bound asserts a beginning the
+    source never claimed. That is the whole contemporary corpus — ``osm``,
+    ``wd``, ``tgn``, ``gn``, ``nl`` — and it made each of them ship
+    ``temporal_range: [2026, 2026]`` while the gateway's own query filter,
+    reading the same document correctly, *kept* them in a sixteenth-century
+    ``possibly`` window. The Atlas mirror then dropped hits the server had
+    deliberately returned.
+
+    Returns ``[None, None]`` — not ``None`` — for a document whose timespans
+    bound neither side: it *has* temporal information (``temporal_core`` carries
+    the attested span alongside), it simply constrains no envelope. ``None``
+    stays reserved for a document with no timespans at all. The overlap signal
+    scores both as 0.0, so this costs nothing there and keeps the payload
+    honest for everyone else.
     """
     starts: list[int] = []
     ends: list[int] = []
+    saw_timespan = False
     for g in geometries:
         if not isinstance(g, dict):
             continue
         for ts in g.get("timespans", []) or []:
             if not isinstance(ts, dict):
                 continue
-            start = _timespan_bound(ts.get("start") or {}, ("earliest", "in", "latest"))
-            end = _timespan_bound(ts.get("end") or {}, ("latest", "in", "earliest"))
+            saw_timespan = True
+            start = _timespan_bound(ts.get("start") or {}, ("earliest", "in"))
+            end = _timespan_bound(ts.get("end") or {}, ("latest", "in"))
             if start is not None:
                 starts.append(start)
             if end is not None:
                 ends.append(end)
-    if not starts and not ends:
+    if not saw_timespan:
         return None
     return [min(starts) if starts else None, max(ends) if ends else None]
 
