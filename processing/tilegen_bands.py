@@ -181,6 +181,16 @@ def load_bands(
                 minzoom=int(spec["minzoom"]),
                 maxzoom=int(spec["maxzoom"]),
                 where=spec.get("where"),
+                # place#159: optional, and absent from the style's band
+                # metadata today — so labels currently inherit the polygon
+                # range. That is right for every band except `continental`,
+                # whose labels are wanted to z5 while its polygons stop at z4.
+                # Read here so populating the style closes the gap with no
+                # further code change.
+                label_minzoom=(int(spec["label_minzoom"])
+                               if spec.get("label_minzoom") is not None else None),
+                label_maxzoom=(int(spec["label_maxzoom"])
+                               if spec.get("label_maxzoom") is not None else None),
             ))
         if bands:
             out[bucket] = bands

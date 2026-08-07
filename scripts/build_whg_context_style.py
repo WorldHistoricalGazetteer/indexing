@@ -46,10 +46,18 @@ OUT = Path(os.environ.get(
 # the resulting mbtiles are tile-join'd into the canonical bucket file.
 # Where clause: ``{"property": "X", "in": [...]}`` matches features with
 # property X in the listed values. Features matching no band are dropped.
+# label_minzoom/label_maxzoom (place#159): the label symbol layers use their
+# OWN zoom windows, which are not always the polygon band's. Continental labels
+# are wanted to z5 while continental polygons stop at z4, so without this the
+# label anchors would simply not be tiled at the zoom they matter most. Kept
+# beside the band so the two cannot drift; `admin_levels` in make_layers() uses
+# the same numbers for the style layers themselves.
 ADMIN_BANDS = [
     {"name": "continental", "minzoom": 0, "maxzoom": 4,
+     "label_minzoom": 0, "label_maxzoom": 5,
      "where": {"property": "boundary", "in": ["0", "1"]}},
     {"name": "country",     "minzoom": 0, "maxzoom": 8,
+     "label_minzoom": 2, "label_maxzoom": 8,
      "where": {"property": "boundary", "in": ["2"]}},
     {"name": "state",       "minzoom": 3, "maxzoom": 10,
      "where": {"property": "boundary", "in": ["3", "4"]}},
