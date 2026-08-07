@@ -1613,6 +1613,30 @@ def tile_join(
     return True
 
 
+def _with_labels(mbtiles_list: list[Path], bucket: str,
+                 labels_geojsonl: Path | None, out_dir: Path,
+                 description: str, maxzoom: int = 10) -> list[Path]:
+    """Append a label-anchor mbtiles to a tile-join input list (place#159).
+
+    Same layer name as the shapes, so tile-join folds the anchors into the one
+    source-layer where `label: 1` distinguishes them. Points are tiny and never
+    clustered — ``preserve_all`` keeps every anchor rather than shedding the
+    densest, because a dropped label is a place that silently loses its name.
+
+    Returns the list unchanged when there is nothing to add, so the caller need
+    not branch.
+    """
+    if labels_geojsonl is None:
+        return mbtiles_list
+    label_mbtiles = out_dir / f"{bucket}.labels.mbtiles"
+    if generate_tileset(labels_geojsonl, label_mbtiles, bucket, description,
+                        minzoom=0, maxzoom=maxzoom,
+                        preserve_all=True):
+        return mbtiles_list + [label_mbtiles]
+    print(f"  ⚠ {bucket}: label pass failed — tileset will have no anchors")
+    return mbtiles_list
+
+
 def generate_tiles_from_staged(
     *,
     buckets: list[str] | None = None,
@@ -1752,10 +1776,20 @@ def generate_tiles_from_staged(
                 # polygon/point mix (see the tippecanoe stage).
                 collect_cov = bucket not in _CONTEXT_OVERLAY_BUCKETS
                 print(f"\nStreaming bucket '{bucket}' (single-band) from {_bucket_contributors(bucket)} ...")
+                # place#159 phase 2: label anchors for the per-namespace
+                # polygon buckets too. Deferred originally because whg3's
+                # loadGazetteerStyle would heatmap the anchors until it gains
+                # the `!has label` filter — a map-appearance problem, not a
+                # data one, and the tileset is the slow half to produce.
+                labels_geojsonl = out_dir / f"{bucket}.labels.geojsonl"
                 written, geom_counts, cov_geoms = _stream_bucket(
                     bucket, reader, geojsonl_path=geojsonl_path,
                     collect_coverage=collect_cov,
+                    labels_path=labels_geojsonl,
                 )
+                if not (labels_geojsonl.exists()
+                        and labels_geojsonl.stat().st_size > 0):
+                    labels_geojsonl = None
                 bucket_counts[bucket] = sum(written.values())
                 for ns, n in written.items():
                     per_namespace_totals[ns] += n
@@ -1893,15 +1927,21 @@ def generate_tiles_from_staged(
                             cluster_points=False,
                         ):
                             built = tile_join(
-                                [base_mbtiles, cov_mbtiles], mbtiles,
-                                layer_name=bucket,
+                                _with_labels([base_mbtiles, cov_mbtiles],
+                                             bucket, labels_geojsonl, out_dir,
+                                             tile_description, tile_maxzoom),
+                                mbtiles, layer_name=bucket,
                             )
                         else:
                             # Footprint failed — keep the boundaries; the single-
                             # input join just renames base → final.
                             print(f"  ⚠ {bucket}: coverage pass failed — "
                                   "deploying boundaries without footprint")
-                            built = tile_join([base_mbtiles], mbtiles, layer_name=bucket)
+                            built = tile_join(
+                                _with_labels([base_mbtiles], bucket,
+                                             labels_geojsonl, out_dir,
+                                             tile_description, tile_maxzoom),
+                                mbtiles, layer_name=bucket)
 
                     if built:
                         tilesets_generated.append(mbtiles)
