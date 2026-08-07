@@ -130,5 +130,53 @@ class TileJoinSkipDetection(unittest.TestCase):
         self.assertEqual(_tile_join_skips(None), [])
 
 
+class RegionalTilesetsAreNotFailedForBeingRegional(unittest.TestCase):
+    """`ukhc` is 92 English and Welsh counties. Demanding tiles over Lagos and
+    Tokyo from it produced "34 missing land tile(s)" — a check that cannot pass
+    is a check that gets ignored, taking the global assertion down with it."""
+
+    def _mbtiles_with_bounds(self, path, tiles, bounds):
+        conn = sqlite3.connect(str(path))
+        conn.execute("CREATE TABLE tiles (zoom_level INTEGER, tile_column "
+                     "INTEGER, tile_row INTEGER, tile_data BLOB)")
+        conn.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
+        conn.executemany("INSERT INTO tiles VALUES (?,?,?,?)",
+                         [(z, x, (2 ** z - 1) - y, b"x") for z, x, y in tiles])
+        conn.execute("INSERT INTO metadata VALUES ('bounds', ?)", (bounds,))
+        conn.commit()
+        conn.close()
+
+    def test_a_uk_only_tileset_passes_when_it_covers_the_uk(self):
+        from processing.verify_tileset_coverage import _tile_for, verify
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ukhc.mbtiles"
+            # London only — the sole land point inside GB bounds.
+            tiles = {(z,) + _tile_for(-0.13, 51.51, z) for z in range(0, 5)}
+            self._mbtiles_with_bounds(p, tiles, "-8.6,49.9,1.8,60.9")
+            self.assertEqual(verify(p, 4), [])
+
+    def test_a_uk_only_tileset_still_fails_if_it_misses_the_uk(self):
+        """Scoping must not neuter the check inside the tileset's own area."""
+        from processing.verify_tileset_coverage import _tile_for, verify
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ukhc.mbtiles"
+            tiles = {(z,) + _tile_for(-0.13, 51.51, z) for z in range(1, 5)}
+            self._mbtiles_with_bounds(p, tiles, "-8.6,49.9,1.8,60.9")
+            failures = verify(p, 4)
+            self.assertTrue(failures)
+            self.assertIn("London", failures[0])
+
+    def test_a_global_tileset_is_still_held_to_global_coverage(self):
+        from processing.verify_tileset_coverage import required_tiles, verify
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "ohm.mbtiles"
+            tiles = set(required_tiles(3))
+            tiles.discard((0, 0, 0))
+            self._mbtiles_with_bounds(p, tiles, "-180,-85,180,85")
+            failures = verify(p, 3)
+            self.assertTrue(failures)
+            self.assertIn("0/0/0", failures[0])
+
+
 if __name__ == "__main__":
     unittest.main()

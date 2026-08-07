@@ -94,12 +94,54 @@ def present_tiles(mbtiles: Path, max_zoom: int = MAX_CHECK_ZOOM) -> set[tuple[in
     return {(z, x, (2 ** z - 1) - row) for z, x, row in rows}
 
 
+def tileset_bounds(mbtiles: Path) -> tuple[float, float, float, float] | None:
+    """(minlon, minlat, maxlon, maxlat) from mbtiles metadata, or None."""
+    try:
+        conn = sqlite3.connect(f"file:{mbtiles}?mode=ro", uri=True, timeout=30)
+        row = conn.execute(
+            "SELECT value FROM metadata WHERE name='bounds'").fetchone()
+        conn.close()
+        if not row:
+            return None
+        parts = [float(v) for v in str(row[0]).split(",")]
+        return (parts[0], parts[1], parts[2], parts[3]) if len(parts) == 4 else None
+    except Exception:
+        return None
+
+
 def verify(mbtiles: Path, max_zoom: int = MAX_CHECK_ZOOM) -> list[str]:
-    """Return a list of failures; empty means the tileset covers land."""
+    """Return a list of failures; empty means the tileset covers its own land.
+
+    Scoped to the tileset's DECLARED BOUNDS. Demanding global coverage from a
+    regional gazetteer is nonsense — `ukhc` is 92 English and Welsh counties
+    and was reported as missing 34 land tiles, all of them in Africa, Asia and
+    the Americas. A check that cannot pass gets ignored, which would have cost
+    the global check that does matter.
+
+    A tileset whose bounds contain none of the land points is skipped rather
+    than failed: it is regional and this check has nothing useful to say.
+    """
     if not mbtiles.exists():
         return [f"{mbtiles.name}: file does not exist"]
     have = present_tiles(mbtiles, max_zoom)
-    need = required_tiles(max_zoom)
+
+    bounds = tileset_bounds(mbtiles)
+    if bounds:
+        minlon, minlat, maxlon, maxlat = bounds
+        points = [(n, lon, lat) for n, lon, lat in _LAND_POINTS
+                  if minlon <= lon <= maxlon and minlat <= lat <= maxlat]
+    else:
+        points = list(_LAND_POINTS)
+
+    if not points:
+        return []  # regional tileset — nothing global to assert
+
+    need: dict[tuple[int, int, int], list[str]] = {}
+    for z in range(0, max_zoom + 1):
+        for name, lon, lat in points:
+            x, y = _tile_for(lon, lat, z)
+            need.setdefault((z, x, y), []).append(name)
+
     failures = []
     for (z, x, y), names in sorted(need.items()):
         if (z, x, y) not in have:
