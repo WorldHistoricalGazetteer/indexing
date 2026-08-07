@@ -542,6 +542,28 @@ The retile is gated on **four** things, all of which change tile content:
 | labels channel (`label:1`) | place#159 | new features in the tileset |
 | containment-hierarchy **test decided** (§9.4) | place#166-adjacent | if adopted, fragment→label links add an array-valued attribute |
 
+**⚠️ AND ONE THING THAT IS NOT A TILE CHANGE, BUT MUST SHIP WITH THE RETILE.**
+
+The `tileboss` style must be regenerated and pushed **in the same operation** as the retile —
+not before, not after. `scripts/build_whg_context_style.py` writes into the sibling `tileboss`
+clone; the change is committed *here* (the label layers gain `["has","label"]`) but publishing it
+is a separate `git push origin production` in **that** repo, which the tileserver picks up via
+`git pull` on `/srv`.
+
+Order matters in both directions, and neither failure is subtle:
+
+| sequence | result |
+|---|---|
+| tiles deployed, style not yet | label layers draw from the polygons **and** the anchors — Nebraska gets its five fragment labels *plus* a sixth. #159 gets **worse**. |
+| style deployed, tiles not yet | `["has","label"]` matches nothing — **every boundary label disappears**. |
+| both together | one label per boundary, at its pole of inaccessibility. |
+
+State as of 7 August 2026: the tiler emits anchors (place#159, committed), the generator emits
+the filter (committed), and the **published `tileboss/tileserver/styles/whg-context/style.json`
+still has the old unfiltered label layers** — deliberately, since deploying it alone would blank
+the labels. Regenerate and push it as part of the retile, and check
+`grep -c '"has", *"label"' tileserver/styles/whg-context/style.json` is non-zero afterwards.
+
 Everything *except the retile itself* parallelises freely — the `tile_join` change and the verifier
 are unit-testable today against the band GeoJSONL kept on `/ix1` (§8.1), and the dump downloads
 (148 GB `wd`, 92 GB `osm`) are the real long pole and should start first, since they block nothing
