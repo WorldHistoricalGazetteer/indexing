@@ -32,6 +32,15 @@ from pathlib import Path
 
 MAX_CHECK_ZOOM = 4
 
+# Only these are DENSE GLOBAL boundary tilesets — every land point on earth
+# should fall inside one of their polygons, so a missing land tile is
+# unambiguously a hole. Everything else is regional (`ukhc` = 92 English and
+# Welsh counties) or sparse (`osm_misc` = scattered categories, with no
+# features near Johannesburg or Jakarta), and asserting global land coverage
+# against those manufactures failures that are really just the shape of the
+# data. A check that cries wolf is a check that gets ignored.
+GLOBAL_DENSE_BUCKETS = {"osm", "ohm"}
+
 # Points that are unambiguously on land with mapped administrative boundaries,
 # spread across every populated continent. A tile containing one of these must
 # exist in any global boundary tileset.
@@ -109,6 +118,26 @@ def tileset_bounds(mbtiles: Path) -> tuple[float, float, float, float] | None:
         return None
 
 
+def declared_zoom_range(mbtiles: Path) -> tuple[int | None, int | None]:
+    """(minzoom, maxzoom) from mbtiles metadata.
+
+    A tileset is not obliged to start at z0: `osm_misc`'s bands begin at z2, so
+    demanding a z0/z1 tile from it reports a hole where the pipeline is working
+    exactly as configured.
+    """
+    try:
+        conn = sqlite3.connect(f"file:{mbtiles}?mode=ro", uri=True, timeout=30)
+        rows = dict(conn.execute(
+            "SELECT name, value FROM metadata "
+            "WHERE name IN ('minzoom','maxzoom')").fetchall())
+        conn.close()
+        lo = int(rows["minzoom"]) if "minzoom" in rows else None
+        hi = int(rows["maxzoom"]) if "maxzoom" in rows else None
+        return lo, hi
+    except Exception:
+        return None, None
+
+
 def verify(mbtiles: Path, max_zoom: int = MAX_CHECK_ZOOM) -> list[str]:
     """Return a list of failures; empty means the tileset covers its own land.
 
@@ -136,8 +165,15 @@ def verify(mbtiles: Path, max_zoom: int = MAX_CHECK_ZOOM) -> list[str]:
     if not points:
         return []  # regional tileset — nothing global to assert
 
+    # Never demand a zoom the tileset does not claim to cover.
+    lo, hi = declared_zoom_range(mbtiles)
+    z_from = lo if lo is not None else 0
+    z_to = min(max_zoom, hi) if hi is not None else max_zoom
+    if z_from > z_to:
+        return []
+
     need: dict[tuple[int, int, int], list[str]] = {}
-    for z in range(0, max_zoom + 1):
+    for z in range(z_from, z_to + 1):
         for name, lon, lat in points:
             x, y = _tile_for(lon, lat, z)
             need.setdefault((z, x, y), []).append(name)
@@ -157,6 +193,9 @@ def main() -> int:
     ap.add_argument("--dir", type=Path,
                     help="Check every .mbtiles in this directory")
     ap.add_argument("--max-zoom", type=int, default=MAX_CHECK_ZOOM)
+    ap.add_argument("--all", action="store_true",
+                    help="Check every tileset, not just the dense global ones "
+                         "(expect sparsity false alarms on regional buckets)")
     args = ap.parse_args()
 
     targets = list(args.mbtiles)
@@ -167,6 +206,11 @@ def main() -> int:
 
     total_failures = 0
     for t in targets:
+        bucket = t.name[:-8] if t.name.endswith(".mbtiles") else t.name
+        if not args.all and bucket not in GLOBAL_DENSE_BUCKETS:
+            print(f"– {t.name}: skipped (not a dense global boundary tileset; "
+                  f"pass --all to check anyway)")
+            continue
         failures = verify(t, args.max_zoom)
         if failures:
             total_failures += len(failures)

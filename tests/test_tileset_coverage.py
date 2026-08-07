@@ -178,5 +178,50 @@ class RegionalTilesetsAreNotFailedForBeingRegional(unittest.TestCase):
             self.assertIn("0/0/0", failures[0])
 
 
+class DeclaredZoomRangeIsRespected(unittest.TestCase):
+    """`osm_misc`'s bands begin at z2. Demanding a z0/z1 tile from it reported
+    a hole where the pipeline was working exactly as configured."""
+
+    def _mb(self, path, tiles, minzoom=None, bounds="-180,-85,180,85"):
+        conn = sqlite3.connect(str(path))
+        conn.execute("CREATE TABLE tiles (zoom_level INTEGER, tile_column "
+                     "INTEGER, tile_row INTEGER, tile_data BLOB)")
+        conn.execute("CREATE TABLE metadata (name TEXT, value TEXT)")
+        conn.executemany("INSERT INTO tiles VALUES (?,?,?,?)",
+                         [(z, x, (2 ** z - 1) - y, b"x") for z, x, y in tiles])
+        conn.execute("INSERT INTO metadata VALUES ('bounds', ?)", (bounds,))
+        if minzoom is not None:
+            conn.execute("INSERT INTO metadata VALUES ('minzoom', ?)",
+                         (str(minzoom),))
+        conn.commit()
+        conn.close()
+
+    def test_zooms_below_declared_minzoom_are_not_demanded(self):
+        from processing.verify_tileset_coverage import required_tiles, verify
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "osm_misc.mbtiles"
+            tiles = {t for t in required_tiles(4) if t[0] >= 2}
+            self._mb(p, tiles, minzoom=2)
+            self.assertEqual(verify(p, 4), [])
+
+    def test_a_hole_inside_the_declared_range_is_still_caught(self):
+        from processing.verify_tileset_coverage import (
+            _tile_for, required_tiles, verify,
+        )
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "osm_misc.mbtiles"
+            tiles = {t for t in required_tiles(4) if t[0] >= 2}
+            tiles.discard((3,) + _tile_for(13.40, 52.52, 3))
+            self._mb(p, tiles, minzoom=2)
+            self.assertTrue(any("Berlin" in f for f in verify(p, 4)))
+
+
+class OnlyDenseGlobalBucketsAreHeldToTheLandMask(unittest.TestCase):
+
+    def test_the_global_admin_buckets_are_listed(self):
+        from processing.verify_tileset_coverage import GLOBAL_DENSE_BUCKETS
+        self.assertEqual(GLOBAL_DENSE_BUCKETS, {"osm", "ohm"})
+
+
 if __name__ == "__main__":
     unittest.main()
