@@ -2111,7 +2111,7 @@ def main():
             )
         )
 
-    generate_tiles_from_staged(
+    produced = generate_tiles_from_staged(
         buckets=args.bucket,
         output_dir=Path(args.output_dir) if args.output_dir else None,
         deploy=args.deploy,
@@ -2119,6 +2119,16 @@ def main():
         manifest_path=manifest_path,
         skip_tippecanoe=args.skip_tippecanoe,
     )
+    # Exit non-zero when a requested bucket produced nothing. Without this a
+    # tippecanoe failure printed "Tilesets generated: 0" and still exited 0, so
+    # Slurm recorded COMPLETED — which is how a 24-bucket array reported 14
+    # successes while writing 0-byte tilesets (7 Aug 2026, ulimit -n 1024 and
+    # three tasks sharing node-local /tmp). Same silent-failure class as the
+    # tile-join drop in place#160: the build must fail loudly or it ships.
+    if args.bucket and not produced:
+        print(f"ERROR: no tileset produced for {', '.join(args.bucket)}",
+              file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
