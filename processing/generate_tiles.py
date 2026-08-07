@@ -1907,7 +1907,14 @@ def generate_tiles_from_staged(
                 # features to a BASE mbtiles (no-drop) and the dissolved footprint
                 # to its OWN mbtiles (maxzoom 7), then ``tile-join`` both into the
                 # single bucket source-layer. Point buckets skip this entirely.
-                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if has_coverage else mbtiles
+                # A join is needed for the coverage footprint AND for label
+                # anchors. Keying it on has_coverage alone silently dropped
+                # labels from every point-DOMINANT bucket that still has some
+                # polygons — `hgis` (892 polygons among 13,213 points) built
+                # its base straight to the final file, so tile_join never ran
+                # and _with_labels never fired.
+                needs_join = has_coverage or labels_geojsonl is not None
+                base_mbtiles = (out_dir / f"{bucket}.base.mbtiles") if needs_join else mbtiles
 
                 if generate_tileset(
                     geojsonl, base_mbtiles, bucket, tile_description,
@@ -1942,6 +1949,13 @@ def generate_tiles_from_staged(
                                              labels_geojsonl, out_dir,
                                              tile_description, tile_maxzoom),
                                 mbtiles, layer_name=bucket)
+                    elif labels_geojsonl is not None:
+                        # No footprint, but there are polygons to label.
+                        built = tile_join(
+                            _with_labels([base_mbtiles], bucket,
+                                         labels_geojsonl, out_dir,
+                                         tile_description, tile_maxzoom),
+                            mbtiles, layer_name=bucket)
 
                     if built:
                         tilesets_generated.append(mbtiles)
