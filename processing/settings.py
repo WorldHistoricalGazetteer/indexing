@@ -141,6 +141,26 @@ OHM_STATE_FILE = os.getenv("OHM_STATE_FILE", f"{IX3_BASE}/elastic/ohm_state.json
 GEOM_STORE_DIR = os.getenv("GEOM_STORE_DIR", f"{IX3_BASE}/geom")
 GEOM_STORE_STAGING_DIR = os.getenv("GEOM_STORE_STAGING_DIR", f"{IX3_BASE}/geom/staging")
 
+# Namespaces whose tile documents are read from Elasticsearch instead of a
+# staged snapshot (comma-separated; empty = always use staging).
+#
+# Tiling has always taken *geometry* from the geom store and only the document
+# body from staged parquet — and every field ``_build_staged_feature`` touches
+# (place_id, title, toponyms, geometries, types, ccodes, population, boundary)
+# is in the places index too. So a namespace whose staged tree is missing can
+# still be tiled, without re-running a multi-hour extract to reconstruct a
+# snapshot the index already contains.
+#
+# Deliberately an explicit list rather than an automatic "fall back to ES when
+# staging is absent": silent source-switching is what let a 1.4 KB test stub be
+# tiled as if it were GeoNames. If staging is unexpectedly missing, that should
+# fail loudly; reading from ES is a decision someone makes on purpose.
+TILE_ES_DOC_NAMESPACES = {
+    ns.strip() for ns in os.getenv("TILE_ES_DOC_NAMESPACES", "").split(",") if ns.strip()
+}
+# Password file for the tiling ES reader (read-only scroll against PLACES_INDEX).
+ES_PASSWORD_FILE = os.getenv("ES_PASSWORD_FILE", f"{IX1_BASE}/es/config/elastic.password")
+
 # Where consolidation copies ``index.sqlite`` once every namespace has been
 # packed. Deliberately on a DIFFERENT filesystem from GEOM_STORE_DIR (IX1 vs
 # IX3): the shards are ~61 GB of keyless WKB whose only key→(shard, offset,

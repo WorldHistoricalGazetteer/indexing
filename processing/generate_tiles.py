@@ -871,6 +871,95 @@ def _staged_namespace_source(namespace: str) -> Path | None:
     return None
 
 
+def _iter_es_docs(namespace: str) -> Iterator[dict[str, Any]]:
+    """Stream a namespace's place documents from Elasticsearch.
+
+    The tile builder only ever needed the *document* from staging — geometry
+    already comes from the geom store via ``reader.get(geom_ref)`` — and the
+    places index carries every field ``_build_staged_feature`` reads. So a
+    namespace can be tiled straight from the index when its staged snapshot is
+    gone, instead of re-running an extract to rebuild a copy of what the index
+    already holds.
+
+    Read-only, so there is nothing to isolate: no snapshot, no scratch cluster.
+    Uses a point-in-time with ``search_after`` rather than a scroll, so the view
+    stays consistent for the whole pass without pinning shard resources the way
+    a long-lived scroll context does; sorting on ``_shard_doc`` is the cheapest
+    total order ES offers and requires no field to be sortable.
+    """
+    from elasticsearch import Elasticsearch
+
+    from processing.settings import ES_HOST, ES_PASSWORD_FILE, PLACES_INDEX
+
+    kwargs: dict[str, Any] = {"request_timeout": 300, "max_retries": 5,
+                              "retry_on_timeout": True}
+    try:
+        with open(ES_PASSWORD_FILE, encoding="utf-8") as fh:
+            kwargs["basic_auth"] = ("elastic", fh.read().strip())
+    except OSError:
+        pass  # unauthenticated cluster, or creds supplied via ES_HOST URL
+    es = Elasticsearch(ES_HOST, **kwargs)
+
+    pit_id = es.open_point_in_time(index=PLACES_INDEX, keep_alive="10m")["id"]
+    query = {"term": {"namespace": namespace}}
+    search_after = None
+    yielded = 0
+    try:
+        while True:
+            body: dict[str, Any] = {
+                "size": 2000,
+                "query": query,
+                "pit": {"id": pit_id, "keep_alive": "10m"},
+                "sort": [{"_shard_doc": "asc"}],
+                "track_total_hits": False,
+            }
+            if search_after is not None:
+                body["search_after"] = search_after
+            resp = es.search(body=body)
+            hits = resp["hits"]["hits"]
+            if not hits:
+                break
+            # The PIT id can be refreshed between pages; honour the new one.
+            pit_id = resp.get("pit_id", pit_id)
+            for hit in hits:
+                src = hit.get("_source")
+                if isinstance(src, dict):
+                    yielded += 1
+                    yield src
+            search_after = hits[-1]["sort"]
+            if yielded % 500_000 == 0:
+                print(f"  ... read {yielded:,} {namespace} docs from ES",
+                      flush=True)
+    finally:
+        try:
+            es.close_point_in_time(body={"id": pit_id})
+        except Exception:
+            pass  # best-effort; the keep_alive expires on its own
+    print(f"  read {yielded:,} {namespace} docs from Elasticsearch", flush=True)
+
+
+def _iter_namespace_docs(namespace: str) -> Iterator[dict[str, Any]]:
+    """Yield a namespace's tile documents from ES or from its staged snapshot.
+
+    ES is used only for namespaces named in ``TILE_ES_DOC_NAMESPACES`` — an
+    explicit opt-in, never an automatic fallback (see that setting for why).
+    Otherwise the staged snapshot is used, and a namespace with no snapshot
+    yields nothing, exactly as before.
+    """
+    from processing.settings import TILE_ES_DOC_NAMESPACES
+
+    if namespace in TILE_ES_DOC_NAMESPACES:
+        print(f"  {namespace}: reading tile documents from Elasticsearch "
+              f"(TILE_ES_DOC_NAMESPACES)", flush=True)
+        yield from _iter_es_docs(namespace)
+        return
+
+    src = _staged_namespace_source(namespace)
+    if src is None:
+        return
+    yield from _iter_staged_docs(src)
+
+
 def _iter_staged_docs(path: Path) -> Iterator[dict[str, Any]]:
     if path.suffix == ".parquet":
         import pyarrow.parquet as pq
@@ -1430,10 +1519,7 @@ def _stream_bucket(
 
     with open(geojsonl_path, "ab") as fh:
         for namespace in contributors:
-            src = _staged_namespace_source(namespace)
-            if src is None:
-                continue
-            for doc in _iter_staged_docs(src):
+            for doc in _iter_namespace_docs(namespace):
                 place_id = doc.get("place_id") or ""
                 ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
                 # Trust place_id over file location: cross-namespace docs in
@@ -1523,10 +1609,7 @@ def _stream_bucket_banded(
     handles = {name: open(p, "ab") for name, p in band_paths.items()}
     try:
         for namespace in contributors:
-            src = _staged_namespace_source(namespace)
-            if src is None:
-                continue
-            for doc in _iter_staged_docs(src):
+            for doc in _iter_namespace_docs(namespace):
                 place_id = doc.get("place_id") or ""
                 ns = place_id.split(":", 1)[0] if ":" in place_id else namespace
                 matches, is_misc = _doc_belongs_to_bucket(doc, bucket, ns)
