@@ -1,7 +1,29 @@
 # CLAUDE.md — Agent Briefing for WHG Indexing Repository
 
 > **Repository:** `WorldHistoricalGazetteer/indexing`
-> **Last updated:** 6 April 2026
+> **Last updated:** 9 August 2026
+
+---
+
+## ⚠️ READ FIRST — work in progress (9 August 2026)
+
+**[`developer/HANDOVER-2026-08-09-geom-store.md`](developer/HANDOVER-2026-08-09-geom-store.md)**
+
+The geom store was destroyed on 2026-08-07 and has been rebuilt; it is live and
+verified. Follow-ups are queued, one needs a decision from SG, and the Atlas
+retile is deliberately deferred. That document is the authoritative statement of
+what is done, what is pending, and which mistakes not to repeat.
+
+The shortest version, if you read nothing else:
+
+* **Never run `python -m unittest discover -s tests`** against real settings. It
+  skips `tests/__init__.py`, so the sandbox is never installed and the writing
+  tests target the real `/vast` paths — that is exactly what destroyed the store
+  and stubbed `gn`/`wd` staging. Safe forms: `python -m unittest tests.test_module`
+  (package-qualified), or `discover -s tests -t .`. A guard now refuses the
+  dangerous case, but don't rely on it.
+* `crc0` is the **smp login node** — never run pipeline compute there. Submit to
+  Slurm with `sbatch -M htc`; query with `squeue -M htc` / `sacct -M htc`.
 
 ---
 

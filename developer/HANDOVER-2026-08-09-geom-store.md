@@ -34,8 +34,25 @@ Backups now exist: consolidation copies `index.sqlite` to
 `/ix1/ishi/backups/geom/index-20260809T064045Z.sqlite`. **This did not exist before
 and is why the original loss was unrecoverable.**
 
-The old broken store is preserved at **`/vast/ishi/geom_broken`** (61 GB, 249 shards,
-index truncated to 2 rows). Safe to delete once you're satisfied — but not before.
+### 🗑️ Delete the broken store copy — SG asks for this as soon as practical
+
+The old broken store was moved off `/vast` on 2026-08-09 to
+**`/ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken`** (57 GB, 249 shards, plus a
+`README-DELETE-ME.txt` explaining itself).
+
+**It is non-essential and should be deleted as soon as is practical** — SG's
+instruction. It is retained only as short-term insurance while the rebuilt store
+beds in; it cannot be read (its index was truncated to 2 rows, and the shards are
+keyless WKB), so it has no standalone value. The end-of-August date in the
+directory name is a backstop, not a target.
+
+```bash
+rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken
+```
+
+Reasonable trigger: once the pending merges in §1 are done and the store has served
+normally for a few days. If you want a single gate — delete it once §1 and §2 are
+closed.
 
 ---
 
@@ -181,7 +198,7 @@ snapshots are now *thinner* than the registry, so a push would move them backwar
 | | |
 |---|---|
 | live store | `/vast/ishi/geom` (82 shards, 11,754,936 rows) |
-| old broken store | `/vast/ishi/geom_broken` (61 GB — keep until satisfied) |
+| old broken store | `/ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` (57 GB — **delete ASAP**) |
 | pending staging | `/vast/ishi/geom_rebuild/staging` |
 | index backups | `/ix1/ishi/backups/geom/` |
 | rebuild run id | `geomrebuild-20260807T170000Z` |
