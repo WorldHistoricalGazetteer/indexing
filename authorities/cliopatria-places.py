@@ -101,8 +101,14 @@ def _parse_year(value):
         return None
 
 
-def process_cliopatria_feature(feature):
-    """Process a single Cliopatria GeoJSON feature into a place document."""
+def process_cliopatria_feature(feature, seen_ids=None):
+    """Process a single Cliopatria GeoJSON feature into a place document.
+
+    ``seen_ids`` is the mutable set of place_ids already emitted in this run.
+    Pass it so duplicate polities are disambiguated **here**, before the
+    geometry is keyed — see the ``_v{n}`` block below for why that ordering
+    matters.
+    """
     props = feature.get('properties', {})
     geometry = feature.get('geometry')
 
@@ -143,6 +149,21 @@ def process_cliopatria_feature(feature):
         place_id = f"{NAMESPACE}:{clean_id}_{start_year}"
         if end_year is not None:
             place_id = f"{NAMESPACE}:{clean_id}_{start_year}_{end_year}"
+
+    # Same polity at different times shares an id, so disambiguate with a
+    # ``_v{n}`` suffix. This MUST happen before enrich_geometry below: that call
+    # writes the polygon into the geom store under ``{place_id}_0``, while the
+    # staged doc's ``geom_ref`` is derived from the FINAL place_id. Renaming
+    # afterwards (as this did until place#176) left every duplicate's geometry
+    # filed under the base id and its ref pointing at a key nothing ever wrote —
+    # 2,986 dangling refs, whose places consequently never appeared in a tile.
+    if seen_ids is not None and place_id in seen_ids:
+        base_id, counter = place_id, 1
+        while place_id in seen_ids:
+            place_id = f"{base_id}_v{counter}"
+            counter += 1
+    if seen_ids is not None:
+        seen_ids.add(place_id)
 
     geom_entry = enrich_geometry(geometry, timespans=timespans or None,
                                  geom_key=f"{place_id}_0") if geometry else None
@@ -225,19 +246,13 @@ def stage_cliopatria(file_path=None):
         configure_module_writer(gsw)
         for i, feature in enumerate(features):
             try:
-                doc = process_cliopatria_feature(feature)
+                # Duplicate ids are disambiguated inside, before the geometry is
+                # keyed — doing it out here renamed the doc after its polygon
+                # had already been filed under the base id (place#176).
+                doc = process_cliopatria_feature(feature, seen_ids=seen_ids)
                 if not doc:
                     total_skipped += 1
                     continue
-
-                # Handle duplicate IDs (same polity at different times)
-                if doc['place_id'] in seen_ids:
-                    counter = 1
-                    base_id = doc['place_id']
-                    while doc['place_id'] in seen_ids:
-                        doc['place_id'] = f"{base_id}_v{counter}"
-                        counter += 1
-                seen_ids.add(doc['place_id'])
 
                 write_staged_place_doc(namespace=NAMESPACE, doc=doc)
                 total_staged += 1
