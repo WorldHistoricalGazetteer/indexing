@@ -12,13 +12,19 @@ see §1.
 
 ## Current state — what is live and working
 
-**The geom store is FIXED and serving.** `/vast/ishi/geom` holds **11,754,936**
-geometries across 82 shards. Verified against the live index: a 2,002-geometry
-random sample resolved 2,001, with **0 bounds mismatches** — that second number is
-the one that matters, because a mis-aligned rebuild would still "resolve" every key.
+**The geom store is FIXED and serving.** `/vast/ishi/geom` holds **11,758,768**
+geometries across 84 shards (11,754,936 rebuilt + 16,536 merged — see §1).
+Verified against the live index: a random sample of 2,002 geometries resolved 2,001,
+with **0 bounds mismatches** — that second number is the one that matters, because a
+mis-aligned rebuild would still "resolve" every key.
 
-So the gateway's `containment=exact` path and `/api/places` geometry serving are
-correct again. **Nothing user-facing is degraded.**
+End-to-end proof the *running gateway* uses it: after a `containment=exact` request
+the log shows `geom-store: opened /vast/ishi/geom/index.sqlite (11754936 entries,
+sqlite backend)` — it opens lazily, so that line appearing is the confirmation.
+(Re-check after the post-merge restart; it should read 11,758,768.)
+
+So the gateway's `containment=exact` path and geometry serving are correct again.
+**Nothing user-facing is degraded.**
 
 Per-namespace, against the index's `geom_ref` counts:
 
@@ -28,9 +34,9 @@ Per-namespace, against the index's `geom_ref` counts:
 | ohm | 755,653 | 755,653 ✅ exact |
 | wd | 57,440 | 58,610 ✅ |
 | kain_par, po, nl, hgis, pl, vob_lgd, vob_rd | — | ✅ reconciled |
-| **clio** | 15,690 | **12,704** ⚠️ see below |
-| **un** | 247 | **0** ⚠️ needs your decision |
-| **ukhc / vob_cty / vob_rc** | 92 / 65 / 55 | **0** ⚠️ extracted, not yet merged |
+| clio | 15,690 | 15,690 ✅ exact (merged 2026-08-09, §1/§3) |
+| ukhc / vob_cty / vob_rc | 92 / 65 / 55 | ✅ merged 2026-08-09 |
+| **un** | 247 | **0** ⚠️ needs your decision — §2 |
 
 Backups now exist: consolidation copies `index.sqlite` to
 `$IX1_BASE/backups/geom/index-<stamp>.sqlite` (keeps 3). First one:
@@ -53,9 +59,8 @@ directory name is a backstop, not a target.
 rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken
 ```
 
-Reasonable trigger: once the pending merges in §1 are done and the store has served
-normally for a few days. If you want a single gate — delete it once §1 and §2 are
-closed.
+§1 is now done, so the only remaining gate is your comfort that the store has served
+normally for a few days — and §2 (`un`) if you want to be strict about it.
 
 ---
 
