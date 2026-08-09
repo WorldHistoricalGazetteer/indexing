@@ -2,8 +2,11 @@
 
 **Written 2026-08-09, before SG's week away. Read this first.**
 
-Priority on return, in order: (1) merge the pending geometry into the live store,
-(2) decide `un`, (3) the deferred retile, (4) the whg3 map filter that started all this.
+Priority on return, in order: (1) decide `un`, (2) delete the broken-store copy from
+`/ix1`, (3) the deferred retile, (4) the whg3 map filter that started all this.
+
+**The pending merge that was originally item 1 is DONE** (2026-08-09, before SG left) —
+see §1.
 
 ---
 
@@ -56,38 +59,31 @@ closed.
 
 ---
 
-## 1. Merge the pending geometry  ← do this first, it is cheap
+## 1. Merge the pending geometry — ✅ DONE 2026-08-09
 
-Four namespaces are extracted into staging but not yet in the store, plus clio's
-re-extract (which should have finished shortly after this was written).
+Completed before SG left. `clio` (re-extracted with the `b3e0dd0` fix), `ukhc`,
+`vob_cty` and `vob_rc` were merged into the live store:
 
-Staging is at **`/vast/ishi/geom_rebuild/staging`** (the store itself moved out from
-under it during the swap; the staging dir was deliberately left in place).
-
-```bash
-# 1. Confirm clio's re-extract landed and now has DISTINCT keys (see §2 for why)
-python3 - <<'EOF'
-import json, collections
-d = json.load(open("/vast/ishi/geom_rebuild/staging/clio.index.json"))
-c = collections.Counter(e["key"] for e in d)
-print("entries", len(d), "distinct", len(c), "dupes", sum(v-1 for v in c.values() if v>1))
-# want: entries 15690, distinct 15690, dupes 0
-EOF
-
-# 2. Merge staging into the LIVE store (--merge preserves the 82 existing shards)
-sbatch -M htc /vast/ishi/staged/runs/p176/consolidate.sbatch   # EDIT IT FIRST:
-#   --output-dir /vast/ishi/geom   (not geom_rebuild)
-#   --merge                        (not --rebuild-from-scratch)
+```
+consolidate_geom_store: merging — kept 11,754,936 existing entries, new shards start at 0083
+consolidate_geom_store: wrote 16,536 geometries across 84 shards → /vast/ishi/geom
+write_sqlite_index: wrote 11,758,768 rows → /vast/ishi/geom/index.sqlite (391 MB)
+consolidate_geom_store: backed up index.sqlite → /ix1/ishi/backups/geom/index-20260809T084521Z.sqlite
 ```
 
-⚠️ **Delete a namespace's `*.bin` + `*.index.json` from staging before re-extracting
-it** — `GeomStoreWriter` opens with `"ab"` and *appends*, so a re-run over populated
-staging silently doubles every entry.
+**11,758,768** = 11,754,936 + clio's 2,986 newly-addressable + 846 from the three
+small namespaces. clio verified at 15,690 entries / 15,690 distinct keys / 0
+duplicates, exactly the index's count.
 
-Then **`gw restart`** (only the `gazetteer` user can) — `GeomStoreReader` holds the
-sqlite handle open for the process lifetime, so the merge is invisible until then.
+Only the merged namespaces were re-packed — staging was split so the 22 GB already
+in the store wasn't needlessly rewritten. The merged inputs are parked at
+`/vast/ishi/geom_rebuild/staging_pending`; the rest remains in
+`/vast/ishi/geom_rebuild/staging`. Both are now redundant and can be removed once
+you're happy (they are the only copy of nothing — the store has it all).
 
----
+⚠️ **If you ever re-extract a namespace, delete its `*.bin` + `*.index.json` from
+staging first** — `GeomStoreWriter` opens with `"ab"` and *appends*, so a re-run
+over populated staging silently doubles every entry.
 
 ## 2. `un` — YOUR DECISION, deliberately untouched
 
