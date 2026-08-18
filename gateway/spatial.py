@@ -48,6 +48,7 @@ try:
     from shapely.geometry import shape as _shape, Point as _Point, mapping as _mapping
     from shapely.ops import unary_union as _unary_union
     from shapely.prepared import prep as _prep
+    from shapely import wkb as _wkb
     _SHAPELY_AVAILABLE = True
 except Exception:  # pragma: no cover
     _SHAPELY_AVAILABLE = False
@@ -217,21 +218,37 @@ class ResolvedRegion:
     _tls: Any = field(
         default_factory=threading.local, repr=False, compare=False,
     )
+    # WKB snapshot of `union`: plain bytes are safe to share between threads, whereas
+    # the GEOSGeometry they describe is not.
+    _union_wkb: Any = field(default=None, repr=False, compare=False)
 
     def prepared_local(self):
         """This thread's own PreparedGeometry, or None when no geometry is loaded.
 
         `self.prepared` remains the marker that an exact geometry exists (the load
         path sets it); it must never be used for predicates from a worker thread.
+
+        The thread gets its own GEOMETRY as well as its own prepared wrapper, rebuilt
+        from a WKB snapshot. Giving each thread only its own wrapper was not enough —
+        the workers still died in libgeos, because every wrapper still pointed at the
+        one shared GEOSGeometry, and GEOS mutates lazily-cached state inside a
+        geometry as predicates run. Sharing only the WKB (plain immutable bytes)
+        leaves no GEOS object crossing a thread boundary at all.
+
+        The geometry is cached alongside the prepared object deliberately: the
+        prepared wrapper holds a bare pointer to it, so letting it be collected would
+        leave the wrapper pointing at freed memory — the same crash by another route.
         """
-        if self.union is None:
+        if self.union is None or self._union_wkb is None:
             return None
         p = getattr(self._tls, "prepared", None)
         if p is None:
             try:
-                p = _prep(self.union)
+                geom = _wkb.loads(self._union_wkb)
+                p = _prep(geom)
             except Exception:
                 return None
+            self._tls.geom = geom      # keep alive: `p` only holds a pointer to it
             self._tls.prepared = p
         return p
 
@@ -277,6 +294,7 @@ class ResolvedRegion:
         try:
             self.union = _unary_union(shapes) if len(shapes) > 1 else shapes[0]
             self.prepared = _prep(self.union)
+            self._union_wkb = self.union.wkb   # per-thread rebuilds work from this
         except Exception:
             self.union = None
             self.prepared = None
