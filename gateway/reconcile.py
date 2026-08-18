@@ -152,6 +152,13 @@ class ReconcileRequest(BaseModel):
                     "(e.g. ['aat:300008347']). Filters on nested types.identifier.",
     )
     bounds: Optional[dict] = Field(None, description="GeoJSON geometry for spatial filter (intersects)")
+    lat: Optional[float] = Field(None, description="Latitude for a radial filter; use with lng + radius")
+    lng: Optional[float] = Field(None, description="Longitude for a radial filter; use with lat + radius")
+    radius: Optional[float] = Field(
+        None,
+        description="Radius in km for a radial filter. Resolved as an H3 disc — no "
+                    "polygon is built — at a resolution chosen from the radius.",
+    )
     contained_in: Optional[list[str]] = Field(
         None,
         description="Place_ids whose geometries define a containment region. "
@@ -362,7 +369,8 @@ def _build_scope_info(req: "ReconcileRequest", region) -> Optional["ScopeInfo"]:
     to the pre-place#144 shape). Otherwise the caller MUST honour
     ``applied=False`` by refusing to answer with unscoped results.
     """
-    if not req.contained_in and not req.bounds:
+    radial = req.lat is not None and req.lng is not None and bool(req.radius)
+    if not req.contained_in and not req.bounds and not radial:
         return None
 
     if region is not None:
@@ -566,6 +574,11 @@ async def reconcile_search(req: ReconcileRequest):
                 region = await spatial.resolve_region(req.contained_in, client, auth)
             except spatial.RegionError as exc:
                 raise HTTPException(status_code=422, detail=str(exc))
+        elif req.lat is not None and req.lng is not None and req.radius:
+            # Radial filter as an H3 disc. Answering "near this point" needs no
+            # geometry at all — every indexed geometry already carries an H3 cover —
+            # so this path builds no polygon, unions nothing and prepares nothing.
+            region = spatial.region_from_circle(req.lat, req.lng, req.radius)
         elif req.bounds:
             region = spatial.region_from_geojson(req.bounds)
 

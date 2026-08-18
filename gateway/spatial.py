@@ -27,6 +27,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
@@ -393,6 +394,81 @@ def region_from_geojson(bounds: dict) -> Optional[ResolvedRegion]:
         union=union,
         prepared=_prep(union),
         source="geojson",
+        _geom_loaded=True,
+    )
+    _cache_put(key, region)
+    return region
+
+
+# Approximate H3 edge length in km per resolution — for choosing a resolution and
+# a ring count from a radius. Indicative averages; cells are not equal-area, which
+# is why the disc is grown by one ring below rather than trusted to the millimetre.
+_H3_EDGE_KM = {4: 22.6, 5: 8.54, 6: 3.23, 7: 1.22, 8: 0.46}
+_DISC_MAX_CELLS = 2000
+
+
+def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[ResolvedRegion]:
+    """Build a containment region for "within `radius_km` of this point", as an H3
+    disc rather than a polygon.
+
+    A radial filter used to be expressed as a 32-point circle handed to
+    ``region_from_geojson``, which unions it in Shapely, polyfills it, and prepares
+    a geometry for exact tests. None of that is needed to answer "near this point":
+    the index already stores an H3 cover per geometry, so the question is a terms
+    match on precomputed cells. This path therefore touches no GEOS at all — which
+    also keeps radial queries clear of the polygon machinery that has twice been
+    implicated in a wedged worker (WHG place#184).
+
+    The resolution is chosen from the radius so the disc stays a few hundred cells:
+    fine enough to be a real filter, coarse enough that the ES terms clause stays
+    small. Cells are not equal-area, so the ring count is rounded up and grown by
+    one — a radial filter that is slightly generous is a filter; one that clips
+    inside the radius silently loses valid matches.
+    """
+    if not _H3_AVAILABLE or lat is None or lng is None or not radius_km or radius_km <= 0:
+        return None
+    key = f"circle:{round(float(lat), 5)}:{round(float(lng), 5)}:{round(float(radius_km), 3)}"
+    cached = _cache_get(key)
+    if cached is not None:
+        return cached
+
+    # Finest resolution whose disc stays under the cell budget.
+    res, rings = None, 0
+    for r in sorted(_H3_EDGE_KM, reverse=True):          # coarse → fine
+        k = max(1, int(math.ceil(float(radius_km) / _H3_EDGE_KM[r])) + 1)
+        n_cells = 1 + 3 * k * (k + 1)                     # cells in a k-ring disc
+        if n_cells <= _DISC_MAX_CELLS:
+            res, rings = r, k
+        else:
+            break
+    if res is None:
+        return None
+
+    try:
+        centre = _h3.latlng_to_cell(float(lat), float(lng), res)
+        cells = set(_h3.grid_disk(centre, rings))
+    except Exception:
+        return None
+    if not cells:
+        return None
+
+    # Envelope for the cheap ES gate: a degree box around the point, latitude-corrected.
+    dlat = float(radius_km) / 110.574
+    dlng = float(radius_km) / max(0.1, 111.320 * math.cos(math.radians(float(lat))))
+    minx, maxx = float(lng) - dlng, float(lng) + dlng
+    miny, maxy = float(lat) - dlat, float(lat) + dlat
+
+    cover = {res: cells}
+    region = ResolvedRegion(
+        cover_by_res=cover,
+        resolutions=(res,),
+        bbox_geojson={"type": "Polygon", "coordinates": [[
+            [minx, miny], [maxx, miny], [maxx, maxy], [minx, maxy], [minx, miny]]]},
+        h3_terms=_es_h3_terms(cover),
+        source="h3-disc",
+        # No `union`/`prepared`: an exact test would need a real polygon, and the
+        # point of this path is not to build one. `hit_matches` falls back to the
+        # fuzzy H3 test, which is what a radial filter wants anyway.
         _geom_loaded=True,
     )
     _cache_put(key, region)
