@@ -239,10 +239,22 @@ class ResolvedRegion:
         prepared wrapper holds a bare pointer to it, so letting it be collected would
         leave the wrapper pointing at freed memory — the same crash by another route.
         """
-        if self.union is None or self._union_wkb is None:
+        if self.union is None:
             return None
         p = getattr(self._tls, "prepared", None)
         if p is None:
+            # A region built straight from GeoJSON (region_from_geojson, and the
+            # bounds path) never runs load_geometry, so it carries a union with no
+            # snapshot yet. Take one now, under the lock — serialising the shared
+            # geometry is itself a read of it, and two threads doing that at once is
+            # the very thing this method exists to avoid.
+            if self._union_wkb is None:
+                with self._lock:
+                    if self._union_wkb is None:
+                        try:
+                            self._union_wkb = self.union.wkb
+                        except Exception:
+                            return None
             try:
                 geom = _wkb.loads(self._union_wkb)
                 p = _prep(geom)
