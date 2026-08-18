@@ -10,10 +10,20 @@ gaps; GB-STAMP is a detector with its own failure modes. What the pair gives is 
 which is what decides whether the spotter is worth running over the whole series to check and extend the
 crowd's work.
 
-THE TRAP THIS SCRIPT EXISTS TO AVOID. Only part of the series has been spotted so far. Outside the spotted
-area "no detection" means NOT LOOKED AT, and counting it as a miss would invent an arbitrarily bad recall
-figure. Every count here is therefore taken inside the MEASURABLE FOOTPRINT: the sheet polygon intersected
-with the union of spotted regions.
+THE TRAP THIS SCRIPT EXISTS TO AVOID. Outside a spotted area "no detection" means NOT LOOKED AT, and
+counting it as a miss would invent an arbitrarily bad recall figure. Every count here is therefore taken
+inside the MEASURABLE FOOTPRINT: the sheet polygon intersected with the union of spotted regions.
+
+As of 4 Aug 2026 the WHOLE series is spotted — all 35,514 regions, 16.77M detections — so the footprint is
+now essentially the entire country and this guard is close to a no-op. It still earns its place in two
+ways: at the OUTER boundary of the spotted union (the coast and the series edge), where the margin below is
+a real cut; and as insurance, because a future partial re-spot would silently reintroduce exactly the
+contamination that made the first attempt at these figures unquotable. Do not remove it because coverage
+happens to be complete today.
+
+`--spot-dir` MUST be set to the corpus-fed pass (`.../edition/spot2`). The default below still names the
+old network-fed directory, whose boxes files were deleted on 4 Aug — pointing at it silently yields a ~100%
+GB-STAMP miss rate that looks like a finding rather than an empty directory.
 
 Note where the erosion goes. Spotting runs on a grid of overlapping regions (~500px of overlap, far more than
 a label is long), so a label cut by the edge of one region is whole in its neighbour and no margin is needed

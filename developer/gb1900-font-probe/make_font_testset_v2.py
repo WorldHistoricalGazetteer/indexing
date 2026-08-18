@@ -78,6 +78,7 @@ def _store_tile(tx, ty):
 
 def _get_tile(tx, ty):
     d = _store_tile(tx, ty)
+    if d is ABSENT: return None                   # corpus says it does not exist upstream: stop, don't fetch
     if d is not None: return d                    # the durable corpus on /ix1, tried first
     p = f"{TILES}/{tx}/{ty}.png"
     if os.path.exists(p): return _read(p)         # hot local cache

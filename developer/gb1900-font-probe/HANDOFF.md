@@ -1,65 +1,77 @@
-# GB-STAMP — handoff, 28 July 2026
+# GB-STAMP — handoff, 7 August 2026
 
-Read `MEMORY.md` first; the notes `gbstamp-label-assembly`, `gbstamp-starved-regions` and
-`gbstamp-tile-corpus` cover most of what follows. **Start with "START HERE" immediately below**, then read
-the scope and the traps before running anything.
+Read `MEMORY.md` first. The July running order (corpus → spot → join → miss rates) is **COMPLETE**; what
+remains is one costed decision, set out immediately below. The steps that were pending on 28 July are kept
+further down for the record, marked done.
 
 ---
 
-## START HERE — what the incoming session should do
+## START HERE — the one open decision
 
-**1. Wait for the corpus fetch to finish.** Do not poll in a loop in the foreground; start a background
-wait and get on with reading the rest of this file:
+Everything through the miss-rate question is delivered. **D1(b) — attaching FACE and SLANT to the
+annotations — is blocked on a budget decision that three cheap experiments have now sharpened.**
 
-```bash
-until ssh crc0 'test -z "$(squeue -M htc -u stg135 -h -o %j | grep corpus)"'; do sleep 300; done
-```
+### What is already done and needs nothing
 
-**2. Then work through "The running order" below, in order.**
+| | |
+|---|---|
+| z17 corpus | 2,366/2,366 blocks verified, 329.6 GB on `/ix1` |
+| full-series spot | **35,514/35,514 regions, 16,766,274 detections**, 0 starved |
+| old-vs-new pass comparison | 94.0% reproduced, **2.54×** detections, 62.9% of new are additions |
+| joiner, retrained nationally | **0.578** vs rules 0.483 vs nearest-word 0.286 (62,745 labels) |
+| miss rates, national | GB-STAMP **0.287**, GB1900 **0.357** — *the union is the product* |
+| labels assembled | **8,828,743** (`gb_stamp_labels.jsonl`) |
+| D1(a) annotations | **22,198,443** W3C records, cap height px + m, line count, 29 GB |
+| face inventory | bounded to the **6 reachable** signatures, 9 marked out-of-reach with reasons |
 
-- **Step 1 (verify + finalise the corpus)** — no decisions needed, just run it. If `--verify` reports short
-  blocks, re-run `corpus.sbatch`; it is resumable and will pick up only what is missing.
-- **Step 2 (spot all 35,514 regions, ~40 h)** — launch it, then **stop and report**. It cannot be chained to
-  the corpus job, so it needs a manual `sbatch`. When it finishes, the first thing to check is whether the
-  new pass reproduces the old one: identical weights on identical imagery should give the same boxes and
-  merely ADD `gline`. If it does not, say so before anything downstream is built on it.
-- **Steps 3–4** — depend on what step 2's comparison shows. Do not run them blind.
+### The decision: how to compute FACE for 8.8M labels
 
-Report progress to SG at each of those points rather than running the whole chain silently: step 2 alone is
-nearly two days of GPU time, and a wrong turn at step 1 would waste it.
+The deployed face instrument is a per-word backbone descriptor. Two ways to get one, differing ~50× in
+cost, and the cheap one **fails in a specific, now-diagnosed way**.
 
-### Progress check (correct version)
+| option | cost | status |
+|---|---|---|
+| **per-word 512² crops** | ~1,100 GPU-h at label level | works, incl. blackletter (0.818 vs human 0.788) |
+| **mosaic ROI-align** | ~39 GPU-h | italic/upright fine; **blackletter unusable** |
+| **hybrid** — ROI at scale, per-word only for antiquity candidates | ROI + (subset × 0.44 s) | untested, recommended |
+| **coarse only from ROI**, blackletter unresolved | ~39 GPU-h | cheap and honest; concedes D2's antiquity signal |
 
-```bash
-ssh crc0 'cd /vast/ishi/gb1900/probe/font/cov &&
-  echo "shards done: $(grep -l CORPUSDONE corpus_*.log 2>/dev/null | wc -l)/16" &&
-  for k in stored absent unresolved; do
-    grep -h "block " corpus_*.log | grep -o "[0-9]* $k" |
-      awk -v k="$k" "{s+=\$1} END{print \"  \"s\" \"k}"
-  done &&
-  echo "  blocks: $(grep -h "block " corpus_*.log | wc -l)/2366"'
-```
+**Why mosaic ROI-align fails.** ViTAE stages 3–5 have receptive fields far larger than a word box, so
+pooling a sub-rectangle of a deep feature map on a 2048² mosaic encodes the NEIGHBOURHOOD, not the
+letterforms. Consequences measured on 14 regions spread the length of the country (5,997 words), three
+settings, same sample:
 
-**The `grep -h "block "` filter is load-bearing.** A shard that finishes writes a `CORPUSDONE shard N: X
-stored, Y absent, Z unresolved` summary line carrying its own totals, so a naive `grep -o "[0-9]* stored"`
-sums those ON TOP of the per-block lines and inflates the count. That produced a reading of 11.2M stored
-against a target of 8.06M — impossible, since blocks tile the plane exactly and no tile is stored twice.
-If the total ever exceeds 8,055,356, this is why.
+| setting | italic | upright | blackletter | **blackletter slant** |
+|---|---|---|---|---|
+| unweighted, pool reference | 0.80 | 0.18 | 0.02 | — |
+| 1/n balanced | 0.62 | 0.10 | 0.15 | **4.29°** |
+| √-balanced, augmented reference | 0.55 | 0.29 | 0.15 | **5.77°** |
 
-**Completion is `shards done: 16/16`**, or an empty `squeue`. Blocks reaching 2,366 is not sufficient — the
-last block of a shard still has to be written.
+Blackletter is a Gothic **upright** hand: its slant should sit near upright's ≈0°, not near italic's 6.2°.
+It never does. A size sweep refutes the obvious explanation — raising the minimum box width from 0 to 200 px
+*increases* the blackletter share (0.15 → 0.37) and pushes its slant further into italic (5.77° → 7.35°),
+so this is not a resolution limit. It is context contamination, consistent with blackletter share varying
+0.07–0.48 by region: antiquity anchors sit in characteristic terrain (moorland, downs) and words in similar
+terrain inherit the label.
 
-**Watch `unresolved`.** It should stay at 0. It is the counter that silently absorbed a total network
-failure for three hours before the certifi fix, because `CERTIFICATE_VERIFY_FAILED` is neither a 403 nor a
-404 and so fell into the "leave it for a later run" bucket. A rising `unresolved` means something is wrong
-with the fetch, not that it is merely slow.
+**The slant body is what caught all of this.** It is an independent physical measurement of the same
+lettering, so it can adjudicate classifier settings with no new labels. Without it the 1/n setting would
+have been accepted on the strength of a more plausible-looking italic share.
 
-### State at handover (28 July, 32h42m elapsed)
+**Why the ROI validation passed anyway (read this before trusting any similar check).** ROI scored 0.655
+against per-word 0.674 on the pooled labels and I took that as equivalence. But that test set holds **11**
+blackletter items; the number was carried by italic and upright. The validation could not express the one
+failure that mattered. Three separate checks this week had that shape — the 12-item face test, the
+miss-rate radius, and this — so the general lesson is: *state what the test set cannot detect before
+reading a pass as a pass.*
 
-7,245,769 stored · 104,278 absent · **0 unresolved** · 2,297/2,366 blocks · 9/16 shards done · 292 G.
-Roughly 91% resolved; 2–3 hours remaining, set by whichever of the 7 running shards drew the densest blocks.
-Resumable throughout — a block already holding everything it wants is skipped, so a kill costs only the
-block in flight.
+### Suggested pragmatic route
+
+Hybrid. Run ROI at scale for italic/upright, where slant independently confirms it works, and spend the
+expensive per-word instrument only on antiquity candidates — the words in the blackletter lexicon plus
+high-confidence ROI blackletter. That puts the costly instrument exactly where the cheap one provably
+fails, and blackletter is rare enough that the subset should be affordable. It needs a costing run first:
+count the candidate subset, multiply by 0.44 s.
 
 ---
 
@@ -237,17 +249,43 @@ footprint stops being scattered squares and becomes the series.
 
 ---
 
+## Step 4 ANSWERED — the miss rates, nationally (5 Aug 2026)
+
+299 sheets, sampled evenly across pin density (0–34.1 pins/km²), every sheet 100% measurable now the whole
+series is spotted. `bench_sheets_national.json`; disagreement set in `sheet_misses_national.jsonl`.
+
+| at the default 48 px matching radius | median | pooled |
+|---|---|---|
+| **GB-STAMP misses** (pinned label not detected) | 0.281 | **0.287** over 52,303 non-numeric pins |
+| **GB1900 misses**, word-adjusted (detection with no pin) | 0.349 | **0.357** over 149,574 non-numeric detections |
+| GB1900 misses, strict | 0.581 | — |
+| reading agrees exactly, on matched labels | 0.278 | — |
+
+**The verdict is the third branch: both miss substantially, and they miss different things.** So the union
+is the product and the disagreement set is itself a deliverable — goal 3, checking the crowd at scale.
+Neither figure is an error rate; neither side is ground truth.
+
+**READ THE RADIUS BEFORE QUOTING ANY OF THIS.** The matching radius does most of the work, because a GB1900
+pin sits at the START of a label and often just off the ink:
+
+| radius | GB-STAMP misses | GB1900 misses |
+|---|---|---|
+| 24 px | 0.616 | 0.500 |
+| **48 px (default)** | **0.281** | **0.349** |
+| 96 px | 0.053 | 0.210 |
+
+GB-STAMP's rate swings **12×** across that range. A headline "GB-STAMP misses 5%" or "misses 62%" is
+available to anyone who picks a radius to suit, which is precisely why all three are recorded. What is
+robust across every radius is the *ordering at 48 px and below* and the fact that both quantities are large.
+
+**Numerals are 26.1% of detections and 0.0% of pins.** GB1900 never transcribed them, so they are excluded
+from both directions — but note that a quarter of what GB-STAMP finds is real map content the crowd never
+recorded and this comparison cannot score.
+
 ## Envisaged downstream processing
 
-**Gated on step 4.** The two miss-rates decide which way the weight falls, so do not commit to a shape
-before they are known:
-
-- if **GB-STAMP misses a lot**, the font-derived hints cover only part of the corpus and GB1900 remains the
-  backbone, with typography an enrichment where it exists;
-- if **GB1900 misses a lot**, GB-STAMP is contributing genuinely new labels and the pipeline has to carry
-  them as first-class records, not as annotations on someone else's;
-- if **both miss substantially but different things**, the union is the product and the disagreement set is
-  itself a deliverable (goal 3 — checking the crowd at scale).
+Gate resolved above: **the union is the product.** GB-STAMP carries genuinely new labels as first-class
+records AND validates the crowd, rather than being an annotation layer on someone else's data.
 
 ### D1. Metadata onto the joined labels, as W3C Web Annotation
 
@@ -310,38 +348,47 @@ Published figures, on the network-fed pass (kept for the record; **not** compara
 Four attempted improvements there: **hard negatives +0.009**, **end tangent +0.011**, face features
 **null**, greedy topology **null**.
 
-**Retrained on the corpus-fed pass, 29–30 July** — 305,931 pairs over 700 blocks (vs 31,779 over 60
-regions). One frozen split throughout: 506 held-out region files, 122,468 words, 25,080 GB1900 labels,
-210 blocks the model never saw.
+**NATIONAL, retrained on the complete series, 4–5 August.** 398,381 pairs over 1,781 blocks (vs 31,779 over
+60 regions for the published figures). One frozen split throughout — 400 held-out region files, 214,735
+words, **62,745 GB1900 labels**, 534 blocks the model never saw. Eval set frozen at
+`/ix1/ishi/gb1900/edition/join_eval_regions_national.txt`, so later runs are directly comparable.
 
 | on the same split | exact | contains all | right *n* | over-join |
 |---|---|---|---|---|
-| nearest word alone | 0.357 | — | — | — |
-| hand-set rules | 0.517 | 0.651 | 0.618 | 0.325 |
-| **learned join + sequence constraint** | **0.576** | 0.691 | 0.696 | 0.300 |
-| learned, end tangent ablated | 0.509 | 0.651 | 0.631 | 0.333 |
-| *control: same model, OLD pass, 3,765 labels* | *0.546* | *0.743* | *0.648* | *0.327* |
+| nearest word alone | 0.286 | — | — | — |
+| hand-set rules | 0.483 | 0.608 | 0.568 | 0.298 |
+| **learned join + sequence constraint** | **0.578** | 0.694 | 0.682 | 0.267 |
+| learned, end tangent ablated | 0.473 | 0.623 | 0.589 | 0.293 |
 
-**The whole table sits ~0.14 above the published one, baselines included** (nearest-word 0.219 → 0.357), so
-the level reflects an easier split — far-northern, sparser, shorter labels — not a 0.425 → 0.576 improvement.
-Read the gaps, not the absolutes:
+Held-out pair AUC 0.9754; rules on the same pairs precision 0.688 / recall 0.587.
 
-- **learned over rules: +0.059** (was +0.044). The learned advantage survives 10× the training data and
-  widens slightly.
-- **the end tangent is now worth +0.067, six times the +0.011 it scored before** — and it is the single
-  largest effect measured. This is the question `gline` made answerable: with the model's *own* centre-line
-  rather than one reconstructed from the outline, direction is the dominant signal. Ablate it and the
-  learned join (0.509) falls **below** the hand-set rules (0.517): the model's edge over the rules depends
-  entirely on having a real baseline to read direction from.
-- the learned join joins more (28.3% of words vs 21.4%) *and* is right more often, with less over-join.
+**Both margins roughly doubled against the published table** (0.219 / 0.381 / 0.425):
 
-**Over-join is now the leading error mode**: 30% of labels carry extra words, and only 69.6% have the right
-word count. That, not pairwise precision, is where the next gain is.
+| | published | national |
+|---|---|---|
+| learned − nearest | +0.206 | **+0.292** |
+| learned − rules | +0.044 | **+0.095** |
 
-Caveat on the control: it necessarily scores different labels (only the 297 old-pass files inside the
-held-out blocks, 3,765 labels), and those files average 47.6 words against 242 in the new pass — so its
-higher nearest-word baseline (0.393) partly reflects sparser detections making single-word labels trivially
-matchable. Indicative, not a like-for-like control.
+- **The national split is HARDER, not easier** — nearest-word alone falls 0.357 (northern sample) → 0.286 —
+  yet the assembled score is unchanged at 0.578. The joiner generalises; the northern figure was not
+  flattered by sparse country.
+- **The end tangent is worth +0.105, the largest single effect in the work** — an order above the +0.011 it
+  scored when the tangent had to be reconstructed from the outline. `gline` is what made this measurable.
+- **Ablate the tangent and the learned join (0.473) falls BELOW the hand-set rules (0.483)** — reproducing
+  the northern result (0.509 vs 0.517) at national scale. The model's entire advantage rests on having the
+  model's own centre-line to read direction from; it is not learning to group better in the abstract. This
+  retrospectively explains why face features and greedy topology were both null: the missing information
+  was direction, not typography.
+- The learned join joins far more (36.0% of words vs 25.4%) with **less** over-join (0.267 vs 0.298) — more
+  confident and more accurate at once.
+
+**Over-join is the leading error mode**: 26.7% of labels carry extra words and only 68.2% have the right
+word count. That, not pairwise precision, is where the next gain is. The threshold is also untuned (0.50,
+while peak pairwise F1 is 0.49 and the useful end-to-end range was historically 0.5–0.7).
+
+Cost: training ~1 h; each evaluation stage ~4–5 h at 200 G on 400 held-out files. The parent job timed out
+at 8 h mid-way, and the frozen eval set is what allowed the remaining stages to run separately and still
+belong in this table.
 
 **Recognition is not the bottleneck** — 93% of labels are read with no unknown-character marker, and exact
 match on that clean subset is only ~0.48. Grouping is the limit.

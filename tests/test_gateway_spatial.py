@@ -331,7 +331,11 @@ class TestPreparedGeometryConcurrency(unittest.TestCase):
                 inside = all(p.intersects(spatial._Point(5, 5)) for _ in range(200))
                 outside = any(p.intersects(spatial._Point(50, 50)) for _ in range(200))
                 with lock:
-                    seen.append((id(p), inside, outside))
+                    # Keep a REFERENCE to the prepared object, not just its id:
+                    # once a thread ends its thread-local is released, and CPython
+                    # happily reuses the id for the next thread's object — which
+                    # makes an id-only check report sharing that never happened.
+                    seen.append((p, inside, outside))
             except Exception as exc:  # pragma: no cover
                 with lock:
                     errors.append(exc)
@@ -345,7 +349,7 @@ class TestPreparedGeometryConcurrency(unittest.TestCase):
         self.assertEqual(errors, [], f"predicate calls raised: {errors}")
         self.assertEqual(len(seen), 16)
         # Every thread must have got a DISTINCT prepared geometry …
-        self.assertEqual(len({pid for pid, _, _ in seen}), 16,
+        self.assertEqual(len({id(p) for p, _, _ in seen}), 16,
                          "threads shared a PreparedGeometry — the crash is back")
         # … and every one must still give the right answers.
         self.assertTrue(all(inside for _, inside, _ in seen))
