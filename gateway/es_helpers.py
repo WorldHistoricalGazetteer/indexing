@@ -508,14 +508,27 @@ def build_places_filter(
     # distinct 9-digit numbers and path segments are dot-delimited, so a substring
     # wildcard `*<id>*` matches only the exact segment — no false partial matches.
     if aat_types:
+        # Match an AAT concept however the source happens to store it. The three
+        # forms are all live in the index today:
+        #   * types.aat_ids  — numeric; Getty TGN's 3M records (and only those)
+        #   * types.identifier — "aat:300008347" (WHG's own data) or the bare
+        #     number (TGN's identifier field)
+        #   * types.aat_paths — materialised ancestry, for concept-OR-descendant
+        #     matching. Currently EMPTY on every namespace, so on its own it
+        #     matched nothing: an AAT filter silently returned zero results even
+        #     for TGN, which is 100% AAT-typed. Kept so the hierarchy works the
+        #     moment the paths are populated. See WHG place#184.
+        ids = [int(aid) for aid in aat_types]
         filter_clauses.append({
             "nested": {
                 "path": "types",
                 "query": {"bool": {
-                    "should": [
-                        {"wildcard": {"types.aat_paths": f"*{int(aid)}*"}}
-                        for aid in aat_types
-                    ],
+                    "should": (
+                        [{"terms": {"types.aat_ids": ids}}]
+                        + [{"terms": {"types.identifier":
+                                      [f"aat:{i}" for i in ids] + [str(i) for i in ids]}}]
+                        + [{"wildcard": {"types.aat_paths": f"*{i}*"}} for i in ids]
+                    ),
                     "minimum_should_match": 1,
                 }},
             }
