@@ -291,6 +291,82 @@ class _StubClient:
 
 
 @unittest.skipUnless(_DEPS, "h3 + shapely required")
+@unittest.skipUnless(_DEPS, "h3 + shapely required")
+class TestPreparedGeometryConcurrency(unittest.TestCase):
+    """Predicates must not share one PreparedGeometry across threads.
+
+    GEOS builds a prepared geometry's spatial index lazily on first use and mutates
+    it as it goes, so concurrent predicate calls on ONE instance corrupt it. It does
+    not raise — it segfaults the process. On 2026-08-18 that killed gateway workers
+    four times in three minutes under a 25-query reconcile batch, and every request
+    in flight on a dying worker returned empty, so rows silently recorded "no match".
+
+    A segfault would take this test process down with it, which is the point: the
+    failure is loud here and silent in production.
+    """
+
+    def test_threads_get_their_own_prepared_geometry(self):
+        import threading
+
+        square = _square(0, 0, 10, 10)
+        region = spatial.ResolvedRegion(
+            cover_by_res={}, resolutions=(), bbox_geojson=square, h3_terms=[],
+            geom_keys=("un:x_0",),
+        )
+
+        class _Reader:
+            def get(self, key):
+                return square
+
+        self.assertTrue(region.load_geometry(_Reader()))
+
+        seen: list = []
+        errors: list = []
+        lock = threading.Lock()
+
+        def _worker(i):
+            try:
+                p = region.prepared_local()
+                # Hammer the predicates: this is what corrupted the shared index.
+                inside = all(p.intersects(spatial._Point(5, 5)) for _ in range(200))
+                outside = any(p.intersects(spatial._Point(50, 50)) for _ in range(200))
+                with lock:
+                    seen.append((id(p), inside, outside))
+            except Exception as exc:  # pragma: no cover
+                with lock:
+                    errors.append(exc)
+
+        threads = [threading.Thread(target=_worker, args=(i,)) for i in range(16)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        self.assertEqual(errors, [], f"predicate calls raised: {errors}")
+        self.assertEqual(len(seen), 16)
+        # Every thread must have got a DISTINCT prepared geometry …
+        self.assertEqual(len({pid for pid, _, _ in seen}), 16,
+                         "threads shared a PreparedGeometry — the crash is back")
+        # … and every one must still give the right answers.
+        self.assertTrue(all(inside for _, inside, _ in seen))
+        self.assertFalse(any(outside for _, _, outside in seen))
+
+    def test_same_thread_reuses_its_prepared_geometry(self):
+        square = _square(0, 0, 4, 4)
+        region = spatial.ResolvedRegion(
+            cover_by_res={}, resolutions=(), bbox_geojson=square, h3_terms=[],
+            geom_keys=("un:x_0",),
+        )
+
+        class _Reader:
+            def get(self, key):
+                return square
+
+        region.load_geometry(_Reader())
+        self.assertIs(region.prepared_local(), region.prepared_local(),
+                      "a thread should prepare once, not per call")
+
+
 class TestResolveRegion(unittest.TestCase):
     def test_builds_from_source_h3_cover_and_caches(self):
         # Real postbarrier _source carries h3_cover/bounds/geometry_index — NOT

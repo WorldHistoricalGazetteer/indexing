@@ -198,6 +198,42 @@ class ResolvedRegion:
     _lock: Any = field(
         default_factory=threading.Lock, repr=False, compare=False,
     )
+    # `prepared` is built once and cached on this SHARED region — but a
+    # PreparedGeometry is not safe to USE from several threads. GEOS builds its
+    # spatial index lazily inside the prepared geometry on the first predicate call
+    # and mutates it as it goes, so concurrent intersects()/contains() on one
+    # instance corrupts that index. It does not raise: it segfaults the worker.
+    #
+    # Observed 2026-08-18: a batch of 25 reconcile queries against one container,
+    # each running its exact test in a worker thread, killed gateway workers four
+    # times in three minutes — `segfault at 8 ... in libgeos.so.3.13.1` — and every
+    # request in flight on the dying worker came back empty, so rows silently
+    # recorded "no match". The load path was already serialised; the USE path was
+    # the hole.
+    #
+    # Each thread therefore gets its own PreparedGeometry over the shared (immutable)
+    # union. Preparing is cheap next to the geom-store reads, and this keeps the
+    # concurrency the thread hand-off exists to buy.
+    _tls: Any = field(
+        default_factory=threading.local, repr=False, compare=False,
+    )
+
+    def prepared_local(self):
+        """This thread's own PreparedGeometry, or None when no geometry is loaded.
+
+        `self.prepared` remains the marker that an exact geometry exists (the load
+        path sets it); it must never be used for predicates from a worker thread.
+        """
+        if self.union is None:
+            return None
+        p = getattr(self._tls, "prepared", None)
+        if p is None:
+            try:
+                p = _prep(self.union)
+            except Exception:
+                return None
+            self._tls.prepared = p
+        return p
 
     @property
     def has_cover(self) -> bool:
@@ -714,7 +750,12 @@ def _candidate_geometry(src: dict, reader):
 def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, reader=None) -> bool:
     rp = extract_repr_point(src)
 
-    if mode == "exact" and _SHAPELY_AVAILABLE and region.prepared is not None:
+    # Predicates go through THIS THREAD's prepared geometry — see ResolvedRegion._tls.
+    # `region.prepared` still answers "is an exact geometry available?", but using it
+    # for the tests themselves segfaults GEOS under concurrency.
+    prepared = region.prepared_local() if mode == "exact" and _SHAPELY_AVAILABLE else None
+
+    if mode == "exact" and _SHAPELY_AVAILABLE and prepared is not None:
         if relation == "within":
             # Cheap, exact fast-reject: repr_point is guaranteed within the
             # candidate's geometry, so geometry ⊆ R requires repr_point ∈ R.
@@ -723,7 +764,7 @@ def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, rea
             # spills outside it (e.g. cross-border polygons).
             if rp:
                 try:
-                    if not region.prepared.intersects(_Point(rp[0], rp[1])):
+                    if not prepared.intersects(_Point(rp[0], rp[1])):
                         return False
                 except Exception:
                     pass
@@ -731,14 +772,14 @@ def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, rea
             if g is None:
                 return False
             try:
-                return region.prepared.contains(g)
+                return prepared.contains(g)
             except Exception:
                 return False
         # intersects: repr_point is guaranteed within the place geometry, so if
         # it lies within R the geometry intersects R — skip the geom-store fetch.
         if rp:
             try:
-                if region.prepared.intersects(_Point(rp[0], rp[1])):
+                if prepared.intersects(_Point(rp[0], rp[1])):
                     return True
             except Exception:
                 pass
@@ -746,7 +787,7 @@ def hit_matches(src: dict, region: ResolvedRegion, mode: str, relation: str, rea
         if g is None:
             return False
         try:
-            return region.prepared.intersects(g)
+            return prepared.intersects(g)
         except Exception:
             return False
 
