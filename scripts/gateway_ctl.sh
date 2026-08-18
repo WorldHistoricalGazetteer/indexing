@@ -19,14 +19,22 @@ LOG_KEEP=5           # generations retained (gateway.log, .1 … .4)
 # multiprocessing re-executes them as `spawn_main`, so they are only findable by
 # parentage. Anything that needs "every gateway process" must walk the tree.
 _all_pids() {
-    local sup kids
+    local sup kids orphans
     sup="$(pgrep -f "python -m gateway" -u gazetteer 2>/dev/null)"
-    [[ -z "$sup" ]] && return 0
     kids=""
     for s in $sup; do
         kids+=" $(pgrep -P "$s" -u gazetteer 2>/dev/null)"
     done
-    printf '%s\n' $sup $kids | sed '/^$/d' | sort -un
+    # ORPHANED WORKERS. When a worker wedges hard the supervisor can die and leave it
+    # reparented to init — still running, still holding port 9200 — and it matches
+    # neither "python -m gateway" (multiprocessing re-execs workers as spawn_main) nor
+    # any live supervisor's child list. A restart then "succeeds" and cannot bind,
+    # which is exactly how 2026-08-18 10:54 played out: the watchdog restarted the
+    # service and logged "still not serving". Match them by their spawn_main cmdline
+    # from the gateway's own interpreter — the only uvicorn multiprocess service this
+    # user runs.
+    orphans="$(pgrep -u gazetteer -f "miniconda/envs/whg/bin/python -c from multiprocessing.spawn import spawn_main" 2>/dev/null)"
+    printf '%s\n' $sup $kids $orphans | sed '/^$/d' | sort -un
 }
 _find_pid() {
     local pids parent
@@ -71,6 +79,22 @@ do_status() {
 do_stop() {
     local pid=$(_find_pid)
     if [[ -z "$pid" ]]; then
+        # No supervisor — but an orphaned worker may still hold the port, in which
+        # case "not running" is exactly the wrong conclusion: the next start would
+        # fail to bind.
+        local orphans
+        orphans="$(_all_pids)"
+        if [[ -n "$orphans" ]]; then
+            echo "No supervisor, but orphaned worker(s) remain: $(tr "\n" " " <<< "$orphans")"
+            # shellcheck disable=SC2086
+            kill $orphans 2>/dev/null
+            sleep 2
+            orphans="$(_all_pids)"
+            # shellcheck disable=SC2086
+            [[ -n "$orphans" ]] && { echo "Force killing orphan(s)"; kill -9 $orphans 2>/dev/null; sleep 1; }
+            echo "Stopped"
+            return 0
+        fi
         echo "Gateway is not running"
         return 0
     fi
