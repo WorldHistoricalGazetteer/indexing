@@ -9,8 +9,16 @@ the ``whg`` namespace via ``processing.helpers.write_staged_place_doc``.
 
 Per Master Plan + plan §"Batch 4c Phase 4":
 
-* ``place_id = whg:<dataset_id>:<entity_id>`` — the WHG numeric place id
-  (``feature['id']``) is the entity id (stable for the dataset's lifetime).
+* ``place_id = whg:<dataset_id>:<src_id>`` — the CONTRIBUTOR's own id for the
+  record (LPF ``properties.src_id``), not WHG's Postgres key. The key changes
+  when a dataset is re-ingested; src_id does not, and it is what WHG's own
+  reconciliation service now emits, so the two sides mint the same identifier
+  for the same place. src_id is not guaranteed unique within a dataset (a small
+  number of legacy datasets carry duplicate records), so a repeat within one
+  dataset takes a fourth segment — ``whg:<dataset_id>:<src_id>:<place_key>`` —
+  rather than colliding on the ES document id and silently dropping a record.
+  Features with no src_id at all fall back to ``whg:<dataset_id>:<place_key>``.
+  See WorldHistoricalGazetteer/place#183, #172.
 * ``dataset_id = whg:<dataset_id>`` — a per-Dataset/Collection sub-namespace
   so per-dataset re-staging and dataset_status filters are tractable.
 * ``dataset_status = 'published'`` for everything returned by the
@@ -308,16 +316,48 @@ def _timespans_from_whens(whens: list[Any]) -> list[dict[str, Any]]:
     return normalise_timespans(out)
 
 
+def _mint_place_id(dataset_sub_id, src_id, entity_id, *, seen_src_ids=None, stats=None) -> str:
+    """``whg:<dataset_id>:<src_id>`` — the identifier WHG's reconciliation service
+    emits for the same record, so an id minted here dereferences there and vice versa.
+
+    Two edge cases, both rare and both counted rather than swallowed:
+
+    * **no src_id** → fall back to the WHG place key, which is always present.
+    * **duplicate src_id within the dataset** → append the place key as a fourth
+      segment. src_id is the contributor's identifier and a handful of legacy
+      datasets carry genuinely duplicated records; without this the second one
+      would overwrite the first on the ES document id and vanish from the index.
+    """
+    src = str(src_id or "").strip()
+    if not src:
+        if stats is not None:
+            stats["no_src_id"] = stats.get("no_src_id", 0) + 1
+        return f"{WHG_NAMESPACE}:{dataset_sub_id}:{entity_id}"
+    if seen_src_ids is not None:
+        if src in seen_src_ids:
+            if stats is not None:
+                stats["duplicate_src_id"] = stats.get("duplicate_src_id", 0) + 1
+            return f"{WHG_NAMESPACE}:{dataset_sub_id}:{src}:{entity_id}"
+        seen_src_ids.add(src)
+    return f"{WHG_NAMESPACE}:{dataset_sub_id}:{src}"
+
+
 def lpf_feature_to_staged_doc(
     feature: dict[str, Any],
     *,
     dataset_sub_id: int,
     dataset_status: str = "published",
+    seen_src_ids: set[str] | None = None,
+    stats: dict[str, int] | None = None,
 ) -> dict[str, Any] | None:
     """Map one LPF feature to a staged place doc.
 
     Returns ``None`` when the feature lacks an ``id`` (rare; rejected at
     parse time so the staged corpus stays clean).
+
+    ``seen_src_ids`` accumulates the src_ids already staged for THIS dataset, so a
+    duplicate can be given a distinct id instead of overwriting its twin; pass None
+    for one-off conversions where that check doesn't apply.
     """
     entity_id = feature.get("id")
     if entity_id is None:
@@ -325,7 +365,10 @@ def lpf_feature_to_staged_doc(
     props = feature.get("properties") or {}
     geometry = feature.get("geometry")
 
-    place_id = f"{WHG_NAMESPACE}:{dataset_sub_id}:{entity_id}"
+    place_id = _mint_place_id(
+        dataset_sub_id, props.get("src_id"), entity_id,
+        seen_src_ids=seen_src_ids, stats=stats,
+    )
     dataset_id = f"{WHG_NAMESPACE}:{dataset_sub_id}"
     timespans = _timespans_from_whens(props.get("whens") or [])
 
@@ -390,6 +433,8 @@ def stage_dataset(
     seen = 0
     written = 0
     skipped = 0
+    seen_src_ids: set[str] = set()   # per dataset — src_ids are only unique within one
+    id_stats: dict[str, int] = {}
     try:
         for feature in iter_features(stream):
             seen += 1
@@ -400,6 +445,8 @@ def stage_dataset(
                     feature,
                     dataset_sub_id=dataset_sub_id,
                     dataset_status=dataset_status,
+                    seen_src_ids=seen_src_ids,
+                    stats=id_stats,
                 )
             except Exception as exc:
                 skipped += 1
@@ -423,7 +470,13 @@ def stage_dataset(
             pass
 
     print()  # newline after progress line
-    return {"features_seen": seen, "docs_written": written, "docs_skipped": skipped}
+    # Report the id edge cases per dataset — a run that quietly re-minted a chunk of
+    # a dataset under fallback ids should say so, not look identical to a clean one.
+    if id_stats:
+        print(f"    [whg:{dataset_sub_id}] id notes: "
+              + ", ".join(f"{k}={v:,}" for k, v in sorted(id_stats.items())))
+    return {"features_seen": seen, "docs_written": written, "docs_skipped": skipped,
+            **{k: v for k, v in id_stats.items()}}
 
 
 def stage_all_authority_datasets(
@@ -498,8 +551,9 @@ def stage_all_authority_datasets(
         # through to the inventory push so the registry (and Atlas popups) get it.
         metrics["web_item"] = ds.get("web_item")
         per_dataset[str(ds_id)] = metrics
-        for k in ("features_seen", "docs_written", "docs_skipped"):
-            totals[k] += int(metrics.get(k) or 0)
+        for k in ("features_seen", "docs_written", "docs_skipped",
+                  "no_src_id", "duplicate_src_id"):
+            totals[k] = totals.get(k, 0) + int(metrics.get(k) or 0)
         print(f"  ✓ {ds_id}: {metrics}")
 
     summary = {

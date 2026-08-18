@@ -137,5 +137,72 @@ class TestLpfFeatureToStagedDoc(unittest.TestCase):
         self.assertEqual(len(doc["relations"]), 1)
 
 
+class TestPlaceIdMinting(unittest.TestCase):
+    """`place_id` is minted from the contributor's src_id, so the gateway and WHG's
+    own reconciliation service name the same place identically (place#183)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.module = _load_whg_places()
+
+    def _feature(self, pk, src_id=None, title="Somewhere"):
+        props = {"title": title}
+        if src_id is not None:
+            props["src_id"] = src_id
+        return {"type": "Feature", "id": pk, "geometry": None, "properties": props}
+
+    def test_src_id_is_the_leaf(self):
+        doc = self.module.lpf_feature_to_staged_doc(
+            self._feature(6954931, src_id="8"), dataset_sub_id=1052)
+        self.assertEqual(doc["place_id"], "whg:1052:8")
+
+    def test_missing_src_id_falls_back_to_place_key(self):
+        stats = {}
+        doc = self.module.lpf_feature_to_staged_doc(
+            self._feature(4242), dataset_sub_id=42, stats=stats)
+        self.assertEqual(doc["place_id"], "whg:42:4242")
+        self.assertEqual(stats["no_src_id"], 1)
+
+    def test_duplicate_src_id_is_disambiguated_not_dropped(self):
+        seen, stats = set(), {}
+        first = self.module.lpf_feature_to_staged_doc(
+            self._feature(13861, src_id="20155", title="Wales"),
+            dataset_sub_id=20, seen_src_ids=seen, stats=stats)
+        second = self.module.lpf_feature_to_staged_doc(
+            self._feature(91040, src_id="20155", title="Wales"),
+            dataset_sub_id=20, seen_src_ids=seen, stats=stats)
+        self.assertEqual(first["place_id"], "whg:20:20155")
+        self.assertEqual(second["place_id"], "whg:20:20155:91040")
+        self.assertNotEqual(first["place_id"], second["place_id"])
+        self.assertEqual(stats["duplicate_src_id"], 1)
+
+    def test_src_ids_are_scoped_to_one_dataset(self):
+        """The same src_id in two datasets is two places, not a duplicate — the
+        caller passes a fresh set per dataset, and nothing here may assume otherwise."""
+        doc_a = self.module.lpf_feature_to_staged_doc(
+            self._feature(1, src_id="7"), dataset_sub_id=100, seen_src_ids=set())
+        doc_b = self.module.lpf_feature_to_staged_doc(
+            self._feature(2, src_id="7"), dataset_sub_id=200, seen_src_ids=set())
+        self.assertEqual(doc_a["place_id"], "whg:100:7")
+        self.assertEqual(doc_b["place_id"], "whg:200:7")
+
+    def test_geom_key_follows_the_disambiguated_id(self):
+        """The geometry is filed under `{place_id}_0`; if the id were disambiguated
+        AFTER processing, the doc's geom_ref would point at a key nothing wrote —
+        the failure documented in test_cliopatria_duplicate_ids."""
+        seen = set()
+        geom = {"type": "Point", "coordinates": [1.0, 2.0]}
+        f1 = self._feature(13861, src_id="20155"); f1["geometry"] = geom
+        f2 = self._feature(91040, src_id="20155"); f2["geometry"] = geom
+        d1 = self.module.lpf_feature_to_staged_doc(f1, dataset_sub_id=20, seen_src_ids=seen)
+        d2 = self.module.lpf_feature_to_staged_doc(f2, dataset_sub_id=20, seen_src_ids=seen)
+        for doc in (d1, d2):
+            entry = (doc.get("geometries") or [{}])[0]
+            ref = entry.get("geom_ref") or entry.get("geom_key")
+            if ref:
+                self.assertTrue(str(ref).startswith(doc["place_id"]),
+                                f"{ref} does not belong to {doc['place_id']}")
+
+
 if __name__ == "__main__":
     unittest.main()
