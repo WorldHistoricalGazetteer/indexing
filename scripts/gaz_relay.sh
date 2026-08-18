@@ -35,6 +35,7 @@ REPO="/vast/ishi/elastic"
 RELAY="$REPO/.gaz_relay"
 ES="$REPO/scripts/es.sh"
 GW="$REPO/scripts/gateway_ctl.sh"
+GWDUMP="$REPO/scripts/gateway_dump.sh"
 
 # Max wall-time for ONE service op. Without this, a hung restart holds the flock
 # and wedges the relay forever (every later tick fails `flock -n` and exits) — the
@@ -54,6 +55,10 @@ declare -A ALLOW=(
   [es-stop]="$ES es-stop"
   [kibana-restart]="$ES kibana-restart"
   [gateway-restart]="$GW restart"
+  # Read-only stack dump of the running gateway (py-spy, non-blocking). Needs to run
+  # as `gazetteer` because py-spy can only attach to a process of the same user. The
+  # watchdog takes one before restarting a wedged gateway, so the cause survives.
+  [gateway-dump]="$GWDUMP"
   [gateway-start]="$GW start"
   [gateway-stop]="$GW stop"
   [restart-all]="$ES -restart"
