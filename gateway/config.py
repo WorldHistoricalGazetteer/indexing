@@ -42,6 +42,19 @@ PLACES_INDEX = os.getenv("PLACES_INDEX", "places")
 # NB: the legacy `clusters` index enrichment was retired 2026-07-12 (clustering
 # is client-side now — plan §1); CLUSTERS_INDEX is intentionally gone.
 
+# Serving + observability
+# WORKERS: more than one uvicorn worker so a single wedged request cannot take the
+# whole gateway down — which is exactly what happened on 2026-08-18, when one hung
+# request left the process alive, spinning, and serving nothing. Each worker loads
+# its own Symphonym model (~650MB RSS), so this trades memory for survivability.
+GATEWAY_WORKERS = int(os.getenv("GATEWAY_WORKERS", "2"))
+# A request that takes longer than this is logged when it finishes.
+SLOW_REQUEST_SECONDS = float(os.getenv("GATEWAY_SLOW_REQUEST_SECONDS", "10"))
+# A request still running after this is reported by the in-flight sweeper — the case
+# the access log can never show, because uvicorn logs a request only on completion.
+INFLIGHT_WARN_SECONDS = float(os.getenv("GATEWAY_INFLIGHT_WARN_SECONDS", "30"))
+INFLIGHT_SWEEP_SECONDS = float(os.getenv("GATEWAY_INFLIGHT_SWEEP_SECONDS", "30"))
+
 # Symphonym model
 SYMPHONYM_MODEL_DIR = os.getenv("SYMPHONYM_MODEL_DIR", "")  # empty = auto-detect
 SYMPHONYM_DATA_VERSION = os.getenv("SYMPHONYM_DATA_VERSION", "7")

@@ -21,8 +21,11 @@ PY_SPY=/home/gazetteer/miniconda/envs/whg/bin/py-spy
 OUT_DIR="$REPO/logs"
 mkdir -p "$OUT_DIR" 2>/dev/null || true
 
-pid="$(pgrep -f 'python -m gateway' | head -1)"
-if [ -z "$pid" ]; then
+# Dump EVERY gateway process, not just the first. With workers>1 the lowest PID is
+# the uvicorn supervisor, which handles no requests at all — a dump of it would say
+# nothing about a wedge. The workers are where the hung request lives.
+pids="$(pgrep -f 'python -m gateway')"
+if [ -z "$pids" ]; then
     echo "gateway_dump: no gateway process found — nothing to dump"
     exit 0
 fi
@@ -33,10 +36,14 @@ fi
 
 out="$OUT_DIR/gateway-dump-$(date +%Y%m%d-%H%M%S).txt"
 {
-    echo "# gateway stack dump — pid $pid — $(date '+%F %T %Z')"
-    ps -o pid,lstart,etime,rss,stat,cmd -p "$pid" 2>/dev/null
-    echo
-    "$PY_SPY" dump --nonblocking --pid "$pid" 2>&1
+    echo "# gateway stack dump — $(date '+%F %T %Z')"
+    # shellcheck disable=SC2086
+    ps -o pid,ppid,lstart,etime,rss,stat,cmd -p $(tr '\n' ',' <<< "$pids" | sed 's/,$//') 2>/dev/null
+    for pid in $pids; do
+        echo
+        echo "===== pid $pid ====="
+        "$PY_SPY" dump --nonblocking --pid "$pid" 2>&1
+    done
 } > "$out"
 echo "gateway_dump: wrote $out ($(wc -l < "$out") lines)"
 

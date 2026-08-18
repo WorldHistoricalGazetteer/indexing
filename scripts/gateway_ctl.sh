@@ -10,8 +10,28 @@ GATEWAY_DIR="/vast/ishi/elastic"
 LOGDIR="${GATEWAY_DIR}/logs"
 LOGFILE="${LOGDIR}/gateway.log"
 LOG_KEEP=5           # generations retained (gateway.log, .1 … .4)
+# With workers>1 there are several matching processes: one uvicorn SUPERVISOR plus a
+# worker per slot. Signalling the supervisor is what stops the service cleanly (it
+# forwards the signal and reaps the workers); signalling a worker just gets it
+# replaced. So identify the supervisor explicitly — the gateway process whose parent
+# is not itself a gateway process — rather than trusting pgrep's ordering.
+_all_pids() {
+    pgrep -f "python -m gateway" -u gazetteer 2>/dev/null
+}
 _find_pid() {
-    pgrep -f "python -m gateway" -u gazetteer 2>/dev/null | head -1
+    local pids parent
+    pids="$(_all_pids)"
+    [[ -z "$pids" ]] && return 0
+    for p in $pids; do
+        parent="$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')"
+        # Parent not in the set → this is the supervisor (or a lone single-worker run).
+        if ! grep -qx "$parent" <<< "$pids"; then
+            echo "$p"
+            return 0
+        fi
+    done
+    # Fallback: no clear supervisor (unexpected) — the oldest process is the best guess.
+    head -1 <<< "$pids"
 }
 _rotate_log() {
     # Generational rotation on each (re)start. The gateway is low-volume
@@ -44,7 +64,7 @@ do_stop() {
         echo "Gateway is not running"
         return 0
     fi
-    echo "Stopping gateway (PID $pid)..."
+    echo "Stopping gateway (supervisor PID $pid)..."
     kill "$pid" 2>/dev/null
     sleep 2
     # Force kill if still running
@@ -52,6 +72,19 @@ do_stop() {
         echo "Force killing..."
         kill -9 "$pid" 2>/dev/null
         sleep 1
+    fi
+    # Workers should have been reaped with the supervisor; a wedged one may not be,
+    # and a stray worker still holding port 9200 would make the next start fail.
+    local strays
+    strays="$(_all_pids)"
+    if [[ -n "$strays" ]]; then
+        echo "Reaping stray worker(s): $(tr "\n" " " <<< "$strays")"
+        # shellcheck disable=SC2086
+        kill $strays 2>/dev/null
+        sleep 2
+        strays="$(_all_pids)"
+        # shellcheck disable=SC2086
+        [[ -n "$strays" ]] && kill -9 $strays 2>/dev/null
     fi
     echo "Stopped"
 }

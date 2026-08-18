@@ -15,7 +15,11 @@ Usage:
   uvicorn gateway.app:app --reload      # development
 """
 
+import asyncio
+import itertools
 import logging
+import os
+import time
 from typing import List, Optional
 
 from contextlib import asynccontextmanager
@@ -25,8 +29,11 @@ from starlette.responses import JSONResponse
 
 from .config import (
     ES_BACKEND,
+    INFLIGHT_SWEEP_SECONDS,
+    INFLIGHT_WARN_SECONDS,
     KIBANA_BACKEND,
     KIBANA_HOST_KEYWORD,
+    SLOW_REQUEST_SECONDS,
     TOPONYMS_INDEX,
     get_elastic_password,
 )
@@ -52,6 +59,56 @@ def _get_backend(host: str) -> str:
     return ES_BACKEND
 
 
+# ---- Request observability ----
+# uvicorn's access log records a request only once it COMPLETES. When the gateway
+# wedged on 2026-08-18 the request responsible therefore left no trace whatsoever:
+# the last log line was an unrelated call that had finished normally, and the cause
+# could not be identified even in principle. These two mechanisms close that gap.
+#
+#   * the middleware logs any request that finishes SLOWLY, and
+#   * the sweeper reports requests still running, which is the case the access log
+#     structurally cannot show.
+#
+# Honest limitation: if the event loop is starved by CPU-bound work rather than
+# waiting on I/O, the sweeper is starved with it and stays silent — that is what
+# scripts/gateway_dump.sh (py-spy) is for. The two are complements, not duplicates.
+
+_inflight: dict[int, tuple[float, str, str, str]] = {}   # id -> (started, method, path, client)
+_req_seq = itertools.count()
+
+
+def _describe(request: Request) -> tuple[str, str]:
+    path = request.url.path
+    if request.url.query:
+        path = f"{path}?{request.url.query[:200]}"
+    client = request.client.host if request.client else "-"
+    return path, client
+
+
+async def _inflight_sweeper():
+    """Periodically name the requests that are still running."""
+    while True:
+        try:
+            await asyncio.sleep(INFLIGHT_SWEEP_SECONDS)
+            now = time.monotonic()
+            stuck = [
+                (now - started, method, path, client)
+                for (started, method, path, client) in list(_inflight.values())
+                if now - started >= INFLIGHT_WARN_SECONDS
+            ]
+            if stuck:
+                stuck.sort(reverse=True)
+                logger.warning(
+                    "pid %d: %d request(s) still in flight after %.0fs: %s",
+                    os.getpid(), len(stuck), INFLIGHT_WARN_SECONDS,
+                    "; ".join(f"{age:.0f}s {m} {p} from {c}" for age, m, p, c in stuck[:5]),
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 — observability must never kill the server
+            logger.exception("in-flight sweeper error")
+
+
 # ---- Application Lifecycle ----
 
 @asynccontextmanager
@@ -64,7 +121,13 @@ async def lifespan(app: FastAPI):
         logger.info("Symphonym model ready")
     except Exception as e:
         logger.warning(f"Symphonym model not available: {e} — /api/search/phonetic will fail")
+    sweeper = asyncio.create_task(_inflight_sweeper())
     yield
+    sweeper.cancel()
+    try:
+        await sweeper
+    except asyncio.CancelledError:
+        pass
     await close_http_client()
     logger.info("Gateway shut down")
 
@@ -76,6 +139,23 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+@app.middleware("http")
+async def track_request_duration(request: Request, call_next):
+    """Register the request while it runs; log it if it finishes slowly."""
+    rid = next(_req_seq)
+    path, client = _describe(request)
+    started = time.monotonic()
+    _inflight[rid] = (started, request.method, path, client)
+    try:
+        return await call_next(request)
+    finally:
+        _inflight.pop(rid, None)
+        elapsed = time.monotonic() - started
+        if elapsed >= SLOW_REQUEST_SECONDS:
+            logger.warning("pid %d: slow request %.1fs %s %s from %s",
+                           os.getpid(), elapsed, request.method, path, client)
+
 
 # Mount reconciliation search router (must be before catch-all proxy routes)
 app.include_router(reconcile_router)
