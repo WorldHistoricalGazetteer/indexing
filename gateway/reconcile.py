@@ -74,6 +74,44 @@ router = APIRouter(prefix="/api", tags=["Reconciliation"])
 # KNN round trip per variant in phonetic modes; one extra should-clause in text
 # modes). Anything beyond this is dropped and reported in the response.
 MAX_VARIANTS = 10
+
+
+def _aat_types(types) -> list[int] | None:
+    """The AAT concept ids in a `types` list, as integers.
+
+    `types` accepts AAT identifiers OR a source's own vocabulary, but AAT ids were
+    being matched literally against `types.identifier` — and almost nothing stores
+    them in the form clients send. Getty TGN, which is 100% AAT-typed, stores the
+    bare number (`300000774`) plus a numeric `types.aat_ids`, so a filter for
+    `aat:300008347` matched none of its 3M records; WHG's own data happens to store
+    the `aat:`-prefixed string and so was the only thing an AAT filter could find.
+
+    Routing AAT ids to the `aat_types` filter instead matches `types.aat_paths`,
+    which also gives concept-OR-descendant semantics for free — selecting
+    "inhabited places" now finds cities and villages, as the Workbench's type
+    picker has always implied it would. See WHG place#184.
+    """
+    if not types:
+        return None
+    out = []
+    for t in types:
+        raw = str(t).strip()
+        if raw.lower().startswith("aat:"):
+            raw = raw[4:]
+        if raw.isdigit():
+            out.append(int(raw))
+    return out or None
+
+
+def _native_types(types) -> list[str] | None:
+    """The non-AAT entries of a `types` list — a source's own vocabulary
+    (GeoNames feature codes, Wikidata QIDs), matched literally as before."""
+    if not types:
+        return None
+    out = [str(t) for t in types
+           if not str(t).strip().lower().startswith("aat:")
+           and not str(t).strip().isdigit()]
+    return out or None
 # Variant matches are worth marginally less than an equally good match on the
 # primary query: the primary is the value the user actually supplied.
 VARIANT_SCORE_WEIGHT = 0.9
@@ -639,7 +677,8 @@ async def reconcile_search(req: ReconcileRequest):
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
-            types=req.types,
+            types=_native_types(req.types),
+            aat_types=_aat_types(req.types),
             clustering_fields=req.include_clustering_fields,
         )
         places_resp = await client.post(
