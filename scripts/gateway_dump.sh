@@ -21,10 +21,23 @@ PY_SPY=/home/gazetteer/miniconda/envs/whg/bin/py-spy
 OUT_DIR="$REPO/logs"
 mkdir -p "$OUT_DIR" 2>/dev/null || true
 
-# Dump EVERY gateway process, not just the first. With workers>1 the lowest PID is
-# the uvicorn supervisor, which handles no requests at all — a dump of it would say
-# nothing about a wedge. The workers are where the hung request lives.
-pids="$(pgrep -f 'python -m gateway')"
+# Dump the WORKERS, not just the supervisor. Two traps here, both learned the hard
+# way: with workers>1 the supervisor handles no requests at all, so a dump of it
+# says nothing about a wedge; and uvicorn's workers do not carry the "python -m
+# gateway" cmdline at all — multiprocessing re-executes them as `spawn_main`, so
+# pgrep on the command line finds only the supervisor. Walk the process tree
+# instead, and dump the supervisor too in case it is the one that is stuck.
+sup="$(pgrep -f 'python -m gateway' | head -1)"
+if [ -n "$sup" ]; then
+    # Children, minus multiprocessing's resource_tracker (a bookkeeping helper with
+    # no request state, whose stack would only add noise).
+    kids="$(pgrep -P "$sup" 2>/dev/null | while read -r k; do
+        grep -qa resource_tracker "/proc/$k/cmdline" 2>/dev/null || echo "$k"
+    done)"
+    pids="$(printf '%s\n%s\n' "$sup" "$kids" | sed '/^$/d')"
+else
+    pids=""
+fi
 if [ -z "$pids" ]; then
     echo "gateway_dump: no gateway process found — nothing to dump"
     exit 0

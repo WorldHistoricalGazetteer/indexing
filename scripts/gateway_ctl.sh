@@ -15,8 +15,18 @@ LOG_KEEP=5           # generations retained (gateway.log, .1 … .4)
 # forwards the signal and reaps the workers); signalling a worker just gets it
 # replaced. So identify the supervisor explicitly — the gateway process whose parent
 # is not itself a gateway process — rather than trusting pgrep's ordering.
+# The supervisor carries the "python -m gateway" cmdline; its WORKERS do not —
+# multiprocessing re-executes them as `spawn_main`, so they are only findable by
+# parentage. Anything that needs "every gateway process" must walk the tree.
 _all_pids() {
-    pgrep -f "python -m gateway" -u gazetteer 2>/dev/null
+    local sup kids
+    sup="$(pgrep -f "python -m gateway" -u gazetteer 2>/dev/null)"
+    [[ -z "$sup" ]] && return 0
+    kids=""
+    for s in $sup; do
+        kids+=" $(pgrep -P "$s" -u gazetteer 2>/dev/null)"
+    done
+    printf '%s\n' $sup $kids | sed '/^$/d' | sort -un
 }
 _find_pid() {
     local pids parent
