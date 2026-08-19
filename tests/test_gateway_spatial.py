@@ -527,8 +527,6 @@ class TestResolveRegion(unittest.TestCase):
         self.assertEqual(captured["ids"], ["ukhc:CMB"])
 
 
-if __name__ == "__main__":
-    unittest.main()
 
 
 @unittest.skipUnless(_DEPS, "h3 + shapely required")
@@ -576,3 +574,66 @@ class TestIsArealAndContainerShape(unittest.TestCase):
         region = asyncio.run(spatial.resolve_region(["osm:r9"], _StubClient(hits), None))
         self.assertIsNotNone(region)
         self.assertEqual(region.area_ids, ("osm:r9",))
+
+
+class TestRegionFromCircle(unittest.TestCase):
+    """A radial filter resolves to an H3 disc — at the FINEST resolution that
+    fits the cell budget, not the coarsest.
+
+    The resolution search walks ``sorted(_H3_EDGE_KM)``, which is ascending by
+    resolution *number* = descending by cell size = coarse → fine, keeping the
+    last one that fits. Reversing that order broke it both ways: it bailed on the
+    first (finest) resolution for anything over ~11 km, so `region_from_circle`
+    returned None and every such query failed closed with zero hits; and below
+    that it ran to the coarsest resolution, answering a 1 km request with a
+    res-4 two-ring disc ~68 km across.
+    """
+
+    def setUp(self):
+        if not spatial._H3_AVAILABLE:
+            self.skipTest("h3 not installed")
+
+    def _disc(self, radius_km):
+        return spatial.region_from_circle(51.09, -1.80, radius_km)
+
+    def test_large_radius_still_resolves(self):
+        for km in (25, 100, 400):
+            with self.subTest(km=km):
+                region = self._disc(km)
+                self.assertIsNotNone(region, f"{km} km must resolve, not fail closed")
+                self.assertEqual(region.source, "h3-disc")
+                self.assertTrue(region.h3_terms)
+
+    def test_resolution_is_the_finest_that_fits_the_budget(self):
+        # Finer radius ⇒ finer (higher-numbered) resolution, never coarser.
+        resolutions = [self._disc(km).resolutions[0] for km in (400, 100, 25, 5, 1)]
+        self.assertEqual(resolutions, sorted(resolutions),
+                         f"resolution must not coarsen as the radius shrinks: {resolutions}")
+        self.assertEqual(self._disc(1).resolutions[0], max(spatial._H3_EDGE_KM))
+
+    def test_disc_stays_within_the_cell_budget(self):
+        for km in (1, 5, 11, 25, 100, 400):
+            with self.subTest(km=km):
+                region = self._disc(km)
+                cells = sum(len(c) for c in region.cover_by_res.values())
+                self.assertLessEqual(cells, spatial._DISC_MAX_CELLS)
+                self.assertGreater(cells, 0)
+
+    def test_bbox_brackets_the_centre(self):
+        region = self._disc(25)
+        ring = region.bbox_geojson["coordinates"][0]
+        xs = [p[0] for p in ring]
+        ys = [p[1] for p in ring]
+        self.assertLess(min(xs), -1.80)
+        self.assertGreater(max(xs), -1.80)
+        self.assertLess(min(ys), 51.09)
+        self.assertGreater(max(ys), 51.09)
+
+    def test_degenerate_input_returns_none(self):
+        self.assertIsNone(spatial.region_from_circle(51.09, -1.80, 0))
+        self.assertIsNone(spatial.region_from_circle(51.09, -1.80, -5))
+        self.assertIsNone(spatial.region_from_circle(None, -1.80, 25))
+
+
+if __name__ == "__main__":
+    unittest.main()

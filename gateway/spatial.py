@@ -434,7 +434,7 @@ def region_from_circle(lat: float, lng: float, radius_km: float) -> Optional[Res
 
     # Finest resolution whose disc stays under the cell budget.
     res, rings = None, 0
-    for r in sorted(_H3_EDGE_KM, reverse=True):          # coarse → fine
+    for r in sorted(_H3_EDGE_KM):                        # coarse → fine
         k = max(1, int(math.ceil(float(radius_km) / _H3_EDGE_KM[r])) + 1)
         n_cells = 1 + 3 * k * (k + 1)                     # cells in a k-ring disc
         if n_cells <= _DISC_MAX_CELLS:
