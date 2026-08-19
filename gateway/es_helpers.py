@@ -236,6 +236,96 @@ def build_toponym_query(
     }
 
 
+def build_lexical_exact_query(
+    forms: list[str], namespaces: list[str] | None = None, size: int = 500,
+) -> dict | None:
+    """Exact, case-insensitive toponym lookup for a set of name forms.
+
+    ``name.raw`` is a keyword field under ``lowercase_normalizer``, so a ``terms``
+    clause over lowercased forms is a true exact match that still tolerates case
+    ("NEWTON WITH SCALES" matches "Newton with Scales") without the asciifolding
+    that would start conflating distinct names.
+
+    This is the lexical half of ``fuzzy``/``phonetic`` discovery. KNN answers
+    "what sounds like this" and is the only thing that ever answered; it does not
+    reliably retrieve a toponym that is spelled *exactly* as asked. "Newton with
+    Scales" is indexed with 3 attestations and never appeared anywhere in the
+    200-candidate KNN pool, while cross-script neighbours filled it (place#197).
+
+    Returns None when there is nothing to look up.
+    """
+    lowered = [f.strip().lower() for f in forms if f and f.strip()]
+    if not lowered:
+        return None
+    query: dict = {"terms": {"name.raw": sorted(set(lowered))}}
+    if namespaces:
+        query = {"bool": {"must": [query],
+                          "filter": [{"terms": {"namespaces": namespaces}}]}}
+    return {
+        "size": size,
+        "query": query,
+        "_source": ["name", "lang", "attestations"],
+    }
+
+
+def apply_lexical_boost(
+    hits: list[dict],
+    place_scores: dict[str, float],
+    form_boosts: dict[str, float],
+    exclude_prefixes: tuple[str, ...] = (),
+    include_prefixes: tuple[str, ...] = (),
+    match_names: dict[str, str] | None = None,
+) -> int:
+    """Add a flat boost to every place attested by an exactly-matching toponym.
+
+    ``form_boosts`` maps a lowercased name form to the boost an exact match on it
+    earns — the primary query more than a variant, mirroring
+    ``variant_weight``/``score_scale`` elsewhere.
+
+    The boost is **added** to whatever the phonetic passes found, not maxed with
+    it, and it is larger than any score those passes can produce. Three
+    consequences, all wanted:
+
+    * a place spelled exactly as asked outranks every purely-phonetic neighbour,
+      even one the KNN scored at its own ceiling;
+    * within the exact-match tier, phonetic proximity survives as the tiebreak,
+      so the 17 places called "Long Melford" still order sensibly;
+    * a place found ONLY by exact spelling still enters the pool, which is how a
+      record the KNN never retrieves becomes reachable at all.
+
+    A place attested by several matching forms takes the single largest boost
+    rather than their sum — matching a primary AND a variant is not evidence
+    twice over.
+
+    Returns the number of places boosted.
+    """
+    best: dict[str, float] = {}
+    best_name: dict[str, str] = {}
+    for hit in hits:
+        source = hit.get("_source", {})
+        name = source.get("name") or ""
+        boost = form_boosts.get(name.strip().lower())
+        if not boost:
+            continue
+        for pid in source.get("attestations", []):
+            if not pid:
+                continue
+            if include_prefixes and not pid.startswith(include_prefixes):
+                continue
+            if exclude_prefixes and pid.startswith(exclude_prefixes):
+                continue
+            if boost > best.get(pid, 0.0):
+                best[pid] = boost
+                best_name[pid] = name
+    for pid, boost in best.items():
+        place_scores[pid] = place_scores.get(pid, 0.0) + boost
+        if match_names is not None:
+            # The exact hit now dominates this place's score, so it is the match
+            # to report — keep name and score agreeing as collect_place_ids does.
+            match_names[pid] = best_name[pid]
+    return len(best)
+
+
 def build_phonetic_knn(
     query: str,
     lang: str = "und",

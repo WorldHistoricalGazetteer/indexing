@@ -61,6 +61,8 @@ from .es_helpers import (
     build_toponym_query as _build_toponym_query,
     build_phonetic_knn as _build_phonetic_knn,
     collect_place_ids as _collect_place_ids,
+    build_lexical_exact_query as _build_lexical_exact_query,
+    apply_lexical_boost as _apply_lexical_boost,
     rank_candidate_ids as _rank_candidate_ids,
     build_places_filter as _build_places_filter,
     build_toponym_lookup as _build_toponym_lookup,
@@ -116,6 +118,22 @@ def _native_types(types) -> list[str] | None:
 # Variant matches are worth marginally less than an equally good match on the
 # primary query: the primary is the value the user actually supplied.
 VARIANT_SCORE_WEIGHT = 0.9
+
+# What an EXACT (case-insensitive) match on a name form is worth in fuzzy/phonetic
+# discovery, added on top of whatever the phonetic passes scored that place.
+#
+# Deliberately above the phonetic ceiling. A KNN pass contributes at most 1.0
+# after per-pass normalisation, so any exactly-spelled candidate outranks any
+# purely-phonetic one, and a variant's exact match (× VARIANT_SCORE_WEIGHT = 1.8)
+# still clears it. Phonetic proximity is not discarded — it rides along as the
+# ordering *within* the exact-match tier.
+#
+# This is what makes `fuzzy` stop trusting KNN alone. Symphonym answers "what
+# sounds like this", which turns out not to include "the toponym spelled exactly
+# like this": `Newton with Scales` is indexed with 3 attestations and appeared
+# nowhere in the 200-candidate KNN pool, while `mode=exact` returned it instantly
+# (place#197 verification, place#188).
+LEXICAL_EXACT_BOOST = 2.0
 
 
 # ---------------------------------------------------------------------------
@@ -633,7 +651,29 @@ async def reconcile_search(req: ReconcileRequest):
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]
-                if bodies:
+
+                # ...plus ONE lexical pass over every form. KNN alone does not
+                # reliably retrieve a toponym spelled exactly as asked, so an
+                # exact match enters discovery on lexical evidence rather than
+                # phonetic proximity, and outranks any neighbour (place#197/#188).
+                # It rides in the same gather — no extra round-trip latency — and
+                # runs even when Symphonym is down, which used to mean no
+                # discovery at all.
+                form_boosts: dict[str, float] = {}
+                for form, _vec, weight in passes:
+                    key = (form or "").strip().lower()
+                    if key:
+                        boost = LEXICAL_EXACT_BOOST * weight
+                        form_boosts[key] = max(form_boosts.get(key, 0.0), boost)
+                lex_body = _build_lexical_exact_query(
+                    [form for form, _, _ in passes],
+                    namespaces=req.namespaces or None,
+                )
+
+                if bodies or lex_body:
+                    requests = [body for body, _ in bodies]
+                    if lex_body:
+                        requests.append(lex_body)
                     responses = await asyncio.gather(*[
                         client.post(
                             f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
@@ -641,7 +681,7 @@ async def reconcile_search(req: ReconcileRequest):
                             auth=auth,
                             headers=ES_HEADERS,
                         )
-                        for body, _ in bodies
+                        for body in requests
                     ])
                     for (_, weight), knn_resp in zip(bodies, responses):
                         knn_resp.raise_for_status()
@@ -649,6 +689,14 @@ async def reconcile_search(req: ReconcileRequest):
                         _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
                                            include_prefixes, match_names,
                                            score_scale=weight, normalise=True)
+                    if lex_body:
+                        lex_resp = responses[len(bodies)]
+                        lex_resp.raise_for_status()
+                        lex_hits = lex_resp.json().get("hits", {}).get("hits", [])
+                        boosted = _apply_lexical_boost(
+                            lex_hits, place_scores, form_boosts,
+                            exclude_prefixes, include_prefixes, match_names)
+                        logger.debug("reconcile: lexical pass boosted %d place(s)", boosted)
             else:
                 # Text modes OR the variants into ONE request (dis_max keeps the
                 # best single-form score per toponym rather than summing).

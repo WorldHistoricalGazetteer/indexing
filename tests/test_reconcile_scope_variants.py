@@ -24,11 +24,14 @@ Pure-function tests: no live Elasticsearch (the ES round trips are stubbed).
 import unittest
 
 from gateway.es_helpers import (
+    apply_lexical_boost,
+    build_lexical_exact_query,
     build_toponym_query,
     collect_place_ids,
     rank_candidate_ids,
 )
 from gateway.reconcile import (
+    LEXICAL_EXACT_BOOST,
     MAX_VARIANTS,
     VARIANT_SCORE_WEIGHT,
     ReconcileRequest,
@@ -327,6 +330,111 @@ class TestCandidateIsArea(unittest.TestCase):
         g = self._geoms({"place_id": "un:FR", "geometries": [
             {"repr_point": {"lon": 1, "lat": 2}, "has_geom": True}]})
         self.assertEqual([(x.is_area, x.has_geom) for x in g], [(True, True)])
+
+
+class TestLexicalExactQuery(unittest.TestCase):
+    """The lexical half of fuzzy discovery — an exact, case-insensitive lookup."""
+
+    def test_lowercases_onto_the_normalised_keyword_field(self):
+        body = build_lexical_exact_query(["Newton with Scales", "NEWTON-WITH-SCALES"])
+        self.assertEqual(body["query"]["terms"]["name.raw"],
+                         ["newton with scales", "newton-with-scales"])
+        self.assertIn("attestations", body["_source"])
+
+    def test_dedupes_and_drops_blanks(self):
+        body = build_lexical_exact_query(["Sarum", "sarum", "  ", "", "SARUM"])
+        self.assertEqual(body["query"]["terms"]["name.raw"], ["sarum"])
+
+    def test_nothing_to_look_up_returns_none(self):
+        self.assertIsNone(build_lexical_exact_query([]))
+        self.assertIsNone(build_lexical_exact_query(["", "   "]))
+
+    def test_namespace_scope_is_pushed_into_discovery(self):
+        body = build_lexical_exact_query(["Sarum"], namespaces=["iv"])
+        self.assertEqual(body["query"]["bool"]["filter"],
+                         [{"terms": {"namespaces": ["iv"]}}])
+
+
+class TestLexicalBoost(unittest.TestCase):
+    """place#197/#188 — an exact spelling must beat any phonetic neighbour."""
+
+    @staticmethod
+    def _hits(pairs):
+        return [{"_source": {"name": n, "attestations": pids}} for n, pids in pairs]
+
+    def _boosts(self, primary, *variants):
+        b = {primary.lower(): LEXICAL_EXACT_BOOST}
+        for v in variants:
+            b[v.lower()] = LEXICAL_EXACT_BOOST * VARIANT_SCORE_WEIGHT
+        return b
+
+    def test_exact_match_outranks_the_phonetic_ceiling(self):
+        # The Newton with Scales case: KNN never retrieved the right record, and
+        # its own top hit is junk sitting at the normalised maximum.
+        scores, names = {}, {}
+        collect_place_ids(
+            [{"_score": 0.99, "_source": {"name": "Nizui", "attestations": ["gn:junk"]}}],
+            scores, match_names=names, normalise=True)
+        self.assertAlmostEqual(scores["gn:junk"], 1.0)
+        apply_lexical_boost(self._hits([("Newton with Scales", ["gn:good"])]),
+                            scores, self._boosts("Newton with Scales"),
+                            match_names=names)
+        self.assertGreater(scores["gn:good"], scores["gn:junk"])
+        self.assertEqual(names["gn:good"], "Newton with Scales")
+
+    def test_variant_exact_also_clears_the_phonetic_ceiling(self):
+        # Melford, Long + variants=["Long Melford"] — the derived form of #188.
+        scores = {}
+        collect_place_ids(
+            [{"_score": 0.99, "_source": {"name": "Trumbull Lake",
+                                          "attestations": ["gn:junk"]}}],
+            scores, normalise=True)
+        apply_lexical_boost(self._hits([("Long Melford", ["gn:good"])]),
+                            scores, self._boosts("Melford, Long", "Long Melford"))
+        self.assertAlmostEqual(scores["gn:good"],
+                               LEXICAL_EXACT_BOOST * VARIANT_SCORE_WEIGHT)
+        self.assertGreater(scores["gn:good"], scores["gn:junk"])
+
+    def test_primary_exact_outranks_variant_exact(self):
+        scores = {}
+        apply_lexical_boost(
+            self._hits([("Long Melford", ["gn:primary"]), ("Melford", ["gn:variant"])]),
+            scores, self._boosts("Long Melford", "Melford"))
+        self.assertGreater(scores["gn:primary"], scores["gn:variant"])
+
+    def test_phonetic_score_survives_as_the_within_tier_tiebreak(self):
+        # The 17 "Long Melford" records must still order sensibly among themselves.
+        scores = {}
+        collect_place_ids(
+            [{"_score": 1.0, "_source": {"name": "Long Melford", "attestations": ["gn:a"]}},
+             {"_score": 0.9, "_source": {"name": "Long Melford", "attestations": ["gn:b"]}}],
+            scores, normalise=True)
+        apply_lexical_boost(self._hits([("Long Melford", ["gn:a", "gn:b"])]),
+                            scores, self._boosts("Long Melford"))
+        self.assertGreater(scores["gn:a"], scores["gn:b"])
+        self.assertAlmostEqual(scores["gn:a"] - scores["gn:b"], 1.0 - 0.9)
+
+    def test_matching_several_forms_is_not_evidence_twice_over(self):
+        scores = {}
+        apply_lexical_boost(
+            self._hits([("Long Melford", ["gn:1"]), ("Melford", ["gn:1"])]),
+            scores, self._boosts("Long Melford", "Melford"))
+        self.assertAlmostEqual(scores["gn:1"], LEXICAL_EXACT_BOOST)  # largest, not sum
+
+    def test_case_insensitive_but_only_via_the_declared_forms(self):
+        scores = {}
+        apply_lexical_boost(self._hits([("LONG MELFORD", ["gn:1"]),
+                                        ("Longmelford", ["gn:2"])]),
+                            scores, self._boosts("Long Melford"))
+        self.assertIn("gn:1", scores)
+        self.assertNotIn("gn:2", scores)   # near-miss spelling earns nothing
+
+    def test_namespace_prefixes_are_honoured(self):
+        scores = {}
+        apply_lexical_boost(self._hits([("Sarum", ["gb:1", "gn:2", "wd:3"])]),
+                            scores, self._boosts("Sarum"),
+                            exclude_prefixes=("gb:",), include_prefixes=("gn:", "gb:"))
+        self.assertEqual(set(scores), {"gn:2"})
 
 
 if __name__ == "__main__":
