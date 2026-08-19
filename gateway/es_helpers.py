@@ -271,6 +271,7 @@ def collect_place_ids(
     include_prefixes: tuple[str, ...] = (),
     match_names: dict[str, str] | None = None,
     score_scale: float = 1.0,
+    normalise: bool = False,
 ) -> None:
     """
     Walk toponym hits and accumulate ``{place_id: best_score}`` from the
@@ -289,7 +290,23 @@ def collect_place_ids(
             for the per-place best. Folds in *separate* discovery passes — e.g.
             the per-variant KNN searches — at a slight discount to the primary
             query, mirroring the ``variant_weight`` boost of the text path.
+        normalise: Divide every hit's score by the top score **of this call's
+            own hit list** before applying ``score_scale``. Required whenever a
+            call folds in a pass run against a *different* query — the KNN
+            searches per name variant. Their raw ``_score``s are cosines to
+            different query vectors and are NOT commensurable: how close a
+            toponym sits to ``"Newton-with-Scales"`` says nothing about how it
+            ranks among the neighbours of ``"Newton with Scales"``, so a variant
+            with a tight neighbourhood returned higher raw cosines than the
+            primary's genuine hits and its junk won the ``max`` outright
+            (place#197). Normalising makes each pass contribute a *relative*
+            score in ``(0, 1]``, so the discounted variant tops out at
+            ``score_scale`` and the primary's best match — the exact name the
+            user supplied — can never be displaced by a variant's neighbour.
     """
+    if normalise:
+        top = max((hit.get("_score") or 0.0) for hit in hits) if hits else 0.0
+        score_scale = (score_scale / top) if top > 0 else 0.0
     for hit in hits:
         score = (hit.get("_score") or 0.0) * score_scale
         name = hit.get("_source", {}).get("name", "")
@@ -305,6 +322,26 @@ def collect_place_ids(
                 place_scores[pid] = score
                 if match_names is not None:
                     match_names[pid] = name
+
+
+def rank_candidate_ids(place_scores: dict[str, float], pool_k: int) -> list[str]:
+    """Return the top-``pool_k`` discovered place_ids, best discovery score first.
+
+    The Step-2 places query is a pure ``filter`` bool, so every hit scores the
+    same and ES's ``size`` cut hands back an ARBITRARY doc-order page. Handing it
+    the whole discovery set therefore drops candidates *before* they are ranked
+    whenever discovery finds more ids than the fetch window. Pre-ordering the
+    ``terms`` list by discovery score (tiebroken on place_id for stable
+    pagination) makes the window the genuine top-K instead.
+
+    Shared by ``/api/search`` and ``/api/reconcile`` — reconcile lacked it, which
+    is how ``variants`` (up to 200 extra toponyms' worth of attestations per
+    extra form) evicted the correct match entirely (place#197).
+    """
+    return sorted(
+        place_scores.keys(),
+        key=lambda p: (place_scores[p], p), reverse=True,
+    )[:pool_k]
 
 
 # ---------------------------------------------------------------------------

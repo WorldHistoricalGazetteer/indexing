@@ -41,6 +41,7 @@ from .es_helpers import (
     build_toponym_query,
     build_phonetic_knn,
     collect_place_ids,
+    rank_candidate_ids,
     build_places_filter,
     build_toponym_lookup,
     build_suggest_query,
@@ -429,13 +430,7 @@ async def search(req: SearchRequest):
         # where high-scoring candidates beyond the doc-order fetch window were
         # silently dropped. (hit.score is a monotonic normalisation of
         # place_scores, so this pre-fetch order matches the final ranking.)
-        if pure_spatial:
-            fetch_ids = None
-        else:
-            fetch_ids = sorted(
-                place_scores.keys(),
-                key=lambda p: (place_scores[p], p), reverse=True,
-            )[:pool_k]
+        fetch_ids = None if pure_spatial else rank_candidate_ids(place_scores, pool_k)
 
         places_body = build_places_filter(
             place_ids=fetch_ids,

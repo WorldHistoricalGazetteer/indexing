@@ -96,6 +96,10 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
   - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
     `contained_in`/`containment`/`relation` spatial-containment params as `/api/search`).
     Optional `variants[]` (alt name forms) are tried alongside `query` in discovery.
+    In `fuzzy`/`phonetic` modes each form is a **separate** KNN pass, so each pass is
+    normalised by its own top score before the union takes the per-place max — raw
+    cosines to different query vectors are not comparable, and comparing them let a
+    variant's junk neighbours outrank (and evict) the correct match (place#197).
     Requested scope is **never silently dropped**: a point-only container borrows
     a `sameAs` co-referent's polygon, and a scope that cannot be applied at all
     **fails closed** (no hits) rather than answering unscoped — either way the

@@ -9,12 +9,25 @@ Covers issue place#144:
   * Gap 2 — optional ``variants`` are tried alongside the primary query in
     discovery, unioned and deduped, best score per place.
 
+Also covers place#197 — supplying ``variants`` made reconciliation *worse*:
+
+  * KNN passes were unioned on raw ``_score``, which are cosines to different
+    query vectors and not comparable, so a variant's junk neighbours outscored
+    the primary's genuine hits. Each pass is now normalised by its own top.
+  * The Step-2 candidate pool was an arbitrary doc-order page of the discovery
+    set, so the extra ids a variant injects evicted the correct match before it
+    was ever ranked. It is now the top-K by discovery score.
+
 Pure-function tests: no live Elasticsearch (the ES round trips are stubbed).
 """
 
 import unittest
 
-from gateway.es_helpers import build_toponym_query, collect_place_ids
+from gateway.es_helpers import (
+    build_toponym_query,
+    collect_place_ids,
+    rank_candidate_ids,
+)
 from gateway.reconcile import (
     MAX_VARIANTS,
     VARIANT_SCORE_WEIGHT,
@@ -209,8 +222,82 @@ class TestVariantScoreAccumulation(unittest.TestCase):
         self.assertEqual(names["gn:1"], "Sarum")
 
 
-if __name__ == "__main__":
-    unittest.main()
+class TestCrossPassNormalisation(unittest.TestCase):
+    """place#197 — passes run against different query vectors are normalised
+    per pass, so raw KNN cosines never compete across passes."""
+
+    @staticmethod
+    def _hits(pairs):
+        # pairs: [(name, score, [pids]), ...] — one pass's hit list
+        return [{"_score": sc, "_source": {"name": n, "attestations": pids}}
+                for n, sc, pids in pairs]
+
+    def test_variant_junk_cannot_outrank_the_primary_best(self):
+        # The reported shape: the variant's neighbourhood is TIGHTER, so its junk
+        # comes back at a higher raw cosine than the primary's genuine hit.
+        scores, names = {}, {}
+        collect_place_ids(self._hits([("Newton with Scales", 0.88, ["gn:good"])]),
+                          scores, match_names=names, normalise=True)
+        collect_place_ids(self._hits([("Niujiaozhai", 0.99, ["gn:junk"])]),
+                          scores, match_names=names,
+                          score_scale=VARIANT_SCORE_WEIGHT, normalise=True)
+        self.assertAlmostEqual(scores["gn:good"], 1.0)
+        self.assertAlmostEqual(scores["gn:junk"], VARIANT_SCORE_WEIGHT)
+        self.assertGreater(scores["gn:good"], scores["gn:junk"])
+
+    def test_within_pass_order_is_preserved(self):
+        scores = {}
+        collect_place_ids(
+            self._hits([("A", 0.9, ["gn:1"]), ("B", 0.8, ["gn:2"])]),
+            scores, normalise=True)
+        self.assertAlmostEqual(scores["gn:1"], 1.0)
+        self.assertAlmostEqual(scores["gn:2"], 0.8 / 0.9)
+        self.assertGreater(scores["gn:1"], scores["gn:2"])
+
+    def test_variant_still_promotes_a_place_the_primary_ranked_poorly(self):
+        # Normalising must not neuter variants: a place the primary barely
+        # reached is still lifted by a strong variant match.
+        scores, names = {}, {}
+        collect_place_ids(self._hits([("Melford, Long", 1.0, ["gn:other"]),
+                                      ("Long Melford", 0.5, ["gn:target"])]),
+                          scores, match_names=names, normalise=True)
+        collect_place_ids(self._hits([("Long Melford", 0.99, ["gn:target"])]),
+                          scores, match_names=names,
+                          score_scale=VARIANT_SCORE_WEIGHT, normalise=True)
+        self.assertAlmostEqual(scores["gn:target"], VARIANT_SCORE_WEIGHT)
+        self.assertEqual(names["gn:target"], "Long Melford")
+
+    def test_empty_and_zero_score_passes_are_safe(self):
+        # A degenerate pass (no hits, or every hit at zero) contributes nothing
+        # rather than dividing by zero.
+        scores = {}
+        collect_place_ids([], scores, normalise=True)
+        collect_place_ids(self._hits([("X", 0.0, ["gn:1"])]), scores, normalise=True)
+        self.assertEqual(scores, {})
+
+
+class TestCandidatePoolOrdering(unittest.TestCase):
+    """place#197 — the Step-2 terms list is the top-K BY DISCOVERY SCORE, not an
+    arbitrary slice; ES scores a pure `filter` bool uniformly, so whatever falls
+    outside the window is lost before ranking."""
+
+    def test_top_k_by_score(self):
+        scores = {"gn:junk1": 0.5, "gn:good": 0.99, "gn:junk2": 0.4}
+        self.assertEqual(rank_candidate_ids(scores, 2), ["gn:good", "gn:junk1"])
+
+    def test_correct_match_survives_a_pool_flooded_by_variant_hits(self):
+        scores = {f"gn:junk{i}": 0.80 for i in range(400)}
+        scores["gn:good"] = 1.0
+        self.assertIn("gn:good", rank_candidate_ids(scores, 40))
+
+    def test_tiebreak_is_stable(self):
+        scores = {"gn:2": 0.9, "gn:1": 0.9, "gn:10": 0.9}
+        self.assertEqual(rank_candidate_ids(scores, 3),
+                         rank_candidate_ids(dict(reversed(scores.items())), 3))
+
+    def test_pool_larger_than_the_set_returns_everything(self):
+        scores = {"gn:1": 0.2, "gn:2": 0.3}
+        self.assertEqual(set(rank_candidate_ids(scores, 100)), {"gn:1", "gn:2"})
 
 
 class TestCandidateIsArea(unittest.TestCase):
@@ -240,3 +327,7 @@ class TestCandidateIsArea(unittest.TestCase):
         g = self._geoms({"place_id": "un:FR", "geometries": [
             {"repr_point": {"lon": 1, "lat": 2}, "has_geom": True}]})
         self.assertEqual([(x.is_area, x.has_geom) for x in g], [(True, True)])
+
+
+if __name__ == "__main__":
+    unittest.main()

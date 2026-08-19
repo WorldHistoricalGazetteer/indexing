@@ -61,6 +61,7 @@ from .es_helpers import (
     build_toponym_query as _build_toponym_query,
     build_phonetic_knn as _build_phonetic_knn,
     collect_place_ids as _collect_place_ids,
+    rank_candidate_ids as _rank_candidate_ids,
     build_places_filter as _build_places_filter,
     build_toponym_lookup as _build_toponym_lookup,
     collect_namespaces as _collect_namespaces,
@@ -612,6 +613,14 @@ async def reconcile_search(req: ReconcileRequest):
                 # form, so (unlike the text path) these cannot be OR-ed into a
                 # single query — but they are independent, so run them together
                 # and union the results, each place keeping its best score.
+                #
+                # Each pass is normalised by its OWN top score before it competes
+                # (``normalise=True``): raw KNN ``_score``s are cosines to
+                # *different* query vectors and are not comparable across passes.
+                # Without that, a variant whose phonetic neighbourhood happens to
+                # be tighter than the primary's returned higher raw scores, and
+                # its junk neighbours outranked — and, after the candidate-pool
+                # cut, evicted — the correct match (place#197).
                 passes: list[tuple[str, Optional[list[int]], float]] = [
                     (req.query, req.query_vector, 1.0)
                 ]
@@ -639,7 +648,7 @@ async def reconcile_search(req: ReconcileRequest):
                         knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
                         _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
                                            include_prefixes, match_names,
-                                           score_scale=weight)
+                                           score_scale=weight, normalise=True)
             else:
                 # Text modes OR the variants into ONE request (dis_max keeps the
                 # best single-form score per toponym rather than summing).
@@ -672,11 +681,19 @@ async def reconcile_search(req: ReconcileRequest):
         # Step 2: Filtering — fetch places by ID + spatial/temporal/ccode
         # ------------------------------------------------------------------
 
-        # Send ALL discovered place_ids — the terms filter is an
-        # inverted-index lookup that handles thousands of IDs with
-        # negligible cost.  Over-fetch (size * 4) so that re-ranking
-        # in Step 4 can surface the best candidates after filters trim.
-        fetch_ids = list(place_scores.keys()) if not pure_spatial else None
+        # Candidate pool size — over-fetch so Step 4's re-ranking still has the
+        # best candidates to choose from after the filters trim. The floor
+        # matters now that the pool is score-ordered rather than a doc-order
+        # page: a client asking for 10 results under a ccode/temporal/containment
+        # filter would otherwise be reconciling against 40 candidates, and the
+        # filters could eat nearly all of them. 200 matches the discovery `k`.
+        pool_k = min(max(req.size * (8 if pure_spatial else 4), 200), 10000)
+
+        # Take the top-K place_ids BY DISCOVERY SCORE, as /api/search does —
+        # reconcile sent the whole set and let ES's doc-order `size` cut choose,
+        # which silently dropped the correct match once `variants` grew the pool
+        # past the window (place#197).
+        fetch_ids = None if pure_spatial else _rank_candidate_ids(place_scores, pool_k)
 
         places_body = _build_places_filter(
             place_ids=fetch_ids,
@@ -686,7 +703,7 @@ async def reconcile_search(req: ReconcileRequest):
             start_year=req.start_year,
             end_year=req.end_year,
             temporal_mode=req.temporal_mode,
-            size=min(req.size * (8 if pure_spatial else 4), 10000),
+            size=pool_k,
             exclude_namespaces=req.exclude_namespaces or None,
             namespaces=req.namespaces,
             fclasses=req.fclasses,
