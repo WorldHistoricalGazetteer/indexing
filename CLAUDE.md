@@ -100,6 +100,15 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     normalised by its own top score before the union takes the per-place max — raw
     cosines to different query vectors are not comparable, and comparing them let a
     variant's junk neighbours outrank (and evict) the correct match (place#197).
+    Those modes also run **one lexical pass** (exact, case-insensitive, on
+    `name.raw`) over the primary + variants in the same round trip: KNN answers
+    "what sounds like this" and demonstrably misses toponyms spelled *exactly* as
+    asked (`Newton with Scales` is indexed yet never entered the 200-candidate KNN
+    pool). An exact match earns `LEXICAL_EXACT_BOOST`, deliberately above the
+    phonetic ceiling of 1.0, **added** to any phonetic score so proximity survives
+    as the within-tier tiebreak. Side-effect worth knowing: when an exact match
+    exists the phonetic band falls to ~half of it, so junk drops well below Map
+    your Data's auto-confirm threshold instead of riding at 99.
     Requested scope is **never silently dropped**: a point-only container borrows
     a `sameAs` co-referent's polygon, and a scope that cannot be applied at all
     **fails closed** (no hits) rather than answering unscoped — either way the
