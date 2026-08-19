@@ -42,6 +42,9 @@ from .es_helpers import (
     build_phonetic_knn,
     collect_place_ids,
     rank_candidate_ids,
+    build_lexical_exact_query,
+    apply_lexical_boost,
+    LEXICAL_EXACT_BOOST,
     build_places_filter,
     build_toponym_lookup,
     build_suggest_query,
@@ -389,16 +392,43 @@ async def search(req: SearchRequest):
 
         if not pure_spatial:
             if req.mode in ("fuzzy", "phonetic"):
+                # Phonetic KNN, PLUS an exact lexical pass on the same query.
+                # KNN answers "what sounds like this", which demonstrably does
+                # not include "the toponym spelled exactly like this" —
+                # `Newton with Scales` is indexed yet never entered the
+                # 200-candidate KNN pool (place#197). The two run together, so
+                # the lexical half costs no extra round-trip and still answers
+                # when Symphonym is unavailable.
                 knn_body = build_phonetic_knn(req.query, k=200, similarity=0.7)
-                if knn_body:
-                    knn_resp = await client.post(
-                        f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
-                        json=knn_body, auth=auth, headers=ES_HEADERS,
-                    )
-                    knn_resp.raise_for_status()
-                    knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                    collect_place_ids(knn_hits, place_scores, exclude_prefixes,
-                                      include_prefixes, match_names)
+                lex_body = build_lexical_exact_query(
+                    [req.query], namespaces=req.namespaces or None)
+                bodies = [b for b in (knn_body, lex_body) if b]
+                if bodies:
+                    responses = await asyncio.gather(*[
+                        client.post(
+                            f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
+                            json=body, auth=auth, headers=ES_HEADERS,
+                        )
+                        for body in bodies
+                    ])
+                    if knn_body:
+                        knn_resp = responses[0]
+                        knn_resp.raise_for_status()
+                        knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
+                        # Normalised so the phonetic band tops out at 1.0 and the
+                        # lexical boost below can sit above it. With a single pass
+                        # this is a monotone rescale — it changes no ordering.
+                        collect_place_ids(knn_hits, place_scores, exclude_prefixes,
+                                          include_prefixes, match_names,
+                                          normalise=True)
+                    if lex_body:
+                        lex_resp = responses[-1]
+                        lex_resp.raise_for_status()
+                        lex_hits = lex_resp.json().get("hits", {}).get("hits", [])
+                        apply_lexical_boost(
+                            lex_hits, place_scores,
+                            {req.query.strip().lower(): LEXICAL_EXACT_BOOST},
+                            exclude_prefixes, include_prefixes, match_names)
             else:
                 text_body = build_toponym_query(
                     req.query, req.mode, size=200, namespaces=req.namespaces or None

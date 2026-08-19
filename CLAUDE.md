@@ -92,6 +92,8 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     Supports **spatial containment** via `contained_in` (place_ids defining the region) or
     `bounds` (raw GeoJSON), with `containment` = `fuzzy` (H3) | `exact` (Shapely) and
     `relation` = `intersects` | `within`. `query` is optional — omit for a pure-spatial query.
+    `fuzzy`/`phonetic` discovery blends a lexical exact pass with the phonetic KNN —
+    see `/api/reconcile` below; search has no `variants`, so only `query` is looked up.
   - `GET /api/suggest` — fast typeahead on toponyms index
   - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
     `contained_in`/`containment`/`relation` spatial-containment params as `/api/search`).
@@ -311,8 +313,8 @@ endpoint silently skips a `license_spdx` its own License table doesn't know.
 | `exact` | BM25 | `name.keyword` (term) |
 | `starts` | BM25 | `name.keyword` (prefix) + `name.prefix` (edge_ngram) |
 | `in` | BM25 | `name.raw` (wildcard) |
-| `fuzzy` | Symphonym KNN | 128-d embedding, k=200, similarity≥0.7 |
-| `phonetic` | Symphonym KNN | same as fuzzy |
+| `fuzzy` | Symphonym KNN **+ exact lexical pass** | 128-d embedding, k=200, similarity≥0.7; plus `name.raw` terms |
+| `phonetic` | Symphonym KNN **+ exact lexical pass** | same as fuzzy |
 
 ### Suggest (`GET /api/suggest`)
 

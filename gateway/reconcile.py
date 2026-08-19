@@ -63,6 +63,7 @@ from .es_helpers import (
     collect_place_ids as _collect_place_ids,
     build_lexical_exact_query as _build_lexical_exact_query,
     apply_lexical_boost as _apply_lexical_boost,
+    LEXICAL_EXACT_BOOST,
     rank_candidate_ids as _rank_candidate_ids,
     build_places_filter as _build_places_filter,
     build_toponym_lookup as _build_toponym_lookup,
@@ -119,21 +120,6 @@ def _native_types(types) -> list[str] | None:
 # primary query: the primary is the value the user actually supplied.
 VARIANT_SCORE_WEIGHT = 0.9
 
-# What an EXACT (case-insensitive) match on a name form is worth in fuzzy/phonetic
-# discovery, added on top of whatever the phonetic passes scored that place.
-#
-# Deliberately above the phonetic ceiling. A KNN pass contributes at most 1.0
-# after per-pass normalisation, so any exactly-spelled candidate outranks any
-# purely-phonetic one, and a variant's exact match (× VARIANT_SCORE_WEIGHT = 1.8)
-# still clears it. Phonetic proximity is not discarded — it rides along as the
-# ordering *within* the exact-match tier.
-#
-# This is what makes `fuzzy` stop trusting KNN alone. Symphonym answers "what
-# sounds like this", which turns out not to include "the toponym spelled exactly
-# like this": `Newton with Scales` is indexed with 3 attestations and appeared
-# nowhere in the 200-candidate KNN pool, while `mode=exact` returned it instantly
-# (place#197 verification, place#188).
-LEXICAL_EXACT_BOOST = 2.0
 
 
 # ---------------------------------------------------------------------------

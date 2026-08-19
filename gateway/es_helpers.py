@@ -236,6 +236,20 @@ def build_toponym_query(
     }
 
 
+#: What an EXACT (case-insensitive) match on a name form is worth in
+#: ``fuzzy``/``phonetic`` discovery, added on top of whatever the phonetic passes
+#: scored that place.
+#:
+#: Deliberately above the phonetic ceiling. A KNN pass contributes at most 1.0
+#: once normalised per pass, so any exactly-spelled candidate outranks any
+#: purely-phonetic one, and a discounted variant's exact match still clears it.
+#: Phonetic proximity is not discarded — it rides along as the ordering *within*
+#: the exact-match tier.
+#:
+#: Shared by ``/api/search`` and ``/api/reconcile`` so the two cannot drift.
+LEXICAL_EXACT_BOOST = 2.0
+
+
 def build_lexical_exact_query(
     forms: list[str], namespaces: list[str] | None = None, size: int = 500,
 ) -> dict | None:

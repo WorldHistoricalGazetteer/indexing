@@ -24,6 +24,7 @@ Pure-function tests: no live Elasticsearch (the ES round trips are stubbed).
 import unittest
 
 from gateway.es_helpers import (
+    LEXICAL_EXACT_BOOST,
     apply_lexical_boost,
     build_lexical_exact_query,
     build_toponym_query,
@@ -31,7 +32,6 @@ from gateway.es_helpers import (
     rank_candidate_ids,
 )
 from gateway.reconcile import (
-    LEXICAL_EXACT_BOOST,
     MAX_VARIANTS,
     VARIANT_SCORE_WEIGHT,
     ReconcileRequest,
