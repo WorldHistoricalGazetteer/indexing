@@ -635,5 +635,81 @@ class TestRegionFromCircle(unittest.TestCase):
         self.assertIsNone(spatial.region_from_circle(None, -1.80, 25))
 
 
+class TestCoverOverlapsRegion(unittest.TestCase):
+    """The fuzzy containment test walks parents only — never children.
+
+    Expanding a candidate's cover to the region's resolution multiplies by 7 per
+    step and materialises every child as a Python string. Against a county-sized
+    container that pinned both gateway workers at 100% CPU until the watchdog
+    killed them (prod, 2026-08-19). Overlap is an ancestor test, so the finer
+    side can always be walked UP instead — same answer, no expansion.
+    """
+
+    def setUp(self):
+        if not spatial._H3_AVAILABLE:
+            self.skipTest("h3 not installed")
+        import h3
+        self.h3 = h3
+        # A mixed-resolution region, as real containers are (ukhc:WTS is 5/6/7).
+        self.inside = h3.latlng_to_cell(51.09, -1.80, 7)
+        self.outside = h3.latlng_to_cell(48.85, 2.35, 7)
+        self.region = spatial.ResolvedRegion(
+            cover_by_res={
+                5: {h3.cell_to_parent(self.inside, 5)},
+                6: {h3.cell_to_parent(self.inside, 6)},
+                7: {self.inside},
+            },
+            resolutions=(5, 6, 7), bbox_geojson={}, h3_terms=[],
+        )
+
+    def _overlaps(self, cover):
+        self.region._ancestor_cache.clear()
+        return spatial._cover_overlaps_region(cover, self.region)
+
+    def test_same_resolution(self):
+        self.assertTrue(self._overlaps([self.inside]))
+        self.assertFalse(self._overlaps([self.outside]))
+
+    def test_candidate_finer_than_the_region(self):
+        fine_in = list(self.h3.cell_to_children(self.inside, 9))[:3]
+        fine_out = list(self.h3.cell_to_children(self.outside, 9))[:3]
+        self.assertTrue(self._overlaps(fine_in))
+        self.assertFalse(self._overlaps(fine_out))
+
+    def test_candidate_coarser_than_the_region(self):
+        # The direction that used to expand to children.
+        self.assertTrue(self._overlaps([self.h3.cell_to_parent(self.inside, 4)]))
+        self.assertFalse(self._overlaps([self.h3.cell_to_parent(self.outside, 4)]))
+
+    def test_empty_and_malformed_covers_are_safe(self):
+        self.assertFalse(self._overlaps([]))
+        self.assertFalse(self._overlaps(["not-a-cell", ""]))
+
+    def test_no_child_expansion_happens(self):
+        # The guarantee, pinned directly: a coarse candidate against a fine
+        # region must not call cell_to_children even once.
+        calls = []
+        real = self.h3.cell_to_children
+
+        def spy(*a, **kw):
+            calls.append(a)
+            return real(*a, **kw)
+
+        self.h3.cell_to_children = spy
+        try:
+            self._overlaps([self.h3.cell_to_parent(self.inside, 3)])
+        finally:
+            self.h3.cell_to_children = real
+        self.assertEqual(calls, [], "overlap test must never expand to children")
+
+    def test_ancestor_lift_is_memoised_on_the_region(self):
+        self.region._ancestor_cache.clear()
+        coarse = self.h3.cell_to_parent(self.inside, 4)
+        spatial._cover_overlaps_region([coarse], self.region)
+        self.assertIn(4, self.region._ancestor_cache)
+        self.assertEqual(self.region._ancestor_cache[4],
+                         {self.h3.cell_to_parent(self.inside, 4)})
+
+
 if __name__ == "__main__":
     unittest.main()

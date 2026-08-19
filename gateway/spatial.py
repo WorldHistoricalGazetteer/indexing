@@ -191,6 +191,13 @@ class ResolvedRegion:
     point_ids: tuple[str, ...] = ()        # containers that contributed only a point
     unresolved_ids: tuple[str, ...] = ()   # requested ids with no usable geometry
     _geom_loaded: bool = False
+    # Region cells lifted to a COARSER resolution, memoised per resolution. Built
+    # on demand by _region_ancestors_at so an overlap test against a candidate
+    # whose cover is coarser than the region's costs a hash lookup instead of a
+    # child expansion. Idempotent, so the benign race between threads is fine.
+    _ancestor_cache: dict = field(
+        default_factory=dict, repr=False, compare=False,
+    )
     # A ResolvedRegion is shared via _region_cache and load_geometry mutates
     # it, so the load must be serialised now that it runs off the event loop
     # (see apply_containment_async). Without this, a second thread could
@@ -752,31 +759,6 @@ def _collect_h3_cover(src: dict) -> list[str]:
     return cover
 
 
-def _normalise_cells_to_resolution(cells: Iterable[str], target_res: int) -> set[str]:
-    """Walk cells to ``target_res`` (parent if finer, children if coarser).
-    Ported from processing.ccode_enrichment."""
-    out: set[str] = set()
-    for cell in cells:
-        if not isinstance(cell, str) or not cell:
-            continue
-        try:
-            res = _h3.get_resolution(cell)
-        except Exception:
-            continue
-        if res == target_res:
-            out.add(cell)
-        elif res > target_res:
-            p = _safe_parent(cell, target_res)
-            if p is not None:
-                out.add(p)
-        else:
-            try:
-                out.update(_h3.cell_to_children(cell, target_res))
-            except Exception:
-                continue
-    return out
-
-
 def _point_in_region_h3(repr_point, region: ResolvedRegion) -> bool:
     if not _H3_AVAILABLE or not repr_point:
         return False
@@ -790,12 +772,60 @@ def _point_in_region_h3(repr_point, region: ResolvedRegion) -> bool:
     return False
 
 
+def _region_ancestors_at(region: ResolvedRegion, res: int) -> set[str]:
+    """The region's cells lifted to ``res`` — a resolution COARSER than they are.
+
+    Memoised on the region. Cost is one parent walk per region cell, once per
+    resolution asked for, against a set that only ever SHRINKS as it coarsens.
+    """
+    cached = region._ancestor_cache.get(res)
+    if cached is not None:
+        return cached
+    out: set[str] = set()
+    for r, cells in region.cover_by_res.items():
+        if r < res:
+            continue
+        for cell in cells:
+            parent = cell if r == res else _safe_parent(cell, res)
+            if parent is not None:
+                out.add(parent)
+    region._ancestor_cache[res] = out
+    return out
+
+
 def _cover_overlaps_region(cover: list[str], region: ResolvedRegion) -> bool:
-    if not cover:
+    """Does a candidate's H3 cover touch the region's?
+
+    Two H3 cells overlap exactly when one is the other's ancestor, so the test
+    only ever needs to walk the FINER cell UP to the coarser resolution. Which
+    side is finer varies, so both directions are handled — but neither expands.
+
+    It used to normalise the candidate's cover to each region resolution via
+    ``cell_to_children``, which multiplies by 7 per resolution step and builds
+    every child as a Python string. Against a county-sized container that is
+    hundreds of cover cells expanded 49-fold, per candidate, per region
+    resolution: enough to pin both gateway workers at 100% CPU until the
+    watchdog killed them (observed in prod 2026-08-19, stack dump parked in
+    ``h3/api/basic_str/_convert.py`` under this function). ``_cover_within_region``
+    already walked parents only; this is the same idiom, applied to the twin it
+    was missing from.
+    """
+    if not cover or not _H3_AVAILABLE:
         return False
-    for res in region.resolutions:
-        if _normalise_cells_to_resolution(cover, res) & region.cover_by_res[res]:
-            return True
+    for cell in cover:
+        try:
+            cres = _h3.get_resolution(cell)
+        except Exception:
+            continue
+        for res in region.resolutions:
+            if cres >= res:
+                # Candidate cell is finer (or equal): lift IT to the region's res.
+                target = cell if cres == res else _safe_parent(cell, res)
+                if target is not None and target in region.cover_by_res[res]:
+                    return True
+            elif cell in _region_ancestors_at(region, cres):
+                # Region cells are finer: lift THEM, once, and look the cell up.
+                return True
     return False
 
 

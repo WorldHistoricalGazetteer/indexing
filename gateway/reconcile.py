@@ -718,10 +718,15 @@ async def reconcile_search(req: ReconcileRequest):
         # Candidate pool size — over-fetch so Step 4's re-ranking still has the
         # best candidates to choose from after the filters trim. The floor
         # matters now that the pool is score-ordered rather than a doc-order
-        # page: a client asking for 10 results under a ccode/temporal/containment
-        # filter would otherwise be reconciling against 40 candidates, and the
-        # filters could eat nearly all of them. 200 matches the discovery `k`.
-        pool_k = min(max(req.size * (8 if pure_spatial else 4), 200), 10000)
+        # page: a client asking for 10 results under a ccode/temporal filter
+        # would otherwise be reconciling against 40 candidates, and the filters
+        # could eat nearly all of them. 200 matches the discovery `k`.
+        #
+        # NOT on the pure-spatial path. There are no discovery scores to protect
+        # there, and every extra candidate is another Python-side containment
+        # test against the region — the most expensive thing this endpoint does.
+        pool_k = (min(req.size * 8, 10000) if pure_spatial
+                  else min(max(req.size * 4, 200), 10000))
 
         # Take the top-K place_ids BY DISCOVERY SCORE, as /api/search does —
         # reconcile sent the whole set and let ES's doc-order `size` cut choose,
