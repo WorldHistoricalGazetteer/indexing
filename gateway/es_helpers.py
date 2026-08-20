@@ -145,6 +145,39 @@ def extract_repr_point(src: dict) -> list[float] | None:
 #: Lives here rather than in reconcile.py so /api/search shares it verbatim.
 VARIANT_SCORE_WEIGHT = 0.9
 
+#: What a LOSSY derived form is worth — one that answers a narrower question
+#: than the one asked, because it throws part of the query away.
+#:
+#: ``Melford, Long`` derives both ``Long Melford`` (a rearrangement: every token
+#: survives) and ``Melford`` (a truncation: "Long" is gone). Scored equally, the
+#: truncation won — real places called *Melford* took rank 1 from Long Melford,
+#: which is the place#188 shape place#205 said must not regress. The fix is not
+#: a tiebreak: ``name_resemblance`` prefers the truncation too (0.70 vs 0.56 —
+#: it rewards the shared prefix and cannot see that tokens were reordered rather
+#: than dropped). The fix is to price the readings differently, because they ARE
+#: different evidence.
+#:
+#: Still comfortably above the ``LEXICAL_EXACT_BOOST`` floor of 0.7, so an exact
+#: match on a lossy form still outranks every inexact candidate.
+DERIVED_LOSSY_WEIGHT = 0.8
+
+_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
+
+
+def derived_form_weight(query: str, form: str) -> float:
+    """What a derived form's matches are worth, by how much of the query it keeps.
+
+    A form carrying every token of the original is a rearrangement of the same
+    question (``Melford, Long`` → ``Long Melford``) and scores as a full variant.
+    A form missing tokens has answered a narrower one (``Melford``,
+    ``Broxbourn``) and is discounted — useful, since the discarded token is often
+    the very qualifier that blocked the match, but weaker.
+    """
+    q_tokens = {t.casefold() for t in _TOKEN_RE.findall(query or "")}
+    f_tokens = {t.casefold() for t in _TOKEN_RE.findall(form or "")}
+    return VARIANT_SCORE_WEIGHT if q_tokens <= f_tokens else DERIVED_LOSSY_WEIGHT
+
+
 #: Ceiling on derived forms per query. Each one is another concurrent KNN pass,
 #: and a string with both a bracket and a comma otherwise yields four. Three
 #: covers every shape actually observed; the order below puts the highest-value
@@ -357,8 +390,16 @@ def build_toponym_query(
 #: Phonetic proximity is not discarded — it rides along as the ordering *within*
 #: the exact-match tier.
 #:
+#: Raised 2.0 → 2.5 for place#205. The tier ordering requires
+#: ``LEXICAL_EXACT_BOOST × weight > LEXICAL_FUZZY_BOOST + 1.0``; at 2.0 that put
+#: the minimum usable form weight at 0.875, leaving no room beneath
+#: ``VARIANT_SCORE_WEIGHT`` to say that one derived form is weaker evidence than
+#: another. It has to be sayable: a form that DISCARDS part of the query is not
+#: as good as one that merely rearranges it (see ``derived_form_weight``). At
+#: 2.5 the floor is 0.7 and there is room to grade them.
+#:
 #: Shared by ``/api/search`` and ``/api/reconcile`` so the two cannot drift.
-LEXICAL_EXACT_BOOST = 2.0
+LEXICAL_EXACT_BOOST = 2.5
 
 
 def build_lexical_exact_query(

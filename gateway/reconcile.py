@@ -80,6 +80,7 @@ from .es_helpers import (
     build_lexical_fuzzy_query as _build_lexical_fuzzy_query,
     apply_lexical_near_miss as _apply_lexical_near_miss,
     derive_name_forms as _derive_name_forms,
+    derived_form_weight as _derived_form_weight,
     VARIANT_SCORE_WEIGHT,
     knn_pass_quality as _knn_pass_quality,
     absolute_confidence as _absolute_confidence,
@@ -686,12 +687,13 @@ async def reconcile_search(req: ReconcileRequest):
                     (form, vec, VARIANT_SCORE_WEIGHT)
                     for form, vec in zip(variants, variant_vectors)
                 ]
-                # Gateway-derived forms ride the same channel, at the same
-                # weight: a form derived here is the same kind of evidence as one
-                # the client derived, and the tier arithmetic leaves no room
-                # below 0.9 anyway (see VARIANT_SCORE_WEIGHT). No client vector
-                # exists for them, so they are embedded server-side.
-                passes += [(form, None, VARIANT_SCORE_WEIGHT)
+                # Gateway-derived forms ride the same channel, graded by how
+                # much of the query each one keeps: a rearrangement is worth as
+                # much as a client-supplied variant, a truncation less (see
+                # ``derived_form_weight`` — this is what stops `Melford` taking
+                # rank 1 from `Long Melford`). No client vector exists for them,
+                # so they are embedded server-side.
+                passes += [(form, None, _derived_form_weight(req.query, form))
                            for form in derived_forms]
                 bodies = [
                     (_build_phonetic_knn(form, k=200, similarity=KNN_SIMILARITY_FLOOR,

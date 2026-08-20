@@ -106,8 +106,8 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     same round trip, because KNN answers only "what sounds like this":
     * **exact** (case-insensitive, on `name.raw`) — KNN demonstrably misses
       toponyms spelled *exactly* as asked (`Newton with Scales` is indexed yet
-      never entered the 200-candidate KNN pool). Earns `LEXICAL_EXACT_BOOST`,
-      deliberately above the phonetic ceiling of 1.0.
+      never entered the 200-candidate KNN pool). Earns `LEXICAL_EXACT_BOOST`
+      (2.5), deliberately above the phonetic ceiling of 1.0.
     * **near-miss** (`multi_match`, `fuzziness: AUTO`) — scored in Python on how
       much the retrieved name really resembles a queried form
       (`name_resemblance`, ≥ `LEXICAL_FUZZY_FLOOR`), earning up to
@@ -132,15 +132,22 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     Edmunds` + `Suffolk Bury St. Edmunds` (place#205). Both readings, always,
     because the string cannot say which it is (`Melford, Long` wants the
     inversion, `Bury St. Edmunds, Suffolk` wants the head). Each is a full pass
-    (KNN + both lexical tiers) at `VARIANT_SCORE_WEIGHT`. Deduped against the caller's own `variants` (so Map
+    (KNN + both lexical tiers), **graded by how much of the query it keeps**
+    (`derived_form_weight`): a rearrangement that preserves every token is worth
+    `VARIANT_SCORE_WEIGHT` (0.9), a truncation `DERIVED_LOSSY_WEIGHT` (0.8).
+    Without that grading `Melford` took rank 1 from `Long Melford` — and a
+    resemblance tiebreak makes it *worse*, since `difflib` rewards the shared
+    prefix (0.70 vs 0.56) and cannot see that tokens were reordered not dropped.
+    Deduped against the caller's own `variants` (so Map
     your Data, which derives these client-side since place#188, pays nothing) and
     held inside the `MAX_VARIANTS` budget. Reported back as `derived_forms[]`,
     distinct from `variants_used[]`. `/api/search` has the same derivation —
     it is the caller that CAN'T send variants, so it needed it most.
-    ⚠ `VARIANT_SCORE_WEIGHT` (0.9) is a **floor**, not a preference: the tier
+    ⚠ Form weights have a hard **floor**, not a preference: the tier
     ordering needs `LEXICAL_EXACT_BOOST × weight > LEXICAL_FUZZY_BOOST + 1.0`,
-    i.e. > 0.875. Discounting derived forms below that would let a primary's
-    near-miss outrank another form's exact match.
+    i.e. > 0.7 at the current boost. `LEXICAL_EXACT_BOOST` was raised 2.0 → 2.5
+    (place#205) precisely to open room beneath 0.9 for grading derived forms —
+    at 2.0 the floor was 0.875 and no discount was expressible.
     Every tier being absolute is what lets each hit carry **`confidence`** (0–100,
     fuzzy/phonetic only) beside the pool-relative `score`, which is ~100 for the
     top hit even when nothing matched (place#198). ⚠ Do NOT try to derive

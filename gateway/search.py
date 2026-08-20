@@ -46,6 +46,7 @@ from .es_helpers import (
     build_lexical_fuzzy_query,
     apply_lexical_near_miss,
     derive_name_forms,
+    derived_form_weight,
     VARIANT_SCORE_WEIGHT,
     knn_pass_quality,
     absolute_confidence,
@@ -433,7 +434,8 @@ async def search(req: SearchRequest):
                 # (embedding spaces differ per form, so they cannot be OR-ed)
                 # plus a place in both lexical passes.
                 forms: list[tuple[str, float]] = [(req.query, 1.0)]
-                forms += [(f, VARIANT_SCORE_WEIGHT) for f in derived_forms]
+                forms += [(f, derived_form_weight(req.query, f))
+                          for f in derived_forms]
                 lex_body = build_lexical_exact_query(
                     [f for f, _ in forms], namespaces=req.namespaces or None)
                 fz_body = build_lexical_fuzzy_query(

@@ -39,9 +39,11 @@ from gateway.es_helpers import (
     rank_candidate_ids,
 )
 from gateway.es_helpers import (
+    DERIVED_LOSSY_WEIGHT,
     MAX_DERIVED_FORMS,
     VARIANT_SCORE_WEIGHT,
     derive_name_forms,
+    derived_form_weight,
 )
 
 
@@ -391,6 +393,35 @@ class TestTrailingQualifierForms(unittest.TestCase):
         for q in ("A, B (C)", "A (B) [C], D", "Bury St. Edmunds, Suffolk"):
             self.assertLessEqual(len(derive_name_forms(q)), MAX_DERIVED_FORMS, q)
 
+    def test_a_rearrangement_is_worth_as_much_as_a_client_variant(self):
+        # Every token survives — it is the same question, asked differently.
+        self.assertEqual(derived_form_weight("Melford, Long", "Long Melford"),
+                         VARIANT_SCORE_WEIGHT)
+
+    def test_a_truncation_is_worth_less(self):
+        # place#205: scored equally, real places called "Melford" took rank 1
+        # from Long Melford. A form that discards a token answered a narrower
+        # question and must not outrank one that kept everything.
+        self.assertEqual(derived_form_weight("Melford, Long", "Melford"),
+                         DERIVED_LOSSY_WEIGHT)
+        self.assertLess(DERIVED_LOSSY_WEIGHT, VARIANT_SCORE_WEIGHT)
+
+    def test_the_bracket_readings_are_graded_the_same_way(self):
+        q = "Broxbourn (St. Augustine)"
+        self.assertEqual(derived_form_weight(q, "Broxbourn"), DERIVED_LOSSY_WEIGHT)
+        self.assertEqual(derived_form_weight(q, "Broxbourn St. Augustine"),
+                         VARIANT_SCORE_WEIGHT)
+
+    def test_grading_ignores_punctuation_and_case(self):
+        self.assertEqual(derived_form_weight("Bury St. Edmunds, Suffolk",
+                                             "suffolk bury st edmunds"),
+                         VARIANT_SCORE_WEIGHT)
+
+    def test_a_lossy_exact_match_still_beats_every_inexact_candidate(self):
+        # The whole tier ordering has to survive the discount.
+        lossy_exact = LEXICAL_EXACT_BOOST * DERIVED_LOSSY_WEIGHT
+        self.assertGreater(lossy_exact, LEXICAL_FUZZY_BOOST + 1.0)
+
     def test_a_derived_form_never_repeats_the_query(self):
         for q in ("Bury St. Edmunds, Suffolk", "Melford, Long", "Kingston, Surrey"):
             self.assertNotIn(q.casefold(),
@@ -405,12 +436,13 @@ class TestTierOrderingInvariant(unittest.TestCase):
         variant_exact = LEXICAL_EXACT_BOOST * VARIANT_SCORE_WEIGHT
         self.assertGreater(variant_exact, inexact_ceiling)
 
-    def test_the_variant_weight_is_a_floor_not_a_preference(self):
-        # Every non-primary form — client variant OR gateway-derived — rides this
-        # weight, and dropping it below the tier arithmetic would let a primary's
-        # near-miss outrank another form's EXACT match. Guard the constant.
-        self.assertGreater(
-            VARIANT_SCORE_WEIGHT, (LEXICAL_FUZZY_BOOST + 1.0) / LEXICAL_EXACT_BOOST)
+    def test_every_form_weight_clears_the_tier_floor(self):
+        # Dropping a form weight below the tier arithmetic would let a primary's
+        # near-miss outrank another form's EXACT match. Guard both constants —
+        # this is what the LEXICAL_EXACT_BOOST rise to 2.5 bought room for.
+        floor = (LEXICAL_FUZZY_BOOST + 1.0) / LEXICAL_EXACT_BOOST
+        self.assertGreater(VARIANT_SCORE_WEIGHT, floor)
+        self.assertGreater(DERIVED_LOSSY_WEIGHT, floor)
 
     def test_a_perfect_near_miss_outranks_a_perfect_phonetic_hit(self):
         # ...only in combination: the tier itself is deliberately below 1.0, so
