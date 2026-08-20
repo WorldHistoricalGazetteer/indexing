@@ -7,10 +7,24 @@ search across the ``places`` and ``toponyms`` ES indexes:
 
   1. **Discovery** — Search the ``toponyms`` index for candidate place_ids.
 
-     - ``fuzzy`` / ``phonetic`` modes use **Symphonym KNN only**.  The
-       phonetic embedding space inherently ranks exact-string matches
-       highest (cosine ≈ 1.0), so a separate BM25 text search is
-       redundant and creates score-scale mismatches.
+     - ``fuzzy`` / ``phonetic`` modes run **three tiers**, gathered in one
+       round trip and combined on an ADDITIVE scale, so a place found
+       several ways outranks one found a single way:
+
+         * phonetic — one Symphonym KNN pass per name form, each
+           normalised by its own top score (place#197) and scaled by that
+           pass's absolute match quality (place#199); contributes ≤ 1.0;
+         * near-miss lexical — one text pass over all forms, scored on how
+           much the retrieved name really resembles a queried one
+           (place#199); contributes ≤ 0.75;
+         * exact lexical — one ``terms`` lookup on ``name.raw``; contributes
+           2.0 (× the form's weight).
+
+       The tiers are deliberately ordered so an exactly-spelled candidate
+       outranks every inexact one, and an inexact form that genuinely
+       resembles an indexed name outranks phonetic noise. Because every
+       tier is absolute, the raw score also yields a per-hit
+       ``confidence`` that means the same thing across queries.
      - ``exact`` / ``starts`` / ``in`` modes use **BM25 text search only**
        — these are structural queries where phonetic proximity doesn't
        apply.
@@ -63,6 +77,11 @@ from .es_helpers import (
     collect_place_ids as _collect_place_ids,
     build_lexical_exact_query as _build_lexical_exact_query,
     apply_lexical_boost as _apply_lexical_boost,
+    build_lexical_fuzzy_query as _build_lexical_fuzzy_query,
+    apply_lexical_near_miss as _apply_lexical_near_miss,
+    knn_pass_quality as _knn_pass_quality,
+    absolute_confidence as _absolute_confidence,
+    KNN_SIMILARITY_FLOOR,
     LEXICAL_EXACT_BOOST,
     rank_candidate_ids as _rank_candidate_ids,
     build_places_filter as _build_places_filter,
@@ -257,6 +276,14 @@ class CandidateHit(BaseModel):
     names: list[CandidateName] = []
     ccodes: list[str] = []
     score: float = 0
+    # ABSOLUTE match confidence, 0–100 — how well this candidate matched the
+    # query, on a scale that means the same thing for every query (place#199 C).
+    # `score` above is normalised by the POOL's best, so the top hit is always
+    # ~100 even when nothing matched, and a client cannot threshold on it: that
+    # is how wrong candidates auto-confirmed at Map-your-Data's 90 default
+    # (place#198). Null outside fuzzy/phonetic discovery, whose additive tiers
+    # (exact / near-miss resemblance / phonetic cosine) are what make it absolute.
+    confidence: Optional[float] = None
     namespace: str = ""
     geometries: list[CandidateGeometry] = []
     links: list[dict] = []  # authority / Wikipedia links from the place _source (e.g. Wikidata sitelinks)
@@ -423,6 +450,7 @@ def _format_candidate(
     toponyms: list[dict] | None = None,
     clustering: dict | None = None,
     query_match: dict | None = None,
+    confidence: float | None = None,
 ) -> CandidateHit:
     """Convert an ES places hit _source into a CandidateHit.
 
@@ -437,6 +465,8 @@ def _format_candidate(
             aat_ids/aat_paths). Attached only when clustering fuel is requested.
         query_match: Optional ``{"name": ..., "score": ...}`` — the toponym that
             produced this hit in discovery.
+        confidence: Optional absolute 0–100 match confidence (fuzzy/phonetic
+            discovery only) — see ``CandidateHit.confidence``.
     """
     # Extract names — prefer step-3 enrichment, fall back to nested data
     names: list[CandidateName] = []
@@ -473,6 +503,7 @@ def _format_candidate(
         names=names,
         ccodes=src.get("ccodes") or [],
         score=score,
+        confidence=confidence,
         namespace=src.get("namespace", ""),
         geometries=geometries,
         links=src.get("links") or [],
@@ -492,11 +523,11 @@ async def reconcile_search(req: ReconcileRequest):
 
     Three-step strategy:
 
-      **Step 1 — Discovery.**  For ``fuzzy``/``phonetic`` modes, Symphonym
-      KNN search on the ``toponyms`` index (phonetic embedding space
-      naturally ranks exact matches highest, so a separate text search is
-      unnecessary).  For ``exact``/``starts``/``in`` modes, BM25 text
-      search instead.  Each hit carries ``attestations`` — the place_ids
+      **Step 1 — Discovery.**  For ``fuzzy``/``phonetic`` modes, three
+      tiers over the ``toponyms`` index in one round trip — Symphonym KNN,
+      a near-miss lexical pass and an exact ``name.raw`` lookup — summed
+      onto one absolute scale.  For ``exact``/``starts``/``in`` modes, BM25
+      text search instead.  Each hit carries ``attestations`` — the place_ids
       of every place that uses that name form.  We accumulate a scored
       set of candidate place_ids, keeping the best score per place.
       Any ``variants`` (alternative name forms, e.g. a Map-your-Data
@@ -633,7 +664,8 @@ async def reconcile_search(req: ReconcileRequest):
                     for form, vec in zip(variants, variant_vectors)
                 ]
                 bodies = [
-                    (_build_phonetic_knn(form, k=200, similarity=0.7, query_vector=vec), weight)
+                    (_build_phonetic_knn(form, k=200, similarity=KNN_SIMILARITY_FLOOR,
+                                         query_vector=vec), weight)
                     for form, vec, weight in passes
                 ]
                 bodies = [(b, w) for b, w in bodies if b]
@@ -646,20 +678,46 @@ async def reconcile_search(req: ReconcileRequest):
                 # runs even when Symphonym is down, which used to mean no
                 # discovery at all.
                 form_boosts: dict[str, float] = {}
+                form_weights: dict[str, float] = {}
                 for form, _vec, weight in passes:
                     key = (form or "").strip().lower()
                     if key:
                         boost = LEXICAL_EXACT_BOOST * weight
                         form_boosts[key] = max(form_boosts.get(key, 0.0), boost)
+                        form_weights[form.strip()] = max(
+                            form_weights.get(form.strip(), 0.0), weight)
                 lex_body = _build_lexical_exact_query(
                     [form for form, _, _ in passes],
                     namespaces=req.namespaces or None,
                 )
 
-                if bodies or lex_body:
-                    requests = [body for body, _ in bodies]
-                    if lex_body:
-                        requests.append(lex_body)
+                # ...and a NEAR-MISS lexical pass over the same forms (place#199).
+                # Exact-or-phonetic left no way for a form that is merely CLOSE to
+                # an indexed spelling to be found: `Broxbourn` finds Broxbourne
+                # perfectly as a query and contributed nothing at all as a variant,
+                # because a variant could only ever help by being spelled exactly
+                # as indexed. Since place#188 the client deliberately derives forms
+                # it believes are better than the raw cell value, so that was
+                # backwards. Same gather, so still one round trip.
+                fz_body = _build_lexical_fuzzy_query(
+                    [form for form, _, _ in passes],
+                    namespaces=req.namespaces or None,
+                    variant_weight=VARIANT_SCORE_WEIGHT,
+                )
+
+                # (kind, weight, body) — ORDER MATTERS on the way back in: the
+                # phonetic passes establish each place's base score by max, then
+                # the two lexical tiers ADD to it, so a place found several ways
+                # outranks one found a single way.
+                requests: list[tuple[str, float, dict]] = [
+                    ("knn", weight, body) for body, weight in bodies
+                ]
+                if fz_body:
+                    requests.append(("near", 1.0, fz_body))
+                if lex_body:
+                    requests.append(("exact", 1.0, lex_body))
+
+                if requests:
                     responses = await asyncio.gather(*[
                         client.post(
                             f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
@@ -667,22 +725,34 @@ async def reconcile_search(req: ReconcileRequest):
                             auth=auth,
                             headers=ES_HEADERS,
                         )
-                        for body in requests
+                        for _, _, body in requests
                     ])
-                    for (_, weight), knn_resp in zip(bodies, responses):
-                        knn_resp.raise_for_status()
-                        knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                        _collect_place_ids(knn_hits, place_scores, exclude_prefixes,
-                                           include_prefixes, match_names,
-                                           score_scale=weight, normalise=True)
-                    if lex_body:
-                        lex_resp = responses[len(bodies)]
-                        lex_resp.raise_for_status()
-                        lex_hits = lex_resp.json().get("hits", {}).get("hits", [])
-                        boosted = _apply_lexical_boost(
-                            lex_hits, place_scores, form_boosts,
-                            exclude_prefixes, include_prefixes, match_names)
-                        logger.debug("reconcile: lexical pass boosted %d place(s)", boosted)
+                    for (kind, weight, _), resp in zip(requests, responses):
+                        resp.raise_for_status()
+                        hits = resp.json().get("hits", {}).get("hits", [])
+                        if kind == "knn":
+                            # Scale the whole pass by how good its best hit
+                            # actually is, so a pass that found only noise no
+                            # longer contributes as much as one that found the
+                            # answer (place#199 B). Within-pass normalisation —
+                            # and so place#197's invariant — is untouched.
+                            quality = _knn_pass_quality(hits)
+                            _collect_place_ids(hits, place_scores, exclude_prefixes,
+                                               include_prefixes, match_names,
+                                               score_scale=weight * quality,
+                                               normalise=True)
+                        elif kind == "near":
+                            near = _apply_lexical_near_miss(
+                                hits, place_scores, form_weights,
+                                exclude_prefixes, include_prefixes, match_names)
+                            logger.debug(
+                                "reconcile: near-miss pass boosted %d place(s)", near)
+                        else:
+                            boosted = _apply_lexical_boost(
+                                hits, place_scores, form_boosts,
+                                exclude_prefixes, include_prefixes, match_names)
+                            logger.debug(
+                                "reconcile: lexical pass boosted %d place(s)", boosted)
             else:
                 # Text modes OR the variants into ONE request (dis_max keeps the
                 # best single-form score per toponym rather than summing).
@@ -822,12 +892,18 @@ async def reconcile_search(req: ReconcileRequest):
     # Re-attach toponym scores and normalise to 0–100
     max_toponym_score = max(place_scores.values()) if place_scores else 1.0
 
+    # The absolute companion to that relative score (place#199 C). Only the
+    # fuzzy/phonetic tiers are on an absolute scale, so only they publish one —
+    # a text-mode BM25 score would be a different number wearing the same name.
+    absolute_scale = (not pure_spatial) and req.mode in ("fuzzy", "phonetic")
+
     candidates = []
     for hit in raw_hits:
         src = hit.get("_source", {})
         pid = src.get("place_id", "")
         raw_score = place_scores.get(pid, 0.0)
         normalised = (raw_score / max_toponym_score * 100) if max_toponym_score > 0 else 0
+        confidence = _absolute_confidence(raw_score) if absolute_scale else None
         # Use step-3 toponyms if available, else _format_candidate falls
         # back to nested toponyms in the places _source.
         toponyms = place_toponyms.get(pid) or None
@@ -840,7 +916,8 @@ async def reconcile_search(req: ReconcileRequest):
             query_match = {"name": matched, "score": normalised} if matched else None
 
         candidates.append(
-            _format_candidate(src, normalised, toponyms, clustering, query_match)
+            _format_candidate(src, normalised, toponyms, clustering, query_match,
+                              confidence)
         )
 
     # Sort by score descending (ES returned them in filter order, not ranked)

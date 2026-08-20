@@ -92,7 +92,7 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     Supports **spatial containment** via `contained_in` (place_ids defining the region) or
     `bounds` (raw GeoJSON), with `containment` = `fuzzy` (H3) | `exact` (Shapely) and
     `relation` = `intersects` | `within`. `query` is optional — omit for a pure-spatial query.
-    `fuzzy`/`phonetic` discovery blends a lexical exact pass with the phonetic KNN —
+    `fuzzy`/`phonetic` discovery blends TWO lexical passes with the phonetic KNN —
     see `/api/reconcile` below; search has no `variants`, so only `query` is looked up.
   - `GET /api/suggest` — fast typeahead on toponyms index
   - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
@@ -102,15 +102,33 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     normalised by its own top score before the union takes the per-place max — raw
     cosines to different query vectors are not comparable, and comparing them let a
     variant's junk neighbours outrank (and evict) the correct match (place#197).
-    Those modes also run **one lexical pass** (exact, case-insensitive, on
-    `name.raw`) over the primary + variants in the same round trip: KNN answers
-    "what sounds like this" and demonstrably misses toponyms spelled *exactly* as
-    asked (`Newton with Scales` is indexed yet never entered the 200-candidate KNN
-    pool). An exact match earns `LEXICAL_EXACT_BOOST`, deliberately above the
-    phonetic ceiling of 1.0, **added** to any phonetic score so proximity survives
-    as the within-tier tiebreak. Side-effect worth knowing: when an exact match
-    exists the phonetic band falls to ~half of it, so junk drops well below Map
-    your Data's auto-confirm threshold instead of riding at 99.
+    Those modes also run **two lexical passes** over the primary + variants in the
+    same round trip, because KNN answers only "what sounds like this":
+    * **exact** (case-insensitive, on `name.raw`) — KNN demonstrably misses
+      toponyms spelled *exactly* as asked (`Newton with Scales` is indexed yet
+      never entered the 200-candidate KNN pool). Earns `LEXICAL_EXACT_BOOST`,
+      deliberately above the phonetic ceiling of 1.0.
+    * **near-miss** (`multi_match`, `fuzziness: AUTO`) — scored in Python on how
+      much the retrieved name really resembles a queried form
+      (`name_resemblance`, ≥ `LEXICAL_FUZZY_FLOOR`), earning up to
+      `LEXICAL_FUZZY_BOOST` (0.75). Without it a *variant* could only ever help
+      by being spelled exactly as indexed, which is the opposite of what variants
+      are for now that Map your Data derives them (place#188/#199): `Broxbourn`
+      finds Broxbourne perfectly as a query and contributed nothing at all as a
+      variant.
+    Both are **added** to any phonetic score, so a place found several ways
+    outranks one found a single way and phonetic proximity survives as the
+    within-tier tiebreak. The tiers are strictly ordered — exact (≥ 1.8) >
+    near-miss + phonetic (≤ 1.75) > phonetic alone (≤ 1.0). Side-effect worth
+    knowing: when an exact match exists the phonetic band falls to ~half of it, so
+    junk drops well below Map your Data's auto-confirm threshold instead of
+    riding at 99.
+    Every tier being absolute is what lets each hit carry **`confidence`** (0–100,
+    fuzzy/phonetic only) beside the pool-relative `score`, which is ~100 for the
+    top hit even when nothing matched (place#198). ⚠ Do NOT try to derive
+    confidence from the KNN cosine: measured 2026-08-20, genuine cross-script
+    matches (`Marsails → مارساليس` 0.9878) sit *inside* the junk band, so no
+    cosine threshold separates them — see `knn_pass_quality`.
     Requested scope is **never silently dropped**: a point-only container borrows
     a `sameAs` co-referent's polygon, and a scope that cannot be applied at all
     **fails closed** (no hits) rather than answering unscoped — either way the
@@ -313,8 +331,8 @@ endpoint silently skips a `license_spdx` its own License table doesn't know.
 | `exact` | BM25 | `name.keyword` (term) |
 | `starts` | BM25 | `name.keyword` (prefix) + `name.prefix` (edge_ngram) |
 | `in` | BM25 | `name.raw` (wildcard) |
-| `fuzzy` | Symphonym KNN **+ exact lexical pass** | 128-d embedding, k=200, similarity≥0.7; plus `name.raw` terms |
-| `phonetic` | Symphonym KNN **+ exact lexical pass** | same as fuzzy |
+| `fuzzy` | Symphonym KNN **+ exact + near-miss lexical passes** | 128-d embedding, k=200, similarity≥0.7; plus `name.raw` terms; plus `name`/`name_romanized`/`name.prefix` fuzzy |
+| `phonetic` | Symphonym KNN **+ exact + near-miss lexical passes** | same as fuzzy |
 
 ### Suggest (`GET /api/suggest`)
 

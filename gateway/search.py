@@ -43,6 +43,11 @@ from .es_helpers import (
     collect_place_ids,
     rank_candidate_ids,
     build_lexical_exact_query,
+    build_lexical_fuzzy_query,
+    apply_lexical_near_miss,
+    knn_pass_quality,
+    absolute_confidence,
+    KNN_SIMILARITY_FLOOR,
     apply_lexical_boost,
     LEXICAL_EXACT_BOOST,
     build_places_filter,
@@ -214,6 +219,11 @@ class SearchHit(BaseModel):
     repr_point: Optional[list[float]] = None  # [lon, lat] — always populated when any geometry exists
     geometries: Optional[list[dict]] = None   # Full GeoJSON geoms; only present when geom="full"
     score: float = 0
+    # ABSOLUTE match confidence, 0–100 — the twin of the /api/reconcile field
+    # (place#199 C). `score` is normalised by the pool's best, so the top hit is
+    # always ~100 even when nothing matched; `confidence` means the same thing
+    # for every query. Null outside fuzzy/phonetic discovery.
+    confidence: Optional[float] = None
     namespace: str = ""
     # Per-hit clustering fuel — only populated when include_clustering_fields=True
     h3: Optional[str] = None                   # representative H3 centroid cell
@@ -392,43 +402,60 @@ async def search(req: SearchRequest):
 
         if not pure_spatial:
             if req.mode in ("fuzzy", "phonetic"):
-                # Phonetic KNN, PLUS an exact lexical pass on the same query.
+                # Phonetic KNN, PLUS two lexical passes on the same query.
                 # KNN answers "what sounds like this", which demonstrably does
                 # not include "the toponym spelled exactly like this" —
                 # `Newton with Scales` is indexed yet never entered the
-                # 200-candidate KNN pool (place#197). The two run together, so
-                # the lexical half costs no extra round-trip and still answers
-                # when Symphonym is unavailable.
-                knn_body = build_phonetic_knn(req.query, k=200, similarity=0.7)
+                # 200-candidate KNN pool (place#197) — nor "the toponym spelled
+                # ALMOST like this", which was reachable only via whatever the
+                # KNN happened to make of it (place#199). All three run in one
+                # gather, so the lexical halves cost no extra round-trip and
+                # still answer when Symphonym is unavailable. Kept in step with
+                # /api/reconcile so the two discovery scales cannot drift.
+                knn_body = build_phonetic_knn(req.query, k=200,
+                                              similarity=KNN_SIMILARITY_FLOOR)
                 lex_body = build_lexical_exact_query(
                     [req.query], namespaces=req.namespaces or None)
-                bodies = [b for b in (knn_body, lex_body) if b]
-                if bodies:
+                fz_body = build_lexical_fuzzy_query(
+                    [req.query], namespaces=req.namespaces or None)
+                # ORDER MATTERS on the way back: the phonetic pass sets each
+                # place's base score, the lexical tiers ADD to it.
+                requests = [(kind, body) for kind, body in
+                            (("knn", knn_body), ("near", fz_body), ("exact", lex_body))
+                            if body]
+                if requests:
                     responses = await asyncio.gather(*[
                         client.post(
                             f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                             json=body, auth=auth, headers=ES_HEADERS,
                         )
-                        for body in bodies
+                        for _, body in requests
                     ])
-                    if knn_body:
-                        knn_resp = responses[0]
-                        knn_resp.raise_for_status()
-                        knn_hits = knn_resp.json().get("hits", {}).get("hits", [])
-                        # Normalised so the phonetic band tops out at 1.0 and the
-                        # lexical boost below can sit above it. With a single pass
-                        # this is a monotone rescale — it changes no ordering.
-                        collect_place_ids(knn_hits, place_scores, exclude_prefixes,
-                                          include_prefixes, match_names,
-                                          normalise=True)
-                    if lex_body:
-                        lex_resp = responses[-1]
-                        lex_resp.raise_for_status()
-                        lex_hits = lex_resp.json().get("hits", {}).get("hits", [])
-                        apply_lexical_boost(
-                            lex_hits, place_scores,
-                            {req.query.strip().lower(): LEXICAL_EXACT_BOOST},
-                            exclude_prefixes, include_prefixes, match_names)
+                    for (kind, _), resp in zip(requests, responses):
+                        resp.raise_for_status()
+                        hits = resp.json().get("hits", {}).get("hits", [])
+                        if kind == "knn":
+                            # Normalised so the phonetic band tops out at 1.0 and
+                            # the lexical tiers below can sit above it; with a
+                            # single pass that is a monotone rescale and changes
+                            # no ordering. Scaled by the pass's ABSOLUTE quality
+                            # so a query that matched only floor-scraping noise
+                            # says so (place#199 B) — also a monotone rescale
+                            # here, but it is what makes `confidence` mean
+                            # anything.
+                            collect_place_ids(hits, place_scores, exclude_prefixes,
+                                              include_prefixes, match_names,
+                                              score_scale=knn_pass_quality(hits),
+                                              normalise=True)
+                        elif kind == "near":
+                            apply_lexical_near_miss(
+                                hits, place_scores, {req.query.strip(): 1.0},
+                                exclude_prefixes, include_prefixes, match_names)
+                        else:
+                            apply_lexical_boost(
+                                hits, place_scores,
+                                {req.query.strip().lower(): LEXICAL_EXACT_BOOST},
+                                exclude_prefixes, include_prefixes, match_names)
             else:
                 text_body = build_toponym_query(
                     req.query, req.mode, size=200, namespaces=req.namespaces or None
@@ -616,6 +643,10 @@ async def search(req: SearchRequest):
 
     max_toponym_score = max(place_scores.values()) if place_scores else 1.0
 
+    # Only the fuzzy/phonetic tiers are on an absolute scale, so only they
+    # publish an absolute confidence (place#199 C).
+    absolute_scale = (not pure_spatial) and req.mode in ("fuzzy", "phonetic")
+
     results: list[SearchHit] = []
     for hit in raw_hits:
         src = hit.get("_source", {})
@@ -682,6 +713,7 @@ async def search(req: SearchRequest):
             repr_point=repr_point,
             geometries=full_geoms if full_geoms else None,
             score=normalised,
+            confidence=absolute_confidence(raw_score) if absolute_scale else None,
             namespace=src.get("namespace", ""),
         )
 

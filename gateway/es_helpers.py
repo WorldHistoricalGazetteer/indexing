@@ -9,6 +9,7 @@ Extracted from ``reconcile.py`` to avoid duplication.
 from __future__ import annotations
 
 import logging
+from difflib import SequenceMatcher
 from typing import Optional
 
 from .config import (
@@ -338,6 +339,251 @@ def apply_lexical_boost(
             # to report — keep name and score agreeing as collect_place_ids does.
             match_names[pid] = best_name[pid]
     return len(best)
+
+
+# ---------------------------------------------------------------------------
+# The near-miss lexical tier (place#199)
+# ---------------------------------------------------------------------------
+#
+# Discovery in ``fuzzy``/``phonetic`` mode had exactly two channels: phonetic
+# KNN, and an EXACT ``terms`` lookup. Nothing in between — so a name form that
+# is *nearly* how a toponym is spelled contributed only whatever the KNN
+# happened to think of it, and a variant could help only by being spelled
+# exactly as indexed. That is close to the opposite of what variants are for:
+# since place#188 Map-your-Data deliberately sends DERIVED forms (de-bracketed,
+# inverted, de-hyphenated) precisely because the raw cell value cannot match.
+#
+# `Broxbourn (St. Augustine)` + variant `Broxbourn` returned a result set
+# byte-identical to the query with no variants at all, while `Broxbourn` ALONE
+# finds Broxbourne perfectly (place#199). The record is trivially reachable
+# lexically — `mode=starts` and `mode=in` both return it today — fuzzy discovery
+# simply never looked.
+#
+# So: a third pass, between the two. It scores on how much the retrieved name
+# ACTUALLY resembles a queried form, which keeps the tier absolute (an ES text
+# score is not) and keeps junk out of a scale the client has to threshold on.
+
+#: What a *perfect* near-miss is worth. Below the phonetic ceiling of 1.0 and
+#: well below ``LEXICAL_EXACT_BOOST``, so the tiers stay strictly ordered:
+#: exact (≥ 1.8) > near-miss + phonetic (≤ 1.75) > phonetic alone (≤ 1.0).
+#: An exact match therefore still outranks every inexact candidate — the
+#: invariant place#197 was fixed to establish — while an inexact form that
+#: genuinely resembles an indexed name can now outrank pure phonetic noise.
+LEXICAL_FUZZY_BOOST = 0.75
+
+#: Minimum resemblance a retrieved name must have to a queried form before it
+#: earns anything at all. The near-miss ES clause is OR-over-terms, so a long
+#: query ("Minster-in-Sheppy (St. Mary and St. Sexburgh)") retrieves anything
+#: sharing one common token; without a floor those would all take the full tier
+#: boost on the strength of matching "St".
+LEXICAL_FUZZY_FLOOR = 0.5
+
+
+def name_resemblance(a: str, b: str) -> float:
+    """Absolute lexical resemblance of two name strings, 0–1.
+
+    ``difflib``'s ratio over the casefolded strings: 2·M/T, where M is the total
+    matched characters and T the combined length. Symmetric, needs no index
+    statistics, and — unlike a BM25 score — means the same thing for every query,
+    which is what lets the near-miss tier be an ABSOLUTE contribution rather than
+    one more relative band (see ``absolute_confidence``).
+
+    ``autojunk`` is off: its heuristic (ignore characters appearing in >1% of a
+    200+-character sequence) is aimed at source diffs and does nothing useful for
+    toponyms, but would silently change scores for a long name.
+    """
+    left, right = (a or "").strip().casefold(), (b or "").strip().casefold()
+    if not left or not right:
+        return 0.0
+    return SequenceMatcher(None, left, right, autojunk=False).ratio()
+
+
+def build_lexical_fuzzy_query(
+    forms: list[str], namespaces: list[str] | None = None, size: int = 200,
+    variant_weight: float = 0.9,
+) -> dict | None:
+    """Near-miss (spelled *almost* like this) toponym lookup for a set of forms.
+
+    Reuses the ``fuzzy`` text clause — ``multi_match`` over
+    ``name^3, name_romanized^2, name.prefix`` with ``fuzziness: AUTO`` — which
+    was until now unreachable for ``mode="fuzzy"``, because that mode routes to
+    the KNN branch and only an unrecognised mode string ever fell through to it.
+    No reindex is needed: every field it touches is live in the prod toponyms
+    index.
+
+    Retrieval only. What each hit is WORTH is decided in Python by
+    ``apply_lexical_near_miss``, so the tier does not inherit ES's
+    corpus-relative scoring.
+
+    Returns None when there is nothing to look up.
+    """
+    cleaned = [f.strip() for f in forms if f and f.strip()]
+    if not cleaned:
+        return None
+    return build_toponym_query(
+        cleaned[0], "fuzzy", size=size, namespaces=namespaces,
+        variants=cleaned[1:] or None, variant_weight=variant_weight,
+    )
+
+
+def apply_lexical_near_miss(
+    hits: list[dict],
+    place_scores: dict[str, float],
+    form_weights: dict[str, float],
+    exclude_prefixes: tuple[str, ...] = (),
+    include_prefixes: tuple[str, ...] = (),
+    match_names: dict[str, str] | None = None,
+) -> int:
+    """Add a resemblance-scaled boost for places whose name nearly matches a form.
+
+    ``form_weights`` maps each queried name form (as supplied — the resemblance
+    is computed against the real string) to its weight: 1.0 for the primary
+    query, ``VARIANT_SCORE_WEIGHT`` for a variant.
+
+    A place's contribution is ``LEXICAL_FUZZY_BOOST × resemblance × weight`` for
+    its best (name, form) pair, and is **added** to whatever the phonetic passes
+    scored — the same additive-tier treatment as ``apply_lexical_boost``, so a
+    place found both ways outranks one found only one way, and a place found ONLY
+    by near-miss still enters the pool. Names below ``LEXICAL_FUZZY_FLOOR``
+    contribute nothing rather than a little: a name that does not resemble the
+    query is not weak evidence, it is no evidence.
+
+    ``match_names`` is updated only when this tier is the place's dominant
+    evidence, so an exact or strong phonetic match keeps reporting its own name.
+
+    Returns the number of places boosted.
+    """
+    forms = [(f, w) for f, w in form_weights.items() if f and f.strip()]
+    if not forms or not hits:
+        return 0
+    best: dict[str, float] = {}
+    best_name: dict[str, str] = {}
+    scored: dict[str, float] = {}   # name → contribution (names repeat across hits)
+    for hit in hits:
+        source = hit.get("_source", {}) or {}
+        name = source.get("name") or ""
+        if not name:
+            continue
+        contribution = scored.get(name)
+        if contribution is None:
+            contribution = 0.0
+            for form, weight in forms:
+                resemblance = name_resemblance(form, name)
+                if resemblance < LEXICAL_FUZZY_FLOOR:
+                    continue
+                contribution = max(
+                    contribution, LEXICAL_FUZZY_BOOST * resemblance * weight)
+            scored[name] = contribution
+        if contribution <= 0:
+            continue
+        for pid in source.get("attestations", []) or []:
+            if not pid:
+                continue
+            if include_prefixes and not pid.startswith(include_prefixes):
+                continue
+            if exclude_prefixes and pid.startswith(exclude_prefixes):
+                continue
+            if contribution > best.get(pid, 0.0):
+                best[pid] = contribution
+                best_name[pid] = name
+    for pid, contribution in best.items():
+        prev = place_scores.get(pid, 0.0)
+        place_scores[pid] = prev + contribution
+        if match_names is not None and contribution > prev:
+            match_names[pid] = best_name[pid]
+    return len(best)
+
+
+# ---------------------------------------------------------------------------
+# Absolute match quality (place#199 C)
+# ---------------------------------------------------------------------------
+
+#: Minimum cosine a KNN neighbour must clear to be returned at all. Shared by
+#: /api/search and /api/reconcile so the score→quality mapping below always
+#: matches the floor the queries actually ask for.
+KNN_SIMILARITY_FLOOR = 0.7
+
+
+def knn_pass_quality(hits: list[dict],
+                     similarity: float = KNN_SIMILARITY_FLOOR) -> float:
+    """How good a KNN pass's BEST hit is in ABSOLUTE terms, on 0–1.
+
+    ``collect_place_ids(normalise=True)`` divides a pass by its own top score, so
+    the pass's best hit becomes exactly 1.0 however bad it is — necessary,
+    because raw cosines to *different* query vectors are not comparable
+    (place#197), but it means a pass that found nothing scores the same as a pass
+    that found the answer. That is why a variant could not rescue a primary that
+    matched only noise (place#199).
+
+    Multiplying the whole pass by this factor restores the absolute dimension
+    without touching the within-pass ordering place#197 established. The toponyms
+    ``embedding`` field is ``similarity: cosine``, for which ES scores
+    ``(1 + cosine) / 2``; we invert that and rescale the usable band
+    ``[floor, 1]`` onto ``[0, 1]``, so a neighbour scraping the similarity floor
+    contributes ~nothing and a near-identical one contributes ~everything.
+
+    MEASURED, 2026-08-20, prod toponyms (20 queries) — READ BEFORE "IMPROVING"
+    THE FLOOR. The embedding space is saturated at the top: the 200 nearest
+    neighbours of *anything* sit above cosine 0.93, so this mapping's usable
+    range is ~[0.97, 1.0] and the ``similarity`` floor barely bites. The obvious
+    fix — raise the floor to ~0.99, where same-script queries separate perfectly
+    (genuine ≥ 0.998, junk ≤ 0.988) — is WRONG. Genuine cross-script phonetic
+    matches, the thing Symphonym exists for, live in the junk band:
+    ``Brocksborne → Броксборн`` 0.9964, ``Sant Petersburg → Saint-Petersburg``
+    0.9940, ``Nyoo York → نيويورك`` 0.9930, ``Marsails → مارساليس`` 0.9878 —
+    against a junk ceiling of 0.9881 (``Minster-in-Sheppy (…) → Shams I``).
+    They overlap, so no cosine threshold separates them and a tighter floor would
+    silently delete the cross-script matches.
+
+    The consequence for callers: this factor is honest but nearly inert in
+    practice, and absolute match quality comes from the LEXICAL tiers
+    (``apply_lexical_boost`` / ``apply_lexical_near_miss``), not from the cosine.
+    That is also why the client's own lexical resemblance check was the right
+    instinct rather than a workaround (place#199 C).
+    """
+    if not hits:
+        return 0.0
+    top = max((hit.get("_score") or 0.0) for hit in hits)
+    if not 0.0 <= top <= 1.0:
+        # Not the cosine score-scale this mapping assumes (a mapping change, or
+        # a different similarity metric). Refuse to guess — leave the pass
+        # unscaled rather than silently mangling every score.
+        logger.warning("knn_pass_quality: unexpected KNN score %.4f — "
+                       "not the cosine scale; leaving the pass unscaled", top)
+        return 1.0
+    span = 1.0 - similarity
+    if span <= 0:
+        return 1.0
+    cosine = 2.0 * top - 1.0
+    return max(0.0, min(1.0, (cosine - similarity) / span))
+
+
+#: The ceiling of the additive discovery scale: a place spelled exactly as asked,
+#: which therefore also tops the near-miss tier and sits at cosine 1.0 in the
+#: phonetic one. Anything a query can score divided by this is an absolute
+#: measure of how well it matched.
+MAX_DISCOVERY_SCORE = LEXICAL_EXACT_BOOST + LEXICAL_FUZZY_BOOST + 1.0
+
+
+def absolute_confidence(raw_score: float) -> float:
+    """Map a raw discovery score onto an absolute 0–100 confidence.
+
+    The displayed ``score`` is normalised by the POOL's best score, so a query
+    that matched nothing still returns 100/99/99 and the number carries no
+    information about whether anything matched — which is how wrong candidates
+    were auto-confirming at Map-your-Data's 90 default (place#198/#199), and why
+    the client had to add its own lexical resemblance check.
+
+    Every term of the raw score is now absolute — the exact tier is a flat
+    constant, the near-miss tier is ``name_resemblance``, and the phonetic tier
+    is scaled by ``knn_pass_quality`` — so dividing by the ceiling gives a number
+    that is monotonic in real match quality and comparable BETWEEN queries.
+    Meaningful only for ``fuzzy``/``phonetic`` discovery; text modes leave it
+    null rather than publish a number on a different scale.
+    """
+    if raw_score <= 0 or MAX_DISCOVERY_SCORE <= 0:
+        return 0.0
+    return round(min(100.0, raw_score / MAX_DISCOVERY_SCORE * 100.0), 1)
 
 
 def build_phonetic_knn(
