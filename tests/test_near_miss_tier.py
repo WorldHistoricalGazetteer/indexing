@@ -45,6 +45,7 @@ from gateway.es_helpers import (
     derive_name_forms,
     derived_form_weight,
 )
+from gateway.es_helpers import _place_qualifiers
 
 
 def _hits(pairs):
@@ -376,9 +377,38 @@ class TestTrailingQualifierForms(unittest.TestCase):
         forms = derive_name_forms("Kingston, Surrey, England")
         self.assertEqual(forms, ["Kingston"])
 
-    def test_a_query_with_no_comma_or_bracket_derives_nothing(self):
+    def test_a_query_with_no_comma_or_qualifier_derives_nothing(self):
         for q in ("Bury St Edmunds", "Broxbourne", "Minster in Sheppy"):
             self.assertEqual(derive_name_forms(q), [], q)
+
+    def test_an_unpunctuated_trailing_qualifier_is_dropped(self):
+        # Same shape as the comma case, no comma to lean on.
+        self.assertEqual(derive_name_forms("Bury St Edmunds Suffolk"),
+                         ["Bury St Edmunds"])
+        self.assertEqual(derive_name_forms("Kingston Surrey"), ["Kingston"])
+        self.assertEqual(derive_name_forms("Great Missenden Bucks"),
+                         ["Great Missenden"])
+
+    def test_a_real_name_is_not_truncated(self):
+        # The morphological guard this replaced fired on 82.7% of real 3+-word
+        # toponyms; asking whether the tail NAMES an administrative unit fires
+        # on 0.4%. These are the shapes that made the difference.
+        for q in ("Newcastle upon Tyne", "Weston super Mare", "Stoke on Trent",
+                  "Tamarack Creek Spring", "Huron Towers Apartments",
+                  "Sumner Pioneer Cemetery", "Cerro los Pájaros",
+                  "Ashby de la Zouch", "Newton St Cyres"):
+            self.assertEqual(derive_name_forms(q), [], q)
+
+    def test_a_two_word_qualifier_is_taken_whole(self):
+        # Longest phrase first, or "Northern Ireland" leaves a stray "Northern".
+        self.assertEqual(derive_name_forms("Newry Northern Ireland"), ["Newry"])
+
+    def test_the_qualifier_vocabulary_is_loaded(self):
+        # An empty vocabulary silently disables the feature, so assert it isn't.
+        self.assertGreater(len(_place_qualifiers()), 500)
+        self.assertIn("suffolk", _place_qualifiers())
+        self.assertIn("yorks", _place_qualifiers())
+        self.assertNotIn("melford", _place_qualifiers())
 
     def test_malformed_comma_forms_are_safe(self):
         for q in (", Suffolk", "Somerset,", ",", " , "):

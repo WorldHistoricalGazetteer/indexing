@@ -8,9 +8,12 @@ Extracted from ``reconcile.py`` to avoid duplication.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 from difflib import SequenceMatcher
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from .config import (
@@ -184,9 +187,48 @@ def derived_form_weight(query: str, form: str) -> float:
 #: reading first, so a cap that bites drops the most speculative form.
 MAX_DERIVED_FORMS = 3
 
+#: Trailing phrases that mark an administrative qualifier rather than part of a
+#: name — UK historic counties with all their variants (place#204), ISO country
+#: names, and the UK's constituent countries. Built by
+#: ``processing/build_place_qualifiers.py``; committed, so no startup lookup.
+#:
+#: WHY A VOCABULARY AND NOT A RULE. The morphological guard tried first — "don't
+#: drop the last word if the word before it joins a name (*upon*, *on*, *le*,
+#: *cum*, *St*)" — was measured against 1,178 real 3+-word toponyms from the prod
+#: index and **fired on 82.7% of them**. It encodes English place-name
+#: morphology and the index is global: ``Tamarack Creek Spring``, ``Huron Towers
+#: Apartments``, ``Cerro los Pájaros``, ``Fonte do Sudre`` are ordinary names
+#: whose last word is a generic or an adjective, and each would have cost a
+#: wasted KNN pass. Asking instead "is the trailing phrase the name of an
+#: administrative unit?" is the qualifier hypothesis stated directly, fires on
+#: almost nothing, and is strictly MORE capable — it catches ``Kingston Surrey``,
+#: which a structural guard has to refuse as ambiguous.
+_QUALIFIERS_FILE = Path(__file__).with_name("data") / "place_qualifiers.json"
+
+#: Longest trailing phrase tested against the vocabulary — enough for
+#: "West Riding", "Greater London", "Northern Ireland".
+MAX_QUALIFIER_WORDS = 3
+
+
+@lru_cache(maxsize=1)
+def _place_qualifiers() -> frozenset[str]:
+    """The casefolded qualifier vocabulary; empty (feature off) if absent."""
+    try:
+        data = json.loads(_QUALIFIERS_FILE.read_text(encoding="utf-8"))
+        return frozenset(data["qualifiers"])
+    except Exception as e:  # never take discovery down over an optional aid
+        logger.warning("place qualifiers unavailable (%s) — trailing-qualifier "
+                       "forms disabled", e)
+        return frozenset()
+
+
 _BRACKET_PAIR_RE = re.compile(r"[(\[{][^()\[\]{}]*[)\]}]")
 _BRACKET_CHAR_RE = re.compile(r"[()\[\]{}]")
 _WHITESPACE_RE = re.compile(r"\s+")
+
+
+#: Punctuation to ignore when testing a word against ``_NAME_CONNECTIVES``.
+_TIDY_EDGE_RE = re.compile(r"^[^\w]+|[^\w]+$")
 
 
 def _tidy_form(text: str) -> str:
@@ -227,11 +269,18 @@ def derive_name_forms(query: str) -> list[str]:
     tail may be a qualifier to drop (``Bury St. Edmunds, Suffolk``) or an
     index-style modifier to fold back in (``Melford, Long`` → ``Long Melford``).
 
-    Deliberately narrow: brackets and commas. Dropping a trailing token from an
-    unpunctuated string (``Bury St Edmunds Suffolk``) is the same shape and
-    fails the same way, but there is nothing in the string to say where the name
-    ends — ``Newcastle upon Tyne`` would lose its tail too — so that wants its
-    own evidence and its own issue. De-hyphenation likewise.
+    An **unpunctuated** trailing qualifier gets the head-word reading too:
+    ``Bury St Edmunds Suffolk`` → ``Bury St Edmunds``, ``Kingston Surrey`` →
+    ``Kingston``. Nothing in such a string says structurally where the name ends,
+    so the drop fires only when the trailing phrase NAMES an administrative unit
+    (``_place_qualifiers``); longest phrase first, so a two-word county is taken
+    whole. That leaves ``Newcastle upon Tyne``, ``Weston super Mare``,
+    ``Tamarack Creek Spring`` and ``Bury St Edmunds`` itself untouched. Measured
+    on 1,178 real 3+-word toponyms it fires on 0.4%, against 82.7% for the
+    morphological guard it replaced — see the note on ``_QUALIFIERS_FILE``.
+
+    Deliberately still narrow: no de-hyphenation, and no general token subsets
+    (combinatorial past three words).
 
     Unbalanced brackets degrade gracefully — the pair form finds nothing and
     drops out, the strip-the-characters form still works. Returns [] for a query
@@ -265,6 +314,17 @@ def derive_name_forms(query: str) -> list[str]:
         _offer(head)
         if "," not in tail:
             _offer(f"{tail} {head}")
+    elif not sep:
+        # No comma to lean on: drop the trailing phrase only when it NAMES an
+        # administrative unit. Longest match first, so "West Riding" is taken
+        # whole rather than leaving a stray "West".
+        words = raw.split()
+        vocabulary = _place_qualifiers()
+        for size in range(min(MAX_QUALIFIER_WORDS, len(words) - 1), 0, -1):
+            phrase = _TIDY_EDGE_RE.sub("", " ".join(words[-size:])).casefold()
+            if phrase in vocabulary:
+                _offer(" ".join(words[:-size]))
+                break
     return forms
 
 

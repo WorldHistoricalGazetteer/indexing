@@ -138,6 +138,16 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     Without that grading `Melford` took rank 1 from `Long Melford` — and a
     resemblance tiebreak makes it *worse*, since `difflib` rewards the shared
     prefix (0.70 vs 0.56) and cannot see that tokens were reordered not dropped.
+    An **unpunctuated** trailing qualifier is handled too — `Bury St Edmunds
+    Suffolk` → `Bury St Edmunds`, `Kingston Surrey` → `Kingston` — but only when
+    the trailing phrase *names an administrative unit* (`gateway/data/
+    place_qualifiers.json`, built by `processing.build_place_qualifiers` from the
+    ukhc variants + ISO countries). ⚠ The morphological guard tried first ("don't
+    drop the last word after *upon*/*on*/*le*/*St*") **fired on 82.7% of 1,178
+    real 3+-word toponyms** — the index is global and `Tamarack Creek Spring` is
+    an ordinary name. The vocabulary test fires on 0.4% and is strictly more
+    capable. Known limit: British counties + countries only, so a trailing US
+    state or French département is not yet recognised.
     Deduped against the caller's own `variants` (so Map
     your Data, which derives these client-side since place#188, pays nothing) and
     held inside the `MAX_VARIANTS` budget. Reported back as `derived_forms[]`,
