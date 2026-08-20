@@ -38,7 +38,11 @@ from gateway.es_helpers import (
     name_resemblance,
     rank_candidate_ids,
 )
-from gateway.es_helpers import VARIANT_SCORE_WEIGHT, derive_name_forms
+from gateway.es_helpers import (
+    MAX_DERIVED_FORMS,
+    VARIANT_SCORE_WEIGHT,
+    derive_name_forms,
+)
 
 
 def _hits(pairs):
@@ -340,6 +344,57 @@ class TestDeriveNameForms(unittest.TestCase):
             {"Broxbourn (St. Augustine)": 1.0,
              **{f: VARIANT_SCORE_WEIGHT for f in derived}})
         self.assertEqual(rank_candidate_ids(scores, 1), ["gn:good"])
+
+
+class TestTrailingQualifierForms(unittest.TestCase):
+    """place#205 — `Place, County` is how gazetteer columns are written, and no
+    existing tier reaches it: the full string is indexed nowhere, it is ~9 edits
+    from the head word, it is LONGER than its target so starts/in don't apply,
+    and the KNN embeds the qualifier too, so the neighbourhood is unrelated.
+    The last one is why the failure is a confident-looking wrong answer rather
+    than an empty one."""
+
+    def test_the_head_word_is_offered(self):
+        self.assertIn("Bury St. Edmunds", derive_name_forms("Bury St. Edmunds, Suffolk"))
+
+    def test_the_inversion_is_offered_too(self):
+        # place#188's case. The string cannot say which reading is right, so
+        # both are tried — exactly as the two bracket readings are.
+        self.assertIn("Long Melford", derive_name_forms("Melford, Long"))
+
+    def test_the_head_word_comes_first(self):
+        # It is the reading that rescues the common failure, so it is the one
+        # that survives if MAX_DERIVED_FORMS bites.
+        self.assertEqual(derive_name_forms("Kingston, Surrey")[0], "Kingston")
+
+    def test_a_three_part_hierarchy_is_not_inverted(self):
+        # "Kingston, Surrey, England" is a hierarchy, not a qualified name;
+        # inverting it would guess at which level the caller meant. The head
+        # word is still offered, which is the useful part.
+        forms = derive_name_forms("Kingston, Surrey, England")
+        self.assertEqual(forms, ["Kingston"])
+
+    def test_a_query_with_no_comma_or_bracket_derives_nothing(self):
+        for q in ("Bury St Edmunds", "Broxbourne", "Minster in Sheppy"):
+            self.assertEqual(derive_name_forms(q), [], q)
+
+    def test_malformed_comma_forms_are_safe(self):
+        for q in (", Suffolk", "Somerset,", ",", " , "):
+            self.assertEqual(derive_name_forms(q), [], repr(q))
+
+    def test_brackets_and_commas_together_stay_bounded(self):
+        # Each derived form is another concurrent KNN pass.
+        forms = derive_name_forms("Melford, Long (St. Catherine)")
+        self.assertLessEqual(len(forms), MAX_DERIVED_FORMS)
+
+    def test_the_cap_holds_for_every_shape(self):
+        for q in ("A, B (C)", "A (B) [C], D", "Bury St. Edmunds, Suffolk"):
+            self.assertLessEqual(len(derive_name_forms(q)), MAX_DERIVED_FORMS, q)
+
+    def test_a_derived_form_never_repeats_the_query(self):
+        for q in ("Bury St. Edmunds, Suffolk", "Melford, Long", "Kingston, Surrey"):
+            self.assertNotIn(q.casefold(),
+                             [f.casefold() for f in derive_name_forms(q)], q)
 
 
 class TestTierOrderingInvariant(unittest.TestCase):

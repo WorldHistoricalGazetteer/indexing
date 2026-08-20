@@ -123,11 +123,16 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     knowing: when an exact match exists the phonetic band falls to ~half of it, so
     junk drops well below Map your Data's auto-confirm threshold instead of
     riding at 99.
-    **Bracketed queries are de-bracketed server-side** (`derive_name_forms`): a
-    parenthetical qualifier is the asker's apparatus and no toponym is indexed
-    with it, so `Broxbourn (St. Augustine)` also runs as `Broxbourn` and
-    `Broxbourn St. Augustine` — each a full pass (KNN + both lexical tiers) at
-    `VARIANT_SCORE_WEIGHT`. Deduped against the caller's own `variants` (so Map
+    **Bracketed and comma-qualified queries are re-read server-side**
+    (`derive_name_forms`, capped at `MAX_DERIVED_FORMS`): a parenthetical
+    qualifier is the asker's apparatus and no toponym is indexed with it, so
+    `Broxbourn (St. Augustine)` also runs as `Broxbourn` and `Broxbourn St.
+    Augustine`; and the `Place, County` shape of gazetteer columns also runs as
+    its head word and its inversion — `Bury St. Edmunds, Suffolk` → `Bury St.
+    Edmunds` + `Suffolk Bury St. Edmunds` (place#205). Both readings, always,
+    because the string cannot say which it is (`Melford, Long` wants the
+    inversion, `Bury St. Edmunds, Suffolk` wants the head). Each is a full pass
+    (KNN + both lexical tiers) at `VARIANT_SCORE_WEIGHT`. Deduped against the caller's own `variants` (so Map
     your Data, which derives these client-side since place#188, pays nothing) and
     held inside the `MAX_VARIANTS` budget. Reported back as `derived_forms[]`,
     distinct from `variants_used[]`. `/api/search` has the same derivation —

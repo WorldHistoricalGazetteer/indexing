@@ -145,6 +145,12 @@ def extract_repr_point(src: dict) -> list[float] | None:
 #: Lives here rather than in reconcile.py so /api/search shares it verbatim.
 VARIANT_SCORE_WEIGHT = 0.9
 
+#: Ceiling on derived forms per query. Each one is another concurrent KNN pass,
+#: and a string with both a bracket and a comma otherwise yields four. Three
+#: covers every shape actually observed; the order below puts the highest-value
+#: reading first, so a cap that bites drops the most speculative form.
+MAX_DERIVED_FORMS = 3
+
 _BRACKET_PAIR_RE = re.compile(r"[(\[{][^()\[\]{}]*[)\]}]")
 _BRACKET_CHAR_RE = re.compile(r"[()\[\]{}]")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -172,25 +178,60 @@ def derive_name_forms(query: str) -> list[str]:
     OTHER caller — ``/api/search``, third-party reconciliation clients — which
     send the raw string and cannot match anything at all.
 
-    Deliberately narrow: brackets only. Inversion (``Melford, Long``) and
-    de-hyphenation are real cases but each costs another KNN pass and needs its
-    own evidence; they are not smuggled in here.
+    A **comma** gets the same treatment (place#205): ``Bury St. Edmunds,
+    Suffolk`` → ``["Bury St. Edmunds", "Suffolk Bury St. Edmunds"]``. The
+    trailing-qualifier shape ``Place, County`` is how historical gazetteer
+    columns are written, and none of the existing tiers reaches it — the full
+    string is indexed nowhere, it is 9 edits from the head word so the near-miss
+    tier cannot see it, it is longer than its target so ``starts``/``in`` do not
+    apply, and the KNN embeds the whole string, so the qualifier dominates and
+    the neighbourhood is unrelated. That last one is why the failure is not an
+    empty result but a confident-looking wrong one: ``Bury St. Edmunds,
+    Suffolk`` returned a Kazakh locality at score 100 (confidence 25.7) while
+    the bare head word returns the right town at 99.4.
+
+    Both readings again, because the string cannot tell you which it is: the
+    tail may be a qualifier to drop (``Bury St. Edmunds, Suffolk``) or an
+    index-style modifier to fold back in (``Melford, Long`` → ``Long Melford``).
+
+    Deliberately narrow: brackets and commas. Dropping a trailing token from an
+    unpunctuated string (``Bury St Edmunds Suffolk``) is the same shape and
+    fails the same way, but there is nothing in the string to say where the name
+    ends — ``Newcastle upon Tyne`` would lose its tail too — so that wants its
+    own evidence and its own issue. De-hyphenation likewise.
 
     Unbalanced brackets degrade gracefully — the pair form finds nothing and
     drops out, the strip-the-characters form still works. Returns [] for a query
-    with no brackets, so nothing changes for the overwhelming majority.
+    with neither a bracket nor a comma, so nothing changes for the overwhelming
+    majority.
     """
     raw = (query or "").strip()
-    if not raw or not _BRACKET_CHAR_RE.search(raw):
+    if not raw:
         return []
     seen = {raw.casefold()}
     forms: list[str] = []
-    for candidate in (_tidy_form(_BRACKET_PAIR_RE.sub(" ", raw)),
-                      _tidy_form(_BRACKET_CHAR_RE.sub(" ", raw))):
+
+    def _offer(candidate: str) -> None:
+        candidate = _tidy_form(candidate)
         key = candidate.casefold()
-        if candidate and key not in seen:
+        if candidate and key not in seen and len(forms) < MAX_DERIVED_FORMS:
             seen.add(key)
             forms.append(candidate)
+
+    if _BRACKET_CHAR_RE.search(raw):
+        _offer(_BRACKET_PAIR_RE.sub(" ", raw))
+        _offer(_BRACKET_CHAR_RE.sub(" ", raw))
+
+    head, sep, tail = raw.partition(",")
+    if sep and _tidy_form(head) and _tidy_form(tail):
+        # Only a TWO-part form. "Kingston, Surrey, England" is a hierarchy, not
+        # a qualified name, and splitting it here would guess at which level the
+        # caller meant; the head word is still offered, which is the useful part.
+        # Head word FIRST: it is the reading that rescues the common failure
+        # (the trailing qualifier), so it is the one to keep if the cap bites.
+        _offer(head)
+        if "," not in tail:
+            _offer(f"{tail} {head}")
     return forms
 
 
