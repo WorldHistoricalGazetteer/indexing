@@ -24,7 +24,9 @@ exactly like the other staging-aware authority scripts. Run standalone:
 
     python -m authorities.ukhc-places
 """
+import json
 import zipfile
+from functools import lru_cache
 from pathlib import Path
 
 from processing.helpers import (
@@ -37,6 +39,27 @@ from processing.temporal import lifespan
 
 NAMESPACE = "ukhc"
 UKHC_CONFIG = next((a for a in AUTHORITIES if a["namespace"] == NAMESPACE), None)
+
+#: Alternative names, abbreviations and codes per HCS code — see
+#: ``authorities/ukhc/build_variants.py``, which regenerates it from the Historic
+#: Counties Standard, the shapefile's own ``ABBR`` field, the Chapman codes,
+#: GeoNames and Wikidata. Committed, so ingest needs no network.
+VARIANTS_FILE = Path(__file__).with_name("ukhc") / "name_variants.json"
+
+
+@lru_cache(maxsize=1)
+def _variants() -> dict:
+    """``{HCS code: {"name", "variants": [...], "wikidata_qid", "geonames_place_id"}}``.
+
+    Missing file is fatal rather than silent: shipping ukhc with one toponym per
+    county is the defect this table exists to fix (place#204), and a run that
+    quietly produced the old single-name documents would look like a success.
+    """
+    if not VARIANTS_FILE.exists():
+        raise FileNotFoundError(
+            f"{VARIANTS_FILE} is missing — regenerate it with "
+            f"`python -m authorities.ukhc.build_variants` (place#204)")
+    return json.loads(VARIANTS_FILE.read_text(encoding="utf-8"))["counties"]
 
 # Validity window applied to every county polygon and toponym.
 #
@@ -136,10 +159,35 @@ def process_county(props: dict, geometry: dict) -> dict | None:
 
     timespans = _timespans_for(code)
 
-    # Only the canonical full county name is a safe toponym. The short ``COUNTY``
-    # form (e.g. "York" for Yorkshire, "Aberdeen" for Aberdeenshire) would shadow
-    # the like-named cities, so it is deliberately omitted.
+    # The canonical name PLUS every attested alternative form (place#204).
+    #
+    # One toponym per county meant that any historic, abbreviated or ``-shire``
+    # spelling matched nothing at all — `Somersetshire` returned zero hits from
+    # the very namespace historians reconcile English county columns against,
+    # and those columns are written overwhelmingly in the forms that failed.
+    # The alternatives are read from a generated table rather than derived,
+    # because the plausible derivations are wrong in both directions: only some
+    # counties take ``-shire`` (there is no Sussexshire), and stripping it
+    # yields the county town, not the county.
+    #
+    # The short ``COUNTY`` field is STILL omitted, deliberately: "York",
+    # "Aberdeen", "Lancaster" would shadow the like-named cities, and a nested
+    # toponym has no weight or type to enter them at lower rank. Nothing is lost
+    # — every ``COUNTY`` value that is a genuine county alias rather than a
+    # settlement ("Salop", "Hants", "Berks", "Wilts") also appears in ``ABBR``.
+    entry = _variants().get(code, {})
     toponyms = [{"toponym_id": f"{name}@en", "timespans": timespans}]
+    seen = {f"{name}@en".casefold()}
+    for variant in entry.get("variants", []):
+        label = (variant.get("label") or "").strip()
+        lang = (variant.get("lang") or "und").strip() or "und"
+        if not label:
+            continue
+        toponym_id = f"{label}@{lang}"
+        if toponym_id.casefold() in seen:
+            continue
+        seen.add(toponym_id.casefold())
+        toponyms.append({"toponym_id": toponym_id, "timespans": timespans})
 
     geom_entry = enrich_geometry(geometry, timespans=timespans, geom_key=f"{place_id}_0")
     area = compute_area_km2(geometry)
@@ -158,6 +206,21 @@ def process_county(props: dict, geometry: dict) -> dict | None:
         "ccodes": ["GB"],
         "boundary": "historic-county",
     }
+
+    # Concordance links (place#204). Deliberately ``closeMatch``, never
+    # ``sameAs``: the Wikidata item is the historic county (its own description
+    # says so — that is the rule the generator matched on), but the GeoNames
+    # record is a MODERN administrative unit that merely inherits the name and
+    # roughly the ground. Close, not identical, and the distinction matters
+    # because the gateway ships these as co-reference edges.
+    links = []
+    if entry.get("wikidata_qid"):
+        links.append({"type": "closeMatch", "identifier": f"wd:{entry['wikidata_qid']}"})
+    if entry.get("geonames_place_id"):
+        links.append({"type": "closeMatch", "identifier": entry["geonames_place_id"]})
+    if links:
+        doc["links"] = links
+
     if area:
         doc["area_km2"] = round(area, 2)
     return doc

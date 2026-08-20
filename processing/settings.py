@@ -906,10 +906,18 @@ AUTHORITIES = [
         'citation': 'Historic County Borders Project (Historic Counties Trust). https://county-borders.co.uk/',
         'files': [
             {
-                # Definition A = whole historic counties (Yorkshire / Lincolnshire
-                # as single counties, not split into ridings / parts), full-
-                # resolution WGS84 polygons. Swap to *_Simplified.zip (~5 MB) for a
-                # lighter set, or UKDefinitionB_* for the ridings / parts split.
+                # Definition A = the 92 whole historic counties, full-resolution
+                # WGS84 polygons. Swap to *_Simplified.zip (~5 MB) for a lighter set.
+                #
+                # UKDefinitionB_* is NOT a ridings / parts split — an earlier note
+                # here said so and was wrong, which is where place#204's option (b)
+                # came from. The Standard's two definitions differ only in "the
+                # treatment of detached parts"; both files carry the same 92 whole
+                # counties with identical NAME/COUNTY/ABBR/HCS_NUMBER/HCS_CODE
+                # fields (verified against both downloads, 2026-08-20). The
+                # Standard is equally explicit that "the ridings shall not be
+                # considered to be historic counties". Ridings ARE separately
+                # indexed in WHG, from GBHGIS — see vob_cty / vob_rc.
                 'url': 'https://county-borders.co.uk/UKDefinitionA_WG84_Full_Resolution.zip',
                 'name': 'UKDefinitionA_WG84_Full_Resolution.zip',
                 'file_type': 'shapefile-zip',

@@ -1,0 +1,5699 @@
+{
+ "_meta": {
+  "description": "Alternative names, abbreviations and codes for the 92 UK historic counties (place#204).",
+  "generator": "authorities/ukhc/build_variants.py",
+  "sources": {
+   "hcs-schedule1": "https://historiccountiestrust.co.uk/Historic_Counties_Standard.pdf",
+   "hcs-abbr": "https://county-borders.co.uk/UKDefinitionA_WG84_Simplified.zip (ABBR field)",
+   "hcs-code": "https://county-borders.co.uk/UKDefinitionA_WG84_Simplified.zip (HCS_CODE field)",
+   "chapman-code": "https://www.genuki.org.uk/big/Regions/Codes",
+   "geonames": "WHG places index, GB ADM records (names only, NOT co-reference)",
+   "wikidata": "wbsearchentities + wbgetentities aliases",
+   "curated-abbr": "curated; see EXTRA_ABBREVIATIONS in the generator",
+   "riding-qualified": "curated; see RIDING_VARIANTS in the generator"
+  }
+ },
+ "counties": {
+  "ABN": {
+   "name": "Aberdeenshire",
+   "variants": [
+    {
+     "label": "County of Aberdeen",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Aber",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ABN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ABD",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Aberdeen County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Obar Dheathain",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "أبردينشاير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Абърдийншър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Абердиншир",
+     "lang": "ce",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Aberdeen",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "ابردین‌شیر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Contae Obar Deathain",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Coontae Aberdon",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "Աբերդինշիր",
+     "lang": "hy",
+     "source": "geonames"
+    },
+    {
+     "label": "アバディーンシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "애버딘셔",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Aberdonensis",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Aberdynšyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "ابردین شائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Aiberdeenshire",
+     "lang": "sco",
+     "source": "geonames"
+    },
+    {
+     "label": "阿伯丁郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "एबर्डीनशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "亞伯丁郡",
+     "lang": "zh-Hant",
+     "source": "geonames"
+    },
+    {
+     "label": "ابیردینشائر",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "Αμπερντήνσαϊρ",
+     "lang": "el",
+     "source": "geonames"
+    },
+    {
+     "label": "Aberdinşir",
+     "lang": "az",
+     "source": "geonames"
+    },
+    {
+     "label": "Абердзіншыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "鴨巴甸郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "অ্যাবরদিনশায়ার",
+     "lang": "bn",
+     "source": "geonames"
+    },
+    {
+     "label": "Википедија:Пренос чланака/Aberdeenshire",
+     "lang": "sr",
+     "source": "geonames"
+    },
+    {
+     "label": "ಆಬರ್ಡೀನ್ಸ್ಶೈರ್",
+     "lang": "kn",
+     "source": "geonames"
+    },
+    {
+     "label": "அபெர்டீன்ஷிர்",
+     "lang": "ta",
+     "source": "geonames"
+    },
+    {
+     "label": "એબરડિનશાયર",
+     "lang": "gu",
+     "source": "geonames"
+    },
+    {
+     "label": "అబెర్డీన్షైర్",
+     "lang": "te",
+     "source": "geonames"
+    },
+    {
+     "label": "אברדינשייר",
+     "lang": "he",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2657830",
+   "wikidata_qid": "Q3290674"
+  },
+  "AGL": {
+   "name": "Anglesey",
+   "variants": [
+    {
+     "label": "County of Anglesey",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Fôn",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Angle",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "AGL",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "AGY",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Isle of Anglesey",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Ynys Môn",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Anglesea",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Môn",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Angleseyshire",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Sir Ynys Môn",
+     "lang": "cy",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2657311",
+   "wikidata_qid": "Q67283698"
+  },
+  "ANG": {
+   "name": "Angus",
+   "variants": [
+    {
+     "label": "County of Forfar",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Angus",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Forfarshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ang",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ANS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Forfar",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Angus County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Forfar County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Aonghas",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "أنغس",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Вобласць Ангус",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "Ангъс",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Ангус",
+     "lang": "ce",
+     "source": "geonames"
+    },
+    {
+     "label": "آنگوس",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Comhairle Aonghais",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "アンガス",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "앵거스 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Angusia",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Angusas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "اینگس",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "安格斯",
+     "lang": "zh",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2657306",
+   "wikidata_qid": "Q67387310"
+  },
+  "ANM": {
+   "name": "Antrim",
+   "variants": [
+    {
+     "label": "County Antrim",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Antrim",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ant",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ANM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "Aontroma",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Aontrama",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Aontroim",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Aontroma",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae Aontroma",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Antrim",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co Antrim",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Antrim",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q189592"
+  },
+  "ARG": {
+   "name": "Argyllshire",
+   "variants": [
+    {
+     "label": "County of Argyll",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Argyll",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ARG",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ARL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Argyll County",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2657088"
+  },
+  "ARH": {
+   "name": "Armagh",
+   "variants": [
+    {
+     "label": "County Armagh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Armagh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Arm",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ARH",
+     "lang": "und",
+     "source": "hcs-code"
+    }
+   ]
+  },
+  "AYS": {
+   "name": "Ayrshire",
+   "variants": [
+    {
+     "label": "County of Ayr",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ayr",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "AYS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "Ayr County",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2656700"
+  },
+  "BED": {
+   "name": "Bedfordshire",
+   "variants": [
+    {
+     "label": "County of Bedford",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Beds",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BED",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BDF",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "BER": {
+   "name": "Berkshire",
+   "variants": [
+    {
+     "label": "County of Berks",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Berks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BER",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BRK",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ],
+   "wikidata_qid": "Q67284726"
+  },
+  "BNF": {
+   "name": "Banffshire",
+   "variants": [
+    {
+     "label": "County of Banff",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Banff",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BNF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BAN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Banff County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Bhanbh",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Banbh",
+     "lang": "ga",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2656399",
+   "wikidata_qid": "Q806432"
+  },
+  "BRN": {
+   "name": "Brecknockshire",
+   "variants": [
+    {
+     "label": "County of Brecon",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Brecknock",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Breconshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Frycheiniog",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Breck",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BRN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BRE",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Brycheiniog",
+     "lang": "ga",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q547052"
+  },
+  "BRW": {
+   "name": "Berwickshire",
+   "variants": [
+    {
+     "label": "County of Berwick",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ber",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BRW",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BEW",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Berwick County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "VC81",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Bhearaig",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Berwick",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2655820",
+   "wikidata_qid": "Q786649"
+  },
+  "BTE": {
+   "name": "Buteshire",
+   "variants": [
+    {
+     "label": "County of Bute",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Bute",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BTE",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BUT",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Bute County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Bód",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Bhòid",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Bute",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2654165",
+   "wikidata_qid": "Q544009"
+  },
+  "BUC": {
+   "name": "Buckinghamshire",
+   "variants": [
+    {
+     "label": "County of Buckingham",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Bucks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "BUC",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "BKM",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Buckinghamshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Buckingham",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Bhuckingham",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2654408",
+   "wikidata_qid": "Q67285329"
+  },
+  "CHE": {
+   "name": "Cheshire",
+   "variants": [
+    {
+     "label": "County of Chester",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ches",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CHE",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CHS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Cheshire West and Chester",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Западный Чешир и Честер",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "Західний Чешир і Честер",
+     "lang": "uk",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:7290537"
+  },
+  "CLM": {
+   "name": "Clackmannanshire",
+   "variants": [
+    {
+     "label": "County of Clackmannan",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Clacks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CLM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CLK",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Clackmannan County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Chlach Mhannainn",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Clackmannanscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Клакмананшър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Clackmannan",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "کلاکماننشر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Clach Mhanainn",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Chlach Mhanainn",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "Coontae Chlagh Manu",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "クラックマナンシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "클라크매넌셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Clackmannanensis",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Klakmananšyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "کلاکموننشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Клакманнаншир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "克拉克曼南郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Chlach Mhanann",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2652975",
+   "wikidata_qid": "Q67393019"
+  },
+  "CMB": {
+   "name": "Cambridgeshire",
+   "variants": [
+    {
+     "label": "County of Cambridge",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Cambs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CMB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CAM",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Cambridgeshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "केंब्रिज",
+     "lang": "mr",
+     "source": "geonames"
+    },
+    {
+     "label": "كامبريدج",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "کیمبرج",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "เคมบริดจ์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "Grantanbrycg",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Cantabrigia",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Кембридж",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "케임브리지",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Konteth Kargront",
+     "lang": "kw",
+     "source": "geonames"
+    },
+    {
+     "label": "Кеймбридж",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "केमब्रिजशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "Кембриџ",
+     "lang": "sr",
+     "source": "geonames"
+    },
+    {
+     "label": "ケンブリッジ",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Caergrawnt",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Kembridža",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "کمبریج",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "劍橋",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Gaergrawnt",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Chambridge",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2653940",
+   "wikidata_qid": "Q30612390"
+  },
+  "CNW": {
+   "name": "Cornwall",
+   "variants": [
+    {
+     "label": "County of Cornwall",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Corn",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CNW",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CON",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Cornualles",
+     "lang": "es",
+     "source": "geonames"
+    },
+    {
+     "label": "Kornvalo",
+     "lang": "eo",
+     "source": "geonames"
+    },
+    {
+     "label": "Cornualla",
+     "lang": "ca",
+     "source": "geonames"
+    },
+    {
+     "label": "Cornouailles",
+     "lang": "fr",
+     "source": "geonames"
+    },
+    {
+     "label": "Cornualha",
+     "lang": "pt",
+     "source": "geonames"
+    },
+    {
+     "label": "Kernow",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Cernyw",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Corn na Breataine",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "A’ Chòrn",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2652355",
+   "wikidata_qid": "Q23148"
+  },
+  "CRD": {
+   "name": "Cardiganshire",
+   "variants": [
+    {
+     "label": "County of Cardigan",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ceredigion",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Aberteifi",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Cards",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CRD",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CGN",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "CRM": {
+   "name": "Carmarthenshire",
+   "variants": [
+    {
+     "label": "County of Carmarthen",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Gaerfyrddin",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Carms",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CRM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CMN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Carmarthenshire",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Caerfyrddin",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Sir Gâr",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "カーマーゼンシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Кармартъншър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "카마던셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Кармартеншир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "卡马森郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Karmartenšyras",
+     "lang": "lt",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2653753",
+   "wikidata_qid": "Q67287054"
+  },
+  "CRN": {
+   "name": "Caernarfonshire",
+   "variants": [
+    {
+     "label": "County of Caernarfon",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Caernarvonshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Gaernarfon",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Caern",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CRN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CAE",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Arfon",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Carnarvonshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Caernarvon",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Carnarvon",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2654090",
+   "wikidata_qid": "Q731669"
+  },
+  "CRT": {
+   "name": "Cromartyshire",
+   "variants": [
+    {
+     "label": "County of Cromarty",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Crom",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CRT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ROC",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Siorrachd Chromba",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Cromba",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Cromaty",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q1140824"
+  },
+  "CTN": {
+   "name": "Caithness",
+   "variants": [
+    {
+     "label": "County of Caithness",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Caith",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CTN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CAI",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Caithness-shire",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Cataibh",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Gallaibh",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Cothnais",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q864668"
+  },
+  "CUM": {
+   "name": "Cumberland",
+   "variants": [
+    {
+     "label": "County of Cumberland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Cumb",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "CUM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "CUL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Carliol",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2651716",
+   "wikidata_qid": "Q23360"
+  },
+  "DBH": {
+   "name": "Denbighshire",
+   "variants": [
+    {
+     "label": "County of Denbigh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Ddinbych",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Denb",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "DBH",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DEN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Denbighshire",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Denbighshire principal area",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Денбишър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "דנבישייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "デンビーシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "덴비셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Denbigšyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "Денбігшир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Денбишир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "登比郡",
+     "lang": "zh",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2651385",
+   "wikidata_qid": "Q5256625"
+  },
+  "DMF": {
+   "name": "Dumfriesshire",
+   "variants": [
+    {
+     "label": "County of Dumfries",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Dumf",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "DMF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DFS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Siorrachd Dhùn Phris",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae Dhùn Phris",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Dùn Phris",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Dumfries",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q1247384"
+  },
+  "DRB": {
+   "name": "Derbyshire",
+   "variants": [
+    {
+     "label": "County of Derby",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Derbys",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "DRB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DBY",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Derbyshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Дербішир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "ダービーシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Derby",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "דארבישיר",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "Dārbišīra",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "دربی‌شر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Derbiensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Dēorabyscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Ντέρμπισαϊρ",
+     "lang": "el",
+     "source": "geonames"
+    },
+    {
+     "label": "더비셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "ডার্বিশায়ার",
+     "lang": "bn",
+     "source": "geonames"
+    },
+    {
+     "label": "Дарбишър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "דרבישייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "डर्बीशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "Дарбишир",
+     "lang": "sr",
+     "source": "geonames"
+    },
+    {
+     "label": "ดาร์บิเชอร์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "ديربيشاير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "ڈربیشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Дербишир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "德比郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Derbišyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "打比郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "Графства Дэрбішыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Derby",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2651346",
+   "wikidata_qid": "Q67393503"
+  },
+  "DRH": {
+   "name": "Durham",
+   "variants": [
+    {
+     "label": "County Durham",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Durham",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Dur",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "DRH",
+     "lang": "und",
+     "source": "hcs-code"
+    }
+   ],
+   "geonames_place_id": "gn:2650629"
+  },
+  "DRS": {
+   "name": "Dorset",
+   "variants": [
+    {
+     "label": "County of Dorset",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Dorsetshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "DRS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DOR",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Дорсет",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "도싯 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "ドーセット",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "ดอร์เซต",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "Dorsæte",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Grofschaft Dorset",
+     "lang": "lb",
+     "source": "geonames"
+    },
+    {
+     "label": "Dorcestria",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "डॉर्सेट",
+     "lang": "mr",
+     "source": "geonames"
+    },
+    {
+     "label": "دورست",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "ڈورسٹ",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "דורסט",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "Dorseta",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "多塞特郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Dorsetas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "ഡോർസെറ്റ്",
+     "lang": "ml",
+     "source": "geonames"
+    },
+    {
+     "label": "דארסעט",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "多實郡",
+     "lang": "yue",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2651079"
+  },
+  "DUN": {
+   "name": "Dunbartonshire",
+   "variants": [
+    {
+     "label": "County of Dumbarton",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Dumbartonshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Dunbar",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "DUN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DNB",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "DVN": {
+   "name": "Devon",
+   "variants": [
+    {
+     "label": "County of Devon",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Devonshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "DVN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DEV",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Dyfnaint",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2651292",
+   "wikidata_qid": "Q67393660"
+  },
+  "DWN": {
+   "name": "Down",
+   "variants": [
+    {
+     "label": "County Down",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Down",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Downshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "DWN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "DOW",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Contae an Dún",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "An Dún",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. an Dúin",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co Down",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Down",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae an Dúin",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd an Dún",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q190684"
+  },
+  "ELT": {
+   "name": "East Lothian",
+   "variants": [
+    {
+     "label": "County of Haddington",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of East Lothian",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Haddingtonshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "E Loth",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "ELT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ELN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Haddington",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Восточный Лотиан",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "Východní Lothian",
+     "lang": "cs",
+     "source": "geonames"
+    },
+    {
+     "label": "Rytų Lodianas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "Lothian Orientale",
+     "lang": "it",
+     "source": "geonames"
+    },
+    {
+     "label": "Ēast Loðene",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "لوثيان الشرقية",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Източен Лоудиън",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Lodainn an Ear",
+     "lang": "br",
+     "source": "geonames"
+    },
+    {
+     "label": "Dwyrain Lothian",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Ekialdeko Lothian",
+     "lang": "eu",
+     "source": "geonames"
+    },
+    {
+     "label": "لوتیان شرقی",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Itä-Lothian",
+     "lang": "fi",
+     "source": "geonames"
+    },
+    {
+     "label": "Comhairle Lodainn an Ear",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "Lodainn Hiar",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "イースト・ロージアン",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "이스트로디언 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Hadintoniensis",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "ایسٹ لوتھین",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "East Lowden",
+     "lang": "sco",
+     "source": "geonames"
+    },
+    {
+     "label": "Istočni Lothian",
+     "lang": "hbs",
+     "source": "geonames"
+    },
+    {
+     "label": "Східний Лотіан",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "东洛锡安",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Labhdaidh an Ear",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Bhaile Adain",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Haddington",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2650386",
+   "wikidata_qid": "Q66224885"
+  },
+  "ESE": {
+   "name": "Essex",
+   "variants": [
+    {
+     "label": "County of Essex",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "ESE",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ESS",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ],
+   "geonames_place_id": "gn:2649889",
+   "wikidata_qid": "Q67442940"
+  },
+  "FFE": {
+   "name": "Fife",
+   "variants": [
+    {
+     "label": "County of Fife",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "FFE",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "FIF",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Fife Region",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Fif Scīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Файф",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Fìobha",
+     "lang": "br",
+     "source": "geonames"
+    },
+    {
+     "label": "فایف",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Foibhe",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Feevey",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "ファイフ",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "파이프 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Fifa",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Faifas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "فائف",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "快富",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "法夫",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Fifeshire",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Fìobha",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Fife",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2649469",
+   "wikidata_qid": "Q67479974"
+  },
+  "FLT": {
+   "name": "Flintshire",
+   "variants": [
+    {
+     "label": "County of Flint",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir y Fflint",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Flints",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "FLT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "FLN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Flintshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Flintshire principal area",
+     "lang": "en",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2649298",
+   "wikidata_qid": "Q684016"
+  },
+  "FRM": {
+   "name": "Fermanagh",
+   "variants": [
+    {
+     "label": "County of Fermanagh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County Fermanagh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ferm",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "FRM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "FER",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Fhear Manach",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Fear Manach",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Fhear Manach",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Fermanagh",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co Fermanagh",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae Fhear Manach",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Fermanagh",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q190678"
+  },
+  "GLC": {
+   "name": "Gloucestershire",
+   "variants": [
+    {
+     "label": "County of Gloucester",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Glos",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "GLC",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "GLS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Gloucestershire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "גלוסטרשייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "Глостършър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "ग्लॉस्टरशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "글로스터셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Глостершир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "گلوسسٹرشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "กลอสเตอร์เชอร์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "غلوسترشير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "グロスタシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "גלאסטערשיר",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Gaerloyw",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Glosteršīra",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "گلاسترشر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Gleawcesterscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Glocestriensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "格洛斯特郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Графства Глостэршыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "Glosteršyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "告羅士打郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "گلوسٹرشائر",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Ghloucester",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2648402",
+   "wikidata_qid": "Q67508687"
+  },
+  "GLM": {
+   "name": "Glamorgan",
+   "variants": [
+    {
+     "label": "County of Glamorgan",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Morgannwg",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Glam",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "GLM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "GLA",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Glamorganshire",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Sir Forgannwg",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q870815"
+  },
+  "HMP": {
+   "name": "Hampshire",
+   "variants": [
+    {
+     "label": "County of Southampton",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Hants",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Hants",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "HMP",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "HAM",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Sūþhāmtūnscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "ハンプシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Hampshire County",
+     "lang": "pl",
+     "source": "geonames"
+    },
+    {
+     "label": "Хэмпшир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "ハンプシャー州",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "County of Hampshire",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2647554",
+   "wikidata_qid": "Q67531563"
+  },
+  "HNT": {
+   "name": "Huntingdonshire",
+   "variants": [
+    {
+     "label": "County of Huntingdon",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Hunts",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "HNT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "HUN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Хънтингдъншър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Huntandūnscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Huntingdoniensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Гантінгдоншир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Хантингдоншир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "亨廷登郡",
+     "lang": "zh",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2646390"
+  },
+  "HRF": {
+   "name": "Herefordshire",
+   "variants": [
+    {
+     "label": "County of Hereford",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Herefs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "HRF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "HEF",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Herefordshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Sir Henffordd",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Henffordd",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Hereford",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2647071",
+   "wikidata_qid": "Q67531905"
+  },
+  "HTF": {
+   "name": "Hertfordshire",
+   "variants": [
+    {
+     "label": "County of Hertford",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Herts",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "HTF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "HRT",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Hertfordshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "ہرٹفورڈشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "हर्टफ़र्डशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "Hārtfordšīra",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "ハートフォードシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Hertford",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "하트퍼드셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Гартфордшир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Heortfordscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Hertfordiensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Хартфордшър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "हर्टफर्डशायर",
+     "lang": "mr",
+     "source": "geonames"
+    },
+    {
+     "label": "هارتفوردشير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "ฮาร์ตฟอร์ดเชอร์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "Хартфордшир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "赫特福德郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "هرتفوردشر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "ჰერტფორდშირი",
+     "lang": "ka",
+     "source": "geonames"
+    },
+    {
+     "label": "Hartfordšyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "赫福郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "Hartfordşir",
+     "lang": "az",
+     "source": "geonames"
+    },
+    {
+     "label": "הרטפורדשייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "ہارٹفورڈشائر",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "הארטפארדשיר",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Hertford",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2647043",
+   "wikidata_qid": "Q67532100"
+  },
+  "INS": {
+   "name": "Inverness-shire",
+   "variants": [
+    {
+     "label": "County of Inverness",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Inver",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "INS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "INV",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Inverness County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Inbhir Nis",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Inverness",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2646086",
+   "wikidata_qid": "Q1247390"
+  },
+  "KCB": {
+   "name": "Kirkcudbrightshire",
+   "variants": [
+    {
+     "label": "County of Kirkcudbright",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Kirkcud",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "KCB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "KKD",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Kirkcudbright County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Stewartry of Kirkcudbright",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "East Galloway",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Chille Chuithbeirt",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Cille Chuitbeirt",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Kirkcudbright",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2645285",
+   "wikidata_qid": "Q17582096"
+  },
+  "KNC": {
+   "name": "Kincardineshire",
+   "variants": [
+    {
+     "label": "County of Kincardine",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Kincar",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "KNC",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "KCD",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Mearns",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Kincardine County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Kincardine Shire",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Mearns County",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "the Mearns",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "A' Mhaoirne",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Kincardine",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2645521",
+   "wikidata_qid": "Q376914"
+  },
+  "KNR": {
+   "name": "Kinross-shire",
+   "variants": [
+    {
+     "label": "County of Kinross",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Kinross",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "KNR",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "KRS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Kinross County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Ceann Rois",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Cheann Rois",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Kinross",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2645364",
+   "wikidata_qid": "Q784746"
+  },
+  "KNT": {
+   "name": "Kent",
+   "variants": [
+    {
+     "label": "County of Kent",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "KNT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "KEN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Kentas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "𐌲𐌰𐍅𐌹 𐌺𐌰𐌹𐌽𐍄𐌹𐍃",
+     "lang": "got",
+     "source": "geonames"
+    },
+    {
+     "label": "کنت",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Кент",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Cantium",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Cent",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Kontelezh Kent",
+     "lang": "br",
+     "source": "geonames"
+    },
+    {
+     "label": "Kint",
+     "lang": "kw",
+     "source": "geonames"
+    },
+    {
+     "label": "켄트 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Κεντ",
+     "lang": "el",
+     "source": "geonames"
+    },
+    {
+     "label": "केंट",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "קנט",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "Ként",
+     "lang": "ug",
+     "source": "geonames"
+    },
+    {
+     "label": "Kenta",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "كنت",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "کینٹ",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "เคนต์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "Caint",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "ケント",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "קענט",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "肯特郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "根德郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "Графства Кент",
+     "lang": "be",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:3333158",
+   "wikidata_qid": "Q67479626"
+  },
+  "LCR": {
+   "name": "Leicestershire",
+   "variants": [
+    {
+     "label": "County of Leicester",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Leics",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "LCR",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "LEI",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Leicestershire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "لیسسٹرشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Lægreceastrescīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "लेस्टरशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "เลสเตอร์เชอร์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "ليسترشير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Lesteršīra",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "レスターシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Gaerlŷr",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Leicestriensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Лестершир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Графства Лестэршыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "레스터셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Лестършър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "莱斯特郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "لسترشر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Lesteršyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "里斯特郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "לסטרשייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "لیسٹرشائر",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "לעסטערשיר",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Leicester",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2644667",
+   "wikidata_qid": "Q67533246"
+  },
+  "LCS": {
+   "name": "Lancashire",
+   "variants": [
+    {
+     "label": "County of Lancaster",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Lancs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "LCS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "LAN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Lancashire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "County Palatine of Lancaster",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Gaerhirfryn",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2644974",
+   "wikidata_qid": "Q67311452"
+  },
+  "LDR": {
+   "name": "Londonderry",
+   "variants": [
+    {
+     "label": "County Londonderry",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Londonderry",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Lond",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "LDR",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "LDY",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "City of Derry",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Derry",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Doire",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Contae Chúil Raithin",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "County Derry",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Deri",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae Dhoire",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Derry",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2643737",
+   "wikidata_qid": "Q192208"
+  },
+  "LNC": {
+   "name": "Lincolnshire",
+   "variants": [
+    {
+     "label": "County of Lincoln",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Lincs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "LNC",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "LIN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Lincolnshire, Parts of Lindsey",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lincolnshire, Parts of Kesteven",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lincolnshire, Parts of Holland",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lincs, Parts of Lindsey",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lincs, Parts of Kesteven",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lincs, Parts of Holland",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Lindsey",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Kesteven",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "County of Lincolnshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Линкълншър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "लिंकनशायर",
+     "lang": "mr",
+     "source": "geonames"
+    },
+    {
+     "label": "Линколншир",
+     "lang": "sr",
+     "source": "geonames"
+    },
+    {
+     "label": "リンカンシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "לינקאנשיר",
+     "lang": "yi",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Lincoln",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "لنکنشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "لنكولنشاير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Linkolnšīra",
+     "lang": "lv",
+     "source": "geonames"
+    },
+    {
+     "label": "Лінкольншир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Lincolniensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Lincolnscīr",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "링컨셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "ลิงคอล์นเชอร์",
+     "lang": "th",
+     "source": "geonames"
+    },
+    {
+     "label": "Линкольншир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "林肯郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Графства Лінкальншыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "لینکلن‌شر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Linkolnšyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "לינקולנשייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Lincoln",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2644486",
+   "wikidata_qid": "Q67533486"
+  },
+  "LNK": {
+   "name": "Lanarkshire",
+   "variants": [
+    {
+     "label": "County of Lanark",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Lanarks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "LNK",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "LKS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Lanark County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Lannraig",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Lannraig",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Lanark",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2644975",
+   "wikidata_qid": "Q530296"
+  },
+  "MLT": {
+   "name": "Midlothian",
+   "variants": [
+    {
+     "label": "County of Edinburgh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Midlothian",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Edinburghshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Midloth",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "MLT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "MLN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Midlothian County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Edinburgh",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Labhdaidh Mheadhanach",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "Мидлотиан",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "Střední Lothian",
+     "lang": "cs",
+     "source": "geonames"
+    },
+    {
+     "label": "Meadhan Lodainn",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "Vidurinis Lodianas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "Mid Lothian",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Edinburgensis",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Середній Лотіан",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Midloðene",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Labhaidh Láir",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Midlowden",
+     "lang": "sco",
+     "source": "geonames"
+    },
+    {
+     "label": "ミッドロージアン",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "미들로디언 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Мидлоудиън",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "مڈلوتھین",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Mean Lodainn",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "中洛锡安",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "میدلودین",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Lodainn Mheadhonach",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Meadhan Lòdainn",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Meadhan Labhdaidh",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Lodainn Mheadhanach",
+     "lang": "ga",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2642559",
+   "wikidata_qid": "Q67317221"
+  },
+  "MNM": {
+   "name": "Monmouthshire",
+   "variants": [
+    {
+     "label": "County of Monmouth",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Fynwy",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Mon",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "MNM",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "County of Monmouthshire",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Monmouthshire principal area",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "몬머스셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Монмутшир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Monemutensis",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "モンマスシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Монмътшър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "मॉनमाउथशायर",
+     "lang": "hi",
+     "source": "geonames"
+    },
+    {
+     "label": "蒙茅斯郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Monmutšyras",
+     "lang": "lt",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:3333244",
+   "wikidata_qid": "Q1245075"
+  },
+  "MOY": {
+   "name": "Morayshire",
+   "variants": [
+    {
+     "label": "County of Elgin",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of Moray",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Elginshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Moray",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "MOY",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "MOR",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "MRN": {
+   "name": "Merionethshire",
+   "variants": [
+    {
+     "label": "County of Merioneth",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Meirionnydd",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Feirionnydd",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Merion",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "MRN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "MER",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "MSX": {
+   "name": "Middlesex",
+   "variants": [
+    {
+     "label": "County of Middlesex",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Mdx",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "Middx",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "MSX",
+     "lang": "und",
+     "source": "hcs-code"
+    }
+   ],
+   "wikidata_qid": "Q19186"
+  },
+  "MTG": {
+   "name": "Montgomeryshire",
+   "variants": [
+    {
+     "label": "County of Montgomery",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Drefaldwyn",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Monts",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "MTG",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "MGY",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Sir Trefaldwyn",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Sir Faldwyn",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "District of Montgomeryshire",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q38825"
+  },
+  "NHB": {
+   "name": "Northumberland",
+   "variants": [
+    {
+     "label": "County of Northumberland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Northum",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "Northumb",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "NHB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "NBL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "ノーサンバーランド州",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Grofschaft Northumberland",
+     "lang": "lb",
+     "source": "geonames"
+    },
+    {
+     "label": "Nortúmbria",
+     "lang": "pt",
+     "source": "geonames"
+    },
+    {
+     "label": "Нортумберленд",
+     "lang": "ru",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2641235",
+   "wikidata_qid": "Q67535553"
+  },
+  "NHP": {
+   "name": "Northamptonshire",
+   "variants": [
+    {
+     "label": "County of Northampton",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Northants",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "NHP",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "NTH",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Northamptonshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Northampton",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Northampton",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2641429",
+   "wikidata_qid": "Q67311402"
+  },
+  "NOT": {
+   "name": "Nottinghamshire",
+   "variants": [
+    {
+     "label": "County of Nottingham",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Notts",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "NOT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "NTT",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Ноттингемшир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "County of Nottinghamshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Nottingham",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Nottingham",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2641169",
+   "wikidata_qid": "Q67535681"
+  },
+  "NRF": {
+   "name": "Norfolk",
+   "variants": [
+    {
+     "label": "County of Norfolk",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Norf",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "NRF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "NFK",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ],
+   "geonames_place_id": "gn:2641455",
+   "wikidata_qid": "Q67535211"
+  },
+  "NRN": {
+   "name": "Nairnshire",
+   "variants": [
+    {
+     "label": "County of Nairn",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Nairn",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "NRN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "NAI",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Nairn County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Inbhir Narann",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Nairn",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2641907",
+   "wikidata_qid": "Q1247441"
+  },
+  "ORN": {
+   "name": "Orkney",
+   "variants": [
+    {
+     "label": "County of Orkney",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "ORN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "OKI",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "OXD": {
+   "name": "Oxfordshire",
+   "variants": [
+    {
+     "label": "County of Oxford",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Oxon",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "OXD",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "OXF",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Oxfordshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Rydychen",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Oxford",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2640726",
+   "wikidata_qid": "Q67311417"
+  },
+  "PBS": {
+   "name": "Peeblesshire",
+   "variants": [
+    {
+     "label": "County of Peebles",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Peebles",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "PBS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "PEE",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Tweeddale",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Peebles County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd nam Pùballan",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Peebles",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Na Pùballan",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Peebles",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2640525",
+   "wikidata_qid": "Q1247417"
+  },
+  "PMB": {
+   "name": "Pembrokeshire",
+   "variants": [
+    {
+     "label": "County of Pembroke",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Benfro",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Pembs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "PMB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "PEM",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Pembrokeshire",
+     "lang": "en",
+     "source": "geonames"
+    },
+    {
+     "label": "Benfro",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Пембрукшир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "ペンブルックシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "펨브로크셔 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Пембрукшър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "彭布罗克郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "بيمبروكشاير",
+     "lang": "ar",
+     "source": "geonames"
+    },
+    {
+     "label": "Pembrukšyras",
+     "lang": "lt",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2640500",
+   "wikidata_qid": "Q85631787"
+  },
+  "PRT": {
+   "name": "Perthshire",
+   "variants": [
+    {
+     "label": "County of Perth",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Perth",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "PRT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "PER",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Siorrachd Pheairt",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Perth",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q67442430"
+  },
+  "RDN": {
+   "name": "Radnorshire",
+   "variants": [
+    {
+     "label": "County of Radnor",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Sir Faesyfed",
+     "lang": "cy",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Rad",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "RDN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "District of Radnorshire",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q1244778"
+  },
+  "RNF": {
+   "name": "Renfrewshire",
+   "variants": [
+    {
+     "label": "County of Renfrew",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Renfrew",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "RNF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "RFW",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Renfrew County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Рэнфрушыр",
+     "lang": "be",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Renfrew",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Ренфрушър",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Ренфрюшир",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "Coontae Rinn Friù",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "Comhairle Siorrachd Rinn Friù",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "렌프루셔",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Renfrušyras",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "رنفریوشائر",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "レンフルーシャー",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Ренфрушир",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "伦弗鲁郡",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Rinn Friù",
+     "lang": "br",
+     "source": "geonames"
+    },
+    {
+     "label": "رنفروشر",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "倫弗魯郡",
+     "lang": "zh-Hant",
+     "source": "geonames"
+    },
+    {
+     "label": "رینفریوشائر",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "聯福郡",
+     "lang": "yue",
+     "source": "geonames"
+    },
+    {
+     "label": "রেনফ্রিউশায়ার",
+     "lang": "bn",
+     "source": "geonames"
+    },
+    {
+     "label": "Википедија:Пренос чланака/Renfrewshire",
+     "lang": "sr",
+     "source": "geonames"
+    },
+    {
+     "label": "ರೆನ್ಫ್ರೂಷೈರ್",
+     "lang": "kn",
+     "source": "geonames"
+    },
+    {
+     "label": "رينفروشاير",
+     "lang": "arz",
+     "source": "geonames"
+    },
+    {
+     "label": "ரேண்பிரயூஷிர்",
+     "lang": "ta",
+     "source": "geonames"
+    },
+    {
+     "label": "રેનફ્ર્યુશાયર",
+     "lang": "gu",
+     "source": "geonames"
+    },
+    {
+     "label": "రెన్ ఫ్రెవ్ షైర్",
+     "lang": "te",
+     "source": "geonames"
+    },
+    {
+     "label": "רנפרושייר",
+     "lang": "he",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Remfrew",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2639494",
+   "wikidata_qid": "Q20723659"
+  },
+  "RSS": {
+   "name": "Ross-shire",
+   "variants": [
+    {
+     "label": "County of Ross",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Ross",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "RSS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ROC",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Ros",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Rois",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Ross",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q978599"
+  },
+  "RTL": {
+   "name": "Rutland",
+   "variants": [
+    {
+     "label": "County of Rutland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Rut",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "RTL",
+     "lang": "und",
+     "source": "hcs-code"
+    }
+   ]
+  },
+  "RXB": {
+   "name": "Roxburghshire",
+   "variants": [
+    {
+     "label": "County of Roxburgh",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Roxb",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "RXB",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "ROX",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Roxburgh County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Teviotdale",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Rosbrog",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Rosbrog",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Roxburgh",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Roxburgh",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2639033",
+   "wikidata_qid": "Q664892"
+  },
+  "SFF": {
+   "name": "Suffolk",
+   "variants": [
+    {
+     "label": "County of Suffolk",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Suff",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "SFF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SFK",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "サフォーク",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "서퍽 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Саффолк",
+     "lang": "ru",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2636561",
+   "wikidata_qid": "Q67574715"
+  },
+  "SHP": {
+   "name": "Shropshire",
+   "variants": [
+    {
+     "label": "County of Salop",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Salop",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "SHP",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SAL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Shropshire",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2638655"
+  },
+  "SHT": {
+   "name": "Shetland",
+   "variants": [
+    {
+     "label": "County of Shetland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Zetland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "SHT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SHI",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "SKK": {
+   "name": "Selkirkshire",
+   "variants": [
+    {
+     "label": "County of Selkirk",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Selk",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "SKK",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SEL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Selkirk County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Ettrick Forest",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Shalcraig",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Salcraig",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Selkirk",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2638228",
+   "wikidata_qid": "Q1247396"
+  },
+  "SMS": {
+   "name": "Somerset",
+   "variants": [
+    {
+     "label": "County of Somerset",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Somersetshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Somer",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "Som",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "SMS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "Comtat de Somerset",
+     "lang": "ca",
+     "source": "geonames"
+    },
+    {
+     "label": "Gwlad yr Haf",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "サマセット州",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "Gwlas an Hav",
+     "lang": "kw",
+     "source": "geonames"
+    },
+    {
+     "label": "Somersetensis comitatus",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Сомерсет",
+     "lang": "ru",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2637532",
+   "wikidata_qid": "Q67461071"
+  },
+  "SRL": {
+   "name": "Sutherland",
+   "variants": [
+    {
+     "label": "County of Sutherland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Suther",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "SRL",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SUT",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Cataibh",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Sutherland",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q1061313"
+  },
+  "STF": {
+   "name": "Staffordshire",
+   "variants": [
+    {
+     "label": "County of Stafford",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Staffs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "STF",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "STS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Staffordshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Stafford",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Stafford",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2637141",
+   "wikidata_qid": "Q67574558"
+  },
+  "STL": {
+   "name": "Stirlingshire",
+   "variants": [
+    {
+     "label": "County of Stirling",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Stirl",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "STL",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "STI",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Siorrachd Shruighlea",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Sterling",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q1229763"
+  },
+  "SUR": {
+   "name": "Surrey",
+   "variants": [
+    {
+     "label": "County of Surrey",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "SUR",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SRY",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ],
+   "geonames_place_id": "gn:2636512",
+   "wikidata_qid": "Q67443130"
+  },
+  "SUS": {
+   "name": "Sussex",
+   "variants": [
+    {
+     "label": "County of Sussex",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "SUS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "SSX",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ],
+   "wikidata_qid": "Q23346"
+  },
+  "TYN": {
+   "name": "Tyrone",
+   "variants": [
+    {
+     "label": "County of Tyrone",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County Tyrone",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Tyr",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "TYN",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "Co. Thír Eoghain",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Thír Eoghain",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Tír Eoghain",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Chontae Thír Eoghain",
+     "lang": "ga",
+     "source": "wikidata"
+    },
+    {
+     "label": "Co. Tyrone",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Contae Thír Eoghain",
+     "lang": "gd",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Tyrone",
+     "lang": "cy",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q192229"
+  },
+  "WGT": {
+   "name": "Wigtownshire",
+   "variants": [
+    {
+     "label": "County of Wigtown",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Wigtown",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "WGT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WIG",
+     "lang": "und",
+     "source": "chapman-code"
+    }
+   ]
+  },
+  "WLT": {
+   "name": "West Lothian",
+   "variants": [
+    {
+     "label": "County of Linlithgow",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "County of West Lothian",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Linlithgowshire",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "W Loth",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "WLT",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WLN",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Linlithgow",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "West Lothian County",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Западный Лотиан",
+     "lang": "ru",
+     "source": "geonames"
+    },
+    {
+     "label": "Západní Lothian",
+     "lang": "cs",
+     "source": "geonames"
+    },
+    {
+     "label": "Vakarų Lodianas",
+     "lang": "lt",
+     "source": "geonames"
+    },
+    {
+     "label": "Lothian Occidentale",
+     "lang": "it",
+     "source": "geonames"
+    },
+    {
+     "label": "West Loðene",
+     "lang": "ang",
+     "source": "geonames"
+    },
+    {
+     "label": "Западен Лоудиън",
+     "lang": "bg",
+     "source": "geonames"
+    },
+    {
+     "label": "Gorllewin Lothian",
+     "lang": "cy",
+     "source": "geonames"
+    },
+    {
+     "label": "Mendebaldeko Lothian",
+     "lang": "eu",
+     "source": "geonames"
+    },
+    {
+     "label": "لوتیان غربی",
+     "lang": "fa",
+     "source": "geonames"
+    },
+    {
+     "label": "Länsi-Lothian",
+     "lang": "fi",
+     "source": "geonames"
+    },
+    {
+     "label": "Labhaidh Thoir",
+     "lang": "ga",
+     "source": "geonames"
+    },
+    {
+     "label": "Lodainn an Iar",
+     "lang": "gd",
+     "source": "geonames"
+    },
+    {
+     "label": "Lodainn Heear",
+     "lang": "gv",
+     "source": "geonames"
+    },
+    {
+     "label": "ウェスト・ロージアン",
+     "lang": "ja",
+     "source": "geonames"
+    },
+    {
+     "label": "웨스트로디언 주",
+     "lang": "ko",
+     "source": "geonames"
+    },
+    {
+     "label": "Lithgoana",
+     "lang": "la",
+     "source": "geonames"
+    },
+    {
+     "label": "Западен Лотијан",
+     "lang": "mk",
+     "source": "geonames"
+    },
+    {
+     "label": "ویسٹ لوتھیان",
+     "lang": "pnb",
+     "source": "geonames"
+    },
+    {
+     "label": "Wast Lowden",
+     "lang": "sco",
+     "source": "geonames"
+    },
+    {
+     "label": "Zapadni Lothian",
+     "lang": "hbs",
+     "source": "geonames"
+    },
+    {
+     "label": "Західний Лотіан",
+     "lang": "uk",
+     "source": "geonames"
+    },
+    {
+     "label": "مغربی لوتھین",
+     "lang": "ur",
+     "source": "geonames"
+    },
+    {
+     "label": "西洛锡安",
+     "lang": "zh",
+     "source": "geonames"
+    },
+    {
+     "label": "Siorrachd Ghlinn Iucha",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2634354",
+   "wikidata_qid": "Q67317108"
+  },
+  "WML": {
+   "name": "Westmorland",
+   "variants": [
+    {
+     "label": "County of Westmorland",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Westm",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "Westmld",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "WML",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WES",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Westmoreland",
+     "lang": "en",
+     "source": "wikidata"
+    }
+   ],
+   "wikidata_qid": "Q23326"
+  },
+  "WRC": {
+   "name": "Worcestershire",
+   "variants": [
+    {
+     "label": "County of Worcester",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Worcs",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "WRC",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WOR",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Worcestershire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Wigorn",
+     "lang": "en",
+     "source": "wikidata"
+    },
+    {
+     "label": "Swydd Gaerwrangon",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Worcester",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2633560",
+   "wikidata_qid": "Q67575442"
+  },
+  "WRW": {
+   "name": "Warwickshire",
+   "variants": [
+    {
+     "label": "County of Warwick",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Warks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "Warws",
+     "lang": "en",
+     "source": "curated-abbr"
+    },
+    {
+     "label": "WRW",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WAR",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Warwickshire",
+     "lang": "und",
+     "source": "geonames"
+    },
+    {
+     "label": "Swydd Warwick",
+     "lang": "cy",
+     "source": "wikidata"
+    },
+    {
+     "label": "Siorrachd Warwick",
+     "lang": "gd",
+     "source": "wikidata"
+    }
+   ],
+   "geonames_place_id": "gn:2634723",
+   "wikidata_qid": "Q67575123"
+  },
+  "WTS": {
+   "name": "Wiltshire",
+   "variants": [
+    {
+     "label": "County of Wilts",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Wilts",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "WTS",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "WIL",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "County of Wiltshire",
+     "lang": "und",
+     "source": "geonames"
+    }
+   ],
+   "geonames_place_id": "gn:2633868",
+   "wikidata_qid": "Q67575300"
+  },
+  "YRK": {
+   "name": "Yorkshire",
+   "variants": [
+    {
+     "label": "County of York",
+     "lang": "en",
+     "source": "hcs-schedule1"
+    },
+    {
+     "label": "Yorks",
+     "lang": "en",
+     "source": "hcs-abbr"
+    },
+    {
+     "label": "YRK",
+     "lang": "und",
+     "source": "hcs-code"
+    },
+    {
+     "label": "YKS",
+     "lang": "und",
+     "source": "chapman-code"
+    },
+    {
+     "label": "Yorkshire, West Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "West Riding of Yorkshire",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorkshire West Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorks, West Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorkshire, East Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "East Riding of Yorkshire",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorkshire East Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorks, East Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorkshire, North Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "North Riding of Yorkshire",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorkshire North Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    },
+    {
+     "label": "Yorks, North Riding",
+     "lang": "en",
+     "source": "riding-qualified"
+    }
+   ]
+  }
+ }
+}
