@@ -54,10 +54,13 @@ class _Staged:
 
 class TestRefresh(unittest.TestCase):
     def test_names_are_copied_and_enrichment_survives(self):
-        enriched = {"h3_cover": ["8a1f"], "geom_ref": "ukhc:SMS_0"}
+        # geom_ref is written at extract time and survives downstream, so both
+        # stages carry it — as the real ukhc snapshots do.
         with _Staged(
-            [_doc("ukhc:SMS", ["Somerset@en", "Somersetshire@en"])],
-            [_doc("ukhc:SMS", ["Somerset@en"], geom_extra=enriched,
+            [_doc("ukhc:SMS", ["Somerset@en", "Somersetshire@en"],
+                  geom_extra={"geom_ref": "ukhc:SMS_0"})],
+            [_doc("ukhc:SMS", ["Somerset@en"],
+                  geom_extra={"h3_cover": ["8a1f"], "geom_ref": "ukhc:SMS_0"},
                   ccodes=["GB"], area_km2=4171.0)],
         ) as s:
             self.assertEqual(rsn.refresh("ukhc", execute=True), 0)
@@ -131,16 +134,43 @@ class TestItRefusesWhenTheAssumptionIsFalse(unittest.TestCase):
             self.assertEqual(s.final()[0]["geometries"][0]["coordinates"],
                              [[[0, 0], [0, 1], [1, 1], [0, 0]]])
 
-    def test_enrichment_only_geometry_keys_are_not_a_change(self):
-        # The extract stage cannot know h3_cover/geom_ref; their absence upstream
-        # must not read as "the geometry moved".
+    def test_stage_only_geometry_keys_are_not_a_change(self):
+        # h3_cover/h3_centroid exist only downstream, `hull` only upstream.
+        # Neither asymmetry means the geometry moved.
         with _Staged(
-            [_doc("ukhc:SMS", ["Somerset@en", "Somersetshire@en"])],
+            [_doc("ukhc:SMS", ["Somerset@en", "Somersetshire@en"],
+                  geom_extra={"hull": {"type": "Polygon", "coordinates": []}})],
             [_doc("ukhc:SMS", ["Somerset@en"],
-                  geom_extra={"h3_cover": ["8a1f"], "geom_ref": "x", "bounds": [0, 0, 1, 1]})],
+                  geom_extra={"h3_cover": ["8a1f"], "h3_centroid": "8a1f"})],
         ) as s:
             self.assertEqual(rsn.refresh("ukhc", execute=True), 0)
             self.assertEqual(len(s.final()[0]["toponyms"]), 2)
+
+    def test_explicit_nulls_are_not_a_change(self):
+        # Downstream materialises absent optional fields as nulls; treating that
+        # as a difference made the guard fire on all 92 real ukhc docs.
+        with _Staged(
+            [_doc("ukhc:SMS", ["Somerset@en", "Somersetshire@en"],
+                  geom_extra={"timespans": [{"start": {"latest": 1974}}]})],
+            [_doc("ukhc:SMS", ["Somerset@en"],
+                  geom_extra={"timespans": [{"start": {"latest": 1974, "in": None}}]})],
+        ) as s:
+            self.assertEqual(rsn.refresh("ukhc", execute=True), 0)
+
+    def test_a_moved_geom_store_key_stops_the_run(self):
+        # geom_ref IS compared — it is the identity of the stored polygon.
+        with _Staged(
+            [_doc("ukhc:SMS", ["Somerset@en"], geom_extra={"geom_ref": "ukhc:SMS_1"})],
+            [_doc("ukhc:SMS", ["Somerset@en"], geom_extra={"geom_ref": "ukhc:SMS_0"})],
+        ):
+            self.assertEqual(rsn.refresh("ukhc", execute=True), 2)
+
+    def test_a_moved_repr_point_stops_the_run(self):
+        with _Staged(
+            [_doc("ukhc:SMS", ["Somerset@en"], geom_extra={"repr_point": [1.0, 2.0]})],
+            [_doc("ukhc:SMS", ["Somerset@en"], geom_extra={"repr_point": [9.0, 9.0]})],
+        ):
+            self.assertEqual(rsn.refresh("ukhc", execute=True), 2)
 
     def test_a_missing_stage_is_an_error_not_a_silent_noop(self):
         with _Staged([_doc("ukhc:SMS", ["Somerset@en"])], []) as s:

@@ -54,10 +54,20 @@ from processing.settings import STAGED_BASE_DIR
 #: them — nothing spatial, nothing temporal, nothing derived.
 NAME_FIELDS = ("toponyms", "title", "links")
 
-#: Per-geometry keys the extract stage cannot produce, so a difference in them
-#: is expected and must NOT count as "the geometry changed".
-ENRICHMENT_GEOM_KEYS = {"h3_cover", "h3_centroid", "geom_ref", "bounds",
-                        "repr_point", "area_km2"}
+#: Per-geometry keys that legitimately differ between the two stages, so a
+#: difference in them must NOT count as "the geometry changed":
+#:
+#:   h3_cover / h3_centroid  the extract stage cannot compute them — that is the
+#:                           whole point of h3_stage;
+#:   hull                    the reverse: an extract-stage artefact (the convex
+#:                           hull H3 falls back to), consumed and dropped
+#:                           downstream.
+#:
+#: Everything else IS compared, deliberately including ``geom_ref`` (the geom
+#: store key, i.e. the identity of the polygon itself), ``bounds`` and
+#: ``repr_point`` — all three are produced at extract time, so comparing them
+#: turns this into a real check on the geometry rather than a formality.
+STAGE_ONLY_GEOM_KEYS = {"h3_cover", "h3_centroid", "hull"}
 
 
 def _read_jsonl(path: Path) -> dict[str, dict]:
@@ -74,11 +84,28 @@ def _read_jsonl(path: Path) -> dict[str, dict]:
     return docs
 
 
+def _drop_nulls(value):
+    """Recursively remove null-valued keys.
+
+    Downstream stages round-trip a doc through a schema that materialises absent
+    optional fields as nulls, so ``{"start": {"latest": 1974}}`` comes back as
+    ``{"start": {"latest": 1974, "in": None}}``. Those assert the same thing, and
+    treating them as a difference would make the guard fire on every doc — which
+    is exactly what it did before this normalisation.
+    """
+    if isinstance(value, dict):
+        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_nulls(v) for v in value]
+    return value
+
+
 def _comparable_geoms(doc: dict) -> list[dict]:
-    """A doc's geometries with the enrichment-only keys stripped."""
+    """A doc's geometries, normalised so only a real difference shows."""
     out = []
     for g in (doc.get("geometries") or []):
-        out.append({k: v for k, v in g.items() if k not in ENRICHMENT_GEOM_KEYS})
+        out.append(_drop_nulls(
+            {k: v for k, v in g.items() if k not in STAGE_ONLY_GEOM_KEYS}))
     return out
 
 
