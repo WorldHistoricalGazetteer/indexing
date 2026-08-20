@@ -79,6 +79,8 @@ from .es_helpers import (
     apply_lexical_boost as _apply_lexical_boost,
     build_lexical_fuzzy_query as _build_lexical_fuzzy_query,
     apply_lexical_near_miss as _apply_lexical_near_miss,
+    derive_name_forms as _derive_name_forms,
+    VARIANT_SCORE_WEIGHT,
     knn_pass_quality as _knn_pass_quality,
     absolute_confidence as _absolute_confidence,
     KNN_SIMILARITY_FLOOR,
@@ -135,9 +137,9 @@ def _native_types(types) -> list[str] | None:
            if not str(t).strip().lower().startswith("aat:")
            and not str(t).strip().isdigit()]
     return out or None
-# Variant matches are worth marginally less than an equally good match on the
-# primary query: the primary is the value the user actually supplied.
-VARIANT_SCORE_WEIGHT = 0.9
+# ``VARIANT_SCORE_WEIGHT`` now lives in es_helpers (re-exported above) so
+# /api/search applies the identical discount to its own derived forms. It is a
+# hard floor, not a preference — see the constant's own note.
 
 
 
@@ -334,6 +336,12 @@ class ReconcileResponse(BaseModel):
     namespaces_searched: list[str] = []
     scope: Optional[ScopeInfo] = None  # geographic-scope diagnostics (when scope requested)
     variants_used: list[str] = []  # name variants actually queried in discovery (post-cap)
+    # Name forms the GATEWAY derived from `query` and queried alongside it —
+    # bracketed qualifiers are stripped both ways (place#199). Reported
+    # separately from `variants_used` so a caller can see what was tried on its
+    # behalf without that being confused with what it asked for. Empty unless
+    # the query contained brackets.
+    derived_forms: list[str] = []
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     # Offline calibration fuel — populated when include_clustering_fields=True
     clustering_params: Optional[dict] = None
@@ -574,6 +582,21 @@ async def reconcile_search(req: ReconcileRequest):
 
     variants, variant_vectors = _normalise_variants(req) if has_query else ([], [])
 
+    # Forms the gateway derives itself. A bracketed qualifier is editorial
+    # apparatus, never part of an indexed toponym, so the raw cell value is the
+    # one string guaranteed not to match (place#199) — and a caller that sends no
+    # `variants` had no way to reach the record at all. Deduped against the
+    # primary and the caller's own variants (so Map your Data, which already
+    # derives these client-side, pays nothing), and held inside the same
+    # MAX_VARIANTS budget so the discovery fan-out cannot grow past it.
+    derived_forms: list[str] = []
+    if has_query:
+        headroom = MAX_VARIANTS - len(variants)
+        if headroom > 0:
+            known = {req.query.strip().casefold()} | {v.casefold() for v in variants}
+            derived_forms = [f for f in _derive_name_forms(req.query)
+                             if f.casefold() not in known][:headroom]
+
     auth = _es_auth()
 
     # Build inclusion prefixes when a positive namespace filter is given
@@ -663,6 +686,13 @@ async def reconcile_search(req: ReconcileRequest):
                     (form, vec, VARIANT_SCORE_WEIGHT)
                     for form, vec in zip(variants, variant_vectors)
                 ]
+                # Gateway-derived forms ride the same channel, at the same
+                # weight: a form derived here is the same kind of evidence as one
+                # the client derived, and the tier arithmetic leaves no room
+                # below 0.9 anyway (see VARIANT_SCORE_WEIGHT). No client vector
+                # exists for them, so they are embedded server-side.
+                passes += [(form, None, VARIANT_SCORE_WEIGHT)
+                           for form in derived_forms]
                 bodies = [
                     (_build_phonetic_knn(form, k=200, similarity=KNN_SIMILARITY_FLOOR,
                                          query_vector=vec), weight)
@@ -944,6 +974,7 @@ async def reconcile_search(req: ReconcileRequest):
         namespaces_searched=ns_searched,
         scope=scope,
         variants_used=variants,
+        derived_forms=derived_forms,
         edges=edges,
         clustering_params=load_clustering_params() if req.include_clustering_fields else None,
         toponym_stoplist=load_toponym_stoplist() if req.include_clustering_fields else [],

@@ -9,6 +9,7 @@ Extracted from ``reconcile.py`` to avoid duplication.
 from __future__ import annotations
 
 import logging
+import re
 from difflib import SequenceMatcher
 from typing import Optional
 
@@ -123,6 +124,74 @@ def extract_repr_point(src: dict) -> list[float] | None:
             if isinstance(rp, list) and len(rp) == 2:
                 return rp
     return None
+
+
+# ---------------------------------------------------------------------------
+# Server-side name-form derivation (place#199)
+# ---------------------------------------------------------------------------
+
+#: What a variant match is worth relative to an equally good primary match: the
+#: primary is the value the caller actually supplied.
+#:
+#: It is also a HARD FLOOR, not a free parameter. The tier ordering requires
+#: ``LEXICAL_EXACT_BOOST × weight > LEXICAL_FUZZY_BOOST + 1.0`` — an exactly
+#: spelled candidate must outrank the best possible inexact one — which with the
+#: current tiers means ``weight > 0.875``. Anything lower and a primary's
+#: near-miss-plus-phonetic could outrank another form's *exact* match. That is
+#: why a DERIVED form (below) carries the same weight rather than a discounted
+#: one: a gateway-derived form is the same kind of evidence as a client-derived
+#: one, and there is no room beneath 0.9 to express the difference.
+#:
+#: Lives here rather than in reconcile.py so /api/search shares it verbatim.
+VARIANT_SCORE_WEIGHT = 0.9
+
+_BRACKET_PAIR_RE = re.compile(r"[(\[{][^()\[\]{}]*[)\]}]")
+_BRACKET_CHAR_RE = re.compile(r"[()\[\]{}]")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _tidy_form(text: str) -> str:
+    """Collapse whitespace and drop punctuation left dangling by an excision."""
+    return _WHITESPACE_RE.sub(" ", text).strip().strip(" ,;:").strip()
+
+
+def derive_name_forms(query: str) -> list[str]:
+    """Extra name forms to try alongside a bracketed query.
+
+    ``Broxbourn (St. Augustine)`` → ``["Broxbourn", "Broxbourn St. Augustine"]``.
+
+    A parenthetical qualifier is the single most reliable reason a place name
+    fails to match: the brackets are the reporter's editorial apparatus, not part
+    of any indexed toponym, so the raw cell value is the one form guaranteed NOT
+    to be in the index (place#199). Both readings are tried because both occur —
+    the qualifier may be an aside to discard (``Broxbourn``) or part of the name
+    with the brackets as punctuation (``Newcastle (upon Tyne)``).
+
+    This mirrors what Map your Data derives client-side since place#188; forms it
+    already sent dedupe away, so the work is not done twice. It exists for every
+    OTHER caller — ``/api/search``, third-party reconciliation clients — which
+    send the raw string and cannot match anything at all.
+
+    Deliberately narrow: brackets only. Inversion (``Melford, Long``) and
+    de-hyphenation are real cases but each costs another KNN pass and needs its
+    own evidence; they are not smuggled in here.
+
+    Unbalanced brackets degrade gracefully — the pair form finds nothing and
+    drops out, the strip-the-characters form still works. Returns [] for a query
+    with no brackets, so nothing changes for the overwhelming majority.
+    """
+    raw = (query or "").strip()
+    if not raw or not _BRACKET_CHAR_RE.search(raw):
+        return []
+    seen = {raw.casefold()}
+    forms: list[str] = []
+    for candidate in (_tidy_form(_BRACKET_PAIR_RE.sub(" ", raw)),
+                      _tidy_form(_BRACKET_CHAR_RE.sub(" ", raw))):
+        key = candidate.casefold()
+        if candidate and key not in seen:
+            seen.add(key)
+            forms.append(candidate)
+    return forms
 
 
 # ---------------------------------------------------------------------------

@@ -45,6 +45,8 @@ from .es_helpers import (
     build_lexical_exact_query,
     build_lexical_fuzzy_query,
     apply_lexical_near_miss,
+    derive_name_forms,
+    VARIANT_SCORE_WEIGHT,
     knn_pass_quality,
     absolute_confidence,
     KNN_SIMILARITY_FLOOR,
@@ -259,6 +261,10 @@ class SearchResponse(BaseModel):
     # cannot express.
     namespaces: list[str] = []
     namespaces_searched: list[str] = []
+    # Name forms the GATEWAY derived from `query` and searched alongside it —
+    # bracketed qualifiers stripped both ways (place#199). Empty unless the query
+    # contained brackets. The twin of /api/reconcile's field of the same name.
+    derived_forms: list[str] = []
     facets: Facets = Facets()
     edges: list[HardLinkEdge] = []  # hard-link co-reference edges (when include_hard_links=True)
     # Offline calibration fuel — populated when include_clustering_fields=True
@@ -351,6 +357,13 @@ async def search(req: SearchRequest):
         return SearchResponse(namespaces_searched=ns_searched)
     pure_spatial = not has_query
 
+    # Name forms the gateway derives from the query itself. Search has no
+    # `variants` channel, so without these a bracketed query has no route to the
+    # record it names (place#199). Empty for anything unbracketed, so the
+    # overwhelming majority of requests are byte-identical to before.
+    derived_forms = (derive_name_forms(req.query)
+                     if has_query and req.mode in ("fuzzy", "phonetic") else [])
+
     auth = es_auth()
 
     include_prefixes = tuple(f"{ns}:" for ns in req.namespaces) if req.namespaces else ()
@@ -408,53 +421,68 @@ async def search(req: SearchRequest):
                 # `Newton with Scales` is indexed yet never entered the
                 # 200-candidate KNN pool (place#197) — nor "the toponym spelled
                 # ALMOST like this", which was reachable only via whatever the
-                # KNN happened to make of it (place#199). All three run in one
+                # KNN happened to make of it (place#199). All of it runs in one
                 # gather, so the lexical halves cost no extra round-trip and
                 # still answer when Symphonym is unavailable. Kept in step with
                 # /api/reconcile so the two discovery scales cannot drift.
-                knn_body = build_phonetic_knn(req.query, k=200,
-                                              similarity=KNN_SIMILARITY_FLOOR)
+                #
+                # Search has no `variants` channel, so a bracketed query used to
+                # have NO route to the record it names — the brackets are the
+                # asker's apparatus and no toponym is indexed with them. The
+                # gateway derives those forms itself; each gets its own KNN pass
+                # (embedding spaces differ per form, so they cannot be OR-ed)
+                # plus a place in both lexical passes.
+                forms: list[tuple[str, float]] = [(req.query, 1.0)]
+                forms += [(f, VARIANT_SCORE_WEIGHT) for f in derived_forms]
                 lex_body = build_lexical_exact_query(
-                    [req.query], namespaces=req.namespaces or None)
+                    [f for f, _ in forms], namespaces=req.namespaces or None)
                 fz_body = build_lexical_fuzzy_query(
-                    [req.query], namespaces=req.namespaces or None)
-                # ORDER MATTERS on the way back: the phonetic pass sets each
+                    [f for f, _ in forms], namespaces=req.namespaces or None,
+                    variant_weight=VARIANT_SCORE_WEIGHT)
+                # ORDER MATTERS on the way back: the phonetic passes set each
                 # place's base score, the lexical tiers ADD to it.
-                requests = [(kind, body) for kind, body in
-                            (("knn", knn_body), ("near", fz_body), ("exact", lex_body))
-                            if body]
+                requests: list[tuple[str, float, dict]] = []
+                for form, weight in forms:
+                    knn_body = build_phonetic_knn(
+                        form, k=200, similarity=KNN_SIMILARITY_FLOOR)
+                    if knn_body:
+                        requests.append(("knn", weight, knn_body))
+                if fz_body:
+                    requests.append(("near", 1.0, fz_body))
+                if lex_body:
+                    requests.append(("exact", 1.0, lex_body))
                 if requests:
                     responses = await asyncio.gather(*[
                         client.post(
                             f"{ES_BACKEND}/{TOPONYMS_INDEX}/_search",
                             json=body, auth=auth, headers=ES_HEADERS,
                         )
-                        for _, body in requests
+                        for _, _, body in requests
                     ])
-                    for (kind, _), resp in zip(requests, responses):
+                    for (kind, weight, _), resp in zip(requests, responses):
                         resp.raise_for_status()
                         hits = resp.json().get("hits", {}).get("hits", [])
                         if kind == "knn":
-                            # Normalised so the phonetic band tops out at 1.0 and
-                            # the lexical tiers below can sit above it; with a
-                            # single pass that is a monotone rescale and changes
-                            # no ordering. Scaled by the pass's ABSOLUTE quality
-                            # so a query that matched only floor-scraping noise
-                            # says so (place#199 B) — also a monotone rescale
-                            # here, but it is what makes `confidence` mean
-                            # anything.
+                            # Normalised per pass so the phonetic band tops out
+                            # at 1.0 and the lexical tiers can sit above it, and
+                            # because raw cosines to different query vectors are
+                            # not comparable (place#197). Scaled by the pass's
+                            # ABSOLUTE quality so a pass that matched only
+                            # floor-scraping noise says so (place#199 B).
                             collect_place_ids(hits, place_scores, exclude_prefixes,
                                               include_prefixes, match_names,
-                                              score_scale=knn_pass_quality(hits),
+                                              score_scale=weight * knn_pass_quality(hits),
                                               normalise=True)
                         elif kind == "near":
                             apply_lexical_near_miss(
-                                hits, place_scores, {req.query.strip(): 1.0},
+                                hits, place_scores,
+                                {f.strip(): w for f, w in forms},
                                 exclude_prefixes, include_prefixes, match_names)
                         else:
                             apply_lexical_boost(
                                 hits, place_scores,
-                                {req.query.strip().lower(): LEXICAL_EXACT_BOOST},
+                                {f.strip().lower(): LEXICAL_EXACT_BOOST * w
+                                 for f, w in forms},
                                 exclude_prefixes, include_prefixes, match_names)
             else:
                 text_body = build_toponym_query(
@@ -828,6 +856,7 @@ async def search(req: SearchRequest):
         max_score=results[0].score if results else 0,
         namespaces=collect_namespaces(results),
         namespaces_searched=ns_searched,
+        derived_forms=derived_forms,
         facets=facets,
         edges=edges,
         clustering_params=load_clustering_params() if req.include_clustering_fields else None,

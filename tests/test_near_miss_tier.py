@@ -38,7 +38,7 @@ from gateway.es_helpers import (
     name_resemblance,
     rank_candidate_ids,
 )
-from gateway.reconcile import VARIANT_SCORE_WEIGHT
+from gateway.es_helpers import VARIANT_SCORE_WEIGHT, derive_name_forms
 
 
 def _hits(pairs):
@@ -275,6 +275,73 @@ class TestAbsoluteConfidence(unittest.TestCase):
         self.assertEqual(absolute_confidence(-1.0), 0.0)
 
 
+# ---------------------------------------------------------------------------
+# Server-side de-bracketing — the no-variant path
+# ---------------------------------------------------------------------------
+
+class TestDeriveNameForms(unittest.TestCase):
+    """A bracketed qualifier is the asker's apparatus, never part of an indexed
+    toponym, so the raw string is the one form guaranteed not to match."""
+
+    def test_both_readings_of_a_qualifier_are_tried(self):
+        self.assertEqual(derive_name_forms("Broxbourn (St. Augustine)"),
+                         ["Broxbourn", "Broxbourn St. Augustine"])
+
+    def test_a_qualifier_that_is_part_of_the_name_survives(self):
+        # Newcastle upon Tyne is one place; Broxbourn St Augustine is a parish of
+        # another. Which reading is right is not knowable here, so try both.
+        self.assertIn("Newcastle upon Tyne", derive_name_forms("Newcastle (upon Tyne)"))
+
+    def test_an_unbracketed_query_derives_nothing(self):
+        # The overwhelming majority of queries — responses stay byte-identical.
+        self.assertEqual(derive_name_forms("Broxbourne"), [])
+        self.assertEqual(derive_name_forms(""), [])
+        self.assertEqual(derive_name_forms("Minster-in-Sheppy"), [])
+
+    def test_unbalanced_brackets_degrade_gracefully(self):
+        # The pair form finds nothing; stripping the characters still works.
+        self.assertEqual(derive_name_forms("Broxbourn (St. Augustine"),
+                         ["Broxbourn St. Augustine"])
+
+    def test_a_wholly_bracketed_query_yields_its_content(self):
+        # Removing the pair would leave nothing, so only one form survives.
+        self.assertEqual(derive_name_forms("(St. Augustine)"), ["St. Augustine"])
+
+    def test_dangling_punctuation_is_tidied(self):
+        self.assertEqual(derive_name_forms("Melford, (Long)")[0], "Melford")
+
+    def test_square_and_curly_brackets_count(self):
+        self.assertEqual(derive_name_forms("Sarum [Old]"), ["Sarum", "Sarum Old"])
+
+    def test_derived_forms_never_repeat_the_query(self):
+        for q in ("Broxbourn (St. Augustine)", "(Sarum)", "A [B] (C)"):
+            self.assertNotIn(q.casefold(), [f.casefold() for f in derive_name_forms(q)])
+
+    def test_the_reported_row_one_case_now_reaches_the_record(self):
+        """place#199 row 1 — the bracketed query with NO variants supplied.
+
+        The derived form gets a full KNN pass of its own, which is what lifts it
+        past the primary's phonetic noise; the near-miss tier alone could not
+        (0.75 ceiling vs a saturated ~0.93 noise floor).
+        """
+        derived = derive_name_forms("Broxbourn (St. Augustine)")
+        scores = {}
+        # primary pass: noise, but noise sitting high in a saturated space
+        primary = _knn([("Ait Bourzouine", 0.979, ["gn:junk"])])
+        collect_place_ids(primary, scores, score_scale=knn_pass_quality(primary),
+                          normalise=True)
+        # derived pass: the record itself
+        dpass = _knn([("Broxbourne", 0.998, ["gn:good"])])
+        collect_place_ids(dpass, scores,
+                          score_scale=VARIANT_SCORE_WEIGHT * knn_pass_quality(dpass),
+                          normalise=True)
+        apply_lexical_near_miss(
+            _hits([("Broxbourne", ["gn:good"])]), scores,
+            {"Broxbourn (St. Augustine)": 1.0,
+             **{f: VARIANT_SCORE_WEIGHT for f in derived}})
+        self.assertEqual(rank_candidate_ids(scores, 1), ["gn:good"])
+
+
 class TestTierOrderingInvariant(unittest.TestCase):
     """The three tiers must stay strictly ordered, whatever the constants."""
 
@@ -282,6 +349,13 @@ class TestTierOrderingInvariant(unittest.TestCase):
         inexact_ceiling = LEXICAL_FUZZY_BOOST + 1.0        # near-miss + phonetic
         variant_exact = LEXICAL_EXACT_BOOST * VARIANT_SCORE_WEIGHT
         self.assertGreater(variant_exact, inexact_ceiling)
+
+    def test_the_variant_weight_is_a_floor_not_a_preference(self):
+        # Every non-primary form — client variant OR gateway-derived — rides this
+        # weight, and dropping it below the tier arithmetic would let a primary's
+        # near-miss outrank another form's EXACT match. Guard the constant.
+        self.assertGreater(
+            VARIANT_SCORE_WEIGHT, (LEXICAL_FUZZY_BOOST + 1.0) / LEXICAL_EXACT_BOOST)
 
     def test_a_perfect_near_miss_outranks_a_perfect_phonetic_hit(self):
         # ...only in combination: the tier itself is deliberately below 1.0, so

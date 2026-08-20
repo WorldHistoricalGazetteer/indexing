@@ -123,6 +123,19 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     knowing: when an exact match exists the phonetic band falls to ~half of it, so
     junk drops well below Map your Data's auto-confirm threshold instead of
     riding at 99.
+    **Bracketed queries are de-bracketed server-side** (`derive_name_forms`): a
+    parenthetical qualifier is the asker's apparatus and no toponym is indexed
+    with it, so `Broxbourn (St. Augustine)` also runs as `Broxbourn` and
+    `Broxbourn St. Augustine` — each a full pass (KNN + both lexical tiers) at
+    `VARIANT_SCORE_WEIGHT`. Deduped against the caller's own `variants` (so Map
+    your Data, which derives these client-side since place#188, pays nothing) and
+    held inside the `MAX_VARIANTS` budget. Reported back as `derived_forms[]`,
+    distinct from `variants_used[]`. `/api/search` has the same derivation —
+    it is the caller that CAN'T send variants, so it needed it most.
+    ⚠ `VARIANT_SCORE_WEIGHT` (0.9) is a **floor**, not a preference: the tier
+    ordering needs `LEXICAL_EXACT_BOOST × weight > LEXICAL_FUZZY_BOOST + 1.0`,
+    i.e. > 0.875. Discounting derived forms below that would let a primary's
+    near-miss outrank another form's exact match.
     Every tier being absolute is what lets each hit carry **`confidence`** (0–100,
     fuzzy/phonetic only) beside the pool-relative `score`, which is ~100 for the
     top hit even when nothing matched (place#198). ⚠ Do NOT try to derive
