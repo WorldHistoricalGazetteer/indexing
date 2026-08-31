@@ -789,6 +789,55 @@ links. That is the right state to leave it in.
 
 #### Rebuilding the overlay — the runbook, and the number that gates it
 
+### 🛑 THE OVERLAY REBUILD ALSO DEPENDS ON 2.7 — `gn`'s relations are only in its patch
+
+**Found by S3 (`indexing-7e`), 31 Aug. Confirmed here structurally, which is
+stronger than its own empirical proof.** `authorities/geonames-places.py`
+**never emits relations at all** — the grep is empty. `geonames-toponyms.py`
+writes them exclusively as `relations_to_add` into the update patch (`:134-144`).
+So `gn`'s identity relations cannot be in `extract/` by construction, and every
+`gn` edge in the live overlay must have come from the patch.
+
+S3's measurement agrees to the unit: 1,111,147 `sameAs` in `gn/update_patch`,
+1,111,147 overlay rows asserted by `gn`, and **0** relations of any kind across
+`extract/`'s 13,454,817 lines.
+
+**So a harvest run today prints `gn: attempted=0` again** — same symptom as the
+31 Aug near-miss, **different cause**. Then the tree was a one-row stub; now it is
+complete and correct and the relations were never in it. **2.5 was verified by
+document counts, and `gn` reconciles exactly — 13,454,817, delta 0 — while
+contributing nothing the overlay needs.** A namespace can reconcile perfectly on
+doc count and still be empty of the thing a given consumer reads.
+
+**The 🛑 gate will therefore fail, correctly**, at roughly
+7,596,959 − 1,111,147 (`gn`) − ~24,943 (the whg id-map drop, which is the fix
+working) ≈ **6.46 M against a 7.6 M threshold, ~15% short**. That is the gate
+doing its job and the "something *else* is wrong — stop and investigate" case
+firing as designed. It has been investigated; this is the something else.
+
+**Sequence (S3's, and it is clean — not a deadlock):**
+
+1. the current harvest finishes **as a measurement**, publishing nothing — it also
+   exercises the never-run LOC and publish-path prerequisites, which is worth
+   having on its own;
+2. S3 releases S8;
+3. 2.7 runs `update_merge` → `h3_stage` → `h3_merge` → `ccode_merge`;
+4. **re-harvest** from the real `final/` trees;
+5. *then* the gate, and only then a publish decision.
+
+**The overlay publish is not completable until 2.7 lands.**
+
+⚠️ **Correction to this section's own arithmetic, and the error is mine.** The
+figures "`wd` accounts for 7,516,092 and `gn` for 5,092,751" are
+**endpoint-touching** counts — rows where the namespace appears at *either* end —
+which is why they sum past the total. They are correct as measured and wrong for
+the purpose I used them for. The **asserting-source** breakdown is what predicts
+what a harvest produces (S3's measurement, not yet independently reproduced here):
+`wd` 3,968,404 (52.2%), `osm` 2,295,659 (30.2%), `gn` 1,111,147 (14.6%), `ohm`
+98,569, `iv` 68,935, `tm` 25,665, `loc` 1,129, `clio` 248, `og` 222, plus 26,981
+contributor rows. **"`gn` is 67% of the overlay" and "`gn` asserted 14.6% of it"
+are both true and lead to different predictions** — say which you mean.
+
 > ### 🛑 The publish gate
 >
 > **The rebuilt overlay must come out within a few percent of `7,596,959` rows.
