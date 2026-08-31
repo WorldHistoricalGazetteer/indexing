@@ -53,7 +53,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus a test that fails on the pre-change code. | ✅ **DONE** (`554e43a`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first, then jsonl; `except BaseException` removes temps and re-raises. Verified independently here: 16/16 pass, all four call sites on the helper |
+| **S9** | 2.8 | All four priority-chain writers made atomic behind one helper, plus tests that fail on the pre-change code. | ✅ **DONE** (`554e43a` + `e37c93b`) — `atomic_staged_snapshot` at `update_merge:298`, `boundary_merge:157`, `h3_merge:235`, `ccode_merge:181`; parquet renamed first then jsonl; cleanup wrapped so a failing unlink can never mask the failure that caused it. Verified here: 17/17 pass, all four call sites on the helper |
 | **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — reconcile `wd`'s status → `update_merge` → `h3_stage` → `h3_merge` → ccode → `ccode_merge`. **Gates S5 and the overlay publish.** | ◐ **holding — now behind 2.8 (S9) by SG's decision**, and behind the running harvest |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying. ⚠️ Its post-2.7 eligibility re-check is **necessary but not sufficient** — `final/` existing cannot show whether `gn`/`wd`'s update patch landed, because that is a **name** count, not a document count (see 2.7). | ⬜ **BLOCKED on 2.7 (S8)** |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -1946,6 +1946,12 @@ driven flood-stage read-only, which took production down with it.** Rulings:
    has been burned repeatedly by discarding evidence before the dependent thing was
    checked. Delete only after **both** S3's re-harvest and S5's retile have
    consumed the result. At current headroom the cost is affordable.
+
+⚠️ **The temps do NOT double peak for 2.7 — but they will for a re-run** (S9,
+corrected by S8's measurement). `gn`/`wd`/`nl` are extract-only, so every stage 2.7
+writes is a **first** write and peak is one copy. Anyone *re-running* 2.7 over an
+existing `final/` pays temps *plus* the incumbent, roughly double for the largest
+namespace. The projection above is for the first run; a re-run needs re-sizing.
 
 ⚠️ **A hard stop-line, since the projection is a projection.** Abort and clean up
 if `/vast` free drops below **100 GB** — well above the ~51 GB at which the volume
