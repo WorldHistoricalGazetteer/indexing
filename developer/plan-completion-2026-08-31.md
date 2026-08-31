@@ -762,6 +762,33 @@ Verified by Slurm 11074356, which calls the pipeline's **own** resolvers
 reimplementation of them, and additionally asserts the last line parses as JSON —
 a truncated JSONL counts fine, so a line count alone cannot see it.
 
+**Is anything ELSE quietly degraded? No — asked and answered, 31 Aug (S4).** Once
+it was established that the accident's blast radius was larger than recorded, the
+open question became whether a fourth namespace had gone quiet without anyone
+noticing — which is really the question of whether 2.5 is *complete*, so it was
+worth settling rather than tracking. Comparing the staged census (Slurm 11074343,
+taken **before** any restore) against the live index's per-namespace counts:
+
+* **24 of 27 namespaces match the live index exactly** — `osm` 20,622,228,
+  `tgn` 2,991,143, `gb` 1,174,449, `ohm` 945,156, `whg` 228,918, … down to
+  `vob_rc` 55. Not "close": equal, every one.
+* **3 are damaged, and they are the three already known** — `gn` (1 row),
+  `wd` (1 row), `nl` (absent).
+
+And the arithmetic closes: 26,269,329 staged today, less the 2 stub rows, plus
+the three real counts (13,454,817 + 11,459,393 + 4,363) = **51,187,900 — exactly
+the live index total**. So when `gn` lands, the staged corpus should reconcile to
+the index to the document, and that equality is a stronger completion test for
+2.5 than three separate per-namespace checks.
+
+⚠️ One residual, deliberately not chased: the 4 Aug stage-1 run scanned
+**51,188,772**, which is **872 more** than the index holds today. Small, and
+plausibly ordinary churn since, but it means **51,188,772 is the wrong target to
+restore to** — take the target from the live index at the time, not from that log
+line. (This is the same failure the `gn` "~11.6 M" figure would have caused,
+arriving from a different direction: a stale number that looks authoritative
+because it was once measured.)
+
 Three notes for whoever finishes or repeats this:
 
 * The `wd` promotion was done with **hard links**, not a copy: `/vast/ishi` is one
