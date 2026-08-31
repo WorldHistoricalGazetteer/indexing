@@ -39,7 +39,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 |---|---|---|---|
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ⬜ |
-| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ⬜ |
+| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **in progress 31 Aug** — code done (`4d763b8`), extract done + verified (228,918 docs, id map 1:1, `yukon100` probe passes); geom merge held behind S2; nothing written to prod ES yet |
 | **S4** | 2.6, then 2.5 | Submit the ~9 h toponyms stage 1 **first**, then do the `gn` extract / `wd` promotion while it runs. If stage 1 has not finished, **verify it at the head of the next session** rather than holding one open. | ⬜ |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -278,6 +278,77 @@ endpoint in the rebuilt overlay resolves in the index (today 2,734 of 13,466 do 
 the post-fix number must be 100% of what survives the join, with the drop
 counted); and the run's `no_src_id` / `duplicate_src_id` counters are reported,
 not swallowed.
+
+#### S3 progress — 31 August 2026
+
+Run id **`whg-idmap-20260831T071935Z`**. Code in `4d763b8`.
+
+**Corrections to this section, measured rather than assumed.**
+
+*The geom-store sub-step above is wrong, and its replacement is larger.* There
+were never any old `whg:` keys to become garbage: `index.sqlite` holds **0** of
+them (11,758,768 total). The cause is a defect in the extract, not in the id
+change — `authorities/whg-places.py` passed `geom_key` to `enrich_geometry`
+without ever calling `configure_module_writer`, and `enrich_geometry` writes only
+when a module writer is configured, so every whg geometry was dropped on the
+floor from the first ingest. **Never written, not lost.** Fourteen other
+authorities configure the writer; `grep -L configure_module_writer` over the
+authorities that compute geometry is the check that finds this class (it also
+finds `og` — see §4.1). SG approved fixing it inside this step. The re-extract
+therefore writes **9,849** geometries, which is four times the 2,320 the
+`geom_class` aggregation suggests: `enrich_geometry` stores anything that is not
+a bare `Point`, while `geom_class` folds MultiPoint into `point`, so about 7,529
+MultiPoint places had been keeping one `repr_point` and discarding every other
+member point.
+
+*The attestation source needed handling and this section did not name it.*
+`contributor_replay` has a third query, `_ACTIVE_ATTESTATION_QUERY`, whose ids
+Django minted rather than this repo. The two errors are not symmetric — leaving a
+legacy id alone yields a dangling edge, but rewriting an already-current one
+corrupts a good edge — so the code reconciles instead of choosing:
+`WhgIdMap.resolve_legacy_id` tests "already current" **first** and
+unconditionally, translates only an unrecognised legacy form, drops anything that
+is neither, and tallies the dispositions per run. Measured on the published
+overlay, that path is currently dormant: all 26,981 contributor rows carry
+`:legacy_v3_2`, so the live flow has contributed nothing yet and no measurement
+could have settled the question — which is the case for reconciling rather than
+guessing.
+
+**Baseline, reproduced independently before any change** (`_mget` of every
+overlay endpoint against the live index): 13,466 distinct `whg:` endpoints,
+**2,734 resolve, 10,732 dangle**, 89 datasets referenced, 51 with dangling refs.
+Two refinements the bare count hides: only **38 of the 48** indexed whg datasets
+appear among the resolving endpoints, so the shortfall is not uniform; and every
+one of the 13,466 has exactly **three** segments, none in the four-segment
+duplicate form — so nothing in today's overlay can be mistaken for a current-form
+id by a prefix test, which is the assumption a future reader is most likely to
+make silently. The resolving-id list is kept so the post-fix comparison can be
+endpoint-by-endpoint rather than by count.
+
+**Extract — done, Slurm 11074319, COMPLETED in 5:54.**
+
+| check | result |
+|---|---|
+| docs written / skipped | 228,918 / 0 — exactly the 228,918 whg docs in prod |
+| distinct place_ids | 228,918 — the new id rule collides on nothing |
+| id-map records | 228,918 + 1 run stamp; **staged-not-mapped 0, mapped-not-staged 0** |
+| `no_src_id` / `duplicate_src_id` | **0 / 0** across all 48 datasets |
+| the `yukon100` probe | map holds `1052 / 6954931 → whg:1052:8` ✅ |
+| `geom_class` | point 213,081 / area 1,248 / line 1,072 — identical to prod |
+| geometries staged for the store | **9,849** (was 0) |
+| places with ccodes | 224,118 (prod holds 224,232 — 114 fewer, upstream drift since 6 Aug, not a regression of this run) |
+
+Worth recording because it cuts against the argument for the map: **both id edge
+cases are empty in today's corpus**, so the rule is momentarily reproducible in
+SQL. That is an accident of the current data, not a property of the rule — the
+duplicate case still turns on stream order the moment one contributor re-uploads
+a dataset with a repeated `src_id`.
+
+**Remaining in this step:** geom merge (serialised behind S2, who owns the store
+this session — my staging is at `/vast/ishi/geom/staging_whg_s3`, deliberately
+outside the directory `consolidate_geom_store` scans) → h3 chain → `final/` →
+`index_namespace --replace` on pitt → Symphonym backfill for new toponyms →
+overlay rebuild → registry push from CRC (the token is unreadable from pitt).
 
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
