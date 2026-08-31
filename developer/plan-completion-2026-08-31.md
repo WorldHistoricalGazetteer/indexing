@@ -53,7 +53,8 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
 | **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ✅ **2.5 COMPLETE & VERIFIED** 31 Aug (S4 closed; verified from `indexing-5e`). 2.6 ⬜ not started |
-| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying — the deploy destroys its own evidence. | ⬜ **BLOCKED — `gn`/`wd`/`nl` have no `final/`**, so the submitter would silently drop them (see 2.5 correction). Not a 2.5-completeness question: a stage-depth one |
+| **S8** | 2.7 | Give `gn`/`wd`/`nl` a real `final/` — `h3_stage` → `h3_merge` → ccode → `ccode_merge`. The correct route, not the fast one: `wd`/`nl` get genuine ccode enrichment. **Gates S5.** | ⬜ not started |
+| **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. Prove the verifier FAILS on the preserved fixtures before deploying — the deploy destroys its own evidence. | ⬜ **BLOCKED on 2.7 (S8)** — `gn`/`wd`/`nl` have no `final/`, so the submitter would silently drop them |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
 
@@ -1286,6 +1287,74 @@ not a resume** — no idempotency question, and the named check is sufficient.
 
 After a successful run, the history self-corrects — but only for the next run,
 which is no help to this one.
+
+---
+
+### 2.7 Give `gn` / `wd` / `nl` a real `final/` — **S8**  ⚠️ GATES S5
+
+**Why:** `submit_tiles_slurm._eligible_buckets` requires `final/places.{parquet,jsonl}`
+per per-namespace bucket and otherwise bare-`continue`s, and these three have only
+`extract/`. A retile today would tile 24 buckets, report success and omit the
+largest gazetteer in the corpus. 2.5 restored the *data*; this restores the
+*stage depth* (see the 2.5 correction).
+
+**SG chose the correct route over the fast one (31 Aug): index-adequate, not
+merely tile-adequate.** Tiles carry no ccodes, so a pass-through `final/` would
+have unblocked S5 with nothing rendered wrong — but `final/` is what a future
+rebuild indexes from, and for `wd` a pass-through would bank a regression against
+the live index's 97.3% ccode coverage. Measured on the staged extracts:
+
+| ns | docs | ccodes in extract | h3_cover in extract |
+|---|---:|---|---|
+| `gn` | 13,454,817 | 20,000 / 20,000 sampled — **native**, GeoNames carries them | none |
+| `wd` | 11,459,393 | **25 / 20,000** sampled | none |
+| `nl` | 4,363 | **0 / 4,363** | none |
+
+So all three need real `h3_stage` work (unlike `un`, whose extract already had
+h3), and `wd`/`nl` need genuine ccode enrichment rather than a pass-through.
+
+**The chain, which is the standard one — nothing bespoke:**
+
+```
+h3_stage → h3_merge → submit_ccode_slurm → ccode_merge → final/
+```
+
+`ccode` requires a **completed `h3_merge`** (`_pending_namespaces`), so the order
+is not negotiable. `ccode_merge` is the only writer of `final/`.
+
+⚠️ **Do NOT run `processing.apply_ccode_patch`.** It writes the **LIVE index** in
+place. This step's entire output is `final/` on `/vast`; production already has
+these ccodes and needs nothing from it. The patch this step produces is an input
+to `ccode_merge`, not to prod.
+
+⚠️ **Set `--wall-hours` explicitly.** `estimate_wall_time_seconds` medians past
+runs, and its own docstring records why that misleads here: the
+BNDA→geoBoundaries move took country outlines from 232 to 73,663 vertices and
+made ccode roughly 5× dearer. This is Fault 13, which already killed `clio` and
+`ohm` mid-run on a stale median. `--namespaces gn,wd,nl` exists for the same
+family of reasons and should be used rather than relying on eligibility.
+
+⚠️ **Confirm the shared clone was pulled** (`indexing-7e` was asked to; verify
+rather than assume — it reports itself current when it is not).
+
+**Cost, honestly:** `wd` alone is ~11.5 M documents needing spatial ccode
+resolution, comparable to the whole of the previous corpus-wide pass. Hours, and
+plausibly many of them. `gn`'s h3 stage streams a 7.4 GB JSONL. Size generously;
+Slurm wall time is a ceiling, not a reservation.
+
+**Verify — and note what 2.5's check could not see.** Row counts alone are
+satisfied at `extract` depth exactly as at `final` depth; that is precisely how
+this defect survived a PASS. So check all three properties:
+
+1. **Stage depth** — `submit_tiles_slurm`-side: `final/places.{parquet,jsonl}`
+   exists for each. And resolver-side, using the pipeline's own function, that
+   `_staged_namespace_source(ns)` now returns a path under `final/`.
+2. **Counts unchanged** — 13,454,817 / 11,459,393 / 4,363, delta 0 against the
+   live index, so the chain moved the data rather than losing some of it.
+3. **ccode coverage in `final/` matches the live index per namespace** — `wd`
+   ~97.3%, `gn` ~99.9%, `nl` measured at the time. This is the property that
+   distinguishes the correct route from the fast one, so it is the one that must
+   be measured rather than assumed.
 
 ---
 
