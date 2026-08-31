@@ -37,7 +37,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 
 | session | steps | shape of the work | status |
 |---|---|---|---|
-| **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ⬜ |
+| **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ⬜ |
 | **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ⬜ |
 | **S4** | 2.6, then 2.5 | Submit the ~9 h toponyms stage 1 **first**, then do the `gn` extract / `wd` promotion while it runs. If stage 1 has not finished, **verify it at the head of the next session** rather than holding one open. | ⬜ |
@@ -90,8 +90,8 @@ fresh as the last session that remembered to tick one.
 
 | # | action | verify |
 |---|---|---|
-| 1.1 | `rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` (**57 GB**) — SG-approved. It is unreadable (index truncated to 2 rows, shards keyless), so it is insurance in name only | `/ix1` free space rises ~57 GB |
-| 1.2 | `rm -rf /vast/ishi/geom_rebuild/staging /vast/ishi/geom_rebuild/staging_pending` (**22 GB**) — redundant since the 9 Aug merge. ⚠️ **Read the path twice.** These are under `geom_rebuild/`. `GEOM_STORE_STAGING_DIR` is `/vast/ishi/geom/staging` — a *different* directory, and it is S2's live input while 2.1 runs. Deleting that one mid-run destroys the extract | live store still reports 11,758,768 rows |
+| 1.1 | ✅ **done 31 Aug.** `rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` (**57 GB**) — SG-approved. It is unreadable (index truncated to 2 rows, shards keyless), so it is insurance in name only | `crc-quota` group `ishi`: ix1 **3.24 TB → 3.18 TB**. Confirmed unreadable before deleting rather than trusting the README: `index.sqlite` held 2 rows, `index.json` 145 bytes naming only `un:fra_0` / `un:esp_0` |
+| 1.2 | ✅ **done 31 Aug.** `rm -rf /vast/ishi/geom_rebuild/staging /vast/ishi/geom_rebuild/staging_pending` (**22 GB**) — redundant since the 9 Aug merge. ⚠️ **Read the path twice.** These are under `geom_rebuild/`. `GEOM_STORE_STAGING_DIR` is `/vast/ishi/geom/staging` — a *different* directory, and it is S2's live input while 2.1 runs. Deleting that one mid-run destroys the extract | vast **759.5 GB → 737.8 GB**; live store still **11,758,768** rows with per-namespace counts unmoved. "Redundant" was **measured, not assumed**: 1,373 keys sampled across all 82 small staging index files resolve in `index.sqlite`, 0 missing, plus the leading keys of the two large `osm`/`ohm` files. `/vast/ishi/geom/staging` untouched (still held S2's `ukhc_counties.*` at the time) |
 
 **Do NOT yet delete** `/vast/ishi/tiles-verify` (17 GB) or
 `/ix1/ishi/data/tiles/_step0` (2.7 GB) — the `ohm` band `.geojsonl` files in them
@@ -135,14 +135,51 @@ only as a Phase 3 precondition.
 
 ### 2.2 Gateway — an unresolvable scope must fail closed (audit §2b)  — **S1**
 
-`contained_in: ["un:not_a_real_place"]` currently returns Paris in Turkey and
-Gabon with `scope: null`. Two fixes in `search.py` / `reconcile.py`:
-fail closed when `resolve_region` yields nothing for *every* requested id, and
-populate the `scope` object (it is `null` even on the successful path).
+✅ **Done 31 Aug — `4286a0f`, deployed to prod and verified live.**
 
-**Verify:** the bad-id request returns 0 hits and a `scope` recording why; the
-`un:fra` request still returns its 1 FR hit, with `scope` populated. Add both as
-test cases — this is a silent-wrong-answer class and deserves a regression pin.
+`contained_in: ["un:not_a_real_place"]` returned Paris in Turkey and Gabon with
+`scope: null`. Two fixes in `search.py` / `reconcile.py`: fail closed when
+`resolve_region` yields nothing for *every* requested id, and populate the
+`scope` object (it was `null` even on the successful path).
+
+**Worse than the audit recorded, measured before the fix.** The bad-id request
+did not merely return *some* wrong hits: it returned the **byte-identical
+400-hit result set** of a bare unscoped `"Paris"` query, same hits in the same
+order. So the scope was not being degraded or widened — it was being discarded
+entirely, and the response was an unscoped search wearing a scoped request's
+clothes.
+
+`ScopeInfo`, `scope_message` and the builder moved out of `reconcile.py` into
+`gateway/spatial.py`, beside the `resolve_region` whose outcome they describe.
+The two endpoints answered the same question differently for four months
+*because* each owned its own copy; sharing the implementation is what stops that
+recurring, and `reconcile.py` keeps `ScopeInfo` as a re-export so its published
+response shape is unchanged.
+
+**Verified live on prod (`localhost:9200`), after the relay restart pulled the
+commit:**
+
+| request | before | after |
+|---|---|---|
+| `contained_in: ["un:not_a_real_place"]` | 400 hits — identical to unscoped | **0 hits**, `scope.applied=false`, `containers_unresolved:["un:not_a_real_place"]`, message |
+| `contained_in: ["un:fra"]` | 73 FR hits, `scope: null` | **73 FR hits unchanged**, `scope.applied=true, mode:"polygon", containers_polygon:["un:fra"]` |
+| no scope requested | 400 hits, no `scope` | **unchanged**, `scope: null` |
+
+`/api/reconcile` re-verified on the same three shapes — unchanged, as intended,
+since only its scope *implementation* moved.
+
+⚠️ The container id is itself a trap: the audit's original repro used
+`un:FRA_0`, and the real place_id is `un:fra`. Both halves of a scope test can
+"pass" for the wrong reason with a wrong id, so the probe asserts
+`GET /places/_doc/un:fra` → `found: true, geom_class: ["area"]` and
+`un:not_a_real_place` → `found: false` **before** it interprets either answer.
+
+Pinned by `tests/test_search_scope_fail_closed.py` (10 cases). The endpoint test
+asserts not merely that the failed-closed response is empty but that it queried
+Elasticsearch **not at all** — zero hits from a global search would satisfy an
+emptiness assertion while still being exactly this bug. Two further cases assert
+search and reconcile produce *identical* `ScopeInfo` for the same region, which
+is the property the shared builder exists to hold.
 
 ### 2.3 `whg` — re-ingest so ids match the reconciliation service  — **S3**
 
@@ -256,6 +293,30 @@ Fix: when ccode is skipped, regenerate `final/` from `h3_merged` rather than
 leaving it. **Verify** with a unit test that a skipped-ccode namespace still ends
 with `final/` newer than `h3_merged/`. (Fault 13, the wall-time floors, is
 already committed — `_MIN_CCODE_WALL_SECONDS`, `_MIN_WALL_SECONDS`.)
+
+✅ **Done 31 Aug — `0c2819c`.** `_mark_un_skipped` now marks only `ccode`
+skipped and runs `ccode_merge` as a **pass-through**: `run_ccode_merge` gained
+`allow_missing_patch`, which treats an absent patch as empty instead of raising.
+That is the same "copy through untouched" semantics the incremental
+single-namespace workflow already gets from an empty `places.ccode.jsonl`,
+without the fake artifact. Inline, because `un` is ~250 documents; every other
+namespace still goes through the Slurm array, and **for them a missing patch
+stays a hard error** — there it means the enrichment produced nothing, and
+passing those documents through would publish a corpus with no ccodes.
+
+Two behaviours worth knowing before the next rebuild:
+
+* a stale-check (`final/` older than `h3_merged/`) keeps a re-submitted array
+  idempotent — a resume does not redo a merge that is already current;
+* with no `h3_merged/` to derive from it falls back to the old `skipped`, so the
+  global barrier still passes, but it **says so on stdout**. A silent skip is
+  precisely how the stale `final/` hid for three days.
+
+`tests/test_ccode_skip_regenerates_final.py` (6 cases) asserts the independent
+measure the plan asked for — `final/` newer than the `h3_merged/` it derives
+from, and carrying its content (the fresh `h3_cover`, not the previous run's) —
+rather than the stage's own status, which reported success throughout the run
+that broke this.
 
 ### 2.5 Restore the `gn` / `wd` staged trees  — **S4**
 

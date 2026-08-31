@@ -116,6 +116,12 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     `relation` = `intersects` | `within`. `query` is optional — omit for a pure-spatial query.
     `fuzzy`/`phonetic` discovery blends TWO lexical passes with the phonetic KNN —
     see `/api/reconcile` below; search has no `variants`, so only `query` is looked up.
+    **Scope fails closed here too, since 31 Aug 2026** — a `contained_in` that
+    resolves to no usable geometry returns 0 hits plus a `scope` saying why,
+    where it used to return the byte-identical *unscoped* result set with no
+    `scope` at all (audit §2b). `ScopeInfo` and its builder live in
+    `gateway/spatial.py` and are shared with `/api/reconcile`: the two endpoints
+    answered this differently for four months because each owned a copy.
   - `GET /api/suggest` — fast typeahead on toponyms index
   - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
     `contained_in`/`containment`/`relation` spatial-containment params as `/api/search`).
@@ -189,7 +195,9 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     Requested scope is **never silently dropped**: a point-only container borrows
     a `sameAs` co-referent's polygon, and a scope that cannot be applied at all
     **fails closed** (no hits) rather than answering unscoped — either way the
-    response's `scope` object records exactly what was applied.
+    response's `scope` object records exactly what was applied. Both the model
+    and the builder (`spatial.ScopeInfo` / `spatial.build_scope_info`) are shared
+    with `/api/search`; don't reintroduce a per-endpoint copy.
   - `GET /api/search/phonetic` — Symphonym KNN phonetic search
   - `GET /api/embed`, `POST /api/embed` — Symphonym embedding generation
   - `GET /api/health` — gateway + ES cluster health check
@@ -595,7 +603,13 @@ rebuild — e.g. `ukhc` (UK Historic Counties), added 2026-05-27. **Order matter
    the convex hull.
 3. **Stage chain → `final/places.parquet`** — `h3_stage` → `h3_merge` →
    `ccode_merge` (an empty `ccode/places.ccode.jsonl` patch passes ccodes
-   through untouched).
+   through untouched; `--allow-missing-patch` does the same with no patch file
+   at all). ⚠️ **`ccode_merge` is the ONLY writer of `final/`, so a namespace
+   whose ccode stage is skipped must still come through it** — else its
+   re-extract stops at `h3_merged/` and the indexer keeps serving the previous
+   run's `final/`, which is self-consistent and therefore invisible to the
+   freshness gate. That is Fault 12; `submit_ccode_slurm._mark_un_skipped` now
+   runs the pass-through for `un` rather than marking `ccode_merge` skipped.
 4. **`processing.index_namespace --namespace <ns> --source-stage final
    --execute`** — bulk-indexes places into the concrete index **behind the
    `places` alias** (NOT `index_from_stage`, which builds a *new* index + swaps
