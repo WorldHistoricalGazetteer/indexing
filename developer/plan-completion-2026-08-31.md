@@ -364,6 +364,24 @@ endpoint-by-endpoint rather than by count.
 | geometries staged for the store | **9,849** (was 0) — 2,320 areal/linear + 7,529 MultiPoint |
 | places with ccodes | 224,118 (prod holds 224,232 — 114 fewer, upstream drift since 6 Aug, not a regression of this run) |
 
+**Join pre-flight — the id map predicts the drop exactly, before touching PG or
+prod.** Resolving all 13,466 overlay endpoints through the map alone:
+
+```
+WOULD RESOLVE : 2,734
+WOULD DROP    : 10,732   across 51 datasets
+```
+
+Unit-identical to the baseline measured independently by `_mget` against the live
+index (2,734 / 10,732 / 51). Two different paths — an ES lookup of each endpoint,
+and a pure offline join against the extract's own artefact — agreeing to the unit
+is about as good as this gets: the map's key set *is* the set of places that were
+indexed, so the join drops precisely the danglers and nothing else. The top
+dropped datasets are `1631` (4,793), `1611` (1,166) and `1415` (1,052).
+
+The map also loads in **0.3 s** for 228,918 entries, so the join costs the
+harvest nothing.
+
 Worth recording because it cuts against the argument for the map: **both id edge
 cases are empty in today's corpus**, so the rule is momentarily reproducible in
 SQL. That is an accident of the current data, not a property of the rule — the
