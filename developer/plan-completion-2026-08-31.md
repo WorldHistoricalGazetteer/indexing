@@ -52,7 +52,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
-| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | ◐ started, holding pre-gate; 2.5 not yet begun |
+| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | 🟡 **2.5 two-thirds done 31 Aug** — `wd` promoted (hard-linked, 0 bytes copied) and `nl` re-extracted; **both verified PASS against the live index, delta 0** (Slurm 11074356). `gn` extract running (11074352, 36 h wall). 2.6 not started and **must not start until `gn` verifies** |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -94,7 +94,7 @@ fresh as the last session that remembered to tick one.
 | **S1** | none | — |
 | **S2** | none | — |
 | **S3** | none | — |
-| **S4** | **2.5 complete before 2.6 starts** — `gn` and `wd` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` ~11.6 M, `wd` 11,459,393 staged docs |
+| **S4** | **2.5 complete before 2.6 starts** — `gn`, `wd` and `nl` staged trees restored and counted against the live index. (The former "no bulk indexing in flight" check is withdrawn: 2.6 never touches ES) | `gn` **13,454,817**, `wd` 11,459,393, `nl` 4,363 staged docs — measured, not the stale "~11.6 M" this table used to carry |
 | **S5** | `sqlite3 /vast/ishi/geom/index.sqlite "select count(*) from geom where k >= 'un:' and k < 'un;'"` | **247** — S2 is done. Anything less and the retile repeats the §2 failure on the country boundaries |
 | **S5** | `gn`/`wd` staged trees restored (S4) **or** `TILE_ES_DOC_NAMESPACES=gn,wd` exported | either |
 | **S6** | 3.1 deployed and verified | polygons present in all 27 deployed tilesets |
@@ -733,9 +733,40 @@ staged-tree residue of Fault 12, distinct from S1's code fix for it. Harmless fo
 normal preference chain will not find a `final/` for the namespace that supplies
 `contained_in` regions. Tracked here rather than fixed.
 
-**Verify:** both trees' `extract/places.jsonl` doc counts match the live index's
-per-namespace counts (`gn` ~11.6 M after alt names, `wd` 11,459,393), not merely
-that the files are large.
+**Verify:** each tree's `extract/places.jsonl` doc count matches the live index's
+per-namespace count, not merely that the file is large. ⚠️ The counts are
+**`gn` 13,454,817, `wd` 11,459,393, `nl` 4,363**, measured against prod on 31 Aug.
+This document previously said `gn` "~11.6 M after alt names"; that figure is
+wrong by 1.9 M and, being a plausible-looking near-miss, is exactly the kind of
+expected value that gets a correct result written off as a mismatch. Take the
+target from `_count` at the time, not from here.
+
+**Done, 31 Aug (S4) — two of three:**
+
+| ns | action | result |
+|---|---|---|
+| `wd` | promoted from `/vast/ishi/staged_geomrebuild/wd` | **PASS** — 11,459,393 = 11,459,393, delta 0 |
+| `nl` | fresh extract (Slurm 11074353, 13 s) | **PASS** — 4,363 = 4,363, delta 0 |
+| `gn` | fresh extract (Slurm 11074352, 8 cpu / 64 G / 36 h) | ⏳ running at time of writing |
+
+Verified by Slurm 11074356, which calls the pipeline's **own** resolvers
+(`_staged_namespace_source`, `h3_stage._extract_stage_dir`) rather than a
+reimplementation of them, and additionally asserts the last line parses as JSON —
+a truncated JSONL counts fine, so a line count alone cannot see it.
+
+Three notes for whoever finishes or repeats this:
+
+* The `wd` promotion was done with **hard links**, not a copy: `/vast/ishi` is one
+  filesystem, so it cost 0 bytes and left `staged_geomrebuild/wd` valid. It also
+  means the data survives an `rm -rf` of *either* path.
+* The stub tree was **preserved, not deleted**, at
+  `/vast/ishi/staged/wd.stubs-preserved-20260831T040511Z`.
+* ⚠️ **The stub `update_merged/` had to go too, and for a different reason than
+  the parquet trap.** `h3_stage._extract_stage_dir` returns `update_merged/` for
+  `gn`/`wd` on `if update_merged.exists()` — **existence, not content** — so a
+  1-row stub directory would have fed the next H3 stage a 1-row snapshot while
+  `extract/` sat there correct and unread. Absent, it correctly falls through to
+  `extract/`. Two independent resolvers, two different traps, one stub tree.
 
 ⚠️ **This is 2.6's input, which is why it now runs first — see 2.6.** The failure
 if you skip it is silent by construction: `_staged_namespace_source` walks
