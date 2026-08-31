@@ -51,7 +51,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 |---|---|---|---|
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
-| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **in progress 31 Aug** — code done (`4d763b8`), extract done + verified (228,918 docs, id map 1:1, `yukon100` probe passes); geom merge held behind S2; nothing written to prod ES yet |
+| **S3** | 2.3 | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | 🟡 **nearly done 31 Aug** — code (`4d763b8`), extract, geom merge (whg 0 → 9,849), prod re-index (0 errors, `whg:1052:8` live and the old id gone), ES restarted (heap 9%, write pool idle), registry pushed (48 datasets, prod + dev). **Only the overlay rebuild is outstanding** (Slurm 11074337). Two side fixes: `adc7345`, `42b6e4a` |
 | **S4** | 2.6, then 2.5 | Submit the ~9 h toponyms stage 1 **first**, then do the `gn` extract / `wd` promotion while it runs. If stage 1 has not finished, **verify it at the head of the next session** rather than holding one open. | ⬜ |
 | **S5** | 3.1 | The retile. Needs S2 done and, for `gn`/`wd`, either S4 done or `TILE_ES_DOC_NAMESPACES=gn,wd`. Verify polygons per bucket **before** deploying. | ⬜ |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
@@ -499,11 +499,77 @@ SQL. That is an accident of the current data, not a property of the rule — the
 duplicate case still turns on stream order the moment one contributor re-uploads
 a dataset with a repeated `src_id`.
 
-**Remaining in this step:** geom merge (serialised behind S2, who owns the store
-this session — my staging is at `/vast/ishi/geom/staging_whg_s3`, deliberately
-outside the directory `consolidate_geom_store` scans) → h3 chain → `final/` →
-`index_namespace --replace` on pitt → Symphonym backfill for new toponyms →
-overlay rebuild → registry push from CRC (the token is unreadable from pitt).
+**Geom merge + stage chain — done, Slurm 11074332, COMPLETED in 4:23.**
+
+```
+kept 11,759,015 existing + wrote 9,849 = 11,768,864 rows in index.sqlite
+whg keys 0 → 9,849      un keys 247 (S2's, preserved)     ukhc 92
+h3_merge   : 215,401 geometry updates, 0 unmatched patches
+ccode_merge: 228,918 pass-through (whg ccodes come from the LPF source)
+final audit: has_geom but NO h3_cover = 0
+```
+
+`215,401 geometry updates` equalling the geometry count exactly is what shows the
+merge-before-h3 ordering actually held — every geometry took h3 from its real
+polygon rather than from a convex hull. S2 re-ran their full `un` verification
+after this rewrote `index.sqlite` wholesale and got PASS with 247/247 resolving
+and a worst bounds delta of 0.000e+00, so the store is consistent after the
+merge, not merely the right size.
+
+**Production re-index — done, on pitt, zero errors.**
+
+```
+[places]   deleted 228,918   indexed ok=228,918   errors=0
+[toponyms] stripped from 206,992   updated ok=207,028   errors=0
+```
+
+| verification (post-restart) | result |
+|---|---|
+| **the plan's headline check** | `whg:1052:8` → found, title "Edigiinjik"; `whg:1052:6954931` → **`found:false`** ✅ |
+| whg places | 228,918 — no orphans, no duplicates |
+| toponyms carrying a whg attestation | 207,028 |
+| whg toponyms lacking an embedding | **0** (36 new ones backfilled, Symphonym v7) |
+| whg geometries with `has_geom` | **9,849** (was 0) |
+
+Then `gaz_request.sh es-restart` (EXIT 0): heap 54% at peak → **9%** (2.6 gb of
+28 gb), write pool `active 0 / queue 0 / rejected 0`, 0 pending tasks — S4's
+precondition met and independently re-measured by S4.
+
+**Registry inventory — pushed**, 48 datasets, prod and dev, `HTTP 200`,
+`{"upserted":47}` + `{"upserted":1}` on each, no errors.
+
+**Two operational faults found and fixed while running this step**, both worth
+more than the step itself:
+
+* `consolidate_geom_store` **reported success having merged nothing** (`adc7345`).
+  A mis-quoted `--staging-dir "\$STAGING"` in an sbatch heredoc reached bash as a
+  literal `$STAGING`; the tool glob'd a directory that does not exist, printed
+  `no entries found`, returned 0 and exited 0, and the job carried on to h3 having
+  merged none of 9,849 geometries. The contrast three lines later is the useful
+  part: `h3_stage` hit the *identical* unexpanded variable and raised
+  `FileNotFoundError`, which `set -e` turned into a clean abort. One tool treated
+  "found nothing" as "did nothing wrong". Now a missing staging directory is a
+  `FileNotFoundError` and the CLI exits 3 on a zero-entry merge (`--allow-empty`
+  for the deliberate no-op). The early return sits above every write, so the bad
+  run touched shared state **zero times** — a pure false success signal. S2's
+  generalisation is the transferable one: *assert on the directory you are about
+  to consume, before you consume it.*
+* An htc node killed a job in one second (`42b6e4a`). `import sqlite3` on htc-n77
+  raised `GLIBCXX_3.4.30 not found` — the node's `/lib64/libstdc++` predates what
+  the env's `libicuuc` needs, while other htc nodes run the identical job. The
+  env ships its own; `submit_hardlinks_slurm` now prefers it and probes the import
+  in the first second rather than after the LOC harvest.
+
+Also worth recording, since it is a source-data fact rather than a pipeline one:
+the 36 toponyms created without embeddings are all **malformed at source** —
+comma-joined lists of twenty-odd name variants crammed into a single LPF
+`toponym` field (dataset `whg:1760`). The same data produced the one toponym
+whose `_id` exceeds Elasticsearch's 512-byte limit and is skipped by design. Not
+caused by this re-ingest, and not fixed by it.
+
+**Remaining in this step:** overlay rebuild (Slurm 11074337, running — reads
+staged files and DO PG, touches no index), then verify every `whg:` endpoint
+resolves before publishing it.
 
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
