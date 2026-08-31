@@ -1160,6 +1160,140 @@ meant to catch that pattern. The second version matched endpoint pairs in
 identical `400/400` — two different worlds, one output, decorative by this
 campaign's own standard. `source_id` answers the question directly and
 unambiguously. Both were found by asking *what would the broken world print?*
+
+##### Harvest 11092269 — COMPLETE, and the 🛑 gate correctly REFUSES it
+
+**Slurm `htc` 11092269, COMPLETED in 01:07:16** (20 h wall; the 6 h floor would in
+fact have sufficed, which could not have been known beforehand). Built on
+`/vast`, not `/ix1`. **Nothing published. The live overlay is still the 6 August
+build and was never opened for writing.**
+
+```
+row_count 6,460,869
+```
+
+**Predicted before the run**: 7,596,959 − 1,111,147 (`gn`) − 24,943 (whg id-map
+drop) = **6,460,869**. Exact to the unit.
+
+**Per-namespace, every asserting source reproduces the published overlay exactly
+except one:**
+
+```
+osm 2,295,659 ✓   wd 3,968,404 ✓   ohm 98,569 ✓   iv 68,935 ✓
+tm 25,665 ✓       clio 248 ✓       og 222 ✓        loc 1,129 ✓
+gn 0   vs   1,111,147 published        <-- the sole discrepancy
+```
+
+`gn: attempted=0 inserted=0 rejected=0` on a complete 13,454,817-document tree.
+
+**The gate's verdict, from `processing.compare_hardlink_overlays`:**
+
+```
+TOTAL ROWS  7,596,959 -> 6,460,869   delta -1,136,090
+VERDICT: FAIL   (exit 1)
+```
+
+**The delta is exactly `1,111,147 + 24,943`.** Ten namespaces are flagged, and
+**all ten are the same cause**: the small authority namespaces (`bnf` −85.2%,
+`gnd` −88.6%, `viaf` −90.9%, `loc` −90.5%, `tgn` −85.4%, `gov` −93.3%, `cerl`
+and `wp` −100%) exist in the overlay almost *only* as targets of GeoNames
+`sameAs`, so losing `gn`'s assertions removed their endpoints too. `wd`'s
+−1,120,203 is the same effect — most `gn` edges point at Wikidata — while `wd`'s
+own **asserted** count is unchanged at 3,968,404. `whg` −92.4% is reported as
+*(shrink allowed)*, the id-map fix working. Nothing is unexplained.
+
+**So the gate is doing exactly what it was written for**, and this is the
+"materially below 7.6 M means something *else* is wrong — stop rather than
+publish" case, with the something else named and quantified.
+
+###### The guard, and the fact that it was validated before it was believed
+
+`processing/compare_hardlink_overlays.py` is the guard §2.3 called for and did
+not build. It reads both databases `mode=ro` (so the gateway's live file is never
+written to, not even a hot journal), reports total rows plus per-namespace
+*rows-touching* coverage, exits non-zero on an unexplained shrink, and takes
+`--allow-shrink NS` for a fall that is supposed to happen.
+
+It was run against inputs whose answers were known **before** being used to
+decide anything:
+
+| test | expected | got |
+|---|---|---|
+| incumbent vs **itself** | PASS, all deltas 0 | **PASS**, exit 0 |
+| incumbent vs the **May overlay** | FAIL | **FAIL**, exit 1, naming `gn`/`wd`/`ohm`/`og` |
+| sub-tolerance changes in that run | *not* flagged | `osm` −2.2%, `bnf`/`gnd`/`loc`/`viaf`/`whg` −0.1% — correctly silent |
+| `--allow-shrink whg` on the real gate | exempts **only** `whg` | `whg` "(shrink allowed)", nine others still FAIL |
+
+The known-good half matters as much as the known-bad: **a guard that cannot say
+PASS is as useless as one that cannot say FAIL.**
+
+⚠️ **It also reproduces the audit's independently-derived figures exactly** —
+total 7,596,959, `wd` 7,516,092, `gn` 5,092,751, `osm` 2,318,576, `ohm` 98,569,
+`iv` 68,935, `whg` 26,981. That is what validates the *metric*, not just the
+code: the counting was rewritten mid-flight from a `UNION` of `(rowid, ns)` pairs
+to inclusion–exclusion (`|a in X| + |b in X| − |both in X|`) because the former
+materialised a ~15 M-row temp B-tree and was far too slow to gate a publish on.
+"Identical answer" was arithmetic until these numbers landed on the audit's.
+
+###### The runbook is no longer a rehearsal
+
+§2.3 warned that `loc_links`, `finalise_local` and the publish path had never
+been reached. All but the final publish have now run:
+
+* **LOC** — 1,132 attempted, **1,129 inserted**, matching the published `loc`
+  asserted count exactly. Source read from `/ix1` without incident.
+* **contributor replay** — reached DO Postgres from an htc compute node with
+  nothing configured by hand, as predicted. `place_link` 34,569 → 1,087,
+  `close_match` 3,206 → 956, **2,038 inserted** (predicted ~2,038),
+  `attestation_input` still **0** (the live flow remains dormant).
+* **`1f5aa50`'s renamed drop-ledger fields genuinely ran on CRC for the first
+  time**: `rows_dropped: 25,168`, `unresolved_endpoint_refs: 25,997` — previously
+  only ever observed as the old single key `"total": 25997`.
+* `id_map_entries: 228,918`, `id_map_run_ids: ['whg-idmap-20260831T071935Z']`.
+
+**Only `publish_hardlinks --execute` remains untried.**
+
+###### Timings, for whoever sizes the re-harvest
+
+Phase 1A **3,240 s** for all 27 namespaces — `osm` alone ~37 min; `gn` + `wd`
+streamed 7.38 GB + 10.26 GB of JSONL inside that. LOC + contributors under 13
+min. Total 67 min. A re-harvest after 2.7 reads `gn`/`wd` as **parquet** rather
+than JSONL and should be faster, but it will also have 1.1 M more rows to insert.
+
+###### What must happen before this step can complete
+
+1. **2.7** — `update_merge` (**required**, not optional) → `h3_stage` →
+   `h3_merge` → `ccode_merge` for `gn`/`wd`/`nl`. Blocked behind 2.8 by SG.
+2. **Re-harvest** with a fresh cutoff. Expect `gn: attempted=1,111,147` and a
+   total near 7.57 M. **If `gn` comes back anything else, 2.7 did not do what it
+   reported** — an independent downstream check on 2.7.
+3. **Re-run the gate**, which must PASS.
+4. **Then** `publish_hardlinks --execute --cutoff <the NEW harvest-start>`.
+   ⚠️ The cutoff from this run (`2026-08-31T21:36:34.901990+00:00`) is **void** —
+   it belongs to a build that will never be published.
+5. ⚠️ **A publish is invisible until the gateway restarts.** `publish_local` is an
+   atomic same-filesystem `os.replace`, and its docstring is explicit that *"the
+   gateway's open descriptors against the previous inode stay valid until it
+   re-opens."* Restart ownership is S5's. A publish without that restart changes
+   nothing anyone can observe.
+
+###### Two operational notes worth keeping
+
+* **⚠️ `submit_hardlinks_slurm` defaults `--db-path` to `IX1_BASE`, and should
+  not.** The `/ix1` build reached 236 MB in 13 minutes; the `/vast` build did
+  41.9 → 58.5 MB in **25 seconds** — about an order of magnitude — and
+  `publish_local` does a `shutil.copyfile` into the target, so building on
+  `/vast` publishes across filesystems perfectly well. (Scoped claim: this is one
+  ~1.3 GB SQLite. S5 correctly pushed back on generalising it to a 74-bucket
+  retile, where `/vast`'s 275 GB is shared with production ES.)
+* **`/ix1` was wedged on `htc-n56` and `crc1`** for part of this session while
+  healthy on `crc2` and `pitt` — a per-NFS-client hang, not a filer outage. It is
+  mounted `hard`, so the first harvest sat in `D`/`folio_wait_bit` with **CPU time
+  frozen at `00:08:30`** while `squeue` reported RUNNING and the log sat still. It
+  would have burned the full wall without failing or logging. **File size,
+  `squeue` state and the job's own log all failed to discriminate; frozen CPU time
+  and byte-identical `/proc/<pid>/io` counters did.** *A job in state RUNNING is
+  not evidence that it is running.*
 ### 2.4 Fault 12 — a skipped stage is a stage not regenerated  — **S1**
 
 Still unfixed in code: `submit_ccode_slurm._mark_un_skipped` only marks `un`'s
