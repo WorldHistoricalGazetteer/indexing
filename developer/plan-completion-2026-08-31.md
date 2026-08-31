@@ -596,9 +596,27 @@ Preconditions and traps:
    because `tiler.service` held descriptors on the old inodes. **Restart the
    tileserver promptly after the push**, and watch the disk during it.
 
-**Verify — the check that would have caught this in the first place:** assert a
-non-zero `poly=` count per polygon-bearing bucket in the job log *and* a non-zero
-polygon count in the built tileset, before deploying. A tile job that reports
+**⚠️ FIRST — prove the verifier can fail, and do it before you deploy, because
+deploying destroys the evidence.** S4's point (31 Aug) is that Phase 3 looks like
+the hard case for "run the check against a known-bad input", since nobody keeps a
+poly-less tileset around to test with. But we have nine of them, they are on the
+live tileserver right now, and **the retile is what overwrites them**. So:
+
+1. Run your polygon verifier against the **currently deployed** `ukhc`,
+   `vob_cty`, `po`, `clio`, `kain_par` and confirm it reports **FAIL** on every
+   one. If it passes any of them the verifier is broken, and you would otherwise
+   have discovered that only by deploying a second poly-less generation.
+2. **Preserve two of them as permanent fixtures before they are overwritten** —
+   `ukhc.mbtiles` (135 KB) and `vob_cty.mbtiles` (115 KB), 250 KB the pair. They
+   are the only known-bad tilesets that will ever exist naturally, and after the
+   retile they are unreproducible without deliberately rebuilding against an
+   empty store. Park them under `/vast/ishi/tiles-fixtures/` with a README
+   saying what they are, so the check has something to be tested against on
+   every future retile rather than only this one.
+
+**Then verify — the check that would have caught this in the first place:**
+assert a non-zero `poly=` count per polygon-bearing bucket in the job log *and* a
+non-zero polygon count in the built tileset, before deploying. A tile job that reports
 success is not evidence it read any geometry. Then re-run the audit's decode
 across all 27 deployed tilesets and confirm: polygons present where expected,
 `start_def`/`end_def` on every bucket, `label` on the banded ones.
