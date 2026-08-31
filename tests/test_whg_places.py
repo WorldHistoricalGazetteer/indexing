@@ -206,3 +206,89 @@ class TestPlaceIdMinting(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestIdMapEmission(unittest.TestCase):
+    """The extract writes down the id it minted, because the rule cannot be
+    reproduced anywhere else: the duplicate-src_id case appends the place key,
+    and which record is the duplicate depends on LPF stream order.
+
+    So this test pins the contract the join relies on — every staged doc has an
+    id-map entry keyed on the WHG place key, including both edge cases. See
+    ``developer/plan-completion-2026-08-31.md`` §2.3.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        from tests._sandbox import assert_sandboxed
+        assert_sandboxed()
+        cls.module = _load_whg_places()
+
+    def _stage(self, features, dataset_sub_id=20):
+        """Run ``stage_dataset`` over a synthetic LPF feature list."""
+        import json
+        import os
+        import tempfile
+        from unittest import mock
+        from processing.whg_id_map import IdMapWriter, load_id_map
+
+        module = self.module
+        with tempfile.TemporaryDirectory() as td:
+            with mock.patch.dict(os.environ, {"STAGED_BASE_DIR": td}):
+                map_path = Path(td) / "whg" / "extract" / "id_map.jsonl"
+                with mock.patch.object(module, "_open_lpf_stream",
+                                       return_value=object()), \
+                        mock.patch.object(module, "iter_features",
+                                          return_value=iter(features)), \
+                        IdMapWriter(map_path, run_id="test-run") as id_map:
+                    metrics = module.stage_dataset(
+                        None, dataset_sub_id=dataset_sub_id, id_map=id_map)
+                staged = [
+                    json.loads(line)
+                    for line in (Path(td) / "whg" / "extract"
+                                 / "places.jsonl").read_text().splitlines()
+                ]
+                return metrics, staged, load_id_map(map_path)
+
+    def _feature(self, pk, src_id=None):
+        props = {"title": f"Place {pk}"}
+        if src_id is not None:
+            props["src_id"] = src_id
+        return {"type": "Feature", "id": pk, "geometry": None, "properties": props}
+
+    def test_every_staged_doc_has_a_map_entry(self):
+        metrics, staged, id_map = self._stage([
+            self._feature(6954931, src_id="8"),
+            self._feature(6954932, src_id="9"),
+        ])
+        self.assertEqual(metrics["docs_written"], 2)
+        self.assertEqual(len(id_map), 2)
+        for doc, key in zip(staged, (6954931, 6954932)):
+            self.assertEqual(id_map.resolve(20, key), doc["place_id"])
+        self.assertEqual(id_map.run_ids, ["test-run"])
+
+    def test_map_covers_the_no_src_id_fallback(self):
+        _, staged, id_map = self._stage([self._feature(4242)], dataset_sub_id=42)
+        self.assertEqual(staged[0]["place_id"], "whg:42:4242")
+        self.assertEqual(id_map.resolve(42, 4242), "whg:42:4242")
+
+    def test_map_covers_the_duplicate_src_id_case(self):
+        # The case that makes the map necessary: the SECOND occurrence takes the
+        # four-segment id, and only the stream knows which one that was.
+        _, staged, id_map = self._stage([
+            self._feature(13861, src_id="20155"),
+            self._feature(91040, src_id="20155"),
+        ])
+        self.assertEqual(staged[0]["place_id"], "whg:20:20155")
+        self.assertEqual(staged[1]["place_id"], "whg:20:20155:91040")
+        self.assertEqual(id_map.resolve(20, 13861), "whg:20:20155")
+        self.assertEqual(id_map.resolve(20, 91040), "whg:20:20155:91040")
+
+    def test_skipped_feature_gets_no_map_entry(self):
+        # A feature with no id is rejected at parse time; the map must not
+        # invent a key for it.
+        bad = {"type": "Feature", "geometry": None, "properties": {"title": "x"}}
+        metrics, staged, id_map = self._stage([bad, self._feature(7, src_id="a")])
+        self.assertEqual(metrics["docs_skipped"], 1)
+        self.assertEqual(len(staged), 1)
+        self.assertEqual(len(id_map), 1)

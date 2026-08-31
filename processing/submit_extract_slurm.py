@@ -185,6 +185,21 @@ def rotate_staged(namespace: str, run_id: str, *, dry_run: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
+# Environment the submitting shell may pin for a run, carried into the job.
+# GEOM_STORE_STAGING_DIR is the one that matters in practice: geometry staging
+# defaults to the single directory ``consolidate_geom_store`` scans, so an
+# extract running alongside somebody else's merge has to be able to write
+# somewhere private — otherwise their merge silently adopts your half-written
+# shards. Only vars explicitly set in the submitting environment are carried,
+# so the default behaviour is unchanged.
+_PASSTHROUGH_ENV = ("GEOM_STORE_STAGING_DIR",)
+
+
+def _passthrough_exports() -> list[str]:
+    return [f"export {name}={os.environ[name]}"
+            for name in _PASSTHROUGH_ENV if os.environ.get(name)]
+
+
 def _build_sbatch(namespace: str, run_id: str) -> str:
     cpus, mem, hours = _sizing_for(namespace)
     qos = _qos_for(hours)
@@ -209,6 +224,7 @@ def _build_sbatch(namespace: str, run_id: str) -> str:
             f"conda activate {_CONDA_ENV}",
             f"cd {_REPO}",
             "export WHG_STAGING_MODE=1",
+            *_passthrough_exports(),
             "",
             "python -u -m processing.ingest_all_authorities \\",
             f"    -n {namespace} \\",

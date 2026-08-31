@@ -35,6 +35,20 @@ Auth: token via the ``Authorization: Bearer <token>`` header, with
 
 The LPF stream is parsed feature-by-feature via ``ijson`` so multi-million
 record datasets stay memory-bounded.
+
+Two artefacts leave here besides the staged place docs:
+
+* **the id map** (``extract/id_map.jsonl``) — ``place_key → place_id`` for every
+  record staged. The id rule above is not derivable in SQL (the duplicate case
+  turns on stream order), so anything else that has to name a whg place joins
+  through this file rather than re-deriving the id. See
+  ``processing.whg_id_map`` and ``developer/plan-completion-2026-08-31.md`` §2.3.
+* **the full geometries** — written to the VAST geom store, like every other
+  areal authority. Until 31 August 2026 this script passed ``geom_key`` to
+  ``enrich_geometry`` without ever configuring a ``GeomStoreWriter``, so
+  ``enrich_geometry`` returned ``has_geom=False`` and dropped the polygon on the
+  floor: 1,248 ``area`` and 1,072 ``line`` whg geometries in production carry no
+  retrievable shape. They were never written, not lost.
 """
 
 from __future__ import annotations
@@ -50,7 +64,9 @@ import requests
 
 from processing.helpers import enrich_geometry, write_staged_place_doc
 from processing.temporal import normalise_timespans
+from processing.whg_id_map import IdMapWriter, default_id_map_path
 from processing.settings import (
+    GEOM_STORE_STAGING_DIR,
     WHG_API_BASE_URL,
     WHG_API_TOKEN_FILE,
     WHG_HTTP_INITIAL_BACKOFF,
@@ -422,8 +438,13 @@ def stage_dataset(
     base_url: str = WHG_API_BASE_URL,
     dataset_status: str = "published",
     limit: int | None = None,
+    id_map: IdMapWriter | None = None,
 ) -> dict[str, Any]:
     """Stage one WHG dataset to ``staged/whg/extract/places.jsonl``.
+
+    ``id_map``, when given, records the ``place_key → place_id`` decision for
+    every doc written, so consumers can join rather than re-mint. Optional only
+    so a one-off conversion can skip it; the driver always supplies one.
 
     Returns counts: ``{features_seen, docs_written, docs_skipped}``.
     """
@@ -457,6 +478,10 @@ def stage_dataset(
                 skipped += 1
                 continue
             write_staged_place_doc(WHG_NAMESPACE, doc)
+            if id_map is not None:
+                # The WHG place key is the LPF feature id; that is what the
+                # contributor-link tables in DO Postgres hold.
+                id_map.record(dataset_sub_id, feature.get("id"), doc["place_id"])
             written += 1
             if written % 5_000 == 0:
                 sys.stdout.write(
@@ -516,6 +541,62 @@ def stage_all_authority_datasets(
     per_dataset: dict[str, dict[str, Any]] = {}
     totals = {"features_seen": 0, "docs_written": 0, "docs_skipped": 0}
 
+    # Full geometries go to the VAST store, as for every other areal authority.
+    # GEOM_STORE_STAGING_DIR is read from the environment at import time, so a
+    # run that must keep its staging output away from a concurrent merge points
+    # that variable somewhere private before starting.
+    from processing.geom_store import GeomStoreWriter, configure_module_writer
+
+    id_map_file = default_id_map_path()
+    print(f"Geom staging: {GEOM_STORE_STAGING_DIR}")
+    print(f"Id map:       {id_map_file}")
+
+    with GeomStoreWriter(GEOM_STORE_STAGING_DIR, WHG_NAMESPACE) as gsw, \
+            IdMapWriter(id_map_file) as id_map:
+        configure_module_writer(gsw)
+        try:
+            _stage_each(
+                datasets,
+                session=session,
+                base_url=base_url,
+                limit_features_per_dataset=limit_features_per_dataset,
+                id_map=id_map,
+                per_dataset=per_dataset,
+                totals=totals,
+            )
+        finally:
+            configure_module_writer(None)
+
+    print(f"\nGeometries written to the VAST store: {gsw.count:,}")
+    print(f"Id-map entries written: {id_map.count:,} → {id_map_file}")
+
+    summary = {
+        "discovered": len(datasets),
+        "per_dataset": per_dataset,
+        "totals": totals,
+        "id_map_path": str(id_map_file),
+        "id_map_entries": id_map.count,
+        "geom_store_entries": gsw.count,
+    }
+    _write_datasets_sidecar(per_dataset, summary)
+    return summary
+
+
+def _stage_each(
+    datasets: list[dict[str, Any]],
+    *,
+    session: requests.Session,
+    base_url: str,
+    limit_features_per_dataset: int | None,
+    id_map: IdMapWriter,
+    per_dataset: dict[str, dict[str, Any]],
+    totals: dict[str, int],
+) -> None:
+    """Stage every discovered dataset, accumulating metrics in place.
+
+    Split out of ``stage_all_authority_datasets`` only so the geom-store and
+    id-map writers can wrap the whole loop without burying it in indentation.
+    """
     for ds in datasets:
         ds_id = ds.get("id")
         title = ds.get("title", "")
@@ -536,6 +617,7 @@ def stage_all_authority_datasets(
                 base_url=base_url,
                 dataset_status=ds_status,
                 limit=limit_features_per_dataset,
+                id_map=id_map,
             )
         except Exception as exc:
             print(f"  ✗ {ds_id}: {exc}", file=sys.stderr)
@@ -556,15 +638,14 @@ def stage_all_authority_datasets(
             totals[k] = totals.get(k, 0) + int(metrics.get(k) or 0)
         print(f"  ✓ {ds_id}: {metrics}")
 
-    summary = {
-        "discovered": len(datasets),
-        "per_dataset": per_dataset,
-        "totals": totals,
-    }
 
-    # Sidecar consumed by Batch 11 push_gazetteer_inventory: one inventory
-    # entry per WHG dataset (class='dataset', owner_user_id, status). Stable
-    # contract: ``staged/_aggregates/whg.datasets.json``.
+def _write_datasets_sidecar(
+    per_dataset: dict[str, dict[str, Any]],
+    summary: dict[str, Any],
+) -> None:
+    """Sidecar consumed by Batch 11 push_gazetteer_inventory: one inventory
+    entry per WHG dataset (class='dataset', owner_user_id, status). Stable
+    contract: ``staged/_aggregates/whg.datasets.json``."""
     try:
         from processing.settings import STAGED_BASE_DIR
         sidecar_path = (
@@ -594,8 +675,6 @@ def stage_all_authority_datasets(
     except Exception as exc:
         print(f"WARNING: failed to write whg datasets sidecar: {exc}",
               file=sys.stderr)
-
-    return summary
 
 
 def main() -> None:

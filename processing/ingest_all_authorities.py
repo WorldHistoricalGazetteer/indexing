@@ -563,6 +563,12 @@ def ingest_all(
             # If running in staged mode, set environment variable for authority scripts
             if run_manifest_path:
                 os.environ["WHG_STAGING_MODE"] = "1"
+            # Authority scripts inherit this environment. Any artefact they write
+            # beside the staged tree — the whg id map, for one — stamps itself with
+            # the run id, so a consumer can tell which run's ids it is joining
+            # against instead of assuming the latest.
+            if run_id:
+                os.environ["WHG_RUN_ID"] = run_id
 
             success = run_ingestion(ns, script, skip_existing=skip_existing, replace_existing=replace_existing)
             _script_finished_at = datetime.now(timezone.utc)

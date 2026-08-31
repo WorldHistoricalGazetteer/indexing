@@ -10,6 +10,9 @@ file, then atomically ships it to the Pitt gateway via
 3. ``clustering.harvest.contributor_replay`` — DO PG: legacy ``place_link`` /
    ``close_matches`` replay **and** active ``api_contributorattestation`` rows
    (the live-forwarding flow) → ``contributor:<user_id>[:legacy_v3_2]`` source.
+   Its whg endpoints are resolved through the id map the whg extract wrote
+   (``staged/whg/extract/id_map.jsonl``), so this job must run **after** the whg
+   extract of the same run, and the two must share a run id.
 
 Then ship the file to Pitt and write
 ``staged/runs/{run_id}.hardlink_ship.json`` as the completion marker that
@@ -181,11 +184,17 @@ def _build_sbatch(
         ])
 
     if not skip_contributors:
+        # The whg extract's id map is the join key for every whg endpoint the
+        # replay harvests. Passed explicitly and read from THIS run's staged
+        # tree, so the overlay and the index carry the same ids; the replay
+        # fails loudly rather than minting ids of its own if it is absent.
+        id_map_path = Path(STAGED_BASE_DIR) / "whg" / "extract" / "id_map.jsonl"
         lines.extend([
             "",
             "echo '--- Phase 1B: contributor replay from DO PG ---'",
             "python -u -m clustering.harvest.contributor_replay \\",
-            "    --db-path \"$DB_PATH\"",
+            "    --db-path \"$DB_PATH\" \\",
+            f"    --id-map {id_map_path}",
         ])
 
     if pitt_user and pitt_host and pitt_dir:

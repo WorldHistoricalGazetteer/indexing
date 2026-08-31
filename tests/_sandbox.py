@@ -70,6 +70,11 @@ def install() -> str:
     os.environ.setdefault("STAGED_RUNS_DIR",
                           os.path.join(_SANDBOX, "staged", "runs"))
     os.environ.setdefault("GEOM_STORE_DIR", os.path.join(_SANDBOX, "geom"))
+    # Authority scripts open a GeomStoreWriter here. Unsandboxed it defaults
+    # under IX3_BASE, so a test that staged an areal authority would drop
+    # shard + index files into the directory a live consolidation merges from.
+    os.environ.setdefault("GEOM_STORE_STAGING_DIR",
+                          os.path.join(_SANDBOX, "geom", "staging"))
     # Consolidation copies index.sqlite here. Unsandboxed it defaults under
     # IX1_BASE, so a test that consolidates would drop files on real storage.
     os.environ.setdefault("GEOM_STORE_BACKUP_DIR",
@@ -89,12 +94,14 @@ def assert_sandboxed() -> None:
     case where an earlier import froze the real paths in place.
     """
     from processing.settings import (  # imported late: reads env at import time
-        GEOM_STORE_BACKUP_DIR, GEOM_STORE_DIR, STAGED_BASE_DIR, STAGED_RUNS_DIR,
+        GEOM_STORE_BACKUP_DIR, GEOM_STORE_DIR, GEOM_STORE_STAGING_DIR,
+        STAGED_BASE_DIR, STAGED_RUNS_DIR,
     )
     offenders = []
     for name, value in (("STAGED_BASE_DIR", STAGED_BASE_DIR),
                         ("STAGED_RUNS_DIR", STAGED_RUNS_DIR),
                         ("GEOM_STORE_DIR", GEOM_STORE_DIR),
+                        ("GEOM_STORE_STAGING_DIR", GEOM_STORE_STAGING_DIR),
                         ("GEOM_STORE_BACKUP_DIR", GEOM_STORE_BACKUP_DIR)):
         if value is None:
             continue
