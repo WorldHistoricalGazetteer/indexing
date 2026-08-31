@@ -206,9 +206,23 @@ retile (§3.1 precondition 1), so it is no longer cost-free to defer.
   (0 / 6,260 in the staged extract) — so raising og's coverage is a *reconciliation*
   task (establish og↔wd links), not a pipeline fix. Its 3.9% ccode coverage is a
   consequence, not an independent problem.
-* 1,497 areal + 1,072 linear docs with `has_geom=false` (the standing
-  incomplete-ingestion predicate), and 1 areal doc with no `h3_cover`. 2,570 of
-  51.2 M = 0.005%.
+* **The 2,569 `has_geom=false` docs are now diagnosed** (31 Aug, by S3 and
+  confirmed here) — they are not a diffuse "incomplete ingestion" tail but two
+  named authority bugs, and the geometry was **never written, not lost**:
+
+  | | area | line | cause |
+  |---|---:|---:|---|
+  | `whg` | 1,248 | 1,072 | `whg-places.py` passes `geom_key` to `enrich_geometry` but never calls `configure_module_writer`, and `enrich_geometry` writes only when a module writer is configured. **Fixed inside 2.3** |
+  | `og` | 249 | 0 | `ottgaz-places.py` calls `enrich_geometry(geo, timespans=ts)` with **no `geom_key` at all**, so its computed hulls are never keyed for the store. Not yet fixed |
+  | corpus | 1,497 | 1,072 | those two are the whole of it |
+
+  Consequence beyond the count: a polygon in neither the store nor the index is
+  unservable and untileable, so `og`'s 249 hulls cannot render even where they
+  exist. Plus 1 areal doc with no `h3_cover`, unrelated.
+
+  The check that generalises: `grep -L configure_module_writer` across the
+  authorities that compute areal geometry. 14 configure a writer; `ottgaz` is the
+  one that computes geometry and does not.
 * Out of this campaign's scope but still the standing tail: AAT coverage
   4,436/15,448 = 28.7% (place#142), and the legacy per-dataset contributed
   tilesets (`whg-*.mbtiles`, 23 July) awaiting migration
