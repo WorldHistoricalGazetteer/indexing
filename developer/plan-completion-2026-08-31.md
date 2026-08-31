@@ -832,7 +832,16 @@ figures "`wd` accounts for 7,516,092 and `gn` for 5,092,751" are
 **endpoint-touching** counts — rows where the namespace appears at *either* end —
 which is why they sum past the total. They are correct as measured and wrong for
 the purpose I used them for. The **asserting-source** breakdown is what predicts
-what a harvest produces (S3's measurement, not yet independently reproduced here):
+what a harvest produces. **S3 measured it; I verified it by summation rather than
+by re-scanning** — the ten categories partition to **exactly 7,596,959**, the
+total I had measured independently, with zero remainder. That is strong evidence
+the partition is complete and correctly attributed, since a wrong or partial
+measurement would be unlikely to land on a known total to the row, and it
+decisively separates this framing from the endpoint one, which *over*-sums by
+construction. It would not catch a systematic swap between two categories that
+preserved the sum, so it is weaker than an independent scan — two of which I
+started, both killed on a 7.6 M-row group-by over NFS. Not worth a third. The
+breakdown:
 `wd` 3,968,404 (52.2%), `osm` 2,295,659 (30.2%), `gn` 1,111,147 (14.6%), `ohm`
 98,569, `iv` 68,935, `tm` 25,665, `loc` 1,129, `clio` 248, `og` 222, plus 26,981
 contributor rows. **"`gn` is 67% of the overlay" and "`gn` asserted 14.6% of it"
