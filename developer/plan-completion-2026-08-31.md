@@ -87,6 +87,14 @@ resources it does not model.
 
 ### ⚠️ Before ANY session runs pipeline code: `git pull` the CRC clone, and fetch first
 
+⚠️ **Corrected by S1 at closing:** this is **one clone shared by pitt and CRC**,
+not a CRC clone distinct from a pitt one — same inode `474440114616486586` from
+both hosts, verified. The distinction matters because **the relay's
+`gateway-restart` does `git pull --ff-only`**, so gateway code is refreshed
+whenever anyone restarts, and **the hazard is entirely Slurm-side: a job launched
+from that clone runs whatever the last restart happened to pull.** The two real
+clones are the workstation checkout and this shared one.
+
 `/vast/ishi/elastic` is what every Slurm job runs from, and **it lies about being
 up to date**. Measured 31 Aug: it sits at `177ba72`, **22 commits behind
 `main`** — including `1f5aa50` and `42b6e4a`, both real fixes to the hard-link
@@ -205,7 +213,35 @@ in the source data.
 * `select count(*) from geom where k >= 'un:' and k < 'un;'` returns **247**;
 * a sample of stored polygons matches the live index's `bounds` for the same `geom_ref` — a mis-keyed rebuild still "resolves" every key, which is why the 9 Aug verification counted bounds mismatches rather than lookups. Now a module rather than a sample: **`python -m processing.verify_un_geom_store`** (`dump` on the VM where ES is reachable, `check` on the compute node) compares **every** entry's bounds *and* `repr_point` against the live index and exits non-zero on any disagreement, so it can gate an sbatch step. `repr_point` is the sharper of the two: two neighbours can share a bbox to 1e-5 and cannot both contain each other's representative point.
 
-~~**Note this is not urgent for search.**~~ ⚠️ **Wrong — corrected by S2,
+~~### ⬜ OPEN — `staged/un` holds `extract/` and no `final/` (S2's, recorded at its closing)
+
+Before 2.1 `staged/un` did not exist; it now exists holding **extract only**. Both
+`index_from_stage` and `index_namespace` fall back through
+`("final", "ccode_merged", "h3_merged", "extract")`, so a full rebuild would reach
+for `extract` and try to index `un` geometries **with no `h3_cover` and no
+ccodes**. `index_namespace` guards against exactly that, so the likely outcome is
+a confusing mid-rebuild refusal rather than bad data — but *a directory that looks
+like data and is not* is this campaign's whole subject, and CLAUDE.md's Fault 12
+note says `un` must come through `ccode_merge` to `final` precisely so this cannot
+arise.
+
+Two closes, either a few minutes:
+
+1. **Exactly reversible** — `rm -rf /vast/ishi/staged/un/extract`, restoring the
+   pre-2.1 state. The geometry is already in the store and verified, the live
+   index needs nothing from it, and it regenerates in ~20 minutes.
+2. **Correct** — run `h3_stage` → `h3_merge` → `ccode_merge` (pass-through) so
+   `final/` exists and is consistent with the store, which also recomputes `un`'s
+   h3 from the real geoBoundaries polygons rather than a hull.
+
+**Recommendation: (2), because a rebuild is coming.** `un` is the namespace that
+supplies `contained_in` regions, 2.5 is currently making the other three staged
+trees whole, and the reconciliation identity wants all 27 complete rather than 26
+plus one that merely counts. Take (1) only if no rebuild is in prospect. What
+must not happen is leaving it undecided, because the next reader sees a populated
+`staged/un` and reasonably assumes it is finished.
+
+**Note this is not urgent for search.**~~ ⚠️ **Wrong — corrected by S2,
 31 Aug, by measurement.** It was urgent for search, and had been for three
 weeks. The borrowed-`sameAs`-polygon reasoning holds only for
 `containment=fuzzy`, which works off the `h3_cover` in ES and never touches the
