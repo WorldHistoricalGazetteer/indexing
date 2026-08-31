@@ -1200,3 +1200,81 @@ otherwise mutually independent and may run concurrently.
 Everything in Phase 2 is ordered ahead of Phase 3 by decision (3), not by
 dependency — so if the Atlas Beta needs its boundaries back sooner, **S2 → S5
 alone is a valid short path**, leaving S1, S3 and S4 to follow.
+
+---
+
+## Closure record — 31 August 2026
+
+Four sessions closed on SG's instruction, each having given a closing statement
+verified against the tree and the hosts rather than from memory. No session can
+terminate another, so this is the record; SG closed the terminals.
+
+**Nothing is in flight anywhere except Slurm 11074352 (`extract-gn`)**, which
+`indexing-5e` watches. Every other job of every session is terminal and read; no
+monitors, no background shells, no uncommitted edits. `main` carried one unpushed
+commit at closing (`c730d32`), which three separate sessions each declined to
+push because it was not theirs — the right call, and worth recording as the norm.
+
+| session | completed | left behind |
+|---|---|---|
+| **S1** `indexing-81` | 1.1, 1.2 (`f94b8b8`); 2.2 verified on prod (`4286a0f`, `177ba72`); 2.4 with a test (`0c2819c`) | Nothing outstanding. Three follow-ups nobody had written down — see below |
+| **S2** `indexing-ab` | 2.1: `un` 247/247 in the store, 0 bounds mismatch; the refuse-to-stage guard + the counters that were tracked and never printed (`b05d5b0`, `6a632a1`) | **One open decision** — `staged/un` holds `extract/` and no `final/` (§2.1). `staging-parked/` is a deletion queue with a README, inert |
+| **S3** `indexing-c7` | 2.3 live and verified on prod: `whg:1052:8` resolves, 0 dangling of 1,935 endpoints; id map; `adc7345`, `42b6e4a`, `1f5aa50` | The overlay rebuild, gated and documented (`d10ef97`, `344c66b`) — **but its publish path has never been executed** |
+| **S4** `indexing-2f` | 2.5 two-thirds: `wd` 11,459,393 and `nl` 4,363 restored, both delta 0; the staged census; the parked verifier (`adff6dc`, `dc40957`) | `gn` extracting; 2.6 unstarted. Both finishable without an S4 session |
+
+### What was only in their heads, and is not any more
+
+Each was asked specifically for knowledge that is **not** recoverable from git.
+The yield was high enough to justify asking, and these are the items no document
+would otherwise have carried:
+
+* **Pushing is deploying, on someone else's schedule** (S1). The relay's
+  `gateway-restart` does `git pull --ff-only`, so anything on `main` goes live at
+  the next restart by whoever triggers it — your unverified push can ride a
+  peer's restart under their name. Verify before you push, or push only when you
+  own the next restart.
+* **A 2.6 submission today asks for `--time=03:40:24` for work needing >12 h**
+  (S4, measured — Slurm 11074461). `estimate_wall_time_seconds` medians the last
+  five runs, and all three recorded `rebuild-toponyms-index` runs skipped
+  IPA/PanPhon, so the history is poisoned by fast runs of a cheaper job wearing
+  the same name. The first correctly-configured run dies at ~30%. Paired with it:
+  `--for-retrain` is not a refinement, it **is** the step.
+* **Any incremental `geom_store --merge` is a full index rebuild** (S2) — ~5.4 GB
+  RSS and ~6 minutes whether you add 247 keys or 9,849. Never size a merge by the
+  keys being added; it belongs on Slurm.
+* **`hits.total.value` caps at 10,000** unless `track_total_hits: true`, and a
+  malformed query returns an error object with no `hits` key that reads as a
+  legitimate zero (S1). For `gn` and `wd` that yields two wrong numbers agreeing
+  with each other through a query reporting `_shards.failed == 0`.
+* **A ready-made live fixture for the degradation path** (S1): `og:10209` is
+  areal in the index with **0** entries in the store — exact and fuzzy return the
+  same 80 hits. `un:fra` is the positive control (exact refines 73 → 72).
+* **A freshness test passes for free unless you backdate** (S1). 2.4's assertion
+  compares `final/` against `h3_merged/` mtimes; written in the same second it is
+  vacuous. `os.utime` the stale artefact backwards or you are testing nothing.
+* **`Errors: 3` in the `un` extract is unexplained** (S2) — identical on 5 and
+  31 August, reconciling exactly to 247. Probably the `stscod=99` unnamed
+  disputed zones, **not confirmed**. If a fourth ever appears, that reconciliation
+  is the thing to re-derive.
+
+### Judgement each offered on its own work
+
+* **S1:** finished. Flagged that its approximate-flag decision for a radial
+  `h3-disc` region asked for `exact` was made alone and deserves revisiting if a
+  radial-scope consumer appears; and that
+  `tests/test_tilegen_bands.py::test_default_style_parses_and_has_expected_buckets`
+  fails **only when a sibling `../tileboss` clone exists** — pre-existing, not
+  S1's, confirmed against a baseline worktree, and it will surprise whoever next
+  runs the full suite.
+* **S2:** finished but for the `staged/un` decision it created and declined to
+  take unilaterally at closing time.
+* **S3:** *"the gate is cold-readable; the procedure past the gate is documented
+  but unexercised."* Its harvest was cancelled during Phase 1A, so `loc_links`,
+  `finalise_local`, `publish_hardlinks`, the ship marker and the prune were never
+  reached. **Expect to debug the publish path, not run it.** Asking about
+  in-flight state also turned up a stale 16 MB SQLite WAL beside the deleted
+  partial database, which a rerun under the same run id would have adopted.
+* **S4:** 2.5 and 2.6 are both finishable cold — *"the residual risk is not
+  knowledge, it is discipline: both overrides are things you must do, not things
+  the tooling will do for you."* Explicitly did **not** clear the 872-document
+  gap or `index_namespace`'s stage chain (4.11).
