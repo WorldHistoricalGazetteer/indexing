@@ -122,6 +122,13 @@ Browser → Django (DigitalOcean) → CRC Gateway (FastAPI) → Elasticsearch 9.
     `scope` at all (audit §2b). `ScopeInfo` and its builder live in
     `gateway/spatial.py` and are shared with `/api/reconcile`: the two endpoints
     answered this differently for four months because each owned a copy.
+    ⚠ A scope can also apply at the **wrong precision**: `hit_matches` degrades
+    `containment=exact` to the H3 test whenever no polygon is behind the region
+    (geom-store miss, no reader, no Shapely, or an `h3-disc` radial region).
+    That is now reported as `scope.approximate=true` with the reason — before
+    31 Aug 2026 it was detectable only by noticing that exact and fuzzy returned
+    identical counts, which is how `un` served cell-accurate country containment
+    for three weeks unnoticed.
   - `GET /api/suggest` — fast typeahead on toponyms index
   - `POST /api/reconcile` — reconciliation search (same 3-step architecture; same
     `contained_in`/`containment`/`relation` spatial-containment params as `/api/search`).

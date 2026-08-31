@@ -244,6 +244,42 @@ emptiness assertion while still being exactly this bug. Two further cases assert
 search and reconcile produce *identical* `ScopeInfo` for the same region, which
 is the property the shared builder exists to hold.
 
+#### Follow-up — the other half of the class, `177ba72` (deployed, verified)
+
+S2 found the twin while measuring 2.1 and handed it over rather than editing a
+verified step. 2.2 was a scope that *could not* be applied answering globally;
+this is one that **can** be applied answering at the wrong precision.
+`hit_matches` falls through to the H3 branch whenever no prepared geometry is
+available, and said nothing: before the `un` merge, `contained_in:["un:fra"]`
+with `containment=exact` returned the fuzzy answer while reporting
+`applied: true, mode: "polygon", approximate: false` — every word true of the
+region, none of it saying its geometry was absent.
+
+`spatial.exact_degraded` + `mark_scope_degraded`, called from both routers
+**after** the containment pass (geometry loads lazily, so before it there is
+nothing to have failed). It reuses `approximate` — "coarser than what was asked
+for" is exactly this — rather than minting a field, and keeps `applied: true`,
+because the scope did apply.
+
+**Verified live on a container proven absent from the store**, not on an
+inference: `og:10209` is areal in the index and has **0** entries in
+`index.sqlite`, and its exact and fuzzy answers are the *same 80 hits* —
+now `approximate: true` with the reason. The control is `un:fra`, whose polygon
+S2 had just merged: exact refines 73 → 72 and is **not** flagged, so the flag
+is not simply always-on. `/api/reconcile` matches on both. 2.2's own three cases
+re-checked after the restart and unchanged.
+
+This changes the standing advice, which is the part worth carrying: until today
+the only way to detect the degradation was to run a query whose exact and fuzzy
+answers *should* differ and notice identical counts — an inference nobody made
+for three weeks. `scope.approximate` now says it outright.
+
+Two deliberate edges: a radial `h3-disc` region asked for `exact` **is** flagged
+(the fuzzy test is that path's design, but the client still asked for boundary
+precision and got cells; `mode` says which), and a failed-closed scope is never
+relabelled `approximate` — that flag describes a constraint that was applied,
+and there isn't one.
+
 ### 2.3 `whg` — re-ingest so ids match the reconciliation service  — **S3**
 
 Production carries `whg:<dataset>:<WHG place key>`; `f835b26` (18 Aug) mints
