@@ -52,7 +52,7 @@ from `CLAUDE.md` → the audit → this plan, which is what those documents are 
 | **S1** | 1.1, 1.2, 2.2, 2.4 | Two deletions plus two small code-and-test fixes. No infrastructure, no long jobs — good use of the wait while something else runs. | ✅ **done 31 Aug** — 78 GB reclaimed; 2.2 deployed and verified on prod (`4286a0f`); 2.4 fixed with a test (`0c2819c`) |
 | **S2** | 2.1 | `un` extract → geom-store merge → gateway restart. One Slurm job, three independent verifications. **Gates S5.** | ✅ **done 31 Aug** — job 11074309, `un:` keys **247**, bounds delta 0.0 against the live index; S5's gate is met. Store released to S3. Also found and fixed a live wrong answer: `containment=exact` had been degrading to fuzzy for every country container |
 | **S3** | 2.3 (⚠️ its overlay rebuild now waits on S4's 2.5 — see the hazard table) | The big one: id-map code change, re-ingest, geom merge, overlay rebuild, registry push. Deserves a session to itself. | ✅ **done 31 Aug except the overlay publish, which 2.5 blocks** — code `4d763b8`; extract + geom merge (whg 0 → 9,849); prod re-index 0 errors, `whg:1052:8` live and the old id gone; ES restarted (heap 9%); registry pushed (48 datasets, prod + dev); join verified against live PG — **1,935 of 1,935 endpoints resolve, 0 dangling** (was 2,734 of 13,466). Side fixes `adc7345`, `42b6e4a`, `1f5aa50` |
-| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | 🟡 **2.5 two-thirds done 31 Aug** — `wd` promoted (hard-linked, 0 bytes copied) and `nl` re-extracted; **both verified PASS against the live index, delta 0** (Slurm 11074356). `gn` extract running (11074352, 36 h wall). 2.6 not started and **must not start until `gn` verifies** |
+| **S4** | **2.5, then 2.6** (order corrected 31 Aug — 2.5 is 2.6's input) | Restore the `gn`/`wd`/`nl` staged trees, then the ~9 h vocabulary rebuild that reads them. Not an ES job. | 🟡 **2.5 two-thirds done 31 Aug** — `wd` promoted (hard-linked, 0 bytes copied) and `nl` re-extracted; **both verified PASS against the live index, delta 0** (Slurm 11074356). `gn` extract running (11074352, 36 h wall; 500k staged at 26 min, ~12 h + an alt-names pass to go). 2.6 not started and **must not start until `gn` verifies** — the one-command verifier is parked at `/vast/ishi/staged/s4_verify_staged.sbatch` and needs no S4 session |
 | **S5** | 3.1, **plus the 47 `whg-*` buckets** (4.6) | The retile. ⚠️ **Blocked on S4's 2.5** — wait for `gn`/`wd`/`nl`, do not start streaming from ES instead. Prove the verifier FAILS on the preserved fixtures before deploying. | ⬜ **deferred by SG, 31 Aug** — not spun up, rather than spun up and idling for `gn`'s several-hour extract |
 | **S6** | 3.2 | `whg3` — a different repository, so a separate session by necessity. | ⬜ |
 | **S7** | 3.3 | Post-retile cleanup, once the deployed map has been looked at (clio gains 2,986 polygons that have never rendered). | ⬜ |
@@ -775,7 +775,24 @@ to matter.
 |---|---|---|
 | `wd` | promoted from `/vast/ishi/staged_geomrebuild/wd` | **PASS** — 11,459,393 = 11,459,393, delta 0 |
 | `nl` | fresh extract (Slurm 11074353, 13 s) | **PASS** — 4,363 = 4,363, delta 0 |
-| `gn` | fresh extract (Slurm 11074352, 8 cpu / 64 G / 36 h) | ⏳ running at time of writing |
+| `gn` | fresh extract (Slurm 11074352, 8 cpu / 64 G / 36 h) | ⏳ running at time of writing — 500,000 staged at 26 min, so ~12 h for the places pass **plus** the `geonames-toponyms` alt-names pass that follows it |
+
+**To finish 2.5 — one command, and it does not need S4's session.** The verifier
+is parked on shared storage, so any session can run it:
+
+```bash
+ssh crc1 'sacct -M htc -j 11074352 --format=State'          # expect COMPLETED
+ssh crc1 'sbatch -M htc /vast/ishi/staged/s4_verify_staged.sbatch \
+              gn=13454817 wd=11459393 nl=4363'
+```
+
+PASS on all three closes 2.5 and unblocks both 2.6 and S5. It calls the
+pipeline's own resolvers rather than reimplementing them, and asserts the last
+line parses as JSON. ⚠️ **`gn` runs two scripts** (`geonames-places` then
+`geonames-toponyms`); a `COMPLETED` after only the first would still leave the
+count short, so check the state, not the clock. And the whole-corpus form is the
+stronger test: the 27 staged counts should sum to **51,187,900**, the live index
+total.
 
 Verified by Slurm 11074356, which calls the pipeline's **own** resolvers
 (`_staged_namespace_source`, `h3_stage._extract_stage_dir`) rather than a
