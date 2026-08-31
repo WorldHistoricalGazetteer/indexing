@@ -301,6 +301,29 @@ regenerated and the Parquet deliberately marked `.stale` rather than rebuilt —
 defensible defensive act, since a stale Parquet that still *looked* current would
 be the more dangerous artefact.
 
+⚠️ **The sizes above carry NO staleness signal — do not read a ratio into them**
+(S5, 31 Aug). Parquet is columnar and compressed and is *always* far smaller than
+the same data as JSONL. Two independent controls: `ukhc`'s own `h3_merged` is
+507,010 JSONL against 141,417 Parquet **for identical data**, and `clio`'s `final`
+is 218,721,276 against 62,947,999 — both ≈28%, from encoding alone. So
+141,445-vs-502,597 is unremarkable. What establishes staleness here is the
+**timestamp** (5 Aug against 20 Aug) and the deliberate rename, which are
+sufficient on their own. Recorded because a size-ratio heuristic written into an
+audit will be reused, and this one would false-positive on every correctly built
+Parquet in the corpus. (Read the other way it is mildly useful: a Parquet that is
+*not* ≈28% of its JSONL is worth a look.)
+
+⚠️ **Latent hazard — a superseded artefact renamed in place still sits inside the
+resolver's search path** (S5). `places.parquet.stale` is one `mv` from outranking
+the correct JSONL, because every chain prefers Parquet within a stage; restoring
+it would silently serve pre-place#204 `ukhc` and lose the 1,109 county name
+variants, with no error anywhere. The realistic trigger is a tidy-up — someone
+reads `.stale` as an accidental rename and "fixes" it. The same applies to
+`places.jsonl.bak` and `extract/places.jsonl.pre204`. **Superseded artefacts
+should be moved OUT of stage directories rather than renamed within them**,
+precisely because the preference order makes a same-directory rename dangerous.
+Housekeeping for after 2.7 — nobody should touch these while S8's chain runs.
+
 **Currently harmless, and I checked rather than assumed.** Every consumer that
 matters resolves Parquet-then-JSONL and falls back: `_staged_namespace_source` in
 all six chains, `ccode_merge._iter_source_docs`, and `submit_tiles_slurm.
