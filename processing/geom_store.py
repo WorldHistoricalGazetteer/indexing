@@ -459,6 +459,19 @@ def consolidate_geom_store(
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
+    # A staging directory that does not exist is never a legitimate request —
+    # it is a typo or an unexpanded shell variable. Reading nothing and
+    # reporting success is the exact failure this campaign was created to stop
+    # (see CLAUDE.md: "a tile job that reports success is not evidence it read
+    # any geometry"). On 31 Aug 2026 a mis-quoted `--staging-dir "\$STAGING"`
+    # merged zero of 9,849 whg geometries and exited 0.
+    if not staging_dir.is_dir():
+        raise FileNotFoundError(
+            f"geom staging directory does not exist: {staging_dir} — refusing to "
+            f"consolidate, because reading nothing would otherwise look like a "
+            f"successful merge"
+        )
+
     # ── 1. Collect all staging index entries ──────────────────────────────
     all_entries: list[dict] = []
     staging_bin_files: list[Path] = []
@@ -872,6 +885,12 @@ if __name__ == "__main__":
                              "--rebuild-from-scratch is chosen against a "
                              "non-empty existing index. Prints the size of "
                              "the index that will be discarded.")
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="Exit 0 when the staging directory holds no "
+                             "entries. Without this a no-op consolidation is "
+                             "an error, because the overwhelmingly likely "
+                             "cause is a mis-pointed --staging-dir rather than "
+                             "a deliberate request to merge nothing.")
     args = parser.parse_args()
 
     if not args.merge:
@@ -901,13 +920,23 @@ if __name__ == "__main__":
                 file=_sys.stderr,
             )
 
-    consolidate_geom_store(
+    written = consolidate_geom_store(
         staging_dir=args.staging_dir,
         output_dir=args.output_dir,
         shard_size_bytes=args.shard_size_mb * 1024 * 1024,
         delete_staging=not args.keep_staging,
         merge_with_existing=args.merge,
     )
+    if not written and not args.allow_empty:
+        print(
+            f"REFUSING TO REPORT SUCCESS: consolidated 0 entries from "
+            f"{args.staging_dir}. Nothing was added to the store. Check that "
+            f"--staging-dir points where the authority actually staged (an "
+            f"unexpanded shell variable is the usual cause); pass --allow-empty "
+            f"if merging nothing really was the intent.",
+            file=_sys.stderr,
+        )
+        _sys.exit(3)
 
 
 
