@@ -91,7 +91,7 @@ fresh as the last session that remembered to tick one.
 | # | action | verify |
 |---|---|---|
 | 1.1 | `rm -rf /ix1/ishi/DELETABLE-AFTER-2026-08-31--geom-broken` (**57 GB**) — SG-approved. It is unreadable (index truncated to 2 rows, shards keyless), so it is insurance in name only | `/ix1` free space rises ~57 GB |
-| 1.2 | `rm -rf /vast/ishi/geom_rebuild/staging /vast/ishi/geom_rebuild/staging_pending` (**22 GB**) — redundant since the 9 Aug merge | live store still reports 11,758,768 rows |
+| 1.2 | `rm -rf /vast/ishi/geom_rebuild/staging /vast/ishi/geom_rebuild/staging_pending` (**22 GB**) — redundant since the 9 Aug merge. ⚠️ **Read the path twice.** These are under `geom_rebuild/`. `GEOM_STORE_STAGING_DIR` is `/vast/ishi/geom/staging` — a *different* directory, and it is S2's live input while 2.1 runs. Deleting that one mid-run destroys the extract | live store still reports 11,758,768 rows |
 
 **Do NOT yet delete** `/vast/ishi/tiles-verify` (17 GB) or
 `/ix1/ishi/data/tiles/_step0` (2.7 GB) — the `ohm` band `.geojsonl` files in them
@@ -119,12 +119,12 @@ pure BNDA if that path is missing**, which would quietly downgrade every country
 outline. That is the failure mode to guard.
 
 1. Rotate `staged/un.bnda-baseline` and any `staged/un` aside — `write_staged_place_doc` **appends**.
-2. Delete any `un.bin` / `un.index.json` from the geom staging dir — `GeomStoreWriter` opens `"ab"` and would double every entry.
+2. Delete any `un.bin` / `un.index.json` from the geom staging dir — `GeomStoreWriter` opens `"ab"` and would double every entry. **And check what else is in there**: `consolidate_geom_store` merges *every* `*.index.json` in `GEOM_STORE_STAGING_DIR`, not only the namespace you are working on. It currently holds `ukhc_counties.bin` + `.index.json` (92 entries, 55 MB) left by the 20 August names refresh; those keys are already in the store, so re-merging them rewrites them into a fresh shard for nothing and muddies "what did this merge add". Move them aside for the run and put them back after (found by S2, 31 Aug).
 3. Re-extract `un`, then `geom_store --merge --keep-staging`.
 4. `es gateway-restart` so the gateway re-reads the store index.
 
 **Verify (all three, not one):**
-* the run's own counters print `from_geoboundaries=229, from_bnda=18` — anything else means the checkout wasn't read;
+* the run's own counters print `from_geoboundaries=229, from_bnda=18` — anything else means the checkout wasn't read. ⚠️ **This plan originally asserted those counters were printed; they were only tracked.** `stage_un_countries` accumulated both in `stats` and the COMPLETE block printed everything except them, so the check as first written could not be read off a run. S2 added the print, and a hard guard: staging now exits non-zero when `load_geoboundaries_geoms` returns `{}` unless `WHG_ALLOW_BNDA_ONLY=1` is set by name. The silent fallback is now impossible rather than merely warned about;
 * `select count(*) from geom where k >= 'un:' and k < 'un;'` returns **247**;
 * a sample of stored polygons matches the live index's `bounds` for the same `geom_ref` — a mis-keyed rebuild still "resolves" every key, which is why the 9 Aug verification counted bounds mismatches rather than lookups.
 
@@ -163,6 +163,14 @@ Production carries `whg:<dataset>:<WHG place key>`; `f835b26` (18 Aug) mints
   independently in SQL** — `('whg:' || d.id || ':' || pl.place_id)` — and the
   overlay holds **2,933 + 26,971 `whg:` rows**. Re-ingesting without changing
   that query points ~30 k hard-link edges at ids that no longer exist.
+
+  ⚠️ **There is a third source, and it is not SQL-minted.** `contributor_replay`
+  also reads `_ACTIVE_ATTESTATION_QUERY` over `api_contributorattestation`, whose
+  `place_a` / `place_b` arrive **already namespaced from Django** rather than
+  being built in the query. Whether those stored ids need the same map join
+  depends on which form Django wrote them in: old `whg:<ds>:<place key>` rows
+  need it, and rows Django already emits as `whg:<ds>:<src_id>` must be left
+  alone. **Measure before writing the join** — raised by S3, 31 Aug.
 
   And it cannot simply be changed to `src_id`: the authority's duplicate rule
   (`whg:<ds>:<src_id>:<place_key>` for a repeat within a dataset) depends on
