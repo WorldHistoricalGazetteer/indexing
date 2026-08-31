@@ -154,6 +154,15 @@ def _build_sbatch(
         "set -eo pipefail",
         f"source {_CONDA_SH}",
         f"conda activate {_CONDA_ENV}",
+        # Some htc nodes carry a /lib64/libstdc++ older than the env's libicuuc
+        # needs, and `import sqlite3` then dies with "GLIBCXX_3.4.30 not found"
+        # before a single row is harvested. Observed on htc-n77, 31 Aug 2026;
+        # other nodes run the identical job fine, so it is the node image, not
+        # the env. The env ships its own libstdc++.so.6.0.34 — prefer it. The
+        # probe line is deliberate: this whole job is SQLite, so failing on the
+        # import in one second beats failing after the LOC harvest.
+        'export LD_LIBRARY_PATH="$CONDA_PREFIX/lib:${LD_LIBRARY_PATH}"',
+        "python -c 'import sqlite3; print(\"sqlite3 ok\", sqlite3.sqlite_version)'",
         f"cd {_REPO}",
         "",
         f"DB_PATH={db_path}",
