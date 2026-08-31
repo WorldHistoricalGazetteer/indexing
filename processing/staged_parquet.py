@@ -293,5 +293,13 @@ def atomic_staged_snapshot(
         if parquet_written and not _PARQUET_RENAMED_FIRST:
             os.replace(parquet_tmp, parquet_path)
     except BaseException:
-        _unlink_quietly(jsonl_tmp, parquet_tmp)
+        # Cleanup must never replace the real failure. _unlink_quietly swallows
+        # only FileNotFoundError — deliberately, because the failed-conversion
+        # branch above RELIES on a stale sidecar actually being removed — but a
+        # PermissionError or an NFS EIO here would propagate in place of the
+        # original exception and lose the cause. This cluster has produced both.
+        try:
+            _unlink_quietly(jsonl_tmp, parquet_tmp)
+        except Exception:
+            pass
         raise

@@ -43,6 +43,7 @@ import json
 import shutil
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 import pyarrow as pa
@@ -308,6 +309,43 @@ class CcodeMergeAtomicity(_StagedMergeAtomicityBase):
         from processing.ccode_merge import run_ccode_merge
         return run_ccode_merge(run_id="test-2.8-atomicity", namespace=self.ns,
                                allow_missing_patch=True)
+
+
+class CleanupNeverMasksTheRealFailure(unittest.TestCase):
+    """A failing cleanup must not replace the exception that caused it.
+
+    ``_unlink_quietly`` swallows only ``FileNotFoundError``, deliberately: the
+    failed-conversion branch relies on a stale sidecar actually being removed.
+    But that means a ``PermissionError`` — or an NFS ``EIO``, which this
+    cluster has produced — while removing the temps would propagate *instead
+    of* the real error, losing the cause exactly when it is most needed.
+    """
+
+    def test_original_exception_survives_a_failing_cleanup(self):
+        from processing import staged_parquet
+
+        with TemporaryDirectory() as tmp:
+            out_dir = Path(tmp)
+            jsonl = out_dir / "places.jsonl"
+            parquet = out_dir / "places.parquet"
+
+            # The helper also pre-cleans temps on entry; only the cleanup
+            # inside the exception handler is under test here.
+            calls = {"n": 0}
+
+            def _explode_on_unlink(*_args, **_kwargs):
+                calls["n"] += 1
+                if calls["n"] > 1:
+                    raise PermissionError("simulated NFS failure during cleanup")
+
+            with mock.patch.object(staged_parquet, "_unlink_quietly",
+                                   _explode_on_unlink):
+                with self.assertRaises(RuntimeError) as caught:
+                    with staged_parquet.atomic_staged_snapshot(
+                            jsonl, parquet, label="test"):
+                        raise RuntimeError("the real failure")
+
+            self.assertEqual("the real failure", str(caught.exception))
 
 
 # The base class is a fixture, not a test case.
