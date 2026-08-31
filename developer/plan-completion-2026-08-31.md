@@ -85,6 +85,28 @@ resources it does not model.
 | **Degraded staged trees** ⚠️ NEW 31 Aug | S3's overlay rebuild, S4's 2.6, and any future rebuild | `hard_links_staged.py` and toponyms stage 1 both read `staged/<ns>/final/places.parquet` through the stage chain, and `gn`/`wd` are **one row each** with `nl` absent. **98.9% of the overlay's 7,596,959 rows touch `wd` and 67.0% touch `gn`**, so a harvest today replaces the gateway's live co-reference store with a fraction of one. **Both now depend on 2.5.** The published overlay is intact only because it was built on 6 Aug, the day before the accident |
 | **The pitt VM** | any step running inline rather than via Slurm | Heavy work goes to Slurm. Several steps do small inline work on pitt; eight parallel inline resolvers once OOM-thrashed the VM into a ~1 h production outage. Two or three sessions doing "just a little" inline work is that same pattern. |
 
+### ⚠️ Before ANY session runs pipeline code: `git pull` the CRC clone, and fetch first
+
+`/vast/ishi/elastic` is what every Slurm job runs from, and **it lies about being
+up to date**. Measured 31 Aug: it sits at `177ba72`, **22 commits behind
+`main`** — including `1f5aa50` and `42b6e4a`, both real fixes to the hard-link
+job — while `git rev-list --count HEAD..origin/main` there returns **0**, because
+its remote-tracking ref is only as fresh as its last fetch. A session that checks
+whether it is current, without fetching, gets a reassuring zero.
+
+```bash
+ssh pitt 'cd /vast/ishi/elastic && git fetch origin && git status -sb && git pull'
+```
+
+S3 hit this inside 2.3 — the clone lagged by exactly the three commits that fixed
+the job it was about to run — and recorded it in that runbook. It is not a 2.3
+problem: it is the precondition for **every** step that executes code on CRC,
+which is most of what is left.
+
+⏳ **Not right now, though.** `gn`'s extract (Slurm 11074352) is running *from
+that clone*. Pull after it finishes and before the next job starts, not under a
+running job.
+
 **Preconditions, as checks rather than prose.** A session must run its own before
 starting, and must not trust this document's status boxes — they are only as
 fresh as the last session that remembered to tick one.
